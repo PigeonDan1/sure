@@ -1,0 +1,85 @@
+{
+  "model": "asr_qwen3",
+  "dataset": "aishell1",
+  "date": "2025-03-25",
+  "num_samples": 10,
+  "metrics": {
+    "wer": 0.79,
+    "wer_percent": 0.79,
+    "cer": null,
+    "all": 127,
+    "cor": 126,
+    "sub": 1,
+    "del": 0,
+    "ins": 0
+  },
+  "rps": 101.60,
+  "baseline": {
+    "metric": "cer",
+    "score": 4.6
+  },
+  "duration_seconds": 53.46,
+  "notes": "Quick test on 10 samples",
+  "samples": [
+    {
+      "key": "BAC009S0764W0121",
+      "reference": "甚至出现交易几乎停滞的情况",
+      "prediction": "甚至出现交易几乎停滞的情况。",
+      "correct": false
+    },
+    {
+      "key": "BAC009S0764W0122",
+      "reference": "一二线城市虽然也处于调整中",
+      "prediction": "一二线城市虽然也处于调整中。",
+      "correct": false
+    },
+    {
+      "key": "BAC009S0764W0123",
+      "reference": "但因为聚集了过多公共资源",
+      "prediction": "但因为聚集了过多公共资源。",
+      "correct": false
+    },
+    {
+      "key": "BAC009S0764W0124",
+      "reference": "为了规避三四线城市明显过剩的市场风险",
+      "prediction": "为了规避三四线城市明显过剩的市场风险。",
+      "correct": false
+    },
+    {
+      "key": "BAC009S0764W0125",
+      "reference": "标杆房企必然调整市场战略",
+      "prediction": "标杆房企必然调整市场战略。",
+      "correct": false
+    },
+    {
+      "key": "BAC009S0764W0126",
+      "reference": "因此土地储备至关重要",
+      "prediction": "因此，土地储备至关重要。",
+      "correct": false
+    },
+    {
+      "key": "BAC009S0764W0127",
+      "reference": "中原地产首席分析师张大伟说",
+      "prediction": "中原地产首席分析师张大伟说，",
+      "correct": false
+    },
+    {
+      "key": "BAC009S0764W0128",
+      "reference": "一线城市土地供应量减少",
+      "prediction": "一线城市土地供应量减少。",
+      "correct": false
+    },
+    {
+      "key": "BAC009S0764W0129",
+      "reference": "也助推了土地市场的火爆",
+      "prediction": "也助推了土地市场的火爆。",
+      "correct": false
+    },
+    {
+      "key": "BAC009S0764W0130",
+      "reference": "北京仅新增住宅用地供应十宗",
+      "prediction": "北京紧新增住宅用地供应十宗，",
+      "correct": false
+    }
+  ]
+}

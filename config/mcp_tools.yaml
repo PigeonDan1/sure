@@ -1,0 +1,66 @@
+# MCP Tool Registry for SURE-EVAL
+# Define MCP tools that can be used for evaluation
+
+tools:
+  # ASR Tools
+  asr_qwen3:
+    name: "asr_qwen3"
+    command: [".venv/bin/python", "server.py"]
+    working_dir: "/cpfs/user/jingpeng/workspace/AUDIO_AGENT/audio_agent/tools/catalog/asr_qwen3"
+    env:
+      MODEL_PATH: "Qwen/Qwen3-ASR-1.7B"
+      DEVICE: "auto"
+    timeout: 600
+  
+  asr_whisper:
+    name: "asr_whisper"
+    command: ["python", "-m", "whisper_server"]
+    working_dir: "/path/to/whisper"
+    env:
+      MODEL_SIZE: "large-v3"
+    timeout: 120
+  
+  # Diarization Tools
+  diarizen:
+    name: "diarizen"
+    command: [".venv/bin/python", "server.py"]
+    working_dir: "/path/to/audio_agent/tools/catalog/diarizen"
+    timeout: 120
+  
+  pyannote:
+    name: "pyannote"
+    command: ["python", "-m", "pyannote_server"]
+    working_dir: "/path/to/pyannote"
+    env:
+      HF_TOKEN: "${HF_TOKEN}"
+    timeout: 120
+  
+  # S2TT Tools
+  s2tt_nllb:
+    name: "s2tt_nllb"
+    command: ["python", "-m", "nllb_server"]
+    working_dir: "/path/to/s2tt"
+    timeout: 120
+  
+  seamless:
+    name: "seamless"
+    command: ["python", "-m", "seamless_server"]
+    working_dir: "/path/to/seamless"
+    timeout: 120
+  
+  # SER Tools
+  emotion2vec:
+    name: "emotion2vec"
+    command: ["python", "-m", "emotion2vec_server"]
+    working_dir: "/path/to/emotion2vec"
+    timeout: 60
+  
+  # Generic API Tools (for external APIs)
+  api_tool:
+    name: "api_tool"
+    command: ["python", "-m", "api_tool_server"]
+    working_dir: "."
+    env:
+      API_BASE_URL: "${API_BASE_URL}"
+      API_KEY: "${API_KEY}"
+    timeout: 60

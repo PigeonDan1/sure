@@ -1,0 +1,63 @@
+# ASR Qwen3 Model Configuration
+
+name: asr_qwen3
+task: ASR
+description: "Automatic Speech Recognition using Qwen3-ASR-1.7B"
+version: "1.0.0"
+
+# Model info
+model:
+  id: "Qwen/Qwen3-ASR-1.7B"
+  size: "1.7B"
+  languages: ["zh", "en", "ja", "ko", "auto"]
+  license: "Apache 2.0"
+
+# MCP Server Configuration
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_PATH: "Qwen/Qwen3-ASR-1.7B"
+    DEVICE: "auto"
+  timeout: 300
+  startup_timeout_sec: 300
+
+# Tools
+tools:
+  - name: "asr_transcribe"
+    description: "Transcribe speech to text"
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+          description: "Path to audio file"
+        language:
+          type: string
+          description: "Language (Chinese, English, auto)"
+          default: "auto"
+      required: ["audio_path"]
+
+# Test Results
+results:
+  aishell1:
+    date: "2025-03-25"
+    samples: 10
+    metrics:
+      wer: 0.79
+      cer: null
+    rps: 101.60
+    notes: "Quick test"
+  
+  librispeech_clean:
+    status: "not_tested"
+  
+  librispeech_other:
+    status: "not_tested"
+
+# Resource Requirements
+resources:
+  memory_gb: 8
+  gpu: true  # Recommended
+  cpu_cores: 4
+  storage_gb: 4

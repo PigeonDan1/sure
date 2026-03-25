@@ -1,0 +1,321 @@
+# SURE-EVAL Default Configuration
+
+# Data directories
+data:
+  root: "./data"
+  cache: "./data/cache"
+  models: "./data/models"
+  datasets: "./data/datasets"
+  results: "./results"
+
+# Model configuration
+models:
+  # Default model providers
+  providers:
+    - huggingface
+    - modelscope
+  
+  # Cache configuration
+  cache_dir: "./data/models"
+  
+  # Download settings
+  download:
+    max_retries: 3
+    timeout: 300
+    resume: true
+
+# Dataset configuration
+datasets:
+  # Default sources
+  sources:
+    - modelscope
+    - huggingface
+  
+  # SURE Benchmark datasets (default source)
+  sure_benchmark:
+    base_url: "https://www.modelscope.cn/datasets/SUREBenchmark"
+    datasets:
+      - name: "SURE_Test_csv"
+        id: "SUREBenchmark/SURE_Test_csv"
+        description: "SURE benchmark test data in CSV format"
+      - name: "SURE_Test_Suites"
+        id: "SUREBenchmark/SURE_Test_Suites"
+        description: "SURE benchmark test suites"
+  
+  # Predefined datasets metadata
+  # Note: These names map to CSV filenames in SURE Benchmark
+  # The 'dataset' field in JSONL will contain these config names
+  definitions:
+    # === ASR Datasets ===
+    aishell1:
+      name: "AISHELL-1"
+      task: "ASR"
+      language: "zh"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/aishell1-test_ASR.csv"
+      subset: "aishell-1_test"
+      splits: ["test"]
+      num_samples: 7176
+      
+    aishell5:
+      name: "AISHELL-5"
+      task: "ASR"
+      language: "zh"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/aishell-5_eval1.csv"
+      subset: "aishell-5_test"
+      splits: ["eval1"]
+      num_samples: 20368
+      
+    librispeech_clean:
+      name: "LibriSpeech Clean"
+      task: "ASR"
+      language: "en"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/librispeech_test-clean_ASR.csv"
+      subset: "librispeech-test-clean"
+      splits: ["test"]
+      num_samples: 2619
+      
+    librispeech_other:
+      name: "LibriSpeech Other"
+      task: "ASR"
+      language: "en"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/librispeech_test-other_ASR.csv"
+      subset: "librispeech-test-other"
+      splits: ["test"]
+      num_samples: 2939
+      
+    kespeech:
+      name: "KeSpeech"
+      task: "ASR"
+      language: "zh"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/kespeech.csv"
+      subset: "kespeech_test"
+      splits: ["test"]
+      num_samples: 19723
+      
+    voxpopuli:
+      name: "VoxPopuli EN"
+      task: "ASR"
+      language: "en"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/voxpopuli_test.csv"
+      subset: "voxpopuli_en_test"
+      splits: ["test"]
+      num_samples: 1842
+      
+    # Context ASR
+    contextasr_en:
+      name: "ContextASR English"
+      task: "ASR"
+      language: "en"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/contextasr_english.csv"
+      subset: "librispeech-test-clean"
+      splits: ["test"]
+      num_samples: 70037
+      
+    contextasr_zh:
+      name: "ContextASR Mandarin"
+      task: "ASR"
+      language: "zh"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/contextasr_mandarin.csv"
+      subset: "aishell-1_test"
+      splits: ["test"]
+      num_samples: 73257
+      
+    # === S2TT Datasets ===
+    covost2_en2zh:
+      name: "CoVoST2 EN-ZH"
+      task: "S2TT"
+      language: "en"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/CoVoST2_S2TT_en2zh_test.csv"
+      subset: "CoVoST2_S2TT_en2zh_test"
+      splits: ["test"]
+      num_samples: 15531
+      
+    covost2_zh2en:
+      name: "CoVoST2 ZH-EN"
+      task: "S2TT"
+      language: "zh"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/CoVoST2_S2TT_zh2en_test.csv"
+      subset: "CoVoST2_S2TT_zh2en_test"
+      splits: ["test"]
+      num_samples: 4898
+      
+    # === Other Tasks ===
+    cs_dialogue:
+      name: "Code-Switching Dialogue"
+      task: "ASR"
+      language: "cs"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/CS_dialogue.csv"
+      subset: "CS-Dialogue_test"
+      splits: ["test"]
+      num_samples: 5956
+      
+    iemocap:
+      name: "IEMOCAP"
+      task: "SER"
+      language: "en"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/IEMOCAP_SER_test.csv"
+      subset: "IEMOCAP_test"
+      splits: ["test"]
+      num_samples: 1241
+      
+    librispeech_gr:
+      name: "LibriSpeech Gender"
+      task: "GR"
+      language: "en"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/librispeech_test_clean_GR.csv"
+      subset: "librispeech-test-clean"
+      splits: ["test"]
+      num_samples: 2620
+      
+    mmsu:
+      name: "MMSU"
+      task: "SLU"
+      language: "zh"
+      source: "sure_benchmark"
+      dataset_id: "SUREBenchmark/SURE_Test_csv/mmsu.csv"
+      subset: "mmsu_reasoning_test"
+      splits: ["test"]
+      num_samples: 2416
+      
+    # AliMeeting for SD task (not in SURE Benchmark yet)
+    alimeeting:
+      name: "AliMeeting"
+      task: "SD"
+      language: "zh"
+      source: "modelscope"
+      dataset_id: "speech_alimeeting"
+      splits: ["train", "eval"]
+
+# Evaluation configuration
+evaluation:
+  # Default metrics by task
+  default_metrics:
+    ASR: "cer"
+    S2TT: "bleu"
+    SD: "der"
+    SA_ASR: "cpwer"
+    SER: "accuracy"
+    GR: "accuracy"
+    SLU: "accuracy"
+  
+  # Metric-specific settings
+  metric_settings:
+    cer:
+      language: "zh"
+    wer:
+      language: "en"
+    bleu:
+      tokenize: "zh"
+    der:
+      collar: 0.25
+    cpwer:
+      collar: 0.5
+  
+  # Batch settings
+  batch:
+    default_batch_size: 32
+    max_workers: 4
+
+# Tool configuration
+tools:
+  # MCP tool registry
+  mcp:
+    config_path: "./config/mcp_tools.yaml"
+    timeout: 60
+    
+  # Default tools by task
+  default_tools:
+    ASR: "asr_qwen3"
+    SD: "diarizen"
+    S2TT: "s2tt_nllb"
+  
+  # Local tool paths
+  local:
+    asr_qwen3:
+      name: "asr_qwen3"
+      type: "local_mcp"
+      path: "/cpfs/user/jingpeng/workspace/AUDIO_AGENT/audio_agent/tools/catalog/asr_qwen3"
+      command: [".venv/bin/python", "server.py"]
+      env:
+        MODEL_PATH: "Qwen/Qwen-Audio-Chat"
+        DEVICE: "cuda"
+      timeout: 120
+      work_dir: "/cpfs/user/jingpeng/workspace/AUDIO_AGENT/audio_agent/tools/catalog/asr_qwen3"
+
+# RPS (Relative Performance Score) configuration
+rps:
+  # SOTA baselines
+  baselines:
+    aishell1:
+      metric: "cer"
+      score: 0.80
+      higher_is_better: false
+    
+    librispeech_clean:
+      metric: "wer"
+      score: 1.70
+      higher_is_better: false
+      
+    covost2_en2zh:
+      metric: "bleu"
+      score: 46.25
+      higher_is_better: true
+      
+    iemocap:
+      metric: "accuracy"
+      score: 69.38
+      higher_is_better: true
+
+# Agent configuration
+agent:
+  # Auto-evaluation settings
+  auto_eval:
+    enabled: true
+    max_retries: 3
+    retry_delay: 5
+    
+  # Decision making
+  decision:
+    # Thresholds for tool selection
+    rps_threshold: 0.9
+    
+    # Strategies
+    strategies:
+      - "sota_comparison"
+      - "ensemble"
+      - "fallback"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "structured"
+  file: "./logs/sure-eval.log"
+  rotation: "1 day"
+  retention: "30 days"
+
+# API Configuration (to be filled by user)
+api:
+  # Tool API endpoints
+  tool_api:
+    base_url: ""
+    api_key: ""
+    timeout: 60
+    
+  # Model API endpoints
+  model_api:
+    base_url: ""
+    api_key: ""
+    timeout: 120

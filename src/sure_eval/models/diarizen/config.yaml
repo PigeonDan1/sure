@@ -1,0 +1,32 @@
+name: diarizen
+task: SD
+description: "Speaker Diarization using Diarizen - Template"
+version: "0.1.0"
+
+model:
+  id: "diarizen/model"
+  size: "TBD"
+  languages: ["multilingual"]
+  license: "TBD"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_PATH: "diarizen/model"
+    DEVICE: "auto"
+  timeout: 300
+
+tools:
+  - name: "diarize"
+    description: "Speaker diarization"
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+        num_speakers:
+          type: integer
+      required: ["audio_path"]
+
+results: {}

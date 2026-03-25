@@ -1,0 +1,33 @@
+name: asr_whisper
+task: ASR
+description: "ASR using OpenAI Whisper - Template"
+version: "0.1.0"
+
+model:
+  id: "openai/whisper-large-v3"
+  size: "1.5B"
+  languages: ["multilingual"]
+  license: "MIT"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_PATH: "openai/whisper-large-v3"
+    DEVICE: "auto"
+  timeout: 300
+
+tools:
+  - name: "asr_transcribe"
+    description: "Transcribe speech to text"
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+        language:
+          type: string
+          default: "auto"
+      required: ["audio_path"]
+
+results: {}

@@ -1,0 +1,34 @@
+name: s2tt_nllb
+task: S2TT
+description: "Speech-to-Text Translation using NLLB - Template"
+version: "0.1.0"
+
+model:
+  id: "facebook/nllb-200-distilled-600M"
+  size: "600M"
+  languages: ["multilingual"]
+  license: "CC-BY-NC"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_PATH: "facebook/nllb-200-distilled-600M"
+    DEVICE: "auto"
+  timeout: 300
+
+tools:
+  - name: "s2tt_translate"
+    description: "Translate speech to text"
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+        source_lang:
+          type: string
+        target_lang:
+          type: string
+      required: ["audio_path", "target_lang"]
+
+results: {}
