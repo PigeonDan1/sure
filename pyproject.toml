@@ -7,7 +7,7 @@ name = "sure-eval"
 version = "0.1.0"
 description = "Autonomous Tool and Model Evaluation Framework"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "SURE Team", email = "sure@example.com"}
@@ -74,14 +74,14 @@ where = ["src"]
 
 [tool.black]
 line-length = 100
-target-version = ["py311"]
+target-version = ["py310"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

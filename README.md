@@ -39,7 +39,18 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
-### 1. Download SURE Benchmark Data
+### 1. Clone and Install
+
+```bash
+# Clone repository
+git clone https://github.com/PigeonDan1/sure.git
+cd sure
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Download SURE Benchmark Data
 
 ```bash
 # Download all SURE benchmark datasets (~11GB)
@@ -50,7 +61,7 @@ python scripts/download_sure_data.py --csv    # Annotations only
 python scripts/download_sure_data.py --suites # Audio files only
 ```
 
-### 2. Convert to JSONL Format
+### 3. Convert to JSONL Format
 
 ```bash
 python scripts/convert_sure_to_jsonl.py \
@@ -58,7 +69,22 @@ python scripts/convert_sure_to_jsonl.py \
     --output-dir data/datasets/sure_benchmark/jsonl
 ```
 
-### 3. Configure MCP Tools
+### 4. Run Demo (Recommended for First-Time Users)
+
+```bash
+# Verify setup
+python demo/demo_quickstart.py
+
+# Setup model environment (requires uv)
+python demo/setup_model.py asr_qwen3
+
+# Evaluate model on dataset
+python demo/demo_evaluate_model.py --model asr_qwen3 --dataset aishell1 --samples 10
+```
+
+See [demo/README.md](demo/README.md) for more examples.
+
+### 5. Configure MCP Tools (Advanced)
 
 Edit `config/mcp_tools.yaml`:
 
@@ -74,7 +100,7 @@ tools:
     timeout: 300
 ```
 
-### 4. Run Evaluation
+### 6. Run Evaluation
 
 ```bash
 # Quick test (10 samples)
@@ -94,6 +120,40 @@ sure-eval batch-evaluate asr_qwen3 aishell1 librispeech_clean
 # Compare tools
 sure-eval compare asr_qwen3 asr_whisper --dataset aishell1
 ```
+
+## Model Environment Setup
+
+Each model has its own isolated Python environment managed by [uv](https://github.com/astral-sh/uv):
+
+```bash
+# Install uv first
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Setup model environment
+python demo/setup_model.py asr_qwen3
+
+# List all models and their status
+python demo/setup_model.py --list
+```
+
+### Model Directory Structure
+
+```
+src/sure_eval/models/<model_name>/
+├── pyproject.toml      # Dependencies (managed by uv)
+├── .venv/              # Virtual environment
+├── config.yaml         # MCP server configuration
+├── server.py           # MCP server implementation
+├── model.py            # Model wrapper
+└── README.md           # Model documentation
+```
+
+### Why uv?
+
+- **Fast**: 10-100x faster than pip
+- **Reliable**: Deterministic dependency resolution
+- **Lightweight**: Efficient virtual environments
+- **Standards-compliant**: Supports PEP 518/621
 
 ## Model Registry
 
@@ -296,13 +356,31 @@ cd src/sure_eval/models/my_model
 ```
 
 2. Create required files:
+- `pyproject.toml` - Dependencies (uv-managed)
 - `config.yaml` - Model and MCP configuration
 - `model.py` - Model wrapper class
 - `server.py` - MCP server implementation
-- `pyproject.toml` - Dependencies
 - `README.md` - Documentation
 
-3. Example `config.yaml`:
+3. Example `pyproject.toml`:
+```toml
+[project]
+name = "my-model-eval"
+version = "1.0.0"
+description = "My custom model for SURE-EVAL"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "transformers>=4.40.0",
+    # ... other dependencies
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+```
+
+4. Example `config.yaml`:
 ```yaml
 name: my_model
 task: ASR
@@ -320,13 +398,14 @@ server:
   timeout: 300
 ```
 
-4. Register in registry:
-```python
-from sure_eval.models import ModelRegistry
+5. Setup environment:
+```bash
+python demo/setup_model.py my_model
+```
 
-registry = ModelRegistry()
-info = registry.get_model("my_model")
-print(info.get_mcp_config())
+6. Test your model:
+```bash
+python demo/demo_evaluate_model.py --model my_model --dataset aishell1 --samples 10
 ```
 
 ## Documentation

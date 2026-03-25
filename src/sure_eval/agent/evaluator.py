@@ -61,7 +61,6 @@ class AutonomousEvaluator:
         self.config.ensure_directories()
         
         # Initialize components
-        self.model_manager = ModelManager(config)
         self.dataset_manager = DatasetManager(config)
         self.tool_registry = ToolRegistry()
         self.tool_adapter = ToolAdapter(self.tool_registry)

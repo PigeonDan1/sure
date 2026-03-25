@@ -1,21 +1,19 @@
 [project]
-name = "asr-qwen3-eval"
+name = "s2tt-nllb-eval"
 version = "1.0.0"
-description = "ASR evaluation using Qwen3-ASR-1.7B model for SURE-EVAL"
+description = "Speech-to-text translation evaluation using NLLB for SURE-EVAL"
 requires-python = ">=3.10"
 authors = [
     {name = "SURE-EVAL Team"}
 ]
 
-# Dependencies for Qwen3-ASR
-# The qwen-asr package provides the official Qwen3-ASR implementation
+# Dependencies for S2TT with NLLB
 dependencies = [
-    "qwen-asr",           # Official Qwen3-ASR package
     "torch>=2.0.0",
     "transformers>=4.40.0",
     "librosa>=0.10.0",
     "soundfile>=0.12.0",
-    "accelerate>=0.25.0",  # For device_map support
+    "sacrebleu>=2.3.0",  # For BLEU/chrF metrics
 ]
 
 [project.optional-dependencies]
