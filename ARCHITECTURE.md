@@ -1,309 +1,527 @@
-# SURE-EVAL 架构文档
+# SURE-EVAL Architecture
 
-## 重构后的架构
-
-### 核心原则
-
-1. **单一评估标准**: 所有评估都通过 `SUREEvaluator` 进行，确保结果一致性
-2. **统一数据格式**: JSONL 格式包含 `key`, `path`, `target`, `task`, `language`, `dataset`
-3. **配置-数据映射**: 配置文件使用友好名称，`dataset` 字段建立映射
-4. **模块化设计**: 各模块职责清晰，通过公共接口交互
+**A Dynamic, Agent-Maintained Evaluation Framework for Audio Processing**
 
 ---
 
-## 模块架构
+## Overview
 
-```
-sure-eval/
-├── src/sure_eval/
-│   ├── __init__.py                 # 公共接口导出
-│   ├── cli.py                      # 命令行接口
-│   ├──
-│   ├── agent/
-│   │   ├── __init__.py
-│   │   └── evaluator.py            # AutonomousEvaluator - 自动化流程编排
-│   │                               #   - 调用 DatasetManager 加载数据
-│   │                               #   - 调用 Tool 进行推理
-│   │                               #   - 调用 SUREEvaluator 进行评估
-│   │                               #   - 调用 RPSManager 计算RPS
-│   │
-│   ├── core/
-│   │   ├── config.py               # 配置管理
-│   │   └── logging.py              # 日志系统
-│   │
-│   ├── datasets/
-│   │   ├── __init__.py
-│   │   └── dataset_manager.py      # DatasetManager - 统一数据管理
-│   │                               #   - 下载 SURE Benchmark (CLI方式)
-│   │                               #   - 下载 HuggingFace/ModelScope
-│   │                               #   - CSV → JSONL 转换
-│   │                               #   - 路径映射和解析
-│   │
-│   ├── evaluation/
-│   │   ├── __init__.py
-│   │   ├── sure_evaluator.py       # SUREEvaluator - 唯一评估标准
-│   │   ├── wenet_compute_cer.py    # WER/CER计算核心
-│   │   ├── normalization/          # 文本归一化
-│   │   ├── metrics.py              # 基础指标（备用）
-│   │   └── rps.py                  # RPS计算
-│   │
-│   ├── models/                     # 模型管理
-│   └── tools/                      # 工具管理
-│
-├── scripts/
-│   ├── convert_sure_to_jsonl.py    # CSV转JSONL（独立脚本）
-│   ├── run_sure_evaluation.py      # 评估运行（独立脚本）
-│   └── download_sure_data.py       # 数据下载（独立脚本）
-│
-└── config/
-    └── default.yaml                # 配置文件（匹配实际数据命名）
-```
+SURE-EVAL is a comprehensive evaluation framework designed for autonomous testing and reporting of audio processing models. It enables users to evaluate new models against established benchmarks, automatically calculate performance metrics, and maintain an up-to-date leaderboard of SOTA results.
+
+### Key Features
+
+- 🔄 **Autonomous Evaluation**: End-to-end pipeline from data to report
+- 📊 **Multi-Task Support**: ASR, S2TT, SD, SER, GR, SLU, SA-ASR
+- 🏆 **SOTA Tracking**: Automatic RPS calculation against baselines
+- 📝 **Dynamic Reports**: Auto-updating model performance reports
+- 🔧 **Tool Integration**: Standardized MCP tool interface
+- 📈 **Benchmark Alignment**: SURE Benchmark compatibility
 
 ---
 
-## 数据流
-
-### 1. 数据准备流程
+## System Architecture
 
 ```
-CSV (SURE Benchmark)
-    ↓
-DatasetManager.download_and_convert()
-    - 使用 modelscope CLI 下载
-    - 解压 tar.gz
-    - CSV → JSONL 转换
-    - 路径映射修复
-    ↓
-JSONL (统一格式)
-    {
-        "key": "BAC009S0764W0121",
-        "path": "aishell-1_test/BAC009S0764W0121.wav",
-        "target": "甚至出现交易几乎停滞的情况",
-        "task": "ASR",
-        "language": "zh",
-        "dataset": "aishell1"  // 配置名称
-    }
-```
-
-### 2. 评估流程
-
-```
-AutonomousEvaluator.evaluate_tool()
-    ↓
-DatasetManager.get_jsonl_path() 或 download_and_convert()
-    ↓
-_load_samples()  →  JSONL 加载
-    ↓
-_run_tool()       →  调用 Tool 进行推理
-    ↓
-_save_predictions() →  保存预测结果 (key\tpred)
-    ↓
-SUREEvaluator.evaluate()  →  标准评估
-    - 文本归一化
-    - WER/CER 计算
-    ↓
-RPSManager.calculate()  →  RPS 分数
-    ↓
-EvaluationResult
-```
-
-### 3. 独立评估脚本流程
-
-```
-run_sure_evaluation.py
-    ↓
-加载 JSONL (GT)
-加载 TXT (Predictions)
-    ↓
-SUREEvaluator.evaluate()
-    ↓
-输出结果
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         USER INTERFACE                                   │
+│  (CLI sure-eval / Demo Scripts / Python API)                            │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      AUTONOMOUS EVALUATOR (Agent)                        │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐ │
+│  │  Orchestrate    │  │  Calculate RPS  │  │  Generate Reports       │ │
+│  │  Evaluation Flow│  │  vs SOTA        │  │  & Leaderboards         │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+        ┌──────────────────────────┼──────────────────────────┐
+        │                          │                          │
+        ▼                          ▼                          ▼
+┌───────────────┐      ┌──────────────────┐      ┌──────────────────────┐
+│  DATA PIPELINE│      │  TOOL MANAGEMENT │      │  EVALUATION ENGINE   │
+│               │      │                  │      │                      │
+│ • Download    │      │ • Model Registry │      │ • SUREEvaluator      │
+│ • Format      │      │ • MCP Client     │      │ • Metrics (WER/CER)  │
+│ • Normalize   │      │ • Model Mapping  │      │ • RPS Calculator     │
+└───────────────┘      └──────────────────┘      └──────────────────────┘
+        │                          │                          │
+        └──────────────────────────┼──────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         REPORT SYSTEM                                    │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐ │
+│  │  SOTA Manager   │  │  Report Manager │  │  Evaluation Database    │ │
+│  │  (Baselines)    │  │  (Performance)  │  │  (History)              │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 关键类说明
+## Component Details
 
-### DatasetManager
+### 1. Data Pipeline
 
+**Purpose**: Manage dataset download, formatting, and normalization
+
+**Key Files**:
+- `src/sure_eval/datasets/dataset_manager.py`
+- `scripts/download_sure_data.py`
+- `scripts/convert_sure_to_jsonl.py`
+
+**Features**:
+- SURE Benchmark dataset download (via ModelScope)
+- CSV → JSONL format conversion
+- Dataset name normalization (e.g., `CS_dialogue` → `cs_dialogue`)
+- Path mapping and correction
+
+**Usage**:
 ```python
-# 获取数据集路径
-jsonl_path = manager.get_jsonl_path("aishell1")  # 支持配置名或CSV名
+from sure_eval import DatasetManager
 
-# 检查可用性
-if manager.is_available("aishell1"):
-    ...
-
-# 下载并转换
-jsonl_path = manager.download_and_convert("aishell1")
-
-# 列出可用数据集
-available = manager.list_available()
-
-# 获取信息
-info = manager.get_info("aishell1")
-# {
-#     "name": "aishell1",
-#     "csv_name": "aishell1-test_ASR",
-#     "config_name": "aishell1",
-#     "task": "ASR",
-#     "language": "zh",
-#     "source": "sure_benchmark",
-#     "is_available": True
-# }
-```
-
-### SUREEvaluator
-
-```python
-# 创建评估器
-evaluator = SUREEvaluator(language="zh")
-
-# 评估 ASR
-result = evaluator.evaluate("ASR", ref_file, hyp_file)
-# 返回: {"all": 100, "cor": 95, "sub": 3, "del": 1, "ins": 1, "wer": 0.05, "wer_percent": 5.0}
-
-# 评估 SER
-accuracy = evaluator.evaluate("SER", ref_file, hyp_file)
-
-# 评估 S2TT
-result = evaluator.evaluate("S2TT", ref_file, hyp_file)
-# 返回: {"bleu": 45.2, "chrf": 52.1}
-```
-
-### AutonomousEvaluator
-
-```python
-# 创建评估器
-evaluator = AutonomousEvaluator(config)
-
-# 评估工具
-result = evaluator.evaluate_tool("asr_qwen3", "aishell1", max_samples=100)
-# 返回: EvaluationResult
-
-# 批量评估
-results = evaluator.batch_evaluate("asr_qwen3", ["aishell1", "librispeech_clean"])
-
-# 工具对比
-comparison = evaluator.compare_tools(["asr_qwen3", "asr_whisper"], "aishell1")
+dm = DatasetManager()
+datasets = dm.list_available()  # Get normalized dataset names
+jsonl_path = dm.download_and_convert("aishell1")
 ```
 
 ---
 
-## 配置映射
+### 2. Tool Management
 
-### 配置文件 (default.yaml)
+**Purpose**: Manage model tools with standardized interfaces
 
-```yaml
-datasets:
-  definitions:
-    aishell1:              # 配置名称（友好名称）
-      name: "AISHELL-1"
-      task: "ASR"
-      language: "zh"
-      source: "sure_benchmark"
-      dataset_id: "SUREBenchmark/SURE_Test_csv/aishell1-test_ASR.csv"
-      subset: "aishell-1_test"  # 实际音频目录名
-      num_samples: 7176
+**Key Files**:
+- `src/sure_eval/models/registry.py`
+- `src/sure_eval/models/model_mapping.py`
+- `src/sure_eval/tools/mcp_client.py`
+
+**Features**:
+- Model auto-discovery from `src/sure_eval/models/`
+- MCP (Model Context Protocol) tool interface
+- Bidirectional tool-to-benchmark mapping
+
+**Model Mapping**:
+```python
+from sure_eval.models import get_benchmark_name, get_tool_name
+
+# Local tool → Benchmark model
+get_benchmark_name("asr_qwen3")  # → "Qwen3-ASR-1.7B"
+
+# Benchmark model → Local tool
+get_tool_name("Qwen3-ASR-1.7B")  # → "asr_qwen3"
 ```
 
-### DatasetManager 映射表
+**Tool Structure**:
+```
+models/<tool_name>/
+├── pyproject.toml      # UV-managed dependencies
+├── config.yaml         # MCP configuration
+├── server.py           # MCP server implementation
+├── model.py            # Model wrapper
+└── README.md           # Documentation
+```
+
+---
+
+### 3. Evaluation Engine
+
+**Purpose**: Compute metrics and calculate relative performance
+
+**Key Files**:
+- `src/sure_eval/evaluation/sure_evaluator.py`
+- `src/sure_eval/evaluation/rps.py`
+
+**Supported Tasks**:
+| Task | Metrics | Direction |
+|------|---------|-----------|
+| ASR | WER, CER, MER | Lower is better ↓ |
+| S2TT | BLEU (char-level) | Higher is better ↑ |
+| SER | Accuracy | Higher is better ↑ |
+| GR | Accuracy | Higher is better ↑ |
+| SLU | Accuracy | Higher is better ↑ |
+| SD | DER | Lower is better ↓ |
+| SA-ASR | cpWER, DER | Lower is better ↓ |
+
+**RPS Calculation**:
+```python
+from sure_eval.evaluation import RPSManager
+
+rps_mgr = RPSManager()
+rps = rps_mgr.calculator.calculate("aishell1", score=0.85)
+# RPS = SOTA_score / score = 0.80 / 0.85 = 0.94
+```
+
+---
+
+### 4. Report System
+
+**Purpose**: Track SOTA baselines and model performance
+
+**Key Files**:
+- `src/sure_eval/reports/sota_manager.py`
+- `src/sure_eval/reports/report_manager.py`
+- `reports/sota/sota_baseline.yaml`
+- `reports/models/model_performance_report.json`
+
+**SOTA Baselines** (14 datasets):
+| Dataset | Metric | SOTA Score | SOTA Model |
+|---------|--------|------------|------------|
+| aishell1 | CER | 0.80% | Qwen3-Omni |
+| librispeech_clean | WER | 1.70% | Qwen3-Omni |
+| covost2_en2zh | BLEU-char | 46.25 | Qwen3-Omni |
+| iemocap | ACC | 69.38% | Kimi-Audio |
+| ... | ... | ... | ... |
+
+**Features**:
+- SOTA baseline lookup
+- Model performance comparison
+- Leaderboard generation
+- Markdown report export
+
+**Usage**:
+```python
+from sure_eval.reports import SOTAManager, ReportManager
+
+# Check SOTA
+sota = SOTAManager()
+baseline = sota.get_baseline("aishell1")
+print(f"SOTA: {baseline.sota_model} with {baseline.score}% CER")
+
+# View leaderboard
+reports = ReportManager()
+reports.print_leaderboard("aishell1")
+```
+
+---
+
+### 5. Autonomous Evaluator (Agent)
+
+**Purpose**: Orchestrate the complete evaluation pipeline
+
+**Key File**: `src/sure_eval/agent/evaluator.py`
+
+**Pipeline**:
+```
+User Request
+    │
+    ▼
+┌─────────────────┐
+│ 1. Load Dataset │ ← DatasetManager (auto-download if needed)
+└─────────────────┘
+    │
+    ▼
+┌─────────────────┐
+│ 2. Run Tool     │ ← MCP Client (inference on samples)
+└─────────────────┘
+    │
+    ▼
+┌─────────────────┐
+│ 3. Evaluate     │ ← SUREEvaluator (compute metrics)
+└─────────────────┘
+    │
+    ▼
+┌─────────────────┐
+│ 4. Calc RPS     │ ← SOTAManager (vs SOTA baseline)
+└─────────────────┘
+    │
+    ▼
+┌─────────────────┐
+│ 5. Record       │ ← EvaluationDatabase (save results)
+└─────────────────┘
+    │
+    ▼
+┌─────────────────┐
+│ 6. Report       │ ← ReportManager (update leaderboard)
+└─────────────────┘
+    │
+    ▼
+Result to User
+```
+
+**Usage**:
+```python
+from sure_eval import AutonomousEvaluator
+
+evaluator = AutonomousEvaluator()
+
+# Quick test
+result = evaluator.quick_test(
+    tool_name="asr_qwen3",
+    dataset="aishell1",
+    num_samples=10
+)
+
+print(f"Score: {result['score']}%")
+print(f"RPS: {result['rps']}")  # vs SOTA
+print(f"SOTA Model: {result['sota_model']}")
+```
+
+---
+
+## Data Flow
+
+### Evaluation Flow
 
 ```python
-CSV_DATASETS = {
-    "aishell1-test_ASR": {           # CSV 文件名
-        "config_name": "aishell1",    # 配置名称
-        "audio_dir": "aishell-1_test", # 实际音频目录
-        "task": "ASR",
-        "language": "zh",
-        "path_mappings": {
-            "aishell-1-test/": "aishell-1_test/",  # CSV路径 → 实际路径
-        },
-    },
-    ...
+# 1. User initiates evaluation
+result = evaluator.quick_test("asr_qwen3", "aishell1", num_samples=10)
+
+# 2. Dataset normalization
+raw_dataset = "aishell1"
+normalized = "aishell1"  # Already normalized
+
+# 3. Tool mapping
+local_tool = "asr_qwen3"
+benchmark_model = "Qwen3-ASR-1.7B"
+
+# 4. SOTA lookup
+sota_model = "Qwen3-Omni"  # Different from Qwen3-ASR-1.7B!
+sota_score = 0.80  # CER
+
+# 5. Evaluation
+actual_score = 0.85  # CER achieved
+
+# 6. RPS calculation
+rps = sota_score / actual_score  # 0.80 / 0.85 = 0.94
+
+# 7. Result assembly
+result = {
+    "tool": "asr_qwen3",
+    "benchmark_model": "Qwen3-ASR-1.7B",
+    "dataset": "aishell1",
+    "score": 0.85,
+    "sota_model": "Qwen3-Omni",
+    "sota_score": 0.80,
+    "rps": 0.94,
+    "is_sota": False,  # 0.94 < 1.0
 }
 ```
 
----
+### Report Update Flow
 
-## 使用示例
+```python
+# After evaluation, automatically update reports
 
-### 1. 独立评估（已有预测结果）
+# 1. Record in evaluation database
+rps_mgr.evaluate_and_record(
+    tool_name="asr_qwen3",
+    dataset="aishell1",
+    score=0.85,
+    rps=0.94,
+)
 
-```bash
-python scripts/run_sure_evaluation.py \
-    --gt data/datasets/sure_benchmark/jsonl/aishell1-test_ASR.jsonl \
-    --pred predictions/aishell1.txt \
-    --task ASR \
-    --language zh
+# 2. Update model report (if new SOTA)
+if rps >= 1.0:
+    report_manager.update_result(
+        model="Qwen3-ASR-1.7B",
+        dataset="aishell1",
+        score=0.85,
+        is_sota=True,
+    )
+    
+# 3. Regenerate leaderboard
+report_manager.print_leaderboard("aishell1")
 ```
 
-### 2. Agent 完整流程
+---
+
+## Integration Points
+
+### Component Integration Matrix
+
+| Component | Uses | Provides |
+|-----------|------|----------|
+| DatasetManager | Config | Normalized datasets |
+| ToolRegistry | Config, MCP | Tool execution |
+| ModelRegistry | Filesystem | Model discovery |
+| ModelMapping | Static maps | Identity translation |
+| SUREEvaluator | - | Metrics computation |
+| RPSManager | Config | RPS calculation |
+| SOTAManager | YAML baselines | SOTA lookup |
+| ReportManager | JSON reports | Leaderboards |
+| AutonomousEvaluator | All above | End-to-end flow |
+
+### Critical Integration Notes
+
+1. **Dataset Name Normalization**
+   - All components use normalized names (lowercase, no suffixes)
+   - `CS_dialogue` → `cs_dialogue`
+   - Ensures consistent baseline lookup
+
+2. **Model Identity Mapping**
+   - Local tools ≠ Benchmark models
+   - `asr_qwen3` → `Qwen3-ASR-1.7B`
+   - Required for correct SOTA comparison
+
+3. **BLEU Metric Specification**
+   - SURE uses **character-level BLEU** for S2TT
+   - Different from standard word-level BLEU
+   - Important for fair comparison
+
+4. **Qwen3 Distinction**
+   - `Qwen3-Omni`: Multi-task (Table 4)
+   - `Qwen3-ASR-1.7B`: ASR-specific (Table 3)
+   - Different SOTA results for each
+
+---
+
+## Usage Patterns
+
+### Pattern 1: Evaluate New Model
 
 ```python
 from sure_eval import AutonomousEvaluator
 
 evaluator = AutonomousEvaluator()
-result = evaluator.evaluate_tool("asr_qwen3", "aishell1", max_samples=100)
 
-print(f"Score: {result.score}")
-print(f"RPS: {result.rps}")
-print(f"Details: {result.details}")
+# Evaluate on multiple datasets
+for dataset in ["aishell1", "librispeech_clean"]:
+    result = evaluator.quick_test(
+        tool_name="my_new_model",
+        dataset=dataset,
+        num_samples=100,
+    )
+    print(f"{dataset}: RPS = {result['rps']:.2f}")
 ```
 
-### 3. 数据管理
+### Pattern 2: Compare with SOTA
 
 ```python
-from sure_eval import DatasetManager
+from sure_eval.reports import ReportManager
 
-manager = DatasetManager()
+reports = ReportManager()
 
-# 下载并转换
-manager.download_and_convert("aishell1")
+# Get SOTA for dataset
+sota_model, sota_result = reports.get_sota_for_dataset("aishell1")
+print(f"SOTA: {sota_model} with {sota_result.raw_score}% CER")
 
-# 获取路径
-jsonl_path = manager.get_jsonl_path("aishell1")
+# Compare your model
+comparison = reports.compare_models(
+    ["Qwen3-Omni", "Kimi-Audio", "Gemini-3.0pro"],
+    dataset="aishell1"
+)
+```
 
-# 加载样本
-with open(jsonl_path) as f:
-    for line in f:
-        sample = json.loads(line)
-        # sample: {"key", "path", "target", "task", "language", "dataset"}
+### Pattern 3: Generate Report
+
+```python
+from sure_eval.reports import ReportManager
+
+reports = ReportManager()
+
+# Generate Markdown report
+markdown = reports.generate_markdown_report(
+    output_path="reports/leaderboard.md"
+)
+
+# Print leaderboard
+reports.print_leaderboard()  # Overall
+reports.print_leaderboard("aishell1")  # Specific dataset
 ```
 
 ---
 
-## 路径约定
+## Extension Guide
 
-### 数据目录结构
+### Adding a New Model
 
-```
-data/datasets/
-└── sure_benchmark/
-    ├── SURE_Test_csv/              # CSV 标注文件
-    │   ├── aishell1-test_ASR.csv
-    │   └── ...
-    ├── SURE_Test_Suites/           # 音频文件
-    │   ├── aishell-1_test/
-    │   ├── librispeech-test-clean/
-    │   └── ...
-    └── jsonl/                      # 转换后的 JSONL
-        ├── aishell1-test_ASR.jsonl
-        └── ...
+1. **Create model directory**:
+```bash
+mkdir src/sure_eval/models/my_model
+cd src/sure_eval/models/my_model
 ```
 
-### JSONL 路径格式
+2. **Add pyproject.toml**:
+```toml
+[project]
+name = "my-model"
+dependencies = ["torch", "transformers"]
+```
 
-- `path` 字段是相对于 `SURE_Test_Suites` 的相对路径
-- 例如: `"aishell-1_test/BAC009S0764W0121.wav"`
-- Agent 会自动拼接完整路径
+3. **Implement MCP server** (`server.py`):
+```python
+class MyModelServer:
+    def transcribe(self, audio_path):
+        # Your inference code
+        return {"text": transcription}
+```
+
+4. **Register mapping** (`src/sure_eval/models/model_mapping.py`):
+```python
+TOOL_TO_BENCHMARK["my_model"] = "My-Model-Paper-Name"
+```
+
+5. **Setup environment**:
+```bash
+python demo/setup_model.py my_model
+```
+
+### Adding a New Dataset
+
+1. **Update dataset mapping** (`dataset_manager.py`):
+```python
+CSV_DATASETS["my_dataset"] = {
+    "config_name": "my_dataset",
+    "task": "ASR",
+    "language": "zh",
+}
+```
+
+2. **Add SOTA baseline** (`reports/sota/sota_baseline.yaml`):
+```yaml
+my_dataset:
+  metric: "cer"
+  score: 5.0
+  higher_is_better: false
+  sota_model: "Some-Model"
+```
+
+3. **Update config** (`config/default.yaml`):
+```yaml
+my_dataset:
+  name: "My Dataset"
+  task: "ASR"
+```
 
 ---
 
-## 注意事项
+## Testing
 
-1. **评估一致性**: 所有评估都通过 `SUREEvaluator`，确保与 evaluation-pipeline 结果一致
-2. **数据格式**: JSONL 必须包含 `key` 字段，用于预测文件匹配
-3. **预测文件格式**: `key\tprediction`，与原始 evaluation-pipeline 兼容
-4. **路径映射**: CSV 中的路径会自动转换为实际路径
-5. **配置名称**: 可以使用配置名（`aishell1`）或 CSV 名（`aishell1-test_ASR`）
+### Run Integration Tests
+
+```bash
+# Test all components
+python demo/demo_end_to_end.py
+
+# Test reports
+python demo/demo_reports.py --sota-summary
+python demo/demo_reports.py --leaderboard aishell1
+
+# Test evaluation (requires setup)
+python demo/demo_evaluate_model.py -m asr_qwen3 -d aishell1 -n 10
+```
+
+### Expected Output
+
+```
+✅ All integration tests passed!
+The SURE-EVAL framework is fully operational.
+```
+
+---
+
+## References
+
+- SURE Benchmark: https://www.modelscope.cn/datasets/SUREBenchmark
+- MCP Protocol: https://modelcontextprotocol.io
+- Architecture Audit: `ARCHITECTURE_AUDIT.md`
+- Metrics Guide: `reports/METRICS_GUIDE.md`
+
+---
+
+## License
+
+MIT License - See LICENSE file for details.
