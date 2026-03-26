@@ -1,32 +1,93 @@
+# DiariZen Model Configuration
+# Speaker diarization using BUT-FIT/diarizen-wavlm-large-s80-md
+# Reference: https://github.com/BUTSpeechFIT/DiariZen
+
 name: diarizen
 task: SD
-description: "Speaker Diarization using Diarizen - Template"
-version: "0.1.0"
+description: "Speaker Diarization using DiariZen (WavLM-Large based)"
+version: "1.0.0"
 
 model:
-  id: "diarizen/model"
-  size: "TBD"
+  id: "BUT-FIT/diarizen-wavlm-large-s80-md"
+  size: "Large (WavLM backbone)"
   languages: ["multilingual"]
-  license: "TBD"
+  license: "CC BY-NC 4.0"
+  
+  # Model details
+  architecture: "WavLM-Large with structured pruning"
+  pruning_ratio: 0.80  # s80 = 80% structured pruning
+  
+  # Benchmark results (from paper)
+  benchmark_results:
+    AMI-SDM: 14.0% DER
+    AISHELL-4: 9.8% DER
+    AliMeeting-far: 12.5% DER
+    DIHARD3-full: 14.5% DER
+    
+  paper: "Leveraging self-supervised learning for speaker diarization (ICASSP 2025)"
+  huggingface: "https://huggingface.co/BUT-FIT/diarizen-wavlm-large-s80-md"
+  github: "https://github.com/BUTSpeechFIT/DiariZen"
 
+# MCP Server Configuration
 server:
   command: [".venv/bin/python", "server.py"]
   working_dir: "."
   env:
-    MODEL_PATH: "diarizen/model"
+    MODEL_PATH: "BUT-FIT/diarizen-wavlm-large-s80-md"
     DEVICE: "auto"
-  timeout: 300
+    RTTM_OUT_DIR: "./results"
+  timeout: 600  # Diarization can take time for long audio
+  startup_timeout_sec: 300
 
+# Tools
 tools:
   - name: "diarize"
-    description: "Speaker diarization"
+    description: "Perform speaker diarization on audio file using DiariZen. Returns speaker segments in RTTM format."
     input_schema:
       type: object
       properties:
         audio_path:
           type: string
+          description: "Path to the audio file to diarize"
         num_speakers:
           type: integer
+          description: "Exact number of speakers (optional, auto-detect if not provided)"
+          minimum: 1
+        min_speakers:
+          type: integer
+          description: "Minimum number of speakers (optional)"
+          minimum: 1
+        max_speakers:
+          type: integer
+          description: "Maximum number of speakers (optional)"
+          minimum: 1
+      required: ["audio_path"]
+  
+  - name: "diarize_with_rttm"
+    description: "Diarize audio and save RTTM output to file. Returns speaker segments and saves RTTM format."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+          description: "Path to the audio file to diarize"
+        output_dir:
+          type: string
+          description: "Directory to save RTTM file"
+          default: "./results"
+        num_speakers:
+          type: integer
+          description: "Exact number of speakers (optional)"
+          minimum: 1
       required: ["audio_path"]
 
+# Test Results (to be filled after evaluation)
 results: {}
+
+# Resource Requirements
+resources:
+  memory_gb: 16
+  gpu: true  # GPU recommended but not required
+  gpu_memory_gb: 8
+  cpu_cores: 4
+  storage_gb: 2

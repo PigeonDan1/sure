@@ -38,7 +38,7 @@ TOOL_TO_BENCHMARK: dict[str, str] = {
     "emotion2vec": "Emotion2Vec",  # Not in SURE SOTA
     
     # SD Tools
-    "diarizen": "DiariZen",  # Not in SURE SOTA
+    "diarizen": "DiariZen-Large-s80",  # DiariZen with WavLM-Large, 80% pruning
     "pyannote": "PyAnnote",  # Not in SURE SOTA
 }
 
@@ -94,6 +94,12 @@ MODEL_METADATA: dict[str, dict] = {
         "table": "Table 3",
         "tasks": ["ASR"],
         "note": "Alibaba's lightweight ASR",
+    },
+    "DiariZen-Large-s80": {
+        "type": "sd_specific",
+        "table": "Not in SURE",
+        "tasks": ["SD"],
+        "note": "Speaker diarization with WavLM-Large, 80% structured pruning",
     },
 }
 

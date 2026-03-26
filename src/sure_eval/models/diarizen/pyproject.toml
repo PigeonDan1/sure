@@ -8,16 +8,49 @@ authors = [
 ]
 
 # Dependencies for DiariZen
+# Installation guide: https://github.com/BUTSpeechFIT/DiariZen
 dependencies = [
-    "torch>=2.0.0",
-    "torchaudio>=2.0.0",
-    "pyannote.audio>=3.0.0",  # For speaker diarization
+    # Core dependencies
+    "torch>=2.1.0",
+    "torchaudio>=2.1.0",
+    
+    # Audio processing
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    
+    # Scientific computing
     "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    
+    # ML utilities
+    "huggingface-hub>=0.20.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.66.0",
+    
+    # Diarization specific (from DiariZen)
+    # Note: diarizen itself must be installed from GitHub
+    # pip install git+https://github.com/BUTSpeechFIT/DiariZen.git
+    
+    # PyAnnote audio (required by DiariZen)
+    "pyannote.audio>=3.1.0",
+    "pyannote.core>=5.0.0",
+    "pyannote.database>=5.0.1",
+    "pyannote.metrics>=3.2.1",
+    "pyannote.pipeline>=3.0.1",
+    
+    # SpeechBrain (for speaker embeddings)
+    "speechbrain>=0.5.16",
+    
+    # Other dependencies
+    "omegaconf>=2.3.0",
+    "hydra-core>=1.3.0",
+    "rich>=13.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
+    "black>=24.0.0",
 ]
 
 # Build system (required by PEP 518)
@@ -28,3 +61,6 @@ build-backend = "setuptools.build_meta"
 # uv-specific configuration
 [tool.uv]
 # allow-prereleases = true
+
+[tool.setuptools]
+py-modules = []
