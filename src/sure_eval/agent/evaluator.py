@@ -13,7 +13,8 @@ from sure_eval.core.config import Config
 from sure_eval.core.logging import get_logger
 from sure_eval.datasets import DatasetManager
 from sure_eval.evaluation import SUREEvaluator, RPSManager
-# Model management removed - using DatasetManager and direct tool calls
+from sure_eval.reports import SOTAManager, ReportManager
+from sure_eval.models import get_benchmark_name, is_sota as check_sota
 from sure_eval.tools.mcp_client import ToolRegistry, ToolAdapter
 
 logger = get_logger(__name__)
@@ -66,6 +67,10 @@ class AutonomousEvaluator:
         self.tool_adapter = ToolAdapter(self.tool_registry)
         self.rps_manager = RPSManager(config)
         
+        # Initialize report system components for SOTA lookup
+        self.sota_manager = SOTAManager()
+        self.report_manager = ReportManager()
+        
         logger.info("AutonomousEvaluator initialized")
     
     def evaluate_tool(
@@ -114,21 +119,24 @@ class AutonomousEvaluator:
             jsonl_path, pred_file, task, language
         )
         
-        # Step 7: Calculate RPS
+        # Step 7: Calculate RPS using normalized dataset name
         score = self._extract_score(eval_result, task)
-        rps = self.rps_manager.calculator.calculate(dataset, score)
+        normalized_dataset = self.dataset_manager.normalize_dataset_name(dataset)
+        rps = self.sota_manager.calculate_rps(normalized_dataset, score)
         
-        # Step 8: Record results
+        # Step 8: Record results (use normalized dataset name)
         duration = time.time() - start_time
         self.rps_manager.evaluate_and_record(
             tool_name=tool_name,
-            dataset=dataset,
+            dataset=normalized_dataset,  # Use normalized name for consistency
             score=score,
             metric=metric_type,
             metadata={
                 "num_samples": len(samples),
                 "duration": duration,
                 "eval_details": eval_result,
+                "original_dataset": dataset,
+                "rps": rps,
             },
         )
         
@@ -268,21 +276,40 @@ class AutonomousEvaluator:
         
         os.unlink(pred_file)
         
-        # 5. Calculate RPS
+        # 5. Calculate RPS using normalized dataset name and SOTAManager
         score = self._extract_score(eval_result, task)
-        rps = self.rps_manager.calculator.calculate(dataset, score)
+        
+        # Normalize dataset name for consistent baseline lookup
+        normalized_dataset = self.dataset_manager.normalize_dataset_name(dataset)
+        
+        # Calculate RPS using SOTAManager (more reliable than config baselines)
+        rps = self.sota_manager.calculate_rps(normalized_dataset, score)
+        
+        # Get SOTA info for reporting
+        sota_info = self.sota_manager.get_baseline(normalized_dataset)
+        sota_model = sota_info.sota_model if sota_info else "Unknown"
+        
+        # Check if this tool is the SOTA model
+        benchmark_name = get_benchmark_name(tool_name)
+        is_sota_result = False
+        if benchmark_name and sota_info:
+            is_sota_result = benchmark_name == sota_model
         
         duration = time.time() - start_time
         
-        # 6. Build result
+        # 6. Build result with enhanced information
         result = {
             "tool": tool_name,
+            "benchmark_model": benchmark_name,  # Mapped benchmark name
             "dataset": dataset,
+            "normalized_dataset": normalized_dataset,
             "num_samples": len(samples),
             "duration": duration,
             "score": score,
             "metric": self.config.get_default_metric(task),
             "rps": rps,
+            "sota_model": sota_model,
+            "is_sota": is_sota_result,
             "details": eval_result,
             "predictions": [
                 {
@@ -298,12 +325,17 @@ class AutonomousEvaluator:
         logger.info("\n" + "=" * 60)
         logger.info("QUICK TEST RESULTS")
         logger.info("=" * 60)
-        logger.info(f"Tool: {tool_name}")
-        logger.info(f"Dataset: {dataset}")
+        logger.info(f"Tool: {tool_name}" + (f" (Benchmark: {benchmark_name})" if benchmark_name else ""))
+        logger.info(f"Dataset: {dataset} (normalized: {normalized_dataset})")
         logger.info(f"Samples: {len(samples)}")
         logger.info(f"Duration: {duration:.2f}s")
         logger.info(f"Score: {score:.4f}")
-        logger.info(f"RPS: {rps:.4f}" if rps else "RPS: N/A")
+        if rps:
+            logger.info(f"RPS: {rps:.4f} (SOTA: {sota_model})")
+            if is_sota_result:
+                logger.info("🏆 This is the current SOTA model for this dataset!")
+        else:
+            logger.info("RPS: N/A (no SOTA baseline available)")
         logger.info("=" * 60)
         
         return result

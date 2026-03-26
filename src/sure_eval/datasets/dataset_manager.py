@@ -458,26 +458,64 @@ class DatasetManager:
         
         return output_path
     
-    def list_available(self) -> list[str]:
-        """List available datasets (both config names and CSV names)."""
-        available = []
+    def normalize_dataset_name(self, name: str) -> str:
+        """
+        Normalize dataset name for consistent lookup across components.
         
-        # From JSONL files
+        Converts various forms (CSV name, config name, display name) to
+        the canonical config name used in baselines and reports.
+        
+        Examples:
+            'CS_dialogue' -> 'cs_dialogue'
+            'CoVoST2_S2TT_en2zh_test' -> 'covost2_en2zh'
+            'aishell1-test_ASR' -> 'aishell1'
+        """
+        # First check if it's already a config name
+        if name in self.config.datasets.definitions:
+            return name
+        
+        # Check if it's a CSV name
+        if name in CSV_DATASETS:
+            config_name = CSV_DATASETS[name].get("config_name")
+            if config_name:
+                return config_name
+            return name
+        
+        # Check reverse mapping (config -> CSV)
+        for csv_name, meta in CSV_DATASETS.items():
+            if meta.get("config_name") == name:
+                return name
+        
+        # Try lowercase normalization as fallback
+        lower_name = name.lower()
+        if lower_name in self.config.datasets.definitions:
+            return lower_name
+        
+        # Return as-is if no mapping found
+        return name
+    
+    def list_available(self) -> list[str]:
+        """
+        List available datasets (normalized config names).
+        
+        Returns normalized names that can be used consistently across:
+        - RPS baseline lookup
+        - Report queries
+        - Evaluation calls
+        """
+        available = set()
+        
+        # From JSONL files - always return normalized (config) names
         for jsonl_file in self.jsonl_dir.glob("*.jsonl"):
             csv_name = jsonl_file.stem
-            if csv_name in CSV_DATASETS:
-                # Add both CSV name and config name
-                available.append(csv_name)
-                config_name = CSV_DATASETS[csv_name].get("config_name")
-                if config_name:
-                    available.append(config_name)
-            else:
-                available.append(csv_name)
+            normalized = self.normalize_dataset_name(csv_name)
+            available.add(normalized)
         
         # From config
-        available.extend(self.config.datasets.definitions.keys())
+        for name in self.config.datasets.definitions.keys():
+            available.add(self.normalize_dataset_name(name))
         
-        return sorted(set(available))
+        return sorted(available)
     
     def get_info(self, dataset_name: str) -> dict[str, Any] | None:
         """Get dataset information."""
