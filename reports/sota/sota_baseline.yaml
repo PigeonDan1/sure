@@ -78,21 +78,23 @@ librispeech_other:
   sota_model: "Qwen3-Omni"
   description: "LibriSpeech other test set"
 
-# CoVoST2 EN-ZH - BLEU (higher is better)
+# CoVoST2 EN-ZH - Character-level BLEU (higher is better)
+# Note: Using character-level BLEU as specified in SURE Benchmark Table 4
 covost2_en2zh:
-  metric: "bleu"
+  metric: "bleu_char"
   score: 46.25
   higher_is_better: true
   sota_model: "Qwen3-Omni"
-  description: "Speech-to-text translation EN to ZH"
+  description: "Speech-to-text translation EN to ZH (character-level BLEU)"
 
-# CoVoST2 ZH-EN - BLEU (higher is better)
+# CoVoST2 ZH-EN - Character-level BLEU (higher is better)
+# Note: Using character-level BLEU as specified in SURE Benchmark Table 4
 covost2_zh2en:
-  metric: "bleu"
+  metric: "bleu_char"
   score: 60.14
   higher_is_better: true
   sota_model: "Gemini-2.5pro"
-  description: "Speech-to-text translation ZH to EN"
+  description: "Speech-to-text translation ZH to EN (character-level BLEU)"
 
 # IEMOCAP SER - Accuracy (higher is better)
 iemocap:

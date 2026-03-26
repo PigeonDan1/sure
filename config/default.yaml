@@ -217,8 +217,14 @@ evaluation:
       language: "zh"
     wer:
       language: "en"
+    # IMPORTANT: SURE Benchmark uses CHARACTER-LEVEL BLEU for S2TT
+    # This is different from standard word/token-level BLEU
+    # See Table 4 description in SURE Benchmark paper
+    bleu_char:
+      tokenize: "char"  # Character-level tokenization
+      smooth_method: "exp"  # Smoothing for short sequences
     bleu:
-      tokenize: "zh"
+      tokenize: "13a"  # Standard word-level (if needed for comparison)
     der:
       collar: 0.25
     cpwer:
@@ -318,15 +324,17 @@ rps:
       score: 3.05
       higher_is_better: false
     
-    # CoVoST2 EN-ZH - BLEU (higher is better)
+    # CoVoST2 EN-ZH - Character-level BLEU (higher is better)
+    # Note: SURE Benchmark uses character-level BLEU for S2TT
     covost2_en2zh:
-      metric: "bleu"
+      metric: "bleu_char"
       score: 46.25
       higher_is_better: true
     
-    # CoVoST2 ZH-EN - BLEU (higher is better)
+    # CoVoST2 ZH-EN - Character-level BLEU (higher is better)
+    # Note: SURE Benchmark uses character-level BLEU for S2TT
     covost2_zh2en:
-      metric: "bleu"
+      metric: "bleu_char"
       score: 60.14
       higher_is_better: true
     
