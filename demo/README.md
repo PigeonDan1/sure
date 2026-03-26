@@ -69,6 +69,29 @@ python demo/demo_compare_models.py --models asr_qwen3 --dataset aishell1 --outpu
 | `setup_model.py` | Setup model environment | `python setup_model.py <model>` |
 | `demo_evaluate_model.py` | Evaluate single model | `python demo_evaluate_model.py -m <model> -d <dataset>` |
 | `demo_compare_models.py` | Compare multiple models | `python demo_compare_models.py -m <model1>,<model2> -d <dataset>` |
+| `demo_reports.py` | View SOTA baselines and model reports | `python demo_reports.py --sota-summary` |
+
+### 4. View SOTA Baselines and Model Reports
+
+```bash
+# Show SOTA baselines for all datasets
+python demo/demo_reports.py --sota-summary
+
+# Show model performance summary
+python demo/demo_reports.py --model-summary Qwen3-Omni
+
+# Show leaderboard for a dataset
+python demo/demo_reports.py --leaderboard aishell1
+
+# Compare models on a dataset
+python demo/demo_reports.py --compare Qwen3-Omni,Kimi-Audio,Gemini-3.0pro --dataset aishell1
+
+# Test RPS calculation
+python demo/demo_reports.py --test-rps
+
+# Generate Markdown report
+python demo/demo_reports.py --generate-md
+```
 
 ## Available Models
 

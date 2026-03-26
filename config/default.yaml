@@ -256,27 +256,96 @@ tools:
       work_dir: "/cpfs/user/jingpeng/workspace/AUDIO_AGENT/audio_agent/tools/catalog/asr_qwen3"
 
 # RPS (Relative Performance Score) configuration
+# SOTA baselines extracted from SURE Benchmark Tables 3 & 4
 rps:
-  # SOTA baselines
+  # SOTA baselines for all SURE datasets
   baselines:
+    # === Track I: Front-end Perception (Table 3) ===
+    
+    # Code-Switching Dialogue - MER (lower is better)
+    cs_dialogue:
+      metric: "mer"
+      score: 7.00
+      higher_is_better: false
+    
+    # KeSpeech - CER (lower is better)
+    kespeech:
+      metric: "cer"
+      score: 3.81
+      higher_is_better: false
+    
+    # VoxPopuli EN - WER (lower is better)
+    voxpopuli:
+      metric: "wer"
+      score: 6.72
+      higher_is_better: false
+    
+    # AISHELL-5 - CER (lower is better)
+    aishell5:
+      metric: "cer"
+      score: 24.74
+      higher_is_better: false
+    
+    # ContextASR English - WER (lower is better)
+    contextasr_en:
+      metric: "wer"
+      score: 3.47
+      higher_is_better: false
+    
+    # ContextASR Mandarin - CER (lower is better)
+    contextasr_zh:
+      metric: "cer"
+      score: 2.50
+      higher_is_better: false
+    
+    # === Track II: Horizontal Comparison (Table 4) ===
+    
+    # AISHELL-1 - CER (lower is better)
     aishell1:
       metric: "cer"
       score: 0.80
       higher_is_better: false
     
+    # LibriSpeech Clean - WER (lower is better)
     librispeech_clean:
       metric: "wer"
       score: 1.70
       higher_is_better: false
-      
+    
+    # LibriSpeech Other - WER (lower is better)
+    librispeech_other:
+      metric: "wer"
+      score: 3.05
+      higher_is_better: false
+    
+    # CoVoST2 EN-ZH - BLEU (higher is better)
     covost2_en2zh:
       metric: "bleu"
       score: 46.25
       higher_is_better: true
-      
+    
+    # CoVoST2 ZH-EN - BLEU (higher is better)
+    covost2_zh2en:
+      metric: "bleu"
+      score: 60.14
+      higher_is_better: true
+    
+    # IEMOCAP SER - Accuracy (higher is better)
     iemocap:
       metric: "accuracy"
       score: 69.38
+      higher_is_better: true
+    
+    # LibriSpeech GR - Accuracy (higher is better)
+    librispeech_gr:
+      metric: "accuracy"
+      score: 92.02
+      higher_is_better: true
+    
+    # MMSU SLU - Accuracy (higher is better)
+    mmsu:
+      metric: "accuracy"
+      score: 89.07
       higher_is_better: true
 
 # Agent configuration

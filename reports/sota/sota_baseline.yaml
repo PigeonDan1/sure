@@ -1,0 +1,136 @@
+# SOTA Baselines for SURE Benchmark
+# Extracted from SURE Benchmark Tables 3 & 4
+# Format: dataset_name -> {metric, score, higher_is_better, sota_model}
+
+# ==================== Track I: Front-end Perception (Table 3) ====================
+
+# Code-Switching Dialogue - MER (lower is better)
+cs_dialogue:
+  metric: "mer"
+  score: 7.00
+  higher_is_better: false
+  sota_model: "Qwen3-Omni"
+  description: "Code-switching dialogue ASR (Mandarin-English)"
+
+# KeSpeech - CER (lower is better)
+kespeech:
+  metric: "cer"
+  score: 3.81
+  higher_is_better: false
+  sota_model: "FireRed-ASR-1.7B"
+  description: "KeSpeech Chinese dialect ASR"
+
+# VoxPopuli EN - WER (lower is better)
+voxpopuli:
+  metric: "wer"
+  score: 6.72
+  higher_is_better: false
+  sota_model: "Parakeet-en"
+  description: "VoxPopuli English ASR"
+
+# AISHELL-5 - CER (lower is better)
+aishell5:
+  metric: "cer"
+  score: 24.74
+  higher_is_better: false
+  sota_model: "FireRed-ASR-1.7B"
+  description: "AISHELL-5 noise/reverb robust ASR"
+
+# ContextASR English - WER (lower is better)
+contextasr_en:
+  metric: "wer"
+  score: 3.47
+  higher_is_better: false
+  sota_model: "Pipeline"
+  description: "Context-aware ASR (English)"
+
+# ContextASR Mandarin - CER (lower is better)
+contextasr_zh:
+  metric: "cer"
+  score: 2.50
+  higher_is_better: false
+  sota_model: "Qwen3-Omni"
+  description: "Context-aware ASR (Mandarin)"
+
+# ==================== Track II: Horizontal Comparison (Table 4) ====================
+
+# AISHELL-1 - CER (lower is better)
+aishell1:
+  metric: "cer"
+  score: 0.80
+  higher_is_better: false
+  sota_model: "Qwen3-Omni"
+  description: "AISHELL-1 Mandarin ASR"
+
+# LibriSpeech Clean - WER (lower is better)
+librispeech_clean:
+  metric: "wer"
+  score: 1.70
+  higher_is_better: false
+  sota_model: "Qwen3-Omni"
+  description: "LibriSpeech clean test set"
+
+# LibriSpeech Other - WER (lower is better)
+librispeech_other:
+  metric: "wer"
+  score: 3.05
+  higher_is_better: false
+  sota_model: "Qwen3-Omni"
+  description: "LibriSpeech other test set"
+
+# CoVoST2 EN-ZH - BLEU (higher is better)
+covost2_en2zh:
+  metric: "bleu"
+  score: 46.25
+  higher_is_better: true
+  sota_model: "Qwen3-Omni"
+  description: "Speech-to-text translation EN to ZH"
+
+# CoVoST2 ZH-EN - BLEU (higher is better)
+covost2_zh2en:
+  metric: "bleu"
+  score: 60.14
+  higher_is_better: true
+  sota_model: "Gemini-2.5pro"
+  description: "Speech-to-text translation ZH to EN"
+
+# IEMOCAP SER - Accuracy (higher is better)
+iemocap:
+  metric: "accuracy"
+  score: 69.38
+  higher_is_better: true
+  sota_model: "Kimi-Audio"
+  description: "Speech emotion recognition"
+
+# LibriSpeech GR - Accuracy (higher is better)
+librispeech_gr:
+  metric: "accuracy"
+  score: 92.02
+  higher_is_better: true
+  sota_model: "Kimi-Audio"
+  description: "Gender recognition"
+
+# MMSU SLU - Accuracy (higher is better)
+mmsu:
+  metric: "accuracy"
+  score: 89.07
+  higher_is_better: true
+  sota_model: "Gemini-3.0pro"
+  description: "Spoken language understanding"
+
+# ==================== Additional Notes ====================
+# 
+# Models evaluated in SURE Benchmark:
+# - SenseVoice-Small
+# - Whisper-large-v3
+# - Parakeet-en
+# - Gemini-2.5pro
+# - Qwen3-Omni (Qwen3-ASR-1.7B)
+# - FireRed-ASR-1.7B
+# - Kimi-Audio
+# - Pipeline (rule-based/context)
+#
+# RPS Calculation:
+# RPS = SOTA_score / current_score (for error rates, lower is better)
+# RPS = current_score / SOTA_score (for accuracy/BLEU, higher is better)
+# Perfect SOTA has RPS = 1.0

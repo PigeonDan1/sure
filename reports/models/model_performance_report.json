@@ -1,0 +1,661 @@
+{
+  "report_version": "1.0.0",
+  "report_date": "2025-03-25",
+  "benchmark": "SURE Benchmark",
+  "description": "Model performance on SURE Benchmark test sets",
+  
+  "models": {
+    "Qwen3-Omni": {
+      "full_name": "Qwen3-ASR-1.7B",
+      "organization": "Alibaba",
+      "model_size": "1.7B",
+      "release_date": "2025",
+      "supported_tasks": ["ASR", "S2TT", "SER", "GR", "SLU"],
+      "paper": "https://huggingface.co/Qwen/Qwen3-ASR-1.7B",
+      
+      "results": {
+        "track_i_frontend": {
+          "cs_dialogue": {
+            "dataset": "CS-Dialogue",
+            "metric": "MER",
+            "raw_score": 7.00,
+            "rps": 1.00,
+            "is_sota": true,
+            "note": "Code-switching Mandarin-English"
+          },
+          "kespeech": {
+            "dataset": "KeSpeech",
+            "metric": "CER",
+            "raw_score": 5.12,
+            "rps": 0.74,
+            "is_sota": false,
+            "note": "Chinese dialect ASR"
+          },
+          "voxpopuli": {
+            "dataset": "VoxPopuli-en",
+            "metric": "WER",
+            "raw_score": 7.41,
+            "rps": 0.91,
+            "is_sota": false,
+            "note": "English ASR"
+          },
+          "aishell5": {
+            "dataset": "AISHELL-5",
+            "metric": "CER",
+            "raw_score": 25.46,
+            "rps": 0.97,
+            "is_sota": false,
+            "note": "Noise/reverb robust ASR"
+          },
+          "contextasr_en": {
+            "dataset": "ContextASR-En",
+            "metric": "WER",
+            "raw_score": 5.58,
+            "rps": 0.62,
+            "is_sota": false,
+            "note": "Context-aware English ASR"
+          },
+          "contextasr_zh": {
+            "dataset": "ContextASR-Zh",
+            "metric": "CER",
+            "raw_score": 2.50,
+            "rps": 1.00,
+            "is_sota": true,
+            "note": "Context-aware Mandarin ASR"
+          }
+        },
+        
+        "track_ii_horizontal": {
+          "aishell1": {
+            "dataset": "AISHELL-1",
+            "task": "ASR",
+            "metric": "CER",
+            "raw_score": 0.80,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "librispeech_clean": {
+            "dataset": "LibriSpeech Clean",
+            "task": "ASR",
+            "metric": "WER",
+            "raw_score": 1.70,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "librispeech_other": {
+            "dataset": "LibriSpeech Other",
+            "task": "ASR",
+            "metric": "WER",
+            "raw_score": 3.05,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "librispeech_gr": {
+            "dataset": "LibriSpeech GR",
+            "task": "GR",
+            "metric": "accuracy",
+            "raw_score": 82.74,
+            "rps": 0.90,
+            "is_sota": false
+          },
+          "covost2_en2zh": {
+            "dataset": "CoVoST2 En→Zh",
+            "task": "S2TT",
+            "metric": "BLEU",
+            "raw_score": 46.25,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "covost2_zh2en": {
+            "dataset": "CoVoST2 Zh→En",
+            "task": "S2TT",
+            "metric": "BLEU",
+            "raw_score": 50.61,
+            "rps": 0.84,
+            "is_sota": false
+          },
+          "iemocap": {
+            "dataset": "IEMOCAP",
+            "task": "SER",
+            "metric": "accuracy",
+            "raw_score": 66.16,
+            "rps": 0.95,
+            "is_sota": false
+          },
+          "mmsu": {
+            "dataset": "MMSU-Reason",
+            "task": "SLU",
+            "metric": "accuracy",
+            "raw_score": 83.61,
+            "rps": 0.94,
+            "is_sota": false
+          }
+        }
+      },
+      
+      "summary": {
+        "total_datasets": 14,
+        "sota_count": 7,
+        "average_rps": 0.92
+      }
+    },
+    
+    "FireRed-ASR-1.7B": {
+      "full_name": "FireRed-ASR-1.7B",
+      "organization": "FireRed",
+      "model_size": "1.7B",
+      "release_date": "2025",
+      "supported_tasks": ["ASR"],
+      
+      "results": {
+        "track_i_frontend": {
+          "cs_dialogue": {
+            "dataset": "CS-Dialogue",
+            "metric": "MER",
+            "raw_score": 7.44,
+            "rps": 0.94,
+            "is_sota": false
+          },
+          "kespeech": {
+            "dataset": "KeSpeech",
+            "metric": "CER",
+            "raw_score": 3.81,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "voxpopuli": {
+            "dataset": "VoxPopuli-en",
+            "metric": "WER",
+            "raw_score": 11.87,
+            "rps": 0.57,
+            "is_sota": false
+          },
+          "aishell5": {
+            "dataset": "AISHELL-5",
+            "metric": "CER",
+            "raw_score": 24.74,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "contextasr_en": {
+            "dataset": "ContextASR-En",
+            "metric": "WER",
+            "raw_score": 8.01,
+            "rps": 0.43,
+            "is_sota": false
+          },
+          "contextasr_zh": {
+            "dataset": "ContextASR-Zh",
+            "metric": "CER",
+            "raw_score": 2.78,
+            "rps": 0.90,
+            "is_sota": false
+          }
+        }
+      },
+      
+      "summary": {
+        "total_datasets": 6,
+        "sota_count": 2,
+        "average_rps": 0.81
+      }
+    },
+    
+    "Kimi-Audio": {
+      "full_name": "Kimi-Audio",
+      "organization": "Moonshot AI",
+      "model_size": "Unknown",
+      "release_date": "2025",
+      "supported_tasks": ["ASR", "SER", "GR"],
+      
+      "results": {
+        "track_i_frontend": {
+          "cs_dialogue": {
+            "dataset": "CS-Dialogue",
+            "metric": "MER",
+            "raw_score": 11.94,
+            "rps": 0.59,
+            "is_sota": false
+          },
+          "kespeech": {
+            "dataset": "KeSpeech",
+            "metric": "CER",
+            "raw_score": 7.80,
+            "rps": 0.49,
+            "is_sota": false
+          },
+          "voxpopuli": {
+            "dataset": "VoxPopuli-en",
+            "metric": "WER",
+            "raw_score": 10.63,
+            "rps": 0.63,
+            "is_sota": false
+          },
+          "aishell5": {
+            "dataset": "AISHELL-5",
+            "metric": "CER",
+            "raw_score": 45.72,
+            "rps": 0.54,
+            "is_sota": false
+          },
+          "contextasr_en": {
+            "dataset": "ContextASR-En",
+            "metric": "WER",
+            "raw_score": 6.66,
+            "rps": 0.52,
+            "is_sota": false
+          },
+          "contextasr_zh": {
+            "dataset": "ContextASR-Zh",
+            "metric": "CER",
+            "raw_score": 2.96,
+            "rps": 0.84,
+            "is_sota": false
+          }
+        },
+        
+        "track_ii_horizontal": {
+          "aishell1": {
+            "dataset": "AISHELL-1",
+            "task": "ASR",
+            "metric": "CER",
+            "raw_score": 0.80,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "librispeech_clean": {
+            "dataset": "LibriSpeech Clean",
+            "task": "ASR",
+            "metric": "WER",
+            "raw_score": 2.30,
+            "rps": 0.74,
+            "is_sota": false
+          },
+          "librispeech_other": {
+            "dataset": "LibriSpeech Other",
+            "task": "ASR",
+            "metric": "WER",
+            "raw_score": 3.83,
+            "rps": 0.80,
+            "is_sota": false
+          },
+          "librispeech_gr": {
+            "dataset": "LibriSpeech GR",
+            "task": "GR",
+            "metric": "accuracy",
+            "raw_score": 92.02,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "iemocap": {
+            "dataset": "IEMOCAP",
+            "task": "SER",
+            "metric": "accuracy",
+            "raw_score": 69.38,
+            "rps": 1.00,
+            "is_sota": true
+          }
+        }
+      },
+      
+      "summary": {
+        "total_datasets": 11,
+        "sota_count": 3,
+        "average_rps": 0.74
+      }
+    },
+    
+    "Gemini-3.0pro": {
+      "full_name": "Gemini 3.0 Pro",
+      "organization": "Google",
+      "model_size": "Unknown",
+      "release_date": "2025",
+      "supported_tasks": ["ASR", "GR", "S2TT", "SER", "SLU"],
+      
+      "results": {
+        "track_ii_horizontal": {
+          "aishell1": {
+            "dataset": "AISHELL-1",
+            "task": "ASR",
+            "metric": "CER",
+            "raw_score": 1.02,
+            "rps": 0.78,
+            "is_sota": false
+          },
+          "librispeech_clean": {
+            "dataset": "LibriSpeech Clean",
+            "task": "ASR",
+            "metric": "WER",
+            "raw_score": 3.05,
+            "rps": 0.56,
+            "is_sota": false
+          },
+          "librispeech_other": {
+            "dataset": "LibriSpeech Other",
+            "task": "ASR",
+            "metric": "WER",
+            "raw_score": 4.40,
+            "rps": 0.69,
+            "is_sota": false
+          },
+          "librispeech_gr": {
+            "dataset": "LibriSpeech GR",
+            "task": "GR",
+            "metric": "accuracy",
+            "raw_score": 78.50,
+            "rps": 0.85,
+            "is_sota": false
+          },
+          "covost2_en2zh": {
+            "dataset": "CoVoST2 En→Zh",
+            "task": "S2TT",
+            "metric": "BLEU",
+            "raw_score": 15.92,
+            "rps": 0.34,
+            "is_sota": false
+          },
+          "covost2_zh2en": {
+            "dataset": "CoVoST2 Zh→En",
+            "task": "S2TT",
+            "metric": "BLEU",
+            "raw_score": 15.50,
+            "rps": 0.26,
+            "is_sota": false
+          },
+          "iemocap": {
+            "dataset": "IEMOCAP",
+            "task": "SER",
+            "metric": "accuracy",
+            "raw_score": 66.56,
+            "rps": 0.96,
+            "is_sota": false
+          },
+          "mmsu": {
+            "dataset": "MMSU-Reason",
+            "task": "SLU",
+            "metric": "accuracy",
+            "raw_score": 89.07,
+            "rps": 1.00,
+            "is_sota": true
+          }
+        }
+      },
+      
+      "summary": {
+        "total_datasets": 8,
+        "sota_count": 1,
+        "average_rps": 0.68
+      }
+    },
+    
+    "Gemini-2.5pro": {
+      "full_name": "Gemini 2.5 Pro",
+      "organization": "Google",
+      "model_size": "Unknown",
+      "release_date": "2025",
+      "supported_tasks": ["ASR", "GR", "S2TT", "SER", "SLU"],
+      
+      "results": {
+        "track_i_frontend": {
+          "cs_dialogue": {
+            "dataset": "CS-Dialogue",
+            "metric": "MER",
+            "raw_score": 17.96,
+            "rps": 0.39,
+            "is_sota": false
+          },
+          "kespeech": {
+            "dataset": "KeSpeech",
+            "metric": "CER",
+            "raw_score": 31.82,
+            "rps": 0.12,
+            "is_sota": false
+          },
+          "voxpopuli": {
+            "dataset": "VoxPopuli-en",
+            "metric": "WER",
+            "raw_score": 9.03,
+            "rps": 0.74,
+            "is_sota": false
+          },
+          "aishell5": {
+            "dataset": "AISHELL-5",
+            "metric": "CER",
+            "raw_score": 64.49,
+            "rps": 0.38,
+            "is_sota": false
+          },
+          "contextasr_en": {
+            "dataset": "ContextASR-En",
+            "metric": "WER",
+            "raw_score": 3.47,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "contextasr_zh": {
+            "dataset": "ContextASR-Zh",
+            "metric": "CER",
+            "raw_score": 2.78,
+            "rps": 0.90,
+            "is_sota": false
+          }
+        },
+        
+        "track_ii_horizontal": {
+          "aishell1": {
+            "dataset": "AISHELL-1",
+            "task": "ASR",
+            "metric": "CER",
+            "raw_score": 4.49,
+            "rps": 0.18,
+            "is_sota": false
+          },
+          "librispeech_clean": {
+            "dataset": "LibriSpeech Clean",
+            "task": "ASR",
+            "metric": "WER",
+            "raw_score": 3.07,
+            "rps": 0.55,
+            "is_sota": false
+          },
+          "librispeech_other": {
+            "dataset": "LibriSpeech Other",
+            "task": "ASR",
+            "metric": "WER",
+            "raw_score": 4.93,
+            "rps": 0.62,
+            "is_sota": false
+          },
+          "librispeech_gr": {
+            "dataset": "LibriSpeech GR",
+            "task": "GR",
+            "metric": "accuracy",
+            "raw_score": 59.64,
+            "rps": 0.65,
+            "is_sota": false
+          },
+          "covost2_en2zh": {
+            "dataset": "CoVoST2 En→Zh",
+            "task": "S2TT",
+            "metric": "BLEU",
+            "raw_score": 41.44,
+            "rps": 0.90,
+            "is_sota": false
+          },
+          "covost2_zh2en": {
+            "dataset": "CoVoST2 Zh→En",
+            "task": "S2TT",
+            "metric": "BLEU",
+            "raw_score": 60.14,
+            "rps": 1.00,
+            "is_sota": true
+          },
+          "iemocap": {
+            "dataset": "IEMOCAP",
+            "task": "SER",
+            "metric": "accuracy",
+            "raw_score": 63.01,
+            "rps": 0.91,
+            "is_sota": false
+          },
+          "mmsu": {
+            "dataset": "MMSU-Reason",
+            "task": "SLU",
+            "metric": "accuracy",
+            "raw_score": 84.64,
+            "rps": 0.95,
+            "is_sota": false
+          }
+        }
+      },
+      
+      "summary": {
+        "total_datasets": 14,
+        "sota_count": 2,
+        "average_rps": 0.68
+      }
+    },
+    
+    "SenseVoice-Small": {
+      "full_name": "SenseVoice Small",
+      "organization": "Alibaba",
+      "model_size": "Small",
+      "release_date": "2024",
+      "supported_tasks": ["ASR"],
+      
+      "results": {
+        "track_i_frontend": {
+          "cs_dialogue": {
+            "dataset": "CS-Dialogue",
+            "metric": "MER",
+            "raw_score": 7.52,
+            "rps": 0.93,
+            "is_sota": false
+          },
+          "kespeech": {
+            "dataset": "KeSpeech",
+            "metric": "CER",
+            "raw_score": 12.46,
+            "rps": 0.31,
+            "is_sota": false
+          },
+          "voxpopuli": {
+            "dataset": "VoxPopuli-en",
+            "metric": "WER",
+            "raw_score": 12.50,
+            "rps": 0.54,
+            "is_sota": false
+          },
+          "aishell5": {
+            "dataset": "AISHELL-5",
+            "metric": "CER",
+            "raw_score": 38.63,
+            "rps": 0.64,
+            "is_sota": false
+          },
+          "contextasr_en": {
+            "dataset": "ContextASR-En",
+            "metric": "WER",
+            "raw_score": 14.52,
+            "rps": 0.24,
+            "is_sota": false
+          },
+          "contextasr_zh": {
+            "dataset": "ContextASR-Zh",
+            "metric": "CER",
+            "raw_score": 6.44,
+            "rps": 0.39,
+            "is_sota": false
+          }
+        }
+      },
+      
+      "summary": {
+        "total_datasets": 6,
+        "sota_count": 0,
+        "average_rps": 0.51
+      }
+    },
+    
+    "Whisper-large-v3": {
+      "full_name": "Whisper Large v3",
+      "organization": "OpenAI",
+      "model_size": "Large",
+      "release_date": "2023",
+      "supported_tasks": ["ASR"],
+      
+      "results": {
+        "track_i_frontend": {
+          "cs_dialogue": {
+            "dataset": "CS-Dialogue",
+            "metric": "MER",
+            "raw_score": 15.91,
+            "rps": 0.44,
+            "is_sota": false
+          },
+          "kespeech": {
+            "dataset": "KeSpeech",
+            "metric": "CER",
+            "raw_score": 30.65,
+            "rps": 0.12,
+            "is_sota": false
+          },
+          "voxpopuli": {
+            "dataset": "VoxPopuli-en",
+            "metric": "WER",
+            "raw_score": 12.62,
+            "rps": 0.53,
+            "is_sota": false
+          },
+          "aishell5": {
+            "dataset": "AISHELL-5",
+            "metric": "CER",
+            "raw_score": 45.11,
+            "rps": 0.55,
+            "is_sota": false
+          },
+          "contextasr_en": {
+            "dataset": "ContextASR-En",
+            "metric": "WER",
+            "raw_score": 8.37,
+            "rps": 0.41,
+            "is_sota": false
+          },
+          "contextasr_zh": {
+            "dataset": "ContextASR-Zh",
+            "metric": "CER",
+            "raw_score": 8.29,
+            "rps": 0.30,
+            "is_sota": false
+          }
+        }
+      },
+      
+      "summary": {
+        "total_datasets": 6,
+        "sota_count": 0,
+        "average_rps": 0.39
+      }
+    }
+  },
+  
+  "sota_summary": {
+    "total_datasets": 14,
+    "datasets_with_sota": {
+      "cs_dialogue": "Qwen3-Omni",
+      "kespeech": "FireRed-ASR-1.7B",
+      "voxpopuli": "Parakeet-en",
+      "aishell5": "FireRed-ASR-1.7B",
+      "contextasr_en": "Pipeline",
+      "contextasr_zh": "Qwen3-Omni",
+      "aishell1": "Qwen3-Omni",
+      "librispeech_clean": "Qwen3-Omni",
+      "librispeech_other": "Qwen3-Omni",
+      "librispeech_gr": "Kimi-Audio",
+      "covost2_en2zh": "Qwen3-Omni",
+      "covost2_zh2en": "Gemini-2.5pro",
+      "iemocap": "Kimi-Audio",
+      "mmsu": "Gemini-3.0pro"
+    }
+  }
+}
