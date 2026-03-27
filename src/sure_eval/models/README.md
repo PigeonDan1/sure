@@ -111,9 +111,11 @@ result = evaluator.quick_test("asr_qwen3", "aishell1", num_samples=10)
 | Model | Task | Status | Results |
 |-------|------|--------|---------|
 | asr_qwen3 | ASR | ✓ Implemented | aishell1 (WER 0.79%) |
-| asr_whisper | ASR | ○ Template | - |
+| asr_whisper | ASR | ✓ Implemented | - |
+| asr_parakeet | ASR | ✓ Implemented | - |
+| qwen3_omni | OMNI | ✓ Implemented | - |
 | s2tt_nllb | S2TT | ○ Template | - |
-| diarizen | SD | ○ Template | - |
+| diarizen | SD | ✓ Implemented | - |
 
 ## Model Registry
 

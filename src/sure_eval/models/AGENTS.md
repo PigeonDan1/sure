@@ -1,6 +1,6 @@
 # SURE-EVAL Agent 工具管理指南
 
-本文档指导 AI Agent 如何下载、配置、验证和管理 SURE-EVAL 中的模型工具。
+本文档指导 AI Agent 如何下载、配置、验证和管理 SURE-EVAL 中的模型工具。请务必按照本文档逐步配置模型工具，不可跳跃步骤，出现问题优先查找此文档。
 
 ---
 
@@ -15,6 +15,14 @@
 - `data/datasets/` - 原始数据集
 - `src/sure_eval/models/*/test_results/` - 他人测试结果
 - 任何已提交到 git 的源代码
+
+**严禁在系统级环境操作：**
+- 🚫 **禁止**使用 `pip install` 直接安装到系统 Python（如 `/usr/bin/python` 或 `/usr/local/bin/python`）
+- 🚫 **禁止**使用 `--break-system-packages` 参数强制安装到系统环境
+- 🚫 **禁止**修改 `/usr/local/lib/python*/dist-packages` 下的任何文件
+- ✅ **必须**在虚拟环境（UV 或 Conda）中进行所有依赖安装
+
+> **警告**：系统级修改会影响整个服务器，可能导致其他项目无法运行。所有依赖必须隔离在各自模型的虚拟环境中。
 
 ### ✅ 允许删除的文件
 **仅允许删除你自己在本次会话中创建的：**
@@ -76,6 +84,7 @@ cat src/sure_eval/models/{tool_name}/config.yaml | grep -A 5 "server:"
 |--------|------|----------|--------|------|
 | `asr_qwen3` | ASR | 本地 | UV | ✅ 已实现 |
 | `asr_whisper` | ASR | 本地 | UV | ✅ 已实现 |
+| `asr_parakeet` | ASR | 本地 | UV | ✅ 已实现 |
 | `qwen3_omni` | OMNI | API | UV | ✅ 已实现 |
 | `diarizen` | SD | 本地 | Conda | ✅ 已实现 |
 | `s2tt_nllb` | S2TT | 本地 | UV | 🚧 模板 |
@@ -336,6 +345,35 @@ cd tests/fixtures
 .venv/bin/python test_model.py --model {tool_name} --task {task_name}
 ```
 
+### 5.3 超时处理策略
+
+当命令执行可能超过 60 秒时（如下载模型、安装大型依赖比如torch等），**必须**使用后台任务：
+
+```bash
+# 推荐：使用后台任务（超时可达 24 小时）
+cd src/sure_eval/models/{tool_name}
+uv pip install nemo-toolkit[asr]  # 可能超时
+
+# 替换为后台任务：
+uv pip install nemo-toolkit[asr] &
+# 或使用工具提供的后台执行功能
+```
+
+**超时重试策略：**
+1. **首次超时**：加倍等待时长（60s → 120s）
+2. **再次失败**：切换到后台任务模式
+3. **两次失败后**：记录问题并退出，不要无限重试
+
+**示例（模型下载）：**
+```bash
+# 第一次尝试（60s 超时）
+timeout 60 huggingface-cli download nvidia/parakeet-tdt-0.6b-v2
+# 如果失败，第二次尝试（120s 超时）
+timeout 120 huggingface-cli download nvidia/parakeet-tdt-0.6b-v2
+# 如果仍失败，使用后台任务
+# 通过后台任务工具执行，设置 300s 或更长超时
+```
+
 ---
 
 ## 6. 测试框架
@@ -489,7 +527,60 @@ python test_model.py --model asr_whisper --task ASR --output results.json
 
 **结论**: Whisper 适合多语言通用场景，中文场景建议使用专门的 Qwen3-ASR。
 
-### 案例 2: 处理路径不一致问题
+### 案例 2: 添加 Parakeet 模型
+
+**背景**: 为 SURE-EVAL 添加 NVIDIA Parakeet-TDT-0.6B-v2 英文 ASR 模型。
+
+**模型特点**:
+- 部署模式: 本地部署
+- 依赖: PyTorch + NVIDIA NeMo toolkit
+- 模型大小: 0.6B 参数 (约 1.2GB)
+- 支持语言: 仅英语
+- 特性: 时间戳、标点符号、自动大小写
+
+**配置步骤**:
+
+```bash
+# Step 1: 验证模型链接
+curl -I https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2
+
+# Step 2: 创建环境（严格遵守 UV 环境）
+cd src/sure_eval/models/asr_parakeet
+uv venv --python=python3.10
+source .venv/bin/activate
+
+# Step 3: 安装依赖（PyTorch 必须先于 NeMo）
+uv pip install torch>=2.0.0 torchaudio>=2.0.0
+# 注意：如果系统已有 PyTorch，避免重复安装，可使用 PYTHONPATH
+uv pip install nemo-toolkit[asr]>=2.0 soundfile
+
+# Step 4: 验证安装
+.venv/bin/python -c "import nemo.collections.asr; print('OK')"
+
+# Step 5: 测试推理
+.venv/bin/python -c "
+from model import ASRParakeetModel
+model = ASRParakeetModel(device='cpu')
+result = model.transcribe('tests/fixtures/librispeech/sample_1.wav')
+print(result.text)
+"
+```
+
+**遇到的问题与解决**:
+
+| 问题 | 原因 | 解决方案 |
+|------|------|----------|
+| 虚拟环境无法导入系统 PyTorch | UV 环境隔离 | 在 `.pth` 文件中添加系统路径，或设置 `PYTHONPATH` |
+| NeMo 版本与 PyTorch 不匹配 | torchvision 版本冲突 | 降级 torchvision 到兼容版本 |
+| 模型下载超时 | 首次下载 1.2GB | 使用后台任务，设置 300s 超时 |
+| 系统环境被破坏 | 误用 `pip install` 修改系统包 | **严禁**系统级安装，必须隔离在虚拟环境 |
+
+**关键教训**:
+- **严格遵守**"不动系统环境"原则
+- PyTorch 必须在 NeMo 之前安装
+- 首次模型下载需要较长超时
+
+### 案例 3: 处理路径不一致问题
 
 **问题**: IEMOCAP 数据集的音频路径在 jsonl 和实际文件系统中不一致。
 

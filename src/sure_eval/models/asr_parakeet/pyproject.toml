@@ -1,0 +1,33 @@
+[project]
+name = "asr-parakeet-eval"
+version = "1.0.0"
+description = "ASR evaluation using NVIDIA Parakeet-TDT-0.6B-v2 model for SURE-EVAL"
+requires-python = ">=3.10"
+authors = [
+    {name = "SURE-EVAL Team"}
+]
+
+# Dependencies for Parakeet
+# Note: Install PyTorch first, then nemo_toolkit
+# See: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2
+dependencies = [
+    "torch>=2.0.0",           # PyTorch
+    "torchaudio>=2.0.0",      # Audio processing
+    "nemo-toolkit[asr]>=2.0", # NVIDIA NeMo ASR toolkit
+    "soundfile>=0.12.0",      # Audio I/O
+    "numpy>=1.26.0",          # NumPy
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+# Build system (required by PEP 518)
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# uv-specific configuration
+[tool.uv]
+# allow-prereleases = true

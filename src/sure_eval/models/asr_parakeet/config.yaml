@@ -1,0 +1,70 @@
+# ASR Parakeet Model Configuration
+# NVIDIA Parakeet-TDT-0.6B-v2 - English ASR Model
+# https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2
+
+name: asr_parakeet
+task: ASR
+description: "ASR using NVIDIA Parakeet-TDT-0.6B-v2 - High-quality English transcription with punctuation and timestamps"
+version: "1.0.0"
+
+# Model info
+model:
+  id: "nvidia/parakeet-tdt-0.6b-v2"
+  size: "0.6B"
+  languages: ["en"]  # English only
+  license: "CC-BY-4.0"
+  architecture: "FastConformer + TDT decoder"
+  features:
+    - "Word-level timestamp predictions"
+    - "Automatic punctuation and capitalization"
+    - "Long audio support (up to 24 minutes per chunk)"
+    - "RTFx 3380 on HF-Open-ASR leaderboard (batch_size=128)"
+
+# MCP Server Configuration
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_PATH: "nvidia/parakeet-tdt-0.6b-v2"
+    DEVICE: "auto"
+  timeout: 600  # Longer timeout for first-time model download
+  startup_timeout_sec: 600
+
+# Tools
+tools:
+  - name: "asr_transcribe"
+    description: "Transcribe English speech to text with optional timestamps"
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+          description: "Path to audio file"
+        language:
+          type: string
+          description: "Language code (only 'en' supported)"
+          default: "en"
+        return_timestamps:
+          type: boolean
+          description: "Whether to return word/segment timestamps"
+          default: false
+      required: ["audio_path"]
+
+# Test Results
+results:
+  librispeech_clean:
+    status: "not_tested"
+  librispeech_other:
+    status: "not_tested"
+
+# Resource Requirements
+resources:
+  memory_gb: 4          # Minimum 2GB for model, recommend 4GB
+  gpu: true             # Recommended for optimal performance
+  gpu_memory_gb: 2      # Minimum GPU memory
+  cpu_cores: 4
+  storage_gb: 2         # For model weights (~1.2GB)
+
+# Dependencies Note
+# Install: pip install nemo-toolkit[asr] torch torchaudio
+# PyTorch must be installed before NeMo

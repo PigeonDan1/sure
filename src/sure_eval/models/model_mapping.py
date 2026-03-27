@@ -21,6 +21,7 @@ TOOL_TO_BENCHMARK: dict[str, str] = {
     # ASR Tools
     "asr_qwen3": "Qwen3-ASR-1.7B",  # Note: Different from Qwen3-Omni (multi-task)
     "asr_whisper": "Whisper-large-v3",
+    "asr_parakeet": "Parakeet-TDT-0.6B-v2",  # NVIDIA Parakeet, English-only
     "sensevoice": "SenseVoice-Small",
     "firered_asr": "FireRed-ASR-1.7B",
     
@@ -64,6 +65,12 @@ MODEL_METADATA: dict[str, dict] = {
         "table": "Table 3",
         "tasks": ["ASR"],
         "note": "OpenAI's ASR model",
+    },
+    "Parakeet-TDT-0.6B-v2": {
+        "type": "asr_specific",
+        "table": "Not in SURE",
+        "tasks": ["ASR"],
+        "note": "NVIDIA's English ASR model with FastConformer+TDT, 0.6B params, RTFx 3380",
     },
     "FireRed-ASR-1.7B": {
         "type": "asr_specific",
