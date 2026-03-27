@@ -410,10 +410,21 @@ python demo/demo_evaluate_model.py --model my_model --dataset aishell1 --samples
 
 ## Documentation
 
+### For AI Agents
+
+- **[Agent Tool Management Guide](src/sure_eval/models/AGENTS.md)** ⭐ - **Essential guide for AI agents configuring and managing tools**
+  - Tool classification (API vs Local deployment)
+  - Environment management strategy (UV vs Conda)
+  - Step-by-step configuration workflow
+  - Validation checklists and troubleshooting
+
+### For Developers
+
 - [Architecture](ARCHITECTURE.md) - System architecture details
 - [Data Download Guide](DATA_DOWNLOAD_GUIDE.md) - SURE Benchmark download instructions
 - [Data Processing Summary](DATA_PROCESSING_SUMMARY.md) - Data format conversion details
 - [Refactoring Summary](REFACTORING_SUMMARY.md) - Recent refactoring notes
+- [Integration Guide](INTEGRATION_GUIDE.md) - Integrating new models and tools
 
 ## License
 
