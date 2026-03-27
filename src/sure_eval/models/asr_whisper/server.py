@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-DiariZen MCP Server for SURE-EVAL.
+ASR Whisper MCP Server for SURE-EVAL.
 
-MCP server implementation for speaker diarization using DiariZen.
+MCP server implementation for speech recognition using OpenAI Whisper.
 """
 
 from __future__ import annotations
@@ -14,65 +14,31 @@ from pathlib import Path
 from typing import Any
 
 
-class DiariZenServer:
-    """MCP Server for DiariZen Speaker Diarization."""
+class ASRWhisperServer:
+    """MCP Server for OpenAI Whisper."""
     
     def __init__(self):
         self._initialized = False
         self._model = None
-        self._model_path = os.environ.get("MODEL_PATH", "BUT-FIT/diarizen-wavlm-large-s80-md")
+        self._model_path = os.environ.get("MODEL_PATH", "large-v3")
         self._device = os.environ.get("DEVICE", "auto")
         
         # Tool definitions
         self._tools = [
             {
-                "name": "diarize",
-                "description": "Perform speaker diarization on audio file using DiariZen. Returns speaker segments in RTTM format.",
+                "name": "asr_transcribe",
+                "description": "Transcribe speech to text using OpenAI Whisper",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "audio_path": {
                             "type": "string",
-                            "description": "Path to the audio file to diarize"
+                            "description": "Path to audio file"
                         },
-                        "num_speakers": {
-                            "type": "integer",
-                            "description": "Exact number of speakers (optional, auto-detect if not provided)",
-                            "minimum": 1
-                        },
-                        "min_speakers": {
-                            "type": "integer",
-                            "description": "Minimum number of speakers (optional)",
-                            "minimum": 1
-                        },
-                        "max_speakers": {
-                            "type": "integer",
-                            "description": "Maximum number of speakers (optional)",
-                            "minimum": 1
-                        }
-                    },
-                    "required": ["audio_path"]
-                }
-            },
-            {
-                "name": "diarize_with_rttm",
-                "description": "Diarize audio and save RTTM output to file. Returns speaker segments and saves RTTM format.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "audio_path": {
+                        "language": {
                             "type": "string",
-                            "description": "Path to the audio file to diarize"
-                        },
-                        "output_dir": {
-                            "type": "string",
-                            "description": "Directory to save RTTM file",
-                            "default": "./results"
-                        },
-                        "num_speakers": {
-                            "type": "integer",
-                            "description": "Exact number of speakers (optional)",
-                            "minimum": 1
+                            "description": "Language (e.g., 'zh', 'en', 'auto')",
+                            "default": "auto"
                         }
                     },
                     "required": ["audio_path"]
@@ -86,14 +52,14 @@ class DiariZenServer:
             return
         
         try:
-            from model import DiariZenModel
+            from model import ASRWhisperModel
         except ImportError:
             # Try relative import
             sys.path.insert(0, str(Path(__file__).parent))
-            from model import DiariZenModel
+            from model import ASRWhisperModel
         
-        print(f"Loading DiariZen model: {self._model_path}", file=sys.stderr)
-        self._model = DiariZenModel(
+        print(f"Loading Whisper model: {self._model_path}", file=sys.stderr)
+        self._model = ASRWhisperModel(
             model_path=self._model_path,
             device=self._device,
         )
@@ -146,7 +112,7 @@ class DiariZenServer:
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
                 "serverInfo": {
-                    "name": "diarizen-server",
+                    "name": "asr-whisper-server",
                     "version": "1.0.0"
                 }
             }
@@ -191,68 +157,28 @@ class DiariZenServer:
         """Execute a tool."""
         self._load_model()
         
-        if tool_name == "diarize":
-            return self._diarize(arguments)
-        elif tool_name == "diarize_with_rttm":
-            return self._diarize_with_rttm(arguments)
+        if tool_name == "asr_transcribe":
+            return self._transcribe(arguments)
         else:
             raise ValueError(f"Unknown tool: {tool_name}")
     
-    def _diarize(self, arguments: dict) -> dict[str, Any]:
-        """Diarize audio."""
+    def _transcribe(self, arguments: dict) -> dict[str, Any]:
+        """Transcribe audio."""
         audio_path = arguments.get("audio_path")
-        num_speakers = arguments.get("num_speakers")
-        min_speakers = arguments.get("min_speakers")
-        max_speakers = arguments.get("max_speakers")
+        language = arguments.get("language", "auto")
         
         if not audio_path:
             raise ValueError("audio_path is required")
         
-        print(f"Diarizing: {audio_path}", file=sys.stderr)
+        print(f"Transcribing: {audio_path} (language={language})", file=sys.stderr)
         
-        result = self._model.diarize(
+        result = self._model.transcribe(
             audio_path,
-            num_speakers=num_speakers,
-            min_speakers=min_speakers,
-            max_speakers=max_speakers,
+            language=language if language != "auto" else None,
         )
         
-        # Format output
-        segments_text = []
-        for seg in result.segments:
-            segments_text.append(f"{seg.start:.1f}s - {seg.end:.1f}s: Speaker {seg.speaker}")
-        
-        output_text = f"Detected {result.num_speakers} speakers\n\n"
-        output_text += "Segments:\n" + "\n".join(segments_text)
-        output_text += "\n\nRTTM format:\n" + result.rttm
-        
         return {
-            "content": [{"type": "text", "text": output_text}],
-            "isError": False
-        }
-    
-    def _diarize_with_rttm(self, arguments: dict) -> dict[str, Any]:
-        """Diarize audio and save RTTM."""
-        audio_path = arguments.get("audio_path")
-        output_dir = arguments.get("output_dir", "./results")
-        num_speakers = arguments.get("num_speakers")
-        
-        if not audio_path:
-            raise ValueError("audio_path is required")
-        
-        print(f"Diarizing: {audio_path} (output to {output_dir})", file=sys.stderr)
-        
-        result = self._model.diarize_with_rttm_output(
-            audio_path,
-            output_dir=output_dir,
-            num_speakers=num_speakers,
-        )
-        
-        output_text = f"RTTM saved to: {output_dir}\n\n"
-        output_text += f"Detected {result.num_speakers} speakers"
-        
-        return {
-            "content": [{"type": "text", "text": output_text}],
+            "content": [{"type": "text", "text": result.text}],
             "isError": False
         }
     
@@ -278,5 +204,5 @@ class DiariZenServer:
 
 
 if __name__ == "__main__":
-    server = DiariZenServer()
+    server = ASRWhisperServer()
     server.run()

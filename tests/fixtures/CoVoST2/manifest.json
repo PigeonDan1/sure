@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "key": "common_voice_en_670098",
+    "dataset": "CoVoST2_S2TT_en2zh_test",
+    "audio": "sample_1_common_voice_en_670098.wav",
+    "ground_truth": "即使他们发现了，也能补救。"
+  },
+  {
+    "id": 2,
+    "key": "common_voice_en_19555521",
+    "dataset": "CoVoST2_S2TT_en2zh_test",
+    "audio": "sample_2_common_voice_en_19555521.wav",
+    "ground_truth": "Eythorne 只有一个商店、一个邮局报刊亭，里面有一些日常用品。"
+  },
+  {
+    "id": 3,
+    "key": "common_voice_en_19589217",
+    "dataset": "CoVoST2_S2TT_en2zh_test",
+    "audio": "sample_3_common_voice_en_19589217.wav",
+    "ground_truth": "Rochester 和 Jane 彼此相爱，坠入爱河。"
+  }
+]

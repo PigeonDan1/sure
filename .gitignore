@@ -87,3 +87,9 @@ dmypy.json
 # Model cache
 model_cache/
 .cache/
+
+# DiariZen submodule (should be cloned separately)
+src/sure_eval/models/diarizen/diarizen_src/
+
+# Test results
+src/sure_eval/models/*/test_results/

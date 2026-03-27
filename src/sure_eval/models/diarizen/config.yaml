@@ -4,9 +4,10 @@
 
 name: diarizen
 task: SD
-description: "Speaker Diarization using DiariZen (WavLM-Large based)"
+description: "Speaker Diarization using DiariZen (WavLM-Large based) - Fully Configured"
 version: "1.0.0"
 
+# Model info
 model:
   id: "BUT-FIT/diarizen-wavlm-large-s80-md"
   size: "Large (WavLM backbone)"
@@ -30,7 +31,7 @@ model:
 
 # MCP Server Configuration
 server:
-  command: [".venv/bin/python", "server.py"]
+  command: ["python", "server.py"]
   working_dir: "."
   env:
     MODEL_PATH: "BUT-FIT/diarizen-wavlm-large-s80-md"
@@ -81,13 +82,25 @@ tools:
           minimum: 1
       required: ["audio_path"]
 
-# Test Results (to be filled after evaluation)
-results: {}
+# Test Results
+results:
+  example_30s:
+    date: "2025-03-27"
+    audio: "EN2002a_30s.wav"
+    num_speakers: 4
+    status: "success"
+    notes: "Successfully detected 4 speakers with overlapping segments"
 
 # Resource Requirements
 resources:
   memory_gb: 16
-  gpu: true  # GPU recommended but not required
-  gpu_memory_gb: 8
+  gpu: false  # CPU only in current setup
   cpu_cores: 4
   storage_gb: 2
+
+# Important Notes
+notes:
+  - "Must use pyannote-audio from submodule (modified version)"
+  - "NumPy 1.26.4 required (not 2.x)"
+  - "Audio files should be >= 30s for best results"
+  - "Model weights auto-downloaded from HuggingFace"

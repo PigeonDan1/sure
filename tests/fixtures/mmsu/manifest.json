@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "key": "idiom_reasoning_a390d080-34d0-43c5-8c7f-d847be0aaac9",
+    "dataset": "mmsu",
+    "audio": "sample_1_idiom_reasoning_a390d080-34d0-43c5-8c7f-d847be0aaac9.wav",
+    "ground_truth": "C"
+  },
+  {
+    "id": 2,
+    "key": "deixis_resolution_8cf6a751-b31c-4a38-8225-93eb577dec0c",
+    "dataset": "mmsu",
+    "audio": "sample_2_deixis_resolution_8cf6a751-b31c-4a38-8225-93eb577dec0c.wav",
+    "ground_truth": "B"
+  },
+  {
+    "id": 3,
+    "key": "prolonged_sound_reasoning_1cea84cb-6d81-497e-8483-be796499b63a",
+    "dataset": "mmsu",
+    "audio": "sample_3_prolonged_sound_reasoning_1cea84cb-6d81-497e-8483-be796499b63a.wav",
+    "ground_truth": "B"
+  }
+]

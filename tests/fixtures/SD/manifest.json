@@ -1,0 +1,29 @@
+[
+  {
+    "id": 1,
+    "key": "Ses05F_script01_1_M038",
+    "dataset": "IEMOCAP",
+    "audio": "Ses05F_script01_1_M038.wav",
+    "task": "SD",
+    "num_speakers": 2,
+    "description": "Multi-speaker dialogue session"
+  },
+  {
+    "id": 2,
+    "key": "Ses05F_script01_1_M039",
+    "dataset": "IEMOCAP",
+    "audio": "Ses05F_script01_1_M039.wav",
+    "task": "SD",
+    "num_speakers": 2,
+    "description": "Multi-speaker dialogue session"
+  },
+  {
+    "id": 3,
+    "key": "Ses05F_script01_1_F033",
+    "dataset": "IEMOCAP",
+    "audio": "Ses05F_script01_1_F033.wav",
+    "task": "SD",
+    "num_speakers": 2,
+    "description": "Multi-speaker dialogue session"
+  }
+]

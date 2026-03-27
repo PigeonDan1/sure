@@ -1,22 +1,28 @@
+# ASR Whisper Model Configuration
+
 name: asr_whisper
 task: ASR
-description: "ASR using OpenAI Whisper - Template"
-version: "0.1.0"
+description: "ASR using OpenAI Whisper - large-v3 model"
+version: "1.0.0"
 
+# Model info
 model:
   id: "openai/whisper-large-v3"
   size: "1.5B"
   languages: ["multilingual"]
   license: "MIT"
 
+# MCP Server Configuration
 server:
   command: [".venv/bin/python", "server.py"]
   working_dir: "."
   env:
-    MODEL_PATH: "openai/whisper-large-v3"
+    MODEL_PATH: "large-v3"
     DEVICE: "auto"
   timeout: 300
+  startup_timeout_sec: 300
 
+# Tools
 tools:
   - name: "asr_transcribe"
     description: "Transcribe speech to text"
@@ -25,9 +31,19 @@ tools:
       properties:
         audio_path:
           type: string
+          description: "Path to audio file"
         language:
           type: string
+          description: "Language (e.g., 'zh', 'en', 'auto')"
           default: "auto"
       required: ["audio_path"]
 
+# Test Results
 results: {}
+
+# Resource Requirements
+resources:
+  memory_gb: 8
+  gpu: true  # Recommended, but CPU also works
+  cpu_cores: 4
+  storage_gb: 3  # For large-v3 model

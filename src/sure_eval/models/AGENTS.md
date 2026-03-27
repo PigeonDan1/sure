@@ -11,6 +11,9 @@
 3. [工具配置流程](#3-工具配置流程)
 4. [验证清单](#4-验证清单)
 5. [故障排除](#5-故障排除)
+6. [测试框架](#6-测试框架)
+7. [实践案例](#7-实践案例)
+8. [复杂依赖配置黄金法则](#8-复杂依赖配置黄金法则) ⭐
 
 ---
 
@@ -21,7 +24,7 @@
 | 模式 | 特征 | 示例工具 |
 |------|------|----------|
 | **API 模式** | 仅需 API Key，无需本地模型 | `qwen3_omni` |
-| **本地部署** | 需要下载模型权重，本地推理 | `asr_qwen3`, `diarizen` |
+| **本地部署** | 需要下载模型权重，本地推理 | `asr_qwen3`, `diarizen`, `asr_whisper` |
 | **混合模式** | 支持 API 或本地 | `asr_whisper` |
 
 **判断方法**：
@@ -35,13 +38,13 @@ cat src/sure_eval/models/{tool_name}/config.yaml | grep -A 5 "server:"
 
 ### 1.2 工具清单
 
-| 工具名 | 任务 | 部署模式 | 包管理 |
-|--------|------|----------|--------|
-| `asr_qwen3` | ASR | 本地 | UV |
-| `asr_whisper` | ASR | 本地 | UV |
-| `qwen3_omni` | OMNI | API | UV |
-| `diarizen` | SD | 本地 | Conda |
-| `s2tt_nllb` | S2TT | 本地 | UV |
+| 工具名 | 任务 | 部署模式 | 包管理 | 状态 |
+|--------|------|----------|--------|------|
+| `asr_qwen3` | ASR | 本地 | UV | ✅ 已实现 |
+| `asr_whisper` | ASR | 本地 | UV | ✅ 已实现 |
+| `qwen3_omni` | OMNI | API | UV | ✅ 已实现 |
+| `diarizen` | SD | 本地 | Conda | ✅ 已实现 |
+| `s2tt_nllb` | S2TT | 本地 | UV | 🚧 模板 |
 
 ---
 
@@ -276,6 +279,8 @@ print('Model loaded successfully')
 | `CUDA out of memory` | GPU 内存不足 | 减小 batch_size 或使用 CPU |
 | `ModuleNotFoundError` | 依赖未安装 | 重新运行 pip install |
 | `version conflict` | 依赖版本冲突 | 使用 Conda 替代 UV |
+| `Connection timeout` | HuggingFace 下载慢 | 使用 ModelScope 镜像 |
+| `CPU fallback warning` | CUDA 版本不匹配 | 更新驱动或接受 CPU 运行 |
 
 ### 5.2 调试命令
 
@@ -291,7 +296,208 @@ time .venv/bin/python -c "from model import {ModelClass}; m = {ModelClass}()"
 
 # 验证 CUDA 可用性
 .venv/bin/python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
+
+# 测试音频转写（使用 fixtures）
+cd tests/fixtures
+.venv/bin/python test_model.py --model {tool_name} --task {task_name}
 ```
+
+---
+
+## 6. 测试框架
+
+### 6.1 测试样本结构
+
+```
+tests/fixtures/
+├── ASR/              # 自动语音识别样本
+│   ├── manifest.json # 样本清单
+│   └── sample_*.wav  # 测试音频
+├── S2TT/             # 语音翻译样本
+├── SER/              # 语音情感识别样本
+├── GR/               # 性别识别样本
+├── SLU/             # 口语理解样本
+└── test_model.py    # 统一测试脚本
+```
+
+### 6.2 生成测试样本
+
+从 SURE Benchmark 抽取标准化测试样本：
+
+```bash
+# 使用默认配置（每个数据集3个样本）
+python scripts/extract_test_samples.py
+
+# 自定义样本数
+python scripts/extract_test_samples.py --samples 5 --output-dir tests/fixtures
+```
+
+样本抽取规则：
+- 每个任务类型至少包含 2-3 个不同数据集
+- 覆盖中英文（必要时包括代码切换）
+- 样本时长适中（3-10秒为宜）
+
+### 6.3 运行模型测试
+
+```bash
+cd tests/fixtures
+
+# 测试特定任务
+python test_model.py --model asr_whisper --task ASR
+
+# 测试所有支持的任务
+python test_model.py --model asr_qwen3 --task all
+
+# 保存详细结果
+python test_model.py --model asr_whisper --task ASR --output results.json
+```
+
+### 6.4 人工评测流程
+
+1. **准备测试数据**
+   ```bash
+   python scripts/extract_test_samples.py --samples 5
+   ```
+
+2. **运行模型推理**
+   ```bash
+   python test_model.py --model {your_model} --task {task} --output predictions.json
+   ```
+
+3. **人工对比结果**
+   - 查看 `predictions.json` 中的 `ground_truth` vs `prediction`
+   - 记录错误类型（同音字、形近字、语义错误等）
+   - 计算准确率/CER/WER
+
+4. **更新模型文档**
+   - 在 `src/sure_eval/models/{model}/README.md` 中记录评测结果
+   - 更新 `config.yaml` 中的 `results` 字段
+
+---
+
+## 7. 实践案例
+
+### 案例 1: 添加 Whisper 模型
+
+**背景**: 为 SURE-EVAL 添加 OpenAI Whisper ASR 模型支持。
+
+**步骤**:
+
+1. **分析模型特点**
+   - 部署模式: 本地部署
+   - 依赖: PyTorch + openai-whisper
+   - 模型大小: large-v3 (1.5B参数, 约3GB)
+   - 支持语言: 99种语言（包括中文）
+
+2. **环境配置**
+   ```bash
+   cd src/sure_eval/models/asr_whisper
+   uv venv --python=python3.10
+   uv pip install openai-whisper torch numpy
+   ```
+
+3. **实现模型包装器** (`model.py`)
+   ```python
+   class ASRWhisperModel:
+       def __init__(self, model_path="large-v3", device="auto"):
+           self.model_path = model_path
+           self.device = device
+           self._model = None
+       
+       def _load_model(self):
+           if self._model is None:
+               import whisper
+               self._model = whisper.load_model(self.model_path)
+       
+       def transcribe(self, audio_path, language=None):
+           self._load_model()
+           result = self._model.transcribe(audio_path, language=language)
+           return TranscriptionResult(text=result["text"])
+   ```
+
+4. **实现 MCP 服务器** (`server.py`)
+   - 参照 `asr_qwen3/server.py` 结构
+   - 实现 `tools/call` 处理 `asr_transcribe`
+
+5. **注册模型映射**
+   ```python
+   # src/sure_eval/models/model_mapping.py
+   TOOL_TO_BENCHMARK["asr_whisper"] = "Whisper-large-v3"
+   ```
+
+6. **测试验证**
+   ```bash
+   # 单元测试
+   .venv/bin/python -c "from model import ASRWhisperModel; m = ASRWhisperModel()"
+   
+   # MCP 测试
+   timeout 5 .venv/bin/python server.py <<< '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
+   
+   # 实际转写测试
+   python test_model.py --model asr_whisper --task ASR
+   ```
+
+**遇到的问题与解决**:
+
+| 问题 | 原因 | 解决方案 |
+|------|------|----------|
+| 模型下载超时 (300s) | large-v3 模型 2.88GB，网络慢 | 使用后台任务 + 超时重试 |
+| CUDA 驱动版本过旧 | 系统 CUDA 12.2，PyTorch 要求更高 | 自动回退到 CPU 模式 |
+| FP16 不支持 CPU | Whisper 默认使用 FP16 | 使用 FP32（自动处理） |
+| 中文同音字错误 | Whisper 对中文方言/口音敏感 | 记录为已知问题，建议使用 Qwen3-ASR |
+
+**评测结果**:
+
+| 数据集 | CER | 主要错误类型 |
+|--------|-----|--------------|
+| KeSpeech | 高 | 同音字、形近字 |
+| AISHELL-1 | 中 | 口音适配问题 |
+
+**结论**: Whisper 适合多语言通用场景，中文场景建议使用专门的 Qwen3-ASR。
+
+### 案例 2: 处理路径不一致问题
+
+**问题**: IEMOCAP 数据集的音频路径在 jsonl 和实际文件系统中不一致。
+
+**jsonl 中的路径**:
+```json
+{"path": "IEMOCAP_test/Ses05F_impro01/Ses05F_impro01_F000.wav"}
+```
+
+**实际路径**:
+```
+IEMOCAP_test/wav/Ses05F_impro01/Ses05F_impro01_F000.wav
+```
+
+**解决方案**:
+
+在 `extract_test_samples.py` 中实现智能路径查找：
+
+```python
+def find_audio_file(audio_base: Path, sample: dict) -> Path | None:
+    # 1. 尝试直接路径
+    direct_path = audio_base / sample["path"]
+    if direct_path.exists():
+        return direct_path
+    
+    # 2. IEMOCAP 特殊处理
+    if "IEMOCAP" in sample.get("dataset", ""):
+        wav_path = audio_base / "IEMOCAP_test/wav" / (sample["key"] + ".wav")
+        if wav_path.exists():
+            return wav_path
+        
+        # 3. 深度搜索
+        search_dir = audio_base / "IEMOCAP_test"
+        for wav_file in search_dir.rglob(f"{sample['key']}.wav"):
+            return wav_file
+    
+    return None
+```
+
+**经验总结**:
+- 抽取样本时打印警告信息，便于发现路径问题
+- 对已知数据集实现特殊处理逻辑
+- 保留 `original_path` 字段用于调试
 
 ---
 
@@ -326,6 +532,11 @@ fi
 echo "Testing import..."
 .venv/bin/python -c "from model import {ModelClass}; print('✓ OK')"
 
+# 6. 运行 fixtures 测试
+echo "Testing on fixtures..."
+cd tests/fixtures
+.venv/bin/python test_model.py --model {tool_name} --task {task}
+
 echo "=== Setup complete ==="
 ```
 
@@ -337,6 +548,13 @@ from sure_eval.models.model_mapping import get_benchmark_name
 
 benchmark = get_benchmark_name("{tool_name}")
 print(f"Tool '{tool_name}' -> Benchmark '{benchmark}'")
+
+# 检查模型实现状态
+from sure_eval.models.registry import ModelRegistry
+
+registry = ModelRegistry()
+info = registry.get_model("{tool_name}")
+print(f"Implemented: {info.is_implemented}")
 ```
 
 ### C. 环境变量模板
@@ -354,3 +572,287 @@ DEVICE=cuda  # or cpu
 HF_HOME=/path/to/huggingface/cache
 PYTHONPATH=src/
 ```
+
+### D. 添加新模型检查清单
+
+- [ ] 创建模型目录 `src/sure_eval/models/{tool_name}/`
+- [ ] 创建 `pyproject.toml` (UV) 或 `environment.yml` (Conda)
+- [ ] 创建 `config.yaml` 配置
+- [ ] 实现 `model.py` 包装器
+- [ ] 实现 `server.py` MCP 服务器
+- [ ] 创建 `README.md` 文档
+- [ ] 注册到 `model_mapping.py`
+- [ ] 运行 fixtures 测试
+- [ ] 更新本 AGENTS.md 文档
+
+---
+
+## 8. 复杂依赖配置黄金法则 ⭐
+
+> 基于 DiariZen 配置的实战经验总结，按重要性排序。
+> 违反这些规则将导致数小时的调试时间。
+
+### 8.1 法则一：永远不要动源代码（最重要）
+
+**原则**：永远不要修改项目源码或子模块代码，即使看起来有个明显的 bug。
+
+**案例：DiariZen 的教训**
+- 短音频 (<16s) 触发 `UnboundLocalError` 于 pyannote.audio
+- 错误想法：直接修改 `inference.py` 修复
+- 正确做法：使用满足条件的音频文件（>= 30s）
+
+**理由**：
+1. **子模块可能是修改版**：DiariZen 的 pyannote-audio 是定制版本，与 PyPI 不同
+2. **修改会破坏一致性**：一处修改可能导致其他依赖出问题
+3. **升级困难**：修改后的代码在更新时会产生冲突
+4. **难以复现**：他人按 README 安装后无法复现你的修改
+
+**替代方案优先级**：
+1. 检查安装步骤是否正确
+2. 检查版本是否匹配
+3. 使用 workaround（如音频长度要求）
+4. 查阅官方 issues
+5. **最后手段**：fork 并维护分支（而非直接修改）
+
+---
+
+### 8.2 法则二：必须严格按 README 逐步安装
+
+**原则**：安装步骤必须严格按照官方文档的顺序执行，不得跳过或调整。
+
+**案例：DiariZen 的正确安装顺序**
+```bash
+# ✅ 正确顺序
+conda create -n diarizen python=3.10 -y
+conda activate diarizen
+pip install torch==2.4.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cpu
+cd diarizen_src
+pip install -e .
+cd pyannote-audio && pip install -e .  # 【关键】必须从子模块安装
+pip install numpy==1.26.4 psutil accelerate
+```
+
+**禁止行为**：
+| 错误行为 | 后果 | 正确做法 |
+|----------|------|----------|
+| `pip install pyannote.audio` (PyPI) | `'DiariZenPipeline' object has no attribute '_segmentation_model'` | `cd pyannote-audio && pip install -e .` |
+| 先装 DiariZen 再装 PyTorch | 依赖解析冲突 | 先 PyTorch 后 DiariZen |
+| 跳过 `pip install -e .` | 模块找不到 | 严格使用 editable 安装 |
+| NumPy 未锁定 1.26.4 | `numpy._core.multiarray` 错误 | `pip install numpy==1.26.4` |
+
+---
+
+### 8.3 法则三：配置前必须分析可能的冲突
+
+**原则**：在开始安装前，必须分析所有关键依赖的版本冲突可能性。
+
+**冲突分析检查清单**：
+
+#### 1. Python 版本矩阵
+| 组件 | 最低版本 | 推荐版本 |
+|------|----------|----------|
+| DiariZen | 3.10 | 3.10 |
+| pyannote.audio | 3.10 | 3.10 |
+
+#### 2. PyTorch 兼容性链
+```
+PyTorch 2.4.0
+    ├── 支持 NumPy 1.x ✅
+    ├── 支持 NumPy 2.x ✅
+    └── 与 DiariZen 兼容 ✅
+    
+决策：使用 PyTorch 2.4.0（最新稳定版）
+```
+
+#### 3. NumPy 版本锁定（关键决策点）
+```
+DiariZen requirements.txt → numpy==1.26.4
+                 ↓
+    pyannote.audio 子模块依赖 NumPy 1.x API
+                 ↓
+    必须严格锁定 1.26.4，不能升级到 2.x
+```
+
+#### 4. pyannote.audio 来源决策树（最关键）
+```
+项目是否包含 pyannote-audio 子模块？
+    ├── 是 → 必须使用子模块版本
+    │         ├── 检查子模块是否为空
+    │         │   └── git submodule update --init --recursive
+    │         └── 安装：pip install -e ./pyannote-audio
+    │             【绝对不能】pip install pyannote.audio
+    └── 否 → 可以使用 PyPI 版本
+              └── pip install pyannote.audio=={version}
+```
+
+**DiariZen 的关键发现**：
+- PyPI 的 pyannote.audio 3.1.1 与 DiariZen 的 `DiariZenPipeline` 不兼容
+- 子模块中的 pyannote.audio 是修改版，API 不同
+- **这是 4 小时调试的根本原因**
+
+---
+
+### 8.4 法则四：冲突发生时首先反思步骤跳跃
+
+**原则**：遇到错误时，首先怀疑安装步骤是否有跳跃或顺序错误，而不是依赖本身有问题。
+
+**排查流程**：
+```
+发生错误
+    ↓
+【第一步】是否严格按 README 顺序安装？
+    ├── 否 → 重新安装，严格按照顺序
+    │         └── 80% 问题解决 ✅
+    ↓
+【第二步】是否使用了子模块的依赖？
+    ├── 否 → 卸载 PyPI 版本，安装子模块
+    │         └── 15% 问题解决 ✅
+    ↓
+【第三步】版本是否严格匹配？
+    ├── 否 → 锁定版本（如 numpy==1.26.4）
+    │         └── 4% 问题解决 ✅
+    ↓
+【第四步】是否还有其他步骤遗漏？
+    ├── 是 → 补全步骤
+    │         └── 0.9% 问题解决 ✅
+    ↓
+【最后】才考虑代码 bug 或依赖冲突
+              └── 0.1% 需要深入调试
+```
+
+**常见跳跃错误与症状**：
+
+| 跳跃行为 | 错误症状 | 修复方法 |
+|----------|----------|----------|
+| 未装子模块 pyannote | `'DiariZenPipeline' object has no attribute '_segmentation_model'` | `cd pyannote-audio && pip install -e .` |
+| NumPy 未锁定 | `numpy._core.multiarray` 错误 | `pip install numpy==1.26.4` |
+| PyTorch 后装 | 依赖冲突警告 | 重新创建环境，先装 PyTorch |
+| 未初始化子模块 | 空 pyannote-audio 目录 | `git submodule update --init --recursive` |
+| 短音频测试 | `UnboundLocalError: cannot access local variable 'segmentations'` | 使用 >= 30s 音频 |
+
+---
+
+### 8.5 法则五：全局最优依赖决策
+
+**原则**：当冲突无法避免时，以最少修改实现全局最优解。
+
+**决策优先级金字塔**：
+```
+                    冲突解决优先级
+                    
+         ┌─────────────────────────────┐
+         │   1. 子模块完整性（最高）    │
+         │      不可妥协               │
+         │      例：pyannote.audio     │
+         └─────────────┬───────────────┘
+                       ↓
+         ┌─────────────────────────────┐
+         │   2. 严格版本锁定           │
+         │      必须精确匹配           │
+         │      例：numpy==1.26.4     │
+         └─────────────┬───────────────┘
+                       ↓
+         ┌─────────────────────────────┐
+         │   3. 主框架版本             │
+         │      选择最新兼容版         │
+         │      例：PyTorch 2.4.0     │
+         └─────────────┬───────────────┘
+                       ↓
+         ┌─────────────────────────────┐
+         │   4. 辅助依赖               │
+         │      满足最低要求           │
+         │      例：psutil, accelerate │
+         └─────────────────────────────┘
+```
+
+**决策案例 1：pyannote.audio 冲突**
+
+**场景**：PyPI 的 pyannote.audio 3.1.1 与 DiariZen 子模块 API 不兼容
+
+| 方案 | 修改内容 | 风险 | 全局最优 |
+|------|----------|------|----------|
+| A | 修改 DiariZen 适配 PyPI 版 | 破坏逻辑，升级困难 | ❌ |
+| B | 强制降级 PyPI 版到 3.0.x | 可能与其他依赖冲突 | ❌ |
+| C | **使用子模块版本** | 无代码修改，官方推荐 | ✅ |
+
+**决策**：方案 C（使用子模块）
+- 无需修改任何代码
+- 与官方环境完全一致
+- 可复现、可维护
+- 符合法则一（不动源代码）
+
+**决策案例 2：NumPy 版本冲突**
+
+**场景**：DiariZen 需要 NumPy 1.26.4，但某些工具想要 NumPy 2.x
+
+```
+方案 A: 升级到 NumPy 2.x，修改 DiariZen 适配
+    → 需要修改大量代码
+    → 违反法则一
+    → 需要 fork 维护
+    → ❌
+
+方案 B: 锁定 NumPy 1.26.4，验证其他工具兼容性
+    → PyTorch 2.4 支持 NumPy 1.x ✅
+    → 无需修改代码
+    → 符合 DiariZen 官方要求
+    → ✅
+```
+
+**决策**：方案 B（锁定版本）
+- PyTorch 2.4 同时支持 NumPy 1.x 和 2.x
+- 保持 NumPy 1.26.4 不影响其他组件
+- 全局最优解
+
+---
+
+### 8.6 DiariZen 完整配置总结
+
+**配置时间线**：
+| 阶段 | 耗时 | 关键问题 |
+|------|------|----------|
+| 环境准备 | 30min | 未按官方顺序安装 |
+| 依赖冲突解决 | 2h+ | pyannote 子模块与 PyPI 版本不兼容 |
+| 模型测试 | 30min | 短音频触发 pyannote bug |
+| 最终验证 | 15min | 成功运行，4 speakers 正确识别 |
+| **总计** | **~4小时** | |
+
+**关键依赖矩阵**：
+| Package | Source | Version | 决策理由 |
+|---------|--------|---------|----------|
+| pyannote.audio | **Submodule** | embedded | 必须使用修改版 |
+| numpy | PyPI | **1.26.4** | pyannote 子模块要求 |
+| torch | PyPI | 2.4.0 | 兼容 NumPy 1.x |
+| python | conda | 3.10 | 最低版本要求 |
+
+**验证结果**：
+```
+✓ Diarization completed
+  Detected 4 speakers
+  13 segments
+Model is ready for SURE evaluation.
+```
+
+---
+
+### 8.7 黄金法则速查卡
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      黄金法则                            │
+├─────────────────────────────────────────────────────────┤
+│  1. 不动代码 → 2. 严格按序 → 3. 预判冲突 →             │
+│  4. 反思跳跃 → 5. 全局最优                              │
+└─────────────────────────────────────────────────────────┘
+```
+
+**违反代价**：
+| 违反规则 | 代价 |
+|----------|------|
+| 规则一（动代码） | 数小时调试 + 维护噩梦 |
+| 规则二（乱序安装） | 环境混乱 + 无法复现 |
+| 规则三（不预判） | 盲目试错 + 时间浪费 |
+| 规则四（不反思） | 错误方向 + 无用功 |
+| 规则五（局部修复） | 全局问题 + 连锁反应 |
+
+**遵循规则，一次成功。**

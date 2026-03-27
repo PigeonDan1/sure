@@ -66,7 +66,6 @@ class DiariZenModel:
         self.rttm_out_dir = rttm_out_dir
         
         self._pipeline = None
-        self._diarizen_available = False
     
     def _load_model(self) -> None:
         """Lazy load the DiariZen pipeline."""
@@ -75,26 +74,16 @@ class DiariZenModel:
         
         try:
             from diarizen.pipelines.inference import DiariZenPipeline
-            self._diarizen_available = True
         except ImportError:
             raise RuntimeError(
                 "diarizen not installed. "
                 "Install from: https://github.com/BUTSpeechFIT/DiariZen"
             )
         
-        # Determine device
-        if self.device == "auto":
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            device = self.device
-        
         # Load pipeline
         print(f"Loading DiariZen model: {self.model_path}")
         self._pipeline = DiariZenPipeline.from_pretrained(
             self.model_path,
-            device=device,
-            rttm_out_dir=self.rttm_out_dir,
         )
         print("DiariZen model loaded")
     
