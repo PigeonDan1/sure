@@ -98,6 +98,14 @@ tools:
       MODEL_PATH: "Qwen/Qwen3-ASR-1.7B"
       DEVICE: "auto"
     timeout: 300
+
+  qwen3_omni:
+    name: "qwen3_omni"
+    command: [".venv/bin/python", "server.py"]
+    working_dir: "/path/to/sure/src/sure_eval/models/qwen3_omni"
+    env:
+      DASHSCOPE_API_KEY: "your-api-key"  # Set via environment or config
+    timeout: 60
 ```
 
 ### 6. Run Evaluation
@@ -182,6 +190,7 @@ registry.print_summary()
 | Model | Task | Status | Description |
 |-------|------|--------|-------------|
 | [asr_qwen3](src/sure_eval/models/asr_qwen3) | ASR | ✓ Ready | Qwen3-ASR-1.7B (Chinese/English) |
+| [qwen3_omni](src/sure_eval/models/qwen3_omni) | OMNI | ✓ Ready | Qwen3-Omni API (text+audio) |
 | [asr_whisper](src/sure_eval/models/asr_whisper) | ASR | ○ Template | OpenAI Whisper (template) |
 | [s2tt_nllb](src/sure_eval/models/s2tt_nllb) | S2TT | ○ Template | NLLB Translation (template) |
 | [diarizen](src/sure_eval/models/diarizen) | SD | ○ Template | Speaker Diarization (template) |
@@ -208,6 +217,7 @@ sure-eval/
 │   │   ├── registry.py     # Model registry
 │   │   ├── base.py         # Base model interface
 │   │   ├── asr_qwen3/      # ASR Qwen3 implementation
+│   │   ├── qwen3_omni/     # Qwen3-Omni API client
 │   │   ├── asr_whisper/    # ASR Whisper template
 │   │   ├── s2tt_nllb/      # S2TT NLLB template
 │   │   └── diarizen/       # Diarization template
