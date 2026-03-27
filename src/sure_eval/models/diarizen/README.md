@@ -2,6 +2,19 @@
 
 Speaker diarization tool for SURE-EVAL using DiariZen.
 
+---
+
+## ⚠️ 数据安全警告
+
+**严禁删除以下文件：**
+- `diarizen_src/` - 项目依赖的子模块（修改版 pyannote-audio）
+- `test_results/` - 他人测试结果
+- 任何已提交到 git 的源代码
+
+**如需清理空间，只能删除你自己创建的临时文件。**
+
+---
+
 ## Quick Start
 
 ```bash

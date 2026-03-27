@@ -7,6 +7,65 @@
 
 SURE-EVAL is an autonomous evaluation framework for audio processing tools and models. It supports multiple tasks including ASR, S2TT, SD, SER, and more.
 
+---
+
+## ⚠️ CRITICAL WARNING FOR AI AGENTS
+
+> **READ THIS BEFORE MAKING ANY CHANGES TO THE REPOSITORY**
+
+### 🚫 DO NOT DELETE EXISTING DATA WITHOUT EXPLICIT USER CONFIRMATION
+
+**This is a serious incident that has occurred:**
+- An AI agent accidentally deleted the `tests/fixtures/` directory containing standardized test samples
+- This data is essential for model evaluation and took significant effort to curate
+
+### ✅ RULES FOR FILE DELETION
+
+| What You Can Delete | What You MUST NOT Delete | Required Action |
+|---------------------|--------------------------|-----------------|
+| Your own test scripts | `tests/fixtures/` directory | ❌ ASK USER FIRST |
+| Your temporary files | Any existing test data | ❌ ASK USER FIRST |
+| Cache/build artifacts | Source code you didn't write | ❌ ASK USER FIRST |
+| Model prediction outputs | `.gitignore` entries without understanding | ❌ ASK USER FIRST |
+
+### ⚠️ MANDATORY CHECKLIST BEFORE DELETING ANYTHING
+
+1. **Is this file/directory created by you in this session?**
+   - If NO → **DO NOT DELETE**
+   - If YES → Proceed to step 2
+
+2. **Is this file in `.gitignore`?**
+   - If YES → Check if it's meant to be excluded from git but kept locally
+   - If NO → **DO NOT DELETE without user confirmation**
+
+3. **Does deleting this affect other parts of the system?**
+   - If YES → **DO NOT DELETE without user confirmation**
+
+4. **Have you asked the user for explicit permission?**
+   - If NO → **DO NOT DELETE**
+
+### 📋 WHEN IN DOUBT
+
+**Always use this command to check before deleting:**
+```bash
+git status --short
+```
+
+- Files marked with `??` are untracked (new files)
+- Files marked with `M` are modified
+- Files marked with `D` are deleted (be very careful!)
+
+**If a file is already tracked by git (not `??`), DO NOT delete it without user confirmation.**
+
+### 🔴 CONSEQUENCES OF VIOLATING THESE RULES
+
+- Loss of curated test datasets
+- Broken evaluation pipelines
+- Hours of debugging to restore lost data
+- Potential data corruption
+
+---
+
 ## Features
 
 - **🤖 Autonomous Evaluation**: Automatically download datasets, run inference, compute metrics, and track RPS scores

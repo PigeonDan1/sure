@@ -2,6 +2,19 @@
 
 Automatic Speech Recognition using OpenAI's Whisper model.
 
+---
+
+## ⚠️ 数据安全警告
+
+**严禁删除以下文件：**
+- 任何已提交到 git 的源代码
+- `test_results/` - 他人测试结果
+- `tests/fixtures/` - 共享测试数据
+
+**如需清理空间，只能删除你自己创建的临时文件。**
+
+---
+
 ## Model Information
 
 | Attribute | Value |
