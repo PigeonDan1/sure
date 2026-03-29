@@ -102,6 +102,17 @@ Each known issue must follow this structure:
 }
 ```
 
+### VAD Models
+
+#### SILERO-001: torchaudio/torchcodec CPU Trap
+
+**Model**: `snakers4/silero-vad`  
+**Issue**: torchaudio high-version triggers unnecessary CUDA dependency  
+**Symptom**: RuntimeError on torchcodec/CUDA libs despite CPU-only requirement  
+**Resolution**: Use CPU-only PyTorch stack (torch==2.2.2+cpu, torchaudio==2.2.2+cpu)  
+
+**Model-level details**: [`src/sure_eval/models/snakers4_silero-vad/known_issues.yaml`](../../../src/sure_eval/models/snakers4_silero-vad/known_issues.yaml)
+
 ### Diarization Models
 
 #### DIARIZEN-001: Short Audio Bug

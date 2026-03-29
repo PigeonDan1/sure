@@ -146,12 +146,14 @@ export DASHSCOPE_API_KEY="your-key"
 ```
 RuntimeError: operator torchvision::nms does not exist
 AttributeError: np.sctypes was removed
+RuntimeError: mentioning torchcodec during audio loading
 ```
 
 **常见证据**:
 - 库版本间不兼容
 - NumPy 2.0 破坏性变更
 - PyTorch/Torchvision 版本不匹配
+- torchaudio 触发 torchcodec/CUDA 依赖链
 
 **推荐修复方向**:
 ```bash
@@ -159,6 +161,24 @@ AttributeError: np.sctypes was removed
 uv pip install numpy==1.26.4
 uv pip install torchvision==0.19.0 --index-url https://download.pytorch.org/whl/cpu
 ```
+
+### Repair Hint: CPU-friendly torch audio models (e.g. Silero VAD)
+
+When all of the following hold:
+- `requires_gpu == false`
+- the model is lightweight and CPU-friendly
+- `torchaudio` is used mainly for audio I/O
+- runtime error mentions `torchcodec`, `torchaudio load/save/info`, or CUDA shared libraries
+
+Prefer the following repair order:
+1. Switch to CPU-only PyTorch wheel index (https://download.pytorch.org/whl/cpu)
+2. Use aligned torch / torchaudio versions instead of latest CUDA-enabled stack (e.g. 2.2.2+cpu)
+3. Pin `numpy<2` if older PyTorch stack requires NumPy 1.x
+4. Consider alternative audio I/O backend if the model logic itself does not depend on torchaudio internals
+
+**Do NOT** default to a CUDA stack when the model spec explicitly says `requires_gpu: false`.
+
+**参考**: [`src/sure_eval/models/snakers4_silero-vad/known_issues.yaml`](../../../src/sure_eval/models/snakers4_silero-vad/known_issues.yaml)
 
 ## 失败分类流程图
 
