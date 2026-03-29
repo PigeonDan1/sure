@@ -1,0 +1,65 @@
+{
+  "$schema": "./artifact_manifest.schema.json",
+  "instance_id": "",
+  "timestamp": "",
+  "model_id": "",
+  "artifacts": {
+    "required": {
+      "spec": {
+        "path": "model.spec.yaml",
+        "description": "模型规范文件"
+      },
+      "backend_choice": {
+        "path": "artifacts/backend_choice.json",
+        "description": "后端选择记录"
+      },
+      "build_log": {
+        "path": "artifacts/build.log",
+        "description": "环境构建日志"
+      },
+      "validation_log": {
+        "path": "artifacts/validation.log",
+        "description": "验证测试日志"
+      },
+      "verdict": {
+        "path": "artifacts/verdict.json",
+        "description": "最终判定结果"
+      },
+      "wrapper": {
+        "path": "model.py",
+        "description": "生成的 wrapper 文件"
+      },
+      "manifest": {
+        "path": "artifacts/artifact_manifest.json",
+        "description": "本清单文件"
+      }
+    },
+    "optional": {
+      "uv_lock": {
+        "path": "uv.lock",
+        "description": "UV 依赖锁定文件",
+        "condition": "backend == 'uv'"
+      },
+      "pixi_lock": {
+        "path": "pixi.lock",
+        "description": "Pixi 依赖锁定文件",
+        "condition": "backend == 'pixi'"
+      },
+      "dockerfile": {
+        "path": "Dockerfile",
+        "description": "Docker 构建文件",
+        "condition": "backend == 'docker'"
+      },
+      "devcontainer": {
+        "path": ".devcontainer/devcontainer.json",
+        "description": "DevContainer 配置",
+        "condition": "backend == 'docker'"
+      },
+      "weights_manifest": {
+        "path": "artifacts/weights_manifest.json",
+        "description": "权重文件清单",
+        "condition": "weights.required == true"
+      }
+    }
+  }
+}

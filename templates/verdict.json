@@ -1,0 +1,51 @@
+{
+  "$schema": "./verdict.schema.json",
+  "instance_id": "",
+  "timestamp": "",
+  "model_id": "",
+  "status": "pending",
+  "backend": {
+    "type": "uv",
+    "choice_reason": ""
+  },
+  "build": {
+    "success": false,
+    "duration_seconds": 0,
+    "log_path": ""
+  },
+  "validation": {
+    "import_test": {
+      "passed": false,
+      "duration_ms": 0,
+      "error": null
+    },
+    "load_test": {
+      "passed": false,
+      "duration_ms": 0,
+      "error": null
+    },
+    "infer_test": {
+      "passed": false,
+      "duration_ms": 0,
+      "error": null
+    },
+    "contract_test": {
+      "passed": false,
+      "duration_ms": 0,
+      "error": null
+    }
+  },
+  "failure": {
+    "type": null,
+    "category": null,
+    "message": null,
+    "retryable": false
+  },
+  "artifacts": {
+    "spec_path": "",
+    "wrapper_path": "",
+    "lockfile_path": null,
+    "log_path": ""
+  },
+  "notes": ""
+}
