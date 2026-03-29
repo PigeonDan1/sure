@@ -168,7 +168,7 @@ RETRY_FROM_CHECKPOINT (回到失败前状态)
 | `build.log` | `artifacts/build.log` | 构建日志 |
 | `validation.log` | `artifacts/validation.log` | 验证日志 |
 | `verdict.json` | `artifacts/verdict.json` | 最终判定 |
-| `wrapper` | `model.py`, `server.py` | 生成的 wrapper |
+| `wrapper` | `model.py`, `server.py`, `__init__.py` | 模型 wrapper 文件集 |
 | `artifact_manifest.json` | `artifacts/artifact_manifest.json` | 工件清单 |
 
 ### 4.2 模板位置
@@ -309,7 +309,11 @@ templates/
 ### 7.9 GENERATE_WRAPPER
 
 **动作**: 生成统一 wrapper skeleton，填写最小调用逻辑  
-**输出**: wrapper file (model.py, server.py)
+**输出**: wrapper 文件集
+  - `model.py`: 核心模型包装类
+  - `server.py`: MCP 服务器实现  
+  - `__init__.py`: 包导出声明
+  - (可选) `config.yaml`: MCP 工具配置
 
 ### 7.10 SAVE_ARTIFACTS
 
@@ -333,25 +337,25 @@ templates/
 
 ### 8.1 Playbooks (执行手册)
 
-- [UV 环境策略](docs/playbooks/env_uv.md)
-- [Pixi/Conda 环境策略](docs/playbooks/env_pixi_or_conda.md)
-- [Docker 环境策略](docs/playbooks/env_docker.md)
-- [API 模型策略](docs/playbooks/model_api.md)
-- [失败分类体系](docs/playbooks/failure_taxonomy.md)
+- [UV 环境策略](../../../docs/playbooks/env_uv.md)
+- [Pixi/Conda 环境策略](../../../docs/playbooks/env_pixi_or_conda.md)
+- [Docker 环境策略](../../../docs/playbooks/env_docker.md)
+- [API 模型策略](../../../docs/playbooks/model_api.md)
+- [失败分类体系](../../../docs/playbooks/failure_taxonomy.md)
 
 ### 8.2 Specs (规范定义)
 
-- [Model Spec 模板说明](docs/specs/model_spec_template.md)
+- [Model Spec 模板说明](../../../docs/specs/model_spec_template.md)
 
 ### 8.3 Contracts (验证契约)
 
-- [最小验证契约](docs/contracts/minimal_validation.md)
+- [最小验证契约](../../../docs/contracts/minimal_validation.md)
 
 ### 8.4 Templates (模板文件)
 
-- [model.spec.yaml](templates/model.spec.yaml)
-- [verdict.json](templates/verdict.json)
-- [artifact_manifest.json](templates/artifact_manifest.json)
+- [model.spec.yaml](../../../templates/model.spec.yaml)
+- [verdict.json](../../../templates/verdict.json)
+- [artifact_manifest.json](../../../templates/artifact_manifest.json)
 
 ---
 

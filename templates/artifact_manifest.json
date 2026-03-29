@@ -26,8 +26,9 @@
         "description": "最终判定结果"
       },
       "wrapper": {
-        "path": "model.py",
-        "description": "生成的 wrapper 文件"
+        "paths": ["model.py", "server.py", "__init__.py"],
+        "description": "模型 wrapper 文件集，最小包含：model.py (核心模型类), server.py (MCP 服务器), __init__.py (包导出)",
+        "required_files": ["model.py", "server.py"]
       },
       "manifest": {
         "path": "artifacts/artifact_manifest.json",

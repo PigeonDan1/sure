@@ -1,17 +1,26 @@
 # 最小验证契约
 
+> **重要说明**：本文档中的测试代码仅为**示例模板**，展示四类验证的基本形式。
+> 
+> **实际执行时**：
+> - 应以 `model.spec.yaml` 中定义的 `entrypoints.import_test`、`entrypoints.load_test`、`entrypoints.infer_test` 为准
+> - 测试样本路径应使用模型专属的 fixture，而非文档示例中的固定路径
+> - 类名、方法名应根据具体模型实现调整
+>
+> 本文档的目的是定义验证的**类别和标准**，而非强制所有模型共享相同的类名和测试路径。
+
 第一阶段模型接入必须通过以下四类测试，每类测试都有明确的通过标准和失败判定。
 
 ## 1. Import Test
 
 **目标**: 验证模型依赖可以正确导入
 
-**测试代码**:
+**测试代码示例** (实际以 model.spec.yaml 定义为准):
 ```python
 def test_import():
     """验证模型可以导入"""
     try:
-        from model import ASRParakeetModel
+        from model import ModelClass  # 由 model.spec.yaml 定义
         return True, "Import successful"
     except ImportError as e:
         return False, f"Import failed: {e}"
@@ -29,15 +38,15 @@ def test_import():
 
 **目标**: 验证模型可以加载到内存
 
-**测试代码**:
+**测试代码示例** (实际以 model.spec.yaml 定义为准):
 ```python
 def test_load():
     """验证模型可以加载"""
     try:
-        from model import ASRParakeetModel
-        model = ASRParakeetModel(device='cpu')
+        from model import ModelClass  # 由 model.spec.yaml 定义
+        model = ModelClass(device='cpu')
         # 触发懒加载
-        model._load_model()
+        model.load()
         return True, "Load successful"
     except Exception as e:
         return False, f"Load failed: {e}"
@@ -56,18 +65,18 @@ def test_load():
 
 **目标**: 验证可以跑通最小推理
 
-**测试代码**:
+**测试代码示例** (实际以 model.spec.yaml 定义和专属 fixture 为准):
 ```python
 def test_infer():
     """验证可以跑通推理"""
     try:
-        from model import ASRParakeetModel
-        model = ASRParakeetModel(device='cpu')
+        from model import ModelClass  # 由 model.spec.yaml 定义
+        model = ModelClass(device='cpu')
         
-        # 使用 fixtures 中的测试样本
-        result = model.transcribe("tests/fixtures/librispeech/sample_1.wav")
+        # 使用模型专属 fixture 路径 (由 model.spec.yaml 或 harness 配置)
+        result = model.predict("path/to/model_specific_fixture.wav")
         
-        return True, f"Infer successful: {result.text}"
+        return True, f"Infer successful: {result}"
     except Exception as e:
         return False, f"Infer failed: {e}"
 ```
@@ -85,25 +94,23 @@ def test_infer():
 
 **目标**: 验证输出满足基础格式要求
 
-**测试代码**:
+**测试代码示例** (实际以 model.spec.yaml 中 io_contract 定义为准):
 ```python
 def test_contract():
     """验证输出满足契约"""
-    from model import ASRParakeetModel, TranscriptionResult
+    from model import ModelClass, ResultClass  # 由 model.spec.yaml 定义
     
-    model = ASRParakeetModel(device='cpu')
-    result = model.transcribe("tests/fixtures/librispeech/sample_1.wav")
+    model = ModelClass(device='cpu')
+    result = model.predict("path/to/model_specific_fixture")
     
-    # 检查类型
-    assert isinstance(result, TranscriptionResult), "Output type mismatch"
+    # 检查类型 (由 model.spec.yaml io_contract.output_type 定义)
+    assert isinstance(result, ResultClass), "Output type mismatch"
     
     # 检查非空
-    assert result.text, "Output text is empty"
-    assert len(result.text.strip()) > 0, "Output text is whitespace only"
+    assert result.output_field, "Output is empty"
     
-    # 检查字段
-    assert hasattr(result, 'text'), "Missing text field"
-    assert hasattr(result, 'language'), "Missing language field"
+    # 检查字段 (由 model.spec.yaml 定义的契约决定)
+    assert hasattr(result, 'required_field'), "Missing required field"
     
     return True, "Contract check passed"
 ```
