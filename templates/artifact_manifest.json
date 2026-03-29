@@ -35,7 +35,42 @@
         "description": "本清单文件"
       }
     },
-    "optional": {
+    "conditional": {
+      "spec_validation": {
+        "path": "artifacts/spec_validation.json",
+        "description": "spec 前置验证结果",
+        "condition": "VALIDATE_SPEC executed"
+      },
+      "preflight_summary": {
+        "path": "artifacts/preflight_summary.json",
+        "description": "执行前检查结果",
+        "condition": "preflight executed"
+      },
+      "weights_manifest": {
+        "path": "artifacts/weights_manifest.json",
+        "description": "权重文件清单",
+        "condition": "weights.required == true"
+      },
+      "failure_classification": {
+        "path": "artifacts/failure_classification.json",
+        "description": "失败分类结果",
+        "condition": "DIAGNOSE executed"
+      },
+      "retry_recommendation": {
+        "path": "artifacts/retry_recommendation.json",
+        "description": "重试建议",
+        "condition": "REPLAN executed"
+      },
+      "escalation": {
+        "path": "artifacts/escalation.json",
+        "description": "人工升级请求记录",
+        "condition": "human escalation triggered"
+      },
+      "patch_report": {
+        "path": "artifacts/patch_report.json",
+        "description": "补丁与修改记录",
+        "condition": "upstream or config patch applied"
+      },
       "uv_lock": {
         "path": "uv.lock",
         "description": "UV 依赖锁定文件",
@@ -55,21 +90,24 @@
         "path": ".devcontainer/devcontainer.json",
         "description": "DevContainer 配置",
         "condition": "backend == 'docker'"
+      }
+    },
+    "optional": {
+      "performance_notes": {
+        "path": "artifacts/performance_notes.md",
+        "description": "性能说明与 benchmark 摘要"
       },
-      "weights_manifest": {
-        "path": "artifacts/weights_manifest.json",
-        "description": "权重文件清单",
-        "condition": "weights.required == true"
+      "benchmark_preview": {
+        "path": "artifacts/benchmark_preview.json",
+        "description": "benchmark 预览结果"
       },
-      "patch_report": {
-        "path": "artifacts/patch_report.json",
-        "description": "记录本次接入所做 patch 与理由",
-        "condition": "has_patches == true"
+      "wrapper_notes": {
+        "path": "artifacts/wrapper_notes.md",
+        "description": "wrapper 实现备注"
       },
-      "preflight_summary": {
-        "path": "artifacts/preflight_summary.json",
-        "description": "执行前检查结果",
-        "condition": "preflight_enabled == true"
+      "diagnostic_outputs": {
+        "path": "artifacts/diagnostic_outputs/",
+        "description": "额外诊断输出"
       }
     }
   }

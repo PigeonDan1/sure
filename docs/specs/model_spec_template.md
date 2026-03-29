@@ -49,8 +49,12 @@
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `io_contract.input_type` | string | ✅ | 输入类型：audio_path/text |
+| `io_contract.input_type` | string | ✅ | 输入类型：audio_path/text/json |
 | `io_contract.output_type` | string | ✅ | 输出类型：text/json |
+| `io_contract.primary_field` | string | ❌ | 主要输出字段名，如 "text" (ASR) 或 "label" (SER) |
+| `io_contract.required_fields` | list | ❌ | 输出必须包含的字段列表，如 ["text", "confidence"] |
+| `io_contract.nonempty_fields` | list | ❌ | 必须非空的字段列表，如 ["text"] |
+| `io_contract.json_serializable` | bool | ❌ | 输出是否必须可 JSON 序列化，默认 true |
 
 ### 验收标准
 
@@ -96,6 +100,10 @@ entrypoints:
 io_contract:
   input_type: "audio_path"
   output_type: "text"
+  primary_field: "text"
+  required_fields: ["text"]
+  nonempty_fields: ["text"]
+  json_serializable: true
 
 acceptance:
   must_import: true

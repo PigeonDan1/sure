@@ -27,8 +27,12 @@ entrypoints:
   infer_test: ""
 
 io_contract:
-  input_type: ""          # audio_path / text
+  input_type: ""          # audio_path / text / json
   output_type: ""         # text / json
+  primary_field: ""       # e.g. "text" for ASR, "label" for SER
+  required_fields: []     # e.g. ["text", "confidence"] - 必须存在的字段
+  nonempty_fields: []     # e.g. ["text"] - 必须非空的字段
+  json_serializable: true # 输出是否必须可 JSON 序列化
 
 acceptance:
   must_import: true

@@ -54,6 +54,8 @@ CLASSIFY
     ↓ (判断模型类型)
 PLAN
     ↓ (生成 spec, 选择 backend)
+VALIDATE_SPEC
+    ↓ (验证 spec 完整性与证据充分性)
 BUILD_ENV
     ↓ (构建隔离环境)
 FETCH_WEIGHTS
@@ -64,6 +66,8 @@ VALIDATE_LOAD
     ↓ (验证可加载)
 VALIDATE_INFER
     ↓ (验证可推理)
+VALIDATE_CONTRACT
+    ↓ (验证输出满足 io_contract)
 GENERATE_WRAPPER
     ↓ (生成统一 wrapper)
 SAVE_ARTIFACTS
@@ -159,9 +163,11 @@ RETRY_FROM_CHECKPOINT (回到失败前状态)
 
 ## 4. 标准输入输出
 
-### 4.1 核心工件
+### 4.1 工件分类
 
-每次模型接入必须产生以下工件：
+每次模型接入必须产生的工件按重要性分为三类：
+
+#### Required Artifacts (每次必须)
 
 | 工件 | 路径 | 说明 |
 |------|------|------|
@@ -172,6 +178,31 @@ RETRY_FROM_CHECKPOINT (回到失败前状态)
 | `verdict.json` | `artifacts/verdict.json` | 最终判定 |
 | `wrapper` | `model.py`, `server.py`, `__init__.py` | 模型 wrapper 文件集 |
 | `artifact_manifest.json` | `artifacts/artifact_manifest.json` | 工件清单 |
+
+#### Conditional Artifacts (满足条件时必须有)
+
+| 工件 | 路径 | 条件 |
+|------|------|------|
+| `spec_validation.json` | `artifacts/spec_validation.json` | VALIDATE_SPEC 执行 |
+| `preflight_summary.json` | `artifacts/preflight_summary.json` | preflight 执行 |
+| `weights_manifest.json` | `artifacts/weights_manifest.json` | weights.required == true |
+| `failure_classification.json` | `artifacts/failure_classification.json` | DIAGNOSE 执行 |
+| `retry_recommendation.json` | `artifacts/retry_recommendation.json` | REPLAN 执行 |
+| `escalation.json` | `artifacts/escalation.json` | 人工升级触发 |
+| `patch_report.json` | `artifacts/patch_report.json` | upstream/config patch 应用 |
+| `uv.lock` | `uv.lock` | backend == 'uv' |
+| `pixi.lock` | `pixi.lock` | backend == 'pixi' |
+| `Dockerfile` | `Dockerfile` | backend == 'docker' |
+| `.devcontainer/devcontainer.json` | `.devcontainer/devcontainer.json` | backend == 'docker' |
+
+#### Optional Artifacts (可选)
+
+| 工件 | 路径 | 说明 |
+|------|------|------|
+| `performance_notes.md` | `artifacts/performance_notes.md` | 性能说明 |
+| `benchmark_preview.json` | `artifacts/benchmark_preview.json` | benchmark 预览 |
+| `wrapper_notes.md` | `artifacts/wrapper_notes.md` | wrapper 实现备注 |
+| `diagnostic_outputs/` | `artifacts/diagnostic_outputs/` | 额外诊断输出 |
 
 ### 4.2 模板位置
 
@@ -281,7 +312,27 @@ templates/
 - backend_choice.json
 - build_plan.json
 
-### 7.4 BUILD_ENV
+### 7.4 VALIDATE_SPEC
+
+**动作**: 
+- 检查 `model.spec.yaml` 是否完整
+- 检查关键字段是否有 evidence 支撑
+- 检查 `backend_choice.json` 是否记录冲突与理由
+- 检查 `build_plan.json` 是否可执行
+- 检查 fixture 是否可用
+- 检查 `io_contract` 是否足以支持后续 contract test
+- 检查 preflight 结果是否与 backend 选择相容
+
+**输出**: 
+- spec_validation.json
+
+**失败**: 
+- 进入 DIAGNOSE / REPLAN
+- **不允许**直接进入 BUILD_ENV
+
+**参考**: [Spec Validation 契约](../../../docs/contracts/spec_validation.md)
+
+### 7.5 BUILD_ENV
 
 **动作**: 使用选定 backend 构建隔离环境  
 **输出**: environment ready / failure  
@@ -310,7 +361,25 @@ templates/
 **输出**: infer result  
 **失败**: 进入 DIAGNOSE (wrong_entrypoint / runtime_backend_incompatible)
 
-### 7.9 GENERATE_WRAPPER
+### 7.9 VALIDATE_CONTRACT
+
+**动作**: 
+- 验证输出是否满足 `model.spec.yaml.io_contract`
+- 检查 required_fields 是否存在
+- 检查 nonempty_fields 是否非空
+- 检查 primary_field 是否有效
+- 检查 JSON serializability（若要求）
+
+**输出**: contract validation result（记录到 `validation.log`）
+
+**失败**: 
+- 进入 DIAGNOSE (wrong_entrypoint / wrapper_contract_mismatch / io_contract_incomplete)
+
+**说明**: 
+- 第一阶段的 runtime validation 验证对象是 **repo-native entrypoint / minimal callable path**
+- wrapper 在 contract 验证通过后生成，用于接入 SURE 框架
+
+### 7.10 GENERATE_WRAPPER
 
 **动作**: 生成统一 wrapper skeleton，填写最小调用逻辑  
 **输出**: wrapper 文件集
@@ -321,12 +390,12 @@ templates/
 
 **参考**: [Wrapper 契约](../../../docs/specs/wrapper_contract.md) 定义各文件职责与最小接口
 
-### 7.10 SAVE_ARTIFACTS
+### 7.11 SAVE_ARTIFACTS
 
 **动作**: 保存 spec snapshot、log、lockfile、verdict、wrapper  
 **输出**: artifact_manifest.json
 
-### 7.11 DIAGNOSE / REPLAN
+### 7.12 DIAGNOSE / REPLAN
 
 **动作**: 
 - Evaluator Agent 结合 failure taxonomy 分类失败
@@ -369,6 +438,7 @@ templates/
 
 ### 8.5 Contracts (验证契约)
 
+- [Spec Validation 契约](../../../docs/contracts/spec_validation.md) - spec 前置验证规范
 - [Fixture 政策](../../../docs/contracts/fixture_policy.md) - 测试样本规范
 - [最小验证契约](../../../docs/contracts/minimal_validation.md)
 
@@ -379,6 +449,7 @@ templates/
 ### 8.7 Templates (模板文件)
 
 - [model.spec.yaml](../../../templates/model.spec.yaml)
+- [spec_validation.json](../../../templates/spec_validation.json)
 - [verdict.json](../../../templates/verdict.json)
 - [artifact_manifest.json](../../../templates/artifact_manifest.json)
 

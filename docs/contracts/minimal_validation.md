@@ -117,12 +117,19 @@ def test_contract():
 
 **通过标准**:
 - 输出类型正确
-- 必要字段存在
-- 值非空且有效
+- 必要字段存在（`io_contract.required_fields` 中列出的字段）
+- 必须非空的字段非空（`io_contract.nonempty_fields` 中列出的字段）
+- 主字段有效（`io_contract.primary_field`）
+- 如要求，输出可 JSON 序列化（`io_contract.json_serializable`）
+
+**验证依据**:
+- 实际 contract test 应以 `model.spec.yaml.io_contract` 定义为准，而非仅检查 `output_type`
+- 具体检查项从 `primary_field`, `required_fields`, `nonempty_fields`, `json_serializable` 中提取
 
 **失败判定**:
 - 属于 `wrong_entrypoint` 或 wrapper 实现问题
 - 需要调整 wrapper 输出格式
+- 或 `io_contract` 定义不完整（属于 `io_contract_incomplete`）
 
 ## 验证顺序
 
