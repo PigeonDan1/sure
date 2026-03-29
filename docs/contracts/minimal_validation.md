@@ -4,7 +4,7 @@
 > 
 > **实际执行时**：
 > - 应以 `model.spec.yaml` 中定义的 `entrypoints.import_test`、`entrypoints.load_test`、`entrypoints.infer_test` 为准
-> - 测试样本路径应使用模型专属的 fixture，而非文档示例中的固定路径
+> - 测试样本路径应使用模型专属的 fixture，而非文档示例中的固定路径（详见 [Fixture 政策](./fixture_policy.md)）
 > - 类名、方法名应根据具体模型实现调整
 >
 > 本文档的目的是定义验证的**类别和标准**，而非强制所有模型共享相同的类名和测试路径。

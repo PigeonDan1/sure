@@ -8,6 +8,8 @@
 
 ## 1. 目标与范围
 
+> **Constitution**: 所有 harness 组件与 agent 必须遵守项目级 constitution 定义的高层不变原则，详见 [`../../../docs/policies/constitution.md`](../../../docs/policies/constitution.md)。
+
 ### 1.1 核心目标
 
 本文档定义第一阶段模型接入的标准 workflow，确保：
@@ -260,6 +262,8 @@ templates/
 **动作**: 扫描 repo 文件结构，收集 README、requirements、environment.yml 等  
 **输出**: repo_summary.json
 
+**后续**: 可执行 [预检清单](../../../docs/playbooks/preflight_checklist.md) 生成 `preflight_summary.json`
+
 ### 7.2 CLASSIFY
 
 **动作**: 判断模型类型 (local/api)，判断任务类型，判断环境复杂度  
@@ -315,6 +319,8 @@ templates/
   - `__init__.py`: 包导出声明
   - (可选) `config.yaml`: MCP 工具配置
 
+**参考**: [Wrapper 契约](../../../docs/specs/wrapper_contract.md) 定义各文件职责与最小接口
+
 ### 7.10 SAVE_ARTIFACTS
 
 **动作**: 保存 spec snapshot、log、lockfile、verdict、wrapper  
@@ -331,27 +337,46 @@ templates/
 - retry_recommendation.json
 - 决定：RETRY_FROM_CHECKPOINT / FAIL_STOP
 
+**约束**: 重试必须遵守 [重试与升级政策](../../../docs/policies/retry_and_escalation.md)，禁止盲重试
+
 ---
 
 ## 8. 文档索引
 
-### 8.1 Playbooks (执行手册)
+### 8.1 Constitution (高层不变原则)
 
+- [项目 Constitution](../../../docs/policies/constitution.md) - 所有组件必须遵守的 10 条核心规则
+
+### 8.2 Policies (决策政策)
+
+- [证据优先级政策](../../../docs/policies/evidence_priority.md) - 多源冲突时的判断依据
+- [重试与升级政策](../../../docs/policies/retry_and_escalation.md) - 失败处理与人工介入规则
+- [补丁记录政策](../../../docs/policies/patch_recording.md) - 非上游修改的留痕要求
+
+### 8.3 Playbooks (执行手册)
+
+- [预检清单](../../../docs/playbooks/preflight_checklist.md) - BUILD_ENV 前的环境检查
 - [UV 环境策略](../../../docs/playbooks/env_uv.md)
 - [Pixi/Conda 环境策略](../../../docs/playbooks/env_pixi_or_conda.md)
 - [Docker 环境策略](../../../docs/playbooks/env_docker.md)
 - [API 模型策略](../../../docs/playbooks/model_api.md)
 - [失败分类体系](../../../docs/playbooks/failure_taxonomy.md)
 
-### 8.2 Specs (规范定义)
+### 8.4 Specs (规范定义)
 
+- [Wrapper 契约](../../../docs/specs/wrapper_contract.md) - model.py/server.py/__init__.py 职责边界
 - [Model Spec 模板说明](../../../docs/specs/model_spec_template.md)
 
-### 8.3 Contracts (验证契约)
+### 8.5 Contracts (验证契约)
 
+- [Fixture 政策](../../../docs/contracts/fixture_policy.md) - 测试样本规范
 - [最小验证契约](../../../docs/contracts/minimal_validation.md)
 
-### 8.4 Templates (模板文件)
+### 8.6 Registry (模型特异性记录)
+
+- [已知问题注册表](../../../docs/registry/known_issues.md) - 模型级例外与工作区
+
+### 8.7 Templates (模板文件)
 
 - [model.spec.yaml](../../../templates/model.spec.yaml)
 - [verdict.json](../../../templates/verdict.json)

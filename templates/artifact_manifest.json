@@ -60,6 +60,16 @@
         "path": "artifacts/weights_manifest.json",
         "description": "权重文件清单",
         "condition": "weights.required == true"
+      },
+      "patch_report": {
+        "path": "artifacts/patch_report.json",
+        "description": "记录本次接入所做 patch 与理由",
+        "condition": "has_patches == true"
+      },
+      "preflight_summary": {
+        "path": "artifacts/preflight_summary.json",
+        "description": "执行前检查结果",
+        "condition": "preflight_enabled == true"
       }
     }
   }
