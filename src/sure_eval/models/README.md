@@ -118,7 +118,7 @@ io_contract:
   json_serializable: true
 ```
 
-> 💡 **Tip**: Use a powerful LLM (GPT-4, Claude) to generate MODEL_INPUT from official documentation. Quality of MODEL_INPUT directly affects onboarding difficulty.
+> 💡 **Recommended Agents**: Claude Code (Opus) for complex cases, Codex GPT-5.4 for repo analysis. Avoid agents with 60s timeout limits for large installations.
 
 #### Step 3: Run
 
@@ -134,18 +134,22 @@ Send Initial Prompt + MODEL_INPUT to your AI agent. The agent will automatically
 
 ## Configured Models
 
-Models that have been successfully onboarded using the agent workflow:
+Models successfully onboarded via Agent Workflow:
 
-| Model | Task | Backend | Status | Verdict |
-|-------|------|---------|--------|---------|
-| [asr_qwen3](asr_qwen3/) | ASR | uv | ✅ Ready | Passed |
-| [asr_whisper](asr_whisper/) | ASR | uv | ✅ Ready | Passed |
-| [asr_parakeet](asr_parakeet/) | ASR | uv | ✅ Ready | Passed |
-| [qwen3_omni](qwen3_omni/) | OMNI | API | ✅ Ready | Passed |
-| [diarizen](diarizen/) | SD | uv | ✅ Ready | Passed |
-| [snakers4_silero-vad](snakers4_silero-vad/) | VAD | uv | ✅ Ready | Passed |
-| [ffmpeg](ffmpeg/) | Utility | uv | ✅ Ready | Passed |
-| [whisperx](whisperx/) | ASR | uv | ⚠️ Failed | VALIDATE_LOAD - torch install timeout |
+| Model | Task | Backend | Status | Notes |
+|-------|------|---------|--------|-------|
+| [deepfilternet](deepfilternet/) | Speech Enhancement | uv | ✅ Ready | DeepFilterNet2 noise suppression |
+| [librosa](librosa/) | Music IR | uv | ✅ Ready | Music feature extraction |
+| [whisperx](whisperx/) | ASR | uv | ✅ Ready | Whisper + alignment + diarization |
+| [asr_qwen3](asr_qwen3/) | ASR | uv | ✅ Ready | Qwen3-ASR-1.7B |
+| [asr_whisper](asr_whisper/) | ASR | uv | ✅ Ready | OpenAI Whisper |
+| [asr_parakeet](asr_parakeet/) | ASR | uv | ✅ Ready | NVIDIA Parakeet |
+| [qwen3_omni](qwen3_omni/) | OMNI | API | ✅ Ready | Qwen3-Omni API |
+| [diarizen](diarizen/) | SD | uv | ✅ Ready | Speaker diarization |
+| [snakers4_silero-vad](snakers4_silero-vad/) | VAD | uv | ✅ Ready | Voice activity detection |
+| [ffmpeg](ffmpeg/) | Utility | uv | ✅ Ready | Audio processing utility |
+
+**Total: 10 models** across ASR, SD, VAD, Speech Enhancement, Music IR, and Utility tasks.
 
 ### Model Directory Structure
 

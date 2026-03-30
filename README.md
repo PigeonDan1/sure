@@ -5,18 +5,41 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-SURE-EVAL is an autonomous evaluation framework for audio processing tools and models. It supports multiple tasks including ASR, S2TT, SD, SER, and more.
+SURE-EVAL is an autonomous evaluation framework for audio processing tools and models, featuring a **Harness-First Agent Workflow** for automated tool onboarding.
+
+**🚀 Onboard any audio tool in minutes, not hours.**
+
+Simply provide a model specification → Agent auto-configures environment → Validated and ready to use.
 
 ---
 
 ## Features
 
-- **🤖 Autonomous Evaluation**: Automatically download datasets, run inference, compute metrics, and track RPS scores
-- **📊 Multi-Task Support**: ASR, S2TT (Speech Translation), SD (Speaker Diarization), SA-ASR, SER, GR, SLU
-- **🔧 MCP Tool Integration**: Evaluate any MCP-compliant tool or model
-- **📈 RPS Tracking**: Relative Performance Score for tool comparison and ranking
-- **🎯 Tool Recommendation**: Automatically recommend the best tool for each dataset
-- **🤖 Agent Workflow**: Built-in harness-first workflow for automated tool/model onboarding ([Guide](src/sure_eval/models/README.md))
+### 🚀 Automated Tool Onboarding (New)
+
+**The fastest way to integrate any audio processing tool.**
+
+```bash
+# Just provide model spec → Agent does the rest
+# Works with: Speech Enhancement, ASR, Diarization, VAD, Music IR, and more
+```
+
+Our **Harness-First Agent Workflow** automatically:
+- Discovers repository structure and dependencies
+- Builds isolated environments (uv/conda/docker)
+- Validates import → load → inference → contract
+- Generates MCP-compliant wrappers
+- Produces structured artifacts for reproducibility
+
+[→ Start Onboarding](src/sure_eval/models/README.md) | [→ See Configured Models](src/sure_eval/models/README.md#configured-models)
+
+### Core Capabilities
+
+- **📊 Multi-Task Support**: ASR, S2TT (Speech Translation), SD (Speaker Diarization), SA-ASR, SER, Music IR, Speech Enhancement
+- **🤖 Autonomous Evaluation**: Download datasets, run inference, compute metrics, track RPS scores
+- **🔧 MCP Tool Integration**: Standardized interface for any tool
+- **📈 RPS Tracking**: Relative Performance Score for tool comparison
+- **🎯 Tool Recommendation**: AI-powered best tool selection
 
 ---
 
@@ -61,21 +84,21 @@ sure-eval evaluate asr_qwen3 aishell1 --max-samples 100
 
 ## Model Onboarding via Agent Workflow
 
-SURE-EVAL includes a **Harness-First Agent Workflow** for automated tool/model environment configuration.
+**Zero-config tool integration.** Provide a model specification, let the agent handle the rest.
 
-**Key capabilities:**
-- Automated environment setup (uv/conda/docker)
-- Standardized validation pipeline
-- Artifact generation and tracking
-- Failure diagnosis and escalation
+**Recommended AI Agents for Onboarding:**
+- **Claude Code** (Opus) - Best for complex dependency resolution
+- **Codex GPT-5.4** - Excellent for repository analysis
+- **Kimi Code** - Good for systematic workflow execution
+
+> ⚠️ **Note**: Avoid agents with strict timeout limits (e.g., 60s) for large model installations.
 
 **Quick Links:**
-- [Agent Workflow Guide](src/sure_eval/models/README.md) - Full documentation with prompt templates
-- [Successfully Configured Models](src/sure_eval/models/README.md#configured-models) - See what's already working
+- [Agent Workflow Guide](src/sure_eval/models/README.md) - Complete documentation with prompt templates
+- [Configured Models](src/sure_eval/models/README.md#configured-models) - 10+ models already onboarded
 
 **Usage:**
 ```bash
-# Use the agent workflow to onboard any audio processing tool
 cd /path/to/sure-eval
 # Follow the guide in src/sure_eval/models/README.md
 ```
