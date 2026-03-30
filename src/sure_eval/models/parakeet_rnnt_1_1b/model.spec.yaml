@@ -1,0 +1,70 @@
+model_id: "nvidia/nvidia/parakeet-rnnt-1.1b"
+model_name: "nvidia/parakeet-rnnt-1.1b"
+task_type: "asr"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/NVIDIA/NeMo"
+  commit: null
+
+weights:
+  source: "huggingface_or_nemo"
+  local_path: null
+  required: true
+
+environment:
+  preferred_backend: "docker"
+  python_version: "3.10"
+  requires_gpu: true
+  system_packages:
+    - "ffmpeg"
+
+phase1_runtime_target:
+  description: "Validate only the minimal repo-native NeMo ASR path by importing nemo, loading nvidia/parakeet-rnnt-1.1b, transcribing one short English speech fixture, and obtaining a non-empty transcript."
+  excludes:
+    - "benchmarking"
+    - "streaming_evaluation"
+    - "language_specific_tuning"
+
+entrypoints:
+  import_test: "import nemo"
+  load_test: |
+    import nemo.collections.asr as nemo_asr
+    model = nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(
+        model_name="nvidia/parakeet-rnnt-1.1b",
+    )
+  infer_test: |
+    outputs = model.transcribe(["tests/fixtures/shared/asr/en_16k_10s.wav"])
+
+fixture:
+  requested_audio: "tests/fixtures/shared/asr/multilingual_16k_10s.wav"
+  selected_audio: "tests/fixtures/shared/asr/en_16k_10s.wav"
+  transcript: null
+  language: "en"
+  task_specific: true
+  source: "shared_fallback"
+  note: "The requested multilingual shared fixture is absent in-repo. Because the resolved model is an English ASR checkpoint, phase 1 uses the available shared ASR speech fixture and records the downgrade explicitly."
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "text"
+  required_fields:
+    - "text"
+  nonempty_fields:
+    - "text"
+  json_serializable: true
+
+contract_expectation:
+  required_outcomes:
+    - "contain non-empty text"
+    - "be serializable"
+  optional_fields:
+    - "language"
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true
+  must_return_nonempty: true

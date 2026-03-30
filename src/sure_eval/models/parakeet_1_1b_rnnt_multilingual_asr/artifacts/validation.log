@@ -1,0 +1,29 @@
+[2026-03-30T13:24:20+08:00] DISCOVER
+Requested model_id: nvidia/parakeet-1.1b-rnnt-multilingual-asr
+Requested repo: https://github.com/NVIDIA/NeMo
+Requested runtime target: import NeMo ASR class, load multilingual Parakeet checkpoint, run inference on multilingual speech fixture, return non-empty transcript.
+
+[2026-03-30T13:24:35+08:00] EVIDENCE
+Local fixture inventory contains tests/fixtures/shared/asr/en_16k_10s.wav only.
+Requested multilingual fixture tests/fixtures/shared/asr/multilingual_16k_10s.wav is absent.
+Requested transcript tests/fixtures/shared/asr/multilingual_16k_10s.txt is absent.
+Public Hugging Face evidence exists for nvidia/parakeet-rnnt-1.1b via EncDecRNNTBPEModel.from_pretrained(...), but that model card is English-only.
+Public NVIDIA NIM evidence exists for Parakeet 1.1b RNNT Multilingual as a GPU docker deployment target.
+
+[2026-03-30T13:24:55+08:00] VALIDATE_SPEC
+FAILED: missing_critical_evidence
+Reasons:
+1. No verified public NeMo/Hugging Face checkpoint was established for the exact requested multilingual model_id.
+2. The exact requested multilingual fixture is absent, so multilingual validation cannot be executed as specified.
+3. Local GPU runtime is unavailable (nvidia-smi failed), while the exact public model evidence points to a GPU NIM deployment.
+
+[2026-03-30T13:25:05+08:00] VALIDATION_RESULTS
+{
+  "tests": {
+    "import": {"passed": false, "status": "skipped"},
+    "load": {"passed": false, "status": "skipped"},
+    "infer": {"passed": false, "status": "skipped"},
+    "contract": {"passed": false, "status": "skipped"}
+  },
+  "overall": "FAILED"
+}

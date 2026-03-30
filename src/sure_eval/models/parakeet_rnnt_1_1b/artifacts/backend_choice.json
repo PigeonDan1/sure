@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-03-30T00:00:00+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "chosen_backend": "uv",
+  "reason": "The strongest evidence supports a Python NeMo from_pretrained path for the exact checkpoint, and uv is the lowest-risk reproducible backend that can validate phase-1 import/load/infer without requiring a working GPU docker runtime.",
+  "evidence": [
+    {
+      "source": "user_input.phase1_runtime_target",
+      "priority": 6,
+      "details": "Phase-1 is scoped to the minimal repo-native import/load/infer path, not to service deployment."
+    },
+    {
+      "source": "https://huggingface.co/nvidia/parakeet-rnnt-1.1b",
+      "priority": 5,
+      "details": "The exact model_name is publicly available as a NeMo/Hugging Face checkpoint, so a Python runtime is evidenced."
+    },
+    {
+      "source": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/preflight_summary.json",
+      "priority": 1,
+      "details": "uv is available locally, disk space is only sufficient on /root, and GPU runtime is unavailable."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "preferred_backend",
+      "sources": [
+        {
+          "value": "docker",
+          "source": "user_input.environment_hint",
+          "priority": 6
+        },
+        {
+          "value": "uv",
+          "source": "runtime_preflight + phase1_target_policy",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "uv",
+      "reason": "preferred_backend is only an initial suggestion, and the lighter Python backend satisfies the exact phase-1 goal with lower risk."
+    },
+    {
+      "field": "fixture.audio",
+      "sources": [
+        {
+          "value": "tests/fixtures/shared/asr/multilingual_16k_10s.wav",
+          "source": "user_input.fixture.audio",
+          "priority": 6
+        },
+        {
+          "value": "tests/fixtures/shared/asr/en_16k_10s.wav",
+          "source": "repo-local fixture inventory",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "reason": "The requested multilingual fixture is absent, and the resolved English checkpoint can be lawfully validated with the available shared ASR speech fallback when the downgrade is recorded."
+    }
+  ],
+  "rejected_options": [
+    {
+      "backend": "docker",
+      "reason": "Docker adds operational overhead and still cannot provide GPU validation on this host; it is unnecessary for the minimal Python checkpoint path."
+    },
+    {
+      "backend": "pixi",
+      "reason": "A conda-style solver does not reduce risk compared with uv for this Python-first validation target."
+    }
+  ]
+}

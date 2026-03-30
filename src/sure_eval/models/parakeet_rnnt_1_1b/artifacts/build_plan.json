@@ -1,0 +1,47 @@
+{
+  "timestamp": "2026-03-30T00:00:00+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "backend": "uv",
+  "build_root": "/root/.cache/sure_eval_parakeet_rnnt_1_1b",
+  "venv_path": "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv",
+  "cache_path": "/root/.cache/sure_eval_parakeet_rnnt_1_1b/uv-cache",
+  "hf_cache_path": "/root/.cache/sure_eval_parakeet_rnnt_1_1b/hf-home",
+  "project_path": "src/sure_eval/models/parakeet_rnnt_1_1b",
+  "steps": [
+    {
+      "name": "create_runtime_dirs",
+      "command": "mkdir -p /root/.cache/sure_eval_parakeet_rnnt_1_1b/uv-cache /root/.cache/sure_eval_parakeet_rnnt_1_1b/hf-home"
+    },
+    {
+      "name": "lock_dependencies",
+      "command": "UV_CACHE_DIR=/root/.cache/sure_eval_parakeet_rnnt_1_1b/uv-cache uv lock --project src/sure_eval/models/parakeet_rnnt_1_1b"
+    },
+    {
+      "name": "create_runtime",
+      "command": "UV_CACHE_DIR=/root/.cache/sure_eval_parakeet_rnnt_1_1b/uv-cache UV_PROJECT_ENVIRONMENT=/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv uv sync --project src/sure_eval/models/parakeet_rnnt_1_1b --python 3.10"
+    },
+    {
+      "name": "fetch_weights",
+      "command": "HF_HOME=/root/.cache/sure_eval_parakeet_rnnt_1_1b/hf-home /root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/bin/python -c \"from huggingface_hub import snapshot_download; print(snapshot_download('nvidia/parakeet-rnnt-1.1b'))\""
+    },
+    {
+      "name": "validate_runtime",
+      "command": "Run import/load/infer/contract checks with the isolated interpreter and tests/fixtures/shared/asr/en_16k_10s.wav."
+    }
+  ],
+  "inputs": {
+    "python_version": "3.10",
+    "fixture": "tests/fixtures/shared/asr/en_16k_10s.wav",
+    "requested_fixture": "tests/fixtures/shared/asr/multilingual_16k_10s.wav",
+    "weights_source": "huggingface_or_nemo",
+    "system_packages": [
+      "ffmpeg"
+    ]
+  },
+  "constraints": [
+    "Network access and writes under /root require escalated commands outside the sandbox.",
+    "GPU validation is unavailable on this host, so phase 1 will exercise the CPU-compatible minimal callable path only."
+  ],
+  "executable": true,
+  "blocking_issues": []
+}

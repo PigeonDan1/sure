@@ -1,0 +1,81 @@
+{
+  "timestamp": "2026-03-30T13:25:10+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "model_name": "parakeet-1.1b-rnnt-multilingual-asr",
+  "status": "FAILED",
+  "stage": "phase_1_failed",
+  "workflow": {
+    "steps_completed": [
+      "DISCOVER",
+      "CLASSIFY",
+      "PLAN",
+      "VALIDATE_SPEC",
+      "DIAGNOSE",
+      "REPLAN",
+      "SAVE_ARTIFACTS"
+    ],
+    "final_step": "SAVE_ARTIFACTS",
+    "stopped_at": "VALIDATE_SPEC"
+  },
+  "validation_results": {
+    "import": {
+      "passed": false,
+      "status": "skipped",
+      "test": "import nemo",
+      "evidence": "VALIDATE_SPEC failed before BUILD_ENV because the exact local checkpoint and fixture could not be established."
+    },
+    "load": {
+      "passed": false,
+      "status": "skipped",
+      "test": "nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(model_name='nvidia/parakeet-1.1b-rnnt-multilingual-asr')",
+      "evidence": "No verified public checkpoint path was available for the exact model_id."
+    },
+    "infer": {
+      "passed": false,
+      "status": "skipped",
+      "test": "model.transcribe(['tests/fixtures/shared/asr/multilingual_16k_10s.wav'])",
+      "evidence": "The requested multilingual fixture is absent in-repo."
+    },
+    "contract": {
+      "passed": false,
+      "status": "skipped",
+      "checks": {
+        "required_fields_present": false,
+        "nonempty_text": false,
+        "json_serializable": false
+      },
+      "evidence": "Contract validation cannot start until import/load/infer have executable evidence."
+    }
+  },
+  "artifacts_produced": [
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/model.spec.yaml",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/pyproject.toml",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/Dockerfile",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/.devcontainer/devcontainer.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/model.py",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/server.py",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/__init__.py",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/config.yaml",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/backend_choice.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/build_plan.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/build.log",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/validation.log",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/spec_validation.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/classification.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/repo_summary.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/preflight_summary.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/weights_manifest.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/failure_classification.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/retry_recommendation.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/escalation.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/artifact_manifest.json",
+    "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/verdict.json"
+  ],
+  "escalation_triggered": true,
+  "retry_count": 0,
+  "notes": [
+    "The exact requested multilingual identity is publicly evidenced as a GPU-backed NVIDIA NIM deployment target, not as a verified public NeMo/Hugging Face checkpoint.",
+    "The requested multilingual fixture and transcript are absent in-repo, so VALIDATE_SPEC failed before BUILD_ENV.",
+    "A minimal wrapper scaffold was written for artifact completeness only; it was not contract-validated and should not be treated as a working integration."
+  ]
+}

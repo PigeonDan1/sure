@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-03-30T13:25:03+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "required": true,
+  "status": "blocked",
+  "source": "huggingface_or_nemo",
+  "resolved_source": null,
+  "local_path": null,
+  "files": [],
+  "reason": "FETCH_WEIGHTS did not execute because VALIDATE_SPEC failed: the exact public multilingual checkpoint and authorized source could not be established."
+}

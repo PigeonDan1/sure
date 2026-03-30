@@ -1,0 +1,127 @@
+{
+  "timestamp": "2026-03-30T13:25:10+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "model_name": "parakeet-1.1b-rnnt-multilingual-asr",
+  "workflow_completed": false,
+  "artifacts": {
+    "required": {
+      "model.spec.yaml": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/model.spec.yaml",
+        "exists": true,
+        "description": "Model specification"
+      },
+      "backend_choice.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/backend_choice.json",
+        "exists": true,
+        "description": "Backend selection record"
+      },
+      "build.log": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/build.log",
+        "exists": true,
+        "description": "Environment build log"
+      },
+      "validation.log": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/validation.log",
+        "exists": true,
+        "description": "Validation test log"
+      },
+      "verdict.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/verdict.json",
+        "exists": true,
+        "description": "Final verdict"
+      },
+      "wrapper": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/",
+        "exists": true,
+        "description": "Scaffolded wrapper files (model.py, server.py, __init__.py, config.yaml) recorded for completeness but not runtime-validated."
+      },
+      "artifact_manifest.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/artifact_manifest.json",
+        "exists": true,
+        "description": "This manifest file"
+      }
+    },
+    "conditional": {
+      "spec_validation.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/spec_validation.json",
+        "exists": true,
+        "condition": "VALIDATE_SPEC executed"
+      },
+      "preflight_summary.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/preflight_summary.json",
+        "exists": true,
+        "condition": "preflight executed"
+      },
+      "weights_manifest.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/weights_manifest.json",
+        "exists": true,
+        "condition": "weights.required == true"
+      },
+      "failure_classification.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/failure_classification.json",
+        "exists": true,
+        "condition": "DIAGNOSE executed"
+      },
+      "retry_recommendation.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/retry_recommendation.json",
+        "exists": true,
+        "condition": "REPLAN executed"
+      },
+      "escalation.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/escalation.json",
+        "exists": true,
+        "condition": "human escalation triggered"
+      },
+      "patch_report.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/patch_report.json",
+        "exists": false,
+        "condition": "upstream or config patch applied"
+      },
+      "Dockerfile": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/Dockerfile",
+        "exists": true,
+        "condition": "backend == docker"
+      },
+      ".devcontainer/devcontainer.json": {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/.devcontainer/devcontainer.json",
+        "exists": true,
+        "condition": "backend == docker"
+      }
+    },
+    "optional": [
+      {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/pyproject.toml",
+        "exists": true,
+        "description": "Python project scaffold for a future local runtime once the checkpoint is clarified"
+      },
+      {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/repo_summary.json",
+        "exists": true,
+        "description": "Discovery summary"
+      },
+      {
+        "path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/classification.json",
+        "exists": true,
+        "description": "Classification summary with phase-1 target understanding"
+      }
+    ]
+  },
+  "validation_summary": {
+    "import": {
+      "passed": false,
+      "status": "skipped"
+    },
+    "load": {
+      "passed": false,
+      "status": "skipped"
+    },
+    "infer": {
+      "passed": false,
+      "status": "skipped"
+    },
+    "contract": {
+      "passed": false,
+      "status": "skipped"
+    }
+  }
+}

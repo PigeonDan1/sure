@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-03-30T13:24:55+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "status": "failed",
+  "checks": {
+    "spec_completeness": {
+      "passed": true,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": false,
+      "unsupported_fields": [
+        "entrypoints.load_test",
+        "entrypoints.infer_test",
+        "weights.source"
+      ]
+    },
+    "conflict_resolution": {
+      "passed": false,
+      "unresolved_conflicts": [
+        "runtime_path",
+        "weights.source"
+      ]
+    },
+    "build_plan_executable": {
+      "passed": false,
+      "blocking_issues": [
+        "missing_critical_evidence",
+        "gpu_runtime_unavailable"
+      ]
+    },
+    "fixture_availability": {
+      "passed": false,
+      "fixture_path": null,
+      "source": "missing"
+    },
+    "io_contract_sufficient": {
+      "passed": true,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": false,
+      "incompatibilities": [
+        "Exact model evidence points to GPU docker deployment, but local GPU runtime is unavailable.",
+        "The requested multilingual fixture and transcript are absent."
+      ]
+    }
+  },
+  "ready_for_build_env": false,
+  "warnings": [
+    "An English-only shared fallback exists, but using it would weaken the multilingual target and would not validate the requested phase-1 scope."
+  ],
+  "blockers": [
+    "No verified public NeMo/Hugging Face checkpoint was established for nvidia/parakeet-1.1b-rnnt-multilingual-asr.",
+    "The requested multilingual fixture is unavailable in-repo.",
+    "The strongest exact-model evidence currently points to a GPU-backed NIM deployment path rather than the requested local NeMo checkpoint path."
+  ]
+}

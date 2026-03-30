@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-03-30T13:24:40+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "chosen_backend": "docker",
+  "reason": "The strongest public evidence for the exact requested multilingual model identity points to NVIDIA NIM docker deployment on GPU. Docker is therefore the only evidenced backend for the exact model name, even though it conflicts with the requested local NeMo checkpoint path.",
+  "evidence": [
+    {
+      "source": "user_input.environment_hint",
+      "priority": 6,
+      "details": "Preferred backend is docker, Python version is 3.10, ffmpeg is required, and the model is marked GPU-required."
+    },
+    {
+      "source": "NVIDIA NIM Riva ASR support matrix",
+      "priority": 5,
+      "details": "The exact multilingual Parakeet 1.1b RNNT model is documented as a supported NIM model under GPU docker deployment."
+    },
+    {
+      "source": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/preflight_summary.json",
+      "priority": 1,
+      "details": "docker and ffmpeg are available locally, but GPU runtime is currently unavailable and root-backed storage would be required for any isolated build."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "runtime_path",
+      "sources": [
+        {
+          "value": "local NeMo import/load/infer path",
+          "source": "user_input.phase1_runtime_target",
+          "priority": 6
+        },
+        {
+          "value": "GPU docker NIM deployment path",
+          "source": "public NVIDIA NIM documentation",
+          "priority": 5
+        }
+      ],
+      "resolved": false,
+      "chosen_value": "docker",
+      "reason": "Docker is the only backend supported by evidence for the exact multilingual identity, but the conflict remains unresolved because the requested validation target is a local NeMo checkpoint path."
+    },
+    {
+      "field": "weights.source",
+      "sources": [
+        {
+          "value": "huggingface_or_nemo",
+          "source": "user_input.weights.source",
+          "priority": 6
+        },
+        {
+          "value": "public English-only Hugging Face checkpoint plus GPU NIM multilingual deployment",
+          "source": "public model documentation",
+          "priority": 5
+        }
+      ],
+      "resolved": false,
+      "chosen_value": null,
+      "reason": "No exact public Hugging Face or NeMo checkpoint was verified for the requested multilingual model_id."
+    }
+  ],
+  "rejected_options": [
+    {
+      "backend": "uv",
+      "reason": "A Python-only NeMo runtime would match the requested phase-1 target better, but there is insufficient evidence for the exact multilingual checkpoint needed to justify BUILD_ENV."
+    },
+    {
+      "backend": "pixi",
+      "reason": "pixi does not solve the missing exact checkpoint evidence and adds solver complexity without reducing risk."
+    }
+  ]
+}

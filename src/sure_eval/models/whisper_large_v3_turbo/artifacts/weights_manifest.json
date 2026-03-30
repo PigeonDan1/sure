@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-03-30T12:45:43.612176+08:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "source": "huggingface",
+  "snapshot_path": "/root/.cache/sure_eval_whisper_large_v3_turbo/hf-home/hub/models--openai--whisper-large-v3-turbo/snapshots/41f01f3fe87f28c78e2fbf8b568835947dd65ed9",
+  "hub_cache_path": "/root/.cache/sure_eval_whisper_large_v3_turbo/hf-home/hub/models--openai--whisper-large-v3-turbo",
+  "disk_usage": "1.6G",
+  "files": [
+    ".gitattributes",
+    "README.md",
+    "added_tokens.json",
+    "config.json",
+    "generation_config.json",
+    "merges.txt",
+    "model.safetensors",
+    "normalizer.json",
+    "preprocessor_config.json",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "vocab.json"
+  ]
+}

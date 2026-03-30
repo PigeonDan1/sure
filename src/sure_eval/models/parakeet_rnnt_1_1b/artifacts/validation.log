@@ -1,0 +1,310 @@
+[PLAN]
+2026-03-30T00:00:00+08:00 Initialized validation log for nvidia/parakeet-rnnt-1.1b.
+
+[VALIDATE_IMPORT]
+IMPORT_OK /root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/__init__.py
+
+[VALIDATE_LOAD]
+[NeMo W 2026-03-30 13:29:32 <frozen importlib:241] Megatron num_microbatches_calculator not found, using Apex version.
+OneLogger: Setting error_handling_strategy to DISABLE_QUIETLY_AND_REPORT_METRIC_ERROR for rank (rank=0) with OneLogger disabled. To override: explicitly set error_handling_strategy parameter.
+No exporters were provided. This means that no telemetry data will be collected.
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/tarfile.py", line 2488, in makefile
+    copyfileobj(source, target, tarinfo.size, ReadError, bufsize)
+  File "/usr/lib/python3.10/tarfile.py", line 255, in copyfileobj
+    dst.write(buf)
+OSError: [Errno 28] No space left on device
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/classes/common.py", line 876, in from_pretrained
+    instance = class_.restore_from(
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/classes/modelPT.py", line 501, in restore_from
+    instance = cls._save_restore_connector.restore_from(
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/connectors/save_restore_connector.py", line 270, in restore_from
+    loaded_params = self.load_config_and_state_dict(
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/connectors/save_restore_connector.py", line 158, in load_config_and_state_dict
+    self._unpack_nemo_file(path2file=restore_path, out_folder=tmpdir, members=members)
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/connectors/save_restore_connector.py", line 716, in _unpack_nemo_file
+    SaveRestoreConnector._safe_extract(tar, out_folder, members)
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/connectors/save_restore_connector.py", line 650, in _safe_extract
+    tar.extract(member, extract_to)
+  File "/usr/lib/python3.10/tarfile.py", line 2322, in extract
+    self._extract_one(tarinfo, path, set_attrs, numeric_owner)
+  File "/usr/lib/python3.10/tarfile.py", line 2356, in _extract_one
+    self._handle_fatal_error(e)
+  File "/usr/lib/python3.10/tarfile.py", line 2352, in _extract_one
+    self._extract_member(tarinfo, os.path.join(path, tarinfo.name),
+  File "/usr/lib/python3.10/tarfile.py", line 2435, in _extract_member
+    self.makefile(tarinfo, targetpath)
+  File "/usr/lib/python3.10/tarfile.py", line 2480, in makefile
+    with bltn_open(targetpath, "wb") as target:
+OSError: [Errno 28] No space left on device
+
+[VALIDATE_LOAD_RETRY_1]
+[NeMo W 2026-03-30 13:30:31 <frozen importlib:241] Megatron num_microbatches_calculator not found, using Apex version.
+OneLogger: Setting error_handling_strategy to DISABLE_QUIETLY_AND_REPORT_METRIC_ERROR for rank (rank=0) with OneLogger disabled. To override: explicitly set error_handling_strategy parameter.
+No exporters were provided. This means that no telemetry data will be collected.
+[NeMo I 2026-03-30 13:30:37 mixins:69] Tokenizer SentencePieceTokenizer initialized with 1024 tokens
+[NeMo I 2026-03-30 13:30:38 mixins:69] Tokenizer SentencePieceTokenizer initialized with 1024 tokens
+[NeMo E 2026-03-30 13:30:38 save_restore_connector:191] Model instantiation failed!
+    Target class:	nemo.collections.asr.models.rnnt_bpe_models.EncDecRNNTBPEModel
+    Error(s):	The NVIDIA driver on your system is too old (found version 12020). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver.
+    Traceback (most recent call last):
+      File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/classes/common.py", line 621, in from_config_dict
+        instance = imported_cls(cfg=config, trainer=trainer)
+      File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/collections/asr/models/rnnt_bpe_models.py", line 315, in __init__
+        super().__init__(cfg=cfg, trainer=trainer)
+      File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/collections/asr/models/rnnt_models.py", line 63, in __init__
+        super().__init__(cfg=cfg, trainer=trainer)
+      File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/classes/modelPT.py", line 157, in __init__
+        if torch.cuda.is_available() and torch.cuda.current_device() is not None:
+      File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/torch/cuda/__init__.py", line 1148, in current_device
+        _lazy_init()
+      File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/torch/cuda/__init__.py", line 478, in _lazy_init
+        torch._C._cuda_init()
+    RuntimeError: The NVIDIA driver on your system is too old (found version 12020). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver.
+    
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/classes/common.py", line 876, in from_pretrained
+    instance = class_.restore_from(
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/classes/modelPT.py", line 501, in restore_from
+    instance = cls._save_restore_connector.restore_from(
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/connectors/save_restore_connector.py", line 270, in restore_from
+    loaded_params = self.load_config_and_state_dict(
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/connectors/save_restore_connector.py", line 191, in load_config_and_state_dict
+    instance = calling_cls.from_config_dict(config=conf, trainer=trainer)
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/classes/common.py", line 645, in from_config_dict
+    raise e
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/classes/common.py", line 637, in from_config_dict
+    instance = cls(cfg=config, trainer=trainer)
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/collections/asr/models/rnnt_bpe_models.py", line 315, in __init__
+    super().__init__(cfg=cfg, trainer=trainer)
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/collections/asr/models/rnnt_models.py", line 63, in __init__
+    super().__init__(cfg=cfg, trainer=trainer)
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/nemo/core/classes/modelPT.py", line 157, in __init__
+    if torch.cuda.is_available() and torch.cuda.current_device() is not None:
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/torch/cuda/__init__.py", line 1148, in current_device
+    _lazy_init()
+  File "/root/.cache/sure_eval_parakeet_rnnt_1_1b/.venv/lib/python3.10/site-packages/torch/cuda/__init__.py", line 478, in _lazy_init
+    torch._C._cuda_init()
+RuntimeError: The NVIDIA driver on your system is too old (found version 12020). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver.
+
+[VALIDATE_LOAD_RETRY_2]
+[NeMo W 2026-03-30 13:31:48 <frozen importlib:241] Megatron num_microbatches_calculator not found, using Apex version.
+OneLogger: Setting error_handling_strategy to DISABLE_QUIETLY_AND_REPORT_METRIC_ERROR for rank (rank=0) with OneLogger disabled. To override: explicitly set error_handling_strategy parameter.
+No exporters were provided. This means that no telemetry data will be collected.
+[NeMo I 2026-03-30 13:31:54 mixins:69] Tokenizer SentencePieceTokenizer initialized with 1024 tokens
+[NeMo W 2026-03-30 13:31:54 rnnt_models:63] If you intend to do training or fine-tuning, please call the ModelPT.setup_training_data() method and provide a valid configuration file to setup the train data loader.
+    Train config : 
+    manifest_filepath: /disk1/NVIDIA/datasets/LibriSpeech_NeMo/librivox-train-all.json
+    sample_rate: 16000
+    batch_size: 16
+    shuffle: true
+    num_workers: 8
+    pin_memory: true
+    use_start_end_token: false
+    trim_silence: false
+    max_duration: 16.7
+    min_duration: 0.1
+    is_tarred: false
+    tarred_audio_filepaths: null
+    shuffle_n: 2048
+    bucketing_strategy: fully_randomized
+    bucketing_batch_size: null
+    
+[NeMo W 2026-03-30 13:31:54 rnnt_models:63] If you intend to do validation, please call the ModelPT.setup_validation_data() or ModelPT.setup_multiple_validation_data() method and provide a valid configuration file to setup the validation data loader(s). 
+    Validation config : 
+    manifest_filepath: /disk1/NVIDIA/datasets/LibriSpeech_NeMo/librivox-dev-clean.json
+    sample_rate: 16000
+    batch_size: 16
+    shuffle: false
+    use_start_end_token: false
+    num_workers: 8
+    pin_memory: true
+    
+[NeMo W 2026-03-30 13:31:54 rnnt_models:63] Please call the ModelPT.setup_test_data() or ModelPT.setup_multiple_test_data() method and provide a valid configuration file to setup the test data loader(s).
+    Test config : 
+    manifest_filepath: null
+    sample_rate: 16000
+    batch_size: 16
+    shuffle: false
+    use_start_end_token: false
+    num_workers: 8
+    pin_memory: true
+    
+[NeMo I 2026-03-30 13:32:00 rnnt_models:83] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.0, 'clamp': -1.0}
+[NeMo I 2026-03-30 13:32:00 rnnt_models:231] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.0, 'clamp': -1.0}
+[NeMo W 2026-03-30 13:32:00 rnnt_label_looping:259] No conditional node support for Cuda.
+    Cuda graphs with while loops are disabled, decoding speed will be slower
+    Reason: CUDA is not available
+[NeMo I 2026-03-30 13:32:00 rnnt_models:231] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.0, 'clamp': -1.0}
+[NeMo W 2026-03-30 13:32:00 rnnt_label_looping:259] No conditional node support for Cuda.
+    Cuda graphs with while loops are disabled, decoding speed will be slower
+    Reason: CUDA is not available
+[NeMo I 2026-03-30 13:32:02 modelPT:501] Model EncDecRNNTBPEModel was successfully restored from /root/.cache/sure_eval_parakeet_rnnt_1_1b/hf-home/hub/models--nvidia--parakeet-rnnt-1.1b/snapshots/a07b19e98a26c1873a3f2622c446a4a1ca6316cb/parakeet-rnnt-1.1b.nemo.
+LOAD_OK EncDecRNNTBPEModel
+
+[VALIDATE_INFER]
+[NeMo W 2026-03-30 13:32:56 <frozen importlib:241] Megatron num_microbatches_calculator not found, using Apex version.
+OneLogger: Setting error_handling_strategy to DISABLE_QUIETLY_AND_REPORT_METRIC_ERROR for rank (rank=0) with OneLogger disabled. To override: explicitly set error_handling_strategy parameter.
+No exporters were provided. This means that no telemetry data will be collected.
+[NeMo I 2026-03-30 13:33:01 mixins:69] Tokenizer SentencePieceTokenizer initialized with 1024 tokens
+[NeMo W 2026-03-30 13:33:01 rnnt_models:63] If you intend to do training or fine-tuning, please call the ModelPT.setup_training_data() method and provide a valid configuration file to setup the train data loader.
+    Train config : 
+    manifest_filepath: /disk1/NVIDIA/datasets/LibriSpeech_NeMo/librivox-train-all.json
+    sample_rate: 16000
+    batch_size: 16
+    shuffle: true
+    num_workers: 8
+    pin_memory: true
+    use_start_end_token: false
+    trim_silence: false
+    max_duration: 16.7
+    min_duration: 0.1
+    is_tarred: false
+    tarred_audio_filepaths: null
+    shuffle_n: 2048
+    bucketing_strategy: fully_randomized
+    bucketing_batch_size: null
+    
+[NeMo W 2026-03-30 13:33:01 rnnt_models:63] If you intend to do validation, please call the ModelPT.setup_validation_data() or ModelPT.setup_multiple_validation_data() method and provide a valid configuration file to setup the validation data loader(s). 
+    Validation config : 
+    manifest_filepath: /disk1/NVIDIA/datasets/LibriSpeech_NeMo/librivox-dev-clean.json
+    sample_rate: 16000
+    batch_size: 16
+    shuffle: false
+    use_start_end_token: false
+    num_workers: 8
+    pin_memory: true
+    
+[NeMo W 2026-03-30 13:33:01 rnnt_models:63] Please call the ModelPT.setup_test_data() or ModelPT.setup_multiple_test_data() method and provide a valid configuration file to setup the test data loader(s).
+    Test config : 
+    manifest_filepath: null
+    sample_rate: 16000
+    batch_size: 16
+    shuffle: false
+    use_start_end_token: false
+    num_workers: 8
+    pin_memory: true
+    
+[NeMo I 2026-03-30 13:33:07 rnnt_models:83] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.0, 'clamp': -1.0}
+[NeMo I 2026-03-30 13:33:07 rnnt_models:231] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.0, 'clamp': -1.0}
+[NeMo W 2026-03-30 13:33:07 rnnt_label_looping:259] No conditional node support for Cuda.
+    Cuda graphs with while loops are disabled, decoding speed will be slower
+    Reason: CUDA is not available
+[NeMo I 2026-03-30 13:33:07 rnnt_models:231] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.0, 'clamp': -1.0}
+[NeMo W 2026-03-30 13:33:07 rnnt_label_looping:259] No conditional node support for Cuda.
+    Cuda graphs with while loops are disabled, decoding speed will be slower
+    Reason: CUDA is not available
+[NeMo I 2026-03-30 13:33:10 modelPT:501] Model EncDecRNNTBPEModel was successfully restored from /root/.cache/sure_eval_parakeet_rnnt_1_1b/hf-home/hub/models--nvidia--parakeet-rnnt-1.1b/snapshots/a07b19e98a26c1873a3f2622c446a4a1ca6316cb/parakeet-rnnt-1.1b.nemo.
+[NeMo W 2026-03-30 13:33:10 dataloader:335] The following configuration keys are ignored by Lhotse dataloader: use_start_end_token
+[NeMo W 2026-03-30 13:33:10 dataloader:341] You are using a non-tarred dataset and requested tokenization during data sampling (pretokenize=True). This will cause the tokenization to happen in the main (GPU) process,possibly impacting the training speed if your tokenizer is very large.If the impact is noticable, set pretokenize=False in dataloader config.(note: that will disable token-per-second filtering and 2D bucketing features)
+Transcribing: 0it [00:00, ?it/s]Transcribing: 1it [00:00,  2.25it/s]Transcribing: 1it [00:00,  2.24it/s]
+INFER_OK {"text": "lobster ola newburgh", "language": "en"}
+
+[WRAPPER_SMOKE]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/__init__.py", line 3, in <module>
+    from sure_eval.core.config import Config
+ModuleNotFoundError: No module named 'sure_eval'
+
+[WRAPPER_SMOKE_RETRY_1]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/__init__.py", line 4, in <module>
+    from sure_eval.core.logging import configure_logging, get_logger
+  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/core/logging.py", line 10, in <module>
+    import structlog
+ModuleNotFoundError: No module named 'structlog'
+
+[WRAPPER_SMOKE_RETRY_2]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/parakeet_rnnt_1_1b/model.py", line 17, in <module>
+    class TranscriptionResult:
+  File "/usr/lib/python3.10/dataclasses.py", line 1184, in dataclass
+    return wrap(cls)
+  File "/usr/lib/python3.10/dataclasses.py", line 1175, in wrap
+    return _process_class(cls, init, repr, eq, order, unsafe_hash,
+  File "/usr/lib/python3.10/dataclasses.py", line 944, in _process_class
+    and _is_type(type, cls, dataclasses, dataclasses.KW_ONLY,
+  File "/usr/lib/python3.10/dataclasses.py", line 711, in _is_type
+    ns = sys.modules.get(cls.__module__).__dict__
+AttributeError: 'NoneType' object has no attribute '__dict__'. Did you mean: '__dir__'?
+
+[WRAPPER_SMOKE_RETRY_3]
+[NeMo W 2026-03-30 13:36:34 <frozen importlib:241] Megatron num_microbatches_calculator not found, using Apex version.
+OneLogger: Setting error_handling_strategy to DISABLE_QUIETLY_AND_REPORT_METRIC_ERROR for rank (rank=0) with OneLogger disabled. To override: explicitly set error_handling_strategy parameter.
+No exporters were provided. This means that no telemetry data will be collected.
+[NeMo I 2026-03-30 13:36:40 mixins:69] Tokenizer SentencePieceTokenizer initialized with 1024 tokens
+[NeMo W 2026-03-30 13:36:40 rnnt_models:63] If you intend to do training or fine-tuning, please call the ModelPT.setup_training_data() method and provide a valid configuration file to setup the train data loader.
+    Train config : 
+    manifest_filepath: /disk1/NVIDIA/datasets/LibriSpeech_NeMo/librivox-train-all.json
+    sample_rate: 16000
+    batch_size: 16
+    shuffle: true
+    num_workers: 8
+    pin_memory: true
+    use_start_end_token: false
+    trim_silence: false
+    max_duration: 16.7
+    min_duration: 0.1
+    is_tarred: false
+    tarred_audio_filepaths: null
+    shuffle_n: 2048
+    bucketing_strategy: fully_randomized
+    bucketing_batch_size: null
+    
+[NeMo W 2026-03-30 13:36:40 rnnt_models:63] If you intend to do validation, please call the ModelPT.setup_validation_data() or ModelPT.setup_multiple_validation_data() method and provide a valid configuration file to setup the validation data loader(s). 
+    Validation config : 
+    manifest_filepath: /disk1/NVIDIA/datasets/LibriSpeech_NeMo/librivox-dev-clean.json
+    sample_rate: 16000
+    batch_size: 16
+    shuffle: false
+    use_start_end_token: false
+    num_workers: 8
+    pin_memory: true
+    
+[NeMo W 2026-03-30 13:36:40 rnnt_models:63] Please call the ModelPT.setup_test_data() or ModelPT.setup_multiple_test_data() method and provide a valid configuration file to setup the test data loader(s).
+    Test config : 
+    manifest_filepath: null
+    sample_rate: 16000
+    batch_size: 16
+    shuffle: false
+    use_start_end_token: false
+    num_workers: 8
+    pin_memory: true
+    
+[NeMo I 2026-03-30 13:36:46 rnnt_models:83] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.0, 'clamp': -1.0}
+[NeMo I 2026-03-30 13:36:46 rnnt_models:231] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.0, 'clamp': -1.0}
+[NeMo W 2026-03-30 13:36:46 rnnt_label_looping:259] No conditional node support for Cuda.
+    Cuda graphs with while loops are disabled, decoding speed will be slower
+    Reason: CUDA is not available
+[NeMo I 2026-03-30 13:36:46 rnnt_models:231] Using RNNT Loss : warprnnt_numba
+    Loss warprnnt_numba_kwargs: {'fastemit_lambda': 0.0, 'clamp': -1.0}
+[NeMo W 2026-03-30 13:36:46 rnnt_label_looping:259] No conditional node support for Cuda.
+    Cuda graphs with while loops are disabled, decoding speed will be slower
+    Reason: CUDA is not available
+[NeMo I 2026-03-30 13:36:48 modelPT:501] Model EncDecRNNTBPEModel was successfully restored from /root/.cache/sure_eval_parakeet_rnnt_1_1b/hf-home/hub/models--nvidia--parakeet-rnnt-1.1b/snapshots/a07b19e98a26c1873a3f2622c446a4a1ca6316cb/parakeet-rnnt-1.1b.nemo.
+[NeMo W 2026-03-30 13:36:49 dataloader:335] The following configuration keys are ignored by Lhotse dataloader: use_start_end_token
+[NeMo W 2026-03-30 13:36:49 dataloader:341] You are using a non-tarred dataset and requested tokenization during data sampling (pretokenize=True). This will cause the tokenization to happen in the main (GPU) process,possibly impacting the training speed if your tokenizer is very large.If the impact is noticable, set pretokenize=False in dataloader config.(note: that will disable token-per-second filtering and 2D bucketing features)
+Transcribing: 0it [00:00, ?it/s]Transcribing: 1it [00:00,  3.49it/s]Transcribing: 1it [00:00,  3.49it/s]
+WRAPPER_OK {"text": "lobster ola newburgh", "language": "en"}
+
+[VALIDATE_CONTRACT]
+CONTRACT_OK {"required_fields_present": true, "nonempty_text": true, "json_serializable": true}

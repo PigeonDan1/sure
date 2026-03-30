@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-03-30T12:40:02+08:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "chosen_backend": "uv",
+  "reason": "The requested runtime is a Python-only Transformers callable path, uv is available locally, Python 3.10 matches the environment hint, and uv is the lowest-risk reproducible backend for a CPU phase-1 validation.",
+  "evidence": [
+    {
+      "source": "user_input.environment_hint",
+      "priority": 6,
+      "details": "Preferred backend is uv and Python version is 3.10."
+    },
+    {
+      "source": "docs/playbooks/env_uv.md",
+      "priority": 3,
+      "details": "uv is the preferred backend for Python-first projects without CUDA compilation requirements."
+    },
+    {
+      "source": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/preflight_summary.json",
+      "priority": 1,
+      "details": "uv, ffmpeg, network reachability, and a root-backed writable mount are available for an isolated build."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "fixture.audio",
+      "sources": [
+        {
+          "value": "tests/fixtures/shared/asr/multilingual_16k_10s.wav",
+          "source": "user_input.fixture.audio",
+          "priority": 6
+        },
+        {
+          "value": "tests/fixtures/shared/asr/en_16k_10s.wav",
+          "source": "repo-local fixture inventory",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "reason": "Fixture policy permits a shared fallback when the requested task-specific asset is unavailable, provided the downgrade is recorded explicitly."
+    },
+    {
+      "field": "runtime_path",
+      "sources": [
+        {
+          "value": "openai/whisper upstream repository",
+          "source": "user_input.repo.url",
+          "priority": 6
+        },
+        {
+          "value": "Transformers AutoModel/AutoProcessor/pipeline callable path",
+          "source": "user_input.phase1_runtime_target + entrypoints",
+          "priority": 6
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "Transformers AutoModel/AutoProcessor/pipeline callable path",
+      "reason": "Phase-1 runtime validation is explicitly scoped to the minimal callable path described in the provided entrypoints, so wrapper generation will target that path rather than the broader upstream repository surface."
+    }
+  ],
+  "rejected_options": [
+    {
+      "backend": "docker",
+      "reason": "No container-only dependency or host-pollution risk justifies the higher operational overhead for this CPU-first validation."
+    },
+    {
+      "backend": "pixi",
+      "reason": "The requested phase-1 path is Python-first and already fits uv without a conda-style solver."
+    }
+  ]
+}

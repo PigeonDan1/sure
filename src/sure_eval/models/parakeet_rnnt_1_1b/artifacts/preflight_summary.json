@@ -1,0 +1,91 @@
+{
+  "timestamp": "2026-03-30T00:00:00+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "overall": "warn",
+  "checks": {
+    "python": {
+      "status": "pass",
+      "details": {
+        "available": true,
+        "version": "3.10.12",
+        "path": "/usr/bin/python3"
+      }
+    },
+    "package_managers": {
+      "status": "pass",
+      "details": {
+        "uv": {
+          "available": true,
+          "version": "0.10.11"
+        },
+        "docker": {
+          "available": true,
+          "version": "24.0.7"
+        }
+      }
+    },
+    "gpu": {
+      "status": "warn",
+      "details": {
+        "required_by_input": true,
+        "available": false,
+        "probe": "nvidia-smi",
+        "error": "NVIDIA-SMI failed because it could not communicate with the NVIDIA driver."
+      }
+    },
+    "disk_space": {
+      "status": "pass",
+      "details": {
+        "workspace_mount_available_gb": 0,
+        "tmp_mount_available_gb": 0,
+        "root_mount_available_gb": 163,
+        "recommended_strategy": "Use a root-backed isolated runtime and Hugging Face cache via escalated commands."
+      }
+    },
+    "network": {
+      "status": "pass",
+      "details": {
+        "sandbox_network": "restricted",
+        "external_fetch_required": true,
+        "weights_remote_source": "https://huggingface.co/nvidia/parakeet-rnnt-1.1b"
+      }
+    },
+    "git": {
+      "status": "pass",
+      "details": {
+        "git_available": true,
+        "lfs_available": true
+      }
+    },
+    "system_tools": {
+      "status": "pass",
+      "details": {
+        "ffmpeg": {
+          "available": true,
+          "version": "4.4.2-0ubuntu0.22.04.1"
+        }
+      }
+    },
+    "fixtures": {
+      "status": "warn",
+      "details": {
+        "requested_audio_exists": false,
+        "selected_audio_exists": true,
+        "selected_audio_path": "tests/fixtures/shared/asr/en_16k_10s.wav"
+      }
+    },
+    "permissions": {
+      "status": "pass",
+      "details": {
+        "model_dir_writable": true,
+        "root_cache_writable_with_escalation": true
+      }
+    }
+  },
+  "recommendations": [
+    "Use Python 3.10 in an isolated uv runtime because the phase-1 target is a Python NeMo callable path.",
+    "Keep the isolated environment and model cache on /root because /cpfs and /tmp do not have enough free space.",
+    "Proceed with a recorded shared ASR fallback fixture because the requested multilingual asset is absent and the resolved checkpoint is English-only."
+  ],
+  "blockers": []
+}

@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-03-30T00:00:00+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "classification": {
+    "task_type": "asr",
+    "deployment_type": "local",
+    "weights_required": true,
+    "runtime_family": "nemo_rnnt_asr",
+    "validation_scope": "phase_1_minimal_callable_path"
+  },
+  "phase1_target_understanding": [
+    "Minimal repo-native path: import NeMo, load nvidia/parakeet-rnnt-1.1b through EncDecRNNTBPEModel.from_pretrained, run one audio-path transcription, and obtain non-empty text.",
+    "The requested fixture intent is task-specific ASR, but the exact multilingual shared file is missing in-repo, so phase 1 uses the available shared English speech fallback and records that downgrade.",
+    "Backend choice is an initial recommendation rather than a hard constraint: docker was suggested, but uv is the least-risk backend if the NeMo Python path loads successfully in an isolated runtime.",
+    "If validation fails, check dependency compatibility first, then repo-native integration/loading behavior, and only then fixture mismatch because the selected fallback is valid speech for this English checkpoint."
+  ]
+}

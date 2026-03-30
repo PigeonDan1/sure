@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-03-30T12:40:02+08:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "model_name": "whisper-large-v3-turbo",
+  "repo": {
+    "url": "https://github.com/openai/whisper",
+    "commit": null
+  },
+  "phase1_inputs": {
+    "deployment_type": "local",
+    "task_type": "asr",
+    "weights_source": "huggingface",
+    "preferred_backend": "uv",
+    "python_version": "3.10",
+    "requires_gpu": false
+  },
+  "runtime_target": {
+    "path_type": "transformers_pipeline",
+    "import_stack": [
+      "transformers.AutoModelForSpeechSeq2Seq",
+      "transformers.AutoProcessor",
+      "transformers.pipeline"
+    ],
+    "load_model_id": "openai/whisper-large-v3-turbo",
+    "expected_output": "non-empty text with optional segments/language metadata"
+  },
+  "evidence": [
+    {
+      "source": "user_input.entrypoints",
+      "priority": 6,
+      "details": "Phase-1 validation target is explicitly defined as the Transformers AutoModel/AutoProcessor/pipeline path."
+    },
+    {
+      "source": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "priority": 1,
+      "details": "Shared ASR fallback fixture exists locally and is available for phase-1 inference."
+    },
+    {
+      "source": "/root/.cache/huggingface/hub/models--openai--whisper-large-v3",
+      "priority": 1,
+      "details": "A related Whisper cache exists locally, but not the requested whisper-large-v3-turbo snapshot."
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-03-30T00:00:00+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "model_name": "nvidia/parakeet-rnnt-1.1b",
+  "repo": {
+    "url": "https://github.com/NVIDIA/NeMo",
+    "commit": null
+  },
+  "phase1_inputs": {
+    "deployment_type": "local",
+    "task_type": "asr",
+    "weights_source": "huggingface_or_nemo",
+    "preferred_backend": "docker",
+    "python_version": "3.10",
+    "requires_gpu": true
+  },
+  "runtime_target": {
+    "path_type": "nemo_from_pretrained",
+    "import_stack": [
+      "nemo",
+      "nemo.collections.asr",
+      "nemo.collections.asr.models.EncDecRNNTBPEModel"
+    ],
+    "load_model_id": "nvidia/parakeet-rnnt-1.1b",
+    "expected_output": "non-empty text with optional language metadata"
+  },
+  "evidence": [
+    {
+      "source": "user_input.entrypoints",
+      "priority": 6,
+      "details": "Phase-1 validation target is explicitly defined as a NeMo import/load/infer path."
+    },
+    {
+      "source": "https://huggingface.co/nvidia/parakeet-rnnt-1.1b",
+      "priority": 5,
+      "details": "The model card exposes a public NeMo ASR checkpoint named nvidia/parakeet-rnnt-1.1b."
+    },
+    {
+      "source": "https://huggingface.co/nvidia/parakeet-rnnt-1.1b/blob/main/parakeet-rnnt-1.1b.nemo",
+      "priority": 5,
+      "details": "A 4.28 GB .nemo checkpoint is publicly listed for the exact model_name."
+    },
+    {
+      "source": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "priority": 1,
+      "details": "A shared ASR speech fixture exists locally and can support minimal phase-1 inference."
+    }
+  ]
+}

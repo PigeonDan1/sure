@@ -1,0 +1,23 @@
+[project]
+name = "sure-eval-whisper-large-v3-turbo"
+version = "0.1.0"
+description = "Phase-1 onboarding package for openai/whisper-large-v3-turbo in SURE-EVAL"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "numpy<2",
+    "safetensors>=0.4,<1",
+    "torch>=2.4,<2.7",
+    "transformers>=4.47,<4.58",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

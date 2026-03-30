@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-03-30T13:24:25+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "classification": {
+    "task_type": "asr",
+    "deployment_type": "local",
+    "weights_required": true,
+    "runtime_family": "nemo_asr_or_nim_conflict",
+    "validation_scope": "phase_1_minimal_callable_path"
+  },
+  "phase1_target_understanding": [
+    "Minimal repo-native path: import the NeMo ASR stack, resolve the exact multilingual Parakeet checkpoint, run one audio-path transcription, and obtain non-empty text.",
+    "The requested fixture is task-specific and multilingual by contract, but the exact multilingual audio and transcript are missing in the repository.",
+    "Backend choice is a strong constraint for the exact model identity because the public evidence points to a GPU docker/NIM path, while the requested phase-1 target still asks for a local NeMo checkpoint path.",
+    "If this fails, check integration evidence first, then dependency/runtime availability, and then fixture mismatch; the first blocker here is not package installability but unresolved model identity."
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "instance_id": "parakeet_rnnt_1_1b",
+  "timestamp": "2026-03-30T00:00:00+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "artifacts": {
+    "required": {
+      "spec": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/model.spec.yaml",
+        "description": "模型规范文件"
+      },
+      "backend_choice": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/backend_choice.json",
+        "description": "后端选择记录"
+      },
+      "build_log": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/build.log",
+        "description": "环境构建日志"
+      },
+      "validation_log": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/validation.log",
+        "description": "验证测试日志"
+      },
+      "verdict": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/verdict.json",
+        "description": "最终判定结果"
+      },
+      "wrapper": {
+        "paths": [
+          "src/sure_eval/models/parakeet_rnnt_1_1b/model.py",
+          "src/sure_eval/models/parakeet_rnnt_1_1b/server.py",
+          "src/sure_eval/models/parakeet_rnnt_1_1b/__init__.py"
+        ],
+        "description": "模型 wrapper 文件集"
+      },
+      "manifest": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/artifact_manifest.json",
+        "description": "本清单文件"
+      }
+    },
+    "conditional": {
+      "spec_validation": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/spec_validation.json",
+        "condition": "VALIDATE_SPEC executed"
+      },
+      "preflight_summary": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/preflight_summary.json",
+        "condition": "preflight executed"
+      },
+      "weights_manifest": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/weights_manifest.json",
+        "condition": "weights.required == true"
+      },
+      "failure_classification": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/failure_classification.json",
+        "condition": "DIAGNOSE executed"
+      },
+      "retry_recommendation": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/retry_recommendation.json",
+        "condition": "REPLAN executed"
+      },
+      "uv_lock": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/uv.lock",
+        "condition": "backend == 'uv'"
+      }
+    },
+    "optional": {
+      "runtime_output": {
+        "path": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/runtime_output.json",
+        "description": "Validated runtime output payload from phase-1 inference."
+      }
+    }
+  }
+}

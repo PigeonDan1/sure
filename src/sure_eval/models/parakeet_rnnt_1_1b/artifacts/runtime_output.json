@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-03-30T13:37:04+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "fixture": "tests/fixtures/shared/asr/en_16k_10s.wav",
+  "output": {
+    "text": "lobster ola newburgh",
+    "language": "en"
+  },
+  "contract_checks": {
+    "required_fields_present": true,
+    "nonempty_text": true,
+    "json_serializable": true
+  }
+}

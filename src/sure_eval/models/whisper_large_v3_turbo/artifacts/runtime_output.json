@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-03-30T12:45:43.612176+08:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "fixture_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+  "fixture_source": "shared_fallback",
+  "output": {
+    "text": " Lobster Ellen Newberg."
+  }
+}

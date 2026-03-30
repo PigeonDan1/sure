@@ -1,0 +1,12 @@
+{
+  "name": "parakeet-1.1b-rnnt-multilingual-asr",
+  "build": {
+    "dockerfile": "../Dockerfile"
+  },
+  "runArgs": ["--gpus=all"],
+  "customizations": {
+    "vscode": {
+      "settings": {}
+    }
+  }
+}

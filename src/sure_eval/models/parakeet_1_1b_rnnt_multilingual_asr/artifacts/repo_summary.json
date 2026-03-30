@@ -1,0 +1,49 @@
+{
+  "timestamp": "2026-03-30T13:24:20+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "model_name": "parakeet-1.1b-rnnt-multilingual-asr",
+  "repo": {
+    "url": "https://github.com/NVIDIA/NeMo",
+    "commit": null
+  },
+  "phase1_inputs": {
+    "deployment_type": "local",
+    "task_type": "asr",
+    "weights_source": "huggingface_or_nemo",
+    "preferred_backend": "docker",
+    "python_version": "3.10",
+    "requires_gpu": true
+  },
+  "runtime_target": {
+    "path_type": "nemo_local_checkpoint",
+    "import_stack": [
+      "nemo",
+      "nemo.collections.asr",
+      "nemo.collections.asr.models.EncDecRNNTBPEModel"
+    ],
+    "requested_model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+    "expected_output": "non-empty multilingual transcript with optional language metadata"
+  },
+  "evidence": [
+    {
+      "source": "user_input.phase1_runtime_target",
+      "priority": 6,
+      "details": "Phase 1 is explicitly scoped to the minimal local NeMo ASR path, not a benchmark or service API path."
+    },
+    {
+      "source": "local fixture inventory",
+      "priority": 1,
+      "details": "tests/fixtures/shared/asr/en_16k_10s.wav exists locally, but the requested multilingual fixture and transcript do not."
+    },
+    {
+      "source": "Hugging Face model card for nvidia/parakeet-rnnt-1.1b",
+      "priority": 5,
+      "details": "The public NeMo/Hugging Face checkpoint evidence that was found is English-only and uses EncDecRNNTBPEModel.from_pretrained(model_name=\"nvidia/parakeet-rnnt-1.1b\")."
+    },
+    {
+      "source": "NVIDIA NIM Riva ASR support matrix",
+      "priority": 5,
+      "details": "The exact multilingual identity appears as 'Parakeet 1.1b RNNT Multilingual' under GPU-backed NIM deployment, which conflicts with the requested public NeMo checkpoint assumption."
+    }
+  ]
+}

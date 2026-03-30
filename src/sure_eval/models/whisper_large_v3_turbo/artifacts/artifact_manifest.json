@@ -1,0 +1,128 @@
+{
+  "timestamp": "2026-03-30T12:45:43.612176+08:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "model_name": "whisper-large-v3-turbo",
+  "workflow_completed": true,
+  "artifacts": {
+    "required": {
+      "model.spec.yaml": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/model.spec.yaml",
+        "exists": true,
+        "description": "Model specification"
+      },
+      "backend_choice.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/backend_choice.json",
+        "exists": true,
+        "description": "Backend selection record"
+      },
+      "build.log": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/build.log",
+        "exists": true,
+        "description": "Environment build log"
+      },
+      "validation.log": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/validation.log",
+        "exists": true,
+        "description": "Validation test log"
+      },
+      "verdict.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/verdict.json",
+        "exists": true,
+        "description": "Final verdict"
+      },
+      "wrapper": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/",
+        "exists": true,
+        "description": "Wrapper files (model.py, server.py, __init__.py, config.yaml)"
+      },
+      "artifact_manifest.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/artifact_manifest.json",
+        "exists": true,
+        "description": "This manifest file"
+      }
+    },
+    "conditional": {
+      "spec_validation.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/spec_validation.json",
+        "exists": true,
+        "condition": "VALIDATE_SPEC executed"
+      },
+      "preflight_summary.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/preflight_summary.json",
+        "exists": true,
+        "condition": "preflight executed"
+      },
+      "weights_manifest.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/weights_manifest.json",
+        "exists": true,
+        "condition": "weights.required == true"
+      },
+      "failure_classification.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/failure_classification.json",
+        "exists": true,
+        "condition": "DIAGNOSE executed"
+      },
+      "retry_recommendation.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/retry_recommendation.json",
+        "exists": true,
+        "condition": "REPLAN executed"
+      },
+      "escalation.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/escalation.json",
+        "exists": false,
+        "condition": "human escalation triggered"
+      },
+      "patch_report.json": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/patch_report.json",
+        "exists": false,
+        "condition": "upstream or config patch applied"
+      },
+      "uv.lock": {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/uv.lock",
+        "exists": true,
+        "condition": "backend == uv"
+      }
+    },
+    "optional": [
+      {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/runtime_output.json",
+        "exists": true,
+        "description": "Captured repo-native runtime output from the passing infer step"
+      },
+      {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/repo_summary.json",
+        "exists": true,
+        "description": "Discovery summary for the requested model"
+      },
+      {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/classification.json",
+        "exists": true,
+        "description": "Classification summary with phase-1 target understanding"
+      },
+      {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/failure_classification.json",
+        "exists": true,
+        "description": "Diagnosed wrapper-smoke failures encountered during GENERATE_WRAPPER"
+      },
+      {
+        "path": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/retry_recommendation.json",
+        "exists": true,
+        "description": "Targeted retry record for the resolved wrapper smoke issues"
+      }
+    ]
+  },
+  "validation_summary": {
+    "import": {
+      "passed": true
+    },
+    "load": {
+      "passed": true
+    },
+    "infer": {
+      "passed": true
+    },
+    "contract": {
+      "passed": true
+    }
+  }
+}

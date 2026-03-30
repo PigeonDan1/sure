@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-03-30T12:57:00+08:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "checkpoint": "GENERATE_WRAPPER",
+  "retry_allowed": true,
+  "retry_count_before_resolution": 2,
+  "recommended_changes": [
+    {
+      "attempt": 2,
+      "change": "Adjust PYTHONPATH from the repository root to the src tree.",
+      "targets_failure_type": "wrong_entrypoint"
+    },
+    {
+      "attempt": 3,
+      "change": "Bypass top-level sure_eval package import and use the wrapper-local module import path for smoke validation.",
+      "targets_failure_type": "python_dependency_missing"
+    }
+  ],
+  "escalate": false,
+  "reason": "Each retry addressed a newly diagnosed and narrowly scoped import-path issue, and the third attempt resolved the wrapper smoke test without changing dependencies or backend."
+}

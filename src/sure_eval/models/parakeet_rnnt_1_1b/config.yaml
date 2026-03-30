@@ -1,0 +1,24 @@
+name: parakeet-rnnt-1.1b
+task: ASR
+description: "Phase-1 wrapper for nvidia/parakeet-rnnt-1.1b via NeMo."
+
+model:
+  id: nvidia/parakeet-rnnt-1.1b
+  backend: uv
+  device: cpu
+
+server:
+  command: ["python", "server.py"]
+  env:
+    MODEL_ID: nvidia/parakeet-rnnt-1.1b
+    DEVICE: cpu
+
+tools:
+  - name: transcribe_audio
+    description: Run ASR on a local audio path.
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: [audio_path]

@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-03-30T00:00:00+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "checkpoint": "VALIDATE_LOAD",
+  "failure_type": "cuda_version_mismatch",
+  "retryable": true,
+  "symptoms": [
+    "After moving TMPDIR to /root, NeMo successfully advanced past tokenizer restoration and failed during model instantiation.",
+    "Torch attempted CUDA initialization and raised a runtime error that the installed NVIDIA driver is too old.",
+    "The host still lacks a usable GPU runtime even though the checkpoint can proceed further with CPU-compatible extraction."
+  ],
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/validation.log",
+      "details": "VALIDATE_LOAD_RETRY_1 traceback shows RuntimeError: The NVIDIA driver on your system is too old during torch.cuda._lazy_init()."
+    },
+    {
+      "source": "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/preflight_summary.json",
+      "details": "gpu check had already recorded that GPU runtime is unavailable on this host."
+    }
+  ],
+  "recommended_action": "Retry VALIDATE_LOAD with CPU fallback by masking CUDA visibility while keeping TMPDIR on the root-backed temporary directory."
+}

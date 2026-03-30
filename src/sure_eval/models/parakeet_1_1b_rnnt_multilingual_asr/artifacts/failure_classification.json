@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-03-30T13:25:00+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "checkpoint": "VALIDATE_SPEC",
+  "failure_type": "missing_critical_evidence",
+  "retryable": false,
+  "symptoms": [
+    "Exact public NeMo/Hugging Face checkpoint for the requested multilingual model_id could not be established.",
+    "Requested multilingual fixture and transcript are absent in the repository.",
+    "Local GPU runtime is unavailable even though the exact public model evidence points to GPU NIM deployment."
+  ],
+  "evidence": [
+    {
+      "source": "artifacts/validation.log",
+      "details": "VALIDATE_SPEC failed before any runtime test because critical model identity evidence is missing."
+    },
+    {
+      "source": "artifacts/preflight_summary.json",
+      "details": "nvidia-smi failed and only root-backed storage has meaningful free space."
+    },
+    {
+      "source": "artifacts/backend_choice.json",
+      "details": "runtime_path and weights.source conflicts remain unresolved."
+    }
+  ],
+  "recommended_action": "Escalate to human review to clarify whether the target should remain a local NeMo checkpoint workflow or be pivoted to NVIDIA NIM docker validation."
+}

@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-03-30T13:37:04+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "source": "huggingface_or_nemo",
+  "snapshot_path": "/root/.cache/sure_eval_parakeet_rnnt_1_1b/hf-home/hub/models--nvidia--parakeet-rnnt-1.1b/snapshots/a07b19e98a26c1873a3f2622c446a4a1ca6316cb",
+  "hub_cache_path": "/root/.cache/sure_eval_parakeet_rnnt_1_1b/hf-home/hub/models--nvidia--parakeet-rnnt-1.1b",
+  "disk_usage": "4.0G",
+  "files": [
+    ".gitattributes",
+    "README.md",
+    "parakeet-rnnt-1.1b.nemo"
+  ]
+}

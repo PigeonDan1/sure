@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-03-30T00:00:00+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "checkpoint": "VALIDATE_LOAD",
+  "retry_allowed": true,
+  "retry_count_before": 1,
+  "max_retries_for_failure_type": 2,
+  "change_plan": {
+    "what_changes": [
+      "Keep TMPDIR=/root/.cache/sure_eval_parakeet_rnnt_1_1b/tmp.",
+      "Set CUDA_VISIBLE_DEVICES='' for load and later inference validation commands so phase 1 exercises the CPU path."
+    ],
+    "why_targeted": "The diagnosed failure is GPU driver incompatibility, and the retry directly targets that failure class by forcing CPU fallback without changing the checkpoint, backend, or entrypoint.",
+    "unchanged": [
+      "backend remains uv",
+      "python version remains 3.10",
+      "checkpoint remains nvidia/parakeet-rnnt-1.1b",
+      "fixture remains tests/fixtures/shared/asr/en_16k_10s.wav"
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+[2026-03-30T13:25:00+08:00] PLAN
+Backend candidate recorded as docker because the exact public evidence for the requested model identity points to NVIDIA NIM docker deployment, not a verified public NeMo checkpoint.
+
+[2026-03-30T13:25:05+08:00] BUILD_ENV
+Skipped.
+Reason: VALIDATE_SPEC failed before BUILD_ENV because the exact multilingual checkpoint and runnable local weight source could not be established with sufficient evidence.

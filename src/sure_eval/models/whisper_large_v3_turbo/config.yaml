@@ -1,0 +1,24 @@
+name: whisper-large-v3-turbo
+task: ASR
+description: "Phase-1 wrapper for openai/whisper-large-v3-turbo via Hugging Face Transformers."
+
+model:
+  id: openai/whisper-large-v3-turbo
+  backend: uv
+  device: cpu
+
+server:
+  command: ["python", "server.py"]
+  env:
+    MODEL_ID: openai/whisper-large-v3-turbo
+    DEVICE: cpu
+
+tools:
+  - name: transcribe_audio
+    description: Run ASR on a local audio path.
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: [audio_path]

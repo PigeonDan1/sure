@@ -1,0 +1,29 @@
+[VALIDATION]
+Device set to use cpu
+`return_token_timestamps` is deprecated for WhisperFeatureExtractor and will be removed in Transformers v5. Use `return_attention_mask` instead, as the number of frames can be inferred from it.
+Using custom `forced_decoder_ids` from the (generation) config. This is deprecated in favor of the `task` and `language` flags/config options.
+Transcription using a multilingual Whisper will default to language detection followed by transcription instead of translation to English. This might be a breaking change for your use case. If you want to instead always translate your audio to English, make sure to pass `language='en'`. See https://github.com/huggingface/transformers/pull/28687 for more details.
+{"record": {"timestamp": "2026-03-30T12:45:43.612176+08:00", "model_id": "openai/whisper-large-v3-turbo", "fixture_source": "shared_fallback", "fixture_path": "tests/fixtures/shared/asr/en_16k_10s.wav", "tests": {"import": {"passed": true, "duration_ms": 6619.99, "error": null}, "load": {"passed": true, "duration_ms": 5246.69, "error": null}, "infer": {"passed": true, "duration_ms": 4925.29, "error": null}, "contract": {"passed": true, "duration_ms": 0.04, "error": null}}, "overall": "PASSED"}, "runtime_output": {"text": " Lobster Ellen Newberg."}}
+
+[WRAPPER_SMOKE]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/__init__.py", line 3, in <module>
+    from sure_eval.core.config import Config
+ModuleNotFoundError: No module named 'sure_eval'
+
+[WRAPPER_SMOKE_RETRY]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/__init__.py", line 3, in <module>
+    from sure_eval.core.config import Config
+  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/core/config.py", line 10, in <module>
+    from pydantic import BaseModel, Field
+ModuleNotFoundError: No module named 'pydantic'
+
+[WRAPPER_SMOKE_RETRY_2]
+Device set to use cpu
+`return_token_timestamps` is deprecated for WhisperFeatureExtractor and will be removed in Transformers v5. Use `return_attention_mask` instead, as the number of frames can be inferred from it.
+Using custom `forced_decoder_ids` from the (generation) config. This is deprecated in favor of the `task` and `language` flags/config options.
+Transcription using a multilingual Whisper will default to language detection followed by transcription instead of translation to English. This might be a breaking change for your use case. If you want to instead always translate your audio to English, make sure to pass `language='en'`. See https://github.com/huggingface/transformers/pull/28687 for more details.
+{"text": " Lobster Ellen Newberg.", "language": null, "segments": null}

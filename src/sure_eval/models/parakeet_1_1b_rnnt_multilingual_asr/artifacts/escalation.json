@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-03-30T13:25:05+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "escalation": {
+    "trigger": "missing_critical_evidence",
+    "checkpoint": "VALIDATE_SPEC",
+    "attempts": 1,
+    "context": {
+      "failure_type_history": [
+        "missing_critical_evidence"
+      ],
+      "last_error": "Cannot verify the exact multilingual Parakeet checkpoint as a public NeMo/Hugging Face asset, and the exact multilingual fixture is missing locally.",
+      "evidence_available": [
+        "model.spec.yaml",
+        "artifacts/repo_summary.json",
+        "artifacts/preflight_summary.json",
+        "artifacts/backend_choice.json",
+        "artifacts/spec_validation.json",
+        "artifacts/validation.log"
+      ],
+      "evidence_missing": [
+        "exact public checkpoint identifier for the requested multilingual model",
+        "approved runtime pivot to NIM/docker if that is the intended exact model",
+        "multilingual in-repo fixture"
+      ]
+    },
+    "artifacts": [
+      "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/build.log",
+      "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/validation.log",
+      "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/model.spec.yaml",
+      "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/artifacts/spec_validation.json"
+    ],
+    "question_for_human": "Please choose one exact target so phase 1 can continue: (1) provide the verified public NeMo/Hugging Face checkpoint name for the multilingual model plus a multilingual fixture, or (2) approve pivoting this onboarding to the GPU docker/NIM runtime that public NVIDIA docs currently support for the exact model identity."
+  }
+}

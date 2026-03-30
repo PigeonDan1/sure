@@ -1,0 +1,79 @@
+{
+  "timestamp": "2026-03-30T13:24:30+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "overall": "warn",
+  "checks": {
+    "python": {
+      "status": "pass",
+      "details": {
+        "available": true,
+        "version": "3.10.12",
+        "path": "/usr/bin/python3"
+      }
+    },
+    "package_managers": {
+      "status": "pass",
+      "details": {
+        "uv": {
+          "available": true,
+          "version": "0.10.11"
+        },
+        "docker": {
+          "available": true,
+          "version": "24.0.7"
+        }
+      }
+    },
+    "gpu": {
+      "status": "warn",
+      "details": {
+        "required_by_input": true,
+        "available": false,
+        "probe": "nvidia-smi",
+        "error": "NVIDIA-SMI failed because it could not communicate with the NVIDIA driver."
+      }
+    },
+    "disk_space": {
+      "status": "pass",
+      "details": {
+        "workspace_mount_available_gb": 0,
+        "tmp_mount_available_gb": 0,
+        "root_mount_available_gb": 163,
+        "recommended_strategy": "If human override is provided, use a root-backed isolated runtime or root-backed docker cache via escalated commands."
+      }
+    },
+    "system_tools": {
+      "status": "pass",
+      "details": {
+        "ffmpeg": {
+          "available": true,
+          "version": "4.4.2-0ubuntu0.22.04.1"
+        }
+      }
+    },
+    "fixtures": {
+      "status": "warn",
+      "details": {
+        "requested_audio_exists": false,
+        "requested_transcript_exists": false,
+        "shared_fallback_exists": true,
+        "shared_fallback_path": "tests/fixtures/shared/asr/en_16k_10s.wav"
+      }
+    },
+    "permissions": {
+      "status": "pass",
+      "details": {
+        "model_dir_writable": true,
+        "root_cache_writable_with_escalation": true
+      }
+    }
+  },
+  "recommendations": [
+    "Do not proceed to BUILD_ENV until the exact local checkpoint identity is clarified.",
+    "If the intent is the exact multilingual NIM model, human approval is needed to pivot the runtime target from local NeMo import/load to dockerized service validation.",
+    "If the intent is a public NeMo checkpoint, provide the exact checkpoint name and a multilingual fixture that exists in-repo."
+  ],
+  "blockers": [
+    "Missing exact public checkpoint evidence for the requested multilingual model_id."
+  ]
+}

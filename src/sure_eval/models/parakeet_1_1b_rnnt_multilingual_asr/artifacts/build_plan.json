@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-03-30T13:24:45+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "backend": "docker",
+  "build_root": "/root/.cache/sure_eval_parakeet_1_1b_rnnt_multilingual_asr",
+  "project_path": "src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr",
+  "steps": [
+    {
+      "name": "clarify_runtime_identity",
+      "command": "Resolve whether the target is a public NeMo checkpoint or a NIM-only docker deployment."
+    },
+    {
+      "name": "prepare_container_recipe",
+      "command": "Build src/sure_eval/models/parakeet_1_1b_rnnt_multilingual_asr/Dockerfile after the runtime identity and weight source are clarified."
+    },
+    {
+      "name": "fetch_weights_or_container_assets",
+      "command": "Acquire the exact multilingual checkpoint or authorized NIM assets once the model source is confirmed."
+    },
+    {
+      "name": "validate_runtime",
+      "command": "Run import/load/infer/contract checks against the clarified runtime using a multilingual fixture that exists locally."
+    }
+  ],
+  "inputs": {
+    "python_version": "3.10",
+    "requested_fixture": "tests/fixtures/shared/asr/multilingual_16k_10s.wav",
+    "weights_source": "huggingface_or_nemo",
+    "system_packages": [
+      "ffmpeg"
+    ]
+  },
+  "constraints": [
+    "The exact requested multilingual checkpoint is not yet evidenced as a public NeMo or Hugging Face asset.",
+    "GPU runtime is currently unavailable.",
+    "Root-backed storage and escalated commands would be needed for any meaningful build attempt."
+  ],
+  "executable": false,
+  "blocking_issues": [
+    "missing_critical_evidence",
+    "fixture_unavailable",
+    "gpu_runtime_unavailable"
+  ]
+}

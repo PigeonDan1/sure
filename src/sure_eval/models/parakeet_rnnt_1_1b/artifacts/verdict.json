@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-03-30T13:37:04+08:00",
+  "model_id": "nvidia/nvidia/parakeet-rnnt-1.1b",
+  "model_name": "nvidia/parakeet-rnnt-1.1b",
+  "status": "PASSED",
+  "stage": "phase_1_complete",
+  "workflow": {
+    "steps_completed": [
+      "DISCOVER",
+      "CLASSIFY",
+      "PLAN",
+      "VALIDATE_SPEC",
+      "BUILD_ENV",
+      "FETCH_WEIGHTS",
+      "VALIDATE_IMPORT",
+      "VALIDATE_LOAD",
+      "VALIDATE_INFER",
+      "VALIDATE_CONTRACT",
+      "GENERATE_WRAPPER",
+      "SAVE_ARTIFACTS"
+    ],
+    "final_step": "SAVE_ARTIFACTS",
+    "stopped_at": null
+  },
+  "validation_results": {
+    "import": {
+      "passed": true,
+      "status": "passed",
+      "test": "import nemo",
+      "evidence": "Isolated uv runtime imported nemo successfully."
+    },
+    "load": {
+      "passed": true,
+      "status": "passed_after_retries",
+      "test": "nemo_asr.models.EncDecRNNTBPEModel.from_pretrained(model_name='nvidia/parakeet-rnnt-1.1b')",
+      "evidence": "Load succeeded after two targeted mitigations: TMPDIR was moved to /root and CUDA was masked for CPU fallback."
+    },
+    "infer": {
+      "passed": true,
+      "status": "passed",
+      "test": "model.transcribe(['tests/fixtures/shared/asr/en_16k_10s.wav'])",
+      "evidence": "Repo-native inference returned a non-empty payload: 'lobster ola newburgh'."
+    },
+    "contract": {
+      "passed": true,
+      "status": "passed",
+      "checks": {
+        "required_fields_present": true,
+        "nonempty_text": true,
+        "json_serializable": true
+      },
+      "evidence": "The runtime output is a JSON-serializable object containing a non-empty text field and optional language metadata."
+    }
+  },
+  "artifacts_produced": [
+    "src/sure_eval/models/parakeet_rnnt_1_1b/model.spec.yaml",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/pyproject.toml",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/model.py",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/server.py",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/__init__.py",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/config.yaml",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/backend_choice.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/build_plan.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/build.log",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/validation.log",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/spec_validation.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/classification.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/repo_summary.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/preflight_summary.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/weights_manifest.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/failure_classification.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/retry_recommendation.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/runtime_output.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/artifact_manifest.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/artifacts/verdict.json",
+    "src/sure_eval/models/parakeet_rnnt_1_1b/uv.lock"
+  ],
+  "escalation_triggered": false,
+  "retry_count": 2,
+  "notes": [
+    "The requested multilingual fixture was downgraded to the available English shared ASR fixture and recorded explicitly.",
+    "The first load attempt failed because NeMo extracted the .nemo archive into a no-space temporary location; the retry moved TMPDIR to /root.",
+    "A second targeted retry masked CUDA visibility so the checkpoint could load on CPU despite the host's outdated NVIDIA driver.",
+    "Phase 1 validated the minimal repo-native NeMo callable path only; it does not claim multilingual coverage, GPU readiness, or benchmark quality.",
+    "Direct wrapper smoke passed only when the wrapper module was imported without the repository's top-level sure_eval package extras, which remain outside this model-specific phase-1 scope."
+  ]
+}

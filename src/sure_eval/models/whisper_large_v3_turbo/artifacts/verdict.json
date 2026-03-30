@@ -1,0 +1,86 @@
+{
+  "timestamp": "2026-03-30T12:45:43.612176+08:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "model_name": "whisper-large-v3-turbo",
+  "status": "PASSED",
+  "stage": "phase_1_complete",
+  "workflow": {
+    "steps_completed": [
+      "DISCOVER",
+      "CLASSIFY",
+      "PLAN",
+      "VALIDATE_SPEC",
+      "BUILD_ENV",
+      "FETCH_WEIGHTS",
+      "VALIDATE_IMPORT",
+      "VALIDATE_LOAD",
+      "VALIDATE_INFER",
+      "VALIDATE_CONTRACT",
+      "GENERATE_WRAPPER",
+      "SAVE_ARTIFACTS"
+    ],
+    "final_step": "SAVE_ARTIFACTS",
+    "stopped_at": null
+  },
+  "validation_results": {
+    "import": {
+      "passed": true,
+      "duration_ms": 6619.99,
+      "test": "from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline",
+      "evidence": "Import completed successfully inside the isolated uv runtime."
+    },
+    "load": {
+      "passed": true,
+      "duration_ms": 5246.69,
+      "test": "AutoProcessor.from_pretrained + AutoModelForSpeechSeq2Seq.from_pretrained + pipeline('automatic-speech-recognition')",
+      "evidence": "Processor, model, and ASR pipeline were created successfully for openai/whisper-large-v3-turbo."
+    },
+    "infer": {
+      "passed": true,
+      "duration_ms": 4925.29,
+      "test": "pipe('tests/fixtures/shared/asr/en_16k_10s.wav')",
+      "evidence": "Repo-native inference returned a non-empty text payload: ' Lobster Ellen Newberg.'"
+    },
+    "contract": {
+      "passed": true,
+      "duration_ms": 0.04,
+      "checks": {
+        "required_fields_present": true,
+        "nonempty_text": true,
+        "json_serializable": true
+      },
+      "evidence": "The runtime output was a JSON-serializable dict containing a non-empty text field."
+    }
+  },
+  "artifacts_produced": [
+    "src/sure_eval/models/whisper_large_v3_turbo/model.spec.yaml",
+    "src/sure_eval/models/whisper_large_v3_turbo/pyproject.toml",
+    "src/sure_eval/models/whisper_large_v3_turbo/uv.lock",
+    "src/sure_eval/models/whisper_large_v3_turbo/model.py",
+    "src/sure_eval/models/whisper_large_v3_turbo/server.py",
+    "src/sure_eval/models/whisper_large_v3_turbo/__init__.py",
+    "src/sure_eval/models/whisper_large_v3_turbo/config.yaml",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/backend_choice.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/build_plan.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/build.log",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/validation.log",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/spec_validation.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/classification.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/repo_summary.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/preflight_summary.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/weights_manifest.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/failure_classification.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/retry_recommendation.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/runtime_output.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/artifact_manifest.json",
+    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/verdict.json"
+  ],
+  "escalation_triggered": false,
+  "retry_count": 2,
+  "notes": [
+    "The requested multilingual shared fixture was not present in the repository, so phase 1 used tests/fixtures/shared/asr/en_16k_10s.wav as an explicitly recorded shared fallback.",
+    "Workspace and /tmp free space were insufficient, so the isolated uv runtime and Hugging Face cache were placed under /root via approved escalated commands.",
+    "Two targeted wrapper-smoke retries were needed after GENERATE_WRAPPER to avoid importing the full sure_eval package; both retries were diagnosed and recorded before the local-import smoke path passed.",
+    "Phase 1 validated minimal ASR callability only; it did not claim multilingual coverage, translation mode support, diarization, or alignment."
+  ]
+}

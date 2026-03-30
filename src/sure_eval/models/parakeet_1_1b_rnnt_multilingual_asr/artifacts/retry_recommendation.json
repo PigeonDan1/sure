@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-03-30T13:25:02+08:00",
+  "model_id": "nvidia/parakeet-1.1b-rnnt-multilingual-asr",
+  "checkpoint": "VALIDATE_SPEC",
+  "retry_allowed": false,
+  "failure_type": "missing_critical_evidence",
+  "attempt_number": 1,
+  "max_retries_for_failure_type": 0,
+  "what_changed": [],
+  "reason": "Retry is prohibited by policy because no targeted mitigation can be applied until a human resolves the exact runtime identity, weight source, and multilingual fixture mismatch."
+}
