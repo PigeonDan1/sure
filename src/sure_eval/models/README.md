@@ -138,18 +138,26 @@ Models successfully onboarded via Agent Workflow:
 
 | Model | Task | Backend | Status | Notes |
 |-------|------|---------|--------|-------|
+| [whisper_large_v3_turbo](whisper_large_v3_turbo/) | ASR | uv | ✅ Ready | OpenAI Whisper Large V3 Turbo |
+| [parakeet_rnnt_1_1b](parakeet_rnnt_1_1b/) | ASR | uv | ✅ Ready | NVIDIA Parakeet RNNT 1.1B |
 | [deepfilternet](deepfilternet/) | Speech Enhancement | uv | ✅ Ready | DeepFilterNet2 noise suppression |
 | [librosa](librosa/) | Music IR | uv | ✅ Ready | Music feature extraction |
 | [whisperx](whisperx/) | ASR | uv | ✅ Ready | Whisper + alignment + diarization |
 | [asr_qwen3](asr_qwen3/) | ASR | uv | ✅ Ready | Qwen3-ASR-1.7B |
-| [asr_whisper](asr_whisper/) | ASR | uv | ✅ Ready | OpenAI Whisper |
-| [asr_parakeet](asr_parakeet/) | ASR | uv | ✅ Ready | NVIDIA Parakeet |
+| [asr_whisper](asr_whisper/) | ASR | uv | ✅ Ready | OpenAI Whisper base |
+| [asr_parakeet](asr_parakeet/) | ASR | uv | ✅ Ready | NVIDIA Parakeet CTC |
 | [qwen3_omni](qwen3_omni/) | OMNI | API | ✅ Ready | Qwen3-Omni API |
 | [diarizen](diarizen/) | SD | uv | ✅ Ready | Speaker diarization |
 | [snakers4_silero-vad](snakers4_silero-vad/) | VAD | uv | ✅ Ready | Voice activity detection |
 | [ffmpeg](ffmpeg/) | Utility | uv | ✅ Ready | Audio processing utility |
 
-**Total: 10 models** across ASR, SD, VAD, Speech Enhancement, Music IR, and Utility tasks.
+### Failed Attempts (Reference)
+
+| Model | Task | Backend | Status | Reason |
+|-------|------|---------|--------|--------|
+| [parakeet_1_1b_rnnt_multilingual_asr](parakeet_1_1b_rnnt_multilingual_asr/) | ASR | docker | ❌ Failed | Docker backend issues |
+
+**Total: 12 models** (10 passed, 2 failed) across ASR, SD, VAD, Speech Enhancement, Music IR, and Utility tasks.
 
 ### Model Directory Structure
 
