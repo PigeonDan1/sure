@@ -21,6 +21,40 @@ Do not treat this document as prescribing fixed file paths for all models.
 
 ## General Rules
 
+### Fixtures Are Not Arbitrary Audio
+
+Fixture **不是任意音频文件**，必须满足：
+- **Task-specific**: 音频内容必须匹配任务语义（ASR 用语音、VAD 用含语音的音频）
+- **Format-compliant**: 采样率、通道数、编码格式符合模型预期
+- **Deterministic**: 相同输入产生可预期的输出
+
+**禁止行为**:
+- ❌ 使用随机生成的噪声作为 fixture
+- ❌ 使用与任务无关的音频（如用音乐测试 ASR）
+- ❌ 使用模型不支持的语言/格式
+
+### Fixture Selection Priority
+
+1. **Task-specific fixture**（优先）
+   - `tests/fixtures/{task_type}/` 下的专用 fixture
+   - 如 ASR 模型优先使用 `shared/asr/en_16k_10s.wav`
+
+2. **Shared fallback**（显式记录）
+   - 当 task-specific 不可用时，使用 `shared/` 下的通用 fixture
+   - 必须在 `validation.log` 中记录: `"fixture_source": "shared"`
+
+3. **Model-specific**（当契约要求时）
+   - 若 `io_contract` 指定了特定格式/语言，必须创建对应 fixture
+
+### Fixture Mismatch 处理
+
+Fixture mismatch **不应直接判定为 integration failure**：
+- 先尝试使用 shared fallback
+- 若 fallback 可用，记录为 `"fixture_source": "shared"`
+- 仅在无可用 fixture 时，才标记为 `"fixture_missing"` 并申请 waiver
+
+---
+
 ### 1. Fixtures Must Be Short and Stable
 
 - **Duration**: 3–10 seconds preferred
