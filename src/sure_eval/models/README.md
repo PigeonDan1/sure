@@ -1,40 +1,177 @@
-# SURE-EVAL Models
+# SURE-EVAL Model Onboarding
 
-Standardized model directory for SURE-EVAL.
+This directory contains the **Harness-First Agent Workflow** for automated tool/model environment configuration, plus all onboarded models.
 
-## Directory Structure
+---
+
+## 🤖 Agent Workflow for Tool/Model Onboarding
+
+SURE-EVAL provides a complete agent workflow that automates the entire process of configuring and validating audio processing tools.
+
+### How It Works
+
+1. **Initial Prompt** → Defines the agent's role and workflow
+2. **MODEL_INPUT** → Specifies the model/tool to onboard
+3. **Automated Execution** → Agent runs the complete pipeline
+4. **Artifact Generation** → All results saved as structured files
+
+### Usage
+
+#### Step 1: Initial Prompt
+
+Use this as the system prompt for your AI agent:
+
+```text
+cd /path/to/sure-eval
+你现在扮演 SURE-EVAL 的模型接入执行代理。你的任务不是做开放式探索，而是严格按照仓库中定义的 harness-first 工作流，完成一个模型的第一阶段 onboarding。
+
+你必须遵守以下文档：
+1. src/sure_eval/models/AGENTS.md
+2. docs/policies/constitution.md
+3. docs/policies/evidence_priority.md
+4. docs/policies/backend_selection.md
+5. docs/policies/retry_and_escalation.md
+6. docs/policies/phase1_target_policy.md
+7. docs/contracts/spec_validation.md
+8. docs/contracts/minimal_validation.md
+9. docs/specs/wrapper_contract.md
+10. docs/contracts/fixture_policy.md
+
+你的目标：
+- 针对给定模型，完成第一阶段端到端接入
+- 当前只评估端到端成功与否，不要求节点级评估分析
+- 你必须显式产出所有 required artifacts，以及满足条件时的 conditional artifacts
+- 如果流程失败，必须进入 DIAGNOSE / REPLAN，并按 policy 决定是否重试或升级
+- 不允许盲重试
+- 不允许无记录 patch
+- 不允许跳过 VALIDATE_SPEC
+
+请按当前 workflow 执行：
+DISCOVER → CLASSIFY → PLAN → VALIDATE_SPEC → BUILD_ENV → FETCH_WEIGHTS → VALIDATE_IMPORT → VALIDATE_LOAD → VALIDATE_INFER → VALIDATE_CONTRACT → GENERATE_WRAPPER → SAVE_ARTIFACTS
+
+运行时验证对象说明：
+- 第一阶段 runtime validation 验证 repo-native entrypoint / minimal callable path
+- wrapper 在 contract 验证通过后生成，用于接入 SURE
+
+你的工作要求：
+- 所有关键决策必须基于 evidence，并记录到结构化工件
+- 所有失败必须分类
+- 所有工件必须落盘
+- 最终输出 verdict.json，并简要汇报：成功 / 失败、停在哪一步、是否触发升级
+- 额外输出一段"phase-1 target understanding"，用 3-8 行说明：
+  1. 当前模型最小要验证的 repo-native path
+  2. 当前 fixture 是否 task-specific
+  3. 当前 backend 选择是强约束还是初始建议
+  4. 当前失败时应优先检查 integration、dependency 还是 fixture mismatch
+
+下面是本次模型输入：
+
+MODEL_INPUT
+```
+
+#### Step 2: MODEL_INPUT Format
+
+```yaml
+model_id: owner/model-name
+model_name: ModelName
+task_type: asr|s2tt|sd|ser|speech_enhancement|...
+deployment_type: local|api
+
+repo:
+  url: https://github.com/owner/repo
+  commit: null  # or specific commit hash
+
+weights:
+  source: huggingface|pip|release_or_pypi
+  local_path: null
+  required: true
+
+environment_hint:
+  preferred_backend: uv|pixi|docker
+  python_version: "3.10"
+  requires_gpu: true|false
+  system_packages: [ffmpeg, libsndfile1]
+
+phase1_runtime_target:
+  Validate the minimal callable path only:
+  - confirm package is importable
+  - load model with minimal config
+  - run inference on fixture
+  This phase does NOT require accuracy evaluation or production validation.
+
+entrypoints:
+  import_test: "import package"
+  load_test: "model = package.load_model('tiny', 'cpu')"
+  infer_test: "model.transcribe('tests/fixtures/shared/asr/en_16k.wav')"
+
+fixture:
+  audio: tests/fixtures/shared/asr/en_16k.wav
+  task_specific: true|false
+  fallback_allowed: true|false
+
+io_contract:
+  input_type: audio_path|text|json
+  output_type: json|text
+  primary_field: text|segments|labels
+  required_fields: [field1, field2]
+  nonempty_fields: [field1]
+  json_serializable: true
+```
+
+> 💡 **Tip**: Use a powerful LLM (GPT-4, Claude) to generate MODEL_INPUT from official documentation. Quality of MODEL_INPUT directly affects onboarding difficulty.
+
+#### Step 3: Run
+
+Send Initial Prompt + MODEL_INPUT to your AI agent. The agent will automatically:
+- Discover repository structure
+- Select appropriate backend
+- Build isolated environment
+- Validate import/load/infer/contract
+- Generate wrapper files
+- Save all artifacts
+
+---
+
+## Configured Models
+
+Models that have been successfully onboarded using the agent workflow:
+
+| Model | Task | Backend | Status | Verdict |
+|-------|------|---------|--------|---------|
+| [asr_qwen3](asr_qwen3/) | ASR | uv | ✅ Ready | Passed |
+| [asr_whisper](asr_whisper/) | ASR | uv | ✅ Ready | Passed |
+| [asr_parakeet](asr_parakeet/) | ASR | uv | ✅ Ready | Passed |
+| [qwen3_omni](qwen3_omni/) | OMNI | API | ✅ Ready | Passed |
+| [diarizen](diarizen/) | SD | uv | ✅ Ready | Passed |
+| [snakers4_silero-vad](snakers4_silero-vad/) | VAD | uv | ✅ Ready | Passed |
+| [ffmpeg](ffmpeg/) | Utility | uv | ✅ Ready | Passed |
+| [whisperx](whisperx/) | ASR | uv | ⚠️ Failed | VALIDATE_LOAD - torch install timeout |
+
+### Model Directory Structure
+
+Each model directory contains:
 
 ```
-models/
-├── README.md           # This file
-├── __init__.py         # Model registry
-├── base.py             # Base model interface
-├── registry.py         # Model registry implementation
-│
-├── asr_qwen3/          # ASR Qwen3 (implemented)
-│   ├── README.md
-│   ├── config.yaml
-│   ├── model.py
-│   ├── server.py
-│   ├── pyproject.toml
-│   ├── setup.sh
-│   ├── __init__.py
-│   └── results/
-│       └── aishell1_20250325.json
-│
-├── asr_whisper/        # ASR Whisper (template)
-│   └── README.md
-│
-├── s2tt_nllb/          # S2TT NLLB (template)
-│   └── README.md
-│
-└── diarizen/           # Diarization (template)
-    └── README.md
+model_name/
+├── model.spec.yaml         # Model specification
+├── model.py                # Wrapper implementation
+├── server.py               # MCP server
+├── config.yaml             # MCP configuration
+├── pyproject.toml          # Dependencies
+├── __init__.py             # Package exports
+└── artifacts/              # Generated artifacts
+    ├── backend_choice.json
+    ├── build.log
+    ├── validation.log
+    ├── verdict.json
+    └── ...
 ```
 
-## Model Template
+---
 
-Each model should have:
+## Manual Model Development
+
+If you prefer manual development over agent workflow:
 
 ### Required Files
 
@@ -46,22 +183,8 @@ Each model should have:
 6. **setup.sh** - Environment setup
 7. **__init__.py** - Package exports
 
-### Optional Files
+### Example config.yaml
 
-- **results/** - Test results directory
-- **tests/** - Unit tests
-
-## Quick Start
-
-### Add a New Model
-
-1. Create directory:
-```bash
-mkdir models/my_model
-cd models/my_model
-```
-
-2. Create config.yaml:
 ```yaml
 name: my_model
 task: ASR
@@ -79,43 +202,17 @@ server:
   timeout: 300
 ```
 
-3. Implement model.py and server.py
-
-4. Test:
-```python
-from sure_eval.models import ModelRegistry
-
-registry = ModelRegistry()
-info = registry.get_model("my_model")
-print(info.get_mcp_config())
-```
-
-### Setup Environment
-
-```bash
-cd models/asr_qwen3
-./setup.sh
-```
-
-### Run Tests
+### Test Your Model
 
 ```python
 from sure_eval import AutonomousEvaluator
 
 evaluator = AutonomousEvaluator()
-result = evaluator.quick_test("asr_qwen3", "aishell1", num_samples=10)
+result = evaluator.quick_test("my_model", "aishell1", num_samples=10)
+print(f"WER: {result['score']:.2f}%, RPS: {result['rps']:.2f}")
 ```
 
-## Available Models
-
-| Model | Task | Status | Results |
-|-------|------|--------|---------|
-| asr_qwen3 | ASR | ✓ Implemented | aishell1 (WER 0.79%) |
-| asr_whisper | ASR | ✓ Implemented | - |
-| asr_parakeet | ASR | ✓ Implemented | - |
-| qwen3_omni | OMNI | ✓ Implemented | - |
-| s2tt_nllb | S2TT | ○ Template | - |
-| diarizen | SD | ✓ Implemented | - |
+---
 
 ## Model Registry
 
@@ -134,36 +231,15 @@ asr_models = registry.list_by_task("ASR")
 info = registry.get_model("asr_qwen3")
 print(info.description)
 print(info.get_mcp_config())
-print(info.get_test_results())
 
 # Generate MCP config
 yaml_content = registry.generate_mcp_tools_yaml()
 ```
 
-## Adding Test Results
-
-Save test results to `results/{dataset}_{date}.json`:
-
-```json
-{
-  "model": "asr_qwen3",
-  "dataset": "aishell1",
-  "date": "2025-03-25",
-  "num_samples": 10,
-  "metrics": {
-    "wer": 0.79,
-    "all": 127,
-    "cor": 126,
-    "sub": 1,
-    "del": 0,
-    "ins": 0
-  },
-  "rps": 101.60,
-  "duration_seconds": 53.46
-}
-```
+---
 
 ## See Also
 
-- [Model Development Guide](../../../docs/model_development.md)
-- [Evaluation Guide](../../../docs/evaluation.md)
+- [Agent Policies](../../docs/policies/) - Constitution, evidence priority, backend selection
+- [Validation Contracts](../../docs/contracts/) - Spec validation, minimal validation
+- [Architecture Guide](../../ARCHITECTURE.md) - System design
