@@ -481,6 +481,122 @@ python demo/demo_evaluate_model.py --model my_model --dataset aishell1 --samples
 
 ### For AI Agents
 
+#### 🤖 Agent Workflow for Tool Environment Configuration
+
+SURE-EVAL 包含一套完整的 **Harness-First Agent Workflow**，可用于自动化配置任何音频处理工具的开发和部署环境。
+
+**使用方法：**
+
+1. **准备初始 Prompt**（复制以下内容作为 Agent 的 system prompt）：
+
+```text
+cd /path/to/sure-eval
+你现在扮演 SURE-EVAL 的模型接入执行代理。你的任务不是做开放式探索，而是严格按照仓库中定义的 harness-first 工作流，完成一个模型的第一阶段 onboarding。
+
+你必须遵守以下文档：
+1. src/sure_eval/models/AGENTS.md
+2. docs/policies/constitution.md
+3. docs/policies/evidence_priority.md
+4. docs/policies/retry_and_escalation.md
+5. docs/contracts/spec_validation.md
+6. docs/contracts/minimal_validation.md
+7. docs/specs/wrapper_contract.md
+8. docs/contracts/fixture_policy.md
+
+你的目标：
+- 针对给定模型，完成第一阶段端到端接入
+- 当前只评估端到端成功与否，不要求节点级评估分析
+- 你必须显式产出所有 required artifacts，以及满足条件时的 conditional artifacts
+- 如果流程失败，必须进入 DIAGNOSE / REPLAN，并按 policy 决定是否重试或升级
+- 不允许盲重试
+- 不允许无记录 patch
+- 不允许跳过 VALIDATE_SPEC
+
+请按当前 workflow 执行：
+DISCOVER → CLASSIFY → PLAN → VALIDATE_SPEC → BUILD_ENV → FETCH_WEIGHTS → VALIDATE_IMPORT → VALIDATE_LOAD → VALIDATE_INFER → VALIDATE_CONTRACT → GENERATE_WRAPPER → SAVE_ARTIFACTS
+
+运行时验证对象说明：
+- 第一阶段 runtime validation 验证 repo-native entrypoint / minimal callable path
+- wrapper 在 contract 验证通过后生成，用于接入 SURE
+
+你的工作要求：
+- 所有关键决策必须基于 evidence，并记录到结构化工件
+- 所有失败必须分类
+- 所有工件必须落盘
+- 最终输出 verdict.json，并简要汇报：成功 / 失败、停在哪一步、是否触发升级
+- 额外输出一段"phase-1 target understanding"，用 3-8 行说明：
+  1. 当前模型最小要验证的 repo-native path
+  2. 当前 fixture 是否 task-specific
+  3. 当前 backend 选择是强约束还是初始建议
+  4. 当前失败时应优先检查 integration、dependency 还是 fixture mismatch
+
+下面是本次模型输入：
+
+MODEL_INPUT
+```
+
+2. **准备 MODEL_INPUT**（模型个性化配置，推荐使用强大的 LLM 生成）：
+
+```yaml
+model_id: Rikorose/DeepFilterNet
+model_name: DeepFilterNet
+task_type: speech_enhancement
+deployment_type: local
+
+repo:
+  url: https://github.com/Rikorose/DeepFilterNet
+  commit: null
+
+weights:
+  source: release_or_pypi
+  local_path: null
+  required: true
+
+environment_hint:
+  preferred_backend: uv
+  python_version: "3.10"
+  requires_gpu: false
+  system_packages: [ffmpeg]
+
+phase1_runtime_target:
+  Validate the minimal enhancement path only:
+  - confirm DeepFilterNet CLI or Python package is callable
+  - enhance one noisy wav fixture
+  - produce a non-empty enhanced output file
+  This phase does NOT require PESQ/STOI evaluation or real-time deployment validation.
+
+entrypoints:
+  import_test: "deepFilter --help"
+  load_test: "deepFilter --version"
+  infer_test: "deepFilter tests/fixtures/shared/se/noisy_48k.wav --output-dir artifacts/df_out"
+
+fixture:
+  audio: tests/fixtures/shared/se/noisy_48k.wav
+  transcript: tests/fixtures/shared/se/noisy_48k.txt
+  task_specific: true
+  fallback_allowed: false
+  note: >
+    Use a noisy speech wav at 48kHz because the official CLI path is defined for wav files at 48kHz.
+
+io_contract:
+  input_type: audio_path
+  output_type: json
+  primary_field: output_path
+  required_fields: [output_path]
+  nonempty_fields: [output_path]
+  json_serializable: true
+
+contract_expectation:
+  - output_path exists
+  - output file is non-empty
+```
+
+> 💡 **提示**：MODEL_INPUT 的质量直接影响适配难度。建议使用 GPT-4、Claude 或其他强大模型根据官方文档生成，确保字段准确、fixture 选择合理。
+
+3. **运行 Agent**：将初始 Prompt + MODEL_INPUT 发送给 AI Agent，Agent 将自动执行完整 workflow 并生成所有工件。
+
+#### 📚 Additional Agent Documentation
+
 - **[Agent Tool Management Guide](src/sure_eval/models/AGENTS.md)** ⭐ - **Essential guide for AI agents configuring and managing tools**
   - Tool classification (API vs Local deployment)
   - Environment management strategy (UV vs Conda)
