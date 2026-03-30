@@ -147,7 +147,7 @@ Models successfully onboarded via Agent Workflow:
 | [asr_whisper](asr_whisper/) | ASR | uv | ✅ Ready | OpenAI Whisper base |
 | [asr_parakeet](asr_parakeet/) | ASR | uv | ✅ Ready | NVIDIA Parakeet CTC |
 | [qwen3_omni](qwen3_omni/) | OMNI | API | ✅ Ready | Qwen3-Omni API |
-| [diarizen](diarizen/) | SD | uv | ✅ Ready | Speaker diarization |
+| [diarizen](diarizen/) | SD | conda | ✅ Ready | Speaker diarization (DiariZen) |
 | [snakers4_silero-vad](snakers4_silero-vad/) | VAD | uv | ✅ Ready | Voice activity detection |
 | [ffmpeg](ffmpeg/) | Utility | uv | ✅ Ready | Audio processing utility |
 
