@@ -42,6 +42,7 @@ class ModelWrapper:
 - Handle HTTP/网络 (that's server's job)
 - Parse command line arguments
 - Write to files outside model directory
+- Depend on unrelated top-level package extras just to exercise model-local loading
 
 ---
 
@@ -189,6 +190,13 @@ def predict(self, input_data: Any) -> Any:
         RuntimeError: If inference fails
     """
 ```
+
+## Wrapper Validation Boundary
+
+- Phase-1 success is gated by repo-native import/load/infer/contract
+- Wrapper generation happens after contract passes
+- If wrapper smoke is executed, it should verify the model-local wrapper path only
+- Wrapper smoke must not require unrelated top-level `sure_eval` package extras to be installed
 
 ---
 

@@ -22,6 +22,7 @@ Retry is allowed ONLY when:
 - [ ] `REPLAN` specifies what will change (dependency version, backend, config, approach)
 - [ ] Change is targeted at the diagnosed failure class
 - [ ] Retry count for this checkpoint is < 3
+- [ ] If a new `failure_type` appears at the same checkpoint, the previous failure class has already been directly mitigated and logged
 
 ### 2. Retry Prohibitions
 
@@ -120,6 +121,10 @@ SUCCESS -> continue
 FAIL (same failure_type) -> ESCALATE
 FAIL (new failure_type) -> DIAGNOSE again
 ```
+
+**Note**:
+- 同一 checkpoint 暴露出新的 `failure_type` 时，不视为盲重试
+- 前提是前一个 failure class 已被明确修复，新的 retry 直接针对新 failure class
 
 ---
 

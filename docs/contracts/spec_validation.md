@@ -11,6 +11,7 @@
 `VALIDATE_SPEC` is a mandatory gate between `PLAN` and `BUILD_ENV`. Its purpose is to verify that:
 
 - The provided spec is complete and internally consistent
+- The runtime identity has been resolved to a single credible callable target
 - Backend choice has sufficient evidence
 - Build plan is executable
 - Critical conflicts have been resolved
@@ -53,6 +54,7 @@
 **Check**: Critical fields have evidence support recorded
 
 **Critical fields**:
+- `model_name` / runtime load identity (must point to a single resolved callable target)
 - `environment.preferred_backend` (must cite evidence in `backend_choice.json`)
 - `entrypoints.infer_test` (must have fixture available)
 - `weights.local_path` or `weights.source` (must be reachable)
@@ -92,6 +94,7 @@
 - All source URLs are reachable
 - No circular dependencies
 - Disk space sufficient (verified in preflight)
+- Temporary extraction/cache strategy is explicit when weights are large or archive restore is expected
 
 **Failure**: Build plan not executable → REPLAN with corrections
 
@@ -107,6 +110,10 @@
 3. Dataset-specific fixture (`tests/fixtures/{dataset}/`)
 
 **Failure**: Fixture not found → mark in spec_validation.json, may proceed with warning if fallback available
+
+**Additional rule**:
+- Fixture fallback may narrow the test asset only when runtime identity has already been resolved to a narrower callable target
+- If runtime identity has not changed, fallback must preserve the original task semantics
 
 ---
 
@@ -131,6 +138,8 @@
 - If `preflight.gpu.available == false` and `model.requires_gpu == true` → warning
 - If `preflight.package_managers.uv == false` and `backend == 'uv'` → error
 - If `preflight.disk_space < required` → error
+- If runtime preflight indicates CUDA initialization risk, build plan must record CPU fallback or mark GPU-only execution as blocked
+- If runtime preflight indicates default TMPDIR/extract path is insufficient, build plan must record an alternate writable path
 
 **Failure**: Incompatibility → REPLAN with adjusted backend
 
@@ -196,6 +205,7 @@ If any check fails:
 **Failure classification**:
 - `spec_incomplete`: Missing required fields
 - `insufficient_evidence`: Critical fields lack evidence
+- `runtime_identity_unresolved`: runtime target not resolved to a single callable identity
 - `unresolved_conflict`: Evidence conflicts not resolved
 - `build_plan_unexecutable`: Cannot execute build steps
 - `fixture_unavailable`: No test fixture found

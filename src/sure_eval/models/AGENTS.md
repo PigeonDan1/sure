@@ -31,6 +31,7 @@
 
 **做**:
 - 环境后端选择 (uv/pixi/docker/api)
+- runtime identity 收敛 (display identity / runtime load identity / local dir name)
 - 最小验证 (import/load/infer/contract)
 - Wrapper 骨架生成
 - 工件归档 (spec/verdict/log)
@@ -104,6 +105,7 @@ RETRY_FROM_CHECKPOINT (回到失败前状态)
 - 调用 shell 命令并捕获日志
 - 保存工件到指定路径
 - 判定验证结果 (PASS/FAIL)
+- 在 BUILD_ENV 前检查 runtime identity、preflight 与 build plan 是否已收敛
 
 **不介入**:
 - 不决定 backend 选择
@@ -251,6 +253,9 @@ templates/
    
 6. 如果宿主机污染风险高 
    → docker backend 优先
+
+7. 如果 phase-1 目标是 Python-only minimal callable path，且轻量 backend 可满足
+   → 不因 preferred_backend 或 requires_gpu 提示而放弃 uv/pixi
 ```
 
 ### 5.2 记录要求
@@ -290,14 +295,16 @@ templates/
 ### 7.1 DISCOVER
 
 **输入**: repo URL / local repo, 初始模型信息  
-**动作**: 扫描 repo 文件结构，收集 README、requirements、environment.yml 等  
+**动作**: 扫描 repo 文件结构，收集 README、requirements、environment.yml 等；收敛 runtime identity（display identity / runtime load identity / local dir name）  
 **输出**: repo_summary.json
 
 **后续**: 可执行 [预检清单](../../../docs/playbooks/preflight_checklist.md) 生成 `preflight_summary.json`
+  - host preflight: GPU/driver、磁盘、docker、系统工具
+  - runtime preflight: package manager、Python、TMPDIR/extract 风险、CUDA 初始化风险
 
 ### 7.2 CLASSIFY
 
-**动作**: 判断模型类型 (local/api)，判断任务类型，判断环境复杂度  
+**动作**: 判断模型类型 (local/api)，判断任务类型，判断环境复杂度，确认 runtime family 与最小 callable path  
 **输出**: classification.json
 
 ### 7.3 PLAN
@@ -306,6 +313,7 @@ templates/
 - Builder Agent 选择 backend
 - 生成 model.spec.yaml
 - 生成 build_plan.json
+- 明确 runtime load identity、fixture 选择、CPU fallback / GPU 限制（若适用）
 
 **输出**: 
 - model.spec.yaml
@@ -322,6 +330,9 @@ templates/
 - 检查 fixture 是否可用
 - 检查 `io_contract` 是否足以支持后续 contract test
 - 检查 preflight 结果是否与 backend 选择相容
+- 检查 runtime identity 是否已收敛
+- 检查大权重 restore/extract 的临时目录策略是否明确
+- 检查 GPU 风险是否已记录为 requirement、warning 或 fallback plan
 
 **输出**: 
 - spec_validation.json
@@ -334,7 +345,7 @@ templates/
 
 ### 7.5 BUILD_ENV
 
-**动作**: 使用选定 backend 构建隔离环境  
+**动作**: 使用选定 backend 构建隔离环境，按 build plan 设置 cache/tmp/runtime 路径  
 **输出**: environment ready / failure  
 **工件**: build.log
 
@@ -353,7 +364,7 @@ templates/
 
 **动作**: 运行 load test  
 **输出**: load result  
-**失败**: 进入 DIAGNOSE (missing_weights / cuda_version_mismatch)
+**失败**: 进入 DIAGNOSE (missing_weights / cuda_version_mismatch / config_not_set)
 
 ### 7.8 VALIDATE_INFER
 
@@ -378,6 +389,7 @@ templates/
 **说明**: 
 - 第一阶段的 runtime validation 验证对象是 **repo-native entrypoint / minimal callable path**
 - wrapper 在 contract 验证通过后生成，用于接入 SURE 框架
+- 若 runtime path 已通过，wrapper smoke 仅验证 model-local wrapper，不要求顶层 `sure_eval` 包 extras 完整可用
 
 ### 7.10 GENERATE_WRAPPER
 
@@ -389,6 +401,10 @@ templates/
   - (可选) `config.yaml`: MCP 工具配置
 
 **参考**: [Wrapper 契约](../../../docs/specs/wrapper_contract.md) 定义各文件职责与最小接口
+
+**约束**:
+- wrapper 应复用已验证通过的 repo-native path
+- wrapper smoke 若执行，应避免被无关全局依赖阻塞
 
 ### 7.11 SAVE_ARTIFACTS
 

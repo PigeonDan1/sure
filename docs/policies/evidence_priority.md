@@ -19,6 +19,7 @@ When evidence sources conflict, agents must use the following priority order:
 - Model load execution result
 - Inference output on fixture
 - Error stack traces with line numbers
+- Host/runtime probes that deterministically block execution (e.g. `nvidia-smi`, CUDA init failure, tmpdir no-space)
 
 **Usage**: Override all other evidence when available
 
@@ -145,7 +146,7 @@ When agents encounter conflicts between evidence sources:
 ### Evaluator Agent (DIAGNOSE phase)
 
 1. Extract failure symptoms from runtime logs (priority 2)
-2. Cross-reference with repository config (priority 3)
+2. Cross-reference with host/runtime preflight and repository config
 3. Generate diagnosis based on highest-priority available evidence
 4. Mark any assumptions as "requires verification"
 
@@ -179,6 +180,11 @@ Agents must NOT:
 
 **Resolution**: Do not apply workaround without verification
 **Rationale**: External discussion (priority 6) must not override official docs (priority 5) without evidence
+
+### Scenario 4: README says GPU is required, runtime probe shows CUDA init fails
+
+**Resolution**: Trust runtime probe, then decide whether CPU fallback still satisfies phase-1 target
+**Rationale**: Executable environment evidence outranks README prose and hints
 
 ---
 

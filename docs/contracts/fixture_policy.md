@@ -53,6 +53,12 @@ Fixture mismatch **不应直接判定为 integration failure**：
 - 若 fallback 可用，记录为 `"fixture_source": "shared"`
 - 仅在无可用 fixture 时，才标记为 `"fixture_missing"` 并申请 waiver
 
+### Semantic Narrowing 规则
+
+- 如果 runtime identity 已被证据解析为更窄目标（例如 multilingual 输入被解析为 English-only checkpoint），fixture 可随之收敛
+- 如果 runtime identity 未变化，fixture fallback 必须保持原始任务语义，不得借 fallback 隐式缩小验证目标
+- 任何语义收敛都必须记录在 `model.spec.yaml` 和 `spec_validation.json`
+
 ---
 
 ### 1. Fixtures Must Be Short and Stable

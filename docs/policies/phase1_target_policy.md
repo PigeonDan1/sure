@@ -65,11 +65,13 @@ result = assign_word_speakers(diarize_result, result)
 - 下游任务未协同（如 ASR 成功但 diarization 失败）
 - 性能未达生产标准（如实时率 < 1x）
 - 特定语言/格式不支持（如仅测试英语，中文失败）
+- 在同一条 repo-native path 上使用 CPU fallback 成功，而 GPU 仅作为性能/部署要求存在
 
 以下情况**构成** Phase-1 失败：
 - import/load/infer/contract 任一阶段报错
 - 输出格式不符合 io_contract
 - 必要字段缺失或为空
+- 为了通过 phase-1 而切换到不同 runtime family 或不同产品形态
 
 ---
 
@@ -112,6 +114,7 @@ Phase-2 (后续)
 - VALIDATE_CONTRACT 仅检查字段存在性和格式
 - 不检查语义正确性
 - 不检查数值合理性
+- 若使用 CPU fallback，必须确认仍是同一条 repo-native minimal callable path
 
 ---
 
@@ -148,6 +151,14 @@ Phase-2 (后续)
 **判定**: ✅ Phase-1 成功
 - 多语言覆盖是 Phase-2 任务
 - Phase-1 验证最小可调用路径即可
+
+### 场景 5: GPU 不可用，但 CPU fallback 跑通
+
+**情况**: 模型输入标记 `requires_gpu: true`，但 host driver 不兼容；同一条 repo-native path 在 CPU 上完成 import/load/infer/contract
+
+**判定**: ✅ Phase-1 成功
+- CPU fallback 仍验证了最小 callable path
+- verdict 必须显式记录 GPU limitation
 
 ---
 
