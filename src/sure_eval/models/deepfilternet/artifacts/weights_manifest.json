@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-03-30T11:18:00+08:00",
+  "model_id": "Rikorose/DeepFilterNet",
+  "required": true,
+  "status": "fetched",
+  "source": {
+    "type": "runtime_download_via_deepfilter_cli",
+    "package": "deepfilternet==0.5.6",
+    "default_model": "DeepFilterNet3"
+  },
+  "local_artifacts": [
+    {
+      "path": "/tmp/sure_eval_deepfilternet/cache/DeepFilterNet/DeepFilterNet3/checkpoints/model_120.ckpt.best",
+      "kind": "checkpoint",
+      "size_bytes": 8714073,
+      "sha256": "23b92884f63ccf54bb026014604625ab231657b6480df65db4095c4c171e6003"
+    },
+    {
+      "path": "/tmp/sure_eval_deepfilternet/cache/DeepFilterNet/DeepFilterNet3/config.ini",
+      "kind": "config",
+      "size_bytes": 2067,
+      "sha256": "415eb925d44990d938fb739f514aa3662c1ec0ea836cff044fa1291b82cb4290"
+    }
+  ],
+  "evidence": [
+    "validation.log shows the CLI loading DeepFilterNet3 from /tmp/sure_eval_deepfilternet/cache/DeepFilterNet/DeepFilterNet3.",
+    "The checkpoint and config files were present locally after the first infer attempt and were reused by subsequent runs."
+  ]
+}

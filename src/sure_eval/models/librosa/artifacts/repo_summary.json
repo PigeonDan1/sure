@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-03-30T11:33:36+08:00",
+  "model_id": "librosa",
+  "repo": {
+    "url": "https://github.com/librosa/librosa",
+    "commit": null,
+    "evidence_level": "user_provided"
+  },
+  "summary": {
+    "package_name": "librosa",
+    "integration_style": "direct_python_import",
+    "local_runtime": true,
+    "weights_required": false
+  },
+  "notes": [
+    "This onboarding uses the library's package import path as the repo-native minimal callable path.",
+    "No upstream repository checkout was required for phase-1 because the target is the installed Python package entrypoint."
+  ]
+}

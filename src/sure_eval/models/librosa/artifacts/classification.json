@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-03-30T11:33:36+08:00",
+  "model_id": "librosa",
+  "classification": {
+    "task_type": "audio_analysis",
+    "deployment_type": "local",
+    "weights_required": false,
+    "requires_gpu": false,
+    "runtime_shape": "pure_python_local_library"
+  },
+  "phase1_runtime_target": {
+    "minimal_repo_native_path": [
+      "import librosa",
+      "librosa.load(audio_path, sr=None)",
+      "librosa.onset.onset_strength(...)",
+      "librosa.beat.beat_track(...)"
+    ],
+    "excluded_scope": [
+      "full MIR interpretation",
+      "chord analysis",
+      "downstream music reasoning"
+    ]
+  }
+}

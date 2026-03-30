@@ -1,0 +1,18 @@
+[
+  {
+    "fixture_id": "se_noisy_48k_v1",
+    "path": "tests/fixtures/shared/se/noisy_48k.wav",
+    "transcript": "tests/fixtures/shared/se/noisy_48k.txt",
+    "format": "wav",
+    "sample_rate": 48000,
+    "channels": 1,
+    "duration_sec": 2.35,
+    "content_summary": "Noisy English speech clip derived from a tracked LibriSpeech utterance for speech enhancement validation.",
+    "ground_truth": "lobster a la newberg",
+    "source": "tests/fixtures/librispeech/sample_1_367-130732-0006.wav",
+    "transformation": "ffmpeg aresample to 48kHz + deterministic pink-noise mix via anoisesrc seed=20260330",
+    "sha256": "6cf3b068a30b2ec2696e562fa29351c4790f5f959b1fe2582bde9c14843edae9",
+    "task_specific": true,
+    "license": "Inherited from source fixture manifest context"
+  }
+]

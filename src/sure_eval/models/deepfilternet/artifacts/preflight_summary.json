@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-03-30T11:04:49+08:00",
+  "model_id": "Rikorose/DeepFilterNet",
+  "overall": "pass",
+  "checks": {
+    "python": {
+      "status": "pass",
+      "details": {
+        "available": true,
+        "version": "3.10.12",
+        "path": "/usr/bin/python3.10"
+      }
+    },
+    "package_managers": {
+      "status": "pass",
+      "details": {
+        "uv": {
+          "available": true,
+          "version": "0.10.11"
+        }
+      }
+    },
+    "gpu": {
+      "status": "pass",
+      "details": {
+        "required_by_input": false,
+        "available": false,
+        "reason": "GPU is not required for phase-1 validation."
+      }
+    },
+    "disk_space": {
+      "status": "warn",
+      "details": {
+        "workspace_mount_available_gb": 0,
+        "tmp_available_gb": 5.6,
+        "recommended_strategy": "place transient env and caches under /tmp"
+      }
+    },
+    "network": {
+      "status": "warn",
+      "details": {
+        "sandbox_network": "restricted",
+        "expected_requirement": "escalated access for PyPI sync and runtime weight fetch"
+      }
+    },
+    "system_tools": {
+      "status": "pass",
+      "details": {
+        "ffmpeg": {
+          "available": true,
+          "version": "4.4.2-0ubuntu0.22.04.1"
+        }
+      }
+    },
+    "fixture": {
+      "status": "pass",
+      "details": {
+        "path": "tests/fixtures/shared/se/noisy_48k.wav",
+        "sample_rate_hz": 48000,
+        "channels": 1,
+        "duration_sec": 2.35
+      }
+    }
+  },
+  "recommendations": [
+    "Use Python 3.10 to match the requested environment hint and supported PyPI range.",
+    "Keep runtime assets under /tmp because the workspace mount is full.",
+    "Treat network access as an escalated step and record fetched weights in weights_manifest.json."
+  ],
+  "blockers": []
+}

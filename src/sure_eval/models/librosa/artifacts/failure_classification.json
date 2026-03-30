@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-03-30T11:34:25+08:00",
+  "model_id": "librosa",
+  "checkpoint": "BUILD_ENV",
+  "attempts": [
+    {
+      "failure_type": "runtime_backend_incompatible",
+      "retryable": true,
+      "evidence": [
+        {
+          "source": "src/sure_eval/models/librosa/artifacts/build.log",
+          "details": "Failed to fetch https://pypi.org/simple/librosa/ due to dns error and temporary failure in name resolution."
+        }
+      ],
+      "root_cause_hypothesis": "The uv backend is compatible, but sandboxed execution cannot reach PyPI, so dependency resolution cannot complete inside the restricted environment.",
+      "classified_as": "environmental_network_restriction"
+    },
+    {
+      "failure_type": "config_not_set",
+      "retryable": true,
+      "evidence": [
+        {
+          "source": "src/sure_eval/models/librosa/artifacts/build.log",
+          "details": "uv venv failed with 'Could not create temporary file' under /root/.cache/uv on a read-only file system."
+        }
+      ],
+      "root_cause_hypothesis": "The uv cache directory was not explicitly redirected for the venv creation command.",
+      "classified_as": "cache_path_not_pinned"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-03-30T11:12:00+08:00",
+  "model_id": "Rikorose/DeepFilterNet",
+  "mutations": [
+    {
+      "path": "src/sure_eval/models/deepfilternet/pyproject.toml",
+      "type": "dependency_pin_update",
+      "change": "Added explicit torch==2.2.2 and torchaudio==2.2.2 runtime dependencies.",
+      "rationale": "Initial import failed with ModuleNotFoundError for torch because the published DeepFilterNet package metadata omits torch despite importing it at CLI startup.",
+      "evidence": [
+        "src/sure_eval/models/deepfilternet/artifacts/validation.log",
+        "/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/deepfilternet-0.5.6.dist-info/METADATA"
+      ]
+    }
+  ]
+}

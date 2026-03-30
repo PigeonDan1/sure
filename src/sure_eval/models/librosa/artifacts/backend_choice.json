@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-03-30T11:33:36+08:00",
+  "model_id": "librosa",
+  "chosen_backend": "uv",
+  "reason": "The requested phase-1 path is a CPU-only Python library import with no weights and only ffmpeg as a declared system package. uv is the lowest-risk reproducible backend and matches the environment hint.",
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/librosa/artifacts/preflight_summary.json",
+      "priority": 1,
+      "details": "uv, Python 3.10, and ffmpeg are available locally."
+    },
+    {
+      "source": "user_input.phase1_runtime_target",
+      "priority": 6,
+      "details": "Phase 1 only requires local import, audio loading, onset extraction, and beat/tempo analysis."
+    },
+    {
+      "source": "docs/policies/constitution.md",
+      "priority": 5,
+      "details": "Backend priority favors uv over pixi and docker when functionality is equivalent."
+    }
+  ],
+  "evidence_conflicts": [],
+  "rejected_options": [
+    {
+      "backend": "pixi",
+      "reason": "No repo-native pixi or conda evidence is available, and it adds unnecessary solver complexity."
+    },
+    {
+      "backend": "docker",
+      "reason": "Higher operational risk than uv for a CPU-only pure Python library path."
+    }
+  ]
+}

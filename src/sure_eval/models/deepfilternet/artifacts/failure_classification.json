@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-03-30T11:16:20+08:00",
+  "model_id": "Rikorose/DeepFilterNet",
+  "checkpoint": "VALIDATE_INFER",
+  "failure_type": "runtime_backend_incompatible",
+  "category": "sandbox_execution_constraint",
+  "message": "The infer command reached CPU enhancement, but torch multiprocessing failed under the sandbox permission model even after the output path issue was fixed.",
+  "evidence": {
+    "error_log": "PermissionError: [Errno 1] Operation not permitted",
+    "root_cause": "deepFilter uses a DataLoader with multiprocessing resource sharing; the unprivileged sandbox blocked the socket/listener setup needed by torch.multiprocessing."
+  },
+  "retryable": true,
+  "mitigation_options": [
+    "Rerun the same infer command outside the sandbox to validate whether the failure is permission-related rather than model-related.",
+    "If sandbox execution remains required in the future, replace the CLI path with a single-process callable path or patch worker settings with a recorded change."
+  ],
+  "history": [
+    {
+      "checkpoint": "VALIDATE_IMPORT",
+      "failure_type": "python_dependency_missing",
+      "message": "Initial environment from deepfilternet==0.5.6 omitted torch even though the CLI imports it at startup."
+    },
+    {
+      "checkpoint": "VALIDATE_INFER",
+      "failure_type": "wrong_entrypoint",
+      "message": "The repo-native infer command assumed an existing parent directory for artifacts/df_out."
+    }
+  ]
+}

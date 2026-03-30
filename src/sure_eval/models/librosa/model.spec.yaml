@@ -1,0 +1,48 @@
+model_id: "librosa"
+model_name: "librosa"
+task_type: "audio_analysis"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/librosa/librosa"
+  commit: null
+
+weights:
+  source: "none"
+  local_path: null
+  required: false
+
+environment:
+  preferred_backend: "uv"
+  python_version: "3.10"
+  requires_gpu: false
+  system_packages:
+    - ffmpeg
+
+entrypoints:
+  import_test: "import librosa"
+  load_test: |
+    import librosa
+    y, sr = librosa.load('tests/fixtures/shared/mir/rhythm_22k_15s.wav', sr=None)
+  infer_test: |
+    import librosa
+    y, sr = librosa.load('tests/fixtures/shared/mir/rhythm_22k_15s.wav', sr=None)
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    tempo, beats = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "tempo"
+  required_fields:
+    - "tempo"
+    - "beats"
+  nonempty_fields:
+    - "beats"
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true

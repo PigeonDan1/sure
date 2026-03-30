@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-03-30T11:34:25+08:00",
+  "model_id": "librosa",
+  "checkpoint": "BUILD_ENV",
+  "recommendations": [
+    {
+      "failure_type": "runtime_backend_incompatible",
+      "recommended_change": "Retry BUILD_ENV with the same uv backend using escalated execution for networked dependency resolution.",
+      "what_changes": [
+        "Execution context changes from sandboxed to escalated command execution.",
+        "Backend, Python version, fixture, and entrypoint remain unchanged."
+      ],
+      "retry_from_checkpoint": "BUILD_ENV",
+      "retry_count_after_apply": 1
+    },
+    {
+      "failure_type": "config_not_set",
+      "recommended_change": "Pin UV_CACHE_DIR to /tmp/sure_eval_librosa/cache for venv creation and subsequent uv commands.",
+      "what_changes": [
+        "The uv cache path is now explicit and stays inside /tmp.",
+        "No backend or dependency changes are introduced."
+      ],
+      "retry_from_checkpoint": "BUILD_ENV",
+      "retry_count_after_apply": 2
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-03-30T11:33:36+08:00",
+  "model_id": "librosa",
+  "package_managers": {
+    "uv": true
+  },
+  "python": {
+    "python3": "3.10.12"
+  },
+  "system_packages": {
+    "ffmpeg": true
+  },
+  "disk": {
+    "workspace_available_human": "0",
+    "tmp_available_human": "656M"
+  },
+  "fixture": {
+    "path": "tests/fixtures/shared/mir/rhythm_22k_15s.wav",
+    "exists": true,
+    "task_specific": true
+  },
+  "compatibility": {
+    "preferred_backend_available": true,
+    "python_version_available": true,
+    "host_risk_detected": false
+  },
+  "warnings": [
+    "The CPFS workspace is full, so transient environment state must live under /tmp.",
+    "Networked package installation will require escalated execution outside the sandbox."
+  ]
+}

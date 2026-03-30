@@ -1,0 +1,62 @@
+[2026-03-30T11:33:36+08:00] BUILD_ENV planned for librosa using uv.
+Using CPython 3.10.12 interpreter at: /usr/bin/python3
+WARN Retry attempt #0. Sleeping 1.521699703s before the next attempt
+WARN Retry attempt #1. Sleeping 2.947741801s before the next attempt
+WARN Retry attempt #2. Sleeping 5.9503894s before the next attempt
+error: Request failed after 3 retries in 10.4s
+  Caused by: Failed to fetch: `https://pypi.org/simple/librosa/`
+  Caused by: error sending request for url (https://pypi.org/simple/librosa/)
+  Caused by: client error (Connect)
+  Caused by: dns error
+  Caused by: failed to lookup address information: Temporary failure in name resolution
+
+[2026-03-30T11:34:10+08:00] BUILD_ENV diagnose: sandbox DNS failure while resolving PyPI; retrying with escalated execution.
+Using CPython 3.10.12 interpreter at: /usr/bin/python3
+Resolved 26 packages in 264ms
+error: Could not acquire lock
+  Caused by: Could not create temporary file
+  Caused by: Read-only file system (os error 30) at path "/root/.cache/uv/.tmpFirrfs"
+[2026-03-30T11:34:25+08:00] BUILD_ENV diagnose: uv cache path defaulted to /root/.cache/uv; retrying with UV_CACHE_DIR=/tmp/sure_eval_librosa/cache.
+Using CPython 3.10.12 interpreter at: /usr/bin/python3.10
+Creating virtual environment at: /tmp/sure_eval_librosa/.venv
+Activate with: source /tmp/sure_eval_librosa/.venv/bin/activate
+Resolved 26 packages in 17ms
+Downloading numpy (16.0MiB)
+Downloading soundfile (1.3MiB)
+Downloading scipy (35.9MiB)
+Downloading scikit-learn (9.2MiB)
+Downloading llvmlite (53.7MiB)
+Downloading numba (3.6MiB)
+ Downloaded soundfile
+ Downloaded numba
+ Downloaded numpy
+ Downloaded scikit-learn
+ Downloaded llvmlite
+ Downloaded scipy
+Prepared 25 packages in 1.72s
+Installed 25 packages in 37ms
+ + audioread==3.1.0
+ + certifi==2026.2.25
+ + cffi==2.0.0
+ + charset-normalizer==3.4.6
+ + decorator==5.2.1
+ + idna==3.11
+ + joblib==1.5.3
+ + lazy-loader==0.5
+ + librosa==0.10.2.post1
+ + llvmlite==0.46.0
+ + msgpack==1.1.2
+ + numba==0.64.0
+ + numpy==2.2.6
+ + packaging==26.0
+ + platformdirs==4.9.4
+ + pooch==1.9.0
+ + pycparser==3.0
+ + requests==2.33.0
+ + scikit-learn==1.7.2
+ + scipy==1.15.3
+ + soundfile==0.13.1
+ + soxr==1.0.0
+ + threadpoolctl==3.6.0
+ + typing-extensions==4.15.0
+ + urllib3==2.6.3

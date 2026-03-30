@@ -1,0 +1,47 @@
+{
+  "timestamp": "2026-03-30T11:04:49+08:00",
+  "model_id": "Rikorose/DeepFilterNet",
+  "repo": {
+    "url": "https://github.com/Rikorose/DeepFilterNet",
+    "commit": null,
+    "discovery_mode": "remote_repo_metadata_and_package_registry"
+  },
+  "summary": {
+    "package_name": "deepfilternet",
+    "repo_name": "DeepFilterNet",
+    "language": "python_and_rust",
+    "task_type": "speech_enhancement",
+    "runtime_shape": "local_cli_first_python_package",
+    "cli_entrypoint": "deepFilter"
+  },
+  "evidence": [
+    {
+      "source_type": "package_registry",
+      "source": "https://pypi.org/project/deepfilternet/",
+      "details": [
+        "Latest PyPI release visible from the registry page is 0.5.6.",
+        "PyPI metadata declares Requires-Python >=3.8,<4.0.",
+        "Package topic is speech/noise reduction and the distribution is installable as a Python package."
+      ]
+    },
+    {
+      "source_type": "upstream_repo_usage",
+      "source": "https://github.com/Rikorose/DeepFilterNet",
+      "details": [
+        "Repository and sample pages describe DeepFilterNet as a speech enhancement / denoising system.",
+        "Issue reports and examples reference the deepFilter CLI for local enhancement runs."
+      ]
+    },
+    {
+      "source_type": "local_fixture",
+      "source": "tests/fixtures/shared/se/noisy_48k.wav",
+      "details": [
+        "A task-specific 48kHz noisy speech fixture was generated locally from a tracked LibriSpeech sample with deterministic pink-noise mixing for phase-1 validation."
+      ]
+    }
+  ],
+  "open_questions": [
+    "Exact runtime weight storage path will be confirmed during FETCH_WEIGHTS.",
+    "CLI output filename convention will be confirmed during VALIDATE_INFER."
+  ]
+}

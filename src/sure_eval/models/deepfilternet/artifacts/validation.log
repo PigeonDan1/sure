@@ -1,0 +1,140 @@
+Traceback (most recent call last):
+  File "/tmp/sure_eval_deepfilternet/.venv/bin/deepFilter", line 4, in <module>
+    from df.enhance import run
+  File "/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/__init__.py", line 2, in <module>
+    from .enhance import enhance, init_df
+  File "/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/enhance.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+Traceback (most recent call last):
+  File "/tmp/sure_eval_deepfilternet/.venv/bin/deepFilter", line 4, in <module>
+    from df.enhance import run
+  File "/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/__init__.py", line 2, in <module>
+    from .enhance import enhance, init_df
+  File "/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/enhance.py", line 8, in <module>
+    import torch
+ModuleNotFoundError: No module named 'torch'
+[IMPORT]
+/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/io.py:9: UserWarning: `torchaudio.backend.common.AudioMetaData` has been moved to `torchaudio.AudioMetaData`. Please update the import path.
+  from torchaudio.backend.common import AudioMetaData
+usage: deepFilter [-h] [--model-base-dir MODEL_BASE_DIR] [--pf]
+                  [--output-dir OUTPUT_DIR] [--log-level LOG_LEVEL] [--debug]
+                  [--epoch EPOCH] [-v] [--no-delay-compensation]
+                  [--atten-lim ATTEN_LIM] [--noisy-dir NOISY_DIR]
+                  [--no-suffix] [--no-df-stage]
+                  [noisy_audio_files ...]
+
+positional arguments:
+  noisy_audio_files     List of noise files to mix with the clean speech file.
+
+options:
+  -h, --help            show this help message and exit
+  --model-base-dir MODEL_BASE_DIR, -m MODEL_BASE_DIR
+                        Model directory containing checkpoints and config. To
+                        load a pretrained model, you may just provide the
+                        model name, e.g. `DeepFilterNet`. By default, the
+                        pretrained DeepFilterNet2 model is loaded.
+  --pf                  Post-filter that slightly over-attenuates very noisy
+                        sections.
+  --output-dir OUTPUT_DIR, -o OUTPUT_DIR
+                        Directory in which the enhanced audio files will be
+                        stored.
+  --log-level LOG_LEVEL
+                        Logger verbosity. Can be one of (debug, info, error,
+                        none)
+  --debug, -d
+  --epoch EPOCH, -e EPOCH
+                        Epoch for checkpoint loading. Can be one of ['best',
+                        'latest', <int>].
+  -v, --version         Print DeepFilterNet version information
+  --no-delay-compensation
+                        Dont't add some paddig to compensate the delay
+                        introduced by the real-time STFT/ISTFT implementation.
+  --atten-lim ATTEN_LIM, -a ATTEN_LIM
+                        Attenuation limit in dB by mixing the enhanced signal
+                        with the noisy signal.
+  --noisy-dir NOISY_DIR, -i NOISY_DIR
+                        Input directory containing noisy audio files. Use
+                        instead of `noisy_audio_files`.
+  --no-suffix           Don't add the model suffix to the enhanced audio files
+  --no-df-stage
+
+[LOAD]
+/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/io.py:9: UserWarning: `torchaudio.backend.common.AudioMetaData` has been moved to `torchaudio.AudioMetaData`. Please update the import path.
+  from torchaudio.backend.common import AudioMetaData
+DeepFilterNet 0.5.6
+
+[INFER]
+/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/io.py:9: UserWarning: `torchaudio.backend.common.AudioMetaData` has been moved to `torchaudio.AudioMetaData`. Please update the import path.
+  from torchaudio.backend.common import AudioMetaData
+2026-03-30 11:14:42 | INFO     | DF | Running on torch 2.2.2+cu121
+2026-03-30 11:14:42 | INFO     | DF | Running on host dsw-370970-76bcf454c-w2cjc
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+2026-03-30 11:14:42 | INFO     | DF | Loading model settings of DeepFilterNet3
+2026-03-30 11:14:42 | INFO     | DF | Using DeepFilterNet3 model at /tmp/sure_eval_deepfilternet/cache/DeepFilterNet/DeepFilterNet3
+2026-03-30 11:14:42 | INFO     | DF | Initializing model `deepfilternet3`
+2026-03-30 11:14:43 | INFO     | DF | Found checkpoint /tmp/sure_eval_deepfilternet/cache/DeepFilterNet/DeepFilterNet3/checkpoints/model_120.ckpt.best with epoch 120
+2026-03-30 11:14:43 | INFO     | DF | Running on device cuda:0
+2026-03-30 11:14:43 | INFO     | DF | Model loaded
+Traceback (most recent call last):
+  File "/tmp/sure_eval_deepfilternet/.venv/bin/deepFilter", line 10, in <module>
+    sys.exit(run())
+  File "/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/enhance.py", line 378, in run
+    main(args)
+  File "/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/enhance.py", line 60, in main
+    os.mkdir(args.output_dir)
+FileNotFoundError: [Errno 2] No such file or directory: 'artifacts/df_out'
+
+[RETRY-INFER]
+/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/io.py:9: UserWarning: `torchaudio.backend.common.AudioMetaData` has been moved to `torchaudio.AudioMetaData`. Please update the import path.
+  from torchaudio.backend.common import AudioMetaData
+2026-03-30 11:15:38 | INFO     | DF | Running on torch 2.2.2+cu121
+2026-03-30 11:15:38 | INFO     | DF | Running on host dsw-370970-76bcf454c-w2cjc
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+2026-03-30 11:15:38 | INFO     | DF | Loading model settings of DeepFilterNet3
+2026-03-30 11:15:38 | INFO     | DF | Using DeepFilterNet3 model at /tmp/sure_eval_deepfilternet/cache/DeepFilterNet/DeepFilterNet3
+2026-03-30 11:15:38 | INFO     | DF | Initializing model `deepfilternet3`
+2026-03-30 11:15:38 | INFO     | DF | Found checkpoint /tmp/sure_eval_deepfilternet/cache/DeepFilterNet/DeepFilterNet3/checkpoints/model_120.ckpt.best with epoch 120
+2026-03-30 11:15:38 | INFO     | DF | Running on device cpu
+2026-03-30 11:15:38 | INFO     | DF | Model loaded
+Traceback (most recent call last):
+  File "/usr/lib/python3.10/multiprocessing/queues.py", line 244, in _feed
+    obj = _ForkingPickler.dumps(obj)
+  File "/usr/lib/python3.10/multiprocessing/reduction.py", line 51, in dumps
+    cls(buf, protocol).dump(obj)
+  File "/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/torch/multiprocessing/reductions.py", line 569, in reduce_storage
+    df = multiprocessing.reduction.DupFd(fd)
+  File "/usr/lib/python3.10/multiprocessing/reduction.py", line 198, in DupFd
+    return resource_sharer.DupFd(fd)
+  File "/usr/lib/python3.10/multiprocessing/resource_sharer.py", line 53, in __init__
+    self._id = _resource_sharer.register(send, close)
+  File "/usr/lib/python3.10/multiprocessing/resource_sharer.py", line 76, in register
+    self._start()
+  File "/usr/lib/python3.10/multiprocessing/resource_sharer.py", line 126, in _start
+    self._listener = Listener(authkey=process.current_process().authkey)
+  File "/usr/lib/python3.10/multiprocessing/connection.py", line 448, in __init__
+    self._listener = SocketListener(address, family, backlog)
+  File "/usr/lib/python3.10/multiprocessing/connection.py", line 588, in __init__
+    self._socket.setsockopt(socket.SOL_SOCKET,
+PermissionError: [Errno 1] Operation not permitted
+
+[ESCALATED-INFER]
+/tmp/sure_eval_deepfilternet/.venv/lib/python3.10/site-packages/df/io.py:9: UserWarning: `torchaudio.backend.common.AudioMetaData` has been moved to `torchaudio.AudioMetaData`. Please update the import path.
+  from torchaudio.backend.common import AudioMetaData
+2026-03-30 11:16:31 | INFO     | DF | Running on torch 2.2.2+cu121
+2026-03-30 11:16:31 | INFO     | DF | Running on host dsw-370970-76bcf454c-w2cjc
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+2026-03-30 11:16:31 | INFO     | DF | Loading model settings of DeepFilterNet3
+2026-03-30 11:16:31 | INFO     | DF | Using DeepFilterNet3 model at /tmp/sure_eval_deepfilternet/cache/DeepFilterNet/DeepFilterNet3
+2026-03-30 11:16:31 | INFO     | DF | Initializing model `deepfilternet3`
+2026-03-30 11:16:31 | INFO     | DF | Found checkpoint /tmp/sure_eval_deepfilternet/cache/DeepFilterNet/DeepFilterNet3/checkpoints/model_120.ckpt.best with epoch 120
+2026-03-30 11:16:31 | INFO     | DF | Running on device cuda:0
+2026-03-30 11:16:31 | INFO     | DF | Model loaded
+2026-03-30 11:16:32 | INFO     | DF | Enhanced noisy audio file 'noisy_48k.wav' in 0.40s (RT factor: 0.171)
+{"output_path": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/deepfilternet/artifacts/wrapper_outputs/noisy_48k_DeepFilterNet3.wav", "model_name": "DeepFilterNet3"}
+
+[CONTRACT]
+{"output_path": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/deepfilternet/artifacts/wrapper_outputs/noisy_48k_DeepFilterNet3.wav"}

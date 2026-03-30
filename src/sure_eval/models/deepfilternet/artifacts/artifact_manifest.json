@@ -1,0 +1,112 @@
+{
+  "timestamp": "2026-03-30T11:18:00+08:00",
+  "model_id": "Rikorose/DeepFilterNet",
+  "model_name": "DeepFilterNet",
+  "workflow_completed": true,
+  "artifacts": {
+    "required": {
+      "model.spec.yaml": {
+        "path": "src/sure_eval/models/deepfilternet/model.spec.yaml",
+        "exists": true,
+        "description": "Model specification"
+      },
+      "backend_choice.json": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/backend_choice.json",
+        "exists": true,
+        "description": "Backend selection record"
+      },
+      "build.log": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/build.log",
+        "exists": true,
+        "description": "Environment build log"
+      },
+      "validation.log": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/validation.log",
+        "exists": true,
+        "description": "Validation log"
+      },
+      "verdict.json": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/verdict.json",
+        "exists": true,
+        "description": "Final verdict"
+      },
+      "wrapper": {
+        "path": "src/sure_eval/models/deepfilternet/",
+        "exists": true,
+        "description": "Wrapper files (model.py, server.py, __init__.py, config.yaml)"
+      },
+      "artifact_manifest.json": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/artifact_manifest.json",
+        "exists": true,
+        "description": "This manifest"
+      }
+    },
+    "conditional": {
+      "spec_validation.json": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/spec_validation.json",
+        "exists": true,
+        "condition": "VALIDATE_SPEC executed"
+      },
+      "preflight_summary.json": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/preflight_summary.json",
+        "exists": true,
+        "condition": "preflight executed"
+      },
+      "weights_manifest.json": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/weights_manifest.json",
+        "exists": true,
+        "condition": "weights.required == true"
+      },
+      "failure_classification.json": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/failure_classification.json",
+        "exists": true,
+        "condition": "DIAGNOSE executed"
+      },
+      "retry_recommendation.json": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/retry_recommendation.json",
+        "exists": true,
+        "condition": "REPLAN executed"
+      },
+      "patch_report.json": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/patch_report.json",
+        "exists": true,
+        "condition": "dependency pin patch applied"
+      },
+      "uv.lock": {
+        "path": "src/sure_eval/models/deepfilternet/uv.lock",
+        "exists": true,
+        "condition": "backend == uv"
+      }
+    },
+    "optional": {
+      "runtime_output": {
+        "path": "artifacts/df_out/noisy_48k_DeepFilterNet3.wav",
+        "exists": true,
+        "description": "Repo-native CLI output from validation infer step"
+      },
+      "wrapper_output": {
+        "path": "src/sure_eval/models/deepfilternet/artifacts/wrapper_outputs/noisy_48k_DeepFilterNet3.wav",
+        "exists": true,
+        "description": "Wrapper-produced enhancement output used for contract validation"
+      }
+    }
+  },
+  "validation_summary": {
+    "import": {
+      "passed": true,
+      "duration_ms": 500
+    },
+    "load": {
+      "passed": true,
+      "duration_ms": 500
+    },
+    "infer": {
+      "passed": true,
+      "duration_ms": 400
+    },
+    "contract": {
+      "passed": true,
+      "duration_ms": 50
+    }
+  }
+}

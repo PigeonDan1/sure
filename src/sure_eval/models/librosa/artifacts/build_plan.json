@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-03-30T11:33:36+08:00",
+  "model_id": "librosa",
+  "backend": "uv",
+  "build_root": "/tmp/sure_eval_librosa",
+  "venv_path": "/tmp/sure_eval_librosa/.venv",
+  "cache_path": "/tmp/sure_eval_librosa/cache",
+  "project_path": "src/sure_eval/models/librosa",
+  "steps": [
+    {
+      "name": "create_runtime_dirs",
+      "command": "mkdir -p /tmp/sure_eval_librosa/cache /tmp/sure_eval_librosa/artifacts"
+    },
+    {
+      "name": "lock_dependencies",
+      "command": "uv lock --project src/sure_eval/models/librosa"
+    },
+    {
+      "name": "create_venv",
+      "command": "uv venv /tmp/sure_eval_librosa/.venv --python 3.10"
+    },
+    {
+      "name": "install_dependencies",
+      "command": "uv sync --project src/sure_eval/models/librosa --python /tmp/sure_eval_librosa/.venv/bin/python"
+    },
+    {
+      "name": "run_minimal_analysis",
+      "command": "/tmp/sure_eval_librosa/.venv/bin/python -c \"import librosa; y, sr = librosa.load('tests/fixtures/shared/mir/rhythm_22k_15s.wav', sr=None); onset_env = librosa.onset.onset_strength(y=y, sr=sr); tempo, beats = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr); print(float(tempo), len(beats))\""
+    }
+  ],
+  "inputs": {
+    "package": "librosa==0.10.2.post1",
+    "fixture": "tests/fixtures/shared/mir/rhythm_22k_15s.wav",
+    "system_packages": [
+      "ffmpeg"
+    ],
+    "weights_required": false
+  },
+  "constraints": [
+    "Transient runtime assets must stay under /tmp because the workspace has no free space.",
+    "Network access for uv lock and uv sync requires escalated execution outside the sandbox."
+  ],
+  "executable": true,
+  "blocking_issues": []
+}

@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-03-30T11:04:49+08:00",
+  "model_id": "Rikorose/DeepFilterNet",
+  "chosen_backend": "uv",
+  "reason": "The target path is a PyPI-distributed local CLI on CPU with only ffmpeg as a system dependency. uv is the lowest-risk backend that satisfies reproducibility and aligns with the input hint.",
+  "evidence": [
+    {
+      "source": "https://pypi.org/project/deepfilternet/",
+      "priority": 3,
+      "details": "Package is published on PyPI and supports Python 3.10."
+    },
+    {
+      "source": "src/sure_eval/models/deepfilternet/artifacts/preflight_summary.json",
+      "priority": 1,
+      "details": "uv, Python 3.10, and ffmpeg are available locally; transient build assets should live under /tmp due workspace disk exhaustion."
+    },
+    {
+      "source": "user_input.phase1_runtime_target",
+      "priority": 6,
+      "details": "Phase 1 only needs the minimal local enhancement CLI path and does not require GPU."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "fixture.path",
+      "sources": [
+        {
+          "value": "tests/fixtures/shared/se/noisy_48k.wav",
+          "source": "user_input",
+          "priority": 6
+        },
+        {
+          "value": "missing in local repository before setup",
+          "source": "local executable evidence",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "tests/fixtures/shared/se/noisy_48k.wav",
+      "reason": "The fixture path is required by the spec; the missing file was addressed by creating a deterministic task-specific fixture under the exact requested path and recording its provenance."
+    }
+  ],
+  "rejected_options": [
+    {
+      "backend": "pixi",
+      "reason": "No repository-native conda or pixi configuration evidence."
+    },
+    {
+      "backend": "docker",
+      "reason": "Higher operational overhead with no current evidence of incompatible system dependencies."
+    }
+  ]
+}

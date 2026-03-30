@@ -1,0 +1,22 @@
+name: librosa
+task: audio_analysis
+description: "Phase-1 wrapper for minimal librosa onset/beat/tempo analysis."
+
+model:
+  id: "librosa"
+  size: "library"
+
+server:
+  command: ["/tmp/sure_eval_librosa/.venv/bin/python", "server.py"]
+  env: {}
+  timeout: 300
+
+tools:
+  - name: "analyze_rhythm"
+    description: "Run onset, beat, and tempo analysis on an audio file."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: ["audio_path"]

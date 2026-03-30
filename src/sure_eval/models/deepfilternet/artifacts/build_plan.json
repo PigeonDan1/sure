@@ -1,0 +1,45 @@
+{
+  "timestamp": "2026-03-30T11:04:49+08:00",
+  "model_id": "Rikorose/DeepFilterNet",
+  "backend": "uv",
+  "build_root": "/tmp/sure_eval_deepfilternet",
+  "venv_path": "/tmp/sure_eval_deepfilternet/.venv",
+  "cache_path": "/tmp/sure_eval_deepfilternet/cache",
+  "project_path": "src/sure_eval/models/deepfilternet",
+  "steps": [
+    {
+      "name": "create_runtime_dirs",
+      "command": "mkdir -p /tmp/sure_eval_deepfilternet/cache /tmp/sure_eval_deepfilternet/hf_home"
+    },
+    {
+      "name": "lock_dependencies",
+      "command": "uv lock --project src/sure_eval/models/deepfilternet"
+    },
+    {
+      "name": "create_venv",
+      "command": "uv venv /tmp/sure_eval_deepfilternet/.venv --python 3.10"
+    },
+    {
+      "name": "install_package",
+      "command": "uv sync --project src/sure_eval/models/deepfilternet --python /tmp/sure_eval_deepfilternet/.venv/bin/python"
+    },
+    {
+      "name": "run_cli_validation",
+      "command": "PATH=/tmp/sure_eval_deepfilternet/.venv/bin:$PATH deepFilter tests/fixtures/shared/se/noisy_48k.wav --output-dir artifacts/df_out"
+    }
+  ],
+  "inputs": {
+    "package": "deepfilternet==0.5.6",
+    "fixture": "tests/fixtures/shared/se/noisy_48k.wav",
+    "system_packages": [
+      "ffmpeg"
+    ],
+    "expected_output_dir": "src/sure_eval/models/deepfilternet/artifacts/df_out"
+  },
+  "constraints": [
+    "Network access for uv sync and any weight download requires escalation outside the sandbox.",
+    "Transient virtualenv and caches must stay under /tmp because the workspace mount has 0 GB free."
+  ],
+  "executable": true,
+  "blocking_issues": []
+}

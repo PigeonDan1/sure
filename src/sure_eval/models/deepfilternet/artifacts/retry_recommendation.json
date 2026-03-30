@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-03-30T11:16:20+08:00",
+  "model_id": "Rikorose/DeepFilterNet",
+  "retry_from": "VALIDATE_INFER",
+  "attempt": 3,
+  "max_retries": 3,
+  "change": {
+    "action": "rerun_same_infer_outside_sandbox",
+    "execution_mode": "require_escalated",
+    "reason": "The command already progressed to CPU inference and failed on a multiprocessing permission boundary, so the next targeted change is to remove the sandbox restriction without altering the model invocation."
+  },
+  "previous_failure": "runtime_backend_incompatible",
+  "expected_outcome": "The same infer command should now write an enhanced wav under artifacts/df_out, enabling contract validation.",
+  "history": [
+    {
+      "retry_from": "BUILD_ENV",
+      "attempt": 2,
+      "change": {
+        "action": "pin_runtime_torch_dependencies",
+        "packages": [
+          "torch==2.2.2",
+          "torchaudio==2.2.2"
+        ]
+      },
+      "previous_failure": "python_dependency_missing"
+    },
+    {
+      "retry_from": "VALIDATE_INFER",
+      "attempt": 3,
+      "change": {
+        "action": "prepare_expected_output_parent",
+        "paths": [
+          "artifacts/",
+          "artifacts/df_out/"
+        ]
+      },
+      "previous_failure": "wrong_entrypoint"
+    }
+  ]
+}
