@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-03-29T08:22:00Z",
+  "model_id": "snakers4/silero-vad",
+  "status": "passed",
+  "checks": {
+    "spec_completeness": {
+      "passed": true,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": true,
+      "unsupported_fields": []
+    },
+    "conflict_resolution": {
+      "passed": true,
+      "unresolved_conflicts": []
+    },
+    "build_plan_executable": {
+      "passed": true,
+      "blocking_issues": []
+    },
+    "fixture_availability": {
+      "passed": true,
+      "fixture_path": "tests/fixtures/shared/vad/en_16k_10s.wav",
+      "source": "shared",
+      "note": "Used librispeech sample as fallback for VAD testing"
+    },
+    "io_contract_sufficient": {
+      "passed": true,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": true,
+      "incompatibilities": []
+    }
+  },
+  "ready_for_build_env": true,
+  "warnings": [
+    "Original fixture not found, used librispeech sample as fallback"
+  ],
+  "blockers": []
+}

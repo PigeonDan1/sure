@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-03-30T10:11:51+08:00",
+  "model_id": "m-bain/whisperx",
+  "classification": {
+    "deployment_type": "local",
+    "task_type": "asr",
+    "model_family": "speech_to_text",
+    "runtime_interface": "python_package",
+    "weights_mode": "pip_package_plus_huggingface_runtime_download",
+    "environment_complexity": "moderate",
+    "phase_1_validation_target": "repo_native_minimal_callable_path"
+  },
+  "evidence": [
+    "pyproject.toml defines a Python package named whisperx",
+    "README Python usage demonstrates a direct import/load/transcribe path",
+    "weights are fetched at runtime through package/Hugging Face model downloads"
+  ]
+}

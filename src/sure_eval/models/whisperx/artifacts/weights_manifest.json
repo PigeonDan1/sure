@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-03-30T10:21:00+08:00",
+  "model_id": "m-bain/whisperx",
+  "weights_required": true,
+  "source": "pip_and_huggingface",
+  "resolved_artifacts": [
+    {
+      "logical_name": "small",
+      "resolved_repo": "Systran/faster-whisper-small",
+      "local_path": "/tmp/sure_eval_whisperx/hf_home/hub/models--Systran--faster-whisper-small/snapshots/536b0662742c02347bc0e980a01041f333bce120",
+      "size_hint": "464M",
+      "acquisition_method": "faster_whisper.utils.download_model('small')"
+    }
+  ],
+  "notes": [
+    "The phase-1 runtime path uses whisperx.load_model('small', 'cpu'), which resolves to the faster-whisper small checkpoint.",
+    "Weights were intentionally cached under /tmp to avoid workspace disk pressure."
+  ]
+}

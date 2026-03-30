@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-03-30T10:27:00+08:00",
+  "model_id": "m-bain/whisperx",
+  "escalation": {
+    "trigger": "resolved_by_human_fixture",
+    "checkpoint": "VALIDATE_CONTRACT",
+    "attempts": 3,
+    "context": {
+      "failure_type_history": [
+        "wrong_entrypoint",
+        "wrong_entrypoint",
+        "resolved_with_fixture"
+      ],
+      "last_error": "Historical contract failure on shared fixture was resolved after human supplied a model-appropriate Aishell fixture",
+      "evidence_available": [
+        "validation.log",
+        "build.log",
+        "weights_manifest.json",
+        "repo_summary.json",
+        "faster-whisper diagnostic result",
+        "successful WhisperX result on tests/fixtures/aishell1-test/sample_1_BAC009S0764W0385.wav"
+      ],
+      "evidence_missing": []
+    },
+    "artifacts": [
+      "src/sure_eval/models/whisperx/artifacts/build.log",
+      "src/sure_eval/models/whisperx/artifacts/validation.log",
+      "src/sure_eval/models/whisperx/model.spec.yaml",
+      "src/sure_eval/models/whisperx/artifacts/weights_manifest.json"
+    ],
+    "question_for_human": "Resolved. Human supplied a model-appropriate fixture and onboarding resumed successfully."
+  }
+}

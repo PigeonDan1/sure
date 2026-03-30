@@ -172,12 +172,12 @@ RETRY_FROM_CHECKPOINT (回到失败前状态)
 | 工件 | 路径 | 说明 |
 |------|------|------|
 | `model.spec.yaml` | `src/sure_eval/models/{model}/model.spec.yaml` | 模型规范 |
-| `backend_choice.json` | `artifacts/backend_choice.json` | 后端选择记录 |
-| `build.log` | `artifacts/build.log` | 构建日志 |
-| `validation.log` | `artifacts/validation.log` | 验证日志 |
-| `verdict.json` | `artifacts/verdict.json` | 最终判定 |
-| `wrapper` | `model.py`, `server.py`, `__init__.py` | 模型 wrapper 文件集 |
-| `artifact_manifest.json` | `artifacts/artifact_manifest.json` | 工件清单 |
+| `backend_choice.json` | `src/sure_eval/models/{model}/artifacts/backend_choice.json` | 后端选择记录 |
+| `build.log` | `src/sure_eval/models/{model}/artifacts/build.log` | 构建日志 |
+| `validation.log` | `src/sure_eval/models/{model}/artifacts/validation.log` | 验证日志 |
+| `verdict.json` | `src/sure_eval/models/{model}/artifacts/verdict.json` | 最终判定 |
+| `wrapper` | `src/sure_eval/models/{model}/model.py`, `src/sure_eval/models/{model}/server.py`, `src/sure_eval/models/{model}/__init__.py` | 模型 wrapper 文件集 |
+| `artifact_manifest.json` | `src/sure_eval/models/{model}/artifacts/artifact_manifest.json` | 工件清单 |
 
 #### Conditional Artifacts (满足条件时必须有)
 

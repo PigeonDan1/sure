@@ -1,0 +1,28 @@
+name: whisperx
+task: ASR
+description: "WhisperX phase-1 wrapper for local transcription"
+version: "1.0.0"
+
+model:
+  id: "m-bain/whisperx"
+  size: "small"
+  languages: ["multilingual"]
+
+server:
+  command: ["python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ARCH: "small"
+    DEVICE: "cpu"
+    VAD_METHOD: "pyannote"
+  timeout: 300
+
+tools:
+  - name: "transcribe_audio"
+    description: "Run WhisperX transcription on an audio file"
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: ["audio_path"]

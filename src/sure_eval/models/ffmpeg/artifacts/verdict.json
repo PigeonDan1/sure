@@ -1,0 +1,80 @@
+{
+  "timestamp": "2026-03-30T00:18:00+08:00",
+  "model_id": "ffmpeg",
+  "model_name": "FFmpeg",
+  "status": "PASSED",
+  "stage": "phase_1_complete",
+  "workflow": {
+    "steps_completed": [
+      "DISCOVER",
+      "CLASSIFY",
+      "PLAN",
+      "VALIDATE_SPEC",
+      "BUILD_ENV",
+      "FETCH_WEIGHTS",
+      "VALIDATE_IMPORT",
+      "VALIDATE_LOAD",
+      "VALIDATE_INFER",
+      "VALIDATE_CONTRACT",
+      "GENERATE_WRAPPER",
+      "SAVE_ARTIFACTS"
+    ],
+    "final_step": "SAVE_ARTIFACTS"
+  },
+  "validation_results": {
+    "import": {
+      "passed": true,
+      "duration_ms": 40,
+      "test": "ffmpeg -version",
+      "evidence": "ffmpeg version 4.4.2-0ubuntu0.22.04.1"
+    },
+    "load": {
+      "passed": true,
+      "duration_ms": 40,
+      "test": "ffprobe -version",
+      "evidence": "ffprobe version 4.4.2-0ubuntu0.22.04.1"
+    },
+    "infer": {
+      "passed": true,
+      "duration_ms": 79,
+      "test": "ffmpeg -i tests/fixtures/shared/asr/en_16k_10s.wav -ss 0 -t 3 -ar 16000 -ac 1 artifacts/tmp_clip.wav -y",
+      "evidence": "Audio clip created: 96078 bytes"
+    },
+    "contract": {
+      "passed": true,
+      "duration_ms": 1,
+      "checks": {
+        "output_path_exists": true,
+        "output_path_nonempty": true,
+        "json_serializable": true
+      },
+      "evidence": "output_path: artifacts/tmp_clip.wav"
+    }
+  },
+  "artifacts_produced": [
+    "src/sure_eval/models/ffmpeg/model.spec.yaml",
+    "src/sure_eval/models/ffmpeg/model.py",
+    "src/sure_eval/models/ffmpeg/server.py",
+    "src/sure_eval/models/ffmpeg/__init__.py",
+    "src/sure_eval/models/ffmpeg/config.yaml",
+    "src/sure_eval/models/ffmpeg/artifacts/backend_choice.json",
+    "src/sure_eval/models/ffmpeg/artifacts/build_plan.json",
+    "src/sure_eval/models/ffmpeg/artifacts/build.log",
+    "src/sure_eval/models/ffmpeg/artifacts/validation.log",
+    "src/sure_eval/models/ffmpeg/artifacts/spec_validation.json",
+    "src/sure_eval/models/ffmpeg/artifacts/classification.json",
+    "src/sure_eval/models/ffmpeg/artifacts/repo_summary.json",
+    "src/sure_eval/models/ffmpeg/artifacts/weights_manifest.json",
+    "src/sure_eval/models/ffmpeg/artifacts/artifact_manifest.json",
+    "src/sure_eval/models/ffmpeg/artifacts/verdict.json"
+  ],
+  "escalation_triggered": false,
+  "retry_count": 0,
+  "notes": [
+    "FFmpeg system tool successfully onboarded",
+    "All four validation tests passed",
+    "Wrapper generated with model.py, server.py, __init__.py, config.yaml",
+    "No weights required (system utility tool)",
+    "Backend: system (pre-installed binary)"
+  ]
+}

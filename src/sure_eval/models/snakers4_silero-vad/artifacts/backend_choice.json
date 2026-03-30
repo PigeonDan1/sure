@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-03-29T08:21:30Z",
+  "model_id": "snakers4/silero-vad",
+  "chosen_backend": "uv",
+  "reason": "Pure Python package with simple dependencies, pyproject.toml present, no complex system dependencies or CUDA compilation needed",
+  "evidence": [
+    "pyproject.toml present with hatchling build system",
+    "Dependencies: torch>=1.12.0, torchaudio>=0.12.0, packaging only",
+    "No Dockerfile found",
+    "No environment.yml found",
+    "Weights bundled in pip package (silero_vad.data)"
+  ],
+  "rejected_options": [
+    {
+      "backend": "docker",
+      "reason": "Overkill for simple pip-installable package, no system-level dependencies beyond ffmpeg"
+    },
+    {
+      "backend": "pixi",
+      "reason": "No conda-specific requirements, uv handles pure Python packages more efficiently"
+    },
+    {
+      "backend": "api",
+      "reason": "Model supports local inference via pip package"
+    }
+  ],
+  "evidence_conflicts": []
+}

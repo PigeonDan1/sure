@@ -1,0 +1,49 @@
+name: ffmpeg
+task: audio_tool
+description: "FFmpeg audio processing wrapper for SURE-EVAL"
+
+model:
+  id: "ffmpeg"
+  type: "system_tool"
+  version: "4.4.2"
+
+server:
+  command: ["python", "server.py"]
+  env:
+    FFMPEG_PATH: "ffmpeg"
+    FFPROBE_PATH: "ffprobe"
+  timeout: 60
+
+tools:
+  - name: "process_audio"
+    description: "Process audio file using FFmpeg (clip, resample, convert format)"
+    input_schema:
+      type: object
+      properties:
+        input_path:
+          type: string
+          description: "Path to input audio file"
+        output_path:
+          type: string
+          description: "Path for output audio file"
+        start_time:
+          type: number
+          description: "Start time in seconds (optional)"
+        duration:
+          type: number
+          description: "Duration in seconds (optional)"
+        sample_rate:
+          type: integer
+          description: "Target sample rate in Hz (optional)"
+        channels:
+          type: integer
+          description: "Target number of channels (optional)"
+      required:
+        - input_path
+        - output_path
+
+  - name: "healthcheck"
+    description: "Check if FFmpeg tools are available"
+    input_schema:
+      type: object
+      properties: {}

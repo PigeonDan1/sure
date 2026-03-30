@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-03-30T00:14:00+08:00",
+  "model_id": "ffmpeg",
+  "chosen_backend": "system",
+  "reason": "FFmpeg is a system-level binary tool, not a Python package. No Python environment needed.",
+  "evidence": [
+    "model task_type is audio_tool (system utility)",
+    "weights.required is false",
+    "ffmpeg binary available at /usr/bin/ffmpeg",
+    "no Python dependencies specified"
+  ],
+  "rejected_options": [
+    {
+      "backend": "uv",
+      "reason": "FFmpeg is not a Python package, cannot be installed via pip/uv"
+    },
+    {
+      "backend": "pixi",
+      "reason": "FFmpeg is not a conda package, system package is preferred"
+    },
+    {
+      "backend": "docker",
+      "reason": "System ffmpeg is already available and sufficient"
+    }
+  ],
+  "evidence_conflicts": []
+}

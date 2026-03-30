@@ -1,0 +1,39 @@
+{
+  "timestamp": "2026-03-30T00:14:00+08:00",
+  "model_id": "ffmpeg",
+  "status": "passed",
+  "checks": {
+    "spec_completeness": {
+      "passed": true,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": true,
+      "unsupported_fields": []
+    },
+    "conflict_resolution": {
+      "passed": true,
+      "unresolved_conflicts": []
+    },
+    "build_plan_executable": {
+      "passed": true,
+      "blocking_issues": []
+    },
+    "fixture_availability": {
+      "passed": true,
+      "fixture_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "source": "shared"
+    },
+    "io_contract_sufficient": {
+      "passed": true,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": true,
+      "incompatibilities": []
+    }
+  },
+  "ready_for_build_env": true,
+  "warnings": [],
+  "blockers": []
+}

@@ -1,0 +1,51 @@
+{
+  "timestamp": "2026-03-29T08:20:53.682390Z",
+  "model_id": "snakers4/silero-vad",
+  "repo_url": "https://github.com/snakers4/silero-vad",
+  "phase": "DISCOVER",
+  "findings": {
+    "repo_accessible": true,
+    "repo_root_files": [
+      "src",
+      ".github",
+      "examples",
+      "pyproject.toml",
+      "README.md",
+      "hubconf.py",
+      "LICENSE",
+      "tests",
+      "silero-vad.ipynb",
+      "CITATION.cff",
+      "tuning",
+      "datasets",
+      ".git",
+      "files",
+      "CODE_OF_CONDUCT.md"
+    ],
+    "config_files_found": [
+      "pyproject.toml",
+      "README.md"
+    ],
+    "python_files_in_root": [
+      "hubconf.py"
+    ],
+    "examples": [
+      "cpp",
+      "rust-example",
+      "go",
+      "c++",
+      "rust-wav-processing-with-wavekat-vad",
+      "cpp_libtorch",
+      "colab_record_example.ipynb",
+      "pyaudio-streaming",
+      "parallel_example.ipynb",
+      "cpp_libtorch_deprecated",
+      "microphone_and_webRTC_integration",
+      "java-example",
+      "haskell",
+      "java-wav-file-example",
+      "csharp"
+    ],
+    "readme_preview": "[![Mailing list : test](http://img.shields.io/badge/Email-gray.svg?style=for-the-badge&logo=gmail)](mailto:hello@silero.ai) [![Mailing list : test](http://img.shields.io/badge/Telegram-blue.svg?style=for-the-badge&logo=telegram)](https://t.me/silero_speech) [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-MIT-lightgrey.svg?style=for-the-badge)](https://github.com/snakers4/silero-vad/blob/master/LICENSE) [![downloads](https://img.shields.io/pypi/dm/silero-vad?style=for-the-badge)](https://pypi.org/project/silero-vad/) \n\n[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/snakers4/silero-vad/blob/master/silero-vad.ipynb) [![Test Package](https://github.com/snakers4/silero-vad/actions/workflows/test.yml/badge.svg)](https://github.com/snakers4/silero-vad/actions/workflows/test.yml) [![Pypi version](https://img.shields.io/pypi/v/silero-vad)](https://pypi.org/project/silero-vad/) [![Python version](https://img.shields.io/pypi/pyversions/silero-vad)](https://pypi.org/project/silero-vad)\n\n![header](https://user-images.githubusercontent.com/12515440/89997349-b3523080-dc94-11ea-9906-ca2e8bc50535.png)\n\n<br/>\n<h1 align=\"center\">Silero VAD</h1>\n<br/>\n\n**Silero VAD** - pre-trained enterprise-grade [Voice Activity Detector](https://en.wikipedia.org/wiki/Voice_activity_detection) (also see our [STT models](https://github.com/snakers4/silero-models)).\n\n<br/>\n\n<p align=\"center\">\n  <img src=\"https://github.com/user-attachments/assets/dfd29c4f-226a-4687-8bea-e8faaaee0287\" />\n</p>\n\n\n<details>\n<summary>Real Time Example</summary>\n\nhttps://user-images.githubusercontent.com/36505480/144874384-95f80f6d-a4f1-42cc-9be7-004c891dd481.mp4\n\nPlease note, that video loads only if you are logged in your GitHub account. \n\n</details>\n\n<br/>\n\n<h2 align=\"center\">Fast start</h2>\n<br/>\n\n<details>\n<summary>Dependencies</summary>\n\n  System requirements to run python examples on `x86-64` systems:\n  \n  - `python 3.8+`;\n  - 1G+ RAM;\n  - A modern CPU with AVX, AVX2, AVX-512 or AMX instruction sets.\n\n  Dependencies:\n  \n  - `torch>=1.12.0`;\n  - `torchaudio>=0.12.0` (for I/O only);\n  - `onnxruntime>=1.16.1` (for ONNX model usage).\n  \n  Silero VAD uses torchaudio library for audio I/O (`torchaudio.info`, `torchaudio.load`, and `torchaudio.save`), so a proper audio backend is required:\n  \n  - Option \u21161 - [**FFmpeg**](https://www.ffmpeg.org/) backend. `conda install -c conda-forge 'ffmpeg<7'`;\n  - Option \u21162 - [**sox_io**](https://pypi.org/project/sox/) backend. `apt-get install sox`, TorchAudio is tested on libsox 14.4.2;\n  - Option \u21163 - [**soundfile**](https://pypi.org/project/soundfile/) backend. `pip install soundfile`.\n\nIf you are planning to run the VAD using solely the `onnx-runtime`, it will run on any other system architectures where onnx-runtume is [supported](https://onnxruntime.ai/getting-started). In this case please note that:\n\n- You will have to implement the I/O;\n- You will have to adapt the existing wra"
+  }
+}

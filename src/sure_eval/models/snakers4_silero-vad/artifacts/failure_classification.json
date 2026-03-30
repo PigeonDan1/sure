@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-03-29T08:36:00Z",
+  "model_id": "snakers4/silero-vad",
+  "checkpoint": "VALIDATE_INFER",
+  "failure_type": "cuda_version_mismatch",
+  "category": "dependency_version_mismatch",
+  "message": "torch 2.6+ requires cuDNN 9 (libcudnn.so.9) which is not available in the environment",
+  "evidence": {
+    "error_log": "ImportError: libcudnn.so.9: cannot open shared object file: No such file or directory",
+    "root_cause": "torchaudio<2.9 downgrade triggered torch downgrade which requires newer cuDNN"
+  },
+  "retryable": true,
+  "mitigation_options": [
+    "Use CPU-only versions of torch and torchaudio",
+    "Pin to specific torch/torchaudio versions compatible with system CUDA"
+  ]
+}

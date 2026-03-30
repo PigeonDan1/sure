@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-03-29T08:21:45Z",
+  "model_id": "snakers4/silero-vad",
+  "backend": "uv",
+  "python_version": "3.10",
+  "steps": [
+    {
+      "step": 1,
+      "action": "initialize_uv_project",
+      "command": "uv init --python 3.10",
+      "description": "Initialize uv project with Python 3.10"
+    },
+    {
+      "step": 2,
+      "action": "install_dependencies",
+      "command": "uv add silero-vad",
+      "description": "Install silero-vad package from PyPI"
+    },
+    {
+      "step": 3,
+      "action": "verify_system_deps",
+      "command": "ffmpeg -version",
+      "description": "Verify ffmpeg is available for audio processing"
+    },
+    {
+      "step": 4,
+      "action": "verify_installation",
+      "command": "uv run python -c 'from silero_vad import load_silero_vad; print(\"OK\")'",
+      "description": "Verify package can be imported"
+    }
+  ],
+  "environment_variables": {},
+  "system_requirements": {
+    "disk_space_mb": 500,
+    "memory_mb": 2048,
+    "cpu_cores": 2
+  }
+}

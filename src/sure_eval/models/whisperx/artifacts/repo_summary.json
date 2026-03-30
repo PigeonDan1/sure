@@ -1,0 +1,48 @@
+{
+  "timestamp": "2026-03-30T10:11:51+08:00",
+  "model_id": "m-bain/whisperx",
+  "repo": {
+    "url": "https://github.com/m-bain/whisperX",
+    "commit": null,
+    "discovery_mode": "remote_repo_metadata"
+  },
+  "summary": {
+    "package_name": "whisperx",
+    "repo_name": "whisperX",
+    "language": "python",
+    "task_type": "asr",
+    "runtime_shape": "local_python_package",
+    "cli_entrypoint": "whisperx.__main__:cli"
+  },
+  "evidence": [
+    {
+      "source_type": "repo_native_config",
+      "source": "https://raw.githubusercontent.com/m-bain/whisperX/main/pyproject.toml",
+      "details": [
+        "name = whisperx",
+        "version = 3.8.4",
+        "requires-python = >=3.10, <3.14",
+        "dependencies include torch~=2.8.0, torchaudio~=2.8.0, pyannote-audio>=4.0.0"
+      ]
+    },
+    {
+      "source_type": "readme",
+      "source": "https://raw.githubusercontent.com/m-bain/whisperX/main/README.md",
+      "details": [
+        "recommended installation is pip install whisperx",
+        "python usage shows import whisperx, whisperx.load_model, whisperx.load_audio, model.transcribe(audio)",
+        "GPU acceleration documentation targets CUDA 12.8, but CPU usage is documented via --device cpu"
+      ]
+    },
+    {
+      "source_type": "local_fixture",
+      "source": "tests/fixtures/aishell1-test/sample_1_BAC009S0764W0385.wav",
+      "details": [
+        "model-specific Aishell test fixture exists locally and was later confirmed to produce non-empty WhisperX segments"
+      ]
+    }
+  ],
+  "open_questions": [
+    "README documents richer alignment and diarization flows, but phase 1 runtime validation is limited to the repo-native minimal transcribe path."
+  ]
+}

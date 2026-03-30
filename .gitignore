@@ -38,6 +38,8 @@ env/
 # Logs
 *.log
 logs/
+!src/sure_eval/models/*/artifacts/build.log
+!src/sure_eval/models/*/artifacts/validation.log
 
 # Data and models (large files)
 data/
@@ -93,3 +95,8 @@ src/sure_eval/models/diarizen/diarizen_src/
 
 # Test results
 src/sure_eval/models/*/test_results/
+
+# Model-specific environment files (should be regenerated)
+src/sure_eval/models/*/uv.lock
+src/sure_eval/models/*/.venv/
+src/sure_eval/models/*/repo/

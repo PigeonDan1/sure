@@ -1,0 +1,14 @@
+=== BUILD_ENV Log Started at 2026-03-30T00:17:25+08:00 ===
+
+Backend: system
+Model: ffmpeg
+
+[Step 1] Verifying ffmpeg availability...
+ffmpeg version 4.4.2-0ubuntu0.22.04.1 Copyright (c) 2000-2021 the FFmpeg developers
+PASS: ffmpeg found
+
+[Step 2] Verifying ffprobe availability...
+ffprobe version 4.4.2-0ubuntu0.22.04.1 Copyright (c) 2007-2021 the FFmpeg developers
+PASS: ffprobe found
+
+=== BUILD_ENV Completed at 2026-03-30T00:17:25+08:00 ===

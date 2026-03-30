@@ -1,0 +1,103 @@
+{
+  "timestamp": "2026-03-30T10:27:00+08:00",
+  "model_id": "m-bain/whisperx",
+  "model_name": "whisperx",
+  "workflow_completed": true,
+  "artifacts": {
+    "required": {
+      "model.spec.yaml": {
+        "path": "src/sure_eval/models/whisperx/model.spec.yaml",
+        "exists": true,
+        "description": "Model specification"
+      },
+      "backend_choice.json": {
+        "path": "src/sure_eval/models/whisperx/artifacts/backend_choice.json",
+        "exists": true,
+        "description": "Backend selection record"
+      },
+      "build.log": {
+        "path": "src/sure_eval/models/whisperx/artifacts/build.log",
+        "exists": true,
+        "description": "Environment build log"
+      },
+      "validation.log": {
+        "path": "src/sure_eval/models/whisperx/artifacts/validation.log",
+        "exists": true,
+        "description": "Validation test log"
+      },
+      "verdict.json": {
+        "path": "src/sure_eval/models/whisperx/artifacts/verdict.json",
+        "exists": true,
+        "description": "Final verdict"
+      },
+      "wrapper": {
+        "path": "src/sure_eval/models/whisperx/",
+        "exists": true,
+        "description": "Wrapper files (model.py, server.py, __init__.py, config.yaml)"
+      },
+      "artifact_manifest.json": {
+        "path": "src/sure_eval/models/whisperx/artifacts/artifact_manifest.json",
+        "exists": true,
+        "description": "This manifest file"
+      }
+    },
+    "conditional": {
+      "spec_validation.json": {
+        "path": "src/sure_eval/models/whisperx/artifacts/spec_validation.json",
+        "exists": true,
+        "condition": "VALIDATE_SPEC executed"
+      },
+      "preflight_summary.json": {
+        "path": "src/sure_eval/models/whisperx/artifacts/preflight_summary.json",
+        "exists": true,
+        "condition": "preflight executed"
+      },
+      "weights_manifest.json": {
+        "path": "src/sure_eval/models/whisperx/artifacts/weights_manifest.json",
+        "exists": true,
+        "condition": "weights.required == true"
+      },
+      "failure_classification.json": {
+        "path": "src/sure_eval/models/whisperx/artifacts/failure_classification.json",
+        "exists": true,
+        "condition": "DIAGNOSE executed"
+      },
+      "retry_recommendation.json": {
+        "path": "src/sure_eval/models/whisperx/artifacts/retry_recommendation.json",
+        "exists": true,
+        "condition": "REPLAN executed"
+      },
+      "escalation.json": {
+        "path": "src/sure_eval/models/whisperx/artifacts/escalation.json",
+        "exists": true,
+        "condition": "human escalation occurred and was resolved with a model-appropriate fixture"
+      },
+      "uv.lock": {
+        "path": "src/sure_eval/models/whisperx/uv.lock",
+        "exists": true,
+        "condition": "backend == uv"
+      }
+    },
+    "optional": [
+      {
+        "path": "src/sure_eval/models/whisperx/pyproject.toml",
+        "exists": true,
+        "description": "Local uv project file used to generate the lockfile"
+      }
+    ]
+  },
+  "validation_summary": {
+    "import": {
+      "passed": true
+    },
+    "load": {
+      "passed": true
+    },
+    "infer": {
+      "passed": true
+    },
+    "contract": {
+      "passed": true
+    }
+  }
+}

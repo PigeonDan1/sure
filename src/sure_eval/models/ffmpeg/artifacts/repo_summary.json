@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-03-30T00:14:00+08:00",
+  "model_id": "ffmpeg",
+  "source_type": "system_tool",
+  "repo": {
+    "url": "https://ffmpeg.org/",
+    "commit": null,
+    "type": "external_binary"
+  },
+  "discovery": {
+    "tool_type": "audio_processing",
+    "system_availability": {
+      "ffmpeg": {
+        "path": "/usr/bin/ffmpeg",
+        "version": "4.4.2-0ubuntu0.22.04.1",
+        "available": true
+      },
+      "ffprobe": {
+        "path": "/usr/bin/ffprobe", 
+        "version": "4.4.2-0ubuntu0.22.04.1",
+        "available": true
+      }
+    },
+    "no_python_repo": true,
+    "notes": "FFmpeg is a system-level audio/video processing tool, not a Python model repository"
+  },
+  "evidence": {
+    "ffmpeg_version_output": "ffmpeg version 4.4.2-0ubuntu0.22.04.1",
+    "ffprobe_version_output": "ffprobe version 4.4.2-0ubuntu0.22.04.1"
+  }
+}

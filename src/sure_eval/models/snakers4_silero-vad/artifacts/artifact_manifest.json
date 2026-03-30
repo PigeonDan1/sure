@@ -1,0 +1,77 @@
+{
+  "$schema": "./artifact_manifest.schema.json",
+  "instance_id": "snakers4_silero-vad_20260329",
+  "timestamp": "2026-03-29T08:40:00Z",
+  "model_id": "snakers4/silero-vad",
+  "artifacts": {
+    "required": {
+      "spec": {
+        "path": "model.spec.yaml",
+        "description": "Model specification file",
+        "exists": true
+      },
+      "backend_choice": {
+        "path": "artifacts/backend_choice.json",
+        "description": "Backend choice record",
+        "exists": true
+      },
+      "build_log": {
+        "path": "artifacts/build.log",
+        "description": "Environment build log",
+        "exists": true
+      },
+      "validation_log": {
+        "path": "artifacts/validation.log",
+        "description": "Validation test log",
+        "exists": true
+      },
+      "verdict": {
+        "path": "artifacts/verdict.json",
+        "description": "Final verdict",
+        "exists": true
+      },
+      "wrapper": {
+        "paths": ["model.py", "server.py", "__init__.py", "config.yaml"],
+        "description": "Model wrapper files",
+        "exists": true
+      },
+      "manifest": {
+        "path": "artifacts/artifact_manifest.json",
+        "description": "This manifest file",
+        "exists": true
+      }
+    },
+    "conditional": {
+      "spec_validation": {
+        "path": "artifacts/spec_validation.json",
+        "description": "Spec validation result",
+        "exists": true
+      },
+      "classification": {
+        "path": "artifacts/classification.json",
+        "description": "Model classification",
+        "exists": true
+      },
+      "repo_summary": {
+        "path": "artifacts/repo_summary.json",
+        "description": "Repository discovery summary",
+        "exists": true
+      },
+      "failure_classification": {
+        "path": "artifacts/failure_classification.json",
+        "description": "Failure classification (updated during retries)",
+        "exists": true
+      },
+      "retry_recommendation": {
+        "path": "artifacts/retry_recommendation.json",
+        "description": "Retry recommendation (updated during retries)",
+        "exists": true
+      },
+      "uv_lock": {
+        "path": "uv.lock",
+        "description": "UV dependency lock file",
+        "exists": true
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-03-29T08:21:00Z",
+  "model_id": "snakers4/silero-vad",
+  "phase": "CLASSIFY",
+  "classification": {
+    "model_type": "local",
+    "task_type": "vad",
+    "environment_complexity": "low",
+    "backend_recommendation": "uv",
+    "reasoning": {
+      "model_type": "Package available on PyPI with local inference capability",
+      "task_type": "Voice Activity Detection - matches user input",
+      "environment_complexity": "Pure Python, no CUDA compilation needed, simple dependencies (torch, torchaudio)",
+      "backend": "pyproject.toml present, no Dockerfile, no conda env.yml, pure Python deps"
+    }
+  },
+  "evidence": {
+    "pip_package": "silero-vad==6.2.1",
+    "python_support": "3.8-3.15",
+    "dependencies": ["torch>=1.12.0", "torchaudio>=0.12.0", "packaging"],
+    "entrypoint_verified": true,
+    "has_dockerfile": false,
+    "has_conda_env": false,
+    "has_pyproject": true
+  }
+}

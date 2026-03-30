@@ -1,0 +1,80 @@
+{
+  "timestamp": "2026-03-30T10:27:00+08:00",
+  "model_id": "m-bain/whisperx",
+  "tests": {
+    "import": {
+      "passed": true,
+      "test": "import whisperx",
+      "evidence": "import exited with code 0"
+    },
+    "load": {
+      "passed": true,
+      "test": "import whisperx; model = whisperx.load_model('small', 'cpu')",
+      "evidence": [
+        "returned wrapper type FasterWhisperPipeline",
+        "whisperx.asr logged default compute_type float32 for device cpu"
+      ],
+      "warnings": [
+        "torchcodec could not load libnvrtc.so.13 and pyannote emitted a warning about built-in audio decoding",
+        "matplotlib default config directory was not writable and fell back to /tmp"
+      ]
+    },
+    "infer": {
+      "passed": true,
+      "test": "import whisperx; model = whisperx.load_model('small', 'cpu'); audio = whisperx.load_audio('tests/fixtures/aishell1-test/sample_1_BAC009S0764W0385.wav'); result = model.transcribe(audio)",
+      "evidence": {
+        "keys": [
+          "language",
+          "segments"
+        ],
+        "language": "zh",
+        "segments_len": 1,
+        "first_segment": {
+          "text": "在此次申办冬奥會的過程中",
+          "start": 0.385,
+          "end": 3.119,
+          "avg_logprob": -0.11236954014748335
+        }
+      },
+      "warnings": [
+        "torchcodec could not load libnvrtc.so.13 and pyannote emitted a warning about built-in audio decoding"
+      ]
+    },
+    "contract": {
+      "passed": true,
+      "checks": {
+        "required_fields_present": true,
+        "primary_field_present": true,
+        "nonempty_fields": true,
+        "json_serializable": true
+      },
+      "evidence": "result['segments'] contained 1 segment and the output is JSON serializable"
+    }
+  },
+  "historical_attempts": [
+    {
+      "checkpoint": "VALIDATE_CONTRACT",
+      "failure_type": "wrong_entrypoint",
+      "change": "Retry with built-in repo-native alternative whisperx.load_model('small', 'cpu', vad_method='silero')",
+      "result": {
+        "segments_len": 0,
+        "language": "en"
+      },
+      "evidence": [
+        "shared English fixture still produced empty segments under silero VAD"
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "name": "direct_faster_whisper_check",
+      "purpose": "isolate whether failure is in WhisperX VAD layer or the underlying ASR model",
+      "result": {
+        "segments_len": 1,
+        "language": "en",
+        "first_text": " You"
+      }
+    }
+  ],
+  "overall": "PASSED"
+}

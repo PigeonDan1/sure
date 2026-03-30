@@ -1,0 +1,19 @@
+=== Validation Log Started at 2026-03-30T00:17:49+08:00 ===
+
+[VALIDATE_IMPORT] Testing: ffmpeg -version
+{"test": "import", "passed": true, "duration_ms": 40, "message": "ffmpeg command available"}
+
+[VALIDATE_LOAD] Testing: ffprobe -version
+{"test": "load", "passed": true, "duration_ms": 40, "message": "ffprobe command available"}
+
+[VALIDATE_INFER] Testing audio clip extraction
+Command: ffmpeg -i tests/fixtures/shared/asr/en_16k_10s.wav -ss 0 -t 3 -ar 16000 -ac 1 artifacts/tmp_clip.wav -y
+      encoder         : Lavc58.134.100 pcm_s16le
+size=       4kB time=00:00:00.00 bitrate=N/A speed=N/A    size=      94kB time=00:00:02.94 bitrate= 261.1kbits/s speed=1.03e+03x    
+video:0kB audio:94kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.081250%
+{"test": "infer", "passed": true, "duration_ms": 79, "output_size_bytes": 96078, "message": "Audio clip created successfully"}
+
+[VALIDATE_CONTRACT] Testing output contract
+{"test": "contract", "passed": true, "duration_ms": 1, "message": "output_path exists and is non-empty", "result": {"output_path": "artifacts/tmp_clip.wav"}}
+
+=== Validation Log Completed at 2026-03-30T00:17:49+08:00 ===

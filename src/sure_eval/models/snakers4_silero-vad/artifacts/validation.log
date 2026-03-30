@@ -1,0 +1,1779 @@
+IMPORT_TEST: PASSED duration_ms=6080
+LOAD_TEST: PASSED duration_ms=341
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+ModuleNotFoundError: No module named 'torchcodec'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 84, in load_with_torchcodec
+    raise ImportError(
+ImportError: TorchCodec is required for load_with_torchcodec. Please install torchcodec to use this function.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 151, in read_audio
+    from torchcodec.decoders import AudioDecoder
+ModuleNotFoundError: No module named 'torchcodec'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 12, in <module>
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 156, in read_audio
+    raise RuntimeError(
+RuntimeError: torchaudio version 2.11.0+cu130 requires torchcodec for audio I/O. Install torchcodec or pin torchaudio < 2.9
+INFER_TEST: FAILED duration_ms=224 error=torchaudio version 2.11.0+cu130 requires torchcodec for audio I/O. Install torchcodec or pin torchaudio < 2.9
+INFER_TEST: FAILED duration_ms=508 error=Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 12, in <module>
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 151, in read_audio
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/__init__.py", line 12, in <module>
+    from . import decoders, encoders, samplers, transforms  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/decoders/__init__.py", line 7, in <module>
+    from .._core import AudioStreamMetadata, VideoStreamMetadata
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/__init__.py", line 8, in <module>
+    from ._decoder_utils import create_audio_decoder, create_video_decoder
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_decoder_utils.py", line 13, in <module>
+    from torchcodec._core._metadata import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/_metadata.py", line 15, in <module>
+    from torchcodec._core.ops import (
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_core/ops.py", line 38, in <module>
+    load_torchcodec_shared_libraries()
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 111, in load_torchcodec_shared_libraries
+    raise RuntimeError(
+RuntimeError: Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.11.0+cu130) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core8.so
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core7.so
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core6.so
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core5.so
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1503, in load_library
+    ctypes.CDLL(path)
+  File "/root/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/ctypes/__init__.py", line 376, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libnppicc.so.13: cannot open shared object file: No such file or directory
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/_internally_replaced_utils.py", line 93, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/_ops.py", line 1505, in load_library
+    raise OSError(f"Could not load this library: {path}") from e
+OSError: Could not load this library: /cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchcodec/libtorchcodec_core4.so
+[end of libtorchcodec loading traceback].
+
+Traceback (most recent call last):
+  File "<string>", line 3, in <module>
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torch/__init__.py", line 416, in <module>
+    from torch._C import *  # noqa: F403
+    ^^^^^^^^^^^^^^^^^^^^^^
+ImportError: libcudnn.so.9: cannot open shared object file: No such file or directory
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 82, in load_with_torchcodec
+    from torchcodec.decoders import AudioDecoder
+ModuleNotFoundError: No module named 'torchcodec'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 148, in read_audio
+    wav, sr = torchaudio.load(path)
+              ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/__init__.py", line 86, in load
+    return load_with_torchcodec(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/torchaudio/_torchcodec.py", line 84, in load_with_torchcodec
+    raise ImportError(
+ImportError: TorchCodec is required for load_with_torchcodec. Please install torchcodec to use this function.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 151, in read_audio
+    from torchcodec.decoders import AudioDecoder
+ModuleNotFoundError: No module named 'torchcodec'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 12, in <module>
+  File "/cpfs/user/jingpeng/workspace/sure-eval/.venv/lib/python3.11/site-packages/silero_vad/utils_vad.py", line 156, in read_audio
+    raise RuntimeError(
+RuntimeError: torchaudio version 2.11.0+cpu requires torchcodec for audio I/O. Install torchcodec or pin torchaudio < 2.9
+INFER_TEST: FAILED duration_ms=1935 error=torchaudio version 2.11.0+cpu requires torchcodec for audio I/O. Install torchcodec or pin torchaudio < 2.9
+INFER_TEST: PASSED duration_ms=931
+INFER_TEST: result_count=1
+INFER_TEST: sample_result=[{'start': 0.5, 'end': 2.2}]
+CONTRACT_TEST: PASSED duration_ms=566
+CONTRACT_TEST: output_sample=[{'start': 0.5, 'end': 2.2}]
+CONTRACT_TEST: json_serializable=true
+WRAPPER_TEST: result type = VADResult
+WRAPPER_TEST: speech_segments = [{'start': 0.5, 'end': 2.2}]
+WRAPPER_TEST: to_json = {"speech_segments": [{"start": 0.5, "end": 2.2}], "audio_duration": 2.35}
+WRAPPER_TEST: healthcheck = {'status': 'ready', 'model_loaded': True, 'device': 'cpu', 'message': 'Model is ready', 'inference_test': 'passed'}
+WRAPPER_TEST: PASSED

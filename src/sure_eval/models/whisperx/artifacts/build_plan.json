@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-03-30T10:11:51+08:00",
+  "model_id": "m-bain/whisperx",
+  "backend": "uv",
+  "build_root": "/tmp/sure_eval_whisperx",
+  "venv_path": "/tmp/sure_eval_whisperx/.venv",
+  "cache_path": "/tmp/sure_eval_whisperx/cache",
+  "project_path": "src/sure_eval/models/whisperx",
+  "steps": [
+    {
+      "name": "create_runtime_dirs",
+      "command": "mkdir -p /tmp/sure_eval_whisperx/cache"
+    },
+    {
+      "name": "lock_dependencies",
+      "command": "uv lock --project src/sure_eval/models/whisperx"
+    },
+    {
+      "name": "create_venv",
+      "command": "uv venv /tmp/sure_eval_whisperx/.venv --python 3.10"
+    },
+    {
+      "name": "install_package",
+      "command": "uv pip install --python /tmp/sure_eval_whisperx/.venv/bin/python whisperx==3.8.4"
+    },
+    {
+      "name": "validate_runtime",
+      "command": "run import/load/infer/contract tests with the isolated python interpreter"
+    }
+  ],
+  "inputs": {
+    "package": "whisperx==3.8.4",
+    "fixture": "tests/fixtures/aishell1-test/sample_1_BAC009S0764W0385.wav",
+    "system_packages": [
+      "ffmpeg"
+    ]
+  },
+  "constraints": [
+    "Network access requires escalation outside the sandbox.",
+    "Transient environment and caches must not be placed on the workspace mount because preflight reports 0 GB free there."
+  ],
+  "executable": true,
+  "blocking_issues": []
+}

@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-03-30T10:27:00+08:00",
+  "model_id": "m-bain/whisperx",
+  "checkpoint": "VALIDATE_CONTRACT",
+  "failure_type": "wrong_entrypoint",
+  "category": "contract_mismatch",
+  "message": "Historical failure on the shared English fixture: WhisperX's repo-native transcribe path returned an empty segments list, but the issue was resolved by switching to a model-appropriate Aishell fixture.",
+  "evidence": {
+      "error_log": "historical result = {'language': 'en', 'segments': []}",
+      "root_cause": [
+        "Default pyannote VAD logged 'No active speech found in audio' on the shared English fixture",
+        "Targeted retry with vad_method='silero' produced the same empty-segments outcome on that fixture",
+        "User-provided Aishell fixture passed the same default repo-native WhisperX entrypoint, so the failure was fixture-specific rather than a blocker to onboarding"
+      ]
+    },
+  "retryable": false,
+  "mitigation_options": [
+    "Use a model-appropriate fixture for phase-1 validation",
+    "Keep the shared English fixture only as a documented residual risk"
+  ]
+}

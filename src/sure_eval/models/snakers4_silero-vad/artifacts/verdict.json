@@ -1,0 +1,71 @@
+{
+  "$schema": "./verdict.schema.json",
+  "instance_id": "snakers4_silero-vad_20260329",
+  "timestamp": "2026-03-29T08:40:30Z",
+  "model_id": "snakers4/silero-vad",
+  "status": "success",
+  "backend": {
+    "type": "uv",
+    "choice_reason": "Pure Python package with simple dependencies, used CPU-only torch to avoid CUDA issues"
+  },
+  "build": {
+    "success": true,
+    "duration_seconds": 600,
+    "log_path": "artifacts/build.log"
+  },
+  "validation": {
+    "import_test": {
+      "passed": true,
+      "duration_ms": 6080,
+      "error": null
+    },
+    "load_test": {
+      "passed": true,
+      "duration_ms": 341,
+      "error": null
+    },
+    "infer_test": {
+      "passed": true,
+      "duration_ms": 931,
+      "error": null
+    },
+    "contract_test": {
+      "passed": true,
+      "duration_ms": 566,
+      "error": null
+    }
+  },
+  "retries": {
+    "count": 3,
+    "history": [
+      {
+        "attempt": 1,
+        "failure_type": "runtime_backend_incompatible",
+        "mitigation": "Installed torchcodec"
+      },
+      {
+        "attempt": 2,
+        "failure_type": "cuda_version_mismatch",
+        "mitigation": "Switched to CPU-only torch/torchaudio from pytorch-cpu index"
+      },
+      {
+        "attempt": 3,
+        "failure_type": "runtime_backend_incompatible",
+        "mitigation": "Pinned torch/torchaudio to <2.3, numpy<2"
+      }
+    ]
+  },
+  "failure": {
+    "type": null,
+    "category": null,
+    "message": null,
+    "retryable": false
+  },
+  "artifacts": {
+    "spec_path": "model.spec.yaml",
+    "wrapper_path": "model.py",
+    "lockfile_path": "uv.lock",
+    "log_path": "artifacts/validation.log"
+  },
+  "notes": "Successfully onboarded snakers4/silero-vad with CPU-only backend. Required dependency adjustments due to torchaudio/torchcodec compatibility issues. Final configuration uses torch 2.2.2+cpu, torchaudio 2.2.2+cpu, numpy 1.26.4."
+}

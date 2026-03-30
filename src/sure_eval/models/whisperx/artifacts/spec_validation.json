@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-03-30T10:11:51+08:00",
+  "model_id": "m-bain/whisperx",
+  "status": "passed",
+  "checks": {
+    "spec_completeness": {
+      "passed": true,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": true,
+      "unsupported_fields": []
+    },
+    "conflict_resolution": {
+      "passed": true,
+      "unresolved_conflicts": []
+    },
+    "build_plan_executable": {
+      "passed": true,
+      "blocking_issues": []
+    },
+    "fixture_availability": {
+      "passed": true,
+      "fixture_path": "tests/fixtures/aishell1-test/sample_1_BAC009S0764W0385.wav",
+      "source": "dataset_specific"
+    },
+    "io_contract_sufficient": {
+      "passed": true,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": true,
+      "incompatibilities": []
+    }
+  },
+  "ready_for_build_env": true,
+  "warnings": [
+    "GPU is unavailable on the host, so validation will use the CPU entrypoint defined in model.spec.yaml.",
+    "Workspace mount reports 0 GB free; transient env and caches are planned under /tmp."
+  ],
+  "blockers": []
+}

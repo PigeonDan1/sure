@@ -1,0 +1,47 @@
+model_id: ffmpeg
+model_name: FFmpeg
+task_type: audio_tool
+deployment_type: local
+
+repo:
+  url: https://ffmpeg.org/
+  commit: null
+  description: FFmpeg is a complete, cross-platform solution to record, convert and stream audio and video.
+
+weights:
+  source: none
+  local_path: null
+  required: false
+
+environment:
+  preferred_backend: system
+  python_version: ""
+  requires_gpu: false
+  system_packages:
+    - ffmpeg
+
+entrypoints:
+  import_test: "ffmpeg -version"
+  load_test: "ffprobe -version"
+  infer_test: "ffmpeg -i tests/fixtures/shared/asr/en_16k_10s.wav -ss 0 -t 3 -ar 16000 -ac 1 artifacts/tmp_clip.wav -y"
+
+io_contract:
+  input_type: audio_path
+  output_type: json
+  primary_field: output_path
+  required_fields:
+    - output_path
+  nonempty_fields:
+    - output_path
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true
+
+metadata:
+  description: "FFmpeg wrapper for SURE-EVAL - provides audio processing capabilities"
+  version: "4.4.2"
+  author: "FFmpeg Team"

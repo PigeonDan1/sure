@@ -1,0 +1,91 @@
+{
+  "timestamp": "2026-03-30T10:11:51+08:00",
+  "model_id": "m-bain/whisperx",
+  "overall": "pass",
+  "checks": {
+    "python": {
+      "status": "pass",
+      "details": {
+        "available": true,
+        "version": "3.10.12",
+        "path": "/usr/bin/python3"
+      }
+    },
+    "package_managers": {
+      "status": "pass",
+      "details": {
+        "uv": {
+          "available": true,
+          "version": "0.10.11"
+        },
+        "pip": {
+          "available": true,
+          "version": "23.3.1"
+        },
+        "docker": {
+          "available": true,
+          "version": "24.0.7"
+        }
+      }
+    },
+    "gpu": {
+      "status": "warn",
+      "details": {
+        "required_by_input": true,
+        "available": false,
+        "nvidia_smi_error": "NVIDIA-SMI failed because it could not communicate with the NVIDIA driver",
+        "torch_cuda_available": false,
+        "torch_warning": "CUDA initialization warned that the installed NVIDIA driver is too old"
+      }
+    },
+    "disk_space": {
+      "status": "warn",
+      "details": {
+        "workspace_mount_available_gb": 0,
+        "root_mount_available_gb": 166,
+        "recommended_strategy": "place transient env and caches under /tmp or /"
+      }
+    },
+    "network": {
+      "status": "pass",
+      "details": {
+        "sandbox_dns": "blocked",
+        "escalated_http_checks": {
+          "pypi": 200,
+          "huggingface": 200
+        }
+      }
+    },
+    "git": {
+      "status": "pass",
+      "details": {
+        "git_available": true,
+        "lfs_available": true,
+        "lfs_version": "git-lfs/3.0.2"
+      }
+    },
+    "system_tools": {
+      "status": "pass",
+      "details": {
+        "ffmpeg": {
+          "available": true,
+          "version": "4.4.2-0ubuntu0.22.04.1"
+        }
+      }
+    },
+    "permissions": {
+      "status": "pass",
+      "details": {
+        "model_dir_readable": true,
+        "model_dir_writable": true,
+        "cache_dir_writable": true
+      }
+    }
+  },
+  "recommendations": [
+    "Use Python 3.10 to match the repository requires-python range.",
+    "Prefer CPU validation for phase 1 because GPU is not currently usable on the host.",
+    "Keep transient virtualenv and cache under /tmp due workspace mount free-space warning."
+  ],
+  "blockers": []
+}

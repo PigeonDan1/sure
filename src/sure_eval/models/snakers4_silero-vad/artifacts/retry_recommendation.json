@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-03-29T08:36:30Z",
+  "model_id": "snakers4/silero-vad",
+  "retry_from": "BUILD_ENV",
+  "attempt": 3,
+  "max_retries": 3,
+  "change": {
+    "action": "switch_to_cpu_backend",
+    "packages": ["torch", "torchaudio"],
+    "index": "https://download.pytorch.org/whl/cpu",
+    "reason": "CUDA version mismatch with system libraries. Using CPU-only versions avoids cuDNN dependency issues."
+  },
+  "previous_failure": "cuda_version_mismatch",
+  "expected_outcome": "Model should load and run on CPU without CUDA library dependencies"
+}

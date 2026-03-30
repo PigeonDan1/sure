@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-03-30T10:27:00+08:00",
+  "model_id": "m-bain/whisperx",
+  "retry_from": "VALIDATE_CONTRACT",
+  "attempt": 3,
+  "max_retries": 3,
+  "change": {
+    "action": "use_model_specific_fixture",
+    "reason": "Human provided a dataset-specific Aishell fixture, and the default repo-native WhisperX entrypoint passed on that audio with non-empty segments."
+  },
+  "previous_failure": "wrong_entrypoint",
+  "expected_outcome": "VALIDATE_CONTRACT passes with the model-appropriate fixture and onboarding can complete"
+}

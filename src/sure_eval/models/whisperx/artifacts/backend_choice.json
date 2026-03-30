@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-03-30T10:11:51+08:00",
+  "model_id": "m-bain/whisperx",
+  "chosen_backend": "uv",
+  "reason": "Repository-native installation path is pip/uv, Python 3.10 and uv are available locally, and phase 1 validation targets the CPU minimal callable path rather than CUDA-accelerated inference. This is the lowest-risk backend that still satisfies reproducibility.",
+  "evidence": [
+    {
+      "source": "https://raw.githubusercontent.com/m-bain/whisperX/main/pyproject.toml",
+      "priority": 3,
+      "details": "Repository includes tool.uv configuration and requires Python >=3.10,<3.14."
+    },
+    {
+      "source": "https://raw.githubusercontent.com/m-bain/whisperX/main/README.md",
+      "priority": 5,
+      "details": "Recommended installation is pip install whisperx; Python usage documents import/load/transcribe directly from the package."
+    },
+    {
+      "source": "src/sure_eval/models/whisperx/artifacts/preflight_summary.json",
+      "priority": 1,
+      "details": "uv is available, GPU is not currently usable, network is reachable with escalation, and /tmp has available space for an isolated env."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "environment.preferred_backend",
+      "sources": [
+        {
+          "value": "docker",
+          "source": "user_input",
+          "priority": 6
+        },
+        {
+          "value": "uv",
+          "source": "repo-native pyproject + README + preflight",
+          "priority": 3
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "uv",
+      "reason": "Constitution requires least-risk execution when functionality is equivalent. For CPU phase-1 validation, uv matches the documented install path and avoids unnecessary container overhead."
+    },
+    {
+      "field": "runtime_device",
+      "sources": [
+        {
+          "value": "gpu",
+          "source": "user_input requires_gpu=true",
+          "priority": 6
+        },
+        {
+          "value": "cpu",
+          "source": "entrypoints.load_test/infer_test and preflight GPU evidence",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "cpu",
+      "reason": "The explicit phase-1 runtime tests use whisperx.load_model('small', 'cpu'), and executable preflight evidence shows GPU is unavailable."
+    }
+  ],
+  "rejected_options": [
+    {
+      "backend": "docker",
+      "reason": "Higher operational overhead with no clear compatibility gain for the CPU-only minimal validation path."
+    },
+    {
+      "backend": "pixi",
+      "reason": "No conda/environment.yml signal in the upstream repository."
+    }
+  ]
+}

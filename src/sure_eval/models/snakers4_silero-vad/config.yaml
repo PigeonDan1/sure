@@ -1,0 +1,37 @@
+name: silero-vad
+task: vad
+description: "Silero Voice Activity Detection (VAD) model for speech segmentation"
+
+model:
+  id: "snakers4/silero-vad"
+  version: "6.2.1"
+  type: "jit"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  env:
+    MODEL_DEVICE: "cpu"
+    TORCH_NUM_THREADS: "1"
+  timeout: 300
+
+tools:
+  - name: "vad_predict"
+    description: "Run Voice Activity Detection on an audio file"
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+          description: "Path to the audio file"
+        sampling_rate:
+          type: integer
+          description: "Target sampling rate (default: 16000)"
+          default: 16000
+      required:
+        - audio_path
+  
+  - name: "healthcheck"
+    description: "Check if the VAD model is ready"
+    input_schema:
+      type: object
+      properties: {}

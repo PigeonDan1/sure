@@ -1,0 +1,64 @@
+{
+  "timestamp": "2026-03-30T00:18:00+08:00",
+  "model_id": "ffmpeg",
+  "model_name": "FFmpeg",
+  "workflow_completed": true,
+  "artifacts": {
+    "required": {
+      "model.spec.yaml": {
+        "path": "src/sure_eval/models/ffmpeg/model.spec.yaml",
+        "exists": true,
+        "description": "Model specification"
+      },
+      "backend_choice.json": {
+        "path": "src/sure_eval/models/ffmpeg/artifacts/backend_choice.json",
+        "exists": true,
+        "description": "Backend selection record"
+      },
+      "build.log": {
+        "path": "src/sure_eval/models/ffmpeg/artifacts/build.log",
+        "exists": true,
+        "description": "Environment build log"
+      },
+      "validation.log": {
+        "path": "src/sure_eval/models/ffmpeg/artifacts/validation.log",
+        "exists": true,
+        "description": "Validation test log"
+      },
+      "verdict.json": {
+        "path": "src/sure_eval/models/ffmpeg/artifacts/verdict.json",
+        "exists": true,
+        "description": "Final verdict"
+      },
+      "wrapper": {
+        "path": "src/sure_eval/models/ffmpeg/",
+        "exists": true,
+        "description": "Wrapper files (model.py, server.py, __init__.py, config.yaml)"
+      },
+      "artifact_manifest.json": {
+        "path": "src/sure_eval/models/ffmpeg/artifacts/artifact_manifest.json",
+        "exists": true,
+        "description": "This manifest file"
+      }
+    },
+    "conditional": {
+      "spec_validation.json": {
+        "path": "src/sure_eval/models/ffmpeg/artifacts/spec_validation.json",
+        "exists": true,
+        "condition": "VALIDATE_SPEC executed"
+      },
+      "weights_manifest.json": {
+        "path": "src/sure_eval/models/ffmpeg/artifacts/weights_manifest.json",
+        "exists": true,
+        "condition": "weights.required evaluated"
+      }
+    },
+    "optional": []
+  },
+  "validation_summary": {
+    "import": {"passed": true, "duration_ms": 40},
+    "load": {"passed": true, "duration_ms": 40},
+    "infer": {"passed": true, "duration_ms": 79},
+    "contract": {"passed": true, "duration_ms": 1}
+  }
+}
