@@ -1,0 +1,63 @@
+model_id: "wenet-e2e/wespeaker"
+model_name: "WeSpeaker-English-ResNet221_LM-SV"
+task_type: "speaker_verification"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/wenet-e2e/wespeaker"
+  commit: "c92349a14d6b426808c4e09b8b12e076864dfc11"
+
+weights:
+  source: "built_in_auto_download"
+  local_path: "pretrained_models/wespeaker"
+  required: true
+  note: "Phase-1 uses the repo-native default english checkpoint download path under a model-local WESPEAKER_HOME for reproducibility."
+
+environment:
+  preferred_backend: "pip"
+  python_version: "3.10"
+  requires_gpu: false
+  system_packages: []
+
+entrypoints:
+  import_test: |
+    import wespeaker
+  load_test: |
+    import os
+    os.environ["WESPEAKER_HOME"] = "pretrained_models/wespeaker"
+
+    import wespeaker
+
+    model = wespeaker.load_model("english")
+    model.set_device("cpu")
+  infer_test: |
+    score = model.compute_similarity(
+        "tests/fixtures/shared/speaker_verification/spk1_enroll.wav",
+        "tests/fixtures/shared/speaker_verification/spk1_trial.wav"
+    )
+
+fixture:
+  enrollment_audio: "tests/fixtures/shared/speaker_verification/spk1_enroll.wav"
+  trial_audio: "tests/fixtures/shared/speaker_verification/spk1_trial.wav"
+  optional_negative_audio: "tests/fixtures/shared/speaker_verification/spk2_trial.wav"
+  transcript: null
+  language: "not_applicable"
+  task_specific: true
+  note: "Use the task-specific shared speaker verification pair already present in tests/fixtures/shared/speaker_verification. The positive pair is required for phase-1; the negative pair is optional and used only as a sanity-check."
+
+io_contract:
+  input_type: "audio_path_pair"
+  output_type: "json"
+  primary_field: "similarity_score"
+  required_fields: ["similarity_score"]
+  nonempty_fields: ["similarity_score"]
+  json_serializable: true
+
+contract_expectation:
+  note: "similarity_score must remain the raw repo-native numeric score returned by compute_similarity without undocumented transformation; the repo-native implementation normalizes cosine similarity into the documented [0, 1] range."
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true
