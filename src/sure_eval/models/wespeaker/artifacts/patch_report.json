@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-04-03T11:38:17Z",
+  "model_id": "wenet-e2e/wespeaker",
+  "patches": [
+    {
+      "id": "0001-lazy-frontend-imports",
+      "path": "artifacts/patches/0001-lazy-frontend-imports.patch",
+      "target": "src/sure_eval/models/wespeaker1.0/upstream/wespeaker/frontend/__init__.py",
+      "type": "local_source_patch",
+      "rationale": "The repo-native minimal english fbank speaker verification path does not require s3prl, whisper, or w2vbert, but the fixed upstream commit eagerly imported those optional frontend families at module import time.",
+      "scope": "Convert optional frontend registry entries to lazy factories so imports happen only when those frontends are actually requested.",
+      "rollback": "git -C src/sure_eval/models/wespeaker1.0/upstream checkout -- wespeaker/frontend/__init__.py",
+      "minimality": "Single-file patch; no behavior change for the validated fbank path beyond deferring unrelated imports."
+    }
+  ]
+}

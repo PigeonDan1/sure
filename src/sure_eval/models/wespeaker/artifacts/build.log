@@ -1,0 +1,43 @@
+[2026-04-03T11:38:17Z] BUILD_ENV start
+[2026-04-03T11:38:17Z] create_local_venv
+command: /opt/anaconda3/envs/fireredvad/bin/python -m venv --clear src/sure_eval/models/wespeaker1.0/.venv
+result: success
+
+[2026-04-03T11:38:17Z] install_runtime_dev_route attempt=1
+command: src/sure_eval/models/wespeaker1.0/.venv/bin/pip install --upgrade pip setuptools wheel packaging && src/sure_eval/models/wespeaker1.0/.venv/bin/pip install -r src/sure_eval/models/wespeaker1.0/upstream/requirements.txt && src/sure_eval/models/wespeaker1.0/.venv/bin/pip install -e src/sure_eval/models/wespeaker1.0/upstream
+result: failed
+traceback_excerpt:
+ModuleNotFoundError: No module named 'pkg_resources'
+reason: upstream dependency chain torchnet -> visdom failed under build isolation with setuptools 82.x where pkg_resources was unavailable.
+
+[2026-04-03T11:38:17Z] diagnose checkpoint=BUILD_ENV
+failure_type: runtime_backend_incompatible
+reason: build toolchain incompatibility, not a repo-native runtime failure.
+
+[2026-04-03T11:38:17Z] replan checkpoint=BUILD_ENV
+change: pin setuptools<81 and disable build isolation for upstream requirements install
+
+[2026-04-03T11:38:17Z] install_runtime_dev_route attempt=2
+command: src/sure_eval/models/wespeaker1.0/.venv/bin/pip install 'setuptools<81' && src/sure_eval/models/wespeaker1.0/.venv/bin/pip install --no-build-isolation -r src/sure_eval/models/wespeaker1.0/upstream/requirements.txt && src/sure_eval/models/wespeaker1.0/.venv/bin/pip install --no-build-isolation -e src/sure_eval/models/wespeaker1.0/upstream
+result: success
+resolved_commit: c92349a14d6b426808c4e09b8b12e076864dfc11
+notable_packages:
+- setuptools==80.10.2
+- torch==2.11.0
+- torchaudio==2.11.0
+- s3prl==0.4.18
+- wespeaker @ editable local source copy pinned to c92349a14d6b426808c4e09b8b12e076864dfc11
+
+[2026-04-03T11:38:17Z] targeted_retry_runtime_pin
+command: src/sure_eval/models/wespeaker1.0/.venv/bin/pip install --force-reinstall torch==2.1.2 torchaudio==2.1.2
+reason: VALIDATE_INFER failed because torchaudio 2.11.0 required torchcodec for torchaudio.load()
+result: success
+final_runtime_versions:
+- torch==2.1.2
+- torchaudio==2.1.2
+
+[2026-04-03T11:38:17Z] freeze_environment
+command: src/sure_eval/models/wespeaker1.0/.venv/bin/pip freeze > src/sure_eval/models/wespeaker1.0/artifacts/pip_freeze.txt
+result: success
+
+[2026-04-03T11:38:17Z] BUILD_ENV complete

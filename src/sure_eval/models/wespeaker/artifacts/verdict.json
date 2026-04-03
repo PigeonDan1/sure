@@ -1,0 +1,77 @@
+{
+  "$schema": "./verdict.schema.json",
+  "instance_id": "wespeaker_20260403",
+  "timestamp": "2026-04-03T11:38:17Z",
+  "model_id": "wenet-e2e/wespeaker",
+  "status": "passed",
+  "backend": {
+    "type": "pip",
+    "choice_reason": "A model-local Python 3.10 venv was the lowest-risk executable backend on this host and matched the upstream development workflow closely enough for a reproducible phase-1 run."
+  },
+  "build": {
+    "success": true,
+    "duration_seconds": 0,
+    "log_path": "artifacts/build.log"
+  },
+  "validation": {
+    "import_test": {
+      "passed": true,
+      "duration_ms": 10487.635
+    },
+    "load_test": {
+      "passed": true,
+      "duration_ms": 235.639
+    },
+    "infer_test": {
+      "passed": true,
+      "duration_ms": 2955.564
+    },
+    "contract_test": {
+      "passed": true,
+      "duration_ms": 0.054
+    }
+  },
+  "retries": {
+    "count": 3,
+    "history": [
+      {
+        "attempt": 1,
+        "checkpoint": "BUILD_ENV",
+        "failure_type": "runtime_backend_incompatible",
+        "mitigation": "Pinned setuptools<81 and disabled build isolation for the upstream development install route after visdom failed to build without pkg_resources."
+      },
+      {
+        "attempt": 2,
+        "checkpoint": "VALIDATE_IMPORT",
+        "failure_type": "integration_issue",
+        "mitigation": "Applied a recorded minimal local patch so wespeaker.frontend lazily imports optional frontend modules."
+      },
+      {
+        "attempt": 3,
+        "checkpoint": "VALIDATE_INFER",
+        "failure_type": "runtime_backend_incompatible",
+        "mitigation": "Pinned torch==2.1.2 and torchaudio==2.1.2 after torchaudio 2.11.0 required torchcodec during inference."
+      }
+    ]
+  },
+  "result": {
+    "similarity_score": 0.9424791634082794,
+    "negative_similarity_score": 0.4905685018748045,
+    "enrollment_audio": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_enroll.wav",
+    "trial_audio": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_trial.wav",
+    "model_name": "english",
+    "device": "cpu",
+    "cache_dir": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker1.0/pretrained_models/wespeaker"
+  },
+  "artifacts": {
+    "spec_path": "model.spec.yaml",
+    "wrapper_path": [
+      "model.py",
+      "server.py",
+      "__init__.py"
+    ],
+    "lockfile_path": "artifacts/pip_freeze.txt",
+    "log_path": "artifacts/validation.log"
+  },
+  "notes": "Phase-1 passed after one recorded lazy-import patch and one targeted torch/torchaudio pin. No escalation was triggered in the final successful run."
+}

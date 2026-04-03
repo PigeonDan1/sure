@@ -1,0 +1,34 @@
+diff --git a/wespeaker/frontend/__init__.py b/wespeaker/frontend/__init__.py
+index e209666..571a845 100644
+--- a/wespeaker/frontend/__init__.py
++++ b/wespeaker/frontend/__init__.py
+@@ -12,13 +12,23 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
++from importlib import import_module
+ 
+-from .s3prl import S3prlFrontend
+-from .whisper_encoder import whisper_encoder
+-from .w2vbert import W2VBertFrontend
++
++class _LazyFrontendFactory:
++    """Delay optional frontend imports until that frontend is actually used."""
++
++    def __init__(self, module_name: str, attr_name: str):
++        self.module_name = module_name
++        self.attr_name = attr_name
++
++    def __call__(self, *args, **kwargs):
++        module = import_module(f"{__name__}.{self.module_name}")
++        factory = getattr(module, self.attr_name)
++        return factory(*args, **kwargs)
+ 
+ frontend_class_dict = {
+     'fbank': None,
+-    's3prl': S3prlFrontend,
+-    'whisper_encoder': whisper_encoder,
+-    'w2vbert': W2VBertFrontend, }
++    's3prl': _LazyFrontendFactory('s3prl', 'S3prlFrontend'),
++    'whisper_encoder': _LazyFrontendFactory('whisper_encoder', 'whisper_encoder'),
++    'w2vbert': _LazyFrontendFactory('w2vbert', 'W2VBertFrontend'), }

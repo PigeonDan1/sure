@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-04-03T11:38:17Z",
+  "model_id": "wenet-e2e/wespeaker",
+  "status": "passed",
+  "checks": {
+    "spec_completeness": {
+      "passed": true,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": true,
+      "unsupported_fields": []
+    },
+    "conflict_resolution": {
+      "passed": true,
+      "unresolved_conflicts": []
+    },
+    "build_plan_executable": {
+      "passed": true,
+      "blocking_issues": []
+    },
+    "fixture_availability": {
+      "passed": true,
+      "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_enroll.wav + /Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_trial.wav",
+      "source": "shared_task_specific"
+    },
+    "io_contract_sufficient": {
+      "passed": true,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": true,
+      "incompatibilities": []
+    }
+  },
+  "ready_for_build_env": true,
+  "warnings": [
+    "Python 3.10 is selected from executable host evidence even though MODEL_INPUT suggests Python 3.9."
+  ],
+  "blockers": []
+}

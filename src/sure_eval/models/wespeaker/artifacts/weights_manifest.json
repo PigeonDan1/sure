@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-04-03T11:38:17Z",
+  "model_id": "wenet-e2e/wespeaker",
+  "required": true,
+  "source": "built_in_auto_download",
+  "status": "downloaded",
+  "model_name": "english",
+  "cache_env_var": "WESPEAKER_HOME",
+  "cache_dir": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker1.0/pretrained_models/wespeaker",
+  "files": [
+    {
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker1.0/pretrained_models/wespeaker/english/avg_model.pt",
+      "size_bytes": 114410390
+    },
+    {
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker1.0/pretrained_models/wespeaker/english/config.yaml",
+      "size_bytes": 1544
+    },
+    {
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker1.0/pretrained_models/wespeaker/english/voxceleb_resnet221_LM.tar.gz",
+      "size_bytes": 105902456
+    }
+  ],
+  "notes": [
+    "The default english checkpoint was downloaded via wespeaker.load_model('english').",
+    "All weight artifacts were stored under the model-local cache directory for reproducibility."
+  ]
+}

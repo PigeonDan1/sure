@@ -1,0 +1,93 @@
+{
+  "$schema": "./artifact_manifest.schema.json",
+  "instance_id": "wespeaker_20260403",
+  "timestamp": "2026-04-03T11:38:17Z",
+  "model_id": "wenet-e2e/wespeaker",
+  "artifacts": {
+    "required": {
+      "spec": {
+        "path": "model.spec.yaml",
+        "description": "Model spec for wespeaker phase-1 onboarding."
+      },
+      "backend_choice": {
+        "path": "artifacts/backend_choice.json",
+        "description": "Structured backend selection decision with evidence."
+      },
+      "build_log": {
+        "path": "artifacts/build.log",
+        "description": "Environment build log including targeted retries."
+      },
+      "validation_log": {
+        "path": "artifacts/validation.log",
+        "description": "Validation attempts, diagnoses, and final pass result."
+      },
+      "verdict": {
+        "path": "artifacts/verdict.json",
+        "description": "Final onboarding verdict."
+      },
+      "wrapper": {
+        "paths": [
+          "model.py",
+          "server.py",
+          "__init__.py"
+        ],
+        "description": "Generated wrapper files for the validated WeSpeaker english similarity path.",
+        "required_files": [
+          "model.py",
+          "server.py",
+          "__init__.py"
+        ]
+      },
+      "manifest": {
+        "path": "artifacts/artifact_manifest.json",
+        "description": "Artifact inventory."
+      }
+    },
+    "conditional": {
+      "spec_validation": {
+        "path": "artifacts/spec_validation.json",
+        "description": "Mandatory plan validation output.",
+        "condition": "VALIDATE_SPEC executed"
+      },
+      "preflight_summary": {
+        "path": "artifacts/preflight_summary.json",
+        "description": "Host capability summary.",
+        "condition": "preflight executed"
+      },
+      "weights_manifest": {
+        "path": "artifacts/weights_manifest.json",
+        "description": "Weight download status.",
+        "condition": "weights.required == true"
+      },
+      "failure_classification": {
+        "path": "artifacts/failure_classification.json",
+        "description": "Latest failure diagnosis that led to the successful retry.",
+        "condition": "DIAGNOSE executed"
+      },
+      "retry_recommendation": {
+        "path": "artifacts/retry_recommendation.json",
+        "description": "Latest targeted retry recommendation.",
+        "condition": "REPLAN executed"
+      },
+      "patch_report": {
+        "path": "artifacts/patch_report.json",
+        "description": "Recorded local source patch applied during onboarding.",
+        "condition": "upstream/config patch applied"
+      }
+    },
+    "optional": {
+      "repo_summary": {
+        "path": "artifacts/repo_summary.json",
+        "description": "Discovery-phase repository summary."
+      },
+      "classification": {
+        "path": "artifacts/classification.json",
+        "description": "Classification-phase result."
+      },
+      "pip_freeze": {
+        "path": "artifacts/pip_freeze.txt",
+        "description": "Model-local environment lock artifact."
+      }
+    }
+  }
+}

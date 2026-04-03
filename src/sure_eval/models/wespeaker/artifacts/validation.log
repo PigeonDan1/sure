@@ -1,0 +1,40 @@
+[2026-04-03T11:38:17Z] attempt=1 checkpoint=VALIDATE_IMPORT
+command: src/sure_eval/models/wespeaker1.0/.venv/bin/python src/sure_eval/models/wespeaker1.0/validate_phase1.py
+result: failed
+traceback_excerpt:
+AttributeError: module 'torchaudio' has no attribute 'set_audio_backend'
+reason: import wespeaker eagerly imported wespeaker.frontend.s3prl through wespeaker.frontend.__init__, which pulled an optional frontend path not needed for the english fbank speaker verification runtime target.
+
+[2026-04-03T11:38:17Z] diagnose checkpoint=VALIDATE_IMPORT
+failure_type: integration_issue
+reason: the minimal speaker verification path was blocked by eager optional frontend imports rather than the target runtime path itself.
+
+[2026-04-03T11:38:17Z] replan checkpoint=VALIDATE_IMPORT
+change: apply a recorded minimal local patch to make wespeaker.frontend lazy-import optional frontend modules.
+patch: artifacts/patches/0001-lazy-frontend-imports.patch
+
+[2026-04-03T11:38:17Z] attempt=2 checkpoint=VALIDATE_IMPORT
+command: src/sure_eval/models/wespeaker1.0/.venv/bin/python src/sure_eval/models/wespeaker1.0/validate_phase1.py
+result: import/load passed; fetch_weights passed; infer failed
+weights_downloaded_to: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker1.0/pretrained_models/wespeaker/english
+traceback_excerpt:
+ImportError: TorchCodec is required for load_with_torchcodec. Please install torchcodec to use this function.
+reason: the validated runtime path reached torchaudio.load() during similarity inference, but torchaudio 2.11.0 introduced a torchcodec dependency not reflected in the upstream phase-1 path.
+
+[2026-04-03T11:38:17Z] diagnose checkpoint=VALIDATE_INFER
+failure_type: runtime_backend_incompatible
+reason: torchaudio 2.11.0 was incompatible with the repo-native inference path on this host; upstream README evidence points to an older PyTorch/torchaudio family.
+
+[2026-04-03T11:38:17Z] replan checkpoint=VALIDATE_INFER
+change: pin torch==2.1.2 torchaudio==2.1.2 and retry from VALIDATE_INFER
+
+[2026-04-03T11:38:17Z] attempt=3 checkpoint=VALIDATE_IMPORT
+command: src/sure_eval/models/wespeaker1.0/.venv/bin/python src/sure_eval/models/wespeaker1.0/validate_phase1.py
+result: passed
+summary:
+- import: passed
+- load: passed
+- infer: passed
+- contract: passed
+- similarity_score: 0.9424791634082794
+- optional_negative_similarity_score: 0.4905685018748045

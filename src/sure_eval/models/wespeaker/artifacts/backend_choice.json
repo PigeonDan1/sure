@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-04-03T11:38:17Z",
+  "model_id": "wenet-e2e/wespeaker",
+  "chosen_backend": "pip",
+  "reason": "A model-local Python 3.10 venv was the lowest-risk executable backend on this host. It matched the upstream development install path and avoided unavailable uv/docker backends.",
+  "evidence": [
+    "Runtime preflight found /opt/anaconda3/envs/fireredvad/bin/python (Python 3.10.20).",
+    "Runtime preflight found no uv binary and no docker daemon.",
+    "The upstream README exposes a development path based on python=3.9 plus pip install -r requirements.txt.",
+    "Phase-1 only requires import/load/infer on CPU and does not justify a heavier backend."
+  ],
+  "rejected_options": [
+    {
+      "backend": "uv",
+      "reason": "Unavailable on host."
+    },
+    {
+      "backend": "docker",
+      "reason": "Unavailable on host and unnecessary for the requested CPU-only minimal callable path."
+    },
+    {
+      "backend": "pixi",
+      "reason": "Not supported by repo-native evidence and unnecessary for this phase-1 target."
+    },
+    {
+      "backend": "api",
+      "reason": "Model is local and the target path is repo-native."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "python_version",
+      "resolved": true,
+      "chosen_value": "3.10",
+      "sources": [
+        {
+          "value": "3.9",
+          "source": "MODEL_INPUT.environment_hint.python_version",
+          "priority": 3
+        },
+        {
+          "value": "python=3.9",
+          "source": "upstream README development install route",
+          "priority": 5
+        },
+        {
+          "value": "3.10",
+          "source": "runtime preflight available interpreter",
+          "priority": 1
+        }
+      ],
+      "reason": "Executable host evidence selected Python 3.10 because it was available in a reusable local interpreter without mutating the host environment."
+    }
+  ]
+}

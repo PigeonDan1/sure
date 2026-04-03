@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-04-03T11:38:17Z",
+  "model_id": "wenet-e2e/wespeaker",
+  "checkpoint": "VALIDATE_INFER",
+  "attempt": 2,
+  "failure_type": "runtime_backend_incompatible",
+  "recommended_action": "retry_from_checkpoint",
+  "change_set": [
+    "Pin torch==2.1.2 and torchaudio==2.1.2 inside the model-local venv.",
+    "Keep the lazy-import patch in place so the minimal english fbank path stays isolated from optional frontends.",
+    "Rerun validate_phase1.py without changing fixtures or the repo-native entrypoint."
+  ],
+  "reason": "This changes the runtime family that actually touched the failing API without broadening scope into additional dependencies.",
+  "max_retries_for_failure_type": 2
+}

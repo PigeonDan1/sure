@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-04-03T11:38:17Z",
+  "model_id": "wenet-e2e/wespeaker",
+  "backend": "pip",
+  "python_version": "3.10",
+  "steps": [
+    {
+      "step": 1,
+      "action": "clone_fixed_source",
+      "command": "git clone https://github.com/wenet-e2e/wespeaker.git src/sure_eval/models/wespeaker1.0/upstream && git -C src/sure_eval/models/wespeaker1.0/upstream checkout c92349a14d6b426808c4e09b8b12e076864dfc11",
+      "description": "Clone a model-local source copy and pin it to the resolved stable commit."
+    },
+    {
+      "step": 2,
+      "action": "create_local_venv",
+      "command": "/opt/anaconda3/envs/fireredvad/bin/python -m venv --clear src/sure_eval/models/wespeaker1.0/.venv",
+      "description": "Create a clean model-local isolated Python 3.10 environment."
+    },
+    {
+      "step": 3,
+      "action": "install_runtime_dev_route",
+      "command": "src/sure_eval/models/wespeaker1.0/.venv/bin/pip install 'setuptools<81' && src/sure_eval/models/wespeaker1.0/.venv/bin/pip install --no-build-isolation -r src/sure_eval/models/wespeaker1.0/upstream/requirements.txt && src/sure_eval/models/wespeaker1.0/.venv/bin/pip install --no-build-isolation -e src/sure_eval/models/wespeaker1.0/upstream",
+      "description": "Follow the upstream development install route inside the model-local venv, with a targeted build-tool compatibility pin."
+    },
+    {
+      "step": 4,
+      "action": "apply_minimal_local_patch",
+      "command": "artifacts/patches/0001-lazy-frontend-imports.patch",
+      "description": "Apply the recorded lazy-import patch so the validated english fbank path is not blocked by optional frontends."
+    },
+    {
+      "step": 5,
+      "action": "pin_runtime_versions",
+      "command": "src/sure_eval/models/wespeaker1.0/.venv/bin/pip install --force-reinstall torch==2.1.2 torchaudio==2.1.2",
+      "description": "Align torchaudio with the repo-native phase-1 path and avoid the torchcodec requirement introduced in 2.11.0."
+    },
+    {
+      "step": 6,
+      "action": "validate_repo_native_path",
+      "command": "src/sure_eval/models/wespeaker1.0/.venv/bin/python src/sure_eval/models/wespeaker1.0/validate_phase1.py",
+      "description": "Run import/load/infer/contract using WESPEAKER_HOME under the model directory."
+    },
+    {
+      "step": 7,
+      "action": "freeze_environment",
+      "command": "src/sure_eval/models/wespeaker1.0/.venv/bin/pip freeze > src/sure_eval/models/wespeaker1.0/artifacts/pip_freeze.txt",
+      "description": "Persist an environment lock artifact."
+    }
+  ],
+  "environment_variables": {
+    "WESPEAKER_HOME": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker1.0/pretrained_models/wespeaker"
+  },
+  "system_requirements": {
+    "disk_space_mb": 4096,
+    "memory_mb": 2048,
+    "cpu_cores": 2
+  },
+  "notes": [
+    "No system package additions were attempted for the phase-1 CPU path.",
+    "The final successful runtime relied on a recorded local patch plus torch/torchaudio 2.1.2."
+  ]
+}

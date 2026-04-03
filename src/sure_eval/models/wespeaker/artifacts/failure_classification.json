@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-04-03T11:38:17Z",
+  "model_id": "wenet-e2e/wespeaker",
+  "checkpoint": "VALIDATE_INFER",
+  "attempt": 2,
+  "failure_type": "runtime_backend_incompatible",
+  "retryable": true,
+  "symptoms": [
+    "ImportError: TorchCodec is required for load_with_torchcodec. Please install torchcodec to use this function."
+  ],
+  "evidence": [
+    {
+      "source": "artifacts/validation.log",
+      "priority": 2,
+      "detail": "Attempt 2 reached torchaudio.load() during compute_similarity and failed because torchaudio 2.11.0 required torchcodec."
+    },
+    {
+      "source": "upstream README development install route",
+      "priority": 5,
+      "detail": "The repo documents an older PyTorch/torchaudio family, which is closer to the successful 2.1.2 pin than to 2.11.0."
+    },
+    {
+      "source": "validated runtime retry",
+      "priority": 1,
+      "detail": "After pinning torch==2.1.2 and torchaudio==2.1.2, the same infer path completed successfully."
+    }
+  ],
+  "diagnosis": "The phase-1 path itself was correct after the lazy-import patch; the remaining blocker was a newer torchaudio runtime family that changed audio loading behavior on this host."
+}
