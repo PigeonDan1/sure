@@ -1,0 +1,27 @@
+name: qwen2_vl_2b_instruct
+task: VLM
+description: "Phase-1 wrapper for Qwen2-VL-2B-Instruct single-image description"
+
+model:
+  id: "Qwen/Qwen2-VL-2B-Instruct"
+  size: "2B"
+
+server:
+  command: ["python", "server.py"]
+  env:
+    HF_HOME: "/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home"
+  timeout: 300
+
+tools:
+  - name: describe_image
+    description: "Describe a single local image briefly."
+    input_schema:
+      type: object
+      properties:
+        image_path:
+          type: string
+        prompt:
+          type: string
+        max_new_tokens:
+          type: integer
+      required: ["image_path"]
