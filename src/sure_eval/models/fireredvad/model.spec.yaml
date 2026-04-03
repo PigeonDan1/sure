@@ -1,0 +1,62 @@
+model_id: "FireRedTeam/FireRedVAD"
+model_name: "FireRedVAD-VAD"
+task_type: "vad"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/FireRedTeam/FireRedVAD"
+  commit: null
+
+weights:
+  source: "huggingface"
+  local_path: "pretrained_models/FireRedVAD"
+  required: true
+
+environment:
+  preferred_backend: "pip"
+  python_version: "3.10"
+  requires_gpu: false
+  system_packages:
+    - ffmpeg
+
+entrypoints:
+  import_test: "from fireredvad import FireRedVad, FireRedVadConfig"
+  load_test: |
+    from fireredvad import FireRedVad, FireRedVadConfig
+
+    model_dir = "pretrained_models/FireRedVAD/VAD"
+    vad_config = FireRedVadConfig(
+        use_gpu=False,
+        smooth_window_size=5,
+        speech_threshold=0.4,
+        min_speech_frame=20,
+        max_speech_frame=2000,
+        min_silence_frame=20,
+        merge_silence_frame=0,
+        extend_speech_frame=0,
+        chunk_max_frame=30000
+    )
+    vad = FireRedVad.from_pretrained(model_dir, vad_config)
+  infer_test: |
+    result, probs = vad.detect("tests/fixtures/shared/vad/en_16k_10s.wav")
+
+fixture:
+  audio: "tests/fixtures/shared/vad/en_16k_10s.wav"
+  transcript: null
+  language: "not_applicable"
+  task_specific: true
+  note: "Shared VAD fixture is used as explicit fallback; asset is 16kHz 16-bit mono PCM wav and includes speech plus non-speech regions."
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "timestamps"
+  required_fields: ["timestamps"]
+  nonempty_fields: ["timestamps"]
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true
