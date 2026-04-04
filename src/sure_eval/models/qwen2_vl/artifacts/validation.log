@@ -1,0 +1,9 @@
+[2026-04-02T18:56:16+01:00] VALIDATION initialized for qwen2-vl-2b-instruct phase-1 onboarding.
+[2026-04-02T18:56:16+01:00] VALIDATE_SPEC passed with warnings: no CUDA device visible; fixture created locally at tests/fixtures/shared/vlm/demo_image.jpg.
+[2026-04-02T18:56:16+01:00] VALIDATE_IMPORT passed: Qwen2VLForConditionalGeneration, AutoProcessor, and process_vision_info imported successfully in the isolated environment.
+[2026-04-02T18:56:16+01:00] VALIDATE_LOAD passed: model and processor loaded successfully from Qwen/Qwen2-VL-2B-Instruct; runtime device reported mps:0.
+[2026-04-02T18:56:16+01:00] VALIDATE_INFER first attempt failed under default sandbox networking: repeated NameResolutionError for huggingface.co HEAD requests to config.json, generation_config.json, custom_generate/generate.py, and processor_config.json.
+[2026-04-02T18:56:16+01:00] DIAGNOSE classified the failed infer attempt as runtime_backend_incompatible in a network-restricted runtime context; targeted retry was approved with network escalation.
+[2026-04-02T18:56:16+01:00] VALIDATE_INFER retry passed: the model returned a non-empty text description for tests/fixtures/shared/vlm/demo_image.jpg.
+[2026-04-02T18:56:16+01:00] VALIDATE_CONTRACT passed: result was JSON serializable and field text was present and non-empty.
+[2026-04-02T18:56:16+01:00] WRAPPER_SMOKE passed: ModelWrapper.predict returned the same non-empty text on the local fixture.

@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "checkpoint": "VALIDATE_INFER",
+  "failure_type": "runtime_backend_incompatible",
+  "retryable": true,
+  "symptoms": [
+    "Infer attempt without escalated network access repeatedly failed DNS resolution for huggingface.co HEAD requests.",
+    "The same isolated environment had already passed import and load, which ruled out missing Python dependencies."
+  ],
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/validation.log",
+      "details": "The first infer attempt hit repeated NameResolutionError errors for config.json, generation_config.json, custom_generate/generate.py, and processor_config.json."
+    },
+    {
+      "source": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/weights_manifest.json",
+      "details": "Weights were already cached locally, so the failure was due to runtime lookups in a network-restricted execution context rather than missing base weights."
+    }
+  ],
+  "resolution": "Retry infer with approved network access so the auxiliary Hugging Face lookups can complete."
+}

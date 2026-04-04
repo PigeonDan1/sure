@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "weights_required": true,
+  "source": "huggingface",
+  "resolved_artifacts": [
+    {
+      "logical_name": "default_checkpoint",
+      "resolved_repo": "Qwen/Qwen2-VL-2B-Instruct",
+      "snapshot": "895c3a49bc3fa70a340399125c650a463535e71c",
+      "local_path": "/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home/hub/models--Qwen--Qwen2-VL-2B-Instruct/snapshots/895c3a49bc3fa70a340399125c650a463535e71c",
+      "cache_root": "/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home",
+      "size_hint": "4.1G",
+      "file_count": 11,
+      "acquisition_method": "Qwen2VLForConditionalGeneration.from_pretrained('Qwen/Qwen2-VL-2B-Instruct', torch_dtype='auto', device_map='auto')"
+    }
+  ],
+  "notes": [
+    "The load step resolved the checkpoint into the local HF_HOME cache under /tmp.",
+    "Later inference attempts still triggered Hugging Face HEAD requests for auxiliary files, so infer was rerun with approved network access."
+  ]
+}

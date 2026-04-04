@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "checkpoint": "VALIDATE_INFER",
+  "attempt": 1,
+  "failure_type": "runtime_backend_incompatible",
+  "recommended_change": "Re-run the infer test with approved network access because Qwen2-VL still resolves auxiliary Hugging Face assets even after the main checkpoint has been cached.",
+  "expected_effect": "Allow infer to complete without changing dependencies, backend, or the repo-native entrypoint.",
+  "do_not_change": [
+    "model_id",
+    "dependency versions",
+    "fixture semantics"
+  ],
+  "result_after_retry": "passed"
+}

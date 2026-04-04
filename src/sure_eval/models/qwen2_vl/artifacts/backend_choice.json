@@ -1,0 +1,71 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "chosen_backend": "conda",
+  "reason": "The requested phase-1 path is a Python-only local Transformers callable path, but the preferred uv backend is unavailable in preflight while conda is available and can still create an isolated Python 3.10 environment with reproducibility artifacts.",
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/preflight_summary.json",
+      "priority": 1,
+      "detail": "uv unavailable, conda available, docker unavailable, no CUDA device visible."
+    },
+    {
+      "source": "src/sure_eval/models/qwen2_vl_2b_instruct/pyproject.toml",
+      "priority": 3,
+      "detail": "Dependency set is Python package based and does not require compiling a custom CUDA extension for phase-1."
+    },
+    {
+      "source": "src/sure_eval/models/qwen2_vl_2b_instruct/model.spec.yaml",
+      "priority": 0,
+      "detail": "Phase-1 target is the minimal image-text repo-native path only."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "backend",
+      "sources": [
+        {
+          "value": "uv",
+          "source": "user environment_hint.preferred_backend",
+          "priority": 5
+        },
+        {
+          "value": "uv unavailable / conda available",
+          "source": "preflight package_managers",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "conda",
+      "reason": "Executable preflight evidence outranks the initial backend hint."
+    },
+    {
+      "field": "requires_gpu",
+      "sources": [
+        {
+          "value": true,
+          "source": "user environment_hint.requires_gpu",
+          "priority": 5
+        },
+        {
+          "value": false,
+          "source": "preflight gpu visibility",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "conda_with_gpu_risk_recorded",
+      "reason": "The host has no CUDA device, so the plan records a warning and treats successful CPU execution as acceptable for phase-1 integration validation if the repo-native path still runs."
+    }
+  ],
+  "rejected_options": [
+    {
+      "backend": "uv",
+      "reason": "Preferred by hint but not present in preflight, which would fail VALIDATE_SPEC."
+    },
+    {
+      "backend": "docker",
+      "reason": "Not available on host and unnecessary for the minimal Python-only target."
+    }
+  ]
+}

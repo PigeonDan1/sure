@@ -1,0 +1,54 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "python": {
+    "available": true,
+    "version": "3.12.4",
+    "path": "/opt/anaconda3/bin/python3"
+  },
+  "package_managers": {
+    "uv": {
+      "available": false
+    },
+    "pip": {
+      "available": true,
+      "version_source": "python3 -m pip"
+    },
+    "conda": {
+      "available": true,
+      "version": "24.7.1",
+      "path": "/opt/anaconda3/bin/conda"
+    },
+    "docker": {
+      "available": false
+    }
+  },
+  "gpu": {
+    "required": true,
+    "available": false,
+    "cuda_visible": false,
+    "nvidia_smi_available": false,
+    "torch_cuda_available": false,
+    "warning": "The host exposes no CUDA device. Phase-1 may still validate the repo-native path on CPU, but load/infer can fail for performance or backend reasons."
+  },
+  "disk_space": {
+    "current_dir_gb_available": 707.0,
+    "tmp_gb_available": 707.0,
+    "status": "pass"
+  },
+  "network": {
+    "sandbox_default_dns": "failed",
+    "model_source_reachable_with_escalation": true,
+    "pypi_reachable_with_escalation": true
+  },
+  "system_tools": {
+    "git": {
+      "available": true,
+      "path": "/usr/bin/git"
+    }
+  },
+  "fixture_probe": {
+    "existing_vlm_fixture_found": false,
+    "created_fixture_path": "tests/fixtures/shared/vlm/demo_image.jpg"
+  }
+}

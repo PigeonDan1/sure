@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "backend": "conda",
+  "build_root": "/tmp/sure_eval_qwen2_vl_2b_instruct",
+  "env_path": "/tmp/sure_eval_qwen2_vl_2b_instruct/env",
+  "cache_path": "/tmp/sure_eval_qwen2_vl_2b_instruct/cache",
+  "weights_cache_path": "/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home",
+  "project_path": "src/sure_eval/models/qwen2_vl_2b_instruct",
+  "lockfile_plan": {
+    "type": "conda_explicit_and_pip_freeze",
+    "paths": [
+      "src/sure_eval/models/qwen2_vl_2b_instruct/conda-explicit.txt",
+      "src/sure_eval/models/qwen2_vl_2b_instruct/pip-freeze.txt"
+    ]
+  },
+  "steps": [
+    {
+      "name": "prepare_dirs",
+      "command": "mkdir -p /tmp/sure_eval_qwen2_vl_2b_instruct/cache /tmp/sure_eval_qwen2_vl_2b_instruct/hf_home"
+    },
+    {
+      "name": "create_env",
+      "command": "conda create -y -p /tmp/sure_eval_qwen2_vl_2b_instruct/env python=3.10 pip"
+    },
+    {
+      "name": "install_deps",
+      "command": "conda run -p /tmp/sure_eval_qwen2_vl_2b_instruct/env python -m pip install torch torchvision transformers accelerate qwen-vl-utils pillow sentencepiece"
+    },
+    {
+      "name": "record_lockfiles",
+      "command": "conda list -p /tmp/sure_eval_qwen2_vl_2b_instruct/env --explicit && conda run -p /tmp/sure_eval_qwen2_vl_2b_instruct/env python -m pip freeze"
+    },
+    {
+      "name": "validate_import",
+      "command": "conda run -p /tmp/sure_eval_qwen2_vl_2b_instruct/env python <import_test>"
+    },
+    {
+      "name": "validate_load_and_download_weights",
+      "command": "HF_HOME=/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home conda run -p /tmp/sure_eval_qwen2_vl_2b_instruct/env python <load_test>"
+    },
+    {
+      "name": "validate_infer",
+      "command": "HF_HOME=/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home conda run -p /tmp/sure_eval_qwen2_vl_2b_instruct/env python <infer_test>"
+    }
+  ],
+  "risks": [
+    "No CUDA device is visible on the host even though the model hint says requires_gpu=true.",
+    "The Hugging Face checkpoint is large enough that CPU-only load/infer may be slow or may fail due to memory pressure.",
+    "Sandboxed network is unavailable by default, so package and weight fetching require approved escalation."
+  ]
+}

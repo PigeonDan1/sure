@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "escalation": {
+    "trigger": "permission_escalation_for_network_access",
+    "checkpoint": "BUILD_ENV/VALIDATE_LOAD/VALIDATE_INFER",
+    "attempts": 3,
+    "context": {
+      "reason": "The sandbox cannot resolve external package and model hosts by default.",
+      "approved_operations": [
+        "Hugging Face reachability probe",
+        "PyPI reachability probe",
+        "conda environment creation",
+        "pip dependency installation",
+        "load/infer commands that still touch Hugging Face auxiliary files"
+      ]
+    },
+    "artifacts": [
+      "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/preflight_summary.json",
+      "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/build.log",
+      "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/validation.log"
+    ],
+    "question_for_human": "Allow temporary network access for this onboarding run."
+  }
+}

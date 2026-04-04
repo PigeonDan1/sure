@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "device": "mps:0",
+  "fixture": {
+    "path": "tests/fixtures/shared/vlm/demo_image.jpg",
+    "uri": "file:///Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vlm/demo_image.jpg",
+    "source": "shared_vlm_created_for_phase1"
+  },
+  "input": {
+    "prompt": "Describe this image briefly."
+  },
+  "output": {
+    "text": "The image depicts a simple, geometric house with a brown roof and two windows. The house is situated on a grassy lawn with a pathway leading up to it. To the right of the house, there is a green tree. The sky is blue with a yellow sun in the background. The overall scene is a cartoon-like representation of a house in a rural setting."
+  }
+}

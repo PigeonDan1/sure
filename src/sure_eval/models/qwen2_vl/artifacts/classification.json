@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "classification": {
+    "deployment_type": "local",
+    "task_type": "vlm",
+    "runtime_family": "transformers_multimodal_generation",
+    "weight_source": "huggingface",
+    "environment_complexity": "medium",
+    "minimal_callable_path": {
+      "type": "single_image_text_generation",
+      "resolved": true,
+      "import_symbols": [
+        "transformers.Qwen2VLForConditionalGeneration",
+        "transformers.AutoProcessor",
+        "qwen_vl_utils.process_vision_info"
+      ],
+      "fixture_required": true,
+      "wrapper_deferred_until_contract_pass": true
+    }
+  },
+  "phase1_scope": {
+    "included": [
+      "import model / processor stack",
+      "load the Hugging Face checkpoint",
+      "single-image local-fixture prompt",
+      "non-empty text response"
+    ],
+    "excluded": [
+      "multi-image reasoning",
+      "video understanding",
+      "OCR benchmarking",
+      "grounding boxes",
+      "tool use",
+      "structured extraction"
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "repo_url": "https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct",
+  "repo_commit": null,
+  "source_type": "huggingface_model_repo",
+  "repo_checkout_required": false,
+  "runtime_identity": {
+    "display_identity": "qwen2-vl-2b-instruct",
+    "runtime_load_identity": "Qwen/Qwen2-VL-2B-Instruct",
+    "local_dir_name": "qwen2_vl_2b_instruct",
+    "resolved_callable_target": "transformers.Qwen2VLForConditionalGeneration.from_pretrained('Qwen/Qwen2-VL-2B-Instruct') with AutoProcessor.from_pretrained and qwen_vl_utils.process_vision_info"
+  },
+  "evidence_sources": [
+    {
+      "type": "user_spec",
+      "priority": 0,
+      "details": "User provided import/load/infer entrypoints for the minimal repo-native path."
+    },
+    {
+      "type": "runtime_probe",
+      "priority": 1,
+      "details": "Base environment imports transformers 4.55.2 and exposes Qwen2VLForConditionalGeneration and AutoProcessor."
+    },
+    {
+      "type": "network_probe",
+      "priority": 1,
+      "details": "Escalated curl to the Hugging Face model page returned HTTP 200 on 2026-04-02."
+    }
+  ],
+  "notes": [
+    "Phase-1 does not require a separate upstream git checkout because the validation target is the Hugging Face-hosted model ID exercised through repo-native Transformers entrypoints.",
+    "The missing qwen_vl_utils dependency and actual weight availability still need build-time/runtime verification."
+  ]
+}

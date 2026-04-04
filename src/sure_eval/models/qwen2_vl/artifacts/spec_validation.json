@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "status": "passed",
+  "checks": {
+    "spec_completeness": {
+      "passed": true,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": true,
+      "unsupported_fields": []
+    },
+    "conflict_resolution": {
+      "passed": true,
+      "unresolved_conflicts": []
+    },
+    "build_plan_executable": {
+      "passed": true,
+      "blocking_issues": []
+    },
+    "fixture_availability": {
+      "passed": true,
+      "fixture_path": "tests/fixtures/shared/vlm/demo_image.jpg",
+      "source": "shared_vlm_created_for_phase1"
+    },
+    "io_contract_sufficient": {
+      "passed": true,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": true,
+      "incompatibilities": []
+    },
+    "runtime_identity_resolved": {
+      "passed": true,
+      "resolved_target": "Qwen2VLForConditionalGeneration.from_pretrained('Qwen/Qwen2-VL-2B-Instruct')"
+    }
+  },
+  "ready_for_build_env": true,
+  "warnings": [
+    "The host exposes no CUDA device; successful phase-1 validation therefore depends on whether the repo-native path can still load and run on CPU.",
+    "The fixture was newly created because the repository had no existing shared VLM image fixture."
+  ],
+  "blockers": []
+}

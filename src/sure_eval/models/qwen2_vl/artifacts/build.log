@@ -1,0 +1,8 @@
+[2026-04-02T18:56:16+01:00] BUILD initialized for qwen2-vl-2b-instruct phase-1 onboarding.
+[2026-04-02T18:56:16+01:00] PLAN selected backend=conda because uv was unavailable in preflight and docker was unavailable.
+[2026-04-02T18:56:16+01:00] BUILD pending execution.
+[2026-04-02T18:56:16+01:00] BUILD_ENV created /tmp/sure_eval_qwen2_vl_2b_instruct/env with conda python=3.10 pip.
+[2026-04-02T18:56:16+01:00] BUILD_ENV installed torch==2.11.0 torchvision==0.26.0 transformers==4.57.6 accelerate==1.13.0 qwen-vl-utils==0.0.14 pillow==12.2.0 sentencepiece==0.2.1.
+[2026-04-02T18:56:16+01:00] BUILD_ENV recorded conda-explicit.txt and pip-freeze.txt for reconstruction.
+[2026-04-02T18:56:16+01:00] FETCH_WEIGHTS cached Qwen/Qwen2-VL-2B-Instruct under /tmp/sure_eval_qwen2_vl_2b_instruct/hf_home/hub/models--Qwen--Qwen2-VL-2B-Instruct (size ~4.1G).
+[2026-04-02T18:56:16+01:00] BUILD completed successfully.
