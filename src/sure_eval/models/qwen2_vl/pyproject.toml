@@ -1,0 +1,18 @@
+[project]
+name = "sure-eval-qwen2-vl-2b-instruct-onboarding"
+version = "0.1.0"
+description = "Phase 1 onboarding environment for Qwen2-VL-2B-Instruct"
+requires-python = "==3.10.*"
+dependencies = [
+  "torch>=2.6,<3",
+  "torchvision>=0.21,<1",
+  "transformers>=4.55,<5",
+  "accelerate>=0.33",
+  "qwen-vl-utils>=0.0.10",
+  "pillow>=10",
+  "sentencepiece>=0.2",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
