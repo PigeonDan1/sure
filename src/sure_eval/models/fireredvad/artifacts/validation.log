@@ -1,0 +1,55 @@
+Traceback (most recent call last):
+  File "/Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad/validate_phase1.py", line 73, in <module>
+    main()
+  File "/Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad/validate_phase1.py", line 45, in main
+    infer_result, probs = vad.detect(FIXTURE)
+  File "/Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad/.venv/lib/python3.10/site-packages/fireredvad/vad.py", line 70, in detect
+    feats, dur = self.audio_feat.extract(audio)
+  File "/Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad/.venv/lib/python3.10/site-packages/fireredvad/core/audio_feat.py", line 24, in extract
+    wav_np, sample_rate = sf.read(audio, dtype="int16")
+  File "/Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad/.venv/lib/python3.10/site-packages/soundfile.py", line 305, in read
+    with SoundFile(file, 'r', samplerate, channels,
+  File "/Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad/.venv/lib/python3.10/site-packages/soundfile.py", line 690, in __init__
+    self._file = self._open(file, mode_int, closefd)
+  File "/Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad/.venv/lib/python3.10/site-packages/soundfile.py", line 1265, in _open
+    raise LibsndfileError(err, prefix="Error opening {0!r}: ".format(self.name))
+soundfile.LibsndfileError: Error opening 'tests/fixtures/shared/vad/en_16k_10s.wav': System error.
+
+=== RETRY attempt 2: path resolution mitigation ===
+{
+  "fixture_path": "/Users/wency/Desktop/上交/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav",
+  "model_dir": "/Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad/pretrained_models/FireRedVAD/VAD",
+  "tests": {
+    "import": {
+      "passed": true,
+      "duration_ms": 592.37
+    },
+    "load": {
+      "passed": true,
+      "duration_ms": 5.754
+    },
+    "infer": {
+      "passed": true,
+      "duration_ms": 41.127,
+      "probs_shape": [
+        233
+      ]
+    },
+    "contract": {
+      "passed": true,
+      "duration_ms": 0.017
+    }
+  },
+  "result": {
+    "dur": 2.35,
+    "timestamps": [
+      [
+        0.5,
+        2.25
+      ]
+    ],
+    "wav_path": "/Users/wency/Desktop/上交/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav"
+  },
+  "overall": "PASSED",
+  "duration_seconds": 0.639
+}

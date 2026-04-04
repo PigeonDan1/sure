@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-04-02T15:47:31Z",
+  "model_id": "FireRedTeam/FireRedVAD",
+  "phase": "PLAN",
+  "preflight": {
+    "host": {
+      "platform": "Darwin arm64",
+      "kernel": "Darwin Kernel Version 25.2.0",
+      "disk_free_human": "710Gi"
+    },
+    "python": {
+      "default_python": "3.12.4",
+      "default_python_path": "/opt/anaconda3/bin/python",
+      "python310_available": true,
+      "python310_path": "/opt/anaconda3/envs/fireredvad/bin/python",
+      "python310_source": "existing conda env bootstrap only"
+    },
+    "package_managers": {
+      "pip": true,
+      "uv": false,
+      "conda": true,
+      "docker": false
+    },
+    "system_packages": {
+      "ffmpeg": false
+    },
+    "gpu": {
+      "available": false,
+      "required_for_phase1": false
+    },
+    "fixture": {
+      "path": "tests/fixtures/shared/vad/en_16k_10s.wav",
+      "exists": true,
+      "format": "RIFF/WAVE PCM 16-bit mono 16000 Hz"
+    }
+  },
+  "warnings": [
+    "uv is unavailable on host, so uv backend is not executable here.",
+    "ffmpeg is unavailable on host, but the selected fixture already matches the required 16kHz 16-bit mono PCM WAV format."
+  ],
+  "blockers": []
+}

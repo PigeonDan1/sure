@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-04-02T15:47:31Z",
+  "model_id": "FireRedTeam/FireRedVAD",
+  "chosen_backend": "pip",
+  "reason": "A model-local Python 3.10 virtual environment created from an existing Python 3.10 interpreter is the lowest-risk executable path on this host. It preserves repo-native pip installation guidance, avoids host-level conda mutation, and does not require unavailable uv or docker tooling.",
+  "evidence": [
+    "GitHub README setup recommends Python 3.10 and pip installation for both PyPI and source flows.",
+    "GitHub pyproject.toml declares package name 'fireredvad' and requires-python >=3.10.",
+    "Local preflight: uv not found.",
+    "Local preflight: docker not found.",
+    "Local preflight: /opt/anaconda3/envs/fireredvad/bin/python is available and reports Python 3.10.20."
+  ],
+  "rejected_options": [
+    {
+      "backend": "uv",
+      "reason": "Unavailable on host; choosing it would violate executable-evidence-first policy."
+    },
+    {
+      "backend": "docker",
+      "reason": "Unavailable on host and heavier than needed for a CPU-only phase-1 path."
+    },
+    {
+      "backend": "pixi",
+      "reason": "Not indicated by repo-native configuration and unnecessary for the documented pip-based setup."
+    },
+    {
+      "backend": "api",
+      "reason": "Model supports local inference and phase-1 target explicitly requires local repo-native runtime validation."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "preferred_backend",
+      "sources": [
+        {
+          "value": "pip",
+          "source": "MODEL_INPUT.environment_hint.preferred_backend",
+          "priority": 3
+        },
+        {
+          "value": "uv",
+          "source": "docs/policies/backend_selection.md default priority ordering",
+          "priority": 4
+        }
+      ],
+      "chosen": "pip",
+      "reason": "Runtime executability on this host outranks default backend preference ordering, and the upstream repo itself documents pip setup."
+    }
+  ]
+}

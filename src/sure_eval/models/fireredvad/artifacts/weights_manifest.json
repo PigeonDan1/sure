@@ -1,0 +1,23 @@
+{
+  "timestamp": "2026-04-02T15:53:48Z",
+  "model_id": "FireRedTeam/FireRedVAD",
+  "source": "huggingface",
+  "repo_id": "FireRedTeam/FireRedVAD",
+  "local_path": "pretrained_models/FireRedVAD",
+  "download_status": "success",
+  "warnings": [
+    "Weights were downloaded without an HF token; the download still completed successfully."
+  ],
+  "files": [
+    {"path": "pretrained_models/FireRedVAD/README.md", "size_bytes": 7936},
+    {"path": "pretrained_models/FireRedVAD/.gitattributes", "size_bytes": 1519},
+    {"path": "pretrained_models/FireRedVAD/config.yaml", "size_bytes": 0},
+    {"path": "pretrained_models/FireRedVAD/VAD/cmvn.ark", "size_bytes": 1311},
+    {"path": "pretrained_models/FireRedVAD/VAD/model.pth.tar", "size_bytes": 2368049},
+    {"path": "pretrained_models/FireRedVAD/Stream-VAD/cmvn.ark", "size_bytes": 1311},
+    {"path": "pretrained_models/FireRedVAD/Stream-VAD/model.pth.tar", "size_bytes": 2283513},
+    {"path": "pretrained_models/FireRedVAD/AED/cmvn.ark", "size_bytes": 1311},
+    {"path": "pretrained_models/FireRedVAD/AED/model.pth.tar", "size_bytes": 2370097}
+  ],
+  "target_runtime_path": "pretrained_models/FireRedVAD/VAD"
+}

@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-04-02T15:47:31Z",
+  "model_id": "FireRedTeam/FireRedVAD",
+  "checkpoint": "VALIDATE_INFER",
+  "attempt": 1,
+  "failure_type": "wrong_entrypoint",
+  "recommended_action": "retry_from_validate_infer",
+  "change_set": [
+    "Resolve fixture path against repo root before calling vad.detect().",
+    "Resolve model_dir against the model artifact directory before calling FireRedVad.from_pretrained()."
+  ],
+  "reason": "The failure is targeted and local to path resolution. Import and load already progressed far enough to show package install and weight layout are viable.",
+  "max_retries_for_failure_type": 2
+}

@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-04-02T15:47:31Z",
+  "model_id": "FireRedTeam/FireRedVAD",
+  "checkpoint": "VALIDATE_INFER",
+  "attempt": 1,
+  "failure_type": "wrong_entrypoint",
+  "retryable": true,
+  "symptoms": [
+    "soundfile.LibsndfileError: Error opening 'tests/fixtures/shared/vad/en_16k_10s.wav': System error."
+  ],
+  "evidence": [
+    {
+      "source": "artifacts/validation.log",
+      "priority": 2,
+      "detail": "Traceback shows failure occurs inside fireredvad.core.audio_feat.extract() while opening the relative fixture path."
+    },
+    {
+      "source": "preflight_summary.json",
+      "priority": 1,
+      "detail": "Fixture exists in repo root and has the required VAD audio format."
+    }
+  ],
+  "diagnosis": "The infer callable path itself loaded correctly, but the harness validation runner executed from the model directory while the spec fixture path is repo-root relative. This is a path-resolution issue in the validation harness, not a missing fixture or missing dependency."
+}

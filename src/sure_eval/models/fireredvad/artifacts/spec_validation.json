@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-04-02T15:47:31Z",
+  "model_id": "FireRedTeam/FireRedVAD",
+  "status": "passed",
+  "checks": {
+    "spec_completeness": {
+      "passed": true,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": true,
+      "unsupported_fields": []
+    },
+    "conflict_resolution": {
+      "passed": true,
+      "unresolved_conflicts": []
+    },
+    "build_plan_executable": {
+      "passed": true,
+      "blocking_issues": []
+    },
+    "fixture_availability": {
+      "passed": true,
+      "fixture_path": "tests/fixtures/shared/vad/en_16k_10s.wav",
+      "source": "shared",
+      "note": "Shared VAD fixture is explicitly recorded as fallback and preserves the original VAD task semantics."
+    },
+    "io_contract_sufficient": {
+      "passed": true,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": true,
+      "incompatibilities": []
+    }
+  },
+  "ready_for_build_env": true,
+  "warnings": [
+    "ffmpeg is unavailable on host; validation depends on the existing compliant WAV fixture and does not cover format conversion."
+  ],
+  "blockers": []
+}
