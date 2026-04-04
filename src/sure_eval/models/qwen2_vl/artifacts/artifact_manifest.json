@@ -1,79 +1,94 @@
 {
   "$schema": "./artifact_manifest.schema.json",
-  "instance_id": "fireredvad_20260402",
-  "timestamp": "2026-04-02T15:53:48Z",
-  "model_id": "FireRedTeam/FireRedVAD",
+  "instance_id": "qwen2-vl-2b-instruct-phase1-20260402",
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
   "artifacts": {
     "required": {
       "spec": {
-        "path": "model.spec.yaml",
-        "description": "Model spec for FireRedVAD phase-1 onboarding."
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/model.spec.yaml",
+        "description": "模型规范文件"
       },
       "backend_choice": {
-        "path": "artifacts/backend_choice.json",
-        "description": "Structured backend selection decision with evidence."
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/backend_choice.json",
+        "description": "后端选择记录"
       },
       "build_log": {
-        "path": "artifacts/build.log",
-        "description": "pip install and Hugging Face weight download logs."
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/build.log",
+        "description": "环境构建日志"
       },
       "validation_log": {
-        "path": "artifacts/validation.log",
-        "description": "Import/load/infer/contract execution log including first failure and targeted retry."
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/validation.log",
+        "description": "验证测试日志"
       },
       "verdict": {
-        "path": "artifacts/verdict.json",
-        "description": "Final onboarding verdict."
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/verdict.json",
+        "description": "最终判定结果"
       },
       "wrapper": {
-        "paths": ["model.py", "server.py", "__init__.py"],
-        "description": "Minimal wrapper files for the validated non-streaming VAD path.",
+        "paths": [
+          "src/sure_eval/models/qwen2_vl_2b_instruct/model.py",
+          "src/sure_eval/models/qwen2_vl_2b_instruct/server.py",
+          "src/sure_eval/models/qwen2_vl_2b_instruct/__init__.py"
+        ],
+        "description": "模型 wrapper 文件集",
         "required_files": ["model.py", "server.py", "__init__.py"]
       },
       "manifest": {
-        "path": "artifacts/artifact_manifest.json",
-        "description": "Artifact inventory."
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/artifact_manifest.json",
+        "description": "本清单文件"
       }
     },
     "conditional": {
       "spec_validation": {
-        "path": "artifacts/spec_validation.json",
-        "description": "Mandatory plan validation output.",
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/spec_validation.json",
+        "description": "spec 前置验证结果",
         "condition": "VALIDATE_SPEC executed"
       },
       "preflight_summary": {
-        "path": "artifacts/preflight_summary.json",
-        "description": "Host capability summary.",
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/preflight_summary.json",
+        "description": "执行前检查结果",
         "condition": "preflight executed"
       },
       "weights_manifest": {
-        "path": "artifacts/weights_manifest.json",
-        "description": "Downloaded weight inventory.",
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/weights_manifest.json",
+        "description": "权重文件清单",
         "condition": "weights.required == true"
       },
       "failure_classification": {
-        "path": "artifacts/failure_classification.json",
-        "description": "Infer-stage failure diagnosis.",
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/failure_classification.json",
+        "description": "失败分类结果",
         "condition": "DIAGNOSE executed"
       },
       "retry_recommendation": {
-        "path": "artifacts/retry_recommendation.json",
-        "description": "Targeted retry plan for the infer-stage failure.",
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/retry_recommendation.json",
+        "description": "重试建议",
         "condition": "REPLAN executed"
+      },
+      "escalation": {
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/escalation.json",
+        "description": "人工升级请求记录",
+        "condition": "human or permission escalation triggered"
+      },
+      "conda_lock": {
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/conda-explicit.txt",
+        "description": "Conda 显式环境锁定文件",
+        "condition": "backend == 'conda'"
+      },
+      "pip_lock": {
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/pip-freeze.txt",
+        "description": "Pip 依赖冻结文件",
+        "condition": "pip install used"
       }
     },
     "optional": {
-      "repo_summary": {
-        "path": "artifacts/repo_summary.json",
-        "description": "Discovery-phase repository summary."
-      },
-      "classification": {
-        "path": "artifacts/classification.json",
-        "description": "Classification-phase result."
-      },
       "runtime_output": {
-        "path": "artifacts/runtime_output.json",
-        "description": "Validated runtime output payload."
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/runtime_output.json",
+        "description": "最小推理输出快照"
+      },
+      "config": {
+        "path": "src/sure_eval/models/qwen2_vl_2b_instruct/config.yaml",
+        "description": "Wrapper 运行配置"
       }
     }
   }
