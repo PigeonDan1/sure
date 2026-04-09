@@ -16,6 +16,7 @@
 
 - **理解任务**: 判断当前请求属于 onboarding、evaluation、repair 还是 audit
 - **做出范围决策**: 选择合适的数据集、判定是否需要调用既有 tool workflow
+- **先做 tool gate**: 先判断模型是否可直接按 server/tool 使用，再决定是否交给 tool workflow
 - **推进稳定流程**: 调用 deterministic scripts，而不是重新实现它们
 - **输出可审计决策**: 所有关键判断必须可解释、可回溯
 
@@ -58,12 +59,12 @@ INTAKE
     ↓ (理解用户目标与上下文)
 CLASSIFY_TASK
     ↓ (判断任务类型)
+CHECK_TOOL_READINESS
+    ↓ (判断 direct server use / smoke test / handoff)
 INSPECT_CONTEXT
     ↓ (读取 README / artifacts / config / history)
 PLAN
     ↓ (形成执行计划与数据集范围)
-DECIDE_TOOL_PATH
-    ↓ (决定是否调用既有 tool workflow)
 PREPARE_DATA
     ↓ (准备 canonical datasets)
 MATERIALIZE_TEMPLATES
@@ -122,9 +123,33 @@ DECIDE_NEXT_ACTION
 
 ---
 
-## 4. 与既有 Tool Workflow 的关系
+## 4. Tool Readiness Gate
 
-### 4.1 主流程 Agent 的权限
+### 4.1 先做 server-first / tool-first 判定
+
+在主流程 Agent 进入 dataset planning 或脚本评测之前，必须先判断当前模型属于以下哪一类：
+
+| 状态 | 含义 |
+|------|------|
+| `server_ready` | 可直接按现有 server/tool 路径使用 |
+| `server_declared_but_unverified` | 已声明 server 路径，但应先做最小 smoke test |
+| `not_tool_ready` | 尚未形成可用 tool，需进入既有 tool workflow |
+| `tool_broken_needs_repair` | 曾经可用，但当前 server/tool 路径失效 |
+
+### 4.2 主流程 Agent 的默认优先级
+
+对于已存在模型目录的模型，主流程 Agent 必须优先遵守以下执行层级：
+
+1. `MCP server path`
+2. `server subprocess smoke path`
+3. `model wrapper path`
+4. `native library path`
+
+也就是说，只要模型声明了 server/tool 路径，main flow 不应一开始就跳到 wrapper 或底层依赖修补。
+
+## 5. 与既有 Tool Workflow 的关系
+
+### 5.1 主流程 Agent 的权限
 
 主流程 Agent **可以**：
 
@@ -138,7 +163,7 @@ DECIDE_NEXT_ACTION
 - 复制该 workflow 的状态机
 - 以“轻量模式”重写其 backend / import / infer / contract 流程
 
-### 4.2 何时调用既有 Tool Workflow
+### 5.2 何时调用既有 Tool Workflow
 
 满足以下任一条件时，应优先调用既有 tool workflow，而不是继续脚本层评测：
 
@@ -146,12 +171,13 @@ DECIDE_NEXT_ACTION
 - 当前模型没有通过最小 contract 验证
 - README / artifacts 表明模型能力边界尚不可靠
 - 当前失败本质上是 tool integration 问题，而不是评测问题
+- `TOOL_READINESS_AND_ROUTING_UNIT` 判定为 `not_tool_ready` 或 `tool_broken_needs_repair`
 
 ---
 
-## 5. 输入规范
+## 6. 输入规范
 
-### 5.1 主输入
+### 6.1 主输入
 
 主流程 Agent 的输入来自四类来源：
 
@@ -174,7 +200,15 @@ DECIDE_NEXT_ACTION
 4. **人工限制**
    - 例如：只跑某类任务、不要触碰 tool workflow、只做 dry-run
 
-### 5.2 关键判断输入
+### 6.2 关键判断输入
+
+在执行 `TOOL_READINESS_AND_ROUTING_UNIT` 时，必须优先查看：
+
+- model-local `config.yaml`
+- model-local `README.md`
+- model-local `.venv` / lockfile / artifacts
+- `server.py` / `model.py`
+- 最近一次 server 或 validation 结果
 
 主流程 Agent 在选择 dataset scope 时，必须优先使用：
 
@@ -187,9 +221,9 @@ DECIDE_NEXT_ACTION
 
 ---
 
-## 6. 输出规范
+## 7. 输出规范
 
-### 6.1 主流程 Agent 必须产出的结构化结果
+### 7.1 主流程 Agent 必须产出的结构化结果
 
 每次主流程执行至少应能归纳出以下结构：
 
@@ -197,6 +231,8 @@ DECIDE_NEXT_ACTION
 {
   "task_type": "evaluate_existing_model",
   "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
   "selected_datasets": ["aishell1", "librispeech_clean"],
   "skipped_datasets": [
     {
@@ -214,7 +250,7 @@ DECIDE_NEXT_ACTION
 }
 ```
 
-### 6.2 必须落到脚本层接口的输出
+### 7.2 必须落到脚本层接口的输出
 
 主流程 Agent 的执行性输出必须转化为以下接口输入：
 
@@ -226,27 +262,29 @@ DECIDE_NEXT_ACTION
 
 ---
 
-## 7. Deterministic Script Routing
+## 8. Deterministic Script Routing
 
 主流程 Agent 的脚本调用顺序必须优先遵守以下路由：
 
-### 7.1 数据准备
+但只有在 `TOOL_READINESS_AND_ROUTING_UNIT` 明确表明无需 handoff、且 server path 已准备好时，才应进入这些评测脚本。
+
+### 8.1 数据准备
 
 - [prepare_sure_dataset.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/prepare_sure_dataset.py)
 
-### 7.2 预测模板生成
+### 8.2 预测模板生成
 
 - [materialize_predictions_template.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/materialize_predictions_template.py)
 
-### 7.3 预测文件校验
+### 8.3 预测文件校验
 
 - [validate_prediction_files.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/validate_prediction_files.py)
 
-### 7.4 正式评分
+### 8.4 正式评分
 
 - [evaluate_predictions.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/evaluate_predictions.py)
 
-### 7.5 报表刷新
+### 8.5 报表刷新
 
 - [refresh_report_snapshot.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/refresh_report_snapshot.py)
 
@@ -254,9 +292,29 @@ DECIDE_NEXT_ACTION
 
 ---
 
-## 8. 核心决策点
+## 9. 核心决策点
 
-### 8.1 是否进入 Tool Workflow
+### 9.1 是否进入 Tool Workflow
+
+这一决策不应靠模糊印象，而应由 `TOOL_READINESS_AND_ROUTING_UNIT` 明确给出。
+
+判断标准：
+
+- server/tool path 是否已声明
+- model-local env 是否存在
+- server smoke test 是否通过
+- 当前失败是否属于 tool integration
+
+### 9.2 是否可以直接使用现有 server
+
+如果模型已经具备：
+
+- `config.yaml` 中定义的 server command
+- model-local environment
+- 明确工具定义
+- 至少一次可置信的 readiness evidence
+
+则应优先 direct server use，而不是再次进入 onboarding/repair。
 
 主流程 Agent 必须明确回答：
 

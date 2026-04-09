@@ -2,7 +2,7 @@
 
 **版本**: v1.0  
 **目标**: 将主流程 Agent 定义为一个可路由、可分单元执行、可结构化评估的 orchestration harness  
-**范围**: 主流程 planning / dataset scope / script routing / result assessment
+**范围**: 主流程 planning / tool readiness routing / dataset scope / script routing / result assessment
 
 ---
 
@@ -42,11 +42,12 @@
 它定义主流程 Agent 由以下子单元组成：
 
 1. `TASK_CLASSIFICATION_UNIT`
-2. `PLAN_UNIT`
-3. `DATASET_SCOPE_UNIT`
-4. `SCRIPT_ROUTING_UNIT`
-5. `ASSESSMENT_UNIT`
-6. `RUN_REPORT_UNIT`
+2. `TOOL_READINESS_AND_ROUTING_UNIT`
+3. `PLAN_UNIT`
+4. `DATASET_SCOPE_UNIT`
+5. `SCRIPT_ROUTING_UNIT`
+6. `ASSESSMENT_UNIT`
+7. `RUN_REPORT_UNIT`
 
 每个单元：
 
@@ -63,6 +64,8 @@
 INTAKE
     ↓
 TASK_CLASSIFICATION_UNIT
+    ↓
+TOOL_READINESS_AND_ROUTING_UNIT
     ↓
 PLAN_UNIT
     ↓
@@ -86,6 +89,7 @@ DONE
 | 单元 | 作用 | 结构化输出 |
 |------|------|------------|
 | `TASK_CLASSIFICATION_UNIT` | 判断任务类型 | `task_classification.json` |
+| `TOOL_READINESS_AND_ROUTING_UNIT` | 判断是否优先 direct server use，或转 tool workflow | `tool_readiness_routing.json` |
 | `PLAN_UNIT` | 形成执行计划 | `main_agent_plan.json` |
 | `DATASET_SCOPE_UNIT` | 选择 / 跳过数据集 | `dataset_decision.json` |
 | `SCRIPT_ROUTING_UNIT` | 形成脚本调用序列 | `script_routing.json` |
@@ -99,9 +103,12 @@ DONE
 | 子单元 | 文档 |
 |--------|------|
 | `TASK_CLASSIFICATION_UNIT` | [`../../../docs/contracts/main_agent_task_unit.md`](../../../docs/contracts/main_agent_task_unit.md) |
+| `TOOL_READINESS_AND_ROUTING_UNIT` | [`../../../docs/contracts/main_agent_tool_readiness_unit.md`](../../../docs/contracts/main_agent_tool_readiness_unit.md) |
 | `PLAN_UNIT` | [`../../../docs/contracts/main_agent_plan_unit.md`](../../../docs/contracts/main_agent_plan_unit.md) |
 | `DATASET_SCOPE_UNIT` | [`../../../docs/contracts/main_agent_dataset_unit.md`](../../../docs/contracts/main_agent_dataset_unit.md) |
+| `SCRIPT_ROUTING_UNIT` | [`../../../docs/contracts/main_agent_script_routing_unit.md`](../../../docs/contracts/main_agent_script_routing_unit.md) |
 | `ASSESSMENT_UNIT` | [`../../../docs/contracts/main_agent_assessment_unit.md`](../../../docs/contracts/main_agent_assessment_unit.md) |
+| `RUN_REPORT_UNIT` | [`../../../docs/contracts/main_agent_run_report_unit.md`](../../../docs/contracts/main_agent_run_report_unit.md) |
 
 ---
 
@@ -110,6 +117,7 @@ DONE
 | 文件 | 模板 |
 |------|------|
 | `task_classification.json` | [`../../../templates/main_agent_task_classification.json`](../../../templates/main_agent_task_classification.json) |
+| `tool_readiness_routing.json` | [`../../../templates/main_agent_tool_readiness_routing.json`](../../../templates/main_agent_tool_readiness_routing.json) |
 | `main_agent_plan.json` | [`../../../templates/main_agent_plan.json`](../../../templates/main_agent_plan.json) |
 | `dataset_decision.json` | [`../../../templates/main_agent_dataset_decision.json`](../../../templates/main_agent_dataset_decision.json) |
 | `script_routing.json` | [`../../../templates/main_agent_script_routing.json`](../../../templates/main_agent_script_routing.json) |
@@ -131,7 +139,21 @@ DONE
 - `need_tool_workflow`
 - `confidence`
 
-### 8.2 PLAN_UNIT
+### 8.2 TOOL_READINESS_AND_ROUTING_UNIT
+
+**目标**:
+- 判断当前模型是否应优先 direct server use
+- 判断是否只需做 server smoke test
+- 判断何时必须转 tool workflow
+
+**最小输出**:
+- `tool_readiness_state`
+- `preferred_execution_path`
+- `server_smoke_test_required`
+- `handoff_to_tool_agent`
+- `reason`
+
+### 8.3 PLAN_UNIT
 
 **目标**:
 - 形成本轮总体计划
@@ -141,7 +163,7 @@ DONE
 - 预期执行步骤
 - stop condition
 
-### 8.3 DATASET_SCOPE_UNIT
+### 8.4 DATASET_SCOPE_UNIT
 
 **目标**:
 - 明确 selected / skipped datasets
@@ -151,7 +173,7 @@ DONE
 - `skipped_datasets`
 - 每个 skipped item 的 reason
 
-### 8.4 SCRIPT_ROUTING_UNIT
+### 8.5 SCRIPT_ROUTING_UNIT
 
 **目标**:
 - 把 agent 的决策转成确定性脚本调用顺序
@@ -160,8 +182,10 @@ DONE
 - `steps`
 - 每一步对应的 script
 - 每一步的输入依赖
+- `wait_points`
+- `stop_condition`
 
-### 8.5 ASSESSMENT_UNIT
+### 8.6 ASSESSMENT_UNIT
 
 **目标**:
 - 判断本轮执行是成功、部分成功还是阻塞
@@ -171,7 +195,7 @@ DONE
 - `evidence`
 - `next_action`
 
-### 8.6 RUN_REPORT_UNIT
+### 8.7 RUN_REPORT_UNIT
 
 **目标**:
 - 汇总整轮 run 的结构化结论
@@ -182,6 +206,7 @@ DONE
 - 实际执行步骤
 - 最终状态
 - 下一步建议
+- 上游 artifact 索引
 
 ---
 
@@ -196,6 +221,12 @@ DONE
 - [refresh_report_snapshot.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/refresh_report_snapshot.py)
 
 主流程 Agent 不应在 routing 层跳过这些脚本去直接构造中间格式。
+
+但在进入这些脚本前，必须先经过 `TOOL_READINESS_AND_ROUTING_UNIT`，优先判断：
+
+- 当前模型是否已经是 `server_ready`
+- 是否应先做 server-first smoke test
+- 是否应转入既有 tool workflow，而不是继续主流程评测
 
 ---
 

@@ -4,6 +4,8 @@
   "goal": "",
   "task_type": "evaluate_existing_model",
   "need_tool_workflow": false,
+  "tool_readiness_state": "server_declared_but_unverified",
+  "preferred_execution_path": "server_smoke_test_then_use",
   "execution_steps": [
     "prepare_dataset",
     "materialize_templates",
