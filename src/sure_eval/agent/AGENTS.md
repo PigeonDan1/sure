@@ -98,6 +98,7 @@ DONE
 
 | 子单元 | 文档 |
 |--------|------|
+| `TASK_CLASSIFICATION_UNIT` | [`../../../docs/contracts/main_agent_task_unit.md`](../../../docs/contracts/main_agent_task_unit.md) |
 | `PLAN_UNIT` | [`../../../docs/contracts/main_agent_plan_unit.md`](../../../docs/contracts/main_agent_plan_unit.md) |
 | `DATASET_SCOPE_UNIT` | [`../../../docs/contracts/main_agent_dataset_unit.md`](../../../docs/contracts/main_agent_dataset_unit.md) |
 | `ASSESSMENT_UNIT` | [`../../../docs/contracts/main_agent_assessment_unit.md`](../../../docs/contracts/main_agent_assessment_unit.md) |
@@ -108,6 +109,7 @@ DONE
 
 | 文件 | 模板 |
 |------|------|
+| `task_classification.json` | [`../../../templates/main_agent_task_classification.json`](../../../templates/main_agent_task_classification.json) |
 | `main_agent_plan.json` | [`../../../templates/main_agent_plan.json`](../../../templates/main_agent_plan.json) |
 | `dataset_decision.json` | [`../../../templates/main_agent_dataset_decision.json`](../../../templates/main_agent_dataset_decision.json) |
 | `script_routing.json` | [`../../../templates/main_agent_script_routing.json`](../../../templates/main_agent_script_routing.json) |
@@ -127,6 +129,7 @@ DONE
 - `task_type`
 - `reason`
 - `need_tool_workflow`
+- `confidence`
 
 ### 8.2 PLAN_UNIT
 
