@@ -1,0 +1,15 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "goal": "",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "execution_steps": [
+    "prepare_dataset",
+    "materialize_templates",
+    "validate_predictions",
+    "evaluate_predictions"
+  ],
+  "stop_condition": "",
+  "notes": []
+}

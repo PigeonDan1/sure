@@ -1,0 +1,13 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "steps": [
+    {
+      "name": "prepare_dataset",
+      "script": "scripts/prepare_sure_dataset.py",
+      "inputs": {
+        "datasets": []
+      }
+    }
+  ]
+}

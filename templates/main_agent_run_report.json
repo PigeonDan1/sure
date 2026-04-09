@@ -1,0 +1,18 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "task_type": "",
+  "goal": "",
+  "selected_datasets": [],
+  "executed_steps": [],
+  "status": "pending",
+  "artifacts": {
+    "task_classification": "",
+    "plan": "",
+    "dataset_decision": "",
+    "script_routing": "",
+    "assessment_report": ""
+  },
+  "next_action": "",
+  "notes": []
+}

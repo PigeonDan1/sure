@@ -1,0 +1,12 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "selection_basis": [],
+  "selected_datasets": [],
+  "skipped_datasets": [
+    {
+      "dataset": "",
+      "reason": ""
+    }
+  ]
+}
