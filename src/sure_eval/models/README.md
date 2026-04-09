@@ -136,28 +136,54 @@ Send Initial Prompt + MODEL_INPUT to your AI agent. The agent will automatically
 
 Models successfully onboarded via Agent Workflow:
 
-| Model | Task | Backend | Status | Notes |
-|-------|------|---------|--------|-------|
-| [whisper_large_v3_turbo](whisper_large_v3_turbo/) | ASR | uv | ✅ Ready | OpenAI Whisper Large V3 Turbo |
-| [parakeet_rnnt_1_1b](parakeet_rnnt_1_1b/) | ASR | uv | ✅ Ready | NVIDIA Parakeet RNNT 1.1B |
-| [deepfilternet](deepfilternet/) | Speech Enhancement | uv | ✅ Ready | DeepFilterNet2 noise suppression |
-| [librosa](librosa/) | Music IR | uv | ✅ Ready | Music feature extraction |
-| [whisperx](whisperx/) | ASR | uv | ✅ Ready | Whisper + alignment + diarization |
-| [asr_qwen3](asr_qwen3/) | ASR | uv | ✅ Ready | Qwen3-ASR-1.7B |
-| [asr_whisper](asr_whisper/) | ASR | uv | ✅ Ready | OpenAI Whisper base |
-| [asr_parakeet](asr_parakeet/) | ASR | uv | ✅ Ready | NVIDIA Parakeet CTC |
-| [qwen3_omni](qwen3_omni/) | OMNI | API | ✅ Ready | Qwen3-Omni API |
-| [diarizen](diarizen/) | SD | conda | ✅ Ready | Speaker diarization (DiariZen) |
-| [snakers4_silero-vad](snakers4_silero-vad/) | VAD | uv | ✅ Ready | Voice activity detection |
-| [ffmpeg](ffmpeg/) | Utility | uv | ✅ Ready | Audio processing utility |
+### Speech Recognition (ASR)
+| Model | Backend | Status | Notes |
+|-------|---------|--------|-------|
+| [whisper_large_v3_turbo](whisper_large_v3_turbo/) | uv | ✅ Ready | OpenAI Whisper Large V3 Turbo |
+| [asr_qwen3](asr_qwen3/) | uv | ✅ Ready | Qwen3-ASR-1.7B (Chinese/English) |
+| [asr_whisper](asr_whisper/) | uv | ✅ Ready | OpenAI Whisper base |
+| [asr_parakeet](asr_parakeet/) | uv | ✅ Ready | NVIDIA Parakeet CTC |
+| [parakeet_rnnt_1_1b](parakeet_rnnt_1_1b/) | uv | ✅ Ready | NVIDIA Parakeet RNNT 1.1B |
+| [whisperx](whisperx/) | uv | ✅ Ready | Whisper + alignment + diarization |
+
+### Speech Enhancement & Audio Processing
+| Model | Backend | Status | Notes |
+|-------|---------|--------|-------|
+| [deepfilternet](deepfilternet/) | uv | ✅ Ready | DeepFilterNet2 noise suppression |
+| [ffmpeg](ffmpeg/) | uv | ✅ Ready | Audio processing utility |
+| [librosa](librosa/) | uv | ✅ Ready | Music feature extraction |
+
+### Voice Activity Detection (VAD)
+| Model | Backend | Status | Notes |
+|-------|---------|--------|-------|
+| [fireredvad](fireredvad/) | conda | ✅ Ready | SOTA industrial VAD/AED (97.57% F1) |
+| [snakers4_silero-vad](snakers4_silero-vad/) | uv | ✅ Ready | Silero VAD |
+
+### Speaker Tasks
+| Model | Backend | Status | Notes |
+|-------|---------|--------|-------|
+| [diarizen](diarizen/) | conda | ✅ Ready | Speaker diarization (WavLM-based) |
+
+### Vision-Language (VLM)
+| Model | Backend | Status | Notes |
+|-------|---------|--------|-------|
+| [qwen2_vl](qwen2_vl/) | conda | ✅ Ready | Qwen2-VL-2B visual understanding |
+
+### API-Based Models
+| Model | Backend | Status | Notes |
+|-------|---------|--------|-------|
+| [qwen3_omni](qwen3_omni/) | API | ✅ Ready | Qwen3-Omni multimodal API |
+
+---
 
 ### Failed Attempts (Reference)
 
 | Model | Task | Backend | Status | Reason |
 |-------|------|---------|--------|--------|
 | [parakeet_1_1b_rnnt_multilingual_asr](parakeet_1_1b_rnnt_multilingual_asr/) | ASR | docker | ❌ Failed | Docker backend issues |
+| [wespeaker](wespeaker/) | SV | pip | ❌ Failed | Import chain issues (eager frontend deps) |
 
-**Total: 12 models** (10 passed, 2 failed) across ASR, SD, VAD, Speech Enhancement, Music IR, and Utility tasks.
+**Total: 15 models** (12 passed, 3 failed) across ASR, SD, VAD, Speech Enhancement, Music IR, VLM, and Utility tasks.
 
 ### Model Directory Structure
 
