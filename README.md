@@ -1,179 +1,336 @@
-# SURE-EVAL
+<div align="center">
+
+# 🔊 SURE-EVAL
 
 **S**ystematic **U**nified **R**obust **E**valuation Framework for Audio Processing
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-SURE-EVAL is an autonomous evaluation framework for audio processing tools and models, featuring a **Harness-First Agent Workflow** for automated tool onboarding.
-
-**🚀 Onboard any audio tool in minutes, not hours.**
-
-Simply provide a model specification → Agent auto-configures environment → Validated and ready to use.
+</div>
 
 ---
 
-## Features
+## 📋 Overview
 
-### 🚀 Automated Tool Onboarding (New)
+SURE-EVAL is an **automated evaluation framework** for audio tools and models, built around a simple principle:
 
-**The fastest way to integrate any audio processing tool.**
+> **🎯 Agent decides scope, scripts enforce execution.**
 
-```bash
-# Just provide model spec → Agent does the rest
-# Works with: Speech Enhancement, ASR, Diarization, VAD, Music IR, and more
+### Three-Layer Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  🤖 Main Flow Agent                                     │
+│  Decides what should be run                             │
+├─────────────────────────────────────────────────────────┤
+│  🔧 Tool Onboarding Workflow                            │
+│  Makes models callable in reproducible ways             │
+├─────────────────────────────────────────────────────────┤
+│  📜 Deterministic Script Layer                          │
+│  Prepares, validates, scores, records                   │
+└─────────────────────────────────────────────────────────┘
 ```
 
-Our **Harness-First Agent Workflow** automatically:
-- Discovers repository structure and dependencies
-- Builds isolated environments (uv/conda/docker)
-- Validates import → load → inference → contract
-- Generates MCP-compliant wrappers
-- Produces structured artifacts for reproducibility
+---
 
-[→ Start Onboarding](src/sure_eval/models/README.md) | [→ See Configured Models](src/sure_eval/models/README.md#configured-models)
+## ✨ What SURE-EVAL Solves
 
-### Core Capabilities
+| Goal | How |
+|------|-----|
+| **🚀 Onboard a new audio model** | Turn raw repositories into stable local tools |
+| **📊 Run controlled evaluations** | Select datasets → Generate predictions → Validate → Score → Record |
 
-- **📊 Multi-Task Support**: ASR, S2TT (Speech Translation), SD (Speaker Diarization), SA-ASR, SER, Music IR, Speech Enhancement
-- **🤖 Autonomous Evaluation**: Download datasets, run inference, compute metrics, track RPS scores
-- **🔧 MCP Tool Integration**: Standardized interface for any tool
-- **📈 RPS Tracking**: Relative Performance Score for tool comparison
-- **🎯 Tool Recommendation**: AI-powered best tool selection
+> 💡 **Key Insight**: Model integration is high-uncertainty, but evaluation execution should be low-uncertainty. SURE-EVAL separates these concerns.
 
 ---
 
-## Quick Start
+## 🏗️ Architecture
 
-### Installation
+### 🤖 1. Main Flow Agent
+
+**Role**: Orchestration layer
+
+**Responsibilities**:
+- Understanding user goals
+- Task classification
+- Tool readiness verification
+- Dataset scope selection
+- Script routing
+- Outcome assessment
+
+📖 **Documentation**:
+- [Agent README](src/sure_eval/agent/README.md)
+- [Agent Guide](src/sure_eval/agent/AGENTS.md)
+
+---
+
+### 🔧 2. Tool Onboarding Workflow
+
+**Location**: `src/sure_eval/models/`
+
+**Responsibilities**:
+- Backend selection
+- Environment isolation
+- Import / Load / Infer / Contract validation
+- Wrapper generation
+- Artifact management
+
+📖 **Documentation**:
+- [Models README](src/sure_eval/models/README.md)
+- [Models Agent Guide](src/sure_eval/models/AGENTS.md)
+
+---
+
+### 📜 3. Deterministic Script Layer
+
+**Core Scripts**:
+
+| Script | Purpose |
+|--------|---------|
+| `prepare_sure_dataset.py` | Canonical dataset preparation |
+| `materialize_predictions_template.py` | Prediction template generation |
+| `validate_prediction_files.py` | Prediction validation |
+| `evaluate_predictions.py` | Metric & RPS computation |
+| `refresh_report_snapshot.py` | Result recording & reports |
+
+---
+
+## 🚀 Quick Start Guide
+
+### 📍 Which Path Should I Use?
+
+```
+Start Here
+    ↓
+┌────────────────────────────────────────────────────────────┐
+│ Do you have a model under src/sure_eval/models/<model>?   │
+└────────────────────────────────────────────────────────────┘
+    │
+    ├── ❌ No → Use Tool Onboarding Workflow
+    │         → Build model-local server first
+    │         → Then use Main Flow Agent
+    │
+    └── ✅ Yes → Check config.yaml for server/tool path
+                │
+                ├── ❌ No server path
+                │   → Use Tool Onboarding Workflow
+                │
+                └── ✅ Server path exists
+                    → Run TOOL_READINESS_AND_ROUTING_UNIT
+                        │
+                        ├── 🟢 server_ready
+                        │   → Continue to evaluation
+                        │
+                        ├── 🟡 server_declared_but_unverified
+                        │   → Run smoke test first
+                        │
+                        └── 🔴 tool_broken_needs_repair
+                            → Hand off to tool workflow
+```
+
+---
+
+### 🛠️ Path A: Onboard a New Model
+
+**Use when**: Model is not yet in `src/sure_eval/models/`
+
+**Steps**:
+1. Go to [Models README](src/sure_eval/models/README.md)
+2. Use the tool onboarding prompt template
+3. Let the workflow produce a callable model
+4. Switch to Main Flow Agent for evaluation
+
+---
+
+### 🎯 Path B: Evaluate an Existing Model
+
+**Use when**: Model already has a directory in `src/sure_eval/models/`
+
+**Steps**:
+1. Use prompt from [Agent README](src/sure_eval/agent/README.md)
+2. Let agent execute:
+   - `TASK_CLASSIFICATION_UNIT`
+   - `TOOL_READINESS_AND_ROUTING_UNIT`
+   - `PLAN_UNIT`
+   - `DATASET_SCOPE_UNIT`
+   - `SCRIPT_ROUTING_UNIT`
+3. Continue to prediction generation and scoring
+
+---
+
+## ⚡ Installation
 
 ```bash
+# Clone repository
 git clone https://github.com/PigeonDan1/sure.git
 cd sure
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Download Data
+---
+
+## 📊 Deterministic Evaluation Pipeline
+
+Execute evaluation without agents:
 
 ```bash
-# Download SURE benchmark datasets (~11GB)
-python scripts/download_sure_data.py
+# 1️⃣ Prepare datasets
+python scripts/prepare_sure_dataset.py \
+  --dataset aishell1
 
-# Convert to JSONL
-python scripts/convert_sure_to_jsonl.py \
-    --csv-dir data/datasets/sure_benchmark/SURE_Test_csv \
-    --output-dir data/datasets/sure_benchmark/jsonl
-```
-
-### Run Evaluation
-
-```bash
-# Quick test (10 samples)
-python -c "
-from sure_eval import AutonomousEvaluator
-evaluator = AutonomousEvaluator()
-result = evaluator.quick_test('asr_qwen3', 'aishell1', num_samples=10)
-print(f'WER: {result[\"score\"]:.2f}%, RPS: {result[\"rps\"]:.2f}')
-"
-
-# Full evaluation
-sure-eval evaluate asr_qwen3 aishell1 --max-samples 100
-```
-
-### Deterministic Script Pipeline
-
-```bash
-# 1. Prepare canonical datasets
-python scripts/prepare_sure_dataset.py --dataset aishell1 covost2_en2zh
-
-# 2. Evaluate existing prediction files deterministically
-python scripts/evaluate_predictions.py \
-  --dataset aishell1 covost2_en2zh \
-  --pred-dir predictions \
-  --tool-name my_model \
-  --record \
-  --output results/eval_payload.json
-
-# 3. Materialize prediction templates before running a new model
+# 2️⃣ Generate prediction templates
 python scripts/materialize_predictions_template.py \
-  --dataset aishell1 covost2_en2zh \
-  --output-dir predictions/templates
+  --dataset aishell1 \
+  --output-dir /tmp/predictions
 
-# 4. Validate filled prediction files before scoring
+# 3️⃣ Fill /tmp/predictions/aishell1.txt with:
+#    key<TAB>prediction
+
+# 4️⃣ Validate predictions
 python scripts/validate_prediction_files.py \
-  --dataset aishell1 covost2_en2zh \
-  --pred-dir predictions/templates \
+  --dataset aishell1 \
+  --pred-dir /tmp/predictions \
   --require-nonempty
 
-# 5. Refresh report snapshot
-python scripts/refresh_report_snapshot.py
+# 5️⃣ Evaluate and record
+python scripts/evaluate_predictions.py \
+  --dataset aishell1 \
+  --pred-dir /tmp/predictions \
+  --tool-name my_model \
+  --record \
+  --output /tmp/eval_payload.json
 ```
 
 ---
 
-## Model Onboarding via Agent Workflow
+## 🔄 Main Flow Execution
 
-**Zero-config tool integration.** Provide a model specification, let the agent handle the rest.
+### Flow Diagram
 
-**Recommended AI Agents for Onboarding:**
-- **Claude Code** (Opus) - Best for complex dependency resolution
-- **Codex GPT-5.4** - Excellent for repository analysis
-- **Kimi Code** - Good for systematic workflow execution
-
-> ⚠️ **Note**: Avoid agents with strict timeout limits (e.g., 60s) for large model installations.
-
-**Quick Links:**
-- [Agent Workflow Guide](src/sure_eval/models/README.md) - Complete documentation with prompt templates
-- [Configured Models](src/sure_eval/models/README.md#configured-models) - 10+ models already onboarded
-
-**Usage:**
-```bash
-cd /path/to/sure-eval
-# Follow the guide in src/sure_eval/models/README.md
 ```
+TASK_CLASSIFICATION_UNIT
+        ↓
+TOOL_READINESS_AND_ROUTING_UNIT
+        ↓
+      PLAN_UNIT
+        ↓
+   DATASET_SCOPE_UNIT
+        ↓
+   SCRIPT_ROUTING_UNIT
+        ↓
+   EXECUTE / WAIT
+        ↓
+   ASSESSMENT_UNIT
+        ↓
+   RUN_REPORT_UNIT
+```
+
+> ⚠️ **Critical Rule**: Never skip tool readiness routing!
+
+If a model declares a server path:
+1. Prefer server-first smoke test
+2. Confirm `server_ready` status
+3. Only then proceed to evaluation
+
+📖 **Example**: [Qwen3 ASR Case Study](docs/contracts/main_agent_qwen3_asr_case.md)
 
 ---
 
-## Project Structure
+## 📝 Example: Evaluate with Main Flow Agent
+
+Use the prompt template from [Agent README](src/sure_eval/agent/README.md), then provide:
+
+```yaml
+MAIN_FLOW_INPUT:
+  user_goal: evaluate_existing_model
+
+  target:
+    model_name: asr_qwen3
+    model_dir: src/sure_eval/models/asr_qwen3
+    tool_workflow_ready: true
+
+  constraints:
+    allow_tool_workflow: true
+    allowed_tasks: [ASR]
+    allowed_datasets: null
+    blocked_datasets: []
+    dry_run: false
+
+  evidence:
+    readme_path: src/sure_eval/models/asr_qwen3/README.md
+    config_path: src/sure_eval/models/asr_qwen3/config.yaml
+    artifacts_dir: src/sure_eval/models/asr_qwen3/artifacts
+    model_spec_path: src/sure_eval/models/asr_qwen3/model.spec.yaml
+
+  runtime_context:
+    available_scripts:
+      - scripts/prepare_sure_dataset.py
+      - scripts/materialize_predictions_template.py
+      - scripts/validate_prediction_files.py
+      - scripts/evaluate_predictions.py
+    output_dir: /tmp/main_agent_run_asr_qwen3
+```
+
+### Structured Outputs
+
+- `task_classification.json`
+- `tool_readiness_routing.json`
+- `main_agent_plan.json`
+- `dataset_decision.json`
+- `script_routing.json`
+- `assessment_report.json`
+- `main_agent_run_report.json`
+
+---
+
+## 📁 Project Structure
 
 ```
 sure-eval/
 ├── src/sure_eval/
-│   ├── agent/              # Autonomous evaluation agent
-│   ├── core/               # Core utilities
-│   ├── datasets/           # Dataset management
-│   ├── evaluation/         # Evaluation metrics
-│   └── models/             # Model registry & onboarding workflow
-├── scripts/                # Utility scripts
-├── config/                 # Configuration files
-└── docs/                   # Documentation
-    ├── policies/           # Agent policies
-    ├── contracts/          # Validation contracts
-    └── playbooks/          # Operation guides
+│   ├── agent/              # 🤖 Main flow agent harness
+│   ├── core/               # ⚙️ Core utilities
+│   ├── datasets/           # 📂 Dataset management
+│   ├── evaluation/         # 📊 Metrics and RPS
+│   ├── models/             # 🔧 Tool onboarding & registry
+│   └── reports/            # 📈 Reporting and baselines
+├── scripts/                # 📜 Deterministic evaluation scripts
+├── templates/              # 📝 Structured output templates
+├── config/                 # ⚙️ Configuration files
+└── docs/                   # 📚 Contracts, policies, playbooks
 ```
 
 ---
 
-## Supported Tasks & Datasets
+## 🎯 Supported Tasks
 
-| Task | Datasets | Metrics |
-|------|----------|---------|
-| ASR | AISHELL-1, AISHELL-5, LibriSpeech | CER, WER |
-| S2TT | CoVoST2 (EN-ZH, ZH-EN) | BLEU, chrF |
-| SD | - | DER |
-| SER | IEMOCAP | Accuracy |
-
----
-
-## Documentation
-
-- **[Model Onboarding Guide](src/sure_eval/models/README.md)** - Agent workflow for tool configuration
-- **[Agent Policies](docs/policies/)** - Constitution, evidence priority, retry/escalation
-- **[Validation Contracts](docs/contracts/)** - Spec validation, minimal validation, fixture policy
-- **[Architecture](ARCHITECTURE.md)** - System design details
+| Task | Description |
+|------|-------------|
+| **ASR** | Automatic Speech Recognition |
+| **S2TT** | Speech-to-Text Translation |
+| **SD** | Speaker Diarization |
+| **SA-ASR** | Speaker-Aware ASR |
+| **SER** | Speech Emotion Recognition |
+| **Speech Enhancement** | Noise suppression, enhancement |
+| **Music IR** | Music information retrieval |
 
 ---
 
-## License
+## 📚 Documentation Map
 
-MIT License - see [LICENSE](LICENSE) file for details.
+| Document | Purpose |
+|----------|---------|
+| [Main Flow Agent](src/sure_eval/agent/README.md) | Agent system prompt & examples |
+| [Agent Routing](src/sure_eval/agent/AGENTS.md) | Main flow routing guide |
+| [Tool Onboarding](src/sure_eval/models/README.md) | Model integration workflow |
+| [Architecture](docs/contracts/main_flow_architecture.md) | System architecture details |
+| [Qwen3 Case Study](docs/contracts/main_agent_qwen3_asr_case.md) | Real replay case |
+
+---
+
+## 📄 License
+
+MIT License. See [LICENSE](LICENSE).
