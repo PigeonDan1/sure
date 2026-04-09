@@ -267,8 +267,10 @@ class SUREEvaluator:
         else:
             wer = 0.0
         
-        result['wer'] = wer
-        result['wer_percent'] = wer * 100
+        metric_name = "cer" if tochar else "wer"
+        result[metric_name] = wer
+        result[f"{metric_name}_percent"] = wer * 100
+        result["score"] = wer
         
         # Cleanup
         os.remove(ref_norm_file)
@@ -392,7 +394,9 @@ class SUREEvaluator:
         
         return {
             "bleu": score_bleu.score,
+            "bleu_char": score_bleu.score,
             "chrf": score_chrf.score,
+            "score": score_bleu.score,
         }
     
     def _eval_slu(self, ref_file: str, hyp_file: str, prompt_jsonl: str | None = None) -> float:

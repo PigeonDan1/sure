@@ -109,6 +109,11 @@ class SOTAManager:
             SOTABaseline if found, None otherwise
         """
         return self._baselines.get(dataset)
+
+    def get_metric(self, dataset: str) -> str | None:
+        """Get the canonical baseline metric for a dataset."""
+        baseline = self.get_baseline(dataset)
+        return baseline.metric if baseline else None
     
     def get_all_baselines(self) -> dict[str, SOTABaseline]:
         """Get all baselines.
@@ -146,7 +151,10 @@ class SOTAManager:
             rps = score / baseline.score if baseline.score > 0 else 0.0
         else:
             # For metrics where lower is better (WER, CER, MER)
-            rps = baseline.score / score if score > 0 else 0.0
+            if score == 0:
+                rps = float("inf") if baseline.score > 0 else 1.0
+            else:
+                rps = baseline.score / score
         
         return rps
     

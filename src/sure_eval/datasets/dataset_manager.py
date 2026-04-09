@@ -169,9 +169,8 @@ class DatasetManager:
     
     def get_jsonl_path(self, dataset_name: str) -> Path:
         """Get the JSONL file path for a dataset."""
-        # Map config name to CSV name if needed
-        csv_name = self._config_to_csv_name(dataset_name)
-        return self.jsonl_dir / f"{csv_name}.jsonl"
+        canonical_name = self._canonical_name(dataset_name)
+        return self.jsonl_dir / f"{canonical_name}.jsonl"
     
     def is_available(self, dataset_name: str) -> bool:
         """Check if dataset JSONL is available."""
@@ -237,6 +236,7 @@ class DatasetManager:
     def _download_sure_suites(self) -> None:
         """Download SURE_Test_Suites if not present."""
         suites_dir = self.sure_dir / "SURE_Test_Suites"
+        suites_dir.mkdir(parents=True, exist_ok=True)
         
         # Check if already downloaded (look for extracted directories)
         audio_dirs = [d for d in suites_dir.iterdir() if d.is_dir() and not d.name.endswith(".tar.gz")]
@@ -289,7 +289,8 @@ class DatasetManager:
     def _convert_csv_to_jsonl(self, csv_path: Path) -> Path:
         """Convert CSV file to JSONL format."""
         csv_name = csv_path.stem
-        jsonl_path = self.jsonl_dir / f"{csv_name}.jsonl"
+        canonical_name = self._canonical_name(csv_name)
+        jsonl_path = self.jsonl_dir / f"{canonical_name}.jsonl"
         
         if jsonl_path.exists():
             logger.debug(f"JSONL already exists: {jsonl_path}")
@@ -380,6 +381,18 @@ class DatasetManager:
         
         # Return as-is (might be standard HF/MS dataset)
         return dataset_name
+
+    def _canonical_name(self, dataset_name: str) -> str:
+        """Resolve any dataset alias to the canonical config key."""
+        normalized = self.normalize_dataset_name(dataset_name)
+        if normalized != dataset_name:
+            return normalized
+
+        dataset_def = self.config.get_dataset(dataset_name)
+        if dataset_def:
+            return dataset_name
+
+        return dataset_name
     
     def _download_standard(self, dataset_name: str) -> Path:
         """Download standard HuggingFace/ModelScope dataset."""
@@ -408,7 +421,8 @@ class DatasetManager:
         )
         
         # Convert to JSONL
-        output_path = self.jsonl_dir / f"{dataset_def.name}.jsonl"
+        canonical_name = self._canonical_name_from_definition(dataset_def)
+        output_path = self.jsonl_dir / f"{canonical_name}.jsonl"
         
         with open(output_path, 'w', encoding='utf-8') as f:
             for split in dataset_def.splits or ['test']:
@@ -420,7 +434,7 @@ class DatasetManager:
                             "target": item.get("text", item.get("label", "")),
                             "task": dataset_def.task,
                             "language": dataset_def.language,
-                            "dataset": dataset_def.name,
+                            "dataset": canonical_name,
                         }
                         f.write(json.dumps(sample, ensure_ascii=False) + '\n')
         
@@ -442,7 +456,8 @@ class DatasetManager:
         )
         
         # Convert to JSONL
-        output_path = self.jsonl_dir / f"{dataset_def.name}.jsonl"
+        canonical_name = self._canonical_name_from_definition(dataset_def)
+        output_path = self.jsonl_dir / f"{canonical_name}.jsonl"
         
         with open(output_path, 'w', encoding='utf-8') as f:
             for item in dataset:
@@ -452,11 +467,18 @@ class DatasetManager:
                     "target": item.get("text", item.get("label", "")),
                     "task": dataset_def.task,
                     "language": dataset_def.language,
-                    "dataset": dataset_def.name,
+                    "dataset": canonical_name,
                 }
                 f.write(json.dumps(sample, ensure_ascii=False) + '\n')
         
         return output_path
+
+    def _canonical_name_from_definition(self, dataset_def) -> str:
+        """Resolve a dataset definition back to its canonical config key."""
+        for key, candidate in self.config.datasets.definitions.items():
+            if candidate == dataset_def:
+                return key
+        return dataset_def.name
     
     def normalize_dataset_name(self, name: str) -> str:
         """
@@ -519,29 +541,33 @@ class DatasetManager:
     
     def get_info(self, dataset_name: str) -> dict[str, Any] | None:
         """Get dataset information."""
-        csv_name = self._config_to_csv_name(dataset_name)
+        canonical_name = self._canonical_name(dataset_name)
+        csv_name = self._config_to_csv_name(canonical_name)
         
         if csv_name in CSV_DATASETS:
             meta = CSV_DATASETS[csv_name]
+            dataset_def = self.config.get_dataset(canonical_name)
             return {
-                "name": dataset_name,
+                "name": canonical_name,
+                "display_name": dataset_def.name if dataset_def else canonical_name,
                 "csv_name": csv_name,
-                "config_name": meta.get("config_name"),
+                "config_name": canonical_name,
                 "task": meta["task"],
                 "language": meta["language"],
                 "source": "sure_benchmark",
-                "is_available": self.is_available(dataset_name),
+                "is_available": self.is_available(canonical_name),
             }
         
         # Check config
-        dataset_def = self.config.get_dataset(dataset_name)
+        dataset_def = self.config.get_dataset(canonical_name)
         if dataset_def:
             return {
-                "name": dataset_name,
+                "name": canonical_name,
+                "display_name": dataset_def.name,
                 "task": dataset_def.task,
                 "language": dataset_def.language,
                 "source": dataset_def.source,
-                "is_available": self.is_available(dataset_name),
+                "is_available": self.is_available(canonical_name),
             }
         
         return None

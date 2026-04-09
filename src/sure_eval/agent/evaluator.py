@@ -104,9 +104,12 @@ class AutonomousEvaluator:
         # Step 3: Determine metric type and language
         task = dataset_info.get("task", "ASR") if dataset_info else "ASR"
         language = dataset_info.get("language", "auto") if dataset_info else "auto"
+        normalized_dataset = self.dataset_manager.normalize_dataset_name(dataset)
         
         if not metric_type:
-            metric_type = self.config.get_default_metric(task)
+            baseline_metric = self.sota_manager.get_metric(normalized_dataset)
+            metric_type = baseline_metric or self.config.get_default_metric(task)
+        self._validate_metric(task, metric_type)
         
         # Step 4: Run tool on samples
         predictions = self._run_tool(tool_name, samples, task)
@@ -116,12 +119,11 @@ class AutonomousEvaluator:
         
         # Step 6: Evaluate using SUREEvaluator
         eval_result = self._evaluate_with_sure_evaluator(
-            jsonl_path, pred_file, task, language
+            jsonl_path, pred_file, task, language, metric_type
         )
         
         # Step 7: Calculate RPS using normalized dataset name
-        score = self._extract_score(eval_result, task)
-        normalized_dataset = self.dataset_manager.normalize_dataset_name(dataset)
+        score = self._extract_score(eval_result, task, metric_type)
         rps = self.sota_manager.calculate_rps(normalized_dataset, score)
         
         # Step 8: Record results (use normalized dataset name)
@@ -137,6 +139,7 @@ class AutonomousEvaluator:
                 "eval_details": eval_result,
                 "original_dataset": dataset,
                 "rps": rps,
+                "baseline_metric": self.sota_manager.get_metric(normalized_dataset),
             },
         )
         
@@ -264,6 +267,10 @@ class AutonomousEvaluator:
         task = dataset_info.get("task", "ASR") if dataset_info else "ASR"
         language = dataset_info.get("language", "auto") if dataset_info else "auto"
         
+        normalized_dataset = self.dataset_manager.normalize_dataset_name(dataset)
+        metric_type = self.sota_manager.get_metric(normalized_dataset) or self.config.get_default_metric(task)
+        self._validate_metric(task, metric_type)
+
         predictions = self._run_tool(tool_name, samples, task)
         
         # 3. Save predictions
@@ -271,16 +278,13 @@ class AutonomousEvaluator:
         
         # 4. Evaluate
         eval_result = self._evaluate_with_sure_evaluator(
-            jsonl_path, pred_file, task, language
+            jsonl_path, pred_file, task, language, metric_type
         )
         
         os.unlink(pred_file)
         
         # 5. Calculate RPS using normalized dataset name and SOTAManager
-        score = self._extract_score(eval_result, task)
-        
-        # Normalize dataset name for consistent baseline lookup
-        normalized_dataset = self.dataset_manager.normalize_dataset_name(dataset)
+        score = self._extract_score(eval_result, task, metric_type)
         
         # Calculate RPS using SOTAManager (more reliable than config baselines)
         rps = self.sota_manager.calculate_rps(normalized_dataset, score)
@@ -306,7 +310,7 @@ class AutonomousEvaluator:
             "num_samples": len(samples),
             "duration": duration,
             "score": score,
-            "metric": self.config.get_default_metric(task),
+            "metric": metric_type,
             "rps": rps,
             "sota_model": sota_model,
             "is_sota": is_sota_result,
@@ -481,6 +485,7 @@ class AutonomousEvaluator:
         pred_file: str,
         task: str,
         language: str,
+        metric_type: str,
     ) -> dict[str, Any]:
         """
         Evaluate using SUREEvaluator (reference evaluation).
@@ -505,7 +510,10 @@ class AutonomousEvaluator:
         try:
             # Run evaluation using SUREEvaluator
             evaluator = SUREEvaluator(language=language)
-            result = evaluator.evaluate(task, ref_file, pred_file)
+            eval_kwargs: dict[str, Any] = {}
+            if task == "ASR":
+                eval_kwargs["tochar"] = metric_type.lower() == "cer"
+            result = evaluator.evaluate(task, ref_file, pred_file, **eval_kwargs)
             
             # Format result to dict
             if isinstance(result, dict):
@@ -517,18 +525,41 @@ class AutonomousEvaluator:
         finally:
             os.unlink(ref_file)
     
-    def _extract_score(self, eval_result: dict[str, Any], task: str) -> float:
+    def _extract_score(
+        self,
+        eval_result: dict[str, Any],
+        task: str,
+        metric_type: str,
+    ) -> float:
         """Extract primary score from evaluation result."""
+        metric_name = metric_type.lower()
         if task == "ASR":
-            # Use WER (lower is better, but RPS handles this)
-            return eval_result.get("wer", 0.0)
+            return eval_result.get(metric_name, eval_result.get("score", 0.0))
         elif task in ["SER", "GR", "SLU"]:
             return eval_result.get("accuracy", 0.0)
         elif task == "S2TT":
-            return eval_result.get("bleu", 0.0)
+            if metric_name == "bleu_char":
+                return eval_result.get("bleu_char", eval_result.get("bleu", eval_result.get("score", 0.0)))
+            return eval_result.get(metric_name, eval_result.get("score", 0.0))
         elif task == "SD":
             return eval_result.get("der", 0.0)
         elif task == "SA-ASR":
             return eval_result.get("cpwer", 0.0)
         else:
             return eval_result.get("score", 0.0)
+
+    def _validate_metric(self, task: str, metric_type: str) -> None:
+        """Validate whether a metric is supported for a task."""
+        supported_metrics = {
+            "ASR": {"cer", "wer"},
+            "S2TT": {"bleu", "bleu_char", "chrf"},
+            "SER": {"accuracy"},
+            "GR": {"accuracy"},
+            "SLU": {"accuracy"},
+            "SD": {"der"},
+            "SA-ASR": {"cpwer"},
+        }
+        allowed = supported_metrics.get(task, set())
+        if allowed and metric_type.lower() not in allowed:
+            supported = ", ".join(sorted(allowed))
+            raise ValueError(f"Unsupported metric '{metric_type}' for task {task}. Supported: {supported}")

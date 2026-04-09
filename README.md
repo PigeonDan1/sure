@@ -80,6 +80,35 @@ print(f'WER: {result[\"score\"]:.2f}%, RPS: {result[\"rps\"]:.2f}')
 sure-eval evaluate asr_qwen3 aishell1 --max-samples 100
 ```
 
+### Deterministic Script Pipeline
+
+```bash
+# 1. Prepare canonical datasets
+python scripts/prepare_sure_dataset.py --dataset aishell1 covost2_en2zh
+
+# 2. Evaluate existing prediction files deterministically
+python scripts/evaluate_predictions.py \
+  --dataset aishell1 covost2_en2zh \
+  --pred-dir predictions \
+  --tool-name my_model \
+  --record \
+  --output results/eval_payload.json
+
+# 3. Materialize prediction templates before running a new model
+python scripts/materialize_predictions_template.py \
+  --dataset aishell1 covost2_en2zh \
+  --output-dir predictions/templates
+
+# 4. Validate filled prediction files before scoring
+python scripts/validate_prediction_files.py \
+  --dataset aishell1 covost2_en2zh \
+  --pred-dir predictions/templates \
+  --require-nonempty
+
+# 5. Refresh report snapshot
+python scripts/refresh_report_snapshot.py
+```
+
 ---
 
 ## Model Onboarding via Agent Workflow

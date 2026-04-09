@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+import click
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -13,6 +14,28 @@ from sure_eval.core.config import Config
 from sure_eval.core.logging import configure_logging, get_logger
 from sure_eval.datasets import DatasetManager
 from sure_eval.evaluation.rps import RPSManager
+
+
+def _apply_click_metavar_compatibility_patch() -> None:
+    """Bridge Click 8.3 metavar signatures for older Typer help rendering."""
+    required_ctx = click.Context(click.Command(name="sure-eval"))
+
+    def _patch_option_like(cls: type[click.Parameter]) -> None:
+        original = cls.make_metavar
+        if getattr(original, "__sure_eval_compat__", False):
+            return
+
+        def wrapped(self, ctx: click.Context | None = None) -> str:
+            return original(self, ctx or required_ctx)
+
+        wrapped.__sure_eval_compat__ = True  # type: ignore[attr-defined]
+        cls.make_metavar = wrapped  # type: ignore[assignment]
+
+    _patch_option_like(click.Argument)
+    _patch_option_like(click.Option)
+
+
+_apply_click_metavar_compatibility_patch()
 
 app = typer.Typer(name="sure-eval", help="SURE-EVAL: Tool and Model Evaluation Framework")
 console = Console()

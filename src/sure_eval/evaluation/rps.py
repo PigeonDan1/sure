@@ -10,6 +10,7 @@ from typing import Any
 
 from sure_eval.core.config import Config
 from sure_eval.core.logging import get_logger
+from sure_eval.reports.sota_manager import SOTAManager
 
 logger = get_logger(__name__)
 
@@ -32,32 +33,49 @@ class RPSCalculator:
     
     def __init__(self, config: Config | None = None) -> None:
         self.config = config or Config.from_env()
+        self.sota_manager = SOTAManager()
     
     def calculate(self, dataset: str, score: float) -> float | None:
         """Calculate RPS for a score on a dataset."""
-        baseline = self.config.get_baseline(dataset)
-        if not baseline:
+        baseline = self.sota_manager.get_baseline(dataset)
+        if baseline:
+            if baseline.higher_is_better:
+                return score / baseline.score if baseline.score > 0 else 0.0
+            if score == 0:
+                return float("inf") if baseline.score > 0 else 1.0
+            return baseline.score / score
+
+        legacy_baseline = self.config.get_baseline(dataset)
+        if not legacy_baseline:
             logger.warning("No baseline for dataset", dataset=dataset)
             return None
         
-        if baseline.higher_is_better:
-            rps = score / baseline.score if baseline.score > 0 else 0.0
-        else:
-            rps = baseline.score / score if score > 0 else 0.0
-        
-        return rps
+        if legacy_baseline.higher_is_better:
+            return score / legacy_baseline.score if legacy_baseline.score > 0 else 0.0
+        if score == 0:
+            return float("inf") if legacy_baseline.score > 0 else 1.0
+        return legacy_baseline.score / score
     
     def get_baseline_info(self, dataset: str) -> dict[str, Any] | None:
         """Get baseline information for a dataset."""
-        baseline = self.config.get_baseline(dataset)
-        if not baseline:
+        baseline = self.sota_manager.get_baseline(dataset)
+        if baseline:
+            return {
+                "dataset": dataset,
+                "metric": baseline.metric,
+                "score": baseline.score,
+                "higher_is_better": baseline.higher_is_better,
+            }
+
+        legacy_baseline = self.config.get_baseline(dataset)
+        if not legacy_baseline:
             return None
         
         return {
             "dataset": dataset,
-            "metric": baseline.metric,
-            "score": baseline.score,
-            "higher_is_better": baseline.higher_is_better,
+            "metric": legacy_baseline.metric,
+            "score": legacy_baseline.score,
+            "higher_is_better": legacy_baseline.higher_is_better,
         }
 
 
@@ -141,33 +159,33 @@ class EvaluationDatabase:
     
     def get_best_tool(self, dataset: str) -> tuple[str, float] | None:
         """Get the best tool for a dataset by RPS."""
-        records = self.get_records(dataset=dataset)
-        if not records:
+        latest_records = self._latest_records_by_tool(dataset)
+        if not latest_records:
             return None
         
-        # Filter records with RPS
-        valid_records = [r for r in records if r.rps is not None]
-        if not valid_records:
-            return None
-        
-        best = max(valid_records, key=lambda r: r.rps or 0)
+        best = max(latest_records.values(), key=lambda r: r.rps or 0)
         return (best.tool_name, best.rps)
     
     def get_tool_ranking(self, dataset: str) -> list[tuple[str, float]]:
-        """Get tool ranking for a dataset."""
-        records = self.get_records(dataset=dataset)
-        
-        # Get latest RPS for each tool
-        tool_scores: dict[str, float] = {}
-        for record in records:
-            if record.rps is not None:
-                # Keep the latest (or highest) RPS
-                if record.tool_name not in tool_scores or record.rps > tool_scores[record.tool_name]:
-                    tool_scores[record.tool_name] = record.rps
-        
-        # Sort by RPS descending
-        ranking = sorted(tool_scores.items(), key=lambda x: x[1], reverse=True)
+        """Get tool ranking for a dataset using each tool's latest result."""
+        latest_records = self._latest_records_by_tool(dataset)
+        ranking = sorted(
+            ((tool_name, record.rps) for tool_name, record in latest_records.items() if record.rps is not None),
+            key=lambda x: x[1],
+            reverse=True,
+        )
         return ranking
+
+    def _latest_records_by_tool(self, dataset: str) -> dict[str, EvaluationRecord]:
+        """Get the latest record for each tool on a dataset."""
+        latest_records: dict[str, EvaluationRecord] = {}
+        for record in self.get_records(dataset=dataset):
+            if record.rps is None:
+                continue
+            existing = latest_records.get(record.tool_name)
+            if existing is None or record.timestamp > existing.timestamp:
+                latest_records[record.tool_name] = record
+        return latest_records
 
 
 class RPSManager:

@@ -213,6 +213,31 @@ class ToolAdapter:
     def __init__(self, registry: ToolRegistry | None = None) -> None:
         self.registry = registry or ToolRegistry()
     
+    def _call_with_client(
+        self,
+        client: MCPToolClient,
+        audio_path: str | Path,
+        task: str | None = None,
+    ) -> dict[str, Any]:
+        """Call the task-specific MCP method using an existing client."""
+        audio_path = str(audio_path)
+        
+        # Determine the right tool method based on task
+        if task == "ASR":
+            result = client.call("transcribe", {"audio_path": audio_path})
+        elif task == "SER":
+            result = client.call("recognize_emotion", {"audio_path": audio_path})
+        elif task == "SD":
+            result = client.call("diarize", {"audio_path": audio_path})
+        else:
+            # Try generic invoke method
+            result = client.call("invoke", {
+                "audio_path": audio_path,
+                "task": task,
+            })
+        
+        return result
+
     def evaluate_audio(
         self,
         tool_name: str,
@@ -221,21 +246,7 @@ class ToolAdapter:
     ) -> dict[str, Any]:
         """Evaluate an audio file using a tool."""
         with self.registry.create_client(tool_name) as client:
-            # Determine the right tool method based on task
-            if task == "ASR":
-                result = client.call("transcribe", {"audio_path": str(audio_path)})
-            elif task == "SER":
-                result = client.call("recognize_emotion", {"audio_path": str(audio_path)})
-            elif task == "SD":
-                result = client.call("diarize", {"audio_path": str(audio_path)})
-            else:
-                # Try generic invoke method
-                result = client.call("invoke", {
-                    "audio_path": str(audio_path),
-                    "task": task,
-                })
-            
-            return result
+            return self._call_with_client(client, audio_path, task)
     
     def batch_evaluate(
         self,
@@ -248,7 +259,7 @@ class ToolAdapter:
         with self.registry.create_client(tool_name) as client:
             for path in audio_paths:
                 try:
-                    result = self.evaluate_audio(tool_name, path, task)
+                    result = self._call_with_client(client, path, task)
                     results.append({"path": str(path), "success": True, "result": result})
                 except Exception as e:
                     results.append({"path": str(path), "success": False, "error": str(e)})
