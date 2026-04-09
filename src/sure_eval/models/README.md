@@ -176,14 +176,18 @@ Models successfully onboarded via Agent Workflow:
 
 ---
 
+### Speaker Verification (SV)
+| Model | Backend | Status | Notes |
+|-------|---------|--------|-------|
+| [wespeaker](wespeaker/) | pip | ✅ Ready | WeSpeaker English ResNet221 (with lazy-import patch) |
+
 ### Failed Attempts (Reference)
 
 | Model | Task | Backend | Status | Reason |
 |-------|------|---------|--------|--------|
 | [parakeet_1_1b_rnnt_multilingual_asr](parakeet_1_1b_rnnt_multilingual_asr/) | ASR | docker | ❌ Failed | Docker backend issues |
-| [wespeaker](wespeaker/) | SV | pip | ❌ Failed | Import chain issues (eager frontend deps) |
 
-**Total: 15 models** (12 passed, 3 failed) across ASR, SD, VAD, Speech Enhancement, Music IR, VLM, and Utility tasks.
+**Total: 15 models** (13 passed, 2 failed) across ASR, SD, VAD, SV, Speech Enhancement, Music IR, VLM, and Utility tasks.
 
 ### Model Directory Structure
 
