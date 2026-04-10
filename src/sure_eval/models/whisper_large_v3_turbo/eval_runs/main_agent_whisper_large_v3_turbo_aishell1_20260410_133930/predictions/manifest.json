@@ -1,0 +1,17 @@
+{
+  "template_version": "1.0",
+  "templates": [
+    {
+      "dataset": "aishell1",
+      "display_name": "AISHELL-1",
+      "task": "ASR",
+      "language": "zh",
+      "metric": "cer",
+      "num_samples": 7176,
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/aishell1.jsonl",
+      "template_path": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_aishell1_20260410_133930/predictions/aishell1.txt",
+      "format": "tsv:key<TAB>prediction",
+      "source": "sure_benchmark"
+    }
+  ]
+}

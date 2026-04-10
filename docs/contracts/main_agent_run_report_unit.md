@@ -14,6 +14,7 @@ It is the terminal aggregation layer for the main flow harness.
 - `executed_steps`
 - `status`
 - `artifacts`
+- `model_eval_manifest`
 - `next_action`
 
 ## Allowed Status Values
@@ -31,10 +32,13 @@ The run report must summarize upstream unit outputs rather than replace them.
 It should point to:
 
 - task classification artifact
+- tool readiness artifact
 - plan artifact
 - dataset decision artifact
 - script routing artifact
+- execution readiness artifact when shell validation is applicable
 - assessment artifact
+- model evaluation manifest
 
 ## Must Not Do
 

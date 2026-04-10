@@ -7,7 +7,35 @@
       "script": "scripts/prepare_sure_dataset.py",
       "inputs": {
         "datasets": []
-      }
+      },
+      "outputs": {
+        "prepare_summary": ""
+      },
+      "completion_criteria": [
+        "prepare summary file exists"
+      ]
+    },
+    {
+      "name": "validate_execution_shell",
+      "script": "shell_preflight_smoke_test",
+      "inputs": {
+        "shell_path": "",
+        "smoke_mode": {
+          "max_samples": 1,
+          "skip_validate_and_eval": true
+        }
+      },
+      "outputs": {
+        "execution_readiness_report": ""
+      },
+      "completion_criteria": [
+        "shell passes syntax validation",
+        "shell smoke test creates bounded run evidence",
+        "execution readiness report exists"
+      ]
     }
-  ]
+  ],
+  "routing_reason": "",
+  "wait_points": [],
+  "stop_condition": ""
 }

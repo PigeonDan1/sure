@@ -18,6 +18,7 @@
 - **做出范围决策**: 选择合适的数据集、判定是否需要调用既有 tool workflow
 - **先做 tool gate**: 先判断模型是否可直接按 server/tool 使用，再决定是否交给 tool workflow
 - **推进稳定流程**: 调用 deterministic scripts，而不是重新实现它们
+- **先做执行预检**: 如果最终交付物是 shell，先验证 shell 是否可在当前环境安全启动
 - **输出可审计决策**: 所有关键判断必须可解释、可回溯
 
 ### 1.2 设计原则
@@ -38,6 +39,7 @@
 - 模型能力边界判读
 - 评测数据集范围选择
 - deterministic scripts 调度
+- shell / execution readiness 预检
 - 脚本结果解释与下一步决策
 
 **不做**:
@@ -65,6 +67,8 @@ INSPECT_CONTEXT
     ↓ (读取 README / artifacts / config / history)
 PLAN
     ↓ (形成执行计划与数据集范围)
+VALIDATE_EXECUTION_READINESS
+    ↓ (预检 shell / bounded smoke mode)
 PREPARE_DATA
     ↓ (准备 canonical datasets)
 MATERIALIZE_TEMPLATES
@@ -103,6 +107,7 @@ DECIDE_NEXT_ACTION
 - 当前用户目标已完成
 - prediction validation 未通过且无合理自动下一步
 - evaluation 已完成并产出结构化结果
+- execution readiness 预检已明确阻塞，继续正式运行没有意义
 - tool workflow 尚未完成，继续推进需要切换到其子系统
 - 缺少关键证据，必须等待人工决策
 

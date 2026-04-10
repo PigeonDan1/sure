@@ -1,0 +1,17 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_aishell1_20260410_133930",
+  "model_name": "whisper_large_v3_turbo",
+  "execution_path": "direct_server_use",
+  "tool_name": "transcribe_audio",
+  "datasets": [
+    {
+      "dataset": "aishell1",
+      "prediction_file": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_aishell1_20260410_133930/predictions/aishell1.txt",
+      "status": "completed",
+      "num_expected_samples": 1,
+      "num_generated_samples": 1,
+      "log_path": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_aishell1_20260410_133930/predictions/logs/aishell1.log",
+      "error": null
+    }
+  ]
+}

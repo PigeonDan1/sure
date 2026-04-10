@@ -48,6 +48,7 @@ It is responsible for:
 - deciding which datasets should be evaluated for the current model
 - deciding when to invoke the existing tool onboarding workflow
 - deciding the execution order of deterministic scripts
+- validating shell / execution readiness before a human launches a background run
 - interpreting script outputs and deciding next actions
 
 It is **not** responsible for re-implementing evaluation logic, dataset conversion logic, or report generation logic.
@@ -187,6 +188,19 @@ Report refresh must go through:
 - [refresh_report_snapshot.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/refresh_report_snapshot.py)
 
 This keeps reporting logic outside the agent.
+
+### 6. Execution-readiness evidence
+
+If the final handoff surface is a shell entrypoint, the main flow agent must
+leave structured execution-readiness evidence before recommending a background
+run.
+
+This evidence should confirm:
+
+- the shell entrypoint is syntactically valid
+- a bounded smoke mode exists
+- bounded smoke execution can create valid run evidence under the current
+  environment
 
 ---
 

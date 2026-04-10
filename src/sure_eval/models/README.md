@@ -15,6 +15,26 @@ SURE-EVAL provides a complete agent workflow that automates the entire process o
 3. **Automated Execution** → Agent runs the complete pipeline
 4. **Artifact Generation** → All results saved as structured files
 
+### Model-Local Checkpoint Rule
+
+For local models, tool onboarding should prefer storing checkpoints and runtime
+caches under the model directory itself, for example:
+
+```text
+src/sure_eval/models/<model>/
+├── checkpoints/
+└── .runtime/
+```
+
+This avoids a common failure mode where a model passes onboarding on one host
+but later cannot find its downloaded checkpoint because the cache lived only in
+a host-global location.
+
+If host-global fallback is unavoidable, the workflow must record that choice in:
+
+- `artifacts/build_plan.json`
+- `artifacts/weights_manifest.json`
+
 ### Usage
 
 #### Step 1: Initial Prompt
@@ -41,6 +61,7 @@ cd /path/to/sure-eval
 - 针对给定模型，完成第一阶段端到端接入
 - 当前只评估端到端成功与否，不要求节点级评估分析
 - 你必须显式产出所有 required artifacts，以及满足条件时的 conditional artifacts
+- 若模型需要下载权重，默认优先落到 model-local checkpoint/cache 路径；若不能做到，必须明确记录 fallback 理由与路径
 - 如果流程失败，必须进入 DIAGNOSE / REPLAN，并按 policy 决定是否重试或升级
 - 不允许盲重试
 - 不允许无记录 patch
@@ -85,6 +106,8 @@ weights:
   source: huggingface|pip|release_or_pypi
   local_path: null
   required: true
+  cache_policy: model_local_first
+  local_dir_name: checkpoints
 
 environment_hint:
   preferred_backend: uv|pixi|docker
@@ -200,6 +223,8 @@ model_name/
 ├── server.py               # MCP server
 ├── config.yaml             # MCP configuration
 ├── pyproject.toml          # Dependencies
+├── checkpoints/            # Preferred local checkpoint location
+├── .runtime/               # Preferred local runtime/cache root
 ├── __init__.py             # Package exports
 └── artifacts/              # Generated artifacts
     ├── backend_choice.json
@@ -240,7 +265,7 @@ model:
 server:
   command: [".venv/bin/python", "server.py"]
   env:
-    MODEL_PATH: "org/model-name"
+    MODEL_PATH: "./checkpoints/model"
   timeout: 300
 ```
 

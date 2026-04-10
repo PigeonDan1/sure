@@ -155,7 +155,16 @@ Start Here
    - `PLAN_UNIT`
    - `DATASET_SCOPE_UNIT`
    - `SCRIPT_ROUTING_UNIT`
+   - `EXECUTION_READINESS_UNIT`
 3. Continue to prediction generation and scoring
+
+Recommended artifact root:
+
+- `src/sure_eval/models/<model>/eval_runs/<run_id>/`
+
+Layout contract:
+
+- [docs/contracts/eval_run_layout.md](docs/contracts/eval_run_layout.md)
 
 ---
 
@@ -221,6 +230,8 @@ TOOL_READINESS_AND_ROUTING_UNIT
         ↓
    SCRIPT_ROUTING_UNIT
         ↓
+EXECUTION_READINESS_UNIT
+        ↓
    EXECUTE / WAIT
         ↓
    ASSESSMENT_UNIT
@@ -235,7 +246,57 @@ If a model declares a server path:
 2. Confirm `server_ready` status
 3. Only then proceed to evaluation
 
+### Two-Stage Usage Note
+
+SURE-EVAL currently treats **tool onboarding** and **evaluation** as two related
+but distinct stages:
+
+1. **Stage 1: Tool Onboarding / Adaptation**
+   - Build or repair the model-local tool path under `src/sure_eval/models/<model>/`
+   - Validate minimal callable readiness such as import / load / infer / contract
+   - Produce reusable model-local artifacts, wrapper, and server/tool entrypoint
+
+2. **Stage 2: Main-Flow Evaluation**
+   - Reuse the onboarded tool path
+   - Run tool-readiness routing
+   - Select datasets and invoke deterministic evaluation scripts
+
+This means a model should normally be **adapted first, evaluated second**.
+If the main flow discovers that a target is `not_tool_ready` or
+`tool_broken_needs_repair`, the correct action is to stop evaluation routing and
+hand off to the existing tool onboarding workflow instead of improvising
+evaluation-time fixes.
+
+This is intentionally modeled as a **two-stage workflow**, not a required
+multi-agent architecture. At the current stage of the project, keeping one main
+flow agent plus one existing tool onboarding workflow is the preferred design.
+
+For new or not-yet-adapted tools, users should provide onboarding-oriented
+inputs as early as possible, such as:
+
+- upstream repository or local code path
+- model/checkpoint source
+- expected task type and IO contract
+- environment or dependency hints
+
+If those inputs are missing, main flow may determine that evaluation cannot
+continue yet because the onboarding stage is not ready to start cleanly.
+
 📖 **Example**: [Qwen3 ASR Case Study](docs/contracts/main_agent_qwen3_asr_case.md)
+
+Prediction generation should follow a hard contract rather than an implicit
+"wait until files appear" step:
+
+- [docs/contracts/prediction_generation_contract.md](docs/contracts/prediction_generation_contract.md)
+
+For human-operated background runs, prefer a single-model single-dataset shell:
+
+- [docs/contracts/single_model_single_dataset_shell.md](docs/contracts/single_model_single_dataset_shell.md)
+
+Before handing that shell to a user, the main flow should run a bounded
+execution-readiness validation:
+
+- [docs/contracts/main_agent_execution_readiness_unit.md](docs/contracts/main_agent_execution_readiness_unit.md)
 
 ---
 
@@ -271,7 +332,7 @@ MAIN_FLOW_INPUT:
       - scripts/materialize_predictions_template.py
       - scripts/validate_prediction_files.py
       - scripts/evaluate_predictions.py
-    output_dir: /tmp/main_agent_run_asr_qwen3
+    output_dir: src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001
 ```
 
 ### Structured Outputs
@@ -281,8 +342,10 @@ MAIN_FLOW_INPUT:
 - `main_agent_plan.json`
 - `dataset_decision.json`
 - `script_routing.json`
+- `execution_readiness_report.json`
 - `assessment_report.json`
 - `main_agent_run_report.json`
+- `model_eval_manifest.json`
 
 ---
 
@@ -327,6 +390,11 @@ sure-eval/
 | [Agent Routing](src/sure_eval/agent/AGENTS.md) | Main flow routing guide |
 | [Tool Onboarding](src/sure_eval/models/README.md) | Model integration workflow |
 | [Architecture](docs/contracts/main_flow_architecture.md) | System architecture details |
+| [Evaluation Run Layout](docs/contracts/eval_run_layout.md) | Model-local artifact layout per run |
+| [Prediction Generation Contract](docs/contracts/prediction_generation_contract.md) | Hard contract for `wait_for_predictions` |
+| [Single Model Single Dataset Shell](docs/contracts/single_model_single_dataset_shell.md) | One-command execution contract for human operators |
+| [Execution Readiness Unit](docs/contracts/main_agent_execution_readiness_unit.md) | Preflight shell validation before background runs |
+| [Model Eval Manifest](docs/contracts/model_eval_manifest.md) | One-file index for a model evaluation run |
 | [Qwen3 Case Study](docs/contracts/main_agent_qwen3_asr_case.md) | Real replay case |
 
 ---

@@ -46,8 +46,9 @@
 3. `PLAN_UNIT`
 4. `DATASET_SCOPE_UNIT`
 5. `SCRIPT_ROUTING_UNIT`
-6. `ASSESSMENT_UNIT`
-7. `RUN_REPORT_UNIT`
+6. `EXECUTION_READINESS_UNIT`
+7. `ASSESSMENT_UNIT`
+8. `RUN_REPORT_UNIT`
 
 每个单元：
 
@@ -73,6 +74,8 @@ DATASET_SCOPE_UNIT
     ↓
 SCRIPT_ROUTING_UNIT
     ↓
+EXECUTION_READINESS_UNIT
+    ↓
 EXECUTE_SCRIPTS / WAIT_FOR_TOOL_WORKFLOW
     ↓
 ASSESSMENT_UNIT
@@ -93,6 +96,7 @@ DONE
 | `PLAN_UNIT` | 形成执行计划 | `main_agent_plan.json` |
 | `DATASET_SCOPE_UNIT` | 选择 / 跳过数据集 | `dataset_decision.json` |
 | `SCRIPT_ROUTING_UNIT` | 形成脚本调用序列 | `script_routing.json` |
+| `EXECUTION_READINESS_UNIT` | 验证 shell / 执行入口是否可安全后台运行 | `execution_readiness_report.json` |
 | `ASSESSMENT_UNIT` | 解释执行结果 | `assessment_report.json` |
 | `RUN_REPORT_UNIT` | 汇总整轮 run | `main_agent_run_report.json` |
 
@@ -107,6 +111,8 @@ DONE
 | `PLAN_UNIT` | [`../../../docs/contracts/main_agent_plan_unit.md`](../../../docs/contracts/main_agent_plan_unit.md) |
 | `DATASET_SCOPE_UNIT` | [`../../../docs/contracts/main_agent_dataset_unit.md`](../../../docs/contracts/main_agent_dataset_unit.md) |
 | `SCRIPT_ROUTING_UNIT` | [`../../../docs/contracts/main_agent_script_routing_unit.md`](../../../docs/contracts/main_agent_script_routing_unit.md) |
+| `EXECUTION_READINESS_UNIT` | [`../../../docs/contracts/main_agent_execution_readiness_unit.md`](../../../docs/contracts/main_agent_execution_readiness_unit.md) |
+| `wait_for_predictions` contract | [`../../../docs/contracts/prediction_generation_contract.md`](../../../docs/contracts/prediction_generation_contract.md) |
 | `ASSESSMENT_UNIT` | [`../../../docs/contracts/main_agent_assessment_unit.md`](../../../docs/contracts/main_agent_assessment_unit.md) |
 | `RUN_REPORT_UNIT` | [`../../../docs/contracts/main_agent_run_report_unit.md`](../../../docs/contracts/main_agent_run_report_unit.md) |
 
@@ -121,8 +127,10 @@ DONE
 | `main_agent_plan.json` | [`../../../templates/main_agent_plan.json`](../../../templates/main_agent_plan.json) |
 | `dataset_decision.json` | [`../../../templates/main_agent_dataset_decision.json`](../../../templates/main_agent_dataset_decision.json) |
 | `script_routing.json` | [`../../../templates/main_agent_script_routing.json`](../../../templates/main_agent_script_routing.json) |
+| `execution_readiness_report.json` | [`../../../templates/main_agent_execution_readiness_report.json`](../../../templates/main_agent_execution_readiness_report.json) |
 | `assessment_report.json` | [`../../../templates/main_agent_assessment_report.json`](../../../templates/main_agent_assessment_report.json) |
 | `main_agent_run_report.json` | [`../../../templates/main_agent_run_report.json`](../../../templates/main_agent_run_report.json) |
+| `model_eval_manifest.json` | [`../../../templates/model_eval_manifest.json`](../../../templates/model_eval_manifest.json) |
 
 ---
 
@@ -182,10 +190,27 @@ DONE
 - `steps`
 - 每一步对应的 script
 - 每一步的输入依赖
+- 每一步的输出路径
+- 每一步的完成判定条件
 - `wait_points`
 - `stop_condition`
 
-### 8.6 ASSESSMENT_UNIT
+### 8.6 EXECUTION_READINESS_UNIT
+
+**目标**:
+- 在正式后台执行前验证 shell / 执行入口是否已经过 bounded smoke test
+- 避免用户最后一键运行时才遇到运行期问题
+
+**最小输出**:
+- `execution_ready`
+- `status`
+- `validation_mode`
+- `validated_shell_entrypoint`
+- `smoke_test_command`
+- `blocking_issues`
+- `next_action`
+
+### 8.7 ASSESSMENT_UNIT
 
 **目标**:
 - 判断本轮执行是成功、部分成功还是阻塞
@@ -195,10 +220,11 @@ DONE
 - `evidence`
 - `next_action`
 
-### 8.7 RUN_REPORT_UNIT
+### 8.8 RUN_REPORT_UNIT
 
 **目标**:
 - 汇总整轮 run 的结构化结论
+- 产出一份可以与 `model_eval_manifest.json` 对齐的终态报告
 
 **最小输出**:
 - 本轮任务类型
@@ -207,6 +233,7 @@ DONE
 - 最终状态
 - 下一步建议
 - 上游 artifact 索引
+- `model_eval_manifest.json` 的路径
 
 ---
 
@@ -227,6 +254,14 @@ DONE
 - 当前模型是否已经是 `server_ready`
 - 是否应先做 server-first smoke test
 - 是否应转入既有 tool workflow，而不是继续主流程评测
+
+如果最终交付物是单模型单数据集 shell，则在正式后台运行前还必须经过
+`EXECUTION_READINESS_UNIT`，验证：
+
+- shell 语法
+- bounded smoke mode
+- 预测生成是否能在当前环境起步
+- shell 是否会产出约定的 run evidence
 
 ---
 

@@ -17,6 +17,7 @@
 - **环境可重建**: 通过规范化的 backend 选择和依赖管理
 - **推理可复现**: 通过统一的验证契约和工件保存
 - **过程可审计**: 通过结构化的 verdict 和 artifact 记录
+- **权重可定位**: 默认将 ckpt / runtime cache 收敛到 model-local 路径
 
 ### 1.2 支持范围
 
@@ -32,6 +33,7 @@
 **做**:
 - 环境后端选择 (uv/pixi/docker/api)
 - runtime identity 收敛 (display identity / runtime load identity / local dir name)
+- model-local checkpoint / cache 路径收敛
 - 最小验证 (import/load/infer/contract)
 - Wrapper 骨架生成
 - 工件归档 (spec/verdict/log)
@@ -226,6 +228,35 @@ templates/
 | 失败分类体系 | `docs/playbooks/failure_taxonomy.md` |
 | Model Spec 规范 | `docs/specs/model_spec_template.md` |
 | 验证契约 | `docs/contracts/minimal_validation.md` |
+| Model-local ckpt 规则 | `docs/contracts/model_local_checkpoint_rule.md` |
+
+---
+
+## 4.4 Model-Local Checkpoint Rule
+
+如果 `weights.required == true`，默认必须优先将以下路径放到模型目录下：
+
+```text
+src/sure_eval/models/{model}/checkpoints/
+src/sure_eval/models/{model}/.runtime/
+```
+
+其中：
+
+- `checkpoints/` 用于保存运行时应优先加载的本地权重路径
+- `.runtime/` 用于保存 model-local venv、HF cache、包缓存等运行期状态
+
+只有在明确受限时，才允许退回到 host-global 路径，例如：
+
+- workspace 容量不足
+- 权限限制
+- 上游运行时强依赖全局缓存
+
+一旦使用 fallback，必须在 `build_plan.json` 与 `weights_manifest.json` 中记录：
+
+- fallback 原因
+- fallback 目标路径
+- 当前运行时如何重新定位本地权重
 
 ---
 

@@ -1,0 +1,19 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "execution_ready": false,
+  "status": "pending",
+  "validation_mode": "",
+  "validated_shell_entrypoint": "",
+  "smoke_test_command": "",
+  "smoke_test_run_dir": "",
+  "checked_artifacts": {
+    "prepare_summary": "",
+    "prediction_manifest": "",
+    "prediction_generation_status": "",
+    "shell_log": ""
+  },
+  "blocking_issues": [],
+  "next_action": "",
+  "notes": []
+}

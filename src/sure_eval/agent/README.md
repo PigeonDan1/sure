@@ -22,6 +22,26 @@ Unlike the tool onboarding workflow under `src/sure_eval/models/`, the main flow
 3. **Structured Execution** → Agent follows the routing file and unit contracts
 4. **Artifact Generation** → Agent emits structured run files for audit
 
+### Two-Stage Boundary
+
+The current project should be understood as a **two-stage workflow**:
+
+1. **Tool onboarding / adaptation stage**
+   - handled by the existing workflow under `src/sure_eval/models/`
+   - responsible for making the model callable as a stable local tool/server
+
+2. **Main-flow evaluation stage**
+   - handled by the main flow agent described in this directory
+   - responsible for readiness routing, dataset scope, script routing, and
+     evaluation assessment
+
+So if a target model is not yet adapted, the main flow should first recognize
+that state and route to onboarding rather than pretending evaluation can start
+immediately.
+
+This does **not** require a multi-agent redesign at this time. The preferred
+shape is still one main flow agent plus one existing onboarding workflow.
+
 ---
 
 ## Usage
@@ -43,9 +63,10 @@ cd /path/to/sure-eval
 6. docs/contracts/main_agent_plan_unit.md
 7. docs/contracts/main_agent_dataset_unit.md
 8. docs/contracts/main_agent_script_routing_unit.md
-9. docs/contracts/main_agent_assessment_unit.md
-10. docs/contracts/main_agent_run_report_unit.md
-11. docs/policies/constitution.md
+9. docs/contracts/main_agent_execution_readiness_unit.md
+10. docs/contracts/main_agent_assessment_unit.md
+11. docs/contracts/main_agent_run_report_unit.md
+12. docs/policies/constitution.md
 
 你的目标：
 - 理解当前请求属于哪类主流程任务
@@ -60,11 +81,13 @@ cd /path/to/sure-eval
 - main_agent_plan.json
 - dataset_decision.json
 - script_routing.json
+- execution_readiness_report.json
 - assessment_report.json
 - main_agent_run_report.json
+- model_eval_manifest.json
 
 请按当前 workflow 执行：
-INTAKE → TASK_CLASSIFICATION_UNIT → TOOL_READINESS_AND_ROUTING_UNIT → PLAN_UNIT → DATASET_SCOPE_UNIT → SCRIPT_ROUTING_UNIT → EXECUTE / WAIT → ASSESSMENT_UNIT → RUN_REPORT_UNIT
+INTAKE → TASK_CLASSIFICATION_UNIT → TOOL_READINESS_AND_ROUTING_UNIT → PLAN_UNIT → DATASET_SCOPE_UNIT → SCRIPT_ROUTING_UNIT → EXECUTION_READINESS_UNIT → EXECUTE / WAIT → ASSESSMENT_UNIT → RUN_REPORT_UNIT
 
 工作要求：
 - 所有关键决策必须基于 evidence
@@ -99,9 +122,10 @@ cd /cpfs/user/jingpeng/workspace/sure-eval
 6. docs/contracts/main_agent_plan_unit.md
 7. docs/contracts/main_agent_dataset_unit.md
 8. docs/contracts/main_agent_script_routing_unit.md
-9. docs/contracts/main_agent_assessment_unit.md
-10. docs/contracts/main_agent_run_report_unit.md
-11. docs/policies/constitution.md
+9. docs/contracts/main_agent_execution_readiness_unit.md
+10. docs/contracts/main_agent_assessment_unit.md
+11. docs/contracts/main_agent_run_report_unit.md
+12. docs/policies/constitution.md
 
 你的工作边界：
 - 你是主流程 agent，不是 tool onboarding agent
@@ -117,8 +141,10 @@ cd /cpfs/user/jingpeng/workspace/sure-eval
 - main_agent_plan.json
 - dataset_decision.json
 - script_routing.json
+- execution_readiness_report.json
 - assessment_report.json
 - main_agent_run_report.json
+- model_eval_manifest.json
 
 你的执行顺序必须是：
 INTAKE
@@ -127,6 +153,7 @@ INTAKE
 → PLAN_UNIT
 → DATASET_SCOPE_UNIT
 → SCRIPT_ROUTING_UNIT
+→ EXECUTION_READINESS_UNIT
 → EXECUTE / WAIT
 → ASSESSMENT_UNIT
 → RUN_REPORT_UNIT
@@ -135,6 +162,7 @@ INTAKE
 - 所有关键判断必须基于 evidence
 - 能交给 deterministic scripts 的工作，必须交给 scripts
 - 不允许跳过 TOOL_READINESS_AND_ROUTING_UNIT
+- 如果最终交付物是 shell entrypoint，必须先完成 EXECUTION_READINESS_UNIT
 - 不允许一开始直接下沉到 wrapper-level / dependency-level 修补
 - 任何 skipped dataset、handoff、blocked、stop 都必须说明理由
 - 输出必须优先结构化，且与 templates 对齐
@@ -160,6 +188,7 @@ target:
   model_name: my_model
   model_dir: src/sure_eval/models/my_model
   tool_workflow_ready: true|false|unknown
+  integration_state: onboarded|not_onboarded|unknown
 
 constraints:
   allow_tool_workflow: true|false
@@ -175,6 +204,14 @@ evidence:
   model_spec_path: src/sure_eval/models/my_model/model.spec.yaml
   prior_results: []
 
+tool_onboarding_inputs:
+  repo_url: null
+  local_code_path: null
+  model_source: null
+  checkpoint_source: null
+  io_contract_hint: null
+  environment_hint: null
+
 runtime_context:
   available_scripts:
     - scripts/prepare_sure_dataset.py
@@ -182,8 +219,14 @@ runtime_context:
     - scripts/validate_prediction_files.py
     - scripts/evaluate_predictions.py
     - scripts/refresh_report_snapshot.py
-  output_dir: /tmp/main_agent_run_xxx
+  output_dir: src/sure_eval/models/my_model/eval_runs/main_agent_my_model_001
 ```
+
+For an already onboarded model, `tool_onboarding_inputs` may be omitted.
+For a new or not-yet-adapted tool, providing them up front is strongly
+recommended. Otherwise the main flow may correctly conclude that the target is
+`not_tool_ready` but still lack enough onboarding inputs to perform a clean
+handoff.
 
 ### Recommended `MAIN_FLOW_INPUT` Example
 
@@ -219,7 +262,7 @@ MAIN_FLOW_INPUT:
       - scripts/validate_prediction_files.py
       - scripts/evaluate_predictions.py
       - scripts/refresh_report_snapshot.py
-    output_dir: /tmp/main_agent_strict_replay_asr_qwen3_003
+    output_dir: src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003
 ```
 
 ### Step 3: Run
@@ -233,6 +276,7 @@ The agent should:
 - produce a plan
 - choose datasets or explain why not
 - route work to deterministic scripts
+- define a hard completion contract for prediction generation
 - assess outputs
 - emit a final structured run report
 
@@ -249,10 +293,17 @@ The main flow agent must produce the following files during a run:
 | `main_agent_plan.json` | Top-level execution plan |
 | `dataset_decision.json` | Selected and skipped datasets |
 | `script_routing.json` | Script execution sequence |
+| `execution_readiness_report.json` | Shell / execution preflight validation |
 | `assessment_report.json` | Result interpretation |
 | `main_agent_run_report.json` | Final run summary |
+| `model_eval_manifest.json` | One-file index of the full run evidence |
 
 Templates are located under [`templates/`](/cpfs/user/jingpeng/workspace/sure-eval/templates).
+
+Recommended run layout:
+
+- [eval_run_layout.md](/cpfs/user/jingpeng/workspace/sure-eval/docs/contracts/eval_run_layout.md)
+- [prediction_generation_contract.md](/cpfs/user/jingpeng/workspace/sure-eval/docs/contracts/prediction_generation_contract.md)
 
 ---
 

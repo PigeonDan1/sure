@@ -8,11 +8,14 @@
   "status": "pending",
   "artifacts": {
     "task_classification": "",
+    "tool_readiness_routing": "",
     "plan": "",
     "dataset_decision": "",
     "script_routing": "",
+    "execution_readiness_report": "",
     "assessment_report": ""
   },
+  "model_eval_manifest": "",
   "next_action": "",
   "notes": []
 }

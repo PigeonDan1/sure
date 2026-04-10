@@ -14,6 +14,8 @@ weights:
   source: ""          # huggingface / modelscope / local
   local_path: null
   required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
 
 environment:
   preferred_backend: ""   # uv / pixi / docker / api

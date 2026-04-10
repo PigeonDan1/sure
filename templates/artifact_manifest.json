@@ -48,7 +48,7 @@
       },
       "weights_manifest": {
         "path": "artifacts/weights_manifest.json",
-        "description": "权重文件清单",
+        "description": "权重文件清单，至少记录 resolved local model path 与 cache root",
         "condition": "weights.required == true"
       },
       "failure_classification": {
