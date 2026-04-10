@@ -29,6 +29,9 @@ The current project should be understood as a **two-stage workflow**:
 1. **Tool onboarding / adaptation stage**
    - handled by the existing workflow under `src/sure_eval/models/`
    - responsible for making the model callable as a stable local tool/server
+   - entrypoint for readers:
+     [Tool Onboarding README](../models/README.md)
+     and [Tool Onboarding AGENTS](../models/AGENTS.md)
 
 2. **Main-flow evaluation stage**
    - handled by the main flow agent described in this directory
