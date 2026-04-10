@@ -1,0 +1,17 @@
+{
+  "template_version": "1.0",
+  "templates": [
+    {
+      "dataset": "librispeech_clean",
+      "display_name": "LibriSpeech Clean",
+      "task": "ASR",
+      "language": "en",
+      "metric": "wer",
+      "num_samples": 2619,
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/librispeech_clean.jsonl",
+      "template_path": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/librispeech_clean.txt",
+      "format": "tsv:key<TAB>prediction",
+      "source": "sure_benchmark"
+    }
+  ]
+}

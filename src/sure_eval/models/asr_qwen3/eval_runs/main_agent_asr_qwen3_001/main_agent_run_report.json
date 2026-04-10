@@ -1,0 +1,46 @@
+{
+  "run_id": "main_agent_asr_qwen3_001_1775812307",
+  "timestamp": "2026-04-10T18:04:31+08:00",
+  "task_type": "evaluate_existing_model",
+  "goal": "Evaluate asr_qwen3 model on canonical ASR datasets using deterministic scripts and server-based prediction generation",
+  "selected_datasets": ["aishell1", "librispeech_clean"],
+  "executed_steps": [
+    "TASK_CLASSIFICATION_UNIT - classified as evaluate_existing_model",
+    "TOOL_READINESS_AND_ROUTING_UNIT - determined server_ready, direct_server_use",
+    "PLAN_UNIT - formed execution plan with dataset scope",
+    "DATASET_SCOPE_UNIT - selected aishell1, librispeech_clean; skipped S2TT/SER datasets",
+    "SCRIPT_ROUTING_UNIT - routed through deterministic script layer",
+    "EXECUTION_SURFACE_UNIT - materialized run_evaluation.sh shell entrypoint",
+    "EXECUTION_READINESS_UNIT - validated shell syntax, approved for execution",
+    "EXECUTE - started background execution of run_evaluation.sh",
+    "PREPARE_DATASET - completed for aishell1 and librispeech_clean",
+    "MATERIALIZE_TEMPLATES - prediction templates created",
+    "GENERATE_PREDICTIONS - in progress (aishell1: ~10% complete)"
+  ],
+  "status": "in_progress",
+  "artifacts": {
+    "task_classification": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/task_classification.json",
+    "tool_readiness_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/tool_readiness_routing.json",
+    "plan": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/main_agent_plan.json",
+    "dataset_decision": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/dataset_decision.json",
+    "script_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/script_routing.json",
+    "execution_surface": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/execution_surface.json",
+    "execution_readiness_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/execution_readiness_report.json",
+    "assessment_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/assessment_report.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/prediction_generation_status.json",
+    "dataset_preparation": {
+      "aishell1": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/datasets/aishell1_prepare_summary.json",
+      "librispeech_clean": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/datasets/librispeech_clean_prepare_summary.json"
+    }
+  },
+  "model_eval_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/model_eval_manifest.json",
+  "next_action": "monitor_prediction_generation_progress",
+  "notes": [
+    "Run is actively executing in background",
+    "Prediction generation for aishell1 is approximately 10% complete (711/7176 samples)",
+    "Process PID: 850136 (generate_predictions_via_server.py)",
+    "Log files available at: predictions/logs/aishell1_generation.log",
+    "Estimated time to completion: depends on inference speed and sample count",
+    "Next steps after completion: validate predictions, evaluate metrics, refresh reports"
+  ]
+}

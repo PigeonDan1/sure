@@ -268,6 +268,7 @@ def main() -> int:
 
     prediction_path = predictions_dir / f"{canonical_dataset}.txt"
     log_path = logs_dir / f"{canonical_dataset}.log"
+    result_log_path = logs_dir / f"{canonical_dataset}_results.log"
     status_path = run_dir / "prediction_generation_status.json"
 
     existing_predictions = _load_existing_predictions(prediction_path) if args.resume else {}
@@ -286,13 +287,21 @@ def main() -> int:
                 "num_expected_samples": len(samples),
                 "num_generated_samples": len(existing_predictions),
                 "log_path": str(log_path),
+                "result_log_path": str(result_log_path),
                 "error": None,
             }
         ],
     }
     status_path.write_text(json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    with open(log_path, "w", encoding="utf-8") as log_handle:
+    with open(log_path, "w", encoding="utf-8") as log_handle, open(result_log_path, "w", encoding="utf-8") as result_log_handle:
+        if args.resume and existing_predictions:
+            for sample in samples:
+                key = str(sample.get("key", ""))
+                if key in existing_predictions:
+                    result_log_handle.write(f"{key}\t{existing_predictions[key]}\n")
+            result_log_handle.flush()
+
         process = subprocess.Popen(
             command,
             cwd=str(working_dir),
@@ -340,7 +349,10 @@ def main() -> int:
                     },
                 )
                 next_id += 1
-                prediction_map[key] = _extract_prediction_text(response)
+                prediction = _extract_prediction_text(response)
+                prediction_map[key] = prediction
+                result_log_handle.write(f"{key}\t{prediction}\n")
+                result_log_handle.flush()
 
                 status_payload["datasets"][0]["num_generated_samples"] = len(prediction_map)
                 status_path.write_text(
@@ -385,6 +397,7 @@ def main() -> int:
         "Generated predictions via model-local server",
         dataset=canonical_dataset,
         prediction_file=str(prediction_path),
+        result_log_file=str(result_log_path),
         status_file=str(status_path),
     )
     print(
@@ -392,6 +405,7 @@ def main() -> int:
             {
                 "dataset": canonical_dataset,
                 "prediction_file": str(prediction_path),
+                "result_log_file": str(result_log_path),
                 "status_file": str(status_path),
                 "num_samples": len(samples),
             },

@@ -1,0 +1,40 @@
+{
+  "run_id": "main_agent_asr_qwen3_001_1775812307",
+  "timestamp": "2026-04-10T17:11:47+08:00",
+  "execution_surface_type": "single_model_single_dataset_shell",
+  "materialized": true,
+  "entrypoint_path": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/run_evaluation.sh",
+  "generation_method": "template_based_with_resolved_inputs",
+  "resolved_inputs": {
+    "model_name": "asr_qwen3",
+    "model_dir": "src/sure_eval/models/asr_qwen3",
+    "datasets": ["aishell1", "librispeech_clean"],
+    "run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001",
+    "execution_path": "mcp_server_direct",
+    "tool_name": "asr_transcribe",
+    "server_command": [".venv/bin/python", "server.py"],
+    "server_working_dir": "src/sure_eval/models/asr_qwen3",
+    "environment": {
+      "MODEL_PATH": "Qwen/Qwen3-ASR-1.7B",
+      "DEVICE": "auto"
+    }
+  },
+  "expected_outputs": {
+    "prepare_summary": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/datasets/prepare_summary.json",
+    "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/manifest.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/prediction_generation_status.json",
+    "validation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/validation_payload.json",
+    "evaluation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/evaluation_payload.json",
+    "per_dataset_results": [
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/evaluation/aishell1_metrics.json",
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/evaluation/librispeech_clean_metrics.json"
+    ]
+  },
+  "reason": "Materialized single-model multi-dataset shell entrypoint that orchestrates full evaluation pipeline. Uses MCP server-based prediction generation as the approved execution path. Shell supports bounded smoke-test mode via MAX_SAMPLES environment variable.",
+  "notes": [
+    "Shell generated from template: templates/run_single_model_single_dataset.sh",
+    "Modified to support multiple datasets in sequence",
+    "Smoke test mode available: MAX_SAMPLES=1 SKIP_VALIDATE_AND_EVAL=1",
+    "Server startup timeout: 300s as per config.yaml"
+  ]
+}

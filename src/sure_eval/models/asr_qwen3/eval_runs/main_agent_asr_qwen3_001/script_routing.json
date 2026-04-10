@@ -1,0 +1,111 @@
+{
+  "run_id": "main_agent_asr_qwen3_001_1775812307",
+  "timestamp": "2026-04-10T17:11:47+08:00",
+  "steps": [
+    {
+      "name": "prepare_dataset",
+      "script": "scripts/prepare_sure_dataset.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "output_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/datasets"
+      },
+      "outputs": {
+        "prepare_summary": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/datasets/prepare_summary.json"
+      },
+      "completion_criteria": [
+        "prepare_summary.json exists",
+        "canonical dataset files available for each selected dataset"
+      ]
+    },
+    {
+      "name": "materialize_templates",
+      "script": "scripts/materialize_predictions_template.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001"
+      },
+      "outputs": {
+        "aishell1_template": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/aishell1_predictions.txt",
+        "librispeech_clean_template": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/librispeech_clean_predictions.txt",
+        "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/manifest.json"
+      },
+      "completion_criteria": [
+        "prediction template files exist for each dataset",
+        "manifest.json exists with dataset list"
+      ]
+    },
+    {
+      "name": "generate_predictions",
+      "script": "scripts/generate_predictions_via_server.py",
+      "inputs": {
+        "model_name": "asr_qwen3",
+        "model_config": "src/sure_eval/models/asr_qwen3/config.yaml",
+        "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/manifest.json",
+        "run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001"
+      },
+      "outputs": {
+        "filled_predictions": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/*_predictions.txt",
+        "prediction_generation_status": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/prediction_generation_status.json"
+      },
+      "completion_criteria": [
+        "all prediction files filled with model outputs",
+        "prediction_generation_status.json shows completed"
+      ]
+    },
+    {
+      "name": "validate_predictions",
+      "script": "scripts/validate_prediction_files.py",
+      "inputs": {
+        "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/manifest.json",
+        "run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001"
+      },
+      "outputs": {
+        "validation_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/validation_report.json"
+      },
+      "completion_criteria": [
+        "validation_report.json exists",
+        "all predictions pass format validation"
+      ]
+    },
+    {
+      "name": "evaluate_predictions",
+      "script": "scripts/evaluate_predictions.py",
+      "inputs": {
+        "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/manifest.json",
+        "run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001"
+      },
+      "outputs": {
+        "evaluation_results": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/evaluation/evaluation_results.json",
+        "metrics_per_dataset": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/evaluation/*_metrics.json"
+      },
+      "completion_criteria": [
+        "evaluation_results.json exists with WER/CER metrics",
+        "RPS (Real-time Processing Speed) computed for each dataset"
+      ]
+    },
+    {
+      "name": "refresh_report",
+      "script": "scripts/refresh_report_snapshot.py",
+      "inputs": {
+        "evaluation_results": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/evaluation/evaluation_results.json",
+        "model_name": "asr_qwen3"
+      },
+      "outputs": {
+        "report_snapshot": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/reports/report_snapshot.md"
+      },
+      "completion_criteria": [
+        "report snapshot updated with latest results"
+      ]
+    }
+  ],
+  "routing_reason": "Using deterministic script layer for all evaluation steps. Server-based prediction generation via MCP server as preferred execution path per tool_readiness_routing.json.",
+  "wait_points": [
+    {
+      "after_step": "materialize_templates",
+      "wait_for": "prediction_files_to_be_filled",
+      "contract": "prediction_generation_contract.md",
+      "status_file": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/prediction_generation_status.json"
+    }
+  ],
+  "stop_condition": "stop_after_evaluation_complete_or_if_validation_fails"
+}

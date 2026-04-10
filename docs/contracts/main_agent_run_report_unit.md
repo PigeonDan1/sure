@@ -36,6 +36,7 @@ It should point to:
 - plan artifact
 - dataset decision artifact
 - script routing artifact
+- execution surface artifact when shell handoff is applicable
 - execution readiness artifact when shell validation is applicable
 - assessment artifact
 - model evaluation manifest

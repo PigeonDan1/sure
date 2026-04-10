@@ -1,0 +1,35 @@
+{
+  "run_id": "main_agent_asr_qwen3_001_1775812307",
+  "timestamp": "2026-04-10T17:11:47+08:00",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": false,
+  "handoff_to_tool_agent": false,
+  "reason": "Model has complete server setup: config.yaml declares MCP server with command [.venv/bin/python, server.py], server.py implements full MCP protocol with asr_transcribe tool, .venv exists with dependencies, and README documents successful prior test on AISHELL-1. The model is already onboarded and ready for direct evaluation.",
+  "evidence": [
+    {
+      "source": "config.yaml",
+      "signal": "server.command = ['.venv/bin/python', 'server.py'] with timeout 300s"
+    },
+    {
+      "source": "server.py",
+      "signal": "MCP server implementation with initialize, tools/list, tools/call handlers"
+    },
+    {
+      "source": "server.py",
+      "signal": "asr_transcribe tool defined with audio_path and language parameters"
+    },
+    {
+      "source": ".venv",
+      "signal": "Virtual environment exists at model directory"
+    },
+    {
+      "source": "README.md",
+      "signal": "Prior AISHELL-1 test completed with WER 0.79% on 10 samples"
+    },
+    {
+      "source": "target.integration_state",
+      "signal": "onboarded - explicitly declared in MAIN_FLOW_INPUT"
+    }
+  ]
+}

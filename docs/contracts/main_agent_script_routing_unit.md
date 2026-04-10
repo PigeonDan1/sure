@@ -9,6 +9,7 @@ It bridges:
 - task classification
 - plan
 - dataset decision
+- execution-surface materialization
 - deterministic scripts
 
 ## Required Output
@@ -56,7 +57,16 @@ This means `wait_for_predictions` must specify:
 - which status file records progress
 
 If the final handoff surface is a one-click shell entrypoint, the route should
-also define a preflight shell-validation step before formal execution.
+also define a shell-materialization step before preflight validation.
+
+That materialization should specify:
+
+- shell path
+- template or generation method
+- resolved model / dataset / run-directory inputs
+- expected output artifacts
+
+Only after that may the route define a preflight shell-validation step.
 
 That validation should specify:
 

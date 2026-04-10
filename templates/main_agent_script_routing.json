@@ -16,6 +16,22 @@
       ]
     },
     {
+      "name": "materialize_execution_surface",
+      "script": "templates/run_single_model_single_dataset.sh",
+      "inputs": {
+        "shell_path": "",
+        "model_name": "",
+        "dataset": "",
+        "run_dir": ""
+      },
+      "outputs": {
+        "execution_surface": ""
+      },
+      "completion_criteria": [
+        "shell entrypoint exists at the declared path"
+      ]
+    },
+    {
       "name": "validate_execution_shell",
       "script": "shell_preflight_smoke_test",
       "inputs": {

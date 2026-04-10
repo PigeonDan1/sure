@@ -1,0 +1,10 @@
+{
+  "status": "completed",
+  "timestamp": "2026-04-10T17:51:51+08:00",
+  "datasets": [
+  "aishell1",
+  "librispeech_clean"
+],
+  "max_samples": 1,
+  "run_dir": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001"
+}

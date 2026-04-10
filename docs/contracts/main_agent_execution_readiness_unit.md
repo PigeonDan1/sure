@@ -8,6 +8,9 @@ the generated shell in the background.
 Its purpose is to make shell validation part of the main-agent flow, so users
 do not discover shell/runtime issues only after starting a full one-click run.
 
+This unit runs only after `EXECUTION_SURFACE_UNIT` has materialized the final
+handoff surface.
+
 ## Required Output
 
 - `execution_ready`
@@ -71,9 +74,12 @@ This unit should leave evidence for:
   shell entrypoint
 - must not mark `execution_ready=true` if prediction generation cannot begin in
   the current environment
+- must not validate a shell path that has not been materialized by
+  `EXECUTION_SURFACE_UNIT`
 
 ## Related Contracts
 
+- [main_agent_execution_surface_unit.md](/cpfs/user/jingpeng/workspace/sure-eval/docs/contracts/main_agent_execution_surface_unit.md)
 - [main_agent_script_routing_unit.md](/cpfs/user/jingpeng/workspace/sure-eval/docs/contracts/main_agent_script_routing_unit.md)
 - [single_model_single_dataset_shell.md](/cpfs/user/jingpeng/workspace/sure-eval/docs/contracts/single_model_single_dataset_shell.md)
 - [prediction_generation_contract.md](/cpfs/user/jingpeng/workspace/sure-eval/docs/contracts/prediction_generation_contract.md)

@@ -1,0 +1,24 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "execution_surface_type": "single_model_single_dataset_shell",
+  "materialized": false,
+  "entrypoint_path": "",
+  "generation_method": "",
+  "resolved_inputs": {
+    "model_name": "",
+    "dataset": "",
+    "run_dir": "",
+    "execution_path": "",
+    "tool_name": ""
+  },
+  "expected_outputs": {
+    "prepare_summary": "",
+    "prediction_manifest": "",
+    "prediction_generation_status": "",
+    "validation_payload": "",
+    "evaluation_payload": ""
+  },
+  "reason": "",
+  "notes": []
+}

@@ -1,0 +1,25 @@
+{
+  "run_id": "main_agent_asr_qwen3_001_1775812307",
+  "timestamp": "2026-04-10T17:11:47+08:00",
+  "goal": "Evaluate asr_qwen3 model on canonical ASR datasets using deterministic scripts and server-based prediction generation",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_dataset - prepare canonical datasets for ASR evaluation",
+    "materialize_templates - generate prediction file templates",
+    "generate_predictions - use MCP server to fill prediction files",
+    "validate_predictions - validate prediction file format",
+    "evaluate_predictions - compute WER/CER metrics and RPS",
+    "refresh_report - update evaluation report snapshot"
+  ],
+  "stop_condition": "stop_after_evaluation_if_results_valid_or_blocked_if_validation_fails",
+  "notes": [
+    "Model supports ASR task only (audio -> transcript)",
+    "Server-based prediction generation preferred over wrapper direct use",
+    "Supported languages: Chinese (zh), English (en), Japanese (ja), Korean (ko), auto",
+    "Prior evidence shows successful AISHELL-1 test",
+    "Dry run mode: false - will execute actual evaluation"
+  ]
+}

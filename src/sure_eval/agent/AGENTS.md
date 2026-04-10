@@ -46,9 +46,10 @@
 3. `PLAN_UNIT`
 4. `DATASET_SCOPE_UNIT`
 5. `SCRIPT_ROUTING_UNIT`
-6. `EXECUTION_READINESS_UNIT`
-7. `ASSESSMENT_UNIT`
-8. `RUN_REPORT_UNIT`
+6. `EXECUTION_SURFACE_UNIT`
+7. `EXECUTION_READINESS_UNIT`
+8. `ASSESSMENT_UNIT`
+9. `RUN_REPORT_UNIT`
 
 每个单元：
 
@@ -74,6 +75,8 @@ DATASET_SCOPE_UNIT
     ↓
 SCRIPT_ROUTING_UNIT
     ↓
+EXECUTION_SURFACE_UNIT
+    ↓
 EXECUTION_READINESS_UNIT
     ↓
 EXECUTE_SCRIPTS / WAIT_FOR_TOOL_WORKFLOW
@@ -96,6 +99,7 @@ DONE
 | `PLAN_UNIT` | 形成执行计划 | `main_agent_plan.json` |
 | `DATASET_SCOPE_UNIT` | 选择 / 跳过数据集 | `dataset_decision.json` |
 | `SCRIPT_ROUTING_UNIT` | 形成脚本调用序列 | `script_routing.json` |
+| `EXECUTION_SURFACE_UNIT` | 生成最终 shell / command handoff artifact | `execution_surface.json` |
 | `EXECUTION_READINESS_UNIT` | 验证 shell / 执行入口是否可安全后台运行 | `execution_readiness_report.json` |
 | `ASSESSMENT_UNIT` | 解释执行结果 | `assessment_report.json` |
 | `RUN_REPORT_UNIT` | 汇总整轮 run | `main_agent_run_report.json` |
@@ -111,6 +115,7 @@ DONE
 | `PLAN_UNIT` | [`../../../docs/contracts/main_agent_plan_unit.md`](../../../docs/contracts/main_agent_plan_unit.md) |
 | `DATASET_SCOPE_UNIT` | [`../../../docs/contracts/main_agent_dataset_unit.md`](../../../docs/contracts/main_agent_dataset_unit.md) |
 | `SCRIPT_ROUTING_UNIT` | [`../../../docs/contracts/main_agent_script_routing_unit.md`](../../../docs/contracts/main_agent_script_routing_unit.md) |
+| `EXECUTION_SURFACE_UNIT` | [`../../../docs/contracts/main_agent_execution_surface_unit.md`](../../../docs/contracts/main_agent_execution_surface_unit.md) |
 | `EXECUTION_READINESS_UNIT` | [`../../../docs/contracts/main_agent_execution_readiness_unit.md`](../../../docs/contracts/main_agent_execution_readiness_unit.md) |
 | `wait_for_predictions` contract | [`../../../docs/contracts/prediction_generation_contract.md`](../../../docs/contracts/prediction_generation_contract.md) |
 | `ASSESSMENT_UNIT` | [`../../../docs/contracts/main_agent_assessment_unit.md`](../../../docs/contracts/main_agent_assessment_unit.md) |
@@ -127,6 +132,7 @@ DONE
 | `main_agent_plan.json` | [`../../../templates/main_agent_plan.json`](../../../templates/main_agent_plan.json) |
 | `dataset_decision.json` | [`../../../templates/main_agent_dataset_decision.json`](../../../templates/main_agent_dataset_decision.json) |
 | `script_routing.json` | [`../../../templates/main_agent_script_routing.json`](../../../templates/main_agent_script_routing.json) |
+| `execution_surface.json` | [`../../../templates/main_agent_execution_surface.json`](../../../templates/main_agent_execution_surface.json) |
 | `execution_readiness_report.json` | [`../../../templates/main_agent_execution_readiness_report.json`](../../../templates/main_agent_execution_readiness_report.json) |
 | `assessment_report.json` | [`../../../templates/main_agent_assessment_report.json`](../../../templates/main_agent_assessment_report.json) |
 | `main_agent_run_report.json` | [`../../../templates/main_agent_run_report.json`](../../../templates/main_agent_run_report.json) |
@@ -195,7 +201,20 @@ DONE
 - `wait_points`
 - `stop_condition`
 
-### 8.6 EXECUTION_READINESS_UNIT
+### 8.6 EXECUTION_SURFACE_UNIT
+
+**目标**:
+- 将 routing 决策 materialize 成最终交付面
+- 在 shell handoff 模式下生成真实存在的 shell artifact
+
+**最小输出**:
+- `execution_surface_type`
+- `materialized`
+- `entrypoint_path`
+- `resolved_inputs`
+- `expected_outputs`
+
+### 8.7 EXECUTION_READINESS_UNIT
 
 **目标**:
 - 在正式后台执行前验证 shell / 执行入口是否已经过 bounded smoke test
@@ -210,7 +229,7 @@ DONE
 - `blocking_issues`
 - `next_action`
 
-### 8.7 ASSESSMENT_UNIT
+### 8.8 ASSESSMENT_UNIT
 
 **目标**:
 - 判断本轮执行是成功、部分成功还是阻塞
@@ -220,7 +239,7 @@ DONE
 - `evidence`
 - `next_action`
 
-### 8.8 RUN_REPORT_UNIT
+### 8.9 RUN_REPORT_UNIT
 
 **目标**:
 - 汇总整轮 run 的结构化结论

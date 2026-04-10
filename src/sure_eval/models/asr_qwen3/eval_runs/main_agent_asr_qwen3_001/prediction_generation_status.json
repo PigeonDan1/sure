@@ -1,0 +1,17 @@
+{
+  "run_id": "main_agent_asr_qwen3_001",
+  "model_name": "asr_qwen3",
+  "execution_path": "direct_server_use",
+  "tool_name": "asr_transcribe",
+  "datasets": [
+    {
+      "dataset": "aishell1",
+      "prediction_file": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/aishell1.txt",
+      "status": "running",
+      "num_expected_samples": 7176,
+      "num_generated_samples": 942,
+      "log_path": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/logs/aishell1.log",
+      "error": null
+    }
+  ]
+}

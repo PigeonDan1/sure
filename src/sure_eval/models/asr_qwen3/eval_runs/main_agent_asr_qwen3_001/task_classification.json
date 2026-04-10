@@ -1,0 +1,34 @@
+{
+  "run_id": "main_agent_asr_qwen3_001_1775812307",
+  "timestamp": "2026-04-10T17:11:47+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "User explicitly requested to evaluate the existing asr_qwen3 model. The model directory exists with complete artifacts including config.yaml, server.py, model.py, and .venv environment. The input signals confirm tool_workflow_ready=true and integration_state=onboarded.",
+  "need_tool_workflow": false,
+  "confidence": "high",
+  "input_signals": [
+    {
+      "source": "user_goal",
+      "signal": "evaluate_existing_model"
+    },
+    {
+      "source": "target.model_dir",
+      "signal": "src/sure_eval/models/asr_qwen3 exists with complete structure"
+    },
+    {
+      "source": "target.tool_workflow_ready",
+      "signal": "true"
+    },
+    {
+      "source": "target.integration_state",
+      "signal": "onboarded"
+    },
+    {
+      "source": "evidence.config_path",
+      "signal": "config.yaml exists with server configuration"
+    },
+    {
+      "source": "evidence.readme_path",
+      "signal": "README.md exists with capability documentation"
+    }
+  ]
+}

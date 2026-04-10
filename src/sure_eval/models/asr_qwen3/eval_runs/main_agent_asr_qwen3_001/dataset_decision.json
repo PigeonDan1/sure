@@ -1,0 +1,33 @@
+{
+  "run_id": "main_agent_asr_qwen3_001_1775812307",
+  "timestamp": "2026-04-10T17:11:47+08:00",
+  "selection_basis": [
+    "model README capability description",
+    "config.yaml task definition (ASR)",
+    "prior test results showing ASR capability",
+    "user constraints (allowed_tasks: [ASR])",
+    "model supports 52 languages including Chinese and English"
+  ],
+  "selected_datasets": [
+    "aishell1",
+    "librispeech_clean"
+  ],
+  "skipped_datasets": [
+    {
+      "dataset": "covost2_en2zh",
+      "reason": "S2TT (Speech-to-Text-Translation) task not supported by model. Model README explicitly marks CoVoST2 as 'Not applicable' for ASR model."
+    },
+    {
+      "dataset": "iemocap",
+      "reason": "SER (Speech Emotion Recognition) task not supported. Model is ASR-only per README capability documentation."
+    },
+    {
+      "dataset": "aishell2",
+      "reason": "Chinese multi-accent ASR dataset - could be supported but not in current default scope. Can be added in future evaluation rounds."
+    },
+    {
+      "dataset": "librispeech_other",
+      "reason": "More challenging English ASR split - deferring to prioritize clean eval first. Can be added in follow-up rounds."
+    }
+  ]
+}

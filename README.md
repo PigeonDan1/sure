@@ -230,6 +230,8 @@ TOOL_READINESS_AND_ROUTING_UNIT
         ↓
    SCRIPT_ROUTING_UNIT
         ↓
+EXECUTION_SURFACE_UNIT
+        ↓
 EXECUTION_READINESS_UNIT
         ↓
    EXECUTE / WAIT
@@ -293,9 +295,10 @@ For human-operated background runs, prefer a single-model single-dataset shell:
 
 - [docs/contracts/single_model_single_dataset_shell.md](docs/contracts/single_model_single_dataset_shell.md)
 
-Before handing that shell to a user, the main flow should run a bounded
-execution-readiness validation:
+Before handing that shell to a user, the main flow should first materialize the
+execution surface and then run a bounded execution-readiness validation:
 
+- [docs/contracts/main_agent_execution_surface_unit.md](docs/contracts/main_agent_execution_surface_unit.md)
 - [docs/contracts/main_agent_execution_readiness_unit.md](docs/contracts/main_agent_execution_readiness_unit.md)
 
 ---
@@ -342,6 +345,7 @@ MAIN_FLOW_INPUT:
 - `main_agent_plan.json`
 - `dataset_decision.json`
 - `script_routing.json`
+- `execution_surface.json`
 - `execution_readiness_report.json`
 - `assessment_report.json`
 - `main_agent_run_report.json`

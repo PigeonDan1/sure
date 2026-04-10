@@ -48,6 +48,7 @@ It is responsible for:
 - deciding which datasets should be evaluated for the current model
 - deciding when to invoke the existing tool onboarding workflow
 - deciding the execution order of deterministic scripts
+- materializing the final execution handoff surface when shell delivery is used
 - validating shell / execution readiness before a human launches a background run
 - interpreting script outputs and deciding next actions
 
@@ -189,7 +190,18 @@ Report refresh must go through:
 
 This keeps reporting logic outside the agent.
 
-### 6. Execution-readiness evidence
+### 6. Execution-surface materialization
+
+If the final handoff surface is a shell entrypoint, the main flow agent must
+first materialize that shell entrypoint as a real run artifact.
+
+This materialization should confirm:
+
+- the shell path exists under the run directory
+- the shell has resolved model / dataset / run inputs
+- the shell declares the expected smoke-test control surface
+
+### 7. Execution-readiness evidence
 
 If the final handoff surface is a shell entrypoint, the main flow agent must
 leave structured execution-readiness evidence before recommending a background
@@ -239,12 +251,14 @@ The recommended end-to-end flow is:
 1. Main flow agent determines the task type
 2. If needed, invoke the existing tool onboarding workflow
 3. Main flow agent chooses canonical datasets
-4. Run [prepare_sure_dataset.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/prepare_sure_dataset.py)
-5. Run [materialize_predictions_template.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/materialize_predictions_template.py)
-6. Fill prediction files through the chosen model path
-7. Run [validate_prediction_files.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/validate_prediction_files.py)
-8. Run [evaluate_predictions.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/evaluate_predictions.py)
-9. Run [refresh_report_snapshot.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/refresh_report_snapshot.py)
+4. Materialize the final execution surface when shell handoff is used
+5. Validate execution readiness against the materialized surface
+6. Run [prepare_sure_dataset.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/prepare_sure_dataset.py)
+7. Run [materialize_predictions_template.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/materialize_predictions_template.py)
+8. Fill prediction files through the chosen model path
+9. Run [validate_prediction_files.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/validate_prediction_files.py)
+10. Run [evaluate_predictions.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/evaluate_predictions.py)
+11. Run [refresh_report_snapshot.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/refresh_report_snapshot.py)
 
 ---
 

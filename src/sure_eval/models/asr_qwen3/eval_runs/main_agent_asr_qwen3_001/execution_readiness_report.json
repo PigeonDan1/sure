@@ -1,0 +1,48 @@
+{
+  "run_id": "main_agent_asr_qwen3_001_1775812307",
+  "timestamp": "2026-04-10T18:04:31+08:00",
+  "execution_ready": true,
+  "status": "execution_in_progress",
+  "validation_mode": "smoke_test_with_prediction_generation",
+  "validated_shell_entrypoint": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/run_evaluation.sh",
+  "smoke_test_command": "cd /cpfs/user/jingpeng/workspace/sure-eval && MODEL_NAME=asr_qwen3 MAX_SAMPLES=1 SKIP_VALIDATE_AND_EVAL=1 bash src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/run_evaluation.sh",
+  "smoke_test_run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/smoke_test_$(date +%Y%m%d_%H%M%S)",
+  "checked_artifacts": {
+    "shell_syntax": {
+      "status": "passed",
+      "command": "bash -n run_evaluation.sh",
+      "result": "syntax valid"
+    },
+    "prepare_summary": {
+      "status": "completed",
+      "path": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/datasets/aishell1_prepare_summary.json",
+      "note": "Dataset preparation completed for aishell1 and librispeech_clean"
+    },
+    "prediction_manifest": {
+      "status": "pending_execution",
+      "expected_path": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/manifest.json",
+      "note": "Will be created during template materialization phase"
+    },
+    "prediction_generation_status": {
+      "status": "in_progress",
+      "path": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/prediction_generation_status.json",
+      "note": "Prediction generation in progress - aishell1: 711/7176 samples generated"
+    },
+    "shell_log": {
+      "status": "pending_execution",
+      "expected_path": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/logs/",
+      "note": "Log directory will be created during execution"
+    }
+  },
+  "blocking_issues": [],
+  "next_action": "ready_for_background_execution",
+  "notes": [
+    "Shell syntax validation passed (bash -n)",
+    "Server configuration verified in config.yaml",
+    "Virtual environment exists at .venv/",
+    "Bounded smoke-test mode available via MAX_SAMPLES env var",
+    "Early-exit smoke mode available via SKIP_VALIDATE_AND_EVAL=1",
+    "All deterministic scripts verified to exist in scripts/",
+    "Tool readiness state is server_ready - approved for direct execution"
+  ]
+}
