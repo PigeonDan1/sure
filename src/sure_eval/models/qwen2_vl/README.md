@@ -1,171 +1,123 @@
-# Qwen2-VL-2B-Instruct
+# VLM Qwen2-VL Model
 
-Phase-1 onboarding for Alibaba's `Qwen/Qwen2-VL-2B-Instruct` in SURE-EVAL.
-
-This directory captures the harness-first onboarding result for the model's minimal
-repo-native image-text path. The phase-1 target is intentionally narrow: import the
-Transformers/Qwen2-VL stack, load the checkpoint, run one local image prompt, and
-verify that the model returns a non-empty JSON-serializable text field.
+Vision-Language inference using Alibaba's Qwen2-VL-2B-Instruct model.
 
 ## Model Information
 
 | Attribute | Value |
 |-----------|-------|
-| **Name** | `qwen2-vl-2b-instruct` |
-| **Task** | VLM |
-| **Model ID** | `Qwen/Qwen2-VL-2B-Instruct` |
-| **Deployment** | Local |
-| **Weight Source** | Hugging Face |
-| **Phase-1 Status** | Passed |
-| **Validated Device** | `mps:0` |
-| **Preferred Hint** | `uv` |
-| **Chosen Backend** | `conda` |
+| **Name** | qwen2_vl_2b_instruct |
+| **Task** | VLM (Vision-Language Model) |
+| **Model** | Qwen/Qwen2-VL-2B-Instruct |
+| **Size** | 2B parameters (~4.1G cached weights) |
+| **Input** | Single local image + text prompt |
+| **License** | See model page |
+| **Source** | [HuggingFace](https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct) |
 
-## Phase-1 Scope
+## Capabilities
 
-Validated in phase-1:
+- **Image Description**: Describe a single image with a text response
+- **Prompted Inference**: Supports custom prompts for the input image
+- **JSON Output**: Returns JSON-serializable output with a non-empty `text` field
+- **MCP Tooling**: Exposed through the `describe_image` tool
 
-- Import `Qwen2VLForConditionalGeneration`, `AutoProcessor`, and `qwen_vl_utils.process_vision_info`
-- Load `Qwen/Qwen2-VL-2B-Instruct`
-- Run a single-image understanding prompt on a local fixture
-- Verify output contract: JSON serializable and non-empty `text`
+## Environment Setup
 
-Explicitly out of scope for phase-1:
+```bash
+# Setup with conda environment file
+cd /cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/qwen2_vl_2b_instruct
+conda env create -f environment.yml
+conda activate qwen2-vl-2b-instruct
 
-- Multi-image reasoning
-- Video understanding
-- OCR benchmarking
-- Grounding boxes
-- Tool use / agent behavior
-- Structured extraction
-
-## Validation Summary
-
-The onboarding succeeded end-to-end under the harness workflow:
-
-- `VALIDATE_IMPORT`: passed
-- `VALIDATE_LOAD`: passed
-- `VALIDATE_INFER`: passed
-- `VALIDATE_CONTRACT`: passed
-- wrapper smoke: passed
-
-The runtime output for the local fixture was:
-
-```json
-{
-  "text": "The image depicts a simple, geometric house with a brown roof and two windows. The house is situated on a grassy lawn with a pathway leading up to it. To the right of the house, there is a green tree. The sky is blue with a yellow sun in the background. The overall scene is a cartoon-like representation of a house in a rural setting."
-}
+# Or manual setup
+cd /cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/qwen2_vl_2b_instruct
+conda create -n qwen2-vl-2b-instruct python=3.10 -y
+conda activate qwen2-vl-2b-instruct
+uv pip install -e .
 ```
+## Test Results
 
-See:
+### Shared VLM Fixture
 
-- [verdict.json](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/verdict.json)
-- [validation.log](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/validation.log)
-- [runtime_output.json](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/runtime_output.json)
+| Date | Samples | Result | Runtime | Notes |
+|------|---------|--------|---------|-------|
+| 2026-04-02 | 1 (phase-1 fixture) | Passed | mps:0 | Single-image description returned non-empty text |
 
-## Environment Notes
+### Inference Validation
 
-The input hint preferred `uv`, but preflight evidence showed that `uv` was not
-available on this host. To satisfy the constitution's evidence-first rule, phase-1
-used an isolated `conda` Python 3.10 environment instead.
+| Date | Stage | Status | Notes |
+|------|-------|--------|-------|
+| 2026-04-02 | VALIDATE_IMPORT | Passed | Imported `Qwen2VLForConditionalGeneration`, `AutoProcessor`, and `process_vision_info` |
+| 2026-04-02 | VALIDATE_LOAD | Passed | Model and processor loaded successfully |
+| 2026-04-02 | VALIDATE_INFER | Passed | Local image fixture produced non-empty text |
+| 2026-04-02 | VALIDATE_CONTRACT | Passed | Output was JSON serializable and `text` was non-empty |
 
-Reproducibility artifacts:
+### Other Datasets
 
-- [pyproject.toml](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/pyproject.toml)
-- [conda-explicit.txt](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/conda-explicit.txt)
-- [pip-freeze.txt](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/pip-freeze.txt)
-- [build_plan.json](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/build_plan.json)
-- [build.log](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/build.log)
+| Dataset | Task | Status | Results |
+|---------|------|--------|---------|
+| Shared VLM fixture | Single-image description | Tested | Passed |
+| OCR benchmark | OCR | Not tested | - |
+| Multi-image benchmark | VLM | Not tested | - |
+| Video benchmark | Video understanding | Not tested | - |
+| Grounding benchmark | Vision grounding | Not tested | - |
 
-Installed runtime versions used for validation:
+## Usage
 
-- `torch==2.11.0`
-- `torchvision==0.26.0`
-- `transformers==4.57.6`
-- `accelerate==1.13.0`
-- `qwen-vl-utils==0.0.14`
-- `pillow==12.2.0`
-- `sentencepiece==0.2.1`
+### As MCP Server
 
-## Weights and Fixture
-
-Weights were resolved from Hugging Face and cached under:
-
-- `/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home`
-
-Weight details are recorded in:
-
-- [weights_manifest.json](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/weights_manifest.json)
-
-The repository had no existing shared VLM image fixtures, so phase-1 created a
-deterministic local fixture:
-
-- [demo_image.jpg](/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vlm/demo_image.jpg)
-
-This fixture is task-specific for minimal single-image VLM validation, but it is not
-intended to represent broader evaluation coverage.
-
-## Wrapper Files
-
-The generated wrapper reuses the validated repo-native path and is intended as the
-model-local integration layer for SURE:
-
-- [model.py](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/model.py)
-- [server.py](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/server.py)
-- [__init__.py](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/__init__.py)
-- [config.yaml](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/config.yaml)
-
-Wrapper behavior:
-
-- `ModelWrapper.load()` loads the model and processor lazily
-- `ModelWrapper.predict()` accepts an image path or request dict
-- output contract is `{"text": "<non-empty string>"}`
-
-## Known Constraints
-
-- The host had no visible CUDA device during onboarding; successful validation used `mps:0`.
-- Sandbox networking was unavailable by default, so this run required controlled
-  network escalation for package installation, checkpoint fetch, and final infer.
-- During inference, Qwen2-VL still performed auxiliary Hugging Face lookups even after
-  the main checkpoint had already been cached; this is recorded in the failure/retry artifacts.
-
-See:
-
-- [preflight_summary.json](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/preflight_summary.json)
-- [failure_classification.json](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/failure_classification.json)
-- [retry_recommendation.json](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/retry_recommendation.json)
-- [escalation.json](/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/escalation.json)
-
-## Minimal Usage
-
-### Direct wrapper usage
+```yaml
+# config/mcp_tools.yaml
+tools:
+  qwen2_vl_2b_instruct:
+    name: "qwen2_vl_2b_instruct"
+    command: ["python", "server.py"]
+    working_dir: "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/qwen2_vl_2b_instruct"
+    env:
+      HF_HOME: "/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home"
+    timeout: 300
+```
+### Direct Usage
 
 ```python
 from sure_eval.models.qwen2_vl_2b_instruct import ModelWrapper
 
-wrapper = ModelWrapper({
-    "hf_home": "/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home"
+model = ModelWrapper()
+result = model.predict({
+    "image_path": "tests/fixtures/shared/vlm/demo_image.jpg",
+    "prompt": "Describe this image briefly.",
+    "max_new_tokens": 128,
 })
-
-result = wrapper.predict({
-    "image_path": "/absolute/path/to/image.jpg",
-    "prompt": "Describe this image briefly."
-})
-
 print(result["text"])
 ```
+## API Reference
 
-### Repo-native validation path
+### Tools
 
-```python
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
-from qwen_vl_utils import process_vision_info
-```
+- `describe_image(image_path, prompt, max_new_tokens)`: Describe a single local image
 
-## Next Steps
+## Files
 
-Suggested follow-up after this phase-1 success:
+- `server.py` - MCP server implementation
+- `model.py` - Core model wrapper
+- `config.yaml` - MCP configuration
+- `pyproject.toml` - Python dependencies
+- `environment.yml` - Conda environment definition
+- `__init__.py` - Package exports
+- `pip-freeze.txt` - Frozen runtime dependencies
+- `weights_manifest.json` - Cached weights record
+- `artifacts/` - Validation and onboarding artifacts
 
-1. Add richer VLM fixtures that cover real photographs rather than only the synthetic phase-1 image.
-2. Evaluate whether offline inference can be made fully cache-complete to avoid auxiliary Hugging Face lookups.
-3. Define phase-2 coverage for multi-image, OCR-like content, or structured extraction if those capabilities matter for downstream SURE tasks.
+## Notes
+
+- First inference is slow due to model loading
+- GPU is recommended, but the recorded phase-1 run succeeded on `mps:0`
+- This wrapper validates only the minimal single-image repo-native path
+- Multi-image, video, OCR benchmark, and grounding tasks are not covered in phase-1
+- In restricted environments, inference may still trigger HuggingFace network checks
+
+## See Also
+
+- [Model Spec](./model.spec.yaml)
+- [Model Config](./config.yaml)
+- [SURE-EVAL Model README](../README.md)
