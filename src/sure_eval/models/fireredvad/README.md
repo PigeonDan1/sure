@@ -1,143 +1,122 @@
----
-language:
-- en
-- zh
-license: apache-2.0
-pipeline_tag: voice-activity-detection
-tags:
-- voice-activity-detection
-- speech-activity-detection
-- audio-event-detection
-- vad
-- aed
-- streaming
-- non-streaming
-- audio
-- automatic-speech-recognition
-- asr
----
+# FireRedVAD Model
 
-<div align="center">
-<h1>
-FireRedVAD: A SOTA Industrial-Grade
-<br>
-Voice Activity Detection & Audio Event Detection
-</h1>
+Voice Activity Detection and Audio Event Detection using FireRedTeam's FireRedVAD model.
 
-</div>
+## Model Information
 
-[[Paper]](https://huggingface.co/papers/2603.10420)
-[[Code]](https://github.com/FireRedTeam/FireRedVAD)
-[[HuggingFace]](https://huggingface.co/FireRedTeam/FireRedVAD)
-[[ModelScope]](https://www.modelscope.cn/models/xukaituo/FireRedVAD)
+| Attribute | Value |
+|-----------|-------|
+| **Name** | fireredvad |
+| **Task** | VAD / AED (Voice Activity Detection / Audio Event Detection) |
+| **Model** | FireRedTeam/FireRedVAD |
+| **Model Variant** | FireRedVAD-VAD |
+| **Deployment** | Local |
+| **Backend** | pip |
+| **Validated Runtime** | Python 3.10, CPU-only |
+| **Languages** | 100+ languages |
+| **Input Audio** | 16kHz 16-bit mono PCM wav |
+| **License** | Apache 2.0 |
+| **Source** | [HuggingFace](https://huggingface.co/FireRedTeam/FireRedVAD) / [GitHub](https://github.com/FireRedTeam/FireRedVAD) |
 
+## Capabilities
 
-FireRedVAD is a state-of-the-art (SOTA) industrial-grade Voice Activity Detection (VAD) and Audio Event Detection (AED) solution. It was introduced as part of [FireRedASR2S](https://huggingface.co/papers/2603.10420).
+- **Non-streaming VAD**: Detect speech regions from full audio
+- **Streaming VAD**: Detect speech activity in streaming scenarios
+- **AED**: Detect speech / singing / music events
+- **Timestamps**: Return timestamp pairs for detected regions
+- **JSON Contract**: Produces JSON-serializable outputs centered on `timestamps`
 
-FireRedVAD supports non-streaming/streaming VAD and non-streaming AED. It supports speech/singing/music detection in 100+ languages. Non-streaming VAD achieves 97.57% F1 on FLEURS-VAD-102, outperforming Silero-VAD, TEN-VAD, FunASR-VAD and WebRTC-VAD.
+## Environment Setup
 
-
-## 🔥 News
-- [2026.03.12] 🔥 We release FireRedASR2S technical report. See [arXiv](https://arxiv.org/abs/2603.10420).
-- [2026.03.03] We release FireRedVAD as a standalone repository, along with model weights and inference code.
-- [2026.02.12] We release [FireRedASR2S](https://github.com/FireRedTeam/FireRedASR2S) (FireRedASR2-AED, FireRedVAD, FireRedLID, and FireRedPunc) with model weights and inference code.
-
-
-
-## Method
-DFSMN-based non-streaming/streaming Voice Activity Detection and Audio Event Detection.
-
-
-
-## Evaluation
-### FireRedVAD
-We evaluate FireRedVAD on FLEURS-VAD-102, a multilingual VAD benchmark covering 102 languages.
-
-FireRedVAD achieves SOTA performance, outperforming Silero-VAD, TEN-VAD, FunASR-VAD, and WebRTC-VAD.
-
-|Metric\Model|FireRedVAD|[Silero-VAD](https://github.com/snakers4/silero-vad)|[TEN-VAD](https://github.com/TEN-framework/ten-vad)|[FunASR-VAD](https://modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch)|[WebRTC-VAD](https://github.com/wiseman/py-webrtcvad)|
-|:-------:|:-----:|:------:|:------:|:------:|:------:|
-|AUC-ROC↑  |**99.60**|97.99|97.81|-    |-    |
-|F1 score↑ |**97.57**|95.95|95.19|90.91|52.30|
-|False Alarm Rate↓  |**2.69** |9.41 |15.47|44.03|2.83 |
-|Miss Rate↓|3.62     |3.95 |2.95 |0.42 |64.15|
-
-<sup>*</sup>FLEURS-VAD-102: We randomly selected ~100 audio files per language from [FLEURS test set](https://huggingface.co/datasets/google/fleurs), resulting in 9,443 audio files with manually annotated binary VAD labels (speech=1, silence=0). This VAD testset will be open sourced (coming soon).
-
-Note: FunASR-VAD achieves low Miss Rate but at the cost of high False Alarm Rate (44.03%), indicating over-prediction of speech segments.
-
-
-
-## Quick Start
-### Setup
-1. Create a clean Python environment:
 ```bash
-$ conda create --name fireredvad python=3.10
-$ conda activate fireredvad
-$ git clone https://github.com/FireRedTeam/FireRedVAD.git
-$ cd FireRedVAD  # or fireredvad
+# Option 1: use the validated phase-1 pinned environment
+cd /Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.phase1.txt
+
+# Option 2: install from pyproject
+cd /Users/wency/Desktop/上交/SURE/sure/src/sure_eval/models/fireredvad
+python3.10 -m venv .venv
+source .venv/bin/activate
+pip install -e .
 ```
-
-2. Install dependencies and set up PATH and PYTHONPATH:
+### Additional Notes
 ```bash
-$ pip install -r requirements.txt
-$ export PATH=$PWD/fireredvad/bin/:$PATH
-$ export PYTHONPATH=$PWD/:$PYTHONPATH
-```
-
-3. Download models:
-```bash
-# Download via ModelScope (recommended for users in China)
-pip install -U modelscope
-modelscope download --model xukaituo/FireRedVAD --local_dir ./pretrained_models/FireRedVAD
-
-# Download via Hugging Face
-pip install -U "huggingface_hub[cli]"
+# Download weights into the validated runtime location
 huggingface-cli download FireRedTeam/FireRedVAD --local-dir ./pretrained_models/FireRedVAD
+
+# Convert audio to the required format if needed
+ffmpeg -i input_audio.wav -ar 16000 -ac 1 -acodec pcm_s16le -f wav output_16k.wav
 ```
 
-4. Convert your audio to **16kHz 16-bit mono PCM** format if needed:
-```bash
-$ ffmpeg -i <input_audio_path> -ar 16000 -ac 1 -acodec pcm_s16le -f wav <output_wav_path>
+## Test Results
+
+### Local Smoke Test
+| Date       | Fixture                                    | Status | Notes                                                                                                                                    |
+| ---------- | ------------------------------------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-04-02 | `tests/fixtures/shared/vad/en_16k_10s.wav` | Passed | CPU-only phase-1 validation passed. Output was JSON-serializable and returned non-empty timestamps `[[0.5, 2.25]]` with duration `2.35`. |
+
+### Phase-1 Validation Summary
+
+| Stage                | Result | Duration  |
+| -------------------- | ------ | --------- |
+| Import               | Passed | 592.37 ms |
+| Load                 | Passed | 5.754 ms  |
+| Inference            | Passed | 41.127 ms |
+| Contract             | Passed | 0.017 ms  |
+| End-to-end retry run | Passed | 0.639 s   |
+| Environment build    | Passed | 377 s     |
+
+### Retry / Failure Note
+| Attempt | Stage          | Issue                                           | Mitigation                                             | Final Outcome   |
+| ------- | -------------- | ----------------------------------------------- | ------------------------------------------------------ | --------------- |
+| 1       | VALIDATE_INFER | Relative fixture path caused audio open failure | Resolved fixture and model paths to absolute locations | Passed on retry |
+
+### Upstream Benchmark Report
+| Benchmark      | AUC-ROC | F1    | False Alarm Rate | Miss Rate | Notes                                  |
+| -------------- | ------- | ----- | ---------------- | --------- | -------------------------------------- |
+| FLEURS-VAD-102 | 99.60   | 97.57 | 2.69             | 3.62      | Reported by upstream FireRedVAD README |
+
+
+## Usage
+
+### As MCP Server
+
+```yaml
+# config/mcp_tools.yaml
+tools:
+  fireredvad:
+    name: "fireredvad"
+    command: [".venv/bin/python", "server.py"]
+    working_dir: "/Users/wency/Desktop/sjtu/SURE/sure/sure-eval/src/sure_eval/models/fireredvad"
+    env:
+      MODEL_PATH: "pretrained_models/FireRedVAD/VAD"
+      DEVICE: "cpu"
+    timeout: 300
 ```
 
-### Script Usage
-```bash
-$ cd examples
-$ bash inference_vad.sh
-$ bash inference_stream_vad.sh
-$ bash inference_aed.sh
+### Direct Usage (SURE Wrapper)
+
+```python
+from sure_eval.models.fireredvad import ModelWrapper
+
+model = ModelWrapper()
+model.load()
+
+result = model.predict(
+    "/Users/wency/Desktop/上交/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav"
+)
+
+print(result.to_dict())
+# {
+#   "timestamps": [[0.5, 2.25]],
+#   "dur": 2.35,
+#   "wav_path": "/Users/wency/Desktop/上交/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav"
+# }
 ```
 
-
-### Command-line Usage
-Set up `PATH` and `PYTHONPATH` first: `export PATH=$PWD/fireredvad/bin/:$PATH; export PYTHONPATH=$PWD/:$PYTHONPATH`
-
-```bash
-$ vad.py --help
-$ vad.py --use_gpu 0 --model_dir pretrained_models/FireRedVAD/VAD --smooth_window_size 5 --speech_threshold 0.4 \
-    --min_speech_frame 20 --max_speech_frame 3000 --min_silence_frame 10 --merge_silence_frame 0 \
-    --extend_speech_frame 0 --chunk_max_frame 30000 --write_textgrid 1 \
-    --wav_path assets/hello_zh.wav --output out/vad.txt --save_segment_dir out/vad
-
-$ stream_vad.py --help
-$ stream_vad.py --use_gpu 0 --model_dir pretrained_models/FireRedVAD/Stream-VAD --smooth_window_size 5 --speech_threshold 0.3 \
-    --pad_start_frame 5 --min_speech_frame 8 --max_speech_frame 2000 --min_silence_frame 20 \
-    --chunk_max_frame 30000 --write_textgrid 1 \
-    --wav_path assets/hello_en.wav --output out/vad.txt --save_segment_dir out/stream_vad
-
-$ aed.py --help
-$ aed.py --use_gpu 0 --model_dir pretrained_models/FireRedVAD/AED --smooth_window_size 5 --speech_threshold 0.4 \
-    --singing_threshold 0.5 --music_threshold 0.5 --min_event_frame 20 --max_event_frame 3000 \
-    --min_silence_frame 10 --merge_silence_frame 0 --extend_speech_frame 0 --chunk_max_frame 30000 --write_textgrid 1 \
-    --wav_path assets/event.wav --output out/aed.txt --save_segment_dir out/aed
-```
-
-
-### Python API Usage
-Set up `PYTHONPATH` first: `export PYTHONPATH=$PWD/:$PYTHONPATH`
-
-#### Non-streaming VAD
+### Direct Usage (Repo-native API)
 ```python
 from fireredvad import FireRedVad, FireRedVadConfig
 
@@ -150,76 +129,47 @@ vad_config = FireRedVadConfig(
     min_silence_frame=20,
     merge_silence_frame=0,
     extend_speech_frame=0,
-    chunk_max_frame=30000)
+    chunk_max_frame=30000,
+)
+
 vad = FireRedVad.from_pretrained("pretrained_models/FireRedVAD/VAD", vad_config)
-
-result, probs = vad.detect("assets/hello_zh.wav")
-
+result, probs = vad.detect("tests/fixtures/shared/vad/en_16k_10s.wav")
 print(result)
-# {'dur': 2.32, 'timestamps': [(0.44, 1.82)], 'wav_path': 'assets/hello_zh.wav'}
 ```
 
+## API Reference
 
-#### Streaming VAD
+### Tools / Core Operations
 
-```python
-from fireredvad import FireRedStreamVad, FireRedStreamVadConfig
+- `vad.detect(audio_path)`: Run the validated non-streaming FireRedVAD path on an audio file
+- `healthcheck()`: Check whether the wrapper has loaded the model
 
-vad_config=FireRedStreamVadConfig(
-    use_gpu=False,
-    smooth_window_size=5,
-    speech_threshold=0.4,
-    pad_start_frame=5,
-    min_speech_frame=8,
-    max_speech_frame=2000,
-    min_silence_frame=20,
-    chunk_max_frame=30000)
-stream_vad = FireRedStreamVad.from_pretrained("pretrained_models/FireRedVAD/Stream-VAD", vad_config)
+## Files
 
-frame_results, result = stream_vad.detect_full("assets/hello_en.wav")
+- `model.spec.yaml` - Phase-1 model specification
+- `pyproject.toml` - Python package definition for the validated local environment
+- `requirements.phase1.txt` - Fully pinned phase-1 runtime dependencies
+- `model.py` - Core SURE wrapper around the validated non-streaming VAD path
+- `server.py` - MCP-style server exposing `vad_predict` and `healthcheck`
+- `__init__.py` - Package exports
+- `validate_phase1.py` - Minimal import/load/infer/contract validation script
+- `artifacts/verdict.json` - Final onboarding verdict
+- `artifacts/build.log` - Environment build and weight download log
+- `artifacts/validation.log` - Validation and retry log
+- `artifacts/runtime_output.json` - Example validated runtime output
+- `artifacts/weights_manifest.json` - Weight inventory and download status
 
-print(result)
-# {'dur': 2.24, 'timestamps': [(0.28, 1.83)], 'wav_path': 'assets/hello_en.wav'}
-```
+## Notes
 
+- This is a **VAD/AED** model, not an ASR model, so local validation should focus on timestamp-bearing JSON outputs rather than WER/CER.
+- The validated SURE phase-1 target is the **minimal non-streaming VAD path**.
+- The accepted IO contract uses `audio_path` as input and JSON output with `timestamps` as the primary field.
+- The local fixture is task-specific for VAD and is explicitly recorded as a shared fallback fixture that includes speech and non-speech regions.
+- Weight download succeeded from Hugging Face without an HF token, but the build log warns that authenticated requests would provide higher rate limits.
+- The current validated path is CPU-only; GPU is not required for phase-1 onboarding.
+- First-run issues were not dependency failures but path-resolution failures during inference, so future failures should first check fixture/model path handling before deeper dependency debugging.
 
-#### Non-streaming AED
+## See Also
 
-```python
-from fireredvad import FireRedAed, FireRedAedConfig
-
-aed_config=FireRedAedConfig(
-    use_gpu=False,
-    smooth_window_size=5,
-    speech_threshold=0.4,
-    singing_threshold=0.5,
-    music_threshold=0.5,
-    min_event_frame=20,
-    max_event_frame=2000,
-    min_silence_frame=20,
-    merge_silence_frame=0,
-    extend_speech_frame=0,
-    chunk_max_frame=30000)
-aed = FireRedAed.from_pretrained("pretrained_models/FireRedVAD/AED", aed_config)
-
-result, probs = aed.detect("assets/event.wav")
-
-print(result)
-# {'dur': 22.016, 'event2timestamps': {'speech': [(0.4, 3.56), (3.66, 9.08), (9.27, 9.77), (10.78, 21.76)], 'singing': [(1.79, 19.96), (19.97, 22.016)], 'music': [(0.09, 12.32), (12.33, 22.016)]}, 'event2ratio': {'speech': 0.848, 'singing': 0.905, 'music': 0.991}, 'wav_path': 'assets/event.wav'}
-```
-
-
-## FAQ
-**Q: What audio format is supported?**
-
-16kHz 16-bit mono PCM wav. Use ffmpeg to convert other formats: `ffmpeg -i <input_audio_path> -ar 16000 -ac 1 -acodec pcm_s16le -f wav <output_wav_path>`
-
-## Citation
-```bibtex
-@article{xu2026fireredasr2s,
-  title={FireRedASR2S: A State-of-the-Art Industrial-Grade All-in-One Automatic Speech Recognition System},
-  author={Xu, Kaituo and Jia, Yan and Huang, Kai and Chen, Junjie and Li, Wenpeng and Liu, Kun and Xie, Feng-Long and Tang, Xu and Hu, Yao},
-  journal={arXiv preprint arXiv:2603.10420},
-  year={2026}
-}
-```
+- [Model README]((../README.md))
+- [FireRedVAD Upstream Repository](https://github.com/FireRedTeam/FireRedVAD)
