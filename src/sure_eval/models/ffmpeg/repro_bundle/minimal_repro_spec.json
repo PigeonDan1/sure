@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "model_id": "system/ffmpeg",
+  "minimal_callable_path": "ffmpeg binary transcodes bundled fixture to wav; ffprobe binary validates metadata contract.",
+  "exact_commands": [
+    "./bin/ffmpeg -y -i ./fixtures/en_16k_10s.wav -ac 1 -ar 16000 -c:a pcm_s16le ./tmp/out.wav",
+    "./bin/ffprobe -v error -show_format -show_streams -of json ./tmp/out.wav"
+  ],
+  "working_directory_assumptions": "Run from the root of the copied repro_bundle in a fresh temp directory.",
+  "required_inputs": [
+    "./fixtures/en_16k_10s.wav",
+    "./bin/ffmpeg",
+    "./bin/ffprobe"
+  ],
+  "expected_outputs": [
+    "./tmp/out.wav",
+    "./tmp/ffprobe.json"
+  ],
+  "contract_checks": [
+    "ffmpeg_exit_code == 0",
+    "output wav exists",
+    "ffprobe JSON parses",
+    "at least one audio stream exists",
+    "sample_rate == 16000",
+    "channels == 1",
+    "codec_name == pcm_s16le",
+    "format_name contains wav"
+  ]
+}

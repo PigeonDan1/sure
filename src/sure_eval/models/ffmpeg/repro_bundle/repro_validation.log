@@ -1,0 +1,5 @@
+{"timestamp": "2026-04-12T14:30:07.306728+00:00", "stage": "LOAD_REPRO_BUNDLE", "status": "passed", "message": "Bundle manifests loaded and references are consistent."}
+{"timestamp": "2026-04-12T14:30:07.343481+00:00", "stage": "REBUILD_MINIMAL_ENV", "status": "passed", "message": "Copied repro bundle into a fresh temp directory.", "temp_dir": "/var/folders/k3/f2tr984n57372kdmn8999t2h0000gn/T/ffmpeg_repro_kzabtbfl"}
+{"timestamp": "2026-04-12T14:30:07.343795+00:00", "stage": "FETCH_OR_VALIDATE_WEIGHTS_FOR_REPRO", "status": "not_applicable", "message": "No weights are required for ffmpeg."}
+{"timestamp": "2026-04-12T14:30:16.536497+00:00", "stage": "RUN_MINIMAL_REPRODUCTION", "status": "passed", "message": "Minimal reproduction command succeeded."}
+{"timestamp": "2026-04-12T14:30:16.536894+00:00", "stage": "VALIDATE_REPRO_OUTPUT", "status": "passed", "message": "Reproduced output satisfied the contract.", "temp_dir": "/var/folders/k3/f2tr984n57372kdmn8999t2h0000gn/T/ffmpeg_repro_kzabtbfl"}

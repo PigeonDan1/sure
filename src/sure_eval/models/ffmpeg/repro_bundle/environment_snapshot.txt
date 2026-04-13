@@ -1,0 +1,76 @@
+timestamp: 2026-04-12T14:30:07.243288+00:00
+python: Python 3.13.3
+sys.executable: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3
+selected backend: python_venv_local_binary_fallback
+selected ffmpeg: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/local_bin/ffmpeg
+selected ffprobe: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/local_bin/ffprobe
+
+ffmpeg -version
+ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers
+built with Apple clang version 13.1.6 (clang-1316.0.21.2.5)
+configuration: --prefix=/Volumes/tempdisk/sw --extra-cflags=-fno-stack-check --arch=arm64 --cc=/usr/bin/clang --enable-gpl --enable-libvmaf --enable-libopenjpeg --enable-libopus --enable-libmp3lame --enable-libx264 --enable-libx265 --enable-libvpx --enable-libwebp --enable-libass --enable-libfreetype --enable-fontconfig --enable-libtheora --enable-libvorbis --enable-libsnappy --enable-libaom --enable-libvidstab --enable-libzimg --enable-libsvtav1 --enable-libharfbuzz --enable-libkvazaar --pkg-config-flags=--static --enable-ffplay --enable-postproc --enable-neon --enable-runtime-cpudetect --disable-indev=qtkit --disable-indev=x11grab_xcb
+libavutil      59. 39.100 / 59. 39.100
+libavcodec     61. 19.100 / 61. 19.100
+libavformat    61.  7.100 / 61.  7.100
+libavdevice    61.  3.100 / 61.  3.100
+libavfilter    10.  4.100 / 10.  4.100
+libswscale      8.  3.100 /  8.  3.100
+libswresample   5.  3.100 /  5.  3.100
+libpostproc    58.  3.100 / 58.  3.100
+
+ffprobe -version
+ffprobe version 7.1-tessus  https://evermeet.cx/ffmpeg/  Copyright (c) 2007-2024 the FFmpeg developers
+built with Apple clang version 16.0.0 (clang-1600.0.26.3)
+configuration: --cc=/usr/bin/clang --prefix=/opt/ffmpeg --extra-version=tessus --enable-avisynth --enable-fontconfig --enable-gpl --enable-libaom --enable-libass --enable-libbluray --enable-libdav1d --enable-libfreetype --enable-libgsm --enable-libharfbuzz --enable-libmodplug --enable-libmp3lame --enable-libmysofa --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvmaf --enable-libvo-amrwbenc --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-libzvbi --enable-version3 --pkg-config-flags=--static --disable-ffplay
+libavutil      59. 39.100 / 59. 39.100
+libavcodec     61. 19.100 / 61. 19.100
+libavformat    61.  7.100 / 61.  7.100
+libavdevice    61.  3.100 / 61.  3.100
+libavfilter    10.  4.100 / 10.  4.100
+libswscale      8.  3.100 /  8.  3.100
+libswresample   5.  3.100 /  5.  3.100
+libpostproc    58.  3.100 / 58.  3.100
+
+environment inspection
+{
+  "timestamp": "2026-04-12T14:30:06.064225+00:00",
+  "model_id": "system/ffmpeg",
+  "python": {
+    "current": "Python 3.13.3",
+    "preferred": "3.10",
+    "python3_10_available": false
+  },
+  "package_managers": {
+    "uv": {
+      "available": false,
+      "path": null
+    },
+    "pip": {
+      "available": true,
+      "path": "/Library/Frameworks/Python.framework/Versions/3.13/bin/pip3"
+    },
+    "docker": {
+      "available": false,
+      "path": null
+    }
+  },
+  "executables": {
+    "system_ffmpeg": {
+      "path": null,
+      "available": false
+    },
+    "system_ffprobe": {
+      "path": null,
+      "available": false
+    },
+    "selected_backend": "python_venv_local_binary_fallback",
+    "selected_reason": "PATH is missing one or both executables; use workspace-local fallback binaries gathered during BUILD_ENV."
+  },
+  "fixture": {
+    "requested": "tests/fixtures/shared/asr/en_16k.wav",
+    "selected": "tests/fixtures/shared/asr/en_16k_10s.wav",
+    "requested_exists": false,
+    "selected_exists": true,
+    "checksum_sha256": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d"
+  }
+}

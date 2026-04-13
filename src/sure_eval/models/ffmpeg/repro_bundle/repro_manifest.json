@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "model_name": "ffmpeg",
+  "model_id": "system/ffmpeg",
+  "task_type": "utility",
+  "deployment_type": "local",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "bundle_created_at": "2026-04-12T14:30:07.285787+00:00",
+  "repo": {
+    "url": "https://github.com/FFmpeg/FFmpeg",
+    "commit_declared": null,
+    "commit_tested": "d799cf809b0330ec78aca6a456d1d8b696f145b1"
+  },
+  "backend": {
+    "selected": "python_venv_local_binary_fallback"
+  },
+  "paths": {
+    "weights_manifest": "./weights_manifest.json",
+    "environment_manifest": "./environment_manifest.json",
+    "minimal_repro_spec": "./minimal_repro_spec.json",
+    "fixture_manifest": "./fixture_manifest.json",
+    "environment_snapshot": "./environment_snapshot.txt",
+    "repro_instructions": "./repro_instructions.md",
+    "sample_output": "./sample_output.json",
+    "ffmpeg_binary": "./bin/ffmpeg",
+    "ffprobe_binary": "./bin/ffprobe"
+  }
+}
