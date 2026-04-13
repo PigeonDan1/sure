@@ -30,6 +30,7 @@ A shell entrypoint must clearly define:
 
 - target model
 - target dataset
+- dataset task and language, when known
 - run id
 - output run directory
 - execution path
@@ -51,6 +52,15 @@ and produce at least:
 - `prediction_generation_status.json`
 - `validation_payload.json`
 - `evaluation_payload.json`
+
+`evaluation_payload.json` must preserve the dataset-driven evaluation context,
+including the dataset language, selected metric, and post-processing /
+normalization policy used by the deterministic evaluator.
+
+The evaluation step must call the deterministic evaluator entrypoint rather
+than reimplementing scoring in the generated shell. For supported tasks, that
+entrypoint is expected to follow the compatible evaluation-pipeline behavior
+for ASR, code-switch ASR, SER, GR, S2TT, SLU, SD, and SA-ASR.
 
 When used for preflight validation, the shell should also make it possible to
 verify:
@@ -75,6 +85,8 @@ The shell must respect this order:
 - must not write final evidence only to `/tmp`
 - must not silently replace a previous run directory
 - must not require a full dataset run just to validate whether the shell works
+- must not treat evaluation as language-agnostic when the dataset declares a
+  language
 
 ## Recommended Template
 

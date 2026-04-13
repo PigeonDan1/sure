@@ -37,7 +37,12 @@ A compliant execution-surface materialization should:
 2. materialize the entrypoint to disk when a shell handoff is used
 3. resolve model, dataset, run directory, tool name, and execution path inputs
 4. record the expected output artifacts that later units should validate
-5. leave a stable path that `EXECUTION_READINESS_UNIT` can validate
+5. preserve dataset task/language metadata for generation and evaluation
+6. leave a stable path that `EXECUTION_READINESS_UNIT` can validate
+
+Evaluation is dataset-driven, not only model-driven. The materialized surface
+should carry enough dataset context for deterministic scripts to select the
+correct language-aware post-processing, normalization, and metric behavior.
 
 ## Must Not Do
 
@@ -45,6 +50,7 @@ A compliant execution-surface materialization should:
 - must not skip script-routing decisions
 - must not validate a shell that has not been materialized
 - must not emit a shell path that does not exist when `materialized=true`
+- must not drop dataset language / task metadata before evaluation
 
 ## Related Contracts
 
