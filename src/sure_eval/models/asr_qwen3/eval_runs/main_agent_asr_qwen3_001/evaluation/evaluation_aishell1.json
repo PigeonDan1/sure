@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "dataset": "aishell1",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/aishell1.jsonl",
+      "prediction_path": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/aishell1.txt",
+      "task": "ASR",
+      "language": "zh",
+      "metric": "cer",
+      "score": 0.01755958055290753,
+      "rps": 45.559174809989145,
+      "rps_is_unbounded": false,
+      "num_samples": 7176,
+      "details": {
+        "all": 104900,
+        "cor": 103386,
+        "sub": 1435,
+        "ins": 328,
+        "del": 79,
+        "cer": 0.01755958055290753,
+        "cer_percent": 1.755958055290753,
+        "score": 0.01755958055290753
+      }
+    }
+  ]
+}

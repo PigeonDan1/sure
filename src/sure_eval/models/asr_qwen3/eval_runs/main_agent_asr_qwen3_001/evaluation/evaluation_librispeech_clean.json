@@ -1,0 +1,26 @@
+{
+  "results": [
+    {
+      "dataset": "librispeech_clean",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/librispeech_clean.jsonl",
+      "prediction_path": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/librispeech_clean.txt",
+      "task": "ASR",
+      "language": "en",
+      "metric": "wer",
+      "score": 0.1639453452081906,
+      "rps": 10.369309344167151,
+      "rps_is_unbounded": false,
+      "num_samples": 2619,
+      "details": {
+        "all": 52548,
+        "cor": 44017,
+        "sub": 8297,
+        "ins": 84,
+        "del": 234,
+        "wer": 0.1639453452081906,
+        "wer_percent": 16.39453452081906,
+        "score": 0.1639453452081906
+      }
+    }
+  ]
+}
