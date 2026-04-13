@@ -1,11 +1,11 @@
 name: ffmpeg
-task: audio_tool
-description: "FFmpeg audio processing wrapper for SURE-EVAL"
+task: utility
+description: "FFmpeg utility wrapper for SURE-EVAL phase-1 and repro validation."
 
 model:
-  id: "ffmpeg"
+  id: "system/ffmpeg"
   type: "system_tool"
-  version: "4.4.2"
+  version: "dynamic"
 
 server:
   command: ["python", "server.py"]
