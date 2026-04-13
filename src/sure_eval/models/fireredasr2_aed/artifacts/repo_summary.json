@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "repo": {
+    "url": "https://github.com/FireRedTeam/FireRedASR2S",
+    "commit": null
+  },
+  "findings": [
+    {
+      "source": "README.md",
+      "detail": "Quick start documents Python 3.10, pip install -r requirements.txt, PATH/PYTHONPATH export, and local weight download into pretrained_models/FireRedASR2-AED."
+    },
+    {
+      "source": "README.md",
+      "detail": "README states fireredasr2, fireredvad, fireredlid, and fireredpunc are self-contained standalone modules."
+    },
+    {
+      "source": "README.md",
+      "detail": "Input audio should be converted to 16kHz 16-bit mono PCM WAV if needed."
+    },
+    {
+      "source": "fireredasr2s/fireredasr2/__init__.py",
+      "detail": "Package export matches import_test target: FireRedAsr2, FireRedAsr2Config."
+    },
+    {
+      "source": "fireredasr2s/fireredasr2/asr.py",
+      "detail": "repo-native load path is FireRedAsr2.from_pretrained('aed', model_dir, config), and minimal inference path is model.transcribe(uttids, wav_paths)."
+    },
+    {
+      "source": "requirements.txt",
+      "detail": "Repository-native dependency file pins torch 2.1.0 and torchaudio 2.1.0 against CUDA 11.8 wheels and includes librosa, kaldiio, sentencepiece, and other runtime packages."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "python_version",
+      "sources": [
+        {
+          "value": "3.10",
+          "source": "README.md setup instructions",
+          "priority": 5
+        },
+        {
+          "value": ">=3.11",
+          "source": "pyproject.toml",
+          "priority": 3
+        }
+      ],
+      "chosen": "3.10",
+      "reason": "Phase-1 build will follow the explicit README + requirements runtime path because that path is aligned with the model input, the documented CUDA 11.8 wheel install, and prior FireRed family onboarding precedent on this host. This remains a recorded conflict to verify during BUILD_ENV."
+    }
+  ]
+}

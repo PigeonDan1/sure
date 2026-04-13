@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "host": {
+    "cwd": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval",
+    "default_python": "Python 3.12.4",
+    "python_310_path": "/opt/anaconda3/envs/fireredvad/bin/python",
+    "python_310_version": "Python 3.10.20"
+  },
+  "package_managers": {
+    "uv": {
+      "available": false,
+      "path": null
+    },
+    "docker": {
+      "available": false,
+      "path": null
+    },
+    "pip": {
+      "available": true,
+      "path": "/opt/anaconda3/bin/pip"
+    },
+    "huggingface_cli": {
+      "available": true,
+      "path": "/opt/anaconda3/bin/huggingface-cli"
+    }
+  },
+  "gpu": {
+    "available": false,
+    "probe": "nvidia-smi not found"
+  },
+  "system_packages": {
+    "ffmpeg": {
+      "available": false,
+      "path": null
+    },
+    "ffprobe": {
+      "available": false,
+      "path": null
+    }
+  },
+  "fixture": {
+    "requested_path": "tests/fixtures/shared/asr/en_16k.wav",
+    "requested_exists": false,
+    "selected_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+    "selected_exists": true,
+    "selected_format": "RIFF/WAVE PCM 16-bit mono 16000 Hz"
+  },
+  "warnings": [
+    "GPU is unavailable on this host; phase-1 may require same-path CPU fallback if load/infer can be proven executable without broadening runtime family.",
+    "Docker and uv are unavailable, so backend must downgrade from the initial docker hint to a model-local pip/venv plan if BUILD_ENV proceeds.",
+    "System ffmpeg/ffprobe are unavailable, but the selected ASR fixture already satisfies the required WAV format so conversion is not currently blocked."
+  ],
+  "blockers": []
+}

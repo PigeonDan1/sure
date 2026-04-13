@@ -1,0 +1,85 @@
+model_id: "FireRedTeam/FireRedASR2-AED"
+model_name: "FireRedASR2-AED"
+task_type: "asr"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/FireRedTeam/FireRedASR2S"
+  commit: null
+  package_import_root: "fireredasr2s"
+  standalone_module: "fireredasr2s.fireredasr2"
+
+weights:
+  source: "huggingface"
+  repo_id: "FireRedTeam/FireRedASR2-AED"
+  fallback_source: "modelscope"
+  fallback_repo_id: "xukaituo/FireRedASR2-AED"
+  local_path: "pretrained_models/FireRedASR2-AED"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "pretrained_models/FireRedASR2-AED"
+
+environment:
+  preferred_backend: "pip"
+  python_version: "3.10"
+  requires_gpu: true
+  system_packages:
+    - ffmpeg
+    - libsndfile1
+
+entrypoints:
+  import_test: |
+    from fireredasr2s.fireredasr2 import FireRedAsr2, FireRedAsr2Config
+  load_test: |
+    from fireredasr2s.fireredasr2 import FireRedAsr2, FireRedAsr2Config
+
+    asr_config = FireRedAsr2Config(
+        use_gpu=False,
+        use_half=False,
+        beam_size=3,
+        nbest=1,
+        decode_max_len=0,
+        softmax_smoothing=1.25,
+        aed_length_penalty=0.6,
+        eos_penalty=1.0,
+        return_timestamp=False,
+    )
+    model = FireRedAsr2.from_pretrained(
+        "aed",
+        "pretrained_models/FireRedASR2-AED",
+        asr_config,
+    )
+  infer_test: |
+    results = model.transcribe(
+        ["sure_en_16k_10s"],
+        ["tests/fixtures/shared/asr/en_16k_10s.wav"],
+    )
+    assert isinstance(results, list) and len(results) == 1
+    assert isinstance(results[0], dict)
+    assert "uttid" in results[0]
+    assert "text" in results[0]
+    assert isinstance(results[0]["text"], str) and results[0]["text"].strip()
+    print(results[0])
+
+fixture:
+  audio: "tests/fixtures/shared/asr/en_16k_10s.wav"
+  transcript: null
+  language: "en"
+  task_specific: false
+  fallback_allowed: true
+  fallback_rule: "Requested shared fixture en_16k.wav is absent in-repo; use existing shared ASR fixture en_16k_10s.wav because runtime identity remains standalone ASR and the asset already matches 16kHz 16-bit mono PCM WAV requirements."
+  note: "No ffmpeg conversion required because the selected shared fixture is already 16kHz, 16-bit, mono PCM WAV."
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "text"
+  required_fields: ["uttid", "text"]
+  nonempty_fields: ["text"]
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true

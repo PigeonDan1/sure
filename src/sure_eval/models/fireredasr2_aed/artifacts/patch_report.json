@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "mutations": [
+    {
+      "path": "requirements.phase1.txt",
+      "type": "model_local_dependency_plan",
+      "rationale": "Created and updated a model-local dependency plan for targeted retries after BUILD_ENV failures on torch==2.1.0+cu118 and kaldi_native_fbank==1.15, and after VALIDATE_IMPORT exposed a missing pkg_resources support package. Upstream repository files were not modified."
+    }
+  ]
+}

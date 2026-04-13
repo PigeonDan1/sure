@@ -1,0 +1,64 @@
+{
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "backend": "pip",
+  "python_version": "3.10",
+  "steps": [
+    {
+      "step": 1,
+      "action": "clone_upstream_repo",
+      "command": "git clone https://github.com/FireRedTeam/FireRedASR2S.git upstream/FireRedASR2S",
+      "description": "Clone the upstream repository into the model-local directory to validate the repo-native standalone ASR path."
+    },
+    {
+      "step": 2,
+      "action": "create_local_venv",
+      "command": "/opt/anaconda3/envs/fireredvad/bin/python -m venv .venv",
+      "description": "Create an isolated model-local Python 3.10 environment without mutating host conda state."
+    },
+    {
+      "step": 3,
+      "action": "upgrade_packaging_tools",
+      "command": ".venv/bin/pip install --upgrade pip setuptools wheel",
+      "description": "Prepare the local environment for dependency resolution."
+    },
+    {
+      "step": 4,
+      "action": "install_runtime_deps",
+      "command": ".venv/bin/pip install -r upstream/FireRedASR2S/requirements.txt",
+      "description": "Attempt the repository-native runtime dependency plan first to collect executable evidence."
+    },
+    {
+      "step": 5,
+      "action": "retry_cpu_fallback_dependency_plan",
+      "command": ".venv/bin/pip install -r requirements.phase1.txt",
+      "description": "Only if the upstream CUDA-pinned plan fails with a diagnosed compatibility error, retry with a model-local CPU-installable dependency plan while keeping the same standalone FireRedAsr2 AED runtime path."
+    },
+    {
+      "step": 6,
+      "action": "fetch_weights_huggingface",
+      "command": ".venv/bin/huggingface-cli download FireRedTeam/FireRedASR2-AED --local-dir pretrained_models/FireRedASR2-AED",
+      "description": "Download the official AED checkpoint bundle into the model-local weights directory."
+    },
+    {
+      "step": 7,
+      "action": "validate_phase1",
+      "command": ".venv/bin/python validate_phase1.py",
+      "description": "Run import/load/infer/contract against the selected shared English 16k fixture and capture structured output."
+    }
+  ],
+  "environment_variables": {
+    "PYTHONPATH": "upstream/FireRedASR2S"
+  },
+  "system_requirements": {
+    "disk_space_mb": 12288,
+    "memory_mb": 8192,
+    "cpu_cores": 4
+  },
+  "notes": [
+    "Weights must resolve to pretrained_models/FireRedASR2-AED under the model directory. No global cache-only success is acceptable without recorded fallback rationale.",
+    "ffmpeg conversion is not planned because the selected shared fixture already satisfies the repository audio format requirement.",
+    "If pip requirements prove incompatible on this CPU-only host, failure must enter DIAGNOSE/REPLAN before any backend or runtime-family switch.",
+    "A targeted retry has been authorized only for the diagnosed CUDA-specific dependency incompatibility at BUILD_ENV."
+  ]
+}

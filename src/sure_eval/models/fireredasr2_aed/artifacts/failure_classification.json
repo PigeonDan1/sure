@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "checkpoint": "VALIDATE_IMPORT",
+  "attempt": 1,
+  "failure_type": "python_dependency_missing",
+  "category": "runtime_import",
+  "retryable": true,
+  "history": [
+    {
+      "checkpoint": "BUILD_ENV",
+      "attempt": 1,
+      "failure_type": "cuda_version_mismatch",
+      "command": ".venv/bin/pip install -r upstream/FireRedASR2S/requirements.txt",
+      "log_excerpt": "ERROR: Could not find a version that satisfies the requirement torch==2.1.0+cu118 ... ERROR: No matching distribution found for torch==2.1.0+cu118"
+    },
+    {
+      "checkpoint": "BUILD_ENV",
+      "attempt": 2,
+      "failure_type": "python_dependency_missing",
+      "command": ".venv/bin/pip install -r requirements.phase1.txt",
+      "log_excerpt": "ERROR: Could not find a version that satisfies the requirement kaldi_native_fbank==1.15 ... ERROR: No matching distribution found for kaldi_native_fbank==1.15"
+    }
+  ],
+  "evidence": {
+    "command": ".venv/bin/python validate_phase1.py",
+    "log_excerpt": "ModuleNotFoundError: No module named 'pkg_resources'",
+    "supporting_context": [
+      "kaldiio/__init__.py imports pkg_resources at module import time.",
+      "The current environment has setuptools 82.0.1 installed but .venv/bin/python cannot import pkg_resources.",
+      "This is an environment support-package issue in the import chain, not evidence against the standalone FireRedAsr2 AED entrypoint."
+    ]
+  },
+  "diagnosis": "VALIDATE_IMPORT fails because the runtime dependency chain expects pkg_resources, which is absent in the current environment. A targeted retry may pin setuptools to a version that restores pkg_resources without changing the repo-native import/load/infer path."
+}
