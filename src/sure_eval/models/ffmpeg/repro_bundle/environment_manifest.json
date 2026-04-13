@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-04-12T14:30:07.243142+00:00",
+  "backend": "python_venv_local_binary_fallback",
+  "python_version": "Python 3.13.3",
+  "env_creation_method": "python3 -m venv .venv-phase1",
+  "dependency_installation_method": ".venv-phase1/bin/pip install -r requirements.phase1.txt",
+  "system_packages": [
+    "ffmpeg",
+    "ffprobe"
+  ],
+  "whether_gpu_required": false,
+  "important_runtime_assumptions": [
+    "ffmpeg/ffprobe must be invoked via the recorded executable paths.",
+    "No model weights are required.",
+    "The shared WAV fixture is used as an allowed fallback because the requested path is absent."
+  ],
+  "ffmpeg_ffprobe_executable_discovery_policy": "Prefer PATH executables; if missing, use model-local fallback binaries in local_bin/.",
+  "selected_paths": {
+    "ffmpeg": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/local_bin/ffmpeg",
+    "ffprobe": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/local_bin/ffprobe"
+  }
+}
