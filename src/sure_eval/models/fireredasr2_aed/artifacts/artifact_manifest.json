@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "status": "complete",
+  "required_artifacts": [
+    "model.spec.yaml",
+    "artifacts/backend_choice.json",
+    "artifacts/build.log",
+    "artifacts/validation.log",
+    "artifacts/verdict.json",
+    "__init__.py",
+    "model.py",
+    "server.py",
+    "artifacts/artifact_manifest.json"
+  ],
+  "conditional_artifacts": [
+    "artifacts/spec_validation.json",
+    "artifacts/preflight_summary.json",
+    "artifacts/weights_manifest.json",
+    "artifacts/failure_classification.json",
+    "artifacts/retry_recommendation.json",
+    "artifacts/patch_report.json"
+  ],
+  "optional_artifacts": [
+    "artifacts/classification.json",
+    "artifacts/repo_summary.json",
+    "artifacts/phase1_target_understanding.txt",
+    "artifacts/sample_output.json",
+    "config.yaml",
+    "requirements.phase1.txt",
+    "validate_phase1.py"
+  ]
+}
