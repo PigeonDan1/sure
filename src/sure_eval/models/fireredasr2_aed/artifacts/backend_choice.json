@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "chosen_backend": "pip",
+  "reason": "A model-local Python 3.10 virtual environment built from the existing local Python 3.10 interpreter is the lowest-risk executable backend on this host. Docker and uv are unavailable, and the phase-1 target only requires repo-native import/load/infer/contract on the standalone ASR module.",
+  "evidence": [
+    "Runtime preflight: docker executable is unavailable on host.",
+    "Runtime preflight: uv executable is unavailable on host.",
+    "Runtime preflight: /opt/anaconda3/envs/fireredvad/bin/python is available and reports Python 3.10.20.",
+    "Repository README documents a Python 3.10 plus pip install -r requirements.txt workflow.",
+    "Phase-1 target is minimal standalone FireRedAsr2 AED validation, not a containerized production deployment."
+  ],
+  "rejected_options": [
+    {
+      "backend": "docker",
+      "reason": "Initial preference only; not executable on this host."
+    },
+    {
+      "backend": "uv",
+      "reason": "Unavailable on this host."
+    },
+    {
+      "backend": "pixi",
+      "reason": "Not indicated by repo-native config and unnecessary unless pip-based build proves incompatible."
+    },
+    {
+      "backend": "api",
+      "reason": "Target explicitly requires local repo-native runtime validation."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "preferred_backend",
+      "sources": [
+        {
+          "value": "docker",
+          "source": "model_input.environment_hint.preferred_backend",
+          "priority": 3
+        },
+        {
+          "value": "pip",
+          "source": "runtime_preflight executable backend availability",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "pip",
+      "reason": "Runtime executable evidence overrides the initial docker suggestion."
+    },
+    {
+      "field": "requires_gpu",
+      "sources": [
+        {
+          "value": true,
+          "source": "model_input.environment_hint.requires_gpu",
+          "priority": 3
+        },
+        {
+          "value": false,
+          "source": "runtime_preflight GPU availability",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "pip-with-cpu-fallback-check",
+      "reason": "Phase-1 policy allows same-path CPU fallback when GPU is unavailable, but the fallback remains conditional on executable load/infer evidence."
+    }
+  ]
+}

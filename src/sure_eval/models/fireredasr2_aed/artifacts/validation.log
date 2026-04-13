@@ -1,0 +1,11 @@
+{"timestamp":"2026-04-13T00:00:00Z","stage":"VALIDATE_SPEC","status":"passed","message":"Spec validated and marked ready for BUILD_ENV.","fixture_source":"shared","fixture_path":"tests/fixtures/shared/asr/en_16k_10s.wav"}
+{"timestamp":"2026-04-13T00:00:00Z","stage":"DIAGNOSE","status":"completed","message":"Classified BUILD_ENV failure as cuda_version_mismatch due to unavailable torch==2.1.0+cu118 wheel on this host."}
+{"timestamp":"2026-04-13T00:00:00Z","stage":"REPLAN","status":"completed","message":"Authorized targeted retry with model-local CPU dependency plan requirements.phase1.txt while preserving standalone FireRedAsr2 AED runtime path."}
+{"timestamp":"2026-04-13T00:00:00Z","stage":"DIAGNOSE","status":"completed","message":"Classified second BUILD_ENV failure as python_dependency_missing due to unavailable kaldi_native_fbank==1.15 wheel."}
+{"timestamp":"2026-04-13T00:00:00Z","stage":"REPLAN","status":"completed","message":"Authorized second targeted retry with kaldi_native_fbank raised to 1.22.3 after confirming repo usage stays within basic knf fbank interfaces."}
+{"timestamp":"2026-04-13T00:00:00Z","stage":"DIAGNOSE","status":"completed","message":"Classified VALIDATE_IMPORT failure as python_dependency_missing because kaldiio imports pkg_resources and the current environment cannot provide it."}
+{"timestamp":"2026-04-13T00:00:00Z","stage":"REPLAN","status":"completed","message":"Authorized targeted retry by pinning setuptools==80.9.0 in requirements.phase1.txt to restore pkg_resources for kaldiio."}
+{"timestamp": "2026-04-13T02:50:52.811438+00:00", "stage": "VALIDATE_IMPORT", "status": "passed", "message": "Import test passed."}
+{"timestamp": "2026-04-13T02:51:04.314205+00:00", "stage": "VALIDATE_LOAD", "status": "passed", "message": "Load test passed.", "weights_dir": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/pretrained_models/FireRedASR2-AED"}
+{"timestamp": "2026-04-13T02:51:10.436088+00:00", "stage": "VALIDATE_INFER", "status": "passed", "message": "Infer test passed.", "fixture_source": "shared"}
+{"timestamp": "2026-04-13T02:51:10.436803+00:00", "stage": "VALIDATE_CONTRACT", "status": "passed", "message": "Contract test passed.", "primary_field": "text"}

@@ -1,0 +1,79 @@
+{
+  "$schema": "./verdict.schema.json",
+  "instance_id": "fireredasr2_aed_20260413",
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "status": "success",
+  "stopped_at": "DONE",
+  "escalated": false,
+  "backend": {
+    "type": "pip",
+    "choice_reason": "Docker and uv were unavailable, so phase-1 used a model-local Python 3.10 venv with pip as the lowest-risk executable backend."
+  },
+  "build": {
+    "success": true,
+    "duration_seconds": null,
+    "log_path": "artifacts/build.log"
+  },
+  "validation": {
+    "import_test": {
+      "passed": true,
+      "duration_ms": 4579.232,
+      "error": null
+    },
+    "load_test": {
+      "passed": true,
+      "duration_ms": 11501.666,
+      "error": null
+    },
+    "infer_test": {
+      "passed": true,
+      "duration_ms": 6120.637,
+      "error": null
+    },
+    "contract_test": {
+      "passed": true,
+      "duration_ms": 0.482,
+      "error": null
+    }
+  },
+  "retries": {
+    "count": 3,
+    "history": [
+      {
+        "checkpoint": "BUILD_ENV",
+        "failure_type": "cuda_version_mismatch",
+        "mitigation": "Replaced upstream CUDA-specific torch/torchaudio pins with a model-local CPU fallback dependency plan."
+      },
+      {
+        "checkpoint": "BUILD_ENV",
+        "failure_type": "python_dependency_missing",
+        "mitigation": "Raised kaldi_native_fbank from unavailable 1.15 to installable 1.22.3 after source-level API usage review."
+      },
+      {
+        "checkpoint": "VALIDATE_IMPORT",
+        "failure_type": "python_dependency_missing",
+        "mitigation": "Pinned setuptools==80.9.0 so kaldiio could import pkg_resources during repo-native import."
+      }
+    ]
+  },
+  "failure": {
+    "type": null,
+    "category": null,
+    "message": null,
+    "retryable": false
+  },
+  "artifacts": {
+    "spec_path": "model.spec.yaml",
+    "wrapper_path": "model.py",
+    "server_path": "server.py",
+    "log_path": "artifacts/validation.log",
+    "weights_manifest_path": "artifacts/weights_manifest.json",
+    "sample_output_path": "artifacts/sample_output.json"
+  },
+  "notes": [
+    "Phase-1 target passed on the standalone FireRedAsr2 AED repo-native path using model-local weights and CPU fallback on a host without GPU tooling.",
+    "No runtime-family switch to FireRedAsr2System or FireRedASR2-LLM was performed.",
+    "The selected shared fixture was already 16kHz 16-bit mono PCM WAV, so no ffmpeg conversion was required."
+  ]
+}

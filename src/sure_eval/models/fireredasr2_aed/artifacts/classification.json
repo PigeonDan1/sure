@@ -1,0 +1,36 @@
+{
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "classification": {
+    "model_type": "local_repo_native_asr",
+    "task_type": "asr",
+    "deployment_type": "local",
+    "runtime_target": "fireredasr2s.fireredasr2.FireRedAsr2",
+    "runtime_family": "aed",
+    "requires_weights": true,
+    "requires_gpu": true,
+    "phase1_scope": "standalone_asr_only"
+  },
+  "evidence": [
+    {
+      "source": "repo_readme",
+      "detail": "FireRedASR2S README states fireredasr2 is a self-contained standalone module and documents separate ASR examples."
+    },
+    {
+      "source": "repo_source",
+      "detail": "fireredasr2s/fireredasr2/__init__.py exports FireRedAsr2 and FireRedAsr2Config."
+    },
+    {
+      "source": "repo_source",
+      "detail": "fireredasr2s/fireredasr2/asr.py exposes FireRedAsr2.from_pretrained(runtime_type, model_path, config) and transcribe(uttids, wav_paths)."
+    },
+    {
+      "source": "model_input",
+      "detail": "Onboarding target is FireRedASR2-AED only; no switch to LLM or all-in-one system path is allowed without diagnose/replan evidence."
+    }
+  ],
+  "rationale": {
+    "runtime_target": "Standalone FireRedAsr2 AED path is the narrowest repo-native callable target matching the requested phase-1 runtime target.",
+    "scope_boundary": "FireRedAsr2System is intentionally excluded because phase-1 target explicitly forbids broadening unless standalone path is proven invalid by evidence."
+  }
+}

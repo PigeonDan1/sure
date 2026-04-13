@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-04-13T00:00:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "checkpoint": "VALIDATE_IMPORT",
+  "attempt": 1,
+  "retry_allowed": true,
+  "max_retries_for_failure_type": 2,
+  "replan": {
+    "what_changes": [
+      "Keep the same repo-native FireRedAsr2 AED import/load/infer path.",
+      "Keep the same model-local venv backend.",
+      "Keep the prior CPU fallback torch/torchaudio pins and the installable kaldi_native_fbank pin.",
+      "Add setuptools==80.9.0 to requirements.phase1.txt and reinstall so pkg_resources is available to kaldiio during import.",
+      "Retain all other runtime packages unchanged."
+    ],
+    "why_targeted": "This change directly mitigates the diagnosed missing support package in the import chain without switching runtime family, broadening scope, or mutating upstream source.",
+    "next_command": ".venv/bin/pip install -r requirements.phase1.txt"
+  }
+}
