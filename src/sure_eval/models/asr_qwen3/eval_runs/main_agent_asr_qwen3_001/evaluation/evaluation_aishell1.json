@@ -8,7 +8,7 @@
       "language": "zh",
       "metric": "cer",
       "score": 0.01755958055290753,
-      "rps": 45.559174809989145,
+      "rps": 0.45559174809989145,
       "rps_is_unbounded": false,
       "num_samples": 7176,
       "details": {
