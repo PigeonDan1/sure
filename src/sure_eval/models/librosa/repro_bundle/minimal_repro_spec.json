@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "model_id": "librosa/librosa",
+  "minimal_callable_path": "Import librosa + soundfile + numpy, load the bundled WAV fixture with librosa.load, then compute 13-coefficient MFCC features with librosa.feature.mfcc.",
+  "exact_commands": [
+    "python3.12 -m venv .venv-repro",
+    "./.venv-repro/bin/pip install --no-index --find-links ./wheelhouse -r ./requirements.phase1.txt",
+    "./.venv-repro/bin/python ./minimal_repro.py ./fixtures/en_16k_10s.wav"
+  ],
+  "working_directory_assumptions": "Run from the root of the copied repro_bundle in a fresh temp directory.",
+  "required_inputs": [
+    "./requirements.phase1.txt",
+    "./wheelhouse/",
+    "./fixtures/en_16k_10s.wav",
+    "./minimal_repro.py"
+  ],
+  "expected_outputs": [
+    "stdout JSON with sample_rate, num_samples, duration_sec, feature_type, shape, mean, std"
+  ],
+  "contract_checks": [
+    "JSON parses successfully",
+    "feature_type == \"mfcc\"",
+    "required fields sample_rate,num_samples,duration_sec,feature_type,shape,mean,std are present",
+    "shape is a non-empty two-element list",
+    "output is JSON serializable"
+  ]
+}

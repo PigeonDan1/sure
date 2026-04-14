@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-04-13T23:58:53.241046+00:00",
+  "backend": "venv_pip_local",
+  "python_version": "Python 3.12.4",
+  "env_creation_method": "python3.12 -m venv .venv-phase1",
+  "dependency_installation_method": "pip install librosa soundfile numpy; repro uses pip install --no-index --find-links ./wheelhouse -r ./requirements.phase1.txt",
+  "system_packages": [
+    "ffmpeg",
+    "libsndfile1"
+  ],
+  "whether_gpu_required": false,
+  "important_runtime_assumptions": [
+    "Replay uses python3.12 because python3.10 is unavailable on the validated host.",
+    "Replay installs only from ./wheelhouse and ./requirements.phase1.txt.",
+    "The bundled WAV fixture is used for both phase-1 evidence replay and minimal reproduction.",
+    "No model weights, system binaries, or external services are required for the minimal callable path."
+  ]
+}
