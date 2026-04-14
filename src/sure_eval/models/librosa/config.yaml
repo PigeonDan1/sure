@@ -1,19 +1,19 @@
 name: librosa
-task: audio_analysis
-description: "Phase-1 wrapper for minimal librosa onset/beat/tempo analysis."
+task: music_ir
+description: "Phase-1 wrapper for minimal librosa MFCC feature extraction."
 
 model:
-  id: "librosa"
+  id: "librosa/librosa"
   size: "library"
 
 server:
-  command: ["/tmp/sure_eval_librosa/.venv/bin/python", "server.py"]
+  command: [".venv-phase1/bin/python", "server.py"]
   env: {}
   timeout: 300
 
 tools:
-  - name: "analyze_rhythm"
-    description: "Run onset, beat, and tempo analysis on an audio file."
+  - name: "extract_mfcc"
+    description: "Run minimal MFCC feature extraction on an audio file."
     input_schema:
       type: object
       properties:
