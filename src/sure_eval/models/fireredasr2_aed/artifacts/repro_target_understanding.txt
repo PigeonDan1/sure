@@ -1,0 +1,5 @@
+repro target understanding
+- The minimal reproducible unit is the standalone FireRedAsr2 AED repo-native import/load/transcribe path on one shared 16 kHz WAV fixture.
+- The most important bundle constraints are `repro_manifest.json`, `environment_manifest.json`, `minimal_repro_spec.json`, and `weights_manifest.json`, because together they pin the runtime path, environment recipe, and resolved checkpoint location.
+- This model depends on local weights and Python packages; it does not require a system binary or external inference service for the chosen phase-1 path.
+- Repro success means a fresh temp workdir can rebuild the minimal Python environment, use the recorded weights path, run one transcription, and satisfy the same `uttid`/`text` JSON contract check.

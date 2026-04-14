@@ -1,25 +1,40 @@
 {
-  "timestamp": "2026-04-13T00:00:00Z",
+  "timestamp": "2026-04-14T13:31:00Z",
   "model_id": "FireRedTeam/FireRedASR2-AED",
-  "required": true,
+  "whether_weights_required": true,
+  "source": "huggingface",
+  "identifier": "FireRedTeam/FireRedASR2-AED",
+  "declared_revision": null,
+  "resolved_local_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/pretrained_models/FireRedASR2-AED",
   "cache_policy": "model_local_first",
-  "used_source": "huggingface",
-  "used_repo_id": "FireRedTeam/FireRedASR2-AED",
-  "fallback_source": "modelscope",
-  "fallback_repo_id": "xukaituo/FireRedASR2-AED",
-  "fallback_used": false,
-  "local_path": "pretrained_models/FireRedASR2-AED",
-  "local_dir_name": "pretrained_models/FireRedASR2-AED",
+  "checksum": "4677cbd30988d63ed3e777f6a42a1e5260a3865317f6e15e488bef40954f7054",
+  "fallback_reason": null,
+  "fallback_path": null,
   "files": [
-    {"path": "pretrained_models/FireRedASR2-AED/model.pth.tar", "size_bytes": 4734571540, "sha256": "4677cbd30988d63ed3e777f6a42a1e5260a3865317f6e15e488bef40954f7054"},
-    {"path": "pretrained_models/FireRedASR2-AED/cmvn.ark", "size_bytes": 1311},
-    {"path": "pretrained_models/FireRedASR2-AED/dict.txt", "size_bytes": 81093},
-    {"path": "pretrained_models/FireRedASR2-AED/train_bpe1000.model", "size_bytes": 252014},
-    {"path": "pretrained_models/FireRedASR2-AED/README.md", "size_bytes": 3216},
-    {"path": "pretrained_models/FireRedASR2-AED/config.yaml", "size_bytes": 0}
-  ],
-  "notes": [
-    "Weights were downloaded directly into the model-local directory, satisfying the model_local_first policy.",
-    "No fallback download source was needed."
+    {
+      "path": "pretrained_models/FireRedASR2-AED/model.pth.tar",
+      "size_bytes": 4734571540,
+      "sha256": "4677cbd30988d63ed3e777f6a42a1e5260a3865317f6e15e488bef40954f7054"
+    },
+    {
+      "path": "pretrained_models/FireRedASR2-AED/cmvn.ark",
+      "size_bytes": 1311
+    },
+    {
+      "path": "pretrained_models/FireRedASR2-AED/dict.txt",
+      "size_bytes": 81093
+    },
+    {
+      "path": "pretrained_models/FireRedASR2-AED/train_bpe1000.model",
+      "size_bytes": 252014
+    },
+    {
+      "path": "pretrained_models/FireRedASR2-AED/README.md",
+      "size_bytes": 3216
+    },
+    {
+      "path": "pretrained_models/FireRedASR2-AED/config.yaml",
+      "size_bytes": 0
+    }
   ]
 }

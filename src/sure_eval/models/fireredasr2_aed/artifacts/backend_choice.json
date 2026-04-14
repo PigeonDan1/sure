@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-04-13T00:00:00Z",
+  "timestamp": "2026-04-14T13:31:00Z",
   "model_id": "FireRedTeam/FireRedASR2-AED",
   "chosen_backend": "pip",
-  "reason": "A model-local Python 3.10 virtual environment built from the existing local Python 3.10 interpreter is the lowest-risk executable backend on this host. Docker and uv are unavailable, and the phase-1 target only requires repo-native import/load/infer/contract on the standalone ASR module.",
+  "reason": "A model-local Python 3.10 virtual environment built from the existing local Python 3.10 interpreter is the lowest-risk executable backend on this host. pixi and uv are unavailable, and the phase-1 target only requires repo-native import/load/infer/contract on the standalone ASR module.",
   "evidence": [
-    "Runtime preflight: docker executable is unavailable on host.",
+    "Runtime preflight: pixi executable is unavailable on host.",
     "Runtime preflight: uv executable is unavailable on host.",
     "Runtime preflight: /opt/anaconda3/envs/fireredvad/bin/python is available and reports Python 3.10.20.",
     "Repository README documents a Python 3.10 plus pip install -r requirements.txt workflow.",
@@ -12,7 +12,7 @@
   ],
   "rejected_options": [
     {
-      "backend": "docker",
+      "backend": "pixi",
       "reason": "Initial preference only; not executable on this host."
     },
     {
@@ -33,7 +33,7 @@
       "field": "preferred_backend",
       "sources": [
         {
-          "value": "docker",
+          "value": "pixi",
           "source": "model_input.environment_hint.preferred_backend",
           "priority": 3
         },
@@ -45,7 +45,7 @@
       ],
       "resolved": true,
       "chosen_value": "pip",
-      "reason": "Runtime executable evidence overrides the initial docker suggestion."
+      "reason": "Runtime executable evidence overrides the initial pixi suggestion."
     },
     {
       "field": "requires_gpu",

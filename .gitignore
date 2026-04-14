@@ -100,3 +100,12 @@ src/sure_eval/models/*/test_results/
 src/sure_eval/models/*/uv.lock
 src/sure_eval/models/*/.venv/
 src/sure_eval/models/*/repo/
+
+# fireredasr2_aed local runtime files
+src/sure_eval/models/fireredasr2_aed/pretrained_models/
+src/sure_eval/models/fireredasr2_aed/.venv/
+src/sure_eval/models/fireredasr2_aed/__pycache__/
+src/sure_eval/models/fireredasr2_aed/.runtime/
+
+# Ignore fireredasr2_aed upstream clone
+src/sure_eval/models/fireredasr2_aed/upstream/

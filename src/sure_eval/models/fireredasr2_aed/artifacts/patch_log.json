@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-04-14T13:40:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "patches": [
+    {
+      "scope": "model spec",
+      "files": [
+        "model.spec.yaml"
+      ],
+      "reason": "Aligned `model_name`, `preferred_backend`, and `requires_gpu` fields with the current pilot input while keeping actual backend selection in structured artifacts."
+    },
+    {
+      "scope": "phase-1 artifacts",
+      "files": [
+        "artifacts/backend_choice.json",
+        "artifacts/spec_validation.json",
+        "artifacts/build.log",
+        "artifacts/failure_classification.json",
+        "artifacts/retry_recommendation.json",
+        "artifacts/fallback_record.json",
+        "artifacts/fetch_weights.log",
+        "artifacts/weights_manifest.json",
+        "artifacts/verdict.json"
+      ],
+      "reason": "Refreshed stale artifacts with the evidence from the current 2026-04-14 execution and recorded the targeted retry used during BUILD_ENV."
+    },
+    {
+      "scope": "repro bundle",
+      "files": [
+        "repro_bundle/repro_manifest.json",
+        "repro_bundle/weights_manifest.json",
+        "repro_bundle/environment_manifest.json",
+        "repro_bundle/minimal_repro_spec.json",
+        "repro_bundle/fixture_manifest.json",
+        "repro_bundle/environment_snapshot.txt",
+        "repro_bundle/repro_instructions.md",
+        "repro_bundle/support/repro_validate.py"
+      ],
+      "reason": "Exported the required repro bundle and added a dedicated replay script for temp-directory minimal reproduction."
+    }
+  ]
+}

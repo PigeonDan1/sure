@@ -1,0 +1,34 @@
+{
+  "timestamp": "2026-04-14T13:38:53.224924+00:00",
+  "upstream_root": "/private/tmp/fireredasr2_aed_repro/repro_bundle/source_snapshot/FireRedASR2S",
+  "weights_dir": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/pretrained_models/FireRedASR2-AED",
+  "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav",
+  "tests": {
+    "import": {
+      "passed": true,
+      "duration_ms": 14109.691
+    },
+    "load": {
+      "passed": true,
+      "duration_ms": 9295.146
+    },
+    "infer": {
+      "passed": true,
+      "duration_ms": 5266.433
+    },
+    "contract": {
+      "passed": true,
+      "duration_ms": 0.056
+    }
+  },
+  "result": {
+    "uttid": "sure_en_16k_10s",
+    "text": "lobster ellen newburgh",
+    "confidence": 0.804,
+    "dur_s": 2.35,
+    "rtf": "2.2376",
+    "wav": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav"
+  },
+  "overall": "PASSED",
+  "duration_seconds": 28.672
+}

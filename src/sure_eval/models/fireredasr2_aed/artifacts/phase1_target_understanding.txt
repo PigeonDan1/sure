@@ -1,5 +1,5 @@
 phase-1 target understanding
 - The minimal repo-native path to validate is `from fireredasr2s.fireredasr2 import FireRedAsr2, FireRedAsr2Config`, then `FireRedAsr2.from_pretrained("aed", local_model_dir, config)`, then `model.transcribe(uttids, wav_paths)`.
 - The selected fixture is not task-specific; it is a shared ASR English 16k WAV fallback that preserves the original ASR semantics.
-- The backend choice is an initial suggestion, not a hard constraint; docker was downgraded to model-local pip/venv because runtime preflight showed docker unavailable.
+- The backend choice is an initial suggestion, not a hard constraint; pixi was downgraded to model-local pip/venv because runtime preflight showed pixi unavailable.
 - If phase-1 fails, check integration first, then dependency/runtime compatibility, and only then fixture mismatch because the selected fixture already matches the documented audio format.

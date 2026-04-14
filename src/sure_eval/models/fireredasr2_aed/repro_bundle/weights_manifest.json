@@ -1,0 +1,11 @@
+{
+  "whether_weights_required": true,
+  "source": "huggingface",
+  "identifier": "FireRedTeam/FireRedASR2-AED",
+  "declared_revision": null,
+  "resolved_local_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/pretrained_models/FireRedASR2-AED",
+  "cache_policy": "model_local_first",
+  "checksum": "4677cbd30988d63ed3e777f6a42a1e5260a3865317f6e15e488bef40954f7054",
+  "fallback_reason": null,
+  "fallback_path": null
+}
