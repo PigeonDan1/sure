@@ -1,174 +1,71 @@
-[2026-03-30T11:33:36+08:00] VALIDATION initialized for librosa phase-1 onboarding.
-<stdin>:37: DeprecationWarning: Conversion of an array with ndim > 0 to a scalar is deprecated, and will error in future. Ensure you extract a single element from your array before performing this operation. (Deprecated NumPy 1.25.)
 {
-  "timestamp": "2026-03-30T11:44:01+0800",
-  "fixture_used": "tests/fixtures/shared/mir/rhythm_22k_15s.wav",
-  "fixture_source": "task_specific_generated",
+  "timestamp": "2026-04-13T23:58:53Z",
+  "fixture": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav",
   "tests": {
     "import": {
       "passed": true,
-      "duration_ms": 5.59,
-      "test": "import librosa"
+      "duration_ms": 101.095,
+      "details": {
+        "modules": [
+          "librosa",
+          "soundfile",
+          "numpy"
+        ],
+        "librosa_version": "0.11.0",
+        "soundfile_version": "1.2.2",
+        "numpy_version": "2.4.4"
+      }
     },
     "load": {
       "passed": true,
-      "duration_ms": 16028.51,
-      "test": "librosa.load('tests/fixtures/shared/mir/rhythm_22k_15s.wav', sr=None)",
-      "evidence": {
-        "sample_count": 330750,
-        "sample_rate": 22050
+      "duration_ms": 1632.649,
+      "details": {
+        "callable_path": "librosa.load",
+        "sample_rate": 16000,
+        "num_samples": 37600,
+        "load_semantics": "minimal feature extraction callable constructed; explicit model object not applicable"
       }
     },
     "infer": {
       "passed": true,
-      "duration_ms": 9180.14,
-      "test": "onset_strength + beat_track",
-      "evidence": {
-        "tempo": 117.45383522727273,
-        "beats_count": 27
+      "duration_ms": 26.621,
+      "details": {
+        "sample_rate": 16000,
+        "num_samples": 37600,
+        "duration_sec": 2.35,
+        "feature_type": "mfcc",
+        "shape": [
+          13,
+          74
+        ],
+        "mean": -17.990097045898438,
+        "std": 98.43057250976562
       }
     },
     "contract": {
       "passed": true,
-      "duration_ms": 11.86,
-      "checks": {
+      "duration_ms": 0.027,
+      "details": {
         "required_fields_present": true,
-        "beats_nonempty": true,
+        "missing_fields": [],
+        "nonempty_fields_valid": true,
+        "empty_fields": [],
+        "primary_field": "mfcc",
         "json_serializable": true
-      },
-      "evidence": {
-        "tempo": 117.45383522727273,
-        "beats": [
-          44,
-          65,
-          87,
-          109,
-          130,
-          152,
-          173,
-          195,
-          216,
-          238,
-          259,
-          281,
-          302,
-          324,
-          345,
-          367,
-          388,
-          410,
-          432,
-          453,
-          475,
-          496,
-          518,
-          539,
-          561,
-          582,
-          604
-        ],
-        "beat_times_sec": [
-          1.021678,
-          1.509297,
-          2.020136,
-          2.530975,
-          3.018594,
-          3.529433,
-          4.017052,
-          4.527891,
-          5.01551,
-          5.526349,
-          6.013968,
-          6.524807,
-          7.012426,
-          7.523265,
-          8.010884,
-          8.521723,
-          9.009342,
-          9.520181,
-          10.03102,
-          10.518639,
-          11.029478,
-          11.517098,
-          12.027937,
-          12.515556,
-          13.026395,
-          13.514014,
-          14.024853
-        ]
       }
     }
   },
-  "overall": "PASSED"
-}
-{
-  "wrapper_validation": {
-    "healthcheck": {
-      "status": "ready",
-      "message": "python_bin=/tmp/sure_eval_librosa/.venv/bin/python",
-      "model_loaded": false
-    },
-    "result": {
-      "tempo": 117.45383522727273,
-      "beats": [
-        44,
-        65,
-        87,
-        109,
-        130,
-        152,
-        173,
-        195,
-        216,
-        238,
-        259,
-        281,
-        302,
-        324,
-        345,
-        367,
-        388,
-        410,
-        432,
-        453,
-        475,
-        496,
-        518,
-        539,
-        561,
-        582,
-        604
-      ],
-      "beat_times_sec": [
-        1.021678,
-        1.509297,
-        2.020136,
-        2.530975,
-        3.018594,
-        3.529433,
-        4.017052,
-        4.527891,
-        5.01551,
-        5.526349,
-        6.013968,
-        6.524807,
-        7.012426,
-        7.523265,
-        8.010884,
-        8.521723,
-        9.009342,
-        9.520181,
-        10.03102,
-        10.518639,
-        11.029478,
-        11.517098,
-        12.027937,
-        12.515556,
-        13.026395,
-        13.514014,
-        14.024853
-      ]
-    },
-    "json_serializable": true
+  "overall": "PASSED",
+  "sample_output": {
+    "sample_rate": 16000,
+    "num_samples": 37600,
+    "duration_sec": 2.35,
+    "feature_type": "mfcc",
+    "shape": [
+      13,
+      74
+    ],
+    "mean": -17.990097045898438,
+    "std": 98.43057250976562
   }
 }

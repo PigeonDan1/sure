@@ -1,34 +1,73 @@
 {
-  "timestamp": "2026-03-30T11:33:36+08:00",
-  "model_id": "librosa",
-  "chosen_backend": "uv",
-  "reason": "The requested phase-1 path is a CPU-only Python library import with no weights and only ffmpeg as a declared system package. uv is the lowest-risk reproducible backend and matches the environment hint.",
+  "timestamp": "2026-04-13T23:58:53.241046+00:00",
+  "model_id": "librosa/librosa",
+  "chosen_backend": "venv_pip_local",
+  "reason": "uv and python3.10 are unavailable on the host. A model-local python3.12 venv with pinned pip dependencies is the lowest-risk reproducible backend that satisfies the phase-1 MFCC callable path.",
   "evidence": [
     {
-      "source": "src/sure_eval/models/librosa/artifacts/preflight_summary.json",
+      "source": "runtime_preflight",
       "priority": 1,
-      "details": "uv, Python 3.10, and ffmpeg are available locally."
+      "details": "uv not found; python3.10 not found; python3.12 available at /opt/anaconda3/bin/python3.12."
     },
     {
-      "source": "user_input.phase1_runtime_target",
-      "priority": 6,
-      "details": "Phase 1 only requires local import, audio loading, onset extraction, and beat/tempo analysis."
+      "source": "runtime_validation",
+      "priority": 1,
+      "details": "librosa import/load/infer/contract passed inside models/librosa/.venv-phase1 using python3.12."
     },
     {
-      "source": "docs/policies/constitution.md",
+      "source": "docs/policies/backend_selection.md",
       "priority": 5,
-      "details": "Backend priority favors uv over pixi and docker when functionality is equivalent."
+      "details": "Preferred backend is only an initial suggestion; choose the lightest viable backend that satisfies phase-1."
     }
   ],
-  "evidence_conflicts": [],
+  "evidence_conflicts": [
+    {
+      "field": "preferred_backend",
+      "sources": [
+        {
+          "value": "uv",
+          "source": "environment_hint",
+          "priority": 3
+        },
+        {
+          "value": "venv_pip_local",
+          "source": "runtime_preflight",
+          "priority": 1
+        }
+      ],
+      "chosen": "venv_pip_local",
+      "reason": "Runtime evidence shows uv unavailable, so the local venv+pinned pip fallback is required.",
+      "resolved": true,
+      "chosen_value": "venv_pip_local"
+    },
+    {
+      "field": "python_version",
+      "sources": [
+        {
+          "value": "3.10",
+          "source": "environment_hint",
+          "priority": 3
+        },
+        {
+          "value": "3.12",
+          "source": "runtime_preflight",
+          "priority": 1
+        }
+      ],
+      "chosen": "3.12",
+      "reason": "python3.10 is unavailable on the host and python3.12 successfully validated the same callable path.",
+      "resolved": true,
+      "chosen_value": "3.12"
+    }
+  ],
   "rejected_options": [
     {
-      "backend": "pixi",
-      "reason": "No repo-native pixi or conda evidence is available, and it adds unnecessary solver complexity."
+      "backend": "uv",
+      "reason": "Executable evidence shows uv is unavailable on the host."
     },
     {
       "backend": "docker",
-      "reason": "Higher operational risk than uv for a CPU-only pure Python library path."
+      "reason": "Heavier than necessary for a pure-Python, CPU-only phase-1 path with no weights."
     }
   ]
 }

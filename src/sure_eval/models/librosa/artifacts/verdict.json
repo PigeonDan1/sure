@@ -1,118 +1,31 @@
 {
-  "timestamp": "2026-03-30T11:45:10+08:00",
-  "model_id": "librosa",
+  "timestamp": "2026-04-13T23:58:53.241046+00:00",
+  "model_id": "librosa/librosa",
   "model_name": "librosa",
-  "status": "PASSED",
-  "stage": "phase_1_complete",
-  "workflow": {
-    "steps_completed": [
-      "DISCOVER",
-      "CLASSIFY",
-      "PLAN",
-      "VALIDATE_SPEC",
-      "BUILD_ENV",
-      "FETCH_WEIGHTS",
-      "VALIDATE_IMPORT",
-      "VALIDATE_LOAD",
-      "VALIDATE_INFER",
-      "VALIDATE_CONTRACT",
-      "GENERATE_WRAPPER",
-      "SAVE_ARTIFACTS"
-    ],
-    "final_step": "SAVE_ARTIFACTS"
+  "integration_status": "READY_LOCAL",
+  "status": "success",
+  "last_successful_stage": "SAVE_ARTIFACTS",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": true,
+  "backend_selected": "venv_pip_local",
+  "runtime_python": "3.12",
+  "weights_required": false,
+  "stages": {
+    "DISCOVER": "passed",
+    "CLASSIFY": "passed",
+    "PLAN": "passed",
+    "VALIDATE_SPEC": "passed",
+    "BUILD_ENV": "passed",
+    "FETCH_WEIGHTS": "not_applicable",
+    "VALIDATE_IMPORT": "passed",
+    "VALIDATE_LOAD": "passed",
+    "VALIDATE_INFER": "passed",
+    "VALIDATE_CONTRACT": "passed",
+    "GENERATE_WRAPPER": "passed",
+    "SAVE_ARTIFACTS": "passed"
   },
-  "backend": {
-    "type": "uv",
-    "choice_reason": "CPU-only local Python library path with no weights; uv was the lowest-risk reproducible backend."
-  },
-  "build": {
-    "success": true,
-    "duration_seconds": 50,
-    "log_path": "src/sure_eval/models/librosa/artifacts/build.log"
-  },
-  "weights": {
-    "required": false,
-    "fetched": false,
-    "note": "FETCH_WEIGHTS was a no-op because this integration validates the librosa package path only."
-  },
-  "validation_results": {
-    "import": {
-      "passed": true,
-      "duration_ms": 5.59,
-      "test": "import librosa",
-      "evidence": "librosa import succeeded inside /tmp/sure_eval_librosa/.venv."
-    },
-    "load": {
-      "passed": true,
-      "duration_ms": 16028.51,
-      "test": "librosa.load('tests/fixtures/shared/mir/rhythm_22k_15s.wav', sr=None)",
-      "evidence": "Loaded 330750 samples at 22050 Hz from the task-specific MIR fixture."
-    },
-    "infer": {
-      "passed": true,
-      "duration_ms": 9180.14,
-      "test": "onset_strength + beat_track",
-      "evidence": "Produced tempo=117.45383522727273 and 27 beat indices."
-    },
-    "contract": {
-      "passed": true,
-      "duration_ms": 11.86,
-      "checks": {
-        "required_fields_present": true,
-        "beats_nonempty": true,
-        "json_serializable": true
-      },
-      "evidence": {
-        "tempo": 117.45383522727273,
-        "beats_count": 27
-      }
-    },
-    "wrapper_contract": {
-      "passed": true,
-      "evidence": "ModelWrapper.predict returned the same JSON-serializable tempo/beats payload via the pinned /tmp runtime."
-    }
-  },
-  "artifacts_produced": [
-    "src/sure_eval/models/librosa/model.spec.yaml",
-    "src/sure_eval/models/librosa/pyproject.toml",
-    "src/sure_eval/models/librosa/uv.lock",
-    "src/sure_eval/models/librosa/model.py",
-    "src/sure_eval/models/librosa/server.py",
-    "src/sure_eval/models/librosa/__init__.py",
-    "src/sure_eval/models/librosa/config.yaml",
-    "src/sure_eval/models/librosa/artifacts/classification.json",
-    "src/sure_eval/models/librosa/artifacts/repo_summary.json",
-    "src/sure_eval/models/librosa/artifacts/preflight_summary.json",
-    "src/sure_eval/models/librosa/artifacts/backend_choice.json",
-    "src/sure_eval/models/librosa/artifacts/build_plan.json",
-    "src/sure_eval/models/librosa/artifacts/spec_validation.json",
-    "src/sure_eval/models/librosa/artifacts/build.log",
-    "src/sure_eval/models/librosa/artifacts/validation.log",
-    "src/sure_eval/models/librosa/artifacts/runtime_output.json",
-    "src/sure_eval/models/librosa/artifacts/failure_classification.json",
-    "src/sure_eval/models/librosa/artifacts/retry_recommendation.json",
-    "src/sure_eval/models/librosa/artifacts/artifact_manifest.json",
-    "src/sure_eval/models/librosa/artifacts/verdict.json",
-    "tests/fixtures/shared/mir/rhythm_22k_15s.wav",
-    "tests/fixtures/shared/mir/rhythm_22k_15s.json"
-  ],
-  "failure_history": [
-    {
-      "checkpoint": "BUILD_ENV",
-      "failure_type": "runtime_backend_incompatible",
-      "resolution": "Reran uv lock outside the sandbox to bypass DNS/network restrictions."
-    },
-    {
-      "checkpoint": "BUILD_ENV",
-      "failure_type": "config_not_set",
-      "resolution": "Pinned UV_CACHE_DIR to /tmp/sure_eval_librosa/cache for uv venv and uv sync."
-    }
-  ],
-  "escalation_triggered": false,
-  "retry_count": 2,
-  "notes": [
-    "Phase-1 target was the minimal librosa analysis path: import, load audio, onset extraction, beat tracking, and JSON-serializable output.",
-    "The provided MIR fixture path was absent initially, so a deterministic task-specific rhythmic fixture was generated and annotated locally.",
-    "Human escalation was not triggered; only controlled privileged command execution was used for networked dependency installation."
-  ]
+  "repro_status": "VERIFIED",
+  "repro_last_successful_stage": "VALIDATE_REPRO_OUTPUT"
 }
