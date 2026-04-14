@@ -1,3 +1,3 @@
-from .model import AnalysisResult, ModelWrapper
+from .model import FeatureExtractionResult, ModelWrapper
 
-__all__ = ["ModelWrapper", "AnalysisResult"]
+__all__ = ["ModelWrapper", "FeatureExtractionResult"]
