@@ -109,3 +109,12 @@ src/sure_eval/models/fireredasr2_aed/.runtime/
 
 # Ignore fireredasr2_aed upstream clone
 src/sure_eval/models/fireredasr2_aed/upstream/
+
+# fireredvad local runtime junk
+src/sure_eval/models/fireredvad/.venv/
+src/sure_eval/models/fireredvad/__pycache__/
+src/sure_eval/models/fireredvad/checkpoints/
+src/sure_eval/models/fireredvad/pretrained_models/
+
+src/sure_eval/models/fireredvad/artifacts/repro_output.json
+src/sure_eval/models/fireredvad/upstream/

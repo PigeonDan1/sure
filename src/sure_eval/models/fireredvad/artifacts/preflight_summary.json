@@ -1,42 +1,61 @@
 {
-  "timestamp": "2026-04-02T15:47:31Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
-  "phase": "PLAN",
-  "preflight": {
-    "host": {
-      "platform": "Darwin arm64",
-      "kernel": "Darwin Kernel Version 25.2.0",
-      "disk_free_human": "710Gi"
-    },
-    "python": {
-      "default_python": "3.12.4",
-      "default_python_path": "/opt/anaconda3/bin/python",
-      "python310_available": true,
-      "python310_path": "/opt/anaconda3/envs/fireredvad/bin/python",
-      "python310_source": "existing conda env bootstrap only"
-    },
-    "package_managers": {
-      "pip": true,
-      "uv": false,
-      "conda": true,
-      "docker": false
-    },
-    "system_packages": {
-      "ffmpeg": false
-    },
-    "gpu": {
+  "host": {
+    "cwd": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad",
+    "default_python": "Python 3.12.4",
+    "python_310_path": "/opt/anaconda3/envs/fireredvad/bin/python",
+    "python_310_version": "Python 3.10.20",
+    "platform": "Darwin arm64"
+  },
+  "package_managers": {
+    "pixi": {
       "available": false,
-      "required_for_phase1": false
+      "path": null
     },
-    "fixture": {
-      "path": "tests/fixtures/shared/vad/en_16k_10s.wav",
-      "exists": true,
-      "format": "RIFF/WAVE PCM 16-bit mono 16000 Hz"
+    "conda": {
+      "available": true,
+      "path": "/opt/anaconda3/bin/conda"
+    },
+    "pip": {
+      "available": true,
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/.venv/bin/pip"
+    },
+    "docker": {
+      "available": false,
+      "path": null
+    },
+    "hf_cli": {
+      "available": true,
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/.venv/bin/hf"
     }
   },
+  "gpu": {
+    "available": false,
+    "probe": "nvidia-smi not found; CPU-only validation selected by policy."
+  },
+  "system_packages": {
+    "ffmpeg": {
+      "available": false,
+      "path": null
+    },
+    "libsndfile1": {
+      "available": "wheel-bundled",
+      "path": "python-soundfile wheel"
+    }
+  },
+  "fixture": {
+    "requested_path": "tests/fixtures/shared/vad/en_16k.wav",
+    "requested_exists": false,
+    "selected_path": "tests/fixtures/shared/vad/en_16k_10s.wav",
+    "selected_exists": true,
+    "selected_format": "RIFF/WAVE PCM 16-bit mono 16000 Hz",
+    "selected_checksum": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d"
+  },
   "warnings": [
-    "uv is unavailable on host, so uv backend is not executable here.",
-    "ffmpeg is unavailable on host, but the selected fixture already matches the required 16kHz 16-bit mono PCM WAV format."
+    "pixi is unavailable on this host, so the preferred backend family must degrade to a conda-family Python 3.10 interpreter plus a model-local pip venv.",
+    "System ffmpeg is unavailable, so fixture conversion is not exercised in this run and phase-1 depends on the existing compliant WAV asset.",
+    "GPU is unavailable; CPU fallback is acceptable because the repo-native non-streaming VAD path is unchanged."
   ],
   "blockers": []
 }

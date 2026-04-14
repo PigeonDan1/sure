@@ -1,0 +1,10 @@
+{
+  "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav",
+  "fixture_role": "phase-1 and repro minimal non-streaming VAD input",
+  "whether_task_specific": true,
+  "whether_fallback_allowed": true,
+  "checksum": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+  "preprocessing_assumption": "None. The selected shared fallback fixture is already a compliant 16kHz 16-bit mono PCM WAV file.",
+  "requested_fixture_path": "tests/fixtures/shared/vad/en_16k.wav",
+  "selected_fixture_path": "tests/fixtures/shared/vad/en_16k_10s.wav"
+}

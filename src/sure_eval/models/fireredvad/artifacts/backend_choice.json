@@ -1,31 +1,27 @@
 {
-  "timestamp": "2026-04-02T15:47:31Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
   "chosen_backend": "pip",
-  "reason": "A model-local Python 3.10 virtual environment created from an existing Python 3.10 interpreter is the lowest-risk executable path on this host. It preserves repo-native pip installation guidance, avoids host-level conda mutation, and does not require unavailable uv or docker tooling.",
+  "reason": "pixi is unavailable, but a model-local Python 3.10 virtual environment created from an existing conda-family interpreter faithfully preserves the upstream Python 3.10 setup while avoiding host-level conda mutation.",
   "evidence": [
-    "GitHub README setup recommends Python 3.10 and pip installation for both PyPI and source flows.",
-    "GitHub pyproject.toml declares package name 'fireredvad' and requires-python >=3.10.",
-    "Local preflight: uv not found.",
-    "Local preflight: docker not found.",
-    "Local preflight: /opt/anaconda3/envs/fireredvad/bin/python is available and reports Python 3.10.20."
+    "upstream README recommends creating a Python 3.10 conda environment before installing FireRedVAD.",
+    "Local preflight: pixi not found.",
+    "Local preflight: /opt/anaconda3/envs/fireredvad/bin/python is available and reports Python 3.10.20.",
+    "Local preflight: docker unavailable and unnecessary for the CPU-only minimal path.",
+    "Validated executable evidence: the resulting model-local pip venv passed import/load/infer/contract on CPU."
   ],
   "rejected_options": [
     {
-      "backend": "uv",
+      "backend": "pixi",
       "reason": "Unavailable on host; choosing it would violate executable-evidence-first policy."
     },
     {
       "backend": "docker",
-      "reason": "Unavailable on host and heavier than needed for a CPU-only phase-1 path."
-    },
-    {
-      "backend": "pixi",
-      "reason": "Not indicated by repo-native configuration and unnecessary for the documented pip-based setup."
+      "reason": "Unavailable on host and heavier than needed for the minimal CPU phase-1 path."
     },
     {
       "backend": "api",
-      "reason": "Model supports local inference and phase-1 target explicitly requires local repo-native runtime validation."
+      "reason": "The target is a local model with a repo-native Python path."
     }
   ],
   "evidence_conflicts": [
@@ -33,18 +29,19 @@
       "field": "preferred_backend",
       "sources": [
         {
-          "value": "pip",
-          "source": "MODEL_INPUT.environment_hint.preferred_backend",
+          "value": "pixi",
+          "source": "model input environment_hint.preferred_backend",
           "priority": 3
         },
         {
-          "value": "uv",
-          "source": "docs/policies/backend_selection.md default priority ordering",
-          "priority": 4
+          "value": "pip",
+          "source": "runtime preflight executability",
+          "priority": 1
         }
       ],
-      "chosen": "pip",
-      "reason": "Runtime executability on this host outranks default backend preference ordering, and the upstream repo itself documents pip setup."
+      "resolved": true,
+      "chosen_value": "pip",
+      "reason": "pixi cannot be executed on this host; the chosen pip backend still uses a conda-family Python 3.10 interpreter and satisfies the minimal repo-native target."
     }
   ]
 }

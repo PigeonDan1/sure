@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-02T15:47:31Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
   "phase": "CLASSIFY",
   "classification": {
@@ -8,10 +8,10 @@
     "environment_complexity": "medium",
     "backend_recommendation": "pip",
     "reasoning": {
-      "model_type": "Repository and package both expose local inference entrypoints; no remote API is required for phase-1.",
-      "task_type": "Target path is non-streaming voice activity detection only.",
-      "environment_complexity": "Python package plus PyTorch, kaldi-native-fbank, and external weights; no GPU required for the declared path.",
-      "backend": "Official quick start uses Python 3.10 with pip install; host lacks uv and docker, so a local venv + pip path is the lowest-risk executable option."
+      "model_type": "The upstream repo and the standalone package both expose a local Python VAD runtime with local weights.",
+      "task_type": "The requested phase-1 scope is the minimal non-streaming voice activity detection path only.",
+      "environment_complexity": "Python 3.10 plus PyTorch, kaldi-native-fbank, and local checkpoint files are required, but GPU is optional for the declared path.",
+      "backend": "pixi is unavailable on this host; a model-local venv created from an existing conda-family Python 3.10 interpreter preserves the upstream conda-family intent with the lowest-risk executable backend."
     }
   },
   "evidence": {

@@ -1,80 +1,38 @@
 {
-  "$schema": "./artifact_manifest.schema.json",
-  "instance_id": "fireredvad_20260402",
-  "timestamp": "2026-04-02T15:53:48Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
-  "artifacts": {
-    "required": {
-      "spec": {
-        "path": "model.spec.yaml",
-        "description": "Model spec for FireRedVAD phase-1 onboarding."
-      },
-      "backend_choice": {
-        "path": "artifacts/backend_choice.json",
-        "description": "Structured backend selection decision with evidence."
-      },
-      "build_log": {
-        "path": "artifacts/build.log",
-        "description": "pip install and Hugging Face weight download logs."
-      },
-      "validation_log": {
-        "path": "artifacts/validation.log",
-        "description": "Import/load/infer/contract execution log including first failure and targeted retry."
-      },
-      "verdict": {
-        "path": "artifacts/verdict.json",
-        "description": "Final onboarding verdict."
-      },
-      "wrapper": {
-        "paths": ["model.py", "server.py", "__init__.py"],
-        "description": "Minimal wrapper files for the validated non-streaming VAD path.",
-        "required_files": ["model.py", "server.py", "__init__.py"]
-      },
-      "manifest": {
-        "path": "artifacts/artifact_manifest.json",
-        "description": "Artifact inventory."
-      }
-    },
-    "conditional": {
-      "spec_validation": {
-        "path": "artifacts/spec_validation.json",
-        "description": "Mandatory plan validation output.",
-        "condition": "VALIDATE_SPEC executed"
-      },
-      "preflight_summary": {
-        "path": "artifacts/preflight_summary.json",
-        "description": "Host capability summary.",
-        "condition": "preflight executed"
-      },
-      "weights_manifest": {
-        "path": "artifacts/weights_manifest.json",
-        "description": "Downloaded weight inventory.",
-        "condition": "weights.required == true"
-      },
-      "failure_classification": {
-        "path": "artifacts/failure_classification.json",
-        "description": "Infer-stage failure diagnosis.",
-        "condition": "DIAGNOSE executed"
-      },
-      "retry_recommendation": {
-        "path": "artifacts/retry_recommendation.json",
-        "description": "Targeted retry plan for the infer-stage failure.",
-        "condition": "REPLAN executed"
-      }
-    },
-    "optional": {
-      "repo_summary": {
-        "path": "artifacts/repo_summary.json",
-        "description": "Discovery-phase repository summary."
-      },
-      "classification": {
-        "path": "artifacts/classification.json",
-        "description": "Classification-phase result."
-      },
-      "runtime_output": {
-        "path": "artifacts/runtime_output.json",
-        "description": "Validated runtime output payload."
-      }
-    }
-  }
+  "model_name": "fireredvad",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "required_artifacts": [
+    "model.spec.yaml",
+    "model.py",
+    "server.py",
+    "__init__.py",
+    "artifacts/backend_choice.json",
+    "artifacts/build.log",
+    "artifacts/validation.log",
+    "artifacts/verdict.json",
+    "artifacts/artifact_manifest.json"
+  ],
+  "conditional_artifacts": [
+    "artifacts/spec_validation.json",
+    "artifacts/preflight_summary.json",
+    "artifacts/weights_manifest.json",
+    "artifacts/failure_classification.json",
+    "artifacts/retry_recommendation.json",
+    "artifacts/fallback_record.json",
+    "artifacts/fetch_weights.log",
+    "artifacts/sample_output.json",
+    "artifacts/repro_verdict.json",
+    "artifacts/repro_validation.log",
+    "artifacts/repro_output.json",
+    "repro_bundle/repro_manifest.json",
+    "repro_bundle/weights_manifest.json",
+    "repro_bundle/environment_manifest.json",
+    "repro_bundle/minimal_repro_spec.json",
+    "repro_bundle/fixture_manifest.json",
+    "repro_bundle/environment_snapshot.txt",
+    "repro_bundle/repro_instructions.md"
+  ]
 }

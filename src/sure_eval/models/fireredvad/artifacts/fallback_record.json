@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-04-14T14:45:26Z",
+  "model_id": "FireRedTeam/FireRedVAD",
+  "fallbacks": [
+    {
+      "scope": "fixture",
+      "requested": "tests/fixtures/shared/vad/en_16k.wav",
+      "selected": "tests/fixtures/shared/vad/en_16k_10s.wav",
+      "reason": "The requested VAD fixture is absent in-repo. The selected shared VAD fixture is already a 16kHz 16-bit mono PCM WAV file and preserves the same VAD task semantics.",
+      "evidence": [
+        "file probe: tests/fixtures/shared/vad/en_16k.wav does not exist",
+        "file probe: tests/fixtures/shared/vad/en_16k_10s.wav is RIFF/WAVE PCM 16-bit mono 16000 Hz"
+      ]
+    }
+  ]
+}

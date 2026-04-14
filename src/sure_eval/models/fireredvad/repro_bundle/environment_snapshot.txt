@@ -1,0 +1,36 @@
+timestamp: 2026-04-14T14:45:26Z
+model_root: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad
+upstream_root: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/upstream/FireRedVAD
+upstream_commit: b1c3fb10e38dab1619b3e54d53ab67f7c8c1461b
+platform: Darwin arm64
+python_default: /opt/anaconda3/bin/python3 (Python 3.12.4)
+python_310_source: /opt/anaconda3/envs/fireredvad/bin/python (Python 3.10.20)
+replay_env_seed: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/repro_bundle/venv_seed
+validated_python: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/.venv/bin/python
+validated_pip: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/.venv/bin/pip
+validated_hf_cli: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/.venv/bin/hf
+fixture: /Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav
+fixture_sha256: 8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d
+weights_root: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/checkpoints/FireRedVAD
+runtime_weights: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/pretrained_models/FireRedVAD/VAD
+runtime_alias: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/pretrained_models/FireRedVAD -> ../checkpoints/FireRedVAD
+package_versions:
+  fireredvad==0.0.2 (installed from cloned upstream source)
+  torch==2.1.0
+  numpy==1.26.1
+  kaldiio==2.18.0
+  kaldi_native_fbank==1.21.3
+  soundfile==0.12.1
+  textgrid==1.6.1
+  huggingface_hub==1.8.0
+host_findings:
+  ffmpeg_available: false
+  pixi_available: false
+  docker_available: false
+  conda_available: true
+useful_debugging_context:
+  sample_output_path: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/artifacts/sample_output.json
+  validation_log_path: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/artifacts/validation.log
+  source_snapshot_path: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/repro_bundle/source_snapshot/FireRedVAD
+  venv_seed_size: 489M (copied from validated .venv)
+bundle_weights_dir: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/repro_bundle/weights/FireRedVAD/VAD

@@ -1,0 +1,10 @@
+{
+  "dur": 2.35,
+  "timestamps": [
+    [
+      0.5,
+      2.25
+    ]
+  ],
+  "wav_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav"
+}

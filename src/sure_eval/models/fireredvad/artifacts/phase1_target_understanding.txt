@@ -1,0 +1,5 @@
+phase-1 target understanding
+- 当前模型最小要验证的 repo-native path 是 `from fireredvad import FireRedVad, FireRedVadConfig` -> `FireRedVad.from_pretrained('pretrained_models/FireRedVAD/VAD', cfg)` -> `model.detect(audio_path)` 的非流式 VAD 路径。
+- 当前 fixture 是 task-specific 的 VAD 语义输入；虽然请求的 `en_16k.wav` 缺失，但选用的 `tests/fixtures/shared/vad/en_16k_10s.wav` 仍然保持同一任务语义。
+- 当前 backend 选择不是强约束；`pixi` 只是初始建议，基于宿主机证据降级到 conda-family Python 3.10 + model-local pip venv。
+- 当前若失败，应优先检查 integration 和 path wiring（导入入口、weights alias、fixture 解析），其次才是依赖，最后才考虑 fixture mismatch。
