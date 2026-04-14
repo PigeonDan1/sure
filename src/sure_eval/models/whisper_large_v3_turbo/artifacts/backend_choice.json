@@ -1,33 +1,51 @@
 {
-  "timestamp": "2026-03-30T12:40:02+08:00",
+  "timestamp": "2026-04-14T13:10:23.063323+01:00",
   "model_id": "openai/whisper-large-v3-turbo",
-  "chosen_backend": "uv",
-  "reason": "The requested runtime is a Python-only Transformers callable path, uv is available locally, Python 3.10 matches the environment hint, and uv is the lowest-risk reproducible backend for a CPU phase-1 validation.",
+  "chosen_backend": "pip",
+  "reason": "The requested phase-1 path is a Python-only local Whisper callable path. uv and docker are unavailable in preflight, while an existing Python 3.10 bootstrap interpreter can create a model-local virtual environment that preserves reproducibility without mutating host package state.",
   "evidence": [
-    {
-      "source": "user_input.environment_hint",
-      "priority": 6,
-      "details": "Preferred backend is uv and Python version is 3.10."
-    },
-    {
-      "source": "docs/playbooks/env_uv.md",
-      "priority": 3,
-      "details": "uv is the preferred backend for Python-first projects without CUDA compilation requirements."
-    },
     {
       "source": "src/sure_eval/models/whisper_large_v3_turbo/artifacts/preflight_summary.json",
       "priority": 1,
-      "details": "uv, ffmpeg, network reachability, and a root-backed writable mount are available for an isolated build."
+      "detail": "uv unavailable, docker unavailable, ffmpeg unavailable on host, and /opt/anaconda3/envs/fireredvad/bin/python provides Python 3.10.20."
+    },
+    {
+      "source": "src/sure_eval/models/whisper_large_v3_turbo/model.spec.yaml",
+      "priority": 3,
+      "detail": "Phase-1 target is the minimal repo-native Whisper import/load/transcribe path only."
+    },
+    {
+      "source": "src/sure_eval/models/whisper_large_v3_turbo/pyproject.toml",
+      "priority": 3,
+      "detail": "Dependencies are Python packages installable into an isolated venv; no CUDA-only or container-only build step is declared for phase-1."
     }
   ],
   "evidence_conflicts": [
     {
+      "field": "backend",
+      "sources": [
+        {
+          "value": "uv",
+          "source": "MODEL_INPUT.environment_hint.preferred_backend",
+          "priority": 5
+        },
+        {
+          "value": "uv unavailable / pip executable with Python 3.10 bootstrap",
+          "source": "preflight package_managers + python probe",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "pip",
+      "reason": "Executable host evidence outranks the initial backend hint."
+    },
+    {
       "field": "fixture.audio",
       "sources": [
         {
-          "value": "tests/fixtures/shared/asr/multilingual_16k_10s.wav",
-          "source": "user_input.fixture.audio",
-          "priority": 6
+          "value": "tests/fixtures/shared/asr/en_16k.wav",
+          "source": "MODEL_INPUT.fixture.audio",
+          "priority": 5
         },
         {
           "value": "tests/fixtures/shared/asr/en_16k_10s.wav",
@@ -37,35 +55,25 @@
       ],
       "resolved": true,
       "chosen_value": "tests/fixtures/shared/asr/en_16k_10s.wav",
-      "reason": "Fixture policy permits a shared fallback when the requested task-specific asset is unavailable, provided the downgrade is recorded explicitly."
-    },
-    {
-      "field": "runtime_path",
-      "sources": [
-        {
-          "value": "openai/whisper upstream repository",
-          "source": "user_input.repo.url",
-          "priority": 6
-        },
-        {
-          "value": "Transformers AutoModel/AutoProcessor/pipeline callable path",
-          "source": "user_input.phase1_runtime_target + entrypoints",
-          "priority": 6
-        }
-      ],
-      "resolved": true,
-      "chosen_value": "Transformers AutoModel/AutoProcessor/pipeline callable path",
-      "reason": "Phase-1 runtime validation is explicitly scoped to the minimal callable path described in the provided entrypoints, so wrapper generation will target that path rather than the broader upstream repository surface."
+      "reason": "Fixture policy allows a shared fallback when the requested asset is absent and task semantics stay unchanged."
     }
   ],
   "rejected_options": [
     {
+      "backend": "uv",
+      "reason": "Unavailable on this host, so selecting it would fail VALIDATE_SPEC."
+    },
+    {
       "backend": "docker",
-      "reason": "No container-only dependency or host-pollution risk justifies the higher operational overhead for this CPU-first validation."
+      "reason": "Unavailable on this host and heavier than required for the minimal CPU path."
     },
     {
       "backend": "pixi",
-      "reason": "The requested phase-1 path is Python-first and already fits uv without a conda-style solver."
+      "reason": "pixi is unavailable and no repo-native pixi signal reduces risk compared with a model-local venv."
+    },
+    {
+      "backend": "api",
+      "reason": "The model supports local inference and phase-1 explicitly requires a local repo-native path."
     }
   ]
 }

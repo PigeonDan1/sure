@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -30,66 +31,77 @@ class TranscriptionResult:
 class ModelWrapper:
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
-        self.model_id = self.config.get("model_id") or os.environ.get(
-            "MODEL_ID", "openai/whisper-large-v3-turbo"
-        )
+        self.model_id = self.config.get("model_id") or os.environ.get("MODEL_ID", "turbo")
         self.device = self.config.get("device") or os.environ.get("DEVICE", "cpu")
-        self.hf_home = self.config.get("hf_home") or os.environ.get("HF_HOME")
-        self.return_timestamps = bool(
-            self.config.get("return_timestamps", False)
-            or os.environ.get("RETURN_TIMESTAMPS", "").lower() in {"1", "true", "yes"}
+        self.download_root = self.config.get("download_root") or os.environ.get(
+            "WHISPER_DOWNLOAD_ROOT"
         )
-        self._processor = None
+        self.ffmpeg_binary = self.config.get("ffmpeg_binary") or os.environ.get(
+            "FFMPEG_BINARY"
+        )
         self._model = None
-        self._pipeline = None
+
+    def _configure_runtime(self) -> None:
+        if not self.ffmpeg_binary:
+            return
+        os.environ["FFMPEG_BINARY"] = self.ffmpeg_binary
+        ffmpeg_dir = os.path.dirname(self.ffmpeg_binary)
+        current_path = os.environ.get("PATH", "")
+        path_entries = current_path.split(os.pathsep) if current_path else []
+        if ffmpeg_dir and ffmpeg_dir not in path_entries:
+            os.environ["PATH"] = (
+                f"{ffmpeg_dir}{os.pathsep}{current_path}" if current_path else ffmpeg_dir
+            )
 
     def load(self) -> None:
-        if self._pipeline is not None:
+        if self._model is not None:
             return
-        if self.hf_home:
-            os.environ["HF_HOME"] = self.hf_home
+        self._configure_runtime()
         try:
-            from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+            import whisper
 
-            self._processor = AutoProcessor.from_pretrained(self.model_id)
-            self._model = AutoModelForSpeechSeq2Seq.from_pretrained(self.model_id)
-            self._pipeline = pipeline(
-                "automatic-speech-recognition",
-                model=self._model,
-                tokenizer=self._processor.tokenizer,
-                feature_extractor=self._processor.feature_extractor,
-                device=self.device,
-            )
+            load_kwargs: dict[str, Any] = {"device": self.device}
+            if self.download_root:
+                load_kwargs["download_root"] = self.download_root
+            self._model = whisper.load_model(self.model_id, **load_kwargs)
+            if self.ffmpeg_binary and shutil.which("ffmpeg") is None:
+                raise ModelLoadError(
+                    f"Configured ffmpeg binary is not executable via PATH: {self.ffmpeg_binary}"
+                )
+        except ModelLoadError:
+            raise
         except Exception as exc:
-            raise ModelLoadError(f"Failed to load {self.model_id}: {exc}") from exc
+            raise ModelLoadError(f"Failed to load Whisper model {self.model_id}: {exc}") from exc
 
     def predict(self, input_data: str) -> TranscriptionResult:
-        if self._pipeline is None:
+        if self._model is None:
             self.load()
+        self._configure_runtime()
         try:
-            kwargs: dict[str, Any] = {}
-            if self.return_timestamps:
-                kwargs["return_timestamps"] = True
-            raw_result = self._pipeline(input_data, **kwargs)
+            raw_result = self._model.transcribe(input_data, fp16=False)
             if not isinstance(raw_result, dict):
                 raise InferenceError(
-                    f"Expected dict output from pipeline, got {type(raw_result).__name__}"
+                    f"Expected dict output from whisper.transcribe, got {type(raw_result).__name__}"
                 )
             return TranscriptionResult(
                 text=raw_result.get("text", ""),
                 language=raw_result.get("language"),
-                segments=raw_result.get("chunks"),
+                segments=raw_result.get("segments"),
             )
         except Exception as exc:
             if isinstance(exc, InferenceError):
                 raise
-            raise InferenceError(f"Inference failed for {self.model_id}: {exc}") from exc
+            raise InferenceError(
+                f"Inference failed for Whisper model {self.model_id}: {exc}"
+            ) from exc
 
     def healthcheck(self) -> dict[str, Any]:
         return {
-            "status": "ready" if self._pipeline is not None else "loading",
-            "message": "Model loaded" if self._pipeline is not None else "Model not loaded",
-            "model_loaded": self._pipeline is not None,
+            "status": "ready" if self._model is not None else "loading",
+            "message": "Model loaded" if self._model is not None else "Model not loaded",
+            "model_loaded": self._model is not None,
             "model_id": self.model_id,
             "device": self.device,
+            "ffmpeg_binary": self.ffmpeg_binary or shutil.which("ffmpeg"),
+            "download_root": self.download_root,
         }

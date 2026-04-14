@@ -1,17 +1,11 @@
 {
-  "timestamp": "2026-03-30T12:40:02+08:00",
+  "timestamp": "2026-04-14T13:10:23.063323+01:00",
   "model_id": "openai/whisper-large-v3-turbo",
-  "classification": {
-    "task_type": "asr",
-    "deployment_type": "local",
-    "weights_required": true,
-    "runtime_family": "huggingface_transformers_whisper",
-    "validation_scope": "phase_1_minimal_callable_path"
-  },
-  "phase1_target_understanding": [
-    "Minimal repo-native path: import Transformers ASR stack, load openai/whisper-large-v3-turbo, run one audio-path transcription, and obtain non-empty text.",
-    "The requested fixture is task-specific in intent, but the exact multilingual shared file is missing in-repo, so phase 1 will use a recorded shared fallback.",
-    "Backend choice is a strong initial recommendation, not an immutable constraint: uv is preferred by input and is the least-risk backend compatible with this Python-only CPU path.",
-    "If validation fails, check integration first, then dependency compatibility, and only then fixture mismatch because the fallback fixture is intentionally weaker than the requested multilingual target."
-  ]
+  "model_name": "whisper_large_v3_turbo",
+  "task_type": "asr",
+  "deployment_type": "local",
+  "runtime_family": "python_package",
+  "phase1_target_kind": "repo_native_minimal_callable_path",
+  "weights_required": true,
+  "uses_external_service": false
 }

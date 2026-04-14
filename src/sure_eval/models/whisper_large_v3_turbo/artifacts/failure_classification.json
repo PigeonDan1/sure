@@ -1,30 +1,14 @@
 {
-  "timestamp": "2026-03-30T12:57:00+08:00",
+  "timestamp": "2026-04-14T13:11:20.919300+01:00",
   "model_id": "openai/whisper-large-v3-turbo",
-  "checkpoint": "GENERATE_WRAPPER",
-  "status": "resolved_after_retry",
-  "failure_history": [
-    {
-      "attempt": 1,
-      "step": "WRAPPER_SMOKE",
-      "failure_type": "wrong_entrypoint",
-      "retryable": true,
-      "error": "ModuleNotFoundError: No module named 'sure_eval'",
-      "evidence": "Initial smoke test imported through a repo-root PYTHONPATH that did not expose the src layout."
-    },
-    {
-      "attempt": 2,
-      "step": "WRAPPER_SMOKE_RETRY",
-      "failure_type": "python_dependency_missing",
-      "retryable": true,
-      "error": "ModuleNotFoundError: No module named 'pydantic'",
-      "evidence": "Importing the top-level sure_eval package pulled in pydantic, which is outside the minimal phase-1 runtime dependencies."
-    }
-  ],
-  "resolved_by": {
-    "attempt": 3,
-    "step": "WRAPPER_SMOKE_RETRY_2",
-    "approach": "Use the wrapper-local import path consistent with server.py fallback behavior.",
-    "evidence": "Wrapper-local import succeeded and returned a JSON-serializable non-empty transcription payload."
-  }
+  "checkpoint": "BUILD_ENV",
+  "failure_type": "python_dependency_missing",
+  "failure_category": "network_access_restricted",
+  "retryable": true,
+  "evidence": {
+    "command": "src/sure_eval/models/whisper_large_v3_turbo/.venv/bin/pip install openai-whisper torch tiktoken imageio-ffmpeg",
+    "symptom": "pip could not resolve the package index because DNS/network access was unavailable inside the sandbox.",
+    "log_excerpt": "Failed to establish a new connection: [Errno 8] nodename nor servname provided, or not known"
+  },
+  "recommended_fix": "Retry the same installation command with escalated network access; do not change package set or backend yet because the failure is environmental rather than dependency-specific."
 }

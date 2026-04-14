@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-30T12:40:02+08:00",
+  "timestamp": "2026-04-14T13:10:23.063323+01:00",
   "model_id": "openai/whisper-large-v3-turbo",
   "status": "passed",
   "checks": {
@@ -35,8 +35,9 @@
   },
   "ready_for_build_env": true,
   "warnings": [
-    "The requested multilingual shared fixture is absent in-repo, so phase 1 will run against tests/fixtures/shared/asr/en_16k_10s.wav and record the downgrade.",
-    "The workspace and /tmp mounts do not have enough free space for this model, so BUILD_ENV and FETCH_WEIGHTS require a root-backed runtime via escalated commands."
+    "uv is unavailable on host, so the preferred uv backend is not executable here.",
+    "ffmpeg is unavailable on host; the plan therefore records a model-local fallback binary path if imageio-ffmpeg can supply one during BUILD_ENV.",
+    "The requested fixture path tests/fixtures/shared/asr/en_16k.wav is absent in-repo, so phase-1 uses tests/fixtures/shared/asr/en_16k_10s.wav as a shared fallback without narrowing ASR task semantics."
   ],
   "blockers": []
 }

@@ -1,9 +1,26 @@
 {
-  "timestamp": "2026-03-30T12:45:43.612176+08:00",
-  "model_id": "openai/whisper-large-v3-turbo",
-  "fixture_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
-  "fixture_source": "shared_fallback",
-  "output": {
-    "text": " Lobster Ellen Newberg."
-  }
+  "text": " Lobster Ellen Newberg",
+  "segments": [
+    {
+      "id": 0,
+      "seek": 0,
+      "start": 0.0,
+      "end": 1.9000000000000001,
+      "text": " Lobster Ellen Newberg",
+      "tokens": [
+        50365,
+        30719,
+        3120,
+        20306,
+        1873,
+        6873,
+        50460
+      ],
+      "temperature": 0.0,
+      "avg_logprob": -0.34242141246795654,
+      "compression_ratio": 0.7241379310344828,
+      "no_speech_prob": 6.187215236680421e-12
+    }
+  ],
+  "language": "en"
 }
