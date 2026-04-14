@@ -1,27 +1,93 @@
 {
-  "timestamp": "2026-03-30T00:14:00+08:00",
-  "model_id": "ffmpeg",
-  "chosen_backend": "system",
-  "reason": "FFmpeg is a system-level binary tool, not a Python package. No Python environment needed.",
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "model_id": "system/ffmpeg",
+  "chosen_backend": "host_python_venv_with_repo_local_executable_fallback",
+  "reason": "PATH does not provide ffmpeg/ffprobe and uv is unavailable, so the lowest-risk reproducible path is a local Python venv for wrapper utilities plus repo-local ffmpeg/ffprobe executables.",
   "evidence": [
-    "model task_type is audio_tool (system utility)",
-    "weights.required is false",
-    "ffmpeg binary available at /usr/bin/ffmpeg",
-    "no Python dependencies specified"
+    {
+      "source": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/artifacts/preflight_summary.json",
+      "priority": 1,
+      "details": "ffmpeg_on_path=false, ffprobe_on_path=false, uv unavailable, python3 available."
+    },
+    {
+      "source": "repo_local_artifact",
+      "priority": 1,
+      "details": "repo-local fallback executables exist at /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg and /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe and are runnable."
+    },
+    {
+      "source": "docs/policies/backend_selection.md",
+      "priority": 5,
+      "details": "preferred backend is only an initial suggestion; choose the lightest workable backend."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "preferred_backend",
+      "sources": [
+        {
+          "value": "uv",
+          "source": "environment_hint",
+          "priority": 3
+        },
+        {
+          "value": null,
+          "source": "runtime_preflight.which(uv)",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "host_python_venv_with_repo_local_executable_fallback",
+      "reason": "Runtime evidence showed uv is unavailable; host python venv remains sufficient for wrapper generation."
+    },
+    {
+      "field": "system_packages.ffmpeg",
+      "sources": [
+        {
+          "value": "ffmpeg on PATH",
+          "source": "environment_hint",
+          "priority": 3
+        },
+        {
+          "value": null,
+          "source": "runtime_preflight.which(ffmpeg)",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg",
+      "reason": "System PATH check failed, so execution falls back to the repo-local binary asset instead of host-level installation."
+    },
+    {
+      "field": "python_version",
+      "sources": [
+        {
+          "value": "3.10",
+          "source": "environment_hint",
+          "priority": 3
+        },
+        {
+          "value": "Python 3.13.3",
+          "source": "runtime_preflight.python3",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "3.13.3",
+      "reason": "Host python3.13 is the available interpreter and the wrapper only relies on the standard library."
+    }
   ],
   "rejected_options": [
     {
       "backend": "uv",
-      "reason": "FFmpeg is not a Python package, cannot be installed via pip/uv"
+      "reason": "Unavailable in current runtime; cannot satisfy BUILD_ENV without escalation or network install."
     },
     {
       "backend": "pixi",
-      "reason": "FFmpeg is not a conda package, system package is preferred"
+      "reason": "No pixi evidence in repo and unnecessary for a stdlib-only wrapper."
     },
     {
       "backend": "docker",
-      "reason": "System ffmpeg is already available and sufficient"
+      "reason": "Heavier than necessary for a local binary validation path and not needed for reproducibility here."
     }
-  ],
-  "evidence_conflicts": []
+  ]
 }

@@ -1,24 +1,17 @@
 {
-  "timestamp": "2026-03-30T00:14:00+08:00",
-  "model_id": "ffmpeg",
-  "classification": {
-    "model_type": "system_tool",
-    "task_type": "audio_tool",
-    "deployment_type": "local",
-    "backend_requirement": "system",
-    "complexity": "low",
-    "requires_python_env": false,
-    "requires_weights": false,
-    "requires_gpu": false
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "model_id": "system/ffmpeg",
+  "model_name": "ffmpeg",
+  "task_type": "utility",
+  "deployment_type": "local",
+  "runtime_family": "system_binary_tool",
+  "phase1_semantics": {
+    "import_stage": "validate_executable",
+    "load_stage": "not_applicable",
+    "infer_stage": "run_minimal_transcode"
   },
-  "rationale": {
-    "model_type": "FFmpeg is a standalone system binary, not a Python ML model",
-    "backend": "System backend - uses pre-installed ffmpeg binary",
-    "no_weights": "FFmpeg does not require ML weights, it's a codec/tool suite"
-  },
-  "evidence": [
-    "ffmpeg -version executed successfully",
-    "weights.required = false in input spec",
-    "deployment_type = local with system backend"
+  "notes": [
+    "ffmpeg is a utility/system tool rather than a Python model package.",
+    "Phase-1 target is the minimal executable transcode path plus metadata contract validation."
   ]
 }

@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-04-12T14:30:06.082539+00:00",
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
   "model_id": "system/ffmpeg",
   "whether_weights_required": false,
   "source": "not_applicable",
-  "identifier_or_package": "ffmpeg utility tool",
+  "identifier_or_package_name": "ffmpeg system utility",
   "declared_revision": null,
   "resolved_local_path": null,
   "cache_policy": "not_applicable",
   "checksum": null,
   "fallback_reason_or_path": null,
   "status": "not_applicable",
-  "reason": "ffmpeg/ffprobe are executables, not model weights."
+  "reason": "ffmpeg is a utility/system tool and this phase-1 path validates executables rather than model weights."
 }

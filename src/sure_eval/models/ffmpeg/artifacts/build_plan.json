@@ -1,34 +1,51 @@
 {
-  "timestamp": "2026-03-30T00:14:00+08:00",
-  "model_id": "ffmpeg",
-  "backend": "system",
-  "build_steps": [
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "model_id": "system/ffmpeg",
+  "backend": "host_python_venv_with_repo_local_executable_fallback",
+  "build_root": "/tmp/sure_eval_ffmpeg_phase1",
+  "venv_path": "/tmp/sure_eval_ffmpeg_phase1/.venv",
+  "project_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg",
+  "steps": [
     {
-      "step": 1,
-      "name": "verify_system_ffmpeg",
-      "command": "ffmpeg -version",
-      "description": "Verify ffmpeg is available on system",
-      "expected_outcome": "version information displayed"
+      "name": "create_runtime_dirs",
+      "command": "mkdir -p /tmp/sure_eval_ffmpeg_phase1 /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/tmp/ffmpeg_smoke"
     },
     {
-      "step": 2,
-      "name": "verify_ffprobe",
-      "command": "ffprobe -version", 
-      "description": "Verify ffprobe is available on system",
-      "expected_outcome": "version information displayed"
+      "name": "create_venv",
+      "command": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 -m venv /tmp/sure_eval_ffmpeg_phase1/.venv"
     },
     {
-      "step": 3,
-      "name": "create_test_fixture",
-      "command": "ffmpeg -f lavfi -i 'sine=frequency=1000:duration=10' -ar 16000 -ac 1 tests/fixtures/shared/asr/en_16k_10s.wav -y",
-      "description": "Create test audio fixture if not exists",
-      "expected_outcome": "test wav file created"
+      "name": "freeze_runtime",
+      "command": "/tmp/sure_eval_ffmpeg_phase1/.venv/bin/python -m pip freeze > /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/requirements.lock"
+    },
+    {
+      "name": "validate_executables",
+      "command": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg -version && /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe -version"
+    },
+    {
+      "name": "validate_infer",
+      "command": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg -y -i /Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav -ac 1 -ar 16000 -c:a pcm_s16le /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/tmp/ffmpeg_smoke/out.wav && /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe -v error -show_format -show_streams -of json /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/tmp/ffmpeg_smoke/out.wav"
+    },
+    {
+      "name": "wrapper_smoke",
+      "command": "/tmp/sure_eval_ffmpeg_phase1/.venv/bin/python -c \"from ffmpeg.model import ModelWrapper; ...\""
     }
   ],
-  "prerequisites": {
-    "system_packages": ["ffmpeg"],
-    "python_packages": [],
-    "disk_space_mb": 10
+  "inputs": {
+    "fixture": "tests/fixtures/shared/asr/en_16k_10s.wav",
+    "system_packages_hint": [
+      "ffmpeg",
+      "ffprobe"
+    ],
+    "fallback_executables": [
+      "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg",
+      "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe"
+    ]
   },
-  "estimated_build_time_seconds": 5
+  "constraints": [
+    "No host-level package installation is permitted during this run.",
+    "Reproducibility is anchored on repo-local ffmpeg/ffprobe binaries because PATH lacks system executables."
+  ],
+  "executable": true,
+  "blocking_issues": []
 }

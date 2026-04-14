@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-03-30T00:14:00+08:00",
-  "model_id": "ffmpeg",
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "model_id": "system/ffmpeg",
   "status": "passed",
   "checks": {
     "spec_completeness": {
@@ -22,7 +22,8 @@
     "fixture_availability": {
       "passed": true,
       "fixture_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
-      "source": "shared"
+      "source": "shared_fallback",
+      "warning": "requested fixture path is absent; shared fallback recorded"
     },
     "io_contract_sufficient": {
       "passed": true,
@@ -34,6 +35,9 @@
     }
   },
   "ready_for_build_env": true,
-  "warnings": [],
+  "warnings": [
+    "environment_hint preferred uv/python3.10, but runtime evidence selected host python3.13 venv plus repo-local executables.",
+    "system PATH lacks ffmpeg/ffprobe; fallback is explicit and recorded."
+  ],
   "blockers": []
 }

@@ -1,34 +1,17 @@
-"""
-FFmpeg Wrapper Package for SURE-EVAL.
+"""Stable exports for the ffmpeg wrapper package."""
 
-Exports:
-    FFmpegWrapper: Main wrapper class for FFmpeg audio processing
-    AudioProcessResult: Result type for audio processing operations
-    MCPServer: MCP server for FFmpeg integration
-
-Example:
-    from ffmpeg import FFmpegWrapper
-    
-    wrapper = FFmpegWrapper()
-    result = wrapper.predict(
-        input_path="input.wav",
-        output_path="output.wav",
-        start_time=0,
-        duration=3,
-        sample_rate=16000,
-        channels=1
-    )
-    print(result.output_path)
-"""
-
-from .model import FFmpegWrapper, AudioProcessResult, ModelLoadError, InferenceError
+from .model import (
+    AudioProcessResult,
+    FFmpegWrapper,
+    InferenceError,
+    ModelLoadError,
+    ModelWrapper,
+)
 
 __all__ = [
+    "ModelWrapper",
     "FFmpegWrapper",
-    "AudioProcessResult", 
+    "AudioProcessResult",
     "ModelLoadError",
-    "InferenceError"
+    "InferenceError",
 ]
-
-# MCP server is available but not auto-imported to avoid heavy dependencies
-# Use: from ffmpeg.server import MCPServer

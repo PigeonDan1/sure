@@ -1,9 +1,11 @@
 {
-  "timestamp": "2026-03-30T00:18:00+08:00",
-  "model_id": "ffmpeg",
-  "model_name": "FFmpeg",
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "model_id": "system/ffmpeg",
+  "model_name": "ffmpeg",
   "status": "PASSED",
-  "stage": "phase_1_complete",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "stage": "SAVE_REPRO_ARTIFACTS",
   "workflow": {
     "steps_completed": [
       "DISCOVER",
@@ -12,69 +14,147 @@
       "VALIDATE_SPEC",
       "BUILD_ENV",
       "FETCH_WEIGHTS",
-      "VALIDATE_IMPORT",
+      "VALIDATE_EXECUTABLE",
       "VALIDATE_LOAD",
       "VALIDATE_INFER",
       "VALIDATE_CONTRACT",
       "GENERATE_WRAPPER",
-      "SAVE_ARTIFACTS"
+      "SAVE_ARTIFACTS",
+      "EXPORT_REPRO_BUNDLE",
+      "LOAD_REPRO_BUNDLE",
+      "REBUILD_MINIMAL_ENV",
+      "FETCH_OR_VALIDATE_WEIGHTS_FOR_REPRO",
+      "RUN_MINIMAL_REPRODUCTION",
+      "VALIDATE_REPRO_OUTPUT",
+      "SAVE_REPRO_ARTIFACTS"
     ],
-    "final_step": "SAVE_ARTIFACTS"
+    "final_step": "SAVE_REPRO_ARTIFACTS"
+  },
+  "backend": {
+    "type": "host_python_venv_with_repo_local_executable_fallback",
+    "choice_reason": "PATH does not provide ffmpeg/ffprobe and uv is unavailable, so the lowest-risk reproducible path is a local Python venv for wrapper utilities plus repo-local ffmpeg/ffprobe executables."
+  },
+  "build": {
+    "success": true,
+    "log_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/artifacts/build.log",
+    "venv_path": "/tmp/sure_eval_ffmpeg_phase1/.venv"
+  },
+  "weights": {
+    "required": false,
+    "fetched": false,
+    "note": "ffmpeg is a utility/system tool and this phase-1 path validates executables rather than model weights."
   },
   "validation_results": {
     "import": {
+      "stage": "VALIDATE_EXECUTABLE",
+      "name": "import",
       "passed": true,
-      "duration_ms": 40,
-      "test": "ffmpeg -version",
-      "evidence": "ffmpeg version 4.4.2-0ubuntu0.22.04.1"
+      "command": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg -version && /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe -version",
+      "ffmpeg_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg",
+      "ffprobe_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe",
+      "ffmpeg_version": "ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers",
+      "ffprobe_version": "ffprobe version 7.1-tessus  https://evermeet.cx/ffmpeg/  Copyright (c) 2007-2024 the FFmpeg developers",
+      "ffmpeg_configuration": "configuration: --prefix=/Volumes/tempdisk/sw --extra-cflags=-fno-stack-check --arch=arm64 --cc=/usr/bin/clang --enable-gpl --enable-libvmaf --enable-libopenjpeg --enable-libopus --enable-libmp3lame --enable-libx264 --enable-libx265 --enable-libvpx --enable-libwebp --enable-libass --enable-libfreetype --enable-fontconfig --enable-libtheora --enable-libvorbis --enable-libsnappy --enable-libaom --enable-libvidstab --enable-libzimg --enable-libsvtav1 --enable-libharfbuzz --enable-libkvazaar --pkg-config-flags=--static --enable-ffplay --enable-postproc --enable-neon --enable-runtime-cpudetect --disable-indev=qtkit --disable-indev=x11grab_xcb",
+      "ffprobe_configuration": "configuration: --cc=/usr/bin/clang --prefix=/opt/ffmpeg --extra-version=tessus --enable-avisynth --enable-fontconfig --enable-gpl --enable-libaom --enable-libass --enable-libbluray --enable-libdav1d --enable-libfreetype --enable-libgsm --enable-libharfbuzz --enable-libmodplug --enable-libmp3lame --enable-libmysofa --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvmaf --enable-libvo-amrwbenc --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-libzvbi --enable-version3 --pkg-config-flags=--static --disable-ffplay"
     },
     "load": {
+      "stage": "VALIDATE_LOAD",
+      "name": "load",
       "passed": true,
-      "duration_ms": 40,
-      "test": "ffprobe -version",
-      "evidence": "ffprobe version 4.4.2-0ubuntu0.22.04.1"
+      "status": "not_applicable",
+      "reason": "ffmpeg is a utility/system tool; there is no separate model load stage distinct from executable discovery."
     },
     "infer": {
+      "stage": "VALIDATE_INFER",
+      "name": "infer",
       "passed": true,
-      "duration_ms": 79,
-      "test": "ffmpeg -i tests/fixtures/shared/asr/en_16k_10s.wav -ss 0 -t 3 -ar 16000 -ac 1 artifacts/tmp_clip.wav -y",
-      "evidence": "Audio clip created: 96078 bytes"
+      "command": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg -y -i /Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav -ac 1 -ar 16000 -c:a pcm_s16le /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/tmp/ffmpeg_smoke/out.wav",
+      "fixture_used": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "fixture_source": "shared_fallback",
+      "output_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/tmp/ffmpeg_smoke/out.wav",
+      "ffmpeg_exit_code": 0
     },
     "contract": {
+      "stage": "VALIDATE_CONTRACT",
+      "name": "contract",
       "passed": true,
-      "duration_ms": 1,
       "checks": {
-        "output_path_exists": true,
-        "output_path_nonempty": true,
-        "json_serializable": true
+        "output_exists": true,
+        "valid_ffprobe_json": true,
+        "has_audio_stream": true,
+        "sample_rate_is_16000": true,
+        "channels_is_1": true,
+        "codec_name_is_pcm_s16le": true,
+        "format_is_wav_compatible": true
       },
-      "evidence": "output_path: artifacts/tmp_clip.wav"
+      "required_fields": [
+        "output_path",
+        "exists",
+        "ffmpeg_exit_code",
+        "ffprobe.streams",
+        "ffprobe.format.format_name"
+      ],
+      "nonempty_fields": [
+        "output_path",
+        "ffprobe.streams"
+      ]
+    },
+    "wrapper_contract": {
+      "stage": "GENERATE_WRAPPER",
+      "name": "wrapper_contract",
+      "passed": true,
+      "evidence": {
+        "ffmpeg_executable": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg",
+        "ffprobe_executable": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe",
+        "output_path": "/tmp/sure_eval_ffmpeg_phase1/wrapper_out.wav"
+      }
     }
   },
   "artifacts_produced": [
-    "src/sure_eval/models/ffmpeg/model.spec.yaml",
-    "src/sure_eval/models/ffmpeg/model.py",
-    "src/sure_eval/models/ffmpeg/server.py",
     "src/sure_eval/models/ffmpeg/__init__.py",
-    "src/sure_eval/models/ffmpeg/config.yaml",
-    "src/sure_eval/models/ffmpeg/artifacts/backend_choice.json",
-    "src/sure_eval/models/ffmpeg/artifacts/build_plan.json",
-    "src/sure_eval/models/ffmpeg/artifacts/build.log",
-    "src/sure_eval/models/ffmpeg/artifacts/validation.log",
-    "src/sure_eval/models/ffmpeg/artifacts/spec_validation.json",
-    "src/sure_eval/models/ffmpeg/artifacts/classification.json",
-    "src/sure_eval/models/ffmpeg/artifacts/repo_summary.json",
-    "src/sure_eval/models/ffmpeg/artifacts/weights_manifest.json",
     "src/sure_eval/models/ffmpeg/artifacts/artifact_manifest.json",
-    "src/sure_eval/models/ffmpeg/artifacts/verdict.json"
+    "src/sure_eval/models/ffmpeg/artifacts/backend_choice.json",
+    "src/sure_eval/models/ffmpeg/artifacts/build.log",
+    "src/sure_eval/models/ffmpeg/artifacts/build_plan.json",
+    "src/sure_eval/models/ffmpeg/artifacts/classification.json",
+    "src/sure_eval/models/ffmpeg/artifacts/environment_manifest.json",
+    "src/sure_eval/models/ffmpeg/artifacts/environment_snapshot.txt",
+    "src/sure_eval/models/ffmpeg/artifacts/fallback_record.json",
+    "src/sure_eval/models/ffmpeg/artifacts/fixture_manifest.json",
+    "src/sure_eval/models/ffmpeg/artifacts/patch_log.json",
+    "src/sure_eval/models/ffmpeg/artifacts/patch_report.json",
+    "src/sure_eval/models/ffmpeg/artifacts/preflight_summary.json",
+    "src/sure_eval/models/ffmpeg/artifacts/repo_summary.json",
+    "src/sure_eval/models/ffmpeg/artifacts/repro_validation.log",
+    "src/sure_eval/models/ffmpeg/artifacts/repro_verdict.json",
+    "src/sure_eval/models/ffmpeg/artifacts/sample_output.json",
+    "src/sure_eval/models/ffmpeg/artifacts/spec_validation.json",
+    "src/sure_eval/models/ffmpeg/artifacts/validation.log",
+    "src/sure_eval/models/ffmpeg/artifacts/verdict.json",
+    "src/sure_eval/models/ffmpeg/artifacts/weights_manifest.json",
+    "src/sure_eval/models/ffmpeg/config.yaml",
+    "src/sure_eval/models/ffmpeg/model.py",
+    "src/sure_eval/models/ffmpeg/model.spec.yaml",
+    "src/sure_eval/models/ffmpeg/pyproject.toml",
+    "src/sure_eval/models/ffmpeg/repro_bundle/environment_manifest.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/environment_snapshot.txt",
+    "src/sure_eval/models/ffmpeg/repro_bundle/fixture_manifest.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/minimal_repro_spec.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/repro_instructions.md",
+    "src/sure_eval/models/ffmpeg/repro_bundle/repro_manifest.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/repro_validation.log",
+    "src/sure_eval/models/ffmpeg/repro_bundle/repro_verdict.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/sample_output.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/weights_manifest.json",
+    "src/sure_eval/models/ffmpeg/requirements.lock",
+    "src/sure_eval/models/ffmpeg/server.py"
   ],
+  "failure_history": [],
   "escalation_triggered": false,
   "retry_count": 0,
   "notes": [
-    "FFmpeg system tool successfully onboarded",
-    "All four validation tests passed",
-    "Wrapper generated with model.py, server.py, __init__.py, config.yaml",
-    "No weights required (system utility tool)",
-    "Backend: system (pre-installed binary)"
+    "Phase-1 target validated the minimal ffmpeg executable path rather than a Python model import path.",
+    "System PATH did not provide ffmpeg/ffprobe, so a recorded repo-local binary fallback was used.",
+    "Repro replay succeeded in a fresh temporary workspace using only the exported bundle contents and bundled fixture."
   ]
 }

@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "patches": [
+    {
+      "files": [
+        "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/model.py",
+        "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/__init__.py",
+        "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/config.yaml",
+        "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/pyproject.toml"
+      ],
+      "type": "wrapper_localization",
+      "rationale": "Aligned wrapper exports and executable resolution with the validated repo-local ffmpeg fallback path and recorded minimal Python runtime metadata.",
+      "upstream_source_modified": false
+    }
+  ]
+}

@@ -1,31 +1,15 @@
 {
-  "timestamp": "2026-03-30T00:14:00+08:00",
-  "model_id": "ffmpeg",
-  "source_type": "system_tool",
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
   "repo": {
-    "url": "https://ffmpeg.org/",
-    "commit": null,
-    "type": "external_binary"
+    "url": "https://github.com/FFmpeg/FFmpeg",
+    "commit_declared": null,
+    "commit_tested": "8bd748ebea5aff96a1284c735c22596af026ba22"
   },
-  "discovery": {
-    "tool_type": "audio_processing",
-    "system_availability": {
-      "ffmpeg": {
-        "path": "/usr/bin/ffmpeg",
-        "version": "4.4.2-0ubuntu0.22.04.1",
-        "available": true
-      },
-      "ffprobe": {
-        "path": "/usr/bin/ffprobe", 
-        "version": "4.4.2-0ubuntu0.22.04.1",
-        "available": true
-      }
-    },
-    "no_python_repo": true,
-    "notes": "FFmpeg is a system-level audio/video processing tool, not a Python model repository"
-  },
-  "evidence": {
-    "ffmpeg_version_output": "ffmpeg version 4.4.2-0ubuntu0.22.04.1",
-    "ffprobe_version_output": "ffprobe version 4.4.2-0ubuntu0.22.04.1"
+  "phase1_runtime_target": "discover ffmpeg/ffprobe, transcode shared ASR fixture, validate wav metadata via ffprobe",
+  "fixture_resolution": {
+    "requested_fixture": "tests/fixtures/shared/asr/en_16k.wav",
+    "selected_fixture": "tests/fixtures/shared/asr/en_16k_10s.wav",
+    "source": "shared_fallback",
+    "reason": "requested shared fixture is absent in repo; selected existing shared ASR wav without narrowing task semantics"
   }
 }

@@ -8,10 +8,10 @@ model:
   version: "dynamic"
 
 server:
-  command: ["python", "server.py"]
+  command: ["python3", "server.py"]
   env:
-    FFMPEG_PATH: "ffmpeg"
-    FFPROBE_PATH: "ffprobe"
+    FFMPEG_PATH: "./repro_bundle/bin/ffmpeg"
+    FFPROBE_PATH: "./repro_bundle/bin/ffprobe"
   timeout: 60
 
 tools:

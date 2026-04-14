@@ -7,7 +7,8 @@ import os
 import shutil
 import subprocess
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, Iterable, Optional
 
 
 class ModelLoadError(RuntimeError):
@@ -38,6 +39,7 @@ class AudioProcessResult:
     ffprobe_version: str
     ffprobe: Dict[str, Any]
     contract_passed: bool
+    contract_checks: Dict[str, Any]
 
     def __post_init__(self):
         assert isinstance(self.output_path, str)
@@ -47,27 +49,45 @@ class AudioProcessResult:
         return asdict(self)
 
 
-class FFmpegWrapper:
+class ModelWrapper:
     """Thin wrapper over local ffmpeg/ffprobe executables."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
-        self._ffmpeg_path = self.config.get("ffmpeg_path", "ffmpeg")
-        self._ffprobe_path = self.config.get("ffprobe_path", "ffprobe")
+        self._model_dir = Path(__file__).resolve().parent
+        self._ffmpeg_path = self.config.get("ffmpeg_path") or os.environ.get("FFMPEG_PATH")
+        self._ffprobe_path = self.config.get("ffprobe_path") or os.environ.get("FFPROBE_PATH")
         self._model_loaded = False
 
-    def _resolve_executable(self, candidate: str) -> str:
-        if os.path.isabs(candidate):
-            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                return candidate
-            raise ModelLoadError(f"Executable is not runnable: {candidate}")
-        resolved = shutil.which(candidate)
-        if resolved:
-            return resolved
-        raise ModelLoadError(f"Executable not found on PATH: {candidate}")
+    def _default_candidates(self, executable_name: str) -> Iterable[str]:
+        env_value = os.environ.get(executable_name.upper() + "_PATH")
+        bundle_candidate = self._model_dir / "repro_bundle" / "bin" / executable_name
+        candidates = [env_value, executable_name, str(bundle_candidate)]
+        for candidate in candidates:
+            if candidate:
+                yield candidate
 
-    def _run_version(self, executable: str) -> tuple[str, str]:
-        resolved = self._resolve_executable(executable)
+    def _resolve_executable(self, candidate: Optional[str], executable_name: str) -> str:
+        candidates = [candidate] if candidate else list(self._default_candidates(executable_name))
+        for value in candidates:
+            if not value:
+                continue
+            if os.path.isabs(value):
+                if os.path.isfile(value) and os.access(value, os.X_OK):
+                    return value
+                continue
+            resolved = shutil.which(value)
+            if resolved:
+                return resolved
+            local_candidate = self._model_dir / value
+            if local_candidate.is_file() and os.access(local_candidate, os.X_OK):
+                return str(local_candidate)
+        raise ModelLoadError(
+            f"Executable not found for {executable_name}; checked {candidates}"
+        )
+
+    def _run_version(self, executable: Optional[str], executable_name: str) -> tuple[str, str]:
+        resolved = self._resolve_executable(executable, executable_name)
         try:
             proc = subprocess.run(
                 [resolved, "-version"],
@@ -81,14 +101,14 @@ class FFmpegWrapper:
         return resolved, version_line
 
     def load(self) -> None:
-        self._ffmpeg_path, _ = self._run_version(self._ffmpeg_path)
-        self._ffprobe_path, _ = self._run_version(self._ffprobe_path)
+        self._ffmpeg_path, _ = self._run_version(self._ffmpeg_path, "ffmpeg")
+        self._ffprobe_path, _ = self._run_version(self._ffprobe_path, "ffprobe")
         self._model_loaded = True
 
     def healthcheck(self) -> Dict[str, Any]:
         try:
-            ffmpeg_path, ffmpeg_version = self._run_version(self._ffmpeg_path)
-            ffprobe_path, ffprobe_version = self._run_version(self._ffprobe_path)
+            ffmpeg_path, ffmpeg_version = self._run_version(self._ffmpeg_path, "ffmpeg")
+            ffprobe_path, ffprobe_version = self._run_version(self._ffprobe_path, "ffprobe")
             return {
                 "status": "ready",
                 "message": "ffmpeg/ffprobe are available",
@@ -120,8 +140,8 @@ class FFmpegWrapper:
             raise InferenceError(f"Input file not found: {input_path}")
 
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-        ffmpeg_path, ffmpeg_version = self._run_version(self._ffmpeg_path)
-        ffprobe_path, ffprobe_version = self._run_version(self._ffprobe_path)
+        ffmpeg_path, ffmpeg_version = self._run_version(self._ffmpeg_path, "ffmpeg")
+        ffprobe_path, ffprobe_version = self._run_version(self._ffprobe_path, "ffprobe")
 
         cmd = [
             ffmpeg_path,
@@ -172,9 +192,19 @@ class FFmpegWrapper:
         except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
             raise InferenceError(f"ffprobe validation failed: {exc}") from exc
 
-        contract_passed = bool(probe_data.get("streams")) and bool(
-            probe_data.get("format", {}).get("format_name")
+        stream = next(
+            (item for item in probe_data.get("streams", []) if item.get("codec_type") == "audio"),
+            {},
         )
+        format_name = probe_data.get("format", {}).get("format_name", "")
+        contract_checks = {
+            "has_audio_stream": bool(stream),
+            "sample_rate_is_16000": stream.get("sample_rate") == str(sample_rate),
+            "channels_is_expected": stream.get("channels") == channels,
+            "codec_matches": stream.get("codec_name") == codec,
+            "format_is_wav_compatible": "wav" in format_name.split(","),
+        }
+        contract_passed = all(contract_checks.values())
         return AudioProcessResult(
             output_path=output_path,
             exists=exists,
@@ -185,6 +215,7 @@ class FFmpegWrapper:
             ffprobe_version=ffprobe_version,
             ffprobe=probe_data,
             contract_passed=contract_passed,
+            contract_checks=contract_checks,
         )
     
     def process_audio(
@@ -206,3 +237,5 @@ class FFmpegWrapper:
         result = self.predict(input_path, output_path, **kwargs)
         return result.to_dict()
 
+
+FFmpegWrapper = ModelWrapper

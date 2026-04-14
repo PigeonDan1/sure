@@ -1,14 +1,132 @@
-=== BUILD_ENV Log Started at 2026-03-30T00:17:25+08:00 ===
+## BUILD_ENV create_venv
+command: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 -m venv /tmp/sure_eval_ffmpeg_phase1/.venv
+stdout:
+<empty>
+stderr:
+<empty>
 
-Backend: system
-Model: ffmpeg
+## BUILD_ENV pip_freeze
+command: /tmp/sure_eval_ffmpeg_phase1/.venv/bin/python -m pip freeze
+stdout:
+<empty>
+stderr:
+WARNING: The directory '/Users/wency/Library/Caches/pip' or its parent directory is not owned or is not writable by the current user. The cache has been disabled. Check the permissions and owner of that directory. If executing pip with sudo, you should use sudo's -H flag.
 
-[Step 1] Verifying ffmpeg availability...
-ffmpeg version 4.4.2-0ubuntu0.22.04.1 Copyright (c) 2000-2021 the FFmpeg developers
-PASS: ffmpeg found
+## VALIDATE_EXECUTABLE ffmpeg
+ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers
+built with Apple clang version 13.1.6 (clang-1316.0.21.2.5)
+configuration: --prefix=/Volumes/tempdisk/sw --extra-cflags=-fno-stack-check --arch=arm64 --cc=/usr/bin/clang --enable-gpl --enable-libvmaf --enable-libopenjpeg --enable-libopus --enable-libmp3lame --enable-libx264 --enable-libx265 --enable-libvpx --enable-libwebp --enable-libass --enable-libfreetype --enable-fontconfig --enable-libtheora --enable-libvorbis --enable-libsnappy --enable-libaom --enable-libvidstab --enable-libzimg --enable-libsvtav1 --enable-libharfbuzz --enable-libkvazaar --pkg-config-flags=--static --enable-ffplay --enable-postproc --enable-neon --enable-runtime-cpudetect --disable-indev=qtkit --disable-indev=x11grab_xcb
+libavutil      59. 39.100 / 59. 39.100
+libavcodec     61. 19.100 / 61. 19.100
+libavformat    61.  7.100 / 61.  7.100
+libavdevice    61.  3.100 / 61.  3.100
+libavfilter    10.  4.100 / 10.  4.100
+libswscale      8.  3.100 /  8.  3.100
+libswresample   5.  3.100 /  5.  3.100
+libpostproc    58.  3.100 / 58.  3.100
 
-[Step 2] Verifying ffprobe availability...
-ffprobe version 4.4.2-0ubuntu0.22.04.1 Copyright (c) 2007-2021 the FFmpeg developers
-PASS: ffprobe found
+## VALIDATE_EXECUTABLE ffprobe
+ffprobe version 7.1-tessus  https://evermeet.cx/ffmpeg/  Copyright (c) 2007-2024 the FFmpeg developers
+built with Apple clang version 16.0.0 (clang-1600.0.26.3)
+configuration: --cc=/usr/bin/clang --prefix=/opt/ffmpeg --extra-version=tessus --enable-avisynth --enable-fontconfig --enable-gpl --enable-libaom --enable-libass --enable-libbluray --enable-libdav1d --enable-libfreetype --enable-libgsm --enable-libharfbuzz --enable-libmodplug --enable-libmp3lame --enable-libmysofa --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvmaf --enable-libvo-amrwbenc --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-libzvbi --enable-version3 --pkg-config-flags=--static --disable-ffplay
+libavutil      59. 39.100 / 59. 39.100
+libavcodec     61. 19.100 / 61. 19.100
+libavformat    61.  7.100 / 61.  7.100
+libavdevice    61.  3.100 / 61.  3.100
+libavfilter    10.  4.100 / 10.  4.100
+libswscale      8.  3.100 /  8.  3.100
+libswresample   5.  3.100 /  5.  3.100
+libpostproc    58.  3.100 / 58.  3.100
 
-=== BUILD_ENV Completed at 2026-03-30T00:17:25+08:00 ===
+## VALIDATE_INFER ffmpeg
+ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers
+  built with Apple clang version 13.1.6 (clang-1316.0.21.2.5)
+  configuration: --prefix=/Volumes/tempdisk/sw --extra-cflags=-fno-stack-check --arch=arm64 --cc=/usr/bin/clang --enable-gpl --enable-libvmaf --enable-libopenjpeg --enable-libopus --enable-libmp3lame --enable-libx264 --enable-libx265 --enable-libvpx --enable-libwebp --enable-libass --enable-libfreetype --enable-fontconfig --enable-libtheora --enable-libvorbis --enable-libsnappy --enable-libaom --enable-libvidstab --enable-libzimg --enable-libsvtav1 --enable-libharfbuzz --enable-libkvazaar --pkg-config-flags=--static --enable-ffplay --enable-postproc --enable-neon --enable-runtime-cpudetect --disable-indev=qtkit --disable-indev=x11grab_xcb
+  libavutil      59. 39.100 / 59. 39.100
+  libavcodec     61. 19.100 / 61. 19.100
+  libavformat    61.  7.100 / 61.  7.100
+  libavdevice    61.  3.100 / 61.  3.100
+  libavfilter    10.  4.100 / 10.  4.100
+  libswscale      8.  3.100 /  8.  3.100
+  libswresample   5.  3.100 /  5.  3.100
+  libpostproc    58.  3.100 / 58.  3.100
+[aist#0:0/pcm_s16le @ 0x15ba04710] Guessed Channel Layout: mono
+Input #0, wav, from '/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav':
+  Duration: 00:00:02.35, bitrate: 256 kb/s
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 16000 Hz, mono, s16, 256 kb/s
+Stream mapping:
+  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))
+Press [q] to stop, [?] for help
+Output #0, wav, to '/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/tmp/ffmpeg_smoke/out.wav':
+  Metadata:
+    ISFT            : Lavf61.7.100
+  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 16000 Hz, mono, s16, 256 kb/s
+      Metadata:
+        encoder         : Lavc61.19.100 pcm_s16le
+[out#0/wav @ 0x13a604080] video:0KiB audio:73KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.103723%
+size=      74KiB time=00:00:02.35 bitrate= 256.3kbits/s speed= 619x
+
+## VALIDATE_CONTRACT ffprobe
+{
+    "streams": [
+        {
+            "index": 0,
+            "codec_name": "pcm_s16le",
+            "codec_long_name": "PCM signed 16-bit little-endian",
+            "codec_type": "audio",
+            "codec_tag_string": "[1][0][0][0]",
+            "codec_tag": "0x0001",
+            "sample_fmt": "s16",
+            "sample_rate": "16000",
+            "channels": 1,
+            "bits_per_sample": 16,
+            "initial_padding": 0,
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/16000",
+            "duration_ts": 37600,
+            "duration": "2.350000",
+            "bit_rate": "256000",
+            "disposition": {
+                "default": 0,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            }
+        }
+    ],
+    "format": {
+        "filename": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/tmp/ffmpeg_smoke/out.wav",
+        "nb_streams": 1,
+        "nb_programs": 0,
+        "nb_stream_groups": 0,
+        "format_name": "wav",
+        "format_long_name": "WAV / WAVE (Waveform Audio)",
+        "duration": "2.350000",
+        "size": "75278",
+        "bit_rate": "256265",
+        "probe_score": 99,
+        "tags": {
+            "encoder": "Lavf61.7.100"
+        }
+    }
+}
+
+## WRAPPER_SMOKE
+{"output_path": "/tmp/sure_eval_ffmpeg_phase1/wrapper_out.wav", "exists": true, "ffmpeg_exit_code": 0, "ffmpeg_executable": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg", "ffprobe_executable": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe", "ffmpeg_version": "ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers", "ffprobe_version": "ffprobe version 7.1-tessus  https://evermeet.cx/ffmpeg/  Copyright (c) 2007-2024 the FFmpeg developers", "ffprobe": {"streams": [{"index": 0, "codec_name": "pcm_s16le", "codec_long_name": "PCM signed 16-bit little-endian", "codec_type": "audio", "codec_tag_string": "[1][0][0][0]", "codec_tag": "0x0001", "sample_fmt": "s16", "sample_rate": "16000", "channels": 1, "bits_per_sample": 16, "initial_padding": 0, "r_frame_rate": "0/0", "avg_frame_rate": "0/0", "time_base": "1/16000", "duration_ts": 37600, "duration": "2.350000", "bit_rate": "256000", "disposition": {"default": 0, "dub": 0, "original": 0, "comment": 0, "lyrics": 0, "karaoke": 0, "forced": 0, "hearing_impaired": 0, "visual_impaired": 0, "clean_effects": 0, "attached_pic": 0, "timed_thumbnails": 0, "non_diegetic": 0, "captions": 0, "descriptions": 0, "metadata": 0, "dependent": 0, "still_image": 0, "multilayer": 0}}], "format": {"filename": "/tmp/sure_eval_ffmpeg_phase1/wrapper_out.wav", "nb_streams": 1, "nb_programs": 0, "nb_stream_groups": 0, "format_name": "wav", "format_long_name": "WAV / WAVE (Waveform Audio)", "duration": "2.350000", "size": "75278", "bit_rate": "256265", "probe_score": 99, "tags": {"encoder": "Lavf61.7.100"}}}, "contract_passed": true, "contract_checks": {"has_audio_stream": true, "sample_rate_is_16000": true, "channels_is_expected": true, "codec_matches": true, "format_is_wav_compatible": true}}
+
