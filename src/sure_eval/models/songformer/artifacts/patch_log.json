@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-04-17T19:57:00Z",
+  "model_id": "ASLP-lab/SongFormer",
+  "patches": [
+    {
+      "path": "src/sure_eval/models/songformer/model.py",
+      "scope": "wrapper_layer",
+      "reason": "Wrapper smoke revealed that Hugging Face dynamic module imports required the snapshot directory to be first on sys.path and the wrapper's top-level model module to stop shadowing the snapshot's model.py.",
+      "related_checkpoint": "GENERATE_WRAPPER"
+    },
+    {
+      "path": "src/sure_eval/models/songformer/repro_validate.py",
+      "scope": "repro_support",
+      "reason": "The first fresh-temp replay failed because transformers initialized its dynamic module cache before bundle-local HF cache environment variables were set.",
+      "related_checkpoint": "RUN_MINIMAL_REPRODUCTION"
+    }
+  ]
+}

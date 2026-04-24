@@ -1,0 +1,36 @@
+{
+  "timestamp": "2026-04-17T19:56:11.495672+00:00",
+  "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/songformer/song_24k.wav",
+  "weights_dir": "/private/tmp/songformer_repro_GgaF69/repro_bundle/weights/SongFormer",
+  "hf_home": "/private/tmp/songformer_repro_GgaF69/repro_bundle/hf_cache",
+  "tests": {
+    "import": {
+      "passed": true,
+      "duration_ms": 0.0
+    },
+    "load": {
+      "passed": true,
+      "duration_ms": 32581.608,
+      "device": "cpu"
+    },
+    "infer": {
+      "passed": true,
+      "duration_ms": 22821.142,
+      "device": "cpu"
+    },
+    "contract": {
+      "passed": true,
+      "duration_ms": 0.0,
+      "segment_count": 1
+    }
+  },
+  "result": [
+    {
+      "label": "inst",
+      "start": 0.0,
+      "end": 15.00060002400096
+    }
+  ],
+  "overall": "PASSED",
+  "duration_seconds": 55.404
+}

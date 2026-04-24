@@ -1,0 +1,50 @@
+model_id: "ASLP-lab/SongFormer"
+model_name: "songformer"
+task_type: "music_ir"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/ASLP-lab/SongFormer"
+  commit: null
+
+weights:
+  source: "huggingface"
+  repo_id: "ASLP-lab/SongFormer"
+  local_path: "ckpts/SongFormer"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "ckpts"
+  note: "Phase-1 must download the Hugging Face snapshot and any secondary Hugging Face assets into model-local directories via local_dir and HF_HOME when possible."
+
+environment:
+  preferred_backend: "pixi"
+  python_version: "3.10"
+  requires_gpu: true
+  system_packages: ["ffmpeg", "libsndfile1"]
+
+entrypoints:
+  import_test: "from transformers import AutoModel; from huggingface_hub import snapshot_download"
+  load_test: "import os, sys; local_dir = snapshot_download(repo_id='ASLP-lab/SongFormer', repo_type='model', local_dir='ckpts/SongFormer', local_dir_use_symlinks=False, resume_download=True, allow_patterns='*', ignore_patterns=['SongFormer.pt', 'SongFormer.safetensors']); sys.path.append(local_dir); os.environ['SONGFORMER_LOCAL_DIR'] = local_dir; model = AutoModel.from_pretrained(local_dir, trust_remote_code=True, low_cpu_mem_usage=False); device = 'cuda:0' if __import__('torch').cuda.is_available() else 'cpu'; model = model.to(device); model.eval()"
+  infer_test: "result = model('tests/fixtures/songformer/song_24k.wav')"
+
+fixture:
+  audio: "tests/fixtures/songformer/song_24k.wav"
+  task_specific: true
+  fallback_allowed: true
+  existence_verified: true
+  existence_evidence: "Verified locally during DISCOVER on 2026-04-17: tests/fixtures/songformer/song_24k.wav exists, probes as 24kHz mono PCM WAV, and was generated model-locally from the existing shared MIR fixture tests/fixtures/shared/mir/rhythm_22k_15s.wav after the prompt placeholder tests/fixtures/shared/music/song_24k.wav was confirmed absent."
+  note: "The prompt fixture path was a placeholder. Phase-1 uses a verified model-specific fallback that preserves music-audio semantics and the required 24kHz input rate."
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "segments"
+  required_fields: ["start", "end", "label"]
+  nonempty_fields: ["label"]
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true

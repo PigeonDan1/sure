@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-04-17T19:30:00Z",
+  "model_id": "ASLP-lab/SongFormer",
+  "status": "passed",
+  "checks": {
+    "spec_completeness": {
+      "passed": true,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": true,
+      "unsupported_fields": []
+    },
+    "conflict_resolution": {
+      "passed": true,
+      "unresolved_conflicts": []
+    },
+    "build_plan_executable": {
+      "passed": true,
+      "blocking_issues": []
+    },
+    "fixture_availability": {
+      "passed": true,
+      "fixture_path": "tests/fixtures/songformer/song_24k.wav",
+      "source": "model_specific_fallback",
+      "note": "The prompt placeholder fixture is absent. The selected fallback is verified locally, preserves music-audio semantics, and meets the 24kHz requirement."
+    },
+    "io_contract_sufficient": {
+      "passed": true,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": true,
+      "incompatibilities": []
+    }
+  },
+  "ready_for_build_env": true,
+  "warnings": [
+    "GPU is unavailable on this host although the model input marks requires_gpu=true. Phase-1 can only pass if the same AutoModel repo-native path completes on CPU fallback.",
+    "pixi is unavailable, so the validated plan uses a model-local pip environment seeded from an existing Python 3.10 interpreter."
+  ],
+  "blockers": []
+}

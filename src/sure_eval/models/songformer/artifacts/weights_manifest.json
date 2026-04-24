@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-04-17T19:42:00Z",
+  "whether_weights_required": true,
+  "source": "huggingface",
+  "identifier": "ASLP-lab/SongFormer",
+  "declared_revision": "5ac5227fccf286519464fdf211e15b606898408e",
+  "resolved_local_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/songformer/ckpts/SongFormer",
+  "cache_policy": "model_local_first",
+  "checksum": {
+    "path": "ckpts/SongFormer/model.safetensors",
+    "sha256": "8dcabf4ea19973edd51b9e5794004775fa7e8de3ecfa07eb1dbce00f516ce7f7"
+  },
+  "secondary_assets": [
+    {
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/songformer/hf_cache/hub/models--facebook--wav2vec2-conformer-rope-large-960h-ft",
+      "reason": "Transformers config lookup triggered during SongFormer custom-code load",
+      "cache_policy": "model_local_first_via_HF_HOME"
+    },
+    {
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/songformer/hf_cache/modules/transformers_modules/SongFormer",
+      "reason": "Transformers cached dynamic module copy for trust_remote_code loading",
+      "cache_policy": "model_local_first_via_HF_HOME"
+    }
+  ],
+  "fallback_reason": null,
+  "fallback_path": null
+}

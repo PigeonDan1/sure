@@ -1,0 +1,4 @@
+{"timestamp": "2026-04-17T19:41:11.180330+00:00", "stage": "VALIDATE_IMPORT", "status": "passed", "message": "Import test passed."}
+{"timestamp": "2026-04-17T19:41:27.655979+00:00", "stage": "VALIDATE_LOAD", "status": "passed", "message": "Load test passed.", "snapshot_dir": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/songformer/ckpts/SongFormer", "device": "cpu"}
+{"timestamp": "2026-04-17T19:41:49.649523+00:00", "stage": "VALIDATE_INFER", "status": "passed", "message": "Infer test passed.", "fixture_source": "model_specific_fallback", "fixture_used": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/songformer/song_24k.wav", "device": "cpu"}
+{"timestamp": "2026-04-17T19:41:49.650854+00:00", "stage": "VALIDATE_CONTRACT", "status": "passed", "message": "Contract test passed.", "primary_field": "segments", "required_fields": ["start", "end", "label"], "segment_count": 1}

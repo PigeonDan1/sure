@@ -1,0 +1,38 @@
+{
+  "minimal_callable_path": "from transformers import AutoModel; model = AutoModel.from_pretrained(weights_dir, trust_remote_code=True, low_cpu_mem_usage=False); result = model(fixture)",
+  "exact_commands_or_steps": [
+    "Create a fresh temp workdir and copy repro_bundle/ into it.",
+    "Materialize the bundle-local replay environment by copying repro_bundle/venv_seed to .venv-repro.",
+    "Run .venv-repro/bin/python repro_bundle/support/repro_validate.py with SURE_REPRO_FIXTURE, SURE_REPRO_WEIGHTS_DIR, SURE_REPRO_HF_HOME, and SURE_REPRO_OUTPUT set according to the manifests."
+  ],
+  "working_directory_assumptions": [
+    "The current working directory is a fresh temp directory containing the copied repro_bundle/.",
+    "Replay does not reuse the original phase-1 .venv, ckpts/, or hf_cache directories."
+  ],
+  "required_inputs": [
+    {
+      "name": "fixture",
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/songformer/song_24k.wav"
+    },
+    {
+      "name": "weights_dir",
+      "path": "<temp>/repro_bundle/weights/SongFormer"
+    },
+    {
+      "name": "hf_home",
+      "path": "<temp>/repro_bundle/hf_cache"
+    }
+  ],
+  "expected_outputs": [
+    {
+      "name": "repro_output.json",
+      "contract": "JSON list with at least one segment containing start, end, and non-empty label"
+    }
+  ],
+  "contract_checks": [
+    "Import succeeds without ModuleNotFoundError.",
+    "Load succeeds from the bundled SongFormer snapshot and bundled HF cache.",
+    "Inference returns a JSON-serializable non-empty list.",
+    "Each returned segment contains start, end, and a non-empty label."
+  ]
+}

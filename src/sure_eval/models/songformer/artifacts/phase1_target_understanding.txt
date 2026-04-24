@@ -1,0 +1,5 @@
+phase-1 target understanding
+- The minimal repo-native path is: import `transformers.AutoModel` and `huggingface_hub.snapshot_download`, fetch the Hugging Face snapshot into a model-local directory, set `SONGFORMER_LOCAL_DIR`, load via `AutoModel.from_pretrained(..., trust_remote_code=True)`, and call the loaded model on one verified 24kHz music WAV fixture.
+- The fixture is task-specific because this is music structure analysis; the prompt path was a placeholder, so phase-1 now uses a verified model-specific fallback derived from the shared MIR fixture while preserving music-audio semantics and the 24kHz requirement.
+- Backend choice is an initial suggestion, not a hard constraint; pixi was only a hint, and runtime evidence selected a model-local Python 3.10 pip environment instead.
+- If this flow fails, dependency and runtime-backend issues should be checked before blaming fixture mismatch, because the selected fixture is now locally verified and format-compliant.

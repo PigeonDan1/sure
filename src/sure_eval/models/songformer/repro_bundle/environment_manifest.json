@@ -1,0 +1,19 @@
+{
+  "backend": "pip",
+  "python_version": "3.10.20",
+  "env_creation_method": "copy repro_bundle/venv_seed to .venv-repro inside the fresh temp replay directory",
+  "dependency_installation_method": "bundle-local venv seed copied from the validated phase-1 environment; no additional package installation is required for replay",
+  "system_packages": {
+    "requested": ["ffmpeg", "libsndfile1"],
+    "available_on_phase1_host": {
+      "ffmpeg": false,
+      "libsndfile1": "not probed separately on macOS host"
+    }
+  },
+  "whether_gpu_required": false,
+  "important_runtime_assumptions": [
+    "Replay must set HF_HOME and HF_HUB_CACHE to repro_bundle/hf_cache so the cached dynamic module and wav2vec2 config remain bundle-local.",
+    "Replay must set SONGFORMER_LOCAL_DIR to the bundled weights directory before AutoModel.from_pretrained is called.",
+    "The validated path is CPU fallback on the same repo-native AutoModel callable path."
+  ]
+}

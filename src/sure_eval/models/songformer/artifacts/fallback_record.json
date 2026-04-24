@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-04-17T19:30:00Z",
+  "model_id": "ASLP-lab/SongFormer",
+  "fallbacks": [
+    {
+      "scope": "fixture",
+      "requested": "tests/fixtures/shared/music/song_24k.wav",
+      "selected": "tests/fixtures/songformer/song_24k.wav",
+      "reason": "The prompt fixture path does not exist in-repo. The selected model-specific fallback was derived from the verified shared MIR fixture tests/fixtures/shared/mir/rhythm_22k_15s.wav, preserves music-audio semantics, and satisfies the required 24kHz mono PCM WAV format.",
+      "evidence": [
+        "file probe: tests/fixtures/shared/music/song_24k.wav does not exist",
+        "source fixture metadata: tests/fixtures/shared/mir/rhythm_22k_15s.json describes a deterministic music-analysis fixture",
+        "output probe: tests/fixtures/songformer/song_24k.wav is RIFF/WAVE PCM 16-bit mono 24000 Hz",
+        "sha256: 6054a58df47891d4819061462e22ce2fe1959f8746fc6d42e1c5ea19c677a2b2"
+      ]
+    },
+    {
+      "scope": "runtime",
+      "requested": "cuda:0",
+      "selected": "cpu",
+      "reason": "The host has no visible NVIDIA GPU, but phase-1 policy allows CPU fallback when the same repo-native AutoModel path still passes import/load/infer/contract.",
+      "evidence": [
+        "preflight: nvidia-smi not found",
+        "validation.log: VALIDATE_LOAD and VALIDATE_INFER passed on device=cpu"
+      ]
+    }
+  ]
+}

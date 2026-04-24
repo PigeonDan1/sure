@@ -1,0 +1,5 @@
+repro target understanding
+- The minimal reproducible unit is: in a fresh temp workdir, recreate the recorded Python environment, reuse the bundle's selected backend and weight/cache paths, set `SONGFORMER_LOCAL_DIR`, and run the same AutoModel callable path on the verified 24kHz fixture.
+- The most critical constraint files in `repro_bundle/` will be `repro_manifest.json`, `minimal_repro_spec.json`, `weights_manifest.json`, and `environment_manifest.json`.
+- This model depends on pretrained weights and likely secondary Hugging Face assets, and it may depend on Python packages bundled through custom Hugging Face code; it does not require an external API service for the validated path.
+- Minimal reproduction succeeds only when the fresh replay produces a non-empty JSON-serializable list of segments whose items include `start`, `end`, and non-empty `label` fields.

@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-17T19:51:00Z",
+  "checkpoint": "RUN_MINIMAL_REPRODUCTION",
+  "failure_type": "config_not_set",
+  "recommended_action": "Move the AutoModel import inside repro_validate.main() after HF_HOME/HF_HUB_CACHE are set, recopy the updated repro_validate.py into repro_bundle/support/, and rerun replay in a brand-new temp directory.",
+  "what_changed": [
+    "repro_validate.py now imports transformers.AutoModel only after bundle-local cache environment variables are set",
+    "repro replay was rerun in /tmp/songformer_repro_GgaF69 instead of the failed /tmp/songformer_repro_7tdKCo directory"
+  ],
+  "approved_retry": true
+}

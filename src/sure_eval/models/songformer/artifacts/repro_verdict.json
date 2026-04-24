@@ -1,0 +1,16 @@
+{
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "last_successful_stage": "SAVE_REPRO_ARTIFACTS",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": true,
+  "repro_output_path": "artifacts/repro_output.json",
+  "repro_validation_log": "artifacts/repro_validation.log",
+  "notes": [
+    "Replay used a fresh temp workdir at /tmp/songformer_repro_GgaF69.",
+    "Replay depended on repro_bundle/, the verified 24kHz fixture, the bundled SongFormer snapshot, and the bundled HF cache rather than the original phase-1 runtime paths.",
+    "Replay reproduced the same non-empty JSON segment list contract with start, end, and non-empty label fields."
+  ]
+}

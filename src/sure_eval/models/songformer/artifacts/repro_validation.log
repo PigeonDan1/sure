@@ -1,0 +1,14 @@
+2026-04-17T19:49:00Z RUN_MINIMAL_REPRODUCTION attempt=1 tempdir=/tmp/songformer_repro_7tdKCo
+- action: copied repro_bundle/ into fresh temp directory and materialized .venv-repro from repro_bundle/venv_seed
+- result: failed
+- failure_type: config_not_set
+- evidence: PermissionError when transformers attempted to create /Users/wency/.cache/huggingface/modules because AutoModel was imported before bundle-local HF_HOME/HF_HUB_CACHE were set
+
+2026-04-17T19:52:00Z DIAGNOSE/REPLAN
+- mitigation: moved AutoModel import inside repro_validate.main() after environment variables are set, recopied repro_bundle/support/repro_validate.py, and selected a brand-new temp directory for retry
+
+2026-04-17T19:55:00Z RUN_MINIMAL_REPRODUCTION attempt=2 tempdir=/tmp/songformer_repro_GgaF69
+- action: copied repro_bundle/ into fresh temp directory and materialized .venv-repro from repro_bundle/venv_seed
+- result: success
+- note: replay emitted a non-blocking matplotlib cache warning and the same upstream runtime warnings about invalid value encountered in divide, but load/infer/contract all passed
+- repro_output: /tmp/songformer_repro_GgaF69/repro_output.json

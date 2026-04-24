@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-04-17T19:50:00Z",
+  "checkpoint": "RUN_MINIMAL_REPRODUCTION",
+  "failure_type": "config_not_set",
+  "retryable": true,
+  "max_retries": 1,
+  "failure_category": "repro_runtime",
+  "summary": "The first fresh-temp replay imported transformers.AutoModel before bundle-local HF cache environment variables were set, so transformers tried to create its dynamic module cache under /Users/wency/.cache/huggingface/modules and hit a permission error.",
+  "evidence": [
+    "PermissionError: [Errno 1] Operation not permitted: '/Users/wency/.cache/huggingface/modules'",
+    "Traceback location: transformers/dynamic_module_utils.py -> init_hf_modules() during AutoModel.from_pretrained in repro_validate.py"
+  ]
+}

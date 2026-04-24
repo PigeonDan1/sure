@@ -1,0 +1,13 @@
+{
+  "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/songformer/song_24k.wav",
+  "fixture_role": "phase1_and_repro_inference_input",
+  "whether_task_specific": true,
+  "whether_fallback_allowed": true,
+  "whether_fixture_existence_was_verified_at_spec_time": true,
+  "fixture_existence_evidence": "Verified locally during DISCOVER on 2026-04-17. The selected fixture exists, probes as 24kHz mono PCM WAV, and was derived from tests/fixtures/shared/mir/rhythm_22k_15s.wav after the prompt placeholder was confirmed absent.",
+  "declared_external_source": null,
+  "checksum": {
+    "sha256": "6054a58df47891d4819061462e22ce2fe1959f8746fc6d42e1c5ea19c677a2b2"
+  },
+  "preprocessing_assumption": "The bundled fixture is already 24kHz and requires no ffmpeg conversion during replay."
+}

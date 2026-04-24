@@ -1,0 +1,36 @@
+{
+  "required": [
+    "src/sure_eval/models/songformer/model.spec.yaml",
+    "src/sure_eval/models/songformer/artifacts/backend_choice.json",
+    "src/sure_eval/models/songformer/artifacts/build.log",
+    "src/sure_eval/models/songformer/artifacts/validation.log",
+    "src/sure_eval/models/songformer/artifacts/verdict.json",
+    "src/sure_eval/models/songformer/model.py",
+    "src/sure_eval/models/songformer/server.py",
+    "src/sure_eval/models/songformer/__init__.py",
+    "src/sure_eval/models/songformer/artifacts/artifact_manifest.json"
+  ],
+  "conditional": [
+    "src/sure_eval/models/songformer/artifacts/spec_validation.json",
+    "src/sure_eval/models/songformer/artifacts/preflight_summary.json",
+    "src/sure_eval/models/songformer/artifacts/weights_manifest.json",
+    "src/sure_eval/models/songformer/artifacts/environment_manifest.json",
+    "src/sure_eval/models/songformer/artifacts/fallback_record.json",
+    "src/sure_eval/models/songformer/artifacts/fetch_weights.log",
+    "src/sure_eval/models/songformer/artifacts/sample_output.json",
+    "src/sure_eval/models/songformer/artifacts/failure_classification.json",
+    "src/sure_eval/models/songformer/artifacts/retry_recommendation.json",
+    "src/sure_eval/models/songformer/artifacts/patch_log.json",
+    "src/sure_eval/models/songformer/artifacts/repro_validation.log",
+    "src/sure_eval/models/songformer/artifacts/repro_output.json",
+    "src/sure_eval/models/songformer/artifacts/repro_verdict.json",
+    "src/sure_eval/models/songformer/artifacts/pip_freeze.txt",
+    "src/sure_eval/models/songformer/repro_bundle/repro_manifest.json",
+    "src/sure_eval/models/songformer/repro_bundle/weights_manifest.json",
+    "src/sure_eval/models/songformer/repro_bundle/environment_manifest.json",
+    "src/sure_eval/models/songformer/repro_bundle/minimal_repro_spec.json",
+    "src/sure_eval/models/songformer/repro_bundle/fixture_manifest.json",
+    "src/sure_eval/models/songformer/repro_bundle/environment_snapshot.txt",
+    "src/sure_eval/models/songformer/repro_bundle/repro_instructions.md"
+  ]
+}

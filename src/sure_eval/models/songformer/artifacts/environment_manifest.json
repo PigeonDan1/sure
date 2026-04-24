@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-04-17T19:42:00Z",
+  "backend": "pip",
+  "python_version": "3.10.20",
+  "env_creation_method": "model-local virtualenv created with /opt/anaconda3/envs/fireredvad/bin/python -m venv .venv",
+  "dependency_installation_method": "pip install from requirements.phase1.txt-equivalent targeted runtime dependency set; full freeze captured in artifacts/pip_freeze.txt",
+  "system_packages": {
+    "requested": ["ffmpeg", "libsndfile1"],
+    "available": {
+      "ffmpeg": false,
+      "libsndfile1": "not probed separately on macOS host"
+    }
+  },
+  "whether_gpu_required": false,
+  "important_runtime_assumptions": [
+    "Phase-1 validated the Hugging Face AutoModel path on CPU fallback because no visible GPU was available on the host.",
+    "HF_HOME and HF_HUB_CACHE must point to model-local directories to keep secondary downloads reproducible.",
+    "The upstream custom code monkey-patches scipy.inf = numpy.inf before importing msaf-dependent code paths; standalone msaf import fails without that compatibility shim on scipy 1.15.2."
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-04-17T19:30:00Z",
+  "python_detected": {
+    "system_python": "3.12.4",
+    "model_env_seed_python": "3.10.20"
+  },
+  "package_managers": {
+    "uv": false,
+    "pixi": false,
+    "conda": true,
+    "pip": true
+  },
+  "system_tools": {
+    "ffmpeg": false,
+    "afconvert": true
+  },
+  "gpu": {
+    "available": false,
+    "checked": true,
+    "probe": "nvidia-smi not found on host"
+  },
+  "network_probe": {
+    "github_reachable_with_escalation": true,
+    "github_head": "461b90011632287e3d8e6474374ede123138011d",
+    "huggingface_reachable_with_escalation": true,
+    "huggingface_head": "5ac5227fccf286519464fdf211e15b606898408e"
+  },
+  "fixture_probe": {
+    "prompt_path": "tests/fixtures/shared/music/song_24k.wav",
+    "prompt_path_exists": false,
+    "selected_path": "tests/fixtures/songformer/song_24k.wav",
+    "selected_path_exists": true,
+    "selected_path_sample_rate_hz": 24000,
+    "selected_path_sha256": "6054a58df47891d4819061462e22ce2fe1959f8746fc6d42e1c5ea19c677a2b2",
+    "source_path": "tests/fixtures/shared/mir/rhythm_22k_15s.wav",
+    "source_path_sha256": "ad2819f22640b35cf0c31a6e6a828a0a8b8e6cff4dcdc5e6885fdf45a968bd30"
+  }
+}

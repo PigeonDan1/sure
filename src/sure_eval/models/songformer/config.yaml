@@ -1,0 +1,25 @@
+name: songformer
+task: music_ir
+description: "SongFormer music structure analysis wrapper"
+
+model:
+  id: "ASLP-lab/SongFormer"
+  size: "custom"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  env:
+    SONGFORMER_LOCAL_DIR: "ckpts/SongFormer"
+    HF_HOME: "hf_cache"
+    DEVICE: "auto"
+  timeout: 600
+
+tools:
+  - name: "analyze_music_structure"
+    description: "Run SongFormer on one audio file and return structure segments."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: ["audio_path"]

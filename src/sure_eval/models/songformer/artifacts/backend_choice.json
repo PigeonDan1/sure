@@ -1,0 +1,70 @@
+{
+  "timestamp": "2026-04-17T19:30:00Z",
+  "model_id": "ASLP-lab/SongFormer",
+  "chosen_backend": "pip",
+  "reason": "The preferred pixi backend is unavailable on this host. A model-local Python 3.10 virtual environment seeded from an existing conda-family Python 3.10 interpreter is the least-risk executable backend that still satisfies the Hugging Face AutoModel phase-1 path.",
+  "evidence": [
+    "Input hint preferred_backend=pixi is only an initial suggestion under docs/policies/backend_selection.md.",
+    "Local preflight: pixi not found.",
+    "Local preflight: uv not found.",
+    "Local preflight: conda available at /opt/anaconda3/bin/conda.",
+    "Local preflight: /opt/anaconda3/envs/fireredvad/bin/python reports Python 3.10.20 and can seed a model-local venv without mutating host-level state.",
+    "Runtime source evidence: the upstream README and Hugging Face model card both define the phase-1 path around transformers AutoModel.from_pretrained + snapshot_download rather than a pixi-only workflow."
+  ],
+  "rejected_options": [
+    {
+      "backend": "pixi",
+      "reason": "Unavailable on host; selecting it would violate executable-evidence-first policy."
+    },
+    {
+      "backend": "uv",
+      "reason": "Unavailable on host."
+    },
+    {
+      "backend": "docker",
+      "reason": "Heavier than needed for the minimal repo-native path and unnecessary before a targeted dependency failure proves it is required."
+    },
+    {
+      "backend": "api",
+      "reason": "The target is a local Hugging Face model with custom code."
+    }
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "preferred_backend",
+      "sources": [
+        {
+          "value": "pixi",
+          "source": "model input environment_hint.preferred_backend",
+          "priority": 3
+        },
+        {
+          "value": "pip",
+          "source": "runtime preflight executability",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "pip",
+      "reason": "pixi cannot be executed on this host, while a model-local pip environment using Python 3.10 can."
+    },
+    {
+      "field": "requires_gpu",
+      "sources": [
+        {
+          "value": true,
+          "source": "model input environment_hint.requires_gpu",
+          "priority": 3
+        },
+        {
+          "value": false,
+          "source": "local preflight nvidia-smi missing",
+          "priority": 1
+        }
+      ],
+      "resolved": true,
+      "chosen_value": "cpu_fallback_allowed_for_phase1",
+      "reason": "Phase-1 policy permits CPU fallback when the same repo-native path remains valid and the target is only minimal import/load/infer/contract validation."
+    }
+  ]
+}
