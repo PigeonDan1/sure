@@ -27,6 +27,46 @@ class ModelInfo:
     @property
     def model_id(self) -> str:
         return self.config.get("model", {}).get("id", "")
+
+    @property
+    def server_config(self) -> dict[str, Any]:
+        """Return server configuration from model config."""
+        return self.config.get("server", {})
+
+    @property
+    def server_command(self) -> list[str]:
+        """Return configured server command."""
+        command = self.server_config.get("command", [".venv/bin/python", "server.py"])
+        if isinstance(command, list):
+            return [str(part) for part in command]
+        if isinstance(command, str):
+            return [command]
+        return []
+
+    @property
+    def working_dir(self) -> Path:
+        """Return resolved working directory for server execution."""
+        configured = self.server_config.get("working_dir", ".")
+        if not configured:
+            configured = "."
+        return (self.path / str(configured)).resolve()
+
+    @property
+    def env(self) -> dict[str, str]:
+        """Return configured environment variables."""
+        env = self.server_config.get("env", {})
+        if isinstance(env, dict):
+            return {str(key): str(value) for key, value in env.items()}
+        return {}
+
+    @property
+    def timeout(self) -> int:
+        """Return configured server timeout."""
+        timeout = self.server_config.get("timeout", 300)
+        try:
+            return int(timeout)
+        except (TypeError, ValueError):
+            return 300
     
     @property
     def is_implemented(self) -> bool:
@@ -37,14 +77,12 @@ class ModelInfo:
     
     def get_mcp_config(self) -> dict[str, Any]:
         """Get MCP configuration."""
-        server_config = self.config.get("server", {})
-        
         return {
             "name": self.name,
-            "command": server_config.get("command", [".venv/bin/python", "server.py"]),
-            "working_dir": str(self.path),
-            "env": server_config.get("env", {}),
-            "timeout": server_config.get("timeout", 300),
+            "command": self.server_command,
+            "working_dir": str(self.working_dir),
+            "env": self.env,
+            "timeout": self.timeout,
         }
     
     def get_test_results(self) -> dict[str, Any]:
@@ -98,6 +136,16 @@ class ModelRegistry:
                     import yaml
                     with open(config_file) as f:
                         config = yaml.safe_load(f)
+
+                    if config is None:
+                        print(f"Error loading model config {item}: config.yaml is empty")
+                        continue
+                    if not isinstance(config, dict):
+                        print(
+                            f"Error loading model config {item}: "
+                            f"expected a mapping, got {type(config).__name__}"
+                        )
+                        continue
                     
                     name = config.get("name", item.name)
                     task = config.get("task", "unknown")

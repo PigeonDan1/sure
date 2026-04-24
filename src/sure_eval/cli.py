@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from typing import Optional
 
 import click
@@ -14,6 +16,7 @@ from sure_eval.core.config import Config
 from sure_eval.core.logging import configure_logging, get_logger
 from sure_eval.datasets import DatasetManager
 from sure_eval.evaluation.rps import RPSManager
+from sure_eval.models.registry import ModelInfo, ModelRegistry
 
 
 def _apply_click_metavar_compatibility_patch() -> None:
@@ -38,6 +41,8 @@ def _apply_click_metavar_compatibility_patch() -> None:
 _apply_click_metavar_compatibility_patch()
 
 app = typer.Typer(name="sure-eval", help="SURE-EVAL: Tool and Model Evaluation Framework")
+models_app = typer.Typer(help="Inspect registered models")
+app.add_typer(models_app, name="models")
 console = Console()
 logger = get_logger(__name__)
 
@@ -56,6 +61,20 @@ def get_evaluator(config_path: Optional[str] = None) -> AutonomousEvaluator:
     )
     
     return AutonomousEvaluator(config)
+
+
+def get_model_registry() -> ModelRegistry:
+    """Get model registry instance."""
+    return ModelRegistry()
+
+
+def get_model_or_exit(model_name: str) -> ModelInfo:
+    """Get a registered model or exit with a clear error."""
+    model = get_model_registry().get_model(model_name)
+    if model is None:
+        console.print(f"[bold red]Error:[/bold red] Model '{model_name}' not found in registry.")
+        raise typer.Exit(1)
+    return model
 
 
 @app.command()
@@ -275,6 +294,159 @@ def show_results(
         )
     
     console.print(table)
+
+
+@models_app.command("list")
+def list_models() -> None:
+    """List discovered models."""
+    registry = get_model_registry()
+
+    table = Table(title="Registered Models")
+    table.add_column("Name", style="cyan")
+    table.add_column("Task", style="magenta")
+    table.add_column("Implemented", style="green")
+
+    for model_name in sorted(registry.list_models()):
+        model = registry.get_model(model_name)
+        if model is None:
+            continue
+        table.add_row(
+            model.name,
+            model.task,
+            "PASS" if model.is_implemented else "FAIL",
+        )
+
+    console.print(table)
+
+
+@models_app.command("inspect")
+def inspect_model(
+    model_name: str = typer.Argument(..., help="Model name"),
+) -> None:
+    """Inspect a registered model."""
+    model = get_model_or_exit(model_name)
+
+    table = Table(title=f"Model Inspection: {model.name}")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value", style="white")
+    table.add_row("name", model.name)
+    table.add_row("task", model.task)
+    table.add_row("path", str(model.path.resolve()))
+    table.add_row("description", model.description or "-")
+    table.add_row("model_id", model.model_id or "-")
+    table.add_row("server command", " ".join(model.server_command) if model.server_command else "-")
+    table.add_row("working_dir", str(model.working_dir))
+    table.add_row("env", str(model.env) if model.env else "{}")
+    table.add_row("timeout", str(model.timeout))
+
+    console.print(table)
+
+
+@app.command()
+def doctor(
+    model_name: str = typer.Argument(..., help="Model name"),
+) -> None:
+    """Run static checks for a registered model."""
+    registry = get_model_registry()
+    model = registry.get_model(model_name)
+
+    checks: list[tuple[str, bool, str]] = []
+
+    checks.append((
+        "Registry discovery",
+        model is not None,
+        f"Model '{model_name}' discovered by ModelRegistry." if model else f"Model '{model_name}' not found in ModelRegistry.",
+    ))
+
+    if model is None:
+        model_path = registry.models_dir / model_name
+        config_file = model_path / "config.yaml"
+        model_file = model_path / "model.py"
+        server_file = model_path / "server.py"
+        checks.extend([
+            ("config.yaml exists", config_file.exists(), str(config_file)),
+            ("model.py exists", model_file.exists(), str(model_file)),
+            ("server.py exists", server_file.exists(), str(server_file)),
+            ("Server command declared", False, "Model is missing from registry, so server configuration could not be loaded."),
+        ])
+    else:
+        config_file = model.path / "config.yaml"
+        model_file = model.path / "model.py"
+        server_file = model.path / "server.py"
+        checks.extend([
+            ("config.yaml exists", config_file.exists(), str(config_file)),
+            ("model.py exists", model_file.exists(), str(model_file)),
+            ("server.py exists", server_file.exists(), str(server_file)),
+            (
+                "Server command declared",
+                bool(model.server_command),
+                " ".join(model.server_command) if model.server_command else "Missing server.command in config.yaml.",
+            ),
+        ])
+
+    table = Table(title=f"Doctor Report: {model_name}")
+    table.add_column("Check", style="cyan")
+    table.add_column("Status", style="bold")
+    table.add_column("Details", style="white")
+
+    failed = False
+    for label, passed, details in checks:
+        status = "[green]PASS[/green]" if passed else "[red]FAIL[/red]"
+        table.add_row(label, status, details)
+        failed = failed or not passed
+
+    console.print(table)
+
+    if failed:
+        raise typer.Exit(1)
+
+
+@app.command()
+def serve(
+    model_name: str = typer.Argument(..., help="Model name"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without starting the server"),
+) -> None:
+    """Start a model server using the registered server configuration."""
+    model = get_model_or_exit(model_name)
+
+    if not model.server_command:
+        console.print(f"[bold red]Error:[/bold red] Model '{model_name}' does not declare server.command.")
+        raise typer.Exit(1)
+
+    working_dir = model.working_dir
+    env = os.environ.copy()
+    env.update(model.env)
+
+    table = Table(title=f"Serve Context: {model.name}")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value", style="white")
+    table.add_row("command", " ".join(model.server_command))
+    table.add_row("working_dir", str(working_dir))
+    table.add_row("env", str(model.env) if model.env else "{}")
+    table.add_row("timeout", str(model.timeout))
+    console.print(table)
+
+    if dry_run:
+        console.print("[green]Dry run complete.[/green] Server was not started.")
+        return
+
+    try:
+        completed = subprocess.run(
+            model.server_command,
+            cwd=working_dir,
+            env=env,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        console.print(f"[bold red]Error:[/bold red] Failed to start server: {exc}")
+        raise typer.Exit(1) from exc
+    except OSError as exc:
+        console.print(f"[bold red]Error:[/bold red] Failed to start server: {exc}")
+        raise typer.Exit(1) from exc
+
+    if completed.returncode != 0:
+        console.print(f"[bold red]Error:[/bold red] Server exited with code {completed.returncode}.")
+        raise typer.Exit(completed.returncode)
 
 
 def main() -> None:
