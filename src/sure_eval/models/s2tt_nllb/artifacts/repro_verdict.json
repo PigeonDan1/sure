@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "model_id": "facebook/nllb-200-distilled-600M",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "PREPARED",
+  "last_successful_stage": "EXPORT_REPRO_BUNDLE",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": "GitHub-safe bundle is prepared; weights are not bundled and must be restored from Hugging Face or model-local cache for fresh replay.",
+  "whether_escalated": true,
+  "notes": [
+    "Original local replay was verified in a fresh temp workspace using local bundled weights.",
+    "GitHub-safe repro has not been rerun without repro_bundle/weights/ and therefore is prepared rather than verified.",
+    "Fresh-clone replay should restore weights from Hugging Face or a prepopulated model-local cache according to weights_manifest.json."
+  ]
+}

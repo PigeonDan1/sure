@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "model_id": "facebook/nllb-200-distilled-600M",
+  "task_type": "s2tt",
+  "deployment_type": "local",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "last_successful_stage": "SAVE_REPRO_ARTIFACTS",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": true,
+  "phase1_checks": {
+    "import": true,
+    "load": true,
+    "infer": true,
+    "contract": true
+  },
+  "notes": [
+    "Phase-1 validated the cascaded Whisper ASR plus NLLB MT path, not direct audio ingestion by NLLB.",
+    "Validated fixture is a shared non-benchmark smoke fixture fallback.",
+    "Repro bundle was replayed successfully in a fresh temporary workspace."
+  ]
+}

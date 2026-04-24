@@ -1,0 +1,9 @@
+[DISCOVER] confirmed s2tt_nllb is an incomplete template with README.md, config.yaml, pyproject.toml, and __init__.py only.
+[DISCOVER] requested fixture tests/fixtures/shared/asr/en_16k.wav is absent.
+[DISCOVER] selected fallback fixture tests/fixtures/shared/asr/en_16k_10s.wav with sha256=8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d.
+[PLAN] chose backend venv_pip_local because uv is unavailable on the host.
+[PLAN] host python3.10 unavailable; using python3.12.4 from /opt/anaconda3/bin/python3.
+[BUILD_ENV] created model-local virtualenv at src/sure_eval/models/s2tt_nllb/.venv.
+[BUILD_ENV] repaired virtualenv toolchain with ensurepip and pip/setuptools/wheel upgrade.
+[BUILD_ENV] installed phase-1 dependencies into model-local virtualenv.
+[BUILD_ENV] installed root sure-eval package into model-local virtualenv to satisfy repo-native import path sure_eval.models.s2tt_nllb.model.

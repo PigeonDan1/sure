@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-04-24T00:00:00Z",
+  "model_name": "s2tt_nllb",
+  "cwd": "/Users/wency/Desktop/sjtu/SURE/sure",
+  "python": {
+    "path": "/opt/anaconda3/bin/python3",
+    "version": "3.12.4",
+    "python310_available": false
+  },
+  "package_managers": {
+    "uv": false,
+    "conda": true,
+    "pip_via_python3": true
+  },
+  "system_tools": {
+    "ffmpeg": false,
+    "ffprobe": false
+  },
+  "disk": {
+    "workspace_available_human": "644Gi"
+  },
+  "git": {
+    "commit_tested": "c892df9468d7e08eee3480366821226040e92d62"
+  },
+  "fixture_probe": {
+    "requested_path": "tests/fixtures/shared/asr/en_16k.wav",
+    "requested_exists": false,
+    "selected_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+    "selected_exists": true,
+    "selected_sha256": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+    "selected_size_bytes": 75244,
+    "selected_format": "RIFF/WAV PCM 16-bit mono 16000 Hz"
+  },
+  "weights_local_probe": {
+    "model_local_checkpoints_present": false,
+    "huggingface_cache_probe_hits": []
+  },
+  "warnings": [
+    "Host ffmpeg/ffprobe are absent; current phase-1 path avoids relying on them by using a WAV smoke fixture and librosa/soundfile loading.",
+    "python3.10 is unavailable; phase-1 will proceed with python3.12.4 unless environment build proves incompatible."
+  ]
+}

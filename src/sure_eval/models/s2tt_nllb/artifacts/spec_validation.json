@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-04-24T00:00:00Z",
+  "model_id": "facebook/nllb-200-distilled-600M",
+  "model_name": "s2tt_nllb",
+  "status": "passed_with_warnings",
+  "checks": {
+    "spec_completeness": {
+      "passed": true,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": true,
+      "unsupported_fields": []
+    },
+    "conflict_resolution": {
+      "passed": true,
+      "unresolved_conflicts": []
+    },
+    "build_plan_executable": {
+      "passed": true,
+      "blocking_issues": [],
+      "notes": [
+        "Execution still depends on successful dependency installation and HuggingFace downloads.",
+        "A model-local .venv plan is executable on the host."
+      ]
+    },
+    "fixture_availability": {
+      "passed": true,
+      "fixture_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "source": "shared_fallback",
+      "requested_fixture_missing": "tests/fixtures/shared/asr/en_16k.wav"
+    },
+    "io_contract_sufficient": {
+      "passed": true,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": true,
+      "incompatibilities": [],
+      "warnings": [
+        "uv unavailable; using venv fallback",
+        "ffmpeg unavailable but not required for current WAV-only phase-1 path",
+        "python3.10 unavailable; proceeding with python3.12.4"
+      ]
+    }
+  },
+  "ready_for_build_env": true,
+  "warnings": [
+    "The requested shared fixture path does not exist; validated fallback fixture is used and recorded.",
+    "Host runtime deviates from requested Python 3.10."
+  ],
+  "blockers": []
+}

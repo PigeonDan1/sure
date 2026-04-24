@@ -1,7 +1,7 @@
 name: s2tt_nllb
 task: S2TT
-description: "Speech-to-Text Translation using NLLB - Template"
-version: "0.1.0"
+description: "Phase-1 cascaded S2TT baseline using Whisper ASR plus NLLB MT"
+version: "1.0.0"
 
 model:
   id: "facebook/nllb-200-distilled-600M"
@@ -13,8 +13,9 @@ server:
   command: [".venv/bin/python", "server.py"]
   working_dir: "."
   env:
-    MODEL_PATH: "facebook/nllb-200-distilled-600M"
-    DEVICE: "auto"
+    ASR_MODEL_ID: "openai/whisper-tiny"
+    MT_MODEL_ID: "facebook/nllb-200-distilled-600M"
+    DEVICE: "cpu"
   timeout: 300
 
 tools:
@@ -29,6 +30,6 @@ tools:
           type: string
         target_lang:
           type: string
-      required: ["audio_path", "target_lang"]
+      required: ["audio_path", "source_lang", "target_lang"]
 
 results: {}

@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "fallbacks": [
+    {
+      "category": "fixture",
+      "declared_candidate": "tests/fixtures/shared/asr/en_16k.wav",
+      "fallback_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "reason": "Declared candidate fixture is absent in the repository; verified shared ASR smoke fixture exists and preserves S2TT semantics for cascaded ASR plus MT validation.",
+      "task_specific": false,
+      "fallback_allowed": true
+    },
+    {
+      "category": "backend",
+      "declared_candidate": "uv",
+      "fallback_path": "venv_pip_local",
+      "reason": "uv is not installed on the host."
+    },
+    {
+      "category": "python_version",
+      "declared_candidate": "3.10",
+      "fallback_path": "3.12.4",
+      "reason": "python3.10 is unavailable on the host, while pyproject declares Python >=3.10."
+    },
+    {
+      "category": "repro_weights_packaging",
+      "declared_candidate": "bundled_weights_in_repro_bundle",
+      "fallback_path": "github_safe_restore_via_model_local_checkpoints",
+      "reason": "Weights are intentionally excluded from GitHub commits to avoid false bundled-weight evidence. Fresh-clone repro must restore weights from Hugging Face or a prepopulated model-local cache."
+    }
+  ]
+}

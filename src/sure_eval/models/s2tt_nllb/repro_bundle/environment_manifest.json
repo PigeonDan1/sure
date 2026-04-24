@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "backend": "venv_pip_local",
+  "python_version": "3.12.4",
+  "env_creation_method": "python3 -m venv .venv",
+  "dependency_installation_method": "pip install -r requirements.phase1.txt",
+  "system_packages": ["ffmpeg", "libsndfile1"],
+  "gpu_required": false,
+  "cpu_fallback_used": true,
+  "important_runtime_assumptions": [
+    "Reproduction uses bundled Whisper and NLLB weights under repro_bundle/weights.",
+    "Fixture is a 16kHz mono PCM WAV file and does not require ffmpeg decoding for the minimal path.",
+    "The minimal repro path validates callable behavior only, not translation quality."
+  ]
+}

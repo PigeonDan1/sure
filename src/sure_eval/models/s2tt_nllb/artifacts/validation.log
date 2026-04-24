@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-04-24T00:00:00Z",
+  "tests": {
+    "import": {
+      "passed": true,
+      "command": "PYTHONPATH=src src/sure_eval/models/s2tt_nllb/.venv/bin/python -c \"from sure_eval.models.s2tt_nllb.model import S2TTNLLBModel; print('import_ok')\"",
+      "result": "import_ok"
+    },
+    "load": {
+      "passed": true,
+      "command": "PYTHONPATH=src src/sure_eval/models/s2tt_nllb/.venv/bin/python -c \"from sure_eval.models.s2tt_nllb.model import S2TTNLLBModel; m=S2TTNLLBModel(); m.load(); print('load_ok')\"",
+      "result": "load_ok"
+    },
+    "infer": {
+      "passed": true,
+      "fixture": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "source_lang": "eng_Latn",
+      "target_lang": "zho_Hans",
+      "result_path": "src/sure_eval/models/s2tt_nllb/artifacts/sample_output.json"
+    },
+    "contract": {
+      "passed": true,
+      "required_fields": ["text", "translation_text", "asr_text", "source_lang", "target_lang", "error_code"],
+      "nonempty_fields": ["text", "translation_text", "asr_text"],
+      "json_serializable": true
+    }
+  },
+  "warnings": [
+    "Transformers emitted generation warnings about deprecated forced_decoder_ids and max_new_tokens/max_length precedence, but inference completed successfully.",
+    "The sample transcript/translation are smoke outputs only and are not semantic quality claims."
+  ],
+  "overall": "PASSED"
+}

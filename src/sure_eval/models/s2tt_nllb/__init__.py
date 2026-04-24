@@ -1,3 +1,5 @@
-"""S2TT NLLB Model - Template."""
+"""Public exports for the s2tt_nllb wrapper."""
 
-__all__ = []
+from .model import InferenceError, ModelLoadError, S2TTNLLBModel
+
+__all__ = ["S2TTNLLBModel", "ModelLoadError", "InferenceError"]

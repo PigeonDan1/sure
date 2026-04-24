@@ -1,0 +1,17 @@
+diff --git a/src/sure_eval/models/s2tt_nllb/pyproject.toml b/src/sure_eval/models/s2tt_nllb/pyproject.toml
+index 2a2854a..f217b0a 100644
+--- a/src/sure_eval/models/s2tt_nllb/pyproject.toml
++++ b/src/sure_eval/models/s2tt_nllb/pyproject.toml
+@@ -11,9 +11,12 @@ authors = [
+ dependencies = [
+     "torch>=2.0.0",
+     "transformers>=4.40.0",
++    "huggingface-hub>=0.23.0",
+     "librosa>=0.10.0",
+     "soundfile>=0.12.0",
+     "sacrebleu>=2.3.0",  # For BLEU/chrF metrics
++    "sentencepiece>=0.2.0",
++    "protobuf>=4.25.0",
+ ]
+ 
+ [project.optional-dependencies]

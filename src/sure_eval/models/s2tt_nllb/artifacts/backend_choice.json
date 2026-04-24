@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "chosen_backend": "venv_pip_local",
+  "reason": "Host preflight shows uv is unavailable, while a model-local .venv driven by host python3 is the least-risk executable fallback for phase-1.",
+  "evidence": [
+    "Host command `which uv` failed with `uv not found`.",
+    "Host command `python3 --version` returned `Python 3.12.4` at `/opt/anaconda3/bin/python3`.",
+    "Phase-1 target only requires import/load/infer/contract for a local wrapper path; no docker-specific isolation evidence is currently required.",
+    "The implementation uses WAV fixture loading via librosa/soundfile, so missing host ffmpeg is a warning rather than a phase-1 blocker."
+  ],
+  "evidence_conflicts": [
+    {
+      "field": "preferred_backend",
+      "sources": [
+        {"value": "uv", "source": "environment_hint / model.spec", "priority": 3},
+        {"value": "venv_pip_local", "source": "runtime_preflight", "priority": 1}
+      ],
+      "chosen": "venv_pip_local",
+      "resolved": true,
+      "reason": "Runtime evidence that uv is unavailable overrides the initial backend suggestion."
+    },
+    {
+      "field": "python_version",
+      "sources": [
+        {"value": "3.10", "source": "environment_hint", "priority": 3},
+        {"value": "3.12.4", "source": "runtime_preflight", "priority": 1},
+        {"value": ">=3.10", "source": "pyproject.toml", "priority": 3}
+      ],
+      "chosen": "3.12.4",
+      "resolved": true,
+      "reason": "python3.10 is unavailable on the host, while pyproject allows Python >=3.10 and host python3.12.4 is executable."
+    }
+  ],
+  "fallbacks": [
+    {
+      "type": "backend",
+      "from": "uv",
+      "to": "venv_pip_local",
+      "reason": "uv missing on host"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+diff --git a/src/sure_eval/models/s2tt_nllb/__init__.py b/src/sure_eval/models/s2tt_nllb/__init__.py
+index ec1004d..504a7a9 100644
+--- a/src/sure_eval/models/s2tt_nllb/__init__.py
++++ b/src/sure_eval/models/s2tt_nllb/__init__.py
+@@ -1,3 +1,5 @@
+-"""S2TT NLLB Model - Template."""
++"""Public exports for the s2tt_nllb wrapper."""
+ 
+-__all__ = []
++from .model import InferenceError, ModelLoadError, S2TTNLLBModel
++
++__all__ = ["S2TTNLLBModel", "ModelLoadError", "InferenceError"]

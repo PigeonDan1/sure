@@ -1,0 +1,1 @@
+Template __init__.py exported nothing. The implemented wrapper needs stable public exports for import/load validation and reproducible package usage.

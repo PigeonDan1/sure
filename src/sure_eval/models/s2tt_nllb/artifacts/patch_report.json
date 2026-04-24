@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "patches": [
+    {
+      "id": "patch-000-init-export",
+      "files": ["src/sure_eval/models/s2tt_nllb/__init__.py"],
+      "type": "source_modification",
+      "diff_path": "src/sure_eval/models/s2tt_nllb/artifacts/patches/patch-000-init.diff",
+      "rationale": "Replace empty template exports with stable wrapper exports for the implemented local model wrapper.",
+      "temporary": true,
+      "local_only": true,
+      "required_for_repro": true
+    },
+    {
+      "id": "patch-001-config-runtime",
+      "files": ["src/sure_eval/models/s2tt_nllb/config.yaml"],
+      "type": "config_modification",
+      "diff_path": "src/sure_eval/models/s2tt_nllb/artifacts/patches/patch-001-config.diff",
+      "rationale": "Repair template config so it describes the implemented cascaded Whisper ASR plus NLLB MT runtime and valid tool schema.",
+      "temporary": true,
+      "local_only": true,
+      "required_for_repro": true
+    },
+    {
+      "id": "patch-002-dependency-spec",
+      "files": ["src/sure_eval/models/s2tt_nllb/pyproject.toml"],
+      "type": "dependency_pin",
+      "diff_path": "src/sure_eval/models/s2tt_nllb/artifacts/patches/patch-002-pyproject.diff",
+      "rationale": "Add explicit phase-1 dependencies required by the chosen cascaded implementation, including sentencepiece, protobuf, and huggingface-hub.",
+      "temporary": true,
+      "local_only": false,
+      "required_for_repro": true
+    },
+    {
+      "id": "patch-003-github-safe-repro-weights",
+      "files": [
+        "src/sure_eval/models/s2tt_nllb/repro_bundle/repro_manifest.json",
+        "src/sure_eval/models/s2tt_nllb/repro_bundle/weights_manifest.json",
+        "src/sure_eval/models/s2tt_nllb/repro_bundle/repro_instructions.md",
+        "src/sure_eval/models/s2tt_nllb/repro_bundle/minimal_repro_spec.json",
+        "src/sure_eval/models/s2tt_nllb/artifacts/weights_manifest.json",
+        "src/sure_eval/models/s2tt_nllb/artifacts/repro_verdict.json",
+        "src/sure_eval/models/s2tt_nllb/artifacts/fallback_record.json",
+        "src/sure_eval/models/s2tt_nllb/artifacts/patch_log.json",
+        "src/sure_eval/models/s2tt_nllb/artifacts/patch_report.json"
+      ],
+      "type": "artifact_consistency_fix",
+      "reason": "remove false bundled weights declaration for GitHub-safe reproducibility",
+      "rationale": "Update active repro manifests and instructions so GitHub-safe repro no longer claims bundled weights. Fresh-clone replay remains reproducible, but requires restoring weights from Hugging Face or a prepopulated model-local cache.",
+      "temporary": true,
+      "local_only": true,
+      "required_for_repro": true,
+      "weights_directory_excluded_from_version_control": true,
+      "no_unrelated_files_changed": true
+    }
+  ]
+}

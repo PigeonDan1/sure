@@ -1,0 +1,1 @@
+Template config declared a server entrypoint that did not exist and omitted the required source_lang field. The config is repaired to match the implemented cascaded ASR plus MT wrapper.

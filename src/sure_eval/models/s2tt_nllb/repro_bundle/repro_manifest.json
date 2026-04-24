@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "model_id": "facebook/nllb-200-distilled-600M",
+  "task_type": "s2tt",
+  "deployment_type": "local",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "PREPARED",
+  "bundle_created_at": "2026-04-24T00:00:00Z",
+  "repo": {
+    "url": "local",
+    "commit_declared": null,
+    "commit_tested": "c892df9468d7e08eee3480366821226040e92d62"
+  },
+  "backend": {
+    "selected": "venv_pip_local"
+  },
+  "weights_packaging": {
+    "bundled_in_repro_bundle": false,
+    "restore_required": true,
+    "restore_source": "weights_manifest.json",
+    "fresh_clone_reproducibility": "requires_network_or_prepopulated_model_local_cache",
+    "note": "Weights are intentionally not committed to GitHub. Reproduction should fetch or validate weights using weights_manifest.json."
+  },
+  "paths": {
+    "weights_manifest": "./weights_manifest.json",
+    "environment_manifest": "./environment_manifest.json",
+    "minimal_repro_spec": "./minimal_repro_spec.json",
+    "fixture_manifest": "./fixture_manifest.json",
+    "environment_snapshot": "./environment_snapshot.txt",
+    "repro_instructions": "./repro_instructions.md",
+    "requirements": "./requirements.phase1.txt",
+    "minimal_repro_script": "./minimal_repro.py",
+    "sample_output": "./sample_output.json",
+    "repro_validation_log": "./repro_validation.log",
+    "repro_verdict": "./repro_verdict.json"
+  }
+}

@@ -1,0 +1,106 @@
+model_id: "facebook/nllb-200-distilled-600M"
+model_name: "s2tt_nllb"
+task_type: "s2tt"
+deployment_type: "local"
+
+repo:
+  url: "local"
+  local_path: "src/sure_eval/models/s2tt_nllb"
+  commit: null
+  package_import_root: "sure_eval.models.s2tt_nllb"
+  standalone_module: "sure_eval.models.s2tt_nllb.model"
+
+weights:
+  source: "huggingface"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+  runtime_cache_dir: ".runtime"
+  components:
+    - name: "mt_backend"
+      source: "huggingface"
+      identifier: "facebook/nllb-200-distilled-600M"
+      required: true
+      role: "text_translation"
+      resolved_local_path: "src/sure_eval/models/s2tt_nllb/checkpoints/mt_backend"
+    - name: "asr_frontend"
+      source: "huggingface"
+      identifier: "openai/whisper-tiny"
+      required: true
+      role: "audio_to_source_text"
+      resolved_local_path: "src/sure_eval/models/s2tt_nllb/checkpoints/asr_frontend"
+
+environment:
+  preferred_backend: "uv"
+  selected_backend: "venv_pip_local"
+  python_version: "3.12.4"
+  requested_python_version: "3.10"
+  requires_gpu: false
+  gpu_optional: true
+  system_packages:
+    - "ffmpeg"
+    - "libsndfile1"
+  notes:
+    - "NLLB is a text-to-text model; phase-1 validates cascaded Whisper ASR plus NLLB translation."
+    - "uv is unavailable on the host, so a model-local venv fallback is selected for phase-1."
+    - "Host python3.10 is unavailable; phase-1 uses host python3.12.4 and records the deviation."
+
+entrypoints:
+  import_test: |
+    PYTHONPATH=src src/sure_eval/models/s2tt_nllb/.venv/bin/python -c "from sure_eval.models.s2tt_nllb.model import S2TTNLLBModel; print('import_ok')"
+  load_test: |
+    PYTHONPATH=src src/sure_eval/models/s2tt_nllb/.venv/bin/python -c "from sure_eval.models.s2tt_nllb.model import S2TTNLLBModel; m=S2TTNLLBModel(); m.load(); print('load_ok')"
+  infer_test: |
+    PYTHONPATH=src src/sure_eval/models/s2tt_nllb/.venv/bin/python - <<'PY'
+    from sure_eval.models.s2tt_nllb.model import S2TTNLLBModel
+    m = S2TTNLLBModel()
+    m.load()
+    out = m.predict({
+        "audio_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+        "source_lang": "eng_Latn",
+        "target_lang": "zho_Hans"
+    })
+    print(out)
+    assert isinstance(out, dict)
+    assert out.get("text")
+    assert out.get("translation_text")
+    assert out.get("asr_text")
+    PY
+
+fixture:
+  primary_candidate_audio: "tests/fixtures/shared/asr/en_16k.wav"
+  selected_audio: "tests/fixtures/shared/asr/en_16k_10s.wav"
+  selected_source: "shared_fallback"
+  task_specific: false
+  fallback_allowed: true
+  existence_verified: true
+  checksum_sha256: "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d"
+  size_bytes: 75244
+  format_summary: "WAV PCM 16-bit mono 16000 Hz"
+  note: "Original candidate en_16k.wav is absent; shared ASR fallback preserves S2TT smoke semantics for cascaded ASR plus MT validation."
+
+io_contract:
+  input_type: "json"
+  output_type: "json"
+  primary_field: "text"
+  required_fields:
+    - "text"
+    - "translation_text"
+    - "asr_text"
+    - "source_lang"
+    - "target_lang"
+    - "error_code"
+  nonempty_fields:
+    - "text"
+    - "translation_text"
+    - "asr_text"
+  json_serializable: true
+  contract_notes:
+    - "Phase-1 output must prove both ASR transcript and translated text are present."
+    - "A pure text-translation path without ASR frontend does not satisfy this S2TT contract."
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true

@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "minimal_callable_path": "audio_path + source_lang + target_lang -> Whisper ASR transcript -> NLLB translation -> unified JSON",
+  "exact_commands_or_callable_steps": [
+    "python3 -m venv .venv",
+    ".venv/bin/pip install -r ./requirements.phase1.txt",
+    "restore or validate model-local weights according to ./weights_manifest.json before running inference",
+    ".venv/bin/python ./minimal_repro.py --fixture <fixture> --source-lang eng_Latn --target-lang zho_Hans --output ./outputs/sample_output.json"
+  ],
+  "working_directory_assumptions": [
+    "Run from the copied repro_bundle root in a fresh temporary directory.",
+    "GitHub-safe repro does not assume bundled weights inside repro_bundle.",
+    "Fresh-clone replay requires network access or a prepopulated model-local cache at the restore targets recorded in weights_manifest.json."
+  ],
+  "required_inputs": {
+    "fixture": "tests/fixtures/shared/asr/en_16k_10s.wav",
+    "source_lang": "eng_Latn",
+    "target_lang": "zho_Hans"
+  },
+  "expected_outputs": {
+    "type": "json",
+    "required_fields": ["text", "translation_text", "asr_text", "source_lang", "target_lang", "error_code"],
+    "nonempty_fields": ["text", "translation_text", "asr_text"]
+  },
+  "contract_checks": [
+    "output is JSON-serializable",
+    "text, translation_text, and asr_text are present and non-empty",
+    "source_lang == eng_Latn",
+    "target_lang == zho_Hans",
+    "text is not merely the absent ASR transcript field"
+  ],
+  "weight_restore_contract": {
+    "bundled_in_repro_bundle": false,
+    "restore_required_for_fresh_clone": true,
+    "restore_source": "./weights_manifest.json",
+    "missing_weights_behavior": "fail as missing_weights rather than integration failure"
+  }
+}

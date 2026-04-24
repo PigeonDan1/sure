@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "whether_weights_required": true,
+  "bundled_in_repro_bundle": false,
+  "fetch_required_for_fresh_clone": true,
+  "cache_policy": "model_local_first",
+  "all_required_weight_components": [
+    {
+      "name": "mt_backend",
+      "source": "huggingface",
+      "identifier": "facebook/nllb-200-distilled-600M",
+      "declared_revision": null,
+      "local_path_status": "not_committed",
+      "restore_target": "src/sure_eval/models/s2tt_nllb/checkpoints/mt_backend",
+      "original_phase1_local_path": "src/sure_eval/models/s2tt_nllb/checkpoints/mt_backend",
+      "primary_weight_file": "pytorch_model.bin",
+      "primary_weight_sha256": "c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42",
+      "size_human": "2.3G",
+      "required": true,
+      "role": "text_translation",
+      "fallback_reason": null,
+      "fallback_path": null
+    },
+    {
+      "name": "asr_frontend",
+      "source": "huggingface",
+      "identifier": "openai/whisper-tiny",
+      "declared_revision": null,
+      "local_path_status": "not_committed",
+      "restore_target": "src/sure_eval/models/s2tt_nllb/checkpoints/asr_frontend",
+      "original_phase1_local_path": "src/sure_eval/models/s2tt_nllb/checkpoints/asr_frontend",
+      "primary_weight_file": "pytorch_model.bin",
+      "primary_weight_sha256": "9607f98a2b22d9e229ae43c52ecea79dcede9e0c5cfae67e8da6eda86d8aac1d",
+      "size_human": "595M",
+      "required": true,
+      "role": "audio_to_source_text",
+      "fallback_reason": null,
+      "fallback_path": null
+    }
+  ],
+  "fresh_clone_restore_note": "Artifacts describe model-local checkpoint restoration only. Weights are intentionally excluded from GitHub commits and must be restored from Hugging Face or a prepopulated model-local cache."
+}

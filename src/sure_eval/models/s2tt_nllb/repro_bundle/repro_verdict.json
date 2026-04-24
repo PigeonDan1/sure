@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "model_name": "s2tt_nllb",
+  "model_id": "facebook/nllb-200-distilled-600M",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "last_successful_stage": "SAVE_REPRO_ARTIFACTS",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": true,
+  "notes": [
+    "Reproduction ran in fresh temp workspace /tmp/s2tt_nllb_repro.excH7m.",
+    "Reproduction used bundled weights inside the copied repro_bundle rather than the phase-1 virtualenv."
+  ]
+}
