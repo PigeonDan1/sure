@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "dataset": "librispeech_clean",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/librispeech_clean.jsonl",
+      "prediction_path": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/librispeech_clean.txt",
+      "task": "ASR",
+      "language": "en",
+      "metric": "wer",
+      "score": 0.022874324427190378,
+      "rps": 0.7431913477537438,
+      "rps_is_unbounded": false,
+      "num_samples": 2619,
+      "evaluation_context": {
+        "task": "ASR",
+        "language": "en",
+        "language_source": "dataset_jsonl",
+        "metric": "wer",
+        "metric_source": "sota_baseline_or_task_default",
+        "postprocessing": "SUREEvaluator._eval_asr",
+        "normalization": "sure_eval.evaluation.normalization.asr_simple_tn.asr_num2words",
+        "punctuation_policy": "evaluation-pipeline clean_marks.strip_all_punct compatible",
+        "tokenization": "word",
+        "case_sensitive": false
+      },
+      "details": {
+        "all": 52548,
+        "cor": 51426,
+        "sub": 888,
+        "ins": 80,
+        "del": 234,
+        "wer": 0.022874324427190378,
+        "wer_percent": 2.287432442719038,
+        "score": 0.022874324427190378
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-04-14T13:20:45.867045+01:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "fallbacks": [
+    {
+      "type": "fixture_path_fallback",
+      "requested": "tests/fixtures/shared/asr/en_16k.wav",
+      "resolved": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "reason": "Requested fixture path is absent in-repo; shared ASR fallback preserves task semantics."
+    },
+    {
+      "type": "system_dependency_fallback",
+      "requested": "host ffmpeg binary",
+      "resolved": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/checkpoints/bin/ffmpeg",
+      "reason": "Host ffmpeg is unavailable, so phase-1 uses the imageio-ffmpeg packaged binary via a model-local shim."
+    }
+  ]
+}

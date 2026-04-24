@@ -1,31 +1,14 @@
-"""
-FFmpeg Wrapper for SURE-EVAL.
+"""Local wrapper around ffmpeg/ffprobe executables for SURE-EVAL."""
 
-Responsibilities:
-- Provide audio processing interface via FFmpeg system calls
-- Handle audio format conversion, clipping, and extraction
-- Manage output file paths
+from __future__ import annotations
 
-Entry Points:
-- FFmpegWrapper: Main wrapper class
-- AudioProcessResult: Output type
-
-Dependencies:
-- ffmpeg (system binary)
-- ffprobe (system binary)
-
-Example:
-    wrapper = FFmpegWrapper()
-    result = wrapper.predict("input.wav", output_path="output.wav", 
-                            start_time=0, duration=3)
-    print(result.output_path)
-"""
-
-import os
-import subprocess
 import json
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
+import os
+import shutil
+import subprocess
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Dict, Iterable, Optional
 
 
 class ModelLoadError(RuntimeError):
@@ -45,203 +28,194 @@ class ConfigurationError(ValueError):
 
 @dataclass
 class AudioProcessResult:
-    """Result of audio processing operation.
-    
-    Attributes:
-        output_path: Path to the processed audio file
-        duration: Duration of output in seconds (if available)
-        sample_rate: Sample rate of output (if available)
-        channels: Number of channels (if available)
-    """
+    """Structured output for the minimal ffmpeg callable path."""
+
     output_path: str
-    duration: Optional[float] = None
-    sample_rate: Optional[int] = None
-    channels: Optional[int] = None
-    
+    exists: bool
+    ffmpeg_exit_code: int
+    ffmpeg_executable: str
+    ffprobe_executable: str
+    ffmpeg_version: str
+    ffprobe_version: str
+    ffprobe: Dict[str, Any]
+    contract_passed: bool
+    contract_checks: Dict[str, Any]
+
     def __post_init__(self):
         assert isinstance(self.output_path, str)
         assert len(self.output_path) > 0, "Empty output_path"
-    
+
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            "output_path": self.output_path,
-            "duration": self.duration,
-            "sample_rate": self.sample_rate,
-            "channels": self.channels
-        }
+        return asdict(self)
 
 
-class FFmpegWrapper:
-    """FFmpeg wrapper for SURE-EVAL.
-    
-    Provides a Python interface to FFmpeg audio processing capabilities.
-    """
-    
+class ModelWrapper:
+    """Thin wrapper over local ffmpeg/ffprobe executables."""
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize wrapper.
-        
-        Args:
-            config: Optional configuration dictionary
-        """
         self.config = config or {}
-        self._ffmpeg_path = self.config.get('ffmpeg_path', 'ffmpeg')
-        self._ffprobe_path = self.config.get('ffprobe_path', 'ffprobe')
+        self._model_dir = Path(__file__).resolve().parent
+        self._ffmpeg_path = self.config.get("ffmpeg_path") or os.environ.get("FFMPEG_PATH")
+        self._ffprobe_path = self.config.get("ffprobe_path") or os.environ.get("FFPROBE_PATH")
         self._model_loaded = False
-        
+
+    def _default_candidates(self, executable_name: str) -> Iterable[str]:
+        env_value = os.environ.get(executable_name.upper() + "_PATH")
+        bundle_candidate = self._model_dir / "repro_bundle" / "bin" / executable_name
+        candidates = [env_value, executable_name, str(bundle_candidate)]
+        for candidate in candidates:
+            if candidate:
+                yield candidate
+
+    def _resolve_executable(self, candidate: Optional[str], executable_name: str) -> str:
+        candidates = [candidate] if candidate else list(self._default_candidates(executable_name))
+        for value in candidates:
+            if not value:
+                continue
+            if os.path.isabs(value):
+                if os.path.isfile(value) and os.access(value, os.X_OK):
+                    return value
+                continue
+            resolved = shutil.which(value)
+            if resolved:
+                return resolved
+            local_candidate = self._model_dir / value
+            if local_candidate.is_file() and os.access(local_candidate, os.X_OK):
+                return str(local_candidate)
+        raise ModelLoadError(
+            f"Executable not found for {executable_name}; checked {candidates}"
+        )
+
+    def _run_version(self, executable: Optional[str], executable_name: str) -> tuple[str, str]:
+        resolved = self._resolve_executable(executable, executable_name)
+        try:
+            proc = subprocess.run(
+                [resolved, "-version"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            raise ModelLoadError(f"Version probe failed for {resolved}: {exc}") from exc
+        version_line = proc.stdout.splitlines()[0] if proc.stdout else ""
+        return resolved, version_line
+
     def load(self) -> None:
-        """Verify FFmpeg tools are available.
-        
-        Raises:
-            ModelLoadError: If ffmpeg or ffprobe cannot be found.
-        """
-        try:
-            subprocess.run(
-                [self._ffmpeg_path, '-version'],
-                capture_output=True,
-                check=True
-            )
-            subprocess.run(
-                [self._ffprobe_path, '-version'],
-                capture_output=True,
-                check=True
-            )
-            self._model_loaded = True
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            raise ModelLoadError(f"FFmpeg tools not available: {e}")
-    
+        self._ffmpeg_path, _ = self._run_version(self._ffmpeg_path, "ffmpeg")
+        self._ffprobe_path, _ = self._run_version(self._ffprobe_path, "ffprobe")
+        self._model_loaded = True
+
     def healthcheck(self) -> Dict[str, Any]:
-        """Check if FFmpeg tools are ready.
-        
-        Returns:
-            Dict with status information
-        """
         try:
-            result = subprocess.run(
-                [self._ffmpeg_path, '-version'],
-                capture_output=True,
-                check=True
-            )
-            version_line = result.stdout.decode().split('\n')[0]
+            ffmpeg_path, ffmpeg_version = self._run_version(self._ffmpeg_path, "ffmpeg")
+            ffprobe_path, ffprobe_version = self._run_version(self._ffprobe_path, "ffprobe")
             return {
                 "status": "ready",
-                "message": f"FFmpeg available: {version_line}",
-                "model_loaded": self._model_loaded
+                "message": "ffmpeg/ffprobe are available",
+                "model_loaded": self._model_loaded,
+                "ffmpeg_path": ffmpeg_path,
+                "ffprobe_path": ffprobe_path,
+                "ffmpeg_version": ffmpeg_version,
+                "ffprobe_version": ffprobe_version,
             }
-        except Exception as e:
+        except Exception as exc:
             return {
                 "status": "error",
-                "message": str(e),
-                "model_loaded": False
+                "message": str(exc),
+                "model_loaded": False,
             }
-    
+
     def predict(
         self,
         input_path: str,
         output_path: str,
-        start_time: Optional[float] = None,
-        duration: Optional[float] = None,
-        sample_rate: Optional[int] = None,
-        channels: Optional[int] = None
+        sample_rate: int = 16000,
+        channels: int = 1,
+        codec: str = "pcm_s16le",
     ) -> AudioProcessResult:
-        """Process audio using FFmpeg.
-        
-        Args:
-            input_path: Path to input audio file
-            output_path: Path for output audio file
-            start_time: Start time in seconds (for clipping)
-            duration: Duration in seconds (for clipping)
-            sample_rate: Target sample rate (e.g., 16000)
-            channels: Target number of channels (e.g., 1 for mono)
-        
-        Returns:
-            AudioProcessResult with output path and metadata
-        
-        Raises:
-            InferenceError: If processing fails
-        """
         if not self._model_loaded:
             self.load()
-        
+
         if not os.path.exists(input_path):
             raise InferenceError(f"Input file not found: {input_path}")
-        
-        # Build FFmpeg command
-        cmd = [self._ffmpeg_path, '-y', '-i', input_path]
-        
-        # Add time clipping if specified
-        if start_time is not None:
-            cmd.extend(['-ss', str(start_time)])
-        if duration is not None:
-            cmd.extend(['-t', str(duration)])
-        
-        # Add audio format options
-        if sample_rate is not None:
-            cmd.extend(['-ar', str(sample_rate)])
-        if channels is not None:
-            cmd.extend(['-ac', str(channels)])
-        
-        # Add output path
+
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        ffmpeg_path, ffmpeg_version = self._run_version(self._ffmpeg_path, "ffmpeg")
+        ffprobe_path, ffprobe_version = self._run_version(self._ffprobe_path, "ffprobe")
+
+        cmd = [
+            ffmpeg_path,
+            "-y",
+            "-i",
+            input_path,
+            "-ac",
+            str(channels),
+            "-ar",
+            str(sample_rate),
+            "-c:a",
+            codec,
+        ]
         cmd.append(output_path)
-        
-        # Execute FFmpeg
+
         try:
-            result = subprocess.run(
+            ffmpeg_proc = subprocess.run(
                 cmd,
                 capture_output=True,
-                check=True
+                check=True,
+                text=True,
             )
-        except subprocess.CalledProcessError as e:
-            stderr = e.stderr.decode() if e.stderr else "Unknown error"
-            raise InferenceError(f"FFmpeg failed: {stderr}")
-        
-        # Verify output exists
-        if not os.path.exists(output_path):
+        except subprocess.CalledProcessError as exc:
+            raise InferenceError(exc.stderr or "ffmpeg command failed") from exc
+
+        exists = os.path.exists(output_path)
+        if not exists:
             raise InferenceError("Output file was not created")
-        
-        # Get output metadata using ffprobe
-        duration_val = None
-        sample_rate_val = None
-        channels_val = None
-        
+
         try:
             probe_cmd = [
-                self._ffprobe_path,
-                '-v', 'quiet',
-                '-print_format', 'json',
-                '-show_format',
-                '-show_streams',
+                ffprobe_path,
+                "-v",
+                "error",
+                "-show_format",
+                "-show_streams",
+                "-of",
+                "json",
                 output_path
             ]
-            probe_result = subprocess.run(
+            probe_proc = subprocess.run(
                 probe_cmd,
                 capture_output=True,
-                check=True
+                check=True,
+                text=True,
             )
-            probe_data = json.loads(probe_result.stdout.decode())
-            
-            # Extract audio stream info
-            for stream in probe_data.get('streams', []):
-                if stream.get('codec_type') == 'audio':
-                    sample_rate_val = int(stream.get('sample_rate', 0)) or None
-                    channels_val = stream.get('channels')
-                    break
-            
-            # Get duration from format
-            format_info = probe_data.get('format', {})
-            duration_str = format_info.get('duration')
-            if duration_str:
-                duration_val = float(duration_str)
-                
-        except Exception:
-            # Metadata extraction is optional
-            pass
-        
+            probe_data = json.loads(probe_proc.stdout)
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+            raise InferenceError(f"ffprobe validation failed: {exc}") from exc
+
+        stream = next(
+            (item for item in probe_data.get("streams", []) if item.get("codec_type") == "audio"),
+            {},
+        )
+        format_name = probe_data.get("format", {}).get("format_name", "")
+        contract_checks = {
+            "has_audio_stream": bool(stream),
+            "sample_rate_is_16000": stream.get("sample_rate") == str(sample_rate),
+            "channels_is_expected": stream.get("channels") == channels,
+            "codec_matches": stream.get("codec_name") == codec,
+            "format_is_wav_compatible": "wav" in format_name.split(","),
+        }
+        contract_passed = all(contract_checks.values())
         return AudioProcessResult(
             output_path=output_path,
-            duration=duration_val,
-            sample_rate=sample_rate_val,
-            channels=channels_val
+            exists=exists,
+            ffmpeg_exit_code=ffmpeg_proc.returncode,
+            ffmpeg_executable=ffmpeg_path,
+            ffprobe_executable=ffprobe_path,
+            ffmpeg_version=ffmpeg_version,
+            ffprobe_version=ffprobe_version,
+            ffprobe=probe_data,
+            contract_passed=contract_passed,
+            contract_checks=contract_checks,
         )
     
     def process_audio(
@@ -262,3 +236,6 @@ class FFmpegWrapper:
         """
         result = self.predict(input_path, output_path, **kwargs)
         return result.to_dict()
+
+
+FFmpegWrapper = ModelWrapper

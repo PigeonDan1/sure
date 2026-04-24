@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import Any
 
 
+class ModelLoadError(RuntimeError):
+    pass
+
+
+class InferenceError(RuntimeError):
+    pass
+
+
 @dataclass
 class VADResult:
     timestamps: list[list[float]]
@@ -40,20 +48,23 @@ class ModelWrapper:
     def load(self) -> None:
         if self._model is not None:
             return
-        from fireredvad import FireRedVad, FireRedVadConfig
+        try:
+            from fireredvad import FireRedVad, FireRedVadConfig
 
-        vad_config = FireRedVadConfig(
-            use_gpu=self.use_gpu,
-            smooth_window_size=int(self.config.get("smooth_window_size", 5)),
-            speech_threshold=float(self.config.get("speech_threshold", 0.4)),
-            min_speech_frame=int(self.config.get("min_speech_frame", 20)),
-            max_speech_frame=int(self.config.get("max_speech_frame", 2000)),
-            min_silence_frame=int(self.config.get("min_silence_frame", 20)),
-            merge_silence_frame=int(self.config.get("merge_silence_frame", 0)),
-            extend_speech_frame=int(self.config.get("extend_speech_frame", 0)),
-            chunk_max_frame=int(self.config.get("chunk_max_frame", 30000)),
-        )
-        self._model = FireRedVad.from_pretrained(str(self.model_dir), vad_config)
+            vad_config = FireRedVadConfig(
+                use_gpu=self.use_gpu,
+                smooth_window_size=int(self.config.get("smooth_window_size", 5)),
+                speech_threshold=float(self.config.get("speech_threshold", 0.4)),
+                min_speech_frame=int(self.config.get("min_speech_frame", 20)),
+                max_speech_frame=int(self.config.get("max_speech_frame", 2000)),
+                min_silence_frame=int(self.config.get("min_silence_frame", 20)),
+                merge_silence_frame=int(self.config.get("merge_silence_frame", 0)),
+                extend_speech_frame=int(self.config.get("extend_speech_frame", 0)),
+                chunk_max_frame=int(self.config.get("chunk_max_frame", 30000)),
+            )
+            self._model = FireRedVad.from_pretrained(str(self.model_dir), vad_config)
+        except Exception as exc:
+            raise ModelLoadError(f"Failed to load FireRedVAD from {self.model_dir}: {exc}") from exc
 
     def healthcheck(self) -> dict[str, Any]:
         return {
@@ -68,13 +79,16 @@ class ModelWrapper:
         audio_path = Path(input_data).resolve()
         if not audio_path.exists():
             raise FileNotFoundError(f"Input audio not found: {audio_path}")
-        raw_result, _ = self._model.detect(str(audio_path))
-        timestamps = [list(pair) for pair in raw_result.get("timestamps", [])]
-        return VADResult(
-            timestamps=timestamps,
-            dur=raw_result.get("dur"),
-            wav_path=raw_result.get("wav_path"),
-        )
+        try:
+            raw_result, _ = self._model.detect(str(audio_path))
+            timestamps = [list(pair) for pair in raw_result.get("timestamps", [])]
+            return VADResult(
+                timestamps=timestamps,
+                dur=raw_result.get("dur"),
+                wav_path=raw_result.get("wav_path"),
+            )
+        except Exception as exc:
+            raise InferenceError(f"FireRedVAD inference failed for {audio_path}: {exc}") from exc
 
 
 def contract_result_to_json(result: VADResult) -> str:

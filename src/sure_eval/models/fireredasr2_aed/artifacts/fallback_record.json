@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-04-14T13:31:00Z",
+  "model_id": "FireRedTeam/FireRedASR2-AED",
+  "fallbacks": [
+    {
+      "type": "backend",
+      "requested": "pixi",
+      "used": "pip",
+      "reason": "`pixi` was unavailable on the host, while a model-local pip venv built from Python 3.10 was executable."
+    },
+    {
+      "type": "dependency_plan",
+      "requested": "upstream/FireRedASR2S/requirements.txt",
+      "used": "requirements.phase1.txt",
+      "reason": "The upstream dependency plan was pinned to `torch==2.1.0+cu118`, which was not installable on the current host."
+    },
+    {
+      "type": "fixture",
+      "requested": "tests/fixtures/shared/asr/en_16k.wav",
+      "used": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "reason": "The requested path was absent in-repo; the selected shared fallback preserved the same ASR task semantics and expected WAV format."
+    }
+  ]
+}

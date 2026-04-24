@@ -1,0 +1,14 @@
+{
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "stage": "BUILD_ENV",
+  "trigger": "system_dependency_missing",
+  "primary_attempt": {
+    "ffmpeg_on_path": null,
+    "ffprobe_on_path": null
+  },
+  "fallback_selected": {
+    "ffmpeg": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg",
+    "ffprobe": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe"
+  },
+  "reason": "PATH lookup failed for required executables; repo-local binaries were available and successfully probed."
+}

@@ -1,79 +1,63 @@
 {
-  "$schema": "./verdict.schema.json",
-  "instance_id": "fireredasr2_aed_20260413",
-  "timestamp": "2026-04-13T00:00:00Z",
+  "timestamp": "2026-04-14T13:31:00Z",
   "model_id": "FireRedTeam/FireRedASR2-AED",
-  "status": "success",
-  "stopped_at": "DONE",
-  "escalated": false,
+  "model_name": "fireredasr2_aed",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "last_successful_stage": "SAVE_REPRO_ARTIFACTS",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": true,
   "backend": {
-    "type": "pip",
-    "choice_reason": "Docker and uv were unavailable, so phase-1 used a model-local Python 3.10 venv with pip as the lowest-risk executable backend."
+    "selected": "pip",
+    "requested": "pixi",
+    "python_version": "3.10.20"
   },
-  "build": {
-    "success": true,
-    "duration_seconds": null,
-    "log_path": "artifacts/build.log"
+  "repo": {
+    "url": "https://github.com/FireRedTeam/FireRedASR2S.git",
+    "commit_declared": null,
+    "commit_tested": "466c9bb718240132f42ec1b9df14cc6aecae587d"
   },
   "validation": {
-    "import_test": {
+    "import": {
       "passed": true,
-      "duration_ms": 4579.232,
-      "error": null
+      "duration_ms": 11397.461
     },
-    "load_test": {
+    "load": {
       "passed": true,
-      "duration_ms": 11501.666,
-      "error": null
+      "duration_ms": 8614.936
     },
-    "infer_test": {
+    "infer": {
       "passed": true,
-      "duration_ms": 6120.637,
-      "error": null
+      "duration_ms": 5516.363
     },
-    "contract_test": {
+    "contract": {
       "passed": true,
-      "duration_ms": 0.482,
-      "error": null
+      "duration_ms": 0.361
     }
   },
-  "retries": {
-    "count": 3,
+  "retry_summary": {
+    "count": 1,
     "history": [
       {
         "checkpoint": "BUILD_ENV",
-        "failure_type": "cuda_version_mismatch",
-        "mitigation": "Replaced upstream CUDA-specific torch/torchaudio pins with a model-local CPU fallback dependency plan."
-      },
-      {
-        "checkpoint": "BUILD_ENV",
-        "failure_type": "python_dependency_missing",
-        "mitigation": "Raised kaldi_native_fbank from unavailable 1.15 to installable 1.22.3 after source-level API usage review."
-      },
-      {
-        "checkpoint": "VALIDATE_IMPORT",
-        "failure_type": "python_dependency_missing",
-        "mitigation": "Pinned setuptools==80.9.0 so kaldiio could import pkg_resources during repo-native import."
+        "failure_type": "runtime_backend_incompatible",
+        "mitigation": "Switched from the upstream CUDA-pinned requirements file to the recorded CPU fallback dependency plan in `requirements.phase1.txt`."
       }
     ]
   },
-  "failure": {
-    "type": null,
-    "category": null,
-    "message": null,
-    "retryable": false
-  },
-  "artifacts": {
-    "spec_path": "model.spec.yaml",
-    "wrapper_path": "model.py",
-    "server_path": "server.py",
-    "log_path": "artifacts/validation.log",
-    "weights_manifest_path": "artifacts/weights_manifest.json",
-    "sample_output_path": "artifacts/sample_output.json"
+  "paths": {
+    "spec": "model.spec.yaml",
+    "backend_choice": "artifacts/backend_choice.json",
+    "build_log": "artifacts/build.log",
+    "validation_log": "artifacts/validation.log",
+    "weights_manifest": "artifacts/weights_manifest.json",
+    "sample_output": "artifacts/sample_output.json"
   },
   "notes": [
-    "Phase-1 target passed on the standalone FireRedAsr2 AED repo-native path using model-local weights and CPU fallback on a host without GPU tooling.",
-    "No runtime-family switch to FireRedAsr2System or FireRedASR2-LLM was performed.",
-    "The selected shared fixture was already 16kHz 16-bit mono PCM WAV, so no ffmpeg conversion was required."
+    "Phase-1 target passed on the standalone FireRedAsr2 AED repo-native path using CPU fallback without switching runtime family.",
+    "Weights were downloaded into the model-local `pretrained_models/FireRedASR2-AED` directory rather than left in a global cache.",
+    "Repro bundle export and replay are required next because integration_status reached READY_LOCAL."
   ]
 }

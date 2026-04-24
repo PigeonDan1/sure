@@ -1,38 +1,44 @@
 {
-  "timestamp": "2026-04-02T15:47:31Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
   "backend": "pip",
   "python_version": "3.10",
   "steps": [
     {
       "step": 1,
-      "action": "create_local_venv",
-      "command": "/opt/anaconda3/envs/fireredvad/bin/python -m venv .venv",
-      "description": "Create an isolated model-local Python 3.10 environment without mutating host conda state."
+      "action": "clone_upstream_repo",
+      "command": "git clone https://github.com/FireRedTeam/FireRedVAD.git upstream/FireRedVAD",
+      "description": "Clone the standalone FireRedVAD repo into the model-local directory so phase-1 can validate the repo-native path and capture the tested commit."
     },
     {
       "step": 2,
-      "action": "upgrade_packaging_tools",
-      "command": ".venv/bin/pip install --upgrade pip setuptools wheel",
-      "description": "Prepare the local environment for dependency resolution."
+      "action": "create_local_venv",
+      "command": "/opt/anaconda3/envs/fireredvad/bin/python -m venv .venv",
+      "description": "Create an isolated model-local Python 3.10 environment without mutating the host conda environment."
     },
     {
       "step": 3,
-      "action": "install_runtime",
-      "command": ".venv/bin/pip install fireredvad huggingface_hub",
-      "description": "Install the repo-native package entrypoint plus Hugging Face download tooling."
+      "action": "install_upstream_runtime_deps",
+      "command": ".venv/bin/pip install -r upstream/FireRedVAD/requirements-macos-arm64.txt",
+      "description": "Install the repository-native macOS arm64 dependency plan first because it is the closest executable upstream evidence on this host."
     },
     {
       "step": 4,
-      "action": "download_weights",
-      "command": ".venv/bin/python -m huggingface_hub download FireRedTeam/FireRedVAD --local-dir pretrained_models/FireRedVAD",
-      "description": "Fetch the official weight bundle into the expected local directory."
+      "action": "install_repo_native_package_and_download_tooling",
+      "command": ".venv/bin/pip install -e upstream/FireRedVAD huggingface_hub==1.8.0",
+      "description": "Expose the repo-native fireredvad import path from the cloned source and install Hugging Face download tooling into the model-local env."
     },
     {
       "step": 5,
-      "action": "validate_repo_native_path",
+      "action": "fetch_weights_model_local_first",
+      "command": ".venv/bin/hf download FireRedTeam/FireRedVAD --local-dir checkpoints/FireRedVAD && ln -s ../checkpoints/FireRedVAD pretrained_models/FireRedVAD",
+      "description": "Download the official weight bundle into the model-local checkpoints directory and expose the repo-native pretrained_models path as a symlink alias."
+    },
+    {
+      "step": 6,
+      "action": "validate_phase1",
       "command": ".venv/bin/python validate_phase1.py",
-      "description": "Run import/load/infer/contract against the declared VAD fixture and capture structured output."
+      "description": "Run import/load/infer/contract on the selected shared VAD fixture and persist raw output before wrapper normalization."
     }
   ],
   "environment_variables": {},
@@ -42,7 +48,9 @@
     "cpu_cores": 2
   },
   "notes": [
-    "ffmpeg is not required for the chosen fixture because the asset already satisfies the repository input format.",
-    "No upstream patch is planned; wrapper generation is deferred until contract validation succeeds."
+    "The selected fixture is a shared VAD fallback because tests/fixtures/shared/vad/en_16k.wav is absent in-repo.",
+    "Weights satisfy model_local_first by downloading into checkpoints/FireRedVAD and aliasing the repo-native pretrained_models path to that location.",
+    "The only authorized retry at FETCH_WEIGHTS is to switch from an incorrect CLI executable name to the verified local hf CLI entrypoint.",
+    "The only authorized retry during bundle export is to disable pip build isolation for the prebuilt replay env seed so replay remains bundle-only."
   ]
 }

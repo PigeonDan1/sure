@@ -39,22 +39,43 @@ class RPSCalculator:
         """Calculate RPS for a score on a dataset."""
         baseline = self.sota_manager.get_baseline(dataset)
         if baseline:
+            normalized_score = self.sota_manager.normalize_evaluator_score_for_rps(
+                baseline.metric,
+                score,
+                higher_is_better=baseline.higher_is_better,
+            )
+            normalized_baseline = self.sota_manager.normalize_baseline_score_for_rps(
+                baseline.metric,
+                baseline.score,
+                higher_is_better=baseline.higher_is_better,
+            )
             if baseline.higher_is_better:
-                return score / baseline.score if baseline.score > 0 else 0.0
-            if score == 0:
-                return float("inf") if baseline.score > 0 else 1.0
-            return baseline.score / score
+                return normalized_score / normalized_baseline if normalized_baseline > 0 else 0.0
+            if normalized_score == 0:
+                return float("inf") if normalized_baseline > 0 else 1.0
+            return normalized_baseline / normalized_score
 
         legacy_baseline = self.config.get_baseline(dataset)
         if not legacy_baseline:
             logger.warning("No baseline for dataset", dataset=dataset)
             return None
+
+        normalized_score = SOTAManager.normalize_evaluator_score_for_rps(
+            legacy_baseline.metric,
+            score,
+            higher_is_better=legacy_baseline.higher_is_better,
+        )
+        normalized_baseline = SOTAManager.normalize_baseline_score_for_rps(
+            legacy_baseline.metric,
+            legacy_baseline.score,
+            higher_is_better=legacy_baseline.higher_is_better,
+        )
         
         if legacy_baseline.higher_is_better:
-            return score / legacy_baseline.score if legacy_baseline.score > 0 else 0.0
-        if score == 0:
-            return float("inf") if legacy_baseline.score > 0 else 1.0
-        return legacy_baseline.score / score
+            return normalized_score / normalized_baseline if normalized_baseline > 0 else 0.0
+        if normalized_score == 0:
+            return float("inf") if normalized_baseline > 0 else 1.0
+        return normalized_baseline / normalized_score
     
     def get_baseline_info(self, dataset: str) -> dict[str, Any] | None:
         """Get baseline information for a dataset."""

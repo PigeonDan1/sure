@@ -1,0 +1,6 @@
+[2026-04-14T14:47:53Z] EXPORT_REPRO_BUNDLE: bundle exported to /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/repro_bundle
+[2026-04-14T14:47:53Z] LOAD_REPRO_BUNDLE: loaded repro_manifest.json, weights_manifest.json, environment_manifest.json, minimal_repro_spec.json, fixture_manifest.json, and repro_instructions.md
+[2026-04-14T14:47:53Z] REBUILD_MINIMAL_ENV: copied repro_bundle/venv_seed into /tmp/fireredvad_repro_inIS8C/.venv-repro
+[2026-04-14T14:47:53Z] FETCH_OR_VALIDATE_WEIGHTS_FOR_REPRO: verified bundle-local weights at /tmp/fireredvad_repro_inIS8C/repro_bundle/weights/FireRedVAD/VAD
+[2026-04-14T14:47:53Z] RUN_MINIMAL_REPRODUCTION: executed /tmp/fireredvad_repro_inIS8C/.venv-repro/bin/python /tmp/fireredvad_repro_inIS8C/repro_bundle/support/repro_validate.py
+[2026-04-14T14:47:53Z] VALIDATE_REPRO_OUTPUT: replay output contract passed with dur/timestamps/wav_path present and non-empty timestamps

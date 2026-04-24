@@ -1,24 +1,26 @@
 {
-  "timestamp": "2026-04-02T15:47:31Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
-  "checkpoint": "VALIDATE_INFER",
-  "attempt": 1,
-  "failure_type": "wrong_entrypoint",
-  "retryable": true,
-  "symptoms": [
-    "soundfile.LibsndfileError: Error opening 'tests/fixtures/shared/vad/en_16k_10s.wav': System error."
-  ],
-  "evidence": [
+  "classifications": [
     {
-      "source": "artifacts/validation.log",
-      "priority": 2,
-      "detail": "Traceback shows failure occurs inside fireredvad.core.audio_feat.extract() while opening the relative fixture path."
+      "checkpoint": "FETCH_WEIGHTS",
+      "attempt": 1,
+      "failure_type": "wrong_entrypoint",
+      "retryable": true,
+      "log_evidence": [
+        "zsh:1: no such file or directory: .venv/bin/huggingface-cli"
+      ],
+      "reasoning": "The download tool was installed, but the expected executable name was wrong in this environment. Switching to the verified local hf CLI directly addresses the failure without changing the weight source or backend."
     },
     {
-      "source": "preflight_summary.json",
-      "priority": 1,
-      "detail": "Fixture exists in repo root and has the required VAD audio format."
+      "checkpoint": "EXPORT_REPRO_BUNDLE",
+      "attempt": 1,
+      "failure_type": "runtime_backend_incompatible",
+      "retryable": true,
+      "log_evidence": [
+        "pip build isolation tried to download setuptools>=68.0 during bundle env-seed preparation and failed without network access"
+      ],
+      "reasoning": "Replay must be bundle-only. Disabling build isolation lets the env seed reuse its already-installed build tooling and avoids an external dependency during bundle preparation."
     }
-  ],
-  "diagnosis": "The infer callable path itself loaded correctly, but the harness validation runner executed from the model directory while the spec fixture path is repo-root relative. This is a path-resolution issue in the validation harness, not a missing fixture or missing dependency."
+  ]
 }

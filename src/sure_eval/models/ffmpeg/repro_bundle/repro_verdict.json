@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "last_successful_stage": "VALIDATE_REPRO_OUTPUT",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": false,
+  "repro_workspace": "/var/folders/k3/f2tr984n57372kdmn8999t2h0000gn/T/sure_eval_ffmpeg_repro_7qs2gfr8"
+}

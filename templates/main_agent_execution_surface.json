@@ -8,6 +8,10 @@
   "resolved_inputs": {
     "model_name": "",
     "dataset": "",
+    "dataset_task": "",
+    "dataset_language": "",
+    "evaluation_metric": "",
+    "evaluation_postprocessing": "",
     "run_dir": "",
     "execution_path": "",
     "tool_name": ""

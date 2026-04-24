@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "model_name": "librosa",
+  "model_id": "librosa/librosa",
+  "task_type": "music_ir",
+  "deployment_type": "local",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "bundle_created_at": "2026-04-13T23:58:53.241046+00:00",
+  "repo": {
+    "url": "https://github.com/librosa/librosa",
+    "commit_declared": null,
+    "commit_tested": "12927cba02b55014326148cf958d0d482bbc1c79"
+  },
+  "backend": {
+    "selected": "venv_pip_local"
+  },
+  "paths": {
+    "weights_manifest": "./weights_manifest.json",
+    "environment_manifest": "./environment_manifest.json",
+    "minimal_repro_spec": "./minimal_repro_spec.json",
+    "fixture_manifest": "./fixture_manifest.json",
+    "environment_snapshot": "./environment_snapshot.txt",
+    "repro_instructions": "./repro_instructions.md",
+    "requirements": "./requirements.phase1.txt",
+    "minimal_repro_script": "./minimal_repro.py",
+    "sample_output": "./sample_output.json",
+    "patch_log": "./patch_log.json",
+    "fallback_record": "./fallback_record.json",
+    "repro_validation_log": "./repro_validation.log",
+    "repro_verdict": "./repro_verdict.json",
+    "wheelhouse": "./wheelhouse"
+  }
+}

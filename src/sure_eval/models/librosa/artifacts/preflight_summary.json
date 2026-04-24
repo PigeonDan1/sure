@@ -1,31 +1,36 @@
 {
-  "timestamp": "2026-03-30T11:33:36+08:00",
-  "model_id": "librosa",
+  "timestamp": "2026-04-13T23:58:53.241046+00:00",
+  "model_id": "librosa/librosa",
   "package_managers": {
-    "uv": true
+    "uv": false,
+    "pip": true
   },
   "python": {
-    "python3": "3.10.12"
+    "python3": "Python 3.13.3",
+    "python3_10_available": false,
+    "python3_12": "Python 3.12.4",
+    "runtime_python": "Python 3.12.4"
   },
   "system_packages": {
-    "ffmpeg": true
-  },
-  "disk": {
-    "workspace_available_human": "0",
-    "tmp_available_human": "656M"
+    "ffmpeg": false,
+    "libsndfile1": false
   },
   "fixture": {
-    "path": "tests/fixtures/shared/mir/rhythm_22k_15s.wav",
-    "exists": true,
-    "task_specific": true
+    "requested_path": "tests/fixtures/shared/asr/en_16k.wav",
+    "requested_exists": false,
+    "resolved_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+    "resolved_exists": true,
+    "task_specific": false
   },
   "compatibility": {
-    "preferred_backend_available": true,
-    "python_version_available": true,
+    "preferred_backend_available": false,
+    "python_version_available": false,
     "host_risk_detected": false
   },
   "warnings": [
-    "The CPFS workspace is full, so transient environment state must live under /tmp.",
-    "Networked package installation will require escalated execution outside the sandbox."
+    "uv is unavailable on the host, so backend selection downgraded to a model-local venv+pinned pip install.",
+    "python3.10 is unavailable on the host; the validated runtime uses python3.12 with executable evidence.",
+    "ffmpeg is absent on the host, but the validated fixture is WAV and librosa.load succeeded via soundfile without ffmpeg.",
+    "Requested fixture tests/fixtures/shared/asr/en_16k.wav is absent; shared fallback tests/fixtures/shared/asr/en_16k_10s.wav was used under fixture_policy."
   ]
 }

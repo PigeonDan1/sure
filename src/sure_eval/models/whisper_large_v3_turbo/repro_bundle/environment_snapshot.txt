@@ -1,0 +1,14 @@
+timestamp=2026-04-14T13:20:45.867045+01:00
+platform=macOS-26.2-arm64-arm-64bit
+workspace=/Users/wency/Desktop/sjtu/SURE/sure
+venv_python=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/.venv/bin/python
+venv_pip=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/.venv/bin/pip
+ffmpeg_binary=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/checkpoints/bin/ffmpeg
+python_version=Python 3.10.20
+package_versions={"openai-whisper": "20250625", "torch": "2.11.0", "tiktoken": "0.12.0", "imageio-ffmpeg": "0.6.0", "numpy": "2.2.6", "numba": "0.65.0"}
+weights_file=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/checkpoints/home/.cache/whisper/large-v3-turbo.pt
+weights_sha256=aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a
+fixture_file=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/repro_bundle/fixtures/en_16k_10s.wav
+fixture_sha256=8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d
+requirements_lock=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/requirements.lock.txt
+ffmpeg_version=ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers

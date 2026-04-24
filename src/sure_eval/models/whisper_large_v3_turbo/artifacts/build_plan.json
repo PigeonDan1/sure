@@ -1,46 +1,49 @@
 {
-  "timestamp": "2026-03-30T12:40:02+08:00",
+  "timestamp": "2026-04-14T13:10:23.063323+01:00",
   "model_id": "openai/whisper-large-v3-turbo",
-  "backend": "uv",
-  "build_root": "/root/.cache/sure_eval_whisper_large_v3_turbo",
-  "venv_path": "/root/.cache/sure_eval_whisper_large_v3_turbo/.venv",
-  "cache_path": "/root/.cache/sure_eval_whisper_large_v3_turbo/uv-cache",
-  "hf_cache_path": "/root/.cache/sure_eval_whisper_large_v3_turbo/hf-home",
+  "backend": "pip",
+  "python_path": "/opt/anaconda3/envs/fireredvad/bin/python",
   "project_path": "src/sure_eval/models/whisper_large_v3_turbo",
+  "venv_path": "src/sure_eval/models/whisper_large_v3_turbo/.venv",
+  "weights_root": "src/sure_eval/models/whisper_large_v3_turbo/checkpoints",
+  "ffmpeg_fallback_path": "src/sure_eval/models/whisper_large_v3_turbo/checkpoints/bin/ffmpeg",
+  "lock_artifacts": [
+    "src/sure_eval/models/whisper_large_v3_turbo/requirements.lock.txt"
+  ],
   "steps": [
     {
-      "name": "create_runtime_dirs",
-      "command": "mkdir -p /root/.cache/sure_eval_whisper_large_v3_turbo/uv-cache /root/.cache/sure_eval_whisper_large_v3_turbo/hf-home"
+      "name": "create_model_local_venv",
+      "command": "/opt/anaconda3/envs/fireredvad/bin/python -m venv src/sure_eval/models/whisper_large_v3_turbo/.venv"
     },
     {
-      "name": "lock_dependencies",
-      "command": "UV_CACHE_DIR=/root/.cache/sure_eval_whisper_large_v3_turbo/uv-cache uv lock --project src/sure_eval/models/whisper_large_v3_turbo"
+      "name": "install_dependencies",
+      "command": "src/sure_eval/models/whisper_large_v3_turbo/.venv/bin/pip install openai-whisper torch tiktoken imageio-ffmpeg"
     },
     {
-      "name": "create_runtime",
-      "command": "UV_CACHE_DIR=/root/.cache/sure_eval_whisper_large_v3_turbo/uv-cache UV_PROJECT_ENVIRONMENT=/root/.cache/sure_eval_whisper_large_v3_turbo/.venv uv sync --project src/sure_eval/models/whisper_large_v3_turbo --python 3.10"
+      "name": "record_lock",
+      "command": "src/sure_eval/models/whisper_large_v3_turbo/.venv/bin/pip freeze > src/sure_eval/models/whisper_large_v3_turbo/requirements.lock.txt"
     },
     {
-      "name": "fetch_weights",
-      "command": "HF_HOME=/root/.cache/sure_eval_whisper_large_v3_turbo/hf-home /root/.cache/sure_eval_whisper_large_v3_turbo/.venv/bin/python -c \"from huggingface_hub import snapshot_download; print(snapshot_download('openai/whisper-large-v3-turbo'))\""
+      "name": "prepare_model_local_paths",
+      "command": "mkdir -p src/sure_eval/models/whisper_large_v3_turbo/checkpoints/home src/sure_eval/models/whisper_large_v3_turbo/checkpoints/bin"
     },
     {
       "name": "validate_runtime",
-      "command": "Run import/load/infer/contract checks with the isolated interpreter and the shared fallback ASR fixture."
+      "command": "HOME=<model checkpoints>/home PATH=<model checkpoints>/bin:$PATH .venv/bin/python <phase1 validation script>"
     }
   ],
   "inputs": {
     "python_version": "3.10",
     "fixture": "tests/fixtures/shared/asr/en_16k_10s.wav",
-    "requested_fixture": "tests/fixtures/shared/asr/multilingual_16k_10s.wav",
-    "weights_source": "huggingface",
+    "requested_fixture": "tests/fixtures/shared/asr/en_16k.wav",
+    "weights_source": "release_or_pypi",
     "system_packages": [
       "ffmpeg"
     ]
   },
   "constraints": [
-    "Network access and writes under /root require escalated commands outside the sandbox.",
-    "The shared fallback fixture validates ASR callability but does not fully prove multilingual coverage."
+    "Package download likely requires escalated network access under the current sandbox.",
+    "ffmpeg is not installed on host, so a model-local fallback binary must be recorded if used."
   ],
   "executable": true,
   "blocking_issues": []

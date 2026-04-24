@@ -1,0 +1,18 @@
+{
+  "is_valid": true,
+  "results": [
+    {
+      "dataset": "librispeech_clean",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/librispeech_clean.jsonl",
+      "prediction_path": "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/predictions/librispeech_clean.txt",
+      "expected_samples": 2619,
+      "provided_predictions": 2619,
+      "missing_keys": [],
+      "extra_keys": [],
+      "duplicate_keys": [],
+      "empty_prediction_keys": [],
+      "require_nonempty": true,
+      "is_valid": true
+    }
+  ]
+}

@@ -1,35 +1,20 @@
 {
-  "timestamp": "2026-04-13T00:00:00Z",
+  "timestamp": "2026-04-14T13:15:00Z",
   "model_id": "FireRedTeam/FireRedASR2-AED",
-  "checkpoint": "VALIDATE_IMPORT",
+  "checkpoint": "BUILD_ENV",
   "attempt": 1,
-  "failure_type": "python_dependency_missing",
-  "category": "runtime_import",
+  "failure_type": "runtime_backend_incompatible",
+  "category": "dependency_resolution",
   "retryable": true,
-  "history": [
-    {
-      "checkpoint": "BUILD_ENV",
-      "attempt": 1,
-      "failure_type": "cuda_version_mismatch",
-      "command": ".venv/bin/pip install -r upstream/FireRedASR2S/requirements.txt",
-      "log_excerpt": "ERROR: Could not find a version that satisfies the requirement torch==2.1.0+cu118 ... ERROR: No matching distribution found for torch==2.1.0+cu118"
-    },
-    {
-      "checkpoint": "BUILD_ENV",
-      "attempt": 2,
-      "failure_type": "python_dependency_missing",
-      "command": ".venv/bin/pip install -r requirements.phase1.txt",
-      "log_excerpt": "ERROR: Could not find a version that satisfies the requirement kaldi_native_fbank==1.15 ... ERROR: No matching distribution found for kaldi_native_fbank==1.15"
-    }
-  ],
+  "history": [],
   "evidence": {
-    "command": ".venv/bin/python validate_phase1.py",
-    "log_excerpt": "ModuleNotFoundError: No module named 'pkg_resources'",
+    "command": ".venv/bin/pip install -r upstream/FireRedASR2S/requirements.txt",
+    "log_excerpt": "ERROR: Could not find a version that satisfies the requirement torch==2.1.0+cu118 ... ERROR: No matching distribution found for torch==2.1.0+cu118",
     "supporting_context": [
-      "kaldiio/__init__.py imports pkg_resources at module import time.",
-      "The current environment has setuptools 82.0.1 installed but .venv/bin/python cannot import pkg_resources.",
-      "This is an environment support-package issue in the import chain, not evidence against the standalone FireRedAsr2 AED entrypoint."
+      "The upstream requirements file is pinned to CUDA wheels from `https://download.pytorch.org/whl/cu118`.",
+      "The current phase-1 target permits same-path CPU fallback when GPU tooling is unavailable.",
+      "The failure occurs during dependency resolution and does not disprove the standalone FireRedAsr2 AED runtime target."
     ]
   },
-  "diagnosis": "VALIDATE_IMPORT fails because the runtime dependency chain expects pkg_resources, which is absent in the current environment. A targeted retry may pin setuptools to a version that restores pkg_resources without changing the repo-native import/load/infer path."
+  "diagnosis": "BUILD_ENV failed because the upstream CUDA-pinned torch wheel set is not installable on the current host. A targeted retry may switch only the dependency plan to the recorded CPU fallback requirements while preserving the same repo-native runtime path."
 }

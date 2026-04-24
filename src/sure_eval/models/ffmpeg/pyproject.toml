@@ -1,0 +1,10 @@
+[project]
+name = "sure-eval-ffmpeg-wrapper"
+version = "0.1.0"
+description = "Minimal local wrapper metadata for SURE-EVAL ffmpeg phase-1 onboarding."
+requires-python = ">=3.13"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

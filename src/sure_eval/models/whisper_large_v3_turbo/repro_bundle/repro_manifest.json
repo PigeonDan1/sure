@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "model_name": "whisper_large_v3_turbo",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "task_type": "asr",
+  "deployment_type": "local",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "bundle_created_at": "2026-04-14T13:20:45.867045+01:00",
+  "repo": {
+    "url": "https://github.com/openai/whisper",
+    "commit_declared": null,
+    "commit_tested": null
+  },
+  "backend": {
+    "selected": "pip"
+  },
+  "paths": {
+    "weights_manifest": "weights_manifest.json",
+    "environment_manifest": "environment_manifest.json",
+    "minimal_repro_spec": "minimal_repro_spec.json",
+    "fixture_manifest": "fixture_manifest.json",
+    "environment_snapshot": "environment_snapshot.txt",
+    "repro_instructions": "repro_instructions.md",
+    "reference_requirements_lock": "reference/requirements.lock.txt",
+    "reference_model_spec": "reference/model.spec.yaml",
+    "reference_model_py": "reference/model.py",
+    "bundled_ffmpeg": "tools/ffmpeg",
+    "repro_validation_log": "repro_validation.log",
+    "repro_verdict": "repro_verdict.json"
+  },
+  "bundle_verified_at": "2026-04-14T13:25:40.931240+01:00"
+}

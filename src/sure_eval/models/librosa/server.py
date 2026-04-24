@@ -26,10 +26,7 @@ class MCPServer:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {
-                    "name": "librosa-mcp-server",
-                    "version": "1.0.0",
-                },
+                "serverInfo": {"name": "librosa-mcp-server", "version": "1.0.0"},
             },
         }
 
@@ -40,24 +37,24 @@ class MCPServer:
             "result": {
                 "tools": [
                     {
-                        "name": "analyze_rhythm",
-                        "description": "Run onset, beat, and tempo analysis on a local audio path.",
+                        "name": "extract_mfcc",
+                        "description": "Run minimal MFCC feature extraction on a local audio path.",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
                                 "audio_path": {
                                     "type": "string",
-                                    "description": "Path to the audio file to analyze."
+                                    "description": "Path to the audio file to analyze.",
                                 }
                             },
-                            "required": ["audio_path"]
-                        }
+                            "required": ["audio_path"],
+                        },
                     },
                     {
                         "name": "healthcheck",
                         "description": "Check whether the librosa runtime is available.",
-                        "inputSchema": {"type": "object", "properties": {}}
-                    }
+                        "inputSchema": {"type": "object", "properties": {}},
+                    },
                 ]
             },
         }
@@ -68,7 +65,7 @@ class MCPServer:
         arguments = params.get("arguments", {})
         request_id = request.get("id")
         try:
-            if tool_name == "analyze_rhythm":
+            if tool_name == "extract_mfcc":
                 audio_path = arguments.get("audio_path")
                 if not audio_path:
                     raise ValueError("audio_path is required")
@@ -80,7 +77,7 @@ class MCPServer:
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
-                "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
+                "result": {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False, indent=2)}]},
             }
         except Exception as exc:
             return {
@@ -109,7 +106,7 @@ class MCPServer:
             if not line:
                 continue
             response = self.handle_request(json.loads(line))
-            print(json.dumps(response), flush=True)
+            print(json.dumps(response, ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":

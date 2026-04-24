@@ -1,0 +1,7 @@
+timestamp: 2026-04-14T10:38:22.755222+00:00
+fresh_root: /var/folders/k3/f2tr984n57372kdmn8999t2h0000gn/T/sure_eval_ffmpeg_repro_7qs2gfr8
+loaded_bundle: /var/folders/k3/f2tr984n57372kdmn8999t2h0000gn/T/sure_eval_ffmpeg_repro_7qs2gfr8/repro_bundle
+verify ffmpeg succeeded
+verify ffprobe succeeded
+transcode returncode: 0
+{"contract_checks": {"output_exists": true, "valid_ffprobe_json": true, "has_audio_stream": true, "sample_rate_is_16000": true, "channels_is_1": true, "codec_name_is_pcm_s16le": true, "format_is_wav_compatible": true}}

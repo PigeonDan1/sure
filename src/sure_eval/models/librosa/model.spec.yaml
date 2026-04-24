@@ -1,6 +1,6 @@
-model_id: "librosa"
+model_id: "librosa/librosa"
 model_name: "librosa"
-task_type: "audio_analysis"
+task_type: "music_ir"
 deployment_type: "local"
 
 repo:
@@ -8,37 +8,46 @@ repo:
   commit: null
 
 weights:
-  source: "none"
+  source: "pip"
   local_path: null
   required: false
+  cache_policy: "not_applicable"
+  local_dir_name: "not_applicable"
 
 environment:
   preferred_backend: "uv"
   python_version: "3.10"
   requires_gpu: false
   system_packages:
-    - ffmpeg
+    - "ffmpeg"
+    - "libsndfile1"
 
 entrypoints:
-  import_test: "import librosa"
-  load_test: |
-    import librosa
-    y, sr = librosa.load('tests/fixtures/shared/mir/rhythm_22k_15s.wav', sr=None)
-  infer_test: |
-    import librosa
-    y, sr = librosa.load('tests/fixtures/shared/mir/rhythm_22k_15s.wav', sr=None)
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-    tempo, beats = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+  import_test: "import librosa, soundfile as sf, numpy as np"
+  load_test: "y, sr = librosa.load('tests/fixtures/shared/asr/en_16k_10s.wav', sr=None)"
+  infer_test: "import json, numpy as np, librosa; y, sr = librosa.load('tests/fixtures/shared/asr/en_16k_10s.wav', sr=None); mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13); result = {'sample_rate': int(sr), 'num_samples': int(len(y)), 'duration_sec': float(len(y)/sr), 'feature_type': 'mfcc', 'shape': [int(mfcc.shape[0]), int(mfcc.shape[1])], 'mean': float(np.mean(mfcc)), 'std': float(np.std(mfcc))}; print(json.dumps(result, ensure_ascii=False))"
+
+fixture:
+  audio: "tests/fixtures/shared/asr/en_16k_10s.wav"
+  task_specific: false
+  fallback_allowed: true
+  fallback_from: "tests/fixtures/shared/asr/en_16k.wav"
 
 io_contract:
   input_type: "audio_path"
   output_type: "json"
-  primary_field: "tempo"
+  primary_field: "feature_type"
   required_fields:
-    - "tempo"
-    - "beats"
+    - "sample_rate"
+    - "num_samples"
+    - "duration_sec"
+    - "feature_type"
+    - "shape"
+    - "mean"
+    - "std"
   nonempty_fields:
-    - "beats"
+    - "feature_type"
+    - "shape"
   json_serializable: true
 
 acceptance:

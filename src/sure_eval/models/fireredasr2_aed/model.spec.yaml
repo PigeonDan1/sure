@@ -1,5 +1,5 @@
 model_id: "FireRedTeam/FireRedASR2-AED"
-model_name: "FireRedASR2-AED"
+model_name: "fireredasr2_aed"
 task_type: "asr"
 deployment_type: "local"
 
@@ -20,9 +20,9 @@ weights:
   local_dir_name: "pretrained_models/FireRedASR2-AED"
 
 environment:
-  preferred_backend: "pip"
+  preferred_backend: "pixi"
   python_version: "3.10"
-  requires_gpu: true
+  requires_gpu: false
   system_packages:
     - ffmpeg
     - libsndfile1

@@ -1,29 +1,69 @@
 [VALIDATION]
-Device set to use cpu
-`return_token_timestamps` is deprecated for WhisperFeatureExtractor and will be removed in Transformers v5. Use `return_attention_mask` instead, as the number of frames can be inferred from it.
-Using custom `forced_decoder_ids` from the (generation) config. This is deprecated in favor of the `task` and `language` flags/config options.
-Transcription using a multilingual Whisper will default to language detection followed by transcription instead of translation to English. This might be a breaking change for your use case. If you want to instead always translate your audio to English, make sure to pass `language='en'`. See https://github.com/huggingface/transformers/pull/28687 for more details.
-{"record": {"timestamp": "2026-03-30T12:45:43.612176+08:00", "model_id": "openai/whisper-large-v3-turbo", "fixture_source": "shared_fallback", "fixture_path": "tests/fixtures/shared/asr/en_16k_10s.wav", "tests": {"import": {"passed": true, "duration_ms": 6619.99, "error": null}, "load": {"passed": true, "duration_ms": 5246.69, "error": null}, "infer": {"passed": true, "duration_ms": 4925.29, "error": null}, "contract": {"passed": true, "duration_ms": 0.04, "error": null}}, "overall": "PASSED"}, "runtime_output": {"text": " Lobster Ellen Newberg."}}
-
-[WRAPPER_SMOKE]
-Traceback (most recent call last):
-  File "<string>", line 1, in <module>
-  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/__init__.py", line 3, in <module>
-    from sure_eval.core.config import Config
-ModuleNotFoundError: No module named 'sure_eval'
-
-[WRAPPER_SMOKE_RETRY]
-Traceback (most recent call last):
-  File "<string>", line 1, in <module>
-  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/__init__.py", line 3, in <module>
-    from sure_eval.core.config import Config
-  File "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/core/config.py", line 10, in <module>
-    from pydantic import BaseModel, Field
-ModuleNotFoundError: No module named 'pydantic'
-
-[WRAPPER_SMOKE_RETRY_2]
-Device set to use cpu
-`return_token_timestamps` is deprecated for WhisperFeatureExtractor and will be removed in Transformers v5. Use `return_attention_mask` instead, as the number of frames can be inferred from it.
-Using custom `forced_decoder_ids` from the (generation) config. This is deprecated in favor of the `task` and `language` flags/config options.
-Transcription using a multilingual Whisper will default to language detection followed by transcription instead of translation to English. This might be a breaking change for your use case. If you want to instead always translate your audio to English, make sure to pass `language='en'`. See https://github.com/huggingface/transformers/pull/28687 for more details.
-{"text": " Lobster Ellen Newberg.", "language": null, "segments": null}
+{
+  "record": {
+    "timestamp": "2026-04-14T13:12:55+0100",
+    "model_id": "openai/whisper-large-v3-turbo",
+    "fixture_source": "shared_fallback",
+    "requested_fixture_path": "tests/fixtures/shared/asr/en_16k.wav",
+    "fixture_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+    "fixture_sha256": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+    "weights_root": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/checkpoints/home/.cache/whisper",
+    "ffmpeg_binary": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/checkpoints/bin/ffmpeg",
+    "tests": {
+      "import": {
+        "passed": true,
+        "duration_ms": 0.0,
+        "error": null,
+        "module_version": "20250625"
+      },
+      "load": {
+        "passed": true,
+        "duration_ms": 62395.41,
+        "error": null,
+        "download_root": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/checkpoints/home/.cache/whisper"
+      },
+      "infer": {
+        "passed": true,
+        "duration_ms": 7822.08,
+        "error": null
+      },
+      "contract": {
+        "passed": true,
+        "duration_ms": 0.0,
+        "error": null,
+        "checks": {
+          "required_fields_present": true,
+          "nonempty_text": true,
+          "json_serializable": true
+        }
+      }
+    },
+    "overall": "PASSED"
+  },
+  "runtime_output": {
+    "text": " Lobster Ellen Newberg",
+    "segments": [
+      {
+        "id": 0,
+        "seek": 0,
+        "start": 0.0,
+        "end": 1.9000000000000001,
+        "text": " Lobster Ellen Newberg",
+        "tokens": [
+          50365,
+          30719,
+          3120,
+          20306,
+          1873,
+          6873,
+          50460
+        ],
+        "temperature": 0.0,
+        "avg_logprob": -0.34242141246795654,
+        "compression_ratio": 0.7241379310344828,
+        "no_speech_prob": 6.187215236680421e-12
+      }
+    ],
+    "language": "en"
+  }
+}

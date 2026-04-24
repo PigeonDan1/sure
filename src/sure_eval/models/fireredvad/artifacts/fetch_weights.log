@@ -1,0 +1,13 @@
+[2026-04-14T14:45:26Z] target_repo=FireRedTeam/FireRedVAD
+[2026-04-14T14:45:26Z] intended_cache_root=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/checkpoints/FireRedVAD
+[2026-04-14T14:45:26Z] intended_runtime_alias=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/pretrained_models/FireRedVAD
+[2026-04-14T14:45:26Z] attempt_1_command=.venv/bin/huggingface-cli download FireRedTeam/FireRedVAD --local-dir checkpoints/FireRedVAD
+[2026-04-14T14:45:26Z] attempt_1_result=failed
+[2026-04-14T14:45:26Z] attempt_1_failure_type=wrong_entrypoint
+[2026-04-14T14:45:26Z] attempt_1_error=zsh:1: no such file or directory: .venv/bin/huggingface-cli
+[2026-04-14T14:45:26Z] attempt_2_command=.venv/bin/hf download FireRedTeam/FireRedVAD --local-dir checkpoints/FireRedVAD
+[2026-04-14T14:45:26Z] attempt_2_result=passed
+[2026-04-14T14:45:26Z] declared_revision=7990aaccc6b7aec1e527743bd30201f2c4a03b8c
+[2026-04-14T14:45:26Z] resolved_local_path=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/checkpoints/FireRedVAD
+[2026-04-14T14:45:26Z] runtime_alias=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/pretrained_models/FireRedVAD
+[2026-04-14T14:45:26Z] notes=download completed without authentication; local symlink preserves repo-native pretrained_models path

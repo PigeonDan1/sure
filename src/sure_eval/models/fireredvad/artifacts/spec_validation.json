@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-02T15:47:31Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
   "status": "passed",
   "checks": {
@@ -23,7 +23,7 @@
       "passed": true,
       "fixture_path": "tests/fixtures/shared/vad/en_16k_10s.wav",
       "source": "shared",
-      "note": "Shared VAD fixture is explicitly recorded as fallback and preserves the original VAD task semantics."
+      "note": "The requested fixture is absent, but the selected shared VAD fallback preserves the same task semantics and already matches the required WAV format."
     },
     "io_contract_sufficient": {
       "passed": true,
@@ -36,7 +36,7 @@
   },
   "ready_for_build_env": true,
   "warnings": [
-    "ffmpeg is unavailable on host; validation depends on the existing compliant WAV fixture and does not cover format conversion."
+    "pixi is unavailable and ffmpeg is absent on host, so the validated plan relies on a conda-family Python 3.10 interpreter and the existing compliant WAV fixture."
   ],
   "blockers": []
 }

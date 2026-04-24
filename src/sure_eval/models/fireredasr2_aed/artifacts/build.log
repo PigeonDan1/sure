@@ -1,9 +1,12 @@
-{"timestamp":"2026-04-13T00:00:00Z","stage":"DISCOVER","status":"completed","message":"Initial planning artifacts created before BUILD_ENV."}
-{"timestamp":"2026-04-13T00:00:00Z","stage":"BUILD_ENV","status":"failed","message":"Upstream requirements install failed on torch==2.1.0+cu118.","failure_type":"cuda_version_mismatch"}
-{"timestamp":"2026-04-13T00:00:00Z","stage":"BUILD_ENV","status":"failed","message":"CPU fallback dependency plan failed on kaldi_native_fbank==1.15.","failure_type":"python_dependency_missing"}
-{"timestamp":"2026-04-13T00:00:00Z","stage":"VALIDATE_IMPORT","status":"failed","message":"Import failed because kaldiio requires pkg_resources, which is absent in the current environment.","failure_type":"python_dependency_missing"}
-{"timestamp":"2026-04-13T00:00:00Z","stage":"BUILD_ENV","status":"passed","message":"Model-local Python 3.10 venv built successfully after targeted dependency replans."}
-{"timestamp":"2026-04-13T00:00:00Z","stage":"FETCH_WEIGHTS","status":"passed","message":"Downloaded FireRedASR2-AED weights into pretrained_models/FireRedASR2-AED from Hugging Face."}
-{"timestamp":"2026-04-13T00:00:00Z","stage":"GENERATE_WRAPPER","status":"passed","message":"Generated thin wrapper around the validated standalone FireRedAsr2 AED path."}
-{"timestamp":"2026-04-13T00:00:00Z","stage":"SAVE_ARTIFACTS","status":"passed","message":"Saved manifests, sample output, and final verdict."}
-{"timestamp":"2026-04-13T00:00:00Z","stage":"BUILD_ENV","status":"running","message":"Created model-local upstream clone; starting virtual environment creation."}
+{"timestamp":"2026-04-14T13:05:00Z","stage":"DISCOVER","status":"completed","message":"Reused the existing fireredasr2_aed model directory and re-read all required harness policies before execution."}
+{"timestamp":"2026-04-14T13:06:00Z","stage":"CLASSIFY","status":"completed","message":"Confirmed the standalone FireRedAsr2 AED path as the narrowest repo-native runtime target for phase-1."}
+{"timestamp":"2026-04-14T13:07:00Z","stage":"PLAN","status":"completed","message":"Selected a model-local Python 3.10 venv plan because pixi and uv were unavailable while pip was executable."}
+{"timestamp":"2026-04-14T13:08:00Z","stage":"VALIDATE_SPEC","status":"passed","message":"Spec, fixture, io contract, and backend evidence were sufficient for BUILD_ENV."}
+{"timestamp":"2026-04-14T13:10:00Z","stage":"BUILD_ENV","status":"passed","message":"Created model-local `.venv` with `/opt/anaconda3/envs/fireredvad/bin/python`."}
+{"timestamp":"2026-04-14T13:12:00Z","stage":"BUILD_ENV","status":"passed","message":"Cloned upstream FireRedASR2S into `upstream/FireRedASR2S` at commit `466c9bb718240132f42ec1b9df14cc6aecae587d`."}
+{"timestamp":"2026-04-14T13:15:00Z","stage":"BUILD_ENV","status":"failed","message":"Upstream dependency installation failed because `torch==2.1.0+cu118` had no matching distribution on the current host.","failure_type":"runtime_backend_incompatible"}
+{"timestamp":"2026-04-14T13:15:30Z","stage":"DIAGNOSE","status":"completed","message":"Classified the upstream dependency failure as runtime_backend_incompatible caused by CUDA-pinned wheels."}
+{"timestamp":"2026-04-14T13:16:00Z","stage":"REPLAN","status":"completed","message":"Authorized a targeted retry with `requirements.phase1.txt` while preserving the same standalone FireRedAsr2 AED runtime path."}
+{"timestamp":"2026-04-14T13:20:00Z","stage":"BUILD_ENV","status":"passed","message":"Installed CPU-fallback phase-1 dependencies from `requirements.phase1.txt` into the model-local venv."}
+{"timestamp":"2026-04-14T13:29:00Z","stage":"FETCH_WEIGHTS","status":"passed","message":"Downloaded FireRedASR2-AED weights into `pretrained_models/FireRedASR2-AED` from Hugging Face."}
+{"timestamp":"2026-04-14T13:31:00Z","stage":"GENERATE_WRAPPER","status":"passed","message":"Revalidated the existing wrapper path after repo-native validation passed."}

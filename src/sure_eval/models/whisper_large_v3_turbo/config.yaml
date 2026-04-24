@@ -1,16 +1,16 @@
-name: whisper-large-v3-turbo
+name: whisper_large_v3_turbo
 task: ASR
-description: "Phase-1 wrapper for openai/whisper-large-v3-turbo via Hugging Face Transformers."
+description: "Phase-1 wrapper for openai/whisper-large-v3-turbo via the repo-native Whisper entrypoint."
 
 model:
-  id: openai/whisper-large-v3-turbo
-  backend: uv
+  id: turbo
+  backend: pip
   device: cpu
 
 server:
   command: ["python", "server.py"]
   env:
-    MODEL_ID: openai/whisper-large-v3-turbo
+    MODEL_ID: turbo
     DEVICE: cpu
 
 tools:

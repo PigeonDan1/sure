@@ -114,6 +114,43 @@ class SOTAManager:
         """Get the canonical baseline metric for a dataset."""
         baseline = self.get_baseline(dataset)
         return baseline.metric if baseline else None
+
+    @staticmethod
+    def normalize_evaluator_score_for_rps(metric: str, score: float, *, higher_is_better: bool) -> float:
+        """Normalize evaluator scores before RPS.
+
+        The evaluator returns ASR error rates as fractions and BLEU-style
+        scores on a 0-100 scale. Accuracy-like metrics are usually fractions,
+        but accept already-percent inputs defensively.
+        """
+        metric_name = metric.lower()
+        fraction_accuracy_metrics = {"accuracy"}
+
+        if higher_is_better and metric_name in fraction_accuracy_metrics:
+            return score / 100.0 if score > 1.0 else score
+
+        return score
+
+    @staticmethod
+    def normalize_baseline_score_for_rps(metric: str, score: float, *, higher_is_better: bool) -> float:
+        """Normalize SOTA baseline scores to the evaluator scale before RPS.
+
+        SURE table baselines are stored in human-readable units. Error rates
+        such as WER/CER/DER/CPWER are percentages in the baseline file, while
+        evaluator outputs are fractions. Accuracy baselines are also
+        percentages. BLEU-style scores are already on a 0-100 scale.
+        """
+        metric_name = metric.lower()
+        rate_metrics = {"wer", "cer", "mer", "der", "cpwer"}
+        fraction_accuracy_metrics = {"accuracy"}
+
+        if metric_name in rate_metrics:
+            return score / 100.0
+
+        if higher_is_better and metric_name in fraction_accuracy_metrics:
+            return score / 100.0 if score > 1.0 else score
+
+        return score
     
     def get_all_baselines(self) -> dict[str, SOTABaseline]:
         """Get all baselines.
@@ -145,16 +182,27 @@ class SOTAManager:
         baseline = self.get_baseline(dataset)
         if not baseline:
             return None
+
+        normalized_score = self.normalize_evaluator_score_for_rps(
+            baseline.metric,
+            score,
+            higher_is_better=baseline.higher_is_better,
+        )
+        normalized_baseline = self.normalize_baseline_score_for_rps(
+            baseline.metric,
+            baseline.score,
+            higher_is_better=baseline.higher_is_better,
+        )
         
         if baseline.higher_is_better:
             # For metrics where higher is better (accuracy, BLEU)
-            rps = score / baseline.score if baseline.score > 0 else 0.0
+            rps = normalized_score / normalized_baseline if normalized_baseline > 0 else 0.0
         else:
             # For metrics where lower is better (WER, CER, MER)
-            if score == 0:
-                rps = float("inf") if baseline.score > 0 else 1.0
+            if normalized_score == 0:
+                rps = float("inf") if normalized_baseline > 0 else 1.0
             else:
-                rps = baseline.score / score
+                rps = normalized_baseline / normalized_score
         
         return rps
     

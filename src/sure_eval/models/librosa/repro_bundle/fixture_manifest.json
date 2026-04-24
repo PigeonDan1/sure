@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "fixture_path": "./fixtures/en_16k_10s.wav",
+  "fixture_role": "phase1_and_repro_audio_input",
+  "whether_task_specific": false,
+  "whether_fallback_allowed": true,
+  "checksum_sha256": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+  "preprocessing_assumption": "Input is a readable mono WAV fixture; no extra preprocessing is required.",
+  "source_original_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+  "fallback_from": "tests/fixtures/shared/asr/en_16k.wav"
+}

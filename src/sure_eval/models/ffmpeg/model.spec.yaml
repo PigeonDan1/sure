@@ -1,47 +1,87 @@
-model_id: ffmpeg
-model_name: FFmpeg
-task_type: audio_tool
-deployment_type: local
+model_id: "system/ffmpeg"
+model_name: "ffmpeg"
+task_type: "utility"
+deployment_type: "local"
 
 repo:
-  url: https://ffmpeg.org/
+  url: "https://github.com/FFmpeg/FFmpeg"
   commit: null
-  description: FFmpeg is a complete, cross-platform solution to record, convert and stream audio and video.
 
 weights:
-  source: none
+  source: "release_or_pypi"
   local_path: null
   required: false
+  cache_policy: "not_applicable"
+  local_dir_name: null
 
 environment:
-  preferred_backend: system
-  python_version: ""
+  preferred_backend: "uv"
+  python_version: "3.10"
   requires_gpu: false
   system_packages:
-    - ffmpeg
+    - "ffmpeg"
+    - "ffprobe"
+
+phase1_runtime_target:
+  description: "Validate the minimal local ffmpeg/ffprobe callable path by discovering executables, transcoding a shared audio fixture, and validating output metadata via ffprobe."
+  utility_semantics:
+    import_stage: "validate_executable"
+    load_stage: "not_applicable"
+    infer_stage: "run_minimal_transcode"
+  excludes:
+    - "accuracy_evaluation"
+    - "performance_benchmarking"
+    - "production_workflow_validation"
 
 entrypoints:
-  import_test: "ffmpeg -version"
-  load_test: "ffprobe -version"
-  infer_test: "ffmpeg -i tests/fixtures/shared/asr/en_16k_10s.wav -ss 0 -t 3 -ar 16000 -ac 1 artifacts/tmp_clip.wav -y"
+  import_test: "ffmpeg -version && ffprobe -version"
+  load_test: "not_applicable"
+  infer_test: "mkdir -p tmp/ffmpeg_smoke && ffmpeg -y -i tests/fixtures/shared/asr/en_16k_10s.wav -ac 1 -ar 16000 -c:a pcm_s16le tmp/ffmpeg_smoke/out.wav && ffprobe -v error -show_format -show_streams -of json tmp/ffmpeg_smoke/out.wav"
+
+fixture:
+  requested_audio: "tests/fixtures/shared/asr/en_16k.wav"
+  selected_audio: "tests/fixtures/shared/asr/en_16k_10s.wav"
+  task_specific: false
+  fallback_allowed: true
+  source: "shared_fallback"
+  note: "Requested shared fixture en_16k.wav is absent in-repo; phase-1 uses the existing shared ASR PCM WAV fallback without narrowing task semantics."
 
 io_contract:
-  input_type: audio_path
-  output_type: json
-  primary_field: output_path
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "output_path"
   required_fields:
-    - output_path
+    - "output_path"
+    - "exists"
+    - "ffmpeg_exit_code"
+    - "ffprobe.streams"
+    - "ffprobe.format.format_name"
   nonempty_fields:
-    - output_path
+    - "output_path"
+    - "ffprobe.streams"
   json_serializable: true
+
+utility_contract:
+  executable_required:
+    - "ffmpeg"
+    - "ffprobe"
+  success_criteria:
+    - "ffmpeg_exit_code == 0"
+    - "output file exists"
+    - "ffprobe returns valid json"
+    - "at least one audio stream exists"
+    - "sample_rate == 16000"
+    - "channels == 1"
+    - "codec_name == pcm_s16le"
+    - "container/format is wav-compatible"
+  failure_priority:
+    - "missing executable"
+    - "invalid command invocation"
+    - "fixture decode failure"
+    - "output contract mismatch"
 
 acceptance:
   must_import: true
-  must_load: true
+  must_load: false
   must_infer: true
   must_pass_contract: true
-
-metadata:
-  description: "FFmpeg wrapper for SURE-EVAL - provides audio processing capabilities"
-  version: "4.4.2"
-  author: "FFmpeg Team"

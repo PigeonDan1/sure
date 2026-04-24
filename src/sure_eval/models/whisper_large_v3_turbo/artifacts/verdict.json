@@ -1,9 +1,11 @@
 {
-  "timestamp": "2026-03-30T12:45:43.612176+08:00",
+  "timestamp": "2026-04-14T13:20:45.867045+01:00",
   "model_id": "openai/whisper-large-v3-turbo",
-  "model_name": "whisper-large-v3-turbo",
+  "model_name": "whisper_large_v3_turbo",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
   "status": "PASSED",
-  "stage": "phase_1_complete",
+  "stage": "SAVE_REPRO_ARTIFACTS",
   "workflow": {
     "steps_completed": [
       "DISCOVER",
@@ -17,70 +19,79 @@
       "VALIDATE_INFER",
       "VALIDATE_CONTRACT",
       "GENERATE_WRAPPER",
-      "SAVE_ARTIFACTS"
+      "SAVE_ARTIFACTS",
+      "EXPORT_REPRO_BUNDLE",
+      "LOAD_REPRO_BUNDLE",
+      "REBUILD_MINIMAL_ENV",
+      "FETCH_OR_VALIDATE_WEIGHTS_FOR_REPRO",
+      "RUN_MINIMAL_REPRODUCTION",
+      "VALIDATE_REPRO_OUTPUT",
+      "SAVE_REPRO_ARTIFACTS"
     ],
-    "final_step": "SAVE_ARTIFACTS",
+    "final_step": "SAVE_REPRO_ARTIFACTS",
     "stopped_at": null
   },
   "validation_results": {
     "import": {
       "passed": true,
-      "duration_ms": 6619.99,
-      "test": "from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline",
-      "evidence": "Import completed successfully inside the isolated uv runtime."
+      "duration_ms": 0.0,
+      "error": null,
+      "module_version": "20250625"
     },
     "load": {
       "passed": true,
-      "duration_ms": 5246.69,
-      "test": "AutoProcessor.from_pretrained + AutoModelForSpeechSeq2Seq.from_pretrained + pipeline('automatic-speech-recognition')",
-      "evidence": "Processor, model, and ASR pipeline were created successfully for openai/whisper-large-v3-turbo."
+      "duration_ms": 62395.41,
+      "error": null,
+      "download_root": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/checkpoints/home/.cache/whisper"
     },
     "infer": {
       "passed": true,
-      "duration_ms": 4925.29,
-      "test": "pipe('tests/fixtures/shared/asr/en_16k_10s.wav')",
-      "evidence": "Repo-native inference returned a non-empty text payload: ' Lobster Ellen Newberg.'"
+      "duration_ms": 7822.08,
+      "error": null
     },
     "contract": {
       "passed": true,
-      "duration_ms": 0.04,
+      "duration_ms": 0.0,
+      "error": null,
       "checks": {
         "required_fields_present": true,
         "nonempty_text": true,
         "json_serializable": true
-      },
-      "evidence": "The runtime output was a JSON-serializable dict containing a non-empty text field."
+      }
     }
   },
   "artifacts_produced": [
-    "src/sure_eval/models/whisper_large_v3_turbo/model.spec.yaml",
-    "src/sure_eval/models/whisper_large_v3_turbo/pyproject.toml",
-    "src/sure_eval/models/whisper_large_v3_turbo/uv.lock",
-    "src/sure_eval/models/whisper_large_v3_turbo/model.py",
-    "src/sure_eval/models/whisper_large_v3_turbo/server.py",
-    "src/sure_eval/models/whisper_large_v3_turbo/__init__.py",
-    "src/sure_eval/models/whisper_large_v3_turbo/config.yaml",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/backend_choice.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/build_plan.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/build.log",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/validation.log",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/spec_validation.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/classification.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/repo_summary.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/preflight_summary.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/weights_manifest.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/failure_classification.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/retry_recommendation.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/runtime_output.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/artifact_manifest.json",
-    "src/sure_eval/models/whisper_large_v3_turbo/artifacts/verdict.json"
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/model.spec.yaml",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/pyproject.toml",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/requirements.lock.txt",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/model.py",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/server.py",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/__init__.py",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/config.yaml",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/backend_choice.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/build_plan.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/build.log",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/validation.log",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/spec_validation.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/classification.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/repo_summary.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/preflight_summary.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/weights_manifest.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/failure_classification.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/retry_recommendation.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/patch_log.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/fallback_record.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/runtime_output.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/sample_output.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/artifact_manifest.json",
+    "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/artifacts/verdict.json"
   ],
   "escalation_triggered": false,
-  "retry_count": 2,
+  "retry_count": 1,
   "notes": [
-    "The requested multilingual shared fixture was not present in the repository, so phase 1 used tests/fixtures/shared/asr/en_16k_10s.wav as an explicitly recorded shared fallback.",
-    "Workspace and /tmp free space were insufficient, so the isolated uv runtime and Hugging Face cache were placed under /root via approved escalated commands.",
-    "Two targeted wrapper-smoke retries were needed after GENERATE_WRAPPER to avoid importing the full sure_eval package; both retries were diagnosed and recorded before the local-import smoke path passed.",
-    "Phase 1 validated minimal ASR callability only; it did not claim multilingual coverage, translation mode support, diarization, or alignment."
+    "The requested fixture path tests/fixtures/shared/asr/en_16k.wav was absent, so phase-1 used the existing shared ASR fallback tests/fixtures/shared/asr/en_16k_10s.wav.",
+    "uv and docker were unavailable in preflight, so phase-1 used a model-local Python 3.10 venv created from an existing bootstrap interpreter.",
+    "Host ffmpeg was unavailable; validation succeeded with a model-local imageio-ffmpeg binary shim recorded in fallback_record.json.",
+    "Repro replay succeeded in /tmp/whisper_repro_M5qmfR using a fresh Python 3.10 venv, the bundled fixture copy, the bundled ffmpeg binary, and the recorded model-local weights path."
   ]
 }

@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-04-14T13:20:45.867045+01:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "mutations": [
+    {
+      "path": "src/sure_eval/models/whisper_large_v3_turbo/model.spec.yaml",
+      "kind": "spec_update",
+      "reason": "Switch phase-1 spec to the repo-native Whisper path and record fallback/cache policy."
+    },
+    {
+      "path": "src/sure_eval/models/whisper_large_v3_turbo/pyproject.toml",
+      "kind": "dependency_update",
+      "reason": "Replace the earlier Transformers dependency set with Whisper package dependencies and imageio-ffmpeg."
+    },
+    {
+      "path": "src/sure_eval/models/whisper_large_v3_turbo/model.py",
+      "kind": "wrapper_update",
+      "reason": "Wrap whisper.load_model(...).transcribe(...) with model-local download_root and ffmpeg fallback support."
+    },
+    {
+      "path": "src/sure_eval/models/whisper_large_v3_turbo/config.yaml",
+      "kind": "config_update",
+      "reason": "Align wrapper metadata with the repo-native Whisper path."
+    }
+  ]
+}

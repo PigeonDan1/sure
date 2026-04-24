@@ -205,8 +205,8 @@ echo ""
 echo "[PHASE 6] Refresh Report Snapshot"
 echo "--------------------------------"
 "$PYTHON_BIN" "$REPO_ROOT/scripts/refresh_report_snapshot.py" \
-  --evaluation-dir "$RUN_DIR/evaluation" \
-  --output "$RUN_DIR/reports/report_snapshot.md" || {
+  --markdown "$RUN_DIR/reports/report_snapshot.md" \
+  --json "$RUN_DIR/reports/report_summary.json" || {
     echo "WARNING: Report refresh failed, continuing..."
   }
 

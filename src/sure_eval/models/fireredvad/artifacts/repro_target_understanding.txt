@@ -1,0 +1,5 @@
+repro target understanding
+- 本次 repro 的最小可复现单元是：在 fresh temp workdir 中，仅用 bundle 提供的 env seed、source snapshot、recorded weights path 和 fixture，重放 FireRedVad 非流式 `detect()` 调用。
+- repro_bundle 中最关键的约束文件是 `repro_manifest.json`、`minimal_repro_spec.json`、`weights_manifest.json` 和 `environment_manifest.json`。
+- 本次模型依赖本地权重文件，不依赖 GPU 或外部在线服务；ffmpeg 只在需要做 fixture 转换时才 relevant，本次 replay 不需要它。
+- 最小复现成功的判定依据是 import/load/infer/contract 再次通过，并且输出 JSON 仍包含 `dur`、非空 `timestamps` 和 `wav_path`。

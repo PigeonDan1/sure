@@ -1,10 +1,12 @@
 [project]
 name = "sure-eval-librosa-onboarding"
-version = "0.1.0"
-description = "Phase 1 onboarding environment for librosa"
-requires-python = "==3.10.*"
+version = "0.2.0"
+description = "Phase-1 onboarding environment for librosa MFCC feature extraction"
+requires-python = ">=3.10"
 dependencies = [
-  "librosa==0.10.2.post1",
+  "librosa==0.11.0",
+  "numpy==2.4.4",
+  "soundfile==0.13.1",
 ]
 
 [tool.uv]

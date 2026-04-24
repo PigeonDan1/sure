@@ -1,16 +1,4 @@
-"""
-FFmpeg MCP Server for SURE-EVAL.
-
-Responsibilities:
-- Implement MCP protocol (initialize, tools/list, tools/call)
-- Parse JSON-RPC requests from stdin
-- Delegate to FFmpegWrapper for processing
-- Format responses to stdout
-
-Input: stdin (JSON-RPC)
-Output: stdout (JSON-RPC)
-Logs: stderr
-"""
+"""Minimal MCP-style server for the ffmpeg wrapper."""
 
 import sys
 import json
@@ -152,7 +140,7 @@ class MCPServer:
     ) -> Dict[str, Any]:
         """Handle process_audio tool call."""
         from .model import InferenceError
-        
+
         wrapper = self._get_wrapper()
         
         input_path = arguments.get("input_path")
@@ -172,10 +160,8 @@ class MCPServer:
             result = wrapper.process_audio(
                 input_path=input_path,
                 output_path=output_path,
-                start_time=arguments.get("start_time"),
-                duration=arguments.get("duration"),
-                sample_rate=arguments.get("sample_rate"),
-                channels=arguments.get("channels")
+                sample_rate=arguments.get("sample_rate", 16000),
+                channels=arguments.get("channels", 1),
             )
             
             return {
@@ -237,34 +223,29 @@ class MCPServer:
                     "message": f"Method not found: {method}"
                 }
             }
-    
-    def run(self):
-        """Run the MCP server (read from stdin, write to stdout)."""
-        logger.info("FFmpeg MCP Server starting")
-        
-        for line in sys.stdin:
-            line = line.strip()
-            if not line:
-                continue
-            
-            try:
-                request = json.loads(line)
-                response = self.handle_request(request)
-                if response:
-                    print(json.dumps(response), flush=True)
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON: {e}")
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {
-                        "code": -32700,
-                        "message": f"Parse error: {e}"
-                    }
-                }
-                print(json.dumps(response), flush=True)
+
+
+def main() -> int:
+    server = MCPServer()
+    for raw_line in sys.stdin:
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            request = json.loads(line)
+            response = server.handle_request(request)
+        except Exception as exc:
+            logger.exception("Request handling failed")
+            response = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": f"Parse/handle failure: {exc}"},
+            }
+        if response is not None:
+            sys.stdout.write(json.dumps(response) + "\n")
+            sys.stdout.flush()
+    return 0
 
 
 if __name__ == "__main__":
-    server = MCPServer()
-    server.run()
+    raise SystemExit(main())

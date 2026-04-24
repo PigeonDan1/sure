@@ -57,6 +57,51 @@ def _write_eval_file(rows: list[str]) -> str:
     return handle.name
 
 
+def _describe_evaluation_context(task: str, language: str, metric: str) -> dict[str, Any]:
+    """Describe the dataset-driven post-processing used by the evaluator."""
+    context: dict[str, Any] = {
+        "task": task,
+        "language": language,
+        "language_source": "dataset_jsonl",
+        "metric": metric,
+        "metric_source": "sota_baseline_or_task_default",
+    }
+
+    if task == "ASR":
+        context.update(
+            {
+                "postprocessing": "SUREEvaluator._eval_asr",
+                "normalization": "sure_eval.evaluation.normalization.asr_simple_tn.asr_num2words",
+                "punctuation_policy": "evaluation-pipeline clean_marks.strip_all_punct compatible",
+                "tokenization": "code_switch_mer_wer_cer" if language == "cs" else "character" if metric == "cer" or language == "zh" else "word",
+                "case_sensitive": False,
+            }
+        )
+    elif task == "S2TT":
+        context.update(
+            {
+                "postprocessing": "SUREEvaluator._eval_s2tt",
+                "normalization": "sacrebleu_tokenizer_by_language",
+            }
+        )
+    elif task in {"SER", "GR", "SLU"}:
+        context.update(
+            {
+                "postprocessing": "evaluation-pipeline process_prediction compatible" if task == "SLU" else f"SUREEvaluator.{task.lower()}_label_normalization",
+                "normalization": "prompt_option_restoration" if task == "SLU" else "label_normalization",
+            }
+        )
+    elif task == "SA-ASR":
+        context.update(
+            {
+                "postprocessing": "SUREEvaluator._eval_sa_asr",
+                "normalization": "evaluation-pipeline text_normalizer.normalize_text compatible",
+            }
+        )
+
+    return context
+
+
 def evaluate_prediction_file(
     dataset_manager: DatasetManager,
     sota_manager: SOTAManager,
@@ -77,7 +122,14 @@ def evaluate_prediction_file(
     language = samples[0].get("language", "auto")
     metric = sota_manager.get_metric(canonical_name)
     if not metric:
-        metric = "accuracy" if task in {"SER", "GR", "SLU"} else "bleu" if task == "S2TT" else "der" if task == "SD" else "cpwer" if task == "SA-ASR" else "cer"
+        metric = (
+            "accuracy" if task in {"SER", "GR", "SLU"}
+            else "bleu" if task == "S2TT"
+            else "der" if task == "SD"
+            else "cpwer" if task == "SA-ASR"
+            else "mer" if task == "ASR" and language == "cs"
+            else "cer"
+        )
 
     ref_file = _write_eval_file([f"{sample.get('key', '')}\t{sample.get('target', '')}" for sample in samples])
     hyp_file = _write_eval_file([f"{sample.get('key', '')}\t{predictions.get(sample.get('key', ''), '')}" for sample in samples])
@@ -87,6 +139,8 @@ def evaluate_prediction_file(
         eval_kwargs: dict[str, Any] = {}
         if task == "ASR":
             eval_kwargs["tochar"] = metric == "cer"
+        elif task == "SLU":
+            eval_kwargs["prompt_jsonl"] = str(jsonl_path)
         result = evaluator.evaluate(task, ref_file, hyp_file, **eval_kwargs)
     finally:
         Path(ref_file).unlink(missing_ok=True)
@@ -125,6 +179,7 @@ def evaluate_prediction_file(
         "rps": rps,
         "rps_is_unbounded": isinstance(rps, float) and not math.isfinite(rps),
         "num_samples": len(samples),
+        "evaluation_context": _describe_evaluation_context(task, language, metric),
         "details": details,
     }
 

@@ -1,0 +1,5 @@
+{
+  "num_models": 8,
+  "num_sota_datasets": 14,
+  "markdown_path": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/reports/report_snapshot.md"
+}

@@ -1,0 +1,8 @@
+{
+  "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav",
+  "fixture_role": "phase-1 shared ASR fallback fixture",
+  "whether_task_specific": false,
+  "whether_fallback_allowed": true,
+  "checksum": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+  "preprocessing_assumption": "No preprocessing is required because the selected fixture is already a 16 kHz mono WAV accepted by the validated repo-native path."
+}

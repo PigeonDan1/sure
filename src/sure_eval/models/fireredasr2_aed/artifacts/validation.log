@@ -9,3 +9,7 @@
 {"timestamp": "2026-04-13T02:51:04.314205+00:00", "stage": "VALIDATE_LOAD", "status": "passed", "message": "Load test passed.", "weights_dir": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/pretrained_models/FireRedASR2-AED"}
 {"timestamp": "2026-04-13T02:51:10.436088+00:00", "stage": "VALIDATE_INFER", "status": "passed", "message": "Infer test passed.", "fixture_source": "shared"}
 {"timestamp": "2026-04-13T02:51:10.436803+00:00", "stage": "VALIDATE_CONTRACT", "status": "passed", "message": "Contract test passed.", "primary_field": "text"}
+{"timestamp": "2026-04-14T13:29:18.272431+00:00", "stage": "VALIDATE_IMPORT", "status": "passed", "message": "Import test passed."}
+{"timestamp": "2026-04-14T13:29:26.888216+00:00", "stage": "VALIDATE_LOAD", "status": "passed", "message": "Load test passed.", "weights_dir": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/pretrained_models/FireRedASR2-AED"}
+{"timestamp": "2026-04-14T13:29:32.405442+00:00", "stage": "VALIDATE_INFER", "status": "passed", "message": "Infer test passed.", "fixture_source": "shared"}
+{"timestamp": "2026-04-14T13:29:32.406015+00:00", "stage": "VALIDATE_CONTRACT", "status": "passed", "message": "Contract test passed.", "primary_field": "text"}

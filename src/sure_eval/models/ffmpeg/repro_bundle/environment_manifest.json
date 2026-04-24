@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "backend": "host_python_venv_with_repo_local_executable_fallback",
+  "python_version": "3.13.3",
+  "env_creation_method": "python3 -m venv",
+  "dependency_installation_method": "none required beyond stdlib; pip freeze recorded for empty venv",
+  "system_packages": [
+    "ffmpeg",
+    "ffprobe"
+  ],
+  "whether_gpu_required": false,
+  "important_runtime_assumptions": [
+    "Phase-1 validation uses repo-local ffmpeg/ffprobe binaries because PATH does not provide them.",
+    "Host python3.13 is sufficient because the wrapper only uses the standard library.",
+    "ffprobe fallback binary is x86_64 on an arm64 host and runs under host compatibility support."
+  ],
+  "ffmpeg_ffprobe_executable_discovery_policy": {
+    "phase1": [
+      "check PATH with which ffmpeg/ffprobe",
+      "if missing, use repo-local fallback executables recorded in backend_choice.json"
+    ],
+    "repro": [
+      "use the exact bundle-local executable paths from repro_manifest.json",
+      "do not re-discover or replace binaries unless a documented fallback is triggered"
+    ]
+  },
+  "phase1_resolved_paths": {
+    "phase1_venv_python": "/tmp/sure_eval_ffmpeg_phase1/.venv/bin/python",
+    "ffmpeg": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg",
+    "ffprobe": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe"
+  },
+  "bundle_relative_paths": {
+    "ffmpeg": "./bin/ffmpeg",
+    "ffprobe": "./bin/ffprobe",
+    "fixture": "./fixtures/en_16k_10s.wav"
+  }
+}

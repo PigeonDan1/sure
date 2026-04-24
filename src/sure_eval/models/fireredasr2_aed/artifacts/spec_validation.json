@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-13T00:00:00Z",
+  "timestamp": "2026-04-14T13:31:00Z",
   "model_id": "FireRedTeam/FireRedASR2-AED",
   "status": "passed",
   "checks": {
@@ -38,7 +38,7 @@
   "warnings": [
     "Python version evidence conflicts between README (3.10) and pyproject.toml (>=3.11); BUILD_ENV must verify which path is actually executable.",
     "GPU is unavailable on this host, so any success must be explicitly recorded as same-path CPU fallback unless GPU becomes available.",
-    "Backend was downgraded from docker hint to pip due to runtime preflight evidence."
+    "Backend was downgraded from pixi hint to pip due to runtime preflight evidence."
   ],
   "blockers": []
 }

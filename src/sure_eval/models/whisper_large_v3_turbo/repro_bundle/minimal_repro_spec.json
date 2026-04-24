@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-04-14T13:20:45.867045+01:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "minimal_callable_path": "import whisper; model = whisper.load_model(\"turbo\", device=\"cpu\", download_root=<weights_root>); result = model.transcribe(<fixture>, fp16=False)",
+  "exact_commands_or_steps": [
+    "Create a fresh Python 3.10 virtual environment in a new temporary working directory.",
+    "Install dependencies from reference/requirements.lock.txt.",
+    "Use the resolved local weight path from weights_manifest.json unless the file is missing.",
+    "Export PATH to include repro_bundle/tools so the bundled ffmpeg fallback resolves before running inference.",
+    "Run the direct Whisper import/load/transcribe command against the bundled fixture and validate that result[\"text\"] is non-empty."
+  ],
+  "working_directory_assumptions": [
+    "Run from a fresh temporary directory, not from the phase-1 model directory.",
+    "The bundle fixture is available at repro_bundle/fixtures/en_16k_10s.wav copied into the fresh workspace."
+  ],
+  "required_inputs": [
+    "A Python 3.10 interpreter path.",
+    "repro_bundle/reference/requirements.lock.txt",
+    "repro_bundle/fixtures/en_16k_10s.wav",
+    "weights_manifest.json resolved_local_path",
+    "repro_bundle/tools/ffmpeg"
+  ],
+  "expected_outputs": {
+    "type": "json",
+    "required_fields": [
+      "text"
+    ],
+    "nonempty_fields": [
+      "text"
+    ],
+    "expected_language_hint": "en"
+  },
+  "contract_checks": {
+    "json_serializable": true,
+    "required_fields_present": true,
+    "nonempty_text": true
+  }
+}

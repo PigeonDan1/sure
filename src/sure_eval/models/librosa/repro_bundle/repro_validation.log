@@ -1,0 +1,7 @@
+[2026-04-14T00:00:38.355193+00:00] EXPORT_REPRO_BUNDLE: complete
+[2026-04-14T00:00:38.355193+00:00] LOAD_REPRO_BUNDLE: manifest parse succeeded and all referenced files were readable
+[2026-04-14T00:00:38.355193+00:00] REBUILD_MINIMAL_ENV: created fresh /tmp workdir and python3.12 venv
+[2026-04-14T00:00:38.355193+00:00] FETCH_OR_VALIDATE_WEIGHTS_FOR_REPRO: not_applicable (no weights required)
+[2026-04-14T00:00:38.355193+00:00] RUN_MINIMAL_REPRODUCTION: offline install from ./wheelhouse succeeded
+[2026-04-14T00:00:38.355193+00:00] RUN_MINIMAL_REPRODUCTION: ./minimal_repro.py ./fixtures/en_16k_10s.wav returned JSON {"sample_rate": 16000, "num_samples": 37600, "duration_sec": 2.35, "feature_type": "mfcc", "shape": [13, 74], "mean": -17.990097045898438, "std": 98.43057250976562}
+[2026-04-14T00:00:38.355193+00:00] VALIDATE_REPRO_OUTPUT: required fields present, feature_type=mfcc, shape non-empty, json serializable

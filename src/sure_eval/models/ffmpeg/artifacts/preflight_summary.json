@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "cwd": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg",
+  "host": {
+    "platform": "macOS-26.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python_path": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+    "python_version": "Python 3.13.3",
+    "uv_available": false,
+    "python_3_10_available": false
+  },
+  "package_managers": {
+    "uv": null,
+    "python3_venv": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3"
+  },
+  "executables": {
+    "ffmpeg_on_path": null,
+    "ffprobe_on_path": null,
+    "ffmpeg_fallback_repo_local": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg",
+    "ffprobe_fallback_repo_local": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe"
+  },
+  "fixture": {
+    "requested": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k.wav",
+    "requested_exists": false,
+    "selected": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav",
+    "selected_exists": true
+  },
+  "disk_free_bytes": 726815805440
+}

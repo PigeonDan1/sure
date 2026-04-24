@@ -1,23 +1,42 @@
 {
-  "timestamp": "2026-04-02T15:53:48Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
+  "whether_weights_required": true,
   "source": "huggingface",
-  "repo_id": "FireRedTeam/FireRedVAD",
-  "local_path": "pretrained_models/FireRedVAD",
-  "download_status": "success",
-  "warnings": [
-    "Weights were downloaded without an HF token; the download still completed successfully."
-  ],
+  "identifier": "FireRedTeam/FireRedVAD",
+  "declared_revision": "7990aaccc6b7aec1e527743bd30201f2c4a03b8c",
+  "resolved_local_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/checkpoints/FireRedVAD",
+  "runtime_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/pretrained_models/FireRedVAD/VAD",
+  "runtime_alias_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/pretrained_models/FireRedVAD",
+  "cache_policy": "model_local_first",
+  "fallback_reason": null,
+  "fallback_path": null,
   "files": [
-    {"path": "pretrained_models/FireRedVAD/README.md", "size_bytes": 7936},
-    {"path": "pretrained_models/FireRedVAD/.gitattributes", "size_bytes": 1519},
-    {"path": "pretrained_models/FireRedVAD/config.yaml", "size_bytes": 0},
-    {"path": "pretrained_models/FireRedVAD/VAD/cmvn.ark", "size_bytes": 1311},
-    {"path": "pretrained_models/FireRedVAD/VAD/model.pth.tar", "size_bytes": 2368049},
-    {"path": "pretrained_models/FireRedVAD/Stream-VAD/cmvn.ark", "size_bytes": 1311},
-    {"path": "pretrained_models/FireRedVAD/Stream-VAD/model.pth.tar", "size_bytes": 2283513},
-    {"path": "pretrained_models/FireRedVAD/AED/cmvn.ark", "size_bytes": 1311},
-    {"path": "pretrained_models/FireRedVAD/AED/model.pth.tar", "size_bytes": 2370097}
+    {
+      "path": "checkpoints/FireRedVAD/VAD/model.pth.tar",
+      "size_bytes": 2368049,
+      "checksum": "63f4fb1b00a6b8607c118dd48efc18d5e40d67d99b7bf9aa7a8d61540cf23d71"
+    },
+    {
+      "path": "checkpoints/FireRedVAD/VAD/cmvn.ark",
+      "size_bytes": 1311,
+      "checksum": "c87f6f13edf0f0ec7535ddfc9cc3387d9268cb234b70182d566c5e2edf3ca473"
+    },
+    {
+      "path": "repro_bundle/weights/FireRedVAD/VAD/model.pth.tar",
+      "size_bytes": 2368049,
+      "checksum": "63f4fb1b00a6b8607c118dd48efc18d5e40d67d99b7bf9aa7a8d61540cf23d71"
+    },
+    {
+      "path": "repro_bundle/weights/FireRedVAD/VAD/cmvn.ark",
+      "size_bytes": 1311,
+      "checksum": "c87f6f13edf0f0ec7535ddfc9cc3387d9268cb234b70182d566c5e2edf3ca473"
+    }
   ],
-  "target_runtime_path": "pretrained_models/FireRedVAD/VAD"
+  "notes": [
+    "Weights were downloaded into the model-local checkpoints directory and exposed to the repo-native runtime path via a local symlink.",
+    "The Hugging Face client warned that requests were unauthenticated, but the download completed successfully."
+  ],
+  "bundle_local_path": "weights/FireRedVAD/VAD",
+  "bundle_local_abs_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredvad/repro_bundle/weights/FireRedVAD/VAD"
 }

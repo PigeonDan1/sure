@@ -1,44 +1,43 @@
 {
-  "timestamp": "2026-03-30T11:33:36+08:00",
-  "model_id": "librosa",
-  "backend": "uv",
-  "build_root": "/tmp/sure_eval_librosa",
-  "venv_path": "/tmp/sure_eval_librosa/.venv",
-  "cache_path": "/tmp/sure_eval_librosa/cache",
+  "timestamp": "2026-04-13T23:58:53.241046+00:00",
+  "model_id": "librosa/librosa",
+  "backend": "venv_pip_local",
+  "build_root": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/librosa",
+  "venv_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/librosa/.venv-phase1",
+  "cache_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/librosa/repro_bundle/wheelhouse",
   "project_path": "src/sure_eval/models/librosa",
   "steps": [
     {
-      "name": "create_runtime_dirs",
-      "command": "mkdir -p /tmp/sure_eval_librosa/cache /tmp/sure_eval_librosa/artifacts"
-    },
-    {
-      "name": "lock_dependencies",
-      "command": "uv lock --project src/sure_eval/models/librosa"
-    },
-    {
       "name": "create_venv",
-      "command": "uv venv /tmp/sure_eval_librosa/.venv --python 3.10"
+      "command": "python3.12 -m venv models/librosa/.venv-phase1"
     },
     {
       "name": "install_dependencies",
-      "command": "uv sync --project src/sure_eval/models/librosa --python /tmp/sure_eval_librosa/.venv/bin/python"
+      "command": "models/librosa/.venv-phase1/bin/pip install librosa soundfile numpy"
     },
     {
-      "name": "run_minimal_analysis",
-      "command": "/tmp/sure_eval_librosa/.venv/bin/python -c \"import librosa; y, sr = librosa.load('tests/fixtures/shared/mir/rhythm_22k_15s.wav', sr=None); onset_env = librosa.onset.onset_strength(y=y, sr=sr); tempo, beats = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr); print(float(tempo), len(beats))\""
+      "name": "validate_runtime",
+      "command": "models/librosa/.venv-phase1/bin/python <phase1 validation snippet>"
+    },
+    {
+      "name": "prepare_repro_wheelhouse",
+      "command": "models/librosa/.venv-phase1/bin/pip download -r models/librosa/requirements.phase1.txt -d models/librosa/repro_bundle/wheelhouse"
     }
   ],
   "inputs": {
-    "package": "librosa==0.10.2.post1",
-    "fixture": "tests/fixtures/shared/mir/rhythm_22k_15s.wav",
+    "package_source": "pip",
+    "fixture_requested": "tests/fixtures/shared/asr/en_16k.wav",
+    "fixture_resolved": "tests/fixtures/shared/asr/en_16k_10s.wav",
     "system_packages": [
-      "ffmpeg"
+      "ffmpeg",
+      "libsndfile1"
     ],
     "weights_required": false
   },
   "constraints": [
-    "Transient runtime assets must stay under /tmp because the workspace has no free space.",
-    "Network access for uv lock and uv sync requires escalated execution outside the sandbox."
+    "Network access was required once to install pinned Python dependencies and to download wheels for the repro bundle.",
+    "The validated runtime uses python3.12 because python3.10 is unavailable on this host.",
+    "No model weights are required."
   ],
   "executable": true,
   "blocking_issues": []

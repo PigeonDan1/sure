@@ -1,0 +1,15 @@
+python_main=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/.venv/bin/python
+python_main_version=Python 3.10.20
+python_seed=/opt/anaconda3/envs/fireredvad/bin/python
+pip_main=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/.venv/bin/pip
+repo_root=/Users/wency/Desktop/sjtu/SURE/sure
+repo_commit_tested=7a051defb32f423b87a8781394ede186c3cad8dc
+upstream_commit_tested=466c9bb718240132f42ec1b9df14cc6aecae587d
+weights_dir=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/pretrained_models/FireRedASR2-AED
+weights_sha256=4677cbd30988d63ed3e777f6a42a1e5260a3865317f6e15e488bef40954f7054
+fixture=/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav
+fixture_sha256=8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d
+ffmpeg_path=not_found
+sndfile_info_path=not_found
+packages=accelerate==1.13.0, cn2an==0.5.23, huggingface_hub==0.36.2, kaldi-native-fbank==1.22.3, kaldiio==2.18.0, numpy==1.26.1, peft==0.18.1, sentencepiece==0.1.99, soundfile==0.12.1, torch==2.1.0, torchaudio==2.1.0, transformers==4.51.3
+debug=Validation on 2026-04-14 succeeded on CPU fallback; no host GPU tooling was available and no ffmpeg conversion was required.

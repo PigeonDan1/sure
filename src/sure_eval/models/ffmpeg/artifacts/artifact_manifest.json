@@ -1,64 +1,44 @@
 {
-  "timestamp": "2026-03-30T00:18:00+08:00",
-  "model_id": "ffmpeg",
-  "model_name": "FFmpeg",
-  "workflow_completed": true,
-  "artifacts": {
-    "required": {
-      "model.spec.yaml": {
-        "path": "src/sure_eval/models/ffmpeg/model.spec.yaml",
-        "exists": true,
-        "description": "Model specification"
-      },
-      "backend_choice.json": {
-        "path": "src/sure_eval/models/ffmpeg/artifacts/backend_choice.json",
-        "exists": true,
-        "description": "Backend selection record"
-      },
-      "build.log": {
-        "path": "src/sure_eval/models/ffmpeg/artifacts/build.log",
-        "exists": true,
-        "description": "Environment build log"
-      },
-      "validation.log": {
-        "path": "src/sure_eval/models/ffmpeg/artifacts/validation.log",
-        "exists": true,
-        "description": "Validation test log"
-      },
-      "verdict.json": {
-        "path": "src/sure_eval/models/ffmpeg/artifacts/verdict.json",
-        "exists": true,
-        "description": "Final verdict"
-      },
-      "wrapper": {
-        "path": "src/sure_eval/models/ffmpeg/",
-        "exists": true,
-        "description": "Wrapper files (model.py, server.py, __init__.py, config.yaml)"
-      },
-      "artifact_manifest.json": {
-        "path": "src/sure_eval/models/ffmpeg/artifacts/artifact_manifest.json",
-        "exists": true,
-        "description": "This manifest file"
-      }
-    },
-    "conditional": {
-      "spec_validation.json": {
-        "path": "src/sure_eval/models/ffmpeg/artifacts/spec_validation.json",
-        "exists": true,
-        "condition": "VALIDATE_SPEC executed"
-      },
-      "weights_manifest.json": {
-        "path": "src/sure_eval/models/ffmpeg/artifacts/weights_manifest.json",
-        "exists": true,
-        "condition": "weights.required evaluated"
-      }
-    },
-    "optional": []
-  },
-  "validation_summary": {
-    "import": {"passed": true, "duration_ms": 40},
-    "load": {"passed": true, "duration_ms": 40},
-    "infer": {"passed": true, "duration_ms": 79},
-    "contract": {"passed": true, "duration_ms": 1}
-  }
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "model_id": "system/ffmpeg",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "artifacts": [
+    "src/sure_eval/models/ffmpeg/__init__.py",
+    "src/sure_eval/models/ffmpeg/artifacts/backend_choice.json",
+    "src/sure_eval/models/ffmpeg/artifacts/build.log",
+    "src/sure_eval/models/ffmpeg/artifacts/build_plan.json",
+    "src/sure_eval/models/ffmpeg/artifacts/classification.json",
+    "src/sure_eval/models/ffmpeg/artifacts/environment_manifest.json",
+    "src/sure_eval/models/ffmpeg/artifacts/environment_snapshot.txt",
+    "src/sure_eval/models/ffmpeg/artifacts/fallback_record.json",
+    "src/sure_eval/models/ffmpeg/artifacts/fixture_manifest.json",
+    "src/sure_eval/models/ffmpeg/artifacts/patch_log.json",
+    "src/sure_eval/models/ffmpeg/artifacts/patch_report.json",
+    "src/sure_eval/models/ffmpeg/artifacts/preflight_summary.json",
+    "src/sure_eval/models/ffmpeg/artifacts/repo_summary.json",
+    "src/sure_eval/models/ffmpeg/artifacts/repro_validation.log",
+    "src/sure_eval/models/ffmpeg/artifacts/repro_verdict.json",
+    "src/sure_eval/models/ffmpeg/artifacts/sample_output.json",
+    "src/sure_eval/models/ffmpeg/artifacts/spec_validation.json",
+    "src/sure_eval/models/ffmpeg/artifacts/validation.log",
+    "src/sure_eval/models/ffmpeg/artifacts/verdict.json",
+    "src/sure_eval/models/ffmpeg/artifacts/weights_manifest.json",
+    "src/sure_eval/models/ffmpeg/config.yaml",
+    "src/sure_eval/models/ffmpeg/model.py",
+    "src/sure_eval/models/ffmpeg/model.spec.yaml",
+    "src/sure_eval/models/ffmpeg/pyproject.toml",
+    "src/sure_eval/models/ffmpeg/repro_bundle/environment_manifest.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/environment_snapshot.txt",
+    "src/sure_eval/models/ffmpeg/repro_bundle/fixture_manifest.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/minimal_repro_spec.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/repro_instructions.md",
+    "src/sure_eval/models/ffmpeg/repro_bundle/repro_manifest.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/repro_validation.log",
+    "src/sure_eval/models/ffmpeg/repro_bundle/repro_verdict.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/sample_output.json",
+    "src/sure_eval/models/ffmpeg/repro_bundle/weights_manifest.json",
+    "src/sure_eval/models/ffmpeg/requirements.lock",
+    "src/sure_eval/models/ffmpeg/server.py"
+  ]
 }

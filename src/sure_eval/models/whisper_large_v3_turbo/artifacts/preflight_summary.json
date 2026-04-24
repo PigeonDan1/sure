@@ -1,85 +1,46 @@
 {
-  "timestamp": "2026-03-30T12:40:02+08:00",
+  "timestamp": "2026-04-14T13:10:23.063323+01:00",
   "model_id": "openai/whisper-large-v3-turbo",
-  "overall": "pass",
-  "checks": {
+  "phase": "PLAN",
+  "preflight": {
+    "host": {
+      "platform": "Darwin arm64",
+      "kernel": "Darwin Kernel Version 25.2.0: Tue Nov 18 21:09:45 PST 2025; root:xnu-12377.61.12~1/RELEASE_ARM64_T6030",
+      "cwd": "/Users/wency/Desktop/sjtu/SURE/sure"
+    },
     "python": {
-      "status": "pass",
-      "details": {
-        "available": true,
-        "version": "3.10.12",
-        "path": "/usr/bin/python3"
-      }
+      "default_python": "Python 3.12.4",
+      "default_python_path": "/opt/anaconda3/bin/python3",
+      "python310_available": true,
+      "python310_path": "/opt/anaconda3/envs/fireredvad/bin/python",
+      "python310_version": "Python 3.10.20",
+      "python310_source": "existing conda env bootstrap only"
     },
     "package_managers": {
-      "status": "pass",
-      "details": {
-        "uv": {
-          "available": true,
-          "version": "0.10.11"
-        },
-        "pip": {
-          "available": true
-        },
-        "docker": {
-          "available": true,
-          "version": "24.0.7"
-        }
-      }
+      "pip": true,
+      "uv": false,
+      "conda": true,
+      "docker": false
+    },
+    "system_packages": {
+      "ffmpeg": false
     },
     "gpu": {
-      "status": "pass",
-      "details": {
-        "required_by_input": false,
-        "torch_cuda_available": false,
-        "torch_warning": "CUDA initialization warns that the installed NVIDIA driver is too old, but the phase-1 target is CPU-compatible."
-      }
+      "available": false,
+      "required_for_phase1": false
     },
-    "disk_space": {
-      "status": "pass",
-      "details": {
-        "workspace_mount_available_gb": 0,
-        "tmp_mount_available_gb": 1,
-        "root_mount_available_gb": 166,
-        "recommended_strategy": "Use a root-backed isolated uv environment and Hugging Face cache via escalated commands."
-      }
-    },
-    "network": {
-      "status": "pass",
-      "details": {
-        "sandbox_network": "restricted",
-        "huggingface_model_page_http_status": 200,
-        "checked_url": "https://huggingface.co/openai/whisper-large-v3-turbo"
-      }
-    },
-    "git": {
-      "status": "pass",
-      "details": {
-        "git_available": true,
-        "lfs_available": true
-      }
-    },
-    "system_tools": {
-      "status": "pass",
-      "details": {
-        "ffmpeg": {
-          "available": true,
-          "version": "4.4.2-0ubuntu0.22.04.1"
-        }
-      }
-    },
-    "permissions": {
-      "status": "pass",
-      "details": {
-        "model_dir_writable": true,
-        "root_cache_writable_with_escalation": true
-      }
+    "fixture": {
+      "requested_path": "tests/fixtures/shared/asr/en_16k.wav",
+      "selected_path": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "exists": true,
+      "sha256": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+      "format": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav: RIFF (little-endian) data, WAVE audio, Microsoft PCM, 16 bit, mono 16000 Hz"
     }
   },
-  "recommendations": [
-    "Use Python 3.10 and uv for the initial runtime because the model path is Python-only and CPU-compatible.",
-    "Keep the isolated environment and Hugging Face cache on /root because /cpfs and /tmp do not have enough free space.",
-    "Record the fixture downgrade explicitly because the requested multilingual shared asset is absent in the repo."
+  "warnings": [
+    "uv is unavailable on host, so the preferred uv backend is not executable here.",
+    "ffmpeg is unavailable on host; the plan therefore records a model-local fallback binary path if imageio-ffmpeg can supply one during BUILD_ENV.",
+    "The requested fixture path tests/fixtures/shared/asr/en_16k.wav is absent in-repo, so phase-1 uses tests/fixtures/shared/asr/en_16k_10s.wav as a shared fallback without narrowing ASR task semantics."
   ],
   "blockers": []
 }

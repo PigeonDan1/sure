@@ -1,19 +1,71 @@
-=== Validation Log Started at 2026-03-30T00:17:49+08:00 ===
-
-[VALIDATE_IMPORT] Testing: ffmpeg -version
-{"test": "import", "passed": true, "duration_ms": 40, "message": "ffmpeg command available"}
-
-[VALIDATE_LOAD] Testing: ffprobe -version
-{"test": "load", "passed": true, "duration_ms": 40, "message": "ffprobe command available"}
-
-[VALIDATE_INFER] Testing audio clip extraction
-Command: ffmpeg -i tests/fixtures/shared/asr/en_16k_10s.wav -ss 0 -t 3 -ar 16000 -ac 1 artifacts/tmp_clip.wav -y
-      encoder         : Lavc58.134.100 pcm_s16le
-size=       4kB time=00:00:00.00 bitrate=N/A speed=N/A    size=      94kB time=00:00:02.94 bitrate= 261.1kbits/s speed=1.03e+03x    
-video:0kB audio:94kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: 0.081250%
-{"test": "infer", "passed": true, "duration_ms": 79, "output_size_bytes": 96078, "message": "Audio clip created successfully"}
-
-[VALIDATE_CONTRACT] Testing output contract
-{"test": "contract", "passed": true, "duration_ms": 1, "message": "output_path exists and is non-empty", "result": {"output_path": "artifacts/tmp_clip.wav"}}
-
-=== Validation Log Completed at 2026-03-30T00:17:49+08:00 ===
+{
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "model_id": "system/ffmpeg",
+  "tests": [
+    {
+      "stage": "VALIDATE_EXECUTABLE",
+      "name": "import",
+      "passed": true,
+      "command": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg -version && /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe -version",
+      "ffmpeg_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg",
+      "ffprobe_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe",
+      "ffmpeg_version": "ffmpeg version 7.1 Copyright (c) 2000-2024 the FFmpeg developers",
+      "ffprobe_version": "ffprobe version 7.1-tessus  https://evermeet.cx/ffmpeg/  Copyright (c) 2007-2024 the FFmpeg developers",
+      "ffmpeg_configuration": "configuration: --prefix=/Volumes/tempdisk/sw --extra-cflags=-fno-stack-check --arch=arm64 --cc=/usr/bin/clang --enable-gpl --enable-libvmaf --enable-libopenjpeg --enable-libopus --enable-libmp3lame --enable-libx264 --enable-libx265 --enable-libvpx --enable-libwebp --enable-libass --enable-libfreetype --enable-fontconfig --enable-libtheora --enable-libvorbis --enable-libsnappy --enable-libaom --enable-libvidstab --enable-libzimg --enable-libsvtav1 --enable-libharfbuzz --enable-libkvazaar --pkg-config-flags=--static --enable-ffplay --enable-postproc --enable-neon --enable-runtime-cpudetect --disable-indev=qtkit --disable-indev=x11grab_xcb",
+      "ffprobe_configuration": "configuration: --cc=/usr/bin/clang --prefix=/opt/ffmpeg --extra-version=tessus --enable-avisynth --enable-fontconfig --enable-gpl --enable-libaom --enable-libass --enable-libbluray --enable-libdav1d --enable-libfreetype --enable-libgsm --enable-libharfbuzz --enable-libmodplug --enable-libmp3lame --enable-libmysofa --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopus --enable-librubberband --enable-libshine --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libtheora --enable-libtwolame --enable-libvidstab --enable-libvmaf --enable-libvo-amrwbenc --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxavs --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-libzvbi --enable-version3 --pkg-config-flags=--static --disable-ffplay"
+    },
+    {
+      "stage": "VALIDATE_LOAD",
+      "name": "load",
+      "passed": true,
+      "status": "not_applicable",
+      "reason": "ffmpeg is a utility/system tool; there is no separate model load stage distinct from executable discovery."
+    },
+    {
+      "stage": "VALIDATE_INFER",
+      "name": "infer",
+      "passed": true,
+      "command": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg -y -i /Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav -ac 1 -ar 16000 -c:a pcm_s16le /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/tmp/ffmpeg_smoke/out.wav",
+      "fixture_used": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "fixture_source": "shared_fallback",
+      "output_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/tmp/ffmpeg_smoke/out.wav",
+      "ffmpeg_exit_code": 0
+    },
+    {
+      "stage": "VALIDATE_CONTRACT",
+      "name": "contract",
+      "passed": true,
+      "checks": {
+        "output_exists": true,
+        "valid_ffprobe_json": true,
+        "has_audio_stream": true,
+        "sample_rate_is_16000": true,
+        "channels_is_1": true,
+        "codec_name_is_pcm_s16le": true,
+        "format_is_wav_compatible": true
+      },
+      "required_fields": [
+        "output_path",
+        "exists",
+        "ffmpeg_exit_code",
+        "ffprobe.streams",
+        "ffprobe.format.format_name"
+      ],
+      "nonempty_fields": [
+        "output_path",
+        "ffprobe.streams"
+      ]
+    },
+    {
+      "stage": "GENERATE_WRAPPER",
+      "name": "wrapper_contract",
+      "passed": true,
+      "evidence": {
+        "ffmpeg_executable": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg",
+        "ffprobe_executable": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe",
+        "output_path": "/tmp/sure_eval_ffmpeg_phase1/wrapper_out.wav"
+      }
+    }
+  ],
+  "overall": "PASSED"
+}

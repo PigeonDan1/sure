@@ -1,14 +1,18 @@
 {
-  "timestamp": "2026-04-02T15:47:31Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
-  "checkpoint": "VALIDATE_INFER",
-  "attempt": 1,
-  "failure_type": "wrong_entrypoint",
-  "recommended_action": "retry_from_validate_infer",
-  "change_set": [
-    "Resolve fixture path against repo root before calling vad.detect().",
-    "Resolve model_dir against the model artifact directory before calling FireRedVad.from_pretrained()."
-  ],
-  "reason": "The failure is targeted and local to path resolution. Import and load already progressed far enough to show package install and weight layout are viable.",
-  "max_retries_for_failure_type": 2
+  "recommendations": [
+    {
+      "checkpoint": "FETCH_WEIGHTS",
+      "failure_type": "wrong_entrypoint",
+      "change": "Use `.venv/bin/hf download` instead of `.venv/bin/huggingface-cli download`.",
+      "justification": "Executable evidence shows hf is the installed CLI entrypoint in huggingface_hub 1.8.0 for this environment."
+    },
+    {
+      "checkpoint": "EXPORT_REPRO_BUNDLE",
+      "failure_type": "runtime_backend_incompatible",
+      "change": "Install the source snapshot into the env seed with `--no-build-isolation --no-deps`.",
+      "justification": "The env seed already contains setuptools and runtime dependencies, so disabling build isolation removes the bundle-only replay blocker without changing the runtime family."
+    }
+  ]
 }

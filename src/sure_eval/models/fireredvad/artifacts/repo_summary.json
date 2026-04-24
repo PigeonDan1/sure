@@ -1,20 +1,24 @@
 {
-  "timestamp": "2026-04-02T15:47:31Z",
+  "timestamp": "2026-04-14T14:45:26Z",
   "model_id": "FireRedTeam/FireRedVAD",
-  "repo_url": "https://github.com/FireRedTeam/FireRedVAD",
+  "repo_url": "https://github.com/FireRedTeam/FireRedVAD.git",
   "phase": "DISCOVER",
   "findings": {
     "repo_accessible": true,
     "repo_root_files": [
+      ".git",
+      ".gitignore",
+      "LICENSE",
+      "README.md",
       "assets",
       "examples",
       "fireredvad",
+      "fireredvad.egg-info",
       "pretrained_models",
-      "runtime",
-      "README.md",
       "pyproject.toml",
       "requirements-macos-arm64.txt",
-      "requirements.txt"
+      "requirements.txt",
+      "runtime"
     ],
     "config_files_found": [
       "pyproject.toml",
@@ -23,37 +27,40 @@
       "README.md"
     ],
     "runtime_identity": {
-      "import_path": "fireredvad.FireRedVad / fireredvad.FireRedVadConfig",
-      "load_path": "FireRedVad.from_pretrained('pretrained_models/FireRedVAD/VAD', config)",
-      "infer_path": "vad.detect(audio_path)"
+      "import_path": "from fireredvad import FireRedVad, FireRedVadConfig",
+      "load_path": "FireRedVad.from_pretrained('pretrained_models/FireRedVAD/VAD', cfg)",
+      "infer_path": "model.detect(audio_path)"
     },
     "weight_source": {
       "source": "huggingface",
       "repo": "FireRedTeam/FireRedVAD",
+      "declared_revision": "7990aaccc6b7aec1e527743bd30201f2c4a03b8c",
+      "cache_root": "checkpoints/FireRedVAD",
+      "runtime_alias": "pretrained_models/FireRedVAD",
       "target_subdir": "pretrained_models/FireRedVAD/VAD"
     },
     "fixture_candidate": "tests/fixtures/shared/vad/en_16k_10s.wav"
   },
   "evidence": [
     {
-      "source": "GitHub README",
+      "source": "upstream/FireRedVAD/README.md",
       "priority": 5,
-      "detail": "README quick start documents pip installation, Hugging Face download, and Python API usage for FireRedVad.from_pretrained(...)."
+      "detail": "README quick start specifies a clean Python 3.10 conda environment, Hugging Face download into pretrained_models/FireRedVAD, and the non-streaming VAD Python API."
     },
     {
-      "source": "GitHub pyproject.toml",
+      "source": "upstream/FireRedVAD/pyproject.toml",
       "priority": 3,
-      "detail": "pyproject declares package name fireredvad, requires-python >=3.10, and dependencies numpy/kaldiio/kaldi-native-fbank/soundfile/textgrid."
+      "detail": "pyproject declares package name fireredvad, requires-python >=3.10, and core dependencies numpy, kaldiio, kaldi-native-fbank, soundfile, and textgrid."
     },
     {
-      "source": "Executable local fixture probe",
+      "source": "executable fixture probe",
       "priority": 1,
-      "detail": "tests/fixtures/shared/vad/en_16k_10s.wav exists locally and is 16-bit mono 16000 Hz PCM WAV."
+      "detail": "tests/fixtures/shared/vad/en_16k_10s.wav exists locally and is a 16-bit mono 16000 Hz PCM WAV file."
     },
     {
-      "source": "Repository source file fireredvad/vad.py",
-      "priority": 3,
-      "detail": "detect() returns {'dur': round(dur, 3), 'timestamps': starts_ends_s} plus optional wav_path, matching the phase-1 contract."
+      "source": "validated runtime output",
+      "priority": 1,
+      "detail": "validate_phase1.py returned a JSON-serializable dict with dur, non-empty timestamps, and wav_path on the declared non-streaming VAD path."
     }
   ]
 }
