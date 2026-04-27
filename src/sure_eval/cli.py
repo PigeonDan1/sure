@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
+import sys
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -16,6 +19,13 @@ from sure_eval.core.config import Config
 from sure_eval.core.logging import configure_logging, get_logger
 from sure_eval.datasets import DatasetManager
 from sure_eval.evaluation.rps import RPSManager
+from sure_eval.inference import (
+    dry_run_prediction_job,
+    run_prediction_job,
+    validate_prediction_artifact,
+)
+from sure_eval.inference.errors import InferenceSurfaceError
+from sure_eval.inference.runner import get_runtime_readiness
 from sure_eval.models.registry import ModelInfo, ModelRegistry
 
 
@@ -345,57 +355,41 @@ def inspect_model(
 @app.command()
 def doctor(
     model_name: str = typer.Argument(..., help="Model name"),
+    json_output: Optional[Path] = typer.Option(None, "--json", help="Write doctor report to a JSON file"),
 ) -> None:
     """Run static checks for a registered model."""
     registry = get_model_registry()
     model = registry.get_model(model_name)
-
-    checks: list[tuple[str, bool, str]] = []
-
-    checks.append((
-        "Registry discovery",
-        model is not None,
-        f"Model '{model_name}' discovered by ModelRegistry." if model else f"Model '{model_name}' not found in ModelRegistry.",
-    ))
-
-    if model is None:
-        model_path = registry.models_dir / model_name
-        config_file = model_path / "config.yaml"
-        model_file = model_path / "model.py"
-        server_file = model_path / "server.py"
-        checks.extend([
-            ("config.yaml exists", config_file.exists(), str(config_file)),
-            ("model.py exists", model_file.exists(), str(model_file)),
-            ("server.py exists", server_file.exists(), str(server_file)),
-            ("Server command declared", False, "Model is missing from registry, so server configuration could not be loaded."),
-        ])
-    else:
-        config_file = model.path / "config.yaml"
-        model_file = model.path / "model.py"
-        server_file = model.path / "server.py"
-        checks.extend([
-            ("config.yaml exists", config_file.exists(), str(config_file)),
-            ("model.py exists", model_file.exists(), str(model_file)),
-            ("server.py exists", server_file.exists(), str(server_file)),
-            (
-                "Server command declared",
-                bool(model.server_command),
-                " ".join(model.server_command) if model.server_command else "Missing server.command in config.yaml.",
-            ),
-        ])
+    readiness = get_runtime_readiness(
+        model,
+        model_name=model_name,
+        models_dir=registry.models_dir,
+    )
 
     table = Table(title=f"Doctor Report: {model_name}")
     table.add_column("Check", style="cyan")
     table.add_column("Status", style="bold")
     table.add_column("Details", style="white")
 
-    failed = False
-    for label, passed, details in checks:
+    failed = readiness["status"] != "ready"
+    for check in readiness["checks"]:
+        label = str(check["name"]).replace("_", " ").title()
+        passed = bool(check["passed"])
+        details = str(check["details"])
         status = "[green]PASS[/green]" if passed else "[red]FAIL[/red]"
         table.add_row(label, status, details)
-        failed = failed or not passed
 
     console.print(table)
+    console.print(f"Status: {readiness['status']}")
+    console.print(f"Failure Class: {readiness['failure_class'] or '-'}")
+    console.print(f"Action Hint: {readiness['action_hint']}")
+
+    if json_output is not None:
+        json_output.parent.mkdir(parents=True, exist_ok=True)
+        json_output.write_text(
+            json.dumps(readiness, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
     if failed:
         raise typer.Exit(1)
@@ -447,6 +441,102 @@ def serve(
     if completed.returncode != 0:
         console.print(f"[bold red]Error:[/bold red] Server exited with code {completed.returncode}.")
         raise typer.Exit(completed.returncode)
+
+
+@app.command()
+def predict(
+    model_name: str = typer.Argument(..., help="Model name"),
+    input: Path = typer.Option(..., "--input", help="Input JSONL path"),
+    output: Path = typer.Option(..., "--output", help="Output prediction JSONL path"),
+    task: str = typer.Option("asr", "--task", help="Task name"),
+    device: str = typer.Option("auto", "--device", help="Inference device"),
+    batch_size: int = typer.Option(1, "--batch-size", help="Batch size"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate inputs without running inference"),
+) -> None:
+    """Run unified prediction generation for a registered model."""
+    model = get_model_or_exit(model_name)
+
+    try:
+        if dry_run:
+            summary = dry_run_prediction_job(
+                model_info=model,
+                input_path=input,
+                output_path=output,
+                task=task,
+                device=device,
+                batch_size=batch_size,
+            )
+            table = Table(title=f"Predict Dry Run: {model.name}")
+            table.add_column("Field", style="cyan")
+            table.add_column("Value", style="white")
+            table.add_row("model", summary["model"])
+            table.add_row("task", summary["task"])
+            table.add_row("input_path", summary["input_path"])
+            table.add_row("output_path", summary["output_path"])
+            table.add_row("num_instances", str(summary["num_instances"]))
+            table.add_row("config_path", summary["config_path"])
+            table.add_row("model_path", summary["model_path"])
+            table.add_row("runtime_command", summary["runtime_command"])
+            table.add_row("runtime_executable", summary["runtime_executable"])
+            table.add_row("working_dir", summary["working_dir"])
+            table.add_row("status", summary["status"])
+            table.add_row("failure_class", str(summary["failure_class"] or "-"))
+            table.add_row("action_hint", summary["action_hint"])
+            table.add_row("device", summary["device"])
+            table.add_row("batch_size", str(summary["batch_size"]))
+            console.print(table)
+            return
+
+        summary = run_prediction_job(
+            model_info=model,
+            input_path=input,
+            output_path=output,
+            task=task,
+            device=device,
+            batch_size=batch_size,
+            command=sys.argv,
+        )
+    except InferenceSurfaceError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise typer.Exit(1) from exc
+
+    table = Table(title=f"Prediction Run: {model.name}")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value", style="white")
+    table.add_row("output_path", summary["output_path"])
+    table.add_row("manifest_path", summary["manifest_path"])
+    table.add_row("num_instances", str(summary["num_instances"]))
+    table.add_row("num_ok", str(summary["num_ok"]))
+    table.add_row("num_failed", str(summary["num_failed"]))
+    table.add_row("status", summary["status"])
+    table.add_row("failure_class", str(summary["failure_class"] or "-"))
+    console.print(table)
+
+
+@app.command("validate-predictions")
+def validate_predictions(
+    input: Path = typer.Option(..., "--input", help="Prediction JSONL path"),
+    schema: str = typer.Option(..., "--schema", help="Prediction schema name"),
+) -> None:
+    """Validate a unified prediction JSONL artifact."""
+    try:
+        summary = validate_prediction_artifact(
+            input_path=input,
+            schema_name=schema,
+        )
+    except InferenceSurfaceError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise typer.Exit(1) from exc
+
+    table = Table(title="Prediction Validation")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value", style="white")
+    table.add_row("schema", summary["schema"])
+    table.add_row("input_path", summary["input_path"])
+    table.add_row("num_records", str(summary["num_records"]))
+    table.add_row("num_ok", str(summary["num_ok"]))
+    table.add_row("num_error", str(summary["num_error"]))
+    console.print(table)
 
 
 def main() -> None:
