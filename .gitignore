@@ -118,3 +118,25 @@ src/sure_eval/models/fireredvad/pretrained_models/
 
 src/sure_eval/models/fireredvad/artifacts/repro_output.json
 src/sure_eval/models/fireredvad/upstream/
+
+# s2tt_nllb local runtime/cache/weights
+src/sure_eval/models/s2tt_nllb/.venv/
+src/sure_eval/models/s2tt_nllb/.runtime/
+src/sure_eval/models/s2tt_nllb/__pycache__/
+src/sure_eval/models/s2tt_nllb/checkpoints/
+src/sure_eval/models/s2tt_nllb/repro_bundle/weights/
+
+# Local run outputs
+runs/
+
+# Model-local runtimes, caches, and downloaded weights
+src/sure_eval/models/*/.venv/
+src/sure_eval/models/*/.runtime/
+src/sure_eval/models/*/__pycache__/
+src/sure_eval/models/*/checkpoints/
+src/sure_eval/models/*/hf_cache/
+src/sure_eval/models/*/pretrained_models/
+src/sure_eval/models/*/repro_bundle/weights/
+
+# Local app/session artifacts
+.Rapp.history
