@@ -1,0 +1,25 @@
+diff --git a/wespeaker/cli/speaker.py b/wespeaker/cli/speaker.py
+index e39f50b..fe0a9e3 100644
+--- a/wespeaker/cli/speaker.py
++++ b/wespeaker/cli/speaker.py
+@@ -29,9 +29,6 @@ from wespeaker.cli.hub import Hub
+ from wespeaker.cli.utils import get_args
+ from wespeaker.models.speaker_model import get_speaker_model
+ from wespeaker.utils.checkpoint import load_checkpoint
+-from wespeaker.diar.umap_clusterer import cluster
+-from wespeaker.diar.extract_emb import subsegment
+-from wespeaker.diar.make_rttm import merge_segments
+ from wespeaker.utils.utils import set_seed
+ from wespeaker.frontend import frontend_class_dict
+ 
+@@ -211,6 +208,10 @@ class Speaker:
+         return result
+ 
+     def diarize(self, audio_path: str, utt: str = "unk"):
++        from wespeaker.diar.extract_emb import subsegment
++        from wespeaker.diar.make_rttm import merge_segments
++        from wespeaker.diar.umap_clusterer import cluster
++
+         assert self.model.frontend_type == 'fbank', \
+             "Diarization only supports fbank frontend"
+         pcm, sample_rate = torchaudio.load(audio_path, normalize=False)

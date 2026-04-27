@@ -1,77 +1,141 @@
 {
-  "$schema": "./verdict.schema.json",
-  "instance_id": "wespeaker_20260403",
-  "timestamp": "2026-04-03T11:38:17Z",
-  "model_id": "wenet-e2e/wespeaker",
-  "status": "passed",
-  "backend": {
-    "type": "pip",
-    "choice_reason": "A model-local Python 3.10 venv was the lowest-risk executable backend on this host and matched the upstream development workflow closely enough for a reproducible phase-1 run."
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "model_id": "Wespeaker/wespeaker-voxceleb-resnet221-LM",
+  "model_name": "wespeaker",
+  "integration_status": "READY_LOCAL",
+  "last_successful_stage": "SAVE_ARTIFACTS",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": true,
+  "selected_backend": "pip",
+  "selected_entrypoint": "python_api",
+  "runtime_model_name": "english",
+  "repo": {
+    "url": "https://github.com/wenet-e2e/wespeaker",
+    "commit_declared": null,
+    "commit_tested": "9ce7995648a281ba6ce6f4e7a33941672ef22779"
   },
-  "build": {
-    "success": true,
-    "duration_seconds": 0,
-    "log_path": "artifacts/build.log"
+  "weights": {
+    "timestamp": "2026-04-27T22:28:55.568983+00:00",
+    "whether_weights_required": true,
+    "source": "huggingface",
+    "identifier_or_package_name": "Wespeaker/wespeaker-voxceleb-resnet221-LM",
+    "declared_revision": null,
+    "runtime_model_name": "english",
+    "resolved_local_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english",
+    "cache_policy": "model_local_first",
+    "whether_included_in_repro_bundle": false,
+    "files": [
+      {
+        "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english/avg_model.pt",
+        "sha256": "47d76239f1e865b273e31e30f691959061ff6565ed6c4e7be9639a65d9662eb5",
+        "size_bytes": 114410390
+      },
+      {
+        "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english/config.yaml",
+        "sha256": "31511c8e6c60d96d40962e9a261dd8f752b01831b955192b5cbed8367276bbb5",
+        "size_bytes": 1544
+      },
+      {
+        "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english/voxceleb_resnet221_LM.tar.gz",
+        "sha256": "9462705bfafeed7b4a6585638a4d0140ddaf9338471198d014eb2579712f89f6",
+        "size_bytes": 105902456
+      }
+    ],
+    "fallback_reason": "The validated repo-native path uses the upstream english alias and an existing model-local archive named voxceleb_resnet221_LM.tar.gz. Because config.yaml was missing at first, it was restored from the local archive instead of performing a new network fetch.",
+    "fallback_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english/voxceleb_resnet221_LM.tar.gz",
+    "exact_refetch_or_validation_command": [
+      "WESPEAKER_HOME=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/.venv/bin/python /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/validate_phase1.py",
+      "WESPEAKER_HOME=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/.venv/bin/python -c \"import wespeaker; model = wespeaker.load_model('english'); model.set_device('cpu')\""
+    ],
+    "whether_repro_requires_network_if_weights_are_absent": true
   },
   "validation": {
-    "import_test": {
-      "passed": true,
-      "duration_ms": 10487.635
+    "timestamp": "2026-04-27T22:28:55.568983+00:00",
+    "selected_entrypoint": "python_api",
+    "fixture_source": "generated_task_specific_shared",
+    "tests": {
+      "import": {
+        "passed": true,
+        "duration_ms": 1697.852
+      },
+      "load": {
+        "passed": true,
+        "duration_ms": 284.298
+      },
+      "infer": {
+        "passed": true,
+        "duration_ms": 1111.155
+      },
+      "contract": {
+        "passed": true,
+        "duration_ms": 0.086
+      }
     },
-    "load_test": {
-      "passed": true,
-      "duration_ms": 235.639
+    "overall": "PASSED",
+    "result": {
+      "model_name": "wespeaker",
+      "task": "speaker_verification",
+      "enroll_audio": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_enroll.wav",
+      "trial_audio": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_trial.wav",
+      "score": 0.6511188596487045,
+      "score_is_finite": true,
+      "device": "cpu",
+      "error_code": null,
+      "backend": "pip",
+      "weight_id": "Wespeaker/wespeaker-voxceleb-resnet221-LM",
+      "negative_score": 0.697369709610939
     },
-    "infer_test": {
-      "passed": true,
-      "duration_ms": 2955.564
-    },
-    "contract_test": {
-      "passed": true,
-      "duration_ms": 0.054
-    }
-  },
-  "retries": {
-    "count": 3,
-    "history": [
+    "retries": [
       {
         "attempt": 1,
         "checkpoint": "BUILD_ENV",
-        "failure_type": "runtime_backend_incompatible",
-        "mitigation": "Pinned setuptools<81 and disabled build isolation for the upstream development install route after visdom failed to build without pkg_resources."
+        "failure_type": "python_dependency_missing",
+        "failure_category": "python_dependency_missing",
+        "evidence_log": "artifacts/logs/build_env_network_failure.log",
+        "failure_reason": "Initial pip install inside the model-local virtual environment failed under sandboxed network restrictions while resolving PyPI packages.",
+        "mitigation": "Escalated a controlled pip install into src/sure_eval/models/wespeaker/.venv and pinned the minimal SV dependency set.",
+        "retryable": true
       },
       {
         "attempt": 2,
-        "checkpoint": "VALIDATE_IMPORT",
-        "failure_type": "integration_issue",
-        "mitigation": "Applied a recorded minimal local patch so wespeaker.frontend lazily imports optional frontend modules."
+        "checkpoint": "VALIDATE_LOAD",
+        "failure_type": "missing_weights",
+        "failure_category": "missing_weights",
+        "evidence_log": "artifacts/logs/validate_load_missing_config.log",
+        "failure_reason": "The local english checkpoint directory had avg_model.pt and the tarball, but config.yaml was missing, so the upstream loader tried to download again.",
+        "mitigation": "Extracted config.yaml from the existing model-local voxceleb_resnet221_LM.tar.gz archive and retried the same repo-native load path.",
+        "retryable": true
       },
       {
         "attempt": 3,
         "checkpoint": "VALIDATE_INFER",
-        "failure_type": "runtime_backend_incompatible",
-        "mitigation": "Pinned torch==2.1.2 and torchaudio==2.1.2 after torchaudio 2.11.0 required torchcodec during inference."
+        "failure_type": "python_dependency_missing",
+        "failure_category": "python_dependency_missing",
+        "evidence_log": "artifacts/logs/validate_infer_audio_backend.log",
+        "failure_reason": "torchaudio 2.1.2 could not open WAV fixtures until a usable audio backend was present in the environment.",
+        "mitigation": "Installed soundfile==0.13.1 into the same model-local virtual environment and retried inference without changing the callable path.",
+        "retryable": true
       }
     ]
   },
-  "result": {
-    "similarity_score": 0.9424791634082794,
-    "negative_similarity_score": 0.4905685018748045,
-    "enrollment_audio": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_enroll.wav",
-    "trial_audio": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_trial.wav",
-    "model_name": "english",
-    "device": "cpu",
-    "cache_dir": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker1.0/pretrained_models/wespeaker"
-  },
-  "artifacts": {
-    "spec_path": "model.spec.yaml",
-    "wrapper_path": [
-      "model.py",
-      "server.py",
-      "__init__.py"
-    ],
-    "lockfile_path": "artifacts/pip_freeze.txt",
-    "log_path": "artifacts/validation.log"
-  },
-  "notes": "Phase-1 passed after one recorded lazy-import patch and one targeted torch/torchaudio pin. No escalation was triggered in the final successful run."
+  "patches": [
+    {
+      "patch_id": "0001-lazy-frontend-imports",
+      "path": "artifacts/0001-lazy-frontend-imports.patch",
+      "applied_to": "upstream/wespeaker/frontend/__init__.py",
+      "status": "pre_applied_local_upstream",
+      "reason": "Delay optional frontend imports so the fbank-based speaker verification path does not require s3prl, whisper_encoder, or w2vbert dependencies during import.",
+      "required_for_phase1": true
+    },
+    {
+      "patch_id": "0002-lazy-diarization-imports",
+      "path": "artifacts/0002-lazy-diarization-imports.patch",
+      "applied_to": "upstream/wespeaker/cli/speaker.py",
+      "status": "pre_applied_local_upstream",
+      "reason": "Move diarization-only imports behind Speaker.diarize() so optional clustering dependencies do not leak into the speaker verification import path.",
+      "required_for_phase1": true
+    }
+  ]
 }

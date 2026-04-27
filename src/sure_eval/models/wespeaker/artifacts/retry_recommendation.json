@@ -1,15 +1,24 @@
 {
-  "timestamp": "2026-04-03T11:38:17Z",
-  "model_id": "wenet-e2e/wespeaker",
-  "checkpoint": "VALIDATE_INFER",
-  "attempt": 2,
-  "failure_type": "runtime_backend_incompatible",
-  "recommended_action": "retry_from_checkpoint",
-  "change_set": [
-    "Pin torch==2.1.2 and torchaudio==2.1.2 inside the model-local venv.",
-    "Keep the lazy-import patch in place so the minimal english fbank path stays isolated from optional frontends.",
-    "Rerun validate_phase1.py without changing fixtures or the repo-native entrypoint."
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "recommendations": [
+    {
+      "checkpoint": "BUILD_ENV",
+      "failure_type": "python_dependency_missing",
+      "recommended_change": "Escalated a controlled pip install into src/sure_eval/models/wespeaker/.venv and pinned the minimal SV dependency set.",
+      "blind_retry_allowed": false
+    },
+    {
+      "checkpoint": "VALIDATE_LOAD",
+      "failure_type": "missing_weights",
+      "recommended_change": "Extracted config.yaml from the existing model-local voxceleb_resnet221_LM.tar.gz archive and retried the same repo-native load path.",
+      "blind_retry_allowed": false
+    },
+    {
+      "checkpoint": "VALIDATE_INFER",
+      "failure_type": "python_dependency_missing",
+      "recommended_change": "Installed soundfile==0.13.1 into the same model-local virtual environment and retried inference without changing the callable path.",
+      "blind_retry_allowed": false
+    }
   ],
-  "reason": "This changes the runtime family that actually touched the failing API without broadening scope into additional dependencies.",
-  "max_retries_for_failure_type": 2
+  "final_status": "resolved"
 }

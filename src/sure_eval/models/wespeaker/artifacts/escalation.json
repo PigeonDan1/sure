@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "events": [
+    {
+      "checkpoint": "BUILD_ENV",
+      "reason": "Network-restricted pip install required approval to fetch minimal dependencies."
+    },
+    {
+      "checkpoint": "VALIDATE_INFER",
+      "reason": "A targeted soundfile install required network approval to satisfy the WAV backend dependency."
+    }
+  ]
+}

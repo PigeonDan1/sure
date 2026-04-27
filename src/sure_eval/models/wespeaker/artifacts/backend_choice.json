@@ -1,55 +1,50 @@
 {
-  "timestamp": "2026-04-03T11:38:17Z",
-  "model_id": "wenet-e2e/wespeaker",
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "model_id": "Wespeaker/wespeaker-voxceleb-resnet221-LM",
   "chosen_backend": "pip",
-  "reason": "A model-local Python 3.10 venv was the lowest-risk executable backend on this host. It matched the upstream development install path and avoided unavailable uv/docker backends.",
+  "reason": "The upstream package documents pip-based installation, a Python 3.10 interpreter is available locally, and the minimal speaker-verification smoke path does not justify a heavier backend.",
   "evidence": [
-    "Runtime preflight found /opt/anaconda3/envs/fireredvad/bin/python (Python 3.10.20).",
-    "Runtime preflight found no uv binary and no docker daemon.",
-    "The upstream README exposes a development path based on python=3.9 plus pip install -r requirements.txt.",
-    "Phase-1 only requires import/load/infer on CPU and does not justify a heavier backend."
+    "Executable Python interpreter: Python 3.10.20 at /opt/anaconda3/envs/fireredvad/bin/python3.10.",
+    "The upstream README and docs/python_package.md document pip installation and a Python API based on wespeaker.load_model(...).",
+    "Phase-1 only requires import/load/infer/contract on CPU for speaker verification, not diarization or benchmark orchestration."
   ],
   "rejected_options": [
     {
       "backend": "uv",
-      "reason": "Unavailable on host."
+      "reason": "Not required; pip already satisfies the minimal runtime target."
     },
     {
       "backend": "docker",
-      "reason": "Unavailable on host and unnecessary for the requested CPU-only minimal callable path."
+      "reason": "Higher-risk and unnecessary for the validated CPU-only smoke path."
     },
     {
       "backend": "pixi",
-      "reason": "Not supported by repo-native evidence and unnecessary for this phase-1 target."
-    },
-    {
-      "backend": "api",
-      "reason": "Model is local and the target path is repo-native."
+      "reason": "No repository-native evidence that pixi is required for the minimal path."
     }
   ],
   "evidence_conflicts": [
     {
-      "field": "python_version",
+      "field": "weights.source",
       "resolved": true,
-      "chosen_value": "3.10",
+      "chosen_value": "model_local_existing_archive",
       "sources": [
         {
-          "value": "3.9",
-          "source": "MODEL_INPUT.environment_hint.python_version",
+          "value": "huggingface",
+          "source": "MODEL_INPUT.weights.source",
           "priority": 3
         },
         {
-          "value": "python=3.9",
-          "source": "upstream README development install route",
-          "priority": 5
+          "value": "english alias -> voxceleb_resnet221_LM.tar.gz",
+          "source": "upstream/wespeaker/cli/hub.py",
+          "priority": 3
         },
         {
-          "value": "3.10",
-          "source": "runtime preflight available interpreter",
+          "value": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english",
+          "source": "verified local checkpoint directory",
           "priority": 1
         }
       ],
-      "reason": "Executable host evidence selected Python 3.10 because it was available in a reusable local interpreter without mutating the host environment."
+      "reason": "Executable evidence showed a complete local archive and avg_model.pt under the model directory, so phase-1 used the local model-local cache without claiming a fresh HuggingFace download."
     }
   ]
 }

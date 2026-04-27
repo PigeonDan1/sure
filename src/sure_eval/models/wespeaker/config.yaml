@@ -1,0 +1,35 @@
+name: wespeaker
+task: speaker_verification
+description: "Minimal WeSpeaker speaker-verification wrapper for engineering smoke reproduction."
+
+model:
+  id: "Wespeaker/wespeaker-voxceleb-resnet221-LM"
+  runtime_model_name: "english"
+  checkpoints_root: "checkpoints"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    WESPEAKER_HOME: "checkpoints"
+    DEVICE: "cpu"
+    MODEL_RUNTIME_NAME: "english"
+    PYTHONUNBUFFERED: "1"
+  timeout: 300
+
+tools:
+  - name: speaker_verify
+    description: "Run speaker similarity on an enroll/trial audio pair."
+    input_schema:
+      type: object
+      properties:
+        enroll_audio:
+          type: string
+        trial_audio:
+          type: string
+      required: [enroll_audio, trial_audio]
+  - name: healthcheck
+    description: "Report whether the WeSpeaker wrapper has a ready local runtime."
+    input_schema:
+      type: object
+      properties: {}

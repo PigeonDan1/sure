@@ -1,29 +1,36 @@
 {
-  "timestamp": "2026-04-03T11:38:17Z",
-  "model_id": "wenet-e2e/wespeaker",
-  "checkpoint": "VALIDATE_INFER",
-  "attempt": 2,
-  "failure_type": "runtime_backend_incompatible",
-  "retryable": true,
-  "symptoms": [
-    "ImportError: TorchCodec is required for load_with_torchcodec. Please install torchcodec to use this function."
-  ],
-  "evidence": [
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "model_id": "Wespeaker/wespeaker-voxceleb-resnet221-LM",
+  "failures": [
     {
-      "source": "artifacts/validation.log",
-      "priority": 2,
-      "detail": "Attempt 2 reached torchaudio.load() during compute_similarity and failed because torchaudio 2.11.0 required torchcodec."
+      "attempt": 1,
+      "checkpoint": "BUILD_ENV",
+      "failure_type": "python_dependency_missing",
+      "failure_category": "python_dependency_missing",
+      "evidence_log": "artifacts/logs/build_env_network_failure.log",
+      "failure_reason": "Initial pip install inside the model-local virtual environment failed under sandboxed network restrictions while resolving PyPI packages.",
+      "mitigation": "Escalated a controlled pip install into src/sure_eval/models/wespeaker/.venv and pinned the minimal SV dependency set.",
+      "retryable": true
     },
     {
-      "source": "upstream README development install route",
-      "priority": 5,
-      "detail": "The repo documents an older PyTorch/torchaudio family, which is closer to the successful 2.1.2 pin than to 2.11.0."
+      "attempt": 2,
+      "checkpoint": "VALIDATE_LOAD",
+      "failure_type": "missing_weights",
+      "failure_category": "missing_weights",
+      "evidence_log": "artifacts/logs/validate_load_missing_config.log",
+      "failure_reason": "The local english checkpoint directory had avg_model.pt and the tarball, but config.yaml was missing, so the upstream loader tried to download again.",
+      "mitigation": "Extracted config.yaml from the existing model-local voxceleb_resnet221_LM.tar.gz archive and retried the same repo-native load path.",
+      "retryable": true
     },
     {
-      "source": "validated runtime retry",
-      "priority": 1,
-      "detail": "After pinning torch==2.1.2 and torchaudio==2.1.2, the same infer path completed successfully."
+      "attempt": 3,
+      "checkpoint": "VALIDATE_INFER",
+      "failure_type": "python_dependency_missing",
+      "failure_category": "python_dependency_missing",
+      "evidence_log": "artifacts/logs/validate_infer_audio_backend.log",
+      "failure_reason": "torchaudio 2.1.2 could not open WAV fixtures until a usable audio backend was present in the environment.",
+      "mitigation": "Installed soundfile==0.13.1 into the same model-local virtual environment and retried inference without changing the callable path.",
+      "retryable": true
     }
-  ],
-  "diagnosis": "The phase-1 path itself was correct after the lazy-import patch; the remaining blocker was a newer torchaudio runtime family that changed audio loading behavior on this host."
+  ]
 }

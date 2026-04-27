@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "backend": "pip",
+  "python_version": "Python 3.10.20",
+  "env_creation_method": "/opt/anaconda3/envs/fireredvad/bin/python3.10 -m venv /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/.venv",
+  "dependency_installation_method": "pip install minimal pinned dependencies + pip install --no-build-isolation --no-deps -e upstream",
+  "system_packages": {
+    "declared_in_input": [
+      "ffmpeg",
+      "libsndfile1"
+    ],
+    "required_for_validated_path": [],
+    "notes": "The validated smoke path succeeded without host ffmpeg. WAV decoding used the Python soundfile package in the virtual environment."
+  },
+  "whether_gpu_required": false,
+  "whether_cpu_fallback_is_allowed": true,
+  "important_runtime_assumptions": [
+    "WESPEAKER_HOME must point at the model-local checkpoints directory.",
+    "The upstream english alias must resolve to checkpoints/english containing avg_model.pt and config.yaml.",
+    "Two local lazy-import patches remain applied in the upstream working tree and are required for clean speaker-verification import/load."
+  ],
+  "important_dependency_pins": {
+    "torch": "2.1.2",
+    "torchaudio": "2.1.2",
+    "soundfile": "0.13.1",
+    "silero-vad": "6.2.0"
+  },
+  "optional_dependency_exclusions": [
+    "hdbscan",
+    "umap-learn",
+    "s3prl",
+    "openai-whisper",
+    "peft",
+    "accelerate"
+  ],
+  "resource_limits": {
+    "max_audio_seconds": 3,
+    "timeout_seconds": 300,
+    "max_memory_gb": null,
+    "gpu_required": false,
+    "network_required_for_repro": true
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "fallbacks": [
+    {
+      "category": "weight_policy",
+      "declared_source": "huggingface",
+      "executable_resolution": "existing local english checkpoint archive and repo-native english alias",
+      "reason": "No verified HuggingFace fetch was performed during phase-1 because a usable local archive already existed under the model directory."
+    },
+    {
+      "category": "weight_cache_repair",
+      "declared_source": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english",
+      "executable_resolution": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english/config.yaml",
+      "reason": "config.yaml was restored from the local tarball because the local cache directory was incomplete at first."
+    }
+  ]
+}

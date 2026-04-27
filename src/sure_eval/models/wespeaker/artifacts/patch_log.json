@@ -1,6 +1,5 @@
 {
   "timestamp": "2026-04-27T22:28:55.568983+00:00",
-  "summary": "Two existing upstream lazy-import patches remain required for the minimal WeSpeaker speaker-verification import/load path.",
   "patches": [
     {
       "patch_id": "0001-lazy-frontend-imports",

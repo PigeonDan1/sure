@@ -1,0 +1,62 @@
+{
+  "created_at": "2026-04-27T22:09:31.473599+00:00",
+  "policy_basis": {
+    "allow_fixture_provisioning_if_missing": true,
+    "allowed_location": "tests/fixtures/shared/speaker_verification/",
+    "max_duration_seconds_each": 3,
+    "required_sample_rate": 16000,
+    "required_channels": "mono"
+  },
+  "source_evidence": [
+    "tests/fixtures/SD/Ses05F_script01_1_M038.wav",
+    "tests/fixtures/SD/Ses05F_script01_1_M039.wav"
+  ],
+  "fixtures": [
+    {
+      "fixture_path": "tests/fixtures/shared/speaker_verification/spk1_enroll.wav",
+      "fixture_role": "enroll_audio",
+      "speaker_id_evidence": "Ses05F_script01_1_M038",
+      "source_path": "tests/fixtures/SD/Ses05F_script01_1_M038.wav",
+      "start_seconds": 0.4,
+      "duration_seconds": 2.0,
+      "sample_rate": 16000,
+      "channels": 1,
+      "file_size_bytes": 64044,
+      "sha256": "7de37439710c9635537e4acb0552f8cae9a5b43ff24e9ab28aaddb93b3e33fad",
+      "generation_method": "wave_slice_from_existing_repo_fixture",
+      "engineering_smoke_only": true,
+      "valid_for_accuracy_claims": false
+    },
+    {
+      "fixture_path": "tests/fixtures/shared/speaker_verification/spk1_trial.wav",
+      "fixture_role": "trial_audio",
+      "speaker_id_evidence": "Ses05F_script01_1_M038",
+      "source_path": "tests/fixtures/SD/Ses05F_script01_1_M038.wav",
+      "start_seconds": 3.0,
+      "duration_seconds": 2.0,
+      "sample_rate": 16000,
+      "channels": 1,
+      "file_size_bytes": 64044,
+      "sha256": "04ebb5517074d8d9609afb32eedc0aa0f0b105e7487fee37bed9747cc73eb476",
+      "generation_method": "wave_slice_from_existing_repo_fixture",
+      "engineering_smoke_only": true,
+      "valid_for_accuracy_claims": false
+    },
+    {
+      "fixture_path": "tests/fixtures/shared/speaker_verification/spk2_trial.wav",
+      "fixture_role": "impostor_audio",
+      "speaker_id_evidence": "Ses05F_script01_1_M039",
+      "source_path": "tests/fixtures/SD/Ses05F_script01_1_M039.wav",
+      "start_seconds": 0.0,
+      "duration_seconds": 2.0,
+      "sample_rate": 16000,
+      "channels": 1,
+      "file_size_bytes": 64044,
+      "sha256": "7ce091f68c6610a3baca83fab14de7b2b1c8b0966a740a5379794c4c35812c64",
+      "generation_method": "wave_slice_from_existing_repo_fixture",
+      "engineering_smoke_only": true,
+      "valid_for_accuracy_claims": false
+    }
+  ],
+  "note": "Generated for engineering smoke reproduction of speaker verification only; no semantic accuracy claims are made."
+}

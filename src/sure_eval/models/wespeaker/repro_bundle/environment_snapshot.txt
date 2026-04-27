@@ -1,0 +1,11 @@
+python_executable: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/.venv/bin/python
+python_version: Python 3.10.20
+pip_executable: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/.venv/bin/pip
+weights_root: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints
+wespeaker_import: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/upstream/wespeaker/__init__.py
+torch_version: 2.1.2
+torchaudio_version: 2.1.2
+soundfile_version: 0.13.1
+cuda_available: false
+mps_available: false
+ffmpeg_available: false
