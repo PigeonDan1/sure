@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "model_id": "snakers4/silero-vad",
+  "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav",
+  "bundle_fixture_path": "fixtures/en_16k_10s.wav",
+  "fixture_role": "shared_vad_smoke_fixture",
+  "whether_task_specific": false,
+  "whether_fallback_allowed": true,
+  "whether_fixture_existence_was_verified_at_spec_time": true,
+  "fixture_existence_evidence": {
+    "file_type": "RIFF PCM mono 16000 Hz WAV",
+    "sha256": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+    "verified_at": "2026-04-28T12:47:38.333989+00:00"
+  },
+  "checksum": {
+    "algorithm": "sha256",
+    "value": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d"
+  },
+  "preprocessing_assumption": {
+    "read_at_hz": 16000,
+    "channels": "mono",
+    "format": "wav_preferred"
+  },
+  "generated_fixture": null,
+  "smoke_only": false,
+  "expected_segments_nonempty": false
+}

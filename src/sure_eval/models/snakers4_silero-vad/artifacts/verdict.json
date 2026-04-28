@@ -1,57 +1,74 @@
 {
   "$schema": "./verdict.schema.json",
-  "instance_id": "snakers4_silero-vad_20260329",
-  "timestamp": "2026-03-29T08:40:30Z",
+  "instance_id": "snakers4_silero-vad_20260428",
+  "timestamp": "2026-04-28T12:50:47.316846+00:00",
   "model_id": "snakers4/silero-vad",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
   "status": "success",
   "backend": {
     "type": "uv",
-    "choice_reason": "Pure Python package with simple dependencies, used CPU-only torch to avoid CUDA issues"
+    "choice_reason": "Verified executable uv path with CPU-only Silero VAD package path."
   },
   "build": {
     "success": true,
-    "duration_seconds": 600,
-    "log_path": "artifacts/build.log"
+    "log_path": "artifacts/build.log",
+    "lockfile_path": "uv.lock",
+    "env_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/snakers4_silero-vad/.phase1_uv_env"
   },
   "validation": {
     "import_test": {
       "passed": true,
-      "duration_ms": 6080,
+      "duration_ms": 1309.99,
       "error": null
     },
     "load_test": {
       "passed": true,
-      "duration_ms": 341,
+      "duration_ms": 70.027,
       "error": null
     },
     "infer_test": {
       "passed": true,
-      "duration_ms": 931,
+      "duration_ms": 115.456,
       "error": null
     },
     "contract_test": {
       "passed": true,
-      "duration_ms": 566,
+      "duration_ms": 0.0,
+      "error": null
+    },
+    "wrapper_smoke": {
+      "passed": true,
+      "duration_ms": null,
       "error": null
     }
   },
   "retries": {
-    "count": 3,
+    "count": 4,
     "history": [
       {
         "attempt": 1,
-        "failure_type": "runtime_backend_incompatible",
-        "mitigation": "Installed torchcodec"
+        "failure_type": "host_path_not_writable",
+        "change_applied": "Set UV_CACHE_DIR and TMPDIR under .runtime/.",
+        "result": "new failure type surfaced"
       },
       {
         "attempt": 2,
-        "failure_type": "cuda_version_mismatch",
-        "mitigation": "Switched to CPU-only torch/torchaudio from pytorch-cpu index"
+        "failure_type": "python_dependency_missing",
+        "change_applied": "Escalated uv lock/sync for network access.",
+        "result": "resolved"
       },
       {
         "attempt": 3,
-        "failure_type": "runtime_backend_incompatible",
-        "mitigation": "Pinned torch/torchaudio to <2.3, numpy<2"
+        "failure_type": "env_path_mismatch",
+        "change_applied": "Pinned UV_PROJECT_ENVIRONMENT to an absolute model-local path.",
+        "result": "resolved"
+      },
+      {
+        "attempt": 4,
+        "failure_type": "lockfile_path_unresolved",
+        "change_applied": "Generated uv.lock from a model-local temporary lock project.",
+        "result": "resolved"
       }
     ]
   },
@@ -61,11 +78,42 @@
     "message": null,
     "retryable": false
   },
+  "selected_fixture": {
+    "path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav",
+    "task_specific": false,
+    "smoke_only": false,
+    "expected_segments_nonempty": false
+  },
+  "weights": {
+    "source": "pip_package_internal_resource",
+    "resolved_local_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/snakers4_silero-vad/.phase1_uv_env/lib/python3.12/site-packages/silero_vad/data/silero_vad.jit",
+    "torch_hub_fallback_used": false,
+    "onnx_fallback_used": false
+  },
+  "last_successful_stage": "SAVE_REPRO_ARTIFACTS",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": true,
+  "phase1_target_understanding": [
+    "The phase-1 target is the pip package callable path, not a full clone or upstream demo reproduction.",
+    "The selected fixture is a verified shared VAD speech WAV, so it is real audio but not model-specific.",
+    "uv is the preferred backend here as a policy-guided initial choice, but the final selection was confirmed by executable evidence rather than treated as absolute.",
+    "If this path had failed, the next checks would have prioritized integration, dependency resolution, audio I/O, fixture mismatch, and only then weight/cache fallback behavior.",
+    "CPU-only execution is intentional for this run, and lack of GPU is not a blocker for phase-1 success."
+  ],
+  "repro_target_understanding": [
+    "The repro unit is one deterministic local Silero VAD inference call from package import through JSON output.",
+    "The key bundle constraints are uv.lock, pyproject.toml, minimal_repro_spec.json, weights_manifest.json, and fixture_manifest.json.",
+    "The model depends on Python wheels and a package-internal JIT file, but not on external APIs, Docker, or torch hub cache for the successful path.",
+    "Minimal repro succeeds when a fresh temp directory can rebuild the environment, run the callable path, emit JSON, and pass output_contract_check.py.",
+    "Even if segments were empty, success would still be judged on callable path and schema contract rather than VAD accuracy; this replay happened to return a non-empty segment."
+  ],
   "artifacts": {
     "spec_path": "model.spec.yaml",
     "wrapper_path": "model.py",
-    "lockfile_path": "uv.lock",
-    "log_path": "artifacts/validation.log"
-  },
-  "notes": "Successfully onboarded snakers4/silero-vad with CPU-only backend. Required dependency adjustments due to torchaudio/torchcodec compatibility issues. Final configuration uses torch 2.2.2+cpu, torchaudio 2.2.2+cpu, numpy 1.26.4."
+    "validation_log": "artifacts/validation.log",
+    "verdict_path": "artifacts/verdict.json",
+    "repro_verdict_path": "repro_bundle/repro_verdict.json"
+  }
 }

@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-29T08:22:00Z",
+  "timestamp": "2026-04-28T12:47:38.333989+00:00",
   "model_id": "snakers4/silero-vad",
   "status": "passed",
   "checks": {
@@ -21,9 +21,9 @@
     },
     "fixture_availability": {
       "passed": true,
-      "fixture_path": "tests/fixtures/shared/vad/en_16k_10s.wav",
-      "source": "shared",
-      "note": "Used librispeech sample as fallback for VAD testing"
+      "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav",
+      "source": "shared_vad",
+      "note": "Original candidate names were absent; selected the verified shared VAD fixture that exists in-repo."
     },
     "io_contract_sufficient": {
       "passed": true,
@@ -31,12 +31,17 @@
     },
     "preflight_compatible": {
       "passed": true,
-      "incompatibilities": []
+      "incompatibilities": [],
+      "notes": [
+        "CPU-only execution is acceptable for phase-1.",
+        "Python 3.12 selected because 3.10 was unavailable."
+      ]
     }
   },
   "ready_for_build_env": true,
   "warnings": [
-    "Original fixture not found, used librispeech sample as fallback"
+    "uv cache had to be redirected into the model directory to satisfy sandbox constraints.",
+    "A network escalation was required to resolve PyPI dependencies and to generate the model-local lockfile."
   ],
   "blockers": []
 }

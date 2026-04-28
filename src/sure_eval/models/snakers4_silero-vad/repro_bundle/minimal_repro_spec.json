@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "model_id": "snakers4/silero-vad",
+  "minimal_callable_path": [
+    "from silero_vad import load_silero_vad, read_audio, get_speech_timestamps",
+    "model = load_silero_vad(onnx=False)",
+    "wav = read_audio(audio_path, sampling_rate=16000)",
+    "segments = get_speech_timestamps(wav, model, sampling_rate=16000, return_seconds=True)"
+  ],
+  "exact_commands": {
+    "rebuild_env": "env UV_CACHE_DIR=./uv-cache TMPDIR=./tmp UV_PROJECT_ENVIRONMENT=./.repro_env /Users/wency/.local/bin/uv sync --project . --python /opt/anaconda3/bin/python3.12 --locked",
+    "run_repro": "./.repro_env/bin/python minimal_repro_runner.py --audio fixtures/en_16k_10s.wav --output repro_output.json",
+    "check_output": "./.repro_env/bin/python output_contract_check.py repro_output.json"
+  },
+  "working_directory_assumptions": [
+    "Run from the root of the copied repro_bundle directory.",
+    "uv and python paths are the tested host paths recorded in environment_manifest.json."
+  ],
+  "required_inputs": [
+    "fixtures/en_16k_10s.wav"
+  ],
+  "expected_outputs": [
+    "repro_output.json"
+  ],
+  "contract_checks": [
+    "required fields exist",
+    "sample_rate == 16000",
+    "audio_duration_sec > 0",
+    "model_backend non-empty",
+    "segments is a list and each item obeys 0 <= start < end <= duration + tolerance"
+  ],
+  "whether_segments_may_be_empty": true,
+  "max_audio_seconds": 3,
+  "timeout_seconds": 60
+}

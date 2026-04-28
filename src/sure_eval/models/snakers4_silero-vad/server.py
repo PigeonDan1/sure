@@ -1,16 +1,12 @@
-"""
-MCP Server for Silero VAD Model.
-
-Implements the Model Context Protocol (MCP) for VAD inference.
-Communicates via stdin/stdout using JSON-RPC 2.0.
-"""
-
 import sys
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
-from model import VADModel, VADResult
+try:
+    from .model import ModelWrapper
+except ImportError:
+    from model import ModelWrapper
 
 # Configure logging to stderr
 logging.basicConfig(
@@ -22,14 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 class MCPServer:
-    """MCP Server for Silero VAD.
-    
-    Implements JSON-RPC 2.0 over stdin/stdout for MCP protocol.
-    """
-    
     def __init__(self):
-        self.model: Optional[VADModel] = None
-        self.model_device = 'cpu'
+        self.model: Optional[ModelWrapper] = None
+        self.model_device = "cpu"
     
     def handle_initialize(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle initialize request.
@@ -68,7 +59,7 @@ class MCPServer:
                 "tools": [
                     {
                         "name": "vad_predict",
-                        "description": "Run Voice Activity Detection on an audio file",
+                        "description": "Run minimal Silero VAD inference on a WAV file",
                         "inputSchema": {
                             "type": "object",
                             "properties": {
@@ -78,7 +69,7 @@ class MCPServer:
                                 },
                                 "sampling_rate": {
                                     "type": "integer",
-                                    "description": "Target sampling rate (default: 16000)",
+                                    "description": "Target sampling rate, defaults to 16000 Hz",
                                     "default": 16000
                                 }
                             },
@@ -132,7 +123,7 @@ class MCPServer:
     def _handle_vad_predict(self, request: Dict[str, Any], arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Handle vad_predict tool call."""
         if self.model is None:
-            self.model = VADModel(device=self.model_device)
+            self.model = ModelWrapper(device=self.model_device)
         
         audio_path = arguments.get("audio_path")
         sampling_rate = arguments.get("sampling_rate", 16000)
@@ -162,7 +153,7 @@ class MCPServer:
     def _handle_healthcheck(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Handle healthcheck tool call."""
         if self.model is None:
-            self.model = VADModel(device=self.model_device)
+            self.model = ModelWrapper(device=self.model_device)
         
         status = self.model.healthcheck()
         

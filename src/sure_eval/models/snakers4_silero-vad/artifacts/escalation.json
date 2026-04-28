@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-04-28T12:47:38.333989+00:00",
+  "triggers": [
+    {
+      "trigger": "dependency resolution required network access",
+      "checkpoint": "BUILD_ENV",
+      "approved": true,
+      "question_asked": "Do you want to allow uv to access PyPI so I can lock and install the Silero VAD dependencies for this onboarding run?"
+    },
+    {
+      "trigger": "model-local lockfile generation required network access",
+      "checkpoint": "EXPORT_REPRO_BUNDLE",
+      "approved": true,
+      "question_asked": "Do you want to allow uv to finish generating a model-local lockfile for the repro bundle from the Silero VAD pyproject?"
+    }
+  ]
+}

@@ -1,28 +1,64 @@
 {
-  "timestamp": "2026-03-29T08:21:30Z",
+  "timestamp": "2026-04-28T12:47:38.333989+00:00",
   "model_id": "snakers4/silero-vad",
   "chosen_backend": "uv",
-  "reason": "Pure Python package with simple dependencies, pyproject.toml present, no complex system dependencies or CUDA compilation needed",
+  "reason": "uv is the lowest-risk backend that satisfies the pip package callable path with isolated CPU-only dependencies.",
   "evidence": [
-    "pyproject.toml present with hatchling build system",
-    "Dependencies: torch>=1.12.0, torchaudio>=0.12.0, packaging only",
-    "No Dockerfile found",
-    "No environment.yml found",
-    "Weights bundled in pip package (silero_vad.data)"
+    "Executable uv binary found at /Users/wency/.local/bin/uv",
+    "Executable Python found at /opt/anaconda3/bin/python3.12",
+    "silero-vad imported, loaded, and inferred successfully in a fresh uv-managed environment",
+    "Selected WAV fixture is repo-local RIFF PCM mono 16000 Hz and required no ffmpeg fallback"
   ],
   "rejected_options": [
     {
-      "backend": "docker",
-      "reason": "Overkill for simple pip-installable package, no system-level dependencies beyond ffmpeg"
+      "backend": "pixi",
+      "reason": "No conda-only dependency or system package pressure remained after selecting the WAV fixture."
     },
     {
-      "backend": "pixi",
-      "reason": "No conda-specific requirements, uv handles pure Python packages more efficiently"
+      "backend": "docker",
+      "reason": "Heavier than necessary for a pure Python CPU-only minimal validation target."
     },
     {
       "backend": "api",
-      "reason": "Model supports local inference via pip package"
+      "reason": "The model exposes a local pip package callable path, so no remote service is needed."
     }
   ],
-  "evidence_conflicts": []
+  "evidence_conflicts": [
+    {
+      "field": "python_version",
+      "sources": [
+        {
+          "value": "3.10",
+          "source": "user_input.environment_hint",
+          "priority": 3
+        },
+        {
+          "value": "3.12",
+          "source": "runtime_preflight.command -v python3.12",
+          "priority": 1
+        }
+      ],
+      "chosen": "3.12",
+      "resolved": true,
+      "reason": "Python 3.10 was unavailable on PATH; Python 3.12 satisfied the package and runtime path successfully."
+    },
+    {
+      "field": "uv_path",
+      "sources": [
+        {
+          "value": "PATH lookup failed",
+          "source": "runtime_preflight.command -v uv",
+          "priority": 1
+        },
+        {
+          "value": "/Users/wency/.local/bin/uv",
+          "source": "home directory probe",
+          "priority": 1
+        }
+      ],
+      "chosen": "/Users/wency/.local/bin/uv",
+      "resolved": true,
+      "reason": "uv was not on PATH but was available as an executable home-local binary."
+    }
+  ]
 }

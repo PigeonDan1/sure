@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "model_id": "snakers4/silero-vad",
+  "whether_weights_required": true,
+  "source": "pip_package_internal_resource",
+  "package_name": "silero-vad",
+  "package_version_tested": "6.2.1",
+  "whether_model_artifact_is_package_internal": true,
+  "whether_model_artifact_is_downloaded": false,
+  "whether_model_artifact_is_torch_hub_cached": false,
+  "resolved_package_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/snakers4_silero-vad/.phase1_uv_env/lib/python3.12/site-packages/silero_vad",
+  "resolved_local_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/snakers4_silero-vad/.phase1_uv_env/lib/python3.12/site-packages/silero_vad/data/silero_vad.jit",
+  "model_file_locator": "importlib.resources.files('silero_vad.data').joinpath('silero_vad.jit')",
+  "cache_policy": "model_local_first",
+  "checksum": {
+    "algorithm": "sha256",
+    "value": "e1122837f4154c511485fe0b9c64455f7b929c96fbb8d79fbdb336383ebd3720"
+  },
+  "fallback_used": false,
+  "fallback_reason": null,
+  "fallback_path": null,
+  "torch_hub_used": false,
+  "torch_hub_cache_path": null,
+  "whether_repro_requires_network": true,
+  "offline_replay_supported": false
+}

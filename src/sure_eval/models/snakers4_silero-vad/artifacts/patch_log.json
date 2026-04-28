@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-04-28T12:47:38.333989+00:00",
+  "patches": [
+    {
+      "path": "src/sure_eval/models/snakers4_silero-vad/model.spec.yaml",
+      "kind": "model_local_spec_update",
+      "rationale": "Align the model spec with the required phase-1 callable path, fixture evidence, and contract fields."
+    },
+    {
+      "path": "src/sure_eval/models/snakers4_silero-vad/model.py",
+      "kind": "wrapper_update",
+      "rationale": "Expose a unified JSON schema and lazy CPU-only model wrapper after repo-native contract validation."
+    },
+    {
+      "path": "src/sure_eval/models/snakers4_silero-vad/server.py",
+      "kind": "server_update",
+      "rationale": "Route MCP calls through the updated minimal wrapper."
+    },
+    {
+      "path": "src/sure_eval/models/snakers4_silero-vad/__init__.py",
+      "kind": "export_update",
+      "rationale": "Re-export the updated wrapper and result types without heavy side effects."
+    },
+    {
+      "path": "src/sure_eval/models/snakers4_silero-vad/config.yaml",
+      "kind": "config_update",
+      "rationale": "Describe the CPU-only minimal wrapper and schema-facing tool behavior."
+    },
+    {
+      "path": "src/sure_eval/models/snakers4_silero-vad/setup.sh",
+      "kind": "setup_update",
+      "rationale": "Create a reproducible uv-based model-local environment with local cache and temp paths."
+    },
+    {
+      "path": "src/sure_eval/models/snakers4_silero-vad/artifacts/output_contract_check.py",
+      "kind": "artifact_script_add",
+      "rationale": "Provide an explicit contract validator that can be reused during repro replay."
+    },
+    {
+      "path": "src/sure_eval/models/snakers4_silero-vad/repro_bundle/minimal_repro_runner.py",
+      "kind": "repro_script_add",
+      "rationale": "Freeze the minimal callable path into a direct replay script for fresh-directory validation."
+    }
+  ],
+  "upstream_source_modified": false
+}

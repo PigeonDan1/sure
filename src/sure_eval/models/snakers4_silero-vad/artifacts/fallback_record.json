@@ -1,0 +1,36 @@
+{
+  "timestamp": "2026-04-28T12:47:38.333989+00:00",
+  "used": true,
+  "records": [
+    {
+      "type": "runtime_path_selection",
+      "reason": "uv was not on PATH",
+      "selected": "/Users/wency/.local/bin/uv",
+      "rejected": "PATH lookup for uv"
+    },
+    {
+      "type": "python_version_selection",
+      "reason": "python3.10 unavailable on PATH",
+      "selected": "/opt/anaconda3/bin/python3.12",
+      "rejected": "python3.10"
+    },
+    {
+      "type": "cache_path_redirect",
+      "reason": "Default ~/.cache/uv was not writable under sandbox",
+      "selected": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/snakers4_silero-vad/.runtime/uv-cache",
+      "rejected": "/Users/wency/.cache/uv"
+    },
+    {
+      "type": "network_escalation",
+      "reason": "Sandboxed dependency resolution failed with DNS errors against PyPI",
+      "selected": "escalated uv lock/sync with explicit approval",
+      "rejected": "blind retry without network access"
+    },
+    {
+      "type": "weights_fallback",
+      "reason": "not needed",
+      "selected": "package-internal silero_vad.jit",
+      "rejected": "torch.hub cache fallback"
+    }
+  ]
+}

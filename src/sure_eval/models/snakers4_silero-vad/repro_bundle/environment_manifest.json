@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "model_id": "snakers4/silero-vad",
+  "backend": "uv",
+  "python_version": "3.12.4",
+  "python_executable": "/opt/anaconda3/bin/python3.12",
+  "uv_executable": "/Users/wency/.local/bin/uv",
+  "env_creation_method": "uv sync --project <model dir> --python /opt/anaconda3/bin/python3.12 with UV_PROJECT_ENVIRONMENT set to a model-local path",
+  "dependency_installation_method": "uv lock + uv sync using the generated model-local uv.lock",
+  "resolved_dependency_versions": {
+    "silero-vad": "6.2.1",
+    "torch": "2.2.2",
+    "torchaudio": "2.2.2",
+    "soundfile": "0.13.1",
+    "numpy": "1.26.4"
+  },
+  "key_packages": {
+    "silero-vad": "6.2.1",
+    "torch": "2.2.2",
+    "torchaudio": "2.2.2",
+    "soundfile": "0.13.1",
+    "onnxruntime": null
+  },
+  "system_packages": [],
+  "whether_gpu_required": false,
+  "important_runtime_assumptions": [
+    "CPU-only execution.",
+    "16kHz mono WAV input.",
+    "Short audio fixture only.",
+    "No benchmark scoring.",
+    "No upstream training.",
+    "No external API."
+  ]
+}

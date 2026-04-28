@@ -1,6 +1,6 @@
 name: silero-vad
 task: vad
-description: "Silero Voice Activity Detection (VAD) model for speech segmentation"
+description: "Minimal CPU-only Silero Voice Activity Detection wrapper for SURE phase-1"
 
 model:
   id: "snakers4/silero-vad"
@@ -16,7 +16,7 @@ server:
 
 tools:
   - name: "vad_predict"
-    description: "Run Voice Activity Detection on an audio file"
+    description: "Run minimal VAD inference and return the unified JSON schema"
     input_schema:
       type: object
       properties:
@@ -25,7 +25,7 @@ tools:
           description: "Path to the audio file"
         sampling_rate:
           type: integer
-          description: "Target sampling rate (default: 16000)"
+          description: "Target sampling rate (default: 16000 Hz)"
           default: 16000
       required:
         - audio_path

@@ -1,15 +1,32 @@
 {
-  "timestamp": "2026-03-29T08:36:30Z",
+  "timestamp": "2026-04-28T12:47:38.333989+00:00",
   "model_id": "snakers4/silero-vad",
-  "retry_from": "BUILD_ENV",
-  "attempt": 3,
-  "max_retries": 3,
-  "change": {
-    "action": "switch_to_cpu_backend",
-    "packages": ["torch", "torchaudio"],
-    "index": "https://download.pytorch.org/whl/cpu",
-    "reason": "CUDA version mismatch with system libraries. Using CPU-only versions avoids cuDNN dependency issues."
-  },
-  "previous_failure": "cuda_version_mismatch",
-  "expected_outcome": "Model should load and run on CPU without CUDA library dependencies"
+  "checkpoint": "BUILD_ENV/EXPORT_REPRO_BUNDLE",
+  "retry_history": [
+    {
+      "attempt": 1,
+      "failure_type": "host_path_not_writable",
+      "change_applied": "Set UV_CACHE_DIR and TMPDIR under .runtime/.",
+      "result": "new failure type surfaced"
+    },
+    {
+      "attempt": 2,
+      "failure_type": "python_dependency_missing",
+      "change_applied": "Escalated uv lock/sync for network access.",
+      "result": "resolved"
+    },
+    {
+      "attempt": 3,
+      "failure_type": "env_path_mismatch",
+      "change_applied": "Pinned UV_PROJECT_ENVIRONMENT to an absolute model-local path.",
+      "result": "resolved"
+    },
+    {
+      "attempt": 4,
+      "failure_type": "lockfile_path_unresolved",
+      "change_applied": "Generated uv.lock from a model-local temporary lock project.",
+      "result": "resolved"
+    }
+  ],
+  "recommendation": "No further retry required; proceed with READY_LOCAL artifacts and repro export."
 }

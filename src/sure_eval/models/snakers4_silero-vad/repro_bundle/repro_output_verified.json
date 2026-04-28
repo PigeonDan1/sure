@@ -1,0 +1,16 @@
+{
+  "segments": [
+    {
+      "start": 0.5,
+      "end": 2.2
+    }
+  ],
+  "sample_rate": 16000,
+  "audio_path": "/private/tmp/silero_repro.BSiZZD/repro_bundle/fixtures/en_16k_10s.wav",
+  "audio_duration_sec": 2.35,
+  "model_backend": "silero_vad_pytorch_jit",
+  "error_code": null,
+  "package_version": "6.2.1",
+  "package_path": "/tmp/silero_repro.BSiZZD/repro_bundle/.repro_env/lib/python3.12/site-packages/silero_vad",
+  "model_file_path": "/tmp/silero_repro.BSiZZD/repro_bundle/.repro_env/lib/python3.12/site-packages/silero_vad/data/silero_vad.jit"
+}

@@ -1,17 +1,43 @@
 {
-  "timestamp": "2026-03-29T08:36:00Z",
+  "timestamp": "2026-04-28T12:47:38.333989+00:00",
   "model_id": "snakers4/silero-vad",
-  "checkpoint": "VALIDATE_INFER",
-  "failure_type": "cuda_version_mismatch",
-  "category": "dependency_version_mismatch",
-  "message": "torch 2.6+ requires cuDNN 9 (libcudnn.so.9) which is not available in the environment",
-  "evidence": {
-    "error_log": "ImportError: libcudnn.so.9: cannot open shared object file: No such file or directory",
-    "root_cause": "torchaudio<2.9 downgrade triggered torch downgrade which requires newer cuDNN"
-  },
-  "retryable": true,
-  "mitigation_options": [
-    "Use CPU-only versions of torch and torchaudio",
-    "Pin to specific torch/torchaudio versions compatible with system CUDA"
-  ]
+  "observed_failures": [
+    {
+      "checkpoint": "BUILD_ENV",
+      "failure_type": "host_path_not_writable",
+      "failure_category": "environment/sandbox",
+      "failure_reason": "uv could not create ~/.cache/uv inside the sandbox.",
+      "evidence": "error: Failed to initialize cache at /Users/wency/.cache/uv",
+      "mitigation": "Redirect UV_CACHE_DIR into src/sure_eval/models/snakers4_silero-vad/.runtime/uv-cache.",
+      "resolved": true
+    },
+    {
+      "checkpoint": "BUILD_ENV",
+      "failure_type": "python_dependency_missing",
+      "failure_category": "dependency/network",
+      "failure_reason": "Sandboxed uv lock failed to resolve PyPI packages because DNS/network access was blocked.",
+      "evidence": "Failed to fetch https://pypi.org/simple/meeteval/ due to dns error",
+      "mitigation": "Request escalated network access for uv lock/sync.",
+      "resolved": true
+    },
+    {
+      "checkpoint": "BUILD_ENV",
+      "failure_type": "env_path_mismatch",
+      "failure_category": "environment/path_resolution",
+      "failure_reason": "Relative UV_PROJECT_ENVIRONMENT resolved outside the model directory on the first sync.",
+      "evidence": "Creating virtual environment at: /Users/wency/Desktop/sjtu/SURE/sure/.phase1_uv_env",
+      "mitigation": "Re-run sync with an absolute model-local UV_PROJECT_ENVIRONMENT.",
+      "resolved": true
+    },
+    {
+      "checkpoint": "EXPORT_REPRO_BUNDLE",
+      "failure_type": "lockfile_path_unresolved",
+      "failure_category": "repro/lockfile",
+      "failure_reason": "uv workspace behavior wrote a lockfile to the workspace root instead of the model directory.",
+      "evidence": "find /Users/wency/Desktop/sjtu/SURE/sure -name uv.lock returned only the workspace-root lockfile",
+      "mitigation": "Generate a model-specific uv.lock from a model-local temporary lock project and copy it into the model directory.",
+      "resolved": true
+    }
+  ],
+  "final_failure_type": null
 }

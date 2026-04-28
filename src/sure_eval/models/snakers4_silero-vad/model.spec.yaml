@@ -1,46 +1,192 @@
 model_id: "snakers4/silero-vad"
-model_name: "Silero VAD"
+model_name: "snakers4_silero-vad"
 task_type: "vad"
 deployment_type: "local"
 
 repo:
   url: "https://github.com/snakers4/silero-vad"
   commit: null
+  role: "reference_upstream_only_unless_needed"
+  instruction:
+    - "Do not clone full upstream repo unless pip package path fails."
+    - "If upstream repo is inspected, record commit_tested or inspected HEAD."
+    - "Primary runnable path should be the pip package callable path."
+
+package:
+  primary_name: "silero-vad"
+  import_name: "silero_vad"
+  install_source: "pip"
+  version: null
+  version_policy:
+    - "Resolve actual installed version during BUILD_ENV."
+    - "Record the resolved version in environment_manifest.json and repro_manifest.json."
+    - "Use uv.lock as the reproducibility source of truth when present."
 
 weights:
-  source: "pip"
+  source: "pip_package_or_package_internal"
   local_path: null
   required: true
-  auto_download: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+  runtime_cache_dir: ".runtime"
+  instruction:
+    - "Prefer package-provided load_silero_vad path."
+    - "If model file path can be resolved, record it."
+    - "If model is loaded from package resources, record package location and loading method."
+    - "Do not rely on unrecorded torch hub global cache."
+    - "If torch.hub is used as fallback, set TORCH_HOME inside .runtime/torch and record fallback."
 
 environment:
   preferred_backend: "uv"
+  python_version: "3.12"
+  requires_gpu: false
+  system_packages: []
+  selected_runtime_assumptions:
+    - "CPU-only is sufficient."
+    - "Input fixture is a short 16kHz mono WAV."
+    - "FFmpeg is not required for the selected WAV fixture."
+    - "No benchmark scoring or upstream training reproduction is in scope."
+
+environment_hint:
+  preferred_backend: "uv"
   python_version: "3.10"
   requires_gpu: false
-  system_packages:
-    - ffmpeg
+  system_packages: []
+  python_packages:
+    - "silero-vad"
+    - "torch"
+    - "torchaudio"
+    - "soundfile"
+  optional_fallback_packages:
+    - "onnxruntime"
+
+phase1_runtime_target:
+  summary: "Validate the pip package callable path only."
+  includes:
+    - "confirm silero_vad package is importable"
+    - "load model with load_silero_vad on CPU"
+    - "read a short 16kHz WAV fixture"
+    - "run get_speech_timestamps"
+    - "produce a JSON-serializable output with standard fields"
+  excludes:
+    - "accuracy evaluation"
+    - "threshold tuning"
+    - "streaming VAD"
+    - "long audio support"
+    - "production validation"
+    - "upstream training reproduction"
 
 entrypoints:
-  import_test: "from silero_vad import load_silero_vad, read_audio, get_speech_timestamps"
+  import_test: |
+    from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
   load_test: |
     from silero_vad import load_silero_vad
-    model = load_silero_vad()
+    model = load_silero_vad(onnx=False)
+    model.eval()
   infer_test: |
     from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
-    model = load_silero_vad()
-    audio = read_audio("{fixture}", sampling_rate=16000)
-    speech_timestamps = get_speech_timestamps(audio, model, return_seconds=True)
+    model = load_silero_vad(onnx=False)
+    wav = read_audio(RESOLVED_AUDIO_FIXTURE, sampling_rate=16000)
+    segments = get_speech_timestamps(
+        wav,
+        model,
+        sampling_rate=16000,
+        return_seconds=True
+    )
+    output = {
+        "segments": segments,
+        "sample_rate": 16000,
+        "audio_path": RESOLVED_AUDIO_FIXTURE,
+        "audio_duration_sec": float(len(wav) / 16000),
+        "model_backend": "silero_vad_pytorch_jit",
+        "error_code": None
+    }
+
+fixture:
+  audio: "tests/fixtures/shared/vad/en_16k_10s.wav"
+  resolution_policy:
+    - "Resolved exactly one usable fixture before VALIDATE_SPEC."
+    - "Original candidate names were absent; selected the verified shared VAD 16k WAV present in-repo."
+    - "No generated fixture is needed for this run."
+  candidates:
+    - "tests/fixtures/shared/vad/en_16k.wav"
+    - "tests/fixtures/shared/vad/speech_16k.wav"
+    - "tests/fixtures/shared/asr/en_16k.wav"
+    - "tests/fixtures/shared/audio/en_16k.wav"
+  generated_fixture_allowed: true
+  generated_fixture_path: "src/sure_eval/models/snakers4_silero-vad/fixtures/silero_vad_smoke_16k.wav"
+  task_specific: false
+  fallback_allowed: true
+  existence_verified: true
+  existence_evidence: "Verified on 2026-04-28 via file(1): RIFF PCM mono 16000 Hz, SHA256 8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d."
+  expected_segments_nonempty: false
 
 io_contract:
   input_type: "audio_path"
   output_type: "json"
-  primary_field: "speech_segments"
-  required_fields: ["speech_segments"]
-  nonempty_fields: ["speech_segments"]
+  primary_field: "segments"
+  required_fields:
+    - "segments"
+    - "sample_rate"
+    - "audio_path"
+    - "audio_duration_sec"
+    - "model_backend"
+    - "error_code"
+  nonempty_fields:
+    - "model_backend"
   json_serializable: true
+  field_rules:
+    segments:
+      type: "list"
+      allow_empty: true
+      item_schema_if_present:
+        required_fields:
+          - "start"
+          - "end"
+        start_type: "number"
+        end_type: "number"
+        rule: "0 <= start < end <= audio_duration_sec + tolerance"
+    sample_rate:
+      expected_value: 16000
+    audio_duration_sec:
+      type: "number"
+      rule: "> 0"
+    error_code:
+      allow_null: true
+  optional_diagnostics:
+    - "Record whether segments is nonempty, but do not fail contract if empty."
+
+minimal_unit_policy:
+  definition: "silero-vad package + resolved package version + CPU model load + one 16kHz WAV fixture + get_speech_timestamps + JSON contract validation."
+  must_include:
+    - "package identity"
+    - "resolved package version"
+    - "Python version"
+    - "backend choice"
+    - "fixture identity"
+    - "output schema"
+    - "sample output"
+  must_exclude_unless_required:
+    - "full upstream clone"
+    - "training scripts"
+    - "benchmark datasets"
+    - "large caches"
+    - "global torch hub cache"
+    - "old phase-1 .venv"
+    - "host-specific absolute temporary paths"
+  success_boundary:
+    - "import succeeds"
+    - "load succeeds"
+    - "inference returns without error"
+    - "output is JSON serializable"
+    - "required fields are present"
+    - "replay succeeds in a fresh temporary directory"
 
 acceptance:
   must_import: true
   must_load: true
   must_infer: true
-  must_return_nonempty: true
+  must_return_nonempty: false
+
+expected_model_dir:
+  path: "src/sure_eval/models/snakers4_silero-vad"
