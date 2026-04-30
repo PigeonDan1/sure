@@ -4,12 +4,20 @@ import json
 import sys
 from typing import Any
 
-from model import InferenceError, ModelLoadError, ModelWrapper
+try:
+    from .model import InferenceError, ModelLoadError, ModelWrapper
+except ImportError:
+    from model import InferenceError, ModelLoadError, ModelWrapper
 
 
 class MCPServer:
-    def __init__(self):
-        self.model = ModelWrapper()
+    def __init__(self) -> None:
+        self._wrapper: ModelWrapper | None = None
+
+    def _get_wrapper(self) -> ModelWrapper:
+        if self._wrapper is None:
+            self._wrapper = ModelWrapper()
+        return self._wrapper
 
     def handle_initialize(self, request: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -33,9 +41,7 @@ class MCPServer:
                         "description": "Run WhisperX transcription on an audio file",
                         "inputSchema": {
                             "type": "object",
-                            "properties": {
-                                "audio_path": {"type": "string"}
-                            },
+                            "properties": {"audio_path": {"type": "string"}},
                             "required": ["audio_path"],
                         },
                     },
@@ -56,12 +62,18 @@ class MCPServer:
         try:
             if name == "transcribe_audio":
                 audio_path = arguments.get("audio_path")
-                result = self.model.predict(audio_path)
-                return self._result_response(request.get("id"), result)
+                if not audio_path:
+                    raise ValueError("audio_path is required")
+                payload = self._get_wrapper().transcribe(
+                    audio_path,
+                    language=arguments.get("language"),
+                    return_timestamps=True,
+                ).to_dict()
+                return self._result_response(request.get("id"), payload)
             if name == "healthcheck":
-                return self._result_response(request.get("id"), self.model.healthcheck())
+                return self._result_response(request.get("id"), self._get_wrapper().healthcheck())
             return self._error_response(request.get("id"), -32601, f"Unknown tool: {name}")
-        except (ModelLoadError, InferenceError) as exc:
+        except (ModelLoadError, InferenceError, ValueError, FileNotFoundError) as exc:
             return self._error_response(request.get("id"), -32000, str(exc))
 
     def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
@@ -74,6 +86,8 @@ class MCPServer:
             return self.handle_tools_call(request)
         if method == "notifications/initialized":
             return None
+        if method == "shutdown":
+            return {"jsonrpc": "2.0", "id": request.get("id"), "result": {}}
         return self._error_response(request.get("id"), -32601, f"Method not found: {method}")
 
     def run(self) -> None:
@@ -85,15 +99,25 @@ class MCPServer:
                 request = json.loads(line)
                 response = self.handle_request(request)
                 if response is not None:
-                    print(json.dumps(response), flush=True)
+                    sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+                    sys.stdout.flush()
             except json.JSONDecodeError as exc:
-                print(json.dumps(self._error_response(None, -32700, f"Parse error: {exc}")), flush=True)
+                sys.stdout.write(
+                    json.dumps(
+                        self._error_response(None, -32700, f"Parse error: {exc}"),
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+                sys.stdout.flush()
 
     def _result_response(self, request_id: Any, payload: dict[str, Any]) -> dict[str, Any]:
         return {
             "jsonrpc": "2.0",
             "id": request_id,
-            "result": {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]},
+            "result": {
+                "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]
+            },
         }
 
     def _error_response(self, request_id: Any, code: int, message: str) -> dict[str, Any]:

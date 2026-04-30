@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
 
@@ -60,19 +61,20 @@ class ASRParakeetServer:
         """Lazy load model."""
         if self._model is not None:
             return
-        
-        try:
-            from model import ASRParakeetModel
-        except ImportError:
-            # Try relative import
-            sys.path.insert(0, str(Path(__file__).parent))
-            from model import ASRParakeetModel
-        
-        print(f"Loading Parakeet model: {self._model_path}", file=sys.stderr)
-        self._model = ASRParakeetModel(
-            model_path=self._model_path,
-            device=self._device,
-        )
+
+        with redirect_stdout(sys.stderr):
+            try:
+                from model import ASRParakeetModel
+            except ImportError:
+                # Try relative import
+                sys.path.insert(0, str(Path(__file__).parent))
+                from model import ASRParakeetModel
+
+            print(f"Loading Parakeet model: {self._model_path}", file=sys.stderr)
+            self._model = ASRParakeetModel(
+                model_path=self._model_path,
+                device=self._device,
+            )
         print("Model loaded", file=sys.stderr)
     
     def run(self) -> None:
@@ -184,12 +186,13 @@ class ASRParakeetServer:
         
         print(f"Transcribing: {audio_path} (language={language}, timestamps={return_timestamps})", 
               file=sys.stderr)
-        
-        result = self._model.transcribe(
-            audio_path,
-            language=language if language != "auto" else None,
-            return_timestamps=return_timestamps,
-        )
+
+        with redirect_stdout(sys.stderr):
+            result = self._model.transcribe(
+                audio_path,
+                language=language if language != "auto" else None,
+                return_timestamps=return_timestamps,
+            )
         
         return {
             "content": [{"type": "text", "text": result.text}],

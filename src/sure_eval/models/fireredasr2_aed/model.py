@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import sys
 from dataclasses import asdict, dataclass
@@ -13,6 +14,17 @@ class ModelLoadError(RuntimeError):
 
 class InferenceError(RuntimeError):
     pass
+
+
+@dataclass
+class TranscriptionResult:
+    text: str
+    language: str | None = None
+    timestamps: list[dict[str, Any]] | None = None
+
+    def __post_init__(self) -> None:
+        if not self.text or not self.text.strip():
+            raise ValueError("text must be non-empty")
 
 
 @dataclass
@@ -35,14 +47,24 @@ class FireRedASR2AEDResult:
 class ModelWrapper:
     """Thin wrapper around the validated standalone FireRedAsr2 AED path."""
 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        model_path: str | None = None,
+        device: str = "auto",
+        config: dict[str, Any] | None = None,
+    ) -> None:
         self.config = config or {}
         self.model_root = Path(__file__).resolve().parent
         self.upstream_root = Path(self.config.get("upstream_root", self.model_root / "upstream" / "FireRedASR2S"))
-        self.weights_dir = Path(
-            self.config.get("weights_dir", self.model_root / "pretrained_models" / "FireRedASR2-AED")
+        model_path_candidate = Path(model_path).expanduser() if model_path else None
+        weights_dir_value = (
+            str(model_path_candidate)
+            if model_path_candidate is not None and model_path_candidate.exists()
+            else self.config.get("weights_dir") or (self.model_root / "pretrained_models" / "FireRedASR2-AED")
         )
-        self.use_gpu = bool(self.config.get("use_gpu", False))
+        self.weights_dir = Path(weights_dir_value)
+        requested_device = (device or "auto").lower()
+        self.use_gpu = bool(self.config.get("use_gpu", requested_device == "cuda"))
         self.use_half = bool(self.config.get("use_half", False))
         self._model = None
         self._import_ready = False
@@ -62,20 +84,21 @@ class ModelWrapper:
         if not self.weights_dir.exists():
             raise ModelLoadError(f"Weights directory not found: {self.weights_dir}")
         try:
-            from fireredasr2s.fireredasr2 import FireRedAsr2, FireRedAsr2Config
+            with contextlib.redirect_stdout(sys.stderr):
+                from fireredasr2s.fireredasr2 import FireRedAsr2, FireRedAsr2Config
 
-            asr_config = FireRedAsr2Config(
-                use_gpu=self.use_gpu,
-                use_half=self.use_half,
-                beam_size=int(self.config.get("beam_size", 3)),
-                nbest=int(self.config.get("nbest", 1)),
-                decode_max_len=int(self.config.get("decode_max_len", 0)),
-                softmax_smoothing=float(self.config.get("softmax_smoothing", 1.25)),
-                aed_length_penalty=float(self.config.get("aed_length_penalty", 0.6)),
-                eos_penalty=float(self.config.get("eos_penalty", 1.0)),
-                return_timestamp=bool(self.config.get("return_timestamp", False)),
-            )
-            self._model = FireRedAsr2.from_pretrained("aed", str(self.weights_dir), asr_config)
+                asr_config = FireRedAsr2Config(
+                    use_gpu=self.use_gpu,
+                    use_half=self.use_half,
+                    beam_size=int(self.config.get("beam_size", 3)),
+                    nbest=int(self.config.get("nbest", 1)),
+                    decode_max_len=int(self.config.get("decode_max_len", 0)),
+                    softmax_smoothing=float(self.config.get("softmax_smoothing", 1.25)),
+                    aed_length_penalty=float(self.config.get("aed_length_penalty", 0.6)),
+                    eos_penalty=float(self.config.get("eos_penalty", 1.0)),
+                    return_timestamp=bool(self.config.get("return_timestamp", False)),
+                )
+                self._model = FireRedAsr2.from_pretrained("aed", str(self.weights_dir), asr_config)
         except Exception as exc:
             raise ModelLoadError(f"Failed to load FireRedASR2-AED: {exc}") from exc
 
@@ -87,7 +110,8 @@ class ModelWrapper:
             raise InferenceError(f"Input audio not found: {audio_path}")
         try:
             uttid = audio_path.stem
-            outputs = self._model.transcribe([uttid], [str(audio_path)])
+            with contextlib.redirect_stdout(sys.stderr):
+                outputs = self._model.transcribe([uttid], [str(audio_path)])
             if not isinstance(outputs, list) or len(outputs) != 1 or not isinstance(outputs[0], dict):
                 raise InferenceError("Unexpected FireRedASR2-AED output shape")
             payload = outputs[0]
@@ -104,6 +128,20 @@ class ModelWrapper:
             raise
         except Exception as exc:
             raise InferenceError(f"FireRedASR2-AED inference failed: {exc}") from exc
+
+    def transcribe(
+        self,
+        audio_path: str | Path,
+        language: str | None = None,
+        return_timestamps: bool = False,
+    ) -> TranscriptionResult:
+        del language, return_timestamps
+        result = self.predict(audio_path)
+        return TranscriptionResult(
+            text=result["text"],
+            language=None,
+            timestamps=[],
+        )
 
     def healthcheck(self) -> dict[str, Any]:
         return {

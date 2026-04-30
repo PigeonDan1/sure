@@ -6,7 +6,9 @@ Simple wrapper for OpenAI Whisper model.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,9 +64,10 @@ class ASRWhisperModel:
             device = self.device
         
         # Load model - whisper will auto-download if needed
-        print(f"Loading Whisper model: {self.model_path}")
-        self._model = whisper.load_model(self.model_path, device=device)
-        print(f"Model loaded on {device}")
+        print(f"Loading Whisper model: {self.model_path}", file=sys.stderr)
+        with contextlib.redirect_stdout(sys.stderr):
+            self._model = whisper.load_model(self.model_path, device=device)
+        print(f"Model loaded on {device}", file=sys.stderr)
     
     def transcribe(
         self,
@@ -108,7 +111,8 @@ class ASRWhisperModel:
             options["language"] = lang_code
         
         # Transcribe
-        result = self._model.transcribe(str(audio_path), **options)
+        with contextlib.redirect_stdout(sys.stderr):
+            result = self._model.transcribe(str(audio_path), **options)
         
         text = result.get("text", "").strip()
         detected_language = result.get("language")

@@ -47,17 +47,17 @@ class MCPServer:
                             "properties": {
                                 "audio_path": {
                                     "type": "string",
-                                    "description": "Path to the audio file to transcribe."
+                                    "description": "Path to the audio file to transcribe.",
                                 }
                             },
-                            "required": ["audio_path"]
-                        }
+                            "required": ["audio_path"],
+                        },
                     },
                     {
                         "name": "healthcheck",
                         "description": "Return wrapper readiness and runtime metadata.",
-                        "inputSchema": {"type": "object", "properties": {}}
-                    }
+                        "inputSchema": {"type": "object", "properties": {}},
+                    },
                 ]
             },
         }
@@ -72,7 +72,11 @@ class MCPServer:
                 audio_path = arguments.get("audio_path")
                 if not audio_path:
                     raise ValueError("audio_path is required")
-                result = self._get_wrapper().predict(audio_path).to_dict()
+                result = self._get_wrapper().transcribe(
+                    audio_path,
+                    language=arguments.get("language"),
+                    return_timestamps=True,
+                ).to_dict()
             elif tool_name == "healthcheck":
                 result = self._get_wrapper().healthcheck()
             else:
@@ -80,16 +84,20 @@ class MCPServer:
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
-                "result": {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]},
+                "result": {
+                    "content": [
+                        {"type": "text", "text": json.dumps(result, ensure_ascii=False)}
+                    ]
+                },
             }
-        except (InferenceError, ModelLoadError, ValueError) as exc:
+        except (InferenceError, ModelLoadError, ValueError, FileNotFoundError) as exc:
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "error": {"code": -32000, "message": str(exc)},
             }
 
-    def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
+    def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
         method = request.get("method")
         if method == "initialize":
             return self.handle_initialize(request)
@@ -97,6 +105,10 @@ class MCPServer:
             return self.handle_tools_list(request)
         if method == "tools/call":
             return self.handle_tools_call(request)
+        if method == "notifications/initialized":
+            return None
+        if method == "shutdown":
+            return {"jsonrpc": "2.0", "id": request.get("id"), "result": {}}
         return {
             "jsonrpc": "2.0",
             "id": request.get("id"),
@@ -108,8 +120,19 @@ class MCPServer:
             line = line.strip()
             if not line:
                 continue
-            response = self.handle_request(json.loads(line))
-            print(json.dumps(response, ensure_ascii=False), flush=True)
+            try:
+                response = self.handle_request(json.loads(line))
+                if response is not None:
+                    sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+                    sys.stdout.flush()
+            except json.JSONDecodeError as exc:
+                error = {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32700, "message": f"Parse error: {exc}"},
+                }
+                sys.stdout.write(json.dumps(error, ensure_ascii=False) + "\n")
+                sys.stdout.flush()
 
 
 if __name__ == "__main__":

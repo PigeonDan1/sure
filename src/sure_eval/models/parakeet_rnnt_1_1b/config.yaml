@@ -8,7 +8,7 @@ model:
   device: cpu
 
 server:
-  command: ["python", "server.py"]
+  command: [".venv/bin/python", "server.py"]
   env:
     MODEL_ID: nvidia/parakeet-rnnt-1.1b
     DEVICE: cpu

@@ -9,7 +9,7 @@ model:
   languages: ["multilingual"]
 
 server:
-  command: ["python", "server.py"]
+  command: [".venv/bin/python", "server.py"]
   working_dir: "."
   env:
     MODEL_ARCH: "small"

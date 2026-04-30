@@ -9,7 +9,9 @@ Model: https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2
 
 from __future__ import annotations
 
+import contextlib
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -52,38 +54,39 @@ class ASRParakeetModel:
         """Lazy load the model."""
         if self._model is not None:
             return
-        
-        try:
-            import nemo.collections.asr as nemo_asr
-            import torch
-        except ImportError as e:
-            raise RuntimeError(
-                f"Required package not installed: {e}. "
-                "Run: pip install nemo-toolkit[asr] torch"
+
+        with contextlib.redirect_stdout(sys.stderr):
+            try:
+                import nemo.collections.asr as nemo_asr
+                import torch
+            except ImportError as e:
+                raise RuntimeError(
+                    f"Required package not installed: {e}. "
+                    "Run: pip install nemo-toolkit[asr] torch"
+                )
+
+            # Determine device
+            if self.device == "auto":
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            else:
+                device = self.device
+
+            print(f"Loading Parakeet model: {self.model_path}", file=sys.stderr)
+            print(f"Device: {device}", file=sys.stderr)
+
+            # Load model using NeMo
+            self._model = nemo_asr.models.ASRModel.from_pretrained(
+                model_name=self.model_path,
             )
-        
-        # Determine device
-        if self.device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            device = self.device
-        
-        print(f"Loading Parakeet model: {self.model_path}")
-        print(f"Device: {device}")
-        
-        # Load model using NeMo
-        self._model = nemo_asr.models.ASRModel.from_pretrained(
-            model_name=self.model_path,
-        )
-        
-        # Move to device
-        if device == "cuda" and torch.cuda.is_available():
-            self._model = self._model.to("cuda")
-            # Use bfloat16 for better performance on modern GPUs
-            if torch.cuda.is_bf16_supported():
-                self._model = self._model.to(torch.bfloat16)
-        
-        print("Model loaded successfully")
+
+            # Move to device
+            if device == "cuda" and torch.cuda.is_available():
+                self._model = self._model.to("cuda")
+                # Use bfloat16 for better performance on modern GPUs
+                if torch.cuda.is_bf16_supported():
+                    self._model = self._model.to(torch.bfloat16)
+
+            print("Model loaded successfully", file=sys.stderr)
     
     def transcribe(
         self,
@@ -103,7 +106,8 @@ class ASRParakeetModel:
         Returns:
             TranscriptionResult with text and optional timestamps
         """
-        self._load_model()
+        with contextlib.redirect_stdout(sys.stderr):
+            self._load_model()
         
         audio_path = Path(audio_path)
         if not audio_path.exists():
@@ -111,10 +115,11 @@ class ASRParakeetModel:
         
         # Transcribe using NeMo
         # Output is a list of Hypothesis objects
-        outputs = self._model.transcribe(
-            [str(audio_path)],
-            timestamps=return_timestamps,
-        )
+        with contextlib.redirect_stdout(sys.stderr):
+            outputs = self._model.transcribe(
+                [str(audio_path)],
+                timestamps=return_timestamps,
+            )
         
         if not outputs:
             return TranscriptionResult(text="")
