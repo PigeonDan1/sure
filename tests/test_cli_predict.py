@@ -50,8 +50,10 @@ def _install_structlog_stub() -> None:
 _install_structlog_stub()
 
 from sure_eval.cli import app  # noqa: E402
+from sure_eval.inference.adapters import create_predict_adapter  # noqa: E402
 from sure_eval.inference.language import canonicalize_language, map_language_for_model  # noqa: E402
 from sure_eval.inference.runner import get_runtime_readiness, _resolve_runtime_command  # noqa: E402
+from sure_eval.inference.errors import AdapterError  # noqa: E402
 from sure_eval.models.registry import ModelRegistry  # noqa: E402
 
 
@@ -346,3 +348,35 @@ def test_unsupported_language_produces_structured_error(monkeypatch, tmp_path: P
 
 def test_asr_whisper_uses_default_language_mapping() -> None:
     assert map_language_for_model(model_name="asr_whisper", language="en") == "en"
+
+
+def test_predict_adapter_selection_covers_asr_utility_and_music_ir() -> None:
+    registry = ModelRegistry()
+    asr_model = registry.get_model("asr_qwen3")
+    ffmpeg_model = registry.get_model("ffmpeg")
+    librosa_model = registry.get_model("librosa")
+    assert asr_model is not None
+    assert ffmpeg_model is not None
+    assert librosa_model is not None
+
+    asr_adapter = create_predict_adapter(asr_model, task="asr")
+    utility_adapter = create_predict_adapter(ffmpeg_model, task="utility")
+    music_ir_adapter = create_predict_adapter(librosa_model, task="music_ir")
+
+    assert asr_adapter.runtime_protocol == "python_wrapper_transcribe"
+    assert utility_adapter.runtime_protocol == "mcp_tool_call"
+    assert utility_adapter.tool_name == "process_audio"
+    assert music_ir_adapter.runtime_protocol == "mcp_tool_call"
+    assert music_ir_adapter.tool_name == "extract_mfcc"
+
+
+def test_predict_adapter_unsupported_task_uses_task_adapter_code() -> None:
+    model = ModelRegistry().get_model("librosa")
+    assert model is not None
+
+    try:
+        create_predict_adapter(model, task="vad")
+    except AdapterError as exc:
+        assert exc.code == "unsupported_task_adapter"
+    else:  # pragma: no cover
+        raise AssertionError("expected AdapterError")

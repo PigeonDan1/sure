@@ -25,6 +25,18 @@ def _ensure_string(value: Any, *, field: str) -> str:
     return value
 
 
+def _ensure_integer(value: Any, *, field: str) -> int:
+    if not isinstance(value, int):
+        raise SchemaValidationError(f"Field '{field}' must be an integer.")
+    return value
+
+
+def _ensure_number(value: Any, *, field: str) -> int | float:
+    if not isinstance(value, (int, float)):
+        raise SchemaValidationError(f"Field '{field}' must be a number.")
+    return value
+
+
 def ensure_json_serializable(value: Any) -> None:
     try:
         json.dumps(value, ensure_ascii=False)
@@ -51,13 +63,34 @@ def validate_input_record(
         )
 
     input_payload = _ensure_mapping(row.get("input"), field="input")
-    audio_path = _ensure_string(input_payload.get("audio_path"), field="input.audio_path")
-    if not audio_path:
-        raise SchemaValidationError("Field 'input.audio_path' must not be empty.")
+    task_key = task.lower()
+    if task_key == "asr":
+        audio_path = _ensure_string(input_payload.get("audio_path"), field="input.audio_path")
+        if not audio_path:
+            raise SchemaValidationError("Field 'input.audio_path' must not be empty.")
 
-    sample_rate = input_payload.get("sample_rate")
-    if not isinstance(sample_rate, int):
-        raise SchemaValidationError("Field 'input.sample_rate' must be an integer.")
+        sample_rate = _ensure_integer(input_payload.get("sample_rate"), field="input.sample_rate")
+        if sample_rate <= 0:
+            raise SchemaValidationError("Field 'input.sample_rate' must be positive.")
+    elif task_key == "utility":
+        input_path = _ensure_string(input_payload.get("input_path"), field="input.input_path")
+        output_path = _ensure_string(input_payload.get("output_path"), field="input.output_path")
+        if not input_path:
+            raise SchemaValidationError("Field 'input.input_path' must not be empty.")
+        if not output_path:
+            raise SchemaValidationError("Field 'input.output_path' must not be empty.")
+        for field in ("sample_rate", "channels"):
+            if field in input_payload:
+                value = _ensure_integer(input_payload.get(field), field=f"input.{field}")
+                if value <= 0:
+                    raise SchemaValidationError(f"Field 'input.{field}' must be positive.")
+        for field in ("duration", "start_time"):
+            if field in input_payload:
+                _ensure_number(input_payload.get(field), field=f"input.{field}")
+    elif task_key == "music_ir":
+        audio_path = _ensure_string(input_payload.get("audio_path"), field="input.audio_path")
+        if not audio_path:
+            raise SchemaValidationError("Field 'input.audio_path' must not be empty.")
 
     request = row.get("request", {})
     if request is None:
@@ -101,7 +134,8 @@ def validate_prediction_record(record: Any) -> dict[str, Any]:
         if row["error"] is not None:
             raise SchemaValidationError("Field 'error' must be null when status='ok'.")
         prediction = _ensure_mapping(row["prediction"], field="prediction")
-        _ensure_string(prediction.get("text"), field="prediction.text")
+        if row["task"].lower() == "asr":
+            _ensure_string(prediction.get("text"), field="prediction.text")
     else:
         error = _ensure_mapping(row["error"], field="error")
         _ensure_string(error.get("code"), field="error.code")

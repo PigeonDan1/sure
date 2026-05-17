@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from sure_eval.inference.adapters import create_predict_adapter
+from sure_eval.inference.adapters import PredictAdapter, create_predict_adapter
 from sure_eval.inference.errors import AdapterError, InferenceSurfaceError, SchemaValidationError
 from sure_eval.inference.language import map_language_for_model
 from sure_eval.inference.schemas import (
@@ -136,6 +136,7 @@ def _action_hint_for_failure(
         "runtime_launch_failed": "Inspect the model-local runtime stderr and fix launch-time failures.",
         "unsupported_runtime_protocol": "This model/task pair needs tool onboarding to define a supported runtime protocol.",
         "unsupported_task": "Predict v1 currently supports only the implemented task adapters.",
+        "unsupported_task_adapter": "Predict v1 currently supports only the implemented task adapters.",
         "task_mismatch": "Use a model whose registered task matches the requested predict task.",
         "unknown_runtime_error": "Inspect stderr/logs from the model-local runtime for the root cause.",
     }
@@ -358,6 +359,8 @@ def _classify_runtime_failure_text(details: str) -> str:
     lower = details.lower()
     if "unsupported_runtime_protocol" in lower:
         return "unsupported_runtime_protocol"
+    if "unsupported_task_adapter" in lower:
+        return "unsupported_task_adapter"
     if "no module named" in lower or "not installed" in lower:
         return "dependency_missing"
     if "audio file not found" in lower or "fixture" in lower:
@@ -564,6 +567,145 @@ print(json.dumps(output, ensure_ascii=False))
     return prediction
 
 
+def _resolve_record_path(value: str) -> str:
+    return str(Path(value).expanduser().resolve())
+
+
+def _build_tool_arguments(adapter: PredictAdapter, record: dict[str, Any]) -> dict[str, Any]:
+    payload = record["input"]
+    if adapter.tool_name == "process_audio":
+        arguments = {
+            "input_path": _resolve_record_path(payload["input_path"]),
+            "output_path": _resolve_record_path(payload["output_path"]),
+        }
+        for field in ("sample_rate", "channels", "duration", "start_time"):
+            if field in payload:
+                arguments[field] = payload[field]
+        return arguments
+    if adapter.tool_name == "extract_mfcc":
+        return {"audio_path": _resolve_record_path(payload["audio_path"])}
+    raise AdapterError(
+        f"Unsupported task adapter tool: {adapter.tool_name}",
+        code="unsupported_task_adapter",
+    )
+
+
+def _extract_tool_prediction(response: dict[str, Any]) -> dict[str, Any]:
+    if response.get("error") is not None:
+        error = response["error"]
+        if isinstance(error, dict):
+            raise AdapterError(str(error.get("message") or error), code="runtime_launch_failed")
+        raise AdapterError(str(error), code="runtime_launch_failed")
+
+    result = response.get("result")
+    if not isinstance(result, dict):
+        raise InferenceSurfaceError("Model-local tool response missing result object.")
+    content = result.get("content")
+    if not isinstance(content, list) or not content:
+        raise InferenceSurfaceError("Model-local tool response missing content.")
+    first = content[0]
+    if not isinstance(first, dict):
+        raise InferenceSurfaceError("Model-local tool response content must be an object.")
+    text = first.get("text")
+    if not isinstance(text, str) or not text:
+        raise InferenceSurfaceError("Model-local tool response content text must be non-empty.")
+    try:
+        prediction = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise InferenceSurfaceError(f"Model-local tool returned invalid JSON text: {text}") from exc
+    if not isinstance(prediction, dict):
+        raise InferenceSurfaceError("Model-local tool JSON text must decode to an object.")
+    return prediction
+
+
+def _run_mcp_tool_subprocess(
+    *,
+    model_info: ModelInfo,
+    adapter: PredictAdapter,
+    runtime_command: list[str],
+    working_dir: Path,
+    env: dict[str, str],
+    record: dict[str, Any],
+) -> dict[str, Any]:
+    """Run one prediction through a model-local MCP-style tools/call server."""
+    if not runtime_command:
+        raise InferenceSurfaceError("Resolved runtime command is empty.")
+    if not adapter.tool_name:
+        raise AdapterError("Task adapter is missing a tool name.", code="unsupported_task_adapter")
+
+    child_env = env.copy()
+    payload = {
+        "model_dir": str(model_info.path.resolve()),
+        "server_file": str((model_info.path / "server.py").resolve()),
+        "module_name": f"sure_eval_predict_tool_{model_info.name}",
+        "tool_name": adapter.tool_name,
+        "arguments": _build_tool_arguments(adapter, record),
+    }
+    script = """
+import importlib.util
+import json
+import pathlib
+import sys
+import types
+
+payload = json.loads(sys.stdin.read())
+model_dir = pathlib.Path(payload["model_dir"])
+server_file = pathlib.Path(payload["server_file"])
+package_name = payload["module_name"]
+package = types.ModuleType(package_name)
+package.__path__ = [str(model_dir)]
+sys.modules[package_name] = package
+spec = importlib.util.spec_from_file_location(f"{package_name}.server", server_file)
+if spec is None or spec.loader is None:
+    raise RuntimeError(f"Could not load model-local server module from {server_file}")
+module = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
+server_cls = getattr(module, "MCPServer", None)
+if server_cls is None:
+    raise RuntimeError("unsupported_runtime_protocol: no MCPServer class found")
+server = server_cls()
+server.handle_request({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+response = server.handle_request({
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+        "name": payload["tool_name"],
+        "arguments": payload["arguments"],
+    },
+})
+print(json.dumps(response, ensure_ascii=False))
+""".strip()
+
+    completed = subprocess.run(
+        [runtime_command[0], "-c", script],
+        cwd=working_dir,
+        env=child_env,
+        input=json.dumps(payload, ensure_ascii=False),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    stdout_lines = [line for line in completed.stdout.splitlines() if line.strip()]
+    if completed.returncode != 0:
+        details = completed.stderr.strip() or completed.stdout.strip() or (
+            f"child process exited with code {completed.returncode}"
+        )
+        raise AdapterError(details, code=_classify_runtime_failure_text(details))
+    if not stdout_lines:
+        details = completed.stderr.strip() or completed.stdout.strip() or "Model-local tool produced no response."
+        raise InferenceSurfaceError(details)
+
+    try:
+        response = json.loads(stdout_lines[-1])
+    except json.JSONDecodeError as exc:
+        raise InferenceSurfaceError(
+            f"Model-local tool returned invalid JSON-RPC response: {stdout_lines[-1]}"
+        ) from exc
+    return _extract_tool_prediction(response)
+
+
 def dry_run_prediction_job(
     *,
     model_info: ModelInfo,
@@ -715,19 +857,34 @@ def run_prediction_job(
             try:
                 if adapter_error is not None:
                     raise adapter_error
-                if adapter is None or adapter.runtime_protocol != "python_wrapper_transcribe":
+                if adapter is None:
                     raise AdapterError(
                         f"Model '{model_info.name}' does not expose a supported runtime protocol for task '{task}'.",
                         code="unsupported_runtime_protocol",
                     )
-                prediction = _run_asr_subprocess(
-                    model_info=model_info,
-                    runtime_command=runtime_command,
-                    working_dir=working_dir,
-                    env=env,
-                    record=record,
-                    device=device,
-                )
+                if adapter.runtime_protocol == "python_wrapper_transcribe":
+                    prediction = _run_asr_subprocess(
+                        model_info=model_info,
+                        runtime_command=runtime_command,
+                        working_dir=working_dir,
+                        env=env,
+                        record=record,
+                        device=device,
+                    )
+                elif adapter.runtime_protocol == "mcp_tool_call":
+                    prediction = _run_mcp_tool_subprocess(
+                        model_info=model_info,
+                        adapter=adapter,
+                        runtime_command=runtime_command,
+                        working_dir=working_dir,
+                        env=env,
+                        record=record,
+                    )
+                else:
+                    raise AdapterError(
+                        f"Unsupported runtime protocol: {adapter.runtime_protocol}",
+                        code="unsupported_runtime_protocol",
+                    )
                 latency_ms = int((perf_counter() - started) * 1000)
                 output_record = _build_prediction_record(
                     model_name=model_info.name,

@@ -35,7 +35,7 @@ class ModelWrapper:
         self.model_dir = Path(__file__).resolve().parent
         self.repo_root = self.model_dir.parents[3]
         self.python_bin = Path(
-            self.config.get("python_bin", self.model_dir / ".venv-phase1" / "bin" / "python")
+            self.config.get("python_bin", self.model_dir / ".venv" / "bin" / "python")
         )
         self.default_fixture = Path(
             self.config.get(
@@ -108,4 +108,3 @@ class ModelWrapper:
 
 def contract_result_to_json(result: FeatureExtractionResult) -> str:
     return json.dumps(result.to_dict(), ensure_ascii=False)
-umps(result.to_dict())
