@@ -177,15 +177,7 @@ class DiariZenServer:
         except Exception as e:
             error_msg = str(e)
             print(f"Tool execution error: {error_msg}", file=sys.stderr)
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "content": [{"type": "text", "text": f"Error: {error_msg}"}],
-                    "isError": True,
-                    "error": error_msg
-                }
-            }
+            return self._error_response(request_id, -32000, error_msg)
     
     def _execute_tool(self, tool_name: str, arguments: dict) -> dict[str, Any]:
         """Execute a tool."""
@@ -217,17 +209,17 @@ class DiariZenServer:
             max_speakers=max_speakers,
         )
         
-        # Format output
-        segments_text = []
-        for seg in result.segments:
-            segments_text.append(f"{seg.start:.1f}s - {seg.end:.1f}s: Speaker {seg.speaker}")
-        
-        output_text = f"Detected {result.num_speakers} speakers\n\n"
-        output_text += "Segments:\n" + "\n".join(segments_text)
-        output_text += "\n\nRTTM format:\n" + result.rttm
+        payload = {
+            "num_speakers": result.num_speakers,
+            "segments": [
+                {"start": seg.start, "end": seg.end, "speaker": seg.speaker}
+                for seg in result.segments
+            ],
+            "rttm": result.rttm,
+        }
         
         return {
-            "content": [{"type": "text", "text": output_text}],
+            "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}],
             "isError": False
         }
     
@@ -248,11 +240,18 @@ class DiariZenServer:
             num_speakers=num_speakers,
         )
         
-        output_text = f"RTTM saved to: {output_dir}\n\n"
-        output_text += f"Detected {result.num_speakers} speakers"
+        payload = {
+            "output_dir": str(output_dir),
+            "num_speakers": result.num_speakers,
+            "segments": [
+                {"start": seg.start, "end": seg.end, "speaker": seg.speaker}
+                for seg in result.segments
+            ],
+            "rttm": result.rttm,
+        }
         
         return {
-            "content": [{"type": "text", "text": output_text}],
+            "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}],
             "isError": False
         }
     
@@ -275,6 +274,13 @@ class DiariZenServer:
     def _send_error(self, request_id: Any, code: int, message: str) -> None:
         """Send error response."""
         self._send_response(self._error_response(request_id, code, message))
+
+
+class MCPServer(DiariZenServer):
+    """Compatibility alias for the unified MCP tool runner."""
+
+    def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
+        return self._handle_request(request)
 
 
 if __name__ == "__main__":

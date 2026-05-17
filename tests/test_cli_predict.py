@@ -57,6 +57,27 @@ from sure_eval.inference.errors import AdapterError  # noqa: E402
 from sure_eval.models.registry import ModelRegistry  # noqa: E402
 
 
+def _missing_runtime_registry(tmp_path: Path) -> ModelRegistry:
+    model_dir = tmp_path / "synthetic_missing_runtime_asr"
+    model_dir.mkdir()
+    (model_dir / "config.yaml").write_text(
+        "\n".join(
+            [
+                "name: synthetic_missing_runtime_asr",
+                "task: ASR",
+                "server:",
+                "  command: ['.venv/bin/python', 'server.py']",
+                "  working_dir: '.'",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (model_dir / "model.py").write_text("class SyntheticASRModel:\n    pass\n", encoding="utf-8")
+    (model_dir / "server.py").write_text("print('synthetic server')\n", encoding="utf-8")
+    return ModelRegistry(models_dir=tmp_path)
+
+
 def test_predict_dry_run_passes_for_asr_qwen3(tmp_path: Path) -> None:
     runner = CliRunner()
     output_path = tmp_path / "predictions.jsonl"
@@ -84,15 +105,20 @@ def test_predict_dry_run_passes_for_asr_qwen3(tmp_path: Path) -> None:
     assert not output_path.exists()
 
 
-def test_predict_dry_run_reports_runtime_not_found_for_asr_whisper(tmp_path: Path) -> None:
+def test_predict_dry_run_reports_runtime_not_found_for_synthetic_model(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
-    output_path = tmp_path / "whisper_predictions.jsonl"
+    output_path = tmp_path / "synthetic_predictions.jsonl"
+    registry = _missing_runtime_registry(tmp_path)
+    monkeypatch.setattr("sure_eval.cli.get_model_registry", lambda: registry)
 
     result = runner.invoke(
         app,
         [
             "predict",
-            "asr_whisper",
+            "synthetic_missing_runtime_asr",
             "--input",
             "tests/fixtures/cli/asr_input.jsonl",
             "--output",
@@ -132,10 +158,15 @@ def test_predict_dry_run_non_asr_model_reports_task_mismatch(tmp_path: Path) -> 
     assert "librosa" in result.stdout
 
 
-def test_doctor_reports_runtime_missing_for_asr_whisper() -> None:
+def test_doctor_reports_runtime_missing_for_synthetic_model(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     runner = CliRunner()
+    registry = _missing_runtime_registry(tmp_path)
+    monkeypatch.setattr("sure_eval.cli.get_model_registry", lambda: registry)
 
-    result = runner.invoke(app, ["doctor", "asr_whisper"])
+    result = runner.invoke(app, ["doctor", "synthetic_missing_runtime_asr"])
 
     assert result.exit_code == 1
     assert "Runtime Executable" in result.stdout
@@ -154,13 +185,15 @@ def test_resolve_runtime_command_uses_model_local_paths() -> None:
     assert env["MODEL_PATH"] == "Qwen/Qwen3-ASR-1.7B"
 
 
-def test_runtime_readiness_detects_missing_runtime_for_asr_whisper() -> None:
-    model = ModelRegistry().get_model("asr_whisper")
+def test_runtime_readiness_detects_missing_runtime_for_synthetic_model(tmp_path: Path) -> None:
+    model = _missing_runtime_registry(tmp_path).get_model("synthetic_missing_runtime_asr")
     assert model is not None
 
     readiness = get_runtime_readiness(model)
 
-    assert readiness["runtime_executable"].endswith("src/sure_eval/models/asr_whisper/.venv/bin/python")
+    assert readiness["runtime_executable"].endswith(
+        "synthetic_missing_runtime_asr/.venv/bin/python"
+    )
     assert readiness["failure_class"] == "runtime_executable_missing"
     runtime_check = next(check for check in readiness["checks"] if check["name"] == "runtime_executable")
     working_dir_check = next(check for check in readiness["checks"] if check["name"] == "working_dir")
@@ -350,24 +383,64 @@ def test_asr_whisper_uses_default_language_mapping() -> None:
     assert map_language_for_model(model_name="asr_whisper", language="en") == "en"
 
 
-def test_predict_adapter_selection_covers_asr_utility_and_music_ir() -> None:
+def test_predict_adapter_selection_covers_asr_utility_music_ir_vad_sd_s2tt_speaker_verification_speech_enhancement_songformer_and_omni() -> None:
     registry = ModelRegistry()
     asr_model = registry.get_model("asr_qwen3")
     ffmpeg_model = registry.get_model("ffmpeg")
     librosa_model = registry.get_model("librosa")
+    songformer_model = registry.get_model("songformer")
+    fireredvad_model = registry.get_model("fireredvad")
+    silero_vad_model = registry.get_model("silero-vad")
+    diarizen_model = registry.get_model("diarizen")
+    s2tt_model = registry.get_model("s2tt_nllb")
+    wespeaker_model = registry.get_model("wespeaker")
+    deepfilternet_model = registry.get_model("deepfilternet")
+    qwen3_omni_model = registry.get_model("qwen3_omni")
     assert asr_model is not None
     assert ffmpeg_model is not None
     assert librosa_model is not None
+    assert songformer_model is not None
+    assert fireredvad_model is not None
+    assert silero_vad_model is not None
+    assert diarizen_model is not None
+    assert s2tt_model is not None
+    assert wespeaker_model is not None
+    assert deepfilternet_model is not None
+    assert qwen3_omni_model is not None
 
     asr_adapter = create_predict_adapter(asr_model, task="asr")
     utility_adapter = create_predict_adapter(ffmpeg_model, task="utility")
     music_ir_adapter = create_predict_adapter(librosa_model, task="music_ir")
+    songformer_adapter = create_predict_adapter(songformer_model, task="music_ir")
+    fireredvad_adapter = create_predict_adapter(fireredvad_model, task="VAD")
+    silero_vad_adapter = create_predict_adapter(silero_vad_model, task="vad")
+    diarizen_adapter = create_predict_adapter(diarizen_model, task="diarization")
+    s2tt_adapter = create_predict_adapter(s2tt_model, task="S2TT")
+    speaker_adapter = create_predict_adapter(wespeaker_model, task="sv")
+    enhancement_adapter = create_predict_adapter(deepfilternet_model, task="se")
+    omni_adapter = create_predict_adapter(qwen3_omni_model, task="multimodal_chat")
 
     assert asr_adapter.runtime_protocol == "python_wrapper_transcribe"
     assert utility_adapter.runtime_protocol == "mcp_tool_call"
     assert utility_adapter.tool_name == "process_audio"
     assert music_ir_adapter.runtime_protocol == "mcp_tool_call"
     assert music_ir_adapter.tool_name == "extract_mfcc"
+    assert songformer_adapter.runtime_protocol == "mcp_tool_call"
+    assert songformer_adapter.tool_name == "analyze_music_structure"
+    assert fireredvad_adapter.runtime_protocol == "mcp_tool_call"
+    assert fireredvad_adapter.tool_name == "vad_predict"
+    assert silero_vad_adapter.runtime_protocol == "mcp_tool_call"
+    assert silero_vad_adapter.tool_name == "vad_predict"
+    assert diarizen_adapter.runtime_protocol == "mcp_tool_call"
+    assert diarizen_adapter.tool_name == "diarize"
+    assert s2tt_adapter.runtime_protocol == "mcp_tool_call"
+    assert s2tt_adapter.tool_name == "s2tt_translate"
+    assert speaker_adapter.runtime_protocol == "mcp_tool_call"
+    assert speaker_adapter.tool_name == "speaker_verify"
+    assert enhancement_adapter.runtime_protocol == "mcp_tool_call"
+    assert enhancement_adapter.tool_name == "enhance_audio"
+    assert omni_adapter.runtime_protocol == "mcp_tool_call"
+    assert omni_adapter.tool_name == "omni_chat_text_only"
 
 
 def test_predict_adapter_unsupported_task_uses_task_adapter_code() -> None:
@@ -375,7 +448,7 @@ def test_predict_adapter_unsupported_task_uses_task_adapter_code() -> None:
     assert model is not None
 
     try:
-        create_predict_adapter(model, task="vad")
+        create_predict_adapter(model, task="vlm")
     except AdapterError as exc:
         assert exc.code == "unsupported_task_adapter"
     else:  # pragma: no cover

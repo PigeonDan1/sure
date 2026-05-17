@@ -178,15 +178,7 @@ class Qwen3OmniServer:
         except Exception as e:
             error_msg = str(e)
             print(f"Tool execution error: {error_msg}", file=sys.stderr)
-            return {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "content": [{"type": "text", "text": f"Error: {error_msg}"}],
-                    "isError": True,
-                    "error": error_msg
-                }
-            }
+            return self._error_response(request_id, -32000, error_msg)
     
     def _execute_tool(self, tool_name: str, arguments: dict) -> dict[str, Any]:
         """Execute a tool."""
@@ -254,15 +246,14 @@ class Qwen3OmniServer:
                 audio_saved_path = output_audio_path
                 print(f"Audio saved to: {output_audio_path}", file=sys.stderr)
             
-            # Build response
-            result_text = text_response
-            if audio_saved_path:
-                result_text += f"\n\n[Audio saved to: {audio_saved_path}]"
-            elif generate_audio and audio_base64:
-                result_text += "\n\n[Audio generated but not saved (no output path provided)]"
+            payload = {
+                "text": text_response,
+                "audio_path": audio_saved_path,
+                "audio_generated": bool(generate_audio and audio_base64),
+            }
             
             return {
-                "content": [{"type": "text", "text": result_text}],
+                "content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}],
                 "isError": False
             }
             
@@ -292,6 +283,13 @@ class Qwen3OmniServer:
     def _send_error(self, request_id: Any, code: int, message: str) -> None:
         """Send error response."""
         self._send_response(self._error_response(request_id, code, message))
+
+
+class MCPServer(Qwen3OmniServer):
+    """Compatibility alias for the unified MCP tool runner."""
+
+    def handle_request(self, request: dict[str, Any]) -> dict[str, Any] | None:
+        return self._handle_request(request)
 
 
 def main():

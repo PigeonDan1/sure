@@ -57,13 +57,30 @@ def validate_input_record(
         raise SchemaValidationError("Field 'instance_id' must not be empty.")
 
     task = _ensure_string(row.get("task"), field="task")
-    if expected_task and task.lower() != expected_task.lower():
+    task_key = task.lower()
+    if task_key in {"speaker-verification", "sv"}:
+        task_key = "speaker_verification"
+    if task_key in {"enhancement", "se"}:
+        task_key = "speech_enhancement"
+    if task_key in {"speaker_diarization", "diarization"}:
+        task_key = "sd"
+    if task_key in {"multimodal_chat", "omni_chat"}:
+        task_key = "omni"
+    expected_task_key = expected_task.lower() if expected_task else None
+    if expected_task_key in {"speaker-verification", "sv"}:
+        expected_task_key = "speaker_verification"
+    if expected_task_key in {"enhancement", "se"}:
+        expected_task_key = "speech_enhancement"
+    if expected_task_key in {"speaker_diarization", "diarization"}:
+        expected_task_key = "sd"
+    if expected_task_key in {"multimodal_chat", "omni_chat"}:
+        expected_task_key = "omni"
+    if expected_task_key and task_key != expected_task_key:
         raise SchemaValidationError(
             f"Field 'task' must be '{expected_task}', got '{task}'."
         )
 
     input_payload = _ensure_mapping(row.get("input"), field="input")
-    task_key = task.lower()
     if task_key == "asr":
         audio_path = _ensure_string(input_payload.get("audio_path"), field="input.audio_path")
         if not audio_path:
@@ -91,6 +108,57 @@ def validate_input_record(
         audio_path = _ensure_string(input_payload.get("audio_path"), field="input.audio_path")
         if not audio_path:
             raise SchemaValidationError("Field 'input.audio_path' must not be empty.")
+    elif task_key == "vad":
+        audio_path = _ensure_string(input_payload.get("audio_path"), field="input.audio_path")
+        if not audio_path:
+            raise SchemaValidationError("Field 'input.audio_path' must not be empty.")
+        if "sampling_rate" in input_payload:
+            sampling_rate = _ensure_integer(
+                input_payload.get("sampling_rate"),
+                field="input.sampling_rate",
+            )
+            if sampling_rate <= 0:
+                raise SchemaValidationError("Field 'input.sampling_rate' must be positive.")
+    elif task_key == "sd":
+        audio_path = _ensure_string(input_payload.get("audio_path"), field="input.audio_path")
+        if not audio_path:
+            raise SchemaValidationError("Field 'input.audio_path' must not be empty.")
+        for field in ("num_speakers", "min_speakers", "max_speakers"):
+            if field in input_payload:
+                value = _ensure_integer(input_payload.get(field), field=f"input.{field}")
+                if value <= 0:
+                    raise SchemaValidationError(f"Field 'input.{field}' must be positive.")
+    elif task_key == "s2tt":
+        audio_path = _ensure_string(input_payload.get("audio_path"), field="input.audio_path")
+        source_lang = _ensure_string(input_payload.get("source_lang"), field="input.source_lang")
+        target_lang = _ensure_string(input_payload.get("target_lang"), field="input.target_lang")
+        if not audio_path:
+            raise SchemaValidationError("Field 'input.audio_path' must not be empty.")
+        if not source_lang:
+            raise SchemaValidationError("Field 'input.source_lang' must not be empty.")
+        if not target_lang:
+            raise SchemaValidationError("Field 'input.target_lang' must not be empty.")
+    elif task_key == "speaker_verification":
+        enroll_audio = _ensure_string(input_payload.get("enroll_audio"), field="input.enroll_audio")
+        trial_audio = _ensure_string(input_payload.get("trial_audio"), field="input.trial_audio")
+        if not enroll_audio:
+            raise SchemaValidationError("Field 'input.enroll_audio' must not be empty.")
+        if not trial_audio:
+            raise SchemaValidationError("Field 'input.trial_audio' must not be empty.")
+    elif task_key == "speech_enhancement":
+        audio_path = _ensure_string(input_payload.get("audio_path"), field="input.audio_path")
+        if not audio_path:
+            raise SchemaValidationError("Field 'input.audio_path' must not be empty.")
+    elif task_key == "omni":
+        message = _ensure_string(input_payload.get("message"), field="input.message")
+        if not message:
+            raise SchemaValidationError("Field 'input.message' must not be empty.")
+        if "voice" in input_payload:
+            _ensure_string(input_payload.get("voice"), field="input.voice")
+        if "output_audio_path" in input_payload:
+            _ensure_string(input_payload.get("output_audio_path"), field="input.output_audio_path")
+        if "generate_audio" in input_payload and not isinstance(input_payload.get("generate_audio"), bool):
+            raise SchemaValidationError("Field 'input.generate_audio' must be a boolean.")
 
     request = row.get("request", {})
     if request is None:

@@ -361,7 +361,9 @@ def _classify_runtime_failure_text(details: str) -> str:
         return "unsupported_runtime_protocol"
     if "unsupported_task_adapter" in lower:
         return "unsupported_task_adapter"
-    if "no module named" in lower or "not installed" in lower:
+    if "api key" in lower or "dashscope_api_key" in lower:
+        return "api_key_missing"
+    if "no module named" in lower or "not installed" in lower or "cli not found" in lower:
         return "dependency_missing"
     if "audio file not found" in lower or "fixture" in lower:
         return "fixture_missing"
@@ -370,6 +372,9 @@ def _classify_runtime_failure_text(details: str) -> str:
         or "cached files" in lower
         or "localentrynotfounderror" in lower
         or "from_pretrained" in lower
+        or "snapshot_download" in lower
+        or "download" in lower
+        or "huggingface" in lower
         or "weights" in lower
     ):
         return "weights_missing"
@@ -571,6 +576,19 @@ def _resolve_record_path(value: str) -> str:
     return str(Path(value).expanduser().resolve())
 
 
+def _normalize_s2tt_language(value: str) -> str:
+    mapping = {
+        "en": "eng_Latn",
+        "eng": "eng_Latn",
+        "english": "eng_Latn",
+        "zh": "zho_Hans",
+        "zh-cn": "zho_Hans",
+        "zho": "zho_Hans",
+        "chinese": "zho_Hans",
+    }
+    return mapping.get(value.lower(), value)
+
+
 def _build_tool_arguments(adapter: PredictAdapter, record: dict[str, Any]) -> dict[str, Any]:
     payload = record["input"]
     if adapter.tool_name == "process_audio":
@@ -582,8 +600,40 @@ def _build_tool_arguments(adapter: PredictAdapter, record: dict[str, Any]) -> di
             if field in payload:
                 arguments[field] = payload[field]
         return arguments
-    if adapter.tool_name == "extract_mfcc":
+    if adapter.tool_name in {"extract_mfcc", "analyze_music_structure"}:
         return {"audio_path": _resolve_record_path(payload["audio_path"])}
+    if adapter.tool_name == "vad_predict":
+        arguments = {"audio_path": _resolve_record_path(payload["audio_path"])}
+        if "sampling_rate" in payload:
+            arguments["sampling_rate"] = payload["sampling_rate"]
+        return arguments
+    if adapter.tool_name in {"diarize", "diarize_with_rttm"}:
+        arguments = {"audio_path": _resolve_record_path(payload["audio_path"])}
+        for field in ("num_speakers", "min_speakers", "max_speakers", "output_dir"):
+            if field in payload:
+                value = payload[field]
+                arguments[field] = _resolve_record_path(value) if field == "output_dir" else value
+        return arguments
+    if adapter.tool_name == "s2tt_translate":
+        return {
+            "audio_path": _resolve_record_path(payload["audio_path"]),
+            "source_lang": _normalize_s2tt_language(payload["source_lang"]),
+            "target_lang": _normalize_s2tt_language(payload["target_lang"]),
+        }
+    if adapter.tool_name == "speaker_verify":
+        return {
+            "enroll_audio": _resolve_record_path(payload["enroll_audio"]),
+            "trial_audio": _resolve_record_path(payload["trial_audio"]),
+        }
+    if adapter.tool_name == "enhance_audio":
+        return {"audio_path": _resolve_record_path(payload["audio_path"])}
+    if adapter.tool_name in {"omni_chat_text_only", "omni_chat"}:
+        arguments = {"message": payload["message"]}
+        for field in ("generate_audio", "output_audio_path", "voice"):
+            if field in payload:
+                value = payload[field]
+                arguments[field] = _resolve_record_path(value) if field == "output_audio_path" else value
+        return arguments
     raise AdapterError(
         f"Unsupported task adapter tool: {adapter.tool_name}",
         code="unsupported_task_adapter",
@@ -594,8 +644,10 @@ def _extract_tool_prediction(response: dict[str, Any]) -> dict[str, Any]:
     if response.get("error") is not None:
         error = response["error"]
         if isinstance(error, dict):
-            raise AdapterError(str(error.get("message") or error), code="runtime_launch_failed")
-        raise AdapterError(str(error), code="runtime_launch_failed")
+            message = str(error.get("message") or error)
+            raise AdapterError(message, code=_classify_runtime_failure_text(message))
+        message = str(error)
+        raise AdapterError(message, code=_classify_runtime_failure_text(message))
 
     result = response.get("result")
     if not isinstance(result, dict):

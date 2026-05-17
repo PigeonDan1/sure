@@ -8,7 +8,7 @@ model:
   type: "jit"
 
 server:
-  command: [".venv/bin/python", "server.py"]
+  command: [".phase1_uv_env/bin/python", "server.py"]
   env:
     MODEL_DEVICE: "cpu"
     TORCH_NUM_THREADS: "1"

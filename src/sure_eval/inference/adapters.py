@@ -52,6 +52,14 @@ def create_predict_adapter(
     del device, batch_size
 
     requested_task = task.lower()
+    if requested_task in {"speaker-verification", "sv"}:
+        requested_task = "speaker_verification"
+    if requested_task in {"enhancement", "se"}:
+        requested_task = "speech_enhancement"
+    if requested_task in {"speaker_diarization", "diarization"}:
+        requested_task = "sd"
+    if requested_task in {"multimodal_chat", "omni_chat"}:
+        requested_task = "omni"
 
     if requested_task == "utility":
         _require_model_task(model_info, requested_task=requested_task)
@@ -70,15 +78,104 @@ def create_predict_adapter(
     if requested_task == "music_ir":
         _require_model_task(model_info, requested_task=requested_task)
         _require_server_command(model_info, task=task)
-        if "extract_mfcc" not in _tool_names(model_info):
+        tool_names = _tool_names(model_info)
+        if "extract_mfcc" in tool_names:
+            tool_name = "extract_mfcc"
+        elif "analyze_music_structure" in tool_names:
+            tool_name = "analyze_music_structure"
+        else:
             raise AdapterError(
-                f"Model '{model_info.name}' does not expose supported music_ir tool 'extract_mfcc'.",
+                f"Model '{model_info.name}' does not expose a supported music_ir tool.",
                 code="unsupported_task_adapter",
             )
         return PredictAdapter(
             task="music_ir",
             runtime_protocol="mcp_tool_call",
-            tool_name="extract_mfcc",
+            tool_name=tool_name,
+        )
+
+    if requested_task == "vad":
+        _require_model_task(model_info, requested_task=requested_task)
+        _require_server_command(model_info, task=task)
+        if "vad_predict" not in _tool_names(model_info):
+            raise AdapterError(
+                f"Model '{model_info.name}' does not expose required VAD tool 'vad_predict'.",
+                code="unsupported_task_adapter",
+            )
+        return PredictAdapter(
+            task="vad",
+            runtime_protocol="mcp_tool_call",
+            tool_name="vad_predict",
+        )
+
+    if requested_task == "sd":
+        _require_model_task(model_info, requested_task=requested_task)
+        _require_server_command(model_info, task=task)
+        if "diarize" not in _tool_names(model_info):
+            raise AdapterError(
+                f"Model '{model_info.name}' does not expose required SD tool 'diarize'.",
+                code="unsupported_task_adapter",
+            )
+        return PredictAdapter(
+            task="sd",
+            runtime_protocol="mcp_tool_call",
+            tool_name="diarize",
+        )
+
+    if requested_task == "s2tt":
+        _require_model_task(model_info, requested_task=requested_task)
+        _require_server_command(model_info, task=task)
+        if "s2tt_translate" not in _tool_names(model_info):
+            raise AdapterError(
+                f"Model '{model_info.name}' does not expose required S2TT tool 's2tt_translate'.",
+                code="unsupported_task_adapter",
+            )
+        return PredictAdapter(
+            task="s2tt",
+            runtime_protocol="mcp_tool_call",
+            tool_name="s2tt_translate",
+        )
+
+    if requested_task == "speaker_verification":
+        _require_model_task(model_info, requested_task=requested_task)
+        _require_server_command(model_info, task=task)
+        if "speaker_verify" not in _tool_names(model_info):
+            raise AdapterError(
+                f"Model '{model_info.name}' does not expose required speaker verification tool 'speaker_verify'.",
+                code="unsupported_task_adapter",
+            )
+        return PredictAdapter(
+            task="speaker_verification",
+            runtime_protocol="mcp_tool_call",
+            tool_name="speaker_verify",
+        )
+
+    if requested_task == "speech_enhancement":
+        _require_model_task(model_info, requested_task=requested_task)
+        _require_server_command(model_info, task=task)
+        if "enhance_audio" not in _tool_names(model_info):
+            raise AdapterError(
+                f"Model '{model_info.name}' does not expose required speech enhancement tool 'enhance_audio'.",
+                code="unsupported_task_adapter",
+            )
+        return PredictAdapter(
+            task="speech_enhancement",
+            runtime_protocol="mcp_tool_call",
+            tool_name="enhance_audio",
+        )
+
+    if requested_task == "omni":
+        _require_model_task(model_info, requested_task=requested_task)
+        _require_server_command(model_info, task=task)
+        if "omni_chat_text_only" not in _tool_names(model_info):
+            raise AdapterError(
+                f"Model '{model_info.name}' does not expose required OMNI tool 'omni_chat_text_only'.",
+                code="unsupported_task_adapter",
+            )
+        return PredictAdapter(
+            task="omni",
+            runtime_protocol="mcp_tool_call",
+            tool_name="omni_chat_text_only",
         )
 
     if requested_task != "asr":
