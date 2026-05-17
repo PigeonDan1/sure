@@ -53,22 +53,33 @@ class MCPServer:
 
     def handle_tools_call(self, request: dict[str, Any]) -> dict[str, Any]:
         params = request.get("params", {})
+        tool_name = params.get("name")
         arguments = params.get("arguments", {})
-        result = self._get_wrapper().predict(arguments)
-        return {
-            "jsonrpc": "2.0",
-            "id": request.get("id"),
-            "result": {
-                "content": [
-                    {
-                        "type": "json",
-                        "json": result,
-                    }
-                ]
-            },
-        }
+        request_id = request.get("id")
+        try:
+            if tool_name != "describe_image":
+                raise ValueError(f"Unknown tool: {tool_name}")
+            result = self._get_wrapper().predict(arguments)
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json.dumps(result, ensure_ascii=False),
+                        }
+                    ]
+                },
+            }
+        except Exception as exc:
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32000, "message": str(exc)},
+            }
 
-    def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
+    def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:
         method = request.get("method")
         if method == "initialize":
             return self.handle_initialize(request)
@@ -85,6 +96,9 @@ class MCPServer:
             },
         }
 
+    def dispatch(self, request: dict[str, Any]) -> dict[str, Any]:
+        return self.handle_request(request)
+
     def serve_forever(self) -> None:
         for line in sys.stdin:
             line = line.strip()
@@ -92,7 +106,7 @@ class MCPServer:
                 continue
             try:
                 request = json.loads(line)
-                response = self.dispatch(request)
+                response = self.handle_request(request)
             except Exception as exc:
                 print(
                     json.dumps(

@@ -1,0 +1,1 @@
+{"instance_id":"qwen2_vl_smoke_001","task":"vlm","input":{"image_path":"tests/fixtures/shared/vlm/demo_image.ppm","prompt":"Describe the simple colored blocks in one sentence.","max_new_tokens":16}}

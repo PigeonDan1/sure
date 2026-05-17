@@ -159,6 +159,19 @@ def validate_input_record(
             _ensure_string(input_payload.get("output_audio_path"), field="input.output_audio_path")
         if "generate_audio" in input_payload and not isinstance(input_payload.get("generate_audio"), bool):
             raise SchemaValidationError("Field 'input.generate_audio' must be a boolean.")
+    elif task_key == "vlm":
+        image_path = _ensure_string(input_payload.get("image_path"), field="input.image_path")
+        if not image_path:
+            raise SchemaValidationError("Field 'input.image_path' must not be empty.")
+        if "prompt" in input_payload:
+            _ensure_string(input_payload.get("prompt"), field="input.prompt")
+        if "max_new_tokens" in input_payload:
+            max_new_tokens = _ensure_integer(
+                input_payload.get("max_new_tokens"),
+                field="input.max_new_tokens",
+            )
+            if max_new_tokens <= 0:
+                raise SchemaValidationError("Field 'input.max_new_tokens' must be positive.")
 
     request = row.get("request", {})
     if request is None:

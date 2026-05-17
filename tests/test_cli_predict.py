@@ -383,7 +383,7 @@ def test_asr_whisper_uses_default_language_mapping() -> None:
     assert map_language_for_model(model_name="asr_whisper", language="en") == "en"
 
 
-def test_predict_adapter_selection_covers_asr_utility_music_ir_vad_sd_s2tt_speaker_verification_speech_enhancement_songformer_and_omni() -> None:
+def test_predict_adapter_selection_covers_asr_utility_music_ir_vad_sd_s2tt_speaker_verification_speech_enhancement_songformer_omni_and_vlm() -> None:
     registry = ModelRegistry()
     asr_model = registry.get_model("asr_qwen3")
     ffmpeg_model = registry.get_model("ffmpeg")
@@ -396,6 +396,7 @@ def test_predict_adapter_selection_covers_asr_utility_music_ir_vad_sd_s2tt_speak
     wespeaker_model = registry.get_model("wespeaker")
     deepfilternet_model = registry.get_model("deepfilternet")
     qwen3_omni_model = registry.get_model("qwen3_omni")
+    qwen2_vl_model = registry.get_model("qwen2_vl_2b_instruct")
     assert asr_model is not None
     assert ffmpeg_model is not None
     assert librosa_model is not None
@@ -407,6 +408,7 @@ def test_predict_adapter_selection_covers_asr_utility_music_ir_vad_sd_s2tt_speak
     assert wespeaker_model is not None
     assert deepfilternet_model is not None
     assert qwen3_omni_model is not None
+    assert qwen2_vl_model is not None
 
     asr_adapter = create_predict_adapter(asr_model, task="asr")
     utility_adapter = create_predict_adapter(ffmpeg_model, task="utility")
@@ -419,6 +421,7 @@ def test_predict_adapter_selection_covers_asr_utility_music_ir_vad_sd_s2tt_speak
     speaker_adapter = create_predict_adapter(wespeaker_model, task="sv")
     enhancement_adapter = create_predict_adapter(deepfilternet_model, task="se")
     omni_adapter = create_predict_adapter(qwen3_omni_model, task="multimodal_chat")
+    vlm_adapter = create_predict_adapter(qwen2_vl_model, task="vlm")
 
     assert asr_adapter.runtime_protocol == "python_wrapper_transcribe"
     assert utility_adapter.runtime_protocol == "mcp_tool_call"
@@ -441,6 +444,8 @@ def test_predict_adapter_selection_covers_asr_utility_music_ir_vad_sd_s2tt_speak
     assert enhancement_adapter.tool_name == "enhance_audio"
     assert omni_adapter.runtime_protocol == "mcp_tool_call"
     assert omni_adapter.tool_name == "omni_chat_text_only"
+    assert vlm_adapter.runtime_protocol == "mcp_tool_call"
+    assert vlm_adapter.tool_name == "describe_image"
 
 
 def test_predict_adapter_unsupported_task_uses_task_adapter_code() -> None:
@@ -448,7 +453,7 @@ def test_predict_adapter_unsupported_task_uses_task_adapter_code() -> None:
     assert model is not None
 
     try:
-        create_predict_adapter(model, task="vlm")
+        create_predict_adapter(model, task="unknown_task")
     except AdapterError as exc:
         assert exc.code == "unsupported_task_adapter"
     else:  # pragma: no cover

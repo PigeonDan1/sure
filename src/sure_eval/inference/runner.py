@@ -130,7 +130,7 @@ def _action_hint_for_failure(
         "model_file_missing": "Add model.py for the model wrapper.",
         "dependency_missing": f"Run {model_path / 'setup.sh'} to install missing model-local dependencies.",
         "weights_missing": "Populate the model-local weights/cache before running predict.",
-        "fixture_missing": "Fix the input fixture path so the referenced audio file exists.",
+        "fixture_missing": "Fix the input fixture path so the referenced file exists.",
         "input_schema_invalid": "Fix the input JSONL to satisfy sure.inference_input.v1.",
         "output_schema_invalid": "Fix the runtime adapter output to satisfy sure.prediction.v1.",
         "runtime_launch_failed": "Inspect the model-local runtime stderr and fix launch-time failures.",
@@ -365,7 +365,7 @@ def _classify_runtime_failure_text(details: str) -> str:
         return "api_key_missing"
     if "no module named" in lower or "not installed" in lower or "cli not found" in lower:
         return "dependency_missing"
-    if "audio file not found" in lower or "fixture" in lower:
+    if "audio file not found" in lower or "image not found" in lower or "fixture" in lower:
         return "fixture_missing"
     if (
         "couldn't connect" in lower
@@ -633,6 +633,12 @@ def _build_tool_arguments(adapter: PredictAdapter, record: dict[str, Any]) -> di
             if field in payload:
                 value = payload[field]
                 arguments[field] = _resolve_record_path(value) if field == "output_audio_path" else value
+        return arguments
+    if adapter.tool_name == "describe_image":
+        arguments = {"image_path": _resolve_record_path(payload["image_path"])}
+        for field in ("prompt", "max_new_tokens"):
+            if field in payload:
+                arguments[field] = payload[field]
         return arguments
     raise AdapterError(
         f"Unsupported task adapter tool: {adapter.tool_name}",

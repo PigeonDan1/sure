@@ -178,6 +178,20 @@ def create_predict_adapter(
             tool_name="omni_chat_text_only",
         )
 
+    if requested_task == "vlm":
+        _require_model_task(model_info, requested_task=requested_task)
+        _require_server_command(model_info, task=task)
+        if "describe_image" not in _tool_names(model_info):
+            raise AdapterError(
+                f"Model '{model_info.name}' does not expose required VLM tool 'describe_image'.",
+                code="unsupported_task_adapter",
+            )
+        return PredictAdapter(
+            task="vlm",
+            runtime_protocol="mcp_tool_call",
+            tool_name="describe_image",
+        )
+
     if requested_task != "asr":
         raise AdapterError(
             f"Unified predict v1 does not yet support task '{task}'.",

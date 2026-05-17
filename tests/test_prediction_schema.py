@@ -140,6 +140,21 @@ def test_validate_input_record_accepts_minimal_omni_row() -> None:
     assert validated["input"]["message"].startswith("Say hello")
 
 
+def test_validate_input_record_accepts_minimal_vlm_row() -> None:
+    row = {
+        "instance_id": "qwen2_vl_smoke_001",
+        "task": "vlm",
+        "input": {
+            "image_path": "tests/fixtures/shared/vlm/demo_image.ppm",
+            "prompt": "Describe this image briefly.",
+            "max_new_tokens": 16,
+        },
+    }
+
+    validated = validate_input_record(row, expected_task="VLM")
+    assert validated["input"]["image_path"].endswith("demo_image.ppm")
+
+
 def test_validate_prediction_record_rejects_ok_without_text() -> None:
     row = {
         "schema_version": PREDICTION_SCHEMA_VERSION,

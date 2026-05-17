@@ -7,7 +7,7 @@ model:
   size: "2B"
 
 server:
-  command: ["python", "server.py"]
+  command: [".venv/bin/python", "server.py"]
   env:
     HF_HOME: "/tmp/sure_eval_qwen2_vl_2b_instruct/hf_home"
   timeout: 300
