@@ -7,7 +7,7 @@ model:
   size: "library"
 
 server:
-  command: [".venv-phase1/bin/python", "server.py"]
+  command: [".venv/bin/python", "server.py"]
   env: {}
   timeout: 300
 
