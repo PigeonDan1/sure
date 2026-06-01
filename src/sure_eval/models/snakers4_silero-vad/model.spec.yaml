@@ -1,0 +1,46 @@
+model_id: "snakers4/silero-vad"
+model_name: "Silero VAD"
+task_type: "vad"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/snakers4/silero-vad"
+  commit: null
+
+weights:
+  source: "pip"
+  local_path: null
+  required: true
+  auto_download: true
+
+environment:
+  preferred_backend: "uv"
+  python_version: "3.10"
+  requires_gpu: false
+  system_packages:
+    - ffmpeg
+
+entrypoints:
+  import_test: "from silero_vad import load_silero_vad, read_audio, get_speech_timestamps"
+  load_test: |
+    from silero_vad import load_silero_vad
+    model = load_silero_vad()
+  infer_test: |
+    from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
+    model = load_silero_vad()
+    audio = read_audio("{fixture}", sampling_rate=16000)
+    speech_timestamps = get_speech_timestamps(audio, model, return_seconds=True)
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "speech_segments"
+  required_fields: ["speech_segments"]
+  nonempty_fields: ["speech_segments"]
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true

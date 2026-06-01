@@ -1,0 +1,15 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "tool_readiness_state": "server_declared_but_unverified",
+  "preferred_execution_path": "server_smoke_test_then_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "",
+  "evidence": [
+    {
+      "source": "",
+      "signal": ""
+    }
+  ]
+}

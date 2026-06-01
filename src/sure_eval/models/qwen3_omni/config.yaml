@@ -1,0 +1,69 @@
+# Qwen3-Omni Model Configuration
+
+name: qwen3_omni
+task: OMNI
+description: "Qwen3-Omni API client for text and audio generation via DashScope"
+version: "1.0.0"
+
+# Model info
+model:
+  id: "qwen3-omni-flash"
+  provider: "alibaba_cloud"
+  base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+  capabilities: ["text", "audio"]
+  license: "Commercial"
+
+# MCP Server Configuration
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    DASHSCOPE_API_KEY: ""  # Must be provided by user
+    DASHSCOPE_BASE_URL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    DEFAULT_MODEL: "qwen3-omni-flash"
+    DEFAULT_VOICE: "Cherry"
+    DEFAULT_AUDIO_FORMAT: "wav"
+    DEFAULT_SAMPLE_RATE: "24000"
+  timeout: 60
+  startup_timeout_sec: 10
+
+# Tools
+tools:
+  - name: "omni_chat"
+    description: "Send a chat message to Qwen3-Omni and get text + optional audio response"
+    input_schema:
+      type: object
+      properties:
+        message:
+          type: string
+          description: "The text message to send"
+        generate_audio:
+          type: boolean
+          description: "Whether to generate audio response"
+          default: true
+        voice:
+          type: string
+          description: "Voice to use for audio (e.g., 'Cherry')"
+          default: "Cherry"
+        output_audio_path:
+          type: string
+          description: "Path to save the generated audio file"
+          default: ""
+      required: ["message"]
+  
+  - name: "omni_chat_text_only"
+    description: "Send a chat message to Qwen3-Omni and get text response only (faster)"
+    input_schema:
+      type: object
+      properties:
+        message:
+          type: string
+          description: "The text message to send"
+      required: ["message"]
+
+# Resource Requirements
+resources:
+  memory_gb: 2
+  gpu: false  # API-based, no local GPU needed
+  cpu_cores: 2
+  storage_gb: 1

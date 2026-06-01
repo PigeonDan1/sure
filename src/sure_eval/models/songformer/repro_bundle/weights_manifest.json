@@ -1,0 +1,24 @@
+{
+  "whether_weights_required": true,
+  "source": "huggingface",
+  "identifier": "ASLP-lab/SongFormer",
+  "declared_revision": "5ac5227fccf286519464fdf211e15b606898408e",
+  "resolved_local_path": "weights/SongFormer",
+  "cache_policy": "model_local_first",
+  "checksum": {
+    "path": "weights/SongFormer/model.safetensors",
+    "sha256": "8dcabf4ea19973edd51b9e5794004775fa7e8de3ecfa07eb1dbce00f516ce7f7"
+  },
+  "secondary_assets": [
+    {
+      "path": "hf_cache/hub/models--facebook--wav2vec2-conformer-rope-large-960h-ft",
+      "reason": "required config cache for SongFormer's vendored MusicFM custom code"
+    },
+    {
+      "path": "hf_cache/modules/transformers_modules/SongFormer",
+      "reason": "transformers dynamic-module cache for trust_remote_code replay"
+    }
+  ],
+  "fallback_reason": null,
+  "fallback_path": null
+}

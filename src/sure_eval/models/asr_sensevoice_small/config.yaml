@@ -1,0 +1,17 @@
+name: asr_sensevoice_small
+task: ASR
+description: "Automatic Speech Recognition using SenseVoice Small"
+
+model:
+  id: "iic/SenseVoiceSmall"
+  size: "Small"
+  languages: ["zh", "en", "ja", "ko", "yue"]
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ID: "iic/SenseVoiceSmall"
+    SENSEVOICE_MODEL_PATH: ".runtime/modelscope_cache/models/iic/SenseVoiceSmall"
+    DEVICE: "auto"
+  timeout: 300

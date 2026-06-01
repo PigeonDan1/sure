@@ -1,0 +1,23 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_002",
+  "timestamp": "2026-05-25T20:00:11+08:00",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model directory contains server.py and config.yaml with a valid MCP server command. Weights are cached locally. Harness explicitly specifies execution_surface_template, indicating direct server use via main flow.",
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/asr_sensevoice_small/config.yaml",
+      "signal": "server.command present"
+    },
+    {
+      "source": "src/sure_eval/models/asr_sensevoice_small/.runtime/modelscope_cache/models/iic/SenseVoiceSmall",
+      "signal": "weights_cached"
+    },
+    {
+      "source": "harness.execution_surface_template",
+      "signal": "templates/run_single_model.sh specified"
+    }
+  ]
+}

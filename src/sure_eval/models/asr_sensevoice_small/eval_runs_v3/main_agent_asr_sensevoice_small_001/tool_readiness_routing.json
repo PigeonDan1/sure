@@ -1,0 +1,19 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-27T22:38:28+08:00",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model config.yaml declares a local MCP server (server.py). Prior runs confirm server boots and produces predictions. No need to hand off to tool agent.",
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/asr_sensevoice_small/config.yaml",
+      "signal": "server.command present: [.venv/bin/python, server.py]"
+    },
+    {
+      "source": "src/sure_eval/models/asr_sensevoice_small/server.py",
+      "signal": "MCP server implements tools/list and tools/call with asr_transcribe"
+    }
+  ]
+}

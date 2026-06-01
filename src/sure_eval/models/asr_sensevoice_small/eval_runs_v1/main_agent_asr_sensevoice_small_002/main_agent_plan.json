@@ -1,0 +1,14 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_002",
+  "timestamp": "2026-05-25T20:00:11+08:00",
+  "goal": "Evaluate asr_sensevoice_small on librispeech_test_clean (ASR task)",
+  "steps": [
+    "Prepare librispeech_test_clean dataset via prepare_sure_dataset.py",
+    "Materialize prediction template for librispeech_test_clean",
+    "Run bounded smoke test (10 samples) via generate_predictions_via_server.py",
+    "Generate full predictions for librispeech_test_clean via model-local MCP server",
+    "Validate prediction files",
+    "Evaluate predictions and produce metrics (WER/CER)"
+  ],
+  "stop_condition": "Abort if smoke test fails, validation fails, or evaluation produces anomalous metrics (e.g., WER > 50%)."
+}

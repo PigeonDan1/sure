@@ -1,0 +1,64 @@
+{
+  "run_id": "main_agent_asr_qwen3_001",
+  "timestamp": "2026-05-17T21:03:29+08:00",
+  "execution_surface_type": "single_model_multi_dataset_shell",
+  "materialized": true,
+  "entrypoint_path": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/run_evaluation.sh",
+  "generation_method": "wrapper_derived_from_template",
+  "source_provenance": {
+    "template_file": "templates/run_single_model_single_dataset.sh",
+    "template_sha256": "df0f39ed6da6868bb60ce52a23acb9ccf8bb56a0b865f89f13d45d35f639135a",
+    "files_read_during_generation": [
+      "templates/run_single_model_single_dataset.sh",
+      "src/sure_eval/models/asr_qwen3/config.yaml",
+      "src/sure_eval/models/asr_qwen3/model.spec.yaml",
+      "config/oref_datasets.yaml"
+    ],
+    "isolation_compliance": {
+      "eval_runs_referenced": false,
+      "prior_run_scripts_copied": false,
+      "template_parameters_deviated": [
+        "execution_surface_type changed from single_model_single_dataset_shell to single_model_multi_dataset_shell because two datasets were selected",
+        "added per-dataset RUN_DIR override to avoid summary file collisions"
+      ],
+      "deviation_approved_by_user": false
+    }
+  },
+  "resolved_inputs": {
+    "model_name": "asr_qwen3",
+    "datasets": ["aishell1", "librispeech_clean"],
+    "dataset_tasks": ["ASR", "ASR"],
+    "dataset_languages": ["zh", "en"],
+    "evaluation_metrics": ["wer", "cer"],
+    "run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001",
+    "execution_path": "direct_server_use",
+    "tool_name": "asr_transcribe"
+  },
+  "expected_outputs": {
+    "prepare_summaries": [
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/aishell1/prepare_summary.json",
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/librispeech_clean/prepare_summary.json"
+    ],
+    "prediction_manifests": [
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/aishell1/predictions/manifest.json",
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/librispeech_clean/predictions/manifest.json"
+    ],
+    "prediction_generation_status": [
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/aishell1/prediction_generation_status.json",
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/librispeech_clean/prediction_generation_status.json"
+    ],
+    "validation_payloads": [
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/aishell1/validation_payload.json",
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/librispeech_clean/validation_payload.json"
+    ],
+    "evaluation_payloads": [
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/aishell1/evaluation_payload.json",
+      "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/librispeech_clean/evaluation_payload.json"
+    ]
+  },
+  "reason": "Two ASR datasets selected. The single-dataset template is invoked per dataset via a thin wrapper to maintain isolation and compliance.",
+  "notes": [
+    "Wrapper script sets RUN_DIR per dataset to avoid collisions in prepare_summary.json and validation_payload.json",
+    "Each sub-run is fully independent and can be retried individually"
+  ]
+}

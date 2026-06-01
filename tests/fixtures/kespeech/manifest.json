@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "key": "1001589_3e04b8a6",
+    "dataset": "kespeech",
+    "audio": "sample_1_1001589_3e04b8a6.wav",
+    "ground_truth": "期末其他各项资产构成单位"
+  },
+  {
+    "id": 2,
+    "key": "1027849_491e97af",
+    "dataset": "kespeech",
+    "audio": "sample_2_1027849_491e97af.wav",
+    "ground_truth": "黄河河口管理局东营黄河河务局"
+  },
+  {
+    "id": 3,
+    "key": "1010431_6841bc11",
+    "dataset": "kespeech",
+    "audio": "sample_3_1010431_6841bc11.wav",
+    "ground_truth": "腼腆恬静在众天使中显得犹为凸出"
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "run_id": "main_agent_whisper-large-v3-turbo_001",
+  "compliance_passed": true,
+  "checks": {
+    "template_source": {
+      "passed": true,
+      "template_declared": "templates/run_single_model.sh",
+      "template_exists": true,
+      "under_templates_dir": true,
+      "matches_expected": true,
+      "evidence": "ok"
+    },
+    "source_provenance": {
+      "passed": true,
+      "template_file": "templates/run_single_model.sh",
+      "evidence": "source_provenance present"
+    },
+    "evaluate_predictions_args": {
+      "passed": true,
+      "evidence": "no evaluate_predictions.py call found"
+    }
+  },
+  "blocking_issues": []
+}

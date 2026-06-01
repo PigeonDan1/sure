@@ -1,0 +1,34 @@
+[project]
+name = "s2tt-nllb-eval"
+version = "1.0.0"
+description = "Speech-to-text translation evaluation using NLLB for SURE-EVAL"
+requires-python = ">=3.10"
+authors = [
+    {name = "SURE-EVAL Team"}
+]
+
+# Dependencies for S2TT with NLLB
+dependencies = [
+    "torch>=2.0.0",
+    "transformers>=4.40.0",
+    "huggingface-hub>=0.23.0",
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "sacrebleu>=2.3.0",  # For BLEU/chrF metrics
+    "sentencepiece>=0.2.0",
+    "protobuf>=4.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+# Build system (required by PEP 518)
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# uv-specific configuration
+[tool.uv]
+# allow-prereleases = true

@@ -1,0 +1,21 @@
+{
+  "status": "success",
+  "evidence": {
+    "dataset": "librispeech_test_clean",
+    "num_samples": 2619,
+    "metric": "wer",
+    "score": 0.018973129329375046,
+    "wer_percent": 1.8973129329375047,
+    "rps": 0.8960040120361085,
+    "evaluation_payload_path": "src/sure_eval/models/asr_parakeet/eval_runs/main_agent_asr_parakeet_001/evaluation_payload.json",
+    "results_dir": "results/asr_parakeet/strict_core"
+  },
+  "anomaly_detected": false,
+  "anomaly_details": {
+    "threshold_wer_percent": 50,
+    "actual_wer_percent": 1.8973129329375047,
+    "within_normal_range": true
+  },
+  "user_confirmed": "not_required",
+  "next_action": "generate_run_report"
+}

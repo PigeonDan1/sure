@@ -1,0 +1,9 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "task_type": "evaluate_existing_model",
+  "reason": "",
+  "need_tool_workflow": false,
+  "confidence": "medium",
+  "input_signals": []
+}

@@ -1,0 +1,28 @@
+.git
+.agents
+.codex
+.venv
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Runtime/model caches should be mounted or downloaded inside the image build,
+# not copied from a host-specific workspace.
+**/.runtime
+**/checkpoints
+**/artifacts/modelscope_cache
+
+# Historical eval outputs are large and not needed to build model images.
+**/eval
+**/eval_runs
+**/eval_runs_old
+**/eval_runs_v1
+results
+reports
+artifacts
+
+# Dataset directories are host-local; fixtures under model dirs remain included.
+data

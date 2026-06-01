@@ -1,0 +1,47 @@
+{
+  "run_id": "main_agent_whisper-large-v3-turbo_001",
+  "timestamp": "2026-05-20T15:00:34Z",
+  "execution_surface_type": "single_model_single_dataset_shell",
+  "materialized": true,
+  "entrypoint_path": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/run_evaluation.sh",
+  "generation_method": "template_substitution_via_env_wrapper",
+  "source_provenance": {
+    "template_file": "templates/run_single_model.sh",
+    "template_sha256": "6078888e0227e5105a86a90d91a6241451c881444391e7bed39409cd74da5a4e",
+    "files_read_during_generation": [
+      "templates/run_single_model.sh",
+      "src/sure_eval/models/whisper-large-v3-turbo/config.yaml",
+      "src/sure_eval/models/whisper-large-v3-turbo/model.spec.yaml"
+    ],
+    "isolation_compliance": {
+      "eval_runs_referenced": false,
+      "prior_run_scripts_copied": false,
+      "template_parameters_deviated": [],
+      "deviation_approved_by_user": false
+    }
+  },
+  "resolved_inputs": {
+    "model_name": "whisper_large_v3_turbo",
+    "dataset": "aishell1_test",
+    "dataset_task": "ASR",
+    "dataset_language": "zh",
+    "evaluation_metric": "WER/CER",
+    "evaluation_postprocessing": "normalize_chinese",
+    "run_dir": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001",
+    "execution_path": "direct_server_use",
+    "tool_name": "transcribe_audio"
+  },
+  "expected_outputs": {
+    "prepare_summary": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/prepare_summary.json",
+    "prediction_manifest": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/predictions/manifest.json",
+    "prediction_generation_status": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/prediction_generation_status.json",
+    "validation_payload": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/validation_payload.json",
+    "evaluation_payload": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/evaluation_payload.json"
+  },
+  "reason": "Execution surface materialized as a wrapper script that exports resolved environment variables and execs the canonical template. This preserves the provenance chain and ensures any template updates are automatically reflected.",
+  "notes": [
+    "DEVICE defaulted to cuda:1 to avoid GPU 0 memory contention.",
+    "Resume enabled for prediction generation."
+  ],
+  "resume_supported": true
+}

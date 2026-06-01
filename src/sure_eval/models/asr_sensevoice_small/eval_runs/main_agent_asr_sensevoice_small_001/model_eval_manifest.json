@@ -1,0 +1,36 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "model_name": "asr_sensevoice_small",
+  "model_dir": "src/sure_eval/models/asr_sensevoice_small",
+  "created_at": "2026-05-28T15:55:20+08:00",
+  "status": "success",
+  "selected_datasets": ["librispeech_test_clean"],
+  "artifacts": {
+    "task_classification": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/task_classification.json",
+    "tool_readiness_routing": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/tool_readiness_routing.json",
+    "main_agent_plan": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/main_agent_plan.json",
+    "dataset_decision": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/dataset_decision.json",
+    "script_routing": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/script_routing.json",
+    "execution_surface": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/execution_surface.json",
+    "execution_readiness_report": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/execution_readiness_report.json",
+    "assessment_report": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/assessment_report.json",
+    "main_agent_run_report": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/main_agent_run_report.json",
+    "compliance_report": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/compliance_report.json",
+    "prepare_summary": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/prepare_summary.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/prediction_generation_status.json",
+    "prediction_manifest": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/manifest.json",
+    "validation_payload": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/validation_payload.json",
+    "evaluation_payload": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/evaluation_payload.json"
+  },
+  "prediction_files": [
+    "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/librispeech_test_clean.txt"
+  ],
+  "dataset_jsonl_paths": [
+    "data/datasets/sure_benchmark/jsonl/librispeech_test_clean.jsonl"
+  ],
+  "notes": [
+    "Evaluation completed via vc submit to pdgpu-2080ti-dsp.",
+    "Initial submission to pdgpu-5090 failed due to CUDA kernel incompatibility.",
+    "WER: 3.21%, RPS: 0.53 on librispeech_test_clean (2619 samples)."
+  ]
+}

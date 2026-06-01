@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sure-eval-fireredvad-phase1"
+version = "0.1.0"
+description = "Model-local phase-1 runtime environment for FireRedVAD onboarding in SURE-EVAL."
+requires-python = "==3.10.*"
+dependencies = [
+  "fireredvad[cpu]==0.0.2",
+  "huggingface_hub==1.8.0",
+  "annotated-doc==0.0.4",
+  "anyio==4.13.0",
+  "certifi==2026.2.25",
+  "cffi==2.0.0",
+  "click==8.3.1",
+  "exceptiongroup==1.3.1",
+  "filelock==3.25.2",
+  "fsspec==2026.3.0",
+  "h11==0.16.0",
+  "hf-xet==1.4.3",
+  "httpcore==1.0.9",
+  "httpx==0.28.1",
+  "idna==3.11",
+  "jinja2==3.1.6",
+  "kaldi-native-fbank==1.22.3",
+  "kaldiio==2.18.1",
+  "markdown-it-py==4.0.0",
+  "markupsafe==3.0.3",
+  "mdurl==0.1.2",
+  "mpmath==1.3.0",
+  "networkx==3.4.2",
+  "numpy==2.2.6",
+  "packaging==26.0",
+  "pycparser==3.0",
+  "pygments==2.20.0",
+  "pyyaml==6.0.3",
+  "rich==14.3.3",
+  "setuptools==81.0.0",
+  "shellingham==1.5.4",
+  "soundfile==0.13.1",
+  "sympy==1.14.0",
+  "textgrid==1.6.1",
+  "torch==2.11.0",
+  "tqdm==4.67.3",
+  "typer==0.24.1",
+  "typing-extensions==4.15.0",
+  "wheel==0.46.3",
+]
+
+[tool.sure_eval.phase1]
+model_id = "FireRedTeam/FireRedVAD"
+backend = "pip"
+device = "cpu"
+weights_dir = "pretrained_models/FireRedVAD"
+fixture = "tests/fixtures/shared/vad/en_16k_10s.wav"
+notes = [
+  "Use Python 3.10.",
+  "Download weights separately from Hugging Face into pretrained_models/FireRedVAD.",
+  "model.spec.yaml records ffmpeg as a system dependency hint.",
+]

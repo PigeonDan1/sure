@@ -1,0 +1,19 @@
+[project]
+name = "sure-eval-whisper-large-v3-turbo"
+version = "0.2.0"
+description = "Phase-1 onboarding package for openai/whisper-large-v3-turbo in SURE-EVAL"
+requires-python = ">=3.10,<3.12"
+dependencies = [
+    "openai-whisper",
+    "torch==2.4.0",
+    "tiktoken",
+    "imageio-ffmpeg",
+    "modelscope",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["model", "server"]

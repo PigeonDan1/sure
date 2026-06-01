@@ -1,0 +1,13 @@
+{
+  "prepared": [
+    {
+      "dataset": "cs_dialogue",
+      "requested_name": "cs_dialogue",
+      "jsonl_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/.datasets/sure_benchmark/jsonl/cs_dialogue.jsonl",
+      "task": "ASR",
+      "language": "cs",
+      "source": "sure_benchmark",
+      "display_name": "cs_dialogue"
+    }
+  ]
+}

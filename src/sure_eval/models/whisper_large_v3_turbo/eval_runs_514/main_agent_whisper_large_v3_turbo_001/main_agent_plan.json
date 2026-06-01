@@ -1,0 +1,23 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-14T11:50:00+08:00",
+  "goal": "Evaluate whisper_large_v3_turbo ASR performance on CS-Dialogue, KeSpeech, VoxPopuli-en, AISHELL-5, ContextASR-En, ContextASR-Zh.",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready_cpu_fallback",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_dataset",
+    "materialize_predictions_template",
+    "generate_predictions_via_server (CPU, --resume)",
+    "validate_prediction_files",
+    "evaluate_predictions",
+    "refresh_report_snapshot"
+  ],
+  "stop_condition": "All 6 datasets have predictions generated, validated, and evaluated. Assessment report confirms no anomalies >50% WER/CER without user confirmation.",
+  "notes": [
+    "GPU inference unavailable due to cluster occupancy; CPU fallback confirmed working via smoke test.",
+    "Total sample count: 191,183. CPU inference will be slow; resume is enabled by default.",
+    "Script routing follows deterministic scripts in scripts/ directory."
+  ]
+}

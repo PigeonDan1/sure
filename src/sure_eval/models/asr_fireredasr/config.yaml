@@ -1,0 +1,18 @@
+name: asr_fireredasr
+task: ASR
+description: "Automatic Speech Recognition using FireRedASR-LLM-L"
+
+model:
+  id: "FireRedTeam/FireRedASR-LLM-L"
+  size: "8.3B"
+  languages: ["zh", "en"]
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ID: "FireRedTeam/FireRedASR-LLM-L"
+    FIREREDASR_MODEL_PATH: ".runtime/modelscope_cache/models/FireRedTeam/FireRedASR-LLM-L"
+    LLM_PATH: ".runtime/modelscope_cache/models/Qwen/Qwen2-7B-Instruct"
+    DEVICE: "auto"
+  timeout: 600

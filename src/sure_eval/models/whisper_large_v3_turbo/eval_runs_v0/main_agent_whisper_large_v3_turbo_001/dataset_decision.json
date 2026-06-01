@@ -1,0 +1,18 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-20T22:09:41+08:00",
+  "selection_basis": [
+    "user_allowed_datasets",
+    "task_type_asr",
+    "model_supports_asr"
+  ],
+  "selected_datasets": [
+    "cs_dialogue",
+    "kespeech",
+    "voxpopuli",
+    "aishell5",
+    "contextasr_en",
+    "contextasr_zh"
+  ],
+  "skipped_datasets": []
+}

@@ -1,0 +1,16 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-24T20:33:18+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "User explicitly requested evaluation of an existing model (asr_sensevoice_small) with allowed datasets and direct execution surface template provided.",
+  "need_tool_workflow": false,
+  "confidence": "high",
+  "input_signals": [
+    "model_dir_exists",
+    "config.yaml_present",
+    "model.spec.yaml_present",
+    "server.py_present",
+    "tool_workflow_ready_true",
+    "execution_surface_template_provided"
+  ]
+}

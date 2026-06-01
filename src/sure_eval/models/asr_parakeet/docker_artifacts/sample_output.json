@@ -1,0 +1,63 @@
+{
+  "timestamp": "2026-05-26T08:29:30.903325+00:00",
+  "model_id": "nvidia/parakeet-tdt-0.6b-v2",
+  "overall": "PASSED",
+  "subtasks": {
+    "asr_en": {
+      "subtask": "asr_en",
+      "num_samples": 3,
+      "tests": {
+        "import": {
+          "passed": true,
+          "duration_ms": 7.434
+        },
+        "load": {
+          "passed": true,
+          "duration_ms": 17563.389
+        },
+        "infer": {
+          "passed": true,
+          "duration_ms": 2713.814
+        },
+        "evaluate": {
+          "passed": true,
+          "duration_ms": 0.464
+        }
+      },
+      "metrics": {
+        "wer": 0.19298245614035087,
+        "details": {
+          "wer": 0.19298245614035087,
+          "score": 0.19298245614035087,
+          "all": 57,
+          "cor": 46,
+          "sub": 11,
+          "ins": 0,
+          "del": 0,
+          "wer_percent": 19.298245614035086
+        }
+      },
+      "samples": [
+        {
+          "key": "367-130732-0006",
+          "audio": "sample_1_367-130732-0006.wav",
+          "ground_truth": "lobster a la newberg",
+          "prediction": "Lobster a la Newberg."
+        },
+        {
+          "key": "4198-12281-0009",
+          "audio": "sample_2_4198-12281-0009.wav",
+          "ground_truth": "to others again he unjointed the spondyles or knuckles of the neck disfigured their chaps gashed their faces made their cheeks hang flapping on their chin and so swinged and balammed them that they fell down before him like hay before a mower",
+          "prediction": "To others again he unjointed the spineels or knuckles of the neck, disfigured their chaps, gashed their faces, made their cheeks hang flapping on their chin, and so swinged and belammed them that they fell down before him like hay before a mower."
+        },
+        {
+          "key": "3005-163389-0016",
+          "audio": "sample_3_3005-163389-0016.wav",
+          "ground_truth": "and the horse a going like a house afire too",
+          "prediction": "and the horse a going like a house afire too."
+        }
+      ],
+      "duration_seconds": 20.313
+    }
+  }
+}

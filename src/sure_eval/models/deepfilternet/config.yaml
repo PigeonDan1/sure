@@ -1,0 +1,17 @@
+name: deepfilternet
+task: speech_enhancement
+description: "Phase-1 wrapper around the repo-native deepFilter CLI."
+
+model:
+  id: "Rikorose/DeepFilterNet"
+  default_variant: "DeepFilterNet3"
+
+runtime:
+  cli_path: "/tmp/sure_eval_deepfilternet/.venv/bin/deepFilter"
+  cache_root: "/tmp/sure_eval_deepfilternet/cache"
+  hf_home: "/tmp/sure_eval_deepfilternet/hf_home"
+  device: "cpu"
+
+tools:
+  - name: "enhance_audio"
+    description: "Enhance a noisy wav file and return the output path."

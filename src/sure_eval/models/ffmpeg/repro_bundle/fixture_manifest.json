@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/ffmpeg/repro_bundle/fixtures/en_16k_10s.wav",
+  "fixture_role": "phase1 infer and repro minimal transcode input",
+  "whether_task_specific": false,
+  "whether_fallback_allowed": true,
+  "checksum": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+  "any_preprocessing_assumption": "None; input fixture is already a mono 16k WAV shared ASR asset.",
+  "source_fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav",
+  "selection_reason": "Shared fallback selected because requested fixture path was absent."
+}

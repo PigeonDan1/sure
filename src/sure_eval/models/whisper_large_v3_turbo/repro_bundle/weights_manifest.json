@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-04-14T13:20:45.867045+01:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "whether_weights_required": true,
+  "source": "release_or_pypi",
+  "identifier": "turbo",
+  "declared_revision": null,
+  "resolved_local_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/checkpoints/home/.cache/whisper/large-v3-turbo.pt",
+  "cache_policy": "model_local_first",
+  "checksum": {
+    "algorithm": "sha256",
+    "value": "aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a"
+  },
+  "size_bytes": 1617941637,
+  "fallback_reason": null,
+  "fallback_path": null
+}

@@ -1,0 +1,13 @@
+{
+  "run_id": "main_agent_whisper-large-v3-turbo_001",
+  "timestamp": "2026-05-20T15:00:34Z",
+  "selection_basis": [
+    "user constraint: allowed_datasets = [data/datasets/aishell1_test]",
+    "task constraint: allowed_tasks = [ASR]",
+    "dataset exists on disk: data/datasets/aishell1_test/sample.jsonl present"
+  ],
+  "selected_datasets": [
+    "aishell1_test"
+  ],
+  "skipped_datasets": []
+}

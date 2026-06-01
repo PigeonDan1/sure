@@ -1,0 +1,24 @@
+{
+  "status": "FAIL",
+  "model": "asr_kimi_audio",
+  "tasks": [
+    "S2TT",
+    "SER",
+    "SLU",
+    "GR"
+  ],
+  "healthcheck": {
+    "status": "loading",
+    "message": "Model not loaded",
+    "model_loaded": false,
+    "model_id": "moonshotai/Kimi-Audio-7B-Instruct",
+    "model_path": "/workspace/sure-eval/src/sure_eval/models/asr_kimi_audio/.runtime/modelscope_cache/models/moonshotai/Kimi-Audio-7B-Instruct",
+    "device": "auto",
+    "cuda_available": true,
+    "load_detokenizer": false,
+    "device_map": "auto",
+    "load_in_8bit": true
+  },
+  "failure": "Failed to load Kimi-Audio from /workspace/sure-eval/src/sure_eval/models/asr_kimi_audio/.runtime/modelscope_cache/models/moonshotai/Kimi-Audio-7B-Instruct: CUDA out of memory. Tried to allocate 66.00 MiB. GPU 1 has a total capacity of 10.57 GiB of which 53.19 MiB is free. Including non-PyTorch memory, this process has 2.11 GiB memory in use. Of the allocated memory 1.90 GiB is allocated by PyTorch, and 53.54 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)",
+  "task_results": {}
+}

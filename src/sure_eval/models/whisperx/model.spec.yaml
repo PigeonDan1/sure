@@ -1,0 +1,41 @@
+model_id: "m-bain/whisperx"
+model_name: "whisperx"
+task_type: "asr"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/m-bain/whisperX"
+  commit: null
+
+weights:
+  source: "pip_and_huggingface"
+  local_path: null
+  required: true
+
+environment:
+  preferred_backend: "uv"
+  python_version: "3.10"
+  requires_gpu: true
+  system_packages:
+    - ffmpeg
+
+entrypoints:
+  import_test: "import whisperx"
+  load_test: "import whisperx; model = whisperx.load_model('small', 'cpu')"
+  infer_test: "import whisperx; model = whisperx.load_model('small', 'cpu'); audio = whisperx.load_audio('tests/fixtures/aishell1-test/sample_1_BAC009S0764W0385.wav'); result = model.transcribe(audio)"
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "segments"
+  required_fields:
+    - "segments"
+  nonempty_fields:
+    - "segments"
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true

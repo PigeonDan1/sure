@@ -1,0 +1,9 @@
+{
+  "run_id": "main_agent_asr_qwen3_007",
+  "timestamp": "2026-05-16T17:39:34+08:00",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model asr_qwen3 has a working MCP server (server.py), config.yaml defines server configuration, and prior runs (main_agent_asr_qwen3_006) successfully used direct_server_use. Model artifacts and weights are available. No need to hand off to tool workflow."
+}

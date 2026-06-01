@@ -1,0 +1,41 @@
+model_id: "Rikorose/DeepFilterNet"
+model_name: "DeepFilterNet"
+task_type: "speech_enhancement"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/Rikorose/DeepFilterNet"
+  commit: null
+
+weights:
+  source: "release_or_pypi"
+  local_path: null
+  required: true
+
+environment:
+  preferred_backend: "uv"
+  python_version: "3.10"
+  requires_gpu: false
+  system_packages:
+    - ffmpeg
+
+entrypoints:
+  import_test: "deepFilter --help"
+  load_test: "deepFilter --version"
+  infer_test: "deepFilter tests/fixtures/shared/se/noisy_48k.wav --output-dir artifacts/df_out"
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "output_path"
+  required_fields:
+    - "output_path"
+  nonempty_fields:
+    - "output_path"
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true

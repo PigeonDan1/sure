@@ -1,0 +1,27 @@
+{
+  "run_id": "main_agent_whisper-large-v3-turbo_001",
+  "timestamp": "2026-05-20T15:00:34Z",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model has a local MCP server (server.py), weights are cached, Python environment has whisper installed. Direct server use is the preferred path. A bounded smoke test is still required before full execution per harness rules.",
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/whisper-large-v3-turbo/server.py",
+      "signal": "MCP server implementation exists"
+    },
+    {
+      "source": "src/sure_eval/models/whisper-large-v3-turbo/.runtime/modelscope_cache/models/iic/Whisper-large-v3-turbo/large-v3-turbo.pt",
+      "signal": "Model weights downloaded (1.6GB)"
+    },
+    {
+      "source": "src/sure_eval/models/whisper-large-v3-turbo/.venv/bin/python -c 'import whisper'",
+      "signal": "Whisper package importable in isolated venv"
+    },
+    {
+      "source": "src/sure_eval/models/whisper-large-v3-turbo/config.yaml",
+      "signal": "Server command and tool schema declared"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+model_id: "openai/whisper-large-v3-turbo"
+model_name: "whisper_large_v3_turbo"
+task_type: "asr"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/openai/whisper"
+  commit: null
+
+weights:
+  source: "release_or_pypi"
+  local_path: "src/sure_eval/models/whisper_large_v3_turbo/checkpoints/home/.cache/whisper"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+
+environment:
+  preferred_backend: "uv"
+  selected_backend: "pip"
+  python_version: "3.10"
+  requires_gpu: false
+  system_packages:
+    - "ffmpeg"
+
+phase1_runtime_target:
+  description: "Validate the minimal repo-native Whisper path: import whisper -> whisper.load_model('turbo') -> model.transcribe(audio_path)."
+  excludes:
+    - "accuracy_evaluation"
+    - "language_coverage_claims"
+    - "production_serving"
+
+entrypoints:
+  import_test: "import whisper"
+  load_test: "model = whisper.load_model('turbo')"
+  infer_test: "result = model.transcribe('tests/fixtures/shared/asr/en_16k_10s.wav')"
+
+fixture:
+  requested_audio: "tests/fixtures/shared/asr/en_16k.wav"
+  selected_audio: "tests/fixtures/shared/asr/en_16k_10s.wav"
+  task_specific: false
+  fallback_allowed: true
+  source: "shared_fallback"
+  note: "The requested fixture path is absent in-repo. Phase-1 uses the existing shared ASR fixture while preserving the same ASR task semantics."
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "text"
+  required_fields:
+    - "text"
+  nonempty_fields:
+    - "text"
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true
+  must_return_nonempty: true

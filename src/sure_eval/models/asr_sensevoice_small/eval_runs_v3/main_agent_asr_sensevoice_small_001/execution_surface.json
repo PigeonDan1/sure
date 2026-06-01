@@ -1,0 +1,44 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-27T22:38:28+08:00",
+  "execution_surface_type": "single_model_shell",
+  "materialized": true,
+  "entrypoint_path": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/run_evaluation.sh",
+  "generation_method": "template_copy_with_variable_injection",
+  "source_provenance": {
+    "template_file": "templates/run_single_model.sh",
+    "template_sha256": "6078888e0227e5105a86a90d91a6241451c881444391e7bed39409cd74da5a4e",
+    "files_read_during_generation": [
+      "templates/run_single_model.sh",
+      "src/sure_eval/models/asr_sensevoice_small/config.yaml",
+      "src/sure_eval/models/asr_sensevoice_small/model.spec.yaml"
+    ],
+    "isolation_compliance": {
+      "eval_runs_referenced": false,
+      "prior_run_scripts_copied": false,
+      "template_parameters_deviated": [],
+      "deviation_approved_by_user": false
+    }
+  },
+  "resolved_inputs": {
+    "model_name": "asr_sensevoice_small",
+    "datasets": ["librispeech_test_clean"],
+    "dataset_task": "ASR",
+    "dataset_language": "en",
+    "evaluation_metric": "WER/CER",
+    "evaluation_postprocessing": "none",
+    "run_dir": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001",
+    "execution_path": "direct_server_use",
+    "tool_name": "asr_transcribe"
+  },
+  "expected_outputs": {
+    "prepare_summary": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/prepare_summary.json",
+    "prediction_manifest": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/manifest.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/prediction_generation_status.json",
+    "validation_payload": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/validation_payload.json",
+    "evaluation_payload": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/evaluation_payload.json"
+  },
+  "resume_supported": true,
+  "reason": "Materialized from templates/run_single_model.sh with explicit variable injection for single-dataset direct-server-use evaluation via vc submit.",
+  "notes": []
+}

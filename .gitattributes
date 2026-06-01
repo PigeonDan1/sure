@@ -1,0 +1,2 @@
+src/sure_eval/models/ffmpeg/repro_bundle/bin/ffmpeg filter=lfs diff=lfs merge=lfs -text
+src/sure_eval/models/ffmpeg/repro_bundle/bin/ffprobe filter=lfs diff=lfs merge=lfs -text

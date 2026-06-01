@@ -1,0 +1,46 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "execution_ready": false,
+  "status": "pending",
+  "validation_mode": "",
+  "validated_shell_entrypoint": "",
+  "smoke_test_command": "",
+  "smoke_test_run_dir": "",
+  "isolation_audit": {
+    "audit_passed": false,
+    "audit_tool": "scripts/check_execution_surface_compliance.py",
+    "checks": {
+      "template_source": {
+        "passed": false,
+        "template_declared": "",
+        "template_exists": false,
+        "under_templates_dir": false,
+        "matches_expected": false,
+        "evidence": ""
+      },
+      "source_provenance": {
+        "passed": false,
+        "evidence": ""
+      }
+    }
+  },
+  "gpu_preflight": {
+    "model_requires_gpu": true,
+    "nvidia_smi_output": "",
+    "available_gpus": [],
+    "gpu_memory_free_mb": [],
+    "recommended_device": "",
+    "cpu_fallback_ready": false,
+    "gpu_check_passed": false
+  },
+  "checked_artifacts": {
+    "prepare_summary": "",
+    "prediction_manifest": "",
+    "prediction_generation_status": "",
+    "shell_log": ""
+  },
+  "blocking_issues": [],
+  "next_action": "",
+  "notes": []
+}

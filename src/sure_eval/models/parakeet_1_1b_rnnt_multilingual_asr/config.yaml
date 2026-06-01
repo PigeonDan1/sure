@@ -1,0 +1,26 @@
+name: parakeet_1_1b_rnnt_multilingual_asr
+task: ASR
+description: "Phase-1 scaffold for NVIDIA Parakeet 1.1B RNNT multilingual ASR. Runtime validation is blocked pending exact checkpoint evidence."
+version: "0.1.0"
+
+model:
+  id: "nvidia/parakeet-1.1b-rnnt-multilingual-asr"
+  family: "Parakeet RNNT"
+  languages: ["auto"]
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ID: "nvidia/parakeet-1.1b-rnnt-multilingual-asr"
+  timeout: 600
+
+tools:
+  - name: "transcribe_audio"
+    description: "Blocked until the exact multilingual checkpoint path is approved."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: ["audio_path"]

@@ -1,0 +1,24 @@
+{
+  "run_id": "main_agent_asr_qwen3_001",
+  "timestamp": "2026-05-17T21:03:29+08:00",
+  "goal": "Evaluate asr_qwen3 (Qwen3-ASR-1.7B) on all available ASR datasets with strict_core protocol",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_datasets",
+    "materialize_prediction_templates",
+    "smoke_test",
+    "generate_predictions",
+    "validate_predictions",
+    "evaluate_predictions",
+    "aggregate_run_report"
+  ],
+  "stop_condition": "All selected datasets have validated predictions and evaluation metrics computed, or a blocking error occurs at smoke test.",
+  "notes": [
+    "Datasets: aishell1 (zh, 7175 samples), librispeech_clean (en, 2618 samples)",
+    "Execution surface derived from templates/run_single_model_single_dataset.sh with per-dataset sub-runs",
+    "GPU available (RTX 2080 Ti); device set to auto"
+  ]
+}

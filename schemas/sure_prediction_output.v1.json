@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sure.prediction.v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "instance_id",
+    "model",
+    "task",
+    "status",
+    "prediction",
+    "error"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sure.prediction.v1"
+    },
+    "instance_id": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "task": {
+      "type": "string"
+    },
+    "status": {
+      "enum": ["ok", "error"]
+    },
+    "prediction": {},
+    "raw_output": {},
+    "runtime": {
+      "type": "object"
+    },
+    "error": {}
+  },
+  "additionalProperties": true
+}

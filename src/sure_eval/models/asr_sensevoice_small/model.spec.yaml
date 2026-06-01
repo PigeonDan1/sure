@@ -1,0 +1,88 @@
+name: "asr_sensevoice_small"
+task: "ASR"
+description: "Automatic Speech Recognition using SenseVoice Small (iic/SenseVoiceSmall)"
+version: "1.0.0"
+
+runtime:
+  identity: "iic/SenseVoiceSmall"
+  load_identity: "iic/SenseVoiceSmall"
+  local_dir_name: "asr_sensevoice_small"
+
+backend:
+  chosen: "uv"
+  reason: "funasr and torch runtime can be installed in an isolated Python environment; weights are available from ModelScope."
+  evidence:
+    - "pyproject.toml present with funasr, torch, and modelscope dependencies"
+    - "ModelScope checkpoint downloaded successfully"
+    - "local checkpoint loads through funasr.AutoModel"
+
+weights:
+  required: true
+  source: "modelscope"
+  repo_id: "iic/SenseVoiceSmall"
+  local_path: "./.runtime/modelscope_cache/models/iic/SenseVoiceSmall"
+  cache_policy: "model_local_first"
+  local_dir_name: ".runtime/modelscope_cache"
+  size_gb: 0.9
+
+environment:
+  python: ">=3.10,<3.12"
+  requires_gpu: false
+  packages:
+    - "funasr"
+    - "torch==2.4.0"
+    - "modelscope"
+    - "soundfile"
+    - "numpy"
+  system_packages:
+    - "ffmpeg"
+
+phase1_runtime_target:
+  description: "Validate the minimal repo-native funasr path: import funasr.AutoModel -> AutoModel(model='iic/SenseVoiceSmall') -> model.generate(audio_path)."
+  excludes:
+    - "accuracy_evaluation"
+    - "language_coverage_claims"
+    - "production_serving"
+
+entrypoints:
+  import_test: "from funasr import AutoModel"
+  load_test: "model = AutoModel(model='iic/SenseVoiceSmall', device='cuda' if torch.cuda.is_available() else 'cpu')"
+  infer_test: "result = model.generate(input='tests/fixtures/shared/asr/en_16k_10s.wav', language='auto')"
+
+fixture:
+  requested_audio: "tests/fixtures/shared/asr/en_16k.wav"
+  selected_audio: "tests/fixtures/shared/asr/en_16k_10s.wav"
+  task_specific: false
+  fallback_allowed: true
+  source: "shared_fallback"
+  note: "The requested fixture path is absent in-repo. Phase-1 uses the existing shared ASR fixture while preserving the same ASR task semantics."
+
+io_contract:
+  input:
+    audio_path: string
+  output:
+    text: string
+    language: string (optional)
+    raw: list[dict] (optional)
+
+resources:
+  memory_gb: 8
+  gpu: recommended
+  cpu_cores: 4
+  storage_gb: 2
+
+mcp_server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ID: "iic/SenseVoiceSmall"
+    SENSEVOICE_MODEL_PATH: ".runtime/modelscope_cache/models/iic/SenseVoiceSmall"
+    DEVICE: "auto"
+  timeout: 300
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true
+  must_return_nonempty: true

@@ -1,0 +1,33 @@
+{
+  "run_id": "main_agent_asr_qwen3_003",
+  "timestamp": "2026-05-12T10:49:51+08:00",
+  "execution_ready": true,
+  "status": "ready",
+  "validation_mode": "shell_preflight_and_gpu_check",
+  "validated_shell_entrypoint": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/run_evaluation.sh",
+  "smoke_test_command": "REPO_ROOT=/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox RUN_ID=main_agent_asr_qwen3_003 DATASETS=aishell1 MAX_SAMPLES=10 REUSE_PREDICTIONS=0 bash src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/run_evaluation.sh",
+  "smoke_test_run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003",
+  "gpu_preflight": {
+    "model_requires_gpu": true,
+    "nvidia_smi_output": "NVIDIA GeForce RTX 2080 Ti, 10823 MiB x4",
+    "available_gpus": ["cuda:0", "cuda:1", "cuda:2", "cuda:3"],
+    "gpu_memory_free_mb": [10823, 10823, 10823, 10823],
+    "recommended_device": "cuda",
+    "cpu_fallback_ready": true,
+    "gpu_check_passed": true
+  },
+  "checked_artifacts": {
+    "prepare_summary": "pending_execution",
+    "prediction_manifest": "pending_execution",
+    "prediction_generation_status": "pending_execution",
+    "shell_log": "pending_execution"
+  },
+  "blocking_issues": [],
+  "next_action": "Proceed to SMOKE_TEST_UNIT. If smoke test passes, proceed to EXECUTE. Since prior run 002 predictions are verified intact, REUSE_PREDICTIONS=1 will skip regeneration after smoke test validation.",
+  "notes": [
+    "Shell syntax validation passed.",
+    "GPU available: 4x NVIDIA GeForce RTX 2080 Ti with sufficient memory.",
+    "Prior run 002 predictions verified: 7176 aishell1 + 2619 librispeech_clean, all non-empty.",
+    "Server path (.venv/bin/python server.py) is declared and was functional in prior run."
+  ]
+}

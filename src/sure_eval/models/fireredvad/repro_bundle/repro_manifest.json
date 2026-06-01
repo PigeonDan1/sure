@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "model_name": "fireredvad",
+  "model_id": "FireRedTeam/FireRedVAD",
+  "task_type": "vad",
+  "deployment_type": "local",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "bundle_created_at": "2026-04-14T14:45:26Z",
+  "repo": {
+    "url": "https://github.com/FireRedTeam/FireRedVAD.git",
+    "commit_declared": null,
+    "commit_tested": "b1c3fb10e38dab1619b3e54d53ab67f7c8c1461b"
+  },
+  "backend": {
+    "selected": "pip"
+  },
+  "paths": {
+    "weights_manifest": "weights_manifest.json",
+    "environment_manifest": "environment_manifest.json",
+    "minimal_repro_spec": "minimal_repro_spec.json",
+    "fixture_manifest": "fixture_manifest.json",
+    "environment_snapshot": "environment_snapshot.txt",
+    "repro_instructions": "repro_instructions.md",
+    "source_snapshot": "source_snapshot/FireRedVAD",
+    "support_dir": "support",
+    "venv_seed": "venv_seed",
+    "fallback_record": "../artifacts/fallback_record.json",
+    "fetch_weights_log": "../artifacts/fetch_weights.log",
+    "sample_output": "../artifacts/sample_output.json",
+    "phase1_verdict": "../artifacts/verdict.json",
+    "repro_validation_log": "../artifacts/repro_validation.log",
+    "repro_verdict": "../artifacts/repro_verdict.json",
+    "bundle_weights": "weights/FireRedVAD/VAD"
+  }
+}

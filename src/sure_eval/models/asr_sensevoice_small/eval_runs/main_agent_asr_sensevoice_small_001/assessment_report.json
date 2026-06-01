@@ -1,0 +1,30 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-28T16:14:00+08:00",
+  "status": "success",
+  "evidence": {
+    "vc_job_id": "job-177995568987474673162-yixuan-wang",
+    "final_vc_job_id": "job-177995568987474673162-yixuan-wang",
+    "failed_vc_job_id": "job-177995538893084537076-yixuan-wang",
+    "failure_stage": "smoke_test",
+    "original_error": "RuntimeError: Inference failed for SenseVoice model iic/SenseVoiceSmall: CUDA error: no kernel image is available for execution on the device",
+    "root_cause": "torch==2.4.0 in the Docker image was not compiled with CUDA kernels for RTX 5090 (Blackwell/sm_100 architecture). The auto-selected partition pdgpu-5090 is incompatible with the model's PyTorch version.",
+    "resolution": "Resubmitted to pdgpu-2080ti-dsp which is compatible with torch 2.4.0.",
+    "evaluation_results": {
+      "dataset": "librispeech_test_clean",
+      "wer": 0.03210398112202177,
+      "wer_percent": 3.210398112202177,
+      "rps": 0.5295293420272673,
+      "num_samples": 2619
+    }
+  },
+  "anomaly_detected": false,
+  "user_confirmed": false,
+  "next_action": "generate_run_report",
+  "notes": [
+    "Initial submission to pdgpu-5090 failed due to CUDA kernel incompatibility with torch==2.4.0.",
+    "Resubmitted to pdgpu-2080ti-dsp which completed successfully.",
+    "WER 3.21% is within normal range for SenseVoice Small on librispeech_test_clean.",
+    "All evaluation artifacts produced successfully."
+  ]
+}

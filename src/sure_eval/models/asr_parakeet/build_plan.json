@@ -1,0 +1,46 @@
+{
+  "$schema": "./build_plan.schema.json",
+  "timestamp": "2026-05-12T20:30:00+08:00",
+  "model_id": "nvidia/parakeet-tdt-0.6b-v2",
+  "backend": "uv",
+  "stages": [
+    {
+      "stage": "BUILD_ENV",
+      "order": 1,
+      "action": "create_uv_venv",
+      "details": "uv venv --python 3.11",
+      "completed": true,
+      "log_ref": "artifacts/build.log"
+    },
+    {
+      "stage": "FETCH_WEIGHTS",
+      "order": 2,
+      "action": "modelscope_download",
+      "details": "modelscope download --model nv-community/parakeet-tdt-0.6b-v2 --local_dir checkpoints",
+      "completed": true,
+      "log_ref": "artifacts/build.log"
+    },
+    {
+      "stage": "INSTALL_DEPS",
+      "order": 3,
+      "action": "uv_pip_install_offline",
+      "details": "uv pip install torch nemo-toolkit[asr] --offline",
+      "completed": true,
+      "log_ref": "artifacts/build.log"
+    },
+    {
+      "stage": "VALIDATE",
+      "order": 4,
+      "action": "run_import_load_infer_contract_tests",
+      "details": "Validate model import, load, inference and output contract",
+      "completed": true,
+      "log_ref": "artifacts/validation.log"
+    }
+  ],
+  "cache_policy": {
+    "model_local_first": true,
+    "checkpoints_dir": "./checkpoints",
+    "runtime_dir": "./.runtime",
+    "fallback_allowed": false
+  }
+}

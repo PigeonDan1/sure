@@ -1,0 +1,100 @@
+# ASR Qwen3 Model Configuration
+
+name: asr_qwen3
+task: ASR
+description: "Automatic Speech Recognition using Qwen3-ASR-1.7B"
+version: "1.0.0"
+
+# Model info
+model:
+  id: "Qwen/Qwen3-ASR-1.7B"
+  size: "1.7B"
+  languages: ["zh", "en", "ja", "ko", "auto"]
+  license: "Apache 2.0"
+
+# MCP Server Configuration
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_PATH: "Qwen/Qwen3-ASR-1.7B"
+    MODELSCOPE_CACHE: "/hpc_stor03/sjtu_home/jing.peng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/.runtime/modelscope_cache"
+    DEVICE: "auto"
+  timeout: 300
+  startup_timeout_sec: 300
+
+# Tools
+tools:
+  - name: "asr_transcribe"
+    description: "Transcribe speech to text"
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+          description: "Path to audio file"
+        language:
+          type: string
+          description: "Language (Chinese, English, auto)"
+          default: "auto"
+      required: ["audio_path"]
+
+# Test Results
+results:
+  aishell1:
+    date: "2025-03-25"
+    samples: 10
+    metrics:
+      wer: 0.79
+      cer: null
+    rps: 101.60
+    notes: "Quick test"
+  
+  librispeech_clean:
+    status: "not_tested"
+  
+  librispeech_other:
+    status: "not_tested"
+
+# Protocol Declarations
+# SURE-EVAL inference protocol mapping for Qwen3-ASR-1.7B
+protocols:
+  strict_core:
+    enabled: true
+    param_map:
+      search_strength:
+        model_param: null
+        note: "Qwen3-ASR uses built-in autoregressive decoding; temperature/beam not exposed"
+      context_policy:
+        model_param: null
+        note: "Context injection not exposed in public API"
+      external_info:
+        model_param: null
+        note: "Model does not support external knowledge retrieval"
+      precision:
+        model_param: dtype
+        mapping:
+          float16: "torch.float16"
+          float32: "torch.float32"
+          bfloat16: "torch.bfloat16"
+      max_batch_size:
+        model_param: batch_size
+        mapping:
+          "1": 1
+          "4": 1
+          "8": 1
+          "16": 1
+        note: "Qwen3-ASR currently supports batch_size=1 only"
+    attestation:
+      single_pass_decode: true
+      no_external_lm: true
+      no_retrieval: true
+      no_hotwords: true
+      no_prompt_engineering: true
+
+# Resource Requirements
+resources:
+  memory_gb: 8
+  gpu: true  # Recommended
+  cpu_cores: 4
+  storage_gb: 4

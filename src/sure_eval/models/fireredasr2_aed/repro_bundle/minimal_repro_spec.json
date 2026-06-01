@@ -1,0 +1,35 @@
+{
+  "minimal_callable_path": "from fireredasr2s.fireredasr2 import FireRedAsr2, FireRedAsr2Config; FireRedAsr2.from_pretrained('aed', weights_dir, config); model.transcribe(['sure_en_16k_10s'], [fixture])",
+  "exact_commands_or_steps": [
+    "Create a fresh temp workdir and copy `repro_bundle/` into it.",
+    "Create a fresh Python 3.10 venv with `/opt/anaconda3/envs/fireredvad/bin/python -m venv .venv`.",
+    "Install dependencies with `.venv/bin/pip install -r repro_bundle/support/requirements.phase1.txt`.",
+    "Run `.venv/bin/python repro_bundle/support/repro_validate.py` with `SURE_REPRO_UPSTREAM_ROOT`, `SURE_REPRO_WEIGHTS_DIR`, `SURE_REPRO_FIXTURE`, and `SURE_REPRO_OUTPUT` set."
+  ],
+  "working_directory_assumptions": [
+    "The current working directory is the fresh temp replay directory containing `repro_bundle/`.",
+    "The upstream source snapshot is used from `repro_bundle/source_snapshot/FireRedASR2S`."
+  ],
+  "required_inputs": [
+    {
+      "name": "fixture",
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav"
+    },
+    {
+      "name": "weights_dir",
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/fireredasr2_aed/pretrained_models/FireRedASR2-AED"
+    }
+  ],
+  "expected_outputs": [
+    {
+      "name": "repro_output.json",
+      "contract": "JSON with required fields `uttid` and non-empty `text`"
+    }
+  ],
+  "contract_checks": [
+    "Import succeeds without ModuleNotFoundError.",
+    "Load succeeds from the recorded local weights path.",
+    "Inference returns a single JSON-serializable dict.",
+    "Returned dict includes `uttid` and non-empty `text`."
+  ]
+}

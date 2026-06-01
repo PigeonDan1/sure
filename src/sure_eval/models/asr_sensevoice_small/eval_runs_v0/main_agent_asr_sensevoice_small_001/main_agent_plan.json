@@ -1,0 +1,23 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-24T20:33:18+08:00",
+  "goal": "Evaluate asr_sensevoice_small on aishell1_test and librispeech_test_clean via direct server use, regenerating all predictions.",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_dataset",
+    "materialize_predictions_template",
+    "smoke_test_via_server",
+    "generate_predictions_via_server",
+    "validate_prediction_files",
+    "evaluate_predictions",
+    "refresh_report_snapshot"
+  ],
+  "stop_condition": "All datasets evaluated and results persisted; abort if smoke test fails or evaluation produces anomalous metrics.",
+  "notes": [
+    "Isolate from prior runs as per harness constraint.",
+    "Both datasets are ASR tasks matching the model capability."
+  ]
+}

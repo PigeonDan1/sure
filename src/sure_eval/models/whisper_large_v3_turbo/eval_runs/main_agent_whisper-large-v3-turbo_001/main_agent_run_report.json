@@ -1,0 +1,39 @@
+{
+  "run_id": "main_agent_whisper-large-v3-turbo_001",
+  "timestamp": "2026-05-20T15:57:15Z",
+  "task_type": "evaluate_existing_model",
+  "goal": "Evaluate whisper-large-v3-turbo on aishell1_test ASR dataset using direct server prediction generation, then validate and evaluate predictions.",
+  "selected_datasets": ["aishell1_test"],
+  "executed_steps": [
+    "TASK_CLASSIFICATION_UNIT: evaluate_existing_model",
+    "TOOL_READINESS_AND_ROUTING_UNIT: direct_server_use (server_ready)",
+    "PLAN_UNIT: 6-step execution plan formed",
+    "DATASET_SCOPE_UNIT: aishell1_test selected",
+    "SCRIPT_ROUTING_UNIT: 5 scripts routed",
+    "EXECUTION_SURFACE_UNIT: run_evaluation.sh materialized from templates/run_single_model.sh",
+    "EXECUTION_READINESS_UNIT: compliance passed, smoke test passed (10/10)",
+    "EXECUTE_SCRIPTS: full run executed (prepare, materialize, smoke, generate, validate, evaluate)",
+    "ASSESSMENT_UNIT: success — CER 7.28%, validation passed",
+    "RUN_REPORT_UNIT: report generated and persisted"
+  ],
+  "status": "success",
+  "artifacts": {
+    "task_classification": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/task_classification.json",
+    "tool_readiness_routing": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/tool_readiness_routing.json",
+    "plan": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/main_agent_plan.json",
+    "dataset_decision": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/dataset_decision.json",
+    "script_routing": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/script_routing.json",
+    "execution_surface": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/execution_surface.json",
+    "execution_readiness_report": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/execution_readiness_report.json",
+    "assessment_report": "src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/assessment_report.json"
+  },
+  "model_eval_manifest": "results/whisper-large-v3-turbo/strict_core/report.jsonl",
+  "next_action": "Evaluation complete. Results available in results/whisper-large-v3-turbo/strict_core/ and evaluation_payload.json.",
+  "notes": [
+    "Execution surface derived from templates/run_single_model.sh with full isolation compliance.",
+    "All 7176 samples processed successfully via direct server use.",
+    "Evaluation produced CER=7.28% (RPS=0.11) on aishell1_test.",
+    "Run directory: src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001"
+  ],
+  "report_persisted": true
+}

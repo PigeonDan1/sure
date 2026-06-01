@@ -1,0 +1,34 @@
+{
+  "run_id": "main_agent_whisper-large-v3-turbo_001",
+  "timestamp": "2026-05-20T15:57:15Z",
+  "status": "success",
+  "evidence": [
+    {
+      "source": "evaluation_payload.json",
+      "signal": "CER = 0.0728 (7.28%) on aishell1_test, 7176 samples"
+    },
+    {
+      "source": "validation_payload.json",
+      "signal": "All 7176 predictions present, no missing/extra/empty keys"
+    },
+    {
+      "source": "results/whisper-large-v3-turbo/strict_core/report.jsonl",
+      "signal": "Standardized results directory created with protocol.yaml and per-sample predictions"
+    }
+  ],
+  "anomaly_detected": false,
+  "anomaly_details": {
+    "cer_percent": 7.28,
+    "rps": 0.1099,
+    "note": "RPS is low (0.11), indicating performance is far from SOTA baseline for aishell1_test. However, CER of 7.28% is within expected range for Whisper-large-v3-turbo on Chinese ASR and does not indicate a model failure or broken pipeline."
+  },
+  "user_confirmed": "not_required",
+  "next_action": "Run is complete. Results are persisted. No further action needed.",
+  "notes": [
+    "Smoke test passed (10/10 valid).",
+    "Full prediction generation completed: 7176/7176 samples.",
+    "Validation passed: all keys present, no empty predictions.",
+    "Evaluation metrics: CER=7.28%, substitutions=6436, insertions=422, deletions=775, correct=97689.",
+    "Low RPS (0.11) reflects that Whisper-large-v3-turbo is not competitive with SOTA on this Chinese ASR benchmark, which is expected given model design trade-offs."
+  ]
+}

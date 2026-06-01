@@ -1,0 +1,14 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-28T15:55:20+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "User explicitly provided evaluate_existing_model goal with model_name=asr_sensevoice_small, allowed_tasks=[ASR], and allowed_datasets=[librispeech_test_clean].",
+  "need_tool_workflow": false,
+  "confidence": "high",
+  "input_signals": [
+    "user_goal: evaluate_existing_model",
+    "model_name: asr_sensevoice_small",
+    "tool_workflow_ready: true",
+    "allowed_tasks: [ASR]"
+  ]
+}

@@ -1,0 +1,58 @@
+name: asr_parakeet
+task: ASR
+description: "Automatic Speech Recognition using NVIDIA Parakeet-TDT-0.6B-v2"
+version: "1.0.0"
+
+runtime:
+  identity: "Parakeet-TDT-0.6B-v2"
+  load_identity: "nvidia/parakeet-tdt-0.6b-v2"
+  local_dir_name: "asr_parakeet"
+
+backend:
+  chosen: "uv"
+  reason: "Python package dependencies can be isolated in a per-model virtual environment."
+  evidence:
+    - "pyproject.toml declares torch, torchaudio, nemo-toolkit[asr] dependencies"
+    - "server.py provides the JSON-RPC MCP tool entrypoint"
+    - "model.py wraps nemo_asr.models.ASRModel.from_pretrained()"
+
+weights:
+  required: true
+  source: "modelscope"
+  repo_id: "nv-community/parakeet-tdt-0.6b-v2"
+  local_path: "./checkpoints"
+  size_gb: 1.2
+
+io_contract:
+  input:
+    audio_path: string
+    language: string (optional, only "en" supported)
+    return_timestamps: boolean (optional)
+  output:
+    text: string
+    language: string
+    timestamps: list[dict] (optional)
+
+environment:
+  python: ">=3.10"
+  packages:
+    - nemo-toolkit[asr]
+    - torch
+    - torchaudio
+    - soundfile
+    - numpy
+
+resources:
+  memory_gb: 4
+  gpu: recommended
+  gpu_memory_gb: 2
+  cpu_cores: 4
+  storage_gb: 2
+
+mcp_server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_PATH: "./checkpoints/parakeet-tdt-0.6b-v2.nemo"
+    DEVICE: "auto"
+  timeout: 600

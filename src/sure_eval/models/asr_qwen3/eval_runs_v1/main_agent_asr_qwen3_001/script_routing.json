@@ -1,0 +1,83 @@
+{
+  "run_id": "main_agent_asr_qwen3_001",
+  "timestamp": "2026-05-17T21:03:29+08:00",
+  "steps": [
+    {
+      "name": "prepare_datasets",
+      "script": "scripts/prepare_sure_dataset.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"]
+      },
+      "outputs": {
+        "prepare_summary": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/{dataset}/prepare_summary.json"
+      },
+      "completion_criteria": [
+        "prepare summary file exists for each dataset"
+      ]
+    },
+    {
+      "name": "materialize_prediction_templates",
+      "script": "scripts/materialize_predictions_template.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "output_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/{dataset}/predictions"
+      },
+      "outputs": {
+        "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/{dataset}/predictions/manifest.json"
+      },
+      "completion_criteria": [
+        "manifest.json exists for each dataset"
+      ]
+    },
+    {
+      "name": "generate_predictions",
+      "script": "scripts/generate_predictions_via_server.py",
+      "inputs": {
+        "model_dir": "src/sure_eval/models/asr_qwen3",
+        "tool_name": "asr_transcribe",
+        "run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/{dataset}"
+      },
+      "outputs": {
+        "prediction_file": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/{dataset}/predictions/{dataset}.txt"
+      },
+      "completion_criteria": [
+        "prediction file exists and has non-empty predictions for all expected samples"
+      ]
+    },
+    {
+      "name": "validate_predictions",
+      "script": "scripts/validate_prediction_files.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "pred_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/{dataset}/predictions"
+      },
+      "outputs": {
+        "validation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/{dataset}/validation_payload.json"
+      },
+      "completion_criteria": [
+        "validation payload exists and reports no critical errors"
+      ]
+    },
+    {
+      "name": "evaluate_predictions",
+      "script": "scripts/evaluate_predictions.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "pred_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/{dataset}/predictions",
+        "tool_name": "asr_qwen3",
+        "results_dir": "results/asr_qwen3/strict_core",
+        "protocol_id": "strict_core",
+        "model_dir": "src/sure_eval/models/asr_qwen3"
+      },
+      "outputs": {
+        "evaluation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/{dataset}/evaluation_payload.json"
+      },
+      "completion_criteria": [
+        "evaluation payload exists with computed metrics"
+      ]
+    }
+  ],
+  "routing_reason": "Model is server-ready; direct_server_use via generate_predictions_via_server.py is the correct path. Per-dataset sub-runs used because execution_surface_template is single-dataset.",
+  "wait_points": [],
+  "stop_condition": "Smoke test failure or any script exits non-zero after smoke test gate."
+}

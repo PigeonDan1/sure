@@ -1,0 +1,101 @@
+{
+  "run_id": "main_agent_asr_qwen3_005",
+  "timestamp": "2026-05-15T21:20:00+08:00",
+  "steps": [
+    {
+      "name": "prepare_dataset",
+      "script": "scripts/prepare_sure_dataset.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"]
+      },
+      "outputs": {
+        "prepare_summary": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_005/prepare_summary.json"
+      },
+      "completion_criteria": [
+        "prepare summary file exists",
+        "dataset JSONL paths are valid"
+      ]
+    },
+    {
+      "name": "materialize_templates",
+      "script": "scripts/materialize_predictions_template.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "output_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_005/predictions"
+      },
+      "outputs": {
+        "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_005/predictions/manifest.json"
+      },
+      "completion_criteria": [
+        "manifest.json exists",
+        "template .txt files created for each dataset"
+      ]
+    },
+    {
+      "name": "validate_predictions",
+      "script": "scripts/validate_prediction_files.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "pred_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_005/predictions",
+        "require_nonempty": true
+      },
+      "outputs": {
+        "validation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_005/validation_payload.json"
+      },
+      "completion_criteria": [
+        "validation_payload.json exists",
+        "no validation errors for any dataset"
+      ]
+    },
+    {
+      "name": "evaluate_predictions",
+      "script": "scripts/evaluate_predictions.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "pred_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_005/predictions",
+        "tool_name": "asr_qwen3",
+        "record": true
+      },
+      "outputs": {
+        "evaluation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_005/evaluation_payload.json"
+      },
+      "completion_criteria": [
+        "evaluation_payload.json exists",
+        "metrics calculated for all datasets",
+        "scores are within reasonable bounds (CER/WER < 50%)"
+      ],
+      "dataset_context": {
+        "aishell1": {
+          "task": "ASR",
+          "language": "zh",
+          "metric": "CER/WER",
+          "normalization": "asr_num2words, clean_marks.strip_all_punct"
+        },
+        "librispeech_clean": {
+          "task": "ASR",
+          "language": "en",
+          "metric": "WER",
+          "normalization": "asr_num2words, clean_marks.strip_all_punct"
+        }
+      }
+    },
+    {
+      "name": "refresh_report",
+      "script": "scripts/refresh_report_snapshot.py",
+      "inputs": {
+        "run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_005"
+      },
+      "outputs": {
+        "report_snapshot": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_005/report_snapshot.md"
+      },
+      "completion_criteria": [
+        "report snapshot exists"
+      ]
+    }
+  ],
+  "routing_reason": "Model is server-ready with asr_transcribe tool. Using deterministic scripts for dataset preparation, template materialization, prediction validation, and evaluation. Prediction generation is handled inline by the materialized execution surface shell. Refresh report produces final snapshot.",
+  "wait_points": [
+    "after prediction generation: wait for all prediction files to be produced before validation"
+  ],
+  "stop_condition": "Evaluation payload generated with valid metrics for all selected datasets, or anomaly detected requiring user confirmation."
+}

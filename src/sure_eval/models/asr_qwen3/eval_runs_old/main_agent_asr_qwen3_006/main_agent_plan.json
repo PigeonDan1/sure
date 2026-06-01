@@ -1,0 +1,28 @@
+{
+  "run_id": "main_agent_asr_qwen3_006",
+  "timestamp": "2026-05-16T15:42:00+08:00",
+  "goal": "Evaluate existing model asr_qwen3 on all available ASR datasets",
+  "expected_steps": [
+    "TASK_CLASSIFICATION_UNIT: confirm evaluate_existing_model",
+    "TOOL_READINESS_AND_ROUTING_UNIT: confirm direct_server_use with smoke test",
+    "DATASET_SCOPE_UNIT: select aishell1 (zh) and librispeech_clean (en)",
+    "SCRIPT_ROUTING_UNIT: route to deterministic scripts",
+    "EXECUTION_SURFACE_UNIT: materialize run_single_model.sh for multi-dataset execution",
+    "EXECUTION_READINESS_UNIT: verify shell syntax and bounded smoke test",
+    "EXECUTE: run predictions via MCP server, then validate and evaluate",
+    "ASSESSMENT_UNIT: inspect metrics and flag anomalies",
+    "RUN_REPORT_UNIT: generate and persist final report"
+  ],
+  "stop_conditions": [
+    "Evaluation payload generated with valid metrics for all selected datasets",
+    "Anomaly detected requiring user confirmation",
+    "Smoke test failure blocking full execution"
+  ],
+  "constraints": {
+    "allowed_tasks": ["ASR"],
+    "allowed_datasets": null,
+    "blocked_datasets": [],
+    "dry_run": false,
+    "isolate_from_prior_runs": true
+  }
+}

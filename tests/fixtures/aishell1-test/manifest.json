@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "key": "BAC009S0764W0385",
+    "dataset": "aishell1-test_ASR",
+    "audio": "sample_1_BAC009S0764W0385.wav",
+    "ground_truth": "在此次申办冬奥会的过程中"
+  },
+  {
+    "id": 2,
+    "key": "BAC009S0764W0369",
+    "dataset": "aishell1-test_ASR",
+    "audio": "sample_2_BAC009S0764W0369.wav",
+    "ground_truth": "很多六七十岁的跑者看到这个研究结果时"
+  },
+  {
+    "id": 3,
+    "key": "BAC009S0766W0157",
+    "dataset": "aishell1-test_ASR",
+    "audio": "sample_3_BAC009S0766W0157.wav",
+    "ground_truth": "广泛应用于移动端"
+  }
+]

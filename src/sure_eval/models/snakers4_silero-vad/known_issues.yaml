@@ -1,0 +1,57 @@
+# Silero VAD Known Issues
+# Model-specific exceptions and workarounds for snakers4/silero-vad
+
+model_id: "snakers4/silero-vad"
+model_name: "Silero VAD"
+
+issues:
+  - issue_id: "SILERO-001"
+    title: "torchaudio high-version audio I/O triggers torchcodec/CUDA dependency chain"
+    severity: "medium"
+    category: "runtime_backend_incompatible"
+    symptoms:
+      - "RuntimeError mentioning torchcodec during audio loading/inference"
+      - "Missing CUDA-related shared libraries (e.g. libnppicc...)"
+      - "Inference fails although import/load succeed"
+      - "torchcodec-related import errors"
+    root_cause: >
+      Silero VAD itself is lightweight and CPU-friendly, but high-version torchaudio 
+      audio I/O may route into torchcodec-related paths. In CPU-only onboarding, 
+      this can introduce unnecessary CUDA dependency failures.
+    conditions:
+      - "requires_gpu == false"
+      - "torchaudio >= 2.11"
+      - "torchcodec dependency triggered"
+    preferred_resolution:
+      - "Prefer CPU-only PyTorch/torchaudio stack when requires_gpu == false"
+      - "Use aligned torch/torchaudio versions (e.g. 2.2.2+cpu)"
+      - "Avoid latest CUDA-enabled wheels for CPU-only inference"
+      - "Pin numpy<2 if older stack requires NumPy 1.x"
+    observed_working_setup:
+      torch: "2.2.2+cpu"
+      torchaudio: "2.2.2+cpu"
+      numpy: "1.26.4"
+    repair_hint: >
+      When requires_gpu == false and torchaudio is used mainly for audio I/O:
+      1. Switch to CPU-only PyTorch wheel index (https://download.pytorch.org/whl/cpu)
+      2. Use aligned torch/torchaudio versions instead of latest CUDA stack
+      3. Do NOT default to CUDA wheels when spec says requires_gpu: false
+    promote_to_global_policy: false
+    notes: >
+      This is a model-level/CPU-audio-model heuristic, not a global rule for all models.
+
+fixture_notes:
+  current_status: "uses shared audio fixture as fallback"
+  preferred: "dedicated VAD fixture with clear silence/speech boundaries"
+  shared_fallback: "librispeech samples can be used for smoke test only"
+  action_item: "Add proper VAD fixture with voice/silence transitions"
+
+builder_heuristics:
+  - rule: "CPU-friendly torch audio models"
+    condition:
+      - "requires_gpu == false"
+      - "model is lightweight and CPU-friendly"
+      - "torchaudio used mainly for audio I/O"
+    action: "prefer CPU-only PyTorch stack before attempting CUDA-enabled wheels"
+    priority: "recommendation"
+    scope: "model_specific"

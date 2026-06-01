@@ -1,0 +1,23 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-28T15:55:20+08:00",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model has config.yaml with server command, server.py exists, and .venv is present. Direct server use is preferred. Bounded smoke test is still required before full evaluation.",
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/asr_sensevoice_small/config.yaml",
+      "signal": "server.command declared: [.venv/bin/python, server.py]"
+    },
+    {
+      "source": "src/sure_eval/models/asr_sensevoice_small/server.py",
+      "signal": "file exists"
+    },
+    {
+      "source": "src/sure_eval/models/asr_sensevoice_small/.venv",
+      "signal": "symlink to /opt/asr_sensevoice_small_venv exists"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+name: sa_asr_vibevoiceasr
+task: ASR
+description: "Microsoft VibeVoice-ASR - Long-form speech recognition with speaker diarization and timestamps"
+
+model:
+  id: "microsoft/VibeVoice-ASR"
+  size: "7B"
+  languages: ["zh", "en", "ja", "ko", "de", "fr", "es", "it", "pt", "ru", "ar"]
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  env:
+    MODEL_PATH: "./.runtime/microsoft/VibeVoice-ASR-HF"
+  timeout: 600

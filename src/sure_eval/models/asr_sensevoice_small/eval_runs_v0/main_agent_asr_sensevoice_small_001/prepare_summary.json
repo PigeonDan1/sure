@@ -1,0 +1,22 @@
+{
+  "prepared": [
+    {
+      "dataset": "aishell1_test",
+      "requested_name": "aishell1_test",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/aishell1_test.jsonl",
+      "task": "ASR",
+      "language": "zh",
+      "source": "oref_local",
+      "display_name": "aishell1_test"
+    },
+    {
+      "dataset": "librispeech_test_clean",
+      "requested_name": "librispeech_test_clean",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/librispeech_test_clean.jsonl",
+      "task": "ASR",
+      "language": "en",
+      "source": "oref_local",
+      "display_name": "librispeech_test_clean"
+    }
+  ]
+}

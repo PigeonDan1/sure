@@ -1,0 +1,387 @@
+# SURE-EVAL Main Flow Agent
+
+This directory contains the **Harness-First Main Flow Agent Workflow** for orchestration across evaluation tasks.
+
+Unlike the tool onboarding workflow under `src/sure_eval/models/`, the main flow agent does not redesign tool integration. It routes work across:
+
+- user intent understanding
+- task classification
+- tool readiness and routing
+- dataset scope decision
+- deterministic script execution
+- result assessment
+
+---
+
+## 🤖 Main Flow Agent Workflow
+
+### How It Works
+
+1. **Initial Prompt** → Defines the main flow agent role and routing rules
+2. **MAIN_FLOW_INPUT** → Describes the current user goal and working context
+3. **Structured Execution** → Agent follows the routing file and unit contracts
+4. **Artifact Generation** → Agent emits structured run files for audit
+
+### Two-Stage Boundary
+
+The current project should be understood as a **two-stage workflow**:
+
+1. **Tool onboarding / adaptation stage**
+   - handled by the existing workflow under `src/sure_eval/models/`
+   - responsible for making the model callable as a stable local tool/server
+   - entrypoint for readers:
+     [Tool Onboarding README](../models/README.md)
+     and [Tool Onboarding AGENTS](../models/AGENTS.md)
+
+2. **Main-flow evaluation stage**
+   - handled by the main flow agent described in this directory
+   - responsible for readiness routing, dataset scope, script routing, and
+     evaluation assessment
+
+So if a target model is not yet adapted, the main flow should first recognize
+that state and route to onboarding rather than pretending evaluation can start
+immediately.
+
+This does **not** require a multi-agent redesign at this time. The preferred
+shape is still one main flow agent plus one existing onboarding workflow.
+
+---
+
+## Usage
+
+### Step 1: Initial Prompt
+
+Use this as the system prompt for your AI agent:
+
+```text
+cd /path/to/sure-eval
+你现在扮演 SURE-EVAL 的主流程执行代理。你的任务不是重新实现 tool onboarding，也不是自由式探索，而是严格按照仓库中定义的 harness-first 主流程规范，完成一次 evaluation orchestration。
+
+你必须遵守以下文档：
+1. src/sure_eval/agent/AGENTS.md
+2. docs/contracts/main_flow_architecture.md
+3. docs/contracts/main_agent_spec.md
+4. docs/contracts/main_agent_task_unit.md
+5. docs/contracts/main_agent_tool_readiness_unit.md
+6. docs/contracts/main_agent_plan_unit.md
+7. docs/contracts/main_agent_dataset_unit.md
+8. docs/contracts/main_agent_script_routing_unit.md
+9. docs/contracts/main_agent_execution_surface_unit.md
+10. docs/contracts/main_agent_execution_readiness_unit.md
+11. docs/contracts/main_agent_assessment_unit.md
+12. docs/contracts/main_agent_run_report_unit.md
+13. docs/policies/constitution.md
+
+你的目标：
+- 理解当前请求属于哪类主流程任务
+- 先判断当前模型是否可以 direct server use，还是应先做 server smoke test，还是应转 tool workflow
+- 选择合理的数据集范围
+- 优先调用 deterministic scripts，而不是重写它们
+- 对本轮执行形成结构化 run report
+
+你必须显式产出以下结构化文件：
+- task_classification.json
+- tool_readiness_routing.json
+- main_agent_plan.json
+- dataset_decision.json
+- script_routing.json
+- execution_surface.json
+- execution_readiness_report.json
+- assessment_report.json
+- main_agent_run_report.json
+- model_eval_manifest.json
+
+请按当前 workflow 执行：
+INTAKE → TASK_CLASSIFICATION_UNIT → TOOL_READINESS_AND_ROUTING_UNIT → PLAN_UNIT → DATASET_SCOPE_UNIT → SCRIPT_ROUTING_UNIT → EXECUTION_SURFACE_UNIT → EXECUTION_READINESS_UNIT → SMOKE_TEST_UNIT → EXECUTE / WAIT → ASSESSMENT_UNIT → RUN_REPORT_UNIT
+
+工作要求：
+- 所有关键决策必须基于 evidence
+- 能交给 scripts 的工作必须交给 scripts
+- 不允许重写既有 tool onboarding workflow
+- 如果模型声明了 server/tool 路径，必须优先做 server-first 判定，不允许一开始就掉进 wrapper-level 或 dependency-level 修补
+- 如果 `TOOL_READINESS_AND_ROUTING_UNIT` 判断为 `tool_broken_needs_repair` 或 `not_tool_ready`，应停止主流程评测并 handoff
+- 任何 skipped dataset 都必须说明理由
+- 任何 stop / block / handoff 决策都必须说明理由
+- 每个单元都要优先落结构化文件，而不是只输出自然语言总结
+- 对异常结果（如 WER/CER > 50%、Accuracy < 20%）必须暂停并请求用户确认，不允许静默继续
+
+下面是本次输入：
+
+MAIN_FLOW_INPUT
+```
+
+### Complete Prompt Template
+
+If you want a single copy-paste block for a coding agent, use this:
+
+```text
+cd /cpfs/user/jingpeng/workspace/sure-eval
+
+你现在扮演 SURE-EVAL 的主流程执行代理。你的任务不是重新实现 tool onboarding，也不是自由式探索，而是严格按照仓库中定义的 harness-first 主流程规范，完成一次 evaluation orchestration。
+
+你必须遵守以下文档：
+1. src/sure_eval/agent/AGENTS.md
+2. docs/contracts/main_flow_architecture.md
+3. docs/contracts/main_agent_spec.md
+4. docs/contracts/main_agent_task_unit.md
+5. docs/contracts/main_agent_tool_readiness_unit.md
+6. docs/contracts/main_agent_plan_unit.md
+7. docs/contracts/main_agent_dataset_unit.md
+8. docs/contracts/main_agent_script_routing_unit.md
+9. docs/contracts/main_agent_execution_surface_unit.md
+10. docs/contracts/main_agent_execution_readiness_unit.md
+11. docs/contracts/main_agent_assessment_unit.md
+12. docs/contracts/main_agent_run_report_unit.md
+13. docs/policies/constitution.md
+
+你的工作边界：
+- 你是主流程 agent，不是 tool onboarding agent
+- 你必须先做 TASK_CLASSIFICATION_UNIT
+- 然后必须做 TOOL_READINESS_AND_ROUTING_UNIT
+- 如果模型已经声明 server/tool 路径，优先 direct server use 或 server smoke test
+- 如果 tool 路径坏了，应 handoff 给既有 tool workflow，而不是自己重写 tool integration
+- 只有在 tool path 已就绪时，才进入 dataset scope 和 deterministic scripts
+
+你的强制输出文件：
+- task_classification.json
+- tool_readiness_routing.json
+- main_agent_plan.json
+- dataset_decision.json
+- script_routing.json
+- execution_surface.json
+- execution_readiness_report.json
+- assessment_report.json
+- main_agent_run_report.json
+- model_eval_manifest.json
+
+你的执行顺序必须是：
+INTAKE
+→ TASK_CLASSIFICATION_UNIT
+→ TOOL_READINESS_AND_ROUTING_UNIT
+→ PLAN_UNIT
+→ DATASET_SCOPE_UNIT
+→ SCRIPT_ROUTING_UNIT
+→ EXECUTION_SURFACE_UNIT
+→ EXECUTION_READINESS_UNIT
+→ SMOKE_TEST_UNIT
+→ EXECUTE / WAIT
+→ ASSESSMENT_UNIT
+→ RUN_REPORT_UNIT
+
+你的执行原则：
+- 所有关键判断必须基于 evidence
+- 能交给 deterministic scripts 的工作，必须交给 scripts
+- 不允许跳过 TOOL_READINESS_AND_ROUTING_UNIT
+- 如果最终交付物是 shell entrypoint，必须先 materialize shell，再做 EXECUTION_READINESS_UNIT
+- 如果最终交付物是 shell entrypoint，必须先完成 EXECUTION_READINESS_UNIT
+- 正式后台执行前必须经过 SMOKE_TEST_UNIT：bounded smoke test 必须验证通过（≥1 条非空预测），否则不允许进入 EXECUTE
+- 不允许一开始直接下沉到 wrapper-level / dependency-level 修补
+- 任何 skipped dataset、handoff、blocked、stop 都必须说明理由
+- 输出必须优先结构化，且与 templates 对齐
+
+**执行方式（Volcano 集群提交）**：
+- 当进入 EXECUTE 阶段时，**不要**直接在本地执行 `bash run_evaluation.sh`
+- 使用以下两种方式之一提交到 Volcano 集群：
+  1. **CLI 方式**：`sure-eval submit-run <model_name> <run_id>`（自动选择镜像、分区、内存，并修复容器内 .venv symlink）
+  2. **脚本方式**：`python src/sure_eval/agent/trigger_vc.py src/sure_eval/models/<model>/eval_runs/<run_id>/execution_surface.json`
+- 这两种方式会自动完成：镜像选择（取最新 tag）、GPU 分区选择（按 5090>4090>3090>A10 优先级选空闲分区）、内存估算、.venv symlink 修复
+- 提交后记录 job_id 到 `main_agent_run_report.json` 的 `vc_job_id` 字段
+- 通过 `vc logs -t <job_id>-master-0` 查看实时日志
+- 结果文件（predictions/、evaluation_payload.json 等）会通过 volume mount 自动同步回本地 `eval_runs/<run_id>/` 目录
+
+当前 deterministic script surface:
+- scripts/prepare_sure_dataset.py
+- scripts/materialize_predictions_template.py
+- scripts/generate_predictions_via_server.py
+  - 支持 `--resume`，默认开启；`NO_RESUME=1` 可禁用
+- scripts/validate_prediction_files.py
+- scripts/evaluate_predictions.py
+- scripts/refresh_report_snapshot.py
+
+下面是本次输入：
+
+MAIN_FLOW_INPUT
+```
+
+### Step 2: MAIN_FLOW_INPUT Format
+
+```yaml
+user_goal: evaluate_existing_model|onboarding_then_evaluate|repair_broken_model|audit_results
+
+target:
+  model_name: my_model
+  model_dir: src/sure_eval/models/my_model
+  tool_workflow_ready: true|false|unknown
+  integration_state: onboarded|not_onboarded|unknown
+
+constraints:
+  allow_tool_workflow: true|false
+  allowed_tasks: [ASR, S2TT]
+  allowed_datasets: null
+  blocked_datasets: []
+  dry_run: false
+
+evidence:
+  readme_path: src/sure_eval/models/my_model/README.md
+  config_path: src/sure_eval/models/my_model/config.yaml
+  artifacts_dir: src/sure_eval/models/my_model/artifacts
+  model_spec_path: src/sure_eval/models/my_model/model.spec.yaml
+  prior_results: []
+
+tool_onboarding_inputs:
+  repo_url: null
+  local_code_path: null
+  model_source: null
+  checkpoint_source: null
+  io_contract_hint: null
+  environment_hint: null
+
+runtime_context:
+  available_scripts:
+    - scripts/prepare_sure_dataset.py
+    - scripts/materialize_predictions_template.py
+    - scripts/validate_prediction_files.py
+    - scripts/evaluate_predictions.py
+    - scripts/refresh_report_snapshot.py
+  output_dir: src/sure_eval/models/my_model/eval_runs/main_agent_my_model_001
+```
+
+For an already onboarded model, `tool_onboarding_inputs` may be omitted.
+For a new or not-yet-adapted tool, providing them up front is strongly
+recommended. Otherwise the main flow may correctly conclude that the target is
+`not_tool_ready` but still lack enough onboarding inputs to perform a clean
+handoff.
+
+### Reference Instantiation: `asr_qwen3`
+
+`asr_qwen3` is the current reference example for how an onboarded,
+server-ready model should be instantiated by the main flow.
+
+Reference artifacts:
+
+- [execution_surface.json](/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/execution_surface.json)
+- [run_evaluation.sh](/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/run_evaluation.sh)
+
+Other models should use this run as the baseline shape for execution-surface
+materialization when they are already onboarded and can be evaluated through
+the harness.
+
+What to copy from the reference:
+
+- generate `execution_surface.json` before readiness validation
+- materialize a runnable `run_evaluation.sh` entrypoint in the model's
+  `eval_runs/<run_id>/` directory
+- resolve `REPO_ROOT`, `MODEL_DIR`, `RUN_DIR`, `CONFIG_PATH`, and tool/server
+  inputs explicitly inside the shell
+- run deterministic scripts from the repository root rather than from the
+  nested run directory
+- expose bounded smoke-test controls such as `MAX_SAMPLES` and
+  `SKIP_VALIDATE_AND_EVAL`
+- `--resume` 默认开启；可通过环境变量 `NO_RESUME=1` 显式禁用
+- smoke test gate：先跑 bounded 样本验证模型能产出非空预测，通过后才启动全量
+- provide runtime visibility through `prediction_generation_status.json` and
+  per-dataset logs
+- provide a user-facing live result log such as
+  `predictions/logs/<dataset>_results.log` during prediction generation
+
+This does not mean every model must use the exact same datasets or tool name.
+It means every compliant model-specific instantiation should produce the same
+kind of audited handoff surface and the same level of execution visibility.
+
+### Recommended `MAIN_FLOW_INPUT` Example
+
+For a real existing model evaluation, you can use:
+
+```yaml
+MAIN_FLOW_INPUT:
+  user_goal: evaluate_existing_model
+
+  target:
+    model_name: asr_qwen3
+    model_dir: src/sure_eval/models/asr_qwen3
+    tool_workflow_ready: true
+
+  constraints:
+    allow_tool_workflow: true
+    allowed_tasks: [ASR]
+    allowed_datasets: null
+    blocked_datasets: []
+    dry_run: false
+
+  evidence:
+    readme_path: src/sure_eval/models/asr_qwen3/README.md
+    config_path: src/sure_eval/models/asr_qwen3/config.yaml
+    artifacts_dir: src/sure_eval/models/asr_qwen3/artifacts
+    model_spec_path: src/sure_eval/models/asr_qwen3/model.spec.yaml
+    prior_results: []
+
+  runtime_context:
+    available_scripts:
+      - scripts/prepare_sure_dataset.py
+      - scripts/materialize_predictions_template.py
+      - scripts/validate_prediction_files.py
+      - scripts/evaluate_predictions.py
+      - scripts/refresh_report_snapshot.py
+    output_dir: src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003
+```
+
+### Step 3: Run
+
+Send Initial Prompt + MAIN_FLOW_INPUT to your AI agent.
+
+The agent should:
+
+- classify the task
+- decide tool readiness and routing
+- produce a plan
+- choose datasets or explain why not
+- route work to deterministic scripts
+- define a hard completion contract for prediction generation
+- assess outputs
+- emit a final structured run report
+
+---
+
+## Required Outputs
+
+The main flow agent must produce the following files during a run:
+
+| File | Purpose |
+|------|---------|
+| `task_classification.json` | Task type decision |
+| `tool_readiness_routing.json` | Tool readiness and execution-path decision |
+| `main_agent_plan.json` | Top-level execution plan |
+| `dataset_decision.json` | Selected and skipped datasets |
+| `script_routing.json` | Script execution sequence |
+| `execution_surface.json` | Materialized shell / command handoff artifact |
+| `execution_readiness_report.json` | Shell / execution preflight validation |
+| `assessment_report.json` | Result interpretation |
+| `main_agent_run_report.json` | Final run summary |
+| `model_eval_manifest.json` | One-file index of the full run evidence |
+
+Templates are located under [`templates/`](/cpfs/user/jingpeng/workspace/sure-eval/templates).
+
+Recommended run layout:
+
+- [eval_run_layout.md](/cpfs/user/jingpeng/workspace/sure-eval/docs/contracts/eval_run_layout.md)
+- [prediction_generation_contract.md](/cpfs/user/jingpeng/workspace/sure-eval/docs/contracts/prediction_generation_contract.md)
+
+---
+
+## Routing Reminder
+
+The main flow agent should prefer these scripts as its deterministic execution surface:
+
+- [prepare_sure_dataset.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/prepare_sure_dataset.py)
+- [materialize_predictions_template.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/materialize_predictions_template.py)
+- [validate_prediction_files.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/validate_prediction_files.py)
+- [evaluate_predictions.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/evaluate_predictions.py)
+- [refresh_report_snapshot.py](/cpfs/user/jingpeng/workspace/sure-eval/scripts/refresh_report_snapshot.py)
+
+The tool onboarding subsystem remains separate and mature. The main flow agent may invoke it, but should not redesign it.
+
+## Practical Notes
+
+- If the model already declares a server path in `config.yaml`, the agent should prefer a server-first smoke test before any dataset work.
+- If that smoke test fails, the correct main-flow action is usually `handoff_to_tool_workflow`.
+- A worked real example is documented in [main_agent_qwen3_asr_case.md](/cpfs/user/jingpeng/workspace/sure-eval/docs/contracts/main_agent_qwen3_asr_case.md).

@@ -1,0 +1,87 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-24T20:33:18+08:00",
+  "steps": [
+    {
+      "name": "prepare_dataset",
+      "script": "scripts/prepare_sure_dataset.py",
+      "inputs": {
+        "datasets": ["aishell1_test", "librispeech_test_clean"]
+      },
+      "outputs": {
+        "prepare_summary": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/prepare_summary.json"
+      },
+      "completion_criteria": [
+        "prepare summary file exists"
+      ]
+    },
+    {
+      "name": "materialize_predictions_template",
+      "script": "scripts/materialize_predictions_template.py",
+      "inputs": {
+        "datasets": ["aishell1_test", "librispeech_test_clean"],
+        "output_dir": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions"
+      },
+      "outputs": {
+        "prediction_manifest": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/manifest.json"
+      },
+      "completion_criteria": [
+        "manifest.json exists"
+      ]
+    },
+    {
+      "name": "generate_predictions_via_server",
+      "script": "scripts/generate_predictions_via_server.py",
+      "inputs": {
+        "model_dir": "src/sure_eval/models/asr_sensevoice_small",
+        "datasets": ["aishell1_test", "librispeech_test_clean"],
+        "run_dir": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001",
+        "tool_name": "asr_transcribe"
+      },
+      "outputs": {
+        "prediction_files": [
+          "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/aishell1_test.txt",
+          "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/librispeech_test_clean.txt"
+        ]
+      },
+      "completion_criteria": [
+        "prediction files exist and contain non-empty predictions"
+      ]
+    },
+    {
+      "name": "validate_prediction_files",
+      "script": "scripts/validate_prediction_files.py",
+      "inputs": {
+        "datasets": ["aishell1_test", "librispeech_test_clean"],
+        "pred_dir": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions"
+      },
+      "outputs": {
+        "validation_payload": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/validation_payload.json"
+      },
+      "completion_criteria": [
+        "validation_payload exists and status is ok"
+      ]
+    },
+    {
+      "name": "evaluate_predictions",
+      "script": "scripts/evaluate_predictions.py",
+      "inputs": {
+        "datasets": ["aishell1_test", "librispeech_test_clean"],
+        "pred_dir": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions",
+        "model_dir": "src/sure_eval/models/asr_sensevoice_small"
+      },
+      "outputs": {
+        "evaluation_payload": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/evaluation_payload.json",
+        "results_dir": "results/asr_sensevoice_small/strict_core"
+      },
+      "completion_criteria": [
+        "evaluation_payload exists"
+      ]
+    }
+  ],
+  "routing_reason": "Direct server use path for ASR model with local MCP server. Script sequence follows the standard SURE-EVAL main flow.",
+  "wait_points": [
+    "after_smoke_test"
+  ],
+  "stop_condition": "Abort if smoke test fails, validation fails, or evaluation produces anomalous metrics."
+}

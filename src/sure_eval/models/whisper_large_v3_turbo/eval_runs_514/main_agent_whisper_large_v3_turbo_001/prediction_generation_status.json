@@ -1,0 +1,18 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "model_name": "whisper_large_v3_turbo",
+  "execution_path": "direct_server_use",
+  "tool_name": "asr_transcribe",
+  "datasets": [
+    {
+      "dataset": "contextasr_zh",
+      "prediction_file": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/contextasr_zh.txt",
+      "status": "running",
+      "num_expected_samples": 73257,
+      "num_generated_samples": 6434,
+      "log_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/logs/contextasr_zh.log",
+      "result_log_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/logs/contextasr_zh_results.log",
+      "error": null
+    }
+  ]
+}

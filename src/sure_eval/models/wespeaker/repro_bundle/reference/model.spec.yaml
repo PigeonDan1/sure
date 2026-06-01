@@ -1,0 +1,97 @@
+model_id: "Wespeaker/wespeaker-voxceleb-resnet221-LM"
+model_name: "wespeaker"
+task_type: "speaker_verification"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/wenet-e2e/wespeaker"
+  commit: null
+  tested_commit: "9ce7995648a281ba6ce6f4e7a33941672ef22779"
+
+weights:
+  source: "huggingface"
+  local_path: "checkpoints/english"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+  include_in_repro_bundle: false
+  runtime_model_name: "english"
+  local_archive_path: "checkpoints/english/voxceleb_resnet221_LM.tar.gz"
+  note: "The validated repo-native load path uses wespeaker.load_model('english') with WESPEAKER_HOME pointed at the model-local checkpoints directory."
+
+environment:
+  preferred_backend: "pip"
+  python_version: "3.10"
+  requires_gpu: false
+  cpu_fallback_allowed: true
+  system_packages:
+    - "ffmpeg"
+    - "libsndfile1"
+  resource_limits:
+    max_audio_seconds: 3
+    timeout_seconds: 300
+    max_batch_size: 1
+    network_required: true
+
+phase1_runtime_target:
+  description: "Validate the minimal repo-native WeSpeaker speaker verification path only: import wespeaker, load the english runtime from model-local checkpoints, run compute_similarity on a short audio pair, and emit JSON-serializable output."
+  no_accuracy_evaluation: true
+  no_benchmark_dataset_required: true
+
+entrypoints:
+  import_test: "import wespeaker"
+  load_test: "import os; os.environ['WESPEAKER_HOME']='<model_root>/checkpoints'; import wespeaker; model = wespeaker.load_model('english'); model.set_device('cpu')"
+  infer_test: "score = model.compute_similarity('<enroll_audio>', '<trial_audio>')"
+  cli_candidate: "wespeaker --task similarity --language english --audio_file <enroll_audio> --audio_file2 <trial_audio> --device cpu"
+  python_candidate: "import wespeaker; model = wespeaker.load_model('english'); model.set_device('cpu'); score = model.compute_similarity(enroll_audio, trial_audio)"
+  selected_entrypoint: "python_api"
+  selected_reason: "The upstream README and python_package.md document the Python API directly, and the validated JSON contract is easiest to enforce on that repo-native path."
+
+fixture:
+  enroll_audio: "tests/fixtures/shared/speaker_verification/spk1_enroll.wav"
+  trial_audio: "tests/fixtures/shared/speaker_verification/spk1_trial.wav"
+  impostor_audio: "tests/fixtures/shared/speaker_verification/spk2_trial.wav"
+  task_specific: true
+  fallback_allowed: false
+  existence_verified: true
+  existence_evidence: "tests/fixtures/shared/speaker_verification/manifest.json"
+  engineering_smoke_only: true
+  semantic_accuracy_claim_allowed: false
+
+io_contract:
+  input_type: "audio_pair"
+  output_type: "json"
+  primary_field: "score"
+  required_fields:
+    - "model_name"
+    - "task"
+    - "enroll_audio"
+    - "trial_audio"
+    - "score"
+    - "score_is_finite"
+    - "device"
+    - "error_code"
+  nonempty_fields:
+    - "model_name"
+    - "task"
+    - "enroll_audio"
+    - "trial_audio"
+  finite_numeric_fields:
+    - "score"
+  json_serializable: true
+  no_accuracy_assertion: true
+  optional_fields:
+    - "embedding_dim"
+    - "sample_rate"
+    - "duration_seconds"
+    - "backend"
+    - "weight_id"
+    - "threshold"
+    - "decision"
+    - "same_speaker_label"
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true

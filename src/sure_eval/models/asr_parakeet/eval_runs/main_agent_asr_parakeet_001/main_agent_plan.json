@@ -1,0 +1,15 @@
+{
+  "goal": "Evaluate asr_parakeet on librispeech_test_clean",
+  "task_type": "evaluate_existing_model",
+  "datasets": ["librispeech_test_clean"],
+  "expected_steps": [
+    "Prepare dataset via prepare_sure_dataset.py",
+    "Materialize prediction templates via materialize_predictions_template.py",
+    "Bounded smoke test via generate_predictions_via_server.py (10 samples)",
+    "Generate full predictions via generate_predictions_via_server.py",
+    "Validate predictions via validate_prediction_files.py",
+    "Evaluate predictions via evaluate_predictions.py",
+    "Generate run report"
+  ],
+  "stop_condition": "Evaluation completes and assessment_report.json is produced, or smoke test fails."
+}

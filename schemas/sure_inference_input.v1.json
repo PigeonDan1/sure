@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "sure.inference_input.v1",
+  "type": "object",
+  "required": ["instance_id", "task", "input"],
+  "properties": {
+    "instance_id": {
+      "type": "string"
+    },
+    "task": {
+      "type": "string"
+    },
+    "input": {
+      "type": "object",
+      "required": ["audio_path", "sample_rate"],
+      "properties": {
+        "audio_path": {
+          "type": "string"
+        },
+        "sample_rate": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": true
+    },
+    "request": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,15 @@
+{
+  "run_id": "main_agent_asr_qwen3_003",
+  "timestamp": "2026-05-12T10:49:51+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "User explicitly requests evaluation of an already-onboarded model (asr_qwen3) on specific datasets (AISHELL-1 and LibriSpeech). Model has config.yaml, server.py, and prior successful eval run (002). No onboarding or repair work is needed.",
+  "need_tool_workflow": false,
+  "confidence": "high",
+  "input_signals": [
+    "user_goal: evaluate_existing_model",
+    "target.model_name: asr_qwen3",
+    "target.tool_workflow_ready: true",
+    "prior_run_002_exists: true",
+    "prior_run_002_status: success"
+  ]
+}

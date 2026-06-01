@@ -1,0 +1,38 @@
+{
+  "run_id": "main_agent_asr_qwen3_004",
+  "timestamp": "2026-05-15T19:49:05+08:00",
+  "status": "success",
+  "evidence": [
+    {
+      "dataset": "aishell1",
+      "metric": "cer",
+      "score": 0.015815061963775023,
+      "score_percent": 1.5815061963775023,
+      "num_samples": 7176,
+      "rps": 0.5058468957203135,
+      "result": "excellent"
+    },
+    {
+      "dataset": "librispeech_clean",
+      "metric": "wer",
+      "score": 0.022874324427190378,
+      "score_percent": 2.287432442719038,
+      "num_samples": 2619,
+      "rps": 0.7431913477537438,
+      "result": "excellent"
+    }
+  ],
+  "blocking_issues": [],
+  "anomaly_detected": false,
+  "anomaly_details": [],
+  "user_confirmed": true,
+  "next_action": "Evaluation completed successfully for all selected datasets. Results are within normal ranges. Proceed to RUN_REPORT_UNIT.",
+  "notes": [
+    "AISHELL-1 CER 1.58% and LibriSpeech WER 2.29% are both excellent results for a 1.7B ASR model.",
+    "No anomalies detected (threshold: WER/CER > 50%).",
+    "RPS scores are within bounded ranges.",
+    "All prediction files passed validation (7176 + 2619 samples, all non-empty).",
+    "Prior run 003 predictions were verified intact and reused, saving ~1.5h regeneration time.",
+    "Smoke test skipped because prior predictions were verified and reused."
+  ]
+}

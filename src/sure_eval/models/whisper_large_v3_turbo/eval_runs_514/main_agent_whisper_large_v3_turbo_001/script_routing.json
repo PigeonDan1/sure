@@ -1,0 +1,79 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-14T11:50:00+08:00",
+  "steps": [
+    {
+      "name": "prepare_dataset",
+      "script": "scripts/prepare_sure_dataset.py",
+      "inputs": {
+        "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"]
+      },
+      "outputs": {
+        "prepare_summary": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/prepare_summary.json"
+      },
+      "completion_criteria": ["prepare_summary.json exists with 6 dataset entries"]
+    },
+    {
+      "name": "materialize_predictions_template",
+      "script": "scripts/materialize_predictions_template.py",
+      "inputs": {
+        "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"],
+        "output_dir": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions"
+      },
+      "outputs": {
+        "manifest": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/manifest.json"
+      },
+      "completion_criteria": ["manifest.json exists with 6 dataset template files"]
+    },
+    {
+      "name": "generate_predictions",
+      "script": "scripts/generate_predictions_via_server.py",
+      "inputs": {
+        "model_dir": "src/sure_eval/models/whisper_large_v3_turbo",
+        "tool_name": "asr_transcribe",
+        "device": "cpu",
+        "resume": true
+      },
+      "outputs": {
+        "prediction_files": [
+          "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/cs_dialogue.txt",
+          "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/kespeech.txt",
+          "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/voxpopuli.txt",
+          "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/aishell5.txt",
+          "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/contextasr_en.txt",
+          "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/contextasr_zh.txt"
+        ],
+        "status_file": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/prediction_generation_status.json"
+      },
+      "completion_criteria": ["all 6 prediction files have non-empty predictions for all samples"]
+    },
+    {
+      "name": "validate_predictions",
+      "script": "scripts/validate_prediction_files.py",
+      "inputs": {
+        "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"],
+        "pred_dir": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions"
+      },
+      "outputs": {
+        "validation_payload": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/validation_payload.json"
+      },
+      "completion_criteria": ["validation_payload.json exists with pass status"]
+    },
+    {
+      "name": "evaluate_predictions",
+      "script": "scripts/evaluate_predictions.py",
+      "inputs": {
+        "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"],
+        "pred_dir": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions",
+        "tool_name": "whisper_large_v3_turbo"
+      },
+      "outputs": {
+        "evaluation_payload": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/evaluation_payload.json"
+      },
+      "completion_criteria": ["evaluation_payload.json exists with per-dataset metrics"]
+    }
+  ],
+  "routing_reason": "All datasets are ASR and model exposes asr_transcribe MCP tool. Direct server use via generate_predictions_via_server.py is the deterministic execution path.",
+  "wait_points": ["after_generate_predictions"],
+  "stop_condition": "Evaluation payload generated or anomaly detected requiring user confirmation."
+}

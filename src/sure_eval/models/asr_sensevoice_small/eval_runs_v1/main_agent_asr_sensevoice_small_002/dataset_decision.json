@@ -1,0 +1,9 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_002",
+  "timestamp": "2026-05-25T20:00:11+08:00",
+  "selected_datasets": [
+    "librispeech_test_clean"
+  ],
+  "skipped_datasets": [],
+  "reason": "User constraint allows ASR task and explicitly specifies librispeech_test_clean. Dataset is available in sure_benchmark."
+}

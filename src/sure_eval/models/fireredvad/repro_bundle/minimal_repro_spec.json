@@ -1,0 +1,34 @@
+{
+  "minimal_callable_path": "from fireredvad import FireRedVad, FireRedVadConfig; model = FireRedVad.from_pretrained(weights_dir, cfg); raw_result, probs = model.detect(fixture)",
+  "exact_commands_or_steps": [
+    "Create a fresh temp workdir and copy `repro_bundle/` into it.",
+    "Materialize the bundle-local replay environment by copying `repro_bundle/venv_seed` to `.venv-repro`.",
+    "Run `.venv-repro/bin/python repro_bundle/support/repro_validate.py` with SURE_REPRO_FIXTURE, SURE_REPRO_WEIGHTS_DIR, and SURE_REPRO_OUTPUT set according to the manifests."
+  ],
+  "working_directory_assumptions": [
+    "The current working directory is a fresh temp directory containing the copied `repro_bundle/`.",
+    "The replay environment is derived only from the bundle-local venv seed and does not reuse the original phase-1 `.venv`."
+  ],
+  "required_inputs": [
+    {
+      "name": "fixture",
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vad/en_16k_10s.wav"
+    },
+    {
+      "name": "weights_dir",
+      "path": "<temp>/repro_bundle/weights/FireRedVAD/VAD"
+    }
+  ],
+  "expected_outputs": [
+    {
+      "name": "repro_output.json",
+      "contract": "JSON object with dur, non-empty timestamps, and wav_path"
+    }
+  ],
+  "contract_checks": [
+    "Import succeeds without ModuleNotFoundError.",
+    "Load succeeds from the recorded local VAD weights path.",
+    "Inference returns a JSON-serializable dict.",
+    "Returned dict contains dur, non-empty timestamps, and wav_path."
+  ]
+}

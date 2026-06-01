@@ -1,0 +1,15 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-14T11:50:00+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "Model whisper_large_v3_turbo is already onboarded with config.yaml, server.py, and model.py present. User goal is to evaluate its ASR performance on 6 specified datasets.",
+  "need_tool_workflow": false,
+  "confidence": "high",
+  "input_signals": [
+    "model_dir exists: src/sure_eval/models/whisper_large_v3_turbo",
+    "config.yaml declares server command",
+    "server.py implements MCP protocol with asr_transcribe tool",
+    "model.spec.yaml confirms onboarded state",
+    "user_goal in input.md is evaluate_existing_model"
+  ]
+}

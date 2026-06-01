@@ -1,0 +1,17 @@
+{
+  "template_version": "1.0",
+  "templates": [
+    {
+      "dataset": "librispeech_test_clean",
+      "display_name": "librispeech_test_clean",
+      "task": "ASR",
+      "language": "en",
+      "metric": "wer",
+      "num_samples": 2619,
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/librispeech_test_clean.jsonl",
+      "template_path": "/workspace/sure-eval/src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/librispeech_test_clean.txt",
+      "format": "tsv:key<TAB>prediction",
+      "source": "oref_local"
+    }
+  ]
+}

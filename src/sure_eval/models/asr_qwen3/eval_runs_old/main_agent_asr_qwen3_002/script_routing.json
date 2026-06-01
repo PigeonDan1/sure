@@ -1,0 +1,134 @@
+{
+  "run_id": "main_agent_asr_qwen3_002",
+  "timestamp": "2026-05-09T22:28:48+08:00",
+  "steps": [
+    {
+      "name": "prepare_dataset",
+      "script": "scripts/prepare_sure_dataset.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "output": "prepare_summary.json"
+      },
+      "outputs": {
+        "prepare_summary": "RUN_DIR/prepare_summary.json"
+      },
+      "completion_criteria": [
+        "prepare_summary.json exists and contains entries for all requested datasets"
+      ]
+    },
+    {
+      "name": "materialize_templates",
+      "script": "scripts/materialize_predictions_template.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "output_dir": "RUN_DIR/predictions",
+        "manifest_name": "manifest.json",
+        "overwrite": true
+      },
+      "outputs": {
+        "prediction_manifest": "RUN_DIR/predictions/manifest.json"
+      },
+      "completion_criteria": [
+        "manifest.json exists and lists all expected sample IDs"
+      ]
+    },
+    {
+      "name": "validate_execution_shell",
+      "script": "scripts/generate_predictions_via_server.py",
+      "inputs": {
+        "model_dir": "MODEL_DIR",
+        "dataset": "aishell1",
+        "run_dir": "RUN_DIR",
+        "tool_name": "asr_transcribe",
+        "max_samples": 10,
+        "resume": true
+      },
+      "outputs": {
+        "smoke_predictions": "RUN_DIR/predictions/aishell1.txt",
+        "smoke_log": "RUN_DIR/predictions/logs/aishell1_results.log"
+      },
+      "completion_criteria": [
+        "prediction file exists with at least 1 non-empty prediction",
+        "no runtime exceptions in log"
+      ],
+      "dataset_context": {
+        "task": "ASR",
+        "language": "zh"
+      }
+    },
+    {
+      "name": "wait_for_predictions",
+      "script": "scripts/generate_predictions_via_server.py",
+      "inputs": {
+        "model_dir": "MODEL_DIR",
+        "datasets": ["aishell1", "librispeech_clean"],
+        "run_dir": "RUN_DIR",
+        "tool_name": "asr_transcribe",
+        "resume": true
+      },
+      "outputs": {
+        "prediction_files": [
+          "RUN_DIR/predictions/aishell1.txt",
+          "RUN_DIR/predictions/librispeech_clean.txt"
+        ],
+        "prediction_generation_status": "RUN_DIR/prediction_generation_status.json"
+      },
+      "completion_criteria": [
+        "all prediction files exist and line counts match manifest expectations",
+        "prediction_generation_status.json records completed status"
+      ]
+    },
+    {
+      "name": "validate_predictions",
+      "script": "scripts/validate_prediction_files.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "pred_dir": "RUN_DIR/predictions",
+        "require_nonempty": true,
+        "output": "RUN_DIR/validation_payload.json"
+      },
+      "outputs": {
+        "validation_payload": "RUN_DIR/validation_payload.json"
+      },
+      "completion_criteria": [
+        "validation_payload.json exists and reports no validation errors"
+      ]
+    },
+    {
+      "name": "evaluate_predictions",
+      "script": "scripts/evaluate_predictions.py",
+      "inputs": {
+        "datasets": ["aishell1", "librispeech_clean"],
+        "pred_dir": "RUN_DIR/predictions",
+        "tool_name": "asr_qwen3",
+        "record": true,
+        "output": "RUN_DIR/evaluation_payload.json"
+      },
+      "outputs": {
+        "evaluation_payload": "RUN_DIR/evaluation_payload.json"
+      },
+      "completion_criteria": [
+        "evaluation_payload.json exists and contains metrics for all datasets"
+      ]
+    },
+    {
+      "name": "refresh_report",
+      "script": "scripts/refresh_report_snapshot.py",
+      "inputs": {
+        "eval_dir": "RUN_DIR",
+        "output": "RUN_DIR/report_snapshot.json"
+      },
+      "outputs": {
+        "report_snapshot": "RUN_DIR/report_snapshot.json"
+      },
+      "completion_criteria": [
+        "report_snapshot.json exists"
+      ]
+    }
+  ],
+  "routing_reason": "Model is server-ready with direct_server_use path. Using deterministic scripts for full evaluation pipeline: dataset preparation -> template materialization -> bounded smoke test via generate_predictions_via_server.py -> full prediction generation -> validation -> evaluation -> report refresh. Resume enabled by default for prediction generation.",
+  "wait_points": [
+    "wait_for_predictions: generate_predictions_via_server.py for full datasets may take significant time"
+  ],
+  "stop_condition": "Stop if smoke test fails (no non-empty predictions), if validation finds errors, or if evaluation metrics are anomalous (WER/CER > 50%)."
+}

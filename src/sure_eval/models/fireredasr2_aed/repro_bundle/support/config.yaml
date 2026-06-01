@@ -1,0 +1,22 @@
+name: fireredasr2_aed
+task: ASR
+description: "Phase-1 wrapper for the standalone FireRedASR2-AED repo-native ASR path."
+
+model:
+  id: "FireRedTeam/FireRedASR2-AED"
+  runtime_family: "FireRedAsr2"
+  weights_dir: "pretrained_models/FireRedASR2-AED"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  timeout: 300
+
+tools:
+  - name: transcribe
+    description: "Run standalone FireRedASR2-AED transcription on one local audio file."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: ["audio_path"]

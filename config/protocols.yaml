@@ -1,0 +1,135 @@
+# SURE-EVAL 推理协议定义
+#
+# 本文件定义两个核心评测协议：
+# - strict_core:   测纯模型能力（默认）
+# - standard_system: 测可部署系统能力（需显式切换）
+#
+# 约束本质：四个统一
+#   1. 搜索强度统一（解码策略一致性）
+#   2. 上下文使用统一（context injection 策略一致性）
+#   3. 外部信息统一（禁止外部 LM / 检索 / hotwords）
+#   4. 计算预算统一（精度、batch size、最大计算步数）
+
+protocols:
+  strict_core:
+    name: "Strict Core"
+    description: "测纯模型能力 — 搜索强度/上下文/外部信息/计算预算统一"
+    is_default: true
+
+    params:
+      # 1. 搜索强度统一
+      search_strength:
+        description: "解码策略统一"
+        default: "default"
+        allowed_values: ["default", "greedy", "beam_search"]
+        scope: "inference"
+
+      # 2. 上下文使用统一
+      context_policy:
+        description: "上下文注入策略统一"
+        default: "none"
+        allowed_values: ["none", "minimal", "full"]
+        scope: "inference"
+
+      # 3. 外部信息统一
+      external_info:
+        description: "外部信息来源统一"
+        default: "forbidden"
+        allowed_values: ["forbidden"]
+        scope: "inference"
+
+      # 4. 计算预算统一
+      precision:
+        description: "计算精度统一"
+        default: "float16"
+        allowed_values: ["float16", "float32", "bfloat16"]
+        scope: "compute"
+
+      max_batch_size:
+        description: "最大批处理大小"
+        default: 1
+        allowed_values: [1, 4, 8, 16]
+        scope: "compute"
+
+    constraints:
+      - id: "no_external_lm"
+        description: "不允许调用外部语言模型进行重打分或纠错"
+        category: "forbidden"
+        scope: "inference"
+
+      - id: "no_retrieval"
+        description: "不允许使用检索增强（RAG）获取外部知识"
+        category: "forbidden"
+        scope: "inference"
+
+      - id: "no_hotwords"
+        description: "不允许注入热词/偏置词列表"
+        category: "forbidden"
+        scope: "preprocessing"
+
+      - id: "single_pass_decode"
+        description: "仅允许单次前向传播或单次标准解码"
+        category: "required"
+        scope: "inference"
+
+      - id: "no_prompt_engineering"
+        description: "不允许超出模板的 prompt engineering"
+        category: "required"
+        scope: "prompt"
+
+  standard_system:
+    name: "Standard System"
+    description: "测可部署系统能力 — 允许必要组件但需申报"
+    is_default: false
+
+    params:
+      search_strength:
+        description: "解码策略"
+        default: "default"
+        allowed_values: ["default", "greedy", "beam_search"]
+        scope: "inference"
+
+      context_policy:
+        description: "上下文注入策略"
+        default: "full"
+        allowed_values: ["none", "minimal", "full"]
+        scope: "inference"
+
+      external_info:
+        description: "外部信息来源"
+        default: "declared"
+        allowed_values: ["forbidden", "declared", "allowed"]
+        scope: "inference"
+
+      precision:
+        description: "计算精度"
+        default: "float16"
+        allowed_values: ["float16", "float32", "bfloat16"]
+        scope: "compute"
+
+      max_batch_size:
+        description: "最大批处理大小"
+        default: 8
+        allowed_values: [1, 4, 8, 16, 32]
+        scope: "compute"
+
+    constraints:
+      - id: "declare_all_modules"
+        description: "必须申报所有外部模块及其版本"
+        category: "required"
+        scope: "inference"
+
+      - id: "official_inference_method"
+        description: "允许使用官方推荐的推理方式"
+        category: "allowed"
+        scope: "inference"
+
+      - id: "pre_post_processing"
+        description: "允许必要前后处理但需声明"
+        category: "declared"
+        scope: "preprocessing"
+
+      - id: "standard_vad_diarization"
+        description: "允许标准 VAD/diarization 但需申报"
+        category: "declared"
+        scope: "preprocessing"

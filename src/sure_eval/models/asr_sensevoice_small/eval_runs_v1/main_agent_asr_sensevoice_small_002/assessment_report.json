@@ -1,0 +1,34 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_002",
+  "timestamp": "2026-05-25T20:17:14+08:00",
+  "status": "success",
+  "evidence": {
+    "prediction_generation": {
+      "status": "completed",
+      "samples_expected": 2619,
+      "samples_generated": 2619,
+      "empty_predictions": 0
+    },
+    "validation": {
+      "status": "passed",
+      "is_valid": true,
+      "missing_keys": [],
+      "extra_keys": [],
+      "duplicate_keys": []
+    },
+    "evaluation": {
+      "status": "completed",
+      "dataset": "librispeech_test_clean",
+      "metric": "wer",
+      "score": 0.03210398112202177,
+      "wer_percent": 3.210398112202177,
+      "rps": 0.5295293420272673,
+      "num_samples": 2619
+    }
+  },
+  "anomaly_detected": false,
+  "anomaly_details": [],
+  "user_confirmed": true,
+  "next_action": "persist_run_report",
+  "reason": "All steps completed successfully. WER of 3.21% is well within normal bounds for ASR on librispeech_test_clean. No anomalies detected."
+}

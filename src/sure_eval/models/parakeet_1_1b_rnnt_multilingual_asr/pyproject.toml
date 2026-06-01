@@ -1,0 +1,15 @@
+[project]
+name = "parakeet-1-1b-rnnt-multilingual-asr"
+version = "0.1.0"
+description = "Phase-1 onboarding scaffold for NVIDIA Parakeet 1.1B RNNT multilingual ASR"
+requires-python = ">=3.10"
+dependencies = [
+    "nemo-toolkit[asr]>=2.0",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "soundfile>=0.12.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"

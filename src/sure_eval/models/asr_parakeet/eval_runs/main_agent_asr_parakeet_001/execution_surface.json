@@ -1,0 +1,34 @@
+{
+  "execution_surface_type": "shell_handoff",
+  "materialized": true,
+  "entrypoint_path": "src/sure_eval/models/asr_parakeet/eval_runs/main_agent_asr_parakeet_001/run_evaluation.sh",
+  "source_provenance": {
+    "template_file": "templates/run_single_model.sh",
+    "template_sha256": "6078888e0227e5105a86a90d91a6241451c881444391e7bed39409cd74da5a4e",
+    "files_read_during_generation": [
+      "src/sure_eval/models/asr_parakeet/config.yaml",
+      "src/sure_eval/models/asr_parakeet/model.spec.yaml",
+      "templates/run_single_model.sh"
+    ],
+    "isolation_compliance": {
+      "eval_runs_referenced": false,
+      "prior_run_scripts_copied": false,
+      "template_parameters_deviated": [],
+      "deviation_approved_by_user": false
+    }
+  },
+  "resolved_inputs": {
+    "model_name": "asr_parakeet",
+    "model_dir": "src/sure_eval/models/asr_parakeet",
+    "datasets": ["librispeech_test_clean"],
+    "run_id": "main_agent_asr_parakeet_001",
+    "tool_name": "asr_transcribe",
+    "protocol_id": "strict_core"
+  },
+  "expected_outputs": [
+    "run_dir/predictions/librispeech_test_clean.txt",
+    "run_dir/validation_payload.json",
+    "run_dir/evaluation_payload.json"
+  ],
+  "resume_supported": true
+}

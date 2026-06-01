@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-04-14T10:38:22.755222+00:00",
+  "minimal_callable_path_to_reproduce": "Invoke bundle-local ffmpeg on the bundled WAV fixture, then validate the output metadata using bundle-local ffprobe.",
+  "exact_commands_or_callable_steps": [
+    {
+      "name": "verify_ffmpeg",
+      "command": "./bin/ffmpeg -version"
+    },
+    {
+      "name": "verify_ffprobe",
+      "command": "./bin/ffprobe -version"
+    },
+    {
+      "name": "transcode",
+      "command": "./bin/ffmpeg -y -i ./fixtures/en_16k_10s.wav -ac 1 -ar 16000 -c:a pcm_s16le ./outputs/out.wav"
+    },
+    {
+      "name": "probe",
+      "command": "./bin/ffprobe -v error -show_format -show_streams -of json ./outputs/out.wav"
+    }
+  ],
+  "working_directory_assumptions": "Run from the root of the loaded repro_bundle copy in a fresh temp workspace.",
+  "required_inputs": [
+    "./fixtures/en_16k_10s.wav",
+    "./bin/ffmpeg",
+    "./bin/ffprobe"
+  ],
+  "expected_outputs": [
+    "./outputs/out.wav",
+    "./outputs/probe.json"
+  ],
+  "contract_checks": {
+    "output_exists": true,
+    "valid_ffprobe_json": true,
+    "has_audio_stream": true,
+    "sample_rate_is_16000": true,
+    "channels_is_1": true,
+    "codec_name_is_pcm_s16le": true,
+    "format_is_wav_compatible": true
+  }
+}

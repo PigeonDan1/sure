@@ -1,0 +1,54 @@
+{
+  "steps": [
+    {
+      "name": "prepare_dataset",
+      "script": "scripts/prepare_sure_dataset.py",
+      "args": ["--dataset", "librispeech_test_clean", "--output", "RUN_DIR/prepare_summary.json"],
+      "input_deps": [],
+      "output_paths": ["RUN_DIR/prepare_summary.json"],
+      "completion_condition": "prepare_summary.json exists and contains librispeech_test_clean"
+    },
+    {
+      "name": "materialize_predictions_template",
+      "script": "scripts/materialize_predictions_template.py",
+      "args": ["--dataset", "librispeech_test_clean", "--output-dir", "RUN_DIR/predictions", "--manifest-name", "manifest.json", "--overwrite"],
+      "input_deps": ["prepare_summary.json"],
+      "output_paths": ["RUN_DIR/predictions/manifest.json"],
+      "completion_condition": "manifest.json exists"
+    },
+    {
+      "name": "smoke_test_predictions",
+      "script": "scripts/generate_predictions_via_server.py",
+      "args": ["--model-dir", "MODEL_DIR", "--dataset", "librispeech_test_clean", "--run-dir", "RUN_DIR", "--tool-name", "asr_transcribe", "--max-samples", "10", "--resume"],
+      "input_deps": ["manifest.json"],
+      "output_paths": ["RUN_DIR/predictions/librispeech_test_clean.txt"],
+      "completion_condition": "prediction file has >=1 non-empty prediction"
+    },
+    {
+      "name": "generate_predictions",
+      "script": "scripts/generate_predictions_via_server.py",
+      "args": ["--model-dir", "MODEL_DIR", "--dataset", "librispeech_test_clean", "--run-dir", "RUN_DIR", "--tool-name", "asr_transcribe", "--resume"],
+      "input_deps": ["smoke_test passed"],
+      "output_paths": ["RUN_DIR/predictions/librispeech_test_clean.txt"],
+      "completion_condition": "prediction file has all samples"
+    },
+    {
+      "name": "validate_predictions",
+      "script": "scripts/validate_prediction_files.py",
+      "args": ["--dataset", "librispeech_test_clean", "--pred-dir", "RUN_DIR/predictions", "--require-nonempty", "--output", "RUN_DIR/validation_payload.json"],
+      "input_deps": ["predictions/librispeech_test_clean.txt"],
+      "output_paths": ["RUN_DIR/validation_payload.json"],
+      "completion_condition": "validation_payload.json exists with no errors"
+    },
+    {
+      "name": "evaluate_predictions",
+      "script": "scripts/evaluate_predictions.py",
+      "args": ["--dataset", "librispeech_test_clean", "--pred-dir", "RUN_DIR/predictions", "--tool-name", "asr_parakeet", "--results-dir", "RESULTS_DIR", "--protocol-id", "strict_core", "--model-dir", "MODEL_DIR", "--record", "--output", "RUN_DIR/evaluation_payload.json"],
+      "input_deps": ["validation_payload.json"],
+      "output_paths": ["RUN_DIR/evaluation_payload.json"],
+      "completion_condition": "evaluation_payload.json exists with score"
+    }
+  ],
+  "wait_points": ["smoke_test_predictions"],
+  "stop_condition": "evaluation_payload.json produced or any step fails"
+}

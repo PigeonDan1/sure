@@ -1,0 +1,14 @@
+{
+  "run_id": "main_agent_asr_qwen3_005",
+  "timestamp": "2026-05-15T21:20:00+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "User goal is to evaluate the existing onboarded model asr_qwen3. Model directory exists with README, config.yaml, and model.spec.yaml. The model is declared tool-workflow-ready and the task is ASR, which matches allowed_tasks.",
+  "need_tool_workflow": true,
+  "confidence": "high",
+  "input_signals": [
+    "user_goal=evaluate_existing_model",
+    "model_name=asr_qwen3",
+    "tool_workflow_ready=true",
+    "allowed_tasks=[ASR]"
+  ]
+}

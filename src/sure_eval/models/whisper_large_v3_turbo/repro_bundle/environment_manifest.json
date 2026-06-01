@@ -1,0 +1,21 @@
+{
+  "timestamp": "2026-04-14T13:20:45.867045+01:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "backend": "pip",
+  "python_version": "3.10.20",
+  "env_creation_method": "model-local venv created from /opt/anaconda3/envs/fireredvad/bin/python",
+  "dependency_installation_method": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/.venv/bin/pip install --cache-dir /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/checkpoints/pip-cache openai-whisper torch tiktoken imageio-ffmpeg",
+  "system_packages": [
+    {
+      "name": "ffmpeg",
+      "provided_by": "bundle-local binary copy",
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/repro_bundle/tools/ffmpeg"
+    }
+  ],
+  "whether_gpu_required": false,
+  "important_runtime_assumptions": [
+    "HOME must point at the model-local checkpoints/home directory so Whisper downloads stay local.",
+    "PATH must include the repro_bundle/tools directory so the bundled ffmpeg resolves correctly.",
+    "CPU execution is sufficient for phase-1 and was the validated path."
+  ]
+}

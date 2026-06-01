@@ -1,0 +1,35 @@
+{
+  "run_id": "main_agent_asr_qwen3_005",
+  "timestamp": "2026-05-15T21:20:00+08:00",
+  "compliance_check": {
+    "script_constraints": {
+      "all_scripts_in_allowed_dir": true,
+      "no_demo_scripts": true,
+      "all_scripts_exist": true,
+      "checked_scripts": [
+        {"step_name": "prepare_dataset", "script_path": "scripts/prepare_sure_dataset.py", "in_allowed_dir": true, "is_demo": false, "exists": true},
+        {"step_name": "materialize_templates", "script_path": "scripts/materialize_predictions_template.py", "in_allowed_dir": true, "is_demo": false, "exists": true},
+        {"step_name": "validate_predictions", "script_path": "scripts/validate_prediction_files.py", "in_allowed_dir": true, "is_demo": false, "exists": true},
+        {"step_name": "evaluate_predictions", "script_path": "scripts/evaluate_predictions.py", "in_allowed_dir": true, "is_demo": false, "exists": true},
+        {"step_name": "refresh_report", "script_path": "scripts/refresh_report_snapshot.py", "in_allowed_dir": true, "is_demo": false, "exists": true}
+      ],
+      "violations": []
+    },
+    "step_type_constraints": {
+      "all_names_in_whitelist": true,
+      "allowed_step_types": ["prepare_dataset", "materialize_templates", "validate_execution_shell", "wait_for_predictions", "validate_predictions", "evaluate_predictions", "refresh_report"],
+      "checked_steps": [
+        {"step_index": 0, "step_name": "prepare_dataset", "in_whitelist": true},
+        {"step_index": 1, "step_name": "materialize_templates", "in_whitelist": true},
+        {"step_index": 2, "step_name": "validate_predictions", "in_whitelist": true},
+        {"step_index": 3, "step_name": "evaluate_predictions", "in_whitelist": true},
+        {"step_index": 4, "step_name": "refresh_report", "in_whitelist": true}
+      ],
+      "violations": []
+    },
+    "overall_passed": true
+  },
+  "self_inspection_passed": true,
+  "blocking_issues": [],
+  "next_action": "Proceed to output script_routing.json"
+}

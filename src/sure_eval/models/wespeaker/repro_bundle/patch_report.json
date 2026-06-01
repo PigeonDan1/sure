@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "summary": "Two existing upstream lazy-import patches remain required for the minimal WeSpeaker speaker-verification import/load path.",
+  "patches": [
+    {
+      "patch_id": "0001-lazy-frontend-imports",
+      "path": "artifacts/0001-lazy-frontend-imports.patch",
+      "applied_to": "upstream/wespeaker/frontend/__init__.py",
+      "status": "pre_applied_local_upstream",
+      "reason": "Delay optional frontend imports so the fbank-based speaker verification path does not require s3prl, whisper_encoder, or w2vbert dependencies during import.",
+      "required_for_phase1": true
+    },
+    {
+      "patch_id": "0002-lazy-diarization-imports",
+      "path": "artifacts/0002-lazy-diarization-imports.patch",
+      "applied_to": "upstream/wespeaker/cli/speaker.py",
+      "status": "pre_applied_local_upstream",
+      "reason": "Move diarization-only imports behind Speaker.diarize() so optional clustering dependencies do not leak into the speaker verification import path.",
+      "required_for_phase1": true
+    }
+  ]
+}

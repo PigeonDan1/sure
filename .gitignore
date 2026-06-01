@@ -1,0 +1,147 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+!src/sure_eval/models/*/artifacts/build.log
+!src/sure_eval/models/*/artifacts/validation.log
+
+# Data and models (large files)
+data/
+!data/.gitkeep
+models_cache/
+*.tar.gz
+*.zip
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+
+# Results and outputs
+results/*
+!results/.gitkeep
+outputs/
+tmp/
+temp/
+
+# Test files
+/test_*.py
+*_test.py
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Documentation build
+docs/_build/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints
+
+# Model cache
+model_cache/
+.cache/
+
+# DiariZen submodule (should be cloned separately)
+src/sure_eval/models/diarizen/diarizen_src/
+
+# Test results
+src/sure_eval/models/*/test_results/
+
+# Model-specific environment files (should be regenerated)
+src/sure_eval/models/*/uv.lock
+src/sure_eval/models/*/.venv/
+src/sure_eval/models/*/repo/
+
+# fireredasr2_aed local runtime files
+src/sure_eval/models/fireredasr2_aed/pretrained_models/
+src/sure_eval/models/fireredasr2_aed/.venv/
+src/sure_eval/models/fireredasr2_aed/__pycache__/
+src/sure_eval/models/fireredasr2_aed/.runtime/
+
+# Ignore fireredasr2_aed upstream clone
+src/sure_eval/models/fireredasr2_aed/upstream/
+
+# fireredvad local runtime junk
+src/sure_eval/models/fireredvad/.venv/
+src/sure_eval/models/fireredvad/__pycache__/
+src/sure_eval/models/fireredvad/checkpoints/
+src/sure_eval/models/fireredvad/pretrained_models/
+
+src/sure_eval/models/fireredvad/artifacts/repro_output.json
+src/sure_eval/models/fireredvad/upstream/
+
+# s2tt_nllb local runtime/cache/weights
+src/sure_eval/models/s2tt_nllb/.venv/
+src/sure_eval/models/s2tt_nllb/.runtime/
+src/sure_eval/models/s2tt_nllb/__pycache__/
+src/sure_eval/models/s2tt_nllb/checkpoints/
+src/sure_eval/models/s2tt_nllb/repro_bundle/weights/
+
+# Local run outputs
+runs/
+
+# Model-local runtimes, caches, and downloaded weights
+src/sure_eval/models/*/.venv/
+src/sure_eval/models/*/.runtime/
+src/sure_eval/models/*/__pycache__/
+src/sure_eval/models/*/checkpoints/
+src/sure_eval/models/*/hf_cache/
+src/sure_eval/models/*/pretrained_models/
+src/sure_eval/models/*/repro_bundle/weights/
+
+# Local app/session artifacts
+.Rapp.history
+
+# Large runtime artifacts
+results/
+artifacts/
+*.tar.gz

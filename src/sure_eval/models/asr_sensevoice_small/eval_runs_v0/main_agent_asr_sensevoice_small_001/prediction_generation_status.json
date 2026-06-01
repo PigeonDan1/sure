@@ -1,0 +1,26 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "model_name": "asr_sensevoice_small",
+  "execution_path": "direct_server_use",
+  "tool_name": "asr_transcribe",
+  "datasets": [
+    {
+      "dataset": "aishell1_test",
+      "prediction_file": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/aishell1_test.txt",
+      "status": "completed",
+      "num_expected_samples": "see_manifest",
+      "num_generated_samples": 7176,
+      "log_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/logs/aishell1_test.log"
+    }
+,
+    {
+      "dataset": "librispeech_test_clean",
+      "prediction_file": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/librispeech_test_clean.txt",
+      "status": "completed",
+      "num_expected_samples": "see_manifest",
+      "num_generated_samples": 2619,
+      "log_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/logs/librispeech_test_clean.log"
+    }
+
+  ]
+}

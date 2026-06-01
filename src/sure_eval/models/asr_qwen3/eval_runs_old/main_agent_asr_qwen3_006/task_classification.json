@@ -1,0 +1,8 @@
+{
+  "run_id": "main_agent_asr_qwen3_006",
+  "timestamp": "2026-05-16T15:42:00+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "MAIN_FLOW_INPUT explicitly sets user_goal=evaluate_existing_model. Model directory exists with prior artifacts and server configuration.",
+  "need_tool_workflow": true,
+  "confidence": "high"
+}

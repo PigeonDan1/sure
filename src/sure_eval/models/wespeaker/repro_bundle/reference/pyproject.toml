@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68,<81", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sure-eval-wespeaker"
+version = "0.1.0"
+description = "Minimal model-local runtime record for the SURE-EVAL WeSpeaker speaker-verification smoke path."
+readme = "README.md"
+requires-python = "==3.10.*"
+dependencies = [
+  "requests==2.32.3",
+  "numpy==1.26.4",
+  "PyYAML==6.0.2",
+  "kaldiio==2.18.1",
+  "tqdm==4.67.1",
+  "silero-vad==6.2.0",
+  "soundfile==0.13.1",
+  "torch==2.1.2",
+  "torchaudio==2.1.2",
+]
+
+[tool.sure_eval.phase1]
+model_id = "Wespeaker/wespeaker-voxceleb-resnet221-LM"
+runtime_model_name = "english"
+backend = "pip"
+weight_dir = "checkpoints/english"
+validated_entrypoint = "wespeaker.load_model('english').compute_similarity(enroll_audio, trial_audio)"
+notes = [
+  "This file records only the dependencies required for the validated speaker-verification smoke path.",
+  "Diarization-only dependencies such as hdbscan, umap-learn, and s3prl are intentionally excluded from the minimal runtime.",
+]

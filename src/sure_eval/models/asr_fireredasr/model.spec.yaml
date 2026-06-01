@@ -1,0 +1,93 @@
+name: "asr_fireredasr"
+task: "ASR"
+description: "Automatic Speech Recognition using FireRedASR-LLM-L (FireRedTeam)"
+version: "1.0.0"
+
+runtime:
+  identity: "FireRedTeam/FireRedASR-LLM-L"
+  load_identity: "FireRedTeam/FireRedASR-LLM-L"
+  local_dir_name: "asr_fireredasr"
+
+backend:
+  chosen: "uv"
+  reason: "FireRedASR repo is pure Python with torch/transformers deps; weights available from ModelScope."
+  evidence:
+    - "pyproject.toml present with torch, transformers dependencies"
+    - "ModelScope checkpoints downloaded successfully"
+    - "local checkpoint loads through FireRedAsr.from_pretrained"
+
+weights:
+  required: true
+  source: "modelscope"
+  repo_id: "FireRedTeam/FireRedASR-LLM-L"
+  local_path: "./.runtime/modelscope_cache/models/FireRedTeam/FireRedASR-LLM-L"
+  cache_policy: "model_local_first"
+  local_dir_name: ".runtime/modelscope_cache"
+  size_gb: 18.0
+  additional_weights:
+    - repo_id: "Qwen/Qwen2-7B-Instruct"
+      local_path: "./.runtime/modelscope_cache/models/Qwen/Qwen2-7B-Instruct"
+      purpose: "LLM backbone required by FireRedASR-LLM-L"
+
+environment:
+  python: ">=3.10,<3.12"
+  requires_gpu: true
+  packages:
+    - "torch==2.4.0"
+    - "transformers"
+    - "modelscope"
+    - "soundfile"
+    - "numpy"
+  system_packages:
+    - "ffmpeg"
+    - "git"
+
+phase1_runtime_target:
+  description: "Validate the minimal repo-native FireRedASR path: git clone repo -> export PYTHONPATH -> from fireredasr.models.fireredasr import FireRedAsr -> FireRedAsr.from_pretrained('llm', model_dir) -> model.transcribe(...)."
+  excludes:
+    - "accuracy_evaluation"
+    - "language_coverage_claims"
+    - "production_serving"
+
+entrypoints:
+  import_test: "from fireredasr.models.fireredasr import FireRedAsr"
+  load_test: "model = FireRedAsr.from_pretrained('llm', 'pretrained_models/FireRedASR-LLM-L')"
+  infer_test: "results = model.transcribe(batch_uttid, batch_wav_path, {'use_gpu': 1, 'beam_size': 3})"
+
+fixture:
+  requested_audio: "tests/fixtures/shared/asr/zh_16k.wav"
+  selected_audio: "tests/fixtures/shared/asr/en_16k_10s.wav"
+  task_specific: false
+  fallback_allowed: true
+  source: "shared_fallback"
+  note: "Phase-1 uses existing shared ASR fixture while preserving ASR task semantics. Chinese audio preferred but shared fixture is English."
+
+io_contract:
+  input:
+    audio_path: string
+  output:
+    text: string
+    raw: list[dict] (optional)
+
+resources:
+  memory_gb: 32
+  gpu: required
+  cpu_cores: 8
+  storage_gb: 25
+
+mcp_server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ID: "FireRedTeam/FireRedASR-LLM-L"
+    FIREREDASR_MODEL_PATH: ".runtime/modelscope_cache/models/FireRedTeam/FireRedASR-LLM-L"
+    LLM_PATH: ".runtime/modelscope_cache/models/Qwen/Qwen2-7B-Instruct"
+    DEVICE: "auto"
+  timeout: 600
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true
+  must_return_nonempty: true

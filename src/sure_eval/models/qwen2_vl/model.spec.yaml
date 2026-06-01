@@ -1,0 +1,125 @@
+model_id: "Qwen/Qwen2-VL-2B-Instruct"
+model_name: "qwen2-vl-2b-instruct"
+task_type: "vlm"
+deployment_type: "local"
+
+repo:
+  url: "https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct"
+  commit: null
+
+weights:
+  source: "huggingface"
+  local_path: null
+  required: true
+
+environment:
+  preferred_backend: "conda"
+  python_version: "3.10"
+  requires_gpu: true
+  system_packages: []
+
+phase1_runtime_target: |
+  Validate only the minimal repo-native image-text callable path:
+  - import transformers Qwen2VL model and AutoProcessor
+  - import qwen_vl_utils.process_vision_info
+  - load Qwen/Qwen2-VL-2B-Instruct
+  - run a single-image brief-description prompt on a local fixture
+  - obtain a non-empty text response
+  This phase does not validate multi-image, video, OCR benchmark, grounding boxes,
+  agent/tool use, or structured extraction.
+
+entrypoints:
+  import_test: |
+    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+    from qwen_vl_utils import process_vision_info
+  load_test: |
+    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+    from qwen_vl_utils import process_vision_info
+
+    model_id = "Qwen/Qwen2-VL-2B-Instruct"
+    model = Qwen2VLForConditionalGeneration.from_pretrained(
+        model_id,
+        torch_dtype="auto",
+        device_map="auto"
+    )
+    processor = AutoProcessor.from_pretrained(model_id)
+  infer_test: |
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "image": "file:///Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/vlm/demo_image.jpg"
+                },
+                {
+                    "type": "text",
+                    "text": "Describe this image briefly."
+                }
+            ]
+        }
+    ]
+
+    text = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+
+    image_inputs, video_inputs = process_vision_info(messages)
+
+    inputs = processor(
+        text=[text],
+        images=image_inputs,
+        videos=video_inputs,
+        padding=True,
+        return_tensors="pt"
+    )
+    inputs = inputs.to(model.device)
+
+    generated_ids = model.generate(**inputs, max_new_tokens=128)
+    generated_ids_trimmed = [
+        out_ids[len(in_ids):]
+        for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    output_text = processor.batch_decode(
+        generated_ids_trimmed,
+        skip_special_tokens=True,
+        clean_up_tokenization_spaces=False
+    )
+
+    result = {
+        "text": output_text[0] if isinstance(output_text, list) and len(output_text) > 0 else ""
+    }
+
+fixture:
+  image: "tests/fixtures/shared/vlm/demo_image.jpg"
+  prompt: "Describe this image briefly."
+  task_specific: true
+  fallback_allowed: false
+  note: >
+    A local shared VLM fixture was added for phase-1 because the repository had no
+    existing image fixtures. The fixture keeps the runtime target to single-image
+    understanding and does not narrow the task semantics beyond the provided input.
+
+io_contract:
+  input_type: "image_path"
+  output_type: "json"
+  primary_field: "text"
+  required_fields:
+    - "text"
+  nonempty_fields:
+    - "text"
+  json_serializable: true
+
+contract_expectation:
+  output_must:
+    - "contain non-empty text"
+    - "be JSON serializable"
+    - "not require bounding boxes, multi-turn history, or video fields"
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true

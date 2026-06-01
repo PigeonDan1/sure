@@ -1,0 +1,25 @@
+{
+  "backend": "pip",
+  "python_version": "3.10.20",
+  "env_creation_method": "model-local venv created from /opt/anaconda3/envs/fireredvad/bin/python",
+  "dependency_installation_method": [
+    "pip install -r upstream/FireRedVAD/requirements-macos-arm64.txt",
+    "pip install -e upstream/FireRedVAD huggingface_hub==1.8.0"
+  ],
+  "system_packages": [
+    {
+      "name": "ffmpeg",
+      "available": false
+    },
+    {
+      "name": "libsndfile1",
+      "available": "wheel-bundled-via-soundfile"
+    }
+  ],
+  "whether_gpu_required": false,
+  "important_runtime_assumptions": [
+    "Replay uses the bundle-local venv seed copied from the validated phase-1 environment.",
+    "The repo-native runtime path expects pretrained_models/FireRedVAD/VAD; the bundle records that this path is a symlink alias to checkpoints/FireRedVAD.",
+    "The selected fixture is already 16kHz 16-bit mono PCM WAV, so ffmpeg conversion is not required."
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-20T22:09:41+08:00",
+  "goal": "Evaluate whisper_large_v3_turbo on 6 allowed ASR datasets: cs_dialogue, kespeech, voxpopuli, aishell5, contextasr_en, contextasr_zh",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": true,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_datasets",
+    "materialize_prediction_templates",
+    "smoke_test",
+    "generate_predictions",
+    "validate_predictions",
+    "evaluate_predictions",
+    "refresh_report_snapshot"
+  ],
+  "stop_condition": "All datasets evaluated and results recorded, or smoke test failure blocks execution.",
+  "notes": [
+    "Datasets are SURE Benchmark CSV-based; will be downloaded via ModelScope if not locally available.",
+    "Execution uses direct_server_use path with generate_predictions_via_server.py.",
+    "GPU available (cuda); device auto-selected."
+  ]
+}

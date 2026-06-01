@@ -1,0 +1,61 @@
+{
+  "run_id": "main_agent_asr_qwen3_002",
+  "timestamp": "2026-05-10T00:17:06+08:00",
+  "task_type": "evaluate_existing_model",
+  "goal": "Evaluate Qwen3-ASR-1.7B on AISHELL-1 (zh) and LibriSpeech test-clean (en) using the existing MCP server harness.",
+  "selected_datasets": ["aishell1", "librispeech_clean"],
+  "executed_steps": [
+    "TASK_CLASSIFICATION_UNIT",
+    "TOOL_READINESS_AND_ROUTING_UNIT",
+    "PLAN_UNIT",
+    "DATASET_SCOPE_UNIT",
+    "SCRIPT_ROUTING_UNIT",
+    "EXECUTION_SURFACE_UNIT",
+    "EXECUTION_READINESS_UNIT",
+    "SMOKE_TEST_UNIT",
+    "EXECUTE_SCRIPTS",
+    "ASSESSMENT_UNIT",
+    "RUN_REPORT_UNIT"
+  ],
+  "status": "success",
+  "artifacts": {
+    "task_classification": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/task_classification.json",
+    "tool_readiness_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/tool_readiness_routing.json",
+    "plan": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/main_agent_plan.json",
+    "dataset_decision": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/dataset_decision.json",
+    "script_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/script_routing.json",
+    "script_routing_compliance_check": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/script_routing_compliance_check.json",
+    "execution_surface": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/execution_surface.json",
+    "execution_readiness_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/execution_readiness_report.json",
+    "assessment_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/assessment_report.json",
+    "run_log": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/run.log",
+    "prepare_summary": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/prepare_summary.json",
+    "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/predictions/manifest.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/prediction_generation_status.json",
+    "validation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/validation_payload.json",
+    "evaluation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/evaluation_payload.json"
+  },
+  "model_eval_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/model_eval_manifest.json",
+  "results_summary": {
+    "aishell1": {
+      "metric": "cer",
+      "score": 0.015815061963775023,
+      "score_percent": 1.58,
+      "num_samples": 7176,
+      "rps": 0.5058468957203135
+    },
+    "librispeech_clean": {
+      "metric": "wer",
+      "score": 0.022874324427190378,
+      "score_percent": 2.29,
+      "num_samples": 2619,
+      "rps": 0.7431913477537438
+    }
+  },
+  "next_action": "Evaluation complete. Results are excellent. No further action required.",
+  "notes": [
+    "One blocking issue was discovered and fixed during execution: empty template placeholders from materialize_predictions_template.py caused generate_predictions_via_server.py --resume to skip all samples. Fixed by adding empty-template detection and removal in run_evaluation.sh.",
+    "Total execution time: approximately 1.5 hours for 7176 + 2619 = 9795 samples.",
+    "GPU used: cuda:2 (NVIDIA GeForce RTX 2080 Ti)"
+  ]
+}

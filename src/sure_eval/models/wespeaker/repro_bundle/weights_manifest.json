@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "whether_weights_required": true,
+  "source": "huggingface",
+  "identifier_or_package_name": "Wespeaker/wespeaker-voxceleb-resnet221-LM",
+  "declared_revision": null,
+  "runtime_model_name": "english",
+  "resolved_local_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english",
+  "cache_policy": "model_local_first",
+  "whether_included_in_repro_bundle": false,
+  "files": [
+    {
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english/avg_model.pt",
+      "sha256": "47d76239f1e865b273e31e30f691959061ff6565ed6c4e7be9639a65d9662eb5",
+      "size_bytes": 114410390
+    },
+    {
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english/config.yaml",
+      "sha256": "31511c8e6c60d96d40962e9a261dd8f752b01831b955192b5cbed8367276bbb5",
+      "size_bytes": 1544
+    },
+    {
+      "path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english/voxceleb_resnet221_LM.tar.gz",
+      "sha256": "9462705bfafeed7b4a6585638a4d0140ddaf9338471198d014eb2579712f89f6",
+      "size_bytes": 105902456
+    }
+  ],
+  "fallback_reason": "The validated repo-native path uses the upstream english alias and an existing model-local archive named voxceleb_resnet221_LM.tar.gz. Because config.yaml was missing at first, it was restored from the local archive instead of performing a new network fetch.",
+  "fallback_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints/english/voxceleb_resnet221_LM.tar.gz",
+  "exact_refetch_or_validation_command": [
+    "WESPEAKER_HOME=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/.venv/bin/python /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/validate_phase1.py",
+    "WESPEAKER_HOME=/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/checkpoints /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/wespeaker/.venv/bin/python -c \"import wespeaker; model = wespeaker.load_model('english'); model.set_device('cpu')\""
+  ],
+  "whether_repro_requires_network_if_weights_are_absent": true
+}

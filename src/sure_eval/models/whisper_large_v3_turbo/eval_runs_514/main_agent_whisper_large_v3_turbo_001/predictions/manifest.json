@@ -1,0 +1,77 @@
+{
+  "template_version": "1.0",
+  "templates": [
+    {
+      "dataset": "cs_dialogue",
+      "display_name": "cs_dialogue",
+      "task": "ASR",
+      "language": "cs",
+      "metric": "mer",
+      "num_samples": 5956,
+      "jsonl_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/.datasets/sure_benchmark/jsonl/cs_dialogue.jsonl",
+      "template_path": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/cs_dialogue.txt",
+      "format": "tsv:key<TAB>prediction",
+      "source": "sure_benchmark"
+    },
+    {
+      "dataset": "kespeech",
+      "display_name": "kespeech",
+      "task": "ASR",
+      "language": "zh",
+      "metric": "cer",
+      "num_samples": 19723,
+      "jsonl_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/.datasets/sure_benchmark/jsonl/kespeech.jsonl",
+      "template_path": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/kespeech.txt",
+      "format": "tsv:key<TAB>prediction",
+      "source": "sure_benchmark"
+    },
+    {
+      "dataset": "voxpopuli",
+      "display_name": "voxpopuli",
+      "task": "ASR",
+      "language": "en",
+      "metric": "wer",
+      "num_samples": 1842,
+      "jsonl_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/.datasets/sure_benchmark/jsonl/voxpopuli.jsonl",
+      "template_path": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/voxpopuli.txt",
+      "format": "tsv:key<TAB>prediction",
+      "source": "sure_benchmark"
+    },
+    {
+      "dataset": "aishell5",
+      "display_name": "aishell5",
+      "task": "ASR",
+      "language": "zh",
+      "metric": "cer",
+      "num_samples": 20368,
+      "jsonl_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/.datasets/sure_benchmark/jsonl/aishell5.jsonl",
+      "template_path": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/aishell5.txt",
+      "format": "tsv:key<TAB>prediction",
+      "source": "sure_benchmark"
+    },
+    {
+      "dataset": "contextasr_en",
+      "display_name": "contextasr_en",
+      "task": "ASR",
+      "language": "en",
+      "metric": "wer",
+      "num_samples": 70037,
+      "jsonl_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/.datasets/sure_benchmark/jsonl/contextasr_en.jsonl",
+      "template_path": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/contextasr_en.txt",
+      "format": "tsv:key<TAB>prediction",
+      "source": "sure_benchmark"
+    },
+    {
+      "dataset": "contextasr_zh",
+      "display_name": "contextasr_zh",
+      "task": "ASR",
+      "language": "zh",
+      "metric": "cer",
+      "num_samples": 73257,
+      "jsonl_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/.datasets/sure_benchmark/jsonl/contextasr_zh.jsonl",
+      "template_path": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/contextasr_zh.txt",
+      "format": "tsv:key<TAB>prediction",
+      "source": "sure_benchmark"
+    }
+  ]
+}

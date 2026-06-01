@@ -1,0 +1,49 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-20T22:09:41+08:00",
+  "execution_ready": true,
+  "status": "ready",
+  "validation_mode": "full",
+  "validated_shell_entrypoint": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/run_evaluation.sh",
+  "smoke_test_command": "DATASETS=cs_dialogue MAX_SAMPLES=10 ./run_evaluation.sh",
+  "smoke_test_run_dir": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001",
+  "isolation_audit": {
+    "audit_passed": true,
+    "audit_tool": "scripts/check_execution_surface_compliance.py",
+    "checks": {
+      "template_source": {
+        "passed": true,
+        "template_declared": "templates/run_single_model.sh",
+        "template_exists": true,
+        "under_templates_dir": true,
+        "matches_expected": true,
+        "evidence": "ok"
+      },
+      "source_provenance": {
+        "passed": true,
+        "evidence": "source_provenance present"
+      }
+    }
+  },
+  "gpu_preflight": {
+    "model_requires_gpu": true,
+    "nvidia_smi_output": "NVIDIA GeForce RTX 2080 Ti x4",
+    "available_gpus": ["cuda:0", "cuda:1", "cuda:2", "cuda:3"],
+    "gpu_memory_free_mb": [296, 5340, 5404, 4320],
+    "recommended_device": "cuda",
+    "cpu_fallback_ready": true,
+    "gpu_check_passed": true
+  },
+  "checked_artifacts": {
+    "prepare_summary": "not_yet_generated",
+    "prediction_manifest": "not_yet_generated",
+    "prediction_generation_status": "not_yet_generated",
+    "shell_log": "not_yet_generated"
+  },
+  "blocking_issues": [],
+  "next_action": "execute_run_evaluation_sh",
+  "notes": [
+    "Compliance audit passed. Template source verified as templates/run_single_model.sh.",
+    "Smoke test is built into run_evaluation.sh as gate before full prediction generation."
+  ]
+}

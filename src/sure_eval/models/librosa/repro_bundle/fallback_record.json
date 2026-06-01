@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-04-13T23:58:53.241046+00:00",
+  "model_id": "librosa/librosa",
+  "fallbacks": [
+    {
+      "type": "backend",
+      "from": "uv",
+      "to": "venv_pip_local",
+      "reason": "uv executable unavailable on host."
+    },
+    {
+      "type": "python_version",
+      "from": "3.10",
+      "to": "3.12",
+      "reason": "python3.10 unavailable; python3.12 passed executable validation."
+    },
+    {
+      "type": "fixture",
+      "from": "tests/fixtures/shared/asr/en_16k.wav",
+      "to": "tests/fixtures/shared/asr/en_16k_10s.wav",
+      "reason": "Requested fixture missing; shared fallback allowed and preserves audio-path semantics for phase-1."
+    },
+    {
+      "type": "system_dependency_assumption",
+      "from": "ffmpeg/libsndfile1 expected",
+      "to": "soundfile wheel runtime only",
+      "reason": "Validated WAV fixture path succeeded without host ffmpeg, so no host-level package mutation was needed."
+    }
+  ]
+}

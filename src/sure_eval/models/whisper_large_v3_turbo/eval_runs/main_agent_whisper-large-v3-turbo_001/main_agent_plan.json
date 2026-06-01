@@ -1,0 +1,22 @@
+{
+  "run_id": "main_agent_whisper-large-v3-turbo_001",
+  "timestamp": "2026-05-20T15:00:34Z",
+  "goal": "Evaluate whisper-large-v3-turbo on aishell1_test ASR dataset using direct server prediction generation, then validate and evaluate predictions.",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_dataset: run scripts/prepare_sure_dataset.py for aishell1_test",
+    "materialize_templates: run scripts/materialize_predictions_template.py",
+    "smoke_test: bounded smoke test via generate_predictions_via_server.py with max_samples=10",
+    "generate_predictions: full prediction generation via server for aishell1_test",
+    "validate_predictions: run scripts/validate_prediction_files.py",
+    "evaluate_predictions: run scripts/evaluate_predictions.py to compute WER/CER"
+  ],
+  "stop_condition": "Evaluation payload produced and validation passes, or a blocking issue is detected at any step.",
+  "notes": [
+    "Execution surface derived from templates/run_single_model.sh with isolation compliance.",
+    "Resume enabled for prediction generation to allow restart safety."
+  ]
+}

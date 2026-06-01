@@ -1,0 +1,9 @@
+{
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "last_successful_stage": "VALIDATE_REPRO_OUTPUT",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": true
+}

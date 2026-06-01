@@ -1,0 +1,1 @@
+{"instance_id":"case_001","task":"asr","input":{"audio_path":"tests/fixtures/shared/asr/en_16k_10s.wav","sample_rate":16000},"request":{"language":"en","timestamps":false}}

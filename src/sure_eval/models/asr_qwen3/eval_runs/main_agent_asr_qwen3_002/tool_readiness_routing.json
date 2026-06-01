@@ -1,0 +1,31 @@
+{
+  "run_id": "main_agent_asr_qwen3_002",
+  "timestamp": "2026-05-09T22:28:48+08:00",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model declares a server path in config.yaml (server.py via .venv/bin/python). Artifacts show prior successful onboarding: verdict.json phase1 PASS with all checks (import, load, infer, contract) passing. validation.log confirms GPU inference succeeded. Model weights are locally cached and verified. Main flow should proceed with direct server use, but bounded smoke test is still required per EXECUTION_READINESS_UNIT contract before full execution.",
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/asr_qwen3/config.yaml",
+      "signal": "MCP server declared: command=[.venv/bin/python, server.py], working_dir=., env includes MODEL_PATH and MODELSCOPE_CACHE"
+    },
+    {
+      "source": "src/sure_eval/models/asr_qwen3/artifacts/verdict.json",
+      "signal": "status=PASS, phase=phase1, all checks (import, load, infer, contract)=PASS, device=cuda, weights verified=true"
+    },
+    {
+      "source": "src/sure_eval/models/asr_qwen3/artifacts/validation.log",
+      "signal": "Model loaded from ModelScope local cache on cuda:0. Single audio inference successful with non-empty text output."
+    },
+    {
+      "source": "src/sure_eval/models/asr_qwen3/artifacts/build.log",
+      "signal": "Environment build complete. Dependencies installed. Model weights downloaded (4.4GB)."
+    },
+    {
+      "source": "src/sure_eval/models/asr_qwen3/model.spec.yaml",
+      "signal": "mcp_server configured with command, working_dir, env. Weights source=modelscope, local_path verified."
+    }
+  ]
+}

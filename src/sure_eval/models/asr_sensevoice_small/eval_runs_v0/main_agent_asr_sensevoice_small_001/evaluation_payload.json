@@ -1,0 +1,72 @@
+{
+  "results": [
+    {
+      "dataset": "aishell1_test",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/aishell1_test.jsonl",
+      "prediction_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/aishell1_test.txt",
+      "task": "ASR",
+      "language": "zh",
+      "metric": "cer",
+      "score": 0.030219256434699714,
+      "rps": 0.2647318611987382,
+      "rps_is_unbounded": false,
+      "num_samples": 7176,
+      "evaluation_context": {
+        "task": "ASR",
+        "language": "zh",
+        "language_source": "dataset_jsonl",
+        "metric": "cer",
+        "metric_source": "sota_baseline_or_task_default",
+        "postprocessing": "SUREEvaluator._eval_asr",
+        "normalization": "sure_eval.evaluation.normalization.asr_simple_tn.asr_num2words",
+        "punctuation_policy": "evaluation-pipeline clean_marks.strip_all_punct compatible",
+        "tokenization": "character",
+        "case_sensitive": false
+      },
+      "details": {
+        "all": 104900,
+        "cor": 101816,
+        "sub": 2984,
+        "ins": 86,
+        "del": 100,
+        "cer": 0.030219256434699714,
+        "cer_percent": 3.0219256434699715,
+        "score": 0.030219256434699714
+      }
+    },
+    {
+      "dataset": "librispeech_test_clean",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/librispeech_test_clean.jsonl",
+      "prediction_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/librispeech_test_clean.txt",
+      "task": "ASR",
+      "language": "en",
+      "metric": "wer",
+      "score": 0.0320278602420644,
+      "rps": 0.5307878787878788,
+      "rps_is_unbounded": false,
+      "num_samples": 2619,
+      "evaluation_context": {
+        "task": "ASR",
+        "language": "en",
+        "language_source": "dataset_jsonl",
+        "metric": "wer",
+        "metric_source": "sota_baseline_or_task_default",
+        "postprocessing": "SUREEvaluator._eval_asr",
+        "normalization": "sure_eval.evaluation.normalization.asr_simple_tn.asr_num2words",
+        "punctuation_policy": "evaluation-pipeline clean_marks.strip_all_punct compatible",
+        "tokenization": "word",
+        "case_sensitive": false
+      },
+      "details": {
+        "all": 52548,
+        "cor": 51026,
+        "sub": 1385,
+        "ins": 161,
+        "del": 137,
+        "wer": 0.0320278602420644,
+        "wer_percent": 3.20278602420644,
+        "score": 0.0320278602420644
+      }
+    }
+  ]
+}

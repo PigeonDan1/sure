@@ -1,0 +1,23 @@
+[project]
+name = "sure-eval-asr-kimi-audio"
+version = "0.1.0"
+description = "Phase-1 onboarding package for moonshotai/Kimi-Audio-7B-Instruct in SURE-EVAL"
+requires-python = ">=3.10,<3.12"
+dependencies = [
+    "torch>=2.4,<2.5",
+    "modelscope",
+    "soundfile",
+    "numpy",
+    "transformers",
+    "accelerate",
+    "huggingface-hub",
+    "loguru",
+    "tqdm",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["model", "server"]

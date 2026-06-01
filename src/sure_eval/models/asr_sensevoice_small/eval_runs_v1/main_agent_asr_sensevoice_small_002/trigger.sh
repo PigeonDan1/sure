@@ -1,0 +1,1 @@
+vc submit --image " " --cmd "bash src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_002/run_evaluation.sh"

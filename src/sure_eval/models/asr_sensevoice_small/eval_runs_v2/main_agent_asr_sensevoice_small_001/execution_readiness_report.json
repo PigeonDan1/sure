@@ -1,0 +1,54 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-27T22:06:21+08:00",
+  "execution_ready": true,
+  "status": "ready",
+  "validation_mode": "bounded_smoke_test",
+  "validated_shell_entrypoint": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/run_evaluation.sh",
+  "smoke_test_command": "DATASETS=librispeech_test_clean MAX_SAMPLES=10 SKIP_VALIDATE_AND_EVAL=1 bash run_evaluation.sh (via Docker)",
+  "smoke_test_passed": true,
+  "smoke_test_run_dir": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001",
+  "resume_integrity_check": {
+    "prior_predictions_exist": false,
+    "resume_safe": true
+  },
+  "isolation_audit": {
+    "audit_passed": true,
+    "audit_tool": "scripts/check_execution_surface_compliance.py",
+    "checks": {
+      "template_source": {
+        "passed": true,
+        "template_declared": "templates/run_single_model.sh",
+        "template_exists": true,
+        "under_templates_dir": true,
+        "matches_expected": true,
+        "evidence": "ok"
+      },
+      "source_provenance": {
+        "passed": true,
+        "evidence": "source_provenance present"
+      }
+    }
+  },
+  "gpu_preflight": {
+    "model_requires_gpu": true,
+    "nvidia_smi_output": "CUDA 12.1.1 available in Docker",
+    "available_gpus": ["cuda:0"],
+    "gpu_memory_free_mb": [],
+    "recommended_device": "cuda:0",
+    "cpu_fallback_ready": true,
+    "gpu_check_passed": true
+  },
+  "checked_artifacts": {
+    "prepare_summary": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/prepare_summary.json",
+    "prediction_manifest": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/manifest.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/prediction_generation_status.json",
+    "shell_log": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/full_run.log"
+  },
+  "blocking_issues": [],
+  "next_action": "execute_run_evaluation.sh",
+  "notes": [
+    "Executed via Docker image docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_sensevoice_small:v1.0",
+    "Host .venv/bin/python symlink fixed via /usr/bin/python3.11 mount to /opt/asr_sensevoice_small_venv/bin/python"
+  ]
+}

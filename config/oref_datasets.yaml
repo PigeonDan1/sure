@@ -1,0 +1,32 @@
+# OREF Local Datasets Registry for SURE-EVAL
+# Add new OREF datasets here without modifying Python code.
+#
+# Each dataset entry maps a dataset config name to its local metadata.
+# The audio_dir and jsonl_path are relative to data.datasets root
+# (default: data/datasets/).
+#
+# Fallbacks map SURE Benchmark canonical names to their OREF equivalents.
+# When a SURE Benchmark dataset is requested but not available, the system
+# automatically uses the OREF fallback to avoid ModelScope download timeouts.
+
+datasets:
+  librispeech_test_clean:
+    config_name: "librispeech_test_clean"
+    audio_dir: "librispeech_test_clean/audio"
+    jsonl_path: "librispeech_test_clean/sample.jsonl"
+    task: "ASR"
+    language: "en"
+
+  aishell1_test:
+    config_name: "aishell1_test"
+    audio_dir: "aishell1_test/audio"
+    jsonl_path: "aishell1_test/sample.jsonl"
+    task: "ASR"
+    language: "zh"
+
+# SURE Benchmark -> OREF local equivalent fallback mapping.
+# Keys are SURE Benchmark canonical config names.
+# Values are OREF dataset names (must exist in datasets above).
+fallbacks:
+  aishell1: "aishell1_test"
+  librispeech_clean: "librispeech_test_clean"

@@ -1,0 +1,40 @@
+{
+  "run_id": "main_agent_asr_qwen3_002",
+  "timestamp": "2026-05-09T22:28:48+08:00",
+  "checks": [
+    {
+      "check": "script_path_starts_with_scripts",
+      "description": "Every step.script must start with 'scripts/'",
+      "passed": true,
+      "violations": []
+    },
+    {
+      "check": "no_forbidden_prefixes",
+      "description": "No step.script uses forbidden prefixes (demo/, examples/, tests/, src/)",
+      "passed": true,
+      "violations": []
+    },
+    {
+      "check": "script_files_exist",
+      "description": "Every step.script references a file that exists on disk",
+      "passed": true,
+      "violations": []
+    },
+    {
+      "check": "step_names_in_whitelist",
+      "description": "Every step.name is in the Allowed Step Types whitelist",
+      "passed": true,
+      "violations": []
+    }
+  ],
+  "overall_pass": true,
+  "notes": [
+    "Step 0 (prepare_dataset): script=scripts/prepare_sure_dataset.py -> exists",
+    "Step 1 (materialize_templates): script=scripts/materialize_predictions_template.py -> exists",
+    "Step 2 (validate_execution_shell): script=scripts/generate_predictions_via_server.py -> exists",
+    "Step 3 (wait_for_predictions): script=scripts/generate_predictions_via_server.py -> exists",
+    "Step 4 (validate_predictions): script=scripts/validate_prediction_files.py -> exists",
+    "Step 5 (evaluate_predictions): script=scripts/evaluate_predictions.py -> exists",
+    "Step 6 (refresh_report): script=scripts/refresh_report_snapshot.py -> exists"
+  ]
+}

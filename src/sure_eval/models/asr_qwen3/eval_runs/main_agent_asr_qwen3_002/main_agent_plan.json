@@ -1,0 +1,25 @@
+{
+  "run_id": "main_agent_asr_qwen3_002",
+  "timestamp": "2026-05-09T22:28:48+08:00",
+  "goal": "Evaluate Qwen3-ASR-1.7B on AISHELL-1 (zh) and LibriSpeech test-clean (en) using the existing MCP server harness.",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_dataset for aishell1 and librispeech_clean",
+    "materialize_predictions_template for selected datasets",
+    "generate_predictions_via_server with bounded smoke test (first dataset, 10 samples)",
+    "generate_predictions_via_server for all selected datasets (full run)",
+    "validate_prediction_files",
+    "evaluate_predictions",
+    "refresh_report_snapshot"
+  ],
+  "stop_condition": "Evaluation completes for all selected datasets with valid metrics, or smoke test fails, or anomaly metrics detected (>50% WER/CER or <20% accuracy).",
+  "notes": [
+    "Resume is enabled by default (--resume) for prediction generation.",
+    "Dataset language context must be preserved: aishell1=zh, librispeech_clean=en.",
+    "GPU preflight required per EXECUTION_READINESS_UNIT contract.",
+    "If smoke test fails, stop and handoff to tool workflow rather than patching wrapper."
+  ]
+}

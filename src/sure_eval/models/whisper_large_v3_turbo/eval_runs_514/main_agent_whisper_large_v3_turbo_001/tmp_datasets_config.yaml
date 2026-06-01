@@ -1,0 +1,6 @@
+data:
+  root: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/data"
+  cache: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/data/cache"
+  models: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/data/models"
+  datasets: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/.datasets"
+  results: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/results"

@@ -1,0 +1,6 @@
+{
+  "task_type": "evaluate_existing_model",
+  "reason": "User provided an existing model (asr_parakeet) with model_dir, evidence files, and runtime context. Goal is explicit evaluate_existing_model.",
+  "need_tool_workflow": true,
+  "confidence": 0.95
+}

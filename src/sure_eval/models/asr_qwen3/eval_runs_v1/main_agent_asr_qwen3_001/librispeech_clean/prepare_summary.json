@@ -1,0 +1,13 @@
+{
+  "prepared": [
+    {
+      "dataset": "librispeech_clean",
+      "requested_name": "librispeech_clean",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/librispeech_clean.jsonl",
+      "task": "ASR",
+      "language": "en",
+      "source": "sure_benchmark",
+      "display_name": "LibriSpeech Clean"
+    }
+  ]
+}

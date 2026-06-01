@@ -1,0 +1,13 @@
+{
+  "model_name": "wespeaker",
+  "task": "speaker_verification",
+  "enroll_audio": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_enroll.wav",
+  "trial_audio": "/Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/speaker_verification/spk1_trial.wav",
+  "score": 0.6511188596487045,
+  "score_is_finite": true,
+  "device": "cpu",
+  "error_code": null,
+  "backend": "pip",
+  "weight_id": "Wespeaker/wespeaker-voxceleb-resnet221-LM",
+  "negative_score": 0.697369709610939
+}

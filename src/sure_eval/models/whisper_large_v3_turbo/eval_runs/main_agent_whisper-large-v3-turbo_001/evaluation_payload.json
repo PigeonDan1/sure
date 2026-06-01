@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "dataset": "aishell1_test",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/aishell1_test.jsonl",
+      "prediction_path": "/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/whisper-large-v3-turbo/eval_runs/main_agent_whisper-large-v3-turbo_001/predictions/aishell1_test.txt",
+      "task": "ASR",
+      "language": "zh",
+      "metric": "cer",
+      "score": 0.07276453765490944,
+      "rps": 0.109943665662256,
+      "rps_is_unbounded": false,
+      "num_samples": 7176,
+      "evaluation_context": {
+        "task": "ASR",
+        "language": "zh",
+        "language_source": "dataset_jsonl",
+        "metric": "cer",
+        "metric_source": "sota_baseline_or_task_default",
+        "postprocessing": "SUREEvaluator._eval_asr",
+        "normalization": "sure_eval.evaluation.normalization.asr_simple_tn.asr_num2words",
+        "punctuation_policy": "evaluation-pipeline clean_marks.strip_all_punct compatible",
+        "tokenization": "character",
+        "case_sensitive": false
+      },
+      "details": {
+        "all": 104900,
+        "cor": 97689,
+        "sub": 6436,
+        "ins": 422,
+        "del": 775,
+        "cer": 0.07276453765490944,
+        "cer_percent": 7.276453765490944,
+        "score": 0.07276453765490944
+      }
+    }
+  ]
+}

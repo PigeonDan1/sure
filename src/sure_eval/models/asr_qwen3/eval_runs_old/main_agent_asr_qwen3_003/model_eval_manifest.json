@@ -1,0 +1,39 @@
+{
+  "run_id": "main_agent_asr_qwen3_003",
+  "model_name": "asr_qwen3",
+  "model_dir": "src/sure_eval/models/asr_qwen3",
+  "created_at": "2026-05-12T10:49:51+08:00",
+  "completed_at": "2026-05-12T11:06:04+08:00",
+  "status": "success",
+  "selected_datasets": ["aishell1", "librispeech_clean"],
+  "artifacts": {
+    "task_classification": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/task_classification.json",
+    "tool_readiness_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/tool_readiness_routing.json",
+    "main_agent_plan": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/main_agent_plan.json",
+    "dataset_decision": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/dataset_decision.json",
+    "script_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/script_routing.json",
+    "execution_surface": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/execution_surface.json",
+    "execution_readiness_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/execution_readiness_report.json",
+    "assessment_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/assessment_report.json",
+    "main_agent_run_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/main_agent_run_report.json",
+    "prepare_summary": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/prepare_summary.json",
+    "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/predictions/manifest.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/prediction_generation_status.json",
+    "validation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/validation_payload.json",
+    "evaluation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/evaluation_payload.json"
+  },
+  "prediction_files": [
+    "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/predictions/aishell1.txt",
+    "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_003/predictions/librispeech_clean.txt"
+  ],
+  "dataset_jsonl_paths": [
+    "data/datasets/sure_benchmark/jsonl/aishell1.jsonl",
+    "data/datasets/sure_benchmark/jsonl/librispeech_clean.jsonl"
+  ],
+  "notes": [
+    "Predictions reused from prior run main_agent_asr_qwen3_002 after integrity verification.",
+    "Server smoke test passed before execution.",
+    "All validation checks passed.",
+    "Evaluation metrics: AISHELL-1 CER=1.58%, LibriSpeech WER=2.29%."
+  ]
+}

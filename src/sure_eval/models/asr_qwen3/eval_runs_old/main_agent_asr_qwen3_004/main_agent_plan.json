@@ -1,0 +1,25 @@
+{
+  "run_id": "main_agent_asr_qwen3_004",
+  "timestamp": "2026-05-15T19:45:49+08:00",
+  "goal": "Evaluate Qwen3-ASR-1.7B on AISHELL-1 (zh) and LibriSpeech test-clean (en) using the existing MCP server harness.",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_dataset",
+    "materialize_templates",
+    "smoke_test_gate",
+    "generate_predictions",
+    "validate_predictions",
+    "evaluate_predictions",
+    "refresh_report_snapshot"
+  ],
+  "stop_condition": "Evaluation payload generated for all selected datasets with valid metrics (CER for zh, WER for en). If prior run 003 predictions are verified intact, may skip regeneration and proceed directly to validation/evaluation.",
+  "notes": [
+    "Prior run 003 (main_agent_asr_qwen3_003) already completed full prediction generation and evaluation with excellent results.",
+    "If prediction files from 003 are intact and match expected sample counts, this run may reuse them to avoid regeneration.",
+    "Smoke test is mandatory before any full execution per EXECUTION_READINESS_UNIT contract.",
+    "Resume (--resume) is enabled by default for prediction generation."
+  ]
+}

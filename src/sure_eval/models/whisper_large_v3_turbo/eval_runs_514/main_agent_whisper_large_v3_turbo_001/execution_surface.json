@@ -1,0 +1,36 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-14T11:50:00+08:00",
+  "execution_surface_type": "single_model_multi_dataset_shell",
+  "materialized": true,
+  "entrypoint_path": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/run_evaluation.sh",
+  "generation_method": "adapted from templates/run_single_model.sh with resolved inputs for whisper_large_v3_turbo, 6 datasets, CPU fallback",
+  "resolved_inputs": {
+    "model_name": "whisper_large_v3_turbo",
+    "model_dir": "src/sure_eval/models/whisper_large_v3_turbo",
+    "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"],
+    "dataset_task": "ASR",
+    "dataset_language": "mixed (cs, zh, en)",
+    "evaluation_metric": "MER for cs_dialogue, CER for zh datasets, WER for en datasets",
+    "evaluation_postprocessing": "asr_num2words, clean_marks.strip_all_punct",
+    "run_dir": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001",
+    "execution_path": "direct_server_use",
+    "tool_name": "asr_transcribe",
+    "device": "cpu"
+  },
+  "expected_outputs": {
+    "prepare_summary": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/prepare_summary.json",
+    "prediction_manifest": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/manifest.json",
+    "prediction_generation_status": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/prediction_generation_status.json",
+    "validation_payload": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/validation_payload.json",
+    "evaluation_payload": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/evaluation_payload.json"
+  },
+  "reason": "Model is server-ready on CPU. Using multi-dataset shell template adapted for whisper_large_v3_turbo with 6 datasets. Resume enabled by default.",
+  "notes": [
+    "Shell supports multiple datasets via DATASETS env var.",
+    "Resume is enabled by default; NO_RESUME=1 disables it.",
+    "Bounded smoke test runs on first dataset with 10 samples before full run.",
+    "DEVICE=cpu due to GPU cluster occupancy.",
+    "Total samples: 191,183. Full run will take significant time on CPU."
+  ]
+}

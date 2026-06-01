@@ -1,0 +1,12 @@
+{
+  "sample_rate": 16000,
+  "num_samples": 37600,
+  "duration_sec": 2.35,
+  "feature_type": "mfcc",
+  "shape": [
+    13,
+    74
+  ],
+  "mean": -17.990097045898438,
+  "std": 98.43057250976562
+}

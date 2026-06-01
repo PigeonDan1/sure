@@ -1,0 +1,22 @@
+name: fireredvad
+task: VAD
+description: "Phase-1 wrapper for the minimal non-streaming FireRedVAD repo-native path."
+
+model:
+  id: "FireRedTeam/FireRedVAD"
+  runtime_family: "FireRedVad"
+  weights_dir: "pretrained_models/FireRedVAD/VAD"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  timeout: 300
+
+tools:
+  - name: vad_predict
+    description: "Run minimal non-streaming FireRedVAD inference on one local WAV file."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: ["audio_path"]

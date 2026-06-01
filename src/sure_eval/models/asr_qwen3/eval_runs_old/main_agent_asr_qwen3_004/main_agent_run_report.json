@@ -1,0 +1,59 @@
+{
+  "run_id": "main_agent_asr_qwen3_004",
+  "timestamp": "2026-05-15T19:49:05+08:00",
+  "task_type": "evaluate_existing_model",
+  "goal": "Evaluate Qwen3-ASR-1.7B on AISHELL-1 (zh) and LibriSpeech test-clean (en) using the existing MCP server harness.",
+  "selected_datasets": ["aishell1", "librispeech_clean"],
+  "executed_steps": [
+    "TASK_CLASSIFICATION_UNIT",
+    "TOOL_READINESS_AND_ROUTING_UNIT",
+    "PLAN_UNIT",
+    "DATASET_SCOPE_UNIT",
+    "SCRIPT_ROUTING_UNIT",
+    "EXECUTION_SURFACE_UNIT",
+    "EXECUTION_READINESS_UNIT",
+    "EXECUTE_SCRIPTS",
+    "ASSESSMENT_UNIT",
+    "RUN_REPORT_UNIT"
+  ],
+  "status": "success",
+  "artifacts": {
+    "task_classification": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/task_classification.json",
+    "tool_readiness_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/tool_readiness_routing.json",
+    "plan": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/main_agent_plan.json",
+    "dataset_decision": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/dataset_decision.json",
+    "script_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/script_routing.json",
+    "execution_surface": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/execution_surface.json",
+    "execution_readiness_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/execution_readiness_report.json",
+    "assessment_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/assessment_report.json",
+    "run_log": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/run.log",
+    "prepare_summary": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/prepare_summary.json",
+    "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/predictions/manifest.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/prediction_generation_status.json",
+    "validation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/validation_payload.json",
+    "evaluation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/evaluation_payload.json"
+  },
+  "model_eval_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_004/model_eval_manifest.json",
+  "results_summary": {
+    "aishell1": {
+      "metric": "cer",
+      "score": 0.015815061963775023,
+      "score_percent": 1.58,
+      "num_samples": 7176,
+      "rps": 0.5058468957203135
+    },
+    "librispeech_clean": {
+      "metric": "wer",
+      "score": 0.022874324427190378,
+      "score_percent": 2.29,
+      "num_samples": 2619,
+      "rps": 0.7431913477537438
+    }
+  },
+  "next_action": "Evaluation complete. Results are excellent. No further action required.",
+  "notes": [
+    "Prior run 003 predictions were verified intact and reused, saving ~1.5h regeneration time.",
+    "GPU used: cuda (auto-selected from execution_readiness_report).",
+    "All deterministic scripts executed successfully: prepare, materialize, validate, evaluate."
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "run_id": "main_agent_asr_qwen3_001",
+  "timestamp": "2026-05-17T21:03:29+08:00",
+  "selection_basis": [
+    "allowed_tasks=[ASR]",
+    "allowed_datasets=null (no restriction)",
+    "blocked_datasets=[]",
+    "model supports languages: zh, en, ja, ko, auto",
+    "local OREF datasets available for ASR: aishell1_test, librispeech_test_clean"
+  ],
+  "selected_datasets": [
+    "aishell1",
+    "librispeech_clean"
+  ],
+  "skipped_datasets": []
+}

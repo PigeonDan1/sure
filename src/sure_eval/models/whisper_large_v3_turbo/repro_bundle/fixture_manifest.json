@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-04-14T13:20:45.867045+01:00",
+  "model_id": "openai/whisper-large-v3-turbo",
+  "fixture_path": "/Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/whisper_large_v3_turbo/repro_bundle/fixtures/en_16k_10s.wav",
+  "fixture_role": "Phase-1 and repro minimal ASR input",
+  "whether_task_specific": false,
+  "whether_fallback_allowed": true,
+  "checksum": {
+    "algorithm": "sha256",
+    "value": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d"
+  },
+  "preprocessing_assumption": "Input is a shared 16 kHz mono WAV file directly consumable by Whisper via ffmpeg."
+}

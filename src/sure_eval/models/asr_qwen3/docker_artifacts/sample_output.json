@@ -1,0 +1,119 @@
+{
+  "timestamp": "2026-05-25T13:33:42.342677+00:00",
+  "model_id": "Qwen/Qwen3-ASR-1.7B",
+  "overall": "PASSED",
+  "languages": {
+    "en": {
+      "language": "en",
+      "num_samples": 3,
+      "tests": {
+        "import": {
+          "passed": true,
+          "duration_ms": 93.184
+        },
+        "load": {
+          "passed": true,
+          "duration_ms": 0.016
+        },
+        "infer": {
+          "passed": true,
+          "duration_ms": 13526.903
+        },
+        "evaluate": {
+          "passed": true,
+          "duration_ms": 437.904
+        }
+      },
+      "metrics": {
+        "wer": 0.08771929824561403,
+        "details": {
+          "all": 57,
+          "cor": 52,
+          "sub": 4,
+          "ins": 0,
+          "del": 1,
+          "wer": 0.08771929824561403,
+          "wer_percent": 8.771929824561402,
+          "score": 0.08771929824561403
+        }
+      },
+      "samples": [
+        {
+          "key": "367-130732-0006",
+          "audio": "sample_1_367-130732-0006.wav",
+          "ground_truth": "lobster a la newberg",
+          "prediction": "Lobster, Ellen Newberg."
+        },
+        {
+          "key": "4198-12281-0009",
+          "audio": "sample_2_4198-12281-0009.wav",
+          "ground_truth": "to others again he unjointed the spondyles or knuckles of the neck disfigured their chaps gashed their faces made their cheeks hang flapping on their chin and so swinged and balammed them that they fell down before him like hay before a mower",
+          "prediction": "To others again, he unjointed the spandles or knuckles of the neck, disfigured their chaps, gashed their faces, made their cheeks hang flapping on their chin, and so swungd and belamed them that they fell down before him like hay before a mower."
+        },
+        {
+          "key": "3005-163389-0016",
+          "audio": "sample_3_3005-163389-0016.wav",
+          "ground_truth": "and the horse a going like a house afire too",
+          "prediction": "And the horse a going like a house afire, too."
+        }
+      ],
+      "duration_seconds": 14.102
+    },
+    "zh": {
+      "language": "zh",
+      "num_samples": 3,
+      "tests": {
+        "import": {
+          "passed": true,
+          "duration_ms": 0.015
+        },
+        "load": {
+          "passed": true,
+          "duration_ms": 0.018
+        },
+        "infer": {
+          "passed": true,
+          "duration_ms": 3742.949
+        },
+        "evaluate": {
+          "passed": true,
+          "duration_ms": 278.251
+        }
+      },
+      "metrics": {
+        "cer": 0.0,
+        "details": {
+          "all": 39,
+          "cor": 39,
+          "sub": 0,
+          "ins": 0,
+          "del": 0,
+          "cer": 0.0,
+          "cer_percent": 0.0,
+          "score": 0.0
+        }
+      },
+      "samples": [
+        {
+          "key": "BAC009S0764W0385",
+          "audio": "sample_1_BAC009S0764W0385.wav",
+          "ground_truth": "在此次申办冬奥会的过程中",
+          "prediction": "在此次申办冬奥会的过程中。"
+        },
+        {
+          "key": "BAC009S0764W0369",
+          "audio": "sample_2_BAC009S0764W0369.wav",
+          "ground_truth": "很多六七十岁的跑者看到这个研究结果时",
+          "prediction": "很多六七十岁的跑者看到这个研究结果时。"
+        },
+        {
+          "key": "BAC009S0766W0157",
+          "audio": "sample_3_BAC009S0766W0157.wav",
+          "ground_truth": "广泛应用于移动端",
+          "prediction": "广泛应用于移动端。"
+        }
+      ],
+      "duration_seconds": 4.055
+    }
+  }
+}

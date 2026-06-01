@@ -1,0 +1,58 @@
+{
+  "prepared": [
+    {
+      "dataset": "cs_dialogue",
+      "requested_name": "cs_dialogue",
+      "jsonl_path": "src/sure_eval/models/asr_fireredasr/eval_runs/main_agent_asr_fireredasr_001/datasets/sure_benchmark/jsonl/cs_dialogue.jsonl",
+      "task": "ASR",
+      "language": "cs",
+      "source": "sure_benchmark",
+      "display_name": "Code-Switching Dialogue"
+    },
+    {
+      "dataset": "kespeech",
+      "requested_name": "kespeech",
+      "jsonl_path": "src/sure_eval/models/asr_fireredasr/eval_runs/main_agent_asr_fireredasr_001/datasets/sure_benchmark/jsonl/kespeech.jsonl",
+      "task": "ASR",
+      "language": "zh",
+      "source": "sure_benchmark",
+      "display_name": "KeSpeech"
+    },
+    {
+      "dataset": "voxpopuli",
+      "requested_name": "voxpopuli",
+      "jsonl_path": "src/sure_eval/models/asr_fireredasr/eval_runs/main_agent_asr_fireredasr_001/datasets/sure_benchmark/jsonl/voxpopuli.jsonl",
+      "task": "ASR",
+      "language": "en",
+      "source": "sure_benchmark",
+      "display_name": "VoxPopuli EN"
+    },
+    {
+      "dataset": "aishell5",
+      "requested_name": "aishell5",
+      "jsonl_path": "src/sure_eval/models/asr_fireredasr/eval_runs/main_agent_asr_fireredasr_001/datasets/sure_benchmark/jsonl/aishell5.jsonl",
+      "task": "ASR",
+      "language": "zh",
+      "source": "sure_benchmark",
+      "display_name": "AISHELL-5"
+    },
+    {
+      "dataset": "contextasr_en",
+      "requested_name": "contextasr_en",
+      "jsonl_path": "src/sure_eval/models/asr_fireredasr/eval_runs/main_agent_asr_fireredasr_001/datasets/sure_benchmark/jsonl/contextasr_en.jsonl",
+      "task": "ASR",
+      "language": "en",
+      "source": "sure_benchmark",
+      "display_name": "ContextASR English"
+    },
+    {
+      "dataset": "contextasr_zh",
+      "requested_name": "contextasr_zh",
+      "jsonl_path": "src/sure_eval/models/asr_fireredasr/eval_runs/main_agent_asr_fireredasr_001/datasets/sure_benchmark/jsonl/contextasr_zh.jsonl",
+      "task": "ASR",
+      "language": "zh",
+      "source": "sure_benchmark",
+      "display_name": "ContextASR Mandarin"
+    }
+  ]
+}

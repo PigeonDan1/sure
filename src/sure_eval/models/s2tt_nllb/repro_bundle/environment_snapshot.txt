@@ -1,0 +1,23 @@
+workspace: /Users/wency/Desktop/sjtu/SURE/sure
+model bundle path: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/s2tt_nllb/repro_bundle
+host python: /opt/anaconda3/bin/python3
+host python version: Python 3.12.4
+phase-1 venv python: /Users/wency/Desktop/sjtu/SURE/sure/src/sure_eval/models/s2tt_nllb/.venv/bin/python
+selected backend: venv_pip_local
+requested backend: uv
+uv available: no
+conda available: yes (/opt/anaconda3/bin/conda)
+ffmpeg available on host: no
+ffprobe available on host: no
+fixture: /Users/wency/Desktop/sjtu/SURE/sure/tests/fixtures/shared/asr/en_16k_10s.wav
+fixture sha256: 8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d
+weights/asr_frontend size: 595M
+weights/mt_backend size: 2.3G
+key package versions:
+  torch==2.11.0
+  transformers==5.6.2
+  huggingface-hub==1.12.0
+  librosa==0.11.0
+  soundfile==0.13.1
+  sentencepiece==0.2.1
+  protobuf==7.34.1

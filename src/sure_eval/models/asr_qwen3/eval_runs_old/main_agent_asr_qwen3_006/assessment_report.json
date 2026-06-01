@@ -1,0 +1,29 @@
+{
+  "run_id": "main_agent_asr_qwen3_006",
+  "timestamp": "2026-05-16T17:28:00+08:00",
+  "status": "success",
+  "evidence": {
+    "datasets_evaluated": 2,
+    "aishell1": {
+      "metric": "CER",
+      "score": 0.015815061963775023,
+      "score_percent": 1.5815061963775023,
+      "rps": 0.5058468957203135,
+      "num_samples": 7176,
+      "status": "pass"
+    },
+    "librispeech_clean": {
+      "metric": "WER",
+      "score": 0.022874324427190378,
+      "score_percent": 2.287432442719038,
+      "rps": 0.7431913477537438,
+      "num_samples": 2619,
+      "status": "pass"
+    }
+  },
+  "anomaly_detected": false,
+  "anomaly_details": [],
+  "user_confirmed": true,
+  "next_action": "persist_run_report",
+  "reason": "All datasets evaluated successfully with metrics well within reasonable bounds. CER 1.58% and WER 2.29% are strong ASR results with no anomalies detected."
+}

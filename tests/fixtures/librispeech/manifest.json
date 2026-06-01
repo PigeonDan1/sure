@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1,
+    "key": "367-130732-0006",
+    "dataset": "librispeech_test-other_ASR",
+    "audio": "sample_1_367-130732-0006.wav",
+    "ground_truth": "lobster a la newberg"
+  },
+  {
+    "id": 2,
+    "key": "4198-12281-0009",
+    "dataset": "librispeech_test-other_ASR",
+    "audio": "sample_2_4198-12281-0009.wav",
+    "ground_truth": "to others again he unjointed the spondyles or knuckles of the neck disfigured their chaps gashed their faces made their cheeks hang flapping on their chin and so swinged and balammed them that they fell down before him like hay before a mower"
+  },
+  {
+    "id": 3,
+    "key": "3005-163389-0016",
+    "dataset": "librispeech_test-other_ASR",
+    "audio": "sample_3_3005-163389-0016.wav",
+    "ground_truth": "and the horse a going like a house afire too"
+  }
+]

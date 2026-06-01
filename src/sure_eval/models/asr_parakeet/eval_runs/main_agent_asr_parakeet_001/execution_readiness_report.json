@@ -1,0 +1,22 @@
+{
+  "execution_ready": true,
+  "status": "ready",
+  "validation_mode": "pre_execution",
+  "validated_shell_entrypoint": "src/sure_eval/models/asr_parakeet/eval_runs/main_agent_asr_parakeet_001/run_evaluation.sh",
+  "smoke_test_command": "scripts/generate_predictions_via_server.py --model-dir MODEL_DIR --dataset librispeech_test_clean --run-dir RUN_DIR --tool-name asr_transcribe --max-samples 10 --resume",
+  "smoke_test_passed": true,
+  "resume_integrity_check": {
+    "prior_predictions_found": false,
+    "resume_safe": true
+  },
+  "isolation_audit": {
+    "audit_passed": true,
+    "audit_tool": "scripts/check_execution_surface_compliance.py",
+    "checks": {
+      "template_source": "passed",
+      "source_provenance": "passed"
+    }
+  },
+  "blocking_issues": [],
+  "next_action": "execute_run_evaluation_sh"
+}

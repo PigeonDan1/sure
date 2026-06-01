@@ -1,0 +1,43 @@
+# Model Spec Template
+# 复制到 src/sure_eval/models/{model_name}/model.spec.yaml 并填写
+
+model_id: ""
+model_name: ""
+task_type: ""         # asr / sd / sa_asr / ser / s2tt / slu / omni / api
+deployment_type: ""   # local / api
+
+repo:
+  url: ""
+  commit: null
+
+weights:
+  source: ""          # huggingface / modelscope / local
+  local_path: null
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+
+environment:
+  preferred_backend: ""   # uv / pixi / docker / api
+  python_version: "3.10"
+  requires_gpu: true
+  system_packages: []
+
+entrypoints:
+  import_test: ""
+  load_test: ""
+  infer_test: ""
+
+io_contract:
+  input_type: ""          # audio_path / text / json
+  output_type: ""         # text / json
+  primary_field: ""       # e.g. "text" for ASR, "label" for SER
+  required_fields: []     # e.g. ["text", "confidence"] - 必须存在的字段
+  nonempty_fields: []     # e.g. ["text"] - 必须非空的字段
+  json_serializable: true # 输出是否必须可 JSON 序列化
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true

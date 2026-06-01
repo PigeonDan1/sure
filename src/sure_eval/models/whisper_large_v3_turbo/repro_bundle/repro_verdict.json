@@ -1,0 +1,10 @@
+{
+  "timestamp": "2026-04-14T13:25:40.931240+01:00",
+  "integration_status": "READY_LOCAL",
+  "repro_status": "VERIFIED",
+  "last_successful_stage": "SAVE_REPRO_ARTIFACTS",
+  "blocker_stage": null,
+  "failure_category": null,
+  "failure_reason": null,
+  "whether_escalated": true
+}

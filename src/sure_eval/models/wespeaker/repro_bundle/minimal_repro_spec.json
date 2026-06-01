@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "minimal_callable_path": "from model import ModelWrapper; result = ModelWrapper().predict({\"enroll_audio\": <fixture>, \"trial_audio\": <fixture>})",
+  "exact_commands_or_callable_steps": [
+    "Create a fresh temporary working directory and copy src/sure_eval/models/wespeaker/repro_bundle into it.",
+    "Run src/sure_eval/models/wespeaker/setup.sh with SURE_WESPEAKER_VENV_DIR pointed inside the new temp directory.",
+    "Set PYTHONPATH to the model directory so the temp environment imports the validated model-local wrapper files.",
+    "Call ModelWrapper().predict(...) with the tiny enroll/trial fixture paths from repro_bundle/fixtures/.",
+    "Confirm the JSON output contains the required finite score fields."
+  ],
+  "working_directory_assumptions": [
+    "The replay must run from a fresh temporary directory, not from the phase-1 working directory.",
+    "The model-local wrapper files remain at src/sure_eval/models/wespeaker/ and are imported via PYTHONPATH.",
+    "The tiny fixture files are copied into the temp directory from repro_bundle/fixtures/."
+  ],
+  "required_inputs": [
+    "A Python 3.10 interpreter or a compatible interpreter accepted by setup.sh.",
+    "repro_bundle/fixtures/spk1_enroll.wav",
+    "repro_bundle/fixtures/spk1_trial.wav",
+    "The model-local checkpoints directory recorded in weights_manifest.json.",
+    "The reference wrapper files under repro_bundle/reference/."
+  ],
+  "expected_outputs": {
+    "type": "json",
+    "required_fields": [
+      "model_name",
+      "task",
+      "enroll_audio",
+      "trial_audio",
+      "score",
+      "score_is_finite",
+      "device",
+      "error_code"
+    ],
+    "finite_numeric_fields": [
+      "score"
+    ]
+  },
+  "contract_checks": {
+    "json_serializable": true,
+    "required_fields_present": true,
+    "score_is_finite": true
+  },
+  "no_accuracy_evaluation": true,
+  "no_benchmark_dataset_required": true
+}

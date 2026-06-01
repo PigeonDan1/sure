@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-04-27T22:28:55.568983+00:00",
+  "fixtures": [
+    {
+      "fixture_path": "fixtures/spk1_enroll.wav",
+      "fixture_role": "enroll_audio",
+      "whether_task_specific": true,
+      "whether_fallback_allowed": false,
+      "whether_fixture_existence_was_verified_at_spec_time": true,
+      "fixture_existence_evidence": "tests/fixtures/shared/speaker_verification/manifest.json",
+      "declared_external_source": null,
+      "checksum": "7de37439710c9635537e4acb0552f8cae9a5b43ff24e9ab28aaddb93b3e33fad",
+      "duration_seconds": 2.0,
+      "sample_rate": 16000,
+      "file_size_bytes": 64044,
+      "preprocessing_assumption": "None beyond the source wave slicing recorded in fixture_creation.json.",
+      "whether_engineering_smoke_only": true,
+      "whether_valid_for_accuracy_claims": false,
+      "generation_method": "wave_slice_from_existing_repo_fixture",
+      "source_path": "tests/fixtures/SD/Ses05F_script01_1_M038.wav",
+      "speaker_id_evidence": "Ses05F_script01_1_M038"
+    },
+    {
+      "fixture_path": "fixtures/spk1_trial.wav",
+      "fixture_role": "trial_audio",
+      "whether_task_specific": true,
+      "whether_fallback_allowed": false,
+      "whether_fixture_existence_was_verified_at_spec_time": true,
+      "fixture_existence_evidence": "tests/fixtures/shared/speaker_verification/manifest.json",
+      "declared_external_source": null,
+      "checksum": "04ebb5517074d8d9609afb32eedc0aa0f0b105e7487fee37bed9747cc73eb476",
+      "duration_seconds": 2.0,
+      "sample_rate": 16000,
+      "file_size_bytes": 64044,
+      "preprocessing_assumption": "None beyond the source wave slicing recorded in fixture_creation.json.",
+      "whether_engineering_smoke_only": true,
+      "whether_valid_for_accuracy_claims": false,
+      "generation_method": "wave_slice_from_existing_repo_fixture",
+      "source_path": "tests/fixtures/SD/Ses05F_script01_1_M038.wav",
+      "speaker_id_evidence": "Ses05F_script01_1_M038"
+    },
+    {
+      "fixture_path": "fixtures/spk2_trial.wav",
+      "fixture_role": "impostor_audio",
+      "whether_task_specific": true,
+      "whether_fallback_allowed": false,
+      "whether_fixture_existence_was_verified_at_spec_time": true,
+      "fixture_existence_evidence": "tests/fixtures/shared/speaker_verification/manifest.json",
+      "declared_external_source": null,
+      "checksum": "7ce091f68c6610a3baca83fab14de7b2b1c8b0966a740a5379794c4c35812c64",
+      "duration_seconds": 2.0,
+      "sample_rate": 16000,
+      "file_size_bytes": 64044,
+      "preprocessing_assumption": "None beyond the source wave slicing recorded in fixture_creation.json.",
+      "whether_engineering_smoke_only": true,
+      "whether_valid_for_accuracy_claims": false,
+      "generation_method": "wave_slice_from_existing_repo_fixture",
+      "source_path": "tests/fixtures/SD/Ses05F_script01_1_M039.wav",
+      "speaker_id_evidence": "Ses05F_script01_1_M039"
+    }
+  ]
+}

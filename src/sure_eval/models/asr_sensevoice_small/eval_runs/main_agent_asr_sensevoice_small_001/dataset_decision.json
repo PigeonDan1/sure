@@ -1,0 +1,13 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-28T15:55:20+08:00",
+  "selection_basis": [
+    "user constraint: allowed_datasets = [data/datasets/librispeech_test_clean]",
+    "dataset exists on disk with audio/ and sample.jsonl",
+    "task match: ASR"
+  ],
+  "selected_datasets": [
+    "librispeech_test_clean"
+  ],
+  "skipped_datasets": []
+}

@@ -1,0 +1,27 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_002",
+  "timestamp": "2026-05-25T20:00:11+08:00",
+  "execution_ready": true,
+  "status": "ready",
+  "validation_mode": "bounded_smoke_test",
+  "validated_shell_entrypoint": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_002/run_evaluation.sh",
+  "smoke_test_command": "DATASETS=librispeech_test_clean MAX_SAMPLES=10 ./run_evaluation.sh",
+  "smoke_test_passed": true,
+  "resume_integrity_check": {
+    "prior_predictions_exist": false,
+    "resume_safe": true
+  },
+  "isolation_audit": {
+    "audit_passed": true,
+    "audit_tool": "scripts/check_execution_surface_compliance.py",
+    "checks": {
+      "template_source": "templates/run_single_model.sh exists under templates/",
+      "source_provenance": "execution_surface.json declares templates/run_single_model.sh"
+    }
+  },
+  "blocking_issues": [],
+  "next_action": "execute_run_evaluation.sh",
+  "gpu_preflight": {
+    "recommended_device": "cuda:0"
+  }
+}

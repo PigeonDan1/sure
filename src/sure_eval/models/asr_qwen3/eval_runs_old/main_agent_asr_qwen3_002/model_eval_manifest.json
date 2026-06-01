@@ -1,0 +1,39 @@
+{
+  "run_id": "main_agent_asr_qwen3_002",
+  "model_name": "asr_qwen3",
+  "model_dir": "src/sure_eval/models/asr_qwen3",
+  "created_at": "2026-05-09T22:28:48+08:00",
+  "completed_at": "2026-05-10T00:17:06+08:00",
+  "status": "success",
+  "selected_datasets": ["aishell1", "librispeech_clean"],
+  "artifacts": {
+    "task_classification": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/task_classification.json",
+    "tool_readiness_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/tool_readiness_routing.json",
+    "main_agent_plan": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/main_agent_plan.json",
+    "dataset_decision": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/dataset_decision.json",
+    "script_routing": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/script_routing.json",
+    "script_routing_compliance_check": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/script_routing_compliance_check.json",
+    "execution_surface": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/execution_surface.json",
+    "execution_readiness_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/execution_readiness_report.json",
+    "assessment_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/assessment_report.json",
+    "main_agent_run_report": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/main_agent_run_report.json",
+    "prepare_summary": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/prepare_summary.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/prediction_generation_status.json",
+    "prediction_manifest": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/predictions/manifest.json",
+    "validation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/validation_payload.json",
+    "evaluation_payload": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/evaluation_payload.json",
+    "report_snapshot": ""
+  },
+  "prediction_files": [
+    "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/predictions/aishell1.txt",
+    "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/predictions/librispeech_clean.txt"
+  ],
+  "dataset_jsonl_paths": [
+    "data/datasets/sure_benchmark/jsonl/aishell1.jsonl",
+    "data/datasets/sure_benchmark/jsonl/librispeech_clean.jsonl"
+  ],
+  "notes": [
+    "Qwen3-ASR-1.7B evaluated on AISHELL-1 (CER 1.58%) and LibriSpeech test-clean (WER 2.29%).",
+    "Execution surfaced and fixed a resume-vs-template interaction bug in the evaluation shell."
+  ]
+}

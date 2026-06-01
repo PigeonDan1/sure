@@ -1,0 +1,17 @@
+{
+  "run_id": "main_agent_asr_qwen3_002",
+  "timestamp": "2026-05-09T22:28:48+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "User goal is explicitly 'evaluate_existing_model'. Model asr_qwen3 has prior onboarding artifacts (verdict.json PASS, validation.log, build.log) and declares an MCP server in config.yaml. No repair or onboarding signals present.",
+  "need_tool_workflow": false,
+  "confidence": "high",
+  "input_signals": [
+    "user_goal: evaluate_existing_model",
+    "model_dir: src/sure_eval/models/asr_qwen3",
+    "tool_workflow_ready: true",
+    "allowed_tasks: [ASR]",
+    "evidence: config.yaml declares MCP server",
+    "evidence: artifacts/verdict.json shows phase1 PASS",
+    "evidence: artifacts/validation.log shows successful inference on GPU"
+  ]
+}

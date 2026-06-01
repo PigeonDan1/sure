@@ -1,0 +1,19 @@
+[project]
+name = "sure-eval-asr-fireredasr"
+version = "0.1.0"
+description = "Phase-1 onboarding package for FireRedTeam/FireRedASR-LLM-L in SURE-EVAL"
+requires-python = ">=3.10,<3.12"
+dependencies = [
+    "torch==2.4.0",
+    "transformers",
+    "modelscope",
+    "soundfile",
+    "numpy",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["model", "server"]

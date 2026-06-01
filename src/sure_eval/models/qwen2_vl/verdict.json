@@ -1,0 +1,94 @@
+{
+  "timestamp": "2026-04-02T18:56:16+01:00",
+  "model_id": "Qwen/Qwen2-VL-2B-Instruct",
+  "model_name": "qwen2-vl-2b-instruct",
+  "status": "PASSED",
+  "stage": "phase_1_complete",
+  "workflow": {
+    "steps_completed": [
+      "DISCOVER",
+      "CLASSIFY",
+      "PLAN",
+      "VALIDATE_SPEC",
+      "BUILD_ENV",
+      "FETCH_WEIGHTS",
+      "VALIDATE_IMPORT",
+      "VALIDATE_LOAD",
+      "VALIDATE_INFER",
+      "VALIDATE_CONTRACT",
+      "GENERATE_WRAPPER",
+      "SAVE_ARTIFACTS"
+    ],
+    "final_step": "SAVE_ARTIFACTS",
+    "stopped_at": null
+  },
+  "backend": {
+    "type": "conda",
+    "choice_reason": "uv was unavailable in preflight, while conda provided an isolated Python 3.10 path that successfully executed the repo-native Transformers workflow."
+  },
+  "build": {
+    "success": true,
+    "duration_seconds": 0,
+    "log_path": "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/build.log"
+  },
+  "validation_results": {
+    "import": {
+      "passed": true,
+      "test": "from transformers import Qwen2VLForConditionalGeneration, AutoProcessor; from qwen_vl_utils import process_vision_info",
+      "evidence": "Import succeeded inside /tmp/sure_eval_qwen2_vl_2b_instruct/env with transformers 4.57.6 and qwen-vl-utils 0.0.14."
+    },
+    "load": {
+      "passed": true,
+      "test": "Qwen2VLForConditionalGeneration.from_pretrained('Qwen/Qwen2-VL-2B-Instruct', torch_dtype='auto', device_map='auto'); AutoProcessor.from_pretrained(model_id)",
+      "evidence": "Load completed on device mps:0 after fetching the checkpoint into /tmp/sure_eval_qwen2_vl_2b_instruct/hf_home."
+    },
+    "infer": {
+      "passed": true,
+      "test": "Single-image prompt using tests/fixtures/shared/vlm/demo_image.jpg and processor.apply_chat_template + process_vision_info + model.generate",
+      "evidence": "The approved-network infer run returned a non-empty description of the local fixture image."
+    },
+    "contract": {
+      "passed": true,
+      "checks": {
+        "required_fields_present": true,
+        "nonempty_text": true,
+        "json_serializable": true
+      },
+      "evidence": "runtime_output.json contains a JSON object with a non-empty text field."
+    }
+  },
+  "artifacts_produced": [
+    "src/sure_eval/models/qwen2_vl_2b_instruct/model.spec.yaml",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/pyproject.toml",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/conda-explicit.txt",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/pip-freeze.txt",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/model.py",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/server.py",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/__init__.py",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/config.yaml",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/repo_summary.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/classification.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/preflight_summary.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/backend_choice.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/build_plan.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/spec_validation.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/build.log",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/validation.log",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/weights_manifest.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/runtime_output.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/failure_classification.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/retry_recommendation.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/escalation.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/artifact_manifest.json",
+    "src/sure_eval/models/qwen2_vl_2b_instruct/artifacts/verdict.json",
+    "tests/fixtures/shared/vlm/demo_image.jpg"
+  ],
+  "escalation_triggered": true,
+  "retry_count": 1,
+  "notes": [
+    "The sandbox could not resolve external hosts by default, so controlled network approval was required for reachability checks, dependency installation, weight download, and the final infer run.",
+    "The host has no CUDA device, but Transformers placed the model on mps:0 and the phase-1 target succeeded there.",
+    "A deterministic shared VLM fixture was created locally because the repository did not contain any existing image fixtures.",
+    "A post-contract wrapper smoke test confirmed that the generated model-local wrapper reuses the validated repo-native path."
+  ]
+}

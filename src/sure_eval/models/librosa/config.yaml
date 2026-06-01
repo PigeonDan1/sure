@@ -1,0 +1,22 @@
+name: librosa
+task: music_ir
+description: "Phase-1 wrapper for minimal librosa MFCC feature extraction."
+
+model:
+  id: "librosa/librosa"
+  size: "library"
+
+server:
+  command: [".venv-phase1/bin/python", "server.py"]
+  env: {}
+  timeout: 300
+
+tools:
+  - name: "extract_mfcc"
+    description: "Run minimal MFCC feature extraction on an audio file."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: ["audio_path"]

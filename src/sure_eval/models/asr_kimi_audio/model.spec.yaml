@@ -1,0 +1,113 @@
+name: "asr_kimi_audio"
+task: "ASR"
+supported_tasks: ["ASR", "S2TT", "SER", "SLU", "GR"]
+description: "Automatic Speech Recognition and audio understanding using Kimi-Audio-7B-Instruct (MoonshotAI)"
+version: "1.0.0"
+
+runtime:
+  identity: "moonshotai/Kimi-Audio-7B-Instruct"
+  load_identity: "moonshotai/Kimi-Audio-7B-Instruct"
+  local_dir_name: "asr_kimi_audio"
+
+backend:
+  chosen: "uv"
+  reason: "kimia_infer and torch runtime can be installed in an isolated Python environment; weights are available from ModelScope."
+  evidence:
+    - "pyproject.toml present with kimia_infer, torch, and modelscope dependencies"
+    - "ModelScope checkpoint downloaded successfully"
+    - "local checkpoint loads through KimiAudio class"
+
+weights:
+  required: true
+  source: "modelscope"
+  repo_id: "moonshotai/Kimi-Audio-7B-Instruct"
+  local_path: "./.runtime/modelscope_cache/models/moonshotai/Kimi-Audio-7B-Instruct"
+  cache_policy: "model_local_first"
+  local_dir_name: ".runtime/modelscope_cache"
+  size_gb: 40.0
+
+environment:
+  python: ">=3.10,<3.12"
+  requires_gpu: true
+  packages:
+    - "torch>=2.4,<2.5"
+    - "modelscope"
+    - "soundfile"
+    - "numpy"
+    - "git+https://github.com/MoonshotAI/Kimi-Audio.git"
+  system_packages:
+    - "ffmpeg"
+    - "git"
+
+phase1_runtime_target:
+  description: "Validate the minimal repo-native kimia_infer path: from kimia_infer.api.kimia import KimiAudio -> KimiAudio(model_path=...) -> model.generate(messages, output_type='text')."
+  excludes:
+    - "full_benchmark_accuracy_evaluation"
+    - "language_coverage_claims"
+    - "production_serving"
+
+entrypoints:
+  import_test: "from kimia_infer.api.kimia import KimiAudio"
+  load_test: "model = KimiAudio(model_path='moonshotai/Kimi-Audio-7B-Instruct', load_detokenizer=False)"
+  infer_test: "_, text = model.generate(messages, output_type='text')"
+  wrapper_methods:
+    ASR: "ModelWrapper.predict(audio_path)"
+    S2TT: "ModelWrapper.translate(audio_path, source_language='auto', target_language='zh')"
+    SER: "ModelWrapper.recognize_emotion(audio_path)"
+    SLU: "ModelWrapper.understand(audio_path, prompt=...)"
+    GR: "ModelWrapper.recognize_gender(audio_path)"
+
+fixture:
+  requested_audio: "tests/fixtures/shared/asr/en_16k.wav"
+  selected_audio: "fixture/asr/aishell1-test/*.wav"
+  task_specific: true
+  fallback_allowed: true
+  source: "tests/fixtures/aishell1-test"
+  note: "ASR uses the original AISHELL1 fixture. S2TT/SLU/GR fixtures reuse repo-local tests/fixtures samples. SER uses IEMOCAP samples extracted from data/datasets_old/sure_benchmark/SURE_Test_Suites/IEMOCAP_test.tar.gz with labels from IEMOCAP_SER_test.csv."
+  multitask:
+    S2TT: "fixture/s2tt/covost2-en2zh/gt.jsonl"
+    SER: "fixture/ser/iemocap/gt.jsonl"
+    SLU: "fixture/slu/mmsu/gt.jsonl"
+    GR: "fixture/gr/librispeech-test-clean/gt.jsonl"
+
+io_contract:
+  input:
+    audio_path: string
+  output:
+    text: string
+    raw: dict (optional)
+  task_outputs:
+    ASR:
+      text: string
+    S2TT:
+      text: string
+    SER:
+      text: string
+      label: "one of [neu, hap, ang, sad]"
+    SLU:
+      text: string
+    GR:
+      text: string
+      label: "one of [male, female]"
+
+resources:
+  memory_gb: 24
+  gpu: required
+  cpu_cores: 8
+  storage_gb: 45
+
+mcp_server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ID: "moonshotai/Kimi-Audio-7B-Instruct"
+    KIMI_AUDIO_MODEL_PATH: ".runtime/modelscope_cache/models/moonshotai/Kimi-Audio-7B-Instruct"
+    DEVICE: "auto"
+  timeout: 600
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true
+  must_return_nonempty: true

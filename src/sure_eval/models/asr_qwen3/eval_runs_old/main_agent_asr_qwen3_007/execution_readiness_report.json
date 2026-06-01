@@ -1,0 +1,23 @@
+{
+  "run_id": "main_agent_asr_qwen3_007",
+  "timestamp": "2026-05-16T17:39:34+08:00",
+  "execution_ready": true,
+  "status": "ready",
+  "validation_mode": "shell_syntax_plus_smoke_test",
+  "validated_shell_entrypoint": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_007/run_evaluation.sh",
+  "smoke_test_command": "bash -n src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_007/run_evaluation.sh",
+  "smoke_test_passed": true,
+  "resume_integrity_check": {
+    "prior_runs_detected": true,
+    "isolate_from_prior_runs": true,
+    "action": "fresh_run_dir_created",
+    "note": "Run dir main_agent_asr_qwen3_007 is empty; no resume needed."
+  },
+  "gpu_preflight": {
+    "gpu_available": true,
+    "recommended_device": "cuda:1",
+    "note": "CUDA visible on host; model spec recommends GPU."
+  },
+  "blocking_issues": [],
+  "next_action": "execute_run_evaluation_sh"
+}

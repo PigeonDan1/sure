@@ -1,0 +1,55 @@
+{
+  "instance_id": "whisper_large_v3_turbo-2026-05-13",
+  "model": "whisper_large_v3_turbo",
+  "phase": "phase1",
+  "generated_at": "2026-05-13T16:05:00+08:00",
+  "backend": "uv",
+  "environment_strategy": {
+    "venv_path": ".venv",
+    "python_version": "3.11",
+    "package_manager": "uv venv + pip install",
+    "reason": "pyproject.toml present, pure Python deps, no CUDA compilation needed"
+  },
+  "steps": [
+    {
+      "step": "CREATE_VENV",
+      "command": "uv venv .venv --python 3.11",
+      "status": "completed"
+    },
+    {
+      "step": "INSTALL_DEPS",
+      "command": ".venv/bin/python -m pip install -e .",
+      "status": "completed",
+      "note": "pip used inside uv venv to avoid retaining uv install cache in model directory"
+    },
+    {
+      "step": "FETCH_WEIGHTS",
+      "command": "modelscope download --model iic/Whisper-large-v3-turbo --local_dir checkpoints",
+      "status": "completed",
+      "fallback": {
+        "used": true,
+        "reason": "HuggingFace hub unreachable from cluster",
+        "primary_source": "huggingface",
+        "fallback_source": "modelscope",
+        "local_path": "./checkpoints"
+      }
+    },
+    {
+      "step": "VALIDATE_IMPORT",
+      "status": "completed"
+    },
+    {
+      "step": "VALIDATE_LOAD",
+      "status": "completed"
+    },
+    {
+      "step": "VALIDATE_INFER",
+      "status": "completed"
+    },
+    {
+      "step": "VALIDATE_CONTRACT",
+      "status": "completed"
+    }
+  ],
+  "rebuild_command": "cd src/sure_eval/models/whisper_large_v3_turbo && rm -rf .venv && uv venv .venv --python 3.11 && .venv/bin/python -m pip install -e ."
+}

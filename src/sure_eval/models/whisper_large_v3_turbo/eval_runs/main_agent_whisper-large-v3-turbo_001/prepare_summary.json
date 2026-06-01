@@ -1,0 +1,13 @@
+{
+  "prepared": [
+    {
+      "dataset": "aishell1_test",
+      "requested_name": "aishell1_test",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/aishell1_test.jsonl",
+      "task": "ASR",
+      "language": "zh",
+      "source": "oref_local",
+      "display_name": "aishell1_test"
+    }
+  ]
+}

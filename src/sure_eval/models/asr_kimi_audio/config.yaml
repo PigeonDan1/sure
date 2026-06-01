@@ -1,0 +1,18 @@
+name: asr_kimi_audio
+task: ASR
+supported_tasks: [ASR, S2TT, SER, SLU, GR]
+description: "Automatic Speech Recognition and audio understanding using Kimi-Audio-7B-Instruct"
+
+model:
+  id: "moonshotai/Kimi-Audio-7B-Instruct"
+  size: "7B"
+  languages: ["zh", "en", "ja", "ko"]
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ID: "moonshotai/Kimi-Audio-7B-Instruct"
+    KIMI_AUDIO_MODEL_PATH: ".runtime/modelscope_cache/models/moonshotai/Kimi-Audio-7B-Instruct"
+    DEVICE: "auto"
+  timeout: 600

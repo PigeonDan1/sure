@@ -1,0 +1,20 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-27T21:58:17+08:00",
+  "goal": "Evaluate asr_sensevoice_small on librispeech_test_clean (ASR, en) with WER/CER metrics.",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_dataset",
+    "materialize_templates",
+    "smoke_test",
+    "generate_predictions",
+    "validate_predictions",
+    "evaluate_predictions",
+    "generate_run_report"
+  ],
+  "stop_condition": "evaluation_payload.json exists with non-empty results array",
+  "notes": []
+}

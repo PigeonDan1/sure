@@ -1,0 +1,50 @@
+{
+  "run_id": "main_agent_asr_qwen3_001",
+  "timestamp": "2026-05-17T21:03:29+08:00",
+  "execution_ready": true,
+  "status": "ready",
+  "validation_mode": "compliance_plus_gpu_preflight",
+  "validated_shell_entrypoint": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/run_evaluation.sh",
+  "smoke_test_command": "bash src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/run_evaluation.sh (smoke test gate embedded in template: 10 samples per dataset)",
+  "smoke_test_run_dir": "src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001",
+  "isolation_audit": {
+    "audit_passed": true,
+    "audit_tool": "scripts/check_execution_surface_compliance.py",
+    "checks": {
+      "template_source": {
+        "passed": true,
+        "template_declared": "templates/run_single_model_single_dataset.sh",
+        "template_exists": true,
+        "under_templates_dir": true,
+        "matches_expected": true,
+        "evidence": "ok"
+      },
+      "source_provenance": {
+        "passed": true,
+        "evidence": "source_provenance present"
+      }
+    }
+  },
+  "gpu_preflight": {
+    "model_requires_gpu": true,
+    "nvidia_smi_output": "4x NVIDIA GeForce RTX 2080 Ti, 11264 MiB",
+    "available_gpus": [0, 1, 2, 3],
+    "gpu_memory_free_mb": [6130, 10820, 10820, 10820],
+    "recommended_device": "cuda:1",
+    "cpu_fallback_ready": true,
+    "gpu_check_passed": true
+  },
+  "checked_artifacts": {
+    "prepare_summary": "pending_execution",
+    "prediction_manifest": "pending_execution",
+    "prediction_generation_status": "pending_execution",
+    "shell_log": "pending_execution"
+  },
+  "blocking_issues": [],
+  "next_action": "execute_run_evaluation_sh",
+  "notes": [
+    "GPU 1 selected as primary (largest free memory).",
+    "Model weights already cached; no download expected.",
+    "Smoke test gate is embedded in the single-dataset template and will run automatically."
+  ]
+}

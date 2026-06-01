@@ -1,0 +1,24 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-28T15:55:20+08:00",
+  "goal": "Evaluate asr_sensevoice_small on librispeech_test_clean via direct server use with vc submit execution.",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": false,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_dataset",
+    "materialize_execution_surface",
+    "execution_readiness_check",
+    "bounded_smoke_test",
+    "submit_vc_run",
+    "assess_results",
+    "generate_run_report"
+  ],
+  "stop_condition": "evaluation_payload.json produced and assessment passed, or blocking issue encountered",
+  "notes": [
+    "VC CLI is available; execution MUST go through vc submit per harness constraint.",
+    "Prediction source is regenerate; run is isolated from prior eval_runs_v*.",
+    "Dataset: librispeech_test_clean (ASR, en)."
+  ]
+}

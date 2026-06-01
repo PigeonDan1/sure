@@ -1,0 +1,47 @@
+{
+  "run_id": "main_agent_asr_parakeet_001",
+  "task_type": "evaluate_existing_model",
+  "model_name": "asr_parakeet",
+  "model_dir": "src/sure_eval/models/asr_parakeet",
+  "datasets": {
+    "selected": ["librispeech_test_clean"],
+    "skipped": []
+  },
+  "execution_path": "direct_server_use",
+  "actual_steps": [
+    "prepare_dataset",
+    "materialize_predictions_template",
+    "smoke_test_predictions",
+    "generate_predictions",
+    "validate_predictions",
+    "evaluate_predictions"
+  ],
+  "final_status": "success",
+  "results_summary": {
+    "librispeech_test_clean": {
+      "task": "ASR",
+      "metric": "wer",
+      "score": 0.018973129329375046,
+      "wer_percent": 1.8973129329375047,
+      "rps": 0.8960040120361085,
+      "num_samples": 2619
+    }
+  },
+  "next_recommendation": "No further action needed. Results recorded in evaluation database.",
+  "upstream_artifact_index": {
+    "task_classification": "task_classification.json",
+    "tool_readiness_routing": "tool_readiness_routing.json",
+    "plan": "main_agent_plan.json",
+    "dataset_decision": "dataset_decision.json",
+    "script_routing": "script_routing.json",
+    "execution_surface": "execution_surface.json",
+    "execution_readiness": "execution_readiness_report.json",
+    "assessment": "assessment_report.json",
+    "evaluation_payload": "evaluation_payload.json",
+    "predictions": "predictions/librispeech_test_clean.txt",
+    "validation_payload": "validation_payload.json",
+    "run_log": "run.log"
+  },
+  "model_eval_manifest_path": "results/asr_parakeet/strict_core/report.jsonl",
+  "report_persisted": true
+}

@@ -1,0 +1,13 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-20T22:09:41+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "Model directory exists with server.py and config.yaml. User explicitly requested evaluation of an existing model on allowed ASR datasets.",
+  "need_tool_workflow": true,
+  "confidence": "high",
+  "input_signals": [
+    "model_dir_exists",
+    "server_config_present",
+    "user_goal_evaluate_existing_model"
+  ]
+}

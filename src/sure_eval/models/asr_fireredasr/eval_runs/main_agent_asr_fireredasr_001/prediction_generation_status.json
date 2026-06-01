@@ -1,0 +1,19 @@
+{
+  "run_id": "main_agent_asr_fireredasr_001",
+  "model_name": "asr_fireredasr",
+  "execution_path": "direct_server_use",
+  "protocol_id": "strict_core",
+  "tool_name": "asr_transcribe",
+  "datasets": [
+    {
+      "dataset": "cs_dialogue",
+      "prediction_file": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_fireredasr/eval_runs/main_agent_asr_fireredasr_001/predictions/cs_dialogue.txt",
+      "status": "completed",
+      "num_expected_samples": 1,
+      "num_generated_samples": 1,
+      "log_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_fireredasr/eval_runs/main_agent_asr_fireredasr_001/predictions/logs/cs_dialogue.log",
+      "result_log_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_fireredasr/eval_runs/main_agent_asr_fireredasr_001/predictions/logs/cs_dialogue_results.log",
+      "error": null
+    }
+  ]
+}

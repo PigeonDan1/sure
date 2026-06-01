@@ -1,0 +1,7 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-27T21:58:17+08:00",
+  "selection_basis": ["user_specified", "task_match", "language_match"],
+  "selected_datasets": ["librispeech_test_clean"],
+  "skipped_datasets": []
+}

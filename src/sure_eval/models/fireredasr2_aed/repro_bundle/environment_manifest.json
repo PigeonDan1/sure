@@ -1,0 +1,24 @@
+{
+  "backend": "pip",
+  "python_version": "3.10.20",
+  "env_creation_method": "/opt/anaconda3/envs/fireredvad/bin/python -m venv .venv",
+  "dependency_installation_method": ".venv/bin/pip install -r repro_bundle/support/requirements.phase1.txt",
+  "system_packages": [
+    {
+      "name": "libsndfile1",
+      "available": false,
+      "note": "The chosen path succeeded without host-level installation because `soundfile` wheel support was sufficient."
+    },
+    {
+      "name": "ffmpeg",
+      "available": false,
+      "note": "Not required because the selected fixture already matches the repo-native WAV expectations."
+    }
+  ],
+  "whether_gpu_required": false,
+  "important_runtime_assumptions": [
+    "Use the standalone FireRedAsr2 AED runtime path only.",
+    "Use the model-local weights path recorded in `weights_manifest.json`.",
+    "Add the copied upstream source snapshot to `sys.path` before import."
+  ]
+}

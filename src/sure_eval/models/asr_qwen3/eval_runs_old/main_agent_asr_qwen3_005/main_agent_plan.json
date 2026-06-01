@@ -1,0 +1,25 @@
+{
+  "run_id": "main_agent_asr_qwen3_005",
+  "timestamp": "2026-05-15T21:20:00+08:00",
+  "goal": "Evaluate asr_qwen3 on all available local ASR datasets (aishell1 and librispeech_clean) using direct server prediction generation with regeneration policy.",
+  "task_type": "evaluate_existing_model",
+  "need_tool_workflow": true,
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "execution_steps": [
+    "prepare_dataset",
+    "materialize_templates",
+    "server_smoke_test",
+    "generate_predictions",
+    "validate_predictions",
+    "evaluate_predictions",
+    "refresh_report"
+  ],
+  "stop_condition": "All selected datasets have valid evaluation payloads with metrics, or a blocking issue/anomaly is detected requiring user confirmation.",
+  "notes": [
+    "Prediction source is regenerate; no reuse from prior runs due to isolate_from_prior_runs=true",
+    "Two datasets selected: aishell1 (zh) and librispeech_clean (en)",
+    "Resume enabled for prediction generation to allow recovery",
+    "Execution surface is materialized from templates/run_single_model_single_dataset.sh adapted for multi-dataset handling"
+  ]
+}

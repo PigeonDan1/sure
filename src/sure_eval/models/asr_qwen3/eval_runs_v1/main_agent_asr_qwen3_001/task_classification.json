@@ -1,0 +1,13 @@
+{
+  "run_id": "main_agent_asr_qwen3_001",
+  "timestamp": "2026-05-17T21:03:29+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "User explicitly requested evaluation of the existing asr_qwen3 model. Model directory exists with server.py, config.yaml, and cached weights. No onboarding or repair needed.",
+  "need_tool_workflow": false,
+  "confidence": "high",
+  "input_signals": [
+    "user_goal=evaluate_existing_model",
+    "model_dir_exists=true",
+    "tool_workflow_ready=true"
+  ]
+}

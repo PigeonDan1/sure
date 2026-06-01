@@ -1,0 +1,10 @@
+{
+  "selected_datasets": [
+    {
+      "dataset": "librispeech_test_clean",
+      "reason": "Explicitly allowed by user constraints; ASR task matches model capability; English language supported by model."
+    }
+  ],
+  "skipped_datasets": [],
+  "blocked_datasets": []
+}

@@ -1,0 +1,51 @@
+{
+  "timestamp": "2026-05-26T07:56:33.131864+00:00",
+  "model_id": "iic/SenseVoiceSmall",
+  "overall": "PASSED",
+  "subtasks": {
+    "asr_en": {
+      "subtask": "asr_en",
+      "num_samples": 1,
+      "tests": {
+        "import": {
+          "passed": true,
+          "duration_ms": 7.717
+        },
+        "load": {
+          "passed": true,
+          "duration_ms": 9789.227
+        },
+        "infer": {
+          "passed": true,
+          "duration_ms": 374.124
+        },
+        "evaluate": {
+          "passed": true,
+          "duration_ms": 341.78
+        }
+      },
+      "metrics": {
+        "wer": 0.5,
+        "details": {
+          "all": 4,
+          "cor": 2,
+          "sub": 1,
+          "ins": 0,
+          "del": 1,
+          "wer": 0.5,
+          "wer_percent": 50.0,
+          "score": 0.5
+        }
+      },
+      "samples": [
+        {
+          "key": "en_16k_10s",
+          "audio": "en_16k_10s.wav",
+          "ground_truth": "lobster a la newberg",
+          "prediction": "lobster een newberg"
+        }
+      ],
+      "duration_seconds": 10.548
+    }
+  }
+}

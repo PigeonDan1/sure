@@ -1,0 +1,59 @@
+model_id: "microsoft/VibeVoice-ASR"
+model_name: "VibeVoice-ASR"
+task_type: "sa_asr"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/microsoft/VibeVoice"
+  commit: null
+
+weights:
+  source: "modelscope"
+  local_path: ".runtime/microsoft/VibeVoice-ASR-HF"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+
+environment:
+  preferred_backend: "uv"
+  python_version: "3.11"
+  requires_gpu: true
+  system_packages: ["ffmpeg", "libsndfile1"]
+  venv_path: "src/sure_eval/models/sa_asr_vibevoiceasr/.venv"
+
+entrypoints:
+  import_test: "from transformers import AutoProcessor, VibeVoiceAsrForConditionalGeneration"
+  load_test: |
+    from transformers import AutoProcessor, VibeVoiceAsrForConditionalGeneration
+    processor = AutoProcessor.from_pretrained(".runtime/microsoft/VibeVoice-ASR-unified")
+    model = VibeVoiceAsrForConditionalGeneration.from_pretrained(
+        ".runtime/microsoft/VibeVoice-ASR-unified",
+        torch_dtype="auto",
+        device_map="auto"
+    )
+  infer_test: |
+    inputs = processor.apply_transcription_request(audio="fixture/asr/default/sample_1.wav")
+    output_ids = model.generate(**inputs, max_new_tokens=50)
+    generated_ids = output_ids[:, inputs["input_ids"].shape[1]:]
+    transcription = processor.decode(generated_ids, return_format="transcription_only")[0]
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "text"
+  primary_field: "text"
+  required_fields: ["text"]
+  nonempty_fields: ["text"]
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true
+
+notes:
+  - "Model size ~7B parameters, requires ~16GB VRAM in fp16. Host has 4x RTX 2080 Ti (11GB each)."
+  - "Using device_map='auto' via accelerate to distribute across multiple GPUs."
+  - "If multi-GPU loading fails, fallback to CPU inference (slower but functional for phase-1 validation)."
+  - "Integrated into transformers since March 2026; requires transformers >= 4.51.3."
+  - "Native multilingual support for 50+ languages, no explicit language setting needed."

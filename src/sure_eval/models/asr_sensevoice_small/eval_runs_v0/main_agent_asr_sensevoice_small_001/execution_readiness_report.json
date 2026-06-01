@@ -1,0 +1,57 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-24T20:43:35+08:00",
+  "execution_ready": true,
+  "status": "ready",
+  "validation_mode": "bounded_smoke_test_then_full",
+  "validated_shell_entrypoint": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/run_evaluation.sh",
+  "smoke_test_command": "MAX_SAMPLES=10 SKIP_VALIDATE_AND_EVAL=1 bash run_evaluation.sh",
+  "smoke_test_run_dir": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001",
+  "smoke_test_passed": true,
+  "resume_integrity_check": {
+    "partial_predictions_exist": true,
+    "datasets_with_partial_predictions": ["aishell1_test", "librispeech_test_clean"],
+    "resume_supported": true,
+    "notes": "10 samples already generated per dataset during smoke test; --resume will skip them."
+  },
+  "isolation_audit": {
+    "audit_passed": true,
+    "audit_tool": "scripts/check_execution_surface_compliance.py",
+    "checks": {
+      "template_source": {
+        "passed": true,
+        "template_declared": "templates/run_single_model.sh",
+        "template_exists": true,
+        "under_templates_dir": true,
+        "matches_expected": true,
+        "evidence": "compliance_check.json"
+      },
+      "source_provenance": {
+        "passed": true,
+        "evidence": "execution_surface.json contains correct template_file and sha256"
+      }
+    }
+  },
+  "gpu_preflight": {
+    "model_requires_gpu": false,
+    "nvidia_smi_output": "NVIDIA GeForce RTX 2080 Ti, 10820 MiB x4",
+    "available_gpus": ["cuda:0", "cuda:1", "cuda:2", "cuda:3"],
+    "gpu_memory_free_mb": [10820, 10820, 10820, 10820],
+    "recommended_device": "cuda:0",
+    "cpu_fallback_ready": true,
+    "gpu_check_passed": true
+  },
+  "checked_artifacts": {
+    "prepare_summary": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/prepare_summary.json",
+    "prediction_manifest": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/manifest.json",
+    "prediction_generation_status": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/prediction_generation_status.json",
+    "shell_log": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/predictions/logs/aishell1_test_results.log"
+  },
+  "blocking_issues": [],
+  "next_action": "execute_full_evaluation",
+  "notes": [
+    "Bounded smoke test passed with 10/10 valid predictions on aishell1_test.",
+    "Server startup and inference confirmed working on available GPU.",
+    "Execution surface compliance audit passed."
+  ]
+}

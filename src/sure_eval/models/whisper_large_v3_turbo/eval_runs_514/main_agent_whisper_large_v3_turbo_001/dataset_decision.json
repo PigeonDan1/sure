@@ -1,0 +1,55 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-14T11:50:00+08:00",
+  "selection_basis": [
+    "user explicitly requested these 6 datasets in the natural language prompt",
+    "all datasets are ASR task matching allowed_tasks constraint",
+    "all CSV files exist in data/datasets/sure_benchmark/SURE_Test_csv/",
+    "all audio directories exist in data/datasets/sure_benchmark/SURE_Test_Suites/"
+  ],
+  "selected_datasets": [
+    {
+      "dataset": "cs_dialogue",
+      "task": "ASR",
+      "language": "cs",
+      "num_samples": 5956,
+      "metric": "mer"
+    },
+    {
+      "dataset": "kespeech",
+      "task": "ASR",
+      "language": "zh",
+      "num_samples": 19723,
+      "metric": "cer"
+    },
+    {
+      "dataset": "voxpopuli",
+      "task": "ASR",
+      "language": "en",
+      "num_samples": 1842,
+      "metric": "wer"
+    },
+    {
+      "dataset": "aishell5",
+      "task": "ASR",
+      "language": "zh",
+      "num_samples": 20368,
+      "metric": "cer"
+    },
+    {
+      "dataset": "contextasr_en",
+      "task": "ASR",
+      "language": "en",
+      "num_samples": 70037,
+      "metric": "wer"
+    },
+    {
+      "dataset": "contextasr_zh",
+      "task": "ASR",
+      "language": "zh",
+      "num_samples": 73257,
+      "metric": "cer"
+    }
+  ],
+  "skipped_datasets": []
+}

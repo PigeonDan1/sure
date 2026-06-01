@@ -1,0 +1,38 @@
+{
+  "results": [
+    {
+      "dataset": "librispeech_test_clean",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/librispeech_test_clean.jsonl",
+      "prediction_path": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_parakeet/eval_runs/main_agent_asr_parakeet_001/predictions/librispeech_test_clean.txt",
+      "task": "ASR",
+      "language": "en",
+      "metric": "wer",
+      "score": 0.018973129329375046,
+      "rps": 0.8960040120361085,
+      "rps_is_unbounded": false,
+      "num_samples": 2619,
+      "evaluation_context": {
+        "task": "ASR",
+        "language": "en",
+        "language_source": "dataset_jsonl",
+        "metric": "wer",
+        "metric_source": "sota_baseline_or_task_default",
+        "postprocessing": "SUREEvaluator._eval_asr",
+        "normalization": "sure_eval.evaluation.normalization.asr_simple_tn.asr_num2words",
+        "punctuation_policy": "evaluation-pipeline clean_marks.strip_all_punct compatible",
+        "tokenization": "word",
+        "case_sensitive": false
+      },
+      "details": {
+        "all": 52548,
+        "cor": 51644,
+        "sub": 792,
+        "ins": 93,
+        "del": 112,
+        "wer": 0.018973129329375046,
+        "wer_percent": 1.8973129329375047,
+        "score": 0.018973129329375046
+      }
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+# DiariZen Model Configuration
+# Speaker diarization using BUT-FIT/diarizen-wavlm-large-s80-md
+# Reference: https://github.com/BUTSpeechFIT/DiariZen
+
+name: diarizen
+task: SD
+description: "Speaker Diarization using DiariZen (WavLM-Large based) - Fully Configured"
+version: "1.0.0"
+
+# Model info
+model:
+  id: "BUT-FIT/diarizen-wavlm-large-s80-md"
+  size: "Large (WavLM backbone)"
+  languages: ["multilingual"]
+  license: "CC BY-NC 4.0"
+  
+  # Model details
+  architecture: "WavLM-Large with structured pruning"
+  pruning_ratio: 0.80  # s80 = 80% structured pruning
+  
+  # Benchmark results (from paper)
+  benchmark_results:
+    AMI-SDM: 14.0% DER
+    AISHELL-4: 9.8% DER
+    AliMeeting-far: 12.5% DER
+    DIHARD3-full: 14.5% DER
+    
+  paper: "Leveraging self-supervised learning for speaker diarization (ICASSP 2025)"
+  huggingface: "https://huggingface.co/BUT-FIT/diarizen-wavlm-large-s80-md"
+  github: "https://github.com/BUTSpeechFIT/DiariZen"
+
+# MCP Server Configuration
+server:
+  command: ["python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_PATH: "BUT-FIT/diarizen-wavlm-large-s80-md"
+    DEVICE: "auto"
+    RTTM_OUT_DIR: "./results"
+  timeout: 600  # Diarization can take time for long audio
+  startup_timeout_sec: 300
+
+# Tools
+tools:
+  - name: "diarize"
+    description: "Perform speaker diarization on audio file using DiariZen. Returns speaker segments in RTTM format."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+          description: "Path to the audio file to diarize"
+        num_speakers:
+          type: integer
+          description: "Exact number of speakers (optional, auto-detect if not provided)"
+          minimum: 1
+        min_speakers:
+          type: integer
+          description: "Minimum number of speakers (optional)"
+          minimum: 1
+        max_speakers:
+          type: integer
+          description: "Maximum number of speakers (optional)"
+          minimum: 1
+      required: ["audio_path"]
+  
+  - name: "diarize_with_rttm"
+    description: "Diarize audio and save RTTM output to file. Returns speaker segments and saves RTTM format."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+          description: "Path to the audio file to diarize"
+        output_dir:
+          type: string
+          description: "Directory to save RTTM file"
+          default: "./results"
+        num_speakers:
+          type: integer
+          description: "Exact number of speakers (optional)"
+          minimum: 1
+      required: ["audio_path"]
+
+# Test Results
+results:
+  example_30s:
+    date: "2025-03-27"
+    audio: "EN2002a_30s.wav"
+    num_speakers: 4
+    status: "success"
+    notes: "Successfully detected 4 speakers with overlapping segments"
+
+# Resource Requirements
+resources:
+  memory_gb: 16
+  gpu: false  # CPU only in current setup
+  cpu_cores: 4
+  storage_gb: 2
+
+# Important Notes
+notes:
+  - "Must use pyannote-audio from submodule (modified version)"
+  - "NumPy 1.26.4 required (not 2.x)"
+  - "Audio files should be >= 30s for best results"
+  - "Model weights auto-downloaded from HuggingFace"

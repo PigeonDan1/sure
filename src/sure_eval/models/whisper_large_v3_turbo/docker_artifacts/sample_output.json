@@ -1,0 +1,53 @@
+{
+  "status": "PASS",
+  "model": "whisper_large_v3_turbo",
+  "num_samples": 3,
+  "metrics": {
+    "cer": 0.0
+  },
+  "healthcheck": {
+    "status": "ready",
+    "message": "Model loaded",
+    "model_loaded": true,
+    "model_id": "turbo",
+    "device": "auto",
+    "resolved_device": "cuda",
+    "ffmpeg_binary": "/usr/bin/ffmpeg",
+    "download_root": "/workspace/sure-eval/src/sure_eval/models/whisper_large_v3_turbo/checkpoints"
+  },
+  "outputs": [
+    {
+      "id": 1,
+      "key": "BAC009S0764W0385",
+      "fixture": "fixture/asr/aishell1-test",
+      "audio": "sample_1_BAC009S0764W0385.wav",
+      "ground_truth": "在此次申办冬奥会的过程中",
+      "prediction": "在此次申办冬奥会的过程中",
+      "language": "zh",
+      "cer_distance": 0,
+      "reference_chars": 12
+    },
+    {
+      "id": 2,
+      "key": "BAC009S0764W0369",
+      "fixture": "fixture/asr/aishell1-test",
+      "audio": "sample_2_BAC009S0764W0369.wav",
+      "ground_truth": "很多六七十岁的跑者看到这个研究结果时",
+      "prediction": "很多六七十岁的跑者看到这个研究结果时",
+      "language": "zh",
+      "cer_distance": 0,
+      "reference_chars": 18
+    },
+    {
+      "id": 3,
+      "key": "BAC009S0766W0157",
+      "fixture": "fixture/asr/aishell1-test",
+      "audio": "sample_3_BAC009S0766W0157.wav",
+      "ground_truth": "广泛应用于移动端",
+      "prediction": "广泛应用于移动端",
+      "language": "zh",
+      "cer_distance": 0,
+      "reference_chars": 8
+    }
+  ]
+}

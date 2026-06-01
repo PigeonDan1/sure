@@ -1,0 +1,7 @@
+{
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model has a local MCP server (server.py), .venv with dependencies, and downloaded weights. config.yaml declares server configuration. Tool workflow is allowed and model is server-ready."
+}

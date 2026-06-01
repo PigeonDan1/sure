@@ -1,0 +1,21 @@
+{
+  "model_name": "asr_sensevoice_small",
+  "task": "ASR",
+  "run_id": "main_agent_asr_sensevoice_small_002",
+  "timestamp": "2026-05-25T20:17:14+08:00",
+  "datasets": [
+    {
+      "dataset": "librispeech_test_clean",
+      "language": "en",
+      "metric": "wer",
+      "score": 0.03210398112202177,
+      "rps": 0.5295293420272673,
+      "num_samples": 2619,
+      "status": "completed"
+    }
+  ],
+  "overall_status": "success",
+  "execution_path": "direct_server_use",
+  "prediction_source": "regenerate",
+  "results_dir": "results/asr_sensevoice_small/strict_core"
+}

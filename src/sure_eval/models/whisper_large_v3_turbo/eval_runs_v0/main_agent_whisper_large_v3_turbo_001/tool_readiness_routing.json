@@ -1,0 +1,19 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-20T22:09:41+08:00",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model config.yaml declares a server with command and working_dir. Model has implemented server.py and model.py. Proceed with direct_server_use after bounded smoke test.",
+  "evidence": [
+    {
+      "source": "config.yaml",
+      "signal": "server.command present: [.venv/bin/python, server.py]"
+    },
+    {
+      "source": "model_dir",
+      "signal": "server.py and model.py both exist"
+    }
+  ]
+}

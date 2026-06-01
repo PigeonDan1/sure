@@ -1,0 +1,95 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-20T22:09:41+08:00",
+  "steps": [
+    {
+      "name": "prepare_dataset",
+      "script": "scripts/prepare_sure_dataset.py",
+      "inputs": {
+        "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"]
+      },
+      "outputs": {
+        "prepare_summary": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/prepare_summary.json"
+      },
+      "completion_criteria": [
+        "prepare_summary file exists"
+      ]
+    },
+    {
+      "name": "materialize_predictions_template",
+      "script": "scripts/materialize_predictions_template.py",
+      "inputs": {
+        "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"],
+        "output_dir": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions"
+      },
+      "outputs": {
+        "prediction_manifest": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/manifest.json"
+      },
+      "completion_criteria": [
+        "manifest.json exists for each dataset"
+      ]
+    },
+    {
+      "name": "generate_predictions",
+      "script": "scripts/generate_predictions_via_server.py",
+      "inputs": {
+        "model_dir": "src/sure_eval/models/whisper_large_v3_turbo",
+        "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"],
+        "tool_name": "transcribe_audio"
+      },
+      "outputs": {
+        "prediction_files": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions/{dataset}.txt"
+      },
+      "completion_criteria": [
+        "all prediction files exist and contain non-empty predictions"
+      ]
+    },
+    {
+      "name": "validate_predictions",
+      "script": "scripts/validate_prediction_files.py",
+      "inputs": {
+        "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"],
+        "pred_dir": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions"
+      },
+      "outputs": {
+        "validation_payload": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/validation_payload.json"
+      },
+      "completion_criteria": [
+        "validation_payload exists and reports no critical errors"
+      ]
+    },
+    {
+      "name": "evaluate_predictions",
+      "script": "scripts/evaluate_predictions.py",
+      "inputs": {
+        "datasets": ["cs_dialogue", "kespeech", "voxpopuli", "aishell5", "contextasr_en", "contextasr_zh"],
+        "pred_dir": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/predictions",
+        "tool_name": "whisper_large_v3_turbo"
+      },
+      "outputs": {
+        "evaluation_payload": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/evaluation_payload.json"
+      },
+      "completion_criteria": [
+        "evaluation_payload exists with metrics for all datasets"
+      ]
+    },
+    {
+      "name": "refresh_report_snapshot",
+      "script": "scripts/refresh_report_snapshot.py",
+      "inputs": {
+        "evaluation_payload": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/evaluation_payload.json"
+      },
+      "outputs": {
+        "model_report": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/model_report.md"
+      },
+      "completion_criteria": [
+        "report snapshot updated"
+      ]
+    }
+  ],
+  "routing_reason": "direct_server_use for existing ASR model with server.py. All allowed datasets are CSV-based SURE Benchmark datasets.",
+  "wait_points": [
+    "smoke_test_gate_before_full_prediction_generation"
+  ],
+  "stop_condition": "evaluation_payload generated or smoke test failure"
+}

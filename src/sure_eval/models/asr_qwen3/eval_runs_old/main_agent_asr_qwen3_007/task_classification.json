@@ -1,0 +1,8 @@
+{
+  "run_id": "main_agent_asr_qwen3_007",
+  "timestamp": "2026-05-16T17:39:34+08:00",
+  "task_type": "evaluate_existing_model",
+  "reason": "User explicitly requested evaluation of existing model asr_qwen3 with constraints indicating full evaluation flow (dry_run=false, allow_tool_workflow=true).",
+  "need_tool_workflow": false,
+  "confidence": 1.0
+}

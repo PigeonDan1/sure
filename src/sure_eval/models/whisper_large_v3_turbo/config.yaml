@@ -1,0 +1,44 @@
+name: whisper_large_v3_turbo
+task: ASR
+description: "Automatic Speech Recognition using Whisper large-v3-turbo"
+version: "1.0.0"
+
+model:
+  id: "openai/whisper-large-v3-turbo"
+  load_id: "turbo"
+  backend: uv
+  device: "auto"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ID: "turbo"
+    DEVICE: "auto"
+    WHISPER_DOWNLOAD_ROOT: "./checkpoints"
+  timeout: 300
+  startup_timeout_sec: 300
+
+tools:
+  - name: "asr_transcribe"
+    description: Run ASR on a local audio path.
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: [audio_path]
+  - name: "transcribe_audio"
+    description: Backward-compatible alias for asr_transcribe.
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: [audio_path]
+
+resources:
+  memory_gb: 8
+  gpu: true
+  cpu_cores: 4
+  storage_gb: 4

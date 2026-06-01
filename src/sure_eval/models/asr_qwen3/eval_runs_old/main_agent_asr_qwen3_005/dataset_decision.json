@@ -1,0 +1,30 @@
+{
+  "run_id": "main_agent_asr_qwen3_005",
+  "timestamp": "2026-05-15T21:20:00+08:00",
+  "selection_basis": [
+    "allowed_tasks=[ASR] — both datasets are ASR tasks",
+    "model supports zh and en per config.yaml languages",
+    "local datasets available in data/datasets/ per config/oref_datasets.yaml",
+    "user allowed_datasets=null (no restriction), blocked_datasets=[]",
+    "prediction_source=regenerate and isolate_from_prior_runs=true"
+  ],
+  "selected_datasets": [
+    {
+      "dataset": "aishell1",
+      "task": "ASR",
+      "language": "zh",
+      "local_config": "aishell1_test",
+      "metric": "CER/WER",
+      "normalization": "asr_num2words, clean_marks.strip_all_punct"
+    },
+    {
+      "dataset": "librispeech_clean",
+      "task": "ASR",
+      "language": "en",
+      "local_config": "librispeech_test_clean",
+      "metric": "WER",
+      "normalization": "asr_num2words, clean_marks.strip_all_punct"
+    }
+  ],
+  "skipped_datasets": []
+}

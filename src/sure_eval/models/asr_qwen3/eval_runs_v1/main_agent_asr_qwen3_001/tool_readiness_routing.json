@@ -1,0 +1,23 @@
+{
+  "run_id": "main_agent_asr_qwen3_001",
+  "timestamp": "2026-05-17T21:03:29+08:00",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model has a working MCP server (server.py), virtual environment (.venv), and cached weights. config.yaml declares tool 'asr_transcribe'. No need to hand off to tool workflow agent; direct server use is the correct path for evaluation.",
+  "evidence": [
+    {
+      "source": "src/sure_eval/models/asr_qwen3/config.yaml",
+      "signal": "server.command and tools.asr_transcribe declared"
+    },
+    {
+      "source": "src/sure_eval/models/asr_qwen3/.venv/bin/python",
+      "signal": "virtual environment exists"
+    },
+    {
+      "source": "src/sure_eval/models/asr_qwen3/.runtime/modelscope_cache/models/Qwen/Qwen3-ASR-1___7B",
+      "signal": "model weights cached locally"
+    }
+  ]
+}

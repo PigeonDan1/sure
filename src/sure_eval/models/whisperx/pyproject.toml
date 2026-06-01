@@ -1,0 +1,11 @@
+[project]
+name = "sure-eval-whisperx-onboarding"
+version = "0.1.0"
+description = "Phase 1 onboarding environment for WhisperX"
+requires-python = "==3.10.*"
+dependencies = [
+  "whisperx==3.8.4",
+]
+
+[tool.uv]
+package = false

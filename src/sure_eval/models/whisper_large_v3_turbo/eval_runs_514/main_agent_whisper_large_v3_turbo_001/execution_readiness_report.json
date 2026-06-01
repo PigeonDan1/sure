@@ -1,0 +1,32 @@
+{
+  "run_id": "main_agent_whisper_large_v3_turbo_001",
+  "timestamp": "2026-05-14T11:52:00+08:00",
+  "execution_ready": true,
+  "status": "ready_with_cpu_fallback",
+  "validation_mode": "shell_smoke_test",
+  "validated_shell_entrypoint": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001/run_evaluation.sh",
+  "smoke_test_command": "DATASETS=cs_dialogue MAX_SAMPLES=10 SKIP_VALIDATE_AND_EVAL=1 DEVICE=cpu bash run_evaluation.sh",
+  "smoke_test_run_dir": "src/sure_eval/models/whisper_large_v3_turbo/eval_runs/main_agent_whisper_large_v3_turbo_001",
+  "gpu_preflight": {
+    "model_requires_gpu": false,
+    "nvidia_smi_output": "4x RTX 2080 Ti, all occupied by glclap processes (~7GB each)",
+    "available_gpus": [],
+    "gpu_memory_free_mb": [2150, 3512, 3494, 3846],
+    "recommended_device": "cpu",
+    "cpu_fallback_ready": true,
+    "gpu_check_passed": false
+  },
+  "checked_artifacts": {
+    "prepare_summary": "pending",
+    "prediction_manifest": "pending",
+    "prediction_generation_status": "pending",
+    "shell_log": "pending"
+  },
+  "blocking_issues": [],
+  "next_action": "execute_full_run",
+  "notes": [
+    "Shell syntax validated (bash -n passed).",
+    "MCP server smoke test passed on CPU: returned non-empty prediction.",
+    "GPU inference blocked by cluster occupancy; CPU fallback is viable but slow for 191k samples."
+  ]
+}

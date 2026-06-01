@@ -1,0 +1,23 @@
+{
+  "run_id": "main_agent_asr_qwen3_005",
+  "timestamp": "2026-05-15T21:20:00+08:00",
+  "tool_readiness_state": "server_ready",
+  "preferred_execution_path": "direct_server_use",
+  "server_smoke_test_required": true,
+  "handoff_to_tool_agent": false,
+  "reason": "Model config.yaml declares an MCP server with command, working_dir, and env. The model is marked tool_workflow_ready=true. Device auto-resolution is available. Server smoke test is still required as a blocking gate before full execution per harness contract.",
+  "evidence": [
+    {
+      "source": "config.yaml",
+      "signal": "MCP server configured with command .venv/bin/python server.py, MODEL_PATH=Qwen/Qwen3-ASR-1.7B, DEVICE=auto"
+    },
+    {
+      "source": "model.spec.yaml",
+      "signal": "mcp_server block present with working_dir, env, and timeout"
+    },
+    {
+      "source": "MAIN_FLOW_INPUT",
+      "signal": "target.tool_workflow_ready=true"
+    }
+  ]
+}

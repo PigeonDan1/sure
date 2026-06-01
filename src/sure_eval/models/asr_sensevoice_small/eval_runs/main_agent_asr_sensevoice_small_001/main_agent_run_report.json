@@ -1,0 +1,48 @@
+{
+  "run_id": "main_agent_asr_sensevoice_small_001",
+  "timestamp": "2026-05-28T16:14:00+08:00",
+  "task_type": "evaluate_existing_model",
+  "goal": "Evaluate asr_sensevoice_small on librispeech_test_clean via direct server use with vc submit execution.",
+  "selected_datasets": ["librispeech_test_clean"],
+  "executed_steps": [
+    "task_classification",
+    "tool_readiness_routing",
+    "plan",
+    "dataset_scope",
+    "script_routing",
+    "execution_surface_materialization",
+    "execution_readiness_check",
+    "bounded_smoke_test",
+    "submit_vc_run",
+    "assessment"
+  ],
+  "status": "success",
+  "artifacts": {
+    "task_classification": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/task_classification.json",
+    "tool_readiness_routing": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/tool_readiness_routing.json",
+    "plan": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/main_agent_plan.json",
+    "dataset_decision": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/dataset_decision.json",
+    "script_routing": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/script_routing.json",
+    "execution_surface": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/execution_surface.json",
+    "execution_readiness_report": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/execution_readiness_report.json",
+    "assessment_report": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/assessment_report.json",
+    "compliance_report": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/compliance_report.json"
+  },
+  "model_eval_manifest": "src/sure_eval/models/asr_sensevoice_small/eval_runs/main_agent_asr_sensevoice_small_001/model_eval_manifest.json",
+  "vc_job_id": "job-177995568987474673162-yixuan-wang",
+  "failed_vc_job_id": "job-177995538893084537076-yixuan-wang",
+  "next_action": "done",
+  "notes": [
+    "Initial vc submit to pdgpu-5090 failed at smoke test due to CUDA kernel incompatibility (torch 2.4.0 vs RTX 5090 Blackwell).",
+    "Resubmitted to pdgpu-2080ti-dsp which completed successfully.",
+    "Evaluation WER: 3.21% on librispeech_test_clean (2619 samples).",
+    "Execution path actual: vc_submit",
+    "Execution path declared: vc_submit",
+    "No local fallback occurred."
+  ],
+  "report_persisted": true,
+  "execution_path_actual": "vc_submit",
+  "execution_path_declared": "vc_submit",
+  "local_fallback_reason": "",
+  "fallback_approved": false
+}
