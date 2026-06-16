@@ -1,0 +1,2 @@
+{"key":"mobvoi_hotword_positive_3479affb150445de18164cb55d27171d","audio":"audio/positive_nihao_wenwen.wav","task":"KWS","keywords":["你好问问","嗨小问"],"expected":"detect","text":"嗨小问","label":"positive","keyword_id":0,"source_split":"p_test","source_utt_id":"3479affb150445de18164cb55d27171d"}
+{"key":"mobvoi_hotword_negative_6f3471e8a7ca6f35e449075f3fb02d17","audio":"audio/negative_mobvoi.wav","task":"KWS","keywords":["你好问问","嗨小问"],"expected":"reject","label":"negative","keyword_id":-1,"source_split":"n_train","source_utt_id":"6f3471e8a7ca6f35e449075f3fb02d17"}

@@ -1,0 +1,11 @@
+model:
+  task: KWS
+  wrapper: model.WeKWSModel
+  default_keywords: "你好问问,嗨小问"
+  default_gpu: -1
+  sample_rate: 16000
+
+paths:
+  wekws_source: ".runtime/source/wekws"
+  weights: ".runtime/modelscope_cache/daydream-factory/keyword-spot-fsmn-ctc-wenwen"
+  fixture: "fixture/kws/gt.jsonl"

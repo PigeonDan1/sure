@@ -256,7 +256,7 @@ def _write_results_dir(
     pred_dir = results_dir / "predictions"
     pred_dir.mkdir(parents=True, exist_ok=True)
 
-    from sure_eval.evaluation.wenet_compute_cer import Calculator, characterize
+    from sure_eval.evaluation.asr.wenet_compute_cer import Calculator, characterize
 
     for result in results:
         dataset_name = result["dataset"]

@@ -120,4 +120,4 @@ print(result["text"])
 
 - [Model Spec](./model.spec.yaml)
 - [Model Config](./config.yaml)
-- [SURE-EVAL Model README](../README.md)
+- [SURE-EVAL Model README](../../../../docs/agents/model_tool_agent/README.md)

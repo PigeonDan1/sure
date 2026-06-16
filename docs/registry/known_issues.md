@@ -166,7 +166,7 @@ A model-specific issue may be promoted to global policy when:
 3. **Workaround is universal**: Same fix applies broadly
 
 Promotion process:
-1. Document in `docs/playbooks/` or `docs/policies/`
+1. Document in `docs/agents/model_tool_agent/playbooks/` or `docs/agents/model_tool_agent/policies/`
 2. Keep registry entry with link to global policy
 3. Mark registry entry as `promoted_to_policy: true`
 

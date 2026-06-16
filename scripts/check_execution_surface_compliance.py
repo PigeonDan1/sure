@@ -2,8 +2,9 @@
 """
 Check execution surface compliance.
 
-Enforces the single rule: the execution surface MUST be generated from a
-template under the templates/ directory. Nothing else matters.
+Enforces the single rule: the execution surface MUST be generated from an
+approved main-flow template under docs/agents/main_flow_agent/templates/.
+The legacy root templates/ is no longer accepted after the docs migration.
 
 This script MUST be called by the EXECUTION_READINESS_UNIT before any run
 is approved for execution.
@@ -25,18 +26,30 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+CANONICAL_TEMPLATE_ROOT = Path("docs/agents/main_flow_agent/templates")
+ALLOWED_TEMPLATE_ROOTS = (CANONICAL_TEMPLATE_ROOT,)
+
+
+def _path_is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 def check_template_source(
     run_dir: Path,
     expected_template: Path | None,
 ) -> dict[str, Any]:
-    """Check that execution_surface.json declares a template under templates/."""
+    """Check that execution_surface.json declares an approved template source."""
     surface_path = run_dir / "execution_surface.json"
     if not surface_path.exists():
         return {
             "passed": False,
             "template_declared": "",
             "template_exists": False,
-            "under_templates_dir": False,
+            "under_approved_template_root": False,
             "matches_expected": False,
             "evidence": "execution_surface.json not found",
         }
@@ -48,7 +61,7 @@ def check_template_source(
             "passed": False,
             "template_declared": "",
             "template_exists": False,
-            "under_templates_dir": False,
+            "under_approved_template_root": False,
             "matches_expected": False,
             "evidence": f"invalid JSON: {e}",
         }
@@ -61,25 +74,26 @@ def check_template_source(
             "passed": False,
             "template_declared": "",
             "template_exists": False,
-            "under_templates_dir": False,
+            "under_approved_template_root": False,
             "matches_expected": False,
             "evidence": "source_provenance.template_file is empty",
         }
 
     template_path = Path(template_file)
-    under_templates = template_path.parts[0] == "templates" if template_path.parts else False
     exists = template_path.exists()
+    under_approved_root = any(_path_is_under(template_path, root) for root in ALLOWED_TEMPLATE_ROOTS)
     matches_expected = False
     if expected_template is not None:
         matches_expected = template_path.resolve() == expected_template.resolve()
 
-    passed = under_templates and exists
+    passed = under_approved_root and exists
     if expected_template is not None:
         passed = passed and matches_expected
 
     evidence_parts = []
-    if not under_templates:
-        evidence_parts.append(f"template '{template_file}' is not under templates/")
+    if not under_approved_root:
+        allowed = ", ".join(str(root) for root in ALLOWED_TEMPLATE_ROOTS)
+        evidence_parts.append(f"template '{template_file}' is not under an approved template root: {allowed}")
     if not exists:
         evidence_parts.append(f"template '{template_file}' does not exist")
     if expected_template is not None and not matches_expected:
@@ -91,7 +105,8 @@ def check_template_source(
         "passed": passed,
         "template_declared": template_file,
         "template_exists": exists,
-        "under_templates_dir": under_templates,
+        "under_approved_template_root": under_approved_root,
+        "canonical_template_root": str(CANONICAL_TEMPLATE_ROOT),
         "matches_expected": matches_expected,
         "evidence": "ok" if passed else "; ".join(evidence_parts),
     }
@@ -193,7 +208,10 @@ def main() -> int:
     parser.add_argument("--run-dir", required=True, help="Path to the run directory")
     parser.add_argument(
         "--expected-template",
-        help="Expected template path (e.g., templates/run_single_model_single_dataset.sh)",
+        help=(
+            "Expected template path under docs/agents/main_flow_agent/templates/ "
+            "(e.g., docs/agents/main_flow_agent/templates/run_single_model.sh)"
+        ),
     )
     parser.add_argument("--output", help="JSON output path")
     args = parser.parse_args()

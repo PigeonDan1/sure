@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 REPO_ROOT="$(readlink -f "${REPO_ROOT}")"
 
-IMAGE_TAG="${IMAGE_TAG:-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_fireredasr:v1.0}"
+IMAGE_TAG="${IMAGE_TAG:-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_fireredasr:v1.1}"
 CONTAINER_NAME="${CONTAINER_NAME:-sure_asr_fireredasr_validate_v1}"
 
 MODEL_DIR="${MODEL_DIR:-${SCRIPT_DIR}}"

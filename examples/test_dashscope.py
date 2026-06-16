@@ -19,7 +19,7 @@ from sure_eval.tools.dashscope_adapter import DashScopeToolWrapper
 from sure_eval.agent.evaluator import AutonomousEvaluator
 
 
-API_KEY = "sk-f8ae3fc37bdd4953977e813f77b7324f"
+API_KEY = os.environ.get("DASHSCOPE_API_KEY", "your-dashscope-api-key")
 
 
 def test_dashscope_as_tool():

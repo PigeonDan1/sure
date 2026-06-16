@@ -1,5 +1,8 @@
 import os
 import json
+import shutil
+import tempfile
+from pathlib import Path
 
 import tqdm
 import torch
@@ -39,6 +42,65 @@ def _parse_max_memory(value):
         return result
 
 
+_OLD_MANUAL_ATTENTION_MASK = (
+    "causal_mask = torch.triu(torch.ones(q_len, kv_len, "
+    "device=target_device, dtype=torch.bool), diagonal=1)"
+)
+
+_NEW_MANUAL_ATTENTION_MASK = """causal_mask = torch.triu(
+                torch.ones(q_len, kv_len, device=target_device, dtype=torch.bool),
+                diagonal=kv_len - q_len + 1,
+            )"""
+
+
+def _patched_model_cache_path(cache_path):
+    """Patch Kimi remote-code fallback attention before transformers imports it.
+
+    The bundled remote code falls back to manual attention when flash_attn is not
+    installed. Its original causal mask is top-left aligned, which breaks
+    incremental decoding because q_len=1 is allowed to attend only to key 0.
+    """
+
+    source_path = Path(cache_path) / "modeling_moonshot_kimia.py"
+    if not source_path.exists():
+        return cache_path
+
+    source_text = source_path.read_text(encoding="utf-8")
+    if "diagonal=kv_len - q_len + 1" in source_text:
+        return cache_path
+    if _OLD_MANUAL_ATTENTION_MASK not in source_text:
+        logger.warning(
+            "Kimi-Audio remote code attention fallback did not match the known "
+            "patch pattern; using it unchanged."
+        )
+        return cache_path
+
+    patched_text = source_text.replace(
+        _OLD_MANUAL_ATTENTION_MASK,
+        _NEW_MANUAL_ATTENTION_MASK,
+        1,
+    )
+
+    overlay_root = Path(tempfile.gettempdir()) / "kimi_audio_model_overlay"
+    overlay_path = overlay_root / str(abs(hash(str(Path(cache_path).resolve()))))
+    if overlay_path.exists():
+        shutil.rmtree(overlay_path)
+    overlay_path.mkdir(parents=True, exist_ok=True)
+
+    for child in Path(cache_path).iterdir():
+        target = overlay_path / child.name
+        if child.name == "modeling_moonshot_kimia.py":
+            target.write_text(patched_text, encoding="utf-8")
+        else:
+            target.symlink_to(child.resolve())
+
+    logger.info(
+        "Using patched Kimi-Audio remote-code overlay at {}",
+        overlay_path,
+    )
+    return str(overlay_path)
+
+
 class KimiAudio(object):
     def __init__(self, model_path: str, load_detokenizer: bool = True, device_map: str = None, load_in_8bit: bool = False):
         logger.info(f"Loading kimi-audio main model")
@@ -49,6 +111,7 @@ class KimiAudio(object):
         else:
             # cache everything if model_path is a model-id
             cache_path = snapshot_download(model_path)
+        cache_path = _patched_model_cache_path(cache_path)
     
         logger.info(f"Looking for resources in {cache_path}")
         logger.info(f"Loading whisper model")
@@ -291,6 +354,8 @@ class KimiAudio(object):
         text_input_ids = text_input_ids.to(torch.cuda.current_device())
         is_continuous_mask = is_continuous_mask.to(torch.cuda.current_device())
         audio_features = [f.to(torch.cuda.current_device()) for f in audio_features]
+        if not audio_features:
+            audio_features = None
 
         generated_wav_tokens, generated_text_tokens = self._generate_loop(
             audio_input_ids=audio_input_ids,

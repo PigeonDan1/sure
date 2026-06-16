@@ -221,3 +221,7 @@ class ModelRegistry:
         
         print("=" * 60)
         print(f"Total: {len(self._models)} models")
+
+
+if __name__ == "__main__":
+    raise SystemExit(ModelRegistry().print_summary() or 0)

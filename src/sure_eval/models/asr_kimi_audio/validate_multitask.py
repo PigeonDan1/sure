@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -8,12 +9,21 @@ from pathlib import Path
 from typing import Any
 
 from model import ModelLoadError, ModelWrapper
+from model import extract_choice_label
 from sure_eval.evaluation.sure_evaluator import SUREEvaluator
 
 
 ROOT = Path(__file__).resolve().parent
 FIXTURE_ROOT = ROOT / "fixture"
 ARTIFACTS = ROOT / "artifacts"
+SLU_METADATA_PATH = ROOT / "fixture" / "slu" / "mmsu_metadata.json"
+
+
+def load_slu_metadata() -> dict[str, dict[str, Any]]:
+    if not SLU_METADATA_PATH.exists():
+        return {}
+    rows = json.loads(SLU_METADATA_PATH.read_text(encoding="utf-8"))
+    return {row["key"]: row for row in rows}
 
 
 def load_cases(task: str) -> list[dict[str, Any]]:
@@ -46,12 +56,66 @@ def write_key_text(path: Path, rows: list[tuple[str, str]]) -> None:
     )
 
 
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", "", text).strip().lower()
+
+
+def edit_distance(reference: str, hypothesis: str) -> int:
+    previous = list(range(len(hypothesis) + 1))
+    for i, ref_char in enumerate(reference, start=1):
+        current = [i]
+        for j, hyp_char in enumerate(hypothesis, start=1):
+            insert_cost = current[j - 1] + 1
+            delete_cost = previous[j] + 1
+            replace_cost = previous[j - 1] + (ref_char != hyp_char)
+            current.append(min(insert_cost, delete_cost, replace_cost))
+        previous = current
+    return previous[-1]
+
+
 def extract_choice(text: str) -> str:
-    match = re.search(r"\b([A-Da-d])\b", text)
-    if match:
-        return match.group(1).upper()
-    compact = re.sub(r"[^A-Da-d]", "", text)
-    return compact[:1].upper() if compact else ""
+    return extract_choice_label(text) or ""
+
+
+def build_slu_prompt(case: dict[str, Any]) -> str:
+    return case.get("prompt", "")
+
+
+def run_asr(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
+    cases = load_cases("ASR")
+    outputs = []
+    ref_rows: list[tuple[str, str]] = []
+    hyp_rows: list[tuple[str, str]] = []
+    total_distance = 0
+    total_reference_chars = 0
+    empty_predictions: list[str] = []
+    for case in cases:
+        result = wrapper.predict(case["audio_path"]).to_dict()
+        prediction = result.get("text", "")
+        reference = case["ground_truth"]
+        normalized_reference = normalize_text(reference)
+        normalized_prediction = normalize_text(prediction)
+        distance = edit_distance(normalized_reference, normalized_prediction)
+        total_distance += distance
+        total_reference_chars += len(normalized_reference)
+        ref_rows.append((case["key"], reference))
+        hyp_rows.append((case["key"], prediction))
+        outputs.append({**case, "prediction": prediction, "cer_distance": distance, "result": result})
+        if not prediction.strip():
+            empty_predictions.append(case["key"])
+        status_word = "OK" if prediction.strip() else "MISSING_OUTPUT"
+        log_lines.append(f"asr: {status_word} key={case['key']} cer_distance={distance}")
+    ref_path = ARTIFACTS / "ref_asr.txt"
+    hyp_path = ARTIFACTS / "hyp_asr.txt"
+    write_key_text(ref_path, ref_rows)
+    write_key_text(hyp_path, hyp_rows)
+    cer = total_distance / total_reference_chars if total_reference_chars else 0.0
+    return {
+        "status": "COMPLETE",
+        "num_samples": len(outputs),
+        "metrics": {"cer": cer, "empty_predictions": empty_predictions},
+        "outputs": outputs,
+    }
 
 
 def run_s2tt(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
@@ -69,13 +133,14 @@ def run_s2tt(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
         ref_rows.append((case["key"], case["ground_truth"]))
         hyp_rows.append((case["key"], prediction))
         outputs.append({**case, "prediction": prediction, "result": result})
-        log_lines.append(f"s2tt: PASS key={case['key']} text_nonempty={bool(prediction.strip())}")
+        status_word = "OK" if prediction.strip() else "MISSING_OUTPUT"
+        log_lines.append(f"s2tt: {status_word} key={case['key']} text_nonempty={bool(prediction.strip())}")
     ref_path = ARTIFACTS / "ref_s2tt.txt"
     hyp_path = ARTIFACTS / "hyp_s2tt.txt"
     write_key_text(ref_path, ref_rows)
     write_key_text(hyp_path, hyp_rows)
     metrics = SUREEvaluator(language="zh").evaluate("s2tt", str(ref_path), str(hyp_path))
-    return {"status": "PASS", "num_samples": len(outputs), "metrics": metrics, "outputs": outputs}
+    return {"status": "COMPLETE", "num_samples": len(outputs), "metrics": metrics, "outputs": outputs}
 
 
 def run_slu(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
@@ -85,14 +150,27 @@ def run_slu(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
     hyp_rows: list[tuple[str, str]] = []
     prompt_rows = []
     for case in cases:
-        result = wrapper.understand(case["audio_path"], prompt=case.get("prompt")).to_dict()
+        prompt = build_slu_prompt(case)
+        result = wrapper.understand(case["audio_path"], prompt=prompt).to_dict()
         prediction = result.get("text", "")
-        choice = extract_choice(prediction)
+        choice = result.get("label") or extract_choice(prediction)
         ref_rows.append((case["key"], case["ground_truth"]))
         hyp_rows.append((case["key"], choice or prediction))
-        prompt_rows.append({"key": case["key"], "prompt": case.get("prompt", "")})
-        outputs.append({**case, "prediction": prediction, "normalized_prediction": choice, "result": result})
-        log_lines.append(f"slu: PASS key={case['key']} answer_nonempty={bool((choice or prediction).strip())}")
+        prompt_rows.append({"key": case["key"], "prompt": prompt})
+        correct = choice == case["ground_truth"]
+        outputs.append(
+            {
+                **case,
+                "prediction": prediction,
+                "normalized_prediction": choice,
+                "correct": correct,
+                "result": result,
+            }
+        )
+        status_word = "OK" if correct else "MISMATCH"
+        log_lines.append(
+            f"slu: {status_word} key={case['key']} expected={case['ground_truth']} got={choice or prediction}"
+        )
     ref_path = ARTIFACTS / "ref_slu.txt"
     hyp_path = ARTIFACTS / "hyp_slu.txt"
     prompt_path = ARTIFACTS / "prompt_slu.jsonl"
@@ -102,8 +180,14 @@ def run_slu(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
         "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in prompt_rows),
         encoding="utf-8",
     )
-    metrics = {"accuracy": SUREEvaluator(language="zh").evaluate("slu", str(ref_path), str(hyp_path), prompt_jsonl=str(prompt_path))}
-    return {"status": "PASS", "num_samples": len(outputs), "metrics": metrics, "outputs": outputs}
+    accuracy = SUREEvaluator(language="zh").evaluate("slu", str(ref_path), str(hyp_path), prompt_jsonl=str(prompt_path))
+    metrics = {"accuracy": accuracy}
+    return {
+        "status": "COMPLETE",
+        "num_samples": len(outputs),
+        "metrics": metrics,
+        "outputs": outputs,
+    }
 
 
 def run_ser(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
@@ -134,19 +218,30 @@ def run_ser(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
             raise RuntimeError(f"SER fixture missing ground_truth label for {case['key']}")
         result = wrapper.recognize_emotion(case["audio_path"]).to_dict()
         label = result.get("label")
+        correct = label == case["ground_truth"]
         ref_rows.append((case["key"], case["ground_truth"]))
         hyp_rows.append((case["key"], label or result.get("text", "")))
-        outputs.append({**case, "prediction": result.get("text", ""), "normalized_prediction": label, "result": result})
-        if not label:
-            raise RuntimeError(f"SER contract failed for {case['key']}: label not in [neu,hap,ang,sad]")
-        log_lines.append(f"ser: PASS key={case['key']} label={label}")
+        outputs.append(
+            {
+                **case,
+                "prediction": result.get("text", ""),
+                "normalized_prediction": label,
+                "correct": correct,
+                "result": result,
+            }
+        )
+        if label:
+            status_word = "OK" if correct else "MISMATCH"
+        else:
+            status_word = "UNPARSED_LABEL"
+        log_lines.append(f"ser: {status_word} key={case['key']} expected={case['ground_truth']} got={label or result.get('text', '')}")
     ref_path = ARTIFACTS / "ref_ser.txt"
     hyp_path = ARTIFACTS / "hyp_ser.txt"
     write_key_text(ref_path, ref_rows)
     write_key_text(hyp_path, hyp_rows)
     metrics = {"accuracy": SUREEvaluator(language="en").evaluate("ser", str(ref_path), str(hyp_path))}
     return {
-        "status": "PASS",
+        "status": "COMPLETE",
         "num_samples": len(outputs),
         "metrics": metrics,
         "outputs": outputs,
@@ -156,17 +251,39 @@ def run_ser(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
 def run_gr(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
     cases = load_cases("GR")
     outputs = []
+    ref_rows: list[tuple[str, str]] = []
+    hyp_rows: list[tuple[str, str]] = []
     for case in cases:
+        if not case.get("ground_truth"):
+            raise RuntimeError(f"GR fixture missing ground_truth label for {case['key']}")
         result = wrapper.recognize_gender(case["audio_path"]).to_dict()
         label = result.get("label")
-        outputs.append({**case, "prediction": result.get("text", ""), "normalized_prediction": label, "result": result})
-        if not label:
-            raise RuntimeError(f"GR contract failed for {case['key']}: label not in [male,female]")
-        log_lines.append(f"gr: PASS key={case['key']} label={label}")
+        correct = label == case["ground_truth"]
+        ref_rows.append((case["key"], case["ground_truth"]))
+        hyp_rows.append((case["key"], label or result.get("text", "")))
+        outputs.append(
+            {
+                **case,
+                "prediction": result.get("text", ""),
+                "normalized_prediction": label,
+                "correct": correct,
+                "result": result,
+            }
+        )
+        if label:
+            status_word = "OK" if correct else "MISMATCH"
+        else:
+            status_word = "UNPARSED_LABEL"
+        log_lines.append(f"gr: {status_word} key={case['key']} expected={case['ground_truth']} got={label or result.get('text', '')}")
+    ref_path = ARTIFACTS / "ref_gr.txt"
+    hyp_path = ARTIFACTS / "hyp_gr.txt"
+    write_key_text(ref_path, ref_rows)
+    write_key_text(hyp_path, hyp_rows)
+    metrics = {"accuracy": SUREEvaluator(language="en").evaluate("gr", str(ref_path), str(hyp_path))}
     return {
-        "status": "PASS",
+        "status": "COMPLETE",
         "num_samples": len(outputs),
-        "metrics": {"accuracy": None, "note": "contract smoke only; fixture has no trusted GR label"},
+        "metrics": metrics,
         "outputs": outputs,
     }
 
@@ -174,29 +291,42 @@ def run_gr(wrapper: ModelWrapper, log_lines: list[str]) -> dict[str, Any]:
 def main() -> int:
     ARTIFACTS.mkdir(exist_ok=True)
     started = time.time()
-    log_lines = ["validate_multitask.py: START", "asr_compatibility: validate.py remains the ASR-only regression path"]
+    requested_tasks = [
+        task.strip().upper()
+        for task in os.environ.get("KIMI_AUDIO_VALIDATE_TASKS", "ASR,S2TT,SER,SLU,GR").split(",")
+        if task.strip()
+    ]
+    run_task = {
+        "ASR": run_asr,
+        "S2TT": run_s2tt,
+        "SER": run_ser,
+        "SLU": run_slu,
+        "GR": run_gr,
+    }
+    unknown_tasks = [task for task in requested_tasks if task not in run_task]
+    if unknown_tasks:
+        raise RuntimeError(f"Unknown validation tasks: {unknown_tasks}")
+    log_lines = ["validate_multitask.py: START", f"tasks: {','.join(requested_tasks)}"]
     wrapper = ModelWrapper()
     log_lines.append(f"resolve_model_path: {wrapper._resolve_model_path()}")
-    status = "PASS"
+    status = "COMPLETE"
     failure: str | None = None
     task_results: dict[str, Any] = {}
     try:
         wrapper.load()
-        log_lines.append("load: PASS")
-        task_results["S2TT"] = run_s2tt(wrapper, log_lines)
-        task_results["SER"] = run_ser(wrapper, log_lines)
-        task_results["SLU"] = run_slu(wrapper, log_lines)
-        task_results["GR"] = run_gr(wrapper, log_lines)
-        log_lines.append("contract: PASS tasks=[S2TT,SER,SLU,GR]")
+        log_lines.append("load: OK")
+        for task in requested_tasks:
+            task_results[task] = run_task[task](wrapper, log_lines)
+        log_lines.append(f"evaluation: COMPLETE tasks={requested_tasks}")
     except (ModelLoadError, Exception) as exc:
-        status = "FAIL"
+        status = "ERROR"
         failure = str(exc)
-        log_lines.append(f"validate_multitask.py: FAIL {failure}")
+        log_lines.append(f"validate_multitask.py: ERROR {failure}")
 
     sample_output = {
         "status": status,
         "model": "asr_kimi_audio",
-        "tasks": ["S2TT", "SER", "SLU", "GR"],
+        "tasks": requested_tasks,
         "healthcheck": wrapper.healthcheck(),
         "failure": failure,
         "task_results": task_results,
@@ -208,7 +338,7 @@ def main() -> int:
     elapsed = time.time() - started
     log_lines.append(f"validate_multitask.py: {status} duration_seconds={elapsed:.2f}")
     (ARTIFACTS / "validation_multitask.log").write_text("\n".join(log_lines) + "\n", encoding="utf-8")
-    return 0 if status == "PASS" else 2
+    return 0 if status == "COMPLETE" else 2
 
 
 if __name__ == "__main__":
@@ -217,7 +347,7 @@ if __name__ == "__main__":
     except Exception as exc:
         ARTIFACTS.mkdir(exist_ok=True)
         (ARTIFACTS / "validation_multitask.log").write_text(
-            f"validate_multitask.py: FAIL\nerror: {exc}\n", encoding="utf-8"
+            f"validate_multitask.py: ERROR\nerror: {exc}\n", encoding="utf-8"
         )
-        print(f"multitask validation failed: {exc}", file=sys.stderr)
+        print(f"multitask validation error: {exc}", file=sys.stderr)
         raise

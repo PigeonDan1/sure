@@ -199,19 +199,20 @@ class WhisperEncoder(nn.Module):
             pad_audio = pad_or_trim(audio_segment.flatten())
             mel = log_mel_spectrogram(pad_audio)  # torch.Size([80, 3000])
             assert mel.shape[1] == 3000
+            encoder_dtype = next(self.speech_encoder.parameters()).dtype
             if kimia_whisper_clip_silence:
                 input_seq_lens_list = [token_len * 4]
                 input_seq_lens = torch.LongTensor(input_seq_lens_list).to(
                     torch.cuda.current_device()
                 )
                 audio_embedding = self.speech_encoder(
-                    mel.unsqueeze(0).to(torch.cuda.current_device()).to(torch.bfloat16),
+                    mel.unsqueeze(0).to(torch.cuda.current_device()).to(encoder_dtype),
                     return_dict=True,
                     input_seq_lens=input_seq_lens,
                 ).last_hidden_state
             else:
                 audio_embedding = self.speech_encoder(
-                    mel.unsqueeze(0).to(torch.cuda.current_device()).to(torch.bfloat16),
+                    mel.unsqueeze(0).to(torch.cuda.current_device()).to(encoder_dtype),
                     return_dict=True,
                 ).last_hidden_state
                 # audio_embedding: [1, 3000, 1280]

@@ -45,16 +45,17 @@ def load_execution_surface(path: Path) -> dict:
     return data
 
 
-def resolve_model_and_run(surface: dict) -> tuple[str, str]:
-    """Extract (model_name, run_id) from execution_surface.json."""
+def resolve_model_and_run(surface: dict) -> tuple[str, str, str | None]:
+    """Extract (model_name, run_id, entrypoint_path) from execution_surface.json."""
     resolved = surface.get("resolved_inputs", {})
     model_name = resolved.get("model_name", "")
     run_id = surface.get("run_id", "")
+    entrypoint_path = surface.get("entrypoint_path")
     if not model_name:
         raise ValueError("execution_surface.json missing resolved_inputs.model_name")
     if not run_id:
         raise ValueError("execution_surface.json missing run_id")
-    return model_name, run_id
+    return model_name, run_id, entrypoint_path
 
 
 def main() -> int:
@@ -111,7 +112,7 @@ def main() -> int:
         )
 
     surface = load_execution_surface(surface_path)
-    model_name, run_id = resolve_model_and_run(surface)
+    model_name, run_id, entrypoint_path = resolve_model_and_run(surface)
 
     # CLI overrides take precedence over surface.json
     image = args.image
@@ -127,6 +128,7 @@ def main() -> int:
             memory_gb=memory,
             gpus=args.gpus,
             cpus=args.cpus,
+            entrypoint_path=entrypoint_path,
         )
         print(" ".join(cmd))
         return 0
@@ -140,6 +142,7 @@ def main() -> int:
             memory_gb=memory,
             gpus=args.gpus,
             cpus=args.cpus,
+            entrypoint_path=entrypoint_path,
         )
     except RuntimeError as exc:
         logger.error("Submission failed", error=str(exc))

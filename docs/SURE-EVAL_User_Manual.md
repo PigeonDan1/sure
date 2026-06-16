@@ -2,8 +2,10 @@
 
 **Systematic Unified Robust Evaluation Framework for Audio Processing**
 
-**版本**: v1.0  
-**日期**: 2026-04-28
+**版本**: v2.0  
+**日期**: 2026-06-16
+
+> 📌 **版本说明**：本手册已随 `docs/agents/` 目录重构同步更新。主流程 Agent 文档现位于 `docs/agents/main_flow_agent/`，模型接入 Agent 文档现位于 `docs/agents/model_tool_agent/`。
 
 ---
 
@@ -39,7 +41,7 @@ SURE-EVAL（**S**ystematic **U**nified **R**obust **E**valuation）是一个面�
 │  🤖 Main Flow Agent（主流程代理）                        │
 │  理解用户意图 → 判断工具就绪性 → 选择数据集 → 编排执行   │
 ├─────────────────────────────────────────────────────────┤
-│  🔧 Tool Onboarding Workflow（工具接入工作流）           │
+│  🔧 Model Tool Agent Workflow（模型接入工作流）          │
 │  将原始模型仓库转化为可复现的本地工具 / MCP Server       │
 ├─────────────────────────────────────────────────────────┤
 │  📜 Deterministic Script Layer（确定性脚本层）           │
@@ -51,6 +53,20 @@ SURE-EVAL（**S**ystematic **U**nified **R**obust **E**valuation）是一个面�
 - **脚本层**是基础——无论有没有 Agent，你都可以直接调用这些脚本完成评估。
 - **工具接入层**是桥梁——把 GitHub 上的模型仓库变成 SURE-EVAL 能调用的本地工具。
 - **Agent 层**是编排器——它判断该做什么、不该做什么，然后把工作分发给脚本层。
+
+**两个 Agent Workflow 的选择方式**：
+
+```text
+用户目标
+  ├── 已经有可调用的模型目录
+  │   └── 使用 main_flow_agent：选择数据集、生成执行入口、运行评估、产出报告
+  ├── 模型还没有完成接入，或环境 / wrapper / contract 未通过
+  │   └── 使用 model_tool_agent：接入模型、修复环境、生成 wrapper、完成验证
+  └── 不确定是否就绪
+      └── 先让 main_flow_agent 做 readiness gate，不就绪时转交 model_tool_agent
+```
+
+详细流程图见 `docs/agents/workflow_gallery.md`。
 
 ### 1.3 支持的评测任务
 
@@ -154,7 +170,8 @@ python scripts/download_sure_data.py --csv
 python scripts/download_sure_data.py --suites
 
 # 验证数据完整性
-python scripts/download_sure_data.py --verify
+python scripts/download_sure_data.py --csv --suites
+# 或分别下载后检查 data/datasets/sure_benchmark/ 目录是否存在
 ```
 
 #### 手动下载（如果脚本不可用）
@@ -404,13 +421,13 @@ class ASRQwen3Model:
 
 #### 方式 A：Agent 自动接入（推荐）
 
-使用 Tool Onboarding Agent 自动完成接入：
+使用 Model Tool Agent 自动完成接入：
 
 1. 准备 `MODEL_INPUT`，描述你的模型信息
 2. 发送给 Agent，让它执行完整的工作流
 3. Agent 会自动生成 `model.py`、`server.py`、`config.yaml` 等文件
 
-具体输入格式参考 `src/sure_eval/models/README.md` 中的 "Agent Workflow for Tool/Model Onboarding" 部分。
+具体输入格式参考 [`docs/agents/model_tool_agent/README.md`](./agents/model_tool_agent/README.md) 中的 `## MODEL_INPUT` 部分。
 
 #### 方式 B：手动接入
 
@@ -535,10 +552,10 @@ python scripts/evaluate_predictions.py \
     --record \
     --output /tmp/eval_result.json
 
-# 6. 刷新报告
+# 6. 刷新报告快照
 python scripts/refresh_report_snapshot.py \
-    --model asr_qwen3 \
-    --dataset aishell1
+    --markdown reports/asr_qwen3.md \
+    --json reports/asr_qwen3_summary.json
 ```
 
 ### 5.2 Agent Flow 执行（交互式流程）
@@ -564,6 +581,7 @@ MAIN_FLOW_INPUT:
     model_name: asr_qwen3
     model_dir: src/sure_eval/models/asr_qwen3
     tool_workflow_ready: true
+    integration_state: onboarded
 
   constraints:
     allow_tool_workflow: true
@@ -577,13 +595,16 @@ MAIN_FLOW_INPUT:
     config_path: src/sure_eval/models/asr_qwen3/config.yaml
     artifacts_dir: src/sure_eval/models/asr_qwen3/artifacts
     model_spec_path: src/sure_eval/models/asr_qwen3/model.spec.yaml
+    prior_results: []
 
   runtime_context:
     available_scripts:
       - scripts/prepare_sure_dataset.py
       - scripts/materialize_predictions_template.py
+      - scripts/generate_predictions_via_server.py
       - scripts/validate_prediction_files.py
       - scripts/evaluate_predictions.py
+      - scripts/check_execution_surface_compliance.py
       - scripts/refresh_report_snapshot.py
     output_dir: src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001
 ```
@@ -594,9 +615,25 @@ MAIN_FLOW_INPUT:
 
 ## 6. Agent Flow 详解
 
-### 6.1 主状态机
+### 6.1 Workflow 选择图
 
-Agent Flow 的执行遵循一个严格的状态机，**不允许跳过任何关键步骤**：
+```text
+用户请求
+  ↓
+当前目标是什么？
+  ├── 评估已接入模型
+  │   └── main_flow_agent
+  ├── 接入新模型 / 修复已有模型工具
+  │   └── model_tool_agent
+  └── 不确定
+      └── main_flow_agent readiness gate
+            ├── tool ready → main_flow_agent
+            └── not ready / broken → model_tool_agent
+```
+
+### 6.2 Main Flow Agent 状态机
+
+Main Flow Agent 用于“模型已经可调用，需要正式评估”的场景。它的执行遵循一个严格的状态机，**不允许跳过任何关键步骤**：
 
 ```
 INTAKE（接收用户输入）
@@ -626,7 +663,47 @@ RUN_REPORT_UNIT（生成报告）
 DONE
 ```
 
-### 6.2 各 UNIT 详解
+### 6.3 Model Tool Agent 状态机
+
+Model Tool Agent 用于“模型还不能被 SURE-EVAL 稳定调用”的场景。它负责把原始模型仓库或半成品模型目录整理成可验证、可复现、可被 main flow 调用的工具。
+
+```text
+DISCOVER（收集模型、仓库、环境、权重证据）
+    ↓
+CONTEXT_SELECTION_UNIT（按任务、环境、失败类型选择文档）
+    ↓
+CLASSIFY（确认任务类型和接入目标）
+    ↓
+PLAN（制定接入 / 修复计划）
+    ↓
+VALIDATE_SPEC（验证 model.spec.yaml）
+    ↓
+BUILD_ENV（创建 uv / pip / conda / docker 环境）
+    ↓
+FETCH_WEIGHTS（准备模型权重和缓存）
+    ↓
+VALIDATE_ENV_COMPAT（验证运行环境兼容性）
+    ↓
+VALIDATE_IMPORT（验证依赖导入）
+    ↓
+VALIDATE_LOAD（验证模型加载）
+    ↓
+VALIDATE_INFER（验证单样本推理）
+    ↓
+VALIDATE_CONTRACT（验证输入输出契约）
+    ↓
+GENERATE_WRAPPER（生成 model.py / server.py / validate.py）
+    ↓
+SAVE_ARTIFACTS（保存日志、验证记录和交接文件）
+    ↓
+DOCKER_BUILD_VALIDATE（如需要，构建并验证镜像）
+    ↓
+TOOL_READY（交回 main_flow_agent）
+```
+
+`CONTEXT_SELECTION_UNIT` 只决定读取哪些任务 playbook、环境 playbook、fixture 索引和 bad-case 记忆；它不会改变上述状态机。
+
+### 6.4 各 UNIT 详解
 
 #### TASK_CLASSIFICATION_UNIT
 
@@ -670,7 +747,7 @@ DONE
 
 **用户交互点**：
 - 如果判断为 `tool_broken_needs_repair`，Agent 会停止评估并建议你修复模型
-- 如果判断为 `not_tool_ready`，Agent 会建议你先走 Tool Onboarding 流程
+- 如果判断为 `not_tool_ready`，Agent 会建议你先走 Model Tool Agent 流程
 
 ---
 
@@ -750,7 +827,7 @@ DONE
       "step": 1,
       "script": "scripts/prepare_sure_dataset.py",
       "args": ["--dataset", "aishell1"],
-      "output": "data/datasets/sure_benchmark/jsonl/aishell1-test_ASR.jsonl"
+      "output": "data/datasets/sure_benchmark/jsonl/aishell1.jsonl"
     },
     {
       "step": 2,
@@ -897,7 +974,7 @@ python scripts/evaluate_predictions.py \
 - 你需要输入 `y` 确认后才保存
 - 如果拒绝，报告会标记为 `cancelled`
 
-### 6.3 交互点总览
+### 6.5 交互点总览
 
 | UNIT | 是否可能交互 | 交互内容 |
 |------|-------------|---------|
@@ -1180,6 +1257,21 @@ python scripts/generate_predictions_via_server.py \
 2. 或者使用更小的批大小
 3. 对于 Qwen3-ASR，当前只支持 `batch_size=1`
 
+### Q8：TOOL_READINESS_AND_ROUTING_UNIT 返回异常状态
+
+**现象**：主流程 Agent 在工具就绪检查阶段停止，报告 `server_declared_but_unverified` 或 `tool_broken_needs_repair`。
+
+**状态含义与处理**：
+
+| 状态 | 含义 | 下一步 |
+|------|------|--------|
+| `server_declared_but_unverified` | `config.yaml` 中声明了 server，但尚未通过冒烟测试 | 先手动运行 `scripts/generate_predictions_via_server.py --max-samples 1` 验证 server 可调用 |
+| `tool_broken_needs_repair` | 模型目录或环境损坏，无法完成基本推理 | 将目标交给 Model Tool Agent 进行修复或重新接入，不要继续执行评估 |
+| `not_tool_ready` | 模型尚未接入，缺少 `config.yaml`、`server.py` 等关键文件 | 先使用 Model Tool Agent 完成第一阶段 onboarding |
+| `server_ready` | 工具已通过验证 | 继续执行后续评估步骤 |
+
+**原则**：主流程 Agent 不负责修复模型环境。一旦工具未就绪，应当停止评估路由并转交 Model Tool Agent。
+
 ---
 
 ## 10. 附录
@@ -1193,7 +1285,7 @@ python scripts/generate_predictions_via_server.py \
 | `generate_predictions_via_server.py` | 通过 MCP Server 生成预测 | `--model-dir`, `--dataset`, `--run-dir`, `--tool-name`, `--language`, `--resume`, `--max-samples`, `--protocol` |
 | `validate_prediction_files.py` | 验证预测文件 | `--dataset`, `--pred-dir`, `--require-nonempty` |
 | `evaluate_predictions.py` | 计算指标 | `--dataset`, `--pred-dir`, `--tool-name`, `--record`, `--output` |
-| `refresh_report_snapshot.py` | 刷新报告 | `--model`, `--dataset` |
+| `refresh_report_snapshot.py` | 刷新报告快照 | `--markdown`, `--json` |
 | `run_sure_evaluation.py` | 端到端评估 | `--gt`, `--pred`, `--task` |
 
 ### 附录 B：配置文件参考
@@ -1255,9 +1347,7 @@ resources:
 ```
 sure-eval/
 ├── src/sure_eval/
-│   ├── agent/              # 主流程 Agent
-│   │   ├── AGENTS.md       # Agent 路由规范
-│   │   ├── README.md       # Agent 使用指南
+│   ├── agent/              # 主流程 Agent 编排与状态机实现
 │   │   ├── orchestrator.py # 编排器
 │   │   └── evaluator.py    # 评估器
 │   ├── core/               # 核心工具
@@ -1273,24 +1363,40 @@ sure-eval/
 │   │   └── adapters.py     # 适配器
 │   ├── models/             # 模型目录
 │   │   ├── registry.py     # 模型注册表
-│   │   ├── AGENTS.md       # 工具接入规范
-│   │   ├── README.md       # 工具接入指南
 │   │   └── asr_qwen3/      # Qwen3-ASR 示例
 │   │       ├── config.yaml
 │   │       ├── model.py
 │   │       ├── server.py
 │   │       └── ...
-│   ├── protocols/          # 推理协议（新增）
+│   ├── protocols/          # 推理协议
 │   │   ├── schema.py
 │   │   └── resolver.py
 │   └── reports/            # 报告生成
 ├── scripts/                # 确定性脚本
-├── templates/              # 结构化输出模板
 ├── config/                 # 全局配置
 │   └── protocols.yaml      # 协议定义
 ├── data/datasets/          # 数据集存储
-├── docs/                   # 文档
+├── fixtures/tasks/         # 按任务划分的共享 smoke fixtures
+├── docs/agents/            # Agent workflow 文档、契约与模板（详见下文）
 └── eval_runs/              # 评估运行记录
+
+# docs/agents/ 详细结构
+docs/agents/
+├── README.md                              # Agent 文档总览
+├── main_flow_agent/                       # 主流程评估 Agent
+│   ├── AGENTS.md                          # 主流程路由规范
+│   ├── README.md                          # 使用指南
+│   ├── contracts/                         # 各 UNIT 契约
+│   └── templates/                         # 结构化输出与 shell 模板
+└── model_tool_agent/                      # 模型接入 Agent
+    ├── AGENTS.md                          # 模型接入规范
+    ├── README.md                          # 使用指南
+    ├── contracts/                         # 验证与产物契约
+    ├── playbooks/                         # 后端、预检、失败分类指南
+    ├── policies/                          # 决策与安全策略
+    ├── specs/                             # 模型 spec 与 wrapper 契约
+    ├── task_playbooks/                    # ASR / SD / SER / TTS 等任务手册
+    └── templates/                         # model.spec.yaml、验证脚本等模板
 ```
 
 ### 附录 D：快速开始清单
@@ -1300,7 +1406,7 @@ sure-eval/
 - [ ] 1. 克隆仓库并安装主环境（`uv pip install -e .`）
 - [ ] 2. 下载 SURE Benchmark 数据集（`python scripts/download_sure_data.py`）
 - [ ] 3. 确认模型已接入（`python -m sure_eval.models.registry`）
-- [ ] 4. 如模型未接入，先走 Tool Onboarding 流程
+- [ ] 4. 如模型未接入，先走 Model Tool Agent 流程
 - [ ] 5. 选择评估方式：手动脚本 or Agent Flow
 - [ ] 6. 执行评估
 - [ ] 7. 查看结果（`eval_result.json`）

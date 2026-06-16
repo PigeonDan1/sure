@@ -27,8 +27,11 @@ class KimiAPromptManager:
             _os.path.join(model_path, "whisper-large-v3"), mel_batch_size=20
         )
         self.whisper_model = self.whisper_model.to(torch.cuda.current_device())
-        # Use float16 when the main model is 8-bit quantized (which uses float16 internally)
-        if _os.environ.get("KIMI_AUDIO_8BIT", "0") == "1":
+        # Use float16 when the main model is 8-bit quantized (which uses float16 internally).
+        if (
+            _os.environ.get("KIMI_AUDIO_LOAD_IN_8BIT", "0") == "1"
+            or _os.environ.get("KIMI_AUDIO_8BIT", "0") == "1"
+        ):
             self.whisper_model = self.whisper_model.half()
         else:
             self.whisper_model = self.whisper_model.bfloat16()

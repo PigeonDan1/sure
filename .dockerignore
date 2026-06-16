@@ -2,18 +2,26 @@
 .agents
 .codex
 .venv
+.venv.hostbak
+.venv.hostbak/**
 **/.venv
+**/.venv/**
 **/__pycache__
 **/*.pyc
 **/.pytest_cache
 **/.mypy_cache
 **/.ruff_cache
+**/.cache
+**/.cache/**
 
 # Runtime/model caches should be mounted or downloaded inside the image build,
 # not copied from a host-specific workspace.
 **/.runtime
+**/.runtime/**
 **/checkpoints
+**/checkpoints/**
 **/artifacts/modelscope_cache
+**/artifacts/modelscope_cache/**
 
 # Historical eval outputs are large and not needed to build model images.
 **/eval

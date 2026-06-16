@@ -3,147 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <title>SURE-EVAL 用户使用手册</title>
-<style>
-@page {
-    size: A4;
-    margin: 2.5cm 2cm;
-    @bottom-center {
-        content: counter(page);
-        font-size: 10pt;
-        color: #666;
-    }
-}
-body {
-    font-family: 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', 'SimSun', sans-serif;
-    font-size: 11pt;
-    line-height: 1.7;
-    color: #333;
-}
-h1 {
-    font-size: 22pt;
-    color: #1a5276;
-    border-bottom: 3px solid #1a5276;
-    padding-bottom: 0.3em;
-    margin-top: 1.5em;
-    page-break-before: always;
-}
-h1:first-of-type {
-    page-break-before: avoid;
-    text-align: center;
-    border-bottom: none;
-    font-size: 28pt;
-    margin-top: 3cm;
-}
-h2 {
-    font-size: 16pt;
-    color: #2874a6;
-    border-left: 4px solid #2874a6;
-    padding-left: 0.5em;
-    margin-top: 1.5em;
-}
-h3 {
-    font-size: 13pt;
-    color: #2e86c1;
-    margin-top: 1.2em;
-}
-h4 {
-    font-size: 11.5pt;
-    color: #5d6d7e;
-    margin-top: 1em;
-}
-p {
-    margin: 0.6em 0;
-    text-align: justify;
-}
-code {
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    background: #f4f4f4;
-    padding: 0.1em 0.3em;
-    border-radius: 3px;
-    font-size: 10pt;
-}
-pre {
-    background: #f8f9fa;
-    border: 1px solid #e9ecef;
-    border-radius: 5px;
-    padding: 1em;
-    overflow-x: auto;
-    font-size: 9.5pt;
-    line-height: 1.5;
-}
-pre code {
-    background: none;
-    padding: 0;
-}
-table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 1em 0;
-    font-size: 10pt;
-}
-th, td {
-    border: 1px solid #ddd;
-    padding: 8px 10px;
-    text-align: left;
-}
-th {
-    background: #1a5276;
-    color: white;
-    font-weight: bold;
-}
-tr:nth-child(even) {
-    background: #f8f9fa;
-}
-ul, ol {
-    margin: 0.5em 0;
-    padding-left: 2em;
-}
-li {
-    margin: 0.3em 0;
-}
-blockquote {
-    border-left: 4px solid #2874a6;
-    margin: 1em 0;
-    padding: 0.5em 1em;
-    background: #f0f7fb;
-    color: #1a5276;
-}
-hr {
-    border: none;
-    border-top: 1px solid #ddd;
-    margin: 2em 0;
-}
-.toc {
-    background: #f8f9fa;
-    border: 1px solid #e9ecef;
-    padding: 1.5em;
-    margin: 1em 0;
-    border-radius: 5px;
-}
-.toc ul {
-    list-style: none;
-    padding-left: 0;
-}
-.toc li {
-    margin: 0.4em 0;
-}
-.toc a {
-    color: #1a5276;
-    text-decoration: none;
-}
-.checklist {
-    background: #f0f7fb;
-    border: 1px solid #b8d4e3;
-    padding: 1em 1.5em;
-    border-radius: 5px;
-}
-</style>
+<link rel="stylesheet" href="assets/manual.css">
 </head>
 <body>
 <h1 id="sure-eval">SURE-EVAL 用户使用手册</h1>
 <p><strong>Systematic Unified Robust Evaluation Framework for Audio Processing</strong></p>
-<p><strong>版本</strong>: v1.0<br />
-<strong>日期</strong>: 2026-04-28</p>
+<p><strong>版本</strong>: v2.0<br />
+<strong>日期</strong>: 2026-06-16</p>
+<blockquote>
+<p>📌 <strong>版本说明</strong>：本手册已随 <code>docs/agents/</code> 目录重构同步更新。主流程 Agent 文档现位于 <code>docs/agents/main_flow_agent/</code>，模型接入 Agent 文档现位于 <code>docs/agents/model_tool_agent/</code>。</p>
+</blockquote>
 <hr />
 <h2 id="_1">目录</h2>
 <ol>
@@ -171,17 +40,27 @@ hr {
 │  🤖 Main Flow Agent（主流程代理）                        │
 │  理解用户意图 → 判断工具就绪性 → 选择数据集 → 编排执行   │
 ├─────────────────────────────────────────────────────────┤
-│  🔧 Tool Onboarding Workflow（工具接入工作流）           │
+│  🔧 Model Tool Agent Workflow（模型接入工作流）          │
 │  将原始模型仓库转化为可复现的本地工具 / MCP Server       │
 ├─────────────────────────────────────────────────────────┤
 │  📜 Deterministic Script Layer（确定性脚本层）           │
 │  下载数据 → 生成预测 → 验证格式 → 计算指标 → 记录报告   │
 └─────────────────────────────────────────────────────────┘
 </code></pre>
-<p><strong>三层的关系</strong>：<br />
-- <strong>脚本层</strong>是基础——无论有没有 Agent，你都可以直接调用这些脚本完成评估。<br />
-- <strong>工具接入层</strong>是桥梁——把 GitHub 上的模型仓库变成 SURE-EVAL 能调用的本地工具。<br />
+<p><strong>三层的关系</strong>：
+- <strong>脚本层</strong>是基础——无论有没有 Agent，你都可以直接调用这些脚本完成评估。
+- <strong>工具接入层</strong>是桥梁——把 GitHub 上的模型仓库变成 SURE-EVAL 能调用的本地工具。
 - <strong>Agent 层</strong>是编排器——它判断该做什么、不该做什么，然后把工作分发给脚本层。</p>
+<p><strong>两个 Agent Workflow 的选择方式</strong>：</p>
+<pre><code class="language-text">用户目标
+  ├── 已经有可调用的模型目录
+  │   └── 使用 main_flow_agent：选择数据集、生成执行入口、运行评估、产出报告
+  ├── 模型还没有完成接入，或环境 / wrapper / contract 未通过
+  │   └── 使用 model_tool_agent：接入模型、修复环境、生成 wrapper、完成验证
+  └── 不确定是否就绪
+      └── 先让 main_flow_agent 做 readiness gate，不就绪时转交 model_tool_agent
+</code></pre>
+<p>详细流程图见 <code>docs/agents/workflow_gallery.md</code>。</p>
 <h3 id="13">1.3 支持的评测任务</h3>
 <table>
 <thead>
@@ -313,7 +192,8 @@ python scripts/download_sure_data.py --csv
 python scripts/download_sure_data.py --suites
 
 # 验证数据完整性
-python scripts/download_sure_data.py --verify
+python scripts/download_sure_data.py --csv --suites
+# 或分别下载后检查 data/datasets/sure_benchmark/ 目录是否存在
 </code></pre>
 <h4 id="_3">手动下载（如果脚本不可用）</h4>
 <pre><code class="language-bash">pip install modelscope
@@ -401,10 +281,10 @@ done
 <p>每个 <code>sample.jsonl</code> 文件的每一行是一个 JSON 对象：</p>
 <pre><code class="language-json">{&quot;key&quot;: &quot;audio_file_id&quot;, &quot;path&quot;: &quot;audio/audio_file.wav&quot;, &quot;text&quot;: &quot;对应的文本标注&quot;, &quot;task&quot;: &quot;ASR&quot;}
 </code></pre>
-<p>字段说明：<br />
-- <code>key</code>：样本唯一标识，用于匹配预测结果<br />
-- <code>path</code>：音频文件相对路径（相对于数据集目录）<br />
-- <code>text</code>：参考答案（ground truth）<br />
+<p>字段说明：
+- <code>key</code>：样本唯一标识，用于匹配预测结果
+- <code>path</code>：音频文件相对路径（相对于数据集目录）
+- <code>text</code>：参考答案（ground truth）
 - <code>task</code>：任务类型（ASR、S2TT 等）</p>
 <h4 id="oref-sure-eval">将 OREF 数据接入 SURE-EVAL</h4>
 <p>如果你已有 OREF 格式的本地数据，只需确保目录结构符合上述格式，SURE-EVAL 的 <code>DatasetManager</code> 会自动识别。你也可以通过配置文件显式声明：</p>
@@ -541,19 +421,19 @@ resources:
         # 返回结果
         return Result(text=&quot;...&quot;, language=&quot;zh&quot;, timestamps=[...])
 </code></pre>
-<p><strong>关键要求</strong>：<br />
-- 类名可以自定义，但 <code>server.py</code> 需要能正确找到它<br />
-- <code>transcribe()</code> 必须接受 <code>audio_path</code> 参数<br />
+<p><strong>关键要求</strong>：
+- 类名可以自定义，但 <code>server.py</code> 需要能正确找到它
+- <code>transcribe()</code> 必须接受 <code>audio_path</code> 参数
 - 返回对象必须至少有 <code>.text</code> 属性</p>
 <h3 id="44-serverpymcp-server">4.4 server.py：MCP Server</h3>
-<p><code>server.py</code> 是一个基于 JSON-RPC 的 MCP（Model Context Protocol）服务器，负责：<br />
-1. 接收外部调用请求<br />
-2. 加载模型（懒加载）<br />
-3. 执行推理<br />
+<p><code>server.py</code> 是一个基于 JSON-RPC 的 MCP（Model Context Protocol）服务器，负责：
+1. 接收外部调用请求
+2. 加载模型（懒加载）
+3. 执行推理
 4. 返回结果</p>
 <p>它通过标准输入/输出与调用方通信，因此可以被 SURE-EVAL 的脚本直接调用。</p>
-<p><strong>通信协议</strong>：<br />
-- 输入：JSON-RPC 2.0 请求（每行一个 JSON 对象）<br />
+<p><strong>通信协议</strong>：
+- 输入：JSON-RPC 2.0 请求（每行一个 JSON 对象）
 - 输出：JSON-RPC 2.0 响应（每行一个 JSON 对象）</p>
 <p>示例请求：</p>
 <pre><code class="language-json">{&quot;jsonrpc&quot;: &quot;2.0&quot;, &quot;id&quot;: 1, &quot;method&quot;: &quot;tools/call&quot;, &quot;params&quot;: {&quot;name&quot;: &quot;asr_transcribe&quot;, &quot;arguments&quot;: {&quot;audio_path&quot;: &quot;/path/to/audio.wav&quot;, &quot;language&quot;: &quot;auto&quot;}}}
@@ -561,13 +441,13 @@ resources:
 <h3 id="45">4.5 从零接入一个新模型</h3>
 <p>如果你的模型还没有接入 SURE-EVAL，有两种方式：</p>
 <h4 id="aagent">方式 A：Agent 自动接入（推荐）</h4>
-<p>使用 Tool Onboarding Agent 自动完成接入：</p>
+<p>使用 Model Tool Agent 自动完成接入：</p>
 <ol>
 <li>准备 <code>MODEL_INPUT</code>，描述你的模型信息</li>
 <li>发送给 Agent，让它执行完整的工作流</li>
 <li>Agent 会自动生成 <code>model.py</code>、<code>server.py</code>、<code>config.yaml</code> 等文件</li>
 </ol>
-<p>具体输入格式参考 <code>src/sure_eval/models/README.md</code> 中的 "Agent Workflow for Tool/Model Onboarding" 部分。</p>
+<p>具体输入格式参考 <a href="./agents/model_tool_agent/README.md"><code>docs/agents/model_tool_agent/README.md</code></a> 中的 <code>## MODEL_INPUT</code> 部分。</p>
 <h4 id="b">方式 B：手动接入</h4>
 <p>如果你更熟悉代码，可以手动创建以下文件：</p>
 <ol>
@@ -623,14 +503,14 @@ resources:
     --tool-name asr_transcribe \
     --language auto
 </code></pre>
-<p><strong>关键参数说明</strong>：<br />
-- <code>--model-dir</code>：模型目录路径<br />
-- <code>--dataset</code>：数据集名称<br />
-- <code>--run-dir</code>：运行输出目录<br />
-- <code>--tool-name</code>：要调用的工具名称（在 <code>config.yaml</code> 的 <code>tools</code> 中定义）<br />
-- <code>--language</code>：语言参数（传递给模型）<br />
-- <code>--resume</code>：断点续跑（已完成的样本会跳过）<br />
-- <code>--max-samples</code>：限制样本数（快速测试）<br />
+<p><strong>关键参数说明</strong>：
+- <code>--model-dir</code>：模型目录路径
+- <code>--dataset</code>：数据集名称
+- <code>--run-dir</code>：运行输出目录
+- <code>--tool-name</code>：要调用的工具名称（在 <code>config.yaml</code> 的 <code>tools</code> 中定义）
+- <code>--language</code>：语言参数（传递给模型）
+- <code>--resume</code>：断点续跑（已完成的样本会跳过）
+- <code>--max-samples</code>：限制样本数（快速测试）
 - <code>--protocol</code>：推理协议 ID（默认 <code>strict_core</code>，详见第 7 章）</p>
 <h4 id="step-4">Step 4：验证预测文件</h4>
 <pre><code class="language-bash">python scripts/validate_prediction_files.py \
@@ -646,9 +526,9 @@ resources:
     --record \
     --output /tmp/eval_result.json
 </code></pre>
-<p>这会输出：<br />
-- <strong>WER</strong>（词错误率）或 <strong>CER</strong>（字错误率）<br />
-- <strong>RPS</strong>（Relative Performance Score，相对性能分数）<br />
+<p>这会输出：
+- <strong>WER</strong>（词错误率）或 <strong>CER</strong>（字错误率）
+- <strong>RPS</strong>（Relative Performance Score，相对性能分数）
 - 与 SOTA 基线的对比</p>
 <h4 id="_5">完整流程示例</h4>
 <pre><code class="language-bash"># 1. 准备数据
@@ -680,10 +560,10 @@ python scripts/evaluate_predictions.py \
     --record \
     --output /tmp/eval_result.json
 
-# 6. 刷新报告
+# 6. 刷新报告快照
 python scripts/refresh_report_snapshot.py \
-    --model asr_qwen3 \
-    --dataset aishell1
+    --markdown reports/asr_qwen3.md \
+    --json reports/asr_qwen3_summary.json
 </code></pre>
 <h3 id="52-agent-flow">5.2 Agent Flow 执行（交互式流程）</h3>
 <p>Agent Flow 是 SURE-EVAL 的高级用法，适合正式评估和批量跑多数据集。</p>
@@ -703,6 +583,7 @@ python scripts/refresh_report_snapshot.py \
     model_name: asr_qwen3
     model_dir: src/sure_eval/models/asr_qwen3
     tool_workflow_ready: true
+    integration_state: onboarded
 
   constraints:
     allow_tool_workflow: true
@@ -716,21 +597,37 @@ python scripts/refresh_report_snapshot.py \
     config_path: src/sure_eval/models/asr_qwen3/config.yaml
     artifacts_dir: src/sure_eval/models/asr_qwen3/artifacts
     model_spec_path: src/sure_eval/models/asr_qwen3/model.spec.yaml
+    prior_results: []
 
   runtime_context:
     available_scripts:
       - scripts/prepare_sure_dataset.py
       - scripts/materialize_predictions_template.py
+      - scripts/generate_predictions_via_server.py
       - scripts/validate_prediction_files.py
       - scripts/evaluate_predictions.py
+      - scripts/check_execution_surface_compliance.py
       - scripts/refresh_report_snapshot.py
     output_dir: src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001
 </code></pre>
 <p>然后将上述输入发送给 Agent（具体方式取决于你使用的 AI 工具）。</p>
 <hr />
 <h2 id="6-agent-flow">6. Agent Flow 详解</h2>
-<h3 id="61">6.1 主状态机</h3>
-<p>Agent Flow 的执行遵循一个严格的状态机，<strong>不允许跳过任何关键步骤</strong>：</p>
+<h3 id="61-workflow">6.1 Workflow 选择图</h3>
+<pre><code class="language-text">用户请求
+  ↓
+当前目标是什么？
+  ├── 评估已接入模型
+  │   └── main_flow_agent
+  ├── 接入新模型 / 修复已有模型工具
+  │   └── model_tool_agent
+  └── 不确定
+      └── main_flow_agent readiness gate
+            ├── tool ready → main_flow_agent
+            └── not ready / broken → model_tool_agent
+</code></pre>
+<h3 id="62-main-flow-agent">6.2 Main Flow Agent 状态机</h3>
+<p>Main Flow Agent 用于“模型已经可调用，需要正式评估”的场景。它的执行遵循一个严格的状态机，<strong>不允许跳过任何关键步骤</strong>：</p>
 <pre><code>INTAKE（接收用户输入）
     ↓
 TASK_CLASSIFICATION_UNIT（任务分类）
@@ -757,7 +654,42 @@ RUN_REPORT_UNIT（生成报告）
     ↓
 DONE
 </code></pre>
-<h3 id="62-unit">6.2 各 UNIT 详解</h3>
+<h3 id="63-model-tool-agent">6.3 Model Tool Agent 状态机</h3>
+<p>Model Tool Agent 用于“模型还不能被 SURE-EVAL 稳定调用”的场景。它负责把原始模型仓库或半成品模型目录整理成可验证、可复现、可被 main flow 调用的工具。</p>
+<pre><code class="language-text">DISCOVER（收集模型、仓库、环境、权重证据）
+    ↓
+CONTEXT_SELECTION_UNIT（按任务、环境、失败类型选择文档）
+    ↓
+CLASSIFY（确认任务类型和接入目标）
+    ↓
+PLAN（制定接入 / 修复计划）
+    ↓
+VALIDATE_SPEC（验证 model.spec.yaml）
+    ↓
+BUILD_ENV（创建 uv / pip / conda / docker 环境）
+    ↓
+FETCH_WEIGHTS（准备模型权重和缓存）
+    ↓
+VALIDATE_ENV_COMPAT（验证运行环境兼容性）
+    ↓
+VALIDATE_IMPORT（验证依赖导入）
+    ↓
+VALIDATE_LOAD（验证模型加载）
+    ↓
+VALIDATE_INFER（验证单样本推理）
+    ↓
+VALIDATE_CONTRACT（验证输入输出契约）
+    ↓
+GENERATE_WRAPPER（生成 model.py / server.py / validate.py）
+    ↓
+SAVE_ARTIFACTS（保存日志、验证记录和交接文件）
+    ↓
+DOCKER_BUILD_VALIDATE（如需要，构建并验证镜像）
+    ↓
+TOOL_READY（交回 main_flow_agent）
+</code></pre>
+<p><code>CONTEXT_SELECTION_UNIT</code> 只决定读取哪些任务 playbook、环境 playbook、fixture 索引和 bad-case 记忆；它不会改变上述状态机。</p>
+<h3 id="64-unit">6.4 各 UNIT 详解</h3>
 <h4 id="task_classification_unit">TASK_CLASSIFICATION_UNIT</h4>
 <p><strong>作用</strong>：判断当前请求属于哪类任务。</p>
 <table>
@@ -801,13 +733,13 @@ DONE
     └── 否 → not_tool_ready（需要接入）
 </code></pre>
 <p><strong>输出文件</strong>：<code>tool_readiness_routing.json</code></p>
-<p><strong>关键字段</strong>：<br />
-- <code>tool_readiness_state</code>：<code>server_ready</code> / <code>server_declared_but_unverified</code> / <code>tool_broken_needs_repair</code> / <code>not_tool_ready</code><br />
-- <code>preferred_execution_path</code>：<code>direct_server_use</code> / <code>server_smoke_test_first</code> / <code>handoff_to_tool_workflow</code><br />
+<p><strong>关键字段</strong>：
+- <code>tool_readiness_state</code>：<code>server_ready</code> / <code>server_declared_but_unverified</code> / <code>tool_broken_needs_repair</code> / <code>not_tool_ready</code>
+- <code>preferred_execution_path</code>：<code>direct_server_use</code> / <code>server_smoke_test_first</code> / <code>handoff_to_tool_workflow</code>
 - <code>handoff_to_tool_agent</code>：true/false（是否需要转交工具接入 Agent）</p>
-<p><strong>用户交互点</strong>：<br />
-- 如果判断为 <code>tool_broken_needs_repair</code>，Agent 会停止评估并建议你修复模型<br />
-- 如果判断为 <code>not_tool_ready</code>，Agent 会建议你先走 Tool Onboarding 流程</p>
+<p><strong>用户交互点</strong>：
+- 如果判断为 <code>tool_broken_needs_repair</code>，Agent 会停止评估并建议你修复模型
+- 如果判断为 <code>not_tool_ready</code>，Agent 会建议你先走 Model Tool Agent 流程</p>
 <hr />
 <h4 id="plan_unit">PLAN_UNIT</h4>
 <p><strong>作用</strong>：形成本轮评估的总体计划。</p>
@@ -831,10 +763,10 @@ DONE
 <hr />
 <h4 id="dataset_scope_unit">DATASET_SCOPE_UNIT</h4>
 <p><strong>作用</strong>：根据模型能力和用户约束，选择要评估的数据集。</p>
-<p><strong>决策逻辑</strong>：<br />
-1. 读取 <code>config.yaml</code> 中的 <code>model.languages</code> 和 <code>task</code><br />
-2. 过滤匹配的数据集<br />
-3. 应用用户的 <code>allowed_datasets</code> 和 <code>blocked_datasets</code> 约束<br />
+<p><strong>决策逻辑</strong>：
+1. 读取 <code>config.yaml</code> 中的 <code>model.languages</code> 和 <code>task</code>
+2. 过滤匹配的数据集
+3. 应用用户的 <code>allowed_datasets</code> 和 <code>blocked_datasets</code> 约束
 4. 排除模型不支持的语言/任务</p>
 <p><strong>输出文件</strong>：<code>dataset_decision.json</code></p>
 <p><strong>内容示例</strong>：</p>
@@ -852,8 +784,8 @@ DONE
   ]
 }
 </code></pre>
-<p><strong>用户交互点</strong>：<br />
-- Agent 会列出选中的数据集和跳过的数据集及原因<br />
+<p><strong>用户交互点</strong>：
+- Agent 会列出选中的数据集和跳过的数据集及原因
 - 你可以要求添加或移除数据集</p>
 <hr />
 <h4 id="script_routing_unit">SCRIPT_ROUTING_UNIT</h4>
@@ -866,7 +798,7 @@ DONE
       &quot;step&quot;: 1,
       &quot;script&quot;: &quot;scripts/prepare_sure_dataset.py&quot;,
       &quot;args&quot;: [&quot;--dataset&quot;, &quot;aishell1&quot;],
-      &quot;output&quot;: &quot;data/datasets/sure_benchmark/jsonl/aishell1-test_ASR.jsonl&quot;
+      &quot;output&quot;: &quot;data/datasets/sure_benchmark/jsonl/aishell1.jsonl&quot;
     },
     {
       &quot;step&quot;: 2,
@@ -881,8 +813,8 @@ DONE
 <hr />
 <h4 id="execution_surface_unit">EXECUTION_SURFACE_UNIT</h4>
 <p><strong>作用</strong>：生成最终的执行入口（通常是一个 shell 脚本）。</p>
-<p><strong>输出文件</strong>：<br />
-- <code>execution_surface.json</code>：执行面描述<br />
+<p><strong>输出文件</strong>：
+- <code>execution_surface.json</code>：执行面描述
 - <code>run_evaluation.sh</code>：可直接运行的 shell 脚本</p>
 <p><strong>run_evaluation.sh 示例</strong>：</p>
 <pre><code class="language-bash">#!/bin/bash
@@ -919,67 +851,67 @@ python scripts/evaluate_predictions.py \
     --record \
     --output &quot;$RUN_DIR/eval_result.json&quot;
 </code></pre>
-<p><strong>用户交互点</strong>：<br />
-- Agent 会展示生成的 shell 脚本<br />
+<p><strong>用户交互点</strong>：
+- Agent 会展示生成的 shell 脚本
 - 你可以审查并确认后再执行</p>
 <hr />
 <h4 id="execution_readiness_unit">EXECUTION_READINESS_UNIT</h4>
 <p><strong>作用</strong>：在正式执行前做预检，确保不会跑到一半失败。</p>
-<p><strong>检查项</strong>：<br />
-1. shell 脚本语法是否正确<br />
-2. 模型 server 能否启动<br />
-3. 数据集是否存在<br />
-4. 输出目录是否可写<br />
+<p><strong>检查项</strong>：
+1. shell 脚本语法是否正确
+2. 模型 server 能否启动
+3. 数据集是否存在
+4. 输出目录是否可写
 5. <strong>冒烟测试</strong>：用少量样本验证模型能产出非空预测</p>
 <p><strong>输出文件</strong>：<code>execution_readiness_report.json</code></p>
-<p><strong>关键字段</strong>：<br />
-- <code>execution_ready</code>：true/false<br />
-- <code>smoke_test_passed</code>：true/false<br />
+<p><strong>关键字段</strong>：
+- <code>execution_ready</code>：true/false
+- <code>smoke_test_passed</code>：true/false
 - <code>blocking_issues</code>：阻塞问题列表</p>
-<p><strong>用户交互点</strong>：<br />
-- <strong>这是阻塞性检查</strong>。如果冒烟测试失败，Agent 会停止并报告问题，不会进入正式执行。<br />
+<p><strong>用户交互点</strong>：
+- <strong>这是阻塞性检查</strong>。如果冒烟测试失败，Agent 会停止并报告问题，不会进入正式执行。
 - 如果 resume 检查发现已有部分预测文件，Agent 会确认 <code>--resume</code> 是否正确衔接。</p>
 <hr />
 <h4 id="smoke_test_unit">SMOKE_TEST_UNIT</h4>
 <p><strong>作用</strong>： bounded 冒烟测试，验证模型在真实数据上能产出非空预测。</p>
-<p><strong>流程</strong>：<br />
-1. 从数据集中取少量样本（如 10 条）<br />
-2. 调用模型生成预测<br />
-3. 检查预测是否非空<br />
+<p><strong>流程</strong>：
+1. 从数据集中取少量样本（如 10 条）
+2. 调用模型生成预测
+3. 检查预测是否非空
 4. 如果通过，才允许进入全量执行</p>
 <p><strong>输出文件</strong>：<code>smoke_test_report.json</code></p>
-<p><strong>用户交互点</strong>：<br />
-- 如果冒烟测试失败，Agent 会停止并让你检查模型<br />
+<p><strong>用户交互点</strong>：
+- 如果冒烟测试失败，Agent 会停止并让你检查模型
 - 你可以要求调整样本数或跳过（不推荐）</p>
 <hr />
 <h4 id="assessment_unit">ASSESSMENT_UNIT</h4>
 <p><strong>作用</strong>：评估执行结果，检测异常。</p>
-<p><strong>异常检测规则</strong>：<br />
-- WER / CER &gt; 50% → 异常，暂停确认<br />
-- Accuracy &lt; 20% → 异常，暂停确认<br />
-- 预测文件为空 → 异常，暂停确认<br />
+<p><strong>异常检测规则</strong>：
+- WER / CER &gt; 50% → 异常，暂停确认
+- Accuracy &lt; 20% → 异常，暂停确认
+- 预测文件为空 → 异常，暂停确认
 - 样本缺失 → 异常，暂停确认</p>
 <p><strong>输出文件</strong>：<code>assessment_report.json</code></p>
-<p><strong>用户交互点</strong>：<br />
-- <strong>这是最重要的交互点之一</strong><br />
-- 如果检测到异常，Agent 会暂停并询问你是否继续<br />
+<p><strong>用户交互点</strong>：
+- <strong>这是最重要的交互点之一</strong>
+- 如果检测到异常，Agent 会暂停并询问你是否继续
 - 你需要确认"结果看起来合理"后，Agent 才会继续</p>
 <hr />
 <h4 id="run_report_unit">RUN_REPORT_UNIT</h4>
 <p><strong>作用</strong>：生成最终的运行报告。</p>
-<p><strong>流程</strong>：<br />
-1. 汇总所有结构化输出<br />
-2. 生成报告预览<br />
-3. <strong>请求用户确认</strong>（y/n）<br />
+<p><strong>流程</strong>：
+1. 汇总所有结构化输出
+2. 生成报告预览
+3. <strong>请求用户确认</strong>（y/n）
 4. 确认后才持久化到文件</p>
-<p><strong>输出文件</strong>：<br />
-- <code>main_agent_run_report.json</code><br />
+<p><strong>输出文件</strong>：
+- <code>main_agent_run_report.json</code>
 - <code>model_eval_manifest.json</code>（单文件索引，包含本轮所有证据）</p>
-<p><strong>用户交互点</strong>：<br />
-- Agent 会展示报告预览<br />
-- 你需要输入 <code>y</code> 确认后才保存<br />
+<p><strong>用户交互点</strong>：
+- Agent 会展示报告预览
+- 你需要输入 <code>y</code> 确认后才保存
 - 如果拒绝，报告会标记为 <code>cancelled</code></p>
-<h3 id="63">6.3 交互点总览</h3>
+<h3 id="65">6.5 交互点总览</h3>
 <table>
 <thead>
 <tr>
@@ -1116,16 +1048,16 @@ python scripts/generate_predictions_via_server.py \
     --protocol none
 </code></pre>
 <h4 id="agent-flow_1">Agent Flow</h4>
-<p>Agent 在执行 <code>EXECUTION_SURFACE_UNIT</code> 时会自动：<br />
-1. 读取 <code>config/protocols.yaml</code> 中的协议定义<br />
-2. 读取模型的 <code>config.yaml</code> 中的协议映射<br />
-3. 解析标准参数到模型参数<br />
+<p>Agent 在执行 <code>EXECUTION_SURFACE_UNIT</code> 时会自动：
+1. 读取 <code>config/protocols.yaml</code> 中的协议定义
+2. 读取模型的 <code>config.yaml</code> 中的协议映射
+3. 解析标准参数到模型参数
 4. 通过环境变量 <code>SURE_EVAL_PROTOCOL_*</code> 和 <code>SURE_EVAL_MODEL_*</code> 注入</p>
 <p>模型 Server 可以读取这些环境变量来调整推理行为。</p>
 <h3 id="76">7.6 向后兼容</h3>
-<p><strong>协议系统是可选的加分项</strong>，不影响原有功能：<br />
-- 旧模型不写 <code>protocols</code> 字段 → 正常工作<br />
-- 不传 <code>--protocol</code> 参数 → 使用默认 <code>strict_core</code>，静默回退<br />
+<p><strong>协议系统是可选的加分项</strong>，不影响原有功能：
+- 旧模型不写 <code>protocols</code> 字段 → 正常工作
+- 不传 <code>--protocol</code> 参数 → 使用默认 <code>strict_core</code>，静默回退
 - 协议解析失败 → 不影响评估执行</p>
 <hr />
 <h2 id="8">8. 结果解读与报告</h2>
@@ -1150,9 +1082,9 @@ python scripts/generate_predictions_via_server.py \
 <li>RPS = 0：等于 SOTA</li>
 <li>RPS &lt; 0：劣于 SOTA</li>
 </ul>
-<p><strong>示例</strong>：<br />
-- SOTA WER = 5.0%<br />
-- 你的模型 WER = 5.5%<br />
+<p><strong>示例</strong>：
+- SOTA WER = 5.0%
+- 你的模型 WER = 5.5%
 - RPS = (5.0 - 5.5) / 5.0 × 100 = -10.0</p>
 <h3 id="82">8.2 评估结果文件</h3>
 <p>执行 <code>evaluate_predictions.py</code> 后，会生成以下文件：</p>
@@ -1184,63 +1116,63 @@ python scripts/generate_predictions_via_server.py \
   &quot;is_sota&quot;: true
 }
 </code></pre>
-<p>解读：<br />
-- CER = 4.32%，在 7176 个样本上计算<br />
-- SOTA 基线 CER = 4.62%<br />
-- RPS = 6.49（正值，表示优于 SOTA）<br />
+<p>解读：
+- CER = 4.32%，在 7176 个样本上计算
+- SOTA 基线 CER = 4.62%
+- RPS = 6.49（正值，表示优于 SOTA）
 - <code>is_sota: true</code>：当前模型在该数据集上达到 SOTA</p>
 <hr />
 <h2 id="9">9. 常见问题与故障排除</h2>
 <h3 id="q1-server">Q1：模型 server 启动失败</h3>
 <p><strong>现象</strong>：<code>generate_predictions_via_server.py</code> 报错 "Server exited before returning a response"</p>
-<p><strong>排查步骤</strong>：<br />
-1. 检查模型虚拟环境是否存在：<br />
-<code>bash
-   ls src/sure_eval/models/asr_qwen3/.venv/bin/python</code><br />
-2. 手动测试 server 启动：<br />
-<code>bash
+<p><strong>排查步骤</strong>：
+1. 检查模型虚拟环境是否存在：
+   <code>bash
+   ls src/sure_eval/models/asr_qwen3/.venv/bin/python</code>
+2. 手动测试 server 启动：
+   <code>bash
    cd src/sure_eval/models/asr_qwen3
    .venv/bin/python server.py
-   # 手动发送 JSON-RPC 请求测试</code><br />
-3. 检查 <code>config.yaml</code> 中的 <code>server.command</code> 是否正确<br />
+   # 手动发送 JSON-RPC 请求测试</code>
+3. 检查 <code>config.yaml</code> 中的 <code>server.command</code> 是否正确
 4. 查看 <code>predictions/logs/&lt;dataset&gt;.log</code> 中的错误信息</p>
 <h3 id="q2">Q2：预测文件为空</h3>
 <p><strong>现象</strong>：评估结果中所有预测为空字符串</p>
-<p><strong>排查步骤</strong>：<br />
-1. 检查模型是否正确加载（查看 log 中的 "Model loaded"）<br />
-2. 检查音频路径是否正确解析<br />
-3. 运行冒烟测试，用单条样本验证：<br />
-<code>bash
+<p><strong>排查步骤</strong>：
+1. 检查模型是否正确加载（查看 log 中的 "Model loaded"）
+2. 检查音频路径是否正确解析
+3. 运行冒烟测试，用单条样本验证：
+   <code>bash
    python scripts/generate_predictions_via_server.py \
        --model-dir src/sure_eval/models/asr_qwen3 \
        --dataset aishell1 \
        --run-dir /tmp/test \
        --max-samples 1</code></p>
 <h3 id="q3">Q3：下载数据集很慢</h3>
-<p><strong>解决方案</strong>：<br />
-1. 使用 ModelScope 国内镜像：<br />
-<code>bash
-   export MODELSCOPE_CACHE=./data/cache</code><br />
-2. 仅下载需要的数据集子集：<br />
-<code>bash
+<p><strong>解决方案</strong>：
+1. 使用 ModelScope 国内镜像：
+   <code>bash
+   export MODELSCOPE_CACHE=./data/cache</code>
+2. 仅下载需要的数据集子集：
+   <code>bash
    cd data/datasets/sure_benchmark/SURE_Test_Suites
    modelscope download --dataset SUREBenchmark/SURE_Test_Suites aishell-1_test.tar.gz</code></p>
 <h3 id="q4agent-flow">Q4：Agent Flow 中冒烟测试失败</h3>
 <p><strong>现象</strong>：SMOKE_TEST_UNIT 报告 "smoke test failed"</p>
-<p><strong>解决方案</strong>：<br />
-1. 检查模型 server 是否能处理单条请求<br />
-2. 检查数据集样本格式是否正确<br />
-3. 确认 <code>--max-samples</code> 没有设置过小导致无法验证<br />
-4. 手动运行单条预测验证：<br />
-<code>bash
+<p><strong>解决方案</strong>：
+1. 检查模型 server 是否能处理单条请求
+2. 检查数据集样本格式是否正确
+3. 确认 <code>--max-samples</code> 没有设置过小导致无法验证
+4. 手动运行单条预测验证：
+   <code>bash
    cd src/sure_eval/models/asr_qwen3
    .venv/bin/python -c "from model import ASRQwen3Model; m = ASRQwen3Model(); print(m.transcribe('path/to/audio.wav').text)"</code></p>
 <h3 id="q5wercer">Q5：评估指标异常（WER/CER 过高）</h3>
 <p><strong>现象</strong>：ASSESSMENT_UNIT 检测到异常，暂停请求确认</p>
-<p><strong>排查步骤</strong>：<br />
-1. 检查预测文件中的样本是否与参考答案对齐<br />
-2. 检查语言设置是否正确（中文数据集用 CER，英文用 WER）<br />
-3. 检查文本后处理是否正常（标点、大小写等）<br />
+<p><strong>排查步骤</strong>：
+1. 检查预测文件中的样本是否与参考答案对齐
+2. 检查语言设置是否正确（中文数据集用 CER，英文用 WER）
+3. 检查文本后处理是否正常（标点、大小写等）
 4. 查看 <code>predictions/logs/&lt;dataset&gt;_results.log</code> 中的原始预测</p>
 <h3 id="q6">Q6：如何断点续跑</h3>
 <p><strong>方案</strong>：使用 <code>--resume</code> 参数</p>
@@ -1253,10 +1185,45 @@ python scripts/generate_predictions_via_server.py \
 <p>已完成的样本会自动跳过，继续处理剩余样本。</p>
 <p><strong>禁用 resume</strong>：设置环境变量 <code>NO_RESUME=1</code></p>
 <h3 id="q7gpu">Q7：GPU 内存不足</h3>
-<p><strong>解决方案</strong>：<br />
-1. 修改 <code>config.yaml</code> 中的 <code>DEVICE</code> 为 <code>"cpu"</code><br />
-2. 或者使用更小的批大小<br />
+<p><strong>解决方案</strong>：
+1. 修改 <code>config.yaml</code> 中的 <code>DEVICE</code> 为 <code>"cpu"</code>
+2. 或者使用更小的批大小
 3. 对于 Qwen3-ASR，当前只支持 <code>batch_size=1</code></p>
+<h3 id="q8tool_readiness_and_routing_unit">Q8：TOOL_READINESS_AND_ROUTING_UNIT 返回异常状态</h3>
+<p><strong>现象</strong>：主流程 Agent 在工具就绪检查阶段停止，报告 <code>server_declared_but_unverified</code> 或 <code>tool_broken_needs_repair</code>。</p>
+<p><strong>状态含义与处理</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>含义</th>
+<th>下一步</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>server_declared_but_unverified</code></td>
+<td><code>config.yaml</code> 中声明了 server，但尚未通过冒烟测试</td>
+<td>先手动运行 <code>scripts/generate_predictions_via_server.py --max-samples 1</code> 验证 server 可调用</td>
+</tr>
+<tr>
+<td><code>tool_broken_needs_repair</code></td>
+<td>模型目录或环境损坏，无法完成基本推理</td>
+<td>将目标交给 Model Tool Agent 进行修复或重新接入，不要继续执行评估</td>
+</tr>
+<tr>
+<td><code>not_tool_ready</code></td>
+<td>模型尚未接入，缺少 <code>config.yaml</code>、<code>server.py</code> 等关键文件</td>
+<td>先使用 Model Tool Agent 完成第一阶段 onboarding</td>
+</tr>
+<tr>
+<td><code>server_ready</code></td>
+<td>工具已通过验证</td>
+<td>继续执行后续评估步骤</td>
+</tr>
+</tbody>
+</table>
+<p><strong>原则</strong>：主流程 Agent 不负责修复模型环境。一旦工具未就绪，应当停止评估路由并转交 Model Tool Agent。</p>
 <hr />
 <h2 id="10">10. 附录</h2>
 <h3 id="a">附录 A：核心脚本参考</h3>
@@ -1296,8 +1263,8 @@ python scripts/generate_predictions_via_server.py \
 </tr>
 <tr>
 <td><code>refresh_report_snapshot.py</code></td>
-<td>刷新报告</td>
-<td><code>--model</code>, <code>--dataset</code></td>
+<td>刷新报告快照</td>
+<td><code>--markdown</code>, <code>--json</code></td>
 </tr>
 <tr>
 <td><code>run_sure_evaluation.py</code></td>
@@ -1359,9 +1326,7 @@ resources:
 <h3 id="c">附录 C：项目目录结构速查</h3>
 <pre><code>sure-eval/
 ├── src/sure_eval/
-│   ├── agent/              # 主流程 Agent
-│   │   ├── AGENTS.md       # Agent 路由规范
-│   │   ├── README.md       # Agent 使用指南
+│   ├── agent/              # 主流程 Agent 编排与状态机实现
 │   │   ├── orchestrator.py # 编排器
 │   │   └── evaluator.py    # 评估器
 │   ├── core/               # 核心工具
@@ -1377,24 +1342,40 @@ resources:
 │   │   └── adapters.py     # 适配器
 │   ├── models/             # 模型目录
 │   │   ├── registry.py     # 模型注册表
-│   │   ├── AGENTS.md       # 工具接入规范
-│   │   ├── README.md       # 工具接入指南
 │   │   └── asr_qwen3/      # Qwen3-ASR 示例
 │   │       ├── config.yaml
 │   │       ├── model.py
 │   │       ├── server.py
 │   │       └── ...
-│   ├── protocols/          # 推理协议（新增）
+│   ├── protocols/          # 推理协议
 │   │   ├── schema.py
 │   │   └── resolver.py
 │   └── reports/            # 报告生成
 ├── scripts/                # 确定性脚本
-├── templates/              # 结构化输出模板
 ├── config/                 # 全局配置
 │   └── protocols.yaml      # 协议定义
 ├── data/datasets/          # 数据集存储
-├── docs/                   # 文档
+├── fixtures/tasks/         # 按任务划分的共享 smoke fixtures
+├── docs/agents/            # Agent workflow 文档、契约与模板（详见下文）
 └── eval_runs/              # 评估运行记录
+
+# docs/agents/ 详细结构
+docs/agents/
+├── README.md                              # Agent 文档总览
+├── main_flow_agent/                       # 主流程评估 Agent
+│   ├── AGENTS.md                          # 主流程路由规范
+│   ├── README.md                          # 使用指南
+│   ├── contracts/                         # 各 UNIT 契约
+│   └── templates/                         # 结构化输出与 shell 模板
+└── model_tool_agent/                      # 模型接入 Agent
+    ├── AGENTS.md                          # 模型接入规范
+    ├── README.md                          # 使用指南
+    ├── contracts/                         # 验证与产物契约
+    ├── playbooks/                         # 后端、预检、失败分类指南
+    ├── policies/                          # 决策与安全策略
+    ├── specs/                             # 模型 spec 与 wrapper 契约
+    ├── task_playbooks/                    # ASR / SD / SER / TTS 等任务手册
+    └── templates/                         # model.spec.yaml、验证脚本等模板
 </code></pre>
 <h3 id="d">附录 D：快速开始清单</h3>
 <p>如果你是第一次使用 SURE-EVAL，按以下清单操作：</p>
@@ -1402,7 +1383,7 @@ resources:
 <li>[ ] 1. 克隆仓库并安装主环境（<code>uv pip install -e .</code>）</li>
 <li>[ ] 2. 下载 SURE Benchmark 数据集（<code>python scripts/download_sure_data.py</code>）</li>
 <li>[ ] 3. 确认模型已接入（<code>python -m sure_eval.models.registry</code>）</li>
-<li>[ ] 4. 如模型未接入，先走 Tool Onboarding 流程</li>
+<li>[ ] 4. 如模型未接入，先走 Model Tool Agent 流程</li>
 <li>[ ] 5. 选择评估方式：手动脚本 or Agent Flow</li>
 <li>[ ] 6. 执行评估</li>
 <li>[ ] 7. 查看结果（<code>eval_result.json</code>）</li>

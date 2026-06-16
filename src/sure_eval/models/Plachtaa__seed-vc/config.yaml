@@ -1,0 +1,13 @@
+model:
+  id: "Plachtaa__seed-vc"
+  task: "VC"
+  source_dir: ".runtime/source/seed-vc"
+runtime:
+  default_device: "cuda"
+  cpu_fallback: true
+  diffusion_steps: 4
+io:
+  source_audio_field: "source_audio_path"
+  reference_audio_field: "reference_audio_path"
+  output_field: "audio_path"
+

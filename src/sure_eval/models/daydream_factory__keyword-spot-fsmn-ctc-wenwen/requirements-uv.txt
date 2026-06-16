@@ -1,0 +1,10 @@
+torch==2.5.1
+torchaudio==2.5.1
+numpy
+pyyaml
+librosa
+soundfile
+scipy
+tqdm
+onnxruntime==1.20.1
+onnx

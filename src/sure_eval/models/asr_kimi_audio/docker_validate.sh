@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 REPO_ROOT="$(readlink -f "${REPO_ROOT}")"
 
 IMAGE_TAG="${IMAGE_TAG:-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_kimi_audio:v1.0}"
-CONTAINER_NAME="${CONTAINER_NAME:-sure_asr_kimi_audio_validate_v1}"
+CONTAINER_NAME="${CONTAINER_NAME:-sure_asr_kimi_audio_validate_v1_0}"
 
 MODEL_DIR="${MODEL_DIR:-${SCRIPT_DIR}}"
 MODEL_DIR="$(readlink -f "${MODEL_DIR}")"
@@ -46,6 +46,10 @@ done
 docker run --rm --gpus all \
   --name "${CONTAINER_NAME}" \
   -e "DEVICE=${DEVICE:-auto}" \
+  -e "KIMI_AUDIO_DEVICE_MAP=${KIMI_AUDIO_DEVICE_MAP:-}" \
+  -e "KIMI_AUDIO_LOAD_IN_8BIT=${KIMI_AUDIO_LOAD_IN_8BIT:-0}" \
+  -e "KIMI_AUDIO_MAX_MEMORY=${KIMI_AUDIO_MAX_MEMORY:-}" \
+  -e "PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}" \
   -e "KIMI_AUDIO_MODEL_PATH=${CONTAINER_MODEL_DIR}/.runtime/modelscope_cache/models/moonshotai/Kimi-Audio-7B-Instruct" \
   -v "${REPO_ROOT}/src/sure_eval/__init__.py:${CONTAINER_SRC_DIR}/__init__.py:ro" \
   -v "${REPO_ROOT}/src/sure_eval/cli.py:${CONTAINER_SRC_DIR}/cli.py:ro" \

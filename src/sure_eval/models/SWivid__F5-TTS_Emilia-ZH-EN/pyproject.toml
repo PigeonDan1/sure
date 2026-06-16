@@ -1,0 +1,18 @@
+[project]
+name = "swivid--f5-tts-emilia-zh-en"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "modelscope[audio]",
+  "torch",
+  "transformers",
+  "accelerate",
+  "librosa>=0.10.0",
+  "numpy",
+  "scipy",
+  "soundfile",
+  "pyyaml",
+]
+
+[tool.uv]
+package = false

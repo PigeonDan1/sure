@@ -1,0 +1,4 @@
+sherpa-onnx
+numpy
+soundfile
+librosa

@@ -1,7 +1,7 @@
 """Validators for main-flow agent artifacts.
 
 Provides deterministic, code-level enforcement of contracts defined in
-docs/contracts/main_agent_script_routing_unit.md and related docs.
+docs/agents/main_flow_agent/contracts/main_agent_script_routing_unit.md and related docs.
 """
 from __future__ import annotations
 

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
 from sure_eval.core.logging import get_logger
-from sure_eval.evaluation.wenet_compute_cer import Calculator, characterize, normalize, compute_wer
+from sure_eval.evaluation.asr.wenet_compute_cer import Calculator, characterize, normalize, compute_wer
 
 logger = get_logger(__name__)
 

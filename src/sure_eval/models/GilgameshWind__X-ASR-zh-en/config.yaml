@@ -1,0 +1,8 @@
+model:
+  id: "GilgameshWind/X-ASR-zh-en"
+  task: "ASR"
+  default_chunk_ms: "960"
+  provider: "cuda"
+  tail_padding_seconds: 1.0
+paths:
+  model_root: ".runtime/huggingface/GilgameshWind/X-ASR-zh-en"

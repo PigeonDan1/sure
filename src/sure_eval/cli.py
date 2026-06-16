@@ -511,13 +511,31 @@ def submit_run(
     memory: Optional[int] = typer.Option(None, "--memory", "-m", help="Container memory in GB (auto-estimated if omitted)"),
     gpus: int = typer.Option(1, "--gpus", "-g", help="GPUs per task"),
     cpus: int = typer.Option(4, "--cpus", "-c", help="CPUs per task"),
+    run_dir: Optional[str] = typer.Option(None, "--run-dir", "-r", help="Run directory relative to repo root (e.g. src/sure_eval/models/asr_qwen3/eval_runs_v1/main_agent_asr_qwen3_test_001)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the command without submitting"),
 ) -> None:
     """Submit a model evaluation run to the Volcano cluster (vc submit).
 
     Auto-selects image, GPU partition, and memory unless overridden.
     Fixes the .venv symlink inside the container automatically.
+
+    If ``--run-dir`` is provided, the command reads
+    ``<run_dir>/execution_surface.json`` and honors its
+    ``entrypoint_path`` when building the container-side command.
     """
+    entrypoint_path: Optional[str] = None
+    if run_dir:
+        surface_path = Path(run_dir) / "execution_surface.json"
+        if not surface_path.exists():
+            console.print(f"[bold red]Error:[/bold red] execution_surface.json not found: {surface_path}")
+            raise typer.Exit(1)
+        try:
+            surface = json.loads(surface_path.read_text(encoding="utf-8"))
+            entrypoint_path = surface.get("entrypoint_path")
+        except Exception as exc:
+            console.print(f"[bold red]Error:[/bold red] failed to read execution surface: {exc}")
+            raise typer.Exit(1) from exc
+
     try:
         cmd = build_vc_submit_command(
             model_name=model_name,
@@ -527,6 +545,7 @@ def submit_run(
             memory_gb=memory,
             gpus=gpus,
             cpus=cpus,
+            entrypoint_path=entrypoint_path,
         )
     except RuntimeError as exc:
         console.print(f"[bold red]Error:[/bold red] {exc}")
@@ -546,6 +565,7 @@ def submit_run(
             memory_gb=memory,
             gpus=gpus,
             cpus=cpus,
+            entrypoint_path=entrypoint_path,
         )
         console.print(f"[bold green]Job submitted successfully![/bold green]")
         console.print(f"Job ID: [cyan]{job_id}[/cyan]")

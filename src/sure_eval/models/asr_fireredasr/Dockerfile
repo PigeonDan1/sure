@@ -46,17 +46,21 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && python -m pip install -r requirements.txt \
     && python -m pip install --no-deps -e . \
     && python -m pip install \
-        "transformers>=4.40.0" \
+        "transformers==4.40.0" \
+        "tokenizers>=0.19,<0.20" \
+        "accelerate>=0.29,<0.31" \
+        "peft>=0.10,<0.11" \
         "modelscope>=1.10.0" \
         "soundfile>=0.12.0" \
         "numpy<2" \
         "kaldiio" \
         "kaldi-native-fbank" \
         "sentencepiece" \
-        "peft" \
-        "accelerate" \
         "protobuf" \
     && python -c "import torch; print(torch.__version__)"
+
+RUN PYTHONPATH="${ASR_FIREREDASR_ROOT}:${SURE_EVAL_ROOT}/src:${PYTHONPATH:-}" \
+    python -c "from transformers import AutoModelForCausalLM; from fireredasr.models.fireredasr import FireRedAsr; print('fireredasr imports ok')"
 
 RUN mkdir -p "${ASR_FIREREDASR_ROOT}/.runtime/modelscope_cache" "${ASR_FIREREDASR_ROOT}/artifacts" \
     && chmod a+rwx "${SURE_EVAL_ROOT}" \

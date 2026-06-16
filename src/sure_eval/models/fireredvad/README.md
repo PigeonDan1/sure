@@ -171,5 +171,5 @@ print(result)
 
 ## See Also
 
-- [Model README]((../README.md))
+- [Model README](../../../../docs/agents/model_tool_agent/README.md)
 - [FireRedVAD Upstream Repository](https://github.com/FireRedTeam/FireRedVAD)

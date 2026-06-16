@@ -55,7 +55,7 @@ def test_materialize_predictions_template_generates_manifest_and_template(tmp_pa
             "--config",
             str(config_path),
         ],
-        cwd="/mnt/cloudstorfs/sjtu_home/jing.peng/workspace/sure-eval",
+        cwd="/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox",
         check=True,
         capture_output=True,
         text=True,
@@ -86,7 +86,7 @@ def test_validate_prediction_files_reports_missing_extra_and_empty(tmp_path: Pat
             str(config_path),
             "--require-nonempty",
         ],
-        cwd="/mnt/cloudstorfs/sjtu_home/jing.peng/workspace/sure-eval",
+        cwd="/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox",
         capture_output=True,
         text=True,
     )

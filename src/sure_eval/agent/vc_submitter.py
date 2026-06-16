@@ -263,8 +263,14 @@ def build_vc_submit_command(
     cpus: int = 4,
     volume_mount: str | None = None,
     repo_root_in_container: str = "/workspace/sure-eval",
+    entrypoint_path: str | None = None,
 ) -> list[str]:
-    """Build the ``vc submit`` command as a list of arguments."""
+    """Build the ``vc submit`` command as a list of arguments.
+
+    If ``entrypoint_path`` is provided (relative to the repo root, as declared in
+    ``execution_surface.json``), it is used as the container-side shell entrypoint.
+    Otherwise the default ``eval_runs/<run_id>/run_evaluation.sh`` layout is used.
+    """
     image = image or select_best_image(model_name)
     partition = partition or select_best_partition()
     memory_gb = memory_gb or estimate_memory_gb(model_name)
@@ -272,10 +278,13 @@ def build_vc_submit_command(
     venv_path = infer_venv_path(model_name)
 
     # Path to run_evaluation.sh inside the container
-    run_sh = (
-        f"{repo_root_in_container}/src/sure_eval/models/{model_name}"
-        f"/eval_runs/{run_id}/run_evaluation.sh"
-    )
+    if entrypoint_path:
+        run_sh = f"{repo_root_in_container}/{entrypoint_path}"
+    else:
+        run_sh = (
+            f"{repo_root_in_container}/src/sure_eval/models/{model_name}"
+            f"/eval_runs/{run_id}/run_evaluation.sh"
+        )
     # Path to .venv inside the container (where we create the symlink)
     venv_link = (
         f"{repo_root_in_container}/src/sure_eval/models/{model_name}/.venv"
@@ -319,6 +328,7 @@ def submit_vc_run(
     memory_gb: int | None = None,
     gpus: int = 1,
     cpus: int = 4,
+    entrypoint_path: str | None = None,
 ) -> str:
     """Submit a model evaluation run to the Volcano cluster via ``vc submit``.
 
@@ -332,6 +342,7 @@ def submit_vc_run(
         memory_gb=memory_gb,
         gpus=gpus,
         cpus=cpus,
+        entrypoint_path=entrypoint_path,
     )
 
     logger.info("Submitting vc job", command=" ".join(cmd))

@@ -1,0 +1,49 @@
+# SURE model-agent onboarding spec for Seed-VC V2.
+model_id: "Plachtaa__seed-vc"
+model_name: "Seed-VC"
+task_type: "vc"
+deployment_type: "local"
+repo:
+  url: "https://github.com/Plachtaa/seed-vc.git"
+  commit: "51383efd921027683c89e5348211d93ff12ac2a8"
+weights:
+  source: "huggingface"
+  repo_id: "Plachta/Seed-VC"
+  local_path: "./.runtime/source/seed-vc/checkpoints"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: ".runtime/huggingface"
+environment:
+  preferred_backend: "docker"
+  supported_backends:
+    - "uv"
+    - "docker"
+  python_version: "3.11"
+  requires_gpu: true
+  system_packages:
+    - "ffmpeg"
+  runtime_root: "./.runtime"
+entrypoints:
+  import_test: "from model import ModelWrapper"
+  load_test: "ModelWrapper().load()"
+  infer_test: "ModelWrapper().predict({'source_audio_path': '<wav>', 'reference_audio_path': '<wav>'})"
+io_contract:
+  input_type: "audio_pair"
+  output_type: "audio_path"
+  primary_field: "audio_path"
+  required_fields:
+    - "audio_path"
+    - "source_audio_path"
+    - "reference_audio_path"
+  nonempty_fields:
+    - "audio_path"
+  json_serializable: true
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true
+notes:
+  - "V2 inference uses inference_v2.py and auto-downloads checkpoints on first load."
+  - "Wrapper changes cwd to the Seed-VC source directory so upstream ./checkpoints resolves model-locally."
+  - "Fixture is copied from SWivid/F5-TTS_Emilia-ZH-EN; one file is source audio and the other is reference audio."

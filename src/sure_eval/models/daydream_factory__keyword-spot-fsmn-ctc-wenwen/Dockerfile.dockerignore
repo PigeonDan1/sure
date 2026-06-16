@@ -1,0 +1,9 @@
+.git
+**/.venv
+**/__pycache__
+**/.runtime
+**/checkpoints
+**/docker_artifacts
+**/artifacts
+data
+reports

@@ -1,0 +1,63 @@
+name: daydream_factory__keyword-spot-fsmn-ctc-wenwen
+task: KWS
+description: "Keyword spotting FSMN-CTC model for 你好问问 / 嗨小问, implemented with WekWS."
+version: "0.1.0"
+
+runtime:
+  identity: "daydream-factory/keyword-spot-fsmn-ctc-wenwen"
+  source_toolkit: "https://github.com/wenet-e2e/wekws"
+  local_dir_name: "daydream_factory__keyword-spot-fsmn-ctc-wenwen"
+
+backend:
+  chosen: "uv"
+  reason: "WekWS README uses conda for training/dev, but inference only needs a small Python dependency set plus the WekWS source tree."
+  evidence:
+    - "ModelScope checkpoint includes avg_30.pt, config.yaml, tokens.txt, lexicon.txt."
+    - "WekWS offline CTC prefix beam search validates whole-utterance SURE fixtures."
+
+weights:
+  required: true
+  source: "modelscope"
+  repo_id: "daydream-factory/keyword-spot-fsmn-ctc-wenwen"
+  local_path: "./.runtime/modelscope_cache/daydream-factory/keyword-spot-fsmn-ctc-wenwen"
+  checkpoint: "avg_30.pt"
+  checkpoints_dir_policy: "empty unless a model requires extra local converted weights"
+
+io_contract:
+  input:
+    audio_path: string
+    keywords: string (optional comma-separated keywords)
+  output:
+    detected: bool
+    keyword: string|null
+    score: float|null
+    start: float|null
+    end: float|null
+    raw: object
+
+environment:
+  python: "3.11.5"
+  setup: "./local_uv_setup.sh"
+  validate: "./local_uv_validate.sh"
+  packages:
+    - torch==2.5.1
+    - torchaudio==2.5.1
+    - librosa
+    - pyyaml
+    - scipy
+    - modelscope
+
+resources:
+  memory_gb: 4
+  gpu: preferred
+  cpu_cores: 2
+  storage_gb: 1
+
+mcp_server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/daydream_factory__keyword-spot-fsmn-ctc-wenwen"
+  env:
+    WEKWS_KEYWORDS: "你好问问,嗨小问"
+    WEKWS_THRESHOLD: "0.0"
+    WEKWS_GPU: "0"
+  timeout: 120

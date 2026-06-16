@@ -27,7 +27,7 @@ Automatic Speech Recognition using Alibaba's Qwen3-ASR-1.7B model.
 ./setup.sh
 
 # Or manual setup
-cd /cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3
+cd /mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_qwen3
 uv venv --python 3.11
 source .venv/bin/activate
 uv pip install -e .
@@ -66,7 +66,7 @@ tools:
   asr_qwen3:
     name: "asr_qwen3"
     command: [".venv/bin/python", "server.py"]
-    working_dir: "/cpfs/user/jingpeng/workspace/sure-eval/src/sure_eval/models/asr_qwen3"
+    working_dir: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_qwen3"
     env:
       MODEL_PATH: "Qwen/Qwen3-ASR-1.7B"
       DEVICE: "auto"
@@ -107,5 +107,5 @@ print(result.text)
 
 ## See Also
 
-- [Model README](../README.md)
+- [Model README](../../../../docs/agents/model_tool_agent/README.md)
 - [Evaluation Guide](../../../docs/evaluation.md)

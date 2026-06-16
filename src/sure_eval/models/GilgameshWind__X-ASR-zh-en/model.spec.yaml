@@ -1,0 +1,41 @@
+model_id: "GilgameshWind__X-ASR-zh-en"
+model_name: "X-ASR-zh-en"
+task_type: "asr"
+deployment_type: "local"
+repo:
+  provider: "huggingface"
+  repo_id: "GilgameshWind/X-ASR-zh-en"
+weights:
+  source: "huggingface"
+  repo_id: "GilgameshWind/X-ASR-zh-en"
+  local_path: "./.runtime/huggingface/GilgameshWind/X-ASR-zh-en"
+  required: true
+  cache_policy: "model_local_first"
+environment:
+  preferred_backend: "docker"
+  python_version: "3.11"
+  requires_gpu: true
+  runtime: "sherpa-onnx"
+entrypoints:
+  import_test: "from model import ModelWrapper"
+  load_test: "ModelWrapper().load()"
+  infer_test: "ModelWrapper().predict({'audio_path': '<wav>'})"
+io_contract:
+  input_type: "audio_path"
+  output_type: "text"
+  primary_field: "text"
+  required_fields:
+    - "text"
+  nonempty_fields: []
+  json_serializable: true
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_json_serializable: true
+notes:
+  - "Downloaded through HF_ENDPOINT=https://hf-mirror.com after ssr-off."
+  - "Full snapshot was stopped after required deployment/models ONNX variants were present to avoid continuing unrelated demo/app downloads."
+  - "Default runtime uses sherpa-onnx OnlineRecognizer with chunk-960ms-model and CUDA provider."
+  - "A 1.0s tail silence pad is applied before stream.input_finished(); without it, short fixtures lose final tokens."
+  - "The PyPI sherpa-onnx wheel observed locally exposes CPUExecutionProvider only; CUDA requires a Docker/source-built sherpa_onnx package with SHERPA_ONNX_ENABLE_GPU=ON."

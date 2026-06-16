@@ -253,13 +253,13 @@ tools:
     asr_qwen3:
       name: "asr_qwen3"
       type: "local_mcp"
-      path: "/mnt/cloudstorfs/sjtu_home/jing.peng/workspace/sure-eval/src/sure_eval/models/asr_qwen3"
+      path: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_qwen3"
       command: [".venv/bin/python", "server.py"]
       env:
         MODEL_PATH: "Qwen/Qwen-Audio-Chat"
         DEVICE: "cuda"
       timeout: 120
-      work_dir: "/mnt/cloudstorfs/sjtu_home/jing.peng/workspace/sure-eval/src/sure_eval/models/asr_qwen3"
+      work_dir: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_qwen3"
 
 # RPS (Relative Performance Score) configuration
 # SOTA baselines extracted from SURE Benchmark Tables 3 & 4

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,87 @@ class TextTaskResult:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def target_language_name(target_language: str) -> str:
+    return {
+        "zh": "Chinese",
+        "zh-cn": "Simplified Chinese",
+        "zh_cn": "Simplified Chinese",
+        "cmn": "Chinese",
+        "en": "English",
+        "ja": "Japanese",
+        "jp": "Japanese",
+        "ko": "Korean",
+        "fr": "French",
+        "de": "German",
+        "es": "Spanish",
+        "it": "Italian",
+        "ru": "Russian",
+        "pt": "Portuguese",
+        "ar": "Arabic",
+        "hi": "Hindi",
+    }.get(target_language.strip().lower(), target_language)
+
+
+def build_translation_instruction(
+    *,
+    transcript: str,
+    source_language: str = "auto",
+    target_language: str = "zh",
+) -> str:
+    source_part = (
+        "The source language is auto-detected."
+        if source_language == "auto"
+        else f"The source language is {target_language_name(source_language)}."
+    )
+    target = target_language_name(target_language)
+    source = target_language_name(source_language) if source_language != "auto" else "source"
+    return (
+        f"{source_part} Translate this {source} sentence into {target}. "
+        f"Output only the {target} translation.\n\n"
+        f"{transcript}"
+    )
+
+
+def extract_choice_label(text: str) -> str | None:
+    text = clean_generated_text(text)
+    stripped = text.strip()
+    if not stripped:
+        return None
+    normalized = stripped.upper()
+    single = re.sub(r"[\s。．.！!？?、,，:：;；()（）\\[\\]{}<>《》\"'`]+", "", normalized)
+    if single in {"A", "B", "C", "D"}:
+        return single
+    edge_stripped = normalized.strip(" \t\r\n。．.！!？?、,，:：;；()（）[]{}<>《》\"'`")
+    if edge_stripped in {"A", "B", "C", "D"}:
+        return edge_stripped
+    patterns = [
+        r"^(?:答案|回答|选择|选项|应选|答案是|我选)\s*[:：]?\s*([ABCD])\s*[。．.!！)]*$",
+        r"^(?:ANSWER|OPTION|CHOICE|THE ANSWER IS)\s*[:：]?\s*([ABCD])\s*[。．.!！)]*$",
+        r"^([ABCD])\s*[。．.)、]?\s*$",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, normalized, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).upper()
+    return None
+
+
+def clean_generated_text(text: str) -> str:
+    if not text:
+        return ""
+    stop_markers = [
+        "<|im_msg_end|>",
+        "<|im_end|>",
+        "<|endoftext|>",
+        "\nYou are an AI assistant.",
+    ]
+    cleaned = text
+    for marker in stop_markers:
+        if marker in cleaned:
+            cleaned = cleaned.split(marker, 1)[0]
+    return cleaned.strip()
 
 
 class ModelWrapper:
@@ -134,7 +216,7 @@ class ModelWrapper:
                 text_top_k=5,
                 max_new_tokens=self.max_new_tokens,
             )
-            return TranscriptionResult(text=text or "", raw={"model_id": self.model_id})
+            return TranscriptionResult(text=clean_generated_text(text or ""), raw={"model_id": self.model_id})
         except Exception as exc:
             raise InferenceError(f"Kimi-Audio inference failed: {exc}") from exc
 
@@ -161,12 +243,38 @@ class ModelWrapper:
                 max_new_tokens=max_new_tokens or self.max_new_tokens,
             )
             return TextTaskResult(
-                text=text or "",
+                text=clean_generated_text(text or ""),
                 task=task,
                 raw={"model_id": self.model_id, "instruction": instruction},
             )
         except Exception as exc:
             raise InferenceError(f"Kimi-Audio {task} inference failed: {exc}") from exc
+
+    def _generate_text_only(
+        self,
+        instruction: str,
+        *,
+        task: str,
+        max_new_tokens: int | None = None,
+    ) -> TextTaskResult:
+        if self._model is None:
+            self.load()
+        messages = [{"role": "user", "message_type": "text", "content": instruction}]
+        try:
+            _, text = self._model.generate(
+                messages,
+                output_type="text",
+                text_temperature=0.0,
+                text_top_k=5,
+                max_new_tokens=max_new_tokens or self.max_new_tokens,
+            )
+            return TextTaskResult(
+                text=clean_generated_text(text or ""),
+                task=task,
+                raw={"model_id": self.model_id, "instruction": instruction},
+            )
+        except Exception as exc:
+            raise InferenceError(f"Kimi-Audio {task} text inference failed: {exc}") from exc
 
     def translate(
         self,
@@ -175,15 +283,21 @@ class ModelWrapper:
         source_language: str = "auto",
         target_language: str = "zh",
     ) -> TextTaskResult:
-        instruction = (
-            "Translate the speech in the following audio into "
-            f"{target_language}. Return only the translated text."
+        transcript_result = self.predict(audio_path)
+        instruction = build_translation_instruction(
+            transcript=transcript_result.text,
+            source_language=source_language,
+            target_language=target_language,
         )
-        if source_language != "auto":
-            instruction = (
-                f"The source speech language is {source_language}. " + instruction
-            )
-        return self._generate_text(audio_path, instruction, task="S2TT")
+        result = self._generate_text_only(instruction, task="S2TT")
+        result.raw = {
+            **(result.raw or {}),
+            "stage": "asr_then_text_translate",
+            "transcript": transcript_result.text,
+            "source_language": source_language,
+            "target_language": target_language,
+        }
+        return result
 
     def recognize_emotion(self, audio_path: str) -> TextTaskResult:
         result = self._generate_text(
@@ -227,12 +341,22 @@ class ModelWrapper:
         *,
         prompt: str | None = None,
     ) -> TextTaskResult:
-        instruction = prompt or (
-            "Listen to the following audio and answer the question in the audio. "
-            "If it is a multiple-choice question, answer only one option letter "
-            "from A, B, C, or D."
+        base_prompt = prompt or (
+            "Listen to the audio and answer the semantic understanding task."
         )
-        return self._generate_text(audio_path, instruction, task="SLU")
+        instruction = (
+            f"{base_prompt}\n\n"
+            "The audio may contain a question, context, and answer choices. "
+            "Reason silently from the audio and output exactly one uppercase letter: A, B, C, or D. "
+            "Do not explain."
+        )
+        result = self._generate_text(audio_path, instruction, task="SLU", max_new_tokens=16)
+        result.label = extract_choice_label(result.text)
+        result.raw = {
+            **(result.raw or {}),
+            "stage": "direct_audio_understand",
+        }
+        return result
 
     def _extract_label(self, text: str, label_aliases: dict[str, set[str]]) -> str | None:
         normalized = "".join(

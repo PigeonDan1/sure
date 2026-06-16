@@ -26,6 +26,10 @@ venv/
 ENV/
 env/
 .venv
+**/.venv/
+**/venv/
+**/env/
+**/ENV/
 
 # IDEs
 .vscode/
@@ -40,6 +44,9 @@ env/
 logs/
 !src/sure_eval/models/*/artifacts/build.log
 !src/sure_eval/models/*/artifacts/validation.log
+*.out
+*.err
+*.pid
 
 # Data and models (large files)
 data/
@@ -52,6 +59,21 @@ models_cache/
 *.pt
 *.pth
 *.ckpt
+*.onnx
+*.gguf
+*.tflite
+*.engine
+*.mlmodel
+*.h5
+*.npz
+*.npy
+*.parquet
+*.arrow
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
 
 # Results and outputs
 results/*
@@ -66,11 +88,13 @@ temp/
 .pytest_cache/
 .coverage
 htmlcov/
+coverage.xml
 
 # Environment
 .env
 .env.local
 .env.*.local
+*.env
 
 # Documentation build
 docs/_build/
@@ -89,6 +113,10 @@ dmypy.json
 # Model cache
 model_cache/
 .cache/
+**/.cache/
+hf_cache/
+modelscope_cache/
+huggingface/
 
 # DiariZen submodule (should be cloned separately)
 src/sure_eval/models/diarizen/diarizen_src/
@@ -100,6 +128,9 @@ src/sure_eval/models/*/test_results/
 src/sure_eval/models/*/uv.lock
 src/sure_eval/models/*/.venv/
 src/sure_eval/models/*/repo/
+src/sure_eval/models/*/pixi.lock
+src/sure_eval/models/*/.pixi/
+src/sure_eval/models/*/conda-meta/
 
 # fireredasr2_aed local runtime files
 src/sure_eval/models/fireredasr2_aed/pretrained_models/
@@ -137,6 +168,36 @@ src/sure_eval/models/*/checkpoints/
 src/sure_eval/models/*/hf_cache/
 src/sure_eval/models/*/pretrained_models/
 src/sure_eval/models/*/repro_bundle/weights/
+src/sure_eval/models/*/modelscope_cache/
+src/sure_eval/models/*/cache/
+src/sure_eval/models/*/tmp/
+src/sure_eval/models/*/temp/
+src/sure_eval/models/*/outputs/
+src/sure_eval/models/*/generated/
+src/sure_eval/models/*/samples/
+src/sure_eval/models/*/upstream/
+
+# Model-local evaluation and Docker run outputs.
+# Already tracked historical files stay tracked; these rules prevent new run
+# artifacts from being added accidentally.
+src/sure_eval/models/*/eval_runs/
+src/sure_eval/models/*/eval_runs_*/
+src/sure_eval/models/*/eval_runs_old/
+src/sure_eval/models/*/docker_artifacts/
+src/sure_eval/models/*/artifacts/diagnostic_outputs/
+src/sure_eval/models/*/artifacts/*.tmp
+src/sure_eval/models/*/artifacts/*.pt
+src/sure_eval/models/*/artifacts/*.pth
+src/sure_eval/models/*/artifacts/*.ckpt
+src/sure_eval/models/*/artifacts/*.safetensors
+src/sure_eval/models/*/artifacts/*.onnx
+src/sure_eval/models/*/artifacts/*.bin
+
+# Metric-local environments. Keep pyproject.toml/README.md; regenerate locks
+# and virtualenvs locally unless a metric explicitly opts in later.
+src/sure_eval/evaluation/*/.venv/
+src/sure_eval/evaluation/*/uv.lock
+src/sure_eval/evaluation/*/.python-version
 
 # Local app/session artifacts
 .Rapp.history
@@ -145,3 +206,15 @@ src/sure_eval/models/*/repro_bundle/weights/
 results/
 artifacts/
 *.tar.gz
+
+# Local analysis / generated reports
+reports/xforge/
+data/.runtime/
+data/artifacts/
+data/xforge_oref_smoke/
+
+# Local code intelligence caches
+.codegraph/
+
+# Local external checkout symlinks
+XForge

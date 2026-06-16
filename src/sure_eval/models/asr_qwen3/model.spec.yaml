@@ -50,9 +50,9 @@ resources:
 
 mcp_server:
   command: [".venv/bin/python", "server.py"]
-  working_dir: "/hpc_stor03/sjtu_home/jing.peng/workspace/sure-eval/src/sure_eval/models/asr_qwen3"
+  working_dir: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_qwen3"
   env:
     MODEL_PATH: "Qwen/Qwen3-ASR-1.7B"
-    MODELSCOPE_CACHE: "/hpc_stor03/sjtu_home/jing.peng/workspace/sure-eval/src/sure_eval/models/asr_qwen3/.runtime/modelscope_cache"
+    MODELSCOPE_CACHE: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_qwen3/.runtime/modelscope_cache"
     DEVICE: "auto"
   timeout: 300

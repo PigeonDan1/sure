@@ -11,7 +11,7 @@
 ### 1. 一键下载
 
 ```bash
-cd /cpfs/user/jingpeng/workspace/sure-eval
+cd /path/to/sure-eval
 python scripts/download_sure_data.py
 ```
 
@@ -104,20 +104,20 @@ data/datasets/sure_benchmark/
 ### Python API
 
 ```python
-from sure_eval.datasets.sure_benchmark import SUREBenchmarkDownloader
+from sure_eval.datasets import DatasetManager
 
-downloader = SUREBenchmarkDownloader()
+manager = DatasetManager()
 
-# 列出所有子集
-subsets = downloader.list_subsets('SURE_Test_csv')
-print(subsets)  # ['aishell1-test_ASR', 'librispeech_test-clean_ASR', ...]
+# 列出当前配置中的数据集
+datasets = manager.list_available()
+print(datasets)
 
-# 加载 AISHELL-1 样本
-samples = downloader.load_subset('SURE_Test_csv', 'aishell1-test_ASR')
+# 下载并转换 AISHELL-1 样本
+jsonl_path = manager.download_and_convert("aishell1")
 
 # 样本格式
 {
-    "path": "aishell-1-test/BAC009S0764W0121.wav",
+    "path": "aishell-1_test/BAC009S0764W0121.wav",
     "target": "甚至出现交易几乎停滞的情况",
     "task": "ASR",
     "language": "zh",
