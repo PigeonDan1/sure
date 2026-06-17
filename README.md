@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🔊 SURE-EVAL
+<img src="./docs/picture/logo.png" alt="SURE-EVAL logo" width="180">
+
+# SURE-EVAL
 
 **S**ystematic **U**nified **R**obust **E**valuation Framework for Audio Processing
 
@@ -56,6 +58,10 @@ flowchart LR
 | 🤖 **Main Flow Agent** | Decides what should be run | [`docs/agents/main_flow_agent/README.md`](docs/agents/main_flow_agent/README.md) |
 | 🔧 **Model Tool Agent** | Makes models callable in reproducible ways | [`docs/agents/model_tool_agent/README.md`](docs/agents/model_tool_agent/README.md) |
 | 📜 **Deterministic Script Layer** | Prepares, validates, scores, records | [`scripts/`](scripts/) |
+
+### Overall Framework
+
+<img src="./docs/picture/teaser.png" alt="SURE-EVAL overall framework" width="100%">
 
 ---
 

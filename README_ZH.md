@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🔊 SURE-EVAL
+<img src="./docs/picture/logo.png" alt="SURE-EVAL logo" width="180">
+
+# SURE-EVAL
 
 **面向音频处理的系统化统一鲁棒评估框架**
 
@@ -58,6 +60,10 @@ flowchart LR
 | 🤖 **主流程 Agent** | 决定该运行什么 | [`docs/agents/main_flow_agent/README.md`](docs/agents/main_flow_agent/README.md) |
 | 🔧 **模型工具 Agent** | 让模型以可复现的方式可被调用 | [`docs/agents/model_tool_agent/README.md`](docs/agents/model_tool_agent/README.md) |
 | 📜 **确定性脚本层** | 准备数据、验证、打分、记录 | [`scripts/`](scripts/) |
+
+### 总体框架
+
+<img src="./docs/picture/teaser.png" alt="SURE-EVAL 总体框架" width="100%">
 
 ---
 
