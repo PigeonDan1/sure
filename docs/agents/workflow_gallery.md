@@ -114,13 +114,13 @@ flowchart TD
   I --> M[memory/ROUTING.md]
 
   T --> TP[Selected task playbook<br/>ASR / S2TT / SER / SLU / GR / TTS / VC / KWS]
-  TP --> F[fixtures/tasks/{task}/README.md]
-  TP --> EM[src/sure_eval/evaluation/{task}/README.md]
+  TP --> F["fixtures/tasks/{task}/README.md"]
+  TP --> EM["src/sure_eval/evaluation/{task}/README.md"]
 
   E --> EP[Selected environment playbook<br/>uv / pip / conda / pixi / docker / api]
 
   M --> R{Concrete failure trigger?}
-  R -- yes --> BC[memory/bad_cases/<case>.md]
+  R -- yes --> BC["memory/bad_cases/<case>.md"]
   R -- no --> Skip[Skip bad-case memory]
 ```
 

@@ -262,13 +262,13 @@ flowchart TD
   I --> M[memory/ROUTING.md]
 
   T --> TP[Selected task playbook]
-  TP --> F[fixtures/tasks/{task}/README.md]
-  TP --> EM[src/sure_eval/evaluation/{task}/README.md]
+  TP --> F["fixtures/tasks/{task}/README.md"]
+  TP --> EM["src/sure_eval/evaluation/{task}/README.md"]
 
   E --> EP[Selected environment playbook]
 
   M --> R{Failure trigger?}
-  R -- yes --> BC[memory/bad_cases/<case>.md]
+  R -- yes --> BC["memory/bad_cases/<case>.md"]
   R -- no --> Skip[Skip bad cases]
 ```
 
