@@ -4,10 +4,27 @@
 
 **S**ystematic **U**nified **R**obust **E**valuation Framework for Audio Processing
 
+[![English](https://img.shields.io/badge/lang-English-blue.svg)](./README.md)
+[![中文](https://img.shields.io/badge/语言-中文-red.svg)](./README_ZH.md)
+[![📖 User Manual](https://img.shields.io/badge/📖-User%20Manual-1a5276.svg)](./docs/SURE-EVAL_User_Manual.md)
+[![HTML Manual](https://img.shields.io/badge/🌐-HTML%20Manual-2874a6.svg)](./docs/SURE-EVAL_User_Manual.html)
+[![PDF Manual](https://img.shields.io/badge/📄-PDF%20Manual-2e86c1.svg)](./docs/SURE-EVAL_User_Manual.pdf)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 </div>
+
+---
+
+## 📖 User Manual (Recommended)
+
+> New to SURE-EVAL? Start with the complete user manual:
+>
+> - **[📄 Markdown Manual](./docs/SURE-EVAL_User_Manual.md)** (read in repo)
+> - **[🌐 HTML Manual](./docs/SURE-EVAL_User_Manual.html)** (browser-friendly)
+> - **[📥 PDF Manual](./docs/SURE-EVAL_User_Manual.pdf)** (print / offline)
+>
+> The manual uses **Qwen3-ASR** as a running example and covers installation, data preparation, model onboarding, evaluation execution, and Agent Flow in detail.
 
 ---
 
@@ -427,6 +444,7 @@ Yes. Use the deterministic script pipeline shown in [📊 Deterministic Evaluati
 
 | Document | Purpose |
 |----------|---------|
+| [User Manual](./docs/SURE-EVAL_User_Manual.md) | Complete Chinese user manual (also available as [HTML](./docs/SURE-EVAL_User_Manual.html) / [PDF](./docs/SURE-EVAL_User_Manual.pdf)) |
 | [Workflow Gallery](docs/agents/workflow_gallery.md) | Visual overview of both agent workflows |
 | [Main Flow Agent](docs/agents/main_flow_agent/README.md) | Agent system prompt & examples |
 | [Agent Routing](docs/agents/main_flow_agent/AGENTS.md) | Main flow routing guide |
