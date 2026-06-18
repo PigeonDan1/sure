@@ -1,0 +1,13 @@
+Title: ClearSpeech-ASR: A Compact Offline Speech Recognition Model
+
+Abstract
+We introduce ClearSpeech-ASR, a local automatic speech recognition model for
+English audio transcription. The reference implementation is available at
+https://github.com/example/clearspeech-asr and the model card is hosted at
+https://huggingface.co/example/clearspeech-asr.
+
+The model is evaluated on LibriSpeech and Common Voice using WER and CER.
+The repository recommends Python 3.10 with uv and ffmpeg. The model can run on
+CPU for small examples, while GPU is recommended for larger batches.
+
+License: MIT.

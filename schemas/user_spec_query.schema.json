@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sure-eval.local/schemas/user_spec_query.schema.json",
+  "title": "SURE Paper_to_UserSpec Query",
+  "type": "object",
+  "required": [
+    "spec_version",
+    "case_id",
+    "source",
+    "user_goal",
+    "model",
+    "task",
+    "data",
+    "runtime",
+    "evaluation",
+    "sure_routing",
+    "confidence",
+    "missing_fields",
+    "conflict_fields",
+    "evidence_spans"
+  ],
+  "properties": {
+    "spec_version": {"const": "0.1"},
+    "case_id": {"type": "string"},
+    "source": {
+      "type": "object",
+      "required": [
+        "paper_title",
+        "paper_path",
+        "paper_text_path",
+        "repo_url",
+        "model_card_url",
+        "extracted_from",
+        "extraction_timestamp"
+      ],
+      "properties": {
+        "paper_title": {"type": "string"},
+        "paper_path": {"type": ["string", "null"]},
+        "paper_text_path": {"type": ["string", "null"]},
+        "repo_url": {"type": ["string", "null"]},
+        "model_card_url": {"type": ["string", "null"]},
+        "extracted_from": {"type": "string"},
+        "extraction_timestamp": {"type": "string"}
+      }
+    },
+    "user_goal": {
+      "type": "object",
+      "required": ["intent", "raw_goal"],
+      "properties": {
+        "intent": {
+          "enum": ["onboard", "evaluate", "reproduce", "compare", "controlled_training", "unknown"]
+        },
+        "raw_goal": {"type": "string"}
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "name",
+        "family",
+        "checkpoint_source",
+        "deployment_type",
+        "license",
+        "local_sure_model_name"
+      ],
+      "properties": {
+        "name": {"type": "string"},
+        "family": {"type": "string"},
+        "checkpoint_source": {"type": "string"},
+        "deployment_type": {"enum": ["local", "api", "unknown"]},
+        "license": {"type": "string"},
+        "local_sure_model_name": {"type": "string"}
+      }
+    },
+    "task": {
+      "type": "object",
+      "required": ["primary_task", "secondary_tasks", "input_modality", "output_type"],
+      "properties": {
+        "primary_task": {
+          "enum": [
+            "ASR",
+            "S2TT",
+            "SD",
+            "SA-ASR",
+            "SER",
+            "Speech Enhancement",
+            "Music IR",
+            "VAD",
+            "SV",
+            "VLM",
+            "GR",
+            "SLU",
+            "utility",
+            "unknown"
+          ]
+        },
+        "secondary_tasks": {"type": "array"},
+        "input_modality": {"type": "array"},
+        "output_type": {"type": "string"}
+      }
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "train_datasets",
+        "pretrain_datasets",
+        "upstream_initialization_corpus",
+        "downstream_datasets",
+        "eval_datasets",
+        "test_datasets",
+        "languages",
+        "split_policy"
+      ],
+      "properties": {
+        "train_datasets": {"type": "array"},
+        "pretrain_datasets": {"type": "array"},
+        "upstream_initialization_corpus": {"type": "array"},
+        "downstream_datasets": {"type": "array"},
+        "eval_datasets": {"type": "array"},
+        "test_datasets": {"type": "array"},
+        "languages": {"type": "array"},
+        "split_policy": {"type": "string"}
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "requires_gpu",
+        "python_version",
+        "backend_hint",
+        "network_required",
+        "estimated_storage_gb",
+        "system_packages"
+      ],
+      "properties": {
+        "backend_hint": {"enum": ["uv", "pixi", "conda", "docker", "api", "unknown"]}
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "required": ["metrics", "normalization", "expected_report"]
+    },
+    "sure_routing": {
+      "type": "object",
+      "required": ["route", "reason", "next_artifact", "downstream_flow"],
+      "properties": {
+        "route": {
+          "enum": [
+            "tool_onboarding",
+            "main_flow_evaluation",
+            "controlled_training_conversion",
+            "needs_human_input"
+          ]
+        }
+      }
+    },
+    "confidence": {"type": "object"},
+    "missing_fields": {"type": "array"},
+    "conflict_fields": {"type": "array"},
+    "evidence_spans": {"type": "array"}
+  }
+}

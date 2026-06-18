@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sure-eval.local/schemas/reproduction_target.v1.json",
+  "title": "SURE-EVAL generic reproduction target",
+  "type": "object",
+  "required": ["paper_claims"],
+  "properties": {
+    "paper_claims": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/paper_claim"}
+    },
+    "dataset_targets": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/dataset_target"}
+    },
+    "local_eval": {
+      "oneOf": [
+        {"$ref": "#/$defs/local_eval"},
+        {"type": "array", "items": {"$ref": "#/$defs/local_eval"}}
+      ]
+    }
+  },
+  "$defs": {
+    "metric_direction": {
+      "type": "string",
+      "enum": ["higher_is_better", "lower_is_better"]
+    },
+    "paper_claim": {
+      "type": "object",
+      "required": [
+        "paper_id",
+        "paper_title",
+        "evidence_text",
+        "model_name",
+        "dataset",
+        "task",
+        "metric",
+        "paper_value",
+        "paper_value_unit"
+      ],
+      "properties": {
+        "paper_id": {"type": "string"},
+        "paper_title": {"type": "string"},
+        "source_pdf": {"type": ["string", "null"]},
+        "evidence_page": {"type": ["integer", "null"]},
+        "evidence_table": {"type": ["string", "null"]},
+        "evidence_text": {"type": "string"},
+        "model_name": {"type": "string"},
+        "dataset": {"type": "string"},
+        "split": {"type": ["string", "null"]},
+        "task": {"type": "string"},
+        "metric": {"type": "string"},
+        "metric_direction": {"$ref": "#/$defs/metric_direction"},
+        "paper_value": {"type": "number"},
+        "paper_value_unit": {"type": "string"}
+      }
+    },
+    "dataset_target": {
+      "type": "object",
+      "properties": {
+        "dataset_name": {"type": "string"},
+        "dataset_dir": {"type": ["string", "null"]},
+        "jsonl_path": {"type": ["string", "null"]},
+        "source_format": {"type": "string"},
+        "task": {"type": "string"},
+        "split": {"type": ["string", "null"]},
+        "label_schema": {"type": "object"},
+        "num_samples": {"type": ["integer", "null"]}
+      }
+    },
+    "local_eval": {
+      "type": "object",
+      "required": [
+        "protocol_id",
+        "metric",
+        "score",
+        "score_unit",
+        "num_samples",
+        "evaluator_version"
+      ],
+      "properties": {
+        "protocol_id": {"type": "string"},
+        "prediction_file": {"type": ["string", "null"]},
+        "eval_result_file": {"type": ["string", "null"]},
+        "metric": {"type": "string"},
+        "score": {"type": ["number", "null"]},
+        "score_unit": {"type": "string"},
+        "num_samples": {"type": "integer"},
+        "evaluator_version": {"type": "string"},
+        "model_name": {"type": ["string", "null"]},
+        "dataset": {"type": ["string", "null"]},
+        "split": {"type": ["string", "null"]},
+        "task": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

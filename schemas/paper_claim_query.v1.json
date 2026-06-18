@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sure-eval.local/schemas/paper_claim_query.v1.json",
+  "title": "SURE-EVAL paper claim query",
+  "type": "object",
+  "required": [
+    "paper_id",
+    "paper_title",
+    "source_pdf",
+    "mineru_content_list",
+    "tables_raw",
+    "validation_policy"
+  ],
+  "properties": {
+    "paper_id": {"type": "string"},
+    "paper_title": {"type": "string"},
+    "source_pdf": {"type": "string"},
+    "mineru_content_list": {"type": "string"},
+    "tables_raw": {"type": "string"},
+    "table_preview_dir": {"type": ["string", "null"]},
+    "table_scope": {
+      "type": "object",
+      "properties": {
+        "target_table_ids": {"type": "array", "items": {"type": "string"}},
+        "caption_keywords": {"type": "array", "items": {"type": "string"}},
+        "page_indices": {"type": "array", "items": {"type": "integer"}}
+      },
+      "additionalProperties": true
+    },
+    "target_rows": {"type": "array", "items": {"type": "string"}},
+    "target_columns": {"type": "array", "items": {"type": "string"}},
+    "target_datasets": {"type": "array", "items": {"type": "string"}},
+    "target_metrics": {"type": "array", "items": {"type": "string"}},
+    "target_models": {"type": "array", "items": {"type": "string"}},
+    "task": {"type": ["string", "null"]},
+    "split": {"type": ["string", "null"]},
+    "metric_directions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["higher_is_better", "lower_is_better"]
+      }
+    },
+    "paper_value_unit": {"type": ["string", "null"]},
+    "expected_claim_count": {"type": ["integer", "null"]},
+    "key_aliases": {
+      "type": "object",
+      "properties": {
+        "metrics": {"type": "object"},
+        "datasets": {"type": "object"},
+        "models": {"type": "object"},
+        "rows": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "validation_policy": {
+      "type": "object",
+      "properties": {
+        "require_table_match": {"type": "boolean"},
+        "require_row_key_match": {"type": "boolean"},
+        "require_metric_key_match": {"type": "boolean"},
+        "require_dataset_key_match": {"type": "boolean"},
+        "require_model_key_match": {"type": "boolean"},
+        "require_value_in_raw_table": {"type": "boolean"},
+        "require_source_pdf_exists": {"type": "boolean"},
+        "allow_human_review": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
