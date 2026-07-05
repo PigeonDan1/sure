@@ -1,0 +1,1 @@
+{"key":"cosyvoice3_zero_shot_smoke","task":"TTS","target_text":"CosyVoice is ready.","prompt_text":"You are a helpful assistant.<|endofprompt|>希望你以后能够做的比我还好呦。","prompt_audio":"asset/zero_shot_prompt.wav","source":"CosyVoice upstream asset required by task input","fallback_allowed":false}

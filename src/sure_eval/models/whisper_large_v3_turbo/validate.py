@@ -1,124 +1,158 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from model import ModelWrapper
+MODEL_DIR = Path(__file__).resolve().parent
+ARTIFACTS_DIR = Path(os.environ.get("ARTIFACTS_DIR", MODEL_DIR / "artifacts")).resolve()
+FIXTURE_DIR = MODEL_DIR / "fixture" / "asr" / "asr_zh"
+VALIDATION_LOG = ARTIFACTS_DIR / "validation.log"
+SAMPLE_OUTPUT = ARTIFACTS_DIR / "sample_output.json"
 
 
-ROOT = Path(__file__).resolve().parent
-FIXTURE_ROOT = ROOT / "fixture"
-ARTIFACTS = ROOT / "artifacts"
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-def normalize_text(text: str) -> str:
-    return re.sub(r"\s+", "", text).strip().lower()
+def log(stage: str, status: str, message: str, **extra: Any) -> None:
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {"timestamp": now_iso(), "stage": stage, "status": status, "message": message}
+    payload.update(extra)
+    with VALIDATION_LOG.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
 
 
-def edit_distance(left: str, right: str) -> int:
-    previous = list(range(len(right) + 1))
-    for i, left_char in enumerate(left, 1):
-        current = [i]
-        for j, right_char in enumerate(right, 1):
-            current.append(
-                min(
-                    previous[j] + 1,
-                    current[j - 1] + 1,
-                    previous[j - 1] + (left_char != right_char),
-                )
-            )
-        previous = current
-    return previous[-1]
+def normalize_zh(text: str) -> str:
+    return re.sub(r"[\s，。！？、,.!?;:：；“”\"'（）()《》<>-]+", "", text)
 
 
-def load_cases() -> list[dict[str, Any]]:
-    cases: list[dict[str, Any]] = []
-    for gt_path in sorted(FIXTURE_ROOT.glob("*/*/gt.jsonl")):
-        for line in gt_path.read_text(encoding="utf-8").splitlines():
+def edit_distance(a: list[str], b: list[str]) -> int:
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def cer(refs: list[str], hyps: list[str]) -> dict[str, Any]:
+    ref_units = [unit for text in refs for unit in normalize_zh(text)]
+    hyp_units = [unit for text in hyps for unit in normalize_zh(text)]
+    total = max(len(ref_units), 1)
+    distance = edit_distance(ref_units, hyp_units)
+    score = distance / total
+    return {"cer": score, "details": {"score": score, "metric": "cer", "edit_distance": distance, "all": total}}
+
+
+def load_samples() -> list[dict[str, Any]]:
+    samples: list[dict[str, Any]] = []
+    with (FIXTURE_DIR / "gt.jsonl").open("r", encoding="utf-8") as handle:
+        for line in handle:
             if not line.strip():
                 continue
-            case = json.loads(line)
-            case["audio_path"] = str((gt_path.parent / case["audio"]).resolve())
-            case["fixture"] = str(gt_path.parent.relative_to(ROOT))
-            cases.append(case)
-    if not cases:
-        raise RuntimeError(f"No fixture cases found under {FIXTURE_ROOT}")
-    return cases
+            row = json.loads(line)
+            audio = row.get("audio") or row.get("path")
+            audio_path = FIXTURE_DIR / audio
+            if not audio_path.exists():
+                raise FileNotFoundError(f"Missing fixture audio: {audio_path}")
+            samples.append({**row, "_audio_path": str(audio_path)})
+    if not samples:
+        raise ValueError(f"No samples loaded from {FIXTURE_DIR}")
+    return samples
 
 
-def main() -> int:
-    ARTIFACTS.mkdir(exist_ok=True)
+def main() -> None:
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    if str(MODEL_DIR) not in sys.path:
+        sys.path.insert(0, str(MODEL_DIR))
+
+    import torch
+
+    gpu_status = {
+        "cuda_available": bool(torch.cuda.is_available()),
+        "device_count": int(torch.cuda.device_count()) if torch.cuda.is_available() else 0,
+        "device_names": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
+        if torch.cuda.is_available()
+        else [],
+        "requested_device": os.environ.get("DEVICE", "auto"),
+    }
+    log("VALIDATE_GPU_PREFLIGHT", "passed", "GPU preflight complete.", gpu_status=gpu_status)
+
+    from model import ModelWrapper
+
+    log("VALIDATE_IMPORT", "passed", "Imported ModelWrapper and torch.")
     started = time.time()
-    log_lines = ["validate.py: START"]
-
-    wrapper = ModelWrapper()
-    log_lines.append(f"resolve_model_path: {wrapper._resolve_model_path()}")
+    wrapper = ModelWrapper(device=os.environ.get("DEVICE", "auto"))
     wrapper.load()
-    health = wrapper.healthcheck()
-    log_lines.append(f"load: PASS device={health.get('resolved_device')}")
+    log("VALIDATE_LOAD", "passed", "Whisper model loaded.", health=wrapper.health())
 
-    outputs: list[dict[str, Any]] = []
-    total_distance = 0
-    total_reference_chars = 0
-    for case in load_cases():
-        result = wrapper.predict(case["audio_path"]).to_dict()
-        prediction = result.get("text", "")
-        reference = case["ground_truth"]
-        normalized_prediction = normalize_text(prediction)
-        normalized_reference = normalize_text(reference)
-        distance = edit_distance(normalized_reference, normalized_prediction)
-        total_distance += distance
-        total_reference_chars += max(len(normalized_reference), 1)
-        outputs.append(
+    samples = load_samples()
+    refs: list[str] = []
+    hyps: list[str] = []
+    details: list[dict[str, Any]] = []
+    for sample in samples:
+        output = wrapper.predict({"audio_path": sample["_audio_path"], "language": "zh"})
+        text = output["text"]
+        if not isinstance(text, str) or not text.strip():
+            raise AssertionError(f"Contract failed for {sample.get('key')}: empty text")
+        ref = str(sample.get("ground_truth") or sample.get("text") or "")
+        refs.append(ref)
+        hyps.append(text)
+        details.append(
             {
-                "id": case["id"],
-                "key": case["key"],
-                "fixture": case["fixture"],
-                "audio": case["audio"],
-                "ground_truth": reference,
-                "prediction": prediction,
-                "language": result.get("language"),
-                "cer_distance": distance,
-                "reference_chars": len(normalized_reference),
+                "key": sample.get("key"),
+                "audio": sample.get("audio") or sample.get("path"),
+                "ground_truth": ref,
+                "prediction": text,
             }
         )
-        log_lines.append(
-            f"infer: PASS key={case['key']} text_nonempty={bool(prediction.strip())}"
-        )
 
-    cer = total_distance / total_reference_chars if total_reference_chars else 0.0
-    sample_output = {
-        "status": "PASS",
-        "model": "whisper_large_v3_turbo",
-        "num_samples": len(outputs),
-        "metrics": {"cer": cer},
-        "healthcheck": health,
-        "outputs": outputs,
-    }
-    (ARTIFACTS / "sample_output.json").write_text(
-        json.dumps(sample_output, ensure_ascii=False, indent=2) + "\n",
+    metrics = cer(refs, hyps)
+    (ARTIFACTS_DIR / "ref_zh.txt").write_text(
+        "\n".join(f"{d['key']}\t{d['ground_truth']}" for d in details) + "\n",
         encoding="utf-8",
     )
+    (ARTIFACTS_DIR / "hyp_zh.txt").write_text(
+        "\n".join(f"{d['key']}\t{d['prediction']}" for d in details) + "\n",
+        encoding="utf-8",
+    )
+    log("VALIDATE_INFER", "passed", "Inference complete for asr_zh.", num_samples=len(samples))
+    log("VALIDATE_EVAL", "passed", "CER metric complete for asr_zh.", metrics=metrics)
+    log("VALIDATE_CONTRACT", "passed", "Outputs satisfy ASR JSON contract.")
 
-    elapsed = time.time() - started
-    log_lines.append(f"contract: PASS required_fields=[text] json_serializable=true")
-    log_lines.append(f"metrics: cer={cer:.6f}")
-    log_lines.append(f"validate.py: PASS duration_seconds={elapsed:.2f}")
-    (ARTIFACTS / "validation.log").write_text("\n".join(log_lines) + "\n", encoding="utf-8")
-    return 0
+    report = {
+        "timestamp": now_iso(),
+        "model_id": "openai/whisper-large-v3-turbo",
+        "overall": "PASSED",
+        "gpu_status": gpu_status,
+        "subtasks": {
+            "asr_zh": {
+                "subtask": "asr_zh",
+                "num_samples": len(samples),
+                "tests": {
+                    "import": {"passed": True},
+                    "load": {"passed": True},
+                    "infer": {"passed": True},
+                    "contract": {"passed": True},
+                    "evaluate": {"passed": True},
+                },
+                "metrics": metrics,
+                "samples": details,
+                "duration_seconds": round(time.time() - started, 3),
+            }
+        },
+    }
+    SAMPLE_OUTPUT.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(report, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        ARTIFACTS.mkdir(exist_ok=True)
-        (ARTIFACTS / "validation.log").write_text(
-            f"validate.py: FAIL\nerror: {exc}\n", encoding="utf-8"
-        )
-        print(f"validation failed: {exc}", file=sys.stderr)
-        raise
+    main()

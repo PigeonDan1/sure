@@ -1,0 +1,9 @@
+.venv/
+.runtime/
+checkpoints/
+artifacts/*.safetensors
+artifacts/*.pt
+artifacts/*.bin
+docker_artifacts/
+__pycache__/
+*.pyc

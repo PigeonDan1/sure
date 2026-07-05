@@ -198,6 +198,12 @@ src/sure_eval/models/*/artifacts/*.bin
 src/sure_eval/evaluation/*/.venv/
 src/sure_eval/evaluation/*/uv.lock
 src/sure_eval/evaluation/*/.python-version
+src/sure_eval/evaluation/**/.venv/
+src/sure_eval/evaluation/**/uv.lock
+src/sure_eval/evaluation/**/.python-version
+src/sure_eval/evaluation/**/.cache/
+src/sure_eval/evaluation/**/checkpoints/
+src/sure_eval/evaluation/**/weights/
 
 # Local app/session artifacts
 .Rapp.history
@@ -218,3 +224,46 @@ data/xforge_oref_smoke/
 
 # Local external checkout symlinks
 XForge
+
+# -----------------------------------------------------------------------------
+# Collaboration cleanup additions
+# -----------------------------------------------------------------------------
+
+# Local virtualenv variants
+.venv.*/
+
+# Python wheel/binary dependency bundles
+*.whl
+
+# Root generated report snapshot
+report_snapshot.md
+
+# Keep checked-in user manuals. Do not ignore these generated publication
+# artifacts unless the documentation release process changes explicitly.
+!docs/SURE-EVAL_User_Manual.md
+!docs/SURE-EVAL_User_Manual.html
+!docs/SURE-EVAL_User_Manual.pdf
+
+# Model reproducibility bundles that should be rebuilt or stored externally.
+src/sure_eval/models/*/repro_bundle/bin/
+src/sure_eval/models/*/repro_bundle/wheelhouse/
+src/sure_eval/models/*/repro_bundle/venv_seed/
+src/sure_eval/models/*/repro_bundle/.venv/
+
+# Model-local copied datasets and expanded run artifacts.
+src/sure_eval/models/*/eval_runs*/
+src/sure_eval/models/*/.datasets/
+src/sure_eval/models/*/**/.datasets/
+src/sure_eval/models/*/**/datasets/sure_benchmark/
+
+# Local override config files
+*.local.json
+*.local.yaml
+*.local.yml
+
+# Local binary tool shims. Install these through system package managers,
+# uv, or collaborator-local setup scripts instead of committing binaries.
+bin/uv
+bin/uvx
+bin/kimi
+bin/kimi-cli

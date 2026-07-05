@@ -1,0 +1,13 @@
+torch
+torchaudio
+voxcpm==2.0.3
+safetensors
+soundfile
+librosa
+transformers>=4.36.2
+huggingface-hub
+einops
+pydantic
+tqdm
+numpy<2.0
+modelscope>=1.22.0

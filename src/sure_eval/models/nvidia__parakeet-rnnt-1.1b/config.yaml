@@ -1,0 +1,25 @@
+name: nvidia__parakeet-rnnt-1.1b
+task: ASR
+description: "SURE-EVAL phase-1 wrapper for nvidia/parakeet-rnnt-1.1b via NVIDIA NeMo."
+
+model:
+  id: "nvidia/parakeet-rnnt-1.1b"
+  backend: "uv"
+  device: "cpu"
+
+server:
+  command: [".runtime/.venv/bin/python", "server.py"]
+  env:
+    DEVICE: "cpu"
+    HF_HOME: ".runtime/hf-home"
+    NEMO_CACHE_DIR: ".runtime/nemo-cache"
+
+tools:
+  - name: "transcribe_audio"
+    description: "Run ASR on a local audio path."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: ["audio_path"]

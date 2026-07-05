@@ -1,87 +1,58 @@
-name: "whisper_large_v3_turbo"
-task: "ASR"
-description: "Automatic Speech Recognition using Whisper large-v3-turbo"
-version: "1.0.0"
-
+model_id: openai/whisper-large-v3-turbo
+model_name: whisper_large_v3_turbo
+task_type: ASR
+deployment_type: local
 runtime:
-  identity: "openai/whisper-large-v3-turbo"
-  load_identity: "turbo"
-  local_dir_name: "whisper_large_v3_turbo"
-
-backend:
-  chosen: "uv"
-  reason: "openai-whisper and torch runtime can be installed in an isolated Python environment; weights are available from ModelScope."
-  evidence:
-    - "pyproject.toml present with openai-whisper, torch, and modelscope dependencies"
-    - "ModelScope checkpoint downloaded successfully"
-    - "local checkpoint loads through whisper.load_model when a valid device is available"
-
+  identity: Whisper large-v3-turbo
+  load_identity: turbo
+  family: openai_whisper
+repo:
+  url: https://github.com/openai/whisper
+  mirror_url: https://modelscope.cn/models/iic/Whisper-large-v3-turbo
+  commit: null
 weights:
+  source: modelscope
+  repo_id: iic/Whisper-large-v3-turbo
+  local_path: checkpoints/large-v3-turbo.pt
   required: true
-  source: "modelscope"
-  repo_id: "iic/Whisper-large-v3-turbo"
-  local_path: "./checkpoints"
-  cache_policy: "model_local_first"
-  local_dir_name: ".runtime/modelscope_cache"
-  size_gb: 1.6
-
+  cache_policy: model_local_first
 environment:
-  python: ">=3.10,<3.12"
+  preferred_backend: uv
+  python_version: "3.11"
   requires_gpu: false
-  packages:
-    - "openai-whisper"
-    - "torch==2.4.0"
-    - "modelscope"
-    - "imageio-ffmpeg"
+  gpu_note: GPU should be used if available; CPU phase-1 validation is acceptable by model_input.
   system_packages:
-    - "ffmpeg"
-
-phase1_runtime_target:
-  description: "Validate the minimal repo-native Whisper path: import whisper -> whisper.load_model('turbo') -> model.transcribe(audio_path)."
-  excludes:
-    - "accuracy_evaluation"
-    - "language_coverage_claims"
-    - "production_serving"
-
+    - ffmpeg
+  package_hints:
+    - openai-whisper
+    - torch==2.4.0
+    - imageio-ffmpeg
 entrypoints:
   import_test: "import whisper"
-  load_test: "model = whisper.load_model('turbo', device='cuda' if torch.cuda.is_available() else 'cpu', download_root='.runtime/modelscope_cache/models/iic/Whisper-large-v3-turbo')"
-  infer_test: "result = ModelWrapper().predict('fixture/asr/aishell1-test/sample_1_BAC009S0764W0385.wav')"
-
+  load_test: "whisper.load_model('turbo', download_root='checkpoints')"
+  infer_test: "model.transcribe('<fixture_wav>')"
 fixture:
-  requested_audio: "tests/fixtures/shared/asr/en_16k.wav"
-  selected_audio: "fixture/asr/aishell1-test/*.wav"
-  task_specific: true
-  fallback_allowed: true
-  source: "tests/fixtures/aishell1-test"
-  note: "The model-local fixture contains three AISHELL1 ASR samples copied from tests/fixtures/aishell1-test with gt.jsonl."
-
+  source: fixtures/tasks/asr/qwen3_asr_smoke/asr_zh
+  local_path: fixture/asr/asr_zh
+  manifest: fixture/asr/asr_zh/gt.jsonl
 io_contract:
-  input:
-    audio_path: string
-  output:
-    text: string
-    language: string
-    segments: list[dict] (optional)
-
-resources:
-  memory_gb: 8
-  gpu: recommended
-  cpu_cores: 4
-  storage_gb: 4
-
-mcp_server:
-  command: [".venv/bin/python", "server.py"]
-  working_dir: "."
-  env:
-    MODEL_ID: "turbo"
-    WHISPER_DOWNLOAD_ROOT: "./checkpoints"
-    DEVICE: "auto"
-  timeout: 300
-
+  input_type: audio_path
+  output_type: json
+  primary_field: text
+  required_fields:
+    - text
+  nonempty_fields:
+    - text
+  json_serializable: true
 acceptance:
   must_import: true
   must_load: true
   must_infer: true
-  must_pass_contract: true
-  must_return_nonempty: true
+  must_validate_contract: true
+  must_build_docker: true
+  must_validate_docker: true
+  must_push_and_pull_image: true
+notes:
+  - Re-onboarding run generated from src/sure_eval/models_reonboard/model_inputs/whisper_large_v3_turbo.yaml.
+  - Existing checkpoint is reused by symlink; old wrapper, old venv, and old Dockerfile are not reused.
+  - CER is recorded as an artifact for the selected Chinese ASR fixture.

@@ -1,0 +1,60 @@
+model_id: "openbmb/VoxCPM2"
+model_name: "VoxCPM2"
+task_type: "tts"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/OpenBMB/VoxCPM"
+  commit: "07c937b2956c5c122d736cfa1a9cd769965bfe5a"
+  source_fetch_status: "blocked_for_source_checkout"
+  source_fetch_blocker: "GitHub archive for the requested commit timed out from this host; phase-1 uses the official voxcpm==2.0.3 wheel metadata and wheel source inspection as executable package evidence."
+
+weights:
+  source: "huggingface"
+  repo_id: "openbmb/VoxCPM2"
+  local_path: "./checkpoints/VoxCPM2"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+
+environment:
+  preferred_backend: "uv"
+  original_preferred_backend: "uv"
+  python_version: "3.11"
+  requested_python_version: "3.10"
+  requires_gpu: true
+  system_packages:
+    - "ffmpeg"
+    - "libsndfile1"
+  runtime_root: "./.runtime"
+  phase1_host_backend_fallback: "pip_install_finalization_after_uv_partial_torch_import_failure"
+
+entrypoints:
+  import_test: "from voxcpm import VoxCPM"
+  load_test: "model = VoxCPM.from_pretrained('openbmb/VoxCPM2', load_denoiser=False, optimize=False)"
+  infer_test: "wav = model.generate(text='Hello, this is a short VoxCPM2 test.', cfg_value=2.0, inference_timesteps=10, seed=42)"
+  compatible_infer_test: "wav = model.generate(text='Hello, this is a short VoxCPM2 test.', cfg_value=2.0, inference_timesteps=10)"
+
+fixture:
+  text: "Hello, this is a short VoxCPM2 test."
+  model_local_text_path: "fixture/tts/en/smoke.txt"
+  audio: null
+  task_specific: true
+  fallback_allowed: false
+
+io_contract:
+  input_type: "text"
+  output_type: "audio_array"
+  primary_field: "audio"
+  required_fields:
+    - "audio"
+    - "sample_rate"
+  nonempty_fields:
+    - "audio"
+  json_serializable: false
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true

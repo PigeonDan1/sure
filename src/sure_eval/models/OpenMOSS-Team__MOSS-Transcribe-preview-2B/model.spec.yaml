@@ -1,0 +1,190 @@
+model_id: "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
+model_name: "MOSS-Transcribe-preview-2B"
+task_type: "asr"
+deployment_type: "local"
+
+repo:
+  url: "https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-preview-2B"
+  commit: "c98175cb20e48bd9be4e95f6c85f2af18899f780"
+
+runtime:
+  identity: "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
+  load_identity: "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
+  local_dir_name: "OpenMOSS-Team__MOSS-Transcribe-preview-2B"
+  model_type: "moss"
+  remote_code:
+    auto_model: "modeling_Moss.MossForCausalLM"
+    processor: "processing_Moss.MossProcessor"
+    mel_config: "processing_Moss.MelConfig"
+
+weights:
+  source: "huggingface"
+  repo_id: "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
+  revision: "c98175cb20e48bd9be4e95f6c85f2af18899f780"
+  local_path: ".runtime/hf-home/hub/models--OpenMOSS-Team--MOSS-Transcribe-preview-2B/snapshots/c98175cb20e48bd9be4e95f6c85f2af18899f780"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+  expected_files:
+    - "config.json"
+    - "model.safetensors.index.json"
+    - "model-00000-of-00001.safetensors"
+    - "modeling_Moss.py"
+    - "processing_Moss.py"
+    - "chat_template_default.py"
+    - "tokenizer.json"
+    - "tokenizer_config.json"
+  expected_size_bytes: 4849194606
+
+environment:
+  preferred_backend: "uv"
+  python_version: "3.10"
+  requires_gpu: true
+  system_packages:
+    - "ffmpeg"
+    - "libsndfile1"
+  packages:
+    - "torch"
+    - "torchaudio"
+    - "transformers>=4.57.1"
+    - "accelerate"
+    - "huggingface-hub"
+    - "librosa"
+    - "soundfile"
+    - "numpy"
+    - "safetensors"
+
+phase1_runtime_target:
+  description: "Validate the minimal repo-native Transformers path: import transformers/torch/librosa/huggingface_hub, load the pinned BF16 MOSS model/tokenizer/custom MossProcessor/chat template, and run greedy English ASR on a short 16 kHz mono fixture."
+  includes:
+    - "import transformers, torch, librosa, huggingface_hub"
+    - "load AutoModelForCausalLM with trust_remote_code=True and dtype=torch.bfloat16"
+    - "load AutoTokenizer, processing_Moss.MossProcessor, processing_Moss.MelConfig, and chat_template_default.py"
+    - "run generate(do_sample=False, num_beams=1) and return non-empty text"
+  excludes:
+    - "full Open ASR Leaderboard evaluation"
+    - "WER target validation"
+    - "multi-language validation"
+    - "production serving optimization"
+
+entrypoints:
+  import_test: |
+    import json
+    import librosa
+    import torch
+    from huggingface_hub import hf_hub_download
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers.dynamic_module_utils import get_class_from_dynamic_module
+  load_test: |
+    REPO = "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
+    REVISION = "c98175cb20e48bd9be4e95f6c85f2af18899f780"
+    DEVICE = "cuda:0"
+
+    model = AutoModelForCausalLM.from_pretrained(
+        REPO,
+        revision=REVISION,
+        dtype=torch.bfloat16,
+        trust_remote_code=True,
+    ).to(DEVICE).eval()
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        REPO,
+        revision=REVISION,
+        trust_remote_code=True,
+    )
+
+    MossProcessor = get_class_from_dynamic_module(
+        "processing_Moss.MossProcessor",
+        REPO,
+        revision=REVISION,
+    )
+    MelConfig = get_class_from_dynamic_module(
+        "processing_Moss.MelConfig",
+        REPO,
+        revision=REVISION,
+    )
+
+    mel_cfg = MelConfig(
+        mel_sr=16000,
+        mel_dim=128,
+        mel_n_fft=400,
+        mel_hop_length=160,
+    )
+
+    processor = MossProcessor(
+        tokenizer,
+        config=mel_cfg,
+        enable_time_marker=False,
+    )
+
+    template_path = hf_hub_download(
+        repo_id=REPO,
+        filename="chat_template_default.py",
+        revision=REVISION,
+    )
+    processor.load_template(template_path)
+  infer_test: |
+    waveform, _ = librosa.load(
+        "fixture/asr/asr_en/sample_1_367-130732-0006.wav",
+        sr=16000,
+        mono=True,
+    )
+
+    model_inputs = processor(
+        audio=waveform,
+        return_tensors="pt",
+    ).to(DEVICE)
+    model_inputs["audio_data"] = model_inputs["audio_data"].to(model.dtype)
+
+    with torch.no_grad():
+        output_ids = model.generate(
+            **model_inputs,
+            max_new_tokens=512,
+            do_sample=False,
+            num_beams=1,
+            use_cache=True,
+            eos_token_id=[processor.end_token_id],
+        )
+
+    generated_ids = output_ids[:, model_inputs["input_ids"].shape[1]:]
+    transcript = processor.batch_decode(
+        generated_ids,
+        skip_special_tokens=True,
+    )[0].strip()
+
+    assert transcript, "MOSS returned an empty transcription"
+    result = {"text": transcript}
+    print(json.dumps(result, ensure_ascii=False))
+
+fixture:
+  requested_audio: "tests/fixtures/shared/asr/en_16k.wav"
+  selected_audio: "fixture/asr/asr_en/sample_1_367-130732-0006.wav"
+  selected_source: "fixtures/tasks/asr/qwen3_asr_smoke/asr_en/sample_1_367-130732-0006.wav"
+  gt_path: "fixture/asr/asr_en/gt.jsonl"
+  task_specific: true
+  fallback_allowed: false
+  sample_rate: 16000
+  channels: 1
+  language: "en"
+  note: "The requested tests/fixtures/shared/asr/en_16k.wav path is absent in the current repo; fixture policy selected the equivalent task-specific English 16 kHz mono ASR fixture and recorded this path in the spec."
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "text"
+  required_fields: ["text"]
+  nonempty_fields: ["text"]
+  json_serializable: true
+
+resources:
+  gpu: "required for requested BF16 path"
+  local_gpu_observed: "RTX 2080 Ti, CUDA visible, BF16 matmul unsupported in host torch probe"
+  storage_gb: 8
+  memory_gb: 16
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true
+  must_return_nonempty: true

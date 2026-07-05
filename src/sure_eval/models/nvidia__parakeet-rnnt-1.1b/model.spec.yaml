@@ -1,0 +1,91 @@
+model_id: "nvidia/parakeet-rnnt-1.1b"
+model_name: "parakeet-rnnt-1.1b"
+task_type: "asr"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/NVIDIA-NeMo/NeMo"
+  commit: null
+
+weights:
+  source: "huggingface"
+  repo_id: "nvidia/parakeet-rnnt-1.1b"
+  local_path: "checkpoints/parakeet-rnnt-1.1b.nemo"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+
+environment:
+  preferred_backend: "uv"
+  python_version: "3.12"
+  requires_gpu: false
+  system_packages:
+    - "libsndfile1"
+
+phase1_runtime_target:
+  description: "Validate the minimal repo-native NeMo ASR callable path: import NeMo ASR, fetch/cache nvidia/parakeet-rnnt-1.1b under the model directory, load EncDecRNNTBPEModel in eval mode, transcribe one short 16 kHz mono WAV fixture, and serialize a JSON transcript."
+  includes:
+    - "import NVIDIA NeMo ASR modules"
+    - "download or restore RNNT checkpoint from model-local cache"
+    - "load EncDecRNNTBPEModel in evaluation mode"
+    - "transcribe one short 16 kHz mono WAV fixture"
+    - "serialize transcription as JSON"
+  excludes:
+    - "streaming validation"
+    - "Riva deployment"
+    - "benchmark evaluation"
+
+entrypoints:
+  import_test: |
+    import json
+    import nemo.collections.asr as nemo_asr
+  load_test: |
+    MODEL_PATH = "checkpoints/parakeet-rnnt-1.1b.nemo"
+
+    asr_model = nemo_asr.models.EncDecRNNTBPEModel.restore_from(
+        restore_path=MODEL_PATH
+    )
+    asr_model.eval()
+  infer_test: |
+    AUDIO_PATH = "fixture/asr/asr_en/sample_1.wav"
+
+    hypotheses = asr_model.transcribe(
+        audio=[AUDIO_PATH],
+        batch_size=1,
+        return_hypotheses=True,
+    )
+
+    transcript = hypotheses[0].text.strip()
+
+    assert transcript, "Parakeet RNNT returned an empty transcription"
+
+    result = {"text": transcript}
+    print(json.dumps(result, ensure_ascii=False))
+
+fixture:
+  requested_audio: "tests/fixtures/shared/asr/en_16k.wav"
+  selected_audio: "tests/fixtures/shared/asr/en_16k_10s.wav"
+  model_local_audio: "fixture/asr/asr_en/sample_1.wav"
+  model_local_gt: "fixture/asr/asr_en/gt.jsonl"
+  language: "en"
+  task_specific: true
+  fallback_allowed: false
+  source: "shared_asr_fixture"
+  note: "The requested tests/fixtures/shared/asr/en_16k.wav path is absent in this checkout. tests/fixtures/shared/asr/en_16k_10s.wav exists, is 16 kHz mono speech, and preserves the ASR task semantics."
+
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "text"
+  required_fields:
+    - "text"
+  nonempty_fields:
+    - "text"
+  json_serializable: true
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_pass_contract: true
+  must_return_nonempty: true

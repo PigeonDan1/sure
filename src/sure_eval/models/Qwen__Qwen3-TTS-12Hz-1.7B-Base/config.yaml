@@ -1,0 +1,44 @@
+name: "Qwen3-TTS-12Hz-1.7B-Base"
+task: "TTS"
+description: "Voice-clone TTS wrapper for Qwen/Qwen3-TTS-12Hz-1.7B-Base."
+
+model:
+  id: "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+  source: "huggingface"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  env:
+    MODEL_PATH: "./checkpoints/Qwen3-TTS-12Hz-1.7B-Base"
+    HF_HOME: "./.runtime/huggingface"
+    HF_HUB_CACHE: "./.runtime/huggingface/hub"
+    MODELSCOPE_CACHE: "./.runtime/modelscope_cache"
+    DEVICE_MAP: "cuda:0"
+    TORCH_DTYPE: "bfloat16"
+    ATTN_IMPLEMENTATION: "eager"
+  timeout: 300
+
+tools:
+  - name: "generate_voice_clone"
+    description: "Generate speech from text using reference audio."
+    input_schema:
+      type: object
+      properties:
+        text:
+          type: string
+        language:
+          type: string
+          default: "English"
+        ref_audio:
+          type: string
+        ref_text:
+          type: string
+        x_vector_only_mode:
+          type: boolean
+          default: true
+        max_new_tokens:
+          type: integer
+          default: 128
+      required:
+        - text
+        - ref_audio

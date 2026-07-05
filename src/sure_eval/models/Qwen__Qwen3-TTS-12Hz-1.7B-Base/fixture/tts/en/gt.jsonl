@@ -1,0 +1,1 @@
+{"key":"qwen3_tts_1_7b_base_en_smoke","task":"TTS","language":"English","target_text":"Hello from Qwen3 TTS.","prompt_audio":"voice_clone_ref_en.wav","prompt_text":"Okay. Yeah. I resent you. I love you. I respect you. But you know what? You blew it! And thanks to you.","fixture_source":"model_local_mitigation_for_missing_requested_shared_fixture","accepted_for_phase1":false}

@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sure-eval-qwen3-tts-12hz-1-7b-base"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "SURE-EVAL wrapper for Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+dependencies = []

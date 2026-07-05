@@ -1,0 +1,7 @@
+--index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+torch==2.8.0
+torchaudio==2.8.0
+
+-c .runtime/source/dots.tts/constraints/recommended.txt
+-e .runtime/source/dots.tts

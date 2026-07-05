@@ -1,0 +1,30 @@
+name: "dots.tts-base"
+task: "TTS"
+description: "rednote-hilab/dots.tts-base text-to-speech wrapper for SURE-EVAL phase-1 onboarding."
+
+model:
+  id: "rednote-hilab/dots.tts-base"
+  local_path: "./checkpoints"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  env:
+    MODEL_PATH: "./checkpoints"
+    DEVICE: "cuda:0"
+    PRECISION: "float16"
+
+tools:
+  - name: "synthesize_speech"
+    description: "Generate speech from text using a reference voice prompt."
+    input_schema:
+      type: object
+      properties:
+        text:
+          type: string
+        prompt_audio_path:
+          type: string
+        prompt_text:
+          type: string
+        output_path:
+          type: string
+      required: ["text", "prompt_audio_path"]

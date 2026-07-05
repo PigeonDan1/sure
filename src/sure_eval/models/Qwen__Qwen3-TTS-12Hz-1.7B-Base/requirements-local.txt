@@ -1,0 +1,14 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+qwen-tts==0.1.1
+transformers==4.57.3
+accelerate==1.12.0
+torch==2.8.0+cu128
+torchaudio==2.8.0+cu128
+modelscope==1.27.0
+wheel==0.47.0
+soundfile
+librosa
+sox
+onnxruntime
+einops
+huggingface_hub[cli]

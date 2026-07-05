@@ -1,0 +1,27 @@
+name: "Fun-CosyVoice3-0.5B-2512"
+task: "tts"
+description: "FunAudioLLM CosyVoice3 zero-shot text-to-speech phase-1 wrapper."
+
+model:
+  id: "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
+  local_path: ".runtime/source/CosyVoice/pretrained_models/Fun-CosyVoice3-0.5B"
+  source_path: ".runtime/source/CosyVoice"
+
+server:
+  command: ["python", "server.py"]
+  env:
+    DEVICE: "cuda"
+  timeout: 300
+
+tools:
+  - name: "tts_zero_shot"
+    input_schema:
+      type: object
+      properties:
+        text:
+          type: string
+        prompt_text:
+          type: string
+        prompt_audio_path:
+          type: string
+      required: ["text", "prompt_text", "prompt_audio_path"]

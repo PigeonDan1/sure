@@ -1,0 +1,13 @@
+.venv
+.runtime/pip-cache
+.runtime/uv-cache
+.runtime/tmp
+.runtime/hf-home
+.runtime/modelscope_cache
+artifacts
+docker_artifacts
+checkpoints
+__pycache__
+*.pyc
+*.pyo
+*.log

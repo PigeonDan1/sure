@@ -1,0 +1,8 @@
+accelerate==1.12.0
+huggingface_hub==0.36.0
+numpy==1.26.4
+pytest==9.1.1
+soundfile==0.13.1
+torch==2.5.1
+torchaudio==2.5.1
+transformers==4.57.3

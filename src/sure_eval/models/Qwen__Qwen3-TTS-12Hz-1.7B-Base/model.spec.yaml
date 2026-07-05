@@ -1,0 +1,78 @@
+model_id: "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+model_name: "Qwen3-TTS-12Hz-1.7B-Base"
+task_type: "tts"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/QwenLM/Qwen3-TTS"
+  commit: "022e286b98fbec7e1e916cb940cdf532cd9f488e"
+
+weights:
+  source: "huggingface"
+  repo_id: "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+  local_path: "./checkpoints/Qwen3-TTS-12Hz-1.7B-Base"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "Qwen3-TTS-12Hz-1.7B-Base"
+  additional_required_repos:
+    - repo_id: "Qwen/Qwen3-TTS-Tokenizer-12Hz"
+      local_path: "./checkpoints/Qwen3-TTS-Tokenizer-12Hz"
+      reason: "Upstream README manual download section lists the tokenizer with Qwen3-TTS runtime weights."
+
+environment:
+  preferred_backend: "uv"
+  chosen_backend: "uv"
+  python_version: "3.11"
+  requested_python_version: "3.12"
+  requires_gpu: true
+  system_packages:
+    - "ffmpeg"
+    - "libsndfile1"
+    - "sox"
+  runtime_root: "./.runtime"
+  python_version_conflict_resolution: "python3.12 unavailable on host; python3.11 is available and adjacent qwen-tts runtime evidence uses python3.11."
+
+entrypoints:
+  import_test: "from qwen_tts import Qwen3TTSModel"
+  original_requested_load_test: "import torch; model = Qwen3TTSModel.from_pretrained('Qwen/Qwen3-TTS-12Hz-1.7B-Base', device_map='cuda:0', dtype=torch.bfloat16, attn_implementation='flash_attention_2')"
+  load_test: "import torch; model = Qwen3TTSModel.from_pretrained('Qwen/Qwen3-TTS-12Hz-1.7B-Base', device_map='cuda:0', dtype=torch.bfloat16, attn_implementation='eager')"
+  load_test_override:
+    accepted_for_phase1: true
+    reason: "flash_attention_2 load failed because flash_attn is not installed; eager uses the same Qwen3TTSModel.from_pretrained CUDA/bfloat16 repo-native path and passed Phase-1 load/infer/contract."
+    failure_evidence: "artifacts/validation_flash_attention_2_failed.log"
+  infer_test: "wavs, sr = model.generate_voice_clone(text='Hello from Qwen3 TTS.', language='English', ref_audio='tests/fixtures/shared/tts/en_ref.wav', x_vector_only_mode=True, max_new_tokens=128)"
+
+fixture:
+  audio: "fixture/tts/en/voice_clone_ref_en.wav"
+  original_requested_audio: "tests/fixtures/shared/tts/en_ref.wav"
+  text: "Hello from Qwen3 TTS."
+  language: "English"
+  x_vector_only_mode: true
+  task_specific: true
+  fallback_allowed: true
+  human_override:
+    accepted_for_phase1: true
+    reason: "User requested continuation after VALIDATE_SPEC blocked on missing shared fixture and current user could not create tests/fixtures/shared/tts."
+    override_turn: "continue"
+  model_local_fixture:
+    audio: "fixture/tts/en/voice_clone_ref_en.wav"
+    ref_text: "fixture/tts/en/voice_clone_ref_en.txt"
+    gt: "fixture/tts/en/gt.jsonl"
+    source: "Existing model-local English voice-clone fixture from Qwen__Qwen3-TTS-12Hz-0.6B-Base."
+
+io_contract:
+  input_type: "text_with_reference_audio"
+  output_type: "audio"
+  primary_field: "wavs"
+  required_fields:
+    - "wavs"
+    - "sample_rate"
+  nonempty_fields:
+    - "wavs"
+  json_serializable: false
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true

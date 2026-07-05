@@ -1,0 +1,6 @@
+torch
+torchaudio
+huggingface_hub>=0.23.0
+modelscope>=1.27.0
+nemo_toolkit[asr]
+soundfile>=0.12.1

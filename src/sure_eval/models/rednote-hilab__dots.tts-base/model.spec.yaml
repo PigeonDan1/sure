@@ -1,0 +1,75 @@
+model_id: "rednote-hilab/dots.tts-base"
+model_name: "dots.tts-base"
+task_type: "tts"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/rednote-hilab/dots.tts"
+  commit: "b995bdb7de14dad008b98cfa085ecc83600e5b7a"
+
+weights:
+  source: "huggingface"
+  repo_id: "rednote-hilab/dots.tts-base"
+  local_path: "./checkpoints"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "checkpoints"
+  mirror_endpoint: "https://hf-mirror.com"
+
+environment:
+  preferred_backend: "uv"
+  python_version: "3.10"
+  requires_gpu: true
+  system_packages:
+    - "ffmpeg"
+    - "libsndfile1"
+  runtime_root: "./.runtime"
+
+entrypoints:
+  cli:
+    command: "dots.tts"
+    model_arg: "--model-name-or-path"
+    text_arg: "--text"
+    output_arg: "--output"
+  python:
+    module: "dots_tts.runtime"
+    class: "DotsTtsRuntime"
+    loader: "from_pretrained"
+    method: "generate"
+  import_test: "from dots_tts.runtime import DotsTtsRuntime"
+  load_test: "DotsTtsRuntime.from_pretrained('./checkpoints', precision='float16')"
+  infer_test: "DotsTtsRuntime.generate(text=fixture.text, prompt_audio_path=fixture.prompt_audio, prompt_text=fixture.prompt_text, language='zh', num_steps=10, guidance_scale=1.2)"
+
+fixture:
+  text: "这是一段用于本地语音合成验证的稍长文本。它可以帮助我们检查生成音频是否清晰、自然，并确认模型没有直接返回参考音频。"
+  prompt_audio: "fixture/tts/reference.wav"
+  prompt_text: "你好，我是独具慧眼的商业观察员红梅，欢迎收听我的原创播客节目，生财有道。"
+  task_specific: true
+  fallback_allowed: true
+  original_prompt_audio: "tests/fixtures/shared/tts/reference.wav"
+  original_prompt_audio_status: "missing_in_workspace"
+  human_override:
+    approved: true
+    approved_at: "2026-07-04T04:35:00Z"
+    approval_text: "批准使用"
+    scope: "Use prepared model-local fixture/tts/reference.wav instead of missing tests/fixtures/shared/tts/reference.wav for phase-1 validation."
+  prepared_model_local_prompt_audio: "fixture/tts/reference.wav"
+  prepared_model_local_source: "fixtures/tasks/tts/indextts2_zh_smoke/zh/ZH_B00001_S00000_W000000.mp3 converted to model-local wav"
+
+io_contract:
+  input_type: "text"
+  output_type: "audio_path"
+  primary_field: "audio_path"
+  required_fields:
+    - "audio_path"
+  nonempty_fields:
+    - "audio_path"
+  json_serializable: false
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true
+
+phase1_runtime_target: "Validate the minimal callable path only; this phase does not require full benchmark evaluation."

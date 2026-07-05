@@ -2,37 +2,27 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../../.." && pwd)"
 REPO_ROOT="$(readlink -f "${REPO_ROOT}")"
-
-IMAGE_TAG="${IMAGE_TAG:-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_whisper_large_v3_turbo:v1.0}"
-CONTAINER_NAME="${CONTAINER_NAME:-sure_whisper_large_v3_turbo_validate_v1}"
-
-MODEL_DIR="${MODEL_DIR:-${SCRIPT_DIR}}"
-MODEL_DIR="$(readlink -f "${MODEL_DIR}")"
-
-MODEL_RUNTIME="${MODEL_RUNTIME:-${MODEL_DIR}/.runtime}"
-MODEL_RUNTIME="$(readlink -f "${MODEL_RUNTIME}")"
-
+MODEL_DIR="$(readlink -f "${SCRIPT_DIR}")"
+IMAGE_TAG="${IMAGE_TAG:-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-reonboard_whisper_large_v3_turbo:v1.0}"
+CONTAINER_NAME="${CONTAINER_NAME:-sure_reonboard_whisper_large_v3_turbo_validate}"
 ARTIFACTS_DIR="${ARTIFACTS_DIR:-${MODEL_DIR}/docker_artifacts}"
 mkdir -p "${ARTIFACTS_DIR}"
 ARTIFACTS_DIR="$(readlink -f "${ARTIFACTS_DIR}")"
 chmod a+rwx "${ARTIFACTS_DIR}"
+CHECKPOINT_FILE="$(readlink -f "${MODEL_DIR}/checkpoints/large-v3-turbo.pt")"
 
-CONTAINER_MODEL_DIR="/workspace/sure-eval/src/sure_eval/models/whisper_large_v3_turbo"
+CONTAINER_MODEL_DIR="/workspace/sure-eval/src/sure_eval/models_reonboard/runs/whisper_large_v3_turbo"
 CONTAINER_SRC_DIR="/workspace/sure-eval/src/sure_eval"
+CONTAINER_CHECKPOINT_DIR="/model_weights/whisper"
 
 for required_path in \
-  "${REPO_ROOT}/src/sure_eval/__init__.py" \
-  "${REPO_ROOT}/src/sure_eval/evaluation" \
-  "${REPO_ROOT}/src/sure_eval/models/__init__.py" \
   "${MODEL_DIR}/model.py" \
   "${MODEL_DIR}/validate.py" \
-  "${MODEL_DIR}/config.yaml" \
   "${MODEL_DIR}/model.spec.yaml" \
-  "${MODEL_DIR}/server.py" \
   "${MODEL_DIR}/fixture" \
-  "${MODEL_DIR}/checkpoints/large-v3-turbo.pt"; do
+  "${CHECKPOINT_FILE}"; do
   if [ ! -e "${required_path}" ]; then
     echo "Missing required path: ${required_path}" >&2
     exit 1
@@ -41,33 +31,14 @@ done
 
 docker run --rm --gpus all \
   --name "${CONTAINER_NAME}" \
-  -v "${REPO_ROOT}/src/sure_eval/__init__.py:${CONTAINER_SRC_DIR}/__init__.py:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/cli.py:${CONTAINER_SRC_DIR}/cli.py:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/agent:${CONTAINER_SRC_DIR}/agent:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/core:${CONTAINER_SRC_DIR}/core:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/datasets:${CONTAINER_SRC_DIR}/datasets:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/evaluation:${CONTAINER_SRC_DIR}/evaluation:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/inference:${CONTAINER_SRC_DIR}/inference:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/protocols:${CONTAINER_SRC_DIR}/protocols:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/reports:${CONTAINER_SRC_DIR}/reports:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/tools:${CONTAINER_SRC_DIR}/tools:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/utils:${CONTAINER_SRC_DIR}/utils:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/models/__init__.py:${CONTAINER_SRC_DIR}/models/__init__.py:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/models/base.py:${CONTAINER_SRC_DIR}/models/base.py:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/models/registry.py:${CONTAINER_SRC_DIR}/models/registry.py:ro" \
-  -v "${REPO_ROOT}/src/sure_eval/models/model_mapping.py:${CONTAINER_SRC_DIR}/models/model_mapping.py:ro" \
-  -v "${MODEL_DIR}/__init__.py:${CONTAINER_MODEL_DIR}/__init__.py:ro" \
-  -v "${MODEL_DIR}/model.py:${CONTAINER_MODEL_DIR}/model.py:ro" \
-  -v "${MODEL_DIR}/validate.py:${CONTAINER_MODEL_DIR}/validate.py:ro" \
-  -v "${MODEL_DIR}/config.yaml:${CONTAINER_MODEL_DIR}/config.yaml:ro" \
-  -v "${MODEL_DIR}/model.spec.yaml:${CONTAINER_MODEL_DIR}/model.spec.yaml:ro" \
-  -v "${MODEL_DIR}/server.py:${CONTAINER_MODEL_DIR}/server.py:ro" \
-  -v "${MODEL_DIR}/fixture:${CONTAINER_MODEL_DIR}/fixture:ro" \
+  -e "WHISPER_DOWNLOAD_ROOT=${CONTAINER_CHECKPOINT_DIR}" \
+  -e "MODEL_ID=turbo" \
+  -e "DEVICE=${DEVICE:-auto}" \
+  -v "${REPO_ROOT}/src/sure_eval:${CONTAINER_SRC_DIR}:ro" \
+  -v "${MODEL_DIR}:${CONTAINER_MODEL_DIR}:ro" \
+  -v "${CHECKPOINT_FILE}:${CONTAINER_CHECKPOINT_DIR}/large-v3-turbo.pt:ro" \
   -v "${ARTIFACTS_DIR}:${CONTAINER_MODEL_DIR}/artifacts" \
-  -v "${MODEL_DIR}/checkpoints:${CONTAINER_MODEL_DIR}/checkpoints:ro" \
-  -e "WHISPER_DOWNLOAD_ROOT=/workspace/sure-eval/src/sure_eval/models/whisper_large_v3_turbo/checkpoints" \
-  -e "DEVICE=auto" \
   "${IMAGE_TAG}" \
-  bash -lc 'export PYTHONPATH=/workspace/sure-eval/src:${PYTHONPATH:-}; python validate.py'
+  bash -lc 'cd /workspace/sure-eval/src/sure_eval/models_reonboard/runs/whisper_large_v3_turbo && export PYTHONPATH=/workspace/sure-eval/src:${PYTHONPATH:-}; python validate.py'
 
 echo "Artifacts written to: ${ARTIFACTS_DIR}"

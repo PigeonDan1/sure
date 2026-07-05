@@ -1,0 +1,11 @@
+numpy<2.0
+safetensors
+soundfile
+librosa
+transformers>=4.36.2,<5
+huggingface-hub
+modelscope>=1.22.0
+einops
+pydantic>=2
+tqdm
+sentencepiece

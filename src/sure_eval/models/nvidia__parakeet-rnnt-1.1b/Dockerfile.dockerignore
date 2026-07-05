@@ -1,0 +1,10 @@
+.git
+**/.venv
+**/.venv.hostbak
+**/.runtime
+**/__pycache__
+src/sure_eval/models/*/checkpoints
+src/sure_eval/models/*/artifacts
+src/sure_eval/models/*/docker_artifacts
+!src/sure_eval/models/nvidia__parakeet-rnnt-1.1b
+!src/sure_eval/models/nvidia__parakeet-rnnt-1.1b/**

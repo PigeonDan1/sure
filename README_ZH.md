@@ -129,6 +129,17 @@ flowchart LR
 | `evaluate_predictions.py` | 指标与 RPS 计算 |
 | `refresh_report_snapshot.py` | 结果记录与报告 |
 
+**确定性指标 CLI**：
+
+```bash
+sure-eval metric describe asr --language zh --metric cer --output /tmp/asr_pipeline.json --json
+sure-eval metric run --pipeline /tmp/asr_pipeline.json --ref-file ref.txt --hyp-file hyp.txt --output-dir /tmp/sure_eval/asr_eval --json
+```
+
+CLI 调用 `sure_eval.evaluation.scripts.run_task(...)`；route 选择、executor
+加载、pipeline-id 校验和结果写出仍由脚本层负责。CLI 只提示 node-local
+环境线索，不检查 uv 或节点依赖。
+
 ---
 
 ## 🚀 快速开始指南
@@ -234,6 +245,8 @@ python -m sure_eval.models.registry
 ```
 
 每个模型还有自己独立的虚拟环境，位于 `src/sure_eval/models/<model>/.venv/`。详见各模型的 `setup.sh`。
+
+数据 payload 不随仓库提交。顶层 `data/` 目录保留给本地挂载、软链、缓存和冒烟数据；需要提交的数据集注册信息应放在 `config/` 或文档中。
 
 > 💡 **提示**：Agent README 中的 minimal prompt 是面向中文 Agent runtime 的复制模板。如果你的 Agent runtime 更偏好英文，可将指令翻译为英文。
 
@@ -395,6 +408,7 @@ MAIN_FLOW_INPUT:
 
 ```
 sure-eval/
+├── data/                   # 📂 本地数据挂载和缓存；Git 忽略
 ├── src/sure_eval/
 │   ├── core/               # ⚙️ 核心工具
 │   ├── datasets/           # 📂 数据集管理
@@ -457,6 +471,7 @@ sure-eval/
 | [主流程 Agent](docs/agents/main_flow_agent/README.md) | Agent 系统 prompt 与示例 |
 | [Agent 路由](docs/agents/main_flow_agent/AGENTS.md) | 主流程路由指南 |
 | [模型工具 Agent](docs/agents/model_tool_agent/README.md) | 模型集成工作流 |
+| [已接入模型](src/sure_eval/models/README.md) | clean model 目录集合与本地产物策略 |
 | [架构](docs/agents/main_flow_agent/contracts/main_flow_architecture.md) | 系统架构细节 |
 | [评测运行布局](docs/agents/main_flow_agent/contracts/eval_run_layout.md) | 每次运行的模型本地产物布局 |
 | [预测生成契约](docs/agents/main_flow_agent/contracts/prediction_generation_contract.md) | `wait_for_predictions` 的硬契约 |

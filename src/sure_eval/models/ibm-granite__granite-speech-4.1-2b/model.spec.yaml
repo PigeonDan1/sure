@@ -1,0 +1,63 @@
+model_id: "ibm-granite/granite-speech-4.1-2b"
+model_name: "granite-speech-4.1-2b"
+task_type: "asr"
+deployment_type: "local"
+repo:
+  provider: "huggingface"
+  url: "https://huggingface.co/ibm-granite/granite-speech-4.1-2b"
+  repo_id: "ibm-granite/granite-speech-4.1-2b"
+  commit: "de575db64086f84fdc79da4932d1076e965bc546"
+weights:
+  source: "huggingface"
+  repo_id: "ibm-granite/granite-speech-4.1-2b"
+  revision: "de575db64086f84fdc79da4932d1076e965bc546"
+  local_path: "./.runtime/hf-home/hub/models--ibm-granite--granite-speech-4.1-2b/snapshots/de575db64086f84fdc79da4932d1076e965bc546"
+  required: true
+  cache_policy: "model_local_first"
+environment:
+  preferred_backend: "uv"
+  python_version: "3.11"
+  requested_python_version: "3.10"
+  requires_gpu: true
+  system_packages:
+    - "ffmpeg"
+    - "libsndfile1"
+entrypoints:
+  import_test: |
+    import json
+    import torch
+    import torchaudio
+    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+  load_test: |
+    from model import ModelWrapper
+    wrapper = ModelWrapper()
+    wrapper.load()
+  infer_test: |
+    from model import ModelWrapper
+    wrapper = ModelWrapper()
+    result = wrapper.predict({"audio_path": "fixture/asr/asr_en/en_16k.wav"})
+    assert result["text"]
+io_contract:
+  input_type: "audio_path"
+  output_type: "json"
+  primary_field: "text"
+  required_fields:
+    - "text"
+  nonempty_fields:
+    - "text"
+  json_serializable: true
+fixture:
+  audio: "fixture/asr/asr_en/en_16k.wav"
+  gt: "fixture/asr/asr_en/gt.jsonl"
+  source: "fixtures/tasks/asr/qwen3_asr_smoke/asr_en/sample_1_367-130732-0006.wav"
+  task_specific: true
+  fallback_allowed: false
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_json_serializable: true
+phase1_runtime_target:
+  - "import transformers, torch, torchaudio, and huggingface_hub"
+  - "load AutoProcessor and AutoModelForSpeechSeq2Seq"
+  - "run deterministic ASR on a short 16 kHz mono fixture"

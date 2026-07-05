@@ -127,6 +127,18 @@ flowchart LR
 | `evaluate_predictions.py` | Metric & RPS computation |
 | `refresh_report_snapshot.py` | Result recording & reports |
 
+**Deterministic Metric CLI**:
+
+```bash
+sure-eval metric describe asr --language zh --metric cer --output /tmp/asr_pipeline.json --json
+sure-eval metric run --pipeline /tmp/asr_pipeline.json --ref-file ref.txt --hyp-file hyp.txt --output-dir /tmp/sure_eval/asr_eval --json
+```
+
+The CLI calls `sure_eval.evaluation.scripts.run_task(...)`; route selection,
+executor loading, pipeline-id validation, and output writing stay in the script
+layer. It reports node-local environment hints but does not validate uv or
+node dependencies.
+
 ---
 
 ## 🚀 Quick Start Guide
@@ -232,6 +244,8 @@ python -m sure_eval.models.registry
 ```
 
 Each model also has its own isolated environment under `src/sure_eval/models/<model>/.venv/`. See the model's `setup.sh` for details.
+
+Dataset payloads are local-only. The top-level `data/` directory is reserved for local mounts, symlinks, caches, and smoke data; tracked dataset registry updates should live under `config/` or docs instead.
 
 > 💡 **Tip**: The minimal prompts in the agent READMEs are copy-paste templates for a Chinese-speaking agent runtime. You can translate the instructions to English if your agent runtime prefers it.
 
@@ -395,6 +409,7 @@ MAIN_FLOW_INPUT:
 
 ```
 sure-eval/
+├── data/                   # 📂 Local dataset mounts and caches; ignored by Git
 ├── src/sure_eval/
 │   ├── core/               # ⚙️ Core utilities
 │   ├── datasets/           # 📂 Dataset management
@@ -455,6 +470,7 @@ Yes. Use the deterministic script pipeline shown in [📊 Deterministic Evaluati
 | [Main Flow Agent](docs/agents/main_flow_agent/README.md) | Agent system prompt & examples |
 | [Agent Routing](docs/agents/main_flow_agent/AGENTS.md) | Main flow routing guide |
 | [Model Tool Agent](docs/agents/model_tool_agent/README.md) | Model integration workflow |
+| [Onboarded Models](src/sure_eval/models/README.md) | Clean model directory set and local artifact policy |
 | [Architecture](docs/agents/main_flow_agent/contracts/main_flow_architecture.md) | System architecture details |
 | [Evaluation Run Layout](docs/agents/main_flow_agent/contracts/eval_run_layout.md) | Model-local artifact layout per run |
 | [Prediction Generation Contract](docs/agents/main_flow_agent/contracts/prediction_generation_contract.md) | Hard contract for `wait_for_predictions` |

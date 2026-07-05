@@ -1,0 +1,30 @@
+name: "OpenMOSS-Team__MOSS-Transcribe-preview-2B"
+task: "ASR"
+description: "English ASR using MOSS-Transcribe-preview-2B"
+
+model:
+  id: "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
+  revision: "c98175cb20e48bd9be4e95f6c85f2af18899f780"
+  size: "2.4B"
+  language: "en"
+
+server:
+  command: [".venv/bin/python", "server.py"]
+  working_dir: "."
+  env:
+    MODEL_ID: "OpenMOSS-Team/MOSS-Transcribe-preview-2B"
+    MODEL_REVISION: "c98175cb20e48bd9be4e95f6c85f2af18899f780"
+    DEVICE: "cuda:0"
+    HF_HOME: ".runtime/hf-home"
+    HF_HUB_CACHE: ".runtime/hf-home/hub"
+  timeout: 600
+
+tools:
+  - name: "asr_transcribe"
+    description: "Transcribe English speech audio to text."
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+      required: ["audio_path"]

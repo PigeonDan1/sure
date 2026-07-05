@@ -1,0 +1,8 @@
+--index-url https://download.pytorch.org/whl/cu128
+--extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+torch==2.8.0+cu128
+torchaudio==2.8.0+cu128
+
+-c .runtime/source/dots.tts/constraints/recommended.txt
+-e .runtime/source/dots.tts

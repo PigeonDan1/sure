@@ -1,0 +1,13 @@
+.runtime
+artifacts
+docker_artifacts
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.log
+*.wav
+*.pt
+*.onnx
+*.safetensors

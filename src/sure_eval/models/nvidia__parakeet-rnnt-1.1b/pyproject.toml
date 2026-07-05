@@ -1,0 +1,17 @@
+[project]
+name = "sure-eval-nvidia-parakeet-rnnt-1-1b"
+version = "0.1.0"
+description = "SURE-EVAL phase-1 onboarding for nvidia/parakeet-rnnt-1.1b."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "torch",
+    "torchaudio",
+    "huggingface_hub>=0.23.0",
+    "modelscope>=1.27.0",
+    "nemo_toolkit[asr]",
+    "soundfile>=0.12.1",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

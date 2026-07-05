@@ -1,0 +1,61 @@
+model_id: "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
+model_name: "Fun-CosyVoice3-0.5B-2512"
+task_type: "tts"
+deployment_type: "local"
+
+repo:
+  url: "https://github.com/FunAudioLLM/CosyVoice"
+  commit: "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc"
+  local_source_path: ".runtime/source/CosyVoice"
+
+weights:
+  source: "huggingface"
+  repo_id: "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
+  local_path: "pretrained_models/Fun-CosyVoice3-0.5B"
+  required: true
+  cache_policy: "model_local_first"
+  local_dir_name: "Fun-CosyVoice3-0.5B"
+
+environment:
+  preferred_backend: "conda"
+  python_version: "3.10"
+  requires_gpu: true
+  system_packages:
+    - "sox"
+    - "libsox-dev"
+    - "ffmpeg"
+    - "libsndfile1"
+  runtime_root: ".runtime"
+  conda_env_name: "sure-fun-cosyvoice3-0-5b-2512"
+
+entrypoints:
+  import_test: "import sys; sys.path.append('third_party/Matcha-TTS'); from cosyvoice.cli.cosyvoice import AutoModel"
+  load_test: "model = AutoModel(model_dir='pretrained_models/Fun-CosyVoice3-0.5B')"
+  infer_test: "next(model.inference_zero_shot('CosyVoice is ready.', 'You are a helpful assistant.<|endofprompt|>希望你以后能够做的比我还好呦。', './asset/zero_shot_prompt.wav', stream=False))"
+
+fixture:
+  source: "model_local_copy_of_upstream_asset"
+  audio: "fixture/tts/en/zero_shot_prompt.wav"
+  gt: "fixture/tts/en/gt.jsonl"
+  upstream_audio: ".runtime/source/CosyVoice/asset/zero_shot_prompt.wav"
+  text: "CosyVoice is ready."
+  prompt_text: "You are a helpful assistant.<|endofprompt|>希望你以后能够做的比我还好呦。"
+  language: "en"
+  task_specific: true
+  fallback_allowed: false
+
+io_contract:
+  input_type: "text_with_prompt_audio"
+  output_type: "audio_tensor"
+  primary_field: "tts_speech"
+  required_fields:
+    - "tts_speech"
+  nonempty_fields:
+    - "tts_speech"
+  json_serializable: false
+
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_return_nonempty: true

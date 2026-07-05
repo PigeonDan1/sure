@@ -1,58 +1,66 @@
-name: asr_qwen3
-task: ASR
-description: "Automatic Speech Recognition using Qwen3-ASR-1.7B"
-version: "1.0.0"
-
+model_id: Qwen/Qwen3-ASR-1.7B
+model_name: asr_qwen3
+task_type: ASR
+deployment_type: local
 runtime:
-  identity: "Qwen3-ASR-1.7B"
-  load_identity: "Qwen/Qwen3-ASR-1.7B"
-  local_dir_name: "asr_qwen3"
-
-backend:
-  chosen: "uv"
-  reason: "pure python dependencies, modelscope for weights, no cuda compilation needed"
-  evidence:
-    - "pyproject.toml present with qwen-asr dependency"
-    - "modelscope accessible for weight download"
-    - "huggingface not accessible in cluster"
-
+  identity: Qwen3-ASR-1.7B
+  load_identity: Qwen/Qwen3-ASR-1.7B
+  family: qwen_asr
+repo:
+  url: https://modelscope.cn/models/Qwen/Qwen3-ASR-1.7B
+  commit: null
 weights:
+  source: modelscope
+  repo_id: Qwen/Qwen3-ASR-1.7B
+  local_path: .runtime/modelscope_cache/models/Qwen/Qwen3-ASR-1___7B
   required: true
-  source: "modelscope"
-  repo_id: "Qwen/Qwen3-ASR-1.7B"
-  local_path: "./.runtime/modelscope_cache/models/Qwen/Qwen3-ASR-1.7B"
-  size_gb: 4.4
-
-io_contract:
-  input:
-    audio_path: string
-    language: string (optional, e.g. "Chinese", "English", "auto")
-  output:
-    text: string
-    language: string
-    timestamps: list[dict] (optional)
-
+  cache_policy: model_local_first
 environment:
-  python: ">=3.10"
-  packages:
-    - qwen-asr
-    - torch
+  preferred_backend: uv
+  python_version: "3.11"
+  requires_gpu: true
+  system_packages:
+    - ffmpeg
+    - libsndfile1
+  package_hints:
+    - qwen-asr==0.0.6
+    - qwen-omni-utils==0.0.9
+    - torch==2.4.0
     - transformers==4.57.6
     - accelerate==1.12.0
     - soundfile
     - scipy
-
-resources:
-  memory_gb: 8
-  gpu: recommended
-  cpu_cores: 4
-  storage_gb: 5
-
-mcp_server:
-  command: [".venv/bin/python", "server.py"]
-  working_dir: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_qwen3"
-  env:
-    MODEL_PATH: "Qwen/Qwen3-ASR-1.7B"
-    MODELSCOPE_CACHE: "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models/asr_qwen3/.runtime/modelscope_cache"
-    DEVICE: "auto"
-  timeout: 300
+entrypoints:
+  import_test: "from qwen_asr import Qwen3ASRModel"
+  load_test: "Qwen3ASRModel.from_pretrained('<model_local_cache>')"
+  infer_test: "ModelWrapper().predict({'audio_path': '<fixture_wav>', 'language': 'Chinese'})"
+fixture:
+  source:
+    - fixtures/tasks/asr/qwen3_asr_smoke/asr_zh
+    - fixtures/tasks/asr/qwen3_asr_smoke/asr_en
+  local_path: fixture/asr
+  manifests:
+    - fixture/asr/asr_zh/gt.jsonl
+    - fixture/asr/asr_en/gt.jsonl
+io_contract:
+  input_type: audio_path
+  output_type: json
+  primary_field: text
+  required_fields:
+    - text
+  nonempty_fields:
+    - text
+  json_serializable: true
+acceptance:
+  must_import: true
+  must_load: true
+  must_infer: true
+  must_validate_contract: true
+  must_validate_gpu: true
+  must_build_docker: true
+  must_validate_docker_gpu: true
+  must_push_and_pull_image: true
+notes:
+  - Re-onboarding run generated from src/sure_eval/models_reonboard/model_inputs/asr_qwen3.yaml.
+  - Existing ModelScope cache is reused by symlink; old wrapper, old venv, and old Dockerfile are not reused.
+  - WER/CER are recorded as artifacts, while phase-1 pass/fail remains contract based.

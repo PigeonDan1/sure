@@ -1,0 +1,10 @@
+.venv/
+.runtime/
+checkpoints/
+artifacts/
+docker_artifacts/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.git/
