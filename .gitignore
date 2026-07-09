@@ -218,3 +218,18 @@ data/xforge_oref_smoke/
 
 # Local external checkout symlinks
 XForge
+
+# SURE model runtime artifacts
+src/sure_eval/models/*/.runtime/
+src/sure_eval/models/*/.venv/
+src/sure_eval/models/*/checkpoints/
+src/sure_eval/models/*/eval_runs/
+src/sure_eval/models/*/artifacts/outputs/
+src/sure_eval/models/**/*.wav
+src/sure_eval/models/**/*.flac
+src/sure_eval/models/**/*.mp3
+src/sure_eval/models/**/*.pt
+src/sure_eval/models/**/*.pth
+src/sure_eval/models/**/*.bin
+src/sure_eval/models/**/*.safetensors
+wget-log

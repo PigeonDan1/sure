@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+
+from .mineru_runtime import (
+    build_mineru_env,
+    discover_mineru_executable,
+    mineru_timeout_sec,
+    probe_mineru_version,
+)
 
 try:
     from pypdf import PdfReader
@@ -19,8 +25,7 @@ except ImportError:  # pragma: no cover - exercised by monkeypatch in tests
     PdfReader = None  # type: ignore[assignment]
 
 MIN_EXTRACTED_PDF_CHARS = 80
-DEFAULT_MINERU_TIMEOUT_SEC = 600
-PDFParserName = Literal["pypdf", "mineru", "auto"]
+PDFParserName = Literal["pypdf", "mineru", "auto", "mineru-first"]
 SECTION_PATTERNS = [
     ("abstract", r"\babstract\b"),
     ("introduction", r"\b(?:1\.?\s*)?introduction\b"),
@@ -79,14 +84,32 @@ def parse_pdf_to_artifacts(
     parser_name: PDFParserName = "pypdf",
 ) -> tuple[str, dict[str, Any]]:
     """Parse a PDF into canonical artifacts consumed by the extractor."""
-    pdf_path = Path(pdf_path)
-    out_dir = Path(out_dir)
+    requested_parser = parser_name
+    pdf_path = Path(pdf_path).expanduser().resolve()
+    out_dir = Path(out_dir).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        _validate_pdf_path(pdf_path)
+    except RuntimeError as exc:
+        report = _build_failure_parse_report(
+            requested_parser=requested_parser,
+            actual_parser=None,
+            error_type="input_pdf_missing" if not pdf_path.exists() else "input_pdf_invalid",
+            error_message=str(exc),
+            pdf_path=pdf_path,
+            out_dir=out_dir,
+        )
+        write_json(out_dir / "paper_parse_report.json", report)
+        raise
+
     if parser_name == "pypdf":
-        text, report = _parse_pdf_with_pypdf(pdf_path, out_dir)
+        text, report = _parse_pdf_with_pypdf(pdf_path, out_dir, requested_parser=requested_parser)
     elif parser_name == "mineru":
-        text, report = _parse_pdf_with_mineru(pdf_path, out_dir)
+        text, report = _parse_pdf_with_mineru(pdf_path, out_dir, requested_parser=requested_parser)
     elif parser_name == "auto":
-        text, report = _parse_pdf_auto(pdf_path, out_dir)
+        text, report = _parse_pdf_auto(pdf_path, out_dir, requested_parser=requested_parser)
+    elif parser_name == "mineru-first":
+        text, report = _parse_pdf_mineru_first(pdf_path, out_dir, requested_parser=requested_parser)
     else:
         raise RuntimeError(f"Unsupported PDF parser: {parser_name}")
 
@@ -102,7 +125,7 @@ def canonicalize_paper_text(
     parser_name: str = "paper_text",
 ) -> tuple[str, dict[str, Any]]:
     """Write canonical paper artifacts for already-extracted text input."""
-    out_dir = Path(out_dir)
+    out_dir = Path(out_dir).expanduser().resolve()
     canonical = _normalize_canonical_markdown(paper_text)
     canonical_path = out_dir / "canonical_paper.md"
     extracted_path = out_dir / "extracted_paper.txt"
@@ -110,10 +133,12 @@ def canonicalize_paper_text(
     write_text(extracted_path, _markdown_to_plain_text(canonical))
     report = _build_parse_report(
         parser_name=parser_name,
+        requested_parser=parser_name,
         parser_version=None,
         input_pdf=str(input_source) if input_source else None,
         output_markdown_path=canonical_path,
         output_json_path=None,
+        out_dir=out_dir,
         num_pages=None,
         text=canonical,
         warnings=[],
@@ -170,8 +195,25 @@ def extract_text_from_pdf_with_report(pdf_path: str | Path) -> tuple[str, dict[s
     return text, metadata
 
 
-def _parse_pdf_with_pypdf(pdf_path: Path, out_dir: Path) -> tuple[str, dict[str, Any]]:
-    text, metadata = extract_text_from_pdf_with_report(pdf_path)
+def _parse_pdf_with_pypdf(
+    pdf_path: Path,
+    out_dir: Path,
+    *,
+    requested_parser: str = "pypdf",
+) -> tuple[str, dict[str, Any]]:
+    try:
+        text, metadata = extract_text_from_pdf_with_report(pdf_path)
+    except Exception as exc:
+        report = _build_failure_parse_report(
+            requested_parser=requested_parser,
+            actual_parser="pypdf",
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            pdf_path=pdf_path,
+            out_dir=out_dir,
+        )
+        write_json(out_dir / "paper_parse_report.json", report)
+        raise
     canonical = _normalize_canonical_markdown(text)
     canonical_path = out_dir / "canonical_paper.md"
     extracted_path = out_dir / "extracted_paper.txt"
@@ -179,10 +221,12 @@ def _parse_pdf_with_pypdf(pdf_path: Path, out_dir: Path) -> tuple[str, dict[str,
     write_text(extracted_path, _markdown_to_plain_text(canonical))
     report = _build_parse_report(
         parser_name="pypdf",
+        requested_parser=requested_parser,
         parser_version=_pypdf_version(),
         input_pdf=str(pdf_path),
         output_markdown_path=canonical_path,
         output_json_path=None,
+        out_dir=out_dir,
         num_pages=metadata.get("num_pages"),
         text=canonical,
         warnings=[metadata["warning"]] if metadata.get("warning") else [],
@@ -190,22 +234,31 @@ def _parse_pdf_with_pypdf(pdf_path: Path, out_dir: Path) -> tuple[str, dict[str,
     return canonical, report
 
 
-def _parse_pdf_auto(pdf_path: Path, out_dir: Path) -> tuple[str, dict[str, Any]]:
+def _parse_pdf_auto(
+    pdf_path: Path,
+    out_dir: Path,
+    *,
+    requested_parser: str = "auto",
+) -> tuple[str, dict[str, Any]]:
     try:
-        text, report = _parse_pdf_with_pypdf(pdf_path, out_dir)
+        text, report = _parse_pdf_with_pypdf(pdf_path, out_dir, requested_parser=requested_parser)
     except RuntimeError as exc:
         warnings = [f"pypdf failed in auto mode: {exc}"]
     else:
         warnings = list(report.get("warnings", []))
         if not _should_try_mineru(text, report):
             report["parser_name"] = "pypdf"
+            report["actual_parser"] = "pypdf"
             report["warnings"] = warnings
-            write_json(out_dir / "paper_parse_report.json", report)
             return text, report
         warnings.append("pypdf parse quality was low; auto mode is trying MinerU.")
 
     try:
-        mineru_text, mineru_report = _parse_pdf_with_mineru(pdf_path, out_dir)
+        mineru_text, mineru_report = _parse_pdf_with_mineru(
+            pdf_path,
+            out_dir,
+            requested_parser=requested_parser,
+        )
     except RuntimeError as exc:
         raise RuntimeError(
             "Auto PDF parsing could not obtain a reliable parse. pypdf output was too short, "
@@ -214,119 +267,272 @@ def _parse_pdf_auto(pdf_path: Path, out_dir: Path) -> tuple[str, dict[str, Any]]
             "Install the optional local MinerU CLI or provide extracted text with --paper-text."
         ) from exc
     mineru_report["warnings"] = warnings + list(mineru_report.get("warnings", []))
-    write_json(out_dir / "paper_parse_report.json", mineru_report)
     return mineru_text, mineru_report
 
 
-def _parse_pdf_with_mineru(pdf_path: Path, out_dir: Path) -> tuple[str, dict[str, Any]]:
-    _validate_pdf_path(pdf_path)
-    cli = _mineru_cli()
-    if cli is None:
-        raise RuntimeError(
-            "MinerU PDF parser is not available. Could not find local CLI command "
-            "'mineru' or legacy 'magic-pdf'. Install the optional local MinerU CLI "
-            "outside the default dependencies, then rerun with --pdf-parser mineru, "
-            "or use --paper-text as a fallback."
-        )
+def _parse_pdf_mineru_first(
+    pdf_path: Path,
+    out_dir: Path,
+    *,
+    requested_parser: str = "mineru-first",
+) -> tuple[str, dict[str, Any]]:
+    try:
+        return _parse_pdf_with_mineru(pdf_path, out_dir, requested_parser=requested_parser)
+    except RuntimeError as mineru_exc:
+        mineru_failure = _read_optional_parse_report(out_dir)
+        try:
+            text, report = _parse_pdf_with_pypdf(
+                pdf_path,
+                out_dir,
+                requested_parser=requested_parser,
+            )
+        except Exception as pypdf_exc:
+            failure = _build_failure_parse_report(
+                requested_parser=requested_parser,
+                actual_parser="pypdf",
+                error_type=type(pypdf_exc).__name__,
+                error_message=f"MinerU failed and pypdf fallback also failed: {pypdf_exc}",
+                pdf_path=pdf_path,
+                out_dir=out_dir,
+            )
+            failure["fallback_used"] = True
+            failure["fallback_reason"] = str(mineru_exc)
+            failure["mineru_failure_summary"] = _failure_summary(mineru_failure)
+            write_json(out_dir / "paper_parse_report.json", failure)
+            raise RuntimeError(f"MinerU failed and pypdf fallback also failed: {pypdf_exc}") from pypdf_exc
 
+        report["status"] = "success_with_fallback"
+        report["requested_parser"] = requested_parser
+        report["preferred_parser"] = "mineru"
+        report["actual_parser"] = "pypdf"
+        report["parser_name"] = "pypdf"
+        report["fallback_used"] = True
+        report["fallback_reason"] = str(mineru_exc)
+        report["mineru_failure_summary"] = _failure_summary(mineru_failure)
+        warnings = list(report.get("warnings", []))
+        warnings.append(f"MinerU failed; fell back to pypdf: {mineru_exc}")
+        report["warnings"] = warnings
+        report["warning"] = "; ".join(warnings)
+        return text, report
+
+
+def _parse_pdf_with_mineru(
+    pdf_path: Path,
+    out_dir: Path,
+    *,
+    requested_parser: str = "mineru",
+) -> tuple[str, dict[str, Any]]:
     raw_dir = out_dir / "mineru_raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    version = _command_version(cli["path"])
-    timeout_sec = _mineru_timeout_sec()
+    stdout_log = out_dir / "mineru_stdout.log"
+    stderr_log = out_dir / "mineru_stderr.log"
+    mineru_env, selected_env = build_mineru_env()
+    timeout_sec = mineru_timeout_sec()
+    cwd = Path.cwd().resolve()
+    discovery = discover_mineru_executable()
+    cli: dict[str, str | None] = {"name": discovery.get("name"), "path": discovery.get("path")}
+    version_probe: dict[str, Any] | None = None
+    version = None
+    command: list[str] | None = None
+    returncode: int | None = None
+    elapsed_sec = 0.0
+    failure_written = False
+
+    def write_failure(
+        *,
+        error_type: str,
+        error_message: str,
+        stdout: str | bytes | None = "",
+        stderr: str | bytes | None = "",
+        timed_out: bool = False,
+    ) -> None:
+        nonlocal failure_written
+        stdout_text = _coerce_text(stdout)
+        stderr_text = _coerce_text(stderr)
+        _write_process_logs(stdout_log, stdout_text, stderr_log, stderr_text)
+        _write_mineru_failure_report(
+            out_dir=out_dir,
+            raw_dir=raw_dir,
+            requested_parser=requested_parser,
+            cli=cli,
+            discovery=discovery,
+            version=version,
+            version_probe=version_probe,
+            pdf_path=pdf_path,
+            cwd=cwd,
+            selected_env=selected_env,
+            command=command,
+            timeout_sec=timeout_sec,
+            elapsed_sec=elapsed_sec,
+            returncode=returncode,
+            stdout_log=stdout_log,
+            stderr_log=stderr_log,
+            stdout_tail=_tail_text(stdout_text),
+            stderr_tail=_tail_text(stderr_text),
+            error_type=error_type,
+            error_message=error_message,
+            timed_out=timed_out,
+        )
+        failure_written = True
+
+    if not discovery.get("available"):
+        message = str(discovery.get("error_message") or "MinerU executable unavailable.")
+        write_failure(
+            error_type=str(discovery.get("error_type") or "mineru_executable_unavailable"),
+            error_message=message,
+        )
+        raise RuntimeError(message)
+
     stdout_tail = ""
     stderr_tail = ""
-    with tempfile.TemporaryDirectory(prefix="paper_to_userspec_mineru_") as tmp:
-        tmp_out = Path(tmp) / "out"
-        tmp_out.mkdir(parents=True, exist_ok=True)
-        run_command = _mineru_run_command(cli, pdf_path, tmp_out)
-        try:
-            proc = subprocess.run(
-                run_command,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-                timeout=timeout_sec,
-            )
-        except subprocess.TimeoutExpired as exc:
-            stdout_tail = _tail_text(exc.stdout)
-            stderr_tail = _tail_text(exc.stderr)
-            _write_mineru_failure_report(
-                out_dir=out_dir,
-                raw_dir=raw_dir,
-                cli=cli,
-                version=version,
-                pdf_path=pdf_path,
-                timeout_sec=timeout_sec,
-                stdout_tail=stdout_tail,
-                stderr_tail=stderr_tail,
-            )
-            raise RuntimeError(
-                f"MinerU parsing timed out after {timeout_sec} seconds. "
-                "Try --pdf-parser pypdf, --pdf-parser auto, or --paper-text."
-            ) from exc
-        stdout_tail = _tail_text(proc.stdout)
-        stderr_tail = _tail_text(proc.stderr)
-        if proc.returncode != 0:
-            detail = (proc.stderr or proc.stdout or "").strip()
-            raise RuntimeError(f"MinerU CLI failed with exit code {proc.returncode}: {detail}")
-        for generated in tmp_out.rglob("*"):
-            if generated.is_file():
-                target = raw_dir / generated.relative_to(tmp_out)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(generated.read_bytes())
-
-    markdown_candidates = _find_files(raw_dir, [".md", ".markdown"])
-    markdown_path = _largest_file(markdown_candidates)
-    json_candidates = _find_files(raw_dir, [".json"])
-    json_path = _largest_file(json_candidates)
-    json_text = _extract_text_from_mineru_json_candidates(json_candidates)
-    warnings: list[str] = []
-    if markdown_path:
-        canonical = _normalize_canonical_markdown(read_text(markdown_path))
-        canonical = _append_missing_urls_from_supplemental_text(canonical, json_text)
-    else:
-        if json_text:
-            warnings.append("MinerU did not produce markdown; canonical text was built from JSON content.")
-            canonical = _normalize_canonical_markdown(json_text)
-        else:
-            text_path = _largest_file(_find_files(raw_dir, [".txt"]))
-            if not text_path:
-                raise RuntimeError(
-                    "MinerU CLI completed but no usable paper text was found. "
-                    "Expected a .md file, text-bearing JSON/content list, or .txt output "
-                    f"under {raw_dir}."
+    started = time.monotonic()
+    try:
+        version_probe = probe_mineru_version(str(discovery["path"]), env=mineru_env)
+        version = version_probe.get("version")
+        with tempfile.TemporaryDirectory(prefix="paper_to_userspec_mineru_") as tmp:
+            tmp_out = Path(tmp) / "out"
+            tmp_out.mkdir(parents=True, exist_ok=True)
+            command = _mineru_run_command(cli, pdf_path, tmp_out)
+            try:
+                proc = subprocess.run(
+                    command,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                    timeout=timeout_sec,
+                    cwd=str(cwd),
+                    env=mineru_env,
                 )
-            warnings.append("MinerU did not produce markdown; canonical text was built from text output.")
-            canonical = _normalize_canonical_markdown(read_text(text_path))
+            except subprocess.TimeoutExpired as exc:
+                elapsed_sec = round(time.monotonic() - started, 3)
+                message = (
+                    f"MinerU parsing timed out after {timeout_sec} seconds. "
+                    "Try --pdf-parser pypdf, --pdf-parser auto, --pdf-parser mineru-first, "
+                    "or --paper-text."
+                )
+                write_failure(
+                    error_type="TimeoutExpired",
+                    error_message=message,
+                    stdout=exc.stdout,
+                    stderr=exc.stderr,
+                    timed_out=True,
+                )
+                raise RuntimeError(message) from exc
+            elapsed_sec = round(time.monotonic() - started, 3)
+            returncode = proc.returncode
+            _write_process_logs(stdout_log, proc.stdout or "", stderr_log, proc.stderr or "")
+            stdout_tail = _tail_text(proc.stdout)
+            stderr_tail = _tail_text(proc.stderr)
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or "").strip()
+                message = f"MinerU CLI failed with exit code {proc.returncode}: {detail}"
+                write_failure(
+                    error_type="mineru_nonzero_exit",
+                    error_message=message,
+                    stdout=proc.stdout,
+                    stderr=proc.stderr,
+                )
+                raise RuntimeError(message)
+            for generated in tmp_out.rglob("*"):
+                if generated.is_file():
+                    target = raw_dir / generated.relative_to(tmp_out)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(generated.read_bytes())
 
-    canonical_path = out_dir / "canonical_paper.md"
-    extracted_path = out_dir / "extracted_paper.txt"
-    write_text(canonical_path, canonical)
-    write_text(extracted_path, _markdown_to_plain_text(canonical))
-    report = _build_parse_report(
-        parser_name="mineru",
-        parser_version=version,
-        input_pdf=str(pdf_path),
-        output_markdown_path=canonical_path,
-        output_json_path=json_path,
-        num_pages=None,
-        text=canonical,
-        warnings=warnings,
-    )
-    report.update(
-        {
-            "cli_command": cli["name"],
-            "output_dir": str(raw_dir),
-            "markdown_candidates": [str(path) for path in markdown_candidates],
-            "selected_markdown": str(markdown_path) if markdown_path else None,
-            "timeout_sec": timeout_sec,
-            "timed_out": False,
-            "stdout_tail": stdout_tail,
-            "stderr_tail": stderr_tail,
-        }
-    )
-    return canonical, report
+        markdown_candidates = _find_files(raw_dir, [".md", ".markdown"])
+        markdown_path = _largest_file(markdown_candidates)
+        json_candidates = _find_files(raw_dir, [".json"])
+        json_path = _largest_file(json_candidates)
+        json_text = _extract_text_from_mineru_json_candidates(json_candidates)
+        warnings: list[str] = []
+        if markdown_path:
+            canonical = _normalize_canonical_markdown(read_text(markdown_path))
+            canonical = _append_missing_urls_from_supplemental_text(canonical, json_text)
+        else:
+            if json_text:
+                warnings.append("MinerU did not produce markdown; canonical text was built from JSON content.")
+                canonical = _normalize_canonical_markdown(json_text)
+            else:
+                text_path = _largest_file(_find_files(raw_dir, [".txt"]))
+                if not text_path:
+                    message = (
+                        "MinerU CLI completed but no usable paper text was found. "
+                        "Expected a .md file, text-bearing JSON/content list, or .txt output "
+                        f"under {raw_dir}."
+                    )
+                    write_failure(
+                        error_type="mineru_no_usable_output",
+                        error_message=message,
+                        stdout=read_text(stdout_log) if stdout_log.exists() else "",
+                        stderr=read_text(stderr_log) if stderr_log.exists() else "",
+                    )
+                    raise RuntimeError(message)
+                warnings.append("MinerU did not produce markdown; canonical text was built from text output.")
+                canonical = _normalize_canonical_markdown(read_text(text_path))
+
+        plain_len = len(_markdown_to_plain_text(canonical))
+        if plain_len < MIN_EXTRACTED_PDF_CHARS:
+            message = f"MinerU CLI completed but extracted text was empty or too short ({plain_len} chars)."
+            write_failure(
+                error_type="mineru_output_too_short",
+                error_message=message,
+                stdout=read_text(stdout_log) if stdout_log.exists() else "",
+                stderr=read_text(stderr_log) if stderr_log.exists() else "",
+            )
+            raise RuntimeError(message)
+
+        canonical_path = out_dir / "canonical_paper.md"
+        extracted_path = out_dir / "extracted_paper.txt"
+        write_text(canonical_path, canonical)
+        write_text(extracted_path, _markdown_to_plain_text(canonical))
+        report = _build_parse_report(
+            parser_name="mineru",
+            requested_parser=requested_parser,
+            parser_version=version,
+            input_pdf=str(pdf_path),
+            output_markdown_path=canonical_path,
+            output_json_path=json_path,
+            out_dir=out_dir,
+            num_pages=None,
+            text=canonical,
+            warnings=warnings,
+        )
+        report.update(
+            {
+                "cli_command": cli["name"],
+                "mineru_executable": cli["path"],
+                "mineru_discovery": discovery,
+                "mineru_command": command,
+                "cwd": str(cwd),
+                "output_dir": str(raw_dir),
+                "markdown_candidates": [str(path) for path in markdown_candidates],
+                "selected_markdown": str(markdown_path) if markdown_path else None,
+                "timeout_sec": timeout_sec,
+                "timed_out": False,
+                "elapsed_sec": elapsed_sec,
+                "returncode": returncode,
+                "stdout_log": str(stdout_log),
+                "stderr_log": str(stderr_log),
+                "stdout_tail": stdout_tail,
+                "stderr_tail": stderr_tail,
+                "selected_env": selected_env,
+                "version_probe": version_probe,
+            }
+        )
+        return canonical, report
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        elapsed_sec = round(time.monotonic() - started, 3)
+        if not failure_written:
+            write_failure(
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+                stdout=read_text(stdout_log) if stdout_log.exists() else "",
+                stderr=read_text(stderr_log) if stderr_log.exists() else "",
+            )
+        raise RuntimeError(f"Unexpected MinerU parsing failure: {exc}") from exc
 
 
 def _validate_pdf_path(pdf_path: Path) -> None:
@@ -336,20 +542,11 @@ def _validate_pdf_path(pdf_path: Path) -> None:
         raise RuntimeError(f"Expected a .pdf file, got: {pdf_path}")
 
 
-def _mineru_cli() -> dict[str, str] | None:
-    mineru = shutil.which("mineru")
-    if mineru:
-        return {"name": "mineru", "path": mineru}
-    magic_pdf = shutil.which("magic-pdf")
-    if magic_pdf:
-        return {"name": "magic-pdf", "path": magic_pdf}
-    return None
-
-
-def _mineru_run_command(cli: dict[str, str], pdf_path: Path, output_dir: Path) -> list[str]:
+def _mineru_run_command(cli: dict[str, str | None], pdf_path: Path, output_dir: Path) -> list[str]:
+    path = str(cli["path"])
     if cli["name"] == "mineru":
         return [
-            cli["path"],
+            path,
             "-p",
             str(pdf_path),
             "-o",
@@ -367,39 +564,54 @@ def _mineru_run_command(cli: dict[str, str], pdf_path: Path, output_dir: Path) -
             "--image-analysis",
             "false",
         ]
-    return [cli["path"], "-p", str(pdf_path), "-o", str(output_dir)]
-
-
-def _mineru_timeout_sec() -> int:
-    raw = os.environ.get("SURE_PAPER_MINERU_TIMEOUT_SEC")
-    if not raw:
-        return DEFAULT_MINERU_TIMEOUT_SEC
-    try:
-        value = int(raw)
-    except ValueError:
-        return DEFAULT_MINERU_TIMEOUT_SEC
-    return value if value > 0 else DEFAULT_MINERU_TIMEOUT_SEC
+    return [path, "-p", str(pdf_path), "-o", str(output_dir)]
 
 
 def _write_mineru_failure_report(
     *,
     out_dir: Path,
     raw_dir: Path,
-    cli: dict[str, str],
+    requested_parser: str,
+    cli: dict[str, str | None],
+    discovery: dict[str, Any],
     version: str | None,
+    version_probe: dict[str, Any] | None,
     pdf_path: Path,
+    cwd: Path,
+    selected_env: dict[str, str],
+    command: list[str] | None,
     timeout_sec: int,
+    elapsed_sec: float,
+    returncode: int | None,
+    stdout_log: Path,
+    stderr_log: Path,
     stdout_tail: str,
     stderr_tail: str,
+    error_type: str,
+    error_message: str,
+    timed_out: bool,
 ) -> None:
     write_json(
         out_dir / "paper_parse_report.json",
         {
             "enabled": True,
             "status": "fail",
+            "requested_parser": requested_parser,
+            "preferred_parser": "mineru",
+            "actual_parser": "mineru",
             "parser_name": "mineru",
             "cli_command": cli["name"],
             "parser_version": version,
+            "fallback_used": False,
+            "fallback_reason": None,
+            "error_type": error_type,
+            "error_message": error_message,
+            "pdf_path": str(pdf_path),
+            "out_dir": str(out_dir),
+            "cwd": str(cwd),
+            "mineru_executable": cli["path"],
+            "mineru_discovery": discovery,
+            "mineru_command": command,
             "input_pdf": str(pdf_path),
             "output_dir": str(raw_dir),
             "output_markdown_path": str(out_dir / "canonical_paper.md"),
@@ -410,15 +622,110 @@ def _write_mineru_failure_report(
             "has_references": False,
             "markdown_candidates": [],
             "selected_markdown": None,
-            "warnings": [f"MinerU parsing timed out after {timeout_sec} seconds."],
-            "warning": f"MinerU parsing timed out after {timeout_sec} seconds.",
+            "warnings": [error_message],
+            "warning": error_message,
             "parse_quality_score": 0.0,
             "timeout_sec": timeout_sec,
-            "timed_out": True,
+            "elapsed_sec": elapsed_sec,
+            "returncode": returncode,
+            "timed_out": timed_out,
+            "stdout_log": str(stdout_log),
+            "stderr_log": str(stderr_log),
             "stdout_tail": stdout_tail,
             "stderr_tail": stderr_tail,
+            "selected_env": selected_env,
+            "version_probe": version_probe,
         },
     )
+
+
+def _build_failure_parse_report(
+    *,
+    requested_parser: str,
+    actual_parser: str | None,
+    error_type: str,
+    error_message: str,
+    pdf_path: Path,
+    out_dir: Path,
+) -> dict[str, Any]:
+    return {
+        "enabled": True,
+        "status": "fail",
+        "requested_parser": requested_parser,
+        "preferred_parser": "mineru" if requested_parser == "mineru-first" else requested_parser,
+        "actual_parser": actual_parser,
+        "parser_name": actual_parser,
+        "parser_version": None,
+        "fallback_used": False,
+        "fallback_reason": None,
+        "error_type": error_type,
+        "error_message": error_message,
+        "pdf_path": str(pdf_path),
+        "out_dir": str(out_dir),
+        "cwd": str(Path.cwd().resolve()),
+        "input_pdf": str(pdf_path),
+        "output_markdown_path": str(out_dir / "canonical_paper.md"),
+        "output_json_path": None,
+        "num_pages": None,
+        "extracted_chars": 0,
+        "detected_sections": [],
+        "has_references": False,
+        "warnings": [error_message],
+        "warning": error_message,
+        "parse_quality_score": 0.0,
+    }
+
+
+def _write_process_logs(
+    stdout_log: Path,
+    stdout: str,
+    stderr_log: Path,
+    stderr: str,
+) -> None:
+    write_text(stdout_log, stdout)
+    write_text(stderr_log, stderr)
+
+
+def _coerce_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def _read_optional_parse_report(out_dir: Path) -> dict[str, Any] | None:
+    path = out_dir / "paper_parse_report.json"
+    if not path.exists():
+        return None
+    try:
+        return read_json(path)
+    except Exception:
+        return None
+
+
+def _failure_summary(report: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not report:
+        return None
+    keys = [
+        "status",
+        "requested_parser",
+        "actual_parser",
+        "error_type",
+        "error_message",
+        "mineru_executable",
+        "mineru_discovery",
+        "mineru_command",
+        "timeout_sec",
+        "elapsed_sec",
+        "returncode",
+        "stdout_log",
+        "stderr_log",
+        "stdout_tail",
+        "stderr_tail",
+        "selected_env",
+    ]
+    return {key: report.get(key) for key in keys if key in report}
 
 
 def _tail_text(value: str | bytes | None, limit: int = 4000) -> str:
@@ -429,22 +736,6 @@ def _tail_text(value: str | bytes | None, limit: int = 4000) -> str:
     else:
         text = value
     return text[-limit:]
-
-
-def _command_version(command: str) -> str | None:
-    try:
-        proc = subprocess.run(
-            [command, "--version"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-            timeout=15,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    version = (proc.stdout or proc.stderr).strip()
-    return version.splitlines()[0] if version else None
 
 
 def _find_best_file(root: Path, suffixes: list[str]) -> Path | None:
@@ -505,10 +796,12 @@ def _collect_mineru_text_fragments(data: Any, fragments: list[str]) -> None:
 def _build_parse_report(
     *,
     parser_name: str,
+    requested_parser: str,
     parser_version: str | None,
     input_pdf: str | None,
     output_markdown_path: Path,
     output_json_path: Path | None,
+    out_dir: Path,
     num_pages: int | None,
     text: str,
     warnings: list[str],
@@ -519,8 +812,16 @@ def _build_parse_report(
     return {
         "enabled": parser_name != "paper_text",
         "status": "pass",
+        "requested_parser": requested_parser,
+        "preferred_parser": "mineru" if requested_parser == "mineru-first" else requested_parser,
+        "actual_parser": parser_name,
         "parser_name": parser_name,
         "parser_version": parser_version,
+        "fallback_used": False,
+        "fallback_reason": None,
+        "pdf_path": input_pdf,
+        "out_dir": str(out_dir),
+        "cwd": str(Path.cwd().resolve()),
         "input_pdf": input_pdf,
         "output_markdown_path": str(output_markdown_path),
         "output_json_path": str(output_json_path) if output_json_path else None,

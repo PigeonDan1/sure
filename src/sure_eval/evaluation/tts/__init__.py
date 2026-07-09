@@ -1,5 +1,13 @@
-"""TTS evaluation package placeholder.
+"""TTS evaluation package."""
 
-Task-specific metrics can be added here without changing the legacy evaluator
-entrypoints.
-"""
+from .metrics import (
+    evaluate_tts_metrics_manifest,
+    load_tts_metrics_manifest,
+    validate_tts_metrics_sample,
+)
+
+__all__ = [
+    "evaluate_tts_metrics_manifest",
+    "load_tts_metrics_manifest",
+    "validate_tts_metrics_sample",
+]

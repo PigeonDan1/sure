@@ -31,6 +31,7 @@ from .io import (
     write_text,
     write_yaml,
 )
+from .mineru_runtime import mineru_runtime_status
 from .report1 import generate_report1
 from .router import route_user_spec
 from .validator import (
@@ -264,6 +265,17 @@ def _report1(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mineru_check(args: argparse.Namespace) -> int:
+    del args
+    status = mineru_runtime_status()
+    discovery = status["mineru_discovery"]
+    version_probe = status.get("version_probe") or {}
+    print(json.dumps(status, indent=2, sort_keys=True))
+    if not discovery.get("available"):
+        return 1
+    return 0 if version_probe.get("ok") else 2
+
+
 def _run_readme(user_spec: dict[str, Any], report: dict[str, Any], next_file: str) -> str:
     missing = user_spec.get("missing_fields", [])
     missing_text = ", ".join(missing) if missing else "None recorded."
@@ -302,7 +314,7 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--case-id", required=True)
     build.add_argument("--paper-text")
     build.add_argument("--paper")
-    build.add_argument("--pdf-parser", choices=["pypdf", "mineru", "auto"], default="pypdf")
+    build.add_argument("--pdf-parser", choices=["pypdf", "mineru", "auto", "mineru-first"], default="pypdf")
     build.add_argument("--repo-url")
     build.add_argument("--model-card-url")
     build.add_argument("--debug-artifacts", action="store_true")
@@ -341,6 +353,9 @@ def build_parser() -> argparse.ArgumentParser:
     report1.add_argument("--external-evidence-json")
     report1.add_argument("--debug-artifacts", action="store_true")
     report1.set_defaults(func=_report1)
+
+    mineru_check = sub.add_parser("mineru-check", help="Check MinerU CLI discovery without parsing a PDF.")
+    mineru_check.set_defaults(func=_mineru_check)
     return parser
 
 

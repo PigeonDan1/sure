@@ -1,4 +1,4 @@
-model_id: "nvidia/nvidia/parakeet-rnnt-1.1b"
+model_id: "nvidia/parakeet-rnnt-1.1b"
 model_name: "nvidia/parakeet-rnnt-1.1b"
 task_type: "asr"
 deployment_type: "local"

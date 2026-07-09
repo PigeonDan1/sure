@@ -5,13 +5,13 @@ description: "Phase-1 wrapper for nvidia/parakeet-rnnt-1.1b via NeMo."
 model:
   id: nvidia/parakeet-rnnt-1.1b
   backend: uv
-  device: cpu
+  device: cuda
 
 server:
   command: ["python", "server.py"]
   env:
     MODEL_ID: nvidia/parakeet-rnnt-1.1b
-    DEVICE: cpu
+    DEVICE: cuda
 
 tools:
   - name: transcribe_audio
