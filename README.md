@@ -1,10 +1,55 @@
 # Sure
 
-Sure is a research-agent harness built on the Pi coding agent framework. It keeps the base agent useful as a normal coding assistant, while adding Sure slash-command skills such as `/paper_collect`, `/literature_survey`, `/knowledge_graph`, `/research_idea`, `/novelty_check`, `/run_experiment`, `/data_workflow`, `/model_eval`, `/model_mcp`, `/science_gateway`, `/research_discussion`, `/scholar_profile`, `/sure_eval`, and `/sure_onboard`.
+Sure is a Pi coding-agent harness for running scientific and model-evaluation workflows as slash-command skills.
 
-The important design rule is simple: the Harness owns lifecycle, state persistence, tool gates, and artifact envelopes; each skill package owns domain-specific prompts, scripts, stages, metrics, validation rules, and repair logic.
+The design boundary is intentional:
 
-## Development Setup
+- Harness owns slash-command discovery, run lifecycle, state persistence, hook execution, tool gates, and final manifest validation.
+- Skill packages own domain prompts, deterministic scripts, state machines, schemas, checkpoints, validation rules, and repair instructions.
+
+Do not move task-specific phases, metrics, or SURE business logic into Harness unless the rule is truly common to every skill.
+
+## Implemented Slash Commands
+
+Only these repository skills are implemented today:
+
+| Command | Purpose | Required inputs | Required terminal artifact |
+|---------|---------|-----------------|----------------------------|
+| `/paper_collect` | Offline deterministic paper collection template. | Topic text; optional `target <number>` or `target=<number>`. | `artifacts/papers.manifest.json` |
+| `/scholar_profile` | Build a scholar profile and persona system prompt from DBLP/OpenAlex/Google Scholar/personal pages. | `scholar_name`; requires `OPENAI_API_KEY`. | `system_prompt.md`, `scholars.csv`, `source_urls.json`, `mainline.json`, `manifest.json` |
+| `/sure_feed` | Scan ModelScope/HuggingFace models, match them to SURE task families, rank them, and emit a handoff manifest. | Optional `source`, `query`/`filter`, `max_models`, `since`, `watch_mode`. | `artifacts/handoff_manifest.json` |
+| `/sure_onboard` | Onboard or repair an audio model into `sure/models/<model_id>/` with wrapper, spec, validation, and verdict. | `model_id`, `repo`, `task_type`, `deployment_type`. | `artifacts/verdict.json` |
+| `/sure_eval` | Evaluate an already-onboarded audio model through the SURE-EVAL main-flow agent. | `model`, `task`. | `artifacts/main_agent_run_report.json`, `artifacts/execution_surface.json` |
+
+Other command names may still be registered in Harness for future packages, but they are not usable until a matching `sure/skills/<skill>/sure.skill.json` exists.
+
+## Typical Workflows
+
+Paper collection:
+
+```text
+/paper_collect graph neural networks after 2022, target 10
+```
+
+Scholar profile:
+
+```text
+/scholar_profile scholar_name="Yoshua Bengio" language=en
+```
+
+SURE model pipeline:
+
+```text
+/sure_feed source=modelscope query="asr english" max_models=20
+/sure_onboard model_id=<id> repo=<repo> task_type=asr deployment_type=local weights_source=<weights>
+/sure_eval model=<id> task=asr max_samples=20
+```
+
+The SURE pipeline handoff is artifact-based. `/sure_feed` writes `handoff_manifest.json`; `/sure_onboard` consumes the selected repo/weights and writes global model products under `sure/models/<model_id>/`; `/sure_eval` reads that model directory. Skills do not call each other directly.
+
+## Development
+
+Install and check from the repo root:
 
 ```bash
 npm install --ignore-scripts
@@ -12,65 +57,67 @@ npm run check
 ./pi-test.sh
 ```
 
-Use `./pi-test.sh` from the repository root to start the local TUI from source. Once a skill package exists, run it in the TUI with its slash command, for example:
+Use `./pi-test.sh` to start the local TUI from source and run slash commands interactively.
 
-```text
-/paper_collect graph neural networks after 2022, target 50 papers
-```
-
-Do not run `npm run build` or the full test suite unless you specifically need them. For Sure changes, the focused test is:
+Do not run `npm run build` or the full test suite unless specifically needed. For Sure-focused changes, prefer targeted checks:
 
 ```bash
 cd packages/coding-agent
-node node_modules/vitest/vitest.mjs --run test/suite/sure-extension.test.ts
+node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-extension.test.ts
+node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-feed.test.ts
+node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-onboard-state-machine.test.ts
+node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-eval-state-machine.test.ts
+node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-eval-red-lines.test.ts
+node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-eval-runbackend.test.ts
 ```
 
-## Where Skills Live
+Hook type-checking is part of `npm run check` through:
 
-Repository-managed skills belong under:
+```bash
+npm run check:sure-hooks
+```
+
+## Skill Package Layout
+
+Shared repository skills live under:
 
 ```text
 sure/skills/<skill-name>/
 ```
 
-Project-local or experimental overrides belong under:
+Project-local or experimental overrides live under:
 
 ```text
 .sure/skills/<skill-name>/
 ```
 
-Runtime discovery checks both locations. Project-local `.sure/skills` packages override repository `sure/skills` packages for the same command. This lets contributors test private versions without changing the shared skill package.
+Discovery checks both locations. A project-local package overrides a repository package for the same command.
 
-Each skill package should use this shape:
+Expected package shape:
 
 ```text
-sure/skills/paper_collect/
+sure/skills/<skill-name>/
   sure.skill.json
   SKILL.md
   hooks/
     index.ts
   scripts/
-    collect.py
-    normalize.py
   schemas/
-    paper_collection.schema.json
   examples/
-    minimal-input.json
-    manifest.example.json
-  README.md
+  references/
 ```
 
-Only `sure.skill.json` and the prompt file are required by discovery. Hooks, scripts, schemas, examples, and README are expected for reviewable production skills.
+Only `sure.skill.json` and the prompt file are required for discovery. Production skills should include hooks, scripts, schemas, and examples so the workflow is reviewable and testable.
 
 ## `sure.skill.json`
 
-The manifest connects a package to a Sure slash command.
+The manifest binds a package to a slash command:
 
 ```json
 {
-  "name": "paper_collect",
-  "command": "/paper_collect",
-  "description": "Collect papers and produce a standard paper collection manifest.",
+  "name": "sure_feed",
+  "command": "/sure_feed",
+  "description": "Feed ModelScope models into the SURE pipeline.",
   "prompt": "SKILL.md",
   "hooks": {
     "pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
@@ -82,15 +129,15 @@ The manifest connects a package to a Sure slash command.
   },
   "artifacts": [
     {
-      "type": "paper_collection",
-      "path": "artifacts/papers.manifest.json",
+      "type": "handoff_manifest",
+      "path": "artifacts/handoff_manifest.json",
       "required": true,
-      "description": "Final paper collection manifest"
+      "description": "Final handoff manifest for /sure_onboard."
     }
   ],
   "ui": {
-    "primaryCounters": ["collected_papers", "target_papers"],
-    "artifactTypes": ["paper_collection"],
+    "primaryCounters": ["completed_units", "total_units", "gate_blocks"],
+    "artifactTypes": ["handoff_manifest"],
     "defaultExpandedSections": ["diagnostics", "artifacts"]
   }
 }
@@ -98,205 +145,132 @@ The manifest connects a package to a Sure slash command.
 
 Rules:
 
-- `command` must be one of the registered Sure commands.
+- `command` must be a registered Sure command.
 - `prompt` and hook module paths must stay inside the skill package.
-- `artifacts` only declares common required files. Deep validation belongs in `pre_finish`.
-- `ui` is a display hint only. It must not encode Harness logic.
+- Required artifacts should declare fixed paths when the Harness must verify them.
+- `ui` is a display hint only. It must not encode workflow semantics.
 
-## Prompt File
+## Prompt, Scripts, And Hooks
 
-The prompt file is the skill's operating manual for the coding agent. Keep it specific and executable. It should tell the agent:
+`SKILL.md` is the agent-facing operating manual. It should define arguments, workflow order, scripts to run, state updates, success criteria, and failure handling.
 
-- what the skill does and what it must not do
-- how to interpret user arguments
-- which scripts to call and in what order
-- what files to write under the run directory
-- when to call `sure_update_state`
-- how to produce the final manifest
-- when to mark the run `success`, `incomplete`, or `failed`
+Scripts do deterministic work: API calls, downloads, parsing, conversion, scoring, validation, and export. They should accept explicit input/output paths, write durable files, and exit non-zero on unrecoverable failures.
 
-Example prompt outline:
+Hooks enforce gates around the agent:
 
-```md
-# /paper_collect
+- `pre_start`: validate inputs, environment, credentials, and writable dirs.
+- `pre_tool_call`: block unsafe or out-of-protocol tool calls.
+- `post_tool_result`: inspect outputs, advance state machines, and return repairs.
+- `pre_finish`: validate final artifacts before accepting `sure_finish`.
+- `post_finish`: summarize or register accepted results.
+- `on_error`: persist failure diagnostics.
 
-Collect a deduplicated paper set for the user's topic.
-
-Inputs:
-- User arguments from the Sure invocation.
-- Optional seed papers, DOI, arXiv IDs, or prior manifests.
-
-Workflow:
-1. Parse the topic and target count.
-2. Run `scripts/collect.py`.
-3. Run `scripts/normalize.py`.
-4. Write artifacts under the run directory.
-5. Call `sure_update_state` after each major phase.
-6. Call `sure_finish` only after writing the final manifest.
-
-Success requires:
-- At least the target paper count, unless the manifest status is `incomplete`.
-- A valid paper collection manifest.
-- Deduplication evidence and failure logs.
-```
-
-## Scripts
-
-Scripts contain deterministic or semi-deterministic work that should not live in the prompt. Put API calls, parsing, downloading, normalization, scoring, and export logic here.
-
-Recommended script behavior:
-
-- accept explicit input/output paths
-- write durable files under the provided run directory
-- be idempotent when possible
-- exit non-zero on unrecoverable failure
-- write machine-readable intermediate files for hooks to inspect
-- never rely on hidden cwd assumptions
-
-Example:
-
-```bash
-python sure/skills/paper_collect/scripts/collect.py \
-  --query "graph neural networks after 2022" \
-  --target 50 \
-  --out .sure/runs/<runId>/artifacts/raw_candidates.jsonl
-```
-
-## Hooks And Gates
-
-Hooks are TypeScript or JavaScript modules loaded from the skill package. They are the place for skill-specific gates. Harness executes them at fixed points and treats `ok: false` or `repair` as a blocking result.
-
-Supported hook points:
-
-- `pre_start`: check inputs, environment, credentials, writable output dirs
-- `pre_tool_call`: block unsafe or off-protocol tool calls
-- `post_tool_result`: inspect tool failures and suggest repair
-- `pre_finish`: validate final artifacts before accepting `sure_finish`
-- `post_finish`: register or summarize accepted results
-- `on_error`: persist failure diagnostics
-
-Example:
+Hook imports must use the hook entrypoint:
 
 ```ts
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent";
-
-export function preFinish(ctx: SureHookContext): SureHookResult {
-  const manifestPath = join(ctx.runDir, "artifacts", "papers.manifest.json");
-  if (!existsSync(manifestPath)) {
-    return {
-      ok: false,
-      repair: "Write artifacts/papers.manifest.json before calling sure_finish.",
-      state_patch: {
-        phase: { id: "validate", label: "Validating artifacts", status: "blocked" },
-        diagnostics: [{ severity: "error", message: "Missing paper collection manifest." }]
-      }
-    };
-  }
-
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
-  const collected = Array.isArray(manifest.papers) ? manifest.papers.length : 0;
-  if (collected < 50) {
-    return {
-      ok: false,
-      repair: "Collect more papers or finish with status incomplete.",
-      state_patch: {
-        phase: { id: "validate", label: "Validating paper count", status: "blocked" },
-        counters: { collected_papers: collected, target_papers: 50 }
-      }
-    };
-  }
-
-  return { ok: true };
-}
+import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 ```
 
-Keep hooks small. Heavy work belongs in scripts; hooks should validate, gate, summarize, and return repair instructions.
+Keep hooks small. Heavy work belongs in scripts; hooks should validate, gate, advance checkpoints, and return repair instructions.
 
-## Runtime State
+## Runtime Contract
 
-During an active Sure run, the skill can update display state with the `sure_update_state` tool or by returning `state_patch` from hooks.
+Every Sure invocation creates a run directory:
+
+```text
+.sure/runs/<runId>/
+  state.json
+  events.jsonl
+  manifest.json
+  artifacts/
+```
+
+The agent can update display state through `sure_update_state`:
 
 ```json
 {
-  "phase": { "id": "download", "label": "Downloading PDFs", "status": "running", "progress": 0.4 },
-  "message": "Downloaded 20 of 50 target PDFs.",
-  "counters": { "downloaded_pdfs": 20, "target_papers": 50 },
-  "diagnostics": [
-    {
-      "severity": "warning",
-      "message": "Some DOI downloads failed.",
-      "repair": "Retry with arXiv fallback."
-    }
-  ],
-  "artifacts": [
-    {
-      "type": "paper_collection",
-      "name": "Raw candidates",
-      "path": ".sure/runs/<runId>/artifacts/raw_candidates.jsonl",
-      "status": "draft"
-    }
-  ],
-  "checkpoint": {
-    "id": "after_download",
-    "label": "After PDF download",
-    "resumable": true,
-    "resume_hint": "Reuse the download cache and continue normalization."
-  },
-  "next_actions": ["Run normalization", "Retry failed PDF downloads"]
+  "phase": { "id": "match_task", "label": "Matching task", "status": "running", "progress": 0.4 },
+  "message": "Matched 12 candidates.",
+  "progress": 0.4,
+  "counters": { "completed_units": 2, "total_units": 6 },
+  "diagnostics": [{ "severity": "warning", "message": "Some metadata fetches failed." }],
+  "artifacts": [{ "type": "scan_result", "path": "artifacts/scan_result.json", "status": "ready" }],
+  "next_actions": ["Collect metadata"]
 }
 ```
 
-Harness validates only the common shape. It does not know that `download`, `dedup`, or `evaluate` are phases. Those names are owned by the skill package.
+`sure_update_state` may update only `phase`, `message`, `progress`, `counters`, `diagnostics`, `artifacts`, and `next_actions`.
 
-State is persisted in:
+Checkpoints are controlled by hooks, not by model tool calls. A hook can persist a checkpoint by returning `state_patch.checkpoint`; `sure_update_state` rejects checkpoint updates.
 
-```text
-.sure/runs/<runId>/state.json
-.sure/runs/<runId>/events.jsonl
-```
+## Final Manifest Contract
 
-## Final Manifest
-
-Every run must finish through `sure_finish`. The final manifest must be JSON and include this common envelope:
+Every run must finish through `sure_finish` with a JSON manifest. The common envelope is:
 
 ```json
 {
   "schema_version": "1",
   "run_id": "<runId>",
-  "skill_name": "paper_collect",
+  "skill_name": "sure_feed",
   "status": "success",
-  "created_at": "2026-07-05T00:00:00.000Z",
+  "created_at": "2026-07-14T00:00:00.000Z",
   "inputs": {},
   "outputs": {},
   "validation": {},
   "artifacts": [
     {
-      "type": "paper_collection",
-      "path": ".sure/runs/<runId>/artifacts/papers.manifest.json"
+      "type": "handoff_manifest",
+      "path": "artifacts/handoff_manifest.json"
     }
   ]
 }
 ```
 
-Harness checks the envelope and required artifact paths. The skill's `pre_finish` hook must check task-specific requirements such as paper count, graph node count, benchmark completeness, citation traceability, or experiment metrics.
+Harness validates:
+
+- The manifest is JSON and contains `schema_version`, `run_id`, `skill_name`, `status`, `created_at`, `inputs`, `outputs`, and `validation`.
+- `run_id` and `skill_name` match the active run.
+- Manifest `status` matches `sure_finish.status`.
+- `created_at` is parseable as an ISO date.
+- `inputs`, `outputs`, and `validation` are JSON objects.
+- Every artifact entry includes a non-empty `path`.
+- Every artifact path exists, either as a project path or a run-relative path.
+- Every required artifact in `sure.skill.json` is present in the final manifest and its declared path exists.
+
+Run-relative artifact paths such as `artifacts/main_agent_run_report.json` are supported. Absolute paths under the project are also supported. Prefer run-relative paths inside manifests unless a skill intentionally produces global products such as `sure/models/<model_id>/`.
+
+## SURE Business Rules
+
+`/sure_feed`:
+
+- Strong-plus-weak matching is mandatory. Matched candidates must record `match.match_source`.
+- Do not synthesize candidates. If discovery returns nothing, emit `candidates: []`.
+- `handoff_manifest.json` must be actionable: selected models need `repo`, and `weights_source` when known.
+
+`/sure_onboard`:
+
+- Model products belong under `sure/models/<model_id>/`, not only under the run directory.
+- Weights should converge to model-local `.runtime/` or `checkpoints/`.
+- Host-global checkpoint fallback requires `fallback_to_host_global=true` and a non-empty reason.
+- Terminal success requires `verdict.json` and a passing terminal gate.
+
+`/sure_eval`:
+
+- Evaluation is for already-onboarded models. If readiness says onboarding or repair is needed, run `/sure_onboard` first.
+- `run_evaluation.sh` must be derived only from templates under `sure/skills/sure_eval/scripts/templates/`.
+- When `which vc` and `vc info` both succeed, `vc_submit` is mandatory. Local bash or docker execution is prohibited unless vc is unavailable and the fallback is explicitly recorded.
+- Non-`vc_submit` final reports require `fallback_approved` and `local_fallback_reason`.
 
 ## Contributor Checklist
 
-Before opening a PR for a skill:
+Before opening a PR for a Sure skill:
 
 - Add the package under `sure/skills/<skill-name>/`.
-- Include a runnable prompt, scripts, hooks, examples, and README.
-- Keep all hook paths inside the skill package.
-- Report status with `sure_update_state` or hook `state_patch`.
-- Write a final manifest with the common envelope.
-- Gate incomplete or invalid outputs in `pre_finish`.
-- Run `npm run check`.
-- Run `node node_modules/vitest/vitest.mjs --run test/suite/sure-extension.test.ts` from `packages/coding-agent` if Harness behavior changed.
-
-## Notes For Maintainers
-
-The original Pi packages are still present under `packages/`. Sure-specific Harness code currently lives under `packages/coding-agent/src/core/sure/`, and repository skills live under `sure/skills/`.
-
-Do not move domain-specific validation into Harness. If a rule only makes sense for one skill, put it in that skill's hook or script.
+- Keep local experiments under `.sure/skills/<skill-name>/`.
+- Include `sure.skill.json`, `SKILL.md`, hooks, scripts, schemas, and examples.
+- Keep prompt and hook paths inside the skill package.
+- Put domain checks in skill hooks/scripts, not in Harness.
+- Declare required artifact paths in `sure.skill.json` when the path is fixed.
+- Write all final manifest artifact entries with existing paths.
+- Use `sure_update_state` for display state and hook `state_patch.checkpoint` for checkpoints.
+- Run `npm run check`; run focused Sure tests when Harness or state-machine behavior changes.
