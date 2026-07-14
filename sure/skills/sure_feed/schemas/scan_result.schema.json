@@ -1,0 +1,28 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "scan_result.schema.json",
+	"title": "SURE model-feed scan result",
+	"description": "Structured output of the SCAN_MODELSCOPE unit.",
+	"type": "object",
+	"required": ["candidates"],
+	"properties": {
+		"source": { "type": "string", "enum": ["modelscope", "huggingface"] },
+		"candidates": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["model_id"],
+				"properties": {
+					"model_id": { "type": "string" },
+					"repo": { "type": "string" },
+					"tasks": { "type": "array", "items": { "type": "string" } },
+					"custom_tag": { "type": ["string", "null"] },
+					"download_count": { "type": "number" }
+				},
+				"additionalProperties": true
+			}
+		},
+		"scan_summary": { "type": "string" }
+	},
+	"additionalProperties": false
+}

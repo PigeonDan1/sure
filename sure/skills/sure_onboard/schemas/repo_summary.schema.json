@@ -1,0 +1,17 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "repo_summary.schema.json",
+	"title": "SURE model-tool repo summary",
+	"description": "Structured output of the DISCOVER unit.",
+	"type": "object",
+	"required": ["repo_url"],
+	"properties": {
+		"repo_url": { "type": "string" },
+		"commit": { "type": ["string", "null"] },
+		"local_path": { "type": ["string", "null"] },
+		"file_inventory": { "type": "array", "items": { "type": "string" } },
+		"language": { "type": "string" },
+		"notes": { "type": "string" }
+	},
+	"additionalProperties": false
+}

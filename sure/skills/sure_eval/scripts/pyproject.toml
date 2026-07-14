@@ -1,0 +1,18 @@
+[project]
+name = "sure-eval-backend"
+version = "0.1.0"
+description = "Deterministic evaluation backend bundled inside the sure_eval skill package."
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+    "rich>=13.0",
+    "typer>=0.12",
+    "click>=8.0",
+    "structlog>=24.0",
+    "openai>=1.0",
+]
+
+[tool.uv]
+# Lightweight: no torch/librosa/modelscope here. Those live in the model
+# wrappers under sure/models/<model>/, imported only at inference time.

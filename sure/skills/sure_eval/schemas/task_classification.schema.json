@@ -1,0 +1,19 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "task_classification.schema.json",
+	"title": "SURE-EVAL task classification",
+	"description": "Structured output of the TASK_CLASSIFICATION_UNIT. Ported from docs/agents/main_flow_agent/templates/task_classification.json.",
+	"type": "object",
+	"required": ["task_type", "rationale"],
+	"properties": {
+		"task_type": {
+			"type": "string",
+			"enum": ["asr", "tts", "vc", "kws", "s2tt", "speech_understanding"]
+		},
+		"rationale": { "type": "string" },
+		"sub_task": { "type": "string" },
+		"input_modality": { "type": "string" },
+		"output_modality": { "type": "string" }
+	},
+	"additionalProperties": false
+}

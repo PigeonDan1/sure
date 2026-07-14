@@ -1,0 +1,16 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "main_agent_plan.schema.json",
+	"title": "SURE-EVAL execution plan",
+	"description": "Structured output of the PLAN_UNIT.",
+	"type": "object",
+	"required": ["plan_summary"],
+	"properties": {
+		"plan_summary": { "type": "string" },
+		"goal": { "type": "string" },
+		"steps": { "type": "array", "items": { "type": "string" } },
+		"target": { "type": "string" },
+		"max_samples": { "type": "number" }
+	},
+	"additionalProperties": false
+}

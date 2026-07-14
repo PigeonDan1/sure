@@ -1,0 +1,16 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "contract_result.schema.json",
+	"title": "SURE model-tool contract validation",
+	"description": "Structured output of the VALIDATE_CONTRACT unit.",
+	"type": "object",
+	"required": ["contract_passed"],
+	"properties": {
+		"contract_passed": { "type": "boolean" },
+		"duration_ms": { "type": "number" },
+		"error": { "type": ["string", "null"] },
+		"io_contract_satisfied": { "type": "boolean" },
+		"violations": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}

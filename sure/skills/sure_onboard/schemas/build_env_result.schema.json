@@ -1,0 +1,19 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "build_env_result.schema.json",
+	"title": "SURE model-tool build env result",
+	"description": "Structured output of the BUILD_ENV unit.",
+	"type": "object",
+	"required": ["env_ready"],
+	"properties": {
+		"env_ready": { "type": "boolean" },
+		"backend": { "type": "string" },
+		"python_version": { "type": "string" },
+		"lockfile_path": { "type": ["string", "null"] },
+		"docker_image": { "type": ["string", "null"] },
+		"duration_seconds": { "type": "number" },
+		"log_path": { "type": "string" },
+		"failures": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}

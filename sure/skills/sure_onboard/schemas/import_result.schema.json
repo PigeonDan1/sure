@@ -1,0 +1,15 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "import_result.schema.json",
+	"title": "SURE model-tool import validation",
+	"description": "Structured output of the VALIDATE_IMPORT unit.",
+	"type": "object",
+	"required": ["import_passed"],
+	"properties": {
+		"import_passed": { "type": "boolean" },
+		"duration_ms": { "type": "number" },
+		"error": { "type": ["string", "null"] },
+		"module": { "type": "string" }
+	},
+	"additionalProperties": false
+}

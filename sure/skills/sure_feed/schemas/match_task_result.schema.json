@@ -1,0 +1,33 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "match_task_result.schema.json",
+	"title": "SURE model-feed task match",
+	"description": "Structured output of the MATCH_TASK unit. Each candidate carries a match with match_source provenance.",
+	"type": "object",
+	"required": ["candidates"],
+	"properties": {
+		"candidates": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["model_id", "match"],
+				"properties": {
+					"model_id": { "type": "string" },
+					"match": {
+						"type": "object",
+						"required": ["matched"],
+						"properties": {
+							"matched": { "type": "boolean" },
+							"match_source": { "type": "string", "description": "tasks (strong) | custom_tag (weak fallback)" },
+							"task_type": { "type": "string" },
+							"score": { "type": "number" }
+						},
+						"additionalProperties": false
+					}
+				},
+				"additionalProperties": true
+			}
+		}
+	},
+	"additionalProperties": false
+}

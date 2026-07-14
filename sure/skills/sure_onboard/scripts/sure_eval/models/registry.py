@@ -1,0 +1,243 @@
+"""
+Model Registry for SURE-EVAL.
+
+Manages model discovery and loading.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+@dataclass
+class ModelInfo:
+    """Model information."""
+    name: str
+    task: str
+    path: Path
+    config: dict[str, Any]
+    
+    @property
+    def description(self) -> str:
+        return self.config.get("description", "")
+    
+    @property
+    def model_id(self) -> str:
+        return self.config.get("model", {}).get("id", "")
+
+    @property
+    def server_config(self) -> dict[str, Any]:
+        """Return server configuration from model config."""
+        return self.config.get("server", {})
+
+    @property
+    def server_command(self) -> list[str]:
+        """Return configured server command."""
+        command = self.server_config.get("command", [".venv/bin/python", "server.py"])
+        if isinstance(command, list):
+            return [str(part) for part in command]
+        if isinstance(command, str):
+            return [command]
+        return []
+
+    @property
+    def working_dir(self) -> Path:
+        """Return resolved working directory for server execution."""
+        configured = self.server_config.get("working_dir", ".")
+        if not configured:
+            configured = "."
+        return (self.path / str(configured)).resolve()
+
+    @property
+    def env(self) -> dict[str, str]:
+        """Return configured environment variables."""
+        env = self.server_config.get("env", {})
+        if isinstance(env, dict):
+            return {str(key): str(value) for key, value in env.items()}
+        return {}
+
+    @property
+    def timeout(self) -> int:
+        """Return configured server timeout."""
+        timeout = self.server_config.get("timeout", 300)
+        try:
+            return int(timeout)
+        except (TypeError, ValueError):
+            return 300
+    
+    @property
+    def is_implemented(self) -> bool:
+        """Check if model is fully implemented."""
+        server_file = self.path / "server.py"
+        model_file = self.path / "model.py"
+        return server_file.exists() and model_file.exists()
+    
+    def get_mcp_config(self) -> dict[str, Any]:
+        """Get MCP configuration."""
+        return {
+            "name": self.name,
+            "command": self.server_command,
+            "working_dir": str(self.working_dir),
+            "env": self.env,
+            "timeout": self.timeout,
+        }
+    
+    def get_test_results(self) -> dict[str, Any]:
+        """Get all test results."""
+        results_dir = self.path / "results"
+        results = {}
+        
+        if results_dir.exists():
+            for result_file in results_dir.glob("*.json"):
+                dataset_name = result_file.stem.split("_")[0]
+                try:
+                    with open(result_file) as f:
+                        results[dataset_name] = json.load(f)
+                except:
+                    pass
+        
+        return results
+    
+    @property
+    def protocols(self) -> dict[str, Any]:
+        """Return model's protocol declarations (backward-compatible)."""
+        return self.config.get("protocols", {}) or {}
+
+
+class ModelRegistry:
+    """Registry for managing models."""
+    
+    def __init__(self, models_dir: str | Path | None = None) -> None:
+        """
+        Initialize registry.
+
+        Args:
+            models_dir: Directory containing models. Default resolves to the
+                repo-level sure/models/ directory (the x-sure global model
+                root, replacing the original src/sure_eval/models default).
+                Override with the SURE_MODELS_DIR env var or an explicit arg.
+        """
+        if models_dir is None:
+            env_dir = os.environ.get("SURE_MODELS_DIR")
+            if env_dir:
+                models_dir = Path(env_dir)
+            else:
+                # The global model root is <repo-root>/sure/models/, where
+                # /sure_onboard lands model artifacts and /sure_eval reads
+                # them back. The repo root is the agent's working directory
+                # (cwd when the skill hook spawns this script).
+                models_dir = Path.cwd() / "sure" / "models"
+
+        self.models_dir = Path(models_dir)
+        self._models: dict[str, ModelInfo] = {}
+        self._discover_models()
+
+    def _discover_models(self) -> None:
+        """Discover models in models directory."""
+        if not self.models_dir.is_dir():
+            # Global model root not yet created (no model onboarded). The
+            # registry is simply empty until /sure_onboard lands a model.
+            return
+        for item in self.models_dir.iterdir():
+            if not item.is_dir():
+                continue
+            
+            # Skip special directories
+            if item.name.startswith("__") or item.name.startswith("."):
+                continue
+            
+            # Check for config.yaml
+            config_file = item / "config.yaml"
+            if config_file.exists():
+                try:
+                    import yaml
+                    with open(config_file) as f:
+                        config = yaml.safe_load(f)
+
+                    if config is None:
+                        print(f"Error loading model config {item}: config.yaml is empty")
+                        continue
+                    if not isinstance(config, dict):
+                        print(
+                            f"Error loading model config {item}: "
+                            f"expected a mapping, got {type(config).__name__}"
+                        )
+                        continue
+                    
+                    name = config.get("name", item.name)
+                    task = config.get("task", "unknown")
+                    
+                    self._models[name] = ModelInfo(
+                        name=name,
+                        task=task,
+                        path=item,
+                        config=config,
+                    )
+                except Exception as e:
+                    print(f"Error loading model config {item}: {e}")
+    
+    def list_models(self) -> list[str]:
+        """List all model names."""
+        return list(self._models.keys())
+    
+    def list_by_task(self, task: str) -> list[str]:
+        """List models by task."""
+        return [
+            name for name, info in self._models.items()
+            if info.task == task
+        ]
+    
+    def get_model(self, name: str) -> ModelInfo | None:
+        """Get model info by name."""
+        return self._models.get(name)
+    
+    def get_mcp_configs(self) -> dict[str, Any]:
+        """Get MCP configurations for all models."""
+        return {
+            name: info.get_mcp_config()
+            for name, info in self._models.items()
+            if info.is_implemented
+        }
+    
+    def generate_mcp_tools_yaml(self) -> str:
+        """Generate mcp_tools.yaml content."""
+        configs = self.get_mcp_configs()
+        
+        lines = ["# MCP Tool Registry for SURE-EVAL", "# Auto-generated from models", "", "tools:"]
+        
+        for name, config in configs.items():
+            lines.append(f"  {name}:")
+            lines.append(f'    name: "{name}"')
+            lines.append(f'    command: {config["command"]}')
+            lines.append(f'    working_dir: "{config["working_dir"]}"')
+            
+            if config.get("env"):
+                lines.append("    env:")
+                for key, value in config["env"].items():
+                    lines.append(f'      {key}: "{value}"')
+            
+            lines.append(f'    timeout: {config.get("timeout", 300)}')
+            lines.append("")
+        
+        return "\n".join(lines)
+    
+    def print_summary(self) -> None:
+        """Print summary of all models."""
+        print("=" * 60)
+        print("SURE-EVAL Model Registry")
+        print("=" * 60)
+        
+        for name, info in sorted(self._models.items()):
+            status = "✓" if info.is_implemented else "○"
+            print(f"{status} {name:20s} [{info.task:10s}] {info.description[:30]}...")
+        
+        print("=" * 60)
+        print(f"Total: {len(self._models)} models")
+
+
+if __name__ == "__main__":
+    raise SystemExit(ModelRegistry().print_summary() or 0)

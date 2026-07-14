@@ -1,0 +1,27 @@
+{
+	"name": "sure_feed",
+	"command": "/sure_feed",
+	"description": "Feed ModelScope models into the SURE pipeline: scan, match to a SURE task family, collect metadata, convert to the SURE resource layout, rank/select, and emit a handoff manifest for /sure_onboard.",
+	"prompt": "SKILL.md",
+	"hooks": {
+		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
+		"pre_tool_call": [{ "module": "hooks/index.ts", "handler": "preToolCall" }],
+		"post_tool_result": [{ "module": "hooks/index.ts", "handler": "postToolResult" }],
+		"pre_finish": [{ "module": "hooks/index.ts", "handler": "preFinish" }],
+		"post_finish": [{ "module": "hooks/index.ts", "handler": "postFinish" }],
+		"on_error": [{ "module": "hooks/index.ts", "handler": "onError" }]
+	},
+	"artifacts": [
+		{
+			"type": "handoff_manifest",
+			"path": "artifacts/handoff_manifest.json",
+			"required": true,
+			"description": "Final handoff manifest (handoff_manifest.json) listing selected models with repo/weights paths for /sure_onboard."
+		}
+	],
+	"ui": {
+		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
+		"artifactTypes": ["handoff_manifest", "scan_result", "rank_select_result"],
+		"defaultExpandedSections": ["diagnostics", "artifacts"]
+	}
+}

@@ -1,0 +1,215 @@
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import type { CheckpointData } from "../../../../sure/skills/sure_eval/hooks/checkpoints.ts";
+import { postToolResult, preFinish } from "../../../../sure/skills/sure_eval/hooks/index.ts";
+import { findUnit, LAST_UNIT } from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
+import type { SureHookContext } from "../../src/core/sure/types.ts";
+
+// sure_eval skill package root (repo-relative from the test file).
+const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_eval");
+
+function freshCtx(name: string): { ctx: SureHookContext; runDir: string } {
+	const runDir = resolve(__dirname, "tmp-sm", name);
+	mkdirSync(join(runDir, "artifacts"), { recursive: true });
+	const ctx: SureHookContext = {
+		point: "post_tool_result",
+		run: { id: "test-eval-sm", command: "/sure_eval", status: "running" } as never,
+		skill: { name: "sure_eval", command: "/sure_eval" } as never,
+		cwd: PACKAGE_DIR,
+		packageDir: PACKAGE_DIR,
+		runDir,
+		args: "",
+	};
+	return { ctx, runDir };
+}
+
+function seedCheckpoint(runDir: string, data: CheckpointData): void {
+	writeFileSync(join(runDir, "state.json"), JSON.stringify({ checkpoint: { data } }, null, 2), "utf-8");
+}
+
+function writeArtifact(runDir: string, produces: string, value: unknown): void {
+	writeFileSync(join(runDir, "artifacts", produces), JSON.stringify(value, null, 2), "utf-8");
+}
+
+// Regression guard for the gateCheck/gateScript split: tool_readiness_routing is
+// now a gate-without-script (kind: "gate", no gateScript) so its handoff block
+// actually fires. Previously it was linear → the block was dead code, so a run
+// with handoff_to_tool_agent=true advanced straight past onboard handoff.
+describe("sure_eval tool_readiness_routing handoff gate", () => {
+	it("is a gate unit with an in-process gateCheck and no gateScript", () => {
+		const unit = findUnit("tool_readiness_routing")!;
+		expect(unit.kind).toBe("gate");
+		expect(unit.gateCheck).toBeDefined();
+		expect(unit.gateScript).toBeUndefined();
+	});
+
+	it("blocks (no advance) when handoff_to_tool_agent=true — hand off to /sure_onboard", () => {
+		const { ctx, runDir } = freshCtx("handoff-true");
+		seedCheckpoint(runDir, {
+			currentUnit: "tool_readiness_routing",
+			completedUnits: ["task_classification"],
+			retries: {},
+		});
+		writeArtifact(runDir, "tool_readiness_routing.json", {
+			readiness: "needs_onboarding",
+			model_dir: "sure/models/missing_model",
+			handoff_to_tool_agent: true,
+		});
+		const result = postToolResult(ctx);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("handoff_to_tool_agent");
+		expect(result.repair).toContain("/sure_onboard");
+		// Did NOT advance past tool_readiness_routing.
+		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
+		expect(checkpoint?.data.currentUnit).toBe("tool_readiness_routing");
+	});
+
+	it("advances when readiness=ready and no handoff_to_tool_agent", () => {
+		const { ctx, runDir } = freshCtx("ready");
+		seedCheckpoint(runDir, {
+			currentUnit: "tool_readiness_routing",
+			completedUnits: ["task_classification"],
+			retries: {},
+		});
+		writeArtifact(runDir, "tool_readiness_routing.json", {
+			readiness: "ready",
+			model_dir: "sure/models/asr_qwen3",
+		});
+		const result = postToolResult(ctx);
+		expect(result.ok).toBe(true);
+		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
+		expect(checkpoint?.data.currentUnit).toBe("plan");
+	});
+});
+
+// Gate-with-script units (submit_vc_run, smoke_test, assessment, run_report,
+// script_routing) must have NO in-process gateCheck — the python gateScript is
+// the single authoritative semantic checker. This is the redundancy-removal
+// contract: no duplicated === true vs truthy logic, no duplicated constant lists.
+describe("sure_eval gate-with-script units have no in-process gateCheck (python is sole authority)", () => {
+	it.each([
+		["script_routing", "check_script_routing.py"],
+		["execution_readiness", "check_execution_surface_compliance.py"],
+		["smoke_test", "run_smoke.py"],
+		["submit_vc_run", "vc_check.py"],
+		["assessment", "check_assessment.py"],
+		["run_report", "check_run_report.py"],
+	])("%s delegates semantics to its python gateScript (no in-process gateCheck)", (unitId, script) => {
+		const unit = findUnit(unitId)!;
+		expect(unit.kind).toBe("gate");
+		expect(unit.gateScript).toBe(script);
+	});
+	// execution_readiness is the ONE exception that keeps an in-process gateCheck:
+	// it checks self-reported pass booleans, disjoint from the python script's
+	// template-provenance audit. All other gate-with-script units must NOT.
+	it("execution_readiness keeps its in-process gateCheck (disjoint from python)", () => {
+		expect(findUnit("execution_readiness")!.gateCheck).toBeDefined();
+	});
+	it("script_routing/smoke_test/submit_vc_run/assessment/run_report drop in-process gateCheck", () => {
+		for (const id of ["script_routing", "smoke_test", "submit_vc_run", "assessment", "run_report"]) {
+			expect(findUnit(id)!.gateCheck).toBeUndefined();
+		}
+	});
+});
+
+// Regression guard for the preFinish terminal-gate backstop. run_report is a
+// gate-with-script (check_run_report.py) with NO in-process gateCheck. The old
+// preFinish read `LAST_UNIT.gateCheck ? ... : {ok:true}` — but run_report has no
+// gateCheck, so the backstop was DEAD CODE: a run_report.json mutated between
+// postToolResult and sure_finish (e.g. report_persisted flipped to false, or
+// execution_path_actual emptied) would sail through sure_finish unchecked. Fixed:
+// preFinish now re-runs `runGateScript(ctx, LAST_UNIT)` (check_run_report.py),
+// mirroring the sure_onboard verdict backstop.
+describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
+	const SCRIPTS_DIR = join(PACKAGE_DIR, "scripts");
+
+	function finishCtx(name: string): { ctx: SureHookContext; runDir: string } {
+		const runDir = resolve(__dirname, "tmp-finish", name);
+		mkdirSync(join(runDir, "artifacts"), { recursive: true });
+		const ctx: SureHookContext = {
+			point: "pre_finish",
+			run: { id: "test-eval-finish", command: "/sure_eval", status: "running" } as never,
+			skill: { name: "sure_eval", command: "/sure_eval" } as never,
+			cwd: PACKAGE_DIR,
+			packageDir: PACKAGE_DIR,
+			runDir,
+			args: "",
+		};
+		return { ctx, runDir };
+	}
+
+	it("LAST_UNIT (run_report) has a gateScript and no gateCheck — so the backstop MUST call runGateScript", () => {
+		expect(LAST_UNIT.id).toBe("run_report");
+		expect(LAST_UNIT.gateScript).toBe("check_run_report.py");
+		expect(LAST_UNIT.gateCheck).toBeUndefined();
+		// scripts/check_run_report.py must actually exist so runGateScript can spawn it.
+		expect(existsSync(join(SCRIPTS_DIR, "check_run_report.py"))).toBe(true);
+	});
+
+	it("rejects a tampered run_report (report_persisted=false) at finish — backstop re-runs the python gate", () => {
+		const { ctx, runDir } = finishCtx("tampered");
+		seedCheckpoint(runDir, {
+			currentUnit: "run_report",
+			completedUnits: [
+				"task_classification",
+				"tool_readiness_routing",
+				"plan",
+				"dataset_scope",
+				"script_routing",
+				"execution_surface",
+				"execution_readiness",
+				"smoke_test",
+				"submit_vc_run",
+				"execute_wait",
+				"assessment",
+			],
+			retries: {},
+		});
+		// A report that violates check_run_report.py: report_persisted is false.
+		writeArtifact(runDir, "main_agent_run_report.json", {
+			report_persisted: false,
+			execution_path_actual: "vc_submit",
+		});
+		const result = preFinish(ctx);
+		expect(result.ok).toBe(false);
+		// The repair must come from check_run_report.py, naming report_persisted.
+		expect(result.repair).toContain("report_persisted");
+	});
+
+	it("accepts a compliant run_report at finish", () => {
+		const { ctx, runDir } = finishCtx("clean");
+		seedCheckpoint(runDir, {
+			currentUnit: "run_report",
+			completedUnits: [
+				"task_classification",
+				"tool_readiness_routing",
+				"plan",
+				"dataset_scope",
+				"script_routing",
+				"execution_surface",
+				"execution_readiness",
+				"smoke_test",
+				"submit_vc_run",
+				"execute_wait",
+				"assessment",
+			],
+			retries: {},
+		});
+		// A fully schema-compliant run_report (the union fix means ALL schema
+		// required fields must be present, not just the unit's requiredFields).
+		writeArtifact(runDir, "main_agent_run_report.json", {
+			run_id: "test-eval-finish",
+			timestamp: "2026-07-12T00:00:00Z",
+			task_type: "asr",
+			goal: "smoke eval",
+			selected_datasets: ["aishell1"],
+			executed_steps: [{ name: "evaluate_predictions", script: "scripts/evaluate_predictions.py" }],
+			status: "success",
+			report_persisted: true,
+			execution_path_actual: "vc_submit",
+		});
+		const result = preFinish(ctx);
+		expect(result.ok).toBe(true);
+	});
+});

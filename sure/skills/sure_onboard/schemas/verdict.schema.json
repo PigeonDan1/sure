@@ -1,0 +1,76 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "verdict.schema.json",
+	"title": "SURE model-tool verdict",
+	"description": "Structured output of the VERDICT unit. A success status requires build.success and all four validation tests passed. Ported from docs/agents/model_tool_agent/templates/verdict.json.",
+	"type": "object",
+	"required": ["status", "instance_id"],
+	"properties": {
+		"instance_id": { "type": "string" },
+		"timestamp": { "type": "string" },
+		"model_id": { "type": "string" },
+		"status": { "type": "string", "enum": ["pending", "passed", "success", "failed", "partial"] },
+		"backend": {
+			"type": "object",
+			"properties": {
+				"type": { "type": "string" },
+				"choice_reason": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"build": {
+			"type": "object",
+			"required": ["success"],
+			"properties": {
+				"success": { "type": "boolean" },
+				"duration_seconds": { "type": "number" },
+				"log_path": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"validation": {
+			"type": "object",
+			"properties": {
+				"import_test": { "$ref": "#/$defs/testResult" },
+				"load_test": { "$ref": "#/$defs/testResult" },
+				"infer_test": { "$ref": "#/$defs/testResult" },
+				"contract_test": { "$ref": "#/$defs/testResult" }
+			},
+			"additionalProperties": false
+		},
+		"failure": {
+			"type": "object",
+			"properties": {
+				"type": { "type": ["string", "null"] },
+				"category": { "type": ["string", "null"] },
+				"message": { "type": ["string", "null"] },
+				"retryable": { "type": "boolean" }
+			},
+			"additionalProperties": false
+		},
+		"artifacts": {
+			"type": "object",
+			"properties": {
+				"spec_path": { "type": "string" },
+				"wrapper_path": { "type": "string" },
+				"lockfile_path": { "type": ["string", "null"] },
+				"log_path": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"notes": { "type": "string" }
+	},
+	"$defs": {
+		"testResult": {
+			"type": "object",
+			"required": ["passed"],
+			"properties": {
+				"passed": { "type": "boolean" },
+				"duration_ms": { "type": "number" },
+				"error": { "type": ["string", "null"] }
+			},
+			"additionalProperties": false
+		}
+	},
+	"additionalProperties": false
+}

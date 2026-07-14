@@ -1,0 +1,15 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "load_result.schema.json",
+	"title": "SURE model-tool load validation",
+	"description": "Structured output of the VALIDATE_LOAD unit.",
+	"type": "object",
+	"required": ["load_passed"],
+	"properties": {
+		"load_passed": { "type": "boolean" },
+		"duration_ms": { "type": "number" },
+		"error": { "type": ["string", "null"] },
+		"device": { "type": "string" }
+	},
+	"additionalProperties": false
+}

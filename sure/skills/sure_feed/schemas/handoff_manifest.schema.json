@@ -1,0 +1,29 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "handoff_manifest.schema.json",
+	"title": "SURE model-feed handoff manifest",
+	"description": "Structured output of the EMIT_HANDOFF_MANIFEST unit. Consumed by /sure_onboard (repo + weights_source).",
+	"type": "object",
+	"required": ["models", "manifest_path"],
+	"properties": {
+		"manifest_path": { "type": "string" },
+		"source": { "type": "string", "enum": ["modelscope", "huggingface"] },
+		"models": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["model_id", "repo"],
+				"properties": {
+					"model_id": { "type": "string" },
+					"repo": { "type": "string" },
+					"weights_source": { "type": ["string", "null"] },
+					"task_type": { "type": "string" },
+					"score": { "type": "number" }
+				},
+				"additionalProperties": true
+			}
+		},
+		"next_action": { "type": "string" }
+	},
+	"additionalProperties": false
+}

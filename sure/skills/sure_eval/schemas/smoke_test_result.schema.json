@@ -1,0 +1,17 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "smoke_test_result.schema.json",
+	"title": "SURE-EVAL bounded smoke test",
+	"description": "Structured output of the SMOKE_TEST_UNIT.",
+	"type": "object",
+	"required": ["smoke_passed"],
+	"properties": {
+		"smoke_passed": { "type": "boolean" },
+		"sample_count": { "type": "number" },
+		"exit_code": { "type": "number" },
+		"stdout_excerpt": { "type": "string" },
+		"stderr_excerpt": { "type": "string" },
+		"failures": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}

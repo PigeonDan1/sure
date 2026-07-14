@@ -1,0 +1,40 @@
+{
+  "$schema": "./spec_validation.schema.json",
+  "timestamp": "",
+  "model_id": "",
+  "status": "pending",
+  "checks": {
+    "spec_completeness": {
+      "passed": false,
+      "missing_fields": []
+    },
+    "evidence_sufficiency": {
+      "passed": false,
+      "unsupported_fields": []
+    },
+    "conflict_resolution": {
+      "passed": false,
+      "unresolved_conflicts": []
+    },
+    "build_plan_executable": {
+      "passed": false,
+      "blocking_issues": []
+    },
+    "fixture_availability": {
+      "passed": false,
+      "fixture_path": null,
+      "source": null
+    },
+    "io_contract_sufficient": {
+      "passed": false,
+      "missing_contract_fields": []
+    },
+    "preflight_compatible": {
+      "passed": false,
+      "incompatibilities": []
+    }
+  },
+  "ready_for_build_env": false,
+  "warnings": [],
+  "blockers": []
+}

@@ -1,0 +1,10 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"@earendil-works/pi-coding-agent/hooks": ["./packages/coding-agent/src/core/sure/hook-types.ts"]
+		}
+	},
+	"include": ["sure/skills/*/hooks/**/*.ts"]
+}

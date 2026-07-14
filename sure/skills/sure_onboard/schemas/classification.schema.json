@@ -1,0 +1,20 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "classification.schema.json",
+	"title": "SURE model-tool classification",
+	"description": "Structured output of the CLASSIFY unit.",
+	"type": "object",
+	"required": ["task_type"],
+	"properties": {
+		"task_type": {
+			"type": "string",
+			"enum": ["asr", "tts", "vc", "kws", "speech_understanding"]
+		},
+		"deployment_type": { "type": "string", "enum": ["local", "api"] },
+		"sub_task": { "type": "string" },
+		"input_modality": { "type": "string" },
+		"output_modality": { "type": "string" },
+		"rationale": { "type": "string" }
+	},
+	"additionalProperties": false
+}

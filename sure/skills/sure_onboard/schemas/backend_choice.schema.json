@@ -1,0 +1,19 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "backend_choice.schema.json",
+	"title": "SURE model-tool backend choice",
+	"description": "Structured output of the PLAN unit. Records the rule-based backend selection + reason.",
+	"type": "object",
+	"required": ["backend"],
+	"properties": {
+		"backend": {
+			"type": "string",
+			"enum": ["uv", "pip", "conda", "pixi", "docker", "api"]
+		},
+		"choice_reason": { "type": "string" },
+		"python_version": { "type": "string" },
+		"requires_gpu": { "type": "boolean" },
+		"build_plan_path": { "type": "string" }
+	},
+	"additionalProperties": false
+}

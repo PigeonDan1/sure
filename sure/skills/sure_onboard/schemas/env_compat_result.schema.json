@@ -1,0 +1,18 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "env_compat_result.schema.json",
+	"title": "SURE model-tool env compatibility",
+	"description": "Structured output of the VALIDATE_ENV_COMPAT unit (added in this port; missing from the skeleton).",
+	"type": "object",
+	"required": ["compat_ok"],
+	"properties": {
+		"compat_ok": { "type": "boolean" },
+		"device": { "type": "string", "enum": ["cuda", "cpu", "mps", "auto"] },
+		"python_version_match": { "type": "boolean" },
+		"adapter_protocol_supported": { "type": "boolean" },
+		"weights_loadable": { "type": "boolean" },
+		"incompatibilities": { "type": "array", "items": { "type": "string" } },
+		"notes": { "type": "string" }
+	},
+	"additionalProperties": false
+}

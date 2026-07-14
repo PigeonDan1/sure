@@ -1,0 +1,30 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "execution_surface.schema.json",
+	"title": "SURE-EVAL execution surface",
+	"description": "Structured output of the EXECUTION_SURFACE_UNIT. Materialized from a template under scripts/templates/ only (red line 1).",
+	"type": "object",
+	"required": ["entrypoint", "source_provenance"],
+	"properties": {
+		"entrypoint": {
+			"type": "string",
+			"description": "Path to the materialized run_evaluation.sh."
+		},
+		"source_provenance": {
+			"type": "object",
+			"required": ["template_file"],
+			"properties": {
+				"template_file": {
+					"type": "string",
+					"description": "Must resolve under scripts/templates/ (EXECUTION_SURFACE_ISOLATION red line)."
+				},
+				"isolation_compliance": { "type": "boolean" },
+				"materialized_at": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"commands": { "type": "array", "items": { "type": "string" } },
+		"env": { "type": "object", "additionalProperties": { "type": "string" } }
+	},
+	"additionalProperties": false
+}

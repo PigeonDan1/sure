@@ -1,0 +1,24 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "submit_result.schema.json",
+	"title": "SURE-EVAL vc submit result",
+	"description": "Structured output of the SUBMIT_VC_RUN_UNIT. Red line 2 (vc mandatory) is enforced here.",
+	"type": "object",
+	"required": ["execution_path", "vc_available"],
+	"properties": {
+		"execution_path": {
+			"type": "string",
+			"enum": ["vc_submit", "local_bash", "local_docker"]
+		},
+		"vc_available": {
+			"type": "boolean",
+			"description": "True when `which vc && vc info` both pass (set by scripts/vc_check.py)."
+		},
+		"vc_job_id": { "type": "string" },
+		"vc_info": { "type": "string" },
+		"fallback_approved": { "type": "boolean" },
+		"local_fallback_reason": { "type": "string" },
+		"submitted_at": { "type": "string" }
+	},
+	"additionalProperties": false
+}

@@ -1,0 +1,7 @@
+{
+	"model": "whisper_large_v3_turbo",
+	"task": "asr",
+	"datasets": ["aishell1"],
+	"target": null,
+	"audit": false
+}

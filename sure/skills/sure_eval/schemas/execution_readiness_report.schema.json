@@ -1,0 +1,24 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "execution_readiness_report.schema.json",
+	"title": "SURE-EVAL execution readiness",
+	"description": "Structured output of the EXECUTION_READINESS_UNIT. Red line 1 (execution surface isolation) is enforced here.",
+	"type": "object",
+	"required": ["execution_ready", "smoke_test_passed", "isolation_audit"],
+	"properties": {
+		"execution_ready": { "type": "boolean" },
+		"smoke_test_passed": { "type": "boolean" },
+		"isolation_audit": {
+			"type": "object",
+			"required": ["audit_passed"],
+			"properties": {
+				"audit_passed": { "type": "boolean" },
+				"template_file": { "type": "string" },
+				"violations": { "type": "array", "items": { "type": "string" } }
+			},
+			"additionalProperties": false
+		},
+		"smoke_summary": { "type": "string" }
+	},
+	"additionalProperties": false
+}

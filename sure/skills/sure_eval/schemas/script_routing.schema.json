@@ -1,0 +1,38 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "script_routing.schema.json",
+	"title": "SURE-EVAL script routing",
+	"description": "Structured output of the SCRIPT_ROUTING_UNIT. Each step must resolve to a script under scripts/ and use a whitelisted name.",
+	"type": "object",
+	"required": ["steps"],
+	"properties": {
+		"steps": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["name", "script"],
+				"properties": {
+					"name": {
+						"type": "string",
+						"enum": [
+							"prepare_dataset",
+							"materialize_templates",
+							"wait_for_predictions",
+							"validate_predictions",
+							"evaluate_predictions",
+							"refresh_report"
+						]
+					},
+					"script": {
+						"type": "string",
+						"description": "Path relative to the skill package, must start with scripts/ and resolve to the file matching the step name (see check_script_routing.py STEP_TO_SCRIPT)."
+					},
+					"args": { "type": "array", "items": { "type": "string" } },
+					"depends_on": { "type": "array", "items": { "type": "string" } }
+				},
+				"additionalProperties": false
+			}
+		}
+	},
+	"additionalProperties": false
+}

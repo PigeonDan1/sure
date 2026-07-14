@@ -1,0 +1,39 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "spec_validation.schema.json",
+	"title": "SURE model-tool spec validation",
+	"description": "Structured output of the VALIDATE_SPEC unit. Seven checks must all pass; status=passed.",
+	"type": "object",
+	"required": ["checks", "status"],
+	"properties": {
+		"timestamp": { "type": "string" },
+		"model_id": { "type": "string" },
+		"status": { "type": "string", "enum": ["pending", "passed", "failed"] },
+		"checks": {
+			"type": "object",
+			"required": [
+				"spec_completeness",
+				"evidence_sufficiency",
+				"conflict_resolution",
+				"build_plan_executable",
+				"fixture_availability",
+				"io_contract_sufficient",
+				"preflight_compatible"
+			],
+			"properties": {
+				"spec_completeness": { "type": "object", "required": ["passed"], "properties": { "passed": { "type": "boolean" }, "missing_fields": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+				"evidence_sufficiency": { "type": "object", "required": ["passed"], "properties": { "passed": { "type": "boolean" }, "unsupported_fields": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+				"conflict_resolution": { "type": "object", "required": ["passed"], "properties": { "passed": { "type": "boolean" }, "unresolved_conflicts": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+				"build_plan_executable": { "type": "object", "required": ["passed"], "properties": { "passed": { "type": "boolean" }, "blocking_issues": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+				"fixture_availability": { "type": "object", "required": ["passed"], "properties": { "passed": { "type": "boolean" }, "fixture_path": { "type": ["string", "null"] }, "source": { "type": ["string", "null"] } }, "additionalProperties": false },
+				"io_contract_sufficient": { "type": "object", "required": ["passed"], "properties": { "passed": { "type": "boolean" }, "missing_contract_fields": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false },
+				"preflight_compatible": { "type": "object", "required": ["passed"], "properties": { "passed": { "type": "boolean" }, "incompatibilities": { "type": "array", "items": { "type": "string" } } }, "additionalProperties": false }
+			},
+			"additionalProperties": false
+		},
+		"ready_for_build_env": { "type": "boolean" },
+		"warnings": { "type": "array", "items": { "type": "string" } },
+		"blockers": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}

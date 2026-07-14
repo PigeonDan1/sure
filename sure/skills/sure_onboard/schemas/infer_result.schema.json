@@ -1,0 +1,15 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "infer_result.schema.json",
+	"title": "SURE model-tool inference validation",
+	"description": "Structured output of the VALIDATE_INFER unit.",
+	"type": "object",
+	"required": ["infer_passed"],
+	"properties": {
+		"infer_passed": { "type": "boolean" },
+		"duration_ms": { "type": "number" },
+		"error": { "type": ["string", "null"] },
+		"output_summary": { "type": "string" }
+	},
+	"additionalProperties": false
+}

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+
+.pi/
+.sure/
+.codegraph/
+
+*.pyc
+__pycache__/
+.venv/
+venv/
+
+packages/coding-agent/test/suite/tmp-*/

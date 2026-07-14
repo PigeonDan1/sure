@@ -1,0 +1,27 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "rank_select_result.schema.json",
+	"title": "SURE model-feed rank & select",
+	"description": "Structured output of the RANK_AND_SELECT unit. Each selected candidate needs a score + repo path for handoff.",
+	"type": "object",
+	"required": ["selected"],
+	"properties": {
+		"selected": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["model_id", "repo", "score"],
+				"properties": {
+					"model_id": { "type": "string" },
+					"repo": { "type": "string" },
+					"weights_source": { "type": ["string", "null"] },
+					"score": { "type": "number" },
+					"rank_reason": { "type": "string" }
+				},
+				"additionalProperties": true
+			}
+		},
+		"ranking_summary": { "type": "string" }
+	},
+	"additionalProperties": false
+}

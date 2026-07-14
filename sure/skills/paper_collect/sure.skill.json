@@ -1,0 +1,26 @@
+{
+  "name": "paper_collect",
+  "command": "/paper_collect",
+  "description": "Collect and normalize a paper set into a standard Sure paper collection artifact.",
+  "prompt": "SKILL.md",
+  "hooks": {
+    "pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
+    "post_tool_result": [{ "module": "hooks/index.ts", "handler": "postToolResult" }],
+    "pre_finish": [{ "module": "hooks/index.ts", "handler": "preFinish" }],
+    "post_finish": [{ "module": "hooks/index.ts", "handler": "postFinish" }],
+    "on_error": [{ "module": "hooks/index.ts", "handler": "onError" }]
+  },
+  "artifacts": [
+    {
+      "type": "paper_collection",
+      "path": "artifacts/papers.manifest.json",
+      "required": true,
+      "description": "Final normalized paper collection manifest"
+    }
+  ],
+  "ui": {
+    "primaryCounters": ["collected_papers", "target_papers", "failed_records"],
+    "artifactTypes": ["paper_collection", "search_log", "dedupe_index"],
+    "defaultExpandedSections": ["diagnostics", "artifacts"]
+  }
+}

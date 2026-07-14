@@ -1,0 +1,115 @@
+{
+  "$schema": "./artifact_manifest.schema.json",
+  "model_dir": "",
+  "instance_id": "",
+  "timestamp": "",
+  "model_id": "",
+  "artifacts": {
+    "required": {
+      "spec": {
+        "path": "model.spec.yaml",
+        "description": "模型规范文件"
+      },
+      "backend_choice": {
+        "path": "artifacts/backend_choice.json",
+        "description": "后端选择记录"
+      },
+      "build_log": {
+        "path": "artifacts/build.log",
+        "description": "环境构建日志"
+      },
+      "validation_log": {
+        "path": "artifacts/validation.log",
+        "description": "验证测试日志"
+      },
+      "verdict": {
+        "path": "artifacts/verdict.json",
+        "description": "最终判定结果"
+      },
+      "wrapper": {
+        "paths": ["model.py", "server.py", "__init__.py"],
+        "description": "模型 wrapper 文件集，最小包含：model.py (核心模型类), server.py (MCP 服务器), __init__.py (包导出)",
+        "required_files": ["model.py", "server.py"]
+      },
+      "manifest": {
+        "path": "artifacts/artifact_manifest.json",
+        "description": "本清单文件"
+      }
+    },
+    "conditional": {
+      "spec_validation": {
+        "path": "artifacts/spec_validation.json",
+        "description": "spec 前置验证结果",
+        "condition": "VALIDATE_SPEC executed"
+      },
+      "preflight_summary": {
+        "path": "artifacts/preflight_summary.json",
+        "description": "执行前检查结果",
+        "condition": "preflight executed"
+      },
+      "weights_manifest": {
+        "path": "artifacts/weights_manifest.json",
+        "description": "权重文件清单，至少记录 resolved local model path 与 cache root",
+        "condition": "weights.required == true"
+      },
+      "failure_classification": {
+        "path": "artifacts/failure_classification.json",
+        "description": "失败分类结果",
+        "condition": "DIAGNOSE executed"
+      },
+      "retry_recommendation": {
+        "path": "artifacts/retry_recommendation.json",
+        "description": "重试建议",
+        "condition": "REPLAN executed"
+      },
+      "escalation": {
+        "path": "artifacts/escalation.json",
+        "description": "人工升级请求记录",
+        "condition": "human escalation triggered"
+      },
+      "patch_report": {
+        "path": "artifacts/patch_report.json",
+        "description": "补丁与修改记录",
+        "condition": "upstream or config patch applied"
+      },
+      "uv_lock": {
+        "path": "uv.lock",
+        "description": "UV 依赖锁定文件",
+        "condition": "backend == 'uv'"
+      },
+      "pixi_lock": {
+        "path": "pixi.lock",
+        "description": "Pixi 依赖锁定文件",
+        "condition": "backend == 'pixi'"
+      },
+      "dockerfile": {
+        "path": "Dockerfile",
+        "description": "Docker 构建文件",
+        "condition": "backend == 'docker'"
+      },
+      "devcontainer": {
+        "path": ".devcontainer/devcontainer.json",
+        "description": "DevContainer 配置",
+        "condition": "backend == 'docker'"
+      }
+    },
+    "optional": {
+      "performance_notes": {
+        "path": "artifacts/performance_notes.md",
+        "description": "性能说明与 benchmark 摘要"
+      },
+      "benchmark_preview": {
+        "path": "artifacts/benchmark_preview.json",
+        "description": "benchmark 预览结果"
+      },
+      "wrapper_notes": {
+        "path": "artifacts/wrapper_notes.md",
+        "description": "wrapper 实现备注"
+      },
+      "diagnostic_outputs": {
+        "path": "artifacts/diagnostic_outputs/",
+        "description": "额外诊断输出"
+      }
+    }
+  }
+}

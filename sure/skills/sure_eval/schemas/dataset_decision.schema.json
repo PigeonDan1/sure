@@ -1,0 +1,27 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "dataset_decision.schema.json",
+	"title": "SURE-EVAL dataset scope",
+	"description": "Structured output of the DATASET_SCOPE_UNIT.",
+	"type": "object",
+	"required": ["datasets"],
+	"properties": {
+		"datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["name"],
+				"properties": {
+					"name": { "type": "string" },
+					"split": { "type": "string" },
+					"max_samples": { "type": "number" },
+					"source": { "type": "string" }
+				},
+				"additionalProperties": false
+			}
+		},
+		"selection_rationale": { "type": "string" },
+		"auto_selected": { "type": "boolean" }
+	},
+	"additionalProperties": false
+}

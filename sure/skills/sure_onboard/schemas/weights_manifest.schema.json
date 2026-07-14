@@ -1,0 +1,18 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "weights_manifest.schema.json",
+	"title": "SURE model-tool weights manifest",
+	"description": "Structured output of the FETCH_WEIGHTS unit. Weights resolve model-local (.runtime/ or checkpoints/).",
+	"type": "object",
+	"required": ["weights_ready"],
+	"properties": {
+		"weights_ready": { "type": "boolean" },
+		"source": { "type": "string", "enum": ["huggingface", "modelscope", "local", "none"] },
+		"resolved_local_model_path": { "type": ["string", "null"] },
+		"cache_dir": { "type": ["string", "null"] },
+		"local_dir_name": { "type": "string" },
+		"fallback_to_host_global": { "type": "boolean" },
+		"fallback_reason": { "type": "string" }
+	},
+	"additionalProperties": false
+}

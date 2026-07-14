@@ -1,0 +1,73 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "run_report.schema.json",
+	"title": "SURE-EVAL main-flow run report",
+	"description": "Structured output of the RUN_REPORT_UNIT. Ported from docs/agents/main_flow_agent/templates/main_agent_run_report.json in the sure-eval repo.",
+	"type": "object",
+	"required": [
+		"run_id",
+		"timestamp",
+		"task_type",
+		"goal",
+		"selected_datasets",
+		"executed_steps",
+		"status",
+		"report_persisted",
+		"execution_path_actual"
+	],
+	"properties": {
+		"run_id": { "type": "string" },
+		"timestamp": { "type": "string" },
+		"task_type": {
+			"type": "string",
+			"description": "onboarding_then_evaluate | evaluate_existing_model | repair_broken_model | audit_results"
+		},
+		"goal": { "type": "string" },
+		"selected_datasets": { "type": "array", "items": { "type": "string" } },
+		"executed_steps": { "type": "array", "items": { "type": "string" } },
+		"status": {
+			"type": "string",
+			"description": "Final run state reported by ASSESSMENT_UNIT."
+		},
+		"artifacts": {
+			"type": "object",
+			"description": "Index of upstream structured-output artifacts.",
+			"properties": {
+				"task_classification": { "type": "string" },
+				"tool_readiness_routing": { "type": "string" },
+				"plan": { "type": "string" },
+				"dataset_decision": { "type": "string" },
+				"script_routing": { "type": "string" },
+				"execution_surface": { "type": "string" },
+				"execution_readiness_report": { "type": "string" },
+				"assessment_report": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"model_eval_manifest": { "type": "string" },
+		"vc_job_id": { "type": "string" },
+		"next_action": { "type": "string" },
+		"report_persisted": {
+			"type": "boolean",
+			"description": "RUN_REPORT_UNIT gate: the report must be previewed and user-confirmed before persistence."
+		},
+		"execution_path_actual": {
+			"type": "string",
+			"description": "Actual execution path used: vc_submit | local_bash | local_docker."
+		},
+		"execution_path_declared": {
+			"type": "string",
+			"description": "Execution path declared in the harness."
+		},
+		"local_fallback_reason": {
+			"type": "string",
+			"description": "Required when execution_path_actual is not vc_submit."
+		},
+		"fallback_approved": {
+			"type": "boolean",
+			"description": "Whether a local fallback was explicitly approved."
+		},
+		"notes": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}
