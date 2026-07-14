@@ -1,5 +1,5 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
@@ -38,8 +38,8 @@ function setupSkillPackage(
 	}
 	writeJson(join(skillDir, "sure.skill.json"), {
 		name,
-		command: options?.command ?? "paper_collect",
-		description: "Demo Sure paper collection",
+		command: options?.command ?? "sure_feed",
+		description: "Demo Sure skill",
 		prompt: "skill/SKILL.md",
 		hooks: options?.hook
 			? {
@@ -122,12 +122,6 @@ function readRunState(tempDir: string, runId: string): unknown {
 	return JSON.parse(readFileSync(join(tempDir, ".sure", "runs", runId, "state.json"), "utf-8"));
 }
 
-function copyRepositoryPaperCollectSkill(tempDir: string): void {
-	cpSync(resolve("../..", "sure", "skills", "paper_collect"), join(tempDir, "sure", "skills", "paper_collect"), {
-		recursive: true,
-	});
-}
-
 describe("Sure extension", () => {
 	const cleanups: Array<() => void> = [];
 
@@ -145,7 +139,7 @@ describe("Sure extension", () => {
 		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
 		harness.setResponses([fauxAssistantMessage("working")]);
 
-		await harness.session.prompt("/paper_collect graph neural networks");
+		await harness.session.prompt("/sure_feed graph neural networks");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => getUserTexts(harness).length > 0);
 
@@ -164,25 +158,25 @@ describe("Sure extension", () => {
 		harness.setResponses([
 			fauxAssistantMessage(
 				fauxToolCall("sure_update_state", {
-					phase: { id: "search", label: "Searching papers", status: "running", progress: 0.4 },
+					phase: { id: "scan", label: "Scanning candidates", status: "running", progress: 0.4 },
 					message: "Collected 12 candidates.",
 					counters: { candidates: 12, target: 50 },
-					next_actions: ["Continue citation expansion"],
+					next_actions: ["Continue metadata collection"],
 				}),
 			),
 			fauxAssistantMessage("still working"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
 		const runId = getOnlyRunId(harness.tempDir);
 		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			phase: { id: "search", label: "Searching papers", status: "running", progress: 0.4 },
+			phase: { id: "scan", label: "Scanning candidates", status: "running", progress: 0.4 },
 			message: "Collected 12 candidates.",
 			counters: { candidates: 12, target: 50 },
-			next_actions: ["Continue citation expansion"],
+			next_actions: ["Continue metadata collection"],
 		});
 		expect(
 			harness.sessionManager
@@ -205,7 +199,7 @@ describe("Sure extension", () => {
 			fauxAssistantMessage("repairing"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -233,7 +227,7 @@ describe("Sure extension", () => {
 			fauxAssistantMessage("repairing"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -250,7 +244,7 @@ describe("Sure extension", () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
 		setupSkillPackage(harness.tempDir, {
-			hook: `export function preFinish() { return { ok: false, repair: "need more papers", state_patch: { phase: { id: "validate", label: "Validating collection", status: "blocked" }, counters: { collected: 3, target: 10 }, diagnostics: [{ severity: "warning", message: "Paper count below target.", repair: "Run citation expansion." }], checkpoint: { id: "hook_gate", label: "Hook-owned checkpoint", data: { currentUnit: "validate" } } } }; }`,
+			hook: `export function preFinish() { return { ok: false, repair: "need more evidence", state_patch: { phase: { id: "validate", label: "Validating output", status: "blocked" }, counters: { collected: 3, target: 10 }, diagnostics: [{ severity: "warning", message: "Evidence below target.", repair: "Collect additional evidence." }], checkpoint: { id: "hook_gate", label: "Hook-owned checkpoint", data: { currentUnit: "validate" } } } }; }`,
 		});
 
 		harness.setResponses([
@@ -268,16 +262,16 @@ describe("Sure extension", () => {
 			fauxAssistantMessage("will repair"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
 		const runId = getOnlyRunId(harness.tempDir);
 		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			phase: { id: "validate", label: "Validating collection", status: "blocked" },
+			phase: { id: "validate", label: "Validating output", status: "blocked" },
 			counters: { collected: 3, target: 10 },
 			diagnostics: [
-				{ severity: "warning", message: "Paper count below target.", repair: "Run citation expansion." },
+				{ severity: "warning", message: "Evidence below target.", repair: "Collect additional evidence." },
 			],
 			checkpoint: { id: "hook_gate", label: "Hook-owned checkpoint", data: { currentUnit: "validate" } },
 		});
@@ -290,7 +284,7 @@ describe("Sure extension", () => {
 
 		harness.setResponses([fauxAssistantMessage("should not run")]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 
 		expect(getUserTexts(harness)).toHaveLength(0);
@@ -314,7 +308,7 @@ describe("Sure extension", () => {
 			fauxAssistantMessage("repairing"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -346,7 +340,7 @@ describe("Sure extension", () => {
 			},
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -400,7 +394,7 @@ describe("Sure extension", () => {
 			},
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -417,7 +411,7 @@ describe("Sure extension", () => {
 
 		harness.setResponses([fauxAssistantMessage("working")]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => getUserTexts(harness).length > 0);
 
@@ -442,84 +436,12 @@ describe("Sure extension", () => {
 
 		harness.setResponses([fauxAssistantMessage("working")]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => getUserTexts(harness).length > 0);
 
 		expect(getUserTexts(harness)[0]).toContain("Project skill prompt.");
 		expect(getUserTexts(harness)[0]).not.toContain("Repository skill prompt.");
-	});
-
-	it("runs the repository paper_collect skill package to a validated finish", async () => {
-		const harness = await createSureHarness();
-		cleanups.push(harness.cleanup);
-		copyRepositoryPaperCollectSkill(harness.tempDir);
-
-		harness.setResponses([
-			() => {
-				const runId = getOnlyRunId(harness.tempDir);
-				const runDir = join(harness.tempDir, ".sure", "runs", runId);
-				const scriptPath = join(harness.tempDir, "sure", "skills", "paper_collect", "scripts", "paper_collect.mjs");
-				return fauxAssistantMessage(
-					fauxToolCall("bash", {
-						command: `node ${JSON.stringify(scriptPath)} --query ${JSON.stringify("graph neural networks after 2022")} --target 5 --run-id ${JSON.stringify(runId)} --run-dir ${JSON.stringify(runDir)} --skill-name paper_collect`,
-					}),
-				);
-			},
-			() => {
-				const runId = getOnlyRunId(harness.tempDir);
-				return fauxAssistantMessage(
-					fauxToolCall("sure_update_state", {
-						phase: { id: "validate", label: "Validating generated papers", status: "running" },
-						counters: { collected_papers: 5, target_papers: 5 },
-						artifacts: [
-							{
-								type: "paper_collection",
-								name: "Paper collection manifest",
-								path: `.sure/runs/${runId}/artifacts/papers.manifest.json`,
-								status: "ready",
-							},
-						],
-					}),
-				);
-			},
-			() => {
-				const runId = getOnlyRunId(harness.tempDir);
-				return fauxAssistantMessage(
-					fauxToolCall("sure_finish", {
-						status: "success",
-						manifest_path: `.sure/runs/${runId}/manifest.json`,
-						summary: "Collected 5 offline papers for graph neural networks.",
-					}),
-				);
-			},
-		]);
-
-		await harness.session.prompt("/paper_collect graph neural networks after 2022 target 5");
-		await harness.session.agent.waitForIdle();
-		await waitForCondition(() =>
-			harness.session.messages.some(
-				(message) =>
-					message.role === "toolResult" &&
-					"content" in message &&
-					JSON.stringify(message.content).includes("finished with status success"),
-			),
-		);
-
-		const runId = getOnlyRunId(harness.tempDir);
-		const manifest = JSON.parse(
-			readFileSync(join(harness.tempDir, ".sure", "runs", runId, "manifest.json"), "utf-8"),
-		);
-		const paperCollection = JSON.parse(
-			readFileSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "papers.manifest.json"), "utf-8"),
-		);
-		expect(manifest.status).toBe("success");
-		expect(manifest.skill_name).toBe("paper_collect");
-		expect(manifest.outputs.collected_count).toBe(5);
-		expect(paperCollection.papers).toHaveLength(5);
-		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			phase: { id: "finish", label: "Paper collection finished", status: "success" },
-		});
 	});
 
 	it("rejects sure_finish when manifest status does not match the finish status", async () => {
@@ -542,7 +464,7 @@ describe("Sure extension", () => {
 			fauxAssistantMessage("repairing"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -575,7 +497,7 @@ describe("Sure extension", () => {
 			fauxAssistantMessage("repairing"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -607,7 +529,7 @@ describe("Sure extension", () => {
 			fauxAssistantMessage("repairing"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -637,7 +559,7 @@ describe("Sure extension", () => {
 			fauxAssistantMessage("repairing"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -669,7 +591,7 @@ describe("Sure extension", () => {
 			fauxAssistantMessage("will repair"),
 		]);
 
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
@@ -683,12 +605,12 @@ describe("Sure extension", () => {
 	it("skips duplicate and unknown skill commands during discovery", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
-		setupSkillPackage(harness.tempDir, { dirName: "first", name: "first", command: "paper_collect" });
-		setupSkillPackage(harness.tempDir, { dirName: "second", name: "second", command: "paper_collect" });
+		setupSkillPackage(harness.tempDir, { dirName: "first", name: "first", command: "sure_feed" });
+		setupSkillPackage(harness.tempDir, { dirName: "second", name: "second", command: "sure_feed" });
 		setupSkillPackage(harness.tempDir, { dirName: "unknown", name: "unknown", command: "unknown_sure" });
 
 		harness.setResponses([fauxAssistantMessage("should not run")]);
-		await harness.session.prompt("/paper_collect topic");
+		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 
 		expect(getUserTexts(harness)).toHaveLength(0);

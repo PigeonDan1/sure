@@ -15,27 +15,13 @@ Only these repository skills are implemented today:
 
 | Command | Purpose | Required inputs | Required terminal artifact |
 |---------|---------|-----------------|----------------------------|
-| `/paper_collect` | Offline deterministic paper collection template. | Topic text; optional `target <number>` or `target=<number>`. | `artifacts/papers.manifest.json` |
-| `/scholar_profile` | Build a scholar profile and persona system prompt from DBLP/OpenAlex/Google Scholar/personal pages. | `scholar_name`; requires `OPENAI_API_KEY`. | `system_prompt.md`, `scholars.csv`, `source_urls.json`, `mainline.json`, `manifest.json` |
 | `/sure_feed` | Scan ModelScope/HuggingFace models, match them to SURE task families, rank them, and emit a handoff manifest. | Optional `source`, `query`/`filter`, `max_models`, `since`, `watch_mode`. | `artifacts/handoff_manifest.json` |
 | `/sure_onboard` | Onboard or repair an audio model into `sure/models/<model_id>/` with wrapper, spec, validation, and verdict. | `model_id`, `repo`, `task_type`, `deployment_type`. | `artifacts/verdict.json` |
 | `/sure_eval` | Evaluate an already-onboarded audio model through the SURE-EVAL main-flow agent. | `model`, `task`. | `artifacts/main_agent_run_report.json`, `artifacts/execution_surface.json` |
 
 Other command names may still be registered in Harness for future packages, but they are not usable until a matching `sure/skills/<skill>/sure.skill.json` exists.
 
-## Typical Workflows
-
-Paper collection:
-
-```text
-/paper_collect graph neural networks after 2022, target 10
-```
-
-Scholar profile:
-
-```text
-/scholar_profile scholar_name="Yoshua Bengio" language=en
-```
+## Typical Workflow
 
 SURE model pipeline:
 
