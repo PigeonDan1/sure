@@ -3,17 +3,19 @@
 
 This is the deterministic hand-off script that the main-flow agent calls
 instead of ``bash run_evaluation.sh``.  It reads the execution surface,
-auto-resolves image / partition / memory, and submits the job.
+auto-resolves image / memory, uses an explicit required partition when the
+execution surface declares one, otherwise requires the default ``pdgpu-4090``
+partition, and submits the job.
 
 Usage::
 
     python src/sure_eval/agent/trigger_vc.py \
-        src/sure_eval/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_002/execution_surface.json
+        src/sure_eval/models/Qwen__Qwen3-ASR-1.7B/eval_runs/<run_id>/execution_surface.json
 
 Or directly by model + run_id (when execution_surface.json is at the
 standard location)::
 
-    python src/sure_eval/agent/trigger_vc.py --model asr_qwen3 --run-id main_agent_asr_qwen3_002
+    python src/sure_eval/agent/trigger_vc.py --model Qwen__Qwen3-ASR-1.7B --run-id <run_id>
 """
 
 from __future__ import annotations
@@ -58,6 +60,98 @@ def resolve_model_and_run(surface: dict) -> tuple[str, str, str | None]:
     return model_name, run_id, entrypoint_path
 
 
+def resolve_required_partition(surface: dict) -> str | None:
+    """Return required_partition from execution_surface.json if declared."""
+    candidates = [
+        surface.get("vc_runtime_contract"),
+        surface.get("runtime_context", {}).get("vc_runtime_contract", {}),
+        surface.get("resolved_inputs", {}).get("vc_runtime_contract", {}),
+    ]
+    for contract in candidates:
+        if not isinstance(contract, dict):
+            continue
+        fallback = contract.get("allow_partition_fallback")
+        if fallback is True:
+            raise ValueError("vc_runtime_contract.allow_partition_fallback must be false")
+        partition = contract.get("required_partition")
+        if isinstance(partition, str) and partition.strip():
+            return partition.strip()
+    return None
+
+
+def resolve_declared_image(surface: dict) -> str | None:
+    """Return a Docker image explicitly declared by execution_surface.json."""
+    candidates = [
+        surface.get("docker_image"),
+        surface.get("image"),
+        surface.get("runtime_context", {}).get("docker_image", {}),
+        surface.get("resolved_inputs", {}).get("docker_image", {}),
+    ]
+    for value in candidates:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _iter_vc_runtime_contracts(surface: dict) -> list[dict]:
+    """Return vc_runtime_contract dictionaries from all supported surface locations."""
+    candidates = [
+        surface.get("vc_runtime_contract"),
+        surface.get("runtime_context", {}).get("vc_runtime_contract", {}),
+        surface.get("resolved_inputs", {}).get("vc_runtime_contract", {}),
+    ]
+    return [contract for contract in candidates if isinstance(contract, dict)]
+
+
+def resolve_container_python_path(surface: dict) -> str | None:
+    """Return an explicit container Python path from execution_surface.json if declared."""
+    for contract in _iter_vc_runtime_contracts(surface):
+        runtime = contract.get("runtime_paths")
+        if isinstance(runtime, dict):
+            value = runtime.get("container_python_path")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        value = contract.get("container_python_path")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+        value = contract.get("container_venv_path")
+        if isinstance(value, str) and value.strip() and value.strip() != "discover_and_verify":
+            return f"{value.strip().rstrip('/')}/bin/python"
+    return None
+
+
+def _append_absolute_path(paths: list[str], value: object) -> None:
+    if isinstance(value, str) and value.startswith("/") and value not in paths:
+        paths.append(value)
+
+
+def _append_absolute_paths_from_mapping(paths: list[str], value: object) -> None:
+    if isinstance(value, dict):
+        for item in value.values():
+            _append_absolute_paths_from_mapping(paths, item)
+    elif isinstance(value, list):
+        for item in value:
+            _append_absolute_paths_from_mapping(paths, item)
+    else:
+        _append_absolute_path(paths, value)
+
+
+def resolve_additional_mount_paths(surface: dict) -> list[str]:
+    """Return host paths whose storage roots should be mounted into the vc job."""
+    paths: list[str] = []
+    for container_name in ("resolved_inputs", "runtime_context"):
+        container = surface.get(container_name)
+        if not isinstance(container, dict):
+            continue
+        for key in ("model_dir", "run_dir", "output_dir", "results_dir"):
+            _append_absolute_path(paths, container.get(key))
+
+    _append_absolute_paths_from_mapping(paths, surface.get("expected_outputs", {}))
+    return paths
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Submit a SURE-EVAL run to the Volcano cluster via vc submit."
@@ -69,16 +163,20 @@ def main() -> int:
         help="Path to execution_surface.json (optional if --model and --run-id are given)",
     )
     parser.add_argument(
-        "--model", "-m", type=str, help="Model directory name (e.g. asr_qwen3)"
+        "--model", "-m", type=str, help="Model directory name (e.g. Qwen__Qwen3-ASR-1.7B)"
     )
     parser.add_argument(
-        "--run-id", "-r", type=str, help="Run ID (e.g. main_agent_asr_qwen3_002)"
+        "--run-id", "-r", type=str, help="Run ID under the model's eval_runs directory"
     )
     parser.add_argument(
         "--image", "-i", type=str, default=None, help="Docker image (auto-detected if omitted)"
     )
     parser.add_argument(
-        "--partition", "-p", type=str, default=None, help="GPU partition (auto-detected if omitted)"
+        "--partition",
+        "-p",
+        type=str,
+        default=None,
+        help="Required GPU partition (defaults to execution surface value, then pdgpu-4090)",
     )
     parser.add_argument(
         "--memory", type=int, default=None, help="Container memory in GB (auto-estimated if omitted)"
@@ -114,10 +212,13 @@ def main() -> int:
     surface = load_execution_surface(surface_path)
     model_name, run_id, entrypoint_path = resolve_model_and_run(surface)
 
-    # CLI overrides take precedence over surface.json
-    image = args.image
-    partition = args.partition
+    # CLI overrides take precedence over surface.json. If neither declares a
+    # partition, vc_submitter requires the default pdgpu-4090 partition.
+    image = args.image or resolve_declared_image(surface)
+    partition = args.partition or resolve_required_partition(surface)
     memory = args.memory
+    container_python_path = resolve_container_python_path(surface)
+    additional_host_paths = resolve_additional_mount_paths(surface)
 
     if args.dry_run:
         cmd = build_vc_submit_command(
@@ -129,6 +230,8 @@ def main() -> int:
             gpus=args.gpus,
             cpus=args.cpus,
             entrypoint_path=entrypoint_path,
+            additional_host_paths=additional_host_paths,
+            container_python_path=container_python_path,
         )
         print(" ".join(cmd))
         return 0
@@ -143,6 +246,8 @@ def main() -> int:
             gpus=args.gpus,
             cpus=args.cpus,
             entrypoint_path=entrypoint_path,
+            additional_host_paths=additional_host_paths,
+            container_python_path=container_python_path,
         )
     except RuntimeError as exc:
         logger.error("Submission failed", error=str(exc))

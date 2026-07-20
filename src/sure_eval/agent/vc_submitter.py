@@ -1,15 +1,13 @@
 """Volcano (vc) cluster job submitter for SURE-EVAL model evaluation.
 
 Replaces local ``bash run_evaluation.sh`` with an intelligent ``vc submit``
-that auto-selects image, GPU partition, memory, and fixes the .venv symlink
+that auto-selects image, pins the GPU partition, estimates memory, and fixes the .venv symlink
 inside the container.
 """
 
 from __future__ import annotations
 
-import json
 import re
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -21,22 +19,13 @@ logger = get_logger(__name__)
 # Fixed prefix for all model images in this project.
 IMAGE_REGISTRY_PREFIX = "docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_"
 
-# GPU partition priority (higher = better).  Only partitions listed here are
-# considered; if a partition is missing it gets priority 0.
-_GPU_PRIORITY: dict[str, int] = {
-    "pdgpu-5090": 100,
-    "pdgpu-4090": 90,
-    "pdgpu-3090": 80,
-    "pdgpu-a10": 70,
-    "pdgpu-v100": 60,
-    "pdgpu-2080ti": 50,
-    "pdgpu-2080ti-dsp": 45,
-    "pdgpu-2080ti-data": 40,
-    "pdgpu-ezkws": 30,
-}
+# Main-flow VC submissions default to one partition for reproducibility and to
+# avoid model-specific failures caused by silently moving across GPU classes.
+DEFAULT_GPU_PARTITION = "pdgpu-4090"
 
 # Default mount: host repo root -> container repo root.
 _DEFAULT_VOLUME_MOUNT = "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox:/workspace/sure-eval"
+_HPC_STORAGE_RE = re.compile(r"^/(hpc_stor\d+)(?:/|$)")
 
 # Base memory heuristic per model weight size (GB).
 _WEIGHT_MEM_MULTIPLIER = 2.5
@@ -143,7 +132,7 @@ def get_partition_status() -> dict[str, dict[str, Any]]:
     result = _run_cmd(["vc", "info"], check=False)
     status: dict[str, dict[str, Any]] = {}
     # Example line:
-    # pdgpu-5090         | 2/8                  | 16/124               | 64Gi/495.0Gi
+    # pdgpu-4090         | 2/8                  | 16/124               | 64Gi/495.0Gi
     pattern = re.compile(
         r"^(\S+)\s+\|\s+(\d+)/(\d+)\s+\|\s+(\d+)/(\d+)\s+\|\s+([\d.]+)Gi/([\d.]+)Gi"
     )
@@ -165,36 +154,23 @@ def get_partition_status() -> dict[str, dict[str, Any]]:
     return status
 
 
-def select_best_partition() -> str:
-    """Pick the best partition the user has access to that also has free GPUs.
+def select_best_partition(required_partition: str | None = None) -> str:
+    """Return the required partition for main-flow VC submissions.
 
-    Priority order (highest first): 5090 > 4090 > 3090 > A10 > V100 > 2080ti > others.
+    No fallback is attempted: the explicit required partition is used when
+    provided, otherwise the default pdgpu-4090 partition is required.
     """
+    partition = required_partition or DEFAULT_GPU_PARTITION
     allowed = get_user_partitions()
-    status = get_partition_status()
+    if partition not in allowed:
+        visible = ", ".join(sorted(allowed)) or "<none>"
+        raise RuntimeError(
+            f"Required GPU partition '{partition}' is not available for this user. "
+            f"Visible partitions: {visible}."
+        )
 
-    candidates: list[tuple[int, str]] = []
-    for name, info in status.items():
-        if name not in allowed:
-            continue
-        if info["gpu_free"] <= 0:
-            continue
-        priority = _GPU_PRIORITY.get(name, 0)
-        candidates.append((priority, name))
-
-    if not candidates:
-        # No partition with free GPUs; fall back to the highest-priority allowed partition
-        # and let vc queue the job.
-        for name in sorted(allowed, key=lambda n: _GPU_PRIORITY.get(n, 0), reverse=True):
-            candidates.append((_GPU_PRIORITY.get(name, 0), name))
-
-    if not candidates:
-        raise RuntimeError("No GPU partitions available for this user.")
-
-    candidates.sort(reverse=True)
-    best = candidates[0][1]
-    logger.info("Selected best partition", partition=best)
-    return best
+    logger.info("Selected required partition", partition=partition)
+    return partition
 
 
 def estimate_memory_gb(model_name: str) -> int:
@@ -253,6 +229,32 @@ def infer_venv_path(model_name: str) -> str:
     return f"/opt/{model_name}_venv"
 
 
+def _mount_for_host_path(path: str) -> str | None:
+    """Return a storage-root mount entry for a host path, if one is needed."""
+    match = _HPC_STORAGE_RE.match(path)
+    if not match:
+        return None
+    root = f"/{match.group(1)}"
+    return f"{root}:{root}"
+
+
+def _compose_volume_mount(
+    base_volume_mount: str,
+    additional_host_paths: list[str] | None = None,
+) -> str:
+    """Merge the base vc volume string with storage mounts required by paths."""
+    entries = [entry.strip() for entry in base_volume_mount.split(",") if entry.strip()]
+    seen = set(entries)
+
+    for path in additional_host_paths or []:
+        mount = _mount_for_host_path(path)
+        if mount and mount not in seen:
+            entries.append(mount)
+            seen.add(mount)
+
+    return ",".join(entries)
+
+
 def build_vc_submit_command(
     model_name: str,
     run_id: str,
@@ -262,8 +264,10 @@ def build_vc_submit_command(
     gpus: int = 1,
     cpus: int = 4,
     volume_mount: str | None = None,
+    additional_host_paths: list[str] | None = None,
     repo_root_in_container: str = "/workspace/sure-eval",
     entrypoint_path: str | None = None,
+    container_python_path: str | None = None,
 ) -> list[str]:
     """Build the ``vc submit`` command as a list of arguments.
 
@@ -272,10 +276,14 @@ def build_vc_submit_command(
     Otherwise the default ``eval_runs/<run_id>/run_evaluation.sh`` layout is used.
     """
     image = image or select_best_image(model_name)
-    partition = partition or select_best_partition()
+    partition = select_best_partition(partition)
     memory_gb = memory_gb or estimate_memory_gb(model_name)
-    volume = volume_mount or _DEFAULT_VOLUME_MOUNT
+    volume = _compose_volume_mount(
+        volume_mount or _DEFAULT_VOLUME_MOUNT,
+        additional_host_paths=additional_host_paths,
+    )
     venv_path = infer_venv_path(model_name)
+    python_bin = container_python_path or f"{venv_path}/bin/python"
 
     # Path to run_evaluation.sh inside the container
     if entrypoint_path:
@@ -296,13 +304,20 @@ def build_vc_submit_command(
     # *inside* the directory rather than replacing it, so .venv/bin/python still
     # won't exist.  Instead: if .venv is a non-symlink directory, rename it to
     # .venv.hostbak (never delete), then create the symlink.
-    inner_cmd = (
-        f'[ -d {venv_link} -a ! -L {venv_link} ] && mv {venv_link} {venv_link}.hostbak; '
-        f'ln -sfn {venv_path} {venv_link}; '
-        f'export REPO_ROOT={repo_root_in_container}; '
-        f'export PYTHON_BIN={venv_path}/bin/python; '
-        f'bash {run_sh}'
-    )
+    if container_python_path:
+        inner_cmd = (
+            f'export REPO_ROOT={repo_root_in_container}; '
+            f'export PYTHON_BIN={python_bin}; '
+            f'bash {run_sh}'
+        )
+    else:
+        inner_cmd = (
+            f'[ -d {venv_link} -a ! -L {venv_link} ] && mv {venv_link} {venv_link}.hostbak; '
+            f'ln -sfn {venv_path} {venv_link}; '
+            f'export REPO_ROOT={repo_root_in_container}; '
+            f'export PYTHON_BIN={python_bin}; '
+            f'bash {run_sh}'
+        )
 
     cmd = [
         "vc",
@@ -329,6 +344,8 @@ def submit_vc_run(
     gpus: int = 1,
     cpus: int = 4,
     entrypoint_path: str | None = None,
+    additional_host_paths: list[str] | None = None,
+    container_python_path: str | None = None,
 ) -> str:
     """Submit a model evaluation run to the Volcano cluster via ``vc submit``.
 
@@ -343,6 +360,8 @@ def submit_vc_run(
         gpus=gpus,
         cpus=cpus,
         entrypoint_path=entrypoint_path,
+        additional_host_paths=additional_host_paths,
+        container_python_path=container_python_path,
     )
 
     logger.info("Submitting vc job", command=" ".join(cmd))
