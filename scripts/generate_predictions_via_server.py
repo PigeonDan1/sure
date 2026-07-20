@@ -28,6 +28,7 @@ configure_logging(level="INFO")
 logger = get_logger(__name__)
 
 SURE_SUITES_ROOT = Path("data/datasets/sure_benchmark/SURE_Test_Suites")
+PREDICTION_SNAPSHOT_INTERVAL = 25
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -209,6 +210,25 @@ def _load_existing_predictions(path: Path) -> dict[str, str]:
     return predictions
 
 
+def _pending_prediction_keys(samples: list[dict[str, Any]], predictions: dict[str, str]) -> list[str]:
+    """Return sample keys that still need non-empty predictions."""
+    pending: list[str] = []
+    for sample in samples:
+        key = str(sample.get("key", ""))
+        if key and key not in predictions:
+            pending.append(key)
+    return pending
+
+
+def _write_prediction_file(samples: list[dict[str, Any]], prediction_path: Path, predictions: dict[str, str]) -> None:
+    tmp_path = prediction_path.with_name(f"{prediction_path.name}.tmp")
+    with open(tmp_path, "w", encoding="utf-8") as handle:
+        for sample in samples:
+            key = str(sample.get("key", ""))
+            handle.write(f"{key}\t{predictions.get(key, '')}\n")
+    tmp_path.replace(prediction_path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate predictions by calling a model-local MCP server")
     parser.add_argument("--model-dir", required=True, help="Model directory under src/sure_eval/models")
@@ -307,8 +327,12 @@ def main() -> int:
     result_log_path = logs_dir / f"{canonical_dataset}_results.log"
     status_path = run_dir / "prediction_generation_status.json"
 
-    existing_predictions = _load_existing_predictions(prediction_path) if args.resume else {}
+    existing_predictions: dict[str, str] = {}
+    if args.resume:
+        existing_predictions = _load_existing_predictions(prediction_path)
+        existing_predictions.update(_load_existing_predictions(result_log_path))
     prediction_map = dict(existing_predictions)
+    pending_keys = _pending_prediction_keys(samples, prediction_map)
 
     status_payload: dict[str, Any] = {
         "run_id": run_dir.name,
@@ -322,7 +346,8 @@ def main() -> int:
                 "prediction_file": str(prediction_path),
                 "status": "running",
                 "num_expected_samples": len(samples),
-                "num_generated_samples": len(existing_predictions),
+                "num_generated_samples": len(samples) - len(pending_keys),
+                "num_pending_samples": len(pending_keys),
                 "log_path": str(log_path),
                 "result_log_path": str(result_log_path),
                 "error": None,
@@ -330,6 +355,46 @@ def main() -> int:
         ],
     }
     status_path.write_text(json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    logger.info(
+        "Prediction generation plan",
+        dataset=canonical_dataset,
+        total_samples=len(samples),
+        existing_samples=len(samples) - len(pending_keys),
+        pending_samples=len(pending_keys),
+        resume=args.resume,
+    )
+
+    if args.resume and not pending_keys:
+        _write_prediction_file(samples, prediction_path, prediction_map)
+        status_payload["datasets"][0]["status"] = "completed"
+        status_payload["datasets"][0]["num_generated_samples"] = len(samples)
+        status_payload["datasets"][0]["num_pending_samples"] = 0
+        status_path.write_text(
+            json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        logger.info(
+            "Resume predictions already complete; skipping model server startup",
+            dataset=canonical_dataset,
+            total_samples=len(samples),
+        )
+        print(
+            json.dumps(
+                {
+                    "dataset": canonical_dataset,
+                    "prediction_file": str(prediction_path),
+                    "result_log_file": str(result_log_path),
+                    "status_file": str(status_path),
+                    "protocol_id": args.protocol if args.protocol.lower() != "none" else None,
+                    "num_samples": len(samples),
+                    "skipped_server_startup": True,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return 0
 
     with open(log_path, "w", encoding="utf-8") as log_handle, open(result_log_path, "w", encoding="utf-8") as result_log_handle:
         if args.resume and existing_predictions:
@@ -391,19 +456,31 @@ def main() -> int:
                 result_log_handle.write(f"{key}\t{prediction}\n")
                 result_log_handle.flush()
 
-                status_payload["datasets"][0]["num_generated_samples"] = len(prediction_map)
+                current_pending_keys = _pending_prediction_keys(samples, prediction_map)
+                status_payload["datasets"][0]["num_generated_samples"] = len(samples) - len(current_pending_keys)
+                status_payload["datasets"][0]["num_pending_samples"] = len(current_pending_keys)
                 status_path.write_text(
                     json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8",
                 )
+                if (
+                    status_payload["datasets"][0]["num_generated_samples"] % PREDICTION_SNAPSHOT_INTERVAL == 0
+                    or not current_pending_keys
+                ):
+                    logger.info(
+                        "Prediction generation progress",
+                        dataset=canonical_dataset,
+                        generated_samples=status_payload["datasets"][0]["num_generated_samples"],
+                        total_samples=len(samples),
+                        pending_samples=len(current_pending_keys),
+                    )
+                    _write_prediction_file(samples, prediction_path, prediction_map)
 
-            with open(prediction_path, "w", encoding="utf-8") as handle:
-                for sample in samples:
-                    key = str(sample.get("key", ""))
-                    handle.write(f"{key}\t{prediction_map.get(key, '')}\n")
+            _write_prediction_file(samples, prediction_path, prediction_map)
 
             status_payload["datasets"][0]["status"] = "completed"
             status_payload["datasets"][0]["num_generated_samples"] = len(samples)
+            status_payload["datasets"][0]["num_pending_samples"] = 0
             status_path.write_text(
                 json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
@@ -412,7 +489,10 @@ def main() -> int:
         except Exception as exc:
             status_payload["datasets"][0]["status"] = "failed"
             status_payload["datasets"][0]["error"] = str(exc)
-            status_payload["datasets"][0]["num_generated_samples"] = len(prediction_map)
+            current_pending_keys = _pending_prediction_keys(samples, prediction_map)
+            status_payload["datasets"][0]["num_generated_samples"] = len(samples) - len(current_pending_keys)
+            status_payload["datasets"][0]["num_pending_samples"] = len(current_pending_keys)
+            _write_prediction_file(samples, prediction_path, prediction_map)
             status_path.write_text(
                 json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",

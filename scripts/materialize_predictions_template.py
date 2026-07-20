@@ -58,11 +58,11 @@ def _materialize_one(
     output_dir.mkdir(parents=True, exist_ok=True)
     template_path = output_dir / f"{canonical_name}.txt"
     if template_path.exists() and not overwrite:
-        raise FileExistsError(f"Template already exists: {template_path}")
-
-    with open(template_path, "w", encoding="utf-8") as handle:
-        for sample in samples:
-            handle.write(f"{sample.get('key', '')}\t\n")
+        logger.info("Preserving existing prediction template for resume", path=str(template_path))
+    else:
+        with open(template_path, "w", encoding="utf-8") as handle:
+            for sample in samples:
+                handle.write(f"{sample.get('key', '')}\t\n")
 
     info = dataset_manager.get_info(canonical_name) or {}
     metric = sota_manager.get_metric(canonical_name)

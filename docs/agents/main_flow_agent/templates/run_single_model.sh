@@ -111,8 +111,7 @@ echo "[2/5] Materializing prediction templates..."
 "$PYTHON_BIN" "$REPO_ROOT/scripts/materialize_predictions_template.py" \
   --dataset "${DATASET_ARRAY[@]}" \
   --output-dir "$RUN_DIR/predictions" \
-  --manifest-name manifest.json \
-  --overwrite
+  --manifest-name manifest.json
 
 # ---------------------------------------------------------------------------
 # [2.5/5] Smoke test gate (first dataset only)
