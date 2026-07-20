@@ -130,9 +130,12 @@ Backend 选择遵循 [Evidence Priority Policy](./evidence_priority.md) 的层�
 **情况**: 输入要求 GPU，但 phase-1 目标仅是最小 callable path，host GPU 不可用或 driver 不兼容
 
 **处理**:
-1. 检查 CPU fallback 是否仍是同一条 repo-native path
-2. 若是，则保留当前 backend，记录 limitation
-3. 在 verdict 中明确：phase-1 passed with CPU fallback，不宣称 GPU readiness
+1. 若 host CUDA 可见且 `device=auto`，必须先用 CUDA 尝试 `validate_env_compat`；不得直接写 `device=cpu` 通过。
+2. CUDA 失败后不能立即 CPU fallback；必须根据 host driver/CUDA 尝试修复模型运行环境，例如重装/pin torch+torchaudio 到 host 可用的 CUDA wheel、切换到文档支持的 CUDA backend、或重建 model-local env。
+3. 只有在记录至少 3 次 CUDA-first 失败（或 `cpu_fallback_after_cuda_failures` 指定的次数）并记录至少 3 次 CUDA 环境修复尝试（或 `cuda_repair_attempts_before_cpu` 指定的次数）后，才允许切到 CPU fallback。
+4. 检查 CPU fallback 是否仍是同一条 repo-native path。
+5. 若是，则保留当前 backend，记录 limitation。
+6. 在 verdict 中明确：phase-1 passed with CPU fallback，不宣称 GPU readiness。
 
 ---
 

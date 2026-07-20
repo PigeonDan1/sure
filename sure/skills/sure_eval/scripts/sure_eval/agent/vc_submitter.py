@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -35,8 +36,9 @@ _GPU_PRIORITY: dict[str, int] = {
     "pdgpu-ezkws": 30,
 }
 
-# Default mount: host repo root -> container repo root.
-_DEFAULT_VOLUME_MOUNT = "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox:/workspace/sure-eval"
+# Default mount is inferred from the current checkout.  Keep this module free
+# of user-specific repository paths: harness deployments may live beside a
+# legacy sandbox checkout and rely on symlinks to shared model assets.
 
 # Base memory heuristic per model weight size (GB).
 _WEIGHT_MEM_MULTIPLIER = 2.5
@@ -55,9 +57,72 @@ def _run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess
     )
 
 
+def _image_repo(model_name: str) -> str:
+    """Return the Docker repository name for *model_name*.
+
+    Docker repositories are lowercase.  Historical SURE model images use the
+    model directory name lowercased after the common project prefix.
+    """
+    return f"{IMAGE_REGISTRY_PREFIX}{model_name}".lower()
+
+
+def _infer_repo_root() -> Path:
+    """Infer the harness/SURE repository root from cwd or this file path."""
+    candidates = [Path.cwd().resolve(), Path(__file__).resolve()]
+    for candidate in candidates:
+        start = candidate if candidate.is_dir() else candidate.parent
+        for parent in (start, *start.parents):
+            if (parent / "sure" / "skills" / "sure_eval").exists() and (
+                parent / "sure" / "models"
+            ).exists():
+                return parent
+    return Path.cwd().resolve()
+
+
+def _infer_default_volume_mount(repo_root: Path) -> str:
+    """Infer a single vc volume covering repo code and shared model symlinks."""
+    for parent in (repo_root, *repo_root.parents):
+        if parent.name == "sjtu_home":
+            return f"{parent}:{parent}"
+    return f"{repo_root}:{repo_root}"
+
+
+def _translate_to_container_path(path: Path, volume_mount: str) -> str:
+    """Translate a host path into the container path implied by a vc volume."""
+    volume = volume_mount.split(",", 1)[0]
+    try:
+        host_raw, container_raw = volume.split(":", 1)
+    except ValueError:
+        return str(path)
+    host = Path(host_raw).resolve()
+    container = Path(container_raw)
+    try:
+        rel = path.resolve().relative_to(host)
+    except ValueError:
+        return str(path)
+    return str(container / rel)
+
+
+def _container_path_for_entrypoint(entrypoint_path: str, repo_root_in_container: str, volume_mount: str) -> str:
+    """Return the container-side path for a materialized execution entrypoint."""
+    path = Path(entrypoint_path)
+    if path.is_absolute():
+        return _translate_to_container_path(path, volume_mount)
+    return str(Path(repo_root_in_container) / entrypoint_path)
+
+
+def _container_path_for_optional(path_value: str | None, volume_mount: str) -> str | None:
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if path.is_absolute():
+        return _translate_to_container_path(path, volume_mount)
+    return path_value
+
+
 def list_local_images(model_name: str) -> list[str]:
     """Return locally available Docker images matching the model prefix."""
-    prefix = f"{IMAGE_REGISTRY_PREFIX}{model_name}"
+    prefix = _image_repo(model_name)
     result = _run_cmd(
         ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
         check=False,
@@ -65,7 +130,7 @@ def list_local_images(model_name: str) -> list[str]:
     images: list[str] = []
     for line in result.stdout.strip().splitlines():
         line = line.strip()
-        if line.startswith(prefix):
+        if line.lower().startswith(prefix):
             images.append(line)
     return images
 
@@ -91,7 +156,7 @@ def select_best_image(model_name: str) -> str:
     If multiple local tags exist, pick the one with the highest version tuple.
     Falls back to ``{prefix}{model_name}:latest`` when no local image is found.
     """
-    prefix = f"{IMAGE_REGISTRY_PREFIX}{model_name}"
+    prefix = _image_repo(model_name)
     images = list_local_images(model_name)
 
     if not images:
@@ -247,10 +312,31 @@ def estimate_memory_gb(model_name: str) -> int:
     return mem
 
 
+def _runtime_model_stem(model_name: str) -> str:
+    """Return the model stem used by model Docker virtualenv paths."""
+    model_dir = Path("sure/models") / model_name
+    spec_path = model_dir / "model.spec.yaml"
+    runtime_name = ""
+    if spec_path.exists():
+        try:
+            import yaml
+
+            data = yaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
+            runtime_name = str(data.get("model_name") or "")
+        except Exception:
+            runtime_name = ""
+    if not runtime_name:
+        runtime_name = model_name.split("__", 1)[-1]
+    stem = re.sub(r"[^a-z0-9]+", "_", runtime_name.lower()).strip("_")
+    return re.sub(r"_+", "_", stem) or model_name.lower()
+
+
 def infer_venv_path(model_name: str) -> str:
     """Infer the virtual-env path inside the Docker image for *model_name*."""
-    # The Dockerfile convention used in this project is /opt/{model_name}_venv
-    return f"/opt/{model_name}_venv"
+    # The Dockerfile convention used in this project is
+    # /opt/<normalized runtime model name>_venv, e.g.
+    # /opt/qwen3_tts_12hz_1_7b_base_venv.
+    return f"/opt/{_runtime_model_stem(model_name)}_venv"
 
 
 def build_vc_submit_command(
@@ -262,8 +348,14 @@ def build_vc_submit_command(
     gpus: int = 1,
     cpus: int = 4,
     volume_mount: str | None = None,
-    repo_root_in_container: str = "/workspace/sure-eval",
+    repo_root_in_container: str | None = None,
     entrypoint_path: str | None = None,
+    log_path: str | None = None,
+    execution_requested: str = "vc",
+    device_request: str = "auto",
+    device_actual: str = "cuda:0",
+    harness_python_bin: str | None = None,
+    job_name: str | None = None,
 ) -> list[str]:
     """Build the ``vc submit`` command as a list of arguments.
 
@@ -274,17 +366,20 @@ def build_vc_submit_command(
     image = image or select_best_image(model_name)
     partition = partition or select_best_partition()
     memory_gb = memory_gb or estimate_memory_gb(model_name)
-    volume = volume_mount or _DEFAULT_VOLUME_MOUNT
+    host_repo_root = _infer_repo_root()
+    volume = volume_mount or _infer_default_volume_mount(host_repo_root)
+    if repo_root_in_container is None:
+        repo_root_in_container = _translate_to_container_path(host_repo_root, volume)
     venv_path = infer_venv_path(model_name)
 
-    # Path to run_evaluation.sh inside the container
     if entrypoint_path:
-        run_sh = f"{repo_root_in_container}/{entrypoint_path}"
+        run_sh = _container_path_for_entrypoint(entrypoint_path, repo_root_in_container, volume)
     else:
         run_sh = (
             f"{repo_root_in_container}/sure/models/{model_name}"
             f"/eval_runs/{run_id}/run_evaluation.sh"
         )
+    log_path_in_container = _container_path_for_optional(log_path, volume)
     # Path to .venv inside the container (where we create the symlink)
     venv_link = (
         f"{repo_root_in_container}/sure/models/{model_name}/.venv"
@@ -296,13 +391,41 @@ def build_vc_submit_command(
     # *inside* the directory rather than replacing it, so .venv/bin/python still
     # won't exist.  Instead: if .venv is a non-symlink directory, rename it to
     # .venv.hostbak (never delete), then create the symlink.
-    inner_cmd = (
-        f'[ -d {venv_link} -a ! -L {venv_link} ] && mv {venv_link} {venv_link}.hostbak; '
-        f'ln -sfn {venv_path} {venv_link}; '
-        f'export REPO_ROOT={repo_root_in_container}; '
-        f'export PYTHON_BIN={venv_path}/bin/python; '
-        f'bash {run_sh}'
-    )
+    q = shlex.quote
+    inner_parts = [
+        "set -e",
+        (
+            f"if [ -d {q(venv_link)} ] && [ ! -L {q(venv_link)} ]; then "
+            f"mv {q(venv_link)} {q(venv_link)}.hostbak.$(date +%s); "
+            "fi"
+        ),
+        f"ln -sfn {q(venv_path)} {q(venv_link)}",
+        f"export REPO_ROOT={q(repo_root_in_container)}",
+        f"export PYTHON_BIN={q(f'{venv_path}/bin/python')}",
+        "export SURE_EVAL_EXECUTION_PATH=vc_submit",
+        f"export SURE_EVAL_EXECUTION_REQUESTED={q(execution_requested or 'vc')}",
+        "export SURE_EVAL_EXECUTION_JOB_ID=${VC_JOB_ID:-}",
+        f"export SURE_EVAL_DEVICE_REQUEST={q(device_request or 'auto')}",
+        f"export SURE_EVAL_DEVICE_ACTUAL={q(device_actual or 'cuda:0')}",
+        f"export DEVICE={q(device_actual or 'cuda:0')}",
+    ]
+    if harness_python_bin:
+        inner_parts.append(f"export HARNESS_PYTHON_BIN={q(harness_python_bin)}")
+    if log_path_in_container:
+        inner_parts.extend(
+            [
+                f"mkdir -p {q(str(Path(log_path_in_container).parent))}",
+                f"bash {q(run_sh)} > {q(log_path_in_container)} 2>&1",
+            ]
+        )
+    else:
+        inner_parts.append(f"bash {q(run_sh)}")
+    inner_cmd = "; ".join(inner_parts)
+    # vc submit has historically behaved more reliably with the command in a
+    # simple `bash -c "..."` form than with a nested single-quoted `bash -lc`.
+    # Keep paths shell-quoted inside the command, then escape only double quotes
+    # for the outer bash -c argument.
+    escaped_inner_cmd = inner_cmd.replace('"', '\\"')
 
     cmd = [
         "vc",
@@ -313,9 +436,9 @@ def build_vc_submit_command(
         "-m", f"{memory_gb}G",
         "-c", str(cpus),
         "-n", "1",
-        "-j", run_id,
+        "-j", job_name or run_id,
         "-v", volume,
-        "--cmd", f'bash -c "{inner_cmd}"',
+        "--cmd", f'bash -c "{escaped_inner_cmd}"',
     ]
     return cmd
 
@@ -329,6 +452,12 @@ def submit_vc_run(
     gpus: int = 1,
     cpus: int = 4,
     entrypoint_path: str | None = None,
+    log_path: str | None = None,
+    execution_requested: str = "vc",
+    device_request: str = "auto",
+    device_actual: str = "cuda:0",
+    harness_python_bin: str | None = None,
+    job_name: str | None = None,
 ) -> str:
     """Submit a model evaluation run to the Volcano cluster via ``vc submit``.
 
@@ -343,6 +472,12 @@ def submit_vc_run(
         gpus=gpus,
         cpus=cpus,
         entrypoint_path=entrypoint_path,
+        log_path=log_path,
+        execution_requested=execution_requested,
+        device_request=device_request,
+        device_actual=device_actual,
+        harness_python_bin=harness_python_bin,
+        job_name=job_name,
     )
 
     logger.info("Submitting vc job", command=" ".join(cmd))

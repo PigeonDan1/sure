@@ -4,7 +4,7 @@
 `asr_kimi_audio` / Kimi-Audio-7B-Instruct 的接入经验。适用任务：
 
 ```text
-ASR, S2TT, SER, SLU, GR
+ASR, S2TT, SER, SLU, GR, SD, SA-ASR
 ```
 
 这类模型不是单一 ASR wrapper，而是统一音频理解模型。新 agent 接入同类模型时，
@@ -24,6 +24,8 @@ ASR, S2TT, SER, SLU, GR
 | SER | speaker emotion recognition | `recognize_emotion(audio_path)` | `text`, normalized `label` |
 | SLU | spoken language understanding | `understand(audio_path, prompt=...)` | `text`, normalized choice `label` |
 | GR | gender recognition | `recognize_gender(audio_path)` | `text`, normalized `label` |
+| SD | speaker diarization | `diarize(audio_path)` | MeetEval-loadable annotation |
+| SA-ASR | speaker-attributed ASR | `transcribe_with_speakers(audio_path)` | MeetEval-loadable annotation |
 
 `model.spec.yaml` 至少要声明：
 
@@ -44,6 +46,10 @@ io_contract:
     GR:
       text: string
       label: "one of [male, female]"
+    SD:
+      segments: list
+    SA-ASR:
+      segments: list
 ```
 
 ## 2. 目录与权重
@@ -92,6 +98,8 @@ fixtures/tasks/s2tt/kimi_audio_s2tt_smoke/
 fixtures/tasks/ser/kimi_audio_ser_smoke/
 fixtures/tasks/slu/kimi_audio_slu_smoke/
 fixtures/tasks/gr/kimi_audio_gr_smoke/
+fixtures/tasks/sd/README.md
+fixtures/tasks/sa_asr/README.md
 ```
 
 组合索引见 `fixtures/tasks/speech_understanding/README.md`。接入新模型时，按
@@ -105,6 +113,8 @@ fixture/s2tt/covost2-en2zh/gt.jsonl
 fixture/ser/iemocap/gt.jsonl
 fixture/slu/mmsu/gt.jsonl
 fixture/gr/librispeech-test-clean/gt.jsonl
+fixture/sd/librispeech-two-speaker/gt.jsonl
+fixture/sa_asr/librispeech-two-speaker/gt.jsonl
 ```
 
 每个 `gt.jsonl` 每行至少包含：
@@ -121,13 +131,27 @@ fixture/gr/librispeech-test-clean/gt.jsonl
   不要用普通 ASR 音频替代 SER。
 - SLU: 可以使用 MMSU 这类选择题音频。fixture audio 中应已经包含问题和选项。
 - GR: 标签限定 `male/female`，可使用 LibriSpeech 等带说话人性别信息的数据。
+- SD: 输出必须是 MeetEval 可读取的 diarization annotation；推荐 DER 使用 RTTM。
+- SA-ASR: 输出必须是 MeetEval 可读取的 speaker-attributed ASR annotation；常用
+  STM/CTM/SegLST，不能退化成普通 ASR `key<TAB>text`。
 - 多任务 metric 脚本索引：
-  - ASR: `src/sure_eval/evaluation/asr/`
-  - S2TT: `src/sure_eval/evaluation/s2tt/`
-  - SER / SLU / GR classification: `src/sure_eval/evaluation/classification/`
-  - 汇总命名空间：`src/sure_eval/evaluation/speech_understanding/`
-- 每个 metric 目录有独立 `pyproject.toml` 和 `README.md`，用 `uv sync` 准备
-  该 metric 的依赖环境。
+  - ASR task route: `src/sure_eval/evaluation/tasks/asr/`
+  - S2TT task route: `src/sure_eval/evaluation/tasks/s2tt/`
+  - SER / GR classification route: `src/sure_eval/evaluation/tasks/classification/`
+  - SLU route: `src/sure_eval/evaluation/tasks/slu/`
+  - SD route: `src/sure_eval/evaluation/tasks/sd/`
+  - SA-ASR route: `src/sure_eval/evaluation/tasks/sa_asr/`
+  - SA-ASR conversion profile: `src/sure_eval/evaluation/conversion/sa_asr__cpwer/`
+  - SA-ASR G-STAR normalization node: `src/sure_eval/evaluation/nodes/normalization/gstar_norm/`
+  - MeetEval scoring node: `src/sure_eval/evaluation/nodes/scoring/meeteval/`
+  - prompt choice normalization node: `src/sure_eval/evaluation/nodes/normalization/prompt_norm/`
+  - generic classification scoring node: `src/sure_eval/evaluation/nodes/scoring/classify/`
+- 重依赖 metric 使用 node-local `pyproject.toml` 和 `.venv`；SER/GR/SLU 的
+  `prompt_norm` / `classify` 为轻量确定性节点，不需要单独大模型环境。
+- SA-ASR/SD 等 annotation 任务要额外检查 conversion profile。若模型输出不是 metric
+  直接可读格式，需要在模型 artifact 或 metric `output_dir` 中保留转换脚本与说明；
+  包级 `src/sure_eval/evaluation/conversion/{task_slug}__{metric_slug}/` 只放可复用代表
+  profile。同时确认 `conversion_trace` 出现在报告中。
 
 样本数建议每任务 2-3 条，最多 5 条。多任务 smoke 的目标是验证链路和契约，
 不是追求 benchmark 统计显著性。
@@ -167,6 +191,37 @@ Kimi-Audio 的 S2TT 实现是两阶段：
 ```
 
 如果 S2TT 输出仍是源语言，优先检查 `translate()` 是否退回 ASR-only path。
+
+S2TT metric 输入必须按 metric 明确准备，不要假设所有 metric 都只需要 `ref/hyp`：
+
+| metric backend | 输入文件 | 聚合 | 用途 |
+| --- | --- | --- | --- |
+| `scoring/sacrebleu` | `hyp + ref`，每行 `key<TAB>text` | corpus metric | BLEU / chrF++ 传统可复现锚点 |
+| `scoring/xcomet_xl` | `src + hyp + ref`，每行 `key<TAB>text` | segment mean | `Unbabel/XCOMET-XL` 主语义质量 |
+| `scoring/bleurt_20` | `hyp + ref`，每行 `key<TAB>text` | segment mean | `BLEURT-20` 互补语义质量 |
+
+S2TT metric 入口：
+
+```text
+sure_eval.evaluation.tasks.s2tt.pipeline.evaluate_s2tt_files
+```
+
+SacreBLEU 使用 scoring backend 自己的轻量 uv project，cache/env 也放在同一目录：
+
+```text
+src/sure_eval/evaluation/nodes/scoring/sacrebleu/pyproject.toml
+src/sure_eval/evaluation/nodes/scoring/sacrebleu/.cache/uv
+src/sure_eval/evaluation/nodes/scoring/sacrebleu/.venv
+```
+
+XCOMET-XL 与 BLEURT-20 使用各自 scoring node 的独立 uv project：
+
+```text
+src/sure_eval/evaluation/nodes/scoring/xcomet_xl/
+src/sure_eval/evaluation/nodes/scoring/bleurt_20/
+```
+
+长期使用的 metric cache 或模型权重不要放到 `/tmp`。
 
 ### SER
 
@@ -270,17 +325,63 @@ ref_gr.txt / hyp_gr.txt
 
 不要把模型答错称作 validation failure。
 
+Kimi-Audio 这类生成式语音理解模型可能在文本最前面稳定生成孤立的 `!` / `！`
+decode artifact。不能先把它当普通文本 normalization 处理，必须先拿 token 级证据：
+
+- raw generated text token ids；
+- first token 的 per-token decode；
+- special token ids，例如 `kimia_text_blank` / `kimia_text_eos`。
+
+Kimi-Audio 已验证根因是 generated text stream 的首 token 为 id `0`，而该 tokenizer
+中 `decode([0]) == "!"`；它不是 `<|im_kimia_text_blank|>`，也不能用
+`skip_special_tokens` 解决。修复应在 Kimi text detokenize / generation protocol
+边界过滤这个首位 stream-boundary token，再写入 `prediction`、`hyp_*.txt` 和 metric
+report。不要只在 wrapper 字符串清洗或 metric 计算时临时去掉 `!`，否则会掩盖根因。
+
+遇到该问题时读取：
+
+```text
+references/memory/bad_cases/kimi_audio_leading_bang_token.md
+```
+
 ## 6. Evaluation
 
-可以复用 `sure_eval.evaluation.sure_evaluator.SUREEvaluator`：
+正式评估应优先复用 task routes；`SUREEvaluator` 和分类兼容入口可以保留，但新报告中
+必须能看到 pipeline trace。
 
-- ASR: 记录 CER/WER，至少 CER。
-- S2TT: BLEU / chrF。
-- SER: accuracy。
-- SLU: accuracy，必要时传 `prompt_jsonl`。
-- GR: accuracy。
+- ASR: `sure_eval.evaluation.tasks.asr.metrics.CERMetric` / `WERMetric`，至少 CER。
+- S2TT: `sure_eval.evaluation.tasks.s2tt.pipeline.evaluate_s2tt_files`，至少 BLEU / chrF。
+- SER / GR: `sure_eval.evaluation.tasks.classification.pipeline.evaluate_classification_files`。
+- SLU: `sure_eval.evaluation.tasks.slu.pipeline.evaluate_slu_files`，先走
+  `normalization/prompt_norm`，再走 `scoring/classify`。
+- SD: `sure_eval.evaluation.tasks.sd` + MeetEval。
+- SA-ASR: `sure_eval.evaluation.tasks.sa_asr` + conversion profile + MeetEval。
 
 第一阶段 success 只要求链路完整；metrics 是模型表现，不是接入是否成功的唯一条件。
+
+`validate_multitask.py` 可以在推理完成后调用正式 metric 类并落盘
+`speech_understanding_metric_report.json`。如果选择先推理、后评测，也必须用同一批
+`ref_*.txt` / `hyp_*.txt` 生成 report。正式多任务指标必须落成独立 report，不能只依赖
+`validate_multitask.py` 内部的临时 metric 字段。
+
+已建立的通用入口：
+
+```text
+scripts/run_speech_understanding_metric_pipeline.py
+```
+
+该 runner 从已有 ref/hyp 文件计算指标，不重新跑模型推理。必须确认 report 中：
+
+- `ok: true` 或结构化 blocker；
+- `errors` 明确；
+- ASR backend 是 SURE ASR metric route；
+- S2TT backend 是 SURE S2TT route；
+- SER / GR backend 是 classification route；
+- SLU pipeline trace 包含 `normalization/prompt_norm` 和 `scoring/classify`；
+- SD/SA-ASR report 包含 MeetEval 或 conversion trace。
+
+如果 `S2TT` 报 `No module named 'sacrebleu'`，这是评测环境依赖缺失，不是模型推理失败。
+按 `references/playbooks/env_uv.md` 修复依赖后重跑同一个 metric runner。
 
 ## 7. GPU 与内存策略
 
@@ -411,10 +512,12 @@ key=deixis_resolution_34bad028-6bad-4086-855a-bac86cd5f253 expected=B got=C
 - [ ] 已读 `AGENTS.md` 和本文。
 - [ ] `model.spec.yaml` 声明 `supported_tasks`。
 - [ ] 每个任务有独立 fixture，不用 ASR 样本替代 SER/SLU/GR。
+- [ ] SD/SA-ASR 如被支持，输出是 MeetEval-loadable annotation，不是普通 ASR 文本行。
 - [ ] wrapper 有 task-specific methods。
 - [ ] `validate_multitask.py` 是多任务唯一结论入口。
 - [ ] `validate.py` 如保留，明确只用于 ASR-only smoke。
 - [ ] S2TT、SER、SLU、GR 有 label/text normalization。
+- [ ] 多任务 metric report 记录 backend、pipeline trace 和 conversion trace。
 - [ ] 输出 ref/hyp 文件和 `multitask_sample_output.json`。
 - [ ] OOM、kernel image、8bit、device_map 等 GPU 状态已记录。
 - [ ] Docker 多任务脚本不挂 host `.venv`，权重通过 `.runtime` 挂载。

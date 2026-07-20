@@ -1,0 +1,31 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "evaluation_route_plan.schema.json",
+	"title": "SURE-EVAL evaluation route plan",
+	"description": "Harness artifact resolved from eval_input_resolved.json through the standalone sure-evaluation capability, route, and agent-plan contracts.",
+	"type": "object",
+	"required": ["schema", "generated_at", "input_path", "engine", "datasets", "can_run_now", "blocking_issues"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.harness.evaluation_route_plan.v1"] },
+		"generated_at": { "type": "string" },
+		"input_path": { "type": "string" },
+		"engine": {
+			"type": "object",
+			"required": ["source", "engine_root"],
+			"properties": {
+				"source": { "type": "string" },
+				"engine_root": { "type": "string" },
+				"commit": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
+		"datasets": {
+			"type": "array",
+			"items": { "type": "object", "additionalProperties": true }
+		},
+		"can_run_now": { "type": "boolean" },
+		"blocking_issues": { "type": "array", "items": { "type": "string" } },
+		"setup_commands": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}

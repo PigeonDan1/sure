@@ -4,23 +4,42 @@
 	"title": "SURE-EVAL dataset scope",
 	"description": "Structured output of the DATASET_SCOPE_UNIT.",
 	"type": "object",
-	"required": ["datasets"],
+	"required": ["selected_datasets", "skipped_datasets", "selection_basis"],
 	"properties": {
-		"datasets": {
+		"run_id": { "type": "string" },
+		"timestamp": { "type": "string" },
+		"selection_basis": { "type": "array", "items": { "type": "string" } },
+		"selected_datasets": { "type": "array", "items": { "type": "string" } },
+		"skipped_datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["dataset", "reason"],
+				"properties": {
+					"dataset": { "type": "string" },
+					"reason": { "type": "string" }
+				},
+				"additionalProperties": false
+			}
+		},
+		"dataset_details": {
 			"type": "array",
 			"items": {
 				"type": "object",
 				"required": ["name"],
 				"properties": {
 					"name": { "type": "string" },
-					"split": { "type": "string" },
-					"max_samples": { "type": "number" },
+					"requested_name": { "type": "string" },
+					"jsonl_path": { "type": "string" },
+					"task": { "type": "string" },
+					"language": { "type": "string" },
+					"default_metrics": { "type": "array", "items": { "type": "string" } },
+					"num_samples": { "type": "number" },
 					"source": { "type": "string" }
 				},
 				"additionalProperties": false
 			}
 		},
-		"selection_rationale": { "type": "string" },
 		"auto_selected": { "type": "boolean" }
 	},
 	"additionalProperties": false

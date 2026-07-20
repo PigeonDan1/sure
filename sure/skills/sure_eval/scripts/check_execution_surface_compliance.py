@@ -2,9 +2,9 @@
 """
 Check execution surface compliance.
 
-Enforces the single rule: the execution surface MUST be generated from an
-approved main-flow template bundled under scripts/templates/. No external
-template root is accepted.
+The execution surface MUST be generated from an approved harness template.
+The bundled main-flow reference mirror is audit-only and is not a runtime
+template source. No prior-run script/prediction/report leakage is accepted.
 
 This script MUST be called by the EXECUTION_READINESS unit before any run
 is approved for execution. The Sure hook invokes it as:
@@ -25,6 +25,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from resolve_evaluation_route_plan import build_route_plan
+
 
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -32,7 +34,9 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-CANONICAL_TEMPLATE_ROOT = Path(__file__).resolve().parent / "templates"
+SCRIPT_DIR = Path(__file__).resolve().parent
+SKILL_ROOT = SCRIPT_DIR.parent
+CANONICAL_TEMPLATE_ROOT = SCRIPT_DIR / "templates"
 ALLOWED_TEMPLATE_ROOTS = (CANONICAL_TEMPLATE_ROOT,)
 
 
@@ -42,6 +46,17 @@ def _path_is_under(path: Path, root: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _maybe_check_declared_hash(path: Path, declared: str | None, label: str) -> list[str]:
+    if not declared:
+        return []
+    if not path.exists():
+        return [f"{label} hash declared but file does not exist: {path}"]
+    actual = _sha256_file(path)
+    if actual != declared:
+        return [f"{label} hash mismatch for {path}: declared={declared} actual={actual}"]
+    return []
 
 
 def check_template_source(
@@ -85,13 +100,30 @@ def check_template_source(
         }
 
     template_path = Path(template_file)
+    if not template_path.is_absolute():
+        template_path = (SKILL_ROOT / template_path).resolve()
     exists = template_path.exists()
     under_approved_root = any(_path_is_under(template_path, root) for root in ALLOWED_TEMPLATE_ROOTS)
     matches_expected = False
     if expected_template is not None:
         matches_expected = template_path.resolve() == expected_template.resolve()
 
-    passed = under_approved_root and exists
+    hash_errors: list[str] = []
+    hash_errors.extend(_maybe_check_declared_hash(template_path, prov.get("template_sha256"), "template"))
+    for source_key, hash_key, label in (
+        ("source_template_file", "source_template_sha256", "source_template"),
+        ("mirror_template_file", "mirror_template_sha256", "mirror_template"),
+    ):
+        source_value = prov.get(source_key)
+        if source_value:
+            source_path = Path(source_value)
+            if not source_path.is_absolute():
+                source_path = (SKILL_ROOT / source_path).resolve()
+            if not any(_path_is_under(source_path, root) for root in ALLOWED_TEMPLATE_ROOTS):
+                hash_errors.append(f"{label} path is not under an approved template root: {source_value}")
+            hash_errors.extend(_maybe_check_declared_hash(source_path, prov.get(hash_key), label))
+
+    passed = under_approved_root and exists and not hash_errors
     if expected_template is not None:
         passed = passed and matches_expected
 
@@ -105,10 +137,11 @@ def check_template_source(
         evidence_parts.append(
             f"expected template '{expected_template}', got '{template_file}'"
         )
+    evidence_parts.extend(hash_errors)
 
     return {
         "passed": passed,
-        "template_declared": template_file,
+        "template_declared": str(template_path),
         "template_exists": exists,
         "under_approved_template_root": under_approved_root,
         "canonical_template_root": str(CANONICAL_TEMPLATE_ROOT),
@@ -154,10 +187,37 @@ def check_source_provenance(surface_path: Path) -> dict[str, Any]:
     }
 
 
+def check_no_prior_run_leakage(surface_path: Path) -> dict[str, Any]:
+    if not surface_path.exists():
+        return {"passed": False, "evidence": f"{surface_path.name} not found"}
+
+    try:
+        data = json.loads(surface_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return {"passed": False, "evidence": f"invalid JSON: {e}"}
+
+    prov = data.get("source_provenance")
+    if not isinstance(prov, dict):
+        return {"passed": False, "evidence": "source_provenance missing"}
+    isolation = prov.get("isolation_compliance")
+    if not isinstance(isolation, dict):
+        return {"passed": False, "evidence": "source_provenance.isolation_compliance must be an object"}
+
+    leaked = []
+    if isolation.get("eval_runs_referenced") is True:
+        leaked.append("eval_runs_referenced=true")
+    if isolation.get("prior_run_scripts_copied") is True:
+        leaked.append("prior_run_scripts_copied=true")
+    if leaked:
+        return {"passed": False, "evidence": "; ".join(leaked)}
+    return {"passed": True, "evidence": "no prior-run leakage declared"}
+
+
 REQUIRED_EVALUATE_ARGS = [
     "--results-dir",
     "--protocol-id",
     "--model-dir",
+    "--evaluation-backend",
 ]
 
 
@@ -178,20 +238,10 @@ def check_evaluate_predictions_args(shell_path: Path) -> dict[str, Any]:
             "evidence": "no evaluate_predictions.py call found",
         }
 
-    # Extract the evaluate_predictions.py call block (from the script line to the || line)
-    lines = content.splitlines()
-    eval_block_lines: list[str] = []
-    in_eval_block = False
-    for line in lines:
-        if "evaluate_predictions.py" in line:
-            in_eval_block = True
-        if in_eval_block:
-            eval_block_lines.append(line)
-            if "|| EVAL_EXIT=$?" in line or "|| EVAL_EXIT" in line or line.strip().endswith("|| EVAL_EXIT=$?"):
-                break
-    eval_block = "\n".join(eval_block_lines)
-
-    missing = [arg for arg in REQUIRED_EVALUATE_ARGS if arg not in eval_block]
+    # Main-flow templates usually declare EVAL_ARGS/MERGE_ARGS arrays and then
+    # expand them at the evaluate_predictions.py call site. Check the whole
+    # script so array-declared arguments are accepted.
+    missing = [arg for arg in REQUIRED_EVALUATE_ARGS if arg not in content]
     if missing:
         return {
             "passed": False,
@@ -201,6 +251,42 @@ def check_evaluate_predictions_args(shell_path: Path) -> dict[str, Any]:
     return {
         "passed": True,
         "evidence": "all required evaluate_predictions.py args present",
+    }
+
+
+def check_evaluation_route_plan(artifacts_dir: Path) -> dict[str, Any]:
+    """Resolve sure-evaluation route/env readiness for selected datasets."""
+
+    input_path = artifacts_dir / "eval_input_resolved.json"
+    output_path = artifacts_dir / "evaluation_route_plan.json"
+    if not input_path.exists():
+        return {
+            "passed": False,
+            "plan_path": str(output_path),
+            "can_run_now": False,
+            "blocking_issues": [f"missing eval_input_resolved.json: {input_path}"],
+            "evidence": "eval_input_resolved.json is required before execution readiness",
+        }
+    try:
+        payload = build_route_plan(input_path, output_path=output_path)
+    except Exception as exc:
+        return {
+            "passed": False,
+            "plan_path": str(output_path),
+            "can_run_now": False,
+            "blocking_issues": [str(exc)],
+            "evidence": f"failed to resolve evaluation route plan: {exc}",
+        }
+    blocking_issues = [str(item) for item in payload.get("blocking_issues") or []]
+    passed = bool(payload.get("can_run_now")) and not blocking_issues
+    return {
+        "passed": passed,
+        "plan_path": str(output_path),
+        "can_run_now": bool(payload.get("can_run_now")),
+        "engine": payload.get("engine"),
+        "blocking_issues": blocking_issues,
+        "setup_commands": payload.get("setup_commands") or [],
+        "evidence": "ok" if passed else "; ".join(blocking_issues),
     }
 
 
@@ -238,13 +324,27 @@ def main() -> int:
         surface_path = Path(args.produces).resolve()
     else:
         surface_path = run_dir / "execution_surface.json"
+
+    # The hook passes the current unit's artifact as --produces. For the
+    # execution_readiness unit this is execution_readiness_report.json, but
+    # this script audits the execution_surface.json materialized in the same
+    # artifacts directory. Fall back to it when the provided path is not the
+    # execution surface artifact.
+    if surface_path.name != "execution_surface.json":
+        fallback = surface_path.parent / "execution_surface.json"
+        if fallback.exists():
+            surface_path = fallback
+
     # run_evaluation.sh lives alongside the surface artifact (same dir).
     shell_path = surface_path.parent / "run_evaluation.sh"
+    artifacts_dir = surface_path.parent
 
     checks = {
         "template_source": check_template_source(surface_path, expected_template),
         "source_provenance": check_source_provenance(surface_path),
+        "prior_run_leakage": check_no_prior_run_leakage(surface_path),
         "evaluate_predictions_args": check_evaluate_predictions_args(shell_path),
+        "evaluation_route_plan": check_evaluation_route_plan(artifacts_dir),
     }
 
     all_passed = all(c["passed"] for c in checks.values())
@@ -262,7 +362,7 @@ def main() -> int:
 
     if all_passed:
         print(
-            f"check_execution_surface_compliance OK: template under "
+            "check_execution_surface_compliance OK: template under "
             f"{CANONICAL_TEMPLATE_ROOT}"
         )
     else:

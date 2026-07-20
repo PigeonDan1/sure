@@ -2,14 +2,34 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "verdict.schema.json",
 	"title": "SURE model-tool verdict",
-	"description": "Structured output of the VERDICT unit. A success status requires build.success and all four validation tests passed. Ported from docs/agents/model_tool_agent/templates/verdict.json.",
+	"description": "Structured output of the VERDICT unit. A success status requires build.success, all four validation tests passed, and readiness semantics consistent with package_profile. The schema intentionally allows richer upstream-style terminal evidence; check_verdict.py owns semantic validation.",
 	"type": "object",
-	"required": ["status", "instance_id"],
+	"required": ["status"],
 	"properties": {
 		"instance_id": { "type": "string" },
 		"timestamp": { "type": "string" },
 		"model_id": { "type": "string" },
-		"status": { "type": "string", "enum": ["pending", "passed", "success", "failed", "partial"] },
+		"model_name": { "type": "string" },
+		"status": { "type": "string", "enum": ["pending", "passed", "success", "failed", "partial", "PASS", "PASSED", "FAIL"] },
+		"phase": { "type": "string" },
+		"tool_ready": { "type": "boolean" },
+		"package": {
+			"type": "object",
+			"properties": {
+				"profile": { "type": "string", "enum": ["none", "docker-local", "docker-registry"] }
+			},
+			"additionalProperties": true
+		},
+		"readiness": {
+			"type": "object",
+			"properties": {
+				"local_ready": { "type": "boolean" },
+				"docker_ready": { "type": "boolean" },
+				"registry_ready": { "type": "boolean" },
+				"vc_ready": { "type": ["boolean", "null"] }
+			},
+			"additionalProperties": true
+		},
 		"backend": {
 			"type": "object",
 			"properties": {
@@ -54,9 +74,12 @@
 				"spec_path": { "type": "string" },
 				"wrapper_path": { "type": "string" },
 				"lockfile_path": { "type": ["string", "null"] },
-				"log_path": { "type": "string" }
+				"log_path": { "type": "string" },
+				"artifact_manifest_path": { "type": "string" },
+				"validation_log_path": { "type": "string" },
+				"sample_output_path": { "type": "string" }
 			},
-			"additionalProperties": false
+			"additionalProperties": true
 		},
 		"notes": { "type": "string" }
 	},
@@ -72,5 +95,5 @@
 			"additionalProperties": false
 		}
 	},
-	"additionalProperties": false
+	"additionalProperties": true
 }

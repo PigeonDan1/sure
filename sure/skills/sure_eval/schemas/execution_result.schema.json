@@ -11,10 +11,23 @@
 			"enum": ["succeeded", "running", "failed", "partial"]
 		},
 		"vc_job_id": { "type": "string" },
+		"execution_path": { "type": "string", "enum": ["vc_submit", "local_bash", "local_docker"] },
+		"execution_requested": { "type": "string", "enum": ["auto", "local", "vc"] },
 		"predictions_path": { "type": "string" },
 		"log_path": { "type": "string" },
+		"host": { "type": "string" },
+		"pid": { "type": "number" },
+		"command": { "type": "string" },
+		"cwd": { "type": "string" },
+		"started_at": { "type": "string" },
+		"ended_at": { "type": "string" },
 		"duration_seconds": { "type": "number" },
-		"exit_code": { "type": "number" }
+		"exit_code": { "type": "number" },
+		"stdout_log": { "type": "string" },
+		"stderr_log": { "type": "string" },
+		"device_request": { "type": "string" },
+		"device_actual": { "type": "string" },
+		"cuda_visible_devices": { "type": "string" }
 	},
 	"additionalProperties": false
 }

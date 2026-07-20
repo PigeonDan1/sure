@@ -2,18 +2,24 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "task_classification.schema.json",
 	"title": "SURE-EVAL task classification",
-	"description": "Structured output of the TASK_CLASSIFICATION_UNIT. Ported from docs/agents/main_flow_agent/templates/task_classification.json.",
+	"description": "Structured output of the TASK_CLASSIFICATION_UNIT. This classifies the main-flow user goal; ASR/TTS/etc. task domains are inferred from dataset metadata.",
 	"type": "object",
-	"required": ["task_type", "rationale"],
+	"required": ["task_type", "reason", "need_tool_workflow", "confidence", "input_signals"],
 	"properties": {
+		"run_id": { "type": "string" },
+		"timestamp": { "type": "string" },
 		"task_type": {
 			"type": "string",
-			"enum": ["asr", "tts", "vc", "kws", "s2tt", "speech_understanding"]
+			"enum": ["onboarding_then_evaluate", "evaluate_existing_model", "repair_broken_model", "audit_results"]
 		},
-		"rationale": { "type": "string" },
-		"sub_task": { "type": "string" },
-		"input_modality": { "type": "string" },
-		"output_modality": { "type": "string" }
+		"reason": { "type": "string" },
+		"need_tool_workflow": { "type": "boolean" },
+		"confidence": {
+			"type": "string",
+			"enum": ["low", "medium", "high"]
+		},
+		"input_signals": { "type": "array", "items": { "type": "string" } },
+		"evaluation_tasks": { "type": "array", "items": { "type": "string" } }
 	},
 	"additionalProperties": false
 }

@@ -1,7 +1,7 @@
 {
 	"name": "sure_onboard",
 	"command": "/sure_onboard",
-	"description": "Onboard or repair an audio model into a reproducible local inference unit: discover the repo, classify, plan a backend, build the environment, fetch weights, validate import/load/infer/contract, generate the wrapper, and save artifacts with a verdict.",
+	"description": "Onboard or repair an audio model into a reproducible local inference unit: load MODEL_INPUT, select context, discover, classify, plan backend/build steps, prepare fixture, build env, fetch weights, generate wrapper, run real validation, package-gate readiness, and save artifacts with a verdict.",
 	"prompt": "SKILL.md",
 	"hooks": {
 		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
@@ -27,11 +27,29 @@
 			"type": "wrapper",
 			"required": false,
 			"description": "Generated wrapper file set (model.py, server.py, __init__.py, validate.py)."
+		},
+		{
+			"type": "build_plan",
+			"path": "artifacts/build_plan.json",
+			"required": false,
+			"description": "Executable onboarding build plan."
+		},
+		{
+			"type": "fixture_manifest",
+			"path": "artifacts/fixture_manifest.json",
+			"required": false,
+			"description": "Prepared model-local fixture manifest."
+		},
+		{
+			"type": "package_gate",
+			"path": "artifacts/package_gate.json",
+			"required": false,
+			"description": "Local/Docker package readiness gate result."
 		}
 	],
 	"ui": {
 		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
-		"artifactTypes": ["verdict", "model_spec", "wrapper", "artifact_manifest"],
+		"artifactTypes": ["verdict", "model_spec", "wrapper", "build_plan", "fixture_manifest", "package_gate", "artifact_manifest"],
 		"defaultExpandedSections": ["diagnostics", "artifacts"]
 	}
 }

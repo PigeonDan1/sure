@@ -1,0 +1,229 @@
+{
+  "schema": "sure.main_flow_reference_manifest.v1",
+  "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+  "mirror_root": "references/main_flow_agent",
+  "mirrored_subdirs": [
+    "contracts",
+    "templates"
+  ],
+  "required_files": [
+    "contracts/prediction_output_contract.md",
+    "contracts/tts_vc_audio_evaluation_surface.md",
+    "templates/run_single_model.sh",
+    "templates/run_single_model_single_dataset.sh",
+    "templates/run_audio_evaluation_only.sh",
+    "templates/report_snapshot.md"
+  ],
+  "entries": [
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/eval_run_layout.md",
+      "mirror_path": "references/main_flow_agent/contracts/eval_run_layout.md",
+      "sha256": "35f32ba77c10a37f6c70299846974a7edde5837baa35301eae9c30c000eb1d20"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_assessment_unit.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_assessment_unit.md",
+      "sha256": "0ef6a76df2dd111184fafceb4c173eef0c4de6511e631692541ee95606fc5442"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_dataset_unit.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_dataset_unit.md",
+      "sha256": "a54d34c120558688b837c36b9de9dfde77c79d1237190b813d733aef8ef6171b"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_execution_readiness_unit.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_execution_readiness_unit.md",
+      "sha256": "9b33f1fe1f8d8aeb2a1eb1c9143b0bef3a0c7d8e3e9a27873dcbcf34ad0d0627"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_execution_surface_unit.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_execution_surface_unit.md",
+      "sha256": "03550f852730cb78f0be161537bbbf371d15b399f7b8934dbcdd2fdf9488ee0f"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_plan_unit.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_plan_unit.md",
+      "sha256": "770330177907416b7f1b95aebe6f9418065b1d2b0dbe5f61fe7ec6be1d67083d"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_qwen3_asr_case.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_qwen3_asr_case.md",
+      "sha256": "cf61aa74817107d8fc1f3a53fcfe3b52c9b175448ff73be06e558b03bff8b54a"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_run_report_unit.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_run_report_unit.md",
+      "sha256": "dc6344de5e7834560f5309d94580916b4c0d715048dadee20cd54617845be398"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_script_routing_unit.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_script_routing_unit.md",
+      "sha256": "67abac7b269260c4638af3d9de88e08a61d4e00d57c8aa696eb1e53e45c54ef1"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_spec.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_spec.md",
+      "sha256": "2cb7182f65bb735bd63857a9cb6a7e0d77786c5f5bbf1a219c47a3b376dd899a"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_task_unit.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_task_unit.md",
+      "sha256": "3330df63488fe9a899aa2ca6a3f3a8ba58ec0d15130dc1a281e8183b9870fe6c"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_tool_readiness_unit.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_tool_readiness_unit.md",
+      "sha256": "f24dd9355f56e459ed6bb69cd7dab803701e1edf01e293b0af75d4a9a227a81d"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_agent_worked_example.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_agent_worked_example.md",
+      "sha256": "af1a90a52fbe7914d0012289f9d1f22cfab2f66fb4ce8af976f4333c820bdc25"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/main_flow_architecture.md",
+      "mirror_path": "references/main_flow_agent/contracts/main_flow_architecture.md",
+      "sha256": "714e64bf3df8c8be4dd56e417fabdf6d5b3426bf1cd531279d6b21f988bd22bc"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/model_eval_manifest.md",
+      "mirror_path": "references/main_flow_agent/contracts/model_eval_manifest.md",
+      "sha256": "026fec4c8e9dfe85b59f09c1a0ad3400dc8c8f3a5760d826fa8ea79d1f2b86bd"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/prediction_generation_contract.md",
+      "mirror_path": "references/main_flow_agent/contracts/prediction_generation_contract.md",
+      "sha256": "8d4a32eba78e208cf68838589318a01db5cbd9b89fd514b4c19c36b0e76e5bd2"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/prediction_output_contract.md",
+      "mirror_path": "references/main_flow_agent/contracts/prediction_output_contract.md",
+      "sha256": "bda17ea558980dc837ff36e1bf6f5e0b449f3f20cc9ca0d25df0657b6db9c48c"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/single_model_single_dataset_shell.md",
+      "mirror_path": "references/main_flow_agent/contracts/single_model_single_dataset_shell.md",
+      "sha256": "76047779d20373da26c5ab38005f01bc54c894aaf25cab735428991ecb48e022"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "contracts/tts_vc_audio_evaluation_surface.md",
+      "mirror_path": "references/main_flow_agent/contracts/tts_vc_audio_evaluation_surface.md",
+      "sha256": "b69329453cf53e5f8c0bf1b56c35982240f193b1b7d93d89e108b8518ec8115c"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_assessment_report.json",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_assessment_report.json",
+      "sha256": "f89d01266f3a5abbf171275c416cbdb2669d7eb7c2a00a73275c6a5d66214d1b"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_dataset_decision.json",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_dataset_decision.json",
+      "sha256": "1abdbdfe216cb4954b1b2a85a78e598f911bc700baa41bbcea980f2491ccc13c"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_execution_readiness_report.json",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_execution_readiness_report.json",
+      "sha256": "0b8732e1813e90f64373947a526b0a0c450697d05512d90ddd0bf7b1ac29d4b3"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_execution_surface.json",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_execution_surface.json",
+      "sha256": "a6302bc1adc3e68b9cb84dd7081b98b2cc56b5546fd9307056d8036f3b9f786a"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_plan.json",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_plan.json",
+      "sha256": "bfa93c97a96aa366b8adf521e8758d145a54c63ed11e6c4c7550983870acd2d2"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_run_report.json",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_run_report.json",
+      "sha256": "805ebc8d4cc91a802df69cebbecf314e004339451d7a00d293588cbeb65f2807"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_script_routing.json",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_script_routing.json",
+      "sha256": "3b82be2b1424e018565fe2ad8625e1340677a721e4a2288d596ee9db6e4739dc"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_script_routing_compliance_check_prompt.md",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_script_routing_compliance_check_prompt.md",
+      "sha256": "3fb5ce2314c4e0fa6f2165d72a3cdd4d10a10c1dc1f8d4a69dca92d030018786"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_task_classification.json",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_task_classification.json",
+      "sha256": "a1e15515bdd00275eb8f94ab6394b86b09c750f5089dc67dd91835e294b14239"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/main_agent_tool_readiness_routing.json",
+      "mirror_path": "references/main_flow_agent/templates/main_agent_tool_readiness_routing.json",
+      "sha256": "7d252545f54466ba9c65721ee87547a0e8d692624b8dbbf674656e6f2a21d5ac"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/model_eval_manifest.json",
+      "mirror_path": "references/main_flow_agent/templates/model_eval_manifest.json",
+      "sha256": "7c74dc3de21c19076b7d7032854c186c1d582fb90374917468b3bad3de8419f0"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/report_snapshot.md",
+      "mirror_path": "references/main_flow_agent/templates/report_snapshot.md",
+      "sha256": "b5cbf5ee529d103f40da4e3106438df1ee29c3db6ecc06b5a29ee9f0c4d3fec1"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/run_audio_evaluation_only.sh",
+      "mirror_path": "references/main_flow_agent/templates/run_audio_evaluation_only.sh",
+      "sha256": "a91e3a5412adc2a4bcaf88c3c1f8d24743d630a868a783f2bd0922d725245537"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/run_single_model.sh",
+      "mirror_path": "references/main_flow_agent/templates/run_single_model.sh",
+      "sha256": "f2f3a7b6a18e5fab5a7e89c54d38a2cd4dae5019d896bba0fdc980708ab98fa4"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/run_single_model_single_dataset.sh",
+      "mirror_path": "references/main_flow_agent/templates/run_single_model_single_dataset.sh",
+      "sha256": "4832694bccd767119131fe40ed0d55a5cfe314ad615c92e561633faddb20d412"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/script_routing_compliance_check.json",
+      "mirror_path": "references/main_flow_agent/templates/script_routing_compliance_check.json",
+      "sha256": "458e51ee48c32e4dd6d77d067eb906161d0e385e6000f9b57a2abaedf144018b"
+    }
+  ]
+}

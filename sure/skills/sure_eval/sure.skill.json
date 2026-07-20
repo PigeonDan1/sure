@@ -1,7 +1,7 @@
 {
 	"name": "sure_eval",
 	"command": "/sure_eval",
-	"description": "Orchestrate a SURE-EVAL evaluation run for an already-onboarded audio model: classify the task, route to deterministic scripts, materialize and gate the execution surface, submit via vc, assess results, and write the run report.",
+	"description": "Orchestrate a SURE-EVAL evaluation run for an already-onboarded audio model: classify the task, route to deterministic scripts, materialize and gate the execution surface, run locally or via vc according to policy, assess results, and write the run report.",
 	"prompt": "SKILL.md",
 	"hooks": {
 		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
@@ -12,6 +12,18 @@
 		"on_error": [{ "module": "hooks/index.ts", "handler": "onError" }]
 	},
 	"artifacts": [
+		{
+			"type": "eval_input_resolved",
+			"path": "artifacts/eval_input_resolved.json",
+			"required": false,
+			"description": "Resolved /sure_eval product input mapped to the main-flow MAIN_FLOW_INPUT contract."
+		},
+		{
+			"type": "evaluation_route_plan",
+			"path": "artifacts/evaluation_route_plan.json",
+			"required": false,
+			"description": "Resolved sure-evaluation capabilities, selected routes, and node-environment readiness plan."
+		},
 		{
 			"type": "run_report",
 			"path": "artifacts/main_agent_run_report.json",
@@ -28,11 +40,35 @@
 			"type": "model_eval_manifest",
 			"required": false,
 			"description": "Optional aligned model evaluation manifest (model_eval_manifest.json)."
+		},
+		{
+			"type": "evaluation_payload",
+			"path": "artifacts/evaluation_payload.json",
+			"required": false,
+			"description": "Main-flow evaluation payload with dataset-metric v2 rows."
+		},
+		{
+			"type": "report_jsonl",
+			"path": "artifacts/report.jsonl",
+			"required": false,
+			"description": "Run-local dataset-metric report.jsonl."
+		},
+		{
+			"type": "protocol",
+			"path": "artifacts/protocol.yaml",
+			"required": false,
+			"description": "Inference and evaluation protocol.yaml."
+		},
+		{
+			"type": "sample_reports",
+			"path": "artifacts/sample_reports",
+			"required": false,
+			"description": "Sample-level result reports by dataset and metric."
 		}
 	],
 	"ui": {
 		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
-		"artifactTypes": ["run_report", "execution_surface", "model_eval_manifest"],
+		"artifactTypes": ["eval_input_resolved", "evaluation_route_plan", "run_report", "execution_surface", "model_eval_manifest", "evaluation_payload", "report_jsonl", "protocol", "sample_reports"],
 		"defaultExpandedSections": ["diagnostics", "artifacts"]
 	}
 }

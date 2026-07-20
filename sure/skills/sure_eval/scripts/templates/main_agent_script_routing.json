@@ -44,6 +44,7 @@
       },
       "outputs": {
         "prediction_file": "predictions/<dataset>.txt",
+        "structured_prediction_file": "predictions/<dataset>.jsonl",
         "status_file": "prediction_generation_status.json"
       },
       "completion_criteria": [
@@ -72,17 +73,25 @@
       "inputs": {
         "dataset": [],
         "pred_dir": "predictions",
-        "results_dir": "results",
+        "results_dir": "<run_dir>/results",
         "model_dir": "",
-        "protocol_id": "strict_core"
+        "protocol_id": "strict_core",
+        "metrics": []
       },
       "outputs": {
         "evaluation_payload": "evaluation_payload.json",
-        "results_dir": "results"
+        "protocol": "protocol.yaml",
+        "report_jsonl": "report.jsonl",
+        "metrics_dir": "metrics",
+        "sample_reports_dir": "sample_reports",
+        "results_dir": "<run_dir>/results"
       },
       "completion_criteria": [
         "evaluation_payload.json exists",
-        "results written to results_dir"
+        "report.jsonl exists",
+        "metrics/<dataset>/<metric_slug>/report.json exists",
+        "metrics/<dataset>/<metric_slug>/pipeline_description.json exists",
+        "results written to run-local results_dir"
       ]
     },
     {

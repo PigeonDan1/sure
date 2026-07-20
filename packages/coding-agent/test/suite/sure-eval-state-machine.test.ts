@@ -32,6 +32,40 @@ function writeArtifact(runDir: string, produces: string, value: unknown): void {
 	writeFileSync(join(runDir, "artifacts", produces), JSON.stringify(value, null, 2), "utf-8");
 }
 
+function seedCompletedEvaluationArtifacts(runDir: string): string {
+	const root = join(runDir, "model-eval-run");
+	const dataset = "aishell1";
+	const metric = "cer";
+	mkdirSync(join(root, "predictions"), { recursive: true });
+	mkdirSync(join(root, "metrics", dataset, metric), { recursive: true });
+	mkdirSync(join(root, "sample_reports", dataset), { recursive: true });
+	const row = {
+		schema: "sure.eval.payload.dataset_metric.v2",
+		dataset,
+		task: "ASR",
+		language: "zh",
+		metric,
+		pipeline_id: "asr.zh.cer.wetext_zh_itn.wenet_cer",
+		evaluation_backend: "external",
+		result: { score: 0, score_key: "cer", cer: 0 },
+		pipeline: { pipeline_id: "asr.zh.cer.wetext_zh_itn.wenet_cer" },
+		artifacts: {},
+	};
+	writeFileSync(
+		join(root, "evaluation_payload.json"),
+		JSON.stringify({ schema: "sure.eval.payload.v2", evaluation_backend: "external", results: [row] }, null, 2),
+		"utf-8",
+	);
+	writeFileSync(join(root, "report.jsonl"), `${JSON.stringify(row)}\n`, "utf-8");
+	writeFileSync(join(root, "protocol.yaml"), "schema: sure.eval.protocol.v1\n", "utf-8");
+	writeFileSync(join(root, "predictions", `${dataset}.txt`), "utt\t文本\n", "utf-8");
+	writeFileSync(join(root, "predictions", `${dataset}.jsonl`), `${JSON.stringify({ key: "utt", prediction: { text: "文本" } })}\n`, "utf-8");
+	writeFileSync(join(root, "metrics", dataset, metric, "report.json"), JSON.stringify({ score: 0 }), "utf-8");
+	writeFileSync(join(root, "metrics", dataset, metric, "pipeline_description.json"), JSON.stringify({ pipeline_id: row.pipeline_id }), "utf-8");
+	writeFileSync(join(root, "sample_reports", dataset, `${metric}.jsonl`), `${JSON.stringify({ key: "utt", score: 0 })}\n`, "utf-8");
+	return root;
+}
+
 // Regression guard for the gateCheck/gateScript split: tool_readiness_routing is
 // now a gate-without-script (kind: "gate", no gateScript) so its handoff block
 // actually fires. Previously it was linear → the block was dead code, so a run
@@ -101,8 +135,9 @@ describe("sure_eval gate-with-script units have no in-process gateCheck (python 
 		expect(unit.gateScript).toBe(script);
 	});
 	// execution_readiness is the ONE exception that keeps an in-process gateCheck:
-	// it checks self-reported pass booleans, disjoint from the python script's
-	// template-provenance audit. All other gate-with-script units must NOT.
+	// it checks self-reported readiness/audit booleans, disjoint from the python
+	// script's template-provenance audit and from the following smoke_test gate.
+	// All other gate-with-script units must NOT.
 	it("execution_readiness keeps its in-process gateCheck (disjoint from python)", () => {
 		expect(findUnit("execution_readiness")!.gateCheck).toBeDefined();
 	});
@@ -179,6 +214,7 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 
 	it("accepts a compliant run_report at finish", () => {
 		const { ctx, runDir } = finishCtx("clean");
+		const artifactRoot = seedCompletedEvaluationArtifacts(runDir);
 		seedCheckpoint(runDir, {
 			currentUnit: "run_report",
 			completedUnits: [
@@ -208,6 +244,7 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 			status: "success",
 			report_persisted: true,
 			execution_path_actual: "vc_submit",
+			artifact_root: artifactRoot,
 		});
 		const result = preFinish(ctx);
 		expect(result.ok).toBe(true);

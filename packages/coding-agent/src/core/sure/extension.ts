@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
@@ -12,6 +12,7 @@ import {
 import { SureHookRunner } from "./hooks.ts";
 import { discoverSureSkillPackages, SURE_COMMANDS, type SureDiscoveryDiagnostic } from "./manifest.ts";
 import { SureRunManager } from "./run-manager.ts";
+import { runSureInit } from "./init.ts";
 import { formatSureDisplayStatus, normalizeSureDisplayStatePatch } from "./state.ts";
 import type {
 	SureArtifactRequirement,
@@ -219,6 +220,28 @@ function artifactPathMatchesRequirement(
 	return possibleArtifactPaths(runManager, run, requirementPath).some((path) => artifactPaths.has(path));
 }
 
+function artifactSatisfiesRequirement(
+	runManager: SureRunManager,
+	run: SureRunRecord,
+	artifact: { type?: string; path?: string },
+	requirement: SureArtifactRequirement,
+): boolean {
+	const requirementPath = requirement.path ?? "";
+	if (artifactPathMatchesRequirement(runManager, run, artifact.path, requirementPath)) {
+		return true;
+	}
+	if (!artifact.path || !artifactPathExists(runManager, run, artifact.path)) {
+		return false;
+	}
+	if (requirementPath !== "" && basename(artifact.path) === basename(requirementPath)) {
+		return true;
+	}
+	if (requirement.type && artifact.type !== requirement.type) {
+		return false;
+	}
+	return false;
+}
+
 function formatArtifactDescription(artifact: { type?: string; path?: string }, index: number): string {
 	if (artifact.type) {
 		return `"${artifact.type}"`;
@@ -265,21 +288,13 @@ function validateRequiredArtifact(
 	}
 
 	const artifacts = manifest.artifacts ?? [];
-	const candidate = artifacts.find((artifact) => {
-		if (requirement.type && artifact.type !== requirement.type) {
-			return false;
-		}
-		if (!artifactPathMatchesRequirement(runManager, run, artifact.path, requirement.path ?? "")) {
-			return false;
-		}
-		return true;
-	});
+	const candidate = artifacts.find((artifact) => artifactSatisfiesRequirement(runManager, run, artifact, requirement));
 	if (!candidate) {
 		const description = requirement.description ? ` (${requirement.description})` : "";
 		return `Final manifest is missing required artifact${description}.`;
 	}
-	if (!artifactPathExists(runManager, run, requirement.path)) {
-		return `Required artifact path does not exist: ${requirement.path}.`;
+	if (!candidate.path || !artifactPathExists(runManager, run, candidate.path)) {
+		return `Required artifact path does not exist: ${candidate.path ?? requirement.path}.`;
 	}
 	return undefined;
 }
@@ -654,6 +669,18 @@ export function createSureExtension(): ExtensionFactory {
 				},
 			}),
 		);
+
+		pi.registerCommand("sure_init", {
+			description: "Initialize SURE: select agent, configure auth, and validate environment",
+			handler: async (args, ctx) => {
+				if (!ctx.isProjectTrusted()) {
+					ctx.ui.notify("Cannot initialize SURE until this project is trusted. Run /trust first.", "error");
+					return;
+				}
+				const result = await runSureInit({ ctx, args: args.trim() });
+				ctx.ui.notify(result.message, result.success ? "info" : "error");
+			},
+		});
 
 		for (const command of SURE_COMMANDS) {
 			pi.registerCommand(command, {

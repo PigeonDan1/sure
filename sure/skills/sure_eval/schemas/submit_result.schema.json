@@ -1,8 +1,8 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "submit_result.schema.json",
-	"title": "SURE-EVAL vc submit result",
-	"description": "Structured output of the SUBMIT_VC_RUN_UNIT. Red line 2 (vc mandatory) is enforced here.",
+	"title": "SURE-EVAL execution submit result",
+	"description": "Structured output of the SUBMIT_EXECUTION_UNIT for either local or vc execution.",
 	"type": "object",
 	"required": ["execution_path", "vc_available"],
 	"properties": {
@@ -16,9 +16,31 @@
 		},
 		"vc_job_id": { "type": "string" },
 		"vc_info": { "type": "string" },
+		"execution_requested": { "type": "string", "enum": ["auto", "local", "vc"] },
+		"execution": { "type": "object", "additionalProperties": true },
 		"fallback_approved": { "type": "boolean" },
 		"local_fallback_reason": { "type": "string" },
-		"submitted_at": { "type": "string" }
+		"submitted_at": { "type": "string" },
+		"host": { "type": "string" },
+		"pid": { "type": "number" },
+		"command": { "type": "string" },
+		"cwd": { "type": "string" },
+		"device_request": { "type": "string" },
+		"device_actual": { "type": "string" },
+		"cuda_visible_devices": { "type": "string" },
+		"stdout_log": { "type": "string" },
+		"stderr_log": { "type": "string" },
+		"vc_submit_command": { "type": "string" },
+		"vc_partition": { "type": "string" },
+		"vc_mem": { "type": "string" },
+		"vc_gpu": { "type": "number" },
+		"vc_cpu": { "type": "number" },
+		"vc_image": { "type": "string" },
+		"vc_submission": {
+			"type": "object",
+			"description": "Effective VC submission snapshot mirrored into execution_surface.vc_runtime.resolved_submission.",
+			"additionalProperties": true
+		}
 	},
 	"additionalProperties": false
 }

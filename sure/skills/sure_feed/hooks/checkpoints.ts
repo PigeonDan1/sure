@@ -54,6 +54,8 @@ export interface Unit {
 	gateScript?: string;
 	/** Extra argv passed to gateScript after --run-dir/--produces. */
 	gateScriptArgs?: (ctx: SureHookContext) => string[];
+	/** Backend scripts this unit may invoke from scripts/. */
+	ownedScripts?: string[];
 }
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -158,7 +160,15 @@ export function retryExhausted(unit: Unit, current: CheckpointData, max = DEFAUL
 }
 
 export function artifactPath(ctx: SureHookContext, produces: string): string {
-	return join(ctx.runDir, "artifacts", produces);
+	const debugPath = join(ctx.runDir, "artifacts", "debug", produces);
+	if (existsSync(debugPath)) {
+		return debugPath;
+	}
+	const rootPath = join(ctx.runDir, "artifacts", produces);
+	if (existsSync(rootPath)) {
+		return rootPath;
+	}
+	return debugPath;
 }
 
 export function readArtifact(ctx: SureHookContext, produces: string): unknown | undefined {

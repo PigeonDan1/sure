@@ -1,12 +1,12 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "scan_result.schema.json",
-	"title": "SURE model-feed scan result",
-	"description": "Structured output of the SCAN_MODELSCOPE unit.",
+	"title": "SURE model-feed source discovery result",
+	"description": "Structured output of the SCAN_MODELSCOPE compatibility unit. Despite the historical unit id, candidates may come from ModelScope, HuggingFace, GitHub, or a multi-source query.",
 	"type": "object",
 	"required": ["candidates"],
 	"properties": {
-		"source": { "type": "string", "enum": ["modelscope", "huggingface"] },
+		"source": { "type": "string", "enum": ["modelscope", "huggingface", "github", "multi"] },
 		"candidates": {
 			"type": "array",
 			"items": {
@@ -14,15 +14,36 @@
 				"required": ["model_id"],
 				"properties": {
 					"model_id": { "type": "string" },
+					"source": { "type": "string", "enum": ["modelscope", "huggingface", "github"] },
 					"repo": { "type": "string" },
+					"source_url": { "type": "string" },
 					"tasks": { "type": "array", "items": { "type": "string" } },
 					"custom_tag": { "type": ["string", "null"] },
+					"pipeline_tag": { "type": ["string", "null"] },
+					"tags": { "type": "array", "items": { "type": "string" } },
+					"description": { "type": ["string", "null"] },
+					"license": { "type": ["string", "null"] },
 					"download_count": { "type": "number" }
 				},
 				"additionalProperties": true
 			}
 		},
-		"scan_summary": { "type": "string" }
+		"scan_summary": { "type": "string" },
+		"diagnostics": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"source": { "type": "string" },
+					"status": { "type": "string" },
+					"candidate_count": { "type": "number" },
+					"endpoint_used": { "type": ["string", "null"] },
+					"fallback_reason": { "type": ["string", "null"] },
+					"message": { "type": "string" }
+				},
+				"additionalProperties": true
+			}
+		}
 	},
 	"additionalProperties": false
 }

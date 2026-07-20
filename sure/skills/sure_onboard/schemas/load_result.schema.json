@@ -9,7 +9,18 @@
 		"load_passed": { "type": "boolean" },
 		"duration_ms": { "type": "number" },
 		"error": { "type": ["string", "null"] },
-		"device": { "type": "string" }
+		"device": { "type": "string" },
+		"model_dir": { "type": "string" },
+		"wrapper_path": { "type": "string" },
+		"validate_py": { "type": "string" },
+		"validate_args": { "type": "array", "items": { "type": "string" } },
+		"run_command": { "type": ["array", "string"] },
+		"cwd": { "type": "string" },
+		"env": { "type": "object" },
+		"log_path": { "type": "string" },
+		"sample_output_path": { "type": "string" },
+		"timeout_seconds": { "type": "number" },
+		"executed": { "type": "boolean" }
 	},
 	"additionalProperties": false
 }

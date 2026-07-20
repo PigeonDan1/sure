@@ -20,9 +20,9 @@ import { validateProduces } from "./validate.ts";
 // SURE model-feed skill hooks. Mixed drive with three gates:
 //   1. checkpoint lock (currentUnit pins position, advance one step)
 //   2. validateProduces on EVERY unit (location/format/value-domain + forbidden fields)
-//   3. gateCheck (match_task + rank_and_select run a Python semantic script)
-// Emits handoff_manifest.json with selected models' repo/weights paths for
-// /sure_onboard to consume.
+//   3. gateCheck (gate units run Python semantic scripts)
+// Emits artifacts/model_input.yaml and artifacts/feed_report.json for users;
+// state-machine JSON artifacts live under artifacts/debug/.
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -97,6 +97,9 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	for (const unit of owningUnits) {
 		if (unit.gateScript) {
 			allowed.add(join("scripts", unit.gateScript));
+		}
+		for (const script of unit.ownedScripts ?? []) {
+			allowed.add(join("scripts", script));
 		}
 	}
 	if (allowed.has(invokedScript)) {
@@ -230,10 +233,10 @@ function failOrRetry(
 ): SureHookResult {
 	const next = bumpRetry(unit, checkpoint.data);
 	const attempts = next.data.retries[unit.id] ?? 1;
-	if (retryExhausted(unit, checkpoint.data)) {
+	if (retryExhausted(unit, next.data)) {
 		return failure(
-			`${repair} (unit "${unit.id}" FAILED after ${attempts} retries; classify via failure_taxonomy and either repair manually or finish with status failed.)`,
-			`Gate "${unit.id}" exhausted retries: ${reason}`,
+			`${repair} After ${attempts} consecutive blocked attempts, /sure_feed still cannot produce a valid artifact for unit "${unit.id}". Stop and ask the user to confirm the model link, access permissions, and whether the model card/README contains enough install, load, and inference information.`,
+			`Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`,
 			countersFor(next.data, attempts),
 		);
 	}
@@ -295,11 +298,18 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 			),
 			artifacts: [
 				{
-					type: "handoff_manifest",
-					name: "SURE feed handoff manifest",
-					path: `.sure/runs/${ctx.run.runId}/artifacts/${LAST_UNIT.produces}`,
+					type: "model_input",
+					name: "SURE MODEL_INPUT",
+					path: `.sure/runs/${ctx.run.runId}/artifacts/model_input.yaml`,
 					status: "ready",
-					summary: "ModelScope feeding handoff manifest for /sure_onboard.",
+					summary: "Single canonical MODEL_INPUT YAML for /sure_onboard.",
+				},
+				{
+					type: "feed_report",
+					name: "SURE feed report",
+					path: `.sure/runs/${ctx.run.runId}/artifacts/feed_report.json`,
+					status: "ready",
+					summary: "Discovery summary, selected model, evidence, diagnostics, and next action.",
 				},
 			],
 		},

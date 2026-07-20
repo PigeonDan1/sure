@@ -12,6 +12,17 @@
 
 ### 1.1 核心目标
 
+### 1.0 Harness 分支边界覆盖规则
+
+本 `sure_onboard` harness 版本以 **本地可运行模型部署闭环** 为默认成功条件：
+
+- `package=none`：默认路径，只要求本地环境、权重、wrapper、fixture、import/load/infer/contract validation 和 artifact/verdict 完整。
+- `package=docker-local`：在本地闭环通过后，额外要求 Docker build 和 Docker validate 通过。
+- `package=docker-registry`：在 Docker local 通过后，额外要求 push 和 registry pull verify 通过。
+- VC/HPC submit/validate 不属于核心 `/sure_onboard` 成功条件；如需支持，应作为独立 deployment plugin 或独立 slash command。
+
+当本文档后续历史段落与以上边界冲突时，以本节和 `SKILL.md` 状态机为准。Docker/registry/VC 相关内容可以作为可选部署参考，不得让 `package=none` 的本地可运行模型被判失败。
+
 本文档定义第一阶段模型接入的标准 workflow，确保：
 
 - **环境可重建**: 通过规范化的 backend 选择和依赖管理
@@ -65,10 +76,10 @@ tool agent 只读取当前模型真正需要的记忆，避免默认注入所有
 
 **默认读取**:
 
-- `docs/agents/model_tool_agent/AGENTS.md`
-- `docs/agents/model_tool_agent/memory/COMMON.md`
-- `docs/agents/model_tool_agent/task_playbooks/ROUTING.md`
-- `docs/agents/model_tool_agent/playbooks/env_ROUTING.md`
+- `references/AGENTS.md`
+- `references/memory/COMMON.md`
+- `references/task_playbooks/ROUTING.md`
+- `references/playbooks/env_ROUTING.md`
 
 **按任务读取**:
 
@@ -104,31 +115,43 @@ context 文件和跳过理由。
 ### 2.1 主状态机
 
 ```
+LOAD_MODEL_INPUT
+    ↓ (解析 /sure_feed MODEL_INPUT 与运行参数)
+CONTEXT_SELECTION
+    ↓ (只读取当前任务/环境/契约需要的上下文)
 DISCOVER
     ↓ (收集 repo 信息)
 CLASSIFY
     ↓ (判断模型类型)
 PLAN
-    ↓ (生成 spec, 选择 backend)
+    ↓ (选择 backend)
+BUILD_PLAN
+    ↓ (生成可执行构建计划)
 VALIDATE_SPEC
     ↓ (验证 spec 完整性与证据充分性)
+PREPARE_FIXTURE
+    ↓ (把任务 fixture/payload 复制到 model-local fixture 目录)
 BUILD_ENV
     ↓ (构建隔离环境)
 FETCH_WEIGHTS
     ↓ (获取/验证权重)
-VALIDATE_IMPORT
-    ↓ (验证可导入)
-VALIDATE_LOAD
-    ↓ (验证可加载)
-VALIDATE_INFER
-    ↓ (验证可推理)
-VALIDATE_CONTRACT
-    ↓ (验证输出满足 io_contract)
+VALIDATE_ENV_COMPAT
+    ↓ (验证环境/设备/权重兼容性)
 GENERATE_WRAPPER
-    ↓ (生成统一 wrapper)
+    ↓ (生成统一 wrapper 与 validate.py)
+VALIDATE_IMPORT
+    ↓ (真实执行导入验证)
+VALIDATE_LOAD
+    ↓ (真实执行加载验证)
+VALIDATE_INFER
+    ↓ (真实执行最小推理)
+VALIDATE_CONTRACT
+    ↓ (真实执行输出满足 io_contract)
 SAVE_ARTIFACTS
-    ↓ (保存所有工件)
-DONE
+    ↓ (保存并检查所有本地部署工件)
+PACKAGE_GATE
+    ↓ (按 package profile 判定 local/docker/registry readiness)
+VERDICT
 ```
 
 ### 2.2 失败处理状态机
@@ -266,10 +289,14 @@ RETRY_FROM_CHECKPOINT (回到失败前状态)
 ### 4.2 模板位置
 
 ```
-templates/
+scripts/templates/
 ├── model.spec.yaml          # 模型规范模板
+├── validate.py              # harness runtime validation template
 ├── verdict.json             # 判定结果模板
 └── artifact_manifest.json   # 工件清单模板
+
+references/templates/
+└── validate_metric_enrichment.md  # 原 model-tool metric enrichment 经验保留
 ```
 
 ### 4.3 子文档索引
@@ -297,6 +324,8 @@ templates/
 | Model Spec 规范 | `specs/model_spec_template.md` |
 | 验证契约 | `contracts/minimal_validation.md` |
 | Model-local ckpt 规则 | `contracts/model_local_checkpoint_rule.md` |
+| Metric enrichment 模板经验 | `templates/validate_metric_enrichment.md`，仅生成 wrapper、metric report 或修复 metric 语义时读取 |
+| 经验资产同步清单 | `experience_loss_register.md`，仅审计 harness 与原 model-tool 经验同步时读取 |
 
 ---
 
@@ -566,22 +595,24 @@ sure/models/{model}/checkpoints/                # 显式本地权重（如有）
 
 ---
 
-## 8. Docker 镜像制作与集群提交
+## 8. 可选 Docker 镜像制作与集群提交
 
-本节定义模型 onboarding 完成后的 Docker 化步骤。目标是让模型可以通过容器提交到集群运行，同时保持模型之间的环境隔离。本节不改变前述第一阶段 harness 状态机；完成本地验证后，再按本节制作、推送和验证镜像。
+本节定义模型 onboarding 完成后的可选 Docker 化步骤。目标是让模型可以通过容器提交到集群运行，同时保持模型之间的环境隔离。本节不改变前述 harness 状态机；只有用户选择 `package=docker-local` 或 `package=docker-registry` 时，才把 Docker/registry readiness 纳入 `/sure_onboard` 成功条件。VC/HPC submit 仍然是外部部署能力，不是核心 `/sure_onboard` gate。
 
 ### 8.1 适用范围
 
-**必须制作独立 Docker 镜像**:
-- `deployment_type == local` 的模型
+**选择 Docker package profile 时需要制作独立 Docker 镜像**:
+- `/sure_onboard package=docker-local`
+- `/sure_onboard package=docker-registry`
 - 需要本地 Python/系统依赖、模型权重、GPU/CPU runtime 的模型
-- 需要通过 `vc submit` 或集群容器任务运行的模型
+- 需要通过未来独立部署命令提交到集群容器任务运行的模型
 
 **可以跳过或降级记录**:
+- 默认 `package=none` 且本地 import/load/infer/contract validation 已通过
 - 纯 API 模型，且运行时只需要远程 endpoint/token
 - 工具本身已经是系统命令且无 Python runtime 依赖
 
-跳过时必须在 `artifacts/verdict.json` 或 `artifacts/build_plan.json` 中记录理由。
+跳过 Docker 时，在 `package_gate.json` / `verdict.json` 中记录 `readiness.local_ready=true`、`docker_ready=false` 即可；这不构成失败。
 
 ### 8.2 镜像命名规则
 

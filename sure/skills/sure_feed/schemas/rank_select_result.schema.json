@@ -15,8 +15,11 @@
 					"model_id": { "type": "string" },
 					"repo": { "type": "string" },
 					"weights_source": { "type": ["string", "null"] },
+					"task_type": { "type": "string" },
 					"score": { "type": "number" },
-					"rank_reason": { "type": "string" }
+					"rank_reason": { "type": "string" },
+					"model_input_path": { "type": "string" },
+					"model_input": { "type": "object" }
 				},
 				"additionalProperties": true
 			}

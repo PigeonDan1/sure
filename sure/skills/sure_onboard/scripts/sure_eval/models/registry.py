@@ -110,27 +110,37 @@ class ModelInfo:
 
 class ModelRegistry:
     """Registry for managing models."""
+
+    @staticmethod
+    def _legacy_models_dir(root: str | Path) -> Path:
+        path = Path(root).expanduser()
+        if path.name == "models":
+            return path
+        return path / "src" / "sure_eval" / "models"
+
+    @classmethod
+    def _default_models_dir(cls) -> Path:
+        for key in ("SURE_MODELS_DIR", "SURE_MODEL_ROOT", "LEGACY_SURE_MODELS_DIR"):
+            value = os.environ.get(key)
+            if value:
+                return Path(value).expanduser()
+        legacy_root = os.environ.get("LEGACY_SURE_EVAL_ROOT")
+        if legacy_root:
+            return cls._legacy_models_dir(legacy_root)
+        return Path.cwd() / "sure" / "models"
     
     def __init__(self, models_dir: str | Path | None = None) -> None:
         """
         Initialize registry.
 
         Args:
-            models_dir: Directory containing models. Default resolves to the
-                repo-level sure/models/ directory (the x-sure global model
-                root, replacing the original src/sure_eval/models default).
-                Override with the SURE_MODELS_DIR env var or an explicit arg.
+            models_dir: Directory containing models. Default resolves from
+                SURE_MODELS_DIR / SURE_MODEL_ROOT / LEGACY_SURE_MODELS_DIR /
+                LEGACY_SURE_EVAL_ROOT, then falls back to repo-level
+                sure/models/. Explicit args always win.
         """
         if models_dir is None:
-            env_dir = os.environ.get("SURE_MODELS_DIR")
-            if env_dir:
-                models_dir = Path(env_dir)
-            else:
-                # The global model root is <repo-root>/sure/models/, where
-                # /sure_onboard lands model artifacts and /sure_eval reads
-                # them back. The repo root is the agent's working directory
-                # (cwd when the skill hook spawns this script).
-                models_dir = Path.cwd() / "sure" / "models"
+            models_dir = self._default_models_dir()
 
         self.models_dir = Path(models_dir)
         self._models: dict[str, ModelInfo] = {}

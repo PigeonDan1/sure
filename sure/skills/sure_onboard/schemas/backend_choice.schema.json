@@ -2,10 +2,12 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "backend_choice.schema.json",
 	"title": "SURE model-tool backend choice",
-	"description": "Structured output of the PLAN unit. Records the rule-based backend selection + reason.",
+	"description": "Structured output of the PLAN unit. Records the evidence-backed backend selection + reason; BUILD_PLAN writes the executable plan in build_plan.json.",
 	"type": "object",
 	"required": ["backend"],
 	"properties": {
+		"model_id": { "type": "string" },
+		"model_name": { "type": "string" },
 		"backend": {
 			"type": "string",
 			"enum": ["uv", "pip", "conda", "pixi", "docker", "api"]
@@ -13,6 +15,10 @@
 		"choice_reason": { "type": "string" },
 		"python_version": { "type": "string" },
 		"requires_gpu": { "type": "boolean" },
+		"deployment_type": { "type": "string", "enum": ["local", "api"] },
+		"package_profile": { "type": "string", "enum": ["none", "docker-local", "docker-registry"] },
+		"context_selection_path": { "type": "string" },
+		"evidence": { "type": "array", "items": { "type": "string" } },
 		"build_plan_path": { "type": "string" }
 	},
 	"additionalProperties": false

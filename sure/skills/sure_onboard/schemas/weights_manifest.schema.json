@@ -2,17 +2,29 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "weights_manifest.schema.json",
 	"title": "SURE model-tool weights manifest",
-	"description": "Structured output of the FETCH_WEIGHTS unit. Weights resolve model-local (.runtime/ or checkpoints/).",
+	"description": "Structured output of the FETCH_WEIGHTS unit. Preferred harness shape uses weights_ready=true; upstream-compatible manifests may use status=fetched plus required/resolved_local_model_path. check_weights.py owns semantic validation.",
 	"type": "object",
-	"required": ["weights_ready"],
 	"properties": {
 		"weights_ready": { "type": "boolean" },
-		"source": { "type": "string", "enum": ["huggingface", "modelscope", "local", "none"] },
+		"status": { "type": "string" },
+		"checked_at": { "type": "string" },
+		"required": { "type": "boolean" },
+		"required_for_phase1": { "type": "boolean" },
+		"source": { "type": "string" },
+		"repo_id": { "type": "string" },
+		"model_dir": { "type": "string" },
 		"resolved_local_model_path": { "type": ["string", "null"] },
 		"cache_dir": { "type": ["string", "null"] },
+		"checkpoint_root": { "type": ["string", "null"] },
+		"hf_cache_root": { "type": ["string", "null"] },
+		"modelscope_cache_root": { "type": ["string", "null"] },
 		"local_dir_name": { "type": "string" },
+		"dependencies": { "type": "array", "items": { "type": "object" } },
+		"files": { "type": "array", "items": { "type": "object" } },
+		"source_attempts": { "type": "array", "items": { "type": "object" } },
+		"model_local_first": { "type": "boolean" },
 		"fallback_to_host_global": { "type": "boolean" },
 		"fallback_reason": { "type": "string" }
 	},
-	"additionalProperties": false
+	"additionalProperties": true
 }

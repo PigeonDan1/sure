@@ -4,10 +4,28 @@ dist/
 .pi/
 .sure/
 .codegraph/
+data/
+sure/external/sure-evaluation/
+sure/skills/sure_eval/results/
+sure/handoffs/
+sure/models/*
+!sure/models/
+!sure/models/whisper_tiny/
+!sure/models/whisper_tiny/**
 
 *.pyc
 __pycache__/
 .venv/
 venv/
+*.log
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.gguf
+*.nemo
+*.tar
+*.tar.gz
 
 packages/coding-agent/test/suite/tmp-*/

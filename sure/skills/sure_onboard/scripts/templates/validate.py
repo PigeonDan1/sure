@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
-"""
-Local Validation Script Template.
+"""Model-local validation template for SURE /sure_onboard.
 
-Loads fixture audio + gt.jsonl, runs inference through the model wrapper,
-and evaluates metrics using SUREEvaluator.
+The generated model directory should customize the constants below and keep the
+CLI contract stable:
 
-Usage:
-    cd sure/models/<model_id>
-    .venv/bin/python validate.py
+    python validate.py --stage import
+    python validate.py --stage load
+    python validate.py --stage infer
+    python validate.py --stage contract
+    python validate.py --stage all
 
-Environment:
-    MODEL_PATH  – model identifier or local path
-    DEVICE      – cpu / cuda / auto (default: cpu)
+Each stage writes artifacts/<stage>_result.json. Inference writes
+artifacts/sample_output.json, and contract validates that sample against
+model.spec.yaml io_contract or the agent-filled IO_CONTRACT constant.
 """
 
 from __future__ import annotations
 
+import argparse
+import dataclasses
+import importlib
 import json
 import os
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -26,26 +29,21 @@ from pathlib import Path
 from typing import Any
 
 
-MODEL_ROOT = Path(__file__).resolve().parent
-REPO_ROOT = MODEL_ROOT.parents[3]
-FIXTURE_DIR = MODEL_ROOT / "fixture" / "__TASK_TYPE_LOWER__"  # e.g. "asr", "ser"
-ARTIFACTS_DIR = MODEL_ROOT / "artifacts"
+MODEL_DIR = Path(__file__).resolve().parent
+ARTIFACTS_DIR = MODEL_DIR / "artifacts"
 VALIDATION_LOG = ARTIFACTS_DIR / "validation.log"
 SAMPLE_OUTPUT = ARTIFACTS_DIR / "sample_output.json"
 
-# ---------------------------------------------------------------------------
-# Agent-filled constants (customize per model)
-# ---------------------------------------------------------------------------
-MODEL_ID = "__MODEL_ID__"  # e.g. "Qwen/Qwen3-ASR-1.7B"
-WRAPPER_CLASS = "__WRAPPER_CLASS__"  # e.g. "ASRQwen3Model"
-PREDICT_METHOD = "__PREDICT_METHOD__"  # e.g. "transcribe", "predict", "enhance"
-TASK_TYPE = "__TASK_TYPE__"  # e.g. "ASR", "SER", "S2TT", "SD"
-# Map sub-task directory names -> evaluation kwargs for SUREEvaluator
-# Example for ASR:
-#   {"asr_zh": {"language": "zh"}, "asr_en": {"language": "en"}}
-SUBTASK_EVAL_KWARGS: dict[str, dict[str, Any]] = {
-    # "__SUBTASK_NAME__": {"language": "__LANG__"},
-}
+# Agent-filled constants.
+MODEL_ID = "__MODEL_ID__"
+TASK_TYPE = "__TASK_TYPE__"
+WRAPPER_MODULE = "model"
+WRAPPER_CLASS = "__WRAPPER_CLASS__"
+PREDICT_METHOD = "__PREDICT_METHOD__"
+_IO_CONTRACT_JSON = r'''__IO_CONTRACT_JSON__'''
+IO_CONTRACT: dict[str, Any] = (
+    {} if _IO_CONTRACT_JSON.startswith("__") else json.loads(_IO_CONTRACT_JSON)
+)
 
 
 def now_iso() -> str:
@@ -53,6 +51,7 @@ def now_iso() -> str:
 
 
 def append_log(stage: str, status: str, message: str, extra: dict[str, Any] | None = None) -> None:
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {
         "timestamp": now_iso(),
         "stage": stage,
@@ -61,231 +60,303 @@ def append_log(stage: str, status: str, message: str, extra: dict[str, Any] | No
     }
     if extra:
         payload.update(extra)
-    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     with VALIDATION_LOG.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
 
 
-def load_fixture(subtask: str) -> list[dict[str, Any]]:
-    """Load gt.jsonl for a given sub-task and resolve absolute audio paths."""
-    subdir = FIXTURE_DIR / subtask
-    gt_path = subdir / "gt.jsonl"
-    if not gt_path.exists():
-        raise FileNotFoundError(f"Missing gt.jsonl for subtask={subtask}: {gt_path}")
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
-    samples: list[dict[str, Any]] = []
-    with gt_path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
+
+def result_path(stage: str) -> Path:
+    return ARTIFACTS_DIR / f"{stage}_result.json"
+
+
+def write_stage_result(stage: str, passed: bool, started: float, error: str | None = None, **extra: Any) -> None:
+    key = f"{stage}_passed" if stage != "contract" else "contract_passed"
+    payload: dict[str, Any] = {
+        key: passed,
+        "duration_ms": round((time.time() - started) * 1000, 3),
+        "error": error,
+        "model_dir": str(MODEL_DIR),
+        "validate_py": "validate.py",
+        "validate_args": ["--stage", stage],
+        "sample_output_path": "artifacts/sample_output.json",
+    }
+    payload.update(extra)
+    write_json(result_path(stage), payload)
+
+
+def import_wrapper_class():
+    if str(MODEL_DIR) not in sys.path:
+        sys.path.insert(0, str(MODEL_DIR))
+    module = importlib.import_module(WRAPPER_MODULE)
+    return getattr(module, WRAPPER_CLASS)
+
+
+def instantiate_wrapper() -> Any:
+    wrapper_cls = import_wrapper_class()
+    model_path = os.environ.get("MODEL_PATH", MODEL_ID)
+    device = os.environ.get("DEVICE", os.environ.get("SURE_DEVICE", "auto"))
+    attempts = [
+        lambda: wrapper_cls(model_path=model_path, device=device),
+        lambda: wrapper_cls({"model_path": model_path, "device": device}),
+        lambda: wrapper_cls(),
+    ]
+    last_error: Exception | None = None
+    for attempt in attempts:
+        try:
+            return attempt()
+        except TypeError as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    raise RuntimeError("failed to instantiate wrapper")
+
+
+def load_wrapper() -> Any:
+    wrapper = instantiate_wrapper()
+    if hasattr(wrapper, "load"):
+        wrapper.load()
+    return wrapper
+
+
+def first_fixture_payload() -> dict[str, Any]:
+    raw_payload = os.environ.get("SURE_VALIDATE_INPUT_JSON")
+    if raw_payload:
+        parsed = json.loads(raw_payload)
+        if not isinstance(parsed, dict):
+            raise ValueError("SURE_VALIDATE_INPUT_JSON must decode to an object.")
+        return parsed
+
+    fixture_root = MODEL_DIR / "fixture"
+    for gt_path in sorted(fixture_root.glob("**/gt.jsonl")):
+        for line in gt_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
                 continue
             item = json.loads(line)
-            # Resolve audio path relative to gt.jsonl directory
-            audio_path = subdir / item["audio"]
-            if not audio_path.exists():
-                raise FileNotFoundError(f"Missing audio file: {audio_path}")
-            item["_audio_path"] = str(audio_path)
-            samples.append(item)
-    return samples
-
-
-def discover_subtasks() -> list[str]:
-    """Discover available sub-task fixtures under fixture/<task>/."""
-    if not FIXTURE_DIR.exists():
-        raise FileNotFoundError(f"Fixture directory missing: {FIXTURE_DIR}")
-    return sorted(
-        d.name
-        for d in FIXTURE_DIR.iterdir()
-        if d.is_dir() and (d / "gt.jsonl").exists()
+            if not isinstance(item, dict):
+                continue
+            payload: dict[str, Any] = {}
+            audio = item.get("audio") or item.get("wav") or item.get("prompt_audio") or item.get("reference_audio")
+            if isinstance(audio, str):
+                payload["audio_path"] = str((gt_path.parent / audio).resolve())
+                payload["prompt_audio_path"] = payload["audio_path"]
+                payload["reference_audio_path"] = payload["audio_path"]
+                payload["ref_audio"] = payload["audio_path"]
+            text = item.get("target_text") or item.get("text") or item.get("prompt_text") or item.get("ground_truth")
+            if isinstance(text, str):
+                payload["text"] = text
+                payload["prompt_text"] = item.get("prompt_text", text)
+            if isinstance(item.get("language"), str):
+                payload["language"] = item["language"]
+            if payload:
+                return payload
+    raise FileNotFoundError(
+        "No validation payload found. Set SURE_VALIDATE_INPUT_JSON or provide fixture/**/gt.jsonl."
     )
 
 
-def run_validation(subtask: str) -> dict[str, Any]:
-    """Run full validation pipeline for one sub-task fixture."""
-    started = time.time()
-    eval_kwargs = SUBTASK_EVAL_KWARGS.get(subtask, {})
-    language = eval_kwargs.get("language", "en")
+def to_plain(value: Any) -> Any:
+    if hasattr(value, "to_dict"):
+        return to_plain(value.to_dict())
+    if dataclasses.is_dataclass(value):
+        return to_plain(dataclasses.asdict(value))
+    if isinstance(value, dict):
+        return {str(key): to_plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_plain(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if hasattr(value, "shape"):
+        return {"type": type(value).__name__, "shape": list(value.shape)}
+    return {"type": type(value).__name__, "repr": repr(value)[:500]}
 
-    # ------------------------------------------------------------------
-    # 1. Load fixture
-    # ------------------------------------------------------------------
-    samples = load_fixture(subtask)
-    if not samples:
-        raise ValueError(f"No samples found in fixture for subtask={subtask}")
 
-    # ------------------------------------------------------------------
-    # 2. Import test
-    # ------------------------------------------------------------------
-    import_started = time.time()
-    repo_src = str(REPO_ROOT / "src")
-    if repo_src not in sys.path:
-        sys.path.insert(0, repo_src)
-    if str(MODEL_ROOT) not in sys.path:
-        sys.path.insert(0, str(MODEL_ROOT))
-
-    # Dynamic import of the wrapper class from model.py
-    model_module = __import__("model", fromlist=[WRAPPER_CLASS])
-    WrapperClass = getattr(model_module, WRAPPER_CLASS)
-    import_duration_ms = round((time.time() - import_started) * 1000, 3)
-    append_log("VALIDATE_IMPORT", "passed", f"Import ok for subtask={subtask}.")
-
-    # ------------------------------------------------------------------
-    # 3. Load model
-    # ------------------------------------------------------------------
-    load_started = time.time()
-    model_path = os.environ.get("MODEL_PATH", MODEL_ID)
-    device = os.environ.get("DEVICE", "cpu")
-    model = WrapperClass(model_path=model_path, device=device)
-    # Trigger lazy load if available
-    if hasattr(model, "load"):
-        model.load()
-    load_duration_ms = round((time.time() - load_started) * 1000, 3)
-    append_log("VALIDATE_LOAD", "passed", f"Model loaded for subtask={subtask}.", {
-        "model_path": model_path,
-        "device": device,
-    })
-
-    # ------------------------------------------------------------------
-    # 4. Inference
-    # ------------------------------------------------------------------
-    infer_started = time.time()
-    predictions: list[tuple[str, str]] = []
-    predict_fn = getattr(model, PREDICT_METHOD)
-
-    for sample in samples:
-        key = sample["key"]
-        audio_path = sample["_audio_path"]
-
-        # Task-specific argument preparation (customize as needed)
-        result = predict_fn(audio_path)
-
-        # Extract text/label from result (adapt per task)
-        if hasattr(result, "text"):
-            pred_text = result.text
-        elif hasattr(result, "label"):
-            pred_text = result.label
+def run_predict(wrapper: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    predict = getattr(wrapper, PREDICT_METHOD, None) or getattr(wrapper, "predict", None)
+    if predict is None:
+        raise AttributeError(f"Wrapper has neither {PREDICT_METHOD!r} nor 'predict'.")
+    try:
+        result = predict(payload)
+    except TypeError:
+        if "audio_path" in payload:
+            result = predict(payload["audio_path"])
+        elif "text" in payload:
+            result = predict(payload["text"])
         else:
-            pred_text = str(result)
-        predictions.append((key, pred_text))
-
-    infer_duration_ms = round((time.time() - infer_started) * 1000, 3)
-    append_log("VALIDATE_INFER", "passed", f"Inference ok for subtask={subtask}.", {
-        "num_samples": len(samples),
-    })
-
-    # ------------------------------------------------------------------
-    # 5. Prepare ref / hyp files for SUREEvaluator
-    # ------------------------------------------------------------------
-    ref_lines = [f"{s['key']}\t{s['ground_truth']}" for s in samples]
-    hyp_lines = [f"{k}\t{t}" for k, t in predictions]
-
-    ref_file = ARTIFACTS_DIR / f"ref_{subtask}.txt"
-    hyp_file = ARTIFACTS_DIR / f"hyp_{subtask}.txt"
-    ref_file.write_text("\n".join(ref_lines) + "\n", encoding="utf-8")
-    hyp_file.write_text("\n".join(hyp_lines) + "\n", encoding="utf-8")
-
-    # ------------------------------------------------------------------
-    # 6. Evaluate with SUREEvaluator (via root venv to avoid dep mismatch)
-    # ------------------------------------------------------------------
-    eval_started = time.time()
-    root_venv_python = REPO_ROOT / ".venv" / "bin" / "python"
-    if not root_venv_python.exists():
-        raise FileNotFoundError(
-            f"Root project venv not found at {root_venv_python}. "
-            "Cannot run SUREEvaluator."
-        )
-
-    eval_script = (
-        "import json, sys;"
-        "sys.path.insert(0, str(__import__('pathlib').Path('{repo_src}')));"
-        "from sure_eval.evaluation.sure_evaluator import SUREEvaluator;"
-        "ev = SUREEvaluator(language='{lang}');"
-        "metrics = ev.evaluate('{task}', '{ref}', '{hyp}');"
-        "print(json.dumps(metrics, ensure_ascii=False))"
-    ).format(
-        repo_src=str(REPO_ROOT / "src"),
-        lang=language,
-        task=TASK_TYPE,
-        ref=str(ref_file),
-        hyp=str(hyp_file),
-    )
-
-    proc = subprocess.run(
-        [str(root_venv_python), "-c", eval_script],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"SUREEvaluator failed: {proc.stderr.strip()}")
-    metrics = json.loads(proc.stdout.strip())
-
-    eval_duration_ms = round((time.time() - eval_started) * 1000, 3)
-    score = metrics.get("score", 0.0)
-    append_log("VALIDATE_EVAL", "passed", f"score={score:.4f}", {
-        "subtask": subtask,
-        "metric": "score",
-        "score": score,
-    })
-
-    # ------------------------------------------------------------------
-    # 7. Build per-sample detail
-    # ------------------------------------------------------------------
-    sample_details = [
-        {
-            "key": s["key"],
-            "audio": s["audio"],
-            "ground_truth": s["ground_truth"],
-            "prediction": p[1],
-        }
-        for s, p in zip(samples, predictions)
-    ]
-
-    duration_seconds = round(time.time() - started, 3)
-
-    return {
-        "subtask": subtask,
-        "num_samples": len(samples),
-        "tests": {
-            "import": {"passed": True, "duration_ms": import_duration_ms},
-            "load": {"passed": True, "duration_ms": load_duration_ms},
-            "infer": {"passed": True, "duration_ms": infer_duration_ms},
-            "evaluate": {"passed": True, "duration_ms": eval_duration_ms},
-        },
-        "metrics": metrics,
-        "samples": sample_details,
-        "duration_seconds": duration_seconds,
-    }
+            raise
+    plain = to_plain(result)
+    if isinstance(plain, dict):
+        return plain
+    if isinstance(plain, str):
+        return {"text": plain}
+    return {"result": plain}
 
 
-def main() -> None:
-    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+def load_io_contract() -> dict[str, Any]:
+    if IO_CONTRACT:
+        return IO_CONTRACT
+    spec_path = MODEL_DIR / "model.spec.yaml"
+    if not spec_path.exists():
+        raise FileNotFoundError("model.spec.yaml is required when IO_CONTRACT is not filled.")
+    try:
+        import yaml
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError("PyYAML is required to read model.spec.yaml io_contract.") from exc
+    spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+    if not isinstance(spec, dict) or not isinstance(spec.get("io_contract"), dict):
+        raise ValueError("model.spec.yaml must contain io_contract.")
+    return spec["io_contract"]
 
-    result: dict[str, Any] = {
-        "timestamp": now_iso(),
-        "model_id": MODEL_ID,
-        "overall": "PASSED",
-        "subtasks": {},
-    }
 
-    available = discover_subtasks()
-    if not available:
-        raise FileNotFoundError(f"No gt.jsonl fixtures found under {FIXTURE_DIR}")
+def string_list(value: Any) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
 
-    for subtask in available:
+
+def is_nonempty(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, dict, set)):
+        return len(value) > 0
+    return True
+
+
+def validate_contract(sample: dict[str, Any], contract: dict[str, Any]) -> list[str]:
+    violations: list[str] = []
+    required = string_list(contract.get("required_fields"))
+    nonempty = string_list(contract.get("nonempty_fields"))
+    primary = contract.get("primary_field")
+    if isinstance(primary, str) and primary:
+        if primary not in required:
+            required.append(primary)
+        if primary not in nonempty:
+            nonempty.append(primary)
+    for field in required:
+        if field not in sample:
+            violations.append(f"required field missing: {field}")
+    for field in nonempty:
+        if field in sample and not is_nonempty(sample[field]):
+            violations.append(f"field must be nonempty: {field}")
+    if contract.get("output_type") == "audio" and not any(
+        key in sample for key in ("audio_path", "wavs", "wavs_summary", "sample_rate")
+    ):
+        violations.append("audio output requires audio_path, wavs, wavs_summary, or sample_rate evidence")
+    if contract.get("json_serializable") is True:
         try:
-            subtask_result = run_validation(subtask)
-            result["subtasks"][subtask] = subtask_result
-        except Exception as exc:
-            result["subtasks"][subtask] = {
-                "error": str(exc),
-                "overall": "FAILED",
-            }
-            result["overall"] = "FAILED"
-            append_log("VALIDATE_RUN", "failed", str(exc), {"subtask": subtask})
+            json.dumps(sample)
+        except TypeError as exc:
+            violations.append(f"sample output is not JSON serializable: {exc}")
+    return violations
 
-    SAMPLE_OUTPUT.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+def stage_import() -> bool:
+    started = time.time()
+    try:
+        import_wrapper_class()
+    except Exception as exc:  # noqa: BLE001
+        append_log("VALIDATE_IMPORT", "failed", str(exc))
+        write_stage_result("import", False, started, str(exc))
+        return False
+    append_log("VALIDATE_IMPORT", "passed", "Wrapper import succeeded.")
+    write_stage_result("import", True, started)
+    return True
+
+
+def stage_load() -> bool:
+    started = time.time()
+    try:
+        load_wrapper()
+    except Exception as exc:  # noqa: BLE001
+        append_log("VALIDATE_LOAD", "failed", str(exc))
+        write_stage_result("load", False, started, str(exc))
+        return False
+    append_log("VALIDATE_LOAD", "passed", "Wrapper load succeeded.")
+    write_stage_result("load", True, started)
+    return True
+
+
+def stage_infer() -> bool:
+    started = time.time()
+    try:
+        wrapper = load_wrapper()
+        payload = first_fixture_payload()
+        sample = run_predict(wrapper, payload)
+        if not sample:
+            raise AssertionError("prediction output is empty")
+        write_json(SAMPLE_OUTPUT, sample)
+    except Exception as exc:  # noqa: BLE001
+        append_log("VALIDATE_INFER", "failed", str(exc))
+        write_stage_result("infer", False, started, str(exc))
+        return False
+    append_log("VALIDATE_INFER", "passed", "Inference produced sample_output.json.")
+    write_stage_result(
+        "infer",
+        True,
+        started,
+        output_summary=json.dumps(sample, ensure_ascii=True)[:500],
+    )
+    return True
+
+
+def stage_contract() -> bool:
+    started = time.time()
+    try:
+        if not SAMPLE_OUTPUT.exists():
+            raise FileNotFoundError(f"Missing sample output: {SAMPLE_OUTPUT}")
+        sample = json.loads(SAMPLE_OUTPUT.read_text(encoding="utf-8"))
+        if not isinstance(sample, dict):
+            raise ValueError("sample_output.json must be an object")
+        contract = load_io_contract()
+        violations = validate_contract(sample, contract)
+        if violations:
+            raise AssertionError("; ".join(violations))
+    except Exception as exc:  # noqa: BLE001
+        append_log("VALIDATE_CONTRACT", "failed", str(exc))
+        write_stage_result(
+            "contract",
+            False,
+            started,
+            str(exc),
+            io_contract_satisfied=False,
+            violations=[str(exc)],
+            io_contract=IO_CONTRACT,
+        )
+        return False
+    append_log("VALIDATE_CONTRACT", "passed", "Sample output satisfies io_contract.")
+    write_stage_result(
+        "contract",
+        True,
+        started,
+        io_contract_satisfied=True,
+        violations=[],
+        io_contract=contract,
+    )
+    return True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", choices=["all", "import", "load", "infer", "contract"], default="all")
+    args = parser.parse_args()
+
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    stages = [args.stage] if args.stage != "all" else ["import", "load", "infer", "contract"]
+    ok = True
+    for stage in stages:
+        if stage == "import":
+            ok = stage_import() and ok
+        elif stage == "load":
+            ok = stage_load() and ok
+        elif stage == "infer":
+            ok = stage_infer() and ok
+        elif stage == "contract":
+            ok = stage_contract() and ok
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

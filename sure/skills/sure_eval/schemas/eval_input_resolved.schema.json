@@ -1,0 +1,40 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "eval_input_resolved.schema.json",
+	"title": "SURE-EVAL resolved input",
+	"description": "Pre-state-machine artifact that maps /sure_eval model+datasets+device input to the main-flow MAIN_FLOW_INPUT contract.",
+	"type": "object",
+	"required": ["schema", "generated_at", "user_input", "model", "datasets", "task_summary", "runtime", "evaluation", "main_flow_input"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.eval.input_resolved.v1"] },
+		"generated_at": { "type": "string" },
+		"user_input": { "type": "object", "additionalProperties": true },
+		"model": { "type": "object", "additionalProperties": true },
+		"datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["name", "jsonl_path", "task", "language", "default_metrics"],
+				"properties": {
+					"name": { "type": "string" },
+					"requested_name": { "type": "string" },
+					"jsonl_path": { "type": "string" },
+					"jsonl_exists": { "type": "boolean" },
+					"task": { "type": "string" },
+					"language": { "type": "string" },
+					"default_metrics": { "type": "array", "items": { "type": "string" } },
+					"source": { "type": ["string", "null"] },
+					"num_samples": { "type": ["number", "null"] },
+					"display_name": { "type": "string" }
+				},
+				"additionalProperties": false
+			}
+		},
+		"task_summary": { "type": "object", "additionalProperties": true },
+		"runtime": { "type": "object", "additionalProperties": true },
+		"evaluation": { "type": "object", "additionalProperties": true },
+		"main_flow_input": { "type": "object", "additionalProperties": true },
+		"expected_outputs": { "type": "object", "additionalProperties": true }
+	},
+	"additionalProperties": false
+}

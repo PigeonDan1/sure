@@ -1,0 +1,55 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "build_plan.schema.json",
+	"title": "SURE onboard build plan",
+	"description": "Structured output of BUILD_PLAN. It is the executable plan that bridges backend selection to spec/env/weights/validation, and records package policy separately from the core local-ready path.",
+	"type": "object",
+	"required": ["model_id", "model_dir", "backend", "steps", "package_profile"],
+	"properties": {
+		"model_id": { "type": "string" },
+		"model_name": { "type": "string" },
+		"model_dir": { "type": "string" },
+		"artifacts_dir": { "type": "string" },
+		"backend": { "type": "string", "enum": ["uv", "pip", "conda", "pixi", "docker", "api"] },
+		"deployment_type": { "type": "string", "enum": ["local", "api"] },
+		"package_profile": { "type": "string", "enum": ["none", "docker-local", "docker-registry"] },
+		"python_version": { "type": "string" },
+		"requires_gpu": { "type": "boolean" },
+		"weights": {
+			"type": "object",
+			"properties": {
+				"source": { "type": "string" },
+				"required": { "type": "boolean" },
+				"target": { "type": "string" },
+				"cache_policy": { "type": "string" },
+				"fallback_to_host_global": { "type": "boolean" },
+				"fallback_reason": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
+		"context_selection_path": { "type": "string" },
+		"backend_choice_path": { "type": "string" },
+		"steps": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {
+					"step": { "type": ["integer", "number", "string"] },
+					"name": { "type": "string" },
+					"description": { "type": "string" },
+					"state": { "type": "string" },
+					"action": { "type": "string" },
+					"command": { "type": ["string", "array", "null"] },
+					"commands": { "type": "array", "items": { "type": "string" } },
+					"evidence": { "type": ["string", "array", "null"] },
+					"status": { "type": "string" }
+				},
+				"additionalProperties": true
+			}
+		},
+		"planned_outputs": { "type": "array", "items": { "type": "string" } },
+		"blockers": { "type": "array", "items": { "type": "string" } },
+		"notes": { "type": "string" }
+	},
+	"additionalProperties": false
+}

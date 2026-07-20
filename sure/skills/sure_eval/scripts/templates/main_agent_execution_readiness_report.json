@@ -25,6 +25,11 @@
       }
     }
   },
+  "evaluation_route_plan": {
+    "plan_path": "",
+    "can_run_now": false,
+    "blocking_issues": []
+  },
   "gpu_preflight": {
     "model_requires_gpu": true,
     "nvidia_smi_output": "",

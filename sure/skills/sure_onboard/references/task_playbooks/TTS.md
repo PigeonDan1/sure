@@ -113,7 +113,68 @@ TTS metric namespace:
 src/sure_eval/evaluation/tts/
 ```
 
-当前阶段没有迁入共享 TTS metric；phase-1 仍以 task-local `validate.py` 检查输出音频契约。
+`/sure_onboard` local-ready 以 task-local `validate.py` 检查 import/load/infer/audio
+contract 为最小门槛，但不能把“输出音频存在、可解码、不是 prompt copy”当作 TTS
+评测完成。正式 TTS 指标必须通过 SURE evaluation 工具链计算。
+
+强制经验规则：
+
+- 评测入口必须使用 `TTSSample` + `TTSMetricPipeline`，优先使用
+  `build_default_tts_metric_pipeline()` 或 `sure-eval metric describe/run`。
+- 如果某些重模型 provider 缺 checkpoint 或资源不可用，必须记录为
+  `blocked` / `not_available`，不能退回手写相似度、手写 MOS 或只用文件大小作为
+  metric。
+- `tts_metric_report.json` 必须记录 sample、prediction audio、reference text、
+  reference audio、metric backend、results 和 provider failures/blockers。
+- 如果只是修正 TTS metric 口径，不允许重新跑 TTS 推理；必须复用已有生成音频和
+  `sample_output.json` 中的 prompt / target text，再用 TTS evaluation 工具重算。
+- 出现 TTS metric bypass 时读取
+  `references/memory/bad_cases/tts_metric_bypass.md`。
+
+推荐新入口：
+
+```bash
+sure-eval metric describe tts \
+  --language zh \
+  --metrics tts_cer,sim/wavlm-large \
+  --output /tmp/tts_pipeline.json \
+  --json
+
+sure-eval metric run \
+  --pipeline /tmp/tts_pipeline.json \
+  --samples-jsonl /tmp/tts_samples.jsonl \
+  --output-dir /tmp/sure_eval/tts_eval \
+  --device cuda \
+  --cache-dir /hpc_stor03/sjtu_home/junhao.du/.cache/sure-eval/tts-metrics \
+  --validate-env \
+  --json
+```
+
+`samples_jsonl` 每行必须显式给出角色：
+
+```json
+{"sample_id":"tts_smoke","prediction_audio":"outputs/tts.wav","reference_text":"目标文本","reference_audio":"prompt.wav","language":"zh"}
+```
+
+逻辑分工：
+
+- 模型自身的 `validate.py` / Docker validate 只负责 import/load/infer/audio contract，
+  并产出 `sample_output.json` 和合成音频。
+- 正式 TTS 指标复用 `sure-eval metric describe/run`：读取已有合成音频、prompt /
+  reference audio、target / reference text，通过 `src/sure_eval/evaluation/tasks/tts`
+  的 `TTSSample` / `TTSMetricPipeline` 计算指标，并输出标准 `report.json` 和
+  `pipeline_description.json`。
+
+历史 wrapper 仍可作为已有镜像的兼容入口：
+
+```text
+scripts/run_tts_metric_pipeline.py
+scripts/run_tts_metric_pipeline_docker.py
+scripts/run_tts_metric_pipeline_docker.sh
+```
+
+新接入和 agent 调用优先使用 `sure-eval metric describe/run`；旧 wrapper 只作为已验证
+镜像或离线修复路径。
 
 ## 4. Backend 选择
 
@@ -262,6 +323,8 @@ TTS 当前不强制自动音质指标，但必须记录：
 - file size
 - prompt audio path
 - target text
+- 若已运行正式指标，记录 `tts_metric_report.json`、`report.json`、
+  `pipeline_description.json`、metric backend 和 provider blocker。
 
 人工试听可以作为补充结论，但不能替代 contract validation。
 
@@ -275,4 +338,5 @@ TTS 当前不强制自动音质指标，但必须记录：
 - [ ] 本地 uv torch/CUDA 版本已 pin 并通过 GPU 初始化。
 - [ ] Docker 验证通过，权重通过 volume 挂载。
 - [ ] 输出音频、采样率、样本数写入 artifacts。
+- [ ] 如执行指标，复用已有合成音频并产出 TTS metric report；没有手写 MOS/SIM。
 - [ ] 镜像 push/pull digest 已记录。

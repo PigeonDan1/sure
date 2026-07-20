@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentSessionServices } from "../../src/core/agent-session-services.ts";
+import { SettingsManager } from "../../src/core/settings-manager.ts";
 import type { ExtensionFactory } from "../../src/core/extensions/index.ts";
 import { sureExtension } from "../../src/core/sure/index.ts";
 import { createHarness, getUserTexts, type Harness } from "./harness.ts";
@@ -48,6 +49,34 @@ function setupSkillPackage(
 			: undefined,
 		artifacts: options?.artifacts,
 	});
+}
+
+function linkRepositorySkill(tempDir: string, skillName: string): void {
+	const target = resolve(__dirname, "../../../../sure/skills", skillName);
+	const parent = join(tempDir, "sure", "skills");
+	mkdirSync(parent, { recursive: true });
+	symlinkSync(target, join(parent, skillName), "dir");
+}
+
+function writeOnboardModelInput(path: string): void {
+	mkdirSync(resolve(path, ".."), { recursive: true });
+	writeFileSync(
+		path,
+		[
+			"model_id: rednote-hilab/dots.tts-base",
+			"model_name: rednote-hilab__dots.tts-base",
+			"task_type: tts",
+			"deployment_type: local",
+			"repo:",
+			'  url: "https://huggingface.co/rednote-hilab/dots.tts-base"',
+			"weights:",
+			"  source: huggingface",
+			"environment_hint:",
+			"  preferred_backend: uv",
+			"  python_version: 3.10",
+		].join("\n") + "\n",
+		"utf-8",
+	);
 }
 
 async function createSureHarness(options?: { projectTrusted?: boolean }): Promise<Harness> {
@@ -148,6 +177,43 @@ describe("Sure extension", () => {
 		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
 		expect(harness.session.getActiveToolNames()).toContain("sure_update_state");
 		expect(existsSync(join(harness.tempDir, ".sure", "runs"))).toBe(true);
+	});
+
+	it("starts the real /sure_onboard repository skill and applies MODEL_INPUT pre-start state", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		linkRepositorySkill(harness.tempDir, "sure_onboard");
+		const modelInputPath = join(
+			harness.tempDir,
+			"sure",
+			"handoffs",
+			"rednote-hilab__dots.tts-base",
+			"model_input.yaml",
+		);
+		writeOnboardModelInput(modelInputPath);
+		harness.setResponses([fauxAssistantMessage("working")]);
+
+		await harness.session.prompt("/sure_onboard model=rednote-hilab__dots.tts-base package=none");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => getUserTexts(harness).length > 0);
+
+		const runId = getOnlyRunId(harness.tempDir);
+		expect(getUserTexts(harness)[0]).toContain("<sure_invocation");
+		expect(getUserTexts(harness)[0]).toContain('skill="sure_onboard" command="/sure_onboard"');
+		expect(getUserTexts(harness)[0]).toContain("# /sure_onboard");
+		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
+		expect(readRunState(harness.tempDir, runId)).toMatchObject({
+			phase: { id: "load_model_input", status: "running" },
+			checkpoint: {
+				id: "main_flow",
+				data: {
+					currentUnit: "load_model_input",
+					completedUnits: [],
+				},
+			},
+		});
+		expect(existsSync(join(harness.tempDir, "sure", "models"))).toBe(true);
+		expect(existsSync(join(harness.tempDir, "sure", "models", "rednote-hilab__dots.tts-base"))).toBe(false);
 	});
 
 	it("updates active run display state through sure_update_state", async () => {
@@ -348,6 +414,54 @@ describe("Sure extension", () => {
 		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain("finished");
 		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
 		expect(harness.session.getActiveToolNames()).not.toContain("sure_update_state");
+	});
+
+	it("accepts required artifacts recorded with concrete run-relative paths", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir, {
+			artifacts: [
+				{
+					type: "verdict",
+					path: "artifacts/verdict.json",
+					required: true,
+					description: "Final verdict.",
+				},
+			],
+		});
+
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				mkdirSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts"), { recursive: true });
+				writeJson(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "verdict.json"), {
+					status: "passed",
+				});
+				writeValidManifest(harness.tempDir, runId, {
+					artifacts: [
+						{
+							type: "json",
+							path: `.sure/runs/${runId}/artifacts/verdict.json`,
+						},
+					],
+				});
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
+
+		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
+		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain("finished");
+		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
 	});
 
 	it("removes only sure_finish when a run ends", async () => {
@@ -630,5 +744,35 @@ describe("Sure extension", () => {
 		});
 
 		expect(services.resourceLoader.getExtensions().extensions).toHaveLength(0);
+	});
+
+	it("initializes SURE via /sure_init with headless args", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		const inMemorySettings = SettingsManager.inMemory();
+		const createSpy = vi.spyOn(SettingsManager, "create").mockReturnValue(inMemorySettings);
+
+		await harness.session.prompt("/sure_init --option kimi-code --api-key sk-test-123");
+		await harness.session.agent.waitForIdle();
+
+		createSpy.mockRestore();
+
+		const manifestPath = join(harness.tempDir, ".sure", "init.json");
+		expect(existsSync(manifestPath)).toBe(true);
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+		expect(manifest.defaultProvider).toBe("kimi-coding");
+		expect(manifest.defaultModel).toBe("kimi-for-coding");
+		expect(manifest.availableSkills).toContain("/sure_feed");
+
+		expect(inMemorySettings.getGlobalSettings().defaultProvider).toBe("kimi-coding");
+		expect(inMemorySettings.getGlobalSettings().defaultModel).toBe("kimi-for-coding");
+
+		const stored = harness.authStorage.get("kimi-coding");
+		expect(stored?.type).toBe("api_key");
+		if (stored?.type === "api_key") {
+			expect(stored.key).toBe("sk-test-123");
+		}
 	});
 });

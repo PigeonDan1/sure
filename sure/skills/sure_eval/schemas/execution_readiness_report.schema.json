@@ -4,10 +4,13 @@
 	"title": "SURE-EVAL execution readiness",
 	"description": "Structured output of the EXECUTION_READINESS_UNIT. Red line 1 (execution surface isolation) is enforced here.",
 	"type": "object",
-	"required": ["execution_ready", "smoke_test_passed", "isolation_audit"],
+	"required": ["execution_ready", "isolation_audit"],
 	"properties": {
 		"execution_ready": { "type": "boolean" },
-		"smoke_test_passed": { "type": "boolean" },
+		"smoke_test_passed": {
+			"type": "boolean",
+			"description": "Optional legacy/pre-smoke summary only. The bounded smoke gate is smoke_test_result.json in the following unit."
+		},
 		"isolation_audit": {
 			"type": "object",
 			"required": ["audit_passed"],
@@ -17,6 +20,15 @@
 				"violations": { "type": "array", "items": { "type": "string" } }
 			},
 			"additionalProperties": false
+		},
+		"evaluation_route_plan": {
+			"type": "object",
+			"properties": {
+				"plan_path": { "type": "string" },
+				"can_run_now": { "type": "boolean" },
+				"blocking_issues": { "type": "array", "items": { "type": "string" } }
+			},
+			"additionalProperties": true
 		},
 		"smoke_summary": { "type": "string" }
 	},

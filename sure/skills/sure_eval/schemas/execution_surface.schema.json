@@ -2,29 +2,62 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "execution_surface.schema.json",
 	"title": "SURE-EVAL execution surface",
-	"description": "Structured output of the EXECUTION_SURFACE_UNIT. Materialized from a template under scripts/templates/ only (red line 1).",
+	"description": "Structured output of the EXECUTION_SURFACE_UNIT. Compatible with the read-only main-flow execution-surface template while preserving the harness entrypoint field.",
 	"type": "object",
-	"required": ["entrypoint", "source_provenance"],
+	"required": ["source_provenance"],
 	"properties": {
+		"run_id": { "type": "string" },
+		"timestamp": { "type": "string" },
+		"execution_surface_type": { "type": "string" },
+		"materialized": { "type": "boolean" },
 		"entrypoint": {
 			"type": "string",
-			"description": "Path to the materialized run_evaluation.sh."
+			"description": "Harness-compatible path to the materialized run_evaluation.sh."
 		},
+		"entrypoint_path": {
+			"type": "string",
+			"description": "Main-flow-compatible path to the materialized run_evaluation.sh."
+		},
+		"entrypoint_path_actual": { "type": "string" },
+		"execution": { "type": "object", "additionalProperties": true },
+		"inference_runtime": { "type": "object", "additionalProperties": true },
+		"evaluation_runtime": { "type": "object", "additionalProperties": true },
+		"vc_runtime": { "type": "object", "additionalProperties": true },
+		"generation_method": { "type": "string" },
 		"source_provenance": {
 			"type": "object",
 			"required": ["template_file"],
 			"properties": {
 				"template_file": {
 					"type": "string",
-					"description": "Must resolve under scripts/templates/ (EXECUTION_SURFACE_ISOLATION red line)."
+					"description": "Declared template file used to materialize the execution surface."
 				},
-				"isolation_compliance": { "type": "boolean" },
+				"template_sha256": { "type": "string" },
+				"source_template_file": { "type": "string" },
+				"source_template_sha256": { "type": "string" },
+				"mirror_template_file": { "type": "string" },
+				"mirror_template_sha256": { "type": "string" },
+				"files_read_during_generation": { "type": "array", "items": { "type": "string" } },
+				"isolation_compliance": {
+					"type": "object",
+					"properties": {
+						"eval_runs_referenced": { "type": "boolean" },
+						"prior_run_scripts_copied": { "type": "boolean" },
+						"template_parameters_deviated": { "type": "array", "items": { "type": "string" } },
+						"deviation_approved_by_user": { "type": "boolean" }
+					},
+					"additionalProperties": true
+				},
 				"materialized_at": { "type": "string" }
 			},
 			"additionalProperties": false
 		},
+		"resolved_inputs": { "type": "object", "additionalProperties": true },
+		"expected_outputs": { "type": "object", "additionalProperties": true },
 		"commands": { "type": "array", "items": { "type": "string" } },
-		"env": { "type": "object", "additionalProperties": { "type": "string" } }
+		"env": { "type": "object", "additionalProperties": { "type": "string" } },
+		"reason": { "type": "string" },
+		"notes": { "type": "array", "items": { "type": "string" } }
 	},
 	"additionalProperties": false
 }

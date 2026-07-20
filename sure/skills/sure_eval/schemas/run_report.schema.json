@@ -33,6 +33,8 @@
 			"type": "object",
 			"description": "Index of upstream structured-output artifacts.",
 			"properties": {
+				"eval_input_resolved": { "type": "string" },
+				"evaluation_route_plan": { "type": "string" },
 				"task_classification": { "type": "string" },
 				"tool_readiness_routing": { "type": "string" },
 				"plan": { "type": "string" },
@@ -40,9 +42,33 @@
 				"script_routing": { "type": "string" },
 				"execution_surface": { "type": "string" },
 				"execution_readiness_report": { "type": "string" },
-				"assessment_report": { "type": "string" }
+				"assessment_report": { "type": "string" },
+				"model_eval_manifest": { "type": "string" },
+				"evaluation_payload": { "type": "string" },
+				"report_jsonl": { "type": "string" },
+				"protocol": { "type": "string" },
+				"metrics_dir": { "type": "string" },
+				"sample_reports_dir": { "type": "string" },
+				"predictions_dir": { "type": "string" },
+				"report_snapshot": { "type": "string" }
 			},
 			"additionalProperties": false
+		},
+		"run_dir": {
+			"type": "string",
+			"description": "Main-flow run directory containing evaluation_payload.json/report.jsonl/protocol.yaml."
+		},
+		"evaluation_run_dir": {
+			"type": "string",
+			"description": "Alias for the completed evaluation artifact root."
+		},
+		"eval_run_dir": {
+			"type": "string",
+			"description": "Alias for the completed evaluation artifact root."
+		},
+		"artifact_root": {
+			"type": "string",
+			"description": "Alias for the completed evaluation artifact root."
 		},
 		"model_eval_manifest": { "type": "string" },
 		"vc_job_id": { "type": "string" },
@@ -55,10 +81,22 @@
 			"type": "string",
 			"description": "Actual execution path used: vc_submit | local_bash | local_docker."
 		},
+		"execution_path_requested": {
+			"type": "string",
+			"description": "User-facing execution request: auto | local | vc, or legacy path alias."
+		},
+		"execution": { "type": "object", "additionalProperties": true },
 		"execution_path_declared": {
 			"type": "string",
 			"description": "Execution path declared in the harness."
 		},
+		"vc_available": { "type": "boolean" },
+		"device_request": { "type": "string" },
+		"device_actual": { "type": "string" },
+		"cuda_visible_devices": { "type": "string" },
+		"max_samples": { "type": "number" },
+		"dataset_total_samples": { "type": "number" },
+		"evaluated_samples": { "type": "number" },
 		"local_fallback_reason": {
 			"type": "string",
 			"description": "Required when execution_path_actual is not vc_submit."
@@ -66,6 +104,10 @@
 		"fallback_approved": {
 			"type": "boolean",
 			"description": "Whether a local fallback was explicitly approved."
+		},
+		"evaluation_only": {
+			"type": "boolean",
+			"description": "True when RUN_REPORT_UNIT summarizes an evaluation-only surface such as TTS/VC audio metric evaluation."
 		},
 		"notes": { "type": "array", "items": { "type": "string" } }
 	},

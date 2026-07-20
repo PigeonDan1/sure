@@ -3,7 +3,17 @@
   "instance_id": "",
   "timestamp": "",
   "model_id": "",
+  "model_name": "",
   "status": "pending",
+  "package": {
+    "profile": "none"
+  },
+  "readiness": {
+    "local_ready": false,
+    "docker_ready": false,
+    "registry_ready": false,
+    "vc_ready": null
+  },
   "backend": {
     "type": "uv",
     "choice_reason": ""
@@ -45,7 +55,10 @@
     "spec_path": "",
     "wrapper_path": "",
     "lockfile_path": null,
-    "log_path": ""
+    "log_path": "",
+    "artifact_manifest_path": "",
+    "validation_log_path": "",
+    "sample_output_path": ""
   },
   "notes": ""
 }

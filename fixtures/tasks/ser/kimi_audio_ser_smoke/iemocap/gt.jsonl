@@ -1,0 +1,3 @@
+{"id": 1, "key": "Ses05F_impro01_F000", "task": "SER", "language": "en", "dataset": "IEMOCAP_SER_test", "audio": "Ses05F_impro01_F000.wav", "ground_truth": "neu"}
+{"id": 2, "key": "Ses05F_impro01_F008", "task": "SER", "language": "en", "dataset": "IEMOCAP_SER_test", "audio": "Ses05F_impro01_F008.wav", "ground_truth": "neu"}
+{"id": 3, "key": "Ses05F_impro01_F017", "task": "SER", "language": "en", "dataset": "IEMOCAP_SER_test", "audio": "Ses05F_impro01_F017.wav", "ground_truth": "ang"}

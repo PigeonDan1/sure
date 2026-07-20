@@ -57,6 +57,9 @@ function loadSchema(ctx: SureHookContext, schemaRef?: string): LoadedSchema | un
 }
 
 function typeOf(value: unknown): string {
+	if (value === null) {
+		return "null";
+	}
 	if (Array.isArray(value)) {
 		return "array";
 	}
@@ -70,7 +73,18 @@ const SCHEMA_TYPE_MAP: Record<string, string[]> = {
 	boolean: ["boolean"],
 	object: ["object"],
 	array: ["array"],
+	null: ["null"],
 };
+
+function schemaTypes(spec: Record<string, unknown>): string[] {
+	if (typeof spec.type === "string") {
+		return [spec.type];
+	}
+	if (Array.isArray(spec.type)) {
+		return spec.type.filter((entry): entry is string => typeof entry === "string");
+	}
+	return [];
+}
 
 // Render the expected shape of a property for the repair message. Pulls the
 // type, enum, required sub-fields, and item shape from the schema spec so the
@@ -81,13 +95,14 @@ function describeExpected(spec: unknown): string {
 		return "(see schema)";
 	}
 	const parts: string[] = [];
-	if (typeof s.type === "string") {
-		parts.push(`type: ${s.type}`);
+	const declaredTypes = schemaTypes(s);
+	if (declaredTypes.length > 0) {
+		parts.push(`type: ${declaredTypes.length === 1 ? declaredTypes[0] : JSON.stringify(declaredTypes)}`);
 	}
 	if (Array.isArray(s.enum)) {
 		parts.push(`enum: ${JSON.stringify(s.enum)}`);
 	}
-	if (s.type === "object" && isRecord(s.properties)) {
+	if (declaredTypes.includes("object") && isRecord(s.properties)) {
 		const req = Array.isArray(s.required) ? (s.required as string[]) : [];
 		const fields = Object.keys(s.properties);
 		if (fields.length > 0) {
@@ -95,7 +110,7 @@ function describeExpected(spec: unknown): string {
 			parts.push(`object fields: [${fields.map(marker).join(", ")}]`);
 		}
 	}
-	if (s.type === "array" && isRecord(s.items)) {
+	if (declaredTypes.includes("array") && isRecord(s.items)) {
 		parts.push(`items: {${describeExpected(s.items)}}`);
 	}
 	return parts.join("; ") || "(see schema)";
@@ -113,8 +128,12 @@ function describeSchemaSummary(ctx: SureHookContext, unit: Unit): string {
 	const entries = Object.entries(schema.properties).map(([field, spec]) => {
 		const s = isRecord(spec) ? spec : undefined;
 		let desc = field;
-		if (s && typeof s.type === "string") {
-			desc += `(${s.type}`;
+		if (s) {
+			const declaredTypes = schemaTypes(s);
+			if (declaredTypes.length === 0) {
+				return required.includes(field) ? `${desc}*` : desc;
+			}
+			desc += `(${declaredTypes.length === 1 ? declaredTypes[0] : JSON.stringify(declaredTypes)}`;
 			if (Array.isArray(s.enum)) {
 				desc += `,enum:${JSON.stringify(s.enum)}`;
 			}
@@ -175,13 +194,13 @@ export function validateProduces(ctx: SureHookContext, unit: Unit, artifact: unk
 				continue;
 			}
 			const spec = isRecord(typeSpec) ? typeSpec : undefined;
-			const declaredType = spec && typeof spec.type === "string" ? spec.type : undefined;
-			if (declaredType) {
-				const allowed = SCHEMA_TYPE_MAP[declaredType] ?? [declaredType];
+			const declaredTypes = spec ? schemaTypes(spec) : [];
+			if (declaredTypes.length > 0) {
+				const allowed = declaredTypes.flatMap((declaredType) => SCHEMA_TYPE_MAP[declaredType] ?? [declaredType]);
 				if (!allowed.includes(typeOf(record[field]))) {
 					return {
 						ok: false,
-						repair: `Field "${field}" in ${unit.produces} must be ${declaredType} (got ${typeOf(record[field])}). Expected ${field}: ${describeExpected(spec)}.`,
+						repair: `Field "${field}" in ${unit.produces} must be ${declaredTypes.length === 1 ? declaredTypes[0] : JSON.stringify(declaredTypes)} (got ${typeOf(record[field])}). Expected ${field}: ${describeExpected(spec)}.`,
 						reason: `type mismatch ${field}`,
 					};
 				}

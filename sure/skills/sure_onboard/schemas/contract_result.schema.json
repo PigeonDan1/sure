@@ -10,7 +10,30 @@
 		"duration_ms": { "type": "number" },
 		"error": { "type": ["string", "null"] },
 		"io_contract_satisfied": { "type": "boolean" },
-		"violations": { "type": "array", "items": { "type": "string" } }
+		"io_contract": {
+			"type": "object",
+			"properties": {
+				"input_type": { "type": "string" },
+				"output_type": { "type": "string" },
+				"primary_field": { "type": "string" },
+				"required_fields": { "type": "array", "items": { "type": "string" } },
+				"nonempty_fields": { "type": "array", "items": { "type": "string" } },
+				"json_serializable": { "type": "boolean" }
+			},
+			"additionalProperties": true
+		},
+		"violations": { "type": "array", "items": { "type": "string" } },
+		"sample_output_path": { "type": "string" },
+		"model_dir": { "type": "string" },
+		"wrapper_path": { "type": "string" },
+		"validate_py": { "type": "string" },
+		"validate_args": { "type": "array", "items": { "type": "string" } },
+		"run_command": { "type": ["array", "string"] },
+		"cwd": { "type": "string" },
+		"env": { "type": "object" },
+		"log_path": { "type": "string" },
+		"timeout_seconds": { "type": "number" },
+		"executed": { "type": "boolean" }
 	},
 	"additionalProperties": false
 }

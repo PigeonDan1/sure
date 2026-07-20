@@ -90,7 +90,62 @@ KWS metric namespace:
 src/sure_eval/evaluation/kws/
 ```
 
-当前阶段没有迁入共享 KWS metric；phase-1 仍以 task-local `validate.py` 同时验证正负样例。
+`/sure_onboard` local-ready 仍以 task-local `validate.py` 同时验证正负样例为最小通过
+条件；但 KWS 经验资产不能降级为只有 smoke。只要 wrapper 产出
+`sample_output.json`，后续 metric enrichment 或 evaluation 应继续调用 canonical KWS
+route，而不是只读 `validate.py` 的正负例断言。
+
+推荐 runner：
+
+```bash
+PYTHONPATH=src python scripts/run_kws_metric_pipeline.py \
+  --reference-jsonl <model_dir>/fixture/kws/gt.jsonl \
+  --sample-output <model_dir>/artifacts/sample_output.json \
+  --threshold <threshold> \
+  --output <model_dir>/artifacts/kws_metric_report.json
+```
+
+该 runner 应直接调用 canonical task route：
+
+```text
+sure_eval.evaluation.tasks.kws.pipeline.evaluate_kws_files
+```
+
+report 必须保留兼容字段：
+
+```text
+ok, input_mode, metrics, rows, summary
+```
+
+同时记录新框架字段：
+
+```text
+pipeline_id, input_contract, input_files, pipeline_trace
+```
+
+正式评测必须记录 `accuracy`、`precision`、`recall`、`f1`、
+`false_reject_rate`、`false_alarm_rate`、`false_alarm_per_hour` 和 `det_curve`。
+DET 阈值扫描语义对齐 WekWS `compute_det.py` / `compute_det_ctc.py`：正例低于阈值
+或关键词错误计为 false reject，负例高于阈值计为 false alarm，并按负例音频时长
+换算 false alarm per hour。
+
+KWS metric uv project 经验：
+
+```text
+src/sure_eval/evaluation/nodes/scoring/wekws_det/pyproject.toml
+src/sure_eval/evaluation/nodes/scoring/wekws_det/.cache/uv
+src/sure_eval/evaluation/nodes/scoring/wekws_det/.venv
+```
+
+不要把长期使用的 KWS metric cache 放到 `/tmp`。
+
+KWS metric 当前支持三种输入模式：
+
+| input_mode | 必需输入 | 说明 |
+| --- | --- | --- |
+| `sure_json` | `reference_jsonl + sample_output` | SURE wrapper 标准输出 |
+| `wekws_score_ctc` | `wekws_label_file + wekws_score_file + keyword` | WekWS `score_ctc.py` 输出 |
+| `wekws_frame_score` | `wekws_label_file + wekws_frame_score_file + keyword` | WekWS `score.py` frame-level 输出 |
 
 KWS fixture 必须有正负样例：
 

@@ -18,9 +18,25 @@
 						"required": ["matched"],
 						"properties": {
 							"matched": { "type": "boolean" },
-							"match_source": { "type": "string", "description": "tasks (strong) | custom_tag (weak fallback)" },
+							"match_source": {
+								"type": "string",
+								"description": "Strong or weak provenance such as tasks, pipeline_tag, model_card, readme, repo_topics, or custom_tag."
+							},
 							"task_type": { "type": "string" },
-							"score": { "type": "number" }
+							"score": { "type": "number" },
+							"evidence": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"properties": {
+										"source": { "type": "string", "enum": ["modelscope", "huggingface", "github", "manual", "local"] },
+										"field": { "type": "string" },
+										"value": {},
+										"strength": { "type": "string", "enum": ["strong", "medium", "weak"] }
+									},
+									"additionalProperties": true
+								}
+							}
 						},
 						"additionalProperties": false
 					}

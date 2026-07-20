@@ -15,6 +15,13 @@
 ```bash
 cd sure/models/{model_name}
 
+# 每个模型使用 model-local cache，避免污染全局环境或被其它 run 影响
+export UV_CACHE_DIR="$PWD/.runtime/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$PWD/.runtime/uv-python"
+export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
+export MPLCONFIGDIR="$PWD/.runtime/matplotlib"
+mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$MPLCONFIGDIR"
+
 # 创建环境
 uv venv --python=python3.10
 
@@ -26,6 +33,13 @@ uv pip install -r requirements.txt
 # 或
 uv pip install -e .
 ```
+
+脚本中如果使用 `uv pip install ... | tee build.log`、`uv pip install ... | tail ...`
+或任何管道，必须启用 `set -o pipefail`，否则 uv 的失败退出码可能被 `tee`/`tail`
+掩盖成成功。安装完成后必须用 `.venv/bin/python` 做短 runtime probe，并把
+`python_executable`、`runtime_checks.required_imports`、`runtime_probe` 写入
+`build_env_result.json`；对于已经存在 `model.py` 的 repair flow，`import model`
+必须通过后才能写 `env_ready=true`。
 
 ## Lock/Sync 约定
 
@@ -70,6 +84,109 @@ uv pip install numpy==1.26.4
 ```bash
 # 安装与 PyTorch 匹配的 torchvision
 uv pip install torchvision==0.19.0 --index-url https://download.pytorch.org/whl/cpu
+```
+
+### 4. S2TT metric 缺少 sacrebleu
+
+**症状**: speech-understanding 或 S2TT metric runner 报：
+
+```text
+No module named 'sacrebleu'
+```
+
+**原因**: S2TT BLEU / chrF metric 依赖 `sacrebleu`。这是 evaluation 环境依赖缺失，
+不是模型推理失败。
+
+**修复**: 使用 uv 安装到当前 SURE/evaluation 环境，不要改模型 wrapper 或重跑模型推理：
+
+```bash
+env UV_CACHE_DIR=src/sure_eval/evaluation/nodes/scoring/sacrebleu/.cache/uv \
+uv pip install \
+  -p .venv.hostbak/bin/python \
+  -i https://pypi.tuna.tsinghua.edu.cn/simple \
+  sacrebleu
+```
+
+安装后重跑同一个 metric runner，复用已有 `ref_*.txt` / `hyp_*.txt`。
+
+### 5. CUDA torch wheel 下载超时
+
+**症状**: 本地 uv 环境安装 CUDA 版 PyTorch 报：
+
+```text
+Failed to fetch https://download-r2.pytorch.org/...torch-*.whl
+operation timed out
+```
+
+**原因**: `download.pytorch.org` / `download-r2.pytorch.org` 在当前网络下可能不稳定。
+
+**修复原则**:
+
+- 先根据 host driver/CUDA 选择匹配 wheel，例如 CUDA 12.8 host 优先尝试 cu128。
+- 使用模型本地 `.venv`，不要切回 base Python。
+- 外网下载可临时开代理；Docker、GPU、registry、ModelScope mirror 操作仍应清代理。
+- CPU fallback 只能在记录 CUDA-first 失败和至少三次 CUDA 环境修复尝试后进入。
+
+示例：
+
+```bash
+set -o pipefail
+bash -lc '. /hpc_stor03/sjtu_home/junhao.du/.local/bin/ssr-on && \
+  UV_CACHE_DIR="$PWD/.runtime/uv-cache" \
+  uv pip install \
+    --python .venv/bin/python \
+    --index-url https://download.pytorch.org/whl/cu128 \
+    torch==2.8.0+cu128 torchaudio==2.8.0+cu128; \
+  status=$?; \
+  . /hpc_stor03/sjtu_home/junhao.du/.local/bin/ssr-off; \
+  exit $status' 2>&1 | tee artifacts/cuda_torch_install.log
+```
+
+如果 uv 报：
+
+```text
+Failed to hardlink files; falling back to full copy
+```
+
+这是 cache 与目标目录跨文件系统导致的性能警告；设置 `UV_LINK_MODE=copy` 可消除噪声，
+不应把它当成安装失败。
+
+### 6. TTS 本地 uv 依赖 pinning
+
+F5-TTS / IndexTTS-2 re-onboarding 经验：
+
+- CUDA host 可见时，优先 pin `torch==2.8.0+cu128`、`torchaudio==2.8.0+cu128`
+  或与当前 driver 匹配的 CUDA wheel。
+- 如果出现 `torch.cuda.is_available() == False`，不要直接改 CPU；先检查 wheel CUDA
+  tag、driver、`LD_LIBRARY_PATH` 和模型 `.venv`。
+- 如果复用 host 已验证的 CUDA torch（例如 system-site-packages 中的
+  `torch==2.3.1+cu121`），不能再安装要求更高 torch 的 `transformers>=5`
+  或模型依赖。二选一：
+  1. 保持该 torch，并 pin 与它兼容的 transformers/模型代码版本；
+  2. 更推荐在模型 `.venv` 内安装与 host driver 匹配的 CUDA torch，例如
+     `torch==2.8.0+cu128` + `torchaudio==2.8.0+cu128`，再安装
+     `transformers>=5`。
+  任何 `transformers` import 报 “PyTorch >= X is required” 都是 build_env 失败，
+  不允许进入后续 validate 节点。
+- `datasets` 与新版 pyarrow 可能出现 `AttributeError: module 'pyarrow' has no attribute
+  'PyExtensionType'`，应 pin `pyarrow<21`。
+- ModelScope 依赖可能要求不可解的旧包；已验证组合可以从 `modelscope==1.27.0` 加
+  显式音频依赖开始，例如 `descript-audiotools==0.7.2`。
+- uv 安装 PyPI 依赖优先使用清华源，避免默认 `https://pypi.org/simple` DNS/连接失败：
+
+```bash
+UV_CACHE_DIR="$PWD/.runtime/uv-cache" \
+UV_PYTHON_INSTALL_DIR="$PWD/.runtime/uv-python" \
+uv pip install --python .venv/bin/python \
+  --index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+  -r requirements.txt
+```
+
+TTS/VC 等模型 import 阶段可能触发 matplotlib cache；每个模型本地验证脚本应设置：
+
+```bash
+export MPLCONFIGDIR="$PWD/.runtime/matplotlib"
+mkdir -p "$MPLCONFIGDIR"
 ```
 
 ## 集群网络限制

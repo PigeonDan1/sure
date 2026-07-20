@@ -5,6 +5,34 @@
   "materialized": false,
   "entrypoint_path": "",
   "generation_method": "",
+  "execution": {
+    "requested": "auto",
+    "planned": "",
+    "path_requested": "auto",
+    "path_planned": "",
+    "vc_available_at_resolve": false,
+    "fallback_allowed": true,
+    "reason": ""
+  },
+  "inference_runtime": {
+    "device_request": "auto",
+    "device_actual": "",
+    "cuda_visible_devices": "",
+    "execution_path": ""
+  },
+  "evaluation_runtime": {
+    "backend": "external",
+    "device_request": "",
+    "engine_root": ""
+  },
+  "vc_runtime": {
+    "partition": "",
+    "cpu": 0,
+    "mem": "",
+    "gpu": 0,
+    "image": "",
+    "job_name": ""
+  },
   "source_provenance": {
     "template_file": "",
     "template_sha256": "",
@@ -18,21 +46,49 @@
   },
   "resolved_inputs": {
     "model_name": "",
+    "model_dir": "",
+    "model_dir_source": "",
+    "shared_model_root": "/hpc_stor03/sjtu_home/jing.peng/workspace/model",
+    "repo_model_root": "src/sure_eval/models",
     "dataset": "",
+    "datasets": [],
     "dataset_task": "",
     "dataset_language": "",
     "evaluation_metric": "",
+    "evaluation_metrics": [],
     "evaluation_postprocessing": "",
+    "audio_evaluation_surface": {
+      "required": false,
+      "contract": "docs/agents/main_flow_agent/contracts/tts_vc_audio_evaluation_surface.md",
+      "template_file": "scripts/templates/run_audio_evaluation_only.sh",
+      "evaluation_image": "",
+      "handoff_file": "",
+      "preflight_required": []
+    },
     "run_dir": "",
     "execution_path": "",
-    "tool_name": ""
+    "device": "",
+    "tool_name": "",
+    "vc_runtime_contract": {
+      "required_partition": "",
+      "allow_partition_fallback": false,
+      "runtime_paths": {
+        "container_python_path": "",
+        "container_venv_path": ""
+      }
+    }
   },
   "expected_outputs": {
     "prepare_summary": "",
     "prediction_manifest": "",
     "prediction_generation_status": "",
     "validation_payload": "",
-    "evaluation_payload": ""
+    "evaluation_payload": "",
+    "protocol": "",
+    "report_jsonl": "",
+    "metrics_dir": "",
+    "sample_reports_dir": "",
+    "report_snapshot": ""
   },
   "reason": "",
   "notes": []

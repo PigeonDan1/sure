@@ -2,7 +2,8 @@
 """Gate script for the MATCH_TASK unit.
 
 Verifies every candidate carries a task match with match_source provenance
-(strong "tasks" match or weak "custom_tag" fallback). Blocks false-positives.
+(for example tasks, pipeline_tag, repo_topics, model_card, readme, or
+custom_tag). Blocks false-positives.
 Called by the Sure hook:
     python3 scripts/check_match_task.py --run-dir <runDir> --produces <abs>
 """
@@ -48,7 +49,8 @@ def main() -> int:
         if match.get("matched") and not match.get("match_source"):
             errors.append(
                 f'candidate "{model_id}" matched but match_source is empty '
-                '(record "tasks" or "custom_tag")'
+                '(record the evidence channel, e.g. "tasks", "pipeline_tag", '
+                '"repo_topics", "model_card", "readme", or "custom_tag")'
             )
     if errors:
         print("MATCH_TASK gate failed:\n  - " + "\n  - ".join(errors), file=sys.stderr)

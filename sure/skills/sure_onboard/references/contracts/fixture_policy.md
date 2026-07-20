@@ -113,6 +113,8 @@ tests/fixtures/
 Task-level fixture indexes:
 
 - ASR: `fixtures/tasks/asr/README.md`
+- SD: `fixtures/tasks/sd/README.md`
+- SA-ASR: `fixtures/tasks/sa_asr/README.md`
 - S2TT: `fixtures/tasks/s2tt/README.md`
 - SER: `fixtures/tasks/ser/README.md`
 - SLU: `fixtures/tasks/slu/README.md`
@@ -150,6 +152,12 @@ Task-level fixture indexes:
 **Output Validation**:
 - Speaker count matches
 - Segment boundaries reasonable
+- Metric-facing outputs must be MeetEval-loadable diarization annotations,
+  usually RTTM for DER. Do not emit ordinary ASR `key<TAB>text` rows for SD
+  scoring.
+- When the evaluation module is available, route scoring through the SD task
+  route and the MeetEval scoring node rather than a hand-written diarization
+  checker.
 
 ### SA-ASR (Speaker-Aware ASR)
 
@@ -160,6 +168,12 @@ Task-level fixture indexes:
 **Output Validation**:
 - Transcription per speaker
 - Speaker labels consistent
+- Metric-facing outputs must be MeetEval-loadable speaker-attributed ASR
+  annotations, such as STM, CTM, or SegLST. Do not collapse SA-ASR into plain
+  ASR `key<TAB>text` rows.
+- If the wrapper's natural output is JSON segments, preserve the conversion
+  script or conversion trace in model artifacts or the metric output directory
+  so the path from model output to MeetEval input is auditable.
 
 ### SER (Speech Emotion Recognition)
 

@@ -1,8 +1,9 @@
 import type { Unit } from "./checkpoints.ts";
 
-// SURE model-feed state machine (the xforge→sure_feed port). Discovers
-// ModelScope models, matches them to SURE task families, collects metadata,
-// converts to the SURE resource (oref) layout, ranks/selects, and emits a
+// SURE model-feed state machine (the xforge→sure_feed port). Discovers models
+// from ModelScope/HuggingFace/GitHub, matches them to SURE task families,
+// collects metadata, converts optional fetched resources to the SURE resource
+// (oref) layout, synthesizes canonical MODEL_INPUT, ranks/selects, and emits a
 // handoff manifest for /sure_onboard to consume. Linear units are LLM
 // self-driven; gate units run validateProduces + a Python semantic gate script.
 //
@@ -12,9 +13,11 @@ import type { Unit } from "./checkpoints.ts";
 // Gate-check split principle (no redundancy, no drift):
 //   - validateProduces owns STRUCTURE (required fields, enum, additionalProperties
 //     /forbiddenFields) for every unit.
-//   - The Python gateScript owns SEMANTICS for the two gate units:
-//     match_task (every matched candidate has match_source provenance) and
-//     rank_and_select (non-empty selection, score ≥ 0, repo present for handoff).
+//   - The Python gateScript owns SEMANTICS for the gate units:
+//     match_task (every matched candidate has match_source provenance),
+//     synthesize_model_input (every selected candidate has a complete
+//     MODEL_INPUT), and rank_and_select (non-empty selection, score ≥ 0, repo
+//     present for handoff).
 //     No in-process gateCheck is kept — the python scripts are the sole authority,
 //     so there is no duplicated === true vs truthy logic.
 //
@@ -23,12 +26,18 @@ import type { Unit } from "./checkpoints.ts";
 export const MODEL_FEED_UNITS: Unit[] = [
 	{
 		id: "scan_modelscope",
-		label: "Scan ModelScope",
+		label: "Discover sources",
 		kind: "linear",
 		produces: "scan_result.json",
 		schemaRef: "scan_result.schema.json",
 		requiredFields: ["candidates"],
 		forbiddenFields: ["selected", "handoff_manifest_path"],
+		ownedScripts: [
+			"sure_feed_online_discover.py",
+			"xforge_collect_model.py",
+			"xforge_daily_modelscope_summary.py",
+			"xforge_watch_modelscope.py",
+		],
 	},
 	{
 		id: "match_task",
@@ -47,6 +56,7 @@ export const MODEL_FEED_UNITS: Unit[] = [
 		schemaRef: "metadata_result.schema.json",
 		requiredFields: ["models"],
 		forbiddenFields: ["handoff_manifest_path"],
+		ownedScripts: ["xforge_modelscope_fetch.py"],
 	},
 	{
 		id: "convert_to_oref",
@@ -56,6 +66,17 @@ export const MODEL_FEED_UNITS: Unit[] = [
 		schemaRef: "oref_result.schema.json",
 		requiredFields: ["converted"],
 		forbiddenFields: ["handoff_manifest_path"],
+		ownedScripts: ["xforge_process_to_oref.py", "xforge_modelscope_dataset_to_oref.py", "xforge_process_to_sure.py"],
+	},
+	{
+		id: "synthesize_model_input",
+		label: "Synthesize MODEL_INPUT",
+		kind: "gate",
+		produces: "model_input_result.json",
+		schemaRef: "model_input_result.schema.json",
+		requiredFields: ["model_inputs"],
+		forbiddenFields: ["models", "handoff_manifest_path"],
+		gateScript: "check_model_input.py",
 	},
 	{
 		id: "rank_and_select",

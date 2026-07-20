@@ -6,10 +6,38 @@
 	"type": "object",
 	"required": ["repo_url"],
 	"properties": {
+		"timestamp": { "type": "string" },
+		"model_id": { "type": "string" },
+		"model_name": { "type": "string" },
+		"task_type": { "type": "string" },
+		"deployment_type": { "type": "string" },
 		"repo_url": { "type": "string" },
 		"commit": { "type": ["string", "null"] },
+		"repo_commit": { "type": ["string", "null"] },
+		"discovery_strategy": { "type": "string" },
+		"model_dir": { "type": ["string", "null"] },
+		"model_dir_exists": { "type": "boolean" },
+		"handoff_artifacts_dir": { "type": ["string", "null"] },
 		"local_path": { "type": ["string", "null"] },
-		"file_inventory": { "type": "array", "items": { "type": "string" } },
+		"evidence_sources": {
+			"type": "array",
+			"items": {
+				"oneOf": [
+					{ "type": "string" },
+					{ "type": "object", "additionalProperties": true }
+				]
+			}
+		},
+		"file_inventory": {
+			"oneOf": [
+				{ "type": "array", "items": { "type": "string" } },
+				{ "type": "object", "additionalProperties": true }
+			]
+		},
+		"model_card_info": { "type": "object", "additionalProperties": true },
+		"entrypoints": { "type": "object", "additionalProperties": true },
+		"dependency_hints": { "type": "object", "additionalProperties": true },
+		"fixture_hints": { "type": "object", "additionalProperties": true },
 		"language": { "type": "string" },
 		"notes": { "type": "string" }
 	},

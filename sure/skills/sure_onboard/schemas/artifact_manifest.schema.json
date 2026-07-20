@@ -2,28 +2,42 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "artifact_manifest.schema.json",
 	"title": "SURE model-tool artifact manifest",
-	"description": "Structured output of the SAVE_ARTIFACTS unit. Indexes all artifacts landed under sure/models/<model_id>/. The artifacts object groups entries by category (required/conditional/optional); each entry records a path and a description.",
+	"description": "Structured output of the SAVE_ARTIFACTS unit. The preferred harness shape indexes artifacts under sure/models/<model_name>/ using model_dir + artifacts.required/conditional/optional. The schema also accepts upstream phase-1 manifests with artifacts[], required_artifacts, conditional_artifacts, or files[]; check_artifact_manifest.py owns semantic filesystem validation.",
 	"type": "object",
-	"required": ["model_dir", "artifacts"],
 	"properties": {
-		"model_dir": { "type": "string", "description": "Resolved sure/models/<model_id>/ directory." },
+		"model_dir": { "type": "string", "description": "Resolved sure/models/<model_name>/ directory." },
 		"instance_id": { "type": "string" },
 		"timestamp": { "type": "string" },
 		"model_id": { "type": "string" },
+		"model": { "type": "string" },
+		"phase": { "type": "string" },
+		"status": { "type": "string" },
+		"phase1_status": { "type": "string" },
+		"tool_ready": { "type": "boolean" },
 		"artifacts": {
-			"type": "object",
-			"required": ["required"],
-			"properties": {
-				"required": { "type": "object" },
-				"conditional": { "type": "object" },
-				"optional": { "type": "object" },
-				"spec_path": { "type": "string" },
-				"wrapper_path": { "type": "string" },
-				"lockfile_path": { "type": ["string", "null"] },
-				"log_path": { "type": "string" }
-			},
-			"additionalProperties": true
+			"oneOf": [
+				{
+					"type": "object",
+					"properties": {
+						"required": { "type": "object" },
+						"conditional": { "type": "object" },
+						"optional": { "type": "object" },
+						"spec_path": { "type": "string" },
+						"wrapper_path": { "type": "string" },
+						"lockfile_path": { "type": ["string", "null"] },
+						"log_path": { "type": "string" }
+					},
+					"additionalProperties": true
+				},
+				{ "type": "array", "items": { "type": "string" } }
+			]
 		}
+		,
+		"required_artifacts": { "type": "object" },
+		"conditional_artifacts": { "type": "object" },
+		"files": { "type": "array", "items": { "type": "object" } },
+		"context_selection": { "type": "object" },
+		"generated_at": { "type": "string" }
 	},
-	"additionalProperties": false
+	"additionalProperties": true
 }

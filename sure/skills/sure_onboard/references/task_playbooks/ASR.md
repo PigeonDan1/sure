@@ -103,6 +103,24 @@ fixture/asr/asr_zh/
 `SUREEvaluator.evaluate("ASR", ...)` 和 `asr/wenet_compute_cer.py`，不是旧的简单
 edit-distance 实现。
 
+强制经验规则：
+
+- ASR re-onboarding、model onboarding、Docker validation 或后续 evaluation 产出的
+  WER/CER artifact 必须调用 SURE ASR metric route 中的 `CERMetric` / `WERMetric`，
+  不得在 `validate.py`、一次性脚本或 wrapper 中重新实现第二套 edit-distance /
+  normalization 逻辑。
+- 允许 `validate.py` 在 `/sure_onboard` local smoke 阶段只保存
+  `sample_output.json`、reference 和 prediction；metric 可以在推理后复算，但复算仍
+  必须调用 `CERMetric` / `WERMetric`。
+- 如果 metric 环境缺依赖，必须修复 evaluation 环境或使用项目已有可用环境；不得退回
+  手写 CER/WER。
+- `sample_output.json`、`verdict.json` 或 metric summary 中应记录 metric backend，
+  例如 `sure_eval.evaluation.tasks.asr.metrics.CERMetric`。
+- 如果只是修正 metric 口径，不允许重新跑模型推理；必须复用已有
+  `sample_output.json` 中的 prediction/reference。
+- 出现手写 edit distance、临时 CER/WER 或 metric-only 重新推理时，读取
+  `references/memory/bad_cases/asr_metric_bypass.md`。
+
 ## 4. Backend 选择
 
 优先级：

@@ -208,7 +208,7 @@ export function runBackend(
 	const r = spawnSync("python3", [py, ...finalArgs], {
 		cwd: ctx.packageDir,
 		encoding: "utf-8",
-		timeout: 300_000,
+		timeout: 3_600_000,
 	});
 	return {
 		ok: r.status === 0,

@@ -131,6 +131,25 @@ def test_contract():
 - 需要调整 wrapper 输出格式
 - 或 `io_contract` 定义不完整（属于 `io_contract_incomplete`）
 
+## 4.5 Smoke Success Must Be Semantic
+
+Validation scripts must not treat the existence or non-empty size of
+`sample_output.json` as sufficient proof of success. Some wrappers write
+`sample_output.json` for failed runs to preserve diagnostics.
+
+A smoke script must also assert an explicit pass signal, for example:
+
+- all required validation stages passed (`import`, `load`, `infer`, `contract`);
+- `validation.log` contains explicit stage pass records;
+- stage result JSONs contain `*_passed: true`;
+- the overall verdict field is terminal success and does not contain failed
+  sub-stages.
+
+Only after this semantic pass check may a local, Docker, or package script record
+`*_validate_status=passed`. If a script only checks file existence, route the
+failure through `references/memory/bad_cases/docker_smoke_false_pass.md` or the
+equivalent smoke false-pass memory.
+
 ## 验证顺序
 
 ```

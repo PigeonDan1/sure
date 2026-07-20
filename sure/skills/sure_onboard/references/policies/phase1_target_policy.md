@@ -157,6 +157,8 @@ Phase-2 (后续)
 **情况**: 模型输入标记 `requires_gpu: true`，但 host driver 不兼容；同一条 repo-native path 在 CPU 上完成 import/load/infer/contract
 
 **判定**: ✅ Phase-1 成功
+- 若 host CUDA 可见且 `device=auto`，必须先完成 CUDA-first 尝试并记录失败证据；不能直接 CPU 成功
+- 若 CUDA 失败来自环境版本问题，必须先尝试按 host driver/CUDA 修复模型运行环境；不能被当前 `.venv` 的错误 torch/CUDA 组合困住后直接放弃
 - CPU fallback 仍验证了最小 callable path
 - verdict 必须显式记录 GPU limitation
 

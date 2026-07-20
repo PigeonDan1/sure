@@ -13,10 +13,14 @@
 				"required": ["model_id"],
 				"properties": {
 					"model_id": { "type": "string" },
+					"source": { "type": "string", "enum": ["modelscope", "huggingface", "github", "multi"] },
 					"repo": { "type": "string" },
+					"source_url": { "type": "string" },
 					"weights_source": { "type": ["string", "null"] },
 					"license": { "type": ["string", "null"] },
 					"frameworks": { "type": "array", "items": { "type": "string" } },
+					"entrypoint_hints": { "type": "object" },
+					"environment_hints": { "type": "object" },
 					"metadata_summary": { "type": "string" }
 				},
 				"additionalProperties": true

@@ -4,13 +4,24 @@
 	"title": "SURE-EVAL execution plan",
 	"description": "Structured output of the PLAN_UNIT.",
 	"type": "object",
-	"required": ["plan_summary"],
+	"required": ["goal", "task_type", "need_tool_workflow", "execution_steps", "stop_condition", "notes"],
 	"properties": {
-		"plan_summary": { "type": "string" },
+		"run_id": { "type": "string" },
+		"timestamp": { "type": "string" },
 		"goal": { "type": "string" },
-		"steps": { "type": "array", "items": { "type": "string" } },
+		"task_type": {
+			"type": "string",
+			"enum": ["onboarding_then_evaluate", "evaluate_existing_model", "repair_broken_model", "audit_results"]
+		},
+		"need_tool_workflow": { "type": "boolean" },
+		"tool_readiness_state": { "type": "string" },
+		"preferred_execution_path": { "type": "string" },
+		"execution_steps": { "type": "array", "items": { "type": "string" } },
+		"stop_condition": { "type": "string" },
+		"notes": { "type": "array", "items": { "type": "string" } },
 		"target": { "type": "string" },
-		"max_samples": { "type": "number" }
+		"max_samples": { "type": "number" },
+		"device": { "type": "string" }
 	},
 	"additionalProperties": false
 }

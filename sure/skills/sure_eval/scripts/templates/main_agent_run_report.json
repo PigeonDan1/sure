@@ -7,6 +7,8 @@
   "executed_steps": [],
   "status": "pending",
   "artifacts": {
+    "eval_input_resolved": "",
+    "evaluation_route_plan": "",
     "task_classification": "",
     "tool_readiness_routing": "",
     "plan": "",
@@ -14,10 +16,30 @@
     "script_routing": "",
     "execution_surface": "",
     "execution_readiness_report": "",
-    "assessment_report": ""
+    "assessment_report": "",
+    "model_eval_manifest": ""
   },
   "model_eval_manifest": "",
   "vc_job_id": "",
+  "report_persisted": false,
+  "execution_path_requested": "auto",
+  "execution_path_declared": "",
+  "execution_path_actual": "",
+  "execution": {
+    "requested": "auto",
+    "actual": "",
+    "path_actual": ""
+  },
+  "vc_available": false,
+  "fallback_approved": false,
+  "local_fallback_reason": "",
+  "evaluation_only": false,
+  "device_request": "auto",
+  "device_actual": "",
+  "cuda_visible_devices": "",
+  "max_samples": 0,
+  "dataset_total_samples": 0,
+  "evaluated_samples": 0,
   "next_action": "",
   "notes": []
 }

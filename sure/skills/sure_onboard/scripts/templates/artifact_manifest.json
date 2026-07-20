@@ -14,6 +14,10 @@
         "path": "artifacts/backend_choice.json",
         "description": "后端选择记录"
       },
+      "build_plan": {
+        "path": "artifacts/build_plan.json",
+        "description": "可执行构建计划"
+      },
       "build_log": {
         "path": "artifacts/build.log",
         "description": "环境构建日志"
@@ -26,10 +30,14 @@
         "path": "artifacts/verdict.json",
         "description": "最终判定结果"
       },
+      "package_gate": {
+        "path": "artifacts/package_gate.json",
+        "description": "本地/Docker package readiness gate"
+      },
       "wrapper": {
-        "paths": ["model.py", "server.py", "__init__.py"],
-        "description": "模型 wrapper 文件集，最小包含：model.py (核心模型类), server.py (MCP 服务器), __init__.py (包导出)",
-        "required_files": ["model.py", "server.py"]
+        "paths": ["model.py", "server.py", "__init__.py", "validate.py", "config.yaml"],
+        "description": "模型 wrapper 文件集，最小包含：model.py, server.py, __init__.py, validate.py, config.yaml",
+        "required_files": ["model.py", "server.py", "__init__.py", "validate.py", "config.yaml"]
       },
       "manifest": {
         "path": "artifacts/artifact_manifest.json",

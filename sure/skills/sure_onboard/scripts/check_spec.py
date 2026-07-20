@@ -44,13 +44,15 @@ def main() -> int:
     checks = data.get("checks") or {}
     failed = [c for c in SEVEN_CHECKS if not (checks.get(c) or {}).get("passed")]
     status = data.get("status", "")
-    if status == "failed" or failed:
+    if status != "passed" or failed:
         blockers = data.get("blockers") or []
         detail = ""
         if failed:
             detail = "\n  - failed checks: " + ", ".join(failed)
         if blockers:
             detail += "\n  - blockers: " + "; ".join(blockers)
+        if status != "passed":
+            detail += '\n  - status must be "passed" after all seven checks succeed'
         print(f"VALIDATE_SPEC gate failed (status={status}).{detail}", file=sys.stderr)
         return 1
     print(f"check_spec OK: all 7 checks passed, status={status}")

@@ -8,9 +8,69 @@
 	"properties": {
 		"compat_ok": { "type": "boolean" },
 		"device": { "type": "string", "enum": ["cuda", "cpu", "mps", "auto"] },
+		"model_dir": { "type": "string" },
+		"python_executable": { "type": "string" },
+		"python_version": { "type": "string" },
+		"requested_device": { "type": "string", "enum": ["auto", "cuda", "cpu", "mps"] },
+		"cuda_available": { "type": "boolean" },
+		"cuda_attempts": { "type": "integer" },
+		"cuda_failures": {
+			"type": "array",
+			"items": {
+				"type": ["object", "string"]
+			}
+		},
+		"cuda_repair_attempts": {
+			"type": "array",
+			"items": {
+				"type": ["object", "string"]
+			}
+		},
+		"fallback_reason": { "type": "string" },
+		"device_policy": {
+			"type": "object",
+			"properties": {
+				"requested_device": { "type": "string", "enum": ["auto", "cuda", "cpu", "mps"] },
+				"selected_device": { "type": "string", "enum": ["cuda", "cpu", "mps", "auto"] },
+				"cuda_first": { "type": "boolean" },
+				"cuda_available": { "type": "boolean" },
+				"cuda_attempts": { "type": "integer" },
+				"cuda_failures": {
+					"type": "array",
+					"items": {
+						"type": ["object", "string"]
+					}
+				},
+				"min_cuda_attempts_before_cpu": { "type": "integer" },
+				"cpu_fallback_after_cuda_failures": { "type": "integer" },
+				"min_cuda_repair_attempts_before_cpu": { "type": "integer" },
+				"cuda_repair_attempts_before_cpu": { "type": "integer" },
+				"cuda_repair_attempts": {
+					"type": "array",
+					"items": {
+						"type": ["object", "string"]
+					}
+				},
+				"cpu_fallback_allowed": { "type": "boolean" },
+				"fallback_reason": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
 		"python_version_match": { "type": "boolean" },
 		"adapter_protocol_supported": { "type": "boolean" },
 		"weights_loadable": { "type": "boolean" },
+		"runtime": {
+			"type": "object",
+			"additionalProperties": true
+		},
+		"weights": {
+			"type": "object",
+			"additionalProperties": true
+		},
+		"adapter": {
+			"type": "object",
+			"additionalProperties": true
+		},
 		"incompatibilities": { "type": "array", "items": { "type": "string" } },
 		"notes": { "type": "string" }
 	},

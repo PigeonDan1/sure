@@ -38,7 +38,9 @@ io_contract:
   json_serializable: true
 ```
 
-VC 第一阶段不做音色相似度指标，只验证可加载、可推理、输出音频契约正确。
+VC `/sure_onboard` local-ready 阶段不以音色相似度指标作为通过条件，只验证可加载、
+可推理、输出音频契约正确。但正式 VC 指标经验必须保留，后续 evaluation 或 metric
+enrichment 应复用已生成 converted audio，不应为刷新指标重新跑模型推理。
 
 ## 2. 目录与权重
 
@@ -90,7 +92,63 @@ VC metric namespace:
 src/sure_eval/evaluation/vc/
 ```
 
-当前阶段没有迁入共享 VC metric；phase-1 仍以 model-local `validate.py` 检查输出音频契约。
+正式 VC 指标必须走该 namespace 的统一入口。`validate.py` / Docker validate 只负责
+生成或验证 converted audio 和 wrapper contract；已有 converted audio 后，不要为了刷新
+指标重新跑模型推理。
+
+推荐新入口：
+
+```bash
+sure-eval metric describe vc \
+  --language zh \
+  --metrics vc_cer,sim/wavlm-large \
+  --output /tmp/vc_pipeline.json \
+  --json
+
+sure-eval metric run \
+  --pipeline /tmp/vc_pipeline.json \
+  --samples-jsonl /tmp/vc_samples.jsonl \
+  --output-dir /tmp/sure_eval/vc_eval \
+  --device cuda \
+  --cache-dir /hpc_stor03/sjtu_home/junhao.du/.cache/sure-eval/tts-metrics \
+  --validate-env \
+  --json
+```
+
+`samples_jsonl` 每行必须显式区分音频角色：
+
+```json
+{"sample_id":"vc_smoke","converted_audio":"outputs/vc.wav","source_audio":"source.wav","reference_audio":"speaker.wav","reference_text":"源音频文本","language":"zh"}
+```
+
+历史 wrapper 仍可用于特定已有镜像：
+
+```text
+scripts/run_vc_metric_pipeline.py
+scripts/run_vc_metric_pipeline_docker.py
+scripts/run_vc_metric_pipeline_docker.sh
+```
+
+新接入和 agent 调用优先使用 `sure-eval metric describe/run`。
+
+VC 指标输入必须显式区分：
+
+- `converted_audio`: 模型输出音频；
+- `source_audio`: 源内容音频；
+- `reference_audio`: 目标说话人音色参考；
+- `reference_text`: 源音频文本或用于语义/ASR 检查的文本。
+
+若 TTS metric cache 已经存在，VC 可以复用同一 provider cache，因为 VC metric pipeline
+复用 TTS 的 semantic、speaker similarity 和 MOS provider 栈。复用 cache 时必须在
+artifact 或 run report 中记录 `cache_dir`。
+
+不要随意换成空的独立 VC metric cache。若必须使用新的 VC cache，必须先完整准备
+semantic、speaker、DNSMOS/WV-MOS/UTMOS 等 provider 资源；provider 缺失应结构化记录为
+blocker，不能误判为 VC 模型失败。
+
+正式 VC metric report 至少记录 `ok`、`errors`、runner、cache_dir、输入音频角色、
+`vc_cer`、`sim/*`、`dnsmos`、`wv-mos`、`utmos` 中实际启用的指标。出现 metric bypass
+时读取 `references/memory/bad_cases/vc_metric_bypass.md`。
 
 ## 3. 下载与网络
 
@@ -219,6 +277,7 @@ docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-seed-vc:v1.0
 - configured backends: `uv`, `docker`
 - Docker image、image id、registry digest
 - output audio path、sample rate、num samples
+- metric report path、runner、cache_dir 和核心指标（如果已执行正式 metric）
 - timeout 或手动 stop 说明
 - HF mirror / proxy 规则
 
@@ -235,4 +294,6 @@ docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-seed-vc:v1.0
 - [ ] local uv GPU 通过或失败原因结构化记录。
 - [ ] Docker GPU 通过，timeout 行为已核验。
 - [ ] `validation.log` 有 `VALIDATE_CONTRACT passed`。
+- [ ] 如执行正式指标，显式传入 converted/source/reference audio，复用已有 converted
+      audio，不因 metric-only 修复重跑模型。
 - [ ] 镜像 push/pull digest 已记录。

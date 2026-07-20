@@ -5,7 +5,7 @@ import type { GateResult } from "./checkpoints.ts";
 // SURE-EVAL model_tool_agent AGENTS.md (now bundled in references/).
 //
 // Onboards or repairs an audio model into a reproducible local inference unit
-// (wrapper set + spec + verdict) under sure/models/<model_id>/. Linear units
+// (wrapper set + spec + verdict) under sure/models/<model_name>/. Linear units
 // are LLM self-driven (advance when produces is compliant); gate units run
 // validateProduces + a Python semantic gate script and block on failure.
 //
@@ -36,9 +36,43 @@ export interface Unit {
 	gateCheck?: (artifact: unknown) => GateResult;
 	gateScript?: string;
 	gateScriptArgs?: (ctx: SureHookContext) => string[];
+	helperScripts?: string[];
 }
 
+const TASK_TYPES = ["asr", "s2tt", "sd", "ser", "tts", "vc", "kws", "slu", "gr", "speech_understanding", "sa-asr", "sa_asr"];
+const DEPLOYMENT_TYPES = ["local", "api"];
+const BACKENDS = ["uv", "pip", "conda", "pixi", "docker", "api"];
+const PACKAGE_PROFILES = ["none", "docker-local", "docker-registry"];
+
 export const MODEL_TOOL_UNITS: Unit[] = [
+	{
+		id: "load_model_input",
+		label: "Load MODEL_INPUT",
+		kind: "gate",
+		produces: "model_input_resolved.json",
+		schemaRef: "model_input_resolved.schema.json",
+		requiredFields: ["model_id", "model_name", "model_dir", "repo_url", "deployment_type", "package_profile"],
+		allowedValues: {
+			task_type: TASK_TYPES,
+			deployment_type: DEPLOYMENT_TYPES,
+			package_profile: PACKAGE_PROFILES,
+		},
+		forbiddenFields: ["status", "wrapper_path"],
+		gateScript: "check_model_input.py",
+		helperScripts: ["materialize_onboard_inputs.py"],
+	},
+	{
+		id: "context_selection",
+		label: "Select context",
+		kind: "linear",
+		produces: "context_selection.json",
+		schemaRef: "context_selection.schema.json",
+		requiredFields: ["task_type", "selected_references"],
+		allowedValues: {
+			task_type: TASK_TYPES,
+		},
+		forbiddenFields: ["status", "wrapper_path"],
+	},
 	{
 		id: "discover",
 		label: "Discover repo",
@@ -55,18 +89,34 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		produces: "classification.json",
 		schemaRef: "classification.schema.json",
 		requiredFields: ["task_type"],
-		allowedValues: { task_type: ["asr", "tts", "vc", "kws", "speech_understanding"] },
+		allowedValues: {
+			task_type: TASK_TYPES,
+		},
 		forbiddenFields: ["status", "wrapper_path"],
 	},
 	{
 		id: "plan",
-		label: "Plan (spec + backend)",
+		label: "Select backend",
 		kind: "linear",
 		produces: "backend_choice.json",
 		schemaRef: "backend_choice.schema.json",
 		requiredFields: ["backend"],
-		allowedValues: { backend: ["uv", "pip", "conda", "pixi", "docker", "api"] },
+		allowedValues: { backend: BACKENDS },
 		forbiddenFields: ["status", "wrapper_path"],
+	},
+	{
+		id: "build_plan",
+		label: "Build plan",
+		kind: "gate",
+		produces: "build_plan.json",
+		schemaRef: "build_plan.schema.json",
+		requiredFields: ["model_id", "model_dir", "backend", "steps", "package_profile"],
+		allowedValues: {
+			backend: BACKENDS,
+			package_profile: PACKAGE_PROFILES,
+		},
+		forbiddenFields: ["wrapper_path"],
+		gateScript: "check_build_plan.py",
 	},
 	{
 		id: "validate_spec",
@@ -76,6 +126,16 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		schemaRef: "spec_validation.schema.json",
 		requiredFields: ["checks", "status"],
 		gateScript: "check_spec.py",
+	},
+	{
+		id: "prepare_fixture",
+		label: "Prepare fixture",
+		kind: "gate",
+		produces: "fixture_manifest.json",
+		schemaRef: "fixture_manifest.schema.json",
+		requiredFields: ["model_dir", "task_type", "staged_dir", "gt_jsonl", "samples", "sample_count"],
+		gateScript: "check_fixture.py",
+		helperScripts: ["prepare_fixture.py"],
 	},
 	{
 		id: "build_env",
@@ -92,7 +152,6 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		kind: "gate",
 		produces: "weights_manifest.json",
 		schemaRef: "weights_manifest.schema.json",
-		requiredFields: ["weights_ready"],
 		gateScript: "check_weights.py",
 	},
 	{
@@ -103,6 +162,15 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		schemaRef: "env_compat_result.schema.json",
 		requiredFields: ["compat_ok"],
 		gateScript: "check_env_compat.py",
+	},
+	{
+		id: "generate_wrapper",
+		label: "Generate wrapper",
+		kind: "linear",
+		produces: "wrapper_manifest.json",
+		schemaRef: "wrapper_manifest.schema.json",
+		requiredFields: ["wrapper_path"],
+		forbiddenFields: ["status"],
 	},
 	{
 		id: "validate_import",
@@ -141,22 +209,26 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		gateScript: "run_validate.py",
 	},
 	{
-		id: "generate_wrapper",
-		label: "Generate wrapper",
-		kind: "linear",
-		produces: "wrapper_manifest.json",
-		schemaRef: "wrapper_manifest.schema.json",
-		requiredFields: ["wrapper_path"],
-		forbiddenFields: ["status"],
-	},
-	{
 		id: "save_artifacts",
 		label: "Save artifacts",
-		kind: "linear",
+		kind: "gate",
 		produces: "artifact_manifest.json",
 		schemaRef: "artifact_manifest.schema.json",
-		requiredFields: ["model_dir"],
-		forbiddenFields: ["status"],
+		gateScript: "check_artifact_manifest.py",
+		helperScripts: ["stage_model_artifacts.py", "adopt_reference_model.py"],
+	},
+	{
+		id: "package_gate",
+		label: "Package gate",
+		kind: "gate",
+		produces: "package_gate.json",
+		schemaRef: "package_gate.schema.json",
+		requiredFields: ["status", "package_profile", "readiness"],
+		allowedValues: {
+			status: ["passed", "failed", "blocked", "skipped"],
+			package_profile: PACKAGE_PROFILES,
+		},
+		gateScript: "check_package_gate.py",
 	},
 	{
 		id: "verdict",
@@ -164,7 +236,7 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		kind: "gate",
 		produces: "verdict.json",
 		schemaRef: "verdict.schema.json",
-		requiredFields: ["status", "instance_id"],
+		requiredFields: ["status"],
 		gateScript: "check_verdict.py",
 	},
 ];

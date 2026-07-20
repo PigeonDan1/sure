@@ -1,4 +1,5 @@
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import {
@@ -38,20 +39,60 @@ function countersFor(completed: CheckpointData, gateBlocks: number) {
 	};
 }
 
-// Resolve the model dir for this run. /sure_eval binds model artifacts to the
-// repo-level sure/models/<model>/ directory (per the product layout decision);
-// --model-dir overrides it.
+function legacyModelsDir(root: string): string {
+	if (root.endsWith("/models")) {
+		return root;
+	}
+	return join(root, "src", "sure_eval", "models");
+}
+
+function candidateModelDirs(ctx: SureHookContext, model: string, explicit?: string): string[] {
+	const candidates: string[] = [];
+	if (explicit) {
+		candidates.push(explicit);
+	}
+	for (const root of [process.env.SURE_MODELS_DIR, process.env.SURE_MODEL_ROOT]) {
+		if (root) {
+			candidates.push(join(root, model));
+		}
+	}
+	if (process.env.LEGACY_SURE_MODELS_DIR) {
+		candidates.push(join(process.env.LEGACY_SURE_MODELS_DIR, model));
+	}
+	if (process.env.LEGACY_SURE_EVAL_ROOT) {
+		candidates.push(join(legacyModelsDir(process.env.LEGACY_SURE_EVAL_ROOT), model));
+	}
+	candidates.push(join(ctx.cwd, "sure", "models", model));
+
+	const seen = new Set<string>();
+	return candidates.filter((candidate) => {
+		if (seen.has(candidate)) {
+			return false;
+		}
+		seen.add(candidate);
+		return true;
+	});
+}
+
+function verdictPathFor(modelDir: string): string | undefined {
+	for (const candidate of [join(modelDir, "verdict.json"), join(modelDir, "artifacts", "verdict.json")]) {
+		if (existsSync(candidate)) {
+			return candidate;
+		}
+	}
+	return undefined;
+}
+
+// Resolve the model dir for this run. /sure_eval prefers explicit model_dir,
+// then externally configured model roots, then the repo-level sure/models root.
 function modelDirFor(ctx: SureHookContext): string | undefined {
 	const args = parseArgs(ctx.args);
 	const model = typeof args.model === "string" ? args.model : undefined;
 	const modelDir = typeof args.model_dir === "string" ? args.model_dir : undefined;
-	if (modelDir) {
+	if (!model) {
 		return modelDir;
 	}
-	if (model) {
-		return join(ctx.cwd, "sure", "models", model);
-	}
-	return undefined;
+	return candidateModelDirs(ctx, model, modelDir).find((candidate) => existsSync(candidate)) ?? modelDir ?? join(ctx.cwd, "sure", "models", model);
 }
 
 function parseArgs(raw: string): Record<string, string> {
@@ -83,22 +124,95 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (!args.model) {
 		missing.push("model");
 	}
-	if (!args.task) {
-		missing.push("task");
+	const datasetsArg = args.datasets ?? args.dataset;
+	if (!datasetsArg) {
+		missing.push("datasets");
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> task=<asr|tts|vc|kws|s2tt|speech_understanding> [datasets=...] [max_samples=...] [model_dir=...]`,
+			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> datasets=<dataset[,dataset...]> [execution=auto|local|vc] [device=auto|cpu|cuda[:index]] [max_samples=...] [model_dir=...]`,
 			"Missing required parameters.",
 		);
 	}
 
 	// Verify the onboarded model dir exists with a verdict.json (cross-skill handoff).
 	const modelDir = modelDirFor(ctx);
-	if (!modelDir || !existsSync(modelDir) || !existsSync(join(modelDir, "verdict.json"))) {
+	const verdictPath = modelDir ? verdictPathFor(modelDir) : undefined;
+	if (!modelDir || !existsSync(modelDir) || !verdictPath) {
+		const searched = args.model
+			? candidateModelDirs(ctx, args.model, typeof args.model_dir === "string" ? args.model_dir : undefined)
+			: [];
 		return failure(
-			`Model "${args.model}" is not onboarded: ${modelDir ?? "(no dir)"}/verdict.json not found. Run /sure_onboard to materialize the model into sure/models/${args.model}/ first.`,
+			`Model "${args.model}" is not onboarded: verdict.json not found. Searched: ${searched.join(", ") || "(no model dirs)"}. Set model_dir=..., SURE_MODELS_DIR, SURE_MODEL_ROOT, LEGACY_SURE_MODELS_DIR, or LEGACY_SURE_EVAL_ROOT; or run /sure_onboard to materialize the model into sure/models/${args.model}/ first.`,
 			"Model not onboarded (handoff incomplete).",
+		);
+	}
+
+	const artifactsDir = join(ctx.runDir, "artifacts");
+	mkdirSync(artifactsDir, { recursive: true });
+	const resolvedInputPath = join(artifactsDir, "eval_input_resolved.json");
+	const resolveArgs = [
+		join(ctx.packageDir, "scripts", "resolve_eval_input.py"),
+		"--model",
+		args.model,
+		"--datasets",
+		datasetsArg,
+		"--device",
+		typeof args.device === "string" ? args.device : "auto",
+		"--cwd",
+		ctx.cwd,
+		"--output",
+		resolvedInputPath,
+	];
+	if (typeof args.model_dir === "string") {
+		resolveArgs.push("--model-dir", args.model_dir);
+	}
+	if (typeof args.max_samples === "string") {
+		resolveArgs.push("--max-samples", args.max_samples);
+	}
+	if (typeof args.metrics === "string") {
+		resolveArgs.push("--metrics", args.metrics);
+	}
+	if (typeof args.execution === "string") {
+		resolveArgs.push("--execution", args.execution);
+	}
+	if (typeof args.execution_path === "string") {
+		resolveArgs.push("--execution-path", args.execution_path);
+	}
+	for (const [argKey, cliKey] of [
+		["vc_partition", "--vc-partition"],
+		["vc_cpu", "--vc-cpu"],
+		["vc_mem", "--vc-mem"],
+		["vc_gpu", "--vc-gpu"],
+		["vc_image", "--vc-image"],
+		["vc_job_name", "--vc-job-name"],
+	] as const) {
+		if (typeof args[argKey] === "string") {
+			resolveArgs.push(cliKey, args[argKey]);
+		}
+	}
+	if (typeof args.run_id === "string") {
+		resolveArgs.push("--run-id", args.run_id);
+	}
+	if (typeof args.evaluation_backend === "string") {
+		resolveArgs.push("--evaluation-backend", args.evaluation_backend);
+	}
+	if (typeof args.evaluation_engine_root === "string") {
+		resolveArgs.push("--evaluation-engine-root", args.evaluation_engine_root);
+	}
+	if (typeof args.config === "string") {
+		resolveArgs.push("--config", args.config);
+	}
+	const resolvedInput = spawnSync("python3", resolveArgs, {
+		cwd: ctx.packageDir,
+		encoding: "utf-8",
+		timeout: 120_000,
+	});
+	if (resolvedInput.status !== 0) {
+		const detail = resolvedInput.stderr.trim() || resolvedInput.stdout.trim() || "resolve_eval_input.py failed";
+		return failure(
+			`Unable to resolve /sure_eval input into eval_input_resolved.json: ${detail}`,
+			"Input resolution failed.",
 		);
 	}
 
@@ -120,7 +234,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		ok: true,
 		state_patch: {
 			phase: phaseFor(findUnit(checkpoint.data.currentUnit) ?? FIRST_UNIT, "running"),
-			message: `SURE-EVAL main-flow skill loaded for model "${args.model}".`,
+			message: `SURE-EVAL main-flow skill loaded for model "${args.model}" from ${modelDir}; resolved input: ${resolvedInputPath}.`,
 			counters: countersFor(checkpoint.data, 0),
 			diagnostics,
 			checkpoint,
@@ -135,18 +249,34 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const event = isRecord(ctx.event) ? ctx.event : {};
 	const toolCall = isRecord(event.toolCall) ? event.toolCall : {};
-	const toolName = typeof toolCall.name === "string" ? toolCall.name : "";
+	const toolName =
+		typeof event.toolName === "string"
+			? event.toolName
+			: typeof toolCall.name === "string"
+				? toolCall.name
+				: "";
 	if (toolName !== "bash") {
 		// Only bash tool calls can invoke backend scripts.
 		return { ok: true };
 	}
-	const input = isRecord(toolCall.input) ? toolCall.input : {};
+	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
 	const scriptMatch = command.match(/scripts\/([A-Za-z0-9_]+\.py)\b/);
 	if (!scriptMatch) {
 		return { ok: true };
 	}
 	const invokedScript = `scripts/${scriptMatch[1]}`;
+	if (
+		invokedScript === "scripts/resolve_model_dir.py" ||
+		invokedScript === "scripts/resolve_eval_input.py" ||
+		invokedScript === "scripts/resolve_evaluation_engine.py" ||
+		invokedScript === "scripts/resolve_evaluation_route_plan.py" ||
+		invokedScript === "scripts/run_model_mcp_smoke.py" ||
+		invokedScript === "scripts/run_local_execution.py" ||
+		invokedScript === "scripts/run_vc_execution.py"
+	) {
+		return { ok: true };
+	}
 	const checkpoint = readCheckpoint(ctx);
 	const currentUnit = findUnit(checkpoint.data.currentUnit);
 	if (!currentUnit) {

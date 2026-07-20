@@ -1,7 +1,7 @@
 {
 	"name": "sure_feed",
 	"command": "/sure_feed",
-	"description": "Feed ModelScope models into the SURE pipeline: scan, match to a SURE task family, collect metadata, convert to the SURE resource layout, rank/select, and emit a handoff manifest for /sure_onboard.",
+	"description": "Feed ModelScope, HuggingFace, or GitHub models into the SURE pipeline: discover, match to a SURE task family, collect metadata, synthesize MODEL_INPUT, rank/select, and emit a handoff manifest for /sure_onboard.",
 	"prompt": "SKILL.md",
 	"hooks": {
 		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
@@ -13,15 +13,33 @@
 	},
 	"artifacts": [
 		{
-			"type": "handoff_manifest",
-			"path": "artifacts/handoff_manifest.json",
+			"type": "model_input",
+			"path": "artifacts/model_input.yaml",
 			"required": true,
-			"description": "Final handoff manifest (handoff_manifest.json) listing selected models with repo/weights paths for /sure_onboard."
+			"description": "Run-local MODEL_INPUT YAML; successful feed runs also publish the canonical onboarding copy under sure/handoffs/<model_name>/model_input.yaml."
+		},
+		{
+			"type": "feed_report",
+			"path": "artifacts/feed_report.json",
+			"required": true,
+			"description": "Human-readable feed report summarizing discovery, selected model, evidence, diagnostics, and the /sure_onboard next action."
+		},
+		{
+			"type": "model_input_result",
+			"path": "artifacts/debug/model_input_result.json",
+			"required": false,
+			"description": "Debug-only synthesized MODEL_INPUT envelope used by the state-machine gate."
+		},
+		{
+			"type": "handoff_manifest",
+			"path": "artifacts/debug/handoff_manifest.json",
+			"required": false,
+			"description": "Debug-only terminal state-machine manifest indexing the handoff MODEL_INPUT for /sure_onboard."
 		}
 	],
 	"ui": {
 		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
-		"artifactTypes": ["handoff_manifest", "scan_result", "rank_select_result"],
+		"artifactTypes": ["model_input", "feed_report", "handoff_manifest", "model_input_result", "scan_result", "rank_select_result"],
 		"defaultExpandedSections": ["diagnostics", "artifacts"]
 	}
 }

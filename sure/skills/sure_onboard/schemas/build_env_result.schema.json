@@ -7,13 +7,49 @@
 	"required": ["env_ready"],
 	"properties": {
 		"env_ready": { "type": "boolean" },
+		"model_id": { "type": "string" },
+		"model_name": { "type": "string" },
 		"backend": { "type": "string" },
+		"installer": { "type": "string" },
 		"python_version": { "type": "string" },
+		"python_executable": { "type": "string" },
+		"model_dir": { "type": "string" },
+		"artifacts_dir": { "type": "string" },
 		"lockfile_path": { "type": ["string", "null"] },
 		"docker_image": { "type": ["string", "null"] },
 		"duration_seconds": { "type": "number" },
 		"log_path": { "type": "string" },
-		"failures": { "type": "array", "items": { "type": "string" } }
+		"runtime_checks": {
+			"type": "object",
+			"properties": {
+				"required_imports": {
+					"type": "array",
+					"items": { "type": "string" }
+				},
+				"require_cuda": { "type": "boolean" }
+			},
+			"additionalProperties": true
+		},
+		"runtime_probe": {
+			"type": "object",
+			"properties": {
+				"status": { "type": "string" },
+				"python_executable": { "type": "string" },
+				"python_version": { "type": "string" },
+				"imports": { "type": "object" },
+				"torch": { "type": "object" },
+				"error": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
+		"repairs": {
+			"type": "array",
+			"items": {
+				"type": ["object", "string"]
+			}
+		},
+		"failures": { "type": "array", "items": { "type": "string" } },
+		"notes": { "type": "string" }
 	},
 	"additionalProperties": false
 }

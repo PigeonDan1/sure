@@ -38,6 +38,26 @@ def _load_samples(jsonl_path: Path) -> list[dict[str, Any]]:
     return samples
 
 
+def _default_metric(task: str | None, language: str | None) -> str:
+    task_name = (task or "").upper()
+    language_name = (language or "").lower()
+    if task_name in {"SER", "GR", "SLU"}:
+        return "accuracy"
+    if task_name == "S2TT":
+        return "bleu"
+    if task_name == "SD":
+        return "der"
+    if task_name == "SA-ASR":
+        return "cpwer"
+    if task_name == "TTS":
+        return "tts_cer" if language_name.startswith(("zh", "cmn", "yue")) else "tts_wer"
+    if task_name == "ASR" and language_name == "cs":
+        return "mer"
+    if task_name == "ASR" and language_name == "en":
+        return "wer"
+    return "cer"
+
+
 def _materialize_one(
     dataset_manager: DatasetManager,
     sota_manager: SOTAManager,
@@ -65,13 +85,15 @@ def _materialize_one(
             handle.write(f"{sample.get('key', '')}\t\n")
 
     info = dataset_manager.get_info(canonical_name) or {}
-    metric = sota_manager.get_metric(canonical_name)
+    task = samples[0].get("task", info.get("task"))
+    language = samples[0].get("language", info.get("language"))
+    metric = sota_manager.get_metric(canonical_name) or _default_metric(task, language)
 
     return {
         "dataset": canonical_name,
         "display_name": info.get("display_name"),
-        "task": samples[0].get("task", info.get("task")),
-        "language": samples[0].get("language", info.get("language")),
+        "task": task,
+        "language": language,
         "metric": metric,
         "num_samples": len(samples),
         "jsonl_path": str(jsonl_path),
@@ -95,8 +117,10 @@ def main() -> int:
     sota_manager = SOTAManager()
     output_dir = Path(args.output_dir)
 
+    dataset_names = dataset_manager.expand_dataset_names(args.dataset)
+
     templates: list[dict[str, Any]] = []
-    for dataset_name in args.dataset:
+    for dataset_name in dataset_names:
         logger.info("Materializing prediction template", dataset=dataset_name)
         templates.append(
             _materialize_one(

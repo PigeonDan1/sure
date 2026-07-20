@@ -1,0 +1,127 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "model_input.schema.json",
+	"title": "Canonical SURE MODEL_INPUT",
+	"description": "The normalized MODEL_INPUT block consumed by /sure_onboard before model onboarding.",
+	"type": "object",
+	"required": [
+		"model_id",
+		"model_name",
+		"task_type",
+		"deployment_type",
+		"repo",
+		"weights",
+		"environment_hint",
+		"phase1_runtime_target",
+		"entrypoints",
+		"fixture",
+		"io_contract"
+	],
+	"properties": {
+		"model_id": { "type": "string" },
+		"model_name": { "type": "string" },
+		"task_type": {
+			"type": "string",
+			"enum": ["asr", "s2tt", "sd", "ser", "tts", "vc", "kws", "slu", "gr", "speech_understanding", "sa-asr", "sa_asr"]
+		},
+		"deployment_type": { "type": "string", "enum": ["local", "api"] },
+		"repo": {
+			"type": "object",
+			"required": ["url", "commit"],
+			"properties": {
+				"url": { "type": "string" },
+				"commit": { "type": ["string", "null"] }
+			},
+			"additionalProperties": true
+		},
+		"weights": {
+			"type": "object",
+			"required": ["source", "local_path", "required", "cache_policy", "local_dir_name"],
+			"properties": {
+				"source": {
+					"type": "string",
+					"enum": ["huggingface", "modelscope", "local", "api", "pip", "release_or_pypi"]
+				},
+				"local_path": { "type": ["string", "null"] },
+				"required": { "type": "boolean" },
+				"cache_policy": { "type": "string" },
+				"local_dir_name": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
+		"environment_hint": {
+			"type": "object",
+			"required": ["preferred_backend", "python_version", "requires_gpu", "system_packages"],
+			"properties": {
+				"preferred_backend": { "type": "string" },
+				"python_version": { "type": "string" },
+				"python_version_source": { "type": "string" },
+				"requires_gpu": { "type": "boolean" },
+				"system_packages": { "type": "array", "items": { "type": "string" } }
+			},
+			"additionalProperties": true
+		},
+		"phase1_runtime_target": { "type": ["string", "array"] },
+		"entrypoints": {
+			"type": "object",
+			"required": ["import_test", "load_test", "infer_test"],
+			"properties": {
+				"import_test": { "type": "string" },
+				"load_test": { "type": "string" },
+				"infer_test": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
+		"runtime_strategy": {
+			"type": "object",
+			"properties": {
+				"type": { "type": "string", "enum": ["python_library", "cli_or_library", "api", "server"] },
+				"framework": { "type": "string" },
+				"load_surface": { "type": "string" },
+				"inference_surface": { "type": "string" },
+				"evidence_terms": { "type": "array", "items": { "type": "string" } }
+			},
+			"additionalProperties": true
+		},
+		"fixture": {
+			"type": "object",
+			"required": ["task_specific", "fallback_allowed"],
+			"properties": {
+				"fixture_id": { "type": "string" },
+				"fixture_source": { "type": "string", "enum": ["task_registry", "model_specific"] },
+				"fixture_index": { "type": "string" },
+				"fixture_root": { "type": "string" },
+				"gt": { "type": "string" },
+				"manifest": { "type": "string" },
+				"audio": { "type": "string" },
+				"text": { "type": "string" },
+				"reference_audio": { "type": "string" },
+				"samples": { "type": "array", "items": { "type": "object" } },
+				"task_specific": { "type": "boolean" },
+				"fallback_allowed": { "type": "boolean" }
+			},
+			"additionalProperties": true
+		},
+		"io_contract": {
+			"type": "object",
+			"required": [
+				"input_type",
+				"output_type",
+				"primary_field",
+				"required_fields",
+				"nonempty_fields",
+				"json_serializable"
+			],
+			"properties": {
+				"input_type": { "type": "string" },
+				"output_type": { "type": "string" },
+				"primary_field": { "type": "string" },
+				"required_fields": { "type": "array", "items": { "type": "string" } },
+				"nonempty_fields": { "type": "array", "items": { "type": "string" } },
+				"json_serializable": { "type": "boolean" }
+			},
+			"additionalProperties": true
+		}
+	},
+	"additionalProperties": true
+}
