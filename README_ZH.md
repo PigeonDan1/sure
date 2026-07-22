@@ -90,10 +90,16 @@ flowchart TB
 ### 1. 克隆并安装依赖
 
 ```bash
-git clone --branch harness-agent-eval-product-20260720 https://github.com/PigeonDan1/sure.git sure-harness
+git clone --depth 1 --single-branch --branch harness-agent-eval-product-20260720 https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
 npm run sure:doctor
+```
+
+如果受限网络下 HTTPS clone 卡住，配置 GitHub SSH key 后使用 SSH：
+
+```bash
+git clone --depth 1 --single-branch --branch harness-agent-eval-product-20260720 git@github.com:PigeonDan1/sure.git sure-harness
 ```
 
 ### 2. 启动 TUI
