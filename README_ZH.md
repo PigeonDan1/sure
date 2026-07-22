@@ -87,16 +87,19 @@ flowchart TB
 
 ## 快速开始
 
-### 1. 安装依赖
+### 1. 克隆并安装依赖
 
 ```bash
+git clone --branch harness-agent-eval-product-20260720 https://github.com/PigeonDan1/sure.git sure-harness
+cd sure-harness
 npm install --ignore-scripts
+npm run sure:doctor
 ```
 
 ### 2. 启动 TUI
 
 ```bash
-./pi-test.sh
+./pi-test.sh --provider openai --model <model-name> --thinking high --approve
 ```
 
 ### 3. 运行工作流
@@ -104,8 +107,19 @@ npm install --ignore-scripts
 ```text
 /sure_init
 /sure_feed source=modelscope query="english asr" max_models=20
-/sure_onboard model_input=sure/handoffs/<model>/model_input.yaml
+/sure_onboard model=<model>
 /sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=vc
+```
+
+`/sure_onboard model=<model>` 默认读取 `sure/handoffs/<model>/model_input.yaml`。
+只有 handoff 不在默认位置时，才使用 `model_input_path=...`。
+
+一个小型 ASR smoke 路径：
+
+```text
+/sure_feed https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf
+/sure_onboard model=Qwen__Qwen3-ASR-0.6B-hf device=auto package=none
+/sure_eval model=Qwen__Qwen3-ASR-0.6B-hf datasets=aishell1 metrics=cer max_samples=1 execution=local device=auto
 ```
 
 本地开发可显式使用 `execution=local`：
@@ -132,6 +146,20 @@ git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-e
 export SURE_EVALUATION_HOME=/path/to/sure-evaluation
 ```
 
+`/sure_eval` 还需要 SURE benchmark JSONL 文件。可以软链到默认 harness 路径：
+
+```bash
+mkdir -p data/datasets/sure_benchmark
+ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
+npm run sure:doctor
+```
+
+也可以通过环境变量指向包含 `sure_benchmark/jsonl` 的数据根目录：
+
+```bash
+export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
+```
+
 典型评估链路：
 
 | 任务 | 链路 |
@@ -153,6 +181,35 @@ export SURE_EVALUATION_HOME=/path/to/sure-evaluation
 
 运行产物应该落到 ignore 路径，例如 `.sure/`、`sure/models/`、
 `sure/handoffs/*/artifacts/`、`sure/skills/sure_eval/results/`。
+
+## 排错
+
+### `Cannot find module 'typebox'`
+
+SURE 的 slash commands 会一起注册，所以 `/sure_onboard` 的依赖缺失也可能在你运行
+`/sure_feed` 时先暴露出来。这不是 `/sure_feed` 的模型发现逻辑失败，而是本地依赖或启动入口
+没有准备好。
+
+请在仓库根目录运行：
+
+```bash
+npm install --ignore-scripts
+npm run sure:doctor
+```
+
+如果 `sure:doctor` 提示 sparse checkout 路径缺失，先补齐必要路径：
+
+```bash
+git sparse-checkout add scripts fixtures packages/coding-agent/examples
+npm install --ignore-scripts
+npm run sure:doctor
+```
+
+然后通过本仓库的本地入口启动 TUI：
+
+```bash
+./pi-test.sh --provider openai --model <model-name> --thinking high --approve
+```
 
 ## Skill 包结构
 

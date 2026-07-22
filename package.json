@@ -20,6 +20,7 @@
 		"check:install-lock:coding-agent": "node scripts/generate-coding-agent-install-lock.mjs --check",
 		"check:sure-hooks": "tsgo --noEmit -p tsconfig.sure-hooks.json",
 		"check:ts-imports": "node scripts/check-ts-relative-imports.mjs",
+		"sure:doctor": "node scripts/sure-doctor.mjs",
 		"profile:tui": "node scripts/profile-coding-agent-node.mjs --mode tui",
 		"profile:rpc": "node scripts/profile-coding-agent-node.mjs --mode rpc",
 		"test": "npm run test --workspaces --if-present",

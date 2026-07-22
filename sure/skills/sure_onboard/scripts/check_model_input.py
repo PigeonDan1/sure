@@ -38,6 +38,19 @@ def infer_repo_root(run_dir: Path) -> Path:
     return Path.cwd().resolve()
 
 
+def allowed_model_root(data: dict, run_dir: Path) -> tuple[Path, Path]:
+    path_policy = data.get("path_policy")
+    if isinstance(path_policy, dict):
+        raw_allowed = path_policy.get("allowed_model_root")
+        if raw_allowed:
+            allowed_root = Path(str(raw_allowed)).expanduser().resolve()
+            if allowed_root.name == "models" and allowed_root.parent.name == "sure":
+                return allowed_root.parent.parent, allowed_root
+            return allowed_root.parent, allowed_root
+    repo_root = infer_repo_root(run_dir)
+    return repo_root, (repo_root / "sure" / "models").resolve()
+
+
 def is_relative_to(path: Path, parent: Path) -> bool:
     try:
         path.relative_to(parent)
@@ -108,8 +121,7 @@ def main() -> int:
         return 1
 
     model_dir = Path(str(data.get("model_dir"))).expanduser()
-    repo_root = infer_repo_root(Path(args.run_dir))
-    allowed_root = (repo_root / "sure" / "models").resolve()
+    repo_root, allowed_root = allowed_model_root(data, Path(args.run_dir))
     model_dir_abs = model_dir if model_dir.is_absolute() else repo_root / model_dir
     if model_dir_abs.exists() and model_dir_abs.is_symlink():
         print(

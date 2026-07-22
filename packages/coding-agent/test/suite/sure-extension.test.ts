@@ -416,6 +416,45 @@ describe("Sure extension", () => {
 		expect(harness.session.getActiveToolNames()).not.toContain("sure_update_state");
 	});
 
+	it("clears stale repair instructions after a later successful finish", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/missing-manifest.json`,
+						summary: "not yet",
+					}),
+				);
+			},
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId);
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => harness.session.messages.filter((message) => message.role === "toolResult").length >= 2);
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("success");
+		expect(run.lastRepair).toBeUndefined();
+	});
+
 	it("accepts required artifacts recorded with concrete run-relative paths", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
@@ -444,6 +483,49 @@ describe("Sure extension", () => {
 							path: `.sure/runs/${runId}/artifacts/verdict.json`,
 						},
 					],
+				});
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
+
+		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
+		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain("finished");
+		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
+	});
+
+	it("accepts required artifacts recorded in final manifest outputs", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir, {
+			artifacts: [
+				{
+					type: "model_input",
+					path: "artifacts/model_input.yaml",
+					required: true,
+					description: "Run-local MODEL_INPUT YAML.",
+				},
+			],
+		});
+
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				mkdirSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts"), { recursive: true });
+				writeFileSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "model_input.yaml"), "model_id: demo\n");
+				writeValidManifest(harness.tempDir, runId, {
+					outputs: {
+						model_input: `.sure/runs/${runId}/artifacts/model_input.yaml`,
+					},
 				});
 				return fauxAssistantMessage(
 					fauxToolCall("sure_finish", {

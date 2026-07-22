@@ -54,4 +54,20 @@ if [[ "$NO_ENV" == "true" ]]; then
   echo "Running without API keys..."
 fi
 
+if [[ ! -x "$SCRIPT_DIR/node_modules/.bin/tsx" ]]; then
+  echo "Missing node_modules/.bin/tsx."
+  echo "Run from the repository root:"
+  echo "  npm install --ignore-scripts"
+  echo "  npm run sure:doctor"
+  exit 1
+fi
+
+if ! node -e "const base = '$SCRIPT_DIR/packages/coding-agent/src/core/sure'; for (const p of ['typebox','typebox/compile','typebox/value']) require.resolve(p, { paths: [base] });" >/dev/null 2>&1; then
+  echo "Missing SURE runtime dependency: typebox."
+  echo "Run from the repository root:"
+  echo "  npm install --ignore-scripts"
+  echo "  npm run sure:doctor"
+  exit 1
+fi
+
 "$SCRIPT_DIR/node_modules/.bin/tsx" --tsconfig "$SCRIPT_DIR/tsconfig.json" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}

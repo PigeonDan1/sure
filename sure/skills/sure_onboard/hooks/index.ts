@@ -199,6 +199,10 @@ function commandUsesSkillScriptPath(ctx: SureHookContext, command: string, invok
 	);
 }
 
+function cwdIsSkillPackage(ctx: SureHookContext): boolean {
+	return resolve(ctx.cwd) === resolve(ctx.packageDir);
+}
+
 function modelDirFromResolvedArtifact(ctx: SureHookContext): string | undefined {
 	const resolved = readArtifact(ctx, "model_input_resolved.json");
 	if (isRecord(resolved) && typeof resolved.model_dir === "string") {
@@ -661,7 +665,11 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 				},
 			};
 		}
-		if (!commandUsesSkillScriptPath(ctx, command, invokedScript) && !commandMentionsCdTo(command, ctx.packageDir, ctx.cwd)) {
+		if (
+			!cwdIsSkillPackage(ctx) &&
+			!commandUsesSkillScriptPath(ctx, command, invokedScript) &&
+			!commandMentionsCdTo(command, ctx.packageDir, ctx.cwd)
+		) {
 			const repair = skillScriptRepair(ctx, currentUnit, invokedScript);
 			return {
 				ok: false,

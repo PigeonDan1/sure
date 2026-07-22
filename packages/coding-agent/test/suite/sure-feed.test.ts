@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { advance, type CheckpointData } from "../../../../sure/skills/sure_feed/hooks/checkpoints.ts";
-import { postToolResult, preToolCall } from "../../../../sure/skills/sure_feed/hooks/index.ts";
+import { postToolResult, preFinish, preToolCall } from "../../../../sure/skills/sure_feed/hooks/index.ts";
 import {
 	FIRST_UNIT,
 	findUnit,
@@ -671,5 +671,74 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		// No match_task_result.json written.
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(true);
+	});
+});
+
+describe("sure_feed preFinish terminal state", () => {
+	function finishCtx(name: string): { ctx: SureHookContext; runDir: string } {
+		const runDir = resolve(__dirname, "tmp-finish", name);
+		mkdirSync(join(runDir, "artifacts", "debug"), { recursive: true });
+		const ctx: SureHookContext = {
+			point: "pre_finish",
+			run: { id: "test-feed-finish", command: "/sure_feed", status: "running" } as never,
+			skill: { name: "sure_feed", command: "/sure_feed" } as never,
+			cwd: PACKAGE_DIR,
+			packageDir: PACKAGE_DIR,
+			runDir,
+			args: "",
+		};
+		return { ctx, runDir };
+	}
+
+	function seedTerminalFeedRun(runDir: string, completedUnits: string[]): void {
+		writeFileSync(
+			join(runDir, "state.json"),
+			JSON.stringify(
+				{
+					checkpoint: {
+						data: {
+							currentUnit: "emit_handoff_manifest",
+							completedUnits,
+							retries: {},
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+		writeDebugArtifact(runDir, "handoff_manifest.json", {
+			manifest_path: "sure/handoffs/Qwen__Qwen3-ASR-0.6B-hf/artifacts/handoff_manifest.json",
+			source: "huggingface",
+			models: [
+				{
+					model_id: "Qwen/Qwen3-ASR-0.6B-hf",
+					repo: "https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf",
+					weights_source: "huggingface",
+					task_type: "asr",
+					score: 1.4485,
+					model_input_path: "sure/handoffs/Qwen__Qwen3-ASR-0.6B-hf/model_input.yaml",
+				},
+			],
+			next_action: "/sure_onboard model=Qwen__Qwen3-ASR-0.6B-hf",
+		});
+	}
+
+	it("does not double-count emit_handoff_manifest when finish runs after the terminal checkpoint", () => {
+		const { ctx, runDir } = finishCtx("terminal-already-counted");
+		seedTerminalFeedRun(runDir, [
+			"scan_modelscope",
+			"match_task",
+			"collect_metadata",
+			"convert_to_oref",
+			"synthesize_model_input",
+			"rank_and_select",
+			"emit_handoff_manifest",
+		]);
+		const result = preFinish(ctx);
+		expect(result.ok).toBe(true);
+		expect(result.state_patch?.counters?.completed_units).toBe(7);
+		expect(result.state_patch?.counters?.total_units).toBe(7);
 	});
 });

@@ -249,4 +249,43 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 		const result = preFinish(ctx);
 		expect(result.ok).toBe(true);
 	});
+
+	it("does not double-count run_report when finish runs after the terminal checkpoint", () => {
+		const { ctx, runDir } = finishCtx("terminal-already-counted");
+		const artifactRoot = seedCompletedEvaluationArtifacts(runDir);
+		seedCheckpoint(runDir, {
+			currentUnit: "run_report",
+			completedUnits: [
+				"task_classification",
+				"tool_readiness_routing",
+				"plan",
+				"dataset_scope",
+				"script_routing",
+				"execution_surface",
+				"execution_readiness",
+				"smoke_test",
+				"submit_vc_run",
+				"execute_wait",
+				"assessment",
+				"run_report",
+			],
+			retries: {},
+		});
+		writeArtifact(runDir, "main_agent_run_report.json", {
+			run_id: "test-eval-finish",
+			timestamp: "2026-07-12T00:00:00Z",
+			task_type: "asr",
+			goal: "smoke eval",
+			selected_datasets: ["aishell1"],
+			executed_steps: [{ name: "evaluate_predictions", script: "scripts/evaluate_predictions.py" }],
+			status: "success",
+			report_persisted: true,
+			execution_path_actual: "vc_submit",
+			artifact_root: artifactRoot,
+		});
+		const result = preFinish(ctx);
+		expect(result.ok).toBe(true);
+		expect(result.state_patch?.counters?.completed_units).toBe(12);
+		expect(result.state_patch?.counters?.total_units).toBe(12);
+	});
 });

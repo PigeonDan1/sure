@@ -103,6 +103,7 @@ function seedLocalReadyArtifacts(runDir: string): string {
 	}
 
 	const stageResults: Record<string, unknown> = {
+		"env_compat_result.json": { compat_ok: true },
 		"import_result.json": { import_passed: true },
 		"load_result.json": { load_passed: true },
 		"infer_result.json": { infer_passed: true },
@@ -624,16 +625,22 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 
 	it("advances from LOAD_MODEL_INPUT after materialized model_input_resolved.json passes the gate", () => {
 		const { ctx, runDir } = freshCtx("load-model-input-pass");
+		const modelDir = join(ctx.cwd, "sure", "models", "rednote-hilab__dots.tts-base");
 		seedCheckpoint(runDir, { currentUnit: "load_model_input", completedUnits: [], retries: {} });
 		writeArtifact(runDir, "model_input_resolved.json", {
 			model_input_path: null,
 			model_id: "rednote-hilab/dots.tts-base",
 			model_name: "rednote-hilab__dots.tts-base",
-			model_dir: "/tmp/sure/models/rednote-hilab__dots.tts-base",
+			model_dir: modelDir,
 			repo_url: "https://huggingface.co/rednote-hilab/dots.tts-base",
 			task_type: "tts",
 			deployment_type: "local",
 			package_profile: "none",
+			path_policy: {
+				model_dir_is_harness_owned: true,
+				model_dir_symlink_allowed: false,
+				allowed_model_root: join(ctx.cwd, "sure", "models"),
+			},
 		});
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(true);

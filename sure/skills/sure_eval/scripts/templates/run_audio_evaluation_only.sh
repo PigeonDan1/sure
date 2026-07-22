@@ -67,6 +67,22 @@ if [[ ! -d "$RUN_DIR" ]]; then
 fi
 
 export PYTHONPATH="$REPO_DEPS_TARGET:$REPO_ROOT/scripts:$REPO_ROOT/src${PYTHONPATH:+:${PYTHONPATH}}"
+
+ensure_python_pip() {
+  local python_bin="$1"
+  if "$python_bin" -m pip --version >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Python runtime has no pip; bootstrapping with ensurepip: $python_bin"
+  if "$python_bin" -m ensurepip --upgrade >/dev/null 2>&1 \
+    && "$python_bin" -m pip --version >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "ERROR: Python runtime cannot install repository dependencies because pip is unavailable: $python_bin"
+  echo "Hint: recreate the venv with pip/seed enabled, or run: $python_bin -m ensurepip --upgrade"
+  exit 2
+}
+
 if [[ "$AUDIO_EVAL_SEGMENT" == "segment_tts_mos_utmos" && -z "${SURE_EVAL_NODE_LOCAL_PYTHON_SCORING_UTMOS:-}" ]]; then
   if [[ ! -x "/usr/bin/python3.8" ]]; then
     UTMOS_NODE_PYTHON="$(command -v "$PYTHON_BIN" 2>/dev/null || true)"
@@ -85,6 +101,7 @@ import typer
 import click
 PY
 then
+  ensure_python_pip "$PYTHON_BIN"
   echo "Installing missing repository runtime dependencies into $REPO_DEPS_TARGET..."
   rm -rf "$REPO_DEPS_TARGET"
   "$PYTHON_BIN" -m pip install --retries 10 --timeout 60 --target "$REPO_DEPS_TARGET" \

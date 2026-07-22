@@ -511,7 +511,9 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 			counters: countersFor(
 				{
 					currentUnit: LAST_UNIT.id,
-					completedUnits: [...checkpoint.data.completedUnits, LAST_UNIT.id],
+					completedUnits: checkpoint.data.completedUnits.includes(LAST_UNIT.id)
+						? checkpoint.data.completedUnits
+						: [...checkpoint.data.completedUnits, LAST_UNIT.id],
 					retries: checkpoint.data.retries,
 				},
 				0,

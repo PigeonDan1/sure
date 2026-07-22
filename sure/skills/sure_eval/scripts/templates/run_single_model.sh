@@ -217,6 +217,21 @@ fi
 
 mkdir -p "$RUN_DIR/predictions/logs"
 
+ensure_python_pip() {
+  local python_bin="$1"
+  if "$python_bin" -m pip --version >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Python runtime has no pip; bootstrapping with ensurepip: $python_bin"
+  if "$python_bin" -m ensurepip --upgrade >/dev/null 2>&1 \
+    && "$python_bin" -m pip --version >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "ERROR: Python runtime cannot install repository dependencies because pip is unavailable: $python_bin"
+  echo "Hint: recreate the venv with pip/seed enabled, or run: $python_bin -m ensurepip --upgrade"
+  exit 2
+}
+
 if ! "$HARNESS_PYTHON_BIN" - <<'PY' >/dev/null 2>&1
 import pydantic
 import pydantic_settings
@@ -225,6 +240,7 @@ import structlog
 import yaml
 PY
 then
+  ensure_python_pip "$HARNESS_PYTHON_BIN"
   echo "Installing missing repository runtime dependencies into $REPO_DEPS_TARGET..."
   rm -rf "$REPO_DEPS_TARGET"
   "$HARNESS_PYTHON_BIN" -m pip install --retries 10 --timeout 60 --target "$REPO_DEPS_TARGET" \

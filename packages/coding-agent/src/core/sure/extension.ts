@@ -269,6 +269,23 @@ function validateManifestArtifacts(
 	return undefined;
 }
 
+function outputArtifacts(manifest: SureManifestEnvelope): Array<{ type?: string; path?: string }> {
+	const artifacts: Array<{ type?: string; path?: string }> = [];
+	for (const [key, value] of Object.entries(manifest.outputs ?? {})) {
+		if (typeof value === "string" && value.trim() !== "") {
+			artifacts.push({ type: key, path: value });
+			continue;
+		}
+		if (isStringRecord(value) && typeof value.path === "string" && value.path.trim() !== "") {
+			artifacts.push({
+				type: typeof value.type === "string" ? value.type : key,
+				path: value.path,
+			});
+		}
+	}
+	return artifacts;
+}
+
 function validateRequiredArtifact(
 	requirement: SureArtifactRequirement,
 	manifest: SureManifestEnvelope,
@@ -287,7 +304,7 @@ function validateRequiredArtifact(
 		return `Required artifact ${label} must declare a path in sure.skill.json.`;
 	}
 
-	const artifacts = manifest.artifacts ?? [];
+	const artifacts = [...(manifest.artifacts ?? []), ...outputArtifacts(manifest)];
 	const candidate = artifacts.find((artifact) => artifactSatisfiesRequirement(runManager, run, artifact, requirement));
 	if (!candidate) {
 		const description = requirement.description ? ` (${requirement.description})` : "";
@@ -633,6 +650,7 @@ export function createSureExtension(): ExtensionFactory {
 							errorSummary: finish.error_summary,
 							artifacts: finish.artifacts,
 							finishedAt: new Date().toISOString(),
+							lastRepair: undefined,
 						},
 						"finished",
 						{ finish, manifestPath },

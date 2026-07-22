@@ -88,16 +88,19 @@ flowchart TB
 
 ## Quick start
 
-### 1. Install dependencies
+### 1. Clone and install
 
 ```bash
+git clone --branch harness-agent-eval-product-20260720 https://github.com/PigeonDan1/sure.git sure-harness
+cd sure-harness
 npm install --ignore-scripts
+npm run sure:doctor
 ```
 
 ### 2. Launch the TUI
 
 ```bash
-./pi-test.sh
+./pi-test.sh --provider openai --model <model-name> --thinking high --approve
 ```
 
 ### 3. Run the workflow
@@ -105,8 +108,19 @@ npm install --ignore-scripts
 ```text
 /sure_init
 /sure_feed source=modelscope query="english asr" max_models=20
-/sure_onboard model_input=sure/handoffs/<model>/model_input.yaml
+/sure_onboard model=<model>
 /sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=vc
+```
+
+`/sure_onboard model=<model>` reads `sure/handoffs/<model>/model_input.yaml` by
+default. Use `model_input_path=...` only when the handoff lives somewhere else.
+
+For a small ASR smoke path:
+
+```text
+/sure_feed https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf
+/sure_onboard model=Qwen__Qwen3-ASR-0.6B-hf device=auto package=none
+/sure_eval model=Qwen__Qwen3-ASR-0.6B-hf datasets=aishell1 metrics=cer max_samples=1 execution=local device=auto
 ```
 
 For local development, use `execution=local`:
@@ -136,6 +150,21 @@ You can also point at a local engine explicitly:
 export SURE_EVALUATION_HOME=/path/to/sure-evaluation
 ```
 
+`/sure_eval` also needs SURE benchmark JSONL files. Either link them into the
+default harness location:
+
+```bash
+mkdir -p data/datasets/sure_benchmark
+ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
+npm run sure:doctor
+```
+
+or point the runtime at a dataset root that contains `sure_benchmark/jsonl`:
+
+```bash
+export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
+```
+
 Typical evaluation routes:
 
 | Task | Route |
@@ -158,6 +187,34 @@ Typical evaluation routes:
 Runtime outputs are expected under ignored paths such as `.sure/`,
 `sure/models/`, `sure/handoffs/*/artifacts/`, and
 `sure/skills/sure_eval/results/`.
+
+## Troubleshooting
+
+### `Cannot find module 'typebox'`
+
+SURE commands are registered together. A missing dependency in `/sure_onboard`
+can therefore appear when you try to run `/sure_feed`.
+
+Run the commands from the repository root:
+
+```bash
+npm install --ignore-scripts
+npm run sure:doctor
+```
+
+If `sure:doctor` reports missing sparse-checkout paths, add them explicitly:
+
+```bash
+git sparse-checkout add scripts fixtures packages/coding-agent/examples
+npm install --ignore-scripts
+npm run sure:doctor
+```
+
+Then start the TUI through the local repository entrypoint:
+
+```bash
+./pi-test.sh --provider openai --model <model-name> --thinking high --approve
+```
 
 ## Skill package layout
 
