@@ -217,6 +217,15 @@ npm run sure:doctor
 ./pi-test.sh --provider openai --model <model-name> --thinking high --approve
 ```
 
+### `rate_limit_exceeded: Concurrency limit exceeded`
+
+模型提供方拒绝了这次 agent 请求，因为同一个账号已经有太多活跃请求。它会中断当前
+TUI 会话，但不代表 SURE run 产物或模型 wrapper 本身无效。
+
+关闭使用同一 provider 账号的其他 Pi/Codex/TUI 会话，等待网关释放进行中的请求，然后重新运行
+同一条 slash command。对于耗时较长的 `/sure_onboard`，可以先查看
+`.sure/runs/<run_id>/state.json`，确认上一次停在了哪个 state-machine 节点。
+
 ## Skill 包结构
 
 ```text

@@ -223,6 +223,17 @@ Then start the TUI through the local repository entrypoint:
 ./pi-test.sh --provider openai --model <model-name> --thinking high --approve
 ```
 
+### `rate_limit_exceeded: Concurrency limit exceeded`
+
+The model provider rejected the agent request because the same account already
+has too many active requests. This interrupts the TUI session; it does not mean
+the SURE run artifacts or model wrapper are invalid.
+
+Close other Pi/Codex/TUI sessions using the same provider account, wait for the
+gateway to release the in-flight request, then re-run the same slash command.
+For long `/sure_onboard` runs, inspect `.sure/runs/<run_id>/state.json` to see
+the last completed unit before retrying.
+
 ## Skill package layout
 
 ```text
