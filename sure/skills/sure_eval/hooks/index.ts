@@ -441,6 +441,7 @@ function failOrRetry(
 			`${repair} (unit "${unit.id}" FAILED after ${attempts} retries; classify via failure_taxonomy and either repair manually or finish with status failed.)`,
 			`Gate "${unit.id}" exhausted retries: ${reason}`,
 			countersFor(next.data, attempts),
+			next,
 		);
 	}
 	return {

@@ -218,7 +218,7 @@ export function runBackend(
 	};
 }
 
-export function failure(repair: string, message: string, counters?: Record<string, number>): SureHookResult {
+export function failure(repair: string, message: string, counters?: Record<string, number>, checkpoint?: RunCheckpoint): SureHookResult {
 	return {
 		ok: false,
 		repair,
@@ -226,6 +226,7 @@ export function failure(repair: string, message: string, counters?: Record<strin
 			phase: { id: "gate", label: "SURE onboard gate blocked", status: "blocked" },
 			message,
 			counters,
+			checkpoint,
 			diagnostics: [{ severity: "error", message, repair }],
 		},
 	};
