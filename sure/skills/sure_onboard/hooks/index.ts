@@ -843,6 +843,7 @@ function failOrRetry(
 			`${repair} After ${attempts} consecutive blocked attempts, /sure_onboard still cannot produce a valid artifact for unit "${unit.id}". Stop and ask the user to confirm the model_input_path or repo link, access permissions, and whether the referenced documentation contains enough install, load, inference, and artifact information.`,
 			`Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`,
 			countersFor(next.data, attempts),
+			next,
 		);
 	}
 	return {
