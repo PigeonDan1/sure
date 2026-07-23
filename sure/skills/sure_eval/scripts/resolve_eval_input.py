@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from sure_eval.core.config import Config
 from sure_eval.datasets import DatasetManager
+from sure_eval.datasets.dataset_manager import CSV_DATASETS
 
 from evaluation_capabilities import default_metrics_for_task_language, supported_metrics_for_task_language
 from resolve_evaluation_engine import resolve_engine_root
@@ -106,6 +107,44 @@ def _effective_dataset_task(dataset_task: str, model_task: str, metrics: list[st
         if model_task in {"TTS", "VC"}:
             return model_task
     return task
+
+
+SYNTH_TASKS = {"TTS", "VC"}
+TASK_CHECK_EXEMPT = {"OMNI", "API"}
+TASK_WORDS = {"ASR": "speech recognition", "TTS": "speech synthesis", "VC": "voice conversion"}
+
+
+class EvalInputError(ValueError):
+    pass
+
+
+def _task_label(task: str) -> str:
+    word = TASK_WORDS.get(task)
+    return f"{task} ({word})" if word else task
+
+
+def _check_task_compatibility(model: dict[str, Any], datasets: list[dict[str, Any]]) -> None:
+    model_task = _normalize_task(model.get("declared_task"))
+    if not model_task or model_task in TASK_CHECK_EXEMPT:
+        return
+    model_synth = model_task in SYNTH_TASKS
+    mismatched = []
+    for item in datasets:
+        task = _normalize_task(item.get("task"))
+        if task and task != "UNKNOWN" and (task in SYNTH_TASKS) != model_synth:
+            mismatched.append(f"dataset '{item.get('name')}' has task {_task_label(task)}")
+    if not mismatched:
+        return
+    if model_synth:
+        suggestion = "e.g. the seedtts_test_eval or cv3_eval collections"
+    else:
+        names = _dedupe([str(item.get("config_name") or "") for item in CSV_DATASETS.values() if _normalize_task(item.get("task")) == model_task])[:4]
+        suggestion = f"e.g.: {', '.join(names)}" if names else "check the dataset registry for a compatible dataset"
+    raise EvalInputError(
+        f"Task mismatch: model '{model.get('name')}' declares task {_task_label(model_task)}, "
+        f"but {'; '.join(mismatched)}. Choose datasets that match the model task, {suggestion}. "
+        f"(Model task comes from the model's config.yaml; dataset task from dataset metadata.)"
+    )
 
 
 def _write_harness_config(*, run_dir: Path, config_path: str | None) -> Path:
@@ -468,6 +507,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         engine_root,
         model_task=str(model.get("declared_task") or ""),
     )
+    if args.strict_main_flow:
+        _check_task_compatibility(model, datasets)
     tasks = _dedupe([str(item.get("task") or "UNKNOWN") for item in datasets])
     languages = _dedupe([str(item.get("language") or "") for item in datasets if item.get("language")])
     metric_list = _dedupe([metric for item in datasets for metric in item.get("default_metrics", [])])
@@ -594,7 +635,11 @@ def main() -> int:
     parser.add_argument("--output")
     args = parser.parse_args()
 
-    payload = build_payload(args)
+    try:
+        payload = build_payload(args)
+    except EvalInputError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     text = json.dumps(payload, indent=2, ensure_ascii=False)
     print(text)
     if args.output:
