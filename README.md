@@ -19,7 +19,7 @@ routing, and prediction re-evaluation into explicit slash-command workflows.
 | --- | --- |
 | Agents need a route through a complex evaluation repo. | Slash commands expose bounded, artifact-gated workflows. |
 | Evaluation results must be reproducible and reviewable. | Every run writes reports, manifests, route plans, and validation payloads. |
-| Metric routes evolve outside the harness. | The harness reads the standalone `sure-evaluation` engine at runtime. |
+| Metric routes evolve outside the harness. | The harness reads the `sure-evaluation` submodule at runtime. |
 | Existing predictions should be reusable. | `/sure_reval` recomputes metrics without rerunning model inference. |
 
 ## Workflow
@@ -48,22 +48,25 @@ flowchart LR
 | Model preparation | `/sure_onboard` | Feed handoff or explicit `model_input_path`. | Runnable wrapper, model spec, fixture, and `verdict.json`. |
 | Full evaluation | `/sure_eval` | Onboarded model, dataset, metric, execution target. | Predictions, validation payload, route plan, metric reports. |
 | Prediction re-evaluation | `/sure_reval` | Existing `results_dir`, run dir, or `predictions/`. | Fresh evaluation-only run and `reval_run_report.json`. |
-| Route-backed metrics | `sure-evaluation` | Local engine checkout plus benchmark JSONL files. | Current metric capabilities, exact `pipeline_id` execution. |
+| Route-backed metrics | `sure-evaluation` | Engine submodule plus benchmark JSONL files. | Current metric capabilities, exact `pipeline_id` execution. |
 
 ## Quick Start
 
 ```bash
-git clone --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
+git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
 ```
 
-Prepare the metric engine and benchmark data:
+If the repository was cloned without submodules:
 
 ```bash
-mkdir -p sure/external
-git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-evaluation
+git submodule update --init --recursive
+```
 
+Prepare benchmark data:
+
+```bash
 mkdir -p data/datasets/sure_benchmark
 ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
 npm run sure:doctor
@@ -122,8 +125,9 @@ run should produce real VC submission evidence.
 | Documentation and examples. | Predictions, metric result dumps, `.sure/` runs, virtual environments. |
 
 Expected local output paths such as `.sure/`, `sure/models/`,
-`sure/handoffs/*/artifacts/`, `sure/skills/sure_eval/results/`, and
-`sure/external/` are ignored.
+`sure/handoffs/*/artifacts/`, and `sure/skills/sure_eval/results/` are ignored.
+`sure/external/sure-evaluation` is tracked as a submodule gitlink, so the parent
+repository records the verified engine commit without committing engine files.
 
 ## License
 

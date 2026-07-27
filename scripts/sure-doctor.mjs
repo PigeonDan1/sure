@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join, resolve } from "node:path";
@@ -25,6 +26,18 @@ function fail(name, detail) {
 function readJson(path) {
 	try {
 		return JSON.parse(readFileSync(path, "utf8"));
+	} catch {
+		return undefined;
+	}
+}
+
+function runGit(args, cwd = root) {
+	try {
+		return execFileSync("git", args, {
+			cwd,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+		}).trim();
 	} catch {
 		return undefined;
 	}
@@ -120,10 +133,51 @@ if (home) {
 	}
 }
 
-if (existsSync(join(root, "sure", "external", "sure-evaluation")) || process.env.SURE_EVALUATION_HOME) {
-	pass("sure-evaluation", process.env.SURE_EVALUATION_HOME ?? "sure/external/sure-evaluation");
+const defaultEngineRelPath = "sure/external/sure-evaluation";
+const defaultEnginePath = join(root, "sure", "external", "sure-evaluation");
+const engineOverride = process.env.SURE_EVALUATION_HOME;
+if (engineOverride) {
+	if (existsSync(engineOverride)) {
+		pass("sure-evaluation override", engineOverride);
+	} else {
+		warn("sure-evaluation override", `${engineOverride} does not exist; unset SURE_EVALUATION_HOME or fix the path`);
+	}
 } else {
-	warn("sure-evaluation", "not configured; needed before /sure_eval, not required for /sure_feed or /sure_onboard");
+	const gitmodulesPath = join(root, ".gitmodules");
+	const gitlink = runGit(["ls-files", "--stage", "--", defaultEngineRelPath]);
+	const indexedCommit = gitlink?.startsWith("160000 ") ? gitlink.split(/\s+/)[1] : undefined;
+	const moduleUrl = existsSync(gitmodulesPath)
+		? runGit(["config", "--file", ".gitmodules", "--get", `submodule.${defaultEngineRelPath}.url`])
+		: undefined;
+	const moduleBranch = existsSync(gitmodulesPath)
+		? runGit(["config", "--file", ".gitmodules", "--get", `submodule.${defaultEngineRelPath}.branch`])
+		: undefined;
+
+	if (!existsSync(gitmodulesPath) || !indexedCommit) {
+		warn(
+			"sure-evaluation submodule",
+			"not registered as a git submodule; expected sure/external/sure-evaluation for /sure_eval and /sure_reval",
+		);
+	} else if (!existsSync(defaultEnginePath) || !existsSync(join(defaultEnginePath, "pyproject.toml"))) {
+		warn(
+			"sure-evaluation submodule",
+			"not initialized; run git submodule update --init --recursive",
+		);
+	} else {
+		const headCommit = runGit(["rev-parse", "HEAD"], defaultEnginePath);
+		const commitDetail = headCommit
+			? `${headCommit.slice(0, 12)}${headCommit !== indexedCommit ? `; indexed ${indexedCommit.slice(0, 12)}` : ""}`
+			: `indexed ${indexedCommit.slice(0, 12)}`;
+		const locationDetail = `${moduleUrl ?? defaultEngineRelPath}${moduleBranch ? ` (${moduleBranch})` : ""}`;
+		if (headCommit && headCommit !== indexedCommit) {
+			warn(
+				"sure-evaluation submodule",
+				`${locationDetail} at ${commitDetail}; commit the gitlink after verification or reset the submodule`,
+			);
+		} else {
+			pass("sure-evaluation submodule", `${locationDetail} @ ${commitDetail}`);
+		}
+	}
 }
 
 const datasetRoot = process.env.SURE_EVAL_DATASETS_ROOT

@@ -2,18 +2,23 @@
 
 SURE Harness does not implement metric logic directly. It reads capabilities,
 route nodes, normalizers, exact `pipeline_id` choices, and node-local
-environments from a standalone `sure-evaluation` checkout.
+environments from the `sure-evaluation` submodule.
 
 ## Setup
 
-Keep the engine local and out of the harness repository history:
+Clone the harness with submodules:
 
 ```bash
-mkdir -p sure/external
-git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-evaluation
+git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 ```
 
-You can also point the harness at another checkout:
+For an existing clone, initialize the submodule:
+
+```bash
+git submodule update --init --recursive
+```
+
+Advanced users can still point the harness at another checkout:
 
 ```bash
 export SURE_EVALUATION_HOME=/path/to/sure-evaluation
@@ -27,31 +32,38 @@ npm run sure:doctor
 
 ## Branch Relationship
 
-Harness branch `harness-tui-agent` is designed to stay coupled to the public
-engine branch:
+Harness branch `harness-tui-agent` tracks the public engine as a Git submodule:
 
 ```text
-git@github.com:PigeonDan1/sure-evaluation.git main
+https://github.com/PigeonDan1/sure-evaluation.git main
 ```
 
-The normal local checkout is:
+The submodule path is:
 
 ```text
 sure/external/sure-evaluation
 ```
 
 Before changing `/sure_eval`, `/sure_reval`, route selection, normalization
-assumptions, or pipeline compatibility docs, sync the engine first:
+assumptions, or pipeline compatibility docs, sync and verify the submodule:
 
 ```bash
-git -C sure/external/sure-evaluation fetch origin main
-git -C sure/external/sure-evaluation merge --ff-only origin/main
+git submodule sync --recursive
+git submodule update --remote --merge sure/external/sure-evaluation
 npm run sure:doctor
 ```
 
-Do not commit the engine checkout into this repository. The durable contract is
-the runtime evidence written by each evaluation run: `evaluation_route_plan.json`
-must record the engine path and commit used for that run.
+Commit only the updated gitlink after verification:
+
+```bash
+git add .gitmodules sure/external/sure-evaluation
+git commit -m "chore(sure): bump sure-evaluation submodule"
+```
+
+Do not vendor engine source files into the parent repository. The durable
+runtime contract is the evidence written by each evaluation run:
+`evaluation_route_plan.json` must record the engine path and commit used for
+that run.
 
 ## Dataset Root
 

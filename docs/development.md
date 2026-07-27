@@ -68,9 +68,11 @@ Keep generated files out of Git:
 sure/models/
 sure/handoffs/*/artifacts/
 sure/skills/sure_eval/results/
-sure/external/
 ```
 
 Do not commit API keys, provider tokens, auth files, model weights,
 checkpoints, large datasets, prediction dumps, metric result dumps, virtual
 environments, or cache directories.
+
+`sure/external/sure-evaluation` is intentionally tracked as a Git submodule.
+Commit only the gitlink pointer when bumping the verified engine version.

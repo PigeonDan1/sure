@@ -67,8 +67,10 @@ skill 都成立。
 sure/models/
 sure/handoffs/*/artifacts/
 sure/skills/sure_eval/results/
-sure/external/
 ```
 
 不要提交 API key、provider token、auth 文件、模型权重、checkpoint、大数据集、prediction
 dump、metric result dump、虚拟环境或 cache 目录。
+
+`sure/external/sure-evaluation` 会作为 Git submodule 被跟踪。更新经过验证的 engine 版本时，
+只提交 gitlink pointer。

@@ -1,18 +1,23 @@
 # 评估引擎
 
 SURE Harness 不直接实现 metric 逻辑。Metric 能力、route nodes、normalizer、精确
-`pipeline_id` 选择、node-local 环境都来自独立的 `sure-evaluation` checkout。
+`pipeline_id` 选择、node-local 环境都来自 `sure-evaluation` submodule。
 
 ## 安装
 
-Engine 应保持本地化，不进入 harness 仓库 Git 历史：
+Clone harness 时拉取 submodule：
 
 ```bash
-mkdir -p sure/external
-git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-evaluation
+git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 ```
 
-也可以指向另一个 checkout：
+已有 clone 可以初始化 submodule：
+
+```bash
+git submodule update --init --recursive
+```
+
+高级用户仍然可以指向另一个 checkout：
 
 ```bash
 export SURE_EVALUATION_HOME=/path/to/sure-evaluation
@@ -26,27 +31,34 @@ npm run sure:doctor
 
 ## 分支关系
 
-Harness 分支 `harness-tui-agent` 应持续跟随公开的 engine 分支：
+Harness 分支 `harness-tui-agent` 通过 Git submodule 跟随公开 engine：
 
 ```text
-git@github.com:PigeonDan1/sure-evaluation.git main
+https://github.com/PigeonDan1/sure-evaluation.git main
 ```
 
-常规本地 checkout 位置是：
+Submodule 路径是：
 
 ```text
 sure/external/sure-evaluation
 ```
 
-在修改 `/sure_eval`、`/sure_reval`、route 选择、normalization 假设或 pipeline 兼容性文档前，先同步 engine：
+在修改 `/sure_eval`、`/sure_reval`、route 选择、normalization 假设或 pipeline 兼容性文档前，先同步并验证 submodule：
 
 ```bash
-git -C sure/external/sure-evaluation fetch origin main
-git -C sure/external/sure-evaluation merge --ff-only origin/main
+git submodule sync --recursive
+git submodule update --remote --merge sure/external/sure-evaluation
 npm run sure:doctor
 ```
 
-不要把 engine checkout 提交进本仓库。长期稳定的契约是每次 evaluation run 写出的运行证据：
+验证通过后只提交更新后的 gitlink：
+
+```bash
+git add .gitmodules sure/external/sure-evaluation
+git commit -m "chore(sure): bump sure-evaluation submodule"
+```
+
+不要把 engine 源文件 vendor 进父仓库。长期稳定的运行契约是每次 evaluation run 写出的证据：
 `evaluation_route_plan.json` 必须记录本次使用的 engine path 和 commit。
 
 ## 数据集根目录

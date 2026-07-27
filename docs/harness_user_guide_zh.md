@@ -21,14 +21,14 @@ SURE Harness 把音频模型评估拆成一组带 artifact 门禁的 TUI slash c
 发现模型 -> 接入模型 -> 正式评估 -> 复用已有 predictions 重新评估
 ```
 
-Harness 不替代指标引擎。metric 能力、route nodes、精确 `pipeline_id` 选择、node-local 环境检查都来自独立的 `sure-evaluation` checkout，默认位置是 `sure/external/sure-evaluation`，也可以用 `SURE_EVALUATION_HOME` 指定。
+Harness 不替代指标引擎。metric 能力、route nodes、精确 `pipeline_id` 选择、node-local 环境检查都来自 `sure/external/sure-evaluation` 下的 `sure-evaluation` submodule，也可以用高级覆盖项 `SURE_EVALUATION_HOME` 指定其他 checkout。
 
 ## 从 0 到第一次成功运行
 
 1. 克隆并安装 harness。
 
 ```bash
-git clone --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
+git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
 npm run sure:doctor
@@ -37,8 +37,7 @@ npm run sure:doctor
 2. 准备指标引擎和 benchmark JSONL。
 
 ```bash
-mkdir -p sure/external
-git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-evaluation
+git submodule update --init --recursive
 
 mkdir -p data/datasets/sure_benchmark
 ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
@@ -253,7 +252,7 @@ sure/models/<model_name>/artifacts/
 | `validation_payload.json` | missing/extra/duplicate/empty prediction 检查。 |
 | `evaluation_route_plan.json` | engine commit、selected routes、pipeline IDs、nodes、环境 readiness。 |
 | `evaluation_payload.json` | 机器可读 dataset-metric 结果。 |
-| `metrics/<dataset>/<metric_slug>/report.json` | 独立 engine 的 metric report。 |
+| `metrics/<dataset>/<metric_slug>/report.json` | Submodule engine 的 metric report。 |
 | `metrics/<dataset>/<metric_slug>/pipeline_description.json` | 选中 pipeline identity 和 node chain。 |
 | `sample_reports/<dataset>/<metric_slug>.jsonl` | 可用时的 per-sample 细节。 |
 | `main_agent_run_report.json` | 最终 run provenance、execution path、sample scope 和 artifacts。 |
@@ -310,7 +309,7 @@ sure/models/<model_name>/artifacts/
 
 ## Route 和 Pipeline ID
 
-用独立 engine 查看可用 route：
+用 submodule engine 查看可用 route：
 
 ```bash
 cd sure/external/sure-evaluation

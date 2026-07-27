@@ -21,14 +21,14 @@ SURE Harness turns audio-model evaluation into a set of artifact-gated slash com
 discover model -> prepare model -> run evaluation -> re-evaluate existing predictions
 ```
 
-The harness does not replace the metric engine. Metric capabilities, route nodes, exact `pipeline_id` selection, and node-local environment checks come from the standalone `sure-evaluation` checkout under `sure/external/sure-evaluation` or `SURE_EVALUATION_HOME`.
+The harness does not replace the metric engine. Metric capabilities, route nodes, exact `pipeline_id` selection, and node-local environment checks come from the `sure-evaluation` submodule under `sure/external/sure-evaluation` or an advanced `SURE_EVALUATION_HOME` override.
 
 ## From Zero To First Run
 
 1. Clone and install the harness.
 
 ```bash
-git clone --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
+git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
 npm run sure:doctor
@@ -37,8 +37,7 @@ npm run sure:doctor
 2. Prepare the metric engine and benchmark JSONL files.
 
 ```bash
-mkdir -p sure/external
-git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-evaluation
+git submodule update --init --recursive
 
 mkdir -p data/datasets/sure_benchmark
 ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
@@ -253,7 +252,7 @@ Repeat `pipeline_id` to compare multiple chains for the same metric. The harness
 | `validation_payload.json` | Missing/extra/duplicate/empty prediction checks. |
 | `evaluation_route_plan.json` | Engine commit, selected routes, pipeline IDs, nodes, and environment readiness. |
 | `evaluation_payload.json` | Machine-readable dataset-metric results. |
-| `metrics/<dataset>/<metric_slug>/report.json` | Standalone engine metric report. |
+| `metrics/<dataset>/<metric_slug>/report.json` | Submodule engine metric report. |
 | `metrics/<dataset>/<metric_slug>/pipeline_description.json` | Selected pipeline identity and node chain. |
 | `sample_reports/<dataset>/<metric_slug>.jsonl` | Per-sample score details when available. |
 | `main_agent_run_report.json` | Final run provenance, execution path, sample scope, and artifacts. |
@@ -312,7 +311,7 @@ Use this checklist when reviewing a completed run.
 
 ## Route And Pipeline IDs
 
-Use the standalone engine to inspect available routes:
+Use the submodule engine to inspect available routes:
 
 ```bash
 cd sure/external/sure-evaluation

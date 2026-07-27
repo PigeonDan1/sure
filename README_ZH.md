@@ -17,7 +17,7 @@ SURE Harness 让 Pi/Codex 风格 TUI agent 能从模型发现、接入、评估�
 | --- | --- |
 | Agent 需要读懂复杂评测仓库并选择执行路径。 | Slash command 暴露有边界、有 artifact 门禁的工作流。 |
 | 评测结果需要可复现、可审阅。 | 每次运行都会写入 report、manifest、route plan 和 validation payload。 |
-| Metric route 会在 harness 外独立演进。 | Harness 运行时读取独立的 `sure-evaluation` engine。 |
+| Metric route 会在 harness 外独立演进。 | Harness 运行时读取 `sure-evaluation` submodule。 |
 | 已有 predictions 应该可以复用。 | `/sure_reval` 只重新计算指标，不重新执行模型推理。 |
 
 ## 工作流
@@ -46,22 +46,25 @@ flowchart LR
 | 模型接入 | `/sure_onboard` | Feed handoff 或显式 `model_input_path`。 | 可运行 wrapper、model spec、fixture、`verdict.json`。 |
 | 完整评估 | `/sure_eval` | 已接入模型、dataset、metric、执行面。 | Predictions、validation payload、route plan、metric reports。 |
 | Prediction 重评估 | `/sure_reval` | 已完成 `results_dir`、run dir 或 `predictions/`。 | 新的 evaluation-only run 和 `reval_run_report.json`。 |
-| Route-backed metrics | `sure-evaluation` | 本地 engine checkout 和 benchmark JSONL。 | 当前 metric 能力和精确 `pipeline_id` 执行。 |
+| Route-backed metrics | `sure-evaluation` | Engine submodule 和 benchmark JSONL。 | 当前 metric 能力和精确 `pipeline_id` 执行。 |
 
 ## 快速开始
 
 ```bash
-git clone --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
+git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
 ```
 
-准备指标引擎和 benchmark 数据：
+如果 clone 时没有拉取 submodule：
 
 ```bash
-mkdir -p sure/external
-git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-evaluation
+git submodule update --init --recursive
+```
 
+准备 benchmark 数据：
+
+```bash
 mkdir -p data/datasets/sure_benchmark
 ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
 npm run sure:doctor
@@ -119,7 +122,9 @@ npm run sure:doctor
 | 文档和示例。 | Predictions、metric result dumps、`.sure/` runs、虚拟环境。 |
 
 `.sure/`、`sure/models/`、`sure/handoffs/*/artifacts/`、
-`sure/skills/sure_eval/results/`、`sure/external/` 等本地产物路径应保持 ignored。
+`sure/skills/sure_eval/results/` 等本地产物路径应保持 ignored。
+`sure/external/sure-evaluation` 作为 submodule gitlink 被跟踪，父仓库只记录经过验证的
+engine commit，不提交 engine 文件内容。
 
 ## License
 

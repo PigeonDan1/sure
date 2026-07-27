@@ -5,7 +5,6 @@ dist/
 .sure/
 .codegraph/
 data/
-sure/external/sure-evaluation/
 sure/skills/sure_eval/results/
 sure/handoffs/
 sure/models/*
