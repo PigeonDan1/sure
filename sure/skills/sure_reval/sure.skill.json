@@ -1,0 +1,33 @@
+{
+	"name": "sure_reval",
+	"command": "/sure_reval",
+	"description": "Reuse existing SURE prediction files and re-evaluate them with the current sure-evaluation routes, metrics, or exact pipeline_ids without running model inference.",
+	"prompt": "SKILL.md",
+	"hooks": {
+		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
+		"pre_tool_call": [{ "module": "hooks/index.ts", "handler": "preToolCall" }],
+		"post_tool_result": [{ "module": "hooks/index.ts", "handler": "postToolResult" }],
+		"pre_finish": [{ "module": "hooks/index.ts", "handler": "preFinish" }],
+		"post_finish": [{ "module": "hooks/index.ts", "handler": "postFinish" }],
+		"on_error": [{ "module": "hooks/index.ts", "handler": "onError" }]
+	},
+	"artifacts": [
+		{
+			"type": "prediction_source_resolved",
+			"path": "artifacts/prediction_source_resolved.json",
+			"required": true,
+			"description": "Resolved source predictions, inferred model/dataset metadata, and source provenance."
+		},
+		{
+			"type": "reval_run_report",
+			"path": "artifacts/reval_run_report.json",
+			"required": true,
+			"description": "Final re-evaluation report indexing the tmp run, route comparisons, and generated artifacts."
+		}
+	],
+	"ui": {
+		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
+		"artifactTypes": ["prediction_source_resolved", "reval_run_report", "evaluation_payload", "report_jsonl", "model_eval_manifest"],
+		"defaultExpandedSections": ["diagnostics", "artifacts"]
+	}
+}

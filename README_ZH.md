@@ -1,6 +1,6 @@
 # SURE Harness
 
-[English](./README.md) · [中文](./README_ZH.md) · [License](./LICENSE)
+[English](./README.md) · [中文](./README_ZH.md) · [Demo](https://sure-eval.com/harness) · [用户指南](./docs/harness_user_guide_zh.md) · [License](./LICENSE)
 
 > 将音频模型评估转变为 agent 可读、artifact 可审计、执行过程可约束的工作流。
 
@@ -12,6 +12,17 @@ SURE Harness 是 Pi/Codex 风格 TUI agent 的控制平面，负责发现音频�
 
 ---
 
+## 从这里开始
+
+| 需求 | 入口 |
+| --- | --- |
+| 先看产品流程 | [sure-eval.com/harness](https://sure-eval.com/harness) |
+| 从全新 clone 跑通 | [从 0 到第一次成功运行](./docs/harness_user_guide_zh.md#从-0-到第一次成功运行) |
+| 理解每个 slash command | [功能参考](./docs/harness_user_guide_zh.md#功能参考) |
+| 准备合法输入 | [输入准备](./docs/harness_user_guide_zh.md#输入准备) |
+| 查看期望输出 | [输出契约](./docs/harness_user_guide_zh.md#输出契约) |
+| 验收一次完成的运行 | [验收清单](./docs/harness_user_guide_zh.md#验收清单) |
+
 ## 一眼看懂
 
 ```mermaid
@@ -19,12 +30,15 @@ flowchart LR
     Init["/sure_init<br/>初始化"] --> Feed["/sure_feed<br/>发现"]
     Feed --> Onboard["/sure_onboard<br/>接入"]
     Onboard --> Eval["/sure_eval<br/>评估"]
+    Eval --> Reval["/sure_reval<br/>重评估"]
     Eval --> Artifacts["报告 &<br/>审计轨迹"]
+    Reval --> Artifacts
 
     style Init fill:#f0f7ff,stroke:#3b82f6
     style Feed fill:#f0f7ff,stroke:#3b82f6
     style Onboard fill:#f0f7ff,stroke:#3b82f6
     style Eval fill:#f0fdf4,stroke:#22c55e
+    style Reval fill:#f0fdf4,stroke:#22c55e
     style Artifacts fill:#faf5ff,stroke:#a855f7
 ```
 
@@ -36,6 +50,9 @@ flowchart LR
 | `/sure_feed` | 发现 | 从 ModelScope、HuggingFace、GitHub 或显式输入中发现模型，并归类到 SURE 任务族。 | `model_input.yaml`, `feed_report.json` |
 | `/sure_onboard` | 接入 | 将模型仓库转变为可运行的本地推理单元，包含 wrapper、环境计划、fixture、package gate 和 verdict。 | `verdict.json`, wrapper 文件, model spec |
 | `/sure_eval` | 评估 | 对已接入音频模型执行 SURE-EVAL 评估，生成 route plan、执行面、VC/local 执行证据和指标报告。 | `main_agent_run_report.json`, route plan, metric reports |
+| `/sure_reval` | 重评估 | 复用已完成的 predictions，跳过推理，只重新运行当前 `sure-evaluation` metric route 或精确 `pipeline_id`。 | `reval_run_report.json`, 复制后的 predictions, route plan, metric reports |
+
+每个命令的完整输入和输出契约见 [用户指南](./docs/harness_user_guide_zh.md)。
 
 ## 架构
 
@@ -82,15 +99,25 @@ flowchart TB
 | **Runtime 规划** | 选择 local、Docker 或 VC 执行面，并把决策写入 artifact。 |
 | **执行门禁** | 执行 bounded smoke，阻止不合规 fallback，要求终态 artifact 齐全后才能 finish。 |
 | **评估路由** | 主动读取外部 `sure-evaluation` engine，发现支持的 metric、选择 route nodes，并检查 node-local 环境。 |
+| **Prediction 重评估** | 从完成的 run 或 results mirror 导入 predictions，只重新计算指标，不重新执行模型推理。 |
 | **VC 提交** | 生成可提交 entrypoint，执行真实 `vc submit`，记录资源、镜像、日志和队列修复。 |
 | **Artifact manifest** | 持久化 `run.json`、`events.jsonl`、最终 manifest、metric payload、sample report 和失败诊断。 |
+
+## 输入与输出
+
+| 阶段 | 主要输入 | 主要输出 | Ready 条件 |
+| --- | --- | --- | --- |
+| 发现 | 模型 URL、provider query 或 curated source | `sure/handoffs/<model>/model_input.yaml` | task evidence、repo、weights source、fixture、IO contract 齐全 |
+| 接入 | `model=<handoff>` 或 `model_input_path=...` | `sure/models/<model>/verdict.json` | import/load/infer/contract 校验通过 |
+| 评估 | 已接入模型、datasets、metrics | predictions、route plan、metric reports、`main_agent_run_report.json` | predictions 校验通过，所有 metric 都有 report artifacts |
+| 重评估 | 完成的 `results_dir`、`run_dir` 或 `predictions/` | 新 tmp run 和 `reval_run_report.json` | `evaluation_only=true`，不复用旧 metric artifacts，selected pipeline IDs 与 reports 一致 |
 
 ## 快速开始
 
 ### 1. 克隆并安装依赖
 
 ```bash
-git clone --depth 1 --single-branch --branch harness-agent-eval-product-20260720 https://github.com/PigeonDan1/sure.git sure-harness
+git clone --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
 npm run sure:doctor
@@ -99,7 +126,7 @@ npm run sure:doctor
 如果受限网络下 HTTPS clone 卡住，配置 GitHub SSH key 后使用 SSH：
 
 ```bash
-git clone --depth 1 --single-branch --branch harness-agent-eval-product-20260720 git@github.com:PigeonDan1/sure.git sure-harness
+git clone --depth 1 --single-branch --branch harness-tui-agent git@github.com:PigeonDan1/sure.git sure-harness
 ```
 
 ### 2. 启动 TUI
@@ -134,6 +161,15 @@ git clone --depth 1 --single-branch --branch harness-agent-eval-product-20260720
 /sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=local
 ```
 
+如果只想基于已有 run 重新计算指标，不重新推理：
+
+```text
+/sure_reval source=<results_or_run_dir> datasets=<dataset_name> max_samples=5 pipeline_id=<exact_pipeline_id>
+```
+
+可以重复传入 `pipeline_id=...`，用同一个 metric 对比多条评估链路。`/sure_reval`
+会写入新的 run 目录，不复用旧的 metric artifacts。
+
 > **注意：** 当请求 `execution=vc` 时，运行必须产生真实 VC 提交证据，不允许静默 fallback 到 local。
 
 ## 评估引擎
@@ -152,7 +188,7 @@ git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-e
 export SURE_EVALUATION_HOME=/path/to/sure-evaluation
 ```
 
-`/sure_eval` 还需要 SURE benchmark JSONL 文件。可以软链到默认 harness 路径：
+`/sure_eval` 和 `/sure_reval` 还需要 SURE benchmark JSONL 文件。可以软链到默认 harness 路径：
 
 ```bash
 mkdir -p data/datasets/sure_benchmark

@@ -1,6 +1,6 @@
 # SURE Harness
 
-[English](./README.md) · [中文](./README_ZH.md) · [License](./LICENSE)
+[English](./README.md) · [中文](./README_ZH.md) · [Demo](https://sure-eval.com/harness) · [User guide](./docs/harness_user_guide.md) · [License](./LICENSE)
 
 > Turn audio-model evaluation into agent-readable, artifact-gated workflows.
 
@@ -13,6 +13,17 @@ harness keeps every run reproducible, inspectable, and safe to review.
 
 ---
 
+## Start here
+
+| Need | Go to |
+| --- | --- |
+| See the product flow first | [sure-eval.com/harness](https://sure-eval.com/harness) |
+| Run from a fresh clone | [From zero to first run](./docs/harness_user_guide.md#from-zero-to-first-run) |
+| Understand each slash command | [Command reference](./docs/harness_user_guide.md#command-reference) |
+| Prepare valid inputs | [Input preparation](./docs/harness_user_guide.md#input-preparation) |
+| Check expected outputs | [Output contracts](./docs/harness_user_guide.md#output-contracts) |
+| Verify a finished run | [Verification checklist](./docs/harness_user_guide.md#verification-checklist) |
+
 ## At a glance
 
 ```mermaid
@@ -20,12 +31,15 @@ flowchart LR
     Init["/sure_init<br/>Configure"] --> Feed["/sure_feed<br/>Discover"]
     Feed --> Onboard["/sure_onboard<br/>Prepare"]
     Onboard --> Eval["/sure_eval<br/>Evaluate"]
+    Eval --> Reval["/sure_reval<br/>Re-evaluate"]
     Eval --> Artifacts["Reports &<br/>Audit Trail"]
+    Reval --> Artifacts
 
     style Init fill:#f0f7ff,stroke:#3b82f6
     style Feed fill:#f0f7ff,stroke:#3b82f6
     style Onboard fill:#f0f7ff,stroke:#3b82f6
     style Eval fill:#f0fdf4,stroke:#22c55e
+    style Reval fill:#f0fdf4,stroke:#22c55e
     style Artifacts fill:#faf5ff,stroke:#a855f7
 ```
 
@@ -37,6 +51,9 @@ flowchart LR
 | `/sure_feed` | Discover | Find candidate models from ModelScope, HuggingFace, GitHub, or curated input; classify them into SURE task families. | `model_input.yaml`, `feed_report.json` |
 | `/sure_onboard` | Prepare | Turn a model repo into a runnable local inference unit with wrapper, environment plan, fixture, package gate, and verdict. | `verdict.json`, wrapper files, model spec |
 | `/sure_eval` | Evaluate | Evaluate an already-onboarded audio model through a deterministic SURE-EVAL route plan and a gated execution surface. | `main_agent_run_report.json`, route plan, metric reports |
+| `/sure_reval` | Re-evaluate | Reuse completed predictions, skip inference, and rerun current `sure-evaluation` metric routes or exact `pipeline_id` selections. | `reval_run_report.json`, copied predictions, route plan, metric reports |
+
+For the full input and output contract of each command, see the [user guide](./docs/harness_user_guide.md).
 
 ## Architecture
 
@@ -83,15 +100,25 @@ flowchart TB
 | **Runtime planning** | Select local, Docker, or VC execution surfaces and record the decision. |
 | **Execution gating** | Run smoke tests, block invalid fallbacks, and require terminal artifacts before a run can finish. |
 | **Evaluation routing** | Read the external `sure-evaluation` engine, discover supported metrics, select route nodes, and verify node-local environments. |
+| **Prediction re-evaluation** | Import predictions from a completed run or results mirror and recompute metrics without rerunning model inference. |
 | **VC submission** | Materialize a submit-ready entrypoint, submit with provenance, and record resource repairs such as queue memory limits. |
 | **Artifact manifests** | Persist `run.json`, `events.jsonl`, final manifest, reports, metric payloads, and failure diagnostics. |
+
+## Inputs And Outputs
+
+| Stage | Primary input | Main output | Ready when |
+| --- | --- | --- | --- |
+| Discover | model URL, provider query, or curated source | `sure/handoffs/<model>/model_input.yaml` | task evidence, repo, weights source, fixture, and IO contract are present |
+| Prepare | `model=<handoff>` or `model_input_path=...` | `sure/models/<model>/verdict.json` | import/load/infer/contract validation passes |
+| Evaluate | onboarded model plus datasets and metrics | predictions, route plan, metric reports, `main_agent_run_report.json` | predictions validate and every metric has report artifacts |
+| Re-evaluate | completed `results_dir`, `run_dir`, or `predictions/` | fresh tmp run with `reval_run_report.json` | `evaluation_only=true`, old metric artifacts are not reused, selected pipeline IDs match reports |
 
 ## Quick start
 
 ### 1. Clone and install
 
 ```bash
-git clone --depth 1 --single-branch --branch harness-agent-eval-product-20260720 https://github.com/PigeonDan1/sure.git sure-harness
+git clone --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
 npm run sure:doctor
@@ -101,7 +128,7 @@ If HTTPS cloning stalls in a restricted network, use SSH after adding a GitHub
 SSH key:
 
 ```bash
-git clone --depth 1 --single-branch --branch harness-agent-eval-product-20260720 git@github.com:PigeonDan1/sure.git sure-harness
+git clone --depth 1 --single-branch --branch harness-tui-agent git@github.com:PigeonDan1/sure.git sure-harness
 ```
 
 ### 2. Launch the TUI
@@ -136,6 +163,16 @@ For local development, use `execution=local`:
 /sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=local
 ```
 
+To recompute metrics from an existing run without inference:
+
+```text
+/sure_reval source=<results_or_run_dir> datasets=<dataset_name> max_samples=5 pipeline_id=<exact_pipeline_id>
+```
+
+Repeat `pipeline_id=...` to compare multiple evaluation chains for the same
+metric. `/sure_reval` writes a fresh run directory and does not reuse old metric
+artifacts.
+
 > **Note:** When `execution=vc` is requested, the run must produce real VC
 > submission evidence. The harness does not silently fall back to local
 > execution.
@@ -157,7 +194,7 @@ You can also point at a local engine explicitly:
 export SURE_EVALUATION_HOME=/path/to/sure-evaluation
 ```
 
-`/sure_eval` also needs SURE benchmark JSONL files. Either link them into the
+`/sure_eval` and `/sure_reval` also need SURE benchmark JSONL files. Either link them into the
 default harness location:
 
 ```bash

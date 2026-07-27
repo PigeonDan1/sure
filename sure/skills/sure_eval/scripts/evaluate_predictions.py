@@ -413,6 +413,7 @@ def _describe_external_pipeline(
     task: str,
     language: str,
     metric: str | None,
+    pipeline_id: str | None = None,
     timeout: int,
 ) -> dict[str, Any]:
     request_handle = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
@@ -422,6 +423,7 @@ def _describe_external_pipeline(
                 "task": task,
                 "language": language if language != "auto" else None,
                 "metric": metric,
+                "pipeline_id": pipeline_id,
             },
             ensure_ascii=False,
         )
@@ -442,6 +444,7 @@ pipeline = build_pipeline_spec(
     request["task"],
     language=request.get("language"),
     metric=request.get("metric"),
+    pipeline_id=request.get("pipeline_id"),
 )
 print(json.dumps(pipeline, ensure_ascii=False))
 """
@@ -527,6 +530,7 @@ if pipeline is None:
         request["task"],
         language=request.get("language"),
         metric=request.get("metric"),
+        pipeline_id=request.get("pipeline_id"),
     )
 summary = run_pipeline_spec(
     pipeline,
@@ -591,6 +595,7 @@ def evaluate_prediction_file_external(
     cache_dir: str | None,
     timeout: int,
     metric_override: str | None = None,
+    pipeline_id_override: str | None = None,
     task_override: str | None = None,
 ) -> dict[str, Any]:
     canonical_name = dataset_manager.normalize_dataset_name(dataset_name)
@@ -616,7 +621,8 @@ def evaluate_prediction_file_external(
         engine_root=engine_root,
         task=task,
         language=language,
-        metric=requested_metric,
+        metric=None if pipeline_id_override else requested_metric,
+        pipeline_id=pipeline_id_override,
         timeout=timeout,
     )
     if _pipeline_uses_samples_jsonl(pipeline):
@@ -632,7 +638,7 @@ def evaluate_prediction_file_external(
     hyp_file = _write_eval_file([f"{sample.get('key', '')}\t{predictions.get(sample.get('key', ''), '')}" for sample in samples])
     src_file = _write_optional_source_file(samples) if task == "S2TT" else None
 
-    metric_dir_name = _safe_path_component(str(requested_metric or "default"))
+    metric_dir_name = _safe_path_component(str(pipeline_id_override or requested_metric or "default"))
     run_dir = external_runs_dir / _safe_path_component(canonical_name) / metric_dir_name
     if run_dir.exists():
         shutil.rmtree(run_dir)
@@ -644,7 +650,8 @@ def evaluate_prediction_file_external(
             request={
                 "task": task,
                 "language": language if language != "auto" else None,
-                "metric": requested_metric,
+                "metric": None if pipeline_id_override else requested_metric,
+                "pipeline_id": pipeline_id_override,
                 "output_dir": str(run_dir.resolve()),
                 "ref_file": ref_file,
                 "hyp_file": hyp_file,
@@ -666,7 +673,7 @@ def evaluate_prediction_file_external(
     summary = external_payload["summary"]
     pipeline = external_payload["pipeline"]
     report = external_payload.get("report") or {}
-    metric = str(summary.get("metric") or requested_metric or pipeline.get("metric") or "")
+    metric = str(summary.get("metric") or pipeline.get("metric") or requested_metric or "")
     score = summary.get("score", report.get("score", 0.0))
     rps = sota_manager.calculate_rps(canonical_name, score)
 
@@ -697,8 +704,10 @@ def evaluate_prediction_file_external(
             "node_config_paths": summary.get("node_config_paths", []),
             "external_output_dir": summary.get("output_dir"),
             "requested_metric_source": (
+                "cli_pipeline_id" if pipeline_id_override else
                 "cli_override" if metric_override else "sota_baseline" if requested_metric else "sure-evaluation_task_manifest"
             ),
+            "requested_pipeline_id": pipeline_id_override,
         },
         "details": {
             "summary": summary,
@@ -721,6 +730,7 @@ def evaluate_audio_prediction_file_external(
     cache_dir: str | None,
     timeout: int,
     metric_override: str | None,
+    pipeline_id_override: str | None = None,
     task_override: str | None = None,
 ) -> dict[str, Any]:
     canonical_name = dataset_manager.normalize_dataset_name(dataset_name)
@@ -739,7 +749,8 @@ def evaluate_audio_prediction_file_external(
         engine_root=engine_root,
         task=task,
         language=language,
-        metric=requested_metric,
+        metric=None if pipeline_id_override else requested_metric,
+        pipeline_id=pipeline_id_override,
         timeout=timeout,
     )
     if not _pipeline_uses_samples_jsonl(pipeline):
@@ -757,7 +768,7 @@ def evaluate_audio_prediction_file_external(
         dataset_name=canonical_name,
     )
 
-    metric_dir_name = _safe_path_component(str(requested_metric or "default"))
+    metric_dir_name = _safe_path_component(str(pipeline_id_override or requested_metric or "default"))
     run_dir = external_runs_dir / _safe_path_component(canonical_name) / metric_dir_name
     if run_dir.exists():
         shutil.rmtree(run_dir)
@@ -777,7 +788,8 @@ def evaluate_audio_prediction_file_external(
         request={
             "task": task,
             "language": language,
-            "metric": requested_metric,
+            "metric": None if pipeline_id_override else requested_metric,
+            "pipeline_id": pipeline_id_override,
             "output_dir": str(run_dir.resolve()),
             "samples_jsonl": str(samples_jsonl.resolve()),
             "device": device,
@@ -790,7 +802,7 @@ def evaluate_audio_prediction_file_external(
     summary = external_payload["summary"]
     pipeline = external_payload["pipeline"]
     report = external_payload.get("report") or {}
-    metric = str(summary.get("metric") or requested_metric or pipeline.get("metric") or "")
+    metric = str(summary.get("metric") or pipeline.get("metric") or requested_metric or "")
     score = summary.get("score", report.get("score", 0.0))
     rps = sota_manager.calculate_rps(canonical_name, score)
 
@@ -823,8 +835,10 @@ def evaluate_audio_prediction_file_external(
             "external_output_dir": summary.get("output_dir"),
             "samples_jsonl": str(samples_jsonl),
             "requested_metric_source": (
+                "cli_pipeline_id" if pipeline_id_override else
                 "cli_override" if metric_override else "sota_baseline" if requested_metric else "sure-evaluation_task_manifest"
             ),
+            "requested_pipeline_id": pipeline_id_override,
         },
         "details": {
             "summary": summary,
@@ -1347,6 +1361,7 @@ def _external_metric_applies_to_task_language(
     *,
     engine_root: Path,
     metric: str | None,
+    pipeline_id: str | None = None,
     task: str,
     language: str,
     timeout: int,
@@ -1357,6 +1372,7 @@ def _external_metric_applies_to_task_language(
             task=task,
             language=language,
             metric=metric,
+            pipeline_id=pipeline_id,
             timeout=timeout,
         )
     except Exception:
@@ -1378,10 +1394,16 @@ def _write_run_artifacts(
 
     report_rows: list[dict[str, Any]] = []
     payload_rows = payload.get("results") if isinstance(payload.get("results"), list) else []
+    dataset_metric_counts: dict[tuple[str, str], int] = {}
+    for result in results:
+        key = (str(result.get("dataset") or ""), str(result.get("metric") or ""))
+        dataset_metric_counts[key] = dataset_metric_counts.get(key, 0) + 1
     for index, result in enumerate(results):
         dataset = str(result["dataset"])
         metric = str(result["metric"])
         slug = _metric_slug(metric)
+        if dataset_metric_counts.get((dataset, metric), 0) > 1:
+            slug = f"{slug}__{_safe_path_component(str(result.get('pipeline_id') or 'pipeline'))}"
         metric_dir = run_dir / "metrics" / dataset / slug
         report_path = metric_dir / "report.json"
         pipeline_path = metric_dir / "pipeline_description.json"
@@ -1484,20 +1506,22 @@ def _write_results_dir(
     model_dir: Path | None,
     results: list[dict[str, Any]],
     dataset_manager: DatasetManager,
+    *,
+    copy_source_report: bool = True,
 ) -> None:
     """Write a compatibility mirror under results/<model>/<protocol>."""
     results_dir.mkdir(parents=True, exist_ok=True)
     source_run_dir = _infer_source_run_dir(results)
 
     source_protocol = source_run_dir / "protocol.yaml" if source_run_dir else None
-    if source_protocol and source_protocol.exists():
+    if copy_source_report and source_protocol and source_protocol.exists():
         shutil.copy2(source_protocol, results_dir / "protocol.yaml")
     else:
         _write_protocol_yaml(results_dir, protocol_id, model_dir, results=results, tool_name=tool_name)
 
     report_path = results_dir / "report.jsonl"
     source_report = source_run_dir / "report.jsonl" if source_run_dir else None
-    if source_report and source_report.exists():
+    if copy_source_report and source_report and source_report.exists():
         shutil.copy2(source_report, report_path)
     else:
         with report_path.open("w", encoding="utf-8") as handle:
@@ -1532,7 +1556,7 @@ def _write_results_dir(
             shutil.copy2(structured_prediction_path, pred_dir / structured_prediction_path.name)
 
     source_snapshot = source_run_dir / "report_snapshot.md" if source_run_dir else None
-    if source_snapshot and source_snapshot.exists():
+    if copy_source_report and source_snapshot and source_snapshot.exists():
         shutil.copy2(source_snapshot, results_dir / "report_snapshot.md")
 
 
@@ -1565,6 +1589,11 @@ def main() -> int:
         help="Metric to evaluate. Repeat for multiple metrics per dataset.",
     )
     parser.add_argument(
+        "--pipeline-id",
+        action="append",
+        help="Exact standalone sure-evaluation pipeline_id to run. Repeat to compare multiple pipelines for the same metric.",
+    )
+    parser.add_argument(
         "--evaluation-backend",
         choices=("auto", "external", "legacy"),
         default=os.environ.get("SURE_EVALUATION_BACKEND", "auto"),
@@ -1595,6 +1624,11 @@ def main() -> int:
         "--evaluation-metric",
         action="append",
         help="Optional metric override forwarded to external sure-evaluation, e.g. wer, tts_wer, dnsmos.",
+    )
+    parser.add_argument(
+        "--no-copy-source-report",
+        action="store_true",
+        help="When writing --results-dir, never copy protocol/report/snapshot from the source prediction run.",
     )
     args = parser.parse_args()
     if args.strict_main_flow and args.evaluation_backend != "external":
@@ -1672,6 +1706,7 @@ def main() -> int:
                 model_dir=Path(args.model_dir) if args.model_dir else None,
                 results=results,
                 dataset_manager=dataset_manager,
+                copy_source_report=not args.no_copy_source_report,
             )
         return 0
 
@@ -1681,9 +1716,22 @@ def main() -> int:
             item = item.strip()
             if item and item not in metric_overrides:
                 metric_overrides.append(item)
+    pipeline_overrides: list[str] = []
+    for raw_pipeline_id in args.pipeline_id or []:
+        for item in str(raw_pipeline_id).replace(",", " ").split():
+            item = item.strip()
+            if item and item not in pipeline_overrides:
+                pipeline_overrides.append(item)
+    if pipeline_overrides and args.evaluation_backend == "legacy":
+        raise ValueError("--pipeline-id requires --evaluation-backend external or auto with an external engine")
     if not metric_overrides:
         metric_overrides = [None]
     task_hint = _metric_task_hint(metric_overrides)
+    evaluation_requests: list[tuple[str | None, str | None]]
+    if pipeline_overrides:
+        evaluation_requests = [(None, pipeline_id) for pipeline_id in pipeline_overrides]
+    else:
+        evaluation_requests = [(metric, None) for metric in metric_overrides]
 
     results: list[dict[str, Any]] = []
     for requested_dataset in args.dataset:
@@ -1699,32 +1747,34 @@ def main() -> int:
             raise FileNotFoundError(f"Prediction file not found: {prediction_path}")
 
         if args.evaluation_backend != "legacy" and resolved_engine is not None:
-            applicable_metric_overrides = [
-                metric_override
-                for metric_override in metric_overrides
+            applicable_requests = [
+                (metric_override, pipeline_id_override)
+                for metric_override, pipeline_id_override in evaluation_requests
                 if _external_metric_applies_to_task_language(
                     engine_root=resolved_engine[1],
-                    metric=metric_override,
+                    metric=None if pipeline_id_override else metric_override,
+                    pipeline_id=pipeline_id_override,
                     task=effective_task,
                     language=dataset_language,
                     timeout=args.evaluation_timeout,
                 )
             ]
         else:
-            applicable_metric_overrides = [
-                metric_override
-                for metric_override in metric_overrides
+            applicable_requests = [
+                (metric_override, None)
+                for metric_override, pipeline_id_override in evaluation_requests
+                if pipeline_id_override is None
                 if _legacy_metric_applies_to_task_language(metric_override, effective_task, dataset_language)
             ]
-        if not applicable_metric_overrides:
-            requested = ", ".join(metric for metric in metric_overrides if metric) or "default"
+        if not applicable_requests:
+            requested = ", ".join(pipeline_overrides or [metric for metric in metric_overrides if metric]) or "default"
             source = "current sure-evaluation engine" if args.evaluation_backend != "legacy" and resolved_engine else "legacy evaluator"
             raise ValueError(
-                f"No requested metric is supported by the {source} for dataset {canonical_name} "
+                f"No requested metric/pipeline is supported by the {source} for dataset {canonical_name} "
                 f"(task={effective_task}, dataset_task={dataset_task}, language={dataset_language}, requested={requested})"
             )
 
-        for metric_override in applicable_metric_overrides:
+        for metric_override, pipeline_id_override in applicable_requests:
             if args.evaluation_backend == "legacy" or resolved_engine is None:
                 if args.strict_main_flow:
                     raise RuntimeError("strict main-flow evaluation cannot use the legacy evaluator")
@@ -1744,7 +1794,8 @@ def main() -> int:
                         engine_root=engine_root,
                         task=effective_task,
                         language=dataset_language,
-                        metric=metric_override,
+                        metric=None if pipeline_id_override else metric_override,
+                        pipeline_id=pipeline_id_override,
                         timeout=args.evaluation_timeout,
                     )
                     if _pipeline_uses_samples_jsonl(pipeline):
@@ -1760,6 +1811,7 @@ def main() -> int:
                             cache_dir=args.evaluation_cache_dir,
                             timeout=args.evaluation_timeout,
                             metric_override=metric_override,
+                            pipeline_id_override=pipeline_id_override,
                             task_override=effective_task,
                         )
                     else:
@@ -1775,6 +1827,7 @@ def main() -> int:
                             cache_dir=args.evaluation_cache_dir,
                             timeout=args.evaluation_timeout,
                             metric_override=metric_override,
+                            pipeline_id_override=pipeline_id_override,
                             task_override=effective_task,
                         )
                 except ExternalEvaluationUnsupported as exc:
@@ -1848,6 +1901,7 @@ def main() -> int:
             model_dir=model_dir,
             results=results,
             dataset_manager=dataset_manager,
+            copy_source_report=not args.no_copy_source_report,
         )
 
     return 0

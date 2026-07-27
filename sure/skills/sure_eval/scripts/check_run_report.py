@@ -61,6 +61,23 @@ def _metric_slug(metric: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "._=-" else "_" for ch in str(metric)) or "metric"
 
 
+def _artifact_path(root: Path, value: Any, fallback: Path) -> Path:
+    if isinstance(value, str) and value:
+        path = Path(value)
+        if not path.is_absolute():
+            path = root / path
+        return path
+    return fallback
+
+
+def _is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 def _validate_completed_artifacts(root: Path) -> list[str]:
     errors: list[str] = []
     for relative in ("evaluation_payload.json", "report.jsonl", "protocol.yaml"):
@@ -125,13 +142,28 @@ def _validate_completed_artifacts(root: Path) -> list[str]:
             if not path.is_file():
                 errors.append(f"missing prediction file: {path}")
         slug = _metric_slug(metric)
-        metric_dir = root / "metrics" / dataset / slug
-        for name in ("report.json", "pipeline_description.json"):
-            if not (metric_dir / name).is_file():
-                errors.append(f"missing metric artifact: {metric_dir / name}")
-        sample_report = root / "sample_reports" / dataset / f"{slug}.jsonl"
-        if not sample_report.is_file():
-            errors.append(f"missing sample report: {sample_report}")
+        artifacts = row.get("artifacts") if isinstance(row.get("artifacts"), dict) else {}
+        metric_dir = _artifact_path(root, artifacts.get("metric_artifact_dir"), root / "metrics" / dataset / slug)
+        report_artifact = _artifact_path(root, artifacts.get("report"), metric_dir / "report.json")
+        pipeline_artifact = _artifact_path(
+            root,
+            artifacts.get("pipeline_description"),
+            metric_dir / "pipeline_description.json",
+        )
+        sample_report = _artifact_path(
+            root,
+            artifacts.get("sample_report"),
+            root / "sample_reports" / dataset / f"{slug}.jsonl",
+        )
+        for label, path in (
+            ("metric report", report_artifact),
+            ("pipeline description", pipeline_artifact),
+            ("sample report", sample_report),
+        ):
+            if not _is_under(path, root):
+                errors.append(f"results[{index}] {label} path must stay under the run root: {path}")
+            if not path.is_file():
+                errors.append(f"missing {label}: {path}")
     return errors
 
 
