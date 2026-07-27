@@ -1,143 +1,81 @@
 # SURE Harness
 
-[English](./README.md) · [中文](./README_ZH.md) · [Demo](https://sure-eval.com/harness) · [User guide](./docs/harness_user_guide.md) · [License](./LICENSE)
+<p align="center">
+  <a href="https://sure-eval.com/harness"><img alt="Demo" src="https://img.shields.io/badge/Demo-sure--eval.com%2Fharness-2563eb?style=for-the-badge"></a>
+  <a href="./docs/harness_user_guide.md"><img alt="User guide" src="https://img.shields.io/badge/Docs-User_Guide-16a34a?style=for-the-badge"></a>
+  <a href="./docs/evaluation_engine.md"><img alt="Evaluation engine" src="https://img.shields.io/badge/Engine-sure--evaluation-f97316?style=for-the-badge"></a>
+  <a href="./README_ZH.md"><img alt="Chinese README" src="https://img.shields.io/badge/Language-%E4%B8%AD%E6%96%87-7c3aed?style=for-the-badge"></a>
+</p>
 
-> Turn audio-model evaluation into agent-readable, artifact-gated workflows.
+> TUI-agent control plane for speech and audio model evaluation.
 
-SURE Harness is the control plane for Pi/Codex-style TUI agents that discover
-audio models, prepare them, run bounded validation, submit real evaluation jobs,
-and leave an auditable trail.
+SURE Harness helps Pi/Codex-style TUI agents evaluate audio models from model
+discovery to audited reports. It turns onboarding, VC/local execution, metric
+routing, and prediction re-evaluation into explicit slash-command workflows.
 
-A human states intent through slash commands. The agent plans and executes. The
-harness keeps every run reproducible, inspectable, and safe to review.
+## Why SURE Harness
 
----
-
-## Start here
-
-| Need | Go to |
+| User need | Product answer |
 | --- | --- |
-| See the product flow first | [sure-eval.com/harness](https://sure-eval.com/harness) |
-| Run from a fresh clone | [From zero to first run](./docs/harness_user_guide.md#from-zero-to-first-run) |
-| Understand each slash command | [Command reference](./docs/harness_user_guide.md#command-reference) |
-| Prepare valid inputs | [Input preparation](./docs/harness_user_guide.md#input-preparation) |
-| Check expected outputs | [Output contracts](./docs/harness_user_guide.md#output-contracts) |
-| Verify a finished run | [Verification checklist](./docs/harness_user_guide.md#verification-checklist) |
+| Agents need a route through a complex evaluation repo. | Slash commands expose bounded, artifact-gated workflows. |
+| Evaluation results must be reproducible and reviewable. | Every run writes reports, manifests, route plans, and validation payloads. |
+| Metric routes evolve outside the harness. | The harness reads the standalone `sure-evaluation` engine at runtime. |
+| Existing predictions should be reusable. | `/sure_reval` recomputes metrics without rerunning model inference. |
 
-## At a glance
+## Workflow
 
 ```mermaid
 flowchart LR
-    Init["/sure_init<br/>Configure"] --> Feed["/sure_feed<br/>Discover"]
-    Feed --> Onboard["/sure_onboard<br/>Prepare"]
-    Onboard --> Eval["/sure_eval<br/>Evaluate"]
-    Eval --> Reval["/sure_reval<br/>Re-evaluate"]
-    Eval --> Artifacts["Reports &<br/>Audit Trail"]
-    Reval --> Artifacts
+    Feed["Discover<br/>/sure_feed"] --> Onboard["Prepare<br/>/sure_onboard"]
+    Onboard --> Eval["Evaluate<br/>/sure_eval"]
+    Eval --> Reval["Re-evaluate<br/>/sure_reval"]
+    Eval --> Review["Review<br/>reports"]
+    Reval --> Review
 
-    style Init fill:#f0f7ff,stroke:#3b82f6
-    style Feed fill:#f0f7ff,stroke:#3b82f6
-    style Onboard fill:#f0f7ff,stroke:#3b82f6
-    style Eval fill:#f0fdf4,stroke:#22c55e
-    style Reval fill:#f0fdf4,stroke:#22c55e
-    style Artifacts fill:#faf5ff,stroke:#a855f7
+    classDef input fill:#eff6ff,stroke:#2563eb,color:#172554
+    classDef run fill:#f0fdf4,stroke:#16a34a,color:#14532d
+    classDef report fill:#f8fafc,stroke:#64748b,color:#0f172a
+    class Feed,Onboard input
+    class Eval,Reval run
+    class Review report
 ```
 
-## Product workflows
+## What You Can Do
 
-| Command | Stage | What it does | Key artifacts |
+| Block | Command | Prepare | Expect |
 | --- | --- | --- | --- |
-| `/sure_init` | Configure | One-time setup: agent/provider, auth location, skill discovery, backend checks. | Project config |
-| `/sure_feed` | Discover | Find candidate models from ModelScope, HuggingFace, GitHub, or curated input; classify them into SURE task families. | `model_input.yaml`, `feed_report.json` |
-| `/sure_onboard` | Prepare | Turn a model repo into a runnable local inference unit with wrapper, environment plan, fixture, package gate, and verdict. | `verdict.json`, wrapper files, model spec |
-| `/sure_eval` | Evaluate | Evaluate an already-onboarded audio model through a deterministic SURE-EVAL route plan and a gated execution surface. | `main_agent_run_report.json`, route plan, metric reports |
-| `/sure_reval` | Re-evaluate | Reuse completed predictions, skip inference, and rerun current `sure-evaluation` metric routes or exact `pipeline_id` selections. | `reval_run_report.json`, copied predictions, route plan, metric reports |
+| Model discovery | `/sure_feed` | Model URL, provider query, or curated source. | `model_input.yaml` and discovery report. |
+| Model preparation | `/sure_onboard` | Feed handoff or explicit `model_input_path`. | Runnable wrapper, model spec, fixture, and `verdict.json`. |
+| Full evaluation | `/sure_eval` | Onboarded model, dataset, metric, execution target. | Predictions, validation payload, route plan, metric reports. |
+| Prediction re-evaluation | `/sure_reval` | Existing `results_dir`, run dir, or `predictions/`. | Fresh evaluation-only run and `reval_run_report.json`. |
+| Route-backed metrics | `sure-evaluation` | Local engine checkout plus benchmark JSONL files. | Current metric capabilities, exact `pipeline_id` execution. |
 
-For the full input and output contract of each command, see the [user guide](./docs/harness_user_guide.md).
-
-## Architecture
-
-```mermaid
-flowchart TB
-    subgraph Agent["TUI Agent"]
-        CMD[Slash commands]
-        PLAN[Planner]
-    end
-
-    subgraph Harness["SURE Harness"]
-        HOOK[Hooks & state machines]
-        SCRIPT[Deterministic scripts]
-        SCHEMA[Schemas & contracts]
-    end
-
-    subgraph Engine["sure-evaluation engine"]
-        ROUTE[Route nodes]
-        METRIC[Metrics]
-    end
-
-    subgraph Runtime["Execution surface"]
-        LOCAL[Local]
-        DOCKER[Docker]
-        VC[VC cluster]
-    end
-
-    CMD --> PLAN --> HOOK --> SCRIPT --> Engine
-    SCRIPT --> Runtime
-
-    style Agent fill:#f8fafc
-    style Harness fill:#f0f7ff
-    style Engine fill:#fff7ed
-    style Runtime fill:#f0fdf4
-```
-
-## Core capabilities
-
-| Capability | Responsibility |
-| --- | --- |
-| **Task routing** | Map model and dataset metadata to ASR, TTS, VC, KWS, S2TT, diarization, speech understanding, and related task families. |
-| **Model input synthesis** | Convert discovery evidence into `MODEL_INPUT` YAML for onboarding. |
-| **Fixture preparation** | Prepare small task-specific smoke fixtures without treating smoke data as benchmark evidence. |
-| **Runtime planning** | Select local, Docker, or VC execution surfaces and record the decision. |
-| **Execution gating** | Run smoke tests, block invalid fallbacks, and require terminal artifacts before a run can finish. |
-| **Evaluation routing** | Read the external `sure-evaluation` engine, discover supported metrics, select route nodes, and verify node-local environments. |
-| **Prediction re-evaluation** | Import predictions from a completed run or results mirror and recompute metrics without rerunning model inference. |
-| **VC submission** | Materialize a submit-ready entrypoint, submit with provenance, and record resource repairs such as queue memory limits. |
-| **Artifact manifests** | Persist `run.json`, `events.jsonl`, final manifest, reports, metric payloads, and failure diagnostics. |
-
-## Inputs And Outputs
-
-| Stage | Primary input | Main output | Ready when |
-| --- | --- | --- | --- |
-| Discover | model URL, provider query, or curated source | `sure/handoffs/<model>/model_input.yaml` | task evidence, repo, weights source, fixture, and IO contract are present |
-| Prepare | `model=<handoff>` or `model_input_path=...` | `sure/models/<model>/verdict.json` | import/load/infer/contract validation passes |
-| Evaluate | onboarded model plus datasets and metrics | predictions, route plan, metric reports, `main_agent_run_report.json` | predictions validate and every metric has report artifacts |
-| Re-evaluate | completed `results_dir`, `run_dir`, or `predictions/` | fresh tmp run with `reval_run_report.json` | `evaluation_only=true`, old metric artifacts are not reused, selected pipeline IDs match reports |
-
-## Quick start
-
-### 1. Clone and install
+## Quick Start
 
 ```bash
 git clone --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
+```
+
+Prepare the metric engine and benchmark data:
+
+```bash
+mkdir -p sure/external
+git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-evaluation
+
+mkdir -p data/datasets/sure_benchmark
+ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
 npm run sure:doctor
 ```
 
-If HTTPS cloning stalls in a restricted network, use SSH after adding a GitHub
-SSH key:
-
-```bash
-git clone --depth 1 --single-branch --branch harness-tui-agent git@github.com:PigeonDan1/sure.git sure-harness
-```
-
-### 2. Launch the TUI
+Start the TUI:
 
 ```bash
 ./pi-test.sh --provider openai --model <model-name> --thinking high --approve
 ```
 
-### 3. Run the workflow
+Run the main path:
 
 ```text
 /sure_init
@@ -146,180 +84,46 @@ git clone --depth 1 --single-branch --branch harness-tui-agent git@github.com:Pi
 /sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=vc
 ```
 
-`/sure_onboard model=<model>` reads `sure/handoffs/<model>/model_input.yaml` by
-default. Use `model_input_path=...` only when the handoff lives somewhere else.
-
-For a small ASR smoke path:
-
-```text
-/sure_feed https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf
-/sure_onboard model=Qwen__Qwen3-ASR-0.6B-hf device=auto package=none
-/sure_eval model=Qwen__Qwen3-ASR-0.6B-hf datasets=aishell1 metrics=cer max_samples=1 execution=local device=auto
-```
-
-For local development, use `execution=local`:
-
-```text
-/sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=local
-```
-
-To recompute metrics from an existing run without inference:
+Recompute metrics from existing predictions:
 
 ```text
 /sure_reval source=<results_or_run_dir> datasets=<dataset_name> max_samples=5 pipeline_id=<exact_pipeline_id>
 ```
 
-Repeat `pipeline_id=...` to compare multiple evaluation chains for the same
-metric. `/sure_reval` writes a fresh run directory and does not reuse old metric
-artifacts.
+Use `execution=local` for local development. Use `execution=vc` only when the
+run should produce real VC submission evidence.
 
-> **Note:** When `execution=vc` is requested, the run must produce real VC
-> submission evidence. The harness does not silently fall back to local
-> execution.
+## Inputs And Outputs
 
-## Evaluation engine
+| Stage | Primary input | Main output | Ready signal |
+| --- | --- | --- | --- |
+| Discover | Model URL or query. | `sure/handoffs/<model>/model_input.yaml` | Task evidence and IO contract are present. |
+| Prepare | `model=<handoff>` or `model_input_path=...` | `sure/models/<model>/verdict.json` | Import/load/infer/contract checks pass. |
+| Evaluate | Model, datasets, metrics, execution target. | `main_agent_run_report.json` plus metric artifacts. | Predictions validate and route reports exist. |
+| Re-evaluate | Previous results or predictions. | `reval_run_report.json` in a fresh tmp run. | `evaluation_only=true`; old metric artifacts are not reused. |
 
-SURE Harness reads metric capabilities and route nodes from the standalone
-`sure-evaluation` engine. Keep that checkout local and out of this repository's
-Git history:
+## Docs
 
-```bash
-mkdir -p sure/external
-git clone https://github.com/PigeonDan1/sure-evaluation.git sure/external/sure-evaluation
-```
-
-You can also point at a local engine explicitly:
-
-```bash
-export SURE_EVALUATION_HOME=/path/to/sure-evaluation
-```
-
-`/sure_eval` and `/sure_reval` also need SURE benchmark JSONL files. Either link them into the
-default harness location:
-
-```bash
-mkdir -p data/datasets/sure_benchmark
-ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
-npm run sure:doctor
-```
-
-or point the runtime at a dataset root that contains `sure_benchmark/jsonl`:
-
-```bash
-export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
-```
-
-Typical evaluation routes:
-
-| Task | Route |
+| Need | Read |
 | --- | --- |
-| ASR zh CER | `normalization/wetext_norm -> scoring/wenet_cer` |
-| TTS/VC zh CER | `frontend/funasr_loader_16k_mono -> transcription/paraformer_zh -> normalization/punctuation_strip_norm -> scoring/wenet_cer` |
-| TTS en WER | `transcription/whisper_large_v3 -> normalization/whisper_norm -> scoring/wenet_wer` |
+| From zero to first run, command fields, output contracts. | [User guide](./docs/harness_user_guide.md) |
+| Metric engine setup, datasets, route and `pipeline_id` selection. | [Evaluation engine](./docs/evaluation_engine.md) |
+| Common setup, provider, dataset, and VC failures. | [Troubleshooting](./docs/troubleshooting.md) |
+| Skill package layout, development checks, design boundaries. | [Development guide](./docs/development.md) |
+| Chinese documentation. | [README_ZH](./README_ZH.md), [用户指南](./docs/harness_user_guide_zh.md) |
+| Product demo. | [sure-eval.com/harness](https://sure-eval.com/harness) |
 
-## Repository hygiene
+## Repository Hygiene
 
 | Keep in repo | Keep out of repo |
 | --- | --- |
-| Harness code, skill packages, schemas, prompts | API keys, provider tokens, auth files |
-| Small fixtures and tests | Model weights, checkpoints, large datasets |
-| | Generated predictions, metric result dumps |
-| | `.sure/` run directories |
-| | Local external-engine checkouts |
-| | Model-local virtual environments or cache directories |
+| Harness code, skill packages, schemas, prompts. | API keys, provider tokens, auth files. |
+| Small fixtures and tests. | Model weights, checkpoints, large datasets. |
+| Documentation and examples. | Predictions, metric result dumps, `.sure/` runs, virtual environments. |
 
-Runtime outputs are expected under ignored paths such as `.sure/`,
-`sure/models/`, `sure/handoffs/*/artifacts/`, and
-`sure/skills/sure_eval/results/`.
-
-## Troubleshooting
-
-### `Cannot find module 'typebox'`
-
-SURE commands are registered together. A missing dependency in `/sure_onboard`
-can therefore appear when you try to run `/sure_feed`.
-
-Run the commands from the repository root:
-
-```bash
-npm install --ignore-scripts
-npm run sure:doctor
-```
-
-If `sure:doctor` reports missing sparse-checkout paths, add them explicitly:
-
-```bash
-git sparse-checkout add scripts fixtures packages/coding-agent/examples
-npm install --ignore-scripts
-npm run sure:doctor
-```
-
-Then start the TUI through the local repository entrypoint:
-
-```bash
-./pi-test.sh --provider openai --model <model-name> --thinking high --approve
-```
-
-### `rate_limit_exceeded: Concurrency limit exceeded`
-
-The model provider rejected the agent request because the same account already
-has too many active requests. This interrupts the TUI session; it does not mean
-the SURE run artifacts or model wrapper are invalid.
-
-Close other Pi/Codex/TUI sessions using the same provider account, wait for the
-gateway to release the in-flight request, then re-run the same slash command.
-For long `/sure_onboard` runs, inspect `.sure/runs/<run_id>/state.json` to see
-the last completed unit before retrying.
-
-## Skill package layout
-
-```text
-sure/skills/<skill-name>/
-  sure.skill.json   # skill manifest
-  SKILL.md          # agent-facing operating manual
-  hooks/            # state-machine gates
-  scripts/          # deterministic execution
-  schemas/          # artifact contracts
-  references/       # domain references
-  examples/         # usage examples
-```
-
-## Development checks
-
-Targeted checks while iterating:
-
-```bash
-npm run check:sure-hooks
-python3 -m py_compile sure/skills/sure_eval/scripts/*.py
-```
-
-Full validation:
-
-```bash
-npm run check
-```
-
-SURE-focused Vitest entry points:
-
-```bash
-cd packages/coding-agent
-node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-extension.test.ts
-node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-feed.test.ts
-node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-onboard-state-machine.test.ts
-node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-eval-state-machine.test.ts
-node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-eval-red-lines.test.ts
-```
-
-## Design boundary
-
-| Harness owns | Skill packages own |
-| --- | --- |
-| Slash-command discovery, run lifecycle, state persistence | Domain prompts, deterministic scripts |
-| Hook execution, tool gates, final manifest validation | State machines, schemas, checkpoints |
-| | Validation rules, repair instructions |
-
-Do not move task-specific metrics, dataset assumptions, or SURE business logic
-into the common harness unless the rule is truly shared by every skill.
+Expected local output paths such as `.sure/`, `sure/models/`,
+`sure/handoffs/*/artifacts/`, `sure/skills/sure_eval/results/`, and
+`sure/external/` are ignored.
 
 ## License
 

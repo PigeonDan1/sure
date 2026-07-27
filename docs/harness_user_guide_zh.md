@@ -4,6 +4,15 @@
 
 产品演示站点：https://sure-eval.com/harness
 
+相关文档：
+
+| 需求 | 阅读 |
+| --- | --- |
+| 指标引擎设置和精确 pipeline 选择。 | [评估引擎](./evaluation_engine_zh.md) |
+| 常见安装、provider、数据集和 VC 问题。 | [排错指南](./troubleshooting_zh.md) |
+| Skill 包结构和维护者检查。 | [开发指南](./development_zh.md) |
+| 英文指南。 | [User guide](./harness_user_guide.md) |
+
 ## 核心理解
 
 SURE Harness 把音频模型评估拆成一组带 artifact 门禁的 TUI slash commands。

@@ -4,6 +4,15 @@ This guide is for users who clone the harness and want to know what they can do,
 
 Product demo: https://sure-eval.com/harness
 
+Related docs:
+
+| Need | Read |
+| --- | --- |
+| Metric engine setup and exact pipeline selection. | [Evaluation engine](./evaluation_engine.md) |
+| Common setup, provider, dataset, and VC failures. | [Troubleshooting](./troubleshooting.md) |
+| Skill package layout and maintainer checks. | [Development guide](./development.md) |
+| Chinese guide. | [用户指南](./harness_user_guide_zh.md) |
+
 ## Mental Model
 
 SURE Harness turns audio-model evaluation into a set of artifact-gated slash commands for a TUI agent.

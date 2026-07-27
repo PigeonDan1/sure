@@ -1,0 +1,92 @@
+# Troubleshooting
+
+Start with the harness doctor:
+
+```bash
+npm run sure:doctor
+```
+
+It checks the repository root, Node dependency surface, SURE skills,
+`sure-evaluation`, and benchmark JSONL discovery.
+
+## `Cannot find module 'typebox'`
+
+SURE slash commands are registered together. A missing dependency in one skill
+can surface while another command is starting.
+
+Run from the repository root:
+
+```bash
+npm install --ignore-scripts
+npm run sure:doctor
+```
+
+If sparse checkout paths are missing:
+
+```bash
+git sparse-checkout add scripts fixtures packages/coding-agent/examples
+npm install --ignore-scripts
+npm run sure:doctor
+```
+
+Then start the TUI through the local entrypoint:
+
+```bash
+./pi-test.sh --provider openai --model <model-name> --thinking high --approve
+```
+
+## `rate_limit_exceeded: Concurrency limit exceeded`
+
+The model provider rejected the agent request because the same account already
+has too many active requests. This interrupts the TUI session; it does not mean
+the SURE run artifacts or model wrapper are invalid.
+
+Close other Pi/Codex/TUI sessions using the same provider account, wait for the
+gateway to release the in-flight request, then retry the same slash command.
+
+For long `/sure_onboard` runs, inspect:
+
+```text
+.sure/runs/<run_id>/state.json
+```
+
+## Missing Benchmark JSONL Files
+
+If `/sure_eval` or `/sure_reval` cannot resolve a dataset, check that one of
+these is true:
+
+```text
+data/datasets/sure_benchmark/jsonl
+```
+
+exists, or:
+
+```bash
+export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
+```
+
+points at a root containing `sure_benchmark/jsonl`.
+
+## VC Execution Did Not Produce Submission Evidence
+
+When `execution=vc` is requested, a successful run must include real VC
+submission evidence. The harness should not silently fall back to local
+execution.
+
+Use `execution=local` for smoke runs and local development. Use `execution=vc`
+only when the run is expected to submit to the VC cluster.
+
+## Exact `pipeline_id` Fails
+
+Exact pipeline IDs are owned by the selected `sure-evaluation` checkout. If a
+previously valid ID fails:
+
+```bash
+cd sure/external/sure-evaluation
+git status --short
+git rev-parse HEAD
+```
+
+Then compare the requested pipeline with the current engine catalog or describe
+command. Re-run `/sure_reval` into a fresh tmp output directory after updating
+the ID.
