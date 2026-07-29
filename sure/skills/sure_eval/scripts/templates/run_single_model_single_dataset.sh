@@ -406,9 +406,10 @@ fi
 "$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/evaluate_predictions.py" "${EVAL_ARGS[@]}" || EVAL_EXIT=$?
 
 if [[ "$EVAL_EXIT" != "0" ]]; then
-  echo "WARNING: Evaluation exited with code $EVAL_EXIT"
-  echo "Run directory: $RUN_DIR"
-  echo "Check predictions and logs before deciding next step."
+  echo "ERROR: Evaluation exited with code $EVAL_EXIT" >&2
+  echo "Run directory: $RUN_DIR" >&2
+  echo "Check predictions and logs before deciding next step." >&2
+  exit "$EVAL_EXIT"
 fi
 
 "$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/generate_report_snapshot.py" \
