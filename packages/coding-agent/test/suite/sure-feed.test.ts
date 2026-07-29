@@ -491,7 +491,7 @@ describe("sure_feed preToolCall script ownership", () => {
 	function toolCtx(command: string): SureHookContext {
 		return {
 			...makeCtx(resolve(__dirname, "tmp-pretool")),
-			event: { toolCall: { name: "bash", input: { command } } },
+			event: { type: "tool_call", toolCallId: "t1", toolName: "bash", input: { command } },
 		} as SureHookContext;
 	}
 
