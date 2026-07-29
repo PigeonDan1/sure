@@ -25,6 +25,31 @@ def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"line {index} is invalid JSON: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ValueError(f"line {index} must be a JSON object")
+        rows.append(value)
+    return rows
+
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    try:
+        import yaml
+
+        value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+    return value if isinstance(value, dict) else {}
+
+
 def _candidate_run_roots(hook_run_dir: Path, report_path: Path, data: dict) -> list[Path]:
     candidates: list[Path] = []
     for key in ("evaluation_run_dir", "run_dir", "artifact_root", "eval_run_dir"):
@@ -61,6 +86,160 @@ def _metric_slug(metric: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "._=-" else "_" for ch in str(metric)) or "metric"
 
 
+def _load_prediction_txt(path: Path) -> dict[str, str]:
+    rows: dict[str, str] = {}
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if not line.strip():
+                continue
+            if "\t" in line:
+                key, value = line.split("\t", 1)
+            else:
+                parts = line.split(None, 1)
+                key = parts[0]
+                value = parts[1] if len(parts) > 1 else ""
+            rows[key] = value
+    return rows
+
+
+def _load_prediction_jsonl(path: Path) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for index, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            value = json.loads(line)
+            if not isinstance(value, dict):
+                raise ValueError(f"{path} line {index} must be an object")
+            key = str(value.get("key") or "")
+            if not key:
+                raise ValueError(f"{path} line {index} missing key")
+            rows[key] = value
+    return rows
+
+
+def _validate_prediction_projection(txt_path: Path, jsonl_path: Path) -> list[str]:
+    errors: list[str] = []
+    txt_rows = _load_prediction_txt(txt_path)
+    jsonl_rows = _load_prediction_jsonl(jsonl_path)
+    if set(txt_rows) != set(jsonl_rows):
+        missing = sorted(set(txt_rows) - set(jsonl_rows))[:10]
+        extra = sorted(set(jsonl_rows) - set(txt_rows))[:10]
+        errors.append(f"prediction txt/jsonl key mismatch for {txt_path.name}: missing_jsonl={missing} extra_jsonl={extra}")
+    for key in sorted(set(txt_rows) & set(jsonl_rows)):
+        normalized = str(jsonl_rows[key].get("normalized_prediction") or "")
+        if txt_rows[key] != normalized:
+            errors.append(f"prediction txt/jsonl normalized mismatch for {txt_path.name} key={key}")
+            break
+    return errors
+
+
+def _validate_protocol(root: Path) -> list[str]:
+    path = root / "protocol.yaml"
+    if not path.is_file():
+        return []
+    errors: list[str] = []
+    try:
+        protocol = _read_yaml(path)
+    except ValueError as exc:
+        return [f"protocol.yaml is invalid YAML: {exc}"]
+    if protocol.get("schema") != "sure.eval.inference_protocol.v1":
+        errors.append("protocol.yaml must use schema sure.eval.inference_protocol.v1")
+    forbidden_eval_fields = {"datasets", "artifact_layout", "metrics", "evaluation", "results"}
+    present = sorted(field for field in forbidden_eval_fields if field in protocol)
+    if present:
+        errors.append(f"protocol.yaml must stay inference-only; remove evaluation fields: {present}")
+    for section in (
+        "run",
+        "model",
+        "protocol_selection",
+        "inference_environment",
+        "inference_constraints",
+        "execution_surface",
+        "prediction_contract",
+        "notes",
+    ):
+        if section not in protocol:
+            errors.append(f"protocol.yaml missing section: {section}")
+    return errors
+
+
+def _validate_report_rows(root: Path, expected_count: int) -> list[str]:
+    path = root / "report.jsonl"
+    if not path.is_file():
+        return []
+    errors: list[str] = []
+    try:
+        rows = _read_jsonl(path)
+    except ValueError as exc:
+        return [f"report.jsonl is invalid: {exc}"]
+    if expected_count and len(rows) != expected_count:
+        errors.append(f"report.jsonl row count {len(rows)} does not match evaluation results {expected_count}")
+    for index, row in enumerate(rows, 1):
+        if row.get("schema") != "sure.eval.report.dataset_metric.v1":
+            errors.append(f"report.jsonl line {index} must use schema sure.eval.report.dataset_metric.v1")
+            continue
+        for section in ("run", "model", "dataset", "prediction", "metric", "pipeline", "artifacts", "status"):
+            if section not in row:
+                errors.append(f"report.jsonl line {index} missing section {section}")
+        metric = row.get("metric") if isinstance(row.get("metric"), dict) else {}
+        if metric and "higher_is_better" not in metric:
+            errors.append(f"report.jsonl line {index} metric.higher_is_better is required")
+    return errors
+
+
+def _validate_prediction_manifests(root: Path, datasets: set[str]) -> list[str]:
+    errors: list[str] = []
+    pred_dir = root / "predictions"
+    manifest_path = pred_dir / "manifest.json"
+    conversion_path = pred_dir / "conversion_manifest.json"
+    for path, schema in (
+        (manifest_path, "sure.eval.prediction_manifest.v1"),
+        (conversion_path, "sure.eval.prediction_conversion_manifest.v1"),
+    ):
+        if not path.is_file():
+            errors.append(f"missing prediction manifest: {path}")
+            continue
+        try:
+            payload = _read_json(path)
+        except json.JSONDecodeError as exc:
+            errors.append(f"{path.name} is invalid JSON: {exc}")
+            continue
+        if payload.get("schema") != schema:
+            errors.append(f"{path.name} must use schema {schema}")
+        rows = payload.get("datasets") if isinstance(payload.get("datasets"), list) else []
+        covered = {str(item.get("dataset")) for item in rows if isinstance(item, dict) and item.get("dataset")}
+        missing = sorted(datasets - covered)
+        if missing:
+            errors.append(f"{path.name} missing dataset coverage: {missing}")
+    return errors
+
+
+def _validate_snapshot(root: Path) -> list[str]:
+    path = root / "report_snapshot.md"
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8", errors="replace")
+    required = [
+        "## Basic Information",
+        "## Formatting Policy",
+        "## Evaluation Scope",
+        "## Dataset Scope",
+        "## Result Summary",
+        "## Per-Dataset Test Results",
+        "## Metric Details",
+        "## Validation Summary",
+        "## Evaluation Pipeline",
+        "## Pipeline Trace Details",
+        "## Evaluation Runtime And Tool Versions",
+        "## Output Artifacts",
+        "## Artifact Groups",
+        "## Test Notes",
+    ]
+    return [f"report_snapshot.md missing required section: {section}" for section in required if section not in text]
+
+
 def _artifact_path(root: Path, value: Any, fallback: Path) -> Path:
     if isinstance(value, str) and value:
         path = Path(value)
@@ -80,7 +259,7 @@ def _is_under(path: Path, root: Path) -> bool:
 
 def _validate_completed_artifacts(root: Path) -> list[str]:
     errors: list[str] = []
-    for relative in ("evaluation_payload.json", "report.jsonl", "protocol.yaml"):
+    for relative in ("evaluation_payload.json", "report.jsonl", "protocol.yaml", "report_snapshot.md"):
         if not (root / relative).is_file():
             errors.append(f"missing required artifact: {root / relative}")
 
@@ -101,23 +280,15 @@ def _validate_completed_artifacts(root: Path) -> list[str]:
     if not results:
         errors.append("evaluation_payload.json results must be a non-empty list")
 
-    report_lines: list[dict] = []
-    report_path = root / "report.jsonl"
-    if report_path.is_file():
-        for index, line in enumerate(report_path.read_text(encoding="utf-8").splitlines(), 1):
-            if not line.strip():
-                continue
-            try:
-                report_lines.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                errors.append(f"report.jsonl line {index} is invalid JSON: {exc}")
-    if results and len(report_lines) != len(results):
-        errors.append(f"report.jsonl row count {len(report_lines)} does not match evaluation results {len(results)}")
+    errors.extend(_validate_protocol(root))
+    errors.extend(_validate_report_rows(root, len(results)))
+    errors.extend(_validate_snapshot(root))
 
     prediction_dir = root / "predictions"
     if not prediction_dir.is_dir():
         errors.append(f"missing predictions directory: {prediction_dir}")
 
+    datasets: set[str] = set()
     for index, row in enumerate(results):
         if not isinstance(row, dict):
             errors.append(f"results[{index}] must be an object")
@@ -132,15 +303,22 @@ def _validate_completed_artifacts(root: Path) -> list[str]:
         if not dataset or not metric:
             errors.append(f"results[{index}] must declare dataset and metric")
             continue
+        datasets.add(dataset)
         if not pipeline_id:
             errors.append(f"results[{index}] must declare pipeline_id")
         result = row.get("result")
         if not isinstance(result, dict) or "score" not in result:
             errors.append(f"results[{index}].result.score is required")
-        for suffix in (".txt", ".jsonl"):
-            path = prediction_dir / f"{dataset}{suffix}"
+        prediction_txt = prediction_dir / f"{dataset}.txt"
+        prediction_jsonl = prediction_dir / f"{dataset}.jsonl"
+        for path in (prediction_txt, prediction_jsonl):
             if not path.is_file():
                 errors.append(f"missing prediction file: {path}")
+        if prediction_txt.is_file() and prediction_jsonl.is_file():
+            try:
+                errors.extend(_validate_prediction_projection(prediction_txt, prediction_jsonl))
+            except Exception as exc:
+                errors.append(f"failed to validate prediction projection for {dataset}: {exc}")
         slug = _metric_slug(metric)
         artifacts = row.get("artifacts") if isinstance(row.get("artifacts"), dict) else {}
         metric_dir = _artifact_path(root, artifacts.get("metric_artifact_dir"), root / "metrics" / dataset / slug)
@@ -164,6 +342,8 @@ def _validate_completed_artifacts(root: Path) -> list[str]:
                 errors.append(f"results[{index}] {label} path must stay under the run root: {path}")
             if not path.is_file():
                 errors.append(f"missing {label}: {path}")
+    if prediction_dir.is_dir() and datasets:
+        errors.extend(_validate_prediction_manifests(root, datasets))
     return errors
 
 

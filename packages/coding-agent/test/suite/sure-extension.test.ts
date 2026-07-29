@@ -79,6 +79,20 @@ function writeOnboardModelInput(path: string): void {
 	);
 }
 
+function writeEvalModel(tempDir: string, modelName = "demo-asr"): string {
+	const modelDir = join(tempDir, "sure", "models", modelName);
+	mkdirSync(modelDir, { recursive: true });
+	writeFileSync(
+		join(modelDir, "config.yaml"),
+		["model:", `  name: ${modelName}`, "  task: ASR", "server:", "  command: [python, server.py]"].join("\n") + "\n",
+		"utf-8",
+	);
+	writeFileSync(join(modelDir, "model.py"), "# test fixture\n", "utf-8");
+	writeFileSync(join(modelDir, "server.py"), "# test fixture\n", "utf-8");
+	writeJson(join(modelDir, "verdict.json"), { status: "success" });
+	return modelDir;
+}
+
 async function createSureHarness(options?: { projectTrusted?: boolean }): Promise<Harness> {
 	const harness = await createHarness({
 		extensionFactories: [sureExtension],
@@ -216,6 +230,55 @@ describe("Sure extension", () => {
 		expect(existsSync(join(harness.tempDir, "sure", "models", "rednote-hilab__dots.tts-base"))).toBe(false);
 	});
 
+	it("starts the real /sure_reval repository skill and resolves an existing prediction source", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		linkRepositorySkill(harness.tempDir, "sure_eval");
+		linkRepositorySkill(harness.tempDir, "sure_reval");
+		const sourceDir = join(harness.tempDir, "source-result");
+		mkdirSync(join(sourceDir, "predictions"), { recursive: true });
+		writeFileSync(join(sourceDir, "predictions", "demo_dataset.txt"), "utt1\thello world\n", "utf-8");
+		harness.setResponses([fauxAssistantMessage("working")]);
+
+		await harness.session.prompt(`/sure_reval source=${sourceDir} model=demo_model datasets=demo_dataset max_samples=1`);
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => getUserTexts(harness).length > 0);
+
+		const runId = getOnlyRunId(harness.tempDir);
+		expect(getUserTexts(harness)[0]).toContain("<sure_invocation");
+		expect(getUserTexts(harness)[0]).toContain('skill="sure_reval" command="/sure_reval"');
+		expect(getUserTexts(harness)[0]).toContain("# /sure_reval");
+		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
+		expect(existsSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "prediction_source_resolved.json"))).toBe(
+			true,
+		);
+		expect(readRunState(harness.tempDir, runId)).toMatchObject({
+			phase: { id: "prediction_source", status: "running" },
+		});
+	});
+
+	it("passes output_dir from /sure_eval arguments into resolved input", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		linkRepositorySkill(harness.tempDir, "sure_eval");
+		writeEvalModel(harness.tempDir);
+		const outputDir = join(harness.tempDir, "custom-eval-output");
+		harness.setResponses([fauxAssistantMessage("working")]);
+
+		await harness.session.prompt(
+			`/sure_eval model=demo-asr datasets=librispeech_clean__v1.0.1__asr max_samples=1 metrics=wer output_dir=${outputDir}`,
+		);
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => getUserTexts(harness).length > 0);
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const resolvedInput = JSON.parse(
+			readFileSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "eval_input_resolved.json"), "utf-8"),
+		);
+		expect(resolvedInput.runtime.run_dir).toBe(outputDir);
+		expect(existsSync(join(outputDir, "_harness_config.yaml"))).toBe(true);
+	});
+
 	it("updates active run display state through sure_update_state", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
@@ -304,6 +367,96 @@ describe("Sure extension", () => {
 			"cannot update checkpoints",
 		);
 		expect(existsSync(join(harness.tempDir, ".sure", "runs", runId, "state.json"))).toBe(false);
+	});
+
+	it("rejects terminal progress updates from sure_update_state during checkpoint-controlled runs", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		linkRepositorySkill(harness.tempDir, "sure_onboard");
+		const modelInputPath = join(
+			harness.tempDir,
+			"sure",
+			"handoffs",
+			"rednote-hilab__dots.tts-base",
+			"model_input.yaml",
+		);
+		writeOnboardModelInput(modelInputPath);
+
+		harness.setResponses([
+			fauxAssistantMessage(
+				fauxToolCall("sure_update_state", {
+					phase: { id: "load_model_input", label: "Load input", status: "success" },
+					counters: { completed_units: 1, total_units: 9, gate_blocks: 0 },
+				}),
+			),
+			fauxAssistantMessage("repairing"),
+		]);
+
+		await harness.session.prompt("/sure_onboard model=rednote-hilab__dots.tts-base package=none");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
+		expect(toolResult && "isError" in toolResult ? toolResult.isError : false).toBe(true);
+		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain(
+			"cannot set terminal phase status",
+		);
+		expect(readRunState(harness.tempDir, runId)).toMatchObject({
+			phase: { id: "load_model_input", status: "running" },
+			checkpoint: {
+				id: "main_flow",
+				data: {
+					currentUnit: "load_model_input",
+					completedUnits: [],
+				},
+			},
+		});
+	});
+
+	it("allows ready checkpoint artifacts when an external absolute path exists", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		linkRepositorySkill(harness.tempDir, "sure_onboard");
+		const modelInputPath = join(
+			harness.tempDir,
+			"sure",
+			"handoffs",
+			"rednote-hilab__dots.tts-base",
+			"model_input.yaml",
+		);
+		writeOnboardModelInput(modelInputPath);
+		const outputDir = join(harness.tempDir, "external-output");
+		mkdirSync(outputDir, { recursive: true });
+
+		harness.setResponses([
+			fauxAssistantMessage(
+				fauxToolCall("sure_update_state", {
+					message: "Output copied.",
+					artifacts: [
+						{
+							type: "output_dir",
+							name: "Output directory",
+							path: outputDir,
+							status: "ready",
+						},
+					],
+				}),
+			),
+			fauxAssistantMessage("still working"),
+		]);
+
+		await harness.session.prompt("/sure_onboard model=rednote-hilab__dots.tts-base package=none");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
+		expect(toolResult && "isError" in toolResult ? toolResult.isError : false).toBe(false);
+		expect(readRunState(harness.tempDir, runId)).toMatchObject({
+			message: "Output copied.",
+			artifacts: [{ type: "output_dir", path: outputDir, status: "ready" }],
+		});
 	});
 
 	it("persists display state patches returned by hooks", async () => {

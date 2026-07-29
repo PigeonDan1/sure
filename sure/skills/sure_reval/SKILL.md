@@ -106,6 +106,40 @@ into the Sure invocation artifact path:
 The `pre_finish` hook rejects completion until `artifacts/reval_run_report.json`
 exists and points to a valid tmp re-evaluation run.
 
+## Final Manifest Contract
+
+`sure_finish` validates required artifacts before running the `pre_finish` hook.
+The final manifest must therefore list the run-local required artifacts exactly,
+in addition to any tmp output paths that are useful to the user:
+
+```json
+{
+  "artifacts": [
+    {
+      "type": "prediction_source_resolved",
+      "path": "artifacts/prediction_source_resolved.json"
+    },
+    {
+      "type": "reval_run_report",
+      "path": "artifacts/reval_run_report.json"
+    }
+  ],
+  "outputs": {
+    "sure_artifact_prediction_source_resolved": "artifacts/prediction_source_resolved.json",
+    "sure_artifact_reval_run_report": "artifacts/reval_run_report.json",
+    "tmp_reval_run_dir": "<output_dir>",
+    "evaluation_payload": "<output_dir>/evaluation_payload.json",
+    "report_jsonl": "<output_dir>/report.jsonl",
+    "report_snapshot": "<output_dir>/report_snapshot.md",
+    "predictions_dir": "<output_dir>/predictions"
+  }
+}
+```
+
+Do not rely only on absolute tmp paths for `prediction_source_resolved.json` or
+`reval_run_report.json`; they are useful user-facing outputs but do not satisfy
+the required run-local artifact contract.
+
 ## Completion Checklist
 
 Before finishing `/sure_reval`, verify:

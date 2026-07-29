@@ -67,6 +67,108 @@ def _count_lines(path: Path) -> int:
         return sum(1 for line in handle if line.strip())
 
 
+def _write_standard_prediction_manifests(
+    *,
+    run_dir: Path,
+    pred_dir: Path,
+    imported: list[dict[str, Any]],
+    source: dict[str, Any],
+) -> tuple[Path, Path]:
+    generated_at = _utc_now()
+    datasets: list[dict[str, Any]] = []
+    conversions: list[dict[str, Any]] = []
+    for item in imported:
+        dataset = str(item.get("dataset") or "")
+        dest_txt = Path(str(item.get("dest_txt") or ""))
+        dest_jsonl = Path(str(item.get("dest_jsonl") or ""))
+        jsonl_exists = dest_jsonl.is_file()
+        datasets.append(
+            {
+                "dataset": dataset,
+                "task": item.get("task"),
+                "language": item.get("language"),
+                "format_used": "jsonl+txt" if jsonl_exists else "txt",
+                "txt": str(dest_txt),
+                "jsonl": str(dest_jsonl) if jsonl_exists else None,
+                "txt_sha256": _sha256(dest_txt) if dest_txt.is_file() else None,
+                "jsonl_sha256": _sha256(dest_jsonl) if jsonl_exists else None,
+                "num_rows": _count_lines(dest_txt),
+                "structured_num_rows": _count_lines(dest_jsonl) if jsonl_exists else 0,
+                "source_txt": item.get("source_txt"),
+                "source_jsonl": item.get("source_jsonl"),
+                "copy_mode": item.get("copy_mode"),
+                "filtered": item.get("filtered"),
+                "max_samples": item.get("max_samples"),
+            }
+        )
+        steps = [
+            {
+                "name": "source_prediction_reuse",
+                "input": item.get("source_txt"),
+                "output": str(dest_txt),
+                "script": "scripts/import_prediction_source.py",
+            }
+        ]
+        if item.get("filtered"):
+            steps.append(
+                {
+                    "name": "bounded_filter_or_structured_synthesis",
+                    "input": item.get("source_jsonl") or item.get("source_txt"),
+                    "output": str(dest_jsonl),
+                    "script": "scripts/import_prediction_source.py:_filter_import",
+                }
+            )
+        else:
+            steps.append(
+                {
+                    "name": "structured_prediction_reuse",
+                    "input": item.get("source_jsonl"),
+                    "output": str(dest_jsonl),
+                    "script": "scripts/import_prediction_source.py",
+                }
+            )
+        conversions.append(
+            {
+                "dataset": dataset,
+                "source_format": "existing_sure_predictions",
+                "format_used": "jsonl+txt" if jsonl_exists else "txt",
+                "num_rows": _count_lines(dest_txt),
+                "source_artifacts": {
+                    "source_txt": item.get("source_txt"),
+                    "source_jsonl": item.get("source_jsonl"),
+                    "compatibility_tsv": str(dest_txt),
+                    "structured_jsonl": str(dest_jsonl) if jsonl_exists else None,
+                },
+                "steps": steps,
+                "conversion_trace": None,
+            }
+        )
+    manifest = {
+        "schema": "sure.eval.prediction_manifest.v1",
+        "generated_at": generated_at,
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir),
+        "model_name": str(source.get("model_name") or ""),
+        "tool_name": str(source.get("model_name") or ""),
+        "predictions_dir": str(pred_dir),
+        "datasets": datasets,
+    }
+    conversion_manifest = {
+        "schema": "sure.eval.prediction_conversion_manifest.v1",
+        "generated_at": generated_at,
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir),
+        "generated_by": "scripts/import_prediction_source.py",
+        "predictions_dir": str(pred_dir),
+        "datasets": conversions,
+    }
+    manifest_path = pred_dir / "manifest.json"
+    conversion_path = pred_dir / "conversion_manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    conversion_path.write_text(json.dumps(conversion_manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return manifest_path, conversion_path
+
+
 def _prediction_map(path: Path) -> dict[str, str]:
     predictions: dict[str, str] = {}
     with path.open(encoding="utf-8", errors="replace") as handle:
@@ -226,6 +328,12 @@ def import_predictions(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
+    prediction_manifest_path, conversion_manifest_path = _write_standard_prediction_manifests(
+        run_dir=run_dir,
+        pred_dir=pred_dir,
+        imported=imported,
+        source=source,
+    )
     manifest = {
         "schema": "sure.reval.prediction_reuse_manifest.v1",
         "generated_at": _utc_now(),
@@ -240,6 +348,8 @@ def import_predictions(args: argparse.Namespace) -> dict[str, Any]:
             "old_evaluation_reused": False,
         },
         "predictions_dir": str(pred_dir),
+        "prediction_manifest": str(prediction_manifest_path),
+        "conversion_manifest": str(conversion_manifest_path),
         "datasets": [item["dataset"] for item in imported],
         "copy_mode_requested": args.copy_mode,
         "max_samples": max_samples if max_samples > 0 else None,

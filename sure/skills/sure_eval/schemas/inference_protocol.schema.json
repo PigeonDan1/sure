@@ -1,0 +1,52 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "inference_protocol.schema.json",
+	"title": "SURE-EVAL inference protocol",
+	"description": "Run-local protocol.yaml contract. This file records inference/runtime parameters only; evaluation routes and metric results live in report_snapshot.md and report.jsonl.",
+	"type": "object",
+	"required": [
+		"schema",
+		"protocol_id",
+		"run",
+		"model",
+		"protocol_selection",
+		"inference_environment",
+		"inference_constraints",
+		"execution_surface",
+		"prediction_contract",
+		"notes"
+	],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.eval.inference_protocol.v1"] },
+		"protocol_id": { "type": "string" },
+		"run": {
+			"type": "object",
+			"required": ["run_id", "run_dir", "created_at"],
+			"additionalProperties": true
+		},
+		"model": {
+			"type": "object",
+			"required": ["model_name", "model_dir", "mcp_tool_name", "server_config"],
+			"additionalProperties": true
+		},
+		"protocol_selection": {
+			"type": "object",
+			"required": ["protocol_id", "standard_params", "resolved_model_params", "unmapped"],
+			"additionalProperties": true
+		},
+		"inference_environment": {
+			"type": "object",
+			"required": ["execution_path", "vc", "container", "server", "env", "mount_policy"],
+			"additionalProperties": true
+		},
+		"inference_constraints": { "type": "object", "additionalProperties": true },
+		"execution_surface": { "type": "object", "additionalProperties": true },
+		"prediction_contract": {
+			"type": "object",
+			"required": ["compatibility_tsv", "structured_jsonl", "format_used", "generated_by"],
+			"additionalProperties": true
+		},
+		"notes": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": true
+}

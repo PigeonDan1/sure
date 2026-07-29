@@ -115,7 +115,7 @@ def _local_device_env(device_request: str) -> tuple[dict[str, str], str, str | N
     match = re.fullmatch(r"cuda:(\d+)", lowered)
     if match:
         env["CUDA_VISIBLE_DEVICES"] = match.group(1)
-        env["DEVICE"] = "cuda:0"
+        env["DEVICE"] = request
         env["SURE_EVAL_DEVICE_ACTUAL"] = "cuda:0"
         return env, "cuda:0", match.group(1)
     if lowered == "cuda":

@@ -102,6 +102,12 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 			counters: { completed_units: 2, total_units: 2, gate_blocks: 0 },
 			artifacts: [
 				{
+					type: "prediction_source_resolved",
+					name: "Prediction source",
+					path: `.sure/runs/${ctx.run.runId}/artifacts/prediction_source_resolved.json`,
+					status: "ready",
+				},
+				{
 					type: "reval_run_report",
 					name: "SURE reval report",
 					path: `.sure/runs/${ctx.run.runId}/artifacts/reval_run_report.json`,

@@ -66,6 +66,25 @@ RUN_DIR="${RUN_DIR:-$MODEL_DIR/eval_runs/$RUN_ID}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 HARNESS_PYTHON_BIN="${HARNESS_PYTHON_BIN:-$PYTHON_BIN}"
 MODEL_PYTHON="${MODEL_PYTHON:-$PYTHON_BIN}"
+_harness_python_works() {
+  "$1" - <<'PY' >/dev/null 2>&1
+import structlog
+import yaml
+PY
+}
+if ! _harness_python_works "$HARNESS_PYTHON_BIN"; then
+  for candidate in "${SURE_EVAL_HARNESS_PYTHON_BIN:-}" python3 python; do
+    if [[ -n "$candidate" ]] && _harness_python_works "$candidate"; then
+      HARNESS_PYTHON_BIN="$candidate"
+      break
+    fi
+  done
+fi
+if ! _harness_python_works "$HARNESS_PYTHON_BIN"; then
+  echo "ERROR: HARNESS_PYTHON_BIN cannot import required harness modules: $HARNESS_PYTHON_BIN"
+  echo "Set HARNESS_PYTHON_BIN or SURE_EVAL_HARNESS_PYTHON_BIN to a Python environment with structlog and PyYAML."
+  exit 1
+fi
 TOOL_NAME="${TOOL_NAME:-}"
 if [[ -z "$TOOL_NAME" && -f "$MODEL_DIR/config.yaml" ]]; then
   TOOL_NAME="$("$HARNESS_PYTHON_BIN" - "$MODEL_DIR/config.yaml" <<'PY'
@@ -106,6 +125,7 @@ NO_RESUME="${NO_RESUME:-0}"
 LANGUAGE="${LANGUAGE:-}"
 export HF_HUB_CACHE="${HF_HUB_CACHE:-$MODEL_DIR/.runtime/hf_cache}"
 export HARNESS_PYTHON_BIN
+export SURE_EVAL_HARNESS_PYTHON_BIN="$HARNESS_PYTHON_BIN"
 export MODEL_PYTHON
 if [[ -n "${SERVER_SCRIPT_OVERRIDE:-}" ]]; then
   export SURE_EVAL_SERVER_SCRIPT_OVERRIDE="$SERVER_SCRIPT_OVERRIDE"

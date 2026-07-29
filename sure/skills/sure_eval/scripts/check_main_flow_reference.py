@@ -29,6 +29,7 @@ REQUIRED_FILES = (
     "templates/run_single_model.sh",
     "templates/run_single_model_single_dataset.sh",
     "templates/run_audio_evaluation_only.sh",
+    "templates/protocol.yaml",
     "templates/report_snapshot.md",
 )
 

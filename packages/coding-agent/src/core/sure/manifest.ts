@@ -19,9 +19,9 @@ export const SURE_COMMANDS = [
 	"science_gateway",
 	"research_discussion",
 	"sure_eval",
+	"sure_reval",
 	"sure_onboard",
 	"sure_feed",
-	"sure_reval",
 ] as const;
 
 const SURE_COMMAND_SET = new Set<string>(SURE_COMMANDS);

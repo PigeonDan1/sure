@@ -51,18 +51,157 @@ function seedCompletedEvaluationArtifacts(runDir: string): string {
 		pipeline: { pipeline_id: "asr.zh.cer.wetext_zh_itn.wenet_cer" },
 		artifacts: {},
 	};
+	const predictionTxt = join(root, "predictions", `${dataset}.txt`);
+	const predictionJsonl = join(root, "predictions", `${dataset}.jsonl`);
+	const standardRow = {
+		schema: "sure.eval.report.dataset_metric.v1",
+		run: { run_id: "model-eval-run", protocol_id: "strict_core" },
+		model: { model_name: "fixture_model", model_dir: "", tool_name: "fixture_model" },
+		dataset: {
+			name: dataset,
+			task: "ASR",
+			language: "zh",
+			jsonl_path: "/tmp/aishell1.jsonl",
+			num_samples: 1,
+		},
+		prediction: {
+			file: predictionTxt,
+			validation: {
+				expected_samples: 1,
+				provided_predictions: 1,
+				missing_keys: [],
+				extra_keys: [],
+				duplicate_keys: [],
+				empty_prediction_keys: [],
+				structured_missing_keys: [],
+				structured_extra_keys: [],
+				structured_duplicate_keys: [],
+				invalid_structured_rows: [],
+				structured_projection_mismatch_keys: [],
+				contract_violation_keys: [],
+				is_valid: true,
+				prediction_jsonl_path: predictionJsonl,
+				format_used: "jsonl+txt",
+			},
+		},
+		metric: { name: metric, score: 0, unit: "fraction", display: "0.00%", higher_is_better: false, score_key: "cer" },
+		baseline: null,
+		rps: null,
+		pipeline: {
+			pipeline_id: "asr.zh.cer.wetext_zh_itn.wenet_cer",
+			report_path: join(root, "metrics", dataset, metric, "report.json"),
+			description_path: join(root, "metrics", dataset, metric, "pipeline_description.json"),
+			nodes: [{ node_id: "wetext_zh_itn" }, { node_id: "wenet_cer" }],
+			conversion_steps: [],
+		},
+		versions: { evaluation_backend: "external", evaluator_version: "sure-evaluation" },
+		artifacts: {
+			metric_artifact_dir: join(root, "metrics", dataset, metric),
+			report: join(root, "metrics", dataset, metric, "report.json"),
+			pipeline_description: join(root, "metrics", dataset, metric, "pipeline_description.json"),
+			sample_report: join(root, "sample_reports", dataset, `${metric}.jsonl`),
+		},
+		status: "success",
+	};
 	writeFileSync(
 		join(root, "evaluation_payload.json"),
 		JSON.stringify({ schema: "sure.eval.payload.v2", evaluation_backend: "external", results: [row] }, null, 2),
 		"utf-8",
 	);
-	writeFileSync(join(root, "report.jsonl"), `${JSON.stringify(row)}\n`, "utf-8");
-	writeFileSync(join(root, "protocol.yaml"), "schema: sure.eval.protocol.v1\n", "utf-8");
-	writeFileSync(join(root, "predictions", `${dataset}.txt`), "utt\t文本\n", "utf-8");
-	writeFileSync(join(root, "predictions", `${dataset}.jsonl`), `${JSON.stringify({ key: "utt", prediction: { text: "文本" } })}\n`, "utf-8");
+	writeFileSync(join(root, "report.jsonl"), `${JSON.stringify(standardRow)}\n`, "utf-8");
+	writeFileSync(
+		join(root, "protocol.yaml"),
+		[
+			"schema: sure.eval.inference_protocol.v1",
+			"protocol_id: strict_core",
+			"run:",
+			"  run_id: model-eval-run",
+			`  run_dir: ${root}`,
+			"  created_at: '2026-07-12T00:00:00Z'",
+			"model:",
+			"  model_name: fixture_model",
+			"  model_dir: ''",
+			"  mcp_tool_name: fixture_model",
+			"  server_config: {}",
+			"protocol_selection:",
+			"  protocol_id: strict_core",
+			"  standard_params: {}",
+			"  resolved_model_params: {}",
+			"  unmapped: {}",
+			"inference_environment:",
+			"  execution_path: vc_submit",
+			"  vc: {}",
+			"  container: {}",
+			"  server: {}",
+			"  env: {}",
+			"  mount_policy: {}",
+			"inference_constraints: {}",
+			"execution_surface: {}",
+			"prediction_contract:",
+			"  compatibility_tsv: predictions/<dataset>.txt",
+			"  structured_jsonl: predictions/<dataset>.jsonl",
+			"  format_used: jsonl+txt",
+			"  generated_by: scripts/generate_predictions_via_server.py",
+			"notes:",
+			"  - inference-only fixture",
+			"",
+		].join("\n"),
+		"utf-8",
+	);
+	writeFileSync(predictionTxt, "utt\t文本\n", "utf-8");
+	writeFileSync(
+		predictionJsonl,
+		`${JSON.stringify({ key: "utt", prediction: { text: "文本" }, normalized_prediction: "文本" })}\n`,
+		"utf-8",
+	);
+	writeFileSync(
+		join(root, "predictions", "manifest.json"),
+		JSON.stringify({
+			schema: "sure.eval.prediction_manifest.v1",
+			generated_at: "2026-07-12T00:00:00Z",
+			run_id: "model-eval-run",
+			predictions_dir: join(root, "predictions"),
+			datasets: [{ dataset, task: "ASR", language: "zh", format_used: "jsonl+txt", txt: predictionTxt, jsonl: predictionJsonl, num_rows: 1 }],
+		}, null, 2),
+		"utf-8",
+	);
+	writeFileSync(
+		join(root, "predictions", "conversion_manifest.json"),
+		JSON.stringify({
+			schema: "sure.eval.prediction_conversion_manifest.v1",
+			generated_at: "2026-07-12T00:00:00Z",
+			run_id: "model-eval-run",
+			generated_by: "fixture",
+			predictions_dir: join(root, "predictions"),
+			datasets: [{ dataset, source_format: "fixture", format_used: "jsonl+txt", steps: [], num_rows: 1 }],
+		}, null, 2),
+		"utf-8",
+	);
 	writeFileSync(join(root, "metrics", dataset, metric, "report.json"), JSON.stringify({ score: 0 }), "utf-8");
 	writeFileSync(join(root, "metrics", dataset, metric, "pipeline_description.json"), JSON.stringify({ pipeline_id: row.pipeline_id }), "utf-8");
 	writeFileSync(join(root, "sample_reports", dataset, `${metric}.jsonl`), `${JSON.stringify({ key: "utt", score: 0 })}\n`, "utf-8");
+	writeFileSync(
+		join(root, "report_snapshot.md"),
+		[
+			"# fixture_model Evaluation Snapshot",
+			"## Basic Information",
+			"## Formatting Policy",
+			"## Evaluation Scope",
+			"## Dataset Scope",
+			"## Result Summary",
+			"## Per-Dataset Test Results",
+			"## Metric Details",
+			"## Validation Summary",
+			"## Evaluation Pipeline",
+			"## Pipeline Trace Details",
+			"## Evaluation Runtime And Tool Versions",
+			"## Output Artifacts",
+			"## Artifact Groups",
+			"## Test Notes",
+			"",
+		].join("\n"),
+		"utf-8",
+	);
 	return root;
 }
 

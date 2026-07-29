@@ -1,0 +1,47 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "report_row.schema.json",
+	"title": "SURE-EVAL standard report row",
+	"description": "Machine-readable report.jsonl row. Each line is one dataset-metric result.",
+	"type": "object",
+	"required": ["schema", "run", "model", "dataset", "prediction", "metric", "pipeline", "artifacts", "status"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.eval.report.dataset_metric.v1"] },
+		"run": {
+			"type": "object",
+			"required": ["run_id", "protocol_id"],
+			"additionalProperties": true
+		},
+		"model": {
+			"type": "object",
+			"required": ["model_name", "model_dir", "tool_name"],
+			"additionalProperties": true
+		},
+		"dataset": {
+			"type": "object",
+			"required": ["name", "task", "language", "jsonl_path", "num_samples"],
+			"additionalProperties": true
+		},
+		"prediction": {
+			"type": "object",
+			"required": ["file", "validation"],
+			"additionalProperties": true
+		},
+		"metric": {
+			"type": "object",
+			"required": ["name", "score", "unit", "display", "higher_is_better"],
+			"additionalProperties": true
+		},
+		"baseline": { "type": ["object", "null"], "additionalProperties": true },
+		"rps": { "type": ["number", "null"] },
+		"pipeline": {
+			"type": "object",
+			"required": ["pipeline_id", "nodes", "conversion_steps"],
+			"additionalProperties": true
+		},
+		"versions": { "type": "object", "additionalProperties": true },
+		"artifacts": { "type": "object", "additionalProperties": true },
+		"status": { "type": "string" }
+	},
+	"additionalProperties": true
+}

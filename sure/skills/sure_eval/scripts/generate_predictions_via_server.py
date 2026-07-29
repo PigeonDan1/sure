@@ -9,12 +9,14 @@ the main flow chooses `direct_server_use`.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import socket
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +33,10 @@ logger = get_logger(__name__)
 
 SURE_SUITES_ROOT = Path("data/datasets/sure_benchmark/SURE_Test_Suites")
 PREDICTION_SNAPSHOT_INTERVAL = 25
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -571,6 +577,21 @@ def _load_existing_structured_predictions(path: Path) -> dict[str, dict[str, Any
     return records
 
 
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _count_nonempty_lines(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        return sum(1 for line in handle if line.strip())
+
+
 def _write_prediction_snapshots(
     *,
     samples: list[dict[str, Any]],
@@ -650,6 +671,105 @@ def _upsert_dataset_status(
     datasets.append(dict(dataset_status))
     payload["datasets"] = datasets
     return payload, datasets[-1]
+
+
+def _write_prediction_manifests(
+    *,
+    predictions_dir: Path,
+    run_dir: Path,
+    model_name: str,
+    tool_name: str,
+    dataset: str,
+    task: str,
+    language: str,
+    prediction_path: Path,
+    structured_prediction_path: Path,
+    protocol_id: str | None,
+    source_samples: int,
+    generated_samples: int,
+) -> tuple[Path, Path]:
+    predictions_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = predictions_dir / "manifest.json"
+    conversion_path = predictions_dir / "conversion_manifest.json"
+    txt_exists = prediction_path.is_file()
+    jsonl_exists = structured_prediction_path.is_file()
+    row = {
+        "dataset": dataset,
+        "task": task,
+        "language": language,
+        "format_used": "jsonl+txt" if jsonl_exists else "txt",
+        "txt": str(prediction_path),
+        "jsonl": str(structured_prediction_path) if jsonl_exists else None,
+        "txt_sha256": _sha256(prediction_path) if txt_exists else None,
+        "jsonl_sha256": _sha256(structured_prediction_path) if jsonl_exists else None,
+        "num_rows": _count_nonempty_lines(prediction_path),
+        "structured_num_rows": _count_nonempty_lines(structured_prediction_path) if jsonl_exists else 0,
+        "source_samples": source_samples,
+        "generated_samples": generated_samples,
+        "protocol_id": protocol_id,
+    }
+    conversion_row = {
+        "dataset": dataset,
+        "source_format": "model_mcp_tool_response",
+        "format_used": row["format_used"],
+        "num_rows": row["num_rows"],
+        "source_artifacts": {
+            "raw_response_field": "predictions/<dataset>.jsonl:raw_response",
+            "structured_jsonl": str(structured_prediction_path) if jsonl_exists else None,
+            "compatibility_tsv": str(prediction_path),
+        },
+        "steps": [
+            {
+                "name": "raw_response_to_prediction",
+                "input": "MCP tools/call JSON-RPC response payload",
+                "output": "prediction object and normalized_prediction scalar/path",
+                "script": "scripts/generate_predictions_via_server.py:_normalize_prediction_payload",
+            },
+            {
+                "name": "structured_prediction_to_tsv_projection",
+                "input": "predictions/<dataset>.jsonl normalized_prediction",
+                "output": "predictions/<dataset>.txt key<TAB>normalized_prediction",
+                "script": "scripts/generate_predictions_via_server.py:_write_prediction_snapshots",
+            },
+        ],
+        "conversion_trace": None,
+    }
+
+    existing_manifest = _load_yaml(manifest_path) if manifest_path.is_file() else {}
+    existing_conversion = _load_yaml(conversion_path) if conversion_path.is_file() else {}
+    existing_datasets = [
+        item
+        for item in existing_manifest.get("datasets", [])
+        if isinstance(item, dict) and item.get("dataset") != dataset
+    ]
+    existing_conversion_datasets = [
+        item
+        for item in existing_conversion.get("datasets", [])
+        if isinstance(item, dict) and item.get("dataset") != dataset
+    ]
+    generated_at = _utc_now()
+    prediction_manifest = {
+        "schema": "sure.eval.prediction_manifest.v1",
+        "generated_at": generated_at,
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir),
+        "model_name": model_name,
+        "tool_name": tool_name,
+        "predictions_dir": str(predictions_dir),
+        "datasets": existing_datasets + [row],
+    }
+    conversion_manifest = {
+        "schema": "sure.eval.prediction_conversion_manifest.v1",
+        "generated_at": generated_at,
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir),
+        "generated_by": "scripts/generate_predictions_via_server.py",
+        "predictions_dir": str(predictions_dir),
+        "datasets": existing_conversion_datasets + [conversion_row],
+    }
+    manifest_path.write_text(json.dumps(prediction_manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    conversion_path.write_text(json.dumps(conversion_manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return manifest_path, conversion_path
 
 
 def main() -> int:
@@ -805,16 +925,16 @@ def main() -> int:
     default_status_payload: dict[str, Any] = {
         "run_id": run_dir.name,
         "model_name": model_dir.name,
-        "execution_path": os.environ.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
-        "execution_requested": os.environ.get("SURE_EVAL_EXECUTION_REQUESTED", ""),
-        "execution_job_id": os.environ.get("SURE_EVAL_EXECUTION_JOB_ID", ""),
+        "execution_path": env.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
+        "execution_requested": env.get("SURE_EVAL_EXECUTION_REQUESTED", ""),
+        "execution_job_id": env.get("SURE_EVAL_EXECUTION_JOB_ID", ""),
         "inference_call_mode": "direct_server_use",
         "protocol_id": args.protocol if args.protocol.lower() != "none" else None,
         "tool_name": tool_name,
         "host": socket.gethostname(),
-        "device_request": os.environ.get("SURE_EVAL_DEVICE_REQUEST", args.device or ""),
-        "device_actual": os.environ.get("SURE_EVAL_DEVICE_ACTUAL", args.device or ""),
-        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+        "device_request": env.get("SURE_EVAL_DEVICE_REQUEST", args.device or ""),
+        "device_actual": env.get("SURE_EVAL_DEVICE_ACTUAL", args.device or ""),
+        "cuda_visible_devices": env.get("CUDA_VISIBLE_DEVICES", ""),
     }
     dataset_status = {
         "dataset": canonical_dataset,
@@ -933,9 +1053,25 @@ def main() -> int:
                 sample_task=sample_task,
                 sample_language=sample_language,
             )
+            manifest_path, conversion_manifest_path = _write_prediction_manifests(
+                predictions_dir=predictions_dir,
+                run_dir=run_dir,
+                model_name=model_dir.name,
+                tool_name=tool_name,
+                dataset=canonical_dataset,
+                task=sample_task,
+                language=sample_language,
+                prediction_path=prediction_path,
+                structured_prediction_path=structured_prediction_path,
+                protocol_id=args.protocol if args.protocol.lower() != "none" else None,
+                source_samples=len(samples),
+                generated_samples=len(prediction_map),
+            )
 
             current_dataset_status["status"] = "completed"
             current_dataset_status["num_generated_samples"] = len(samples)
+            current_dataset_status["prediction_manifest"] = str(manifest_path)
+            current_dataset_status["conversion_manifest"] = str(conversion_manifest_path)
             status_path.write_text(
                 json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
@@ -987,6 +1123,8 @@ def main() -> int:
                 "structured_prediction_file": str(structured_prediction_path),
                 "result_log_file": str(result_log_path),
                 "status_file": str(status_path),
+                "prediction_manifest": str(predictions_dir / "manifest.json"),
+                "conversion_manifest": str(predictions_dir / "conversion_manifest.json"),
                 "protocol_id": args.protocol if args.protocol.lower() != "none" else None,
                 "num_samples": len(samples),
             },

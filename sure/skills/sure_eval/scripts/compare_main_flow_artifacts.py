@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-REQUIRED_ROOT_FILES = ("evaluation_payload.json", "report.jsonl", "protocol.yaml")
+REQUIRED_ROOT_FILES = ("evaluation_payload.json", "report.jsonl", "protocol.yaml", "report_snapshot.md")
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -24,6 +24,16 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
         if line.strip():
             rows.append(json.loads(line))
     return rows
+
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    try:
+        import yaml
+
+        value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _metric_slug(metric: str) -> str:
@@ -40,6 +50,32 @@ def _prediction_keys(path: Path, limit: int | None) -> list[str]:
         if limit is not None and len(keys) >= limit:
             break
     return keys
+
+
+def _prediction_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        if "\t" in line:
+            key, value = line.split("\t", 1)
+        else:
+            parts = line.split(None, 1)
+            key = parts[0]
+            value = parts[1] if len(parts) > 1 else ""
+        values[key] = value
+    return values
+
+
+def _structured_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if isinstance(row, dict) and row.get("key"):
+            values[str(row["key"])] = str(row.get("normalized_prediction") or "")
+    return values
 
 
 def _row_key(row: dict[str, Any]) -> tuple[str, str]:
@@ -100,11 +136,19 @@ def _validate_tree(root: Path, label: str) -> tuple[dict[str, Any], list[str]]:
         else:
             if payload.get("schema") != "sure.eval.payload.v2":
                 errors.append(f"{label}: evaluation_payload.json schema must be sure.eval.payload.v2")
+    if (root / "protocol.yaml").is_file():
+        protocol = _read_yaml(root / "protocol.yaml")
+        if protocol.get("schema") != "sure.eval.inference_protocol.v1":
+            errors.append(f"{label}: protocol.yaml schema must be sure.eval.inference_protocol.v1")
     if (root / "report.jsonl").is_file():
         try:
             rows = _read_jsonl(root / "report.jsonl")
         except Exception as exc:
             errors.append(f"{label}: invalid report.jsonl: {exc}")
+        else:
+            for index, row in enumerate(rows, 1):
+                if row.get("schema") != "sure.eval.report.dataset_metric.v1":
+                    errors.append(f"{label}: report.jsonl line {index} schema must be sure.eval.report.dataset_metric.v1")
 
     payload_rows = payload.get("results") if isinstance(payload.get("results"), list) else []
     if not payload_rows:
@@ -126,6 +170,17 @@ def _validate_tree(root: Path, label: str) -> tuple[dict[str, Any], list[str]]:
             errors.append(f"{label}: missing {prediction_txt}")
         if not prediction_jsonl.is_file():
             errors.append(f"{label}: missing {prediction_jsonl}")
+        if prediction_txt.is_file() and prediction_jsonl.is_file():
+            try:
+                txt_values = _prediction_values(prediction_txt)
+                structured_values = _structured_values(prediction_jsonl)
+            except Exception as exc:
+                errors.append(f"{label}: failed to inspect prediction projection for {dataset}: {exc}")
+            else:
+                if set(txt_values) != set(structured_values):
+                    errors.append(f"{label}: prediction txt/jsonl keys differ for {dataset}")
+                elif any(txt_values[key] != structured_values[key] for key in txt_values):
+                    errors.append(f"{label}: prediction txt/jsonl normalized values differ for {dataset}")
         metric_dir = root / "metrics" / dataset / _metric_slug(metric)
         if not (metric_dir / "report.json").is_file():
             errors.append(f"{label}: missing {metric_dir / 'report.json'}")
@@ -134,6 +189,10 @@ def _validate_tree(root: Path, label: str) -> tuple[dict[str, Any], list[str]]:
         sample_report = root / "sample_reports" / dataset / f"{_metric_slug(metric)}.jsonl"
         if not sample_report.is_file():
             errors.append(f"{label}: missing {sample_report}")
+    for name in ("manifest.json", "conversion_manifest.json"):
+        path = root / "predictions" / name
+        if not path.is_file():
+            errors.append(f"{label}: missing {path}")
     return payload, errors
 
 
