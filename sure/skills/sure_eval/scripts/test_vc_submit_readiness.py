@@ -65,10 +65,19 @@ class ProbeTests(unittest.TestCase):
 
 class ImageCheckTests(unittest.TestCase):
     def test_local_image_passes_without_probe(self):
-        run = make_runner([(["docker", "image", "inspect"], FakeCompleted(0, "[]", ""))])
+        run = make_runner([(["docker", "image", "inspect"], FakeCompleted(0, "sha256:abc123\n", ""))])
         result = vc_precheck.check_image(IMG, "auto_select_best_image", run)
         self.assertEqual(result.status, "pass")
         self.assertEqual(len(run.calls), 1)
+
+    def test_zero_exit_error_text_is_not_local(self):
+        run = make_runner([
+            (["docker", "image", "inspect"], FakeCompleted(0, "", "Error response from daemon: No such image\nError: exit status 1\n")),
+            (["vc", "submit"], FakeCompleted(1, "", "partition not found")),
+        ])
+        result = vc_precheck.check_image(IMG, "cli_override", run)
+        self.assertEqual(result.status, "pass")
+        self.assertIn("not local", result.detail)
 
     def test_registry_hit_passes_with_note(self):
         run = make_runner([
@@ -108,7 +117,7 @@ class ImageCheckTests(unittest.TestCase):
         self.assertEqual(vc_precheck.check_image(IMG, "model_metadata", make_runner(responses)).status, "warn")
 
 
-VC_INFO_U = "User: ruichen.sun\n[Partition]\npdcpu\npdgpu-3090\npdgpu-4090\n[Quota]\nGPU: 32\n"
+VC_INFO_U = "User: ruichen.sun\n[Partition]\n------------------------------\npdcpu\npdgpu-3090\npdgpu-4090\n[Quota]\nGPU: 32\n"
 
 
 class PartitionCheckTests(unittest.TestCase):
@@ -151,7 +160,7 @@ class VenvCheckTests(unittest.TestCase):
 
     def test_expected_venv_found_passes(self):
         run = make_runner([
-            (["docker", "image", "inspect"], FakeCompleted(0, "[]", "")),
+            (["docker", "image", "inspect"], FakeCompleted(0, "sha256:abc123\n", "")),
             (["docker", "run"], FakeCompleted(0, "/opt/asr_nemo_stt_zh_conformer_transducer_venv\n/opt/conda\n", "")),
         ])
         result = vc_precheck.check_venv(IMG, "/opt/asr_nemo_stt_zh_conformer_transducer_venv", run)
@@ -159,12 +168,21 @@ class VenvCheckTests(unittest.TestCase):
 
     def test_expected_venv_missing_fails_with_opt_listing(self):
         run = make_runner([
-            (["docker", "image", "inspect"], FakeCompleted(0, "[]", "")),
+            (["docker", "image", "inspect"], FakeCompleted(0, "sha256:abc123\n", "")),
             (["docker", "run"], FakeCompleted(0, "/opt/conda\n", "")),
         ])
         result = vc_precheck.check_venv(IMG, "/opt/x_venv", run)
         self.assertEqual(result.status, "fail")
         self.assertEqual(result.candidates, ["/opt/conda"])
+
+    def test_zero_exit_garbage_run_output_warns(self):
+        run = make_runner([
+            (["docker", "image", "inspect"], FakeCompleted(0, "sha256:abc123\n", "")),
+            (["docker", "run"], FakeCompleted(0, "Error: exit status 125\n", "")),
+        ])
+        result = vc_precheck.check_venv(IMG, "/opt/x_venv", run)
+        self.assertEqual(result.status, "warn")
+        self.assertEqual(result.candidates, [])
 
 
 class ResourceCheckTests(unittest.TestCase):
