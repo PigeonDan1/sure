@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
+import subprocess as real_subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -237,6 +240,47 @@ class SelectBestImageTests(unittest.TestCase):
         self.fake_docker(LOCAL_IMAGES)
         selected = self.vc_submitter.select_best_image("asr_nemo_stt_zh_conformer_transducer")
         self.assertEqual(selected, IMG)
+
+
+class CliTests(unittest.TestCase):
+    SCRIPT = str(Path(__file__).resolve().parent / "check_vc_submit_readiness.py")
+
+    def run_cli(self, *extra):
+        return real_subprocess.run(
+            [sys.executable, self.SCRIPT,
+             "--image", IMG, "--image-source", "cli_override",
+             "--partition", "pdcpu", "--memory", "16G",
+             "--volume", "/hpc_stor03/sjtu_home:/hpc_stor03/sjtu_home",
+             "--path", "/hpc_stor03/sjtu_home/x",
+             "--expected-venv", "/opt/x_venv", *extra],
+            capture_output=True, text=True,
+        )
+
+    def test_cli_passes_and_writes_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "vc_precheck.json"
+            completed = self.run_cli("--output", str(out))
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            self.assertTrue(payload["passed"])
+            self.assertEqual(len(payload["checks"]), 5)
+
+    def test_cli_fails_on_bad_memory(self):
+        completed = self.run_cli("--memory-override-for-test")
+        self.assertNotEqual(completed.returncode, 0)
+
+    def test_cli_reports_failure_on_stderr(self):
+        completed = real_subprocess.run(
+            [sys.executable, self.SCRIPT,
+             "--image", IMG, "--image-source", "cli_override",
+             "--partition", "pdcpu", "--memory", "16",
+             "--volume", "/hpc_stor03/sjtu_home:/hpc_stor03/sjtu_home",
+             "--path", "/hpc_stor03/sjtu_home/x",
+             "--expected-venv", "/opt/x_venv"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("resources", completed.stderr)
 
 
 if __name__ == "__main__":
