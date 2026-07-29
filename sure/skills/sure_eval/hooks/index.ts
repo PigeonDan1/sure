@@ -287,7 +287,7 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const allowed = new Set<string>();
 	for (const unit of owningUnits) {
 		if (unit.gateScript) {
-			allowed.add(join("scripts", unit.gateScript));
+			allowed.add(`scripts/${unit.gateScript}`);
 		}
 	}
 	if (allowed.has(invokedScript)) {
