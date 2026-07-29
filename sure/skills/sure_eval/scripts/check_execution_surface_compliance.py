@@ -21,6 +21,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -213,6 +215,111 @@ def check_no_prior_run_leakage(surface_path: Path) -> dict[str, Any]:
     return {"passed": True, "evidence": "no prior-run leakage declared"}
 
 
+INTERPRETER_ENV_KEYS = ("MODEL_PYTHON", "PYTHON_BIN", "HARNESS_PYTHON_BIN")
+
+TASK_DEFAULT_TOOLS = {
+    "ASR": "transcribe_audio",
+    "S2TT": "translate_audio",
+    "TTS": "synthesize_speech",
+    "VC": "convert_voice",
+}
+
+
+def _interpreter_candidates(model_dir: Any) -> list[str]:
+    if not isinstance(model_dir, str) or not model_dir:
+        return []
+    root = Path(model_dir).expanduser()
+    if not root.is_dir():
+        return []
+    found: list[str] = []
+    for pattern in ("venv*/bin/python*", ".venv/bin/python*"):
+        found.extend(str(path) for path in sorted(root.glob(pattern)))
+    return found[:5]
+
+
+def _expected_tool_names(model_dir: Any) -> list[str]:
+    if not isinstance(model_dir, str) or not model_dir:
+        return []
+    config_path = Path(model_dir).expanduser() / "config.yaml"
+    if not config_path.is_file():
+        return []
+    try:
+        import yaml
+
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return []
+    if not isinstance(config, dict):
+        return []
+    names = [str(tool["name"]) for tool in config.get("tools") or [] if isinstance(tool, dict) and tool.get("name")]
+    if names:
+        return names
+    model = config.get("model") if isinstance(config.get("model"), dict) else {}
+    task = str(model.get("task") or config.get("task") or config.get("task_type") or "").strip().upper()
+    return [TASK_DEFAULT_TOOLS.get(task, "predict")]
+
+
+def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
+    if not surface_path.exists():
+        return {"passed": False, "evidence": f"{surface_path.name} not found"}
+    try:
+        data = json.loads(surface_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return {"passed": False, "evidence": f"invalid JSON: {e}"}
+
+    execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
+    if str(execution.get("requested") or "local") == "vc" or str(execution.get("path_planned") or "") == "vc_submit":
+        return {"passed": True, "evidence": "vc execution: container runtime is validated at vc submit preflight"}
+
+    env = data.get("env") if isinstance(data.get("env"), dict) else {}
+    resolved_inputs = data.get("resolved_inputs") if isinstance(data.get("resolved_inputs"), dict) else {}
+    issues: list[str] = []
+
+    declared = {key: str(env[key]) for key in INTERPRETER_ENV_KEYS if isinstance(env.get(key), str) and env[key]}
+    model_python = declared.get("MODEL_PYTHON") or declared.get("PYTHON_BIN")
+    if not model_python:
+        issues.append("env must declare MODEL_PYTHON (absolute path to the model interpreter) for local execution")
+    for key, value in declared.items():
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            issues.append(f"{key} must be an absolute path, got: {value}")
+        elif not path.exists():
+            issues.append(f"{key} does not exist: {value}")
+        elif not os.access(path, os.X_OK):
+            issues.append(f"{key} is not executable: {value}")
+
+    if model_python and not issues:
+        try:
+            probe = subprocess.run(
+                [model_python, "-c", "import torch"],
+                capture_output=True,
+                text=True,
+                timeout=180,
+                check=False,
+            )
+            probe_error = "" if probe.returncode == 0 else ((probe.stderr or "").strip() or "import torch failed").splitlines()[-1]
+        except subprocess.TimeoutExpired:
+            probe_error = "import torch timed out after 180s"
+        if probe_error:
+            candidates = _interpreter_candidates(resolved_inputs.get("model_dir"))
+            suffix = f"; interpreter candidates: {', '.join(candidates)}" if candidates else ""
+            issues.append(f"MODEL_PYTHON cannot import torch ({probe_error}){suffix}")
+
+    declared_tool = ""
+    for value in (env.get("TOOL_NAME"), resolved_inputs.get("tool_name")):
+        if isinstance(value, str) and value:
+            declared_tool = value
+            break
+    if declared_tool:
+        expected = _expected_tool_names(resolved_inputs.get("model_dir"))
+        if expected and declared_tool not in expected:
+            issues.append(f"tool name '{declared_tool}' is not declared by the model; expected one of: {', '.join(expected)}")
+
+    if issues:
+        return {"passed": False, "evidence": "; ".join(issues)}
+    return {"passed": True, "evidence": "interpreter, torch import, and tool name verified"}
+
+
 REQUIRED_EVALUATE_ARGS = [
     "--results-dir",
     "--protocol-id",
@@ -344,6 +451,7 @@ def main() -> int:
         "source_provenance": check_source_provenance(surface_path),
         "prior_run_leakage": check_no_prior_run_leakage(surface_path),
         "evaluate_predictions_args": check_evaluate_predictions_args(shell_path),
+        "inference_runtime": check_inference_runtime(surface_path),
         "evaluation_route_plan": check_evaluation_route_plan(artifacts_dir),
     }
 

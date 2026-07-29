@@ -52,7 +52,14 @@
 			},
 			"additionalProperties": false
 		},
-		"resolved_inputs": { "type": "object", "additionalProperties": true },
+		"resolved_inputs": {
+			"type": "object",
+			"properties": {
+				"model_dir": { "type": "string" },
+				"tool_name": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
 		"expected_outputs": { "type": "object", "additionalProperties": true },
 		"commands": { "type": "array", "items": { "type": "string" } },
 		"env": { "type": "object", "additionalProperties": { "type": "string" } },
