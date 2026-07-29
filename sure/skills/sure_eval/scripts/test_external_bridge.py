@@ -79,6 +79,26 @@ class BridgeFailureReportingTests(unittest.TestCase):
         exc = RuntimeError("first\n\n\nsecond")
         self.assertEqual(ep._summarize_bridge_error(exc), "first | second")
 
+    def test_summary_drops_traceback_scaffolding(self) -> None:
+        exc = RuntimeError(
+            "external sure-evaluation describe failed (returncode=1)\n"
+            "STDOUT:\n\n"
+            "STDERR:\n"
+            "Traceback (most recent call last):\n"
+            "  File \"<string>\", line 4, in <module>\n"
+            "    pipeline = build_pipeline_spec(\n"
+            "               ^^^^^^^^^^^^^^^^^^^\n"
+            "  File \"/engine/src/sure_eval/evaluation/scripts/contracts.py\", line 117, in find_task_route\n"
+            "    raise ValueError(f\"No configured route found\")\n"
+            "ValueError: No configured route found for ASR (language=zh, metric=bogus_metric)"
+        )
+        summary = ep._summarize_bridge_error(exc)
+        self.assertIn("No configured route found for ASR (language=zh, metric=bogus_metric)", summary)
+        self.assertNotIn("^^^", summary)
+        self.assertNotIn('File "', summary)
+        self.assertNotIn("Traceback", summary)
+        self.assertNotIn("STDOUT", summary)
+
 
 class UnsupportedMessageTests(unittest.TestCase):
     def test_message_quotes_the_underlying_engine_errors(self) -> None:

@@ -1357,9 +1357,13 @@ def merge_payload_results(payload_paths: list[Path]) -> list[dict[str, Any]]:
     return results
 
 
+BRIDGE_NOISE_PREFIXES = ("Traceback (", 'File "', "^", "~", "STDOUT:", "STDERR:")
+
+
 def _summarize_bridge_error(exc: Exception) -> str:
     lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
-    return " | ".join(lines[-4:])[:400]
+    meaningful = [line for line in lines if not line.startswith(BRIDGE_NOISE_PREFIXES)]
+    return " | ".join((meaningful or lines)[-2:])[:400]
 
 
 def _unsupported_request_message(
