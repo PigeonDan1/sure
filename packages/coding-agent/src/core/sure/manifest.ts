@@ -19,6 +19,7 @@ export const SURE_COMMANDS = [
 	"science_gateway",
 	"research_discussion",
 	"sure_eval",
+	"sure_reval",
 	"sure_onboard",
 	"sure_feed",
 ] as const;

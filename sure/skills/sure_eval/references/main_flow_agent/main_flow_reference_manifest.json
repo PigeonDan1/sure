@@ -12,6 +12,7 @@
     "templates/run_single_model.sh",
     "templates/run_single_model_single_dataset.sh",
     "templates/run_audio_evaluation_only.sh",
+    "templates/protocol.yaml",
     "templates/report_snapshot.md"
   ],
   "entries": [
@@ -197,9 +198,15 @@
     },
     {
       "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
+      "source_path": "templates/protocol.yaml",
+      "mirror_path": "references/main_flow_agent/templates/protocol.yaml",
+      "sha256": "1283f9482d063ef53e7604e24ce09e56adb161afae5fc1c8e003cd4a3fae9554"
+    },
+    {
+      "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",
       "source_path": "templates/report_snapshot.md",
       "mirror_path": "references/main_flow_agent/templates/report_snapshot.md",
-      "sha256": "b5cbf5ee529d103f40da4e3106438df1ee29c3db6ecc06b5a29ee9f0c4d3fec1"
+      "sha256": "36085d3f699cb59b245e6ea2d758f62473dd5547660e9f11f6557b7462a75e5c"
     },
     {
       "source_root": "/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent",

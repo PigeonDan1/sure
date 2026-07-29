@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
 import json
 import math
+import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +29,10 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -34,6 +41,23 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
 
 def _safe_component(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "._=-" else "_" for ch in value.lower()) or "metric"
+
+
+def _sha256(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _count_lines(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        return sum(1 for line in handle if line.strip())
 
 
 def _load_raw_rows(path: Path) -> dict[str, dict[str, Any]]:
@@ -127,26 +151,71 @@ def _pipeline_description(*, language: str, metric: str) -> dict[str, Any]:
 
 
 def _write_protocol(path: Path, *, dataset: str, metric: str, language: str, model_dir: str, tool_name: str, protocol_id: str) -> None:
+    del dataset, metric, language
     payload = {
-        "schema": "sure.eval.protocol.v1",
+        "schema": "sure.eval.inference_protocol.v1",
         "protocol_id": protocol_id,
-        "model": {"model_dir": model_dir, "tool_name": tool_name, "server": {}},
-        "datasets": [
-            {
-                "name": dataset,
-                "task": "TTS",
-                "language": language,
-                "metrics": [metric],
-            }
-        ],
-        "protocol": {"id": protocol_id},
-        "artifact_layout": {
-            "evaluation_payload": "evaluation_payload.json",
-            "report_jsonl": "report.jsonl",
-            "protocol": "protocol.yaml",
-            "metrics": "metrics/<dataset>/<metric_slug>/",
-            "sample_reports": "sample_reports/<dataset>/<metric_slug>.jsonl",
+        "run": {
+            "run_id": path.parent.name,
+            "run_dir": str(path.parent),
+            "created_at": _utc_now(),
         },
+        "model": {
+            "model_name": Path(model_dir).name if model_dir else tool_name,
+            "model_dir": model_dir,
+            "model_source": None,
+            "weights_source": None,
+            "model_dir_source": None,
+            "mcp_tool_name": tool_name,
+            "server_config": {},
+        },
+        "protocol_selection": {
+            "protocol_id": protocol_id,
+            "definition_path": None,
+            "model_protocol_config_path": None,
+            "is_default": protocol_id == "strict_core",
+            "purpose": "recovered audio-quality segment from existing predictions",
+            "standard_params": {},
+            "resolved_model_params": {},
+            "unmapped": {},
+        },
+        "inference_environment": {
+            "execution_path": "reused_predictions",
+            "vc": {},
+            "container": {},
+            "server": {},
+            "env": {},
+            "mount_policy": {},
+        },
+        "inference_constraints": {
+            "no_external_lm": True,
+            "no_retrieval": True,
+            "no_hotwords": True,
+            "single_pass_decode": True,
+            "no_prompt_engineering": True,
+            "local_fallback_allowed": False,
+            "metric_logic_in_inference_image_allowed": False,
+            "required_preflight_checks": ["deterministic_prediction_contract"],
+        },
+        "execution_surface": {
+            "materialized": True,
+            "execution_surface_type": "audio_evaluation_only_recovery",
+            "entrypoint_path": "scripts/recover_dnsmos_segment.py",
+            "generation_method": "recovery_script",
+            "isolation_compliance": {},
+        },
+        "prediction_contract": {
+            "contract_path": "references/contracts/prediction_output_contract.md",
+            "compatibility_tsv": "predictions/<dataset>.txt",
+            "structured_jsonl": "predictions/<dataset>.jsonl",
+            "format_used": "jsonl+txt",
+            "generated_by": "reused from parent run predictions",
+            "protocol_argument": protocol_id,
+        },
+        "notes": [
+            "This file records inference protocol only for a recovered evaluation segment.",
+            "Dataset scope, evaluation routes, metric results, validation, and metric artifacts are recorded in report_snapshot.md and report.jsonl.",
+        ],
     }
     try:
         import yaml
@@ -156,6 +225,137 @@ def _write_protocol(path: Path, *, dataset: str, metric: str, language: str, mod
         text = json.dumps(_strict(payload), ensure_ascii=False, indent=2) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def _metric_display(score: float) -> str:
+    return f"{score:.6f}"
+
+
+def _standard_report_row(
+    *,
+    row: dict[str, Any],
+    score: float,
+    total: int,
+    language: str,
+    metric_dir: Path,
+    sample_report_path: Path,
+    prediction_path: Path,
+    structured_prediction_path: Path,
+    protocol_id: str,
+    model_dir: str,
+    tool_name: str,
+) -> dict[str, Any]:
+    return _strict(
+        {
+            "schema": "sure.eval.report.dataset_metric.v1",
+            "run": {"run_id": row["run_id"], "protocol_id": protocol_id},
+            "model": {"model_name": Path(model_dir).name if model_dir else tool_name, "model_dir": model_dir, "tool_name": tool_name},
+            "dataset": {
+                "name": row["dataset"],
+                "task": "TTS",
+                "language": language,
+                "jsonl_path": row["inputs"]["jsonl_path"],
+                "num_samples": total,
+            },
+            "prediction": {
+                "file": str(prediction_path),
+                "validation": {
+                    "expected_samples": total,
+                    "provided_predictions": _count_lines(prediction_path),
+                    "missing_keys": [],
+                    "extra_keys": [],
+                    "duplicate_keys": [],
+                    "empty_prediction_keys": [],
+                    "structured_missing_keys": [],
+                    "structured_extra_keys": [],
+                    "structured_duplicate_keys": [],
+                    "invalid_structured_rows": [],
+                    "structured_projection_mismatch_keys": [],
+                    "contract_violation_keys": [],
+                    "is_valid": True,
+                    "prediction_jsonl_path": str(structured_prediction_path) if structured_prediction_path.is_file() else None,
+                    "format_used": "jsonl+txt" if structured_prediction_path.is_file() else "txt",
+                },
+            },
+            "metric": {"name": "dnsmos", "score": score, "unit": "mos", "display": _metric_display(score), "higher_is_better": True, "score_key": "OVRL"},
+            "baseline": None,
+            "rps": row.get("rps"),
+            "pipeline": row["pipeline"],
+            "versions": {
+                "evaluation_backend": "external",
+                "evaluator_version": "sure-evaluation",
+                "recovery": "scripts/recover_dnsmos_segment.py",
+            },
+            "artifacts": {
+                "metric_artifact_dir": str(metric_dir),
+                "report": str(metric_dir / "report.json"),
+                "pipeline_description": str(metric_dir / "pipeline_description.json"),
+                "sample_report": str(sample_report_path),
+            },
+            "status": "success",
+        }
+    )
+
+
+def _materialize_segment_predictions(segment_dir: Path, parent_prediction_path: Path, dataset: str, task: str, language: str) -> tuple[Path, Path]:
+    pred_dir = segment_dir / "predictions"
+    pred_dir.mkdir(parents=True, exist_ok=True)
+    prediction_path = pred_dir / f"{dataset}.txt"
+    structured_prediction_path = pred_dir / f"{dataset}.jsonl"
+    if parent_prediction_path.is_file():
+        shutil.copy2(parent_prediction_path, prediction_path)
+    parent_structured = parent_prediction_path.with_suffix(".jsonl")
+    if parent_structured.is_file():
+        shutil.copy2(parent_structured, structured_prediction_path)
+    generated_at = _utc_now()
+    manifest = {
+        "schema": "sure.eval.prediction_manifest.v1",
+        "generated_at": generated_at,
+        "run_id": segment_dir.name,
+        "run_dir": str(segment_dir),
+        "predictions_dir": str(pred_dir),
+        "datasets": [
+            {
+                "dataset": dataset,
+                "task": task,
+                "language": language,
+                "format_used": "jsonl+txt" if structured_prediction_path.is_file() else "txt",
+                "txt": str(prediction_path),
+                "jsonl": str(structured_prediction_path) if structured_prediction_path.is_file() else None,
+                "txt_sha256": _sha256(prediction_path),
+                "jsonl_sha256": _sha256(structured_prediction_path),
+                "num_rows": _count_lines(prediction_path),
+                "structured_num_rows": _count_lines(structured_prediction_path),
+            }
+        ],
+    }
+    conversion = {
+        "schema": "sure.eval.prediction_conversion_manifest.v1",
+        "generated_at": generated_at,
+        "run_id": segment_dir.name,
+        "run_dir": str(segment_dir),
+        "generated_by": "scripts/recover_dnsmos_segment.py",
+        "predictions_dir": str(pred_dir),
+        "datasets": [
+            {
+                "dataset": dataset,
+                "source_format": "parent_run_predictions",
+                "format_used": "jsonl+txt" if structured_prediction_path.is_file() else "txt",
+                "num_rows": _count_lines(prediction_path),
+                "source_artifacts": {
+                    "source_txt": str(parent_prediction_path),
+                    "source_jsonl": str(parent_structured) if parent_structured.is_file() else None,
+                    "compatibility_tsv": str(prediction_path),
+                    "structured_jsonl": str(structured_prediction_path) if structured_prediction_path.is_file() else None,
+                },
+                "steps": [{"name": "parent_prediction_reuse", "script": "scripts/recover_dnsmos_segment.py"}],
+                "conversion_trace": None,
+            }
+        ],
+    }
+    _write_json(pred_dir / "manifest.json", manifest)
+    _write_json(pred_dir / "conversion_manifest.json", conversion)
+    return prediction_path, structured_prediction_path
 
 
 def main() -> int:
@@ -252,7 +452,14 @@ def main() -> int:
         for sample in samples:
             handle.write(json.dumps(_sample_report_row(sample, dataset=args.dataset, metric=metric), ensure_ascii=False) + "\n")
 
-    prediction_path = run_dir / "predictions" / f"{args.dataset}.txt"
+    parent_prediction_path = run_dir / "predictions" / f"{args.dataset}.txt"
+    prediction_path, structured_prediction_path = _materialize_segment_predictions(
+        segment_dir,
+        parent_prediction_path,
+        args.dataset,
+        "TTS",
+        language,
+    )
     dataset_jsonl = Path.cwd() / "data" / "datasets" / "sure_benchmark" / "jsonl" / f"{args.dataset}.jsonl"
     row = {
         "schema": "sure.eval.payload.dataset_metric.v2",
@@ -315,7 +522,20 @@ def main() -> int:
         "results": [row],
     }
     _write_json(segment_dir / "evaluation_payload.json", payload)
-    (segment_dir / "report.jsonl").write_text(json.dumps(_strict(row), ensure_ascii=False) + "\n", encoding="utf-8")
+    report_row = _standard_report_row(
+        row=row,
+        score=score,
+        total=total,
+        language=language,
+        metric_dir=metric_dir,
+        sample_report_path=sample_report_path,
+        prediction_path=prediction_path,
+        structured_prediction_path=structured_prediction_path,
+        protocol_id=args.protocol_id,
+        model_dir=args.model_dir,
+        tool_name=args.tool_name,
+    )
+    (segment_dir / "report.jsonl").write_text(json.dumps(report_row, ensure_ascii=False) + "\n", encoding="utf-8")
     _write_protocol(
         segment_dir / "protocol.yaml",
         dataset=args.dataset,
@@ -325,6 +545,29 @@ def main() -> int:
         tool_name=args.tool_name,
         protocol_id=args.protocol_id,
     )
+    try:
+        from generate_report_snapshot import build_snapshot
+
+        (segment_dir / "report_snapshot.md").write_text(build_snapshot(segment_dir), encoding="utf-8")
+    except Exception:
+        (segment_dir / "report_snapshot.md").write_text(
+            "# DNSMOS Recovery Evaluation Snapshot\n\n"
+            "## Basic Information\n"
+            "## Formatting Policy\n"
+            "## Evaluation Scope\n"
+            "## Dataset Scope\n"
+            "## Result Summary\n"
+            "## Per-Dataset Test Results\n"
+            "## Metric Details\n"
+            "## Validation Summary\n"
+            "## Evaluation Pipeline\n"
+            "## Pipeline Trace Details\n"
+            "## Evaluation Runtime And Tool Versions\n"
+            "## Output Artifacts\n"
+            "## Artifact Groups\n"
+            "## Test Notes\n",
+            encoding="utf-8",
+        )
     _write_json(
         segment_dir / "evaluation_only_status.json",
         {

@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -51,6 +52,16 @@ def _count_valid_predictions(pred_path: Path) -> tuple[int, int]:
     return total, valid
 
 
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def _surface_env(surface: dict) -> dict[str, str]:
     env = surface.get("env")
     if not isinstance(env, dict):
@@ -61,6 +72,58 @@ def _surface_env(surface: dict) -> dict[str, str]:
             continue
         values[key] = str(value)
     return values
+
+
+def _device_request(surface: dict[str, Any], eval_input: dict[str, Any]) -> str:
+    runtime = surface.get("inference_runtime") if isinstance(surface.get("inference_runtime"), dict) else {}
+    for value in (runtime.get("device_request"), runtime.get("device")):
+        if isinstance(value, str) and value:
+            return value
+    resolved_runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
+    device = resolved_runtime.get("device") if isinstance(resolved_runtime.get("device"), dict) else {}
+    for value in (device.get("request"), device.get("resolved")):
+        if isinstance(value, str) and value:
+            return value
+    resolved_inputs = surface.get("resolved_inputs") if isinstance(surface.get("resolved_inputs"), dict) else {}
+    if isinstance(resolved_inputs.get("device"), str) and resolved_inputs["device"]:
+        return resolved_inputs["device"]
+    return "auto"
+
+
+def _local_device_env(device_request: str) -> dict[str, str]:
+    request = (device_request or "auto").strip()
+    lowered = request.lower()
+    env: dict[str, str] = {
+        "SURE_EVAL_DEVICE_REQUEST": request,
+        "DEVICE_RESOLVED": request,
+        "SURE_EVAL_DEVICE": request,
+    }
+    if lowered == "cpu":
+        env["DEVICE"] = "cpu"
+        env["SURE_EVAL_DEVICE_ACTUAL"] = "cpu"
+        env["CUDA_VISIBLE_DEVICES"] = ""
+        return env
+    match = re.fullmatch(r"cuda:(\d+)", lowered)
+    if match:
+        env["CUDA_VISIBLE_DEVICES"] = match.group(1)
+        env["DEVICE"] = request
+        env["SURE_EVAL_DEVICE_ACTUAL"] = "cuda:0"
+        return env
+    if lowered == "cuda":
+        env["DEVICE"] = "cuda"
+        env["SURE_EVAL_DEVICE_ACTUAL"] = "cuda"
+        return env
+    env["DEVICE"] = request
+    env["SURE_EVAL_DEVICE_ACTUAL"] = request
+    return env
+
+
+def _execution_requested(surface: dict[str, Any]) -> str:
+    execution = surface.get("execution") if isinstance(surface.get("execution"), dict) else {}
+    requested = execution.get("requested")
+    if isinstance(requested, str) and requested:
+        return requested
+    return "local"
 
 
 def main() -> int:
@@ -92,6 +155,7 @@ def main() -> int:
         _write_result(path, passed=False, sample_count=0, exit_code=1, stdout="", failures=[str(exc)])
         print(f"execution_surface.json is not valid JSON: {exc}", file=sys.stderr)
         return 1
+    eval_input = _read_json(run_dir / "artifacts" / "eval_input_resolved.json")
 
     entrypoint = surface.get("entrypoint") or surface.get("entrypoint_path") or ""
     if not entrypoint:
@@ -135,13 +199,14 @@ def main() -> int:
     log_path = logs_dir / "smoke_test.log"
     env = os.environ.copy()
     env.update(_surface_env(surface))
+    env.update(_local_device_env(_device_request(surface, eval_input)))
     if env.get("SURE_EVAL_HARNESS_PYTHON_BIN") and not env.get("HARNESS_PYTHON_BIN"):
         env["HARNESS_PYTHON_BIN"] = env["SURE_EVAL_HARNESS_PYTHON_BIN"]
     env.setdefault("REPO_ROOT", str(Path(__file__).resolve().parents[1]))
     env["SMOKE_ONLY"] = "1"
     env["SMOKE_TEST_SAMPLES"] = str(smoke_samples)
     env.setdefault("SURE_EVAL_EXECUTION_PATH", "local_smoke")
-    env.setdefault("SURE_EVAL_EXECUTION_REQUESTED", "vc")
+    env.setdefault("SURE_EVAL_EXECUTION_REQUESTED", _execution_requested(surface))
 
     exit_code = 1
     try:

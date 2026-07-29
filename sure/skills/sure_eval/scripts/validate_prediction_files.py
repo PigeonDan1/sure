@@ -135,6 +135,19 @@ def _task_contract_violations(
     return sorted(set(violations))
 
 
+def _structured_projection_mismatches(
+    predictions: dict[str, str],
+    structured: dict[str, dict[str, Any]],
+    expected_keys: set[str],
+) -> list[str]:
+    mismatches: list[str] = []
+    for key in sorted(expected_keys & set(predictions) & set(structured)):
+        normalized = str(structured[key].get("normalized_prediction") or "")
+        if predictions[key] != normalized:
+            mismatches.append(key)
+    return mismatches
+
+
 def validate_prediction_file(
     dataset_manager: DatasetManager,
     dataset_name: str,
@@ -170,6 +183,11 @@ def validate_prediction_file(
         if structured_path.exists()
         else []
     )
+    structured_projection_mismatch_keys = (
+        _structured_projection_mismatches(predictions, structured_predictions, expected_key_set)
+        if structured_path.exists()
+        else []
+    )
 
     is_valid = not missing_keys and not extra_keys and not duplicate_keys
     if require_nonempty and empty_prediction_keys:
@@ -180,6 +198,7 @@ def validate_prediction_file(
         or structured_duplicate_keys
         or invalid_structured_rows
         or contract_violation_keys
+        or structured_projection_mismatch_keys
     ):
         is_valid = False
 
@@ -201,6 +220,7 @@ def validate_prediction_file(
         "structured_extra_keys": structured_extra_keys,
         "structured_duplicate_keys": sorted(set(structured_duplicate_keys)),
         "invalid_structured_rows": invalid_structured_rows,
+        "structured_projection_mismatch_keys": structured_projection_mismatch_keys,
         "contract_violation_keys": contract_violation_keys,
         "require_nonempty": require_nonempty,
         "is_valid": is_valid,

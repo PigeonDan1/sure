@@ -11,6 +11,7 @@ This script is deterministic by design:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -18,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +51,10 @@ LOWER_IS_BETTER_METRICS = {
     "vc_wer",
     "vc_cer",
 }
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class ExternalEvaluationUnsupported(RuntimeError):
@@ -1033,6 +1039,160 @@ def _dataset_metric_row(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _validation_by_dataset(validation_payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    rows = validation_payload.get("results") if isinstance(validation_payload.get("results"), list) else []
+    out: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        dataset = str(row.get("dataset") or "")
+        if dataset:
+            out[dataset] = row
+    return out
+
+
+def _metric_score_from_payload_row(row: dict[str, Any]) -> Any:
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    score = result.get("score")
+    score_key = result.get("score_key")
+    if score is None and score_key:
+        score = result.get(score_key)
+    return score
+
+
+def _is_lower_better_metric(metric: str) -> bool:
+    metric_name = str(metric or "").lower()
+    return metric_name in LOWER_IS_BETTER_METRICS or metric_name.endswith(("wer", "cer", "der", "mer"))
+
+
+def _metric_unit(metric: str) -> str:
+    metric_name = str(metric or "").lower()
+    if _is_lower_better_metric(metric_name):
+        return "fraction"
+    if metric_name in {"accuracy", "acc"}:
+        return "fraction"
+    if metric_name.startswith("sim/"):
+        return "similarity"
+    if metric_name in {"dnsmos", "wv-mos", "utmos"}:
+        return "mos"
+    return "score"
+
+
+def _metric_display(metric: str, score: Any) -> str:
+    if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
+        return "N/A"
+    if _is_lower_better_metric(metric):
+        return f"{float(score) * 100:.2f}%"
+    return f"{float(score):.6f}"
+
+
+def _pipeline_nodes(row: dict[str, Any]) -> list[Any]:
+    pipeline = row.get("pipeline") if isinstance(row.get("pipeline"), dict) else {}
+    candidates = row.get("nodes") or pipeline.get("nodes") or []
+    nodes: list[Any] = []
+    if isinstance(candidates, list):
+        for node in candidates:
+            if isinstance(node, dict):
+                nodes.append(node)
+            elif node:
+                nodes.append({"node_id": str(node)})
+    return nodes
+
+
+def _standard_report_row_v1(
+    *,
+    row: dict[str, Any],
+    validation: dict[str, Any],
+    run_id: str,
+    protocol_id: str,
+    model_dir: Path | None,
+    tool_name: str,
+) -> dict[str, Any]:
+    artifacts = row.get("artifacts") if isinstance(row.get("artifacts"), dict) else {}
+    inputs = row.get("inputs") if isinstance(row.get("inputs"), dict) else {}
+    pipeline = row.get("pipeline") if isinstance(row.get("pipeline"), dict) else {}
+    context = row.get("evaluation_context") if isinstance(row.get("evaluation_context"), dict) else {}
+    metric = str(row.get("metric") or "")
+    score = _metric_score_from_payload_row(row)
+    prediction_file = artifacts.get("prediction_file") or inputs.get("prediction_path") or ""
+    pipeline_id = row.get("pipeline_id") or pipeline.get("pipeline_id") or context.get("pipeline_id")
+    validation_summary = {
+        "expected_samples": validation.get("expected_samples"),
+        "provided_predictions": validation.get("provided_predictions"),
+        "missing_keys": validation.get("missing_keys", []),
+        "extra_keys": validation.get("extra_keys", []),
+        "duplicate_keys": validation.get("duplicate_keys", []),
+        "empty_prediction_keys": validation.get("empty_prediction_keys", []),
+        "structured_missing_keys": validation.get("structured_missing_keys", []),
+        "structured_extra_keys": validation.get("structured_extra_keys", []),
+        "structured_duplicate_keys": validation.get("structured_duplicate_keys", []),
+        "invalid_structured_rows": validation.get("invalid_structured_rows", []),
+        "structured_projection_mismatch_keys": validation.get("structured_projection_mismatch_keys", []),
+        "contract_violation_keys": validation.get("contract_violation_keys", []),
+        "is_valid": validation.get("is_valid"),
+        "prediction_jsonl_path": validation.get("prediction_jsonl_path") or (str(Path(str(prediction_file)).with_suffix(".jsonl")) if prediction_file else None),
+        "format_used": validation.get("format_used") or "jsonl+txt",
+        "require_nonempty": validation.get("require_nonempty"),
+    }
+    return _to_strict_jsonable(
+        {
+            "schema": "sure.eval.report.dataset_metric.v1",
+            "run": {
+                "run_id": run_id,
+                "protocol_id": protocol_id,
+            },
+            "model": {
+                "model_name": model_dir.name if model_dir else tool_name,
+                "model_dir": str(model_dir) if model_dir else "",
+                "tool_name": tool_name,
+            },
+            "dataset": {
+                "name": row.get("dataset"),
+                "task": row.get("task"),
+                "language": row.get("language"),
+                "jsonl_path": inputs.get("jsonl_path") or row.get("jsonl_path") or validation.get("jsonl_path"),
+                "num_samples": row.get("num_samples"),
+            },
+            "prediction": {
+                "file": prediction_file,
+                "validation": validation_summary,
+            },
+            "metric": {
+                "name": metric,
+                "score": score,
+                "unit": _metric_unit(metric),
+                "display": _metric_display(metric, score),
+                "higher_is_better": not _is_lower_better_metric(metric),
+                "score_key": (row.get("result") or {}).get("score_key") if isinstance(row.get("result"), dict) else "score",
+            },
+            "baseline": None,
+            "rps": row.get("rps"),
+            "pipeline": {
+                "pipeline_id": pipeline_id,
+                "report_path": pipeline.get("report_path") or artifacts.get("report"),
+                "description_path": pipeline.get("description_path") or artifacts.get("pipeline_description"),
+                "route_id": row.get("route_id") or pipeline.get("route_id") or context.get("route_id"),
+                "nodes": _pipeline_nodes(row),
+                "conversion_steps": pipeline.get("conversion_steps", []),
+            },
+            "versions": {
+                "evaluation_backend": row.get("evaluation_backend"),
+                "evaluator_version": row.get("evaluator_version"),
+                "sure_evaluation_engine_root": context.get("engine_root"),
+                "python": sys.version.split()[0],
+                "pipeline_nodes": _pipeline_nodes(row),
+            },
+            "artifacts": {
+                "metric_artifact_dir": artifacts.get("metric_artifact_dir"),
+                "sample_report": artifacts.get("sample_report"),
+                "report": artifacts.get("report"),
+                "pipeline_description": artifacts.get("pipeline_description"),
+            },
+            "status": row.get("status") or ("success" if score is not None else "failed"),
+        }
+    )
+
+
 def _evaluation_payload_v2(
     *,
     evaluation_backend: str,
@@ -1067,6 +1227,150 @@ def _peek_dataset_task(dataset_manager: DatasetManager, dataset_name: str) -> st
     return task
 
 
+def _safe_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _sha256_file(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    h = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _count_nonempty_lines(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        return sum(1 for line in handle if line.strip())
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _load_model_sidecar(model_dir: Path | None, relative: str) -> dict[str, Any]:
+    if model_dir is None:
+        return {}
+    return _read_json_file(model_dir / relative)
+
+
+def _ensure_prediction_manifests(
+    *,
+    run_dir: Path,
+    results: list[dict[str, Any]],
+    tool_name: str,
+    protocol_id: str,
+) -> None:
+    pred_dir = run_dir / "predictions"
+    if not pred_dir.is_dir():
+        return
+    required_datasets = {str(result.get("dataset") or "") for result in results if result.get("dataset")}
+    existing_manifest = _read_json_file(pred_dir / "manifest.json")
+    existing_conversion = _read_json_file(pred_dir / "conversion_manifest.json")
+    existing_coverage = {
+        str(item.get("dataset") or "")
+        for item in existing_manifest.get("datasets", [])
+        if isinstance(item, dict) and item.get("dataset")
+    }
+    existing_conversion_coverage = {
+        str(item.get("dataset") or "")
+        for item in existing_conversion.get("datasets", [])
+        if isinstance(item, dict) and item.get("dataset")
+    }
+    if (
+        existing_manifest.get("schema") == "sure.eval.prediction_manifest.v1"
+        and existing_conversion.get("schema") == "sure.eval.prediction_conversion_manifest.v1"
+        and required_datasets.issubset(existing_coverage)
+        and required_datasets.issubset(existing_conversion_coverage)
+    ):
+        return
+    datasets: list[dict[str, Any]] = []
+    conversions: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for result in results:
+        dataset = str(result.get("dataset") or "")
+        if not dataset or dataset in seen:
+            continue
+        seen.add(dataset)
+        prediction_path = Path(str(result.get("prediction_path") or pred_dir / f"{dataset}.txt"))
+        structured_path = prediction_path.with_suffix(".jsonl")
+        if not prediction_path.is_file():
+            fallback = pred_dir / f"{dataset}.txt"
+            prediction_path = fallback if fallback.is_file() else prediction_path
+            structured_path = prediction_path.with_suffix(".jsonl")
+        jsonl_exists = structured_path.is_file()
+        datasets.append(
+            {
+                "dataset": dataset,
+                "task": result.get("task"),
+                "language": result.get("language"),
+                "format_used": "jsonl+txt" if jsonl_exists else "txt",
+                "txt": str(prediction_path),
+                "jsonl": str(structured_path) if jsonl_exists else None,
+                "txt_sha256": _sha256_file(prediction_path),
+                "jsonl_sha256": _sha256_file(structured_path) if jsonl_exists else None,
+                "num_rows": _count_nonempty_lines(prediction_path),
+                "structured_num_rows": _count_nonempty_lines(structured_path) if jsonl_exists else 0,
+                "protocol_id": protocol_id,
+            }
+        )
+        conversions.append(
+            {
+                "dataset": dataset,
+                "source_format": "existing_sure_predictions",
+                "format_used": "jsonl+txt" if jsonl_exists else "txt",
+                "num_rows": _count_nonempty_lines(prediction_path),
+                "source_artifacts": {
+                    "compatibility_tsv": str(prediction_path),
+                    "structured_jsonl": str(structured_path) if jsonl_exists else None,
+                },
+                "steps": [
+                    {
+                        "name": "prediction_contract_projection",
+                        "input": str(structured_path) if jsonl_exists else str(prediction_path),
+                        "output": str(prediction_path),
+                        "script": "scripts/evaluate_predictions.py:_ensure_prediction_manifests",
+                    }
+                ],
+                "conversion_trace": None,
+            }
+        )
+    if not datasets:
+        return
+    generated_at = _utc_now()
+    manifest = {
+        "schema": "sure.eval.prediction_manifest.v1",
+        "generated_at": generated_at,
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir),
+        "model_name": tool_name,
+        "tool_name": tool_name,
+        "predictions_dir": str(pred_dir),
+        "datasets": datasets,
+    }
+    conversion_manifest = {
+        "schema": "sure.eval.prediction_conversion_manifest.v1",
+        "generated_at": generated_at,
+        "run_id": run_dir.name,
+        "run_dir": str(run_dir),
+        "generated_by": os.environ.get("SURE_EVAL_PREDICTION_GENERATED_BY") or "scripts/evaluate_predictions.py",
+        "predictions_dir": str(pred_dir),
+        "datasets": conversions,
+    }
+    (pred_dir / "manifest.json").write_text(json.dumps(_to_strict_jsonable(manifest), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (pred_dir / "conversion_manifest.json").write_text(
+        json.dumps(_to_strict_jsonable(conversion_manifest), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def _write_protocol_yaml(
     results_dir: Path,
     protocol_id: str,
@@ -1075,65 +1379,163 @@ def _write_protocol_yaml(
     results: list[dict[str, Any]] | None = None,
     tool_name: str | None = None,
 ) -> None:
-    protocol: dict[str, Any] = {}
-    server: dict[str, Any] = {}
+    protocol_cfg: dict[str, Any] = {}
+    server_cfg: dict[str, Any] = {}
+    model_cfg: dict[str, Any] = {}
     config_yaml = model_dir / "config.yaml" if model_dir and model_dir.exists() else None
     try:
         import yaml
 
         if config_yaml and config_yaml.exists():
-            cfg = yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
-            protocols = cfg.get("protocols", {})
-            protocol = protocols.get(protocol_id, {}) if isinstance(protocols, dict) else {}
-            server = dict(cfg.get("server") or {})
+            model_cfg = yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
+            protocols = model_cfg.get("protocols", {})
+            protocol_cfg = protocols.get(protocol_id, {}) if isinstance(protocols, dict) else {}
+            server_cfg = dict(model_cfg.get("server") or {})
     except Exception as exc:
         logger.warning("Failed to read model config for protocol.yaml", error=str(exc))
 
-    datasets: list[dict[str, Any]] = []
-    by_dataset: dict[str, dict[str, Any]] = {}
-    for result in results or []:
-        dataset = str(result.get("dataset") or "")
-        if not dataset:
-            continue
-        item = by_dataset.setdefault(
-            dataset,
-            {
-                "name": dataset,
-                "task": result.get("task"),
-                "language": result.get("language"),
-                "metrics": [],
-                "jsonl_path": result.get("jsonl_path"),
-            },
-        )
-        metric = str(result.get("metric") or "")
-        if metric and metric not in item["metrics"]:
-            item["metrics"].append(metric)
-    for item in by_dataset.values():
-        item["metrics"] = sorted(item["metrics"])
-        datasets.append(item)
+    model_section = _safe_dict(model_cfg.get("model"))
+    tool_section = model_cfg.get("tools") if isinstance(model_cfg.get("tools"), list) else []
+    first_tool = tool_section[0] if tool_section and isinstance(tool_section[0], dict) else {}
+    selected_tool_name = tool_name or first_tool.get("name")
+    server_env = _safe_dict(server_cfg.get("env"))
+    server_env_keys = sorted(str(key) for key in server_env)
+    sanitized_server = dict(server_cfg)
+    sanitized_server.pop("env", None)
+    sanitized_server["env_keys"] = server_env_keys
 
-    if "env" in server:
-        server["env_keys"] = sorted(str(key) for key in (server.get("env") or {}).keys())
-        server.pop("env", None)
+    weights_manifest = _load_model_sidecar(model_dir, "artifacts/weights_manifest.json")
+    build_plan = _load_model_sidecar(model_dir, "artifacts/build_plan.json")
+    standard_params = _safe_dict(protocol_cfg.get("standard_params") or protocol_cfg.get("standard"))
+    resolved_model_params = _safe_dict(
+        protocol_cfg.get("resolved_model_params")
+        or protocol_cfg.get("model_params")
+        or protocol_cfg.get("params")
+    )
+    unmapped = _safe_dict(protocol_cfg.get("unmapped"))
+    protocol_definition_path = str(
+        protocol_cfg.get("definition_path")
+        or os.environ.get("SURE_EVAL_PROTOCOL_DEFINITION_PATH")
+        or ""
+    )
+    template_file = SKILL_ROOT / "scripts" / "templates" / "protocol.yaml"
 
     payload = {
-        "schema": "sure.eval.protocol.v1",
+        "schema": "sure.eval.inference_protocol.v1",
         "protocol_id": protocol_id,
+        "run": {
+            "run_id": results_dir.name,
+            "run_dir": str(results_dir),
+            "created_at": _utc_now(),
+        },
         "model": {
+            "model_name": str(model_section.get("name") or model_cfg.get("name") or (model_dir.name if model_dir else tool_name or "unknown")),
             "model_dir": str(model_dir) if model_dir else None,
-            "tool_name": tool_name,
-            "server": server,
+            "model_source": model_section.get("source") or weights_manifest.get("model_id") or weights_manifest.get("source") or None,
+            "weights_source": weights_manifest.get("snapshot_path") or weights_manifest.get("local_path") or weights_manifest.get("model_path") or None,
+            "model_dir_source": build_plan.get("model_dir_source") or build_plan.get("source") or None,
+            "mcp_tool_name": selected_tool_name,
+            "server_config": {
+                "command": sanitized_server.get("command", []),
+                "working_dir": sanitized_server.get("working_dir", "."),
+                "timeout": sanitized_server.get("timeout"),
+                "startup_timeout_sec": sanitized_server.get("startup_timeout_sec"),
+                "env_keys": server_env_keys,
+            },
         },
-        "datasets": datasets,
-        "protocol": protocol,
-        "artifact_layout": {
-            "evaluation_payload": "evaluation_payload.json",
-            "report_jsonl": "report.jsonl",
-            "protocol": "protocol.yaml",
-            "metrics": "metrics/<dataset>/<metric_slug>/",
-            "sample_reports": "sample_reports/<dataset>/<metric_slug>.jsonl",
-            "predictions": "predictions/<dataset>.txt and predictions/<dataset>.jsonl",
+        "protocol_selection": {
+            "protocol_id": protocol_id,
+            "definition_path": protocol_definition_path,
+            "model_protocol_config_path": str(config_yaml) if config_yaml and config_yaml.exists() else None,
+            "is_default": protocol_id == str(model_cfg.get("default_protocol") or "strict_core"),
+            "purpose": protocol_cfg.get("purpose") or "standardized model inference before route-backed evaluation",
+            "standard_params": standard_params,
+            "resolved_model_params": resolved_model_params,
+            "unmapped": unmapped,
         },
+        "inference_environment": {
+            "execution_path": os.environ.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
+            "vc": {
+                "job_id": os.environ.get("SURE_EVAL_EXECUTION_JOB_ID") or os.environ.get("VC_JOB_ID"),
+                "partition": os.environ.get("SURE_EVAL_VC_PARTITION") or os.environ.get("VC_PARTITION"),
+                "gpu_count": os.environ.get("SURE_EVAL_VC_GPU") or os.environ.get("VC_GPU"),
+                "memory": os.environ.get("SURE_EVAL_VC_MEMORY") or os.environ.get("VC_MEMORY"),
+                "cpu_count": os.environ.get("SURE_EVAL_VC_CPU") or os.environ.get("VC_CPU"),
+                "node_count": os.environ.get("SURE_EVAL_VC_NODES") or os.environ.get("VC_NODES"),
+                "require_vc_submit": _env_bool("SURE_EVAL_REQUIRE_VC_SUBMIT", False),
+                "allow_partition_fallback": _env_bool("SURE_EVAL_ALLOW_PARTITION_FALLBACK", False),
+                "preflight_required": True,
+            },
+            "container": {
+                "image": os.environ.get("SURE_EVAL_CONTAINER_IMAGE") or server_cfg.get("image"),
+                "dockerfile": os.environ.get("SURE_EVAL_DOCKERFILE") or model_cfg.get("dockerfile"),
+                "repo_root": os.environ.get("SURE_EVAL_CONTAINER_REPO_ROOT") or str(HARNESS_ROOT),
+                "model_dir": str(model_dir) if model_dir else None,
+                "python_executable": os.environ.get("MODEL_PYTHON") or sys.executable,
+            },
+            "server": {
+                "transport": "stdio_jsonrpc",
+                "command": sanitized_server.get("command", []),
+                "tool_name": selected_tool_name,
+                "startup_timeout_sec": sanitized_server.get("startup_timeout_sec"),
+                "timeout": sanitized_server.get("timeout"),
+            },
+            "env": {
+                "device": os.environ.get("SURE_EVAL_DEVICE_ACTUAL") or os.environ.get("DEVICE") or os.environ.get("CUDA_VISIBLE_DEVICES") or None,
+                "env_keys": server_env_keys,
+                "modelscope_cache": os.environ.get("MODELSCOPE_CACHE"),
+            },
+            "mount_policy": {
+                "mount_stable_absolute_roots": [
+                    str(path)
+                    for path in (
+                        model_dir,
+                        HARNESS_ROOT / "data",
+                    )
+                    if path is not None
+                ],
+                "reject_repo_internal_runtime_mount_overlays": True,
+            },
+        },
+        "inference_constraints": {
+            "no_external_lm": True,
+            "no_retrieval": True,
+            "no_hotwords": True,
+            "single_pass_decode": True,
+            "no_prompt_engineering": True,
+            "local_fallback_allowed": False,
+            "metric_logic_in_inference_image_allowed": False,
+            "required_preflight_checks": [
+                "deterministic_prediction_contract",
+                "execution_surface_isolation",
+                "model_server_smoke",
+            ],
+        },
+        "execution_surface": {
+            "materialized": (results_dir / "run_evaluation.sh").is_file(),
+            "execution_surface_type": os.environ.get("SURE_EVAL_EXECUTION_SURFACE_TYPE") or "main_flow_script",
+            "entrypoint_path": str(results_dir / "run_evaluation.sh") if (results_dir / "run_evaluation.sh").is_file() else None,
+            "generation_method": os.environ.get("SURE_EVAL_EXECUTION_GENERATION_METHOD") or "harness_template",
+            "template_file": os.environ.get("SURE_EVAL_EXECUTION_TEMPLATE_FILE"),
+            "template_sha256": os.environ.get("SURE_EVAL_EXECUTION_TEMPLATE_SHA256") or _sha256_file(template_file),
+            "isolation_compliance": {
+                "eval_runs_referenced": False,
+                "prior_run_scripts_copied": False,
+                "deviation_approved_by_user": False,
+            },
+        },
+        "prediction_contract": {
+            "contract_path": "references/contracts/prediction_output_contract.md",
+            "compatibility_tsv": "predictions/<dataset>.txt",
+            "structured_jsonl": "predictions/<dataset>.jsonl",
+            "format_used": "jsonl+txt",
+            "generated_by": os.environ.get("SURE_EVAL_PREDICTION_GENERATED_BY") or "scripts/generate_predictions_via_server.py",
+            "protocol_argument": protocol_id,
+        },
+        "notes": [
+            "This file records inference protocol, runtime environment, inference parameters, and inference constraints only.",
+            "Dataset scope, evaluation routes, metric results, validation, and metric artifacts are recorded in report_snapshot.md and report.jsonl.",
+        ],
     }
     protocol_yaml = results_dir / "protocol.yaml"
     protocol_yaml.parent.mkdir(parents=True, exist_ok=True)
@@ -1388,8 +1790,10 @@ def _write_run_artifacts(
     model_dir: Path | None,
     payload: dict[str, Any],
     results: list[dict[str, Any]],
+    validation_payload: dict[str, Any] | None = None,
 ) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
+    _ensure_prediction_manifests(run_dir=run_dir, results=results, tool_name=tool_name, protocol_id=protocol_id)
     _write_protocol_yaml(run_dir, protocol_id, model_dir, results=results, tool_name=tool_name)
 
     report_rows: list[dict[str, Any]] = []
@@ -1472,20 +1876,28 @@ def _write_run_artifacts(
         json.dumps(_to_strict_jsonable(payload_with_artifacts), indent=2, ensure_ascii=False, allow_nan=False) + "\n",
         encoding="utf-8",
     )
-    _write_report_jsonl(run_dir / "report.jsonl", report_rows)
-    snapshot_template = SKILL_REPORT_SNAPSHOT_TEMPLATE
-    if snapshot_template.is_file():
-        snapshot = snapshot_template.read_text(encoding="utf-8")
-    else:
-        snapshot = "# SURE-EVAL Report Snapshot\n\n"
-    summary_lines = [
-        "",
-        f"- run_id: {run_dir.name}",
-        f"- tool_uid: {tool_name}",
-        f"- protocol_id: {protocol_id}",
-        f"- num_results: {len(results)}",
+    validations = _validation_by_dataset(validation_payload or {})
+    standard_rows = [
+        _standard_report_row_v1(
+            row=row,
+            validation=validations.get(str(row.get("dataset") or ""), {}),
+            run_id=run_dir.name,
+            protocol_id=protocol_id,
+            model_dir=model_dir,
+            tool_name=tool_name,
+        )
+        for row in report_rows
     ]
-    (run_dir / "report_snapshot.md").write_text(snapshot.rstrip() + "\n" + "\n".join(summary_lines) + "\n", encoding="utf-8")
+    _write_report_jsonl(run_dir / "report.jsonl", standard_rows)
+    try:
+        from generate_report_snapshot import build_snapshot
+
+        snapshot = build_snapshot(run_dir)
+    except Exception as exc:
+        logger.warning("Failed to render rich report_snapshot.md; using template fallback", error=str(exc))
+        snapshot_template = SKILL_REPORT_SNAPSHOT_TEMPLATE
+        snapshot = snapshot_template.read_text(encoding="utf-8") if snapshot_template.is_file() else "# SURE-EVAL Report Snapshot\n\n"
+    (run_dir / "report_snapshot.md").write_text(snapshot, encoding="utf-8")
 
 
 SKILL_REPORT_SNAPSHOT_TEMPLATE = Path(__file__).resolve().parent / "templates" / "report_snapshot.md"
@@ -1524,25 +1936,18 @@ def _write_results_dir(
     if copy_source_report and source_report and source_report.exists():
         shutil.copy2(source_report, report_path)
     else:
-        with report_path.open("w", encoding="utf-8") as handle:
-            for result in results:
-                report_line = {
-                    "tool_uid": tool_name,
-                    "protocol_id": protocol_id,
-                    "dataset": result["dataset"],
-                    "task": result["task"],
-                    "language": result["language"],
-                    "metric": result["metric"],
-                    "score": result["score"],
-                    "rps": result.get("rps"),
-                    "num_samples": result["num_samples"],
-                    "evaluation_backend": result.get("evaluation_backend", "legacy"),
-                    "pipeline_id": result.get("pipeline_id"),
-                    "evaluation_context": result.get("evaluation_context"),
-                    "prediction_file": f"predictions/{result['dataset']}.txt",
-                    "evaluator_version": result.get("evaluator_version", "sure_eval v1.0"),
-                }
-                handle.write(json.dumps(report_line, ensure_ascii=False) + "\n")
+        standard_rows = [
+            _standard_report_row_v1(
+                row=_dataset_metric_row(result),
+                validation={},
+                run_id=results_dir.name,
+                protocol_id=protocol_id,
+                model_dir=model_dir,
+                tool_name=tool_name,
+            )
+            for result in results
+        ]
+        _write_report_jsonl(report_path, standard_rows)
     logger.info("Wrote report.jsonl", path=str(report_path), num_entries=len(results))
 
     pred_dir = results_dir / "predictions"
@@ -1554,6 +1959,18 @@ def _write_results_dir(
         structured_prediction_path = prediction_path.with_suffix(".jsonl")
         if structured_prediction_path.exists():
             shutil.copy2(structured_prediction_path, pred_dir / structured_prediction_path.name)
+    source_pred_dir = source_run_dir / "predictions" if source_run_dir else None
+    for name in ("manifest.json", "conversion_manifest.json"):
+        source_manifest = source_pred_dir / name if source_pred_dir else None
+        if source_manifest and source_manifest.exists():
+            shutil.copy2(source_manifest, pred_dir / name)
+    if not (pred_dir / "manifest.json").is_file() or not (pred_dir / "conversion_manifest.json").is_file():
+        mirror_results: list[dict[str, Any]] = []
+        for result in results:
+            item = dict(result)
+            item["prediction_path"] = str(pred_dir / Path(str(result["prediction_path"])).name)
+            mirror_results.append(item)
+        _ensure_prediction_manifests(run_dir=results_dir, results=mirror_results, tool_name=tool_name, protocol_id=protocol_id)
 
     source_snapshot = source_run_dir / "report_snapshot.md" if source_run_dir else None
     if copy_source_report and source_snapshot and source_snapshot.exists():
@@ -1697,6 +2114,7 @@ def main() -> int:
                 model_dir=Path(args.model_dir) if args.model_dir else None,
                 payload=payload,
                 results=results,
+                validation_payload=validation_payload,
             )
         if args.results_dir:
             _write_results_dir(
@@ -1889,6 +2307,7 @@ def main() -> int:
             model_dir=model_dir,
             payload=payload,
             results=results,
+            validation_payload=validation_payload,
         )
 
     if args.results_dir:

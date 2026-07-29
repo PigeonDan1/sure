@@ -179,6 +179,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (typeof args.execution_path === "string") {
 		resolveArgs.push("--execution-path", args.execution_path);
 	}
+	if (typeof args.output_dir === "string") {
+		resolveArgs.push("--output-dir", args.output_dir);
+	}
 	for (const [argKey, cliKey] of [
 		["vc_partition", "--vc-partition"],
 		["vc_cpu", "--vc-cpu"],
@@ -421,6 +424,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 			phase: phaseFor(findUnit(next.data.currentUnit) ?? LAST_UNIT, "running"),
 			message: `Advanced to unit "${next.data.currentUnit}".`,
 			counters: countersFor(next.data, 0),
+			diagnostics: [],
 			checkpoint: next,
 		},
 	};
@@ -527,6 +531,7 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 					summary: "Validated SURE-EVAL main-flow run report.",
 				},
 			],
+			diagnostics: [],
 		},
 	};
 }

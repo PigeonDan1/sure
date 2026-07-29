@@ -145,6 +145,44 @@ function hasCheckpointPatch(value: unknown): boolean {
 	return isStringRecord(value) && value.checkpoint !== undefined;
 }
 
+const CHECKPOINT_COUNTER_KEYS = new Set(["completed_units", "total_units", "gate_blocks"]);
+const CHECKPOINT_TERMINAL_PHASE_STATUSES = new Set(["success", "failed", "incomplete", "skipped"]);
+
+function validateAgentStateUpdatePolicy(
+	runManager: SureRunManager,
+	active: ActiveRun,
+	patch: SureDisplayState,
+): string | undefined {
+	const currentState = runManager.readState(active.record);
+	if (!currentState?.checkpoint) {
+		return undefined;
+	}
+	const phaseStatus = patch.phase?.status;
+	if (phaseStatus && CHECKPOINT_TERMINAL_PHASE_STATUSES.has(phaseStatus)) {
+		return `${UPDATE_STATE_TOOL_NAME} cannot set terminal phase status "${phaseStatus}" during checkpoint-controlled Sure runs; produce the required artifact and let hooks advance or call ${FINISH_TOOL_NAME}.`;
+	}
+	for (const key of Object.keys(patch.counters ?? {})) {
+		if (CHECKPOINT_COUNTER_KEYS.has(key)) {
+			return `${UPDATE_STATE_TOOL_NAME} cannot update checkpoint counter "${key}"; checkpoint counters are controlled by Sure hooks.`;
+		}
+	}
+	for (const artifact of patch.artifacts ?? []) {
+		if (artifact.status !== "ready") {
+			continue;
+		}
+		if (!artifact.path) {
+			return `${UPDATE_STATE_TOOL_NAME} cannot mark an artifact ready without a path during checkpoint-controlled Sure runs.`;
+		}
+		const resolved = isAbsolute(artifact.path)
+			? resolve(artifact.path)
+			: runManager.resolveRunPath(active.record, artifact.path);
+		if (!resolved || !existsSync(resolved)) {
+			return `${UPDATE_STATE_TOOL_NAME} cannot mark missing artifact "${artifact.path}" as ready during checkpoint-controlled Sure runs.`;
+		}
+	}
+	return undefined;
+}
+
 function setRunStatusText(ctx: ExtensionContext, run: SureRunRecord, state?: SureDisplayState): void {
 	ctx.ui.setStatus(STATUS_KEY, formatSureDisplayStatus(run.command, run.runId, state));
 }
@@ -521,6 +559,31 @@ export function createSureExtension(): ExtensionFactory {
 								runId: active.record.runId,
 								accepted: false,
 								repair,
+							} satisfies SureUpdateStateDetails,
+							isError: true,
+						};
+					}
+					const normalized = normalizeSureDisplayStatePatch(params);
+					if (!normalized.ok || !normalized.state) {
+						return {
+							content: toolText(normalized.message ?? "Invalid Sure state update."),
+							details: {
+								runId: active.record.runId,
+								accepted: false,
+								repair: normalized.message,
+							} satisfies SureUpdateStateDetails,
+							isError: true,
+						};
+					}
+					const runManager = new SureRunManager(active.record.cwd);
+					const policyRepair = validateAgentStateUpdatePolicy(runManager, active, normalized.state);
+					if (policyRepair) {
+						return {
+							content: toolText(policyRepair),
+							details: {
+								runId: active.record.runId,
+								accepted: false,
+								repair: policyRepair,
 							} satisfies SureUpdateStateDetails,
 							isError: true,
 						};

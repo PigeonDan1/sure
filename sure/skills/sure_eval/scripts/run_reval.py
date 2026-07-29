@@ -254,7 +254,17 @@ def run_reval(args: argparse.Namespace) -> dict[str, Any]:
         eval_cmd.extend(["--metric", metric])
     for pipeline_id in pipeline_ids:
         eval_cmd.extend(["--pipeline-id", pipeline_id])
-    _run(eval_cmd)
+    eval_env = os.environ.copy()
+    eval_env.update(
+        {
+            "SURE_EVAL_EXECUTION_PATH": "reused_predictions",
+            "SURE_EVAL_EXECUTION_REQUESTED": "local",
+            "SURE_EVAL_EXECUTION_SURFACE_TYPE": "sure_reval",
+            "SURE_EVAL_EXECUTION_GENERATION_METHOD": "reuse_existing_predictions",
+            "SURE_EVAL_PREDICTION_GENERATED_BY": "scripts/import_prediction_source.py",
+        }
+    )
+    _run(eval_cmd, env=eval_env)
 
     _run(
         [
