@@ -115,6 +115,12 @@ def build_route_plan(
             )
         except Exception as exc:
             issue = f"{dataset_name or '(unknown dataset)'}: {exc}"
+            if "No configured route" in str(exc):
+                issue += (
+                    " (common cause: the dataset task does not match the model task,"
+                    " e.g. an ASR model paired with a TTS dataset; check datasets="
+                    " against the task declared in the model's config.yaml)"
+                )
             blocking_issues.append(issue)
             dataset_plans.append(
                 {

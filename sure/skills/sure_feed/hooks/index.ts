@@ -238,6 +238,7 @@ function failOrRetry(
 			`${repair} After ${attempts} consecutive blocked attempts, /sure_feed still cannot produce a valid artifact for unit "${unit.id}". Stop and ask the user to confirm the model link, access permissions, and whether the model card/README contains enough install, load, and inference information.`,
 			`Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`,
 			countersFor(next.data, attempts),
+			next,
 		);
 	}
 	return {
