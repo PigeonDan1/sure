@@ -213,5 +213,31 @@ class RunPrecheckTests(unittest.TestCase):
         self.assertEqual(len(payload["checks"]), 5)
 
 
+class SelectBestImageTests(unittest.TestCase):
+    def setUp(self):
+        from sure_eval.agent import vc_submitter
+        self.vc_submitter = vc_submitter
+        self.original = vc_submitter._run_cmd
+        self.addCleanup(setattr, vc_submitter, "_run_cmd", self.original)
+
+    def fake_docker(self, stdout):
+        def _run_cmd(args, check=True):
+            return FakeCompleted(0, stdout, "")
+        self.vc_submitter._run_cmd = _run_cmd
+
+    def test_no_local_image_raises_instead_of_guessing(self):
+        self.fake_docker(LOCAL_IMAGES)
+        with self.assertRaises(RuntimeError) as ctx:
+            self.vc_submitter.select_best_image("whisper_tiny")
+        message = str(ctx.exception)
+        self.assertIn("refusing to guess", message)
+        self.assertIn("sure_asr_kyutai_stt_1b:v1.0", message)
+
+    def test_local_image_still_selected(self):
+        self.fake_docker(LOCAL_IMAGES)
+        selected = self.vc_submitter.select_best_image("asr_nemo_stt_zh_conformer_transducer")
+        self.assertEqual(selected, IMG)
+
+
 if __name__ == "__main__":
     unittest.main()
