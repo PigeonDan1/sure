@@ -22,6 +22,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -217,6 +218,11 @@ def check_no_prior_run_leakage(surface_path: Path) -> dict[str, Any]:
 
 INTERPRETER_ENV_KEYS = ("MODEL_PYTHON", "PYTHON_BIN", "HARNESS_PYTHON_BIN")
 
+# The model interpreter must be pinned to one venv, so a bare command name is
+# not acceptable. The harness interpreter is resolved from PATH by the
+# template, so a bare command name is the normal value there.
+MODEL_INTERPRETER_ENV_KEYS = ("MODEL_PYTHON", "PYTHON_BIN")
+
 TASK_DEFAULT_TOOLS = {
     "ASR": "transcribe_audio",
     "S2TT": "translate_audio",
@@ -259,6 +265,22 @@ def _expected_tool_names(model_dir: Any) -> list[str]:
     return [TASK_DEFAULT_TOOLS.get(task, "predict")]
 
 
+def _resolve_interpreter(key: str, value: str) -> tuple[str, str]:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        if key in MODEL_INTERPRETER_ENV_KEYS:
+            return "", f"{key} must be an absolute path, got: {value}"
+        found = shutil.which(value)
+        if not found:
+            return "", f"{key} is not resolvable on PATH: {value}"
+        path = Path(found)
+    if not path.exists():
+        return "", f"{key} does not exist: {value}"
+    if not os.access(path, os.X_OK):
+        return "", f"{key} is not executable: {value}"
+    return str(path), ""
+
+
 def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
     if not surface_path.exists():
         return {"passed": False, "evidence": f"{surface_path.name} not found"}
@@ -276,19 +298,17 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
     issues: list[str] = []
 
     declared = {key: str(env[key]) for key in INTERPRETER_ENV_KEYS if isinstance(env.get(key), str) and env[key]}
-    model_python = declared.get("MODEL_PYTHON") or declared.get("PYTHON_BIN")
-    if not model_python:
+    if not (declared.get("MODEL_PYTHON") or declared.get("PYTHON_BIN")):
         issues.append("env must declare MODEL_PYTHON (absolute path to the model interpreter) for local execution")
+    model_python = ""
     for key, value in declared.items():
-        path = Path(value).expanduser()
-        if not path.is_absolute():
-            issues.append(f"{key} must be an absolute path, got: {value}")
-        elif not path.exists():
-            issues.append(f"{key} does not exist: {value}")
-        elif not os.access(path, os.X_OK):
-            issues.append(f"{key} is not executable: {value}")
+        resolved, issue = _resolve_interpreter(key, value)
+        if issue:
+            issues.append(issue)
+        elif key in MODEL_INTERPRETER_ENV_KEYS and not model_python:
+            model_python = resolved
 
-    if model_python and not issues:
+    if model_python:
         try:
             probe = subprocess.run(
                 [model_python, "-c", "import torch"],
