@@ -45,8 +45,10 @@ def list_local_sure_images(run=subprocess.run):
 
 
 def image_is_local(image, run=subprocess.run):
-    result = _run(["docker", "image", "inspect", image], 30, run)
-    return result is not None and result.returncode == 0
+    result = _run(["docker", "image", "inspect", "--format", "{{.Id}}", image], 30, run)
+    if result is None or result.returncode != 0:
+        return False
+    return result.stdout.strip().startswith("sha256:")
 
 
 def probe_registry_image(image, run=subprocess.run):
@@ -100,7 +102,7 @@ def get_user_partitions(run=subprocess.run):
         if in_block:
             if stripped.startswith("["):
                 break
-            if stripped:
+            if stripped and stripped.strip("-"):
                 partitions.add(stripped)
     return partitions
 
@@ -139,7 +141,9 @@ def check_venv(image, expected_venv, run=subprocess.run):
     result = _run(["docker", "run", "--rm", "--entrypoint", "sh", image, "-c", "ls -d /opt/*"], 120, run)
     if result is None or result.returncode != 0:
         return CheckResult("venv", "warn", f"could not list /opt inside {image}")
-    entries = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    entries = [line.strip() for line in result.stdout.splitlines() if line.strip().startswith("/opt/")]
+    if not entries:
+        return CheckResult("venv", "warn", f"could not list /opt inside {image}")
     if expected_venv in entries:
         return CheckResult("venv", "pass", f"{expected_venv} exists inside {image}")
     return CheckResult("venv", "fail", f"{expected_venv} does not exist inside {image}", entries)
