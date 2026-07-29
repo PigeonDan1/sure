@@ -150,21 +150,28 @@ def _parse_tag_version(tag: str) -> tuple[int, ...]:
     return tuple(nums)
 
 
-def select_best_image(model_name: str) -> str:
-    """Select the newest Docker image tag for *model_name*.
+def _local_sure_images() -> list[str]:
+    result = _run_cmd(
+        ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
+        check=False,
+    )
+    return [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip().lower().startswith(IMAGE_REGISTRY_PREFIX)
+    ]
 
-    If multiple local tags exist, pick the one with the highest version tuple.
-    Falls back to ``{prefix}{model_name}:latest`` when no local image is found.
+
+def select_best_image(model_name: str) -> str:
+    """Select the newest local Docker image tag for *model_name*.
+
+    Raises RuntimeError when no local image matches: the registry cannot be
+    listed from the submit host, so guessing a tag would only fail later at
+    ``vc submit`` with the whole pipeline already spent.
     """
     prefix = _image_repo(model_name)
     images = list_local_images(model_name)
 
-    if not images:
-        fallback = f"{prefix}:latest"
-        logger.warning("No local image found; using fallback", fallback=fallback)
-        return fallback
-
-    # Parse each image into (repo, tag, version_tuple)
     parsed: list[tuple[str, str, tuple[int, ...]]] = []
     for img in images:
         if ":" not in img:
@@ -173,9 +180,12 @@ def select_best_image(model_name: str) -> str:
         parsed.append((repo, tag, _parse_tag_version(tag)))
 
     if not parsed:
-        fallback = f"{prefix}:latest"
-        logger.warning("Could not parse local image tags; using fallback", fallback=fallback)
-        return fallback
+        available = ", ".join(_local_sure_images()) or "none"
+        raise RuntimeError(
+            f"no local Docker image matches {prefix}; refusing to guess a registry tag. "
+            f"Declare the image explicitly (runtime.vc.image or --image) or load one locally. "
+            f"Local SURE images: {available}"
+        )
 
     # Sort by version tuple descending, then by tag string descending as tie-breaker
     parsed.sort(key=lambda x: (x[2], x[1]), reverse=True)

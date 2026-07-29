@@ -23,6 +23,7 @@ from typing import Any
 
 import yaml
 
+from sure_eval.agent import vc_precheck
 from sure_eval.agent.vc_submitter import (
     _infer_default_volume_mount,
     _infer_repo_root,
@@ -668,6 +669,25 @@ def main() -> int:
     if args.dry_run:
         print(command)
         return 0
+
+    precheck_paths = [str(repo_root), str(entrypoint_path)]
+    if model_dir is not None:
+        precheck_paths.append(str(model_dir))
+    precheck_results = vc_precheck.run_precheck(
+        image=image,
+        image_source=image_source,
+        partition=partition,
+        memory=f"{memory_gb}G",
+        gpus=gpus,
+        cpus=cpus,
+        volume_mount=volume_mount,
+        paths=precheck_paths,
+        expected_venv=infer_venv_path(model_name),
+    )
+    _write_json(artifacts_dir / "vc_precheck.json", vc_precheck.as_payload(precheck_results))
+    if not vc_precheck.precheck_passed(precheck_results):
+        print(vc_precheck.format_report(precheck_results), file=sys.stderr)
+        return 1
 
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
