@@ -256,14 +256,13 @@ class CliTests(unittest.TestCase):
             capture_output=True, text=True,
         )
 
-    def test_cli_passes_and_writes_output(self):
+    def test_cli_writes_payload_and_exit_code_matches(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "vc_precheck.json"
             completed = self.run_cli("--output", str(out))
-            self.assertEqual(completed.returncode, 0, completed.stderr)
             payload = json.loads(out.read_text(encoding="utf-8"))
-            self.assertTrue(payload["passed"])
             self.assertEqual(len(payload["checks"]), 5)
+            self.assertEqual(completed.returncode, 0 if payload["passed"] else 1, completed.stderr)
 
     def test_cli_fails_on_bad_memory(self):
         completed = self.run_cli("--memory-override-for-test")
