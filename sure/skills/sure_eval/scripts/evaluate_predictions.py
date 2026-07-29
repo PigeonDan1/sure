@@ -1357,6 +1357,30 @@ def merge_payload_results(payload_paths: list[Path]) -> list[dict[str, Any]]:
     return results
 
 
+def _summarize_bridge_error(exc: Exception) -> str:
+    lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
+    return " | ".join(lines[-4:])[:400]
+
+
+def _unsupported_request_message(
+    *,
+    source: str,
+    dataset: str,
+    task: str,
+    dataset_task: str,
+    language: str,
+    requested: str,
+    failures: list[str],
+) -> str:
+    message = (
+        f"No requested metric/pipeline is supported by the {source} for dataset {dataset} "
+        f"(task={task}, dataset_task={dataset_task}, language={language}, requested={requested})"
+    )
+    if failures:
+        message += ". The engine rejected each request: " + "; ".join(failures)
+    return message
+
+
 def _external_metric_applies_to_task_language(
     *,
     engine_root: Path,
@@ -1365,6 +1389,7 @@ def _external_metric_applies_to_task_language(
     task: str,
     language: str,
     timeout: int,
+    failures: list[str] | None = None,
 ) -> bool:
     try:
         _describe_external_pipeline(
@@ -1375,7 +1400,9 @@ def _external_metric_applies_to_task_language(
             pipeline_id=pipeline_id,
             timeout=timeout,
         )
-    except Exception:
+    except Exception as exc:
+        if failures is not None:
+            failures.append(f"{pipeline_id or metric or 'default'}: {_summarize_bridge_error(exc)}")
         return False
     return True
 
@@ -1746,6 +1773,7 @@ def main() -> int:
         if not prediction_path.exists():
             raise FileNotFoundError(f"Prediction file not found: {prediction_path}")
 
+        request_failures: list[str] = []
         if args.evaluation_backend != "legacy" and resolved_engine is not None:
             applicable_requests = [
                 (metric_override, pipeline_id_override)
@@ -1757,6 +1785,7 @@ def main() -> int:
                     task=effective_task,
                     language=dataset_language,
                     timeout=args.evaluation_timeout,
+                    failures=request_failures,
                 )
             ]
         else:
@@ -1770,8 +1799,15 @@ def main() -> int:
             requested = ", ".join(pipeline_overrides or [metric for metric in metric_overrides if metric]) or "default"
             source = "current sure-evaluation engine" if args.evaluation_backend != "legacy" and resolved_engine else "legacy evaluator"
             raise ValueError(
-                f"No requested metric/pipeline is supported by the {source} for dataset {canonical_name} "
-                f"(task={effective_task}, dataset_task={dataset_task}, language={dataset_language}, requested={requested})"
+                _unsupported_request_message(
+                    source=source,
+                    dataset=canonical_name,
+                    task=effective_task,
+                    dataset_task=dataset_task,
+                    language=dataset_language,
+                    requested=requested,
+                    failures=request_failures,
+                )
             )
 
         for metric_override, pipeline_id_override in applicable_requests:
