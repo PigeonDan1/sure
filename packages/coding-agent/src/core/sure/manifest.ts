@@ -21,6 +21,7 @@ export const SURE_COMMANDS = [
 	"sure_eval",
 	"sure_onboard",
 	"sure_feed",
+	"sure_reval",
 ] as const;
 
 const SURE_COMMAND_SET = new Set<string>(SURE_COMMANDS);
