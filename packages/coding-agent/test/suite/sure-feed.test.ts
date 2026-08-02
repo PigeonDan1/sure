@@ -569,6 +569,30 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		expect(checkpoint?.data.retries.match_task).toBeUndefined();
 	});
 
+	it("resolves --produces for the gate script without doubling the run-dir prefix on an absolute path (Windows regression)", () => {
+		// runBackend's produces guard used `!val.startsWith("/")` to decide whether
+		// a --produces value needed joining under runDir/artifacts/. artifactPath()
+		// already returns an absolute path (e.g. Windows "E:\...\artifacts\..."),
+		// which does not start with "/", so the guard joined it a second time and
+		// the gate script could never find the artifact.
+		const { ctx, runDir } = freshCtx("advance-absolute-produces");
+		writeFileSync(
+			join(runDir, "state.json"),
+			JSON.stringify(
+				{ checkpoint: { data: { currentUnit: "match_task", completedUnits: ["scan_modelscope"], retries: {} } } },
+				null,
+				2,
+			),
+			"utf-8",
+		);
+		writeArtifact(runDir, "match_task_result.json", {
+			candidates: [{ model_id: "m1", match: { matched: true, match_source: "tasks", task_type: "asr" } }],
+		});
+		const result = postToolResult(ctx);
+		expect(result.ok).toBe(true);
+		expect(result.repair).toBeUndefined();
+	});
+
 	it("advances when the gate artifact lives under artifacts/debug", () => {
 		const { ctx, runDir } = freshCtx("advance-debug-artifact-pass");
 		writeFileSync(
