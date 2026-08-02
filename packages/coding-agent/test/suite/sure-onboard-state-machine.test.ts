@@ -3,7 +3,13 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, syml
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CheckpointData } from "../../../../sure/skills/sure_onboard/hooks/checkpoints.ts";
-import { postToolResult, preFinish, preStart, preToolCall } from "../../../../sure/skills/sure_onboard/hooks/index.ts";
+import {
+	countersFor,
+	postToolResult,
+	preFinish,
+	preStart,
+	preToolCall,
+} from "../../../../sure/skills/sure_onboard/hooks/index.ts";
 import {
 	FIRST_UNIT,
 	findUnit,
@@ -1149,6 +1155,17 @@ describe("sure_onboard gate --kind routing (regression)", () => {
 		expect(result.repair).toContain("After 3 consecutive blocked attempts");
 		expect(result.repair).toContain("confirm the model_input_path or repo link");
 		expect(result.state_patch?.message).toContain("exhausted 3 blocked attempts");
+	});
+});
+
+describe("sure_onboard countersFor", () => {
+	it("keeps gate_blocks consistent with the retry ledger", () => {
+		const data: CheckpointData = {
+			currentUnit: "discover",
+			completedUnits: [],
+			retries: { discover: 4, classify: 2 },
+		};
+		expect(countersFor(data, 0).gate_blocks).toBe(6);
 	});
 });
 

@@ -32,11 +32,12 @@ function phaseFor(unit: Unit, status: "running" | "blocked" | "success") {
 	return { id: unit.id, label: unit.label, status };
 }
 
-function countersFor(completed: CheckpointData, gateBlocks: number) {
+export function countersFor(completed: CheckpointData, gateBlocks?: number) {
+	const ledgerBlocks = Object.values(completed.retries ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
 	return {
 		completed_units: completed.completedUnits.length,
 		total_units: TOTAL_UNITS,
-		gate_blocks: gateBlocks,
+		gate_blocks: Math.max(ledgerBlocks, gateBlocks ?? 0),
 	};
 }
 
