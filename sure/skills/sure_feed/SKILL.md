@@ -23,6 +23,7 @@ This skill is **self-contained**: all backend code is bundled under `scripts/` (
 | `handoff_root` | — | Override the handoff publication root. Default: repo-level `sure/handoffs`. |
 | `output_dir` | — | Defaults to the run directory. |
 | `since` | — | Incremental-scan timestamp (watch mode). |
+| `max_retries` | — | Consecutive blocked gate attempts allowed per unit before the run terminates. Default `3`. |
 
 The run directory (`<run_dir>`, provided by the Sure invocation) retains normal run products under `artifacts/` for auditability. The onboarding handoff is additionally published as a single model folder:
 

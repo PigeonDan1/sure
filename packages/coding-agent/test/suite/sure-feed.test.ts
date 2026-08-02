@@ -703,6 +703,40 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		expect(result.state_patch?.message).toContain("exhausted 3 blocked attempts");
 	});
 
+	it("honors max_retries from the /sure_feed command line", () => {
+		const { ctx, runDir } = freshCtx("advance-max-retries");
+		// Same state as "fails clearly on the third consecutive blocked gate
+		// attempt": retries.match_task = 2, so this call is the third attempt.
+		writeFileSync(
+			join(runDir, "state.json"),
+			JSON.stringify(
+				{
+					checkpoint: {
+						data: {
+							currentUnit: "match_task",
+							completedUnits: ["scan_modelscope"],
+							retries: { match_task: 2 },
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+		writeArtifact(runDir, "match_task_result.json", {
+			candidates: [{ model_id: "m1", match: { matched: true } }],
+		});
+		const result = postToolResult({ ...ctx, args: "max_retries=5" });
+		expect(result.ok).toBe(false);
+		// Quota raised to 5: the third attempt is blocked, not terminal.
+		expect(result.repair).not.toContain("After 3 consecutive blocked attempts");
+		expect(result.repair).not.toContain("confirm the model link");
+		// Still the real gate rejection (missing match_source), not the
+		// retry-exhaustion wrapper — proves it took the blocked-but-not-exhausted branch.
+		expect(result.repair).toContain("match_source");
+	});
+
 	it("stays on the unit (no block, no advance) when the artifact is not yet produced", () => {
 		const { ctx, runDir } = freshCtx("advance-missing");
 		writeFileSync(
