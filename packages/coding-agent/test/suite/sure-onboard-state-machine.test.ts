@@ -355,6 +355,19 @@ describe("sure_onboard aligned state machine", () => {
 		expect(result.ok).toBe(true);
 	});
 
+	it("reports every type mismatch in one pass, not just the first", () => {
+		const { ctx } = freshCtx("repo-summary-multi-type-mismatch");
+		const unit = findUnit("discover")!;
+		const result = validateProduces(ctx, unit, {
+			repo_url: "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+			notes: ["a"], // should be string
+			language: { x: 1 }, // should be string
+		});
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("notes");
+		expect(result.repair).toContain("language");
+	});
+
 	it("blocks unbounded filesystem search during discover", () => {
 		const { ctx, runDir } = freshCtx("discover-wide-find");
 		seedCheckpoint(runDir, {

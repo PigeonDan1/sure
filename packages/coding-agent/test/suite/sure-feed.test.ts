@@ -310,6 +310,20 @@ describe("sure_feed validateProduces repair message quality", () => {
 		expect(result.repair).toContain("gitlab");
 	});
 
+	it("type-mismatch repair names every wrong field in one pass, not just the first", () => {
+		const ctx = makeCtx(resolve(__dirname, "tmp-rq-type"));
+		const unit = findUnit("scan_modelscope")!; // schema: scan_result.schema.json
+		const result = validateProduces(ctx, unit, {
+			candidates: "not-an-array", // should be array
+			scan_summary: 123, // should be string
+		});
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("type mismatch");
+		expect(result.repair).toContain("candidates");
+		expect(result.repair).toContain("scan_summary");
+		expect(result.repair).toContain("Full expected shape:");
+	});
+
 	it("additionalProperties:false repair lists the undeclared field AND the declared set", () => {
 		const ctx = makeCtx(resolve(__dirname, "tmp-rq-extra"));
 		const unit = findUnit("scan_modelscope")!; // schema sets additionalProperties:false
