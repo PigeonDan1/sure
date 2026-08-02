@@ -101,10 +101,13 @@ function readTrustFile(path: string): TrustFile {
 
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(readFileSync(path, "utf-8"));
+		const raw = readFileSync(path, "utf-8");
+		parsed = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Failed to read trust store ${path}: ${message}`);
+		throw new Error(
+			`Failed to read trust store ${path}: ${message}. The file must be valid UTF-8 JSON without a byte order mark (BOM).`,
+		);
 	}
 
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {

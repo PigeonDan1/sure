@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { FIRST_UNIT, LAST_UNIT, nextUnit } from "./state-machine.ts";
 
@@ -201,7 +201,7 @@ export function runBackend(
 	if (produces) {
 		const idx = finalArgs.indexOf("--produces");
 		const val = finalArgs[idx + 1];
-		if (typeof val === "string" && !val.startsWith("/")) {
+		if (typeof val === "string" && !isAbsolute(val)) {
 			finalArgs[idx + 1] = join(ctx.runDir, "artifacts", val);
 		}
 	}
@@ -218,7 +218,12 @@ export function runBackend(
 	};
 }
 
-export function failure(repair: string, message: string, counters?: Record<string, number>, checkpoint?: RunCheckpoint): SureHookResult {
+export function failure(
+	repair: string,
+	message: string,
+	counters?: Record<string, number>,
+	checkpoint?: RunCheckpoint,
+): SureHookResult {
 	return {
 		ok: false,
 		repair,

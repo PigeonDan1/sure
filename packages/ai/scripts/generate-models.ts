@@ -1572,8 +1572,9 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
 		return models;
 	} catch (error) {
-		console.error("Failed to load models.dev data:", error);
-		return [];
+		throw new Error(`Failed to load models.dev data: ${error instanceof Error ? error.message : String(error)}`, {
+			cause: error,
+		});
 	}
 }
 
@@ -2052,14 +2053,10 @@ async function generateModels() {
 	const sortedProviderIds = Object.keys(providers).sort();
 	const providersDir = join(packageRoot, "src/providers");
 
-	// Remove stale per-provider catalogs
-	for (const entry of readdirSync(providersDir)) {
-		if (entry.endsWith(".models.ts")) {
-			rmSync(join(providersDir, entry));
-		}
-	}
-
-	// Per-provider catalogs (sorted for deterministic output)
+	// Render every per-provider catalog first (sorted for deterministic output).
+	// If any provider throws while rendering, we must not have touched the
+	// checked-in files yet.
+	const renderedProviderCatalogs = new Map<string, string>();
 	for (const providerId of sortedProviderIds) {
 		const models = providers[providerId];
 		let output = generatedHeader;
@@ -2070,7 +2067,17 @@ async function generateModels() {
 			output += emitModel(models[modelId], "\t");
 		}
 		output += `} as const;\n`;
-		writeFileSync(join(providersDir, `${providerId}.models.ts`), output);
+		renderedProviderCatalogs.set(`${providerId}.models.ts`, output);
+	}
+
+	// Only now is it safe to remove stale catalogs and write the new ones.
+	for (const entry of readdirSync(providersDir)) {
+		if (entry.endsWith(".models.ts") && !renderedProviderCatalogs.has(entry)) {
+			rmSync(join(providersDir, entry));
+		}
+	}
+	for (const [fileName, output] of renderedProviderCatalogs) {
+		writeFileSync(join(providersDir, fileName), output);
 	}
 	console.log(`Generated ${sortedProviderIds.length} catalogs under src/providers/`);
 
@@ -2101,4 +2108,7 @@ async function generateModels() {
 }
 
 // Run the generator
-generateModels().catch(console.error);
+generateModels().catch((error) => {
+	console.error(error);
+	process.exitCode = 1;
+});

@@ -24,6 +24,9 @@ function printHelp(): void {
 
 function printResponse(response: unknown): void {
 	console.log(JSON.stringify(response, null, 2));
+	if (response && typeof response === "object" && "ok" in response && response.ok === false) {
+		process.exitCode = 1;
+	}
 }
 
 function getFlagValue(args: string[], flag: string): string | undefined {
@@ -32,6 +35,24 @@ function getFlagValue(args: string[], flag: string): string | undefined {
 		return undefined;
 	}
 	return args[index + 1];
+}
+
+// Flags that consume the following argument as a free-form value (e.g. `spawn --label --help`
+// should spawn an instance labeled "--help", not print help). --help/-h must be ignored when
+// they appear in one of these positions.
+const VALUE_FLAGS = new Set(["--cwd", "--label"]);
+
+function hasHelpFlag(args: string[]): boolean {
+	for (let i = 0; i < args.length; i += 1) {
+		if (VALUE_FLAGS.has(args[i])) {
+			i += 1;
+			continue;
+		}
+		if (args[i] === "--help" || args[i] === "-h") {
+			return true;
+		}
+	}
+	return false;
 }
 
 async function rpcStream(instanceId: string): Promise<void> {
@@ -79,7 +100,7 @@ async function rpcStream(instanceId: string): Promise<void> {
 async function main(): Promise<void> {
 	const args = process.argv.slice(2);
 
-	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+	if (args.length === 0 || hasHelpFlag(args)) {
 		printHelp();
 		process.exit(0);
 	}
@@ -158,4 +179,14 @@ async function main(): Promise<void> {
 	process.exit(1);
 }
 
-await main();
+try {
+	await main();
+} catch (error) {
+	const code = (error as NodeJS.ErrnoException)?.code;
+	if (code === "ENOENT" || code === "ECONNREFUSED") {
+		console.error("orchestrator daemon is not running; start it with `orchestrator serve`");
+		process.exit(1);
+	}
+	console.error(error instanceof Error ? error.message : String(error));
+	process.exit(1);
+}

@@ -20,6 +20,8 @@ from typing import Any
 
 import yaml
 
+from dataset_alias import resolve_dataset_alias
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -201,6 +203,14 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         for item in (protocol_info.get("datasets") or report_info.get("datasets") or [])
         if item.get("name")
     ] or sorted(discovered)
+    # Accept the same short dataset aliases /sure_eval accepts (e.g.
+    # "aishell1" for predictions actually saved as
+    # "aishell1__v1.0.2__asr.txt"). A name already present in `discovered`
+    # (including any name /sure_eval could not itself have expanded) passes
+    # through unchanged; only a short alias with a unique versioned match
+    # gets rewritten. Unmatched or ambiguous names are left as-is so the
+    # existing missing-file check below still reports them.
+    selected_datasets = [resolve_dataset_alias(dataset, discovered) or dataset for dataset in selected_datasets]
 
     missing = [dataset for dataset in selected_datasets if dataset not in discovered or not discovered[dataset].get("txt")]
     if missing:

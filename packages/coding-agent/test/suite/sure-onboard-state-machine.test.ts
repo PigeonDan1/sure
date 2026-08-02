@@ -1,10 +1,21 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CheckpointData } from "../../../../sure/skills/sure_onboard/hooks/checkpoints.ts";
-import { postToolResult, preFinish, preStart, preToolCall } from "../../../../sure/skills/sure_onboard/hooks/index.ts";
-import { FIRST_UNIT, findUnit, LAST_UNIT, MODEL_TOOL_UNITS } from "../../../../sure/skills/sure_onboard/hooks/state-machine.ts";
+import {
+	countersFor,
+	postToolResult,
+	preFinish,
+	preStart,
+	preToolCall,
+} from "../../../../sure/skills/sure_onboard/hooks/index.ts";
+import {
+	FIRST_UNIT,
+	findUnit,
+	LAST_UNIT,
+	MODEL_TOOL_UNITS,
+} from "../../../../sure/skills/sure_onboard/hooks/state-machine.ts";
 import { validateProduces } from "../../../../sure/skills/sure_onboard/hooks/validate.ts";
 import type { SureHookContext } from "../../src/core/sure/types.ts";
 
@@ -53,7 +64,7 @@ function writePythonShim(modelDir: string): string {
 	const binDir = join(modelDir, ".venv", "bin");
 	mkdirSync(binDir, { recursive: true });
 	const pythonPath = join(binDir, "python");
-	writeFileSync(pythonPath, "#!/usr/bin/env sh\nexec python3 \"$@\"\n", "utf-8");
+	writeFileSync(pythonPath, '#!/usr/bin/env sh\nexec python3 "$@"\n', "utf-8");
 	chmodSync(pythonPath, 0o755);
 	return pythonPath;
 }
@@ -163,7 +174,7 @@ function seedPreparedFixture(runDir: string, modelDir = join(runDir, "model-dir"
 					audio: "sample.wav",
 					ground_truth: "hello",
 				};
-	writeFileSync(join(fixtureDir, "gt.jsonl"), JSON.stringify(row) + "\n", "utf-8");
+	writeFileSync(join(fixtureDir, "gt.jsonl"), `${JSON.stringify(row)}\n`, "utf-8");
 	writeArtifact(runDir, "fixture_manifest.json", {
 		model_id: "owner/model",
 		model_name: "model",
@@ -209,7 +220,7 @@ function writeModelInput(path: string): void {
 	mkdirSync(resolve(path, ".."), { recursive: true });
 	writeFileSync(
 		path,
-		[
+		`${[
 			"model_id: rednote-hilab/dots.tts-base",
 			"model_name: rednote-hilab__dots.tts-base",
 			"task_type: tts",
@@ -224,7 +235,7 @@ function writeModelInput(path: string): void {
 			"  preferred_backend: uv",
 			"  python_version: 3.10",
 			"  requires_gpu: true",
-		].join("\n") + "\n",
+		].join("\n")}\n`,
 		"utf-8",
 	);
 }
@@ -238,7 +249,7 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 		const result = preStart(ctx);
 		expect(result.ok).toBe(true);
 		expect(result.state_patch?.message).toContain("rednote-hilab/dots.tts-base");
-		expect(result.state_patch?.message).toContain("as \"rednote-hilab__dots.tts-base\"");
+		expect(result.state_patch?.message).toContain('as "rednote-hilab__dots.tts-base"');
 		expect(result.state_patch?.message).toContain("sure/models/rednote-hilab__dots.tts-base");
 		expect(result.state_patch?.message).toContain("from MODEL_INPUT");
 		expect(result.state_patch?.diagnostics?.some((item) => item.message.includes("Loaded MODEL_INPUT"))).toBe(true);
@@ -274,10 +285,7 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 	});
 
 	it("normalizes URL-like model arguments to the handoff folder name", () => {
-		const { ctx, cwd } = preStartCtx(
-			"handoff-url-name",
-			"model=https://huggingface.co/rednote-hilab/dots.tts-base",
-		);
+		const { ctx, cwd } = preStartCtx("handoff-url-name", "model=https://huggingface.co/rednote-hilab/dots.tts-base");
 		writeModelInput(join(cwd, "sure", "handoffs", "rednote-hilab__dots.tts-base", "model_input.yaml"));
 		const result = preStart(ctx);
 		expect(result.ok).toBe(true);
@@ -298,7 +306,7 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 		);
 		const result = preStart(ctx);
 		expect(result.ok).toBe(false);
-		expect(result.repair).toContain("package \"vc\" is not one of");
+		expect(result.repair).toContain('package "vc" is not one of');
 	});
 });
 
@@ -351,6 +359,19 @@ describe("sure_onboard aligned state machine", () => {
 			notes: "Existing local model inspected before remote evidence.",
 		});
 		expect(result.ok).toBe(true);
+	});
+
+	it("reports every type mismatch in one pass, not just the first", () => {
+		const { ctx } = freshCtx("repo-summary-multi-type-mismatch");
+		const unit = findUnit("discover")!;
+		const result = validateProduces(ctx, unit, {
+			repo_url: "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+			notes: ["a"], // should be string
+			language: { x: 1 }, // should be string
+		});
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("notes");
+		expect(result.repair).toContain("language");
 	});
 
 	it("blocks unbounded filesystem search during discover", () => {
@@ -510,11 +531,17 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 
 	it("falls back to scalar parsing for legacy handoffs with unquoted multiline code", () => {
 		const { ctx, cwd, runDir } = preStartCtx("materialize-legacy-yaml", "");
-		const modelInputPath = join(cwd, "sure", "handoffs", "OpenMOSS-Team__MOSS-Transcribe-Diarize", "model_input.yaml");
+		const modelInputPath = join(
+			cwd,
+			"sure",
+			"handoffs",
+			"OpenMOSS-Team__MOSS-Transcribe-Diarize",
+			"model_input.yaml",
+		);
 		mkdirSync(resolve(modelInputPath, ".."), { recursive: true });
 		writeFileSync(
 			modelInputPath,
-			[
+			`${[
 				"model_id: OpenMOSS-Team/MOSS-Transcribe-Diarize",
 				"model_name: OpenMOSS-Team__MOSS-Transcribe-Diarize",
 				"task_type: sa_asr",
@@ -532,7 +559,7 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 				")",
 				"fixture:",
 				"  task_specific: true",
-			].join("\n") + "\n",
+			].join("\n")}\n`,
 			"utf-8",
 		);
 		const proc = spawnSync(
@@ -559,22 +586,19 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 		expect(context.selected_references.environment_playbooks).toContain("references/playbooks/env_conda.md");
 	});
 
-	it.each([
-		[
-			"Qwen__Qwen3-ASR-1.7B",
-			"Qwen/Qwen3-ASR-1.7B",
-			"asr",
-			"references/task_playbooks/ASR.md",
-		],
-		[
-			"Qwen__Qwen3-TTS-12Hz-1.7B-Base",
-			"Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-			"tts",
-			"references/task_playbooks/TTS.md",
-		],
+	// sure/handoffs/ is listed in .gitignore, so these fixtures exist only on a
+	// machine that has already run /sure_feed. Skip rather than fail when the
+	// directory is absent: a fresh clone cannot produce it, and hand-writing a
+	// model_input.yaml would test a fixture we invented rather than the artifact
+	// the pipeline actually emits.
+	const HANDOFFS_DIR = resolve(__dirname, "../../../../sure/handoffs");
+
+	it.skipIf(!existsSync(HANDOFFS_DIR)).each([
+		["Qwen__Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-1.7B", "asr", "references/task_playbooks/ASR.md"],
+		["Qwen__Qwen3-TTS-12Hz-1.7B-Base", "Qwen/Qwen3-TTS-12Hz-1.7B-Base", "tts", "references/task_playbooks/TTS.md"],
 	])("materializes checked-in Qwen handoff %s", (modelName, modelId, taskType, taskPlaybook) => {
 		const { ctx, cwd, runDir } = preStartCtx(`materialize-${modelName}`, "");
-		const modelInputPath = resolve(__dirname, "../../../../sure/handoffs", modelName, "model_input.yaml");
+		const modelInputPath = join(HANDOFFS_DIR, modelName, "model_input.yaml");
 		const proc = spawnSync(
 			"python3",
 			[
@@ -769,7 +793,10 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			planned_outputs: ["artifacts/verdict.json"],
 			blockers: [],
 		});
-		writeJson(join(modelArtifacts, "build_plan.json"), JSON.parse(readFileSync(join(runDir, "artifacts", "build_plan.json"), "utf-8")));
+		writeJson(
+			join(modelArtifacts, "build_plan.json"),
+			JSON.parse(readFileSync(join(runDir, "artifacts", "build_plan.json"), "utf-8")),
+		);
 		advance("validate_spec");
 
 		const passedCheck = { passed: true };
@@ -795,12 +822,12 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 		writeFileSync(join(fixtureDir, "sample.wav"), "not real audio\n", "utf-8");
 		writeFileSync(
 			join(fixtureDir, "gt.jsonl"),
-			JSON.stringify({
+			`${JSON.stringify({
 				key: "sample",
 				audio: "sample.wav",
 				target_text: "hello from fixture",
 				language: "en",
-			}) + "\n",
+			})}\n`,
 			"utf-8",
 		);
 		writeArtifact(runDir, "fixture_manifest.json", {
@@ -850,7 +877,10 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			model_local_first: true,
 			fallback_to_host_global: false,
 		});
-		writeJson(join(modelArtifacts, "weights_manifest.json"), JSON.parse(readFileSync(join(runDir, "artifacts", "weights_manifest.json"), "utf-8")));
+		writeJson(
+			join(modelArtifacts, "weights_manifest.json"),
+			JSON.parse(readFileSync(join(runDir, "artifacts", "weights_manifest.json"), "utf-8")),
+		);
 		advance("validate_env_compat");
 
 		writeArtifact(runDir, "env_compat_result.json", {
@@ -871,7 +901,10 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			validate_py: "validate.py",
 			config_yaml: "config.yaml",
 		});
-		writeJson(join(modelArtifacts, "wrapper_manifest.json"), JSON.parse(readFileSync(join(runDir, "artifacts", "wrapper_manifest.json"), "utf-8")));
+		writeJson(
+			join(modelArtifacts, "wrapper_manifest.json"),
+			JSON.parse(readFileSync(join(runDir, "artifacts", "wrapper_manifest.json"), "utf-8")),
+		);
 		advance("validate_import");
 
 		const validationCommand = ["python3", "-c", "print('sure replay validation ok')"];
@@ -880,7 +913,10 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			model_dir: modelDir,
 			run_command: validationCommand,
 		});
-		writeJson(join(modelArtifacts, "import_result.json"), JSON.parse(readFileSync(join(runDir, "artifacts", "import_result.json"), "utf-8")));
+		writeJson(
+			join(modelArtifacts, "import_result.json"),
+			JSON.parse(readFileSync(join(runDir, "artifacts", "import_result.json"), "utf-8")),
+		);
 		advance("validate_load");
 
 		writeArtifact(runDir, "load_result.json", {
@@ -888,7 +924,10 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			model_dir: modelDir,
 			run_command: validationCommand,
 		});
-		writeJson(join(modelArtifacts, "load_result.json"), JSON.parse(readFileSync(join(runDir, "artifacts", "load_result.json"), "utf-8")));
+		writeJson(
+			join(modelArtifacts, "load_result.json"),
+			JSON.parse(readFileSync(join(runDir, "artifacts", "load_result.json"), "utf-8")),
+		);
 		advance("validate_infer");
 
 		writeArtifact(runDir, "sample_output.json", { text: "hello from replay" });
@@ -899,7 +938,10 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			sample_output_path: "sample_output.json",
 			run_command: validationCommand,
 		});
-		writeJson(join(modelArtifacts, "infer_result.json"), JSON.parse(readFileSync(join(runDir, "artifacts", "infer_result.json"), "utf-8")));
+		writeJson(
+			join(modelArtifacts, "infer_result.json"),
+			JSON.parse(readFileSync(join(runDir, "artifacts", "infer_result.json"), "utf-8")),
+		);
 		advance("validate_contract");
 
 		const ioContract = {
@@ -917,7 +959,10 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			sample_output_path: "sample_output.json",
 			run_command: validationCommand,
 		});
-		writeJson(join(modelArtifacts, "contract_result.json"), JSON.parse(readFileSync(join(runDir, "artifacts", "contract_result.json"), "utf-8")));
+		writeJson(
+			join(modelArtifacts, "contract_result.json"),
+			JSON.parse(readFileSync(join(runDir, "artifacts", "contract_result.json"), "utf-8")),
+		);
 		advance("save_artifacts");
 
 		const manifest = {
@@ -1108,8 +1153,48 @@ describe("sure_onboard gate --kind routing (regression)", () => {
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("After 3 consecutive blocked attempts");
-		expect(result.repair).toContain("confirm the model_input_path or repo link");
+		expect(result.repair).toContain("model_input_path or repo link");
+		expect(result.repair).toContain("confirm access permissions");
 		expect(result.state_patch?.message).toContain("exhausted 3 blocked attempts");
+	});
+
+	it("puts the actual blocking reason before the generic checklist in the terminal repair message", () => {
+		const { ctx, runDir } = freshCtx("envcompat-reason-first");
+		seedCheckpoint(runDir, {
+			currentUnit: "validate_env_compat",
+			completedUnits: [
+				"load_model_input",
+				"context_selection",
+				"discover",
+				"classify",
+				"plan",
+				"build_plan",
+				"validate_spec",
+				"prepare_fixture",
+				"build_env",
+				"fetch_weights",
+			],
+			retries: { validate_env_compat: 2 },
+		});
+		writeArtifact(runDir, "env_compat_result.json", { compat_ok: false });
+		const result = postToolResult(ctx);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("Blocked because: gate script check_env_compat.py failed");
+		const reasonIndex = result.repair?.indexOf("Blocked because:") ?? -1;
+		const checklistIndex = result.repair?.indexOf("model_input_path or repo link") ?? -1;
+		expect(reasonIndex).toBeGreaterThanOrEqual(0);
+		expect(reasonIndex).toBeLessThan(checklistIndex);
+	});
+});
+
+describe("sure_onboard countersFor", () => {
+	it("keeps gate_blocks consistent with the retry ledger", () => {
+		const data: CheckpointData = {
+			currentUnit: "discover",
+			completedUnits: [],
+			retries: { discover: 4, classify: 2 },
+		};
+		expect(countersFor(data, 0).gate_blocks).toBe(6);
 	});
 });
 
@@ -1213,8 +1298,7 @@ describe("sure_onboard new alignment gates", () => {
 			toolCall: {
 				name: "bash",
 				input: {
-					command:
-						"python3 scripts/prepare_fixture.py --run-dir x --produces x/artifacts/fixture_manifest.json",
+					command: "python3 scripts/prepare_fixture.py --run-dir x --produces x/artifacts/fixture_manifest.json",
 				},
 			},
 		} as never;
@@ -1247,7 +1331,7 @@ describe("sure_onboard new alignment gates", () => {
 		writeFileSync(join(fixtureSource, "sample.wav"), "not real audio\n", "utf-8");
 		writeFileSync(
 			join(fixtureSource, "gt.jsonl"),
-			JSON.stringify({ key: "sample", audio: "sample.wav", ground_truth: "hello" }) + "\n",
+			`${JSON.stringify({ key: "sample", audio: "sample.wav", ground_truth: "hello" })}\n`,
 			"utf-8",
 		);
 		writeJson(join(artifactsDir, "model_input_resolved.json"), {
@@ -1297,7 +1381,7 @@ describe("sure_onboard new alignment gates", () => {
 		writeFileSync(join(fixtureDir, "sample.wav"), "not real audio\n", "utf-8");
 		writeFileSync(
 			join(fixtureDir, "gt.jsonl"),
-			JSON.stringify({ key: "sample", audio: "sample.wav", ground_truth: "hello" }) + "\n",
+			`${JSON.stringify({ key: "sample", audio: "sample.wav", ground_truth: "hello" })}\n`,
 			"utf-8",
 		);
 		const produces = join(artifactsDir, "fixture_manifest.json");
@@ -1416,14 +1500,12 @@ describe("sure_onboard new alignment gates", () => {
 			status: "fetched",
 			source: "modelscope_fallback",
 			required: true,
-			resolved_local_model_path:
-				"sure/models/Qwen__Qwen3-TTS-12Hz-1.7B-Base/checkpoints/Qwen3-TTS-12Hz-1.7B-Base",
+			resolved_local_model_path: "sure/models/Qwen__Qwen3-TTS-12Hz-1.7B-Base/checkpoints/Qwen3-TTS-12Hz-1.7B-Base",
 			checkpoint_root: "sure/models/Qwen__Qwen3-TTS-12Hz-1.7B-Base/checkpoints",
 			dependencies: [
 				{
 					repo_id: "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-					local_path:
-						"sure/models/Qwen__Qwen3-TTS-12Hz-1.7B-Base/checkpoints/Qwen3-TTS-12Hz-1.7B-Base",
+					local_path: "sure/models/Qwen__Qwen3-TTS-12Hz-1.7B-Base/checkpoints/Qwen3-TTS-12Hz-1.7B-Base",
 					exists: true,
 				},
 			],
@@ -1464,7 +1546,10 @@ describe("sure_onboard new alignment gates", () => {
 			checkpoint_root: join(modelDir, "checkpoints"),
 			dependencies: [{ repo_id: "Qwen/Qwen3-TTS-12Hz-1.7B-Base", local_path: checkpointPath, exists: true }],
 			model_local_first: true,
-			source_attempts: [{ source: "huggingface", status: "failed" }, { source: "modelscope", status: "succeeded" }],
+			source_attempts: [
+				{ source: "huggingface", status: "failed" },
+				{ source: "modelscope", status: "succeeded" },
+			],
 		});
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(true);
@@ -1834,12 +1919,12 @@ describe("sure_onboard new alignment gates", () => {
 		const localPython = join(modelDir, ".venv", "bin", "python");
 		writeFileSync(
 			localPython,
-			[
+			`${[
 				"#!/usr/bin/env bash",
 				"mkdir -p artifacts",
 				'printf "%s\\n" "$0" > artifacts/python_used.txt',
 				`exec ${pythonPath} "$@"`,
-			].join("\n") + "\n",
+			].join("\n")}\n`,
 			"utf-8",
 		);
 		chmodSync(localPython, 0o755);
@@ -1865,9 +1950,7 @@ describe("sure_onboard new alignment gates", () => {
 			{ encoding: "utf-8" },
 		);
 		expect(proc.status, proc.stderr || proc.stdout).toBe(0);
-		expect(readFileSync(join(modelDir, "artifacts", "python_used.txt"), "utf-8")).toContain(
-			".venv/bin/python",
-		);
+		expect(readFileSync(join(modelDir, "artifacts", "python_used.txt"), "utf-8")).toContain(".venv/bin/python");
 	});
 
 	it("normalizes repo-root relative sure/models paths inside validation commands", () => {
@@ -2173,7 +2256,7 @@ describe("sure_onboard new alignment gates", () => {
 		writeFileSync(join(modelDir, "validate.py"), template, "utf-8");
 		writeFileSync(
 			join(modelDir, "model.py"),
-			[
+			`${[
 				"class ModelWrapper:",
 				"    def __init__(self, *args, **kwargs):",
 				"        self.loaded = False",
@@ -2181,18 +2264,18 @@ describe("sure_onboard new alignment gates", () => {
 				"        self.loaded = True",
 				"    def predict(self, payload):",
 				"        return {'text': payload.get('text') or 'hello'}",
-			].join("\n") + "\n",
+			].join("\n")}\n`,
 			"utf-8",
 		);
 		writeFileSync(join(modelDir, "fixture", "asr", "asr_en", "sample.wav"), "not real audio\n", "utf-8");
 		writeFileSync(
 			join(modelDir, "fixture", "asr", "asr_en", "gt.jsonl"),
-			JSON.stringify({
+			`${JSON.stringify({
 				key: "sample",
 				audio: "sample.wav",
 				ground_truth: "hello from fixture",
 				language: "en",
-			}) + "\n",
+			})}\n`,
 			"utf-8",
 		);
 
@@ -2309,7 +2392,8 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 			toolCall: {
 				name: "bash",
 				input: {
-					command: "python3 scripts/stage_model_artifacts.py --run-dir x --produces x/artifacts/artifact_manifest.json",
+					command:
+						"python3 scripts/stage_model_artifacts.py --run-dir x --produces x/artifacts/artifact_manifest.json",
 				},
 			},
 		} as never;
@@ -2346,7 +2430,8 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 			toolCall: {
 				name: "bash",
 				input: {
-					command: "python3 scripts/adopt_reference_model.py --reference-model-dir x --target-model-dir y --model-id a/b --model-name a__b",
+					command:
+						"python3 scripts/adopt_reference_model.py --reference-model-dir x --target-model-dir y --model-id a/b --model-name a__b",
 				},
 			},
 		} as never;
@@ -2494,13 +2579,7 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 		const manifestPath = join(runDir, "artifacts", "artifact_manifest.json");
 		const stage = spawnSync(
 			"python3",
-			[
-				join(PACKAGE_DIR, "scripts", "stage_model_artifacts.py"),
-				"--run-dir",
-				runDir,
-				"--produces",
-				manifestPath,
-			],
+			[join(PACKAGE_DIR, "scripts", "stage_model_artifacts.py"), "--run-dir", runDir, "--produces", manifestPath],
 			{ encoding: "utf-8" },
 		);
 		expect(stage.status, stage.stderr || stage.stdout).toBe(0);
@@ -2509,13 +2588,7 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 
 		const gate = spawnSync(
 			"python3",
-			[
-				join(PACKAGE_DIR, "scripts", "check_artifact_manifest.py"),
-				"--run-dir",
-				runDir,
-				"--produces",
-				manifestPath,
-			],
+			[join(PACKAGE_DIR, "scripts", "check_artifact_manifest.py"), "--run-dir", runDir, "--produces", manifestPath],
 			{ encoding: "utf-8" },
 		);
 		expect(gate.status, gate.stderr || gate.stdout).toBe(0);

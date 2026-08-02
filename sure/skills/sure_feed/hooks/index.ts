@@ -32,17 +32,41 @@ function phaseFor(unit: Unit, status: "running" | "blocked" | "success") {
 	return { id: unit.id, label: unit.label, status };
 }
 
-function countersFor(completed: CheckpointData, gateBlocks: number) {
+export function countersFor(completed: CheckpointData, gateBlocks?: number) {
+	const ledgerBlocks = Object.values(completed.retries ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
 	return {
 		completed_units: completed.completedUnits.length,
 		total_units: TOTAL_UNITS,
-		gate_blocks: gateBlocks,
+		gate_blocks: Math.max(ledgerBlocks, gateBlocks ?? 0),
 	};
+}
+
+function parseArgs(raw: string): Record<string, string> {
+	const out: Record<string, string> = {};
+	const tokens = raw.trim().split(/\s+/).filter(Boolean);
+	for (let i = 0; i < tokens.length; i++) {
+		const token = tokens[i];
+		const eq = token.indexOf("=");
+		if (eq >= 0) {
+			out[token.slice(0, eq)] = token.slice(eq + 1);
+			continue;
+		}
+		const key = token.replace(/^--?/, "");
+		const next = tokens[i + 1];
+		if (next !== undefined && !next.startsWith("-")) {
+			out[key] = next;
+			i++;
+		} else {
+			out[key] = "true";
+		}
+	}
+	return out;
 }
 
 // sure_feed has no required parameters (source/watch_mode/query/max_models/
 // handoff/output_dir/since are all optional, with sensible defaults), so preStart
 // does no arg parsing — unlike sure_eval/sure_onboard which validate required params.
+// failOrRetry does parse ctx.args, but only to read the optional max_retries override.
 
 export function preStart(ctx: SureHookContext): SureHookResult {
 	const scriptsDir = join(ctx.packageDir, "scripts");
@@ -226,7 +250,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 }
 
 function failOrRetry(
-	_ctx: SureHookContext,
+	ctx: SureHookContext,
 	unit: Unit,
 	checkpoint: { data: CheckpointData },
 	repair: string,
@@ -234,9 +258,14 @@ function failOrRetry(
 ): SureHookResult {
 	const next = bumpRetry(unit, checkpoint.data);
 	const attempts = next.data.retries[unit.id] ?? 1;
-	if (retryExhausted(unit, next.data)) {
+	// Honor the user's max_retries parameter (default 3). Read from ctx.args so a
+	// run started with /sure_feed ... max_retries=5 actually gets 5 attempts.
+	const args = parseArgs(ctx.args);
+	const maxRetries = args.max_retries ? Number.parseInt(args.max_retries, 10) : undefined;
+	const effectiveMax = Number.isFinite(maxRetries) && (maxRetries ?? 0) > 0 ? maxRetries : undefined;
+	if (retryExhausted(unit, next.data, effectiveMax)) {
 		return failure(
-			`${repair} After ${attempts} consecutive blocked attempts, /sure_feed still cannot produce a valid artifact for unit "${unit.id}". Stop and ask the user to confirm the model link, access permissions, and whether the model card/README contains enough install, load, and inference information.`,
+			`${repair} Blocked because: ${reason}. After ${attempts} consecutive blocked attempts, /sure_feed still cannot produce a valid artifact for unit "${unit.id}". If the blocking reason above points at the model link rather than the artifact you wrote, ask the user to confirm access permissions and whether the model card/README covers install, load, and inference.`,
 			`Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`,
 			countersFor(next.data, attempts),
 			next,

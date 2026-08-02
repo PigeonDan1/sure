@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { advance, type CheckpointData } from "../../../../sure/skills/sure_feed/hooks/checkpoints.ts";
-import { postToolResult, preFinish, preToolCall } from "../../../../sure/skills/sure_feed/hooks/index.ts";
+import { countersFor, postToolResult, preFinish, preToolCall } from "../../../../sure/skills/sure_feed/hooks/index.ts";
 import {
 	FIRST_UNIT,
 	findUnit,
@@ -310,6 +310,20 @@ describe("sure_feed validateProduces repair message quality", () => {
 		expect(result.repair).toContain("gitlab");
 	});
 
+	it("type-mismatch repair names every wrong field in one pass, not just the first", () => {
+		const ctx = makeCtx(resolve(__dirname, "tmp-rq-type"));
+		const unit = findUnit("scan_modelscope")!; // schema: scan_result.schema.json
+		const result = validateProduces(ctx, unit, {
+			candidates: "not-an-array", // should be array
+			scan_summary: 123, // should be string
+		});
+		expect(result.ok).toBe(false);
+		expect(result.reason).toContain("type mismatch");
+		expect(result.repair).toContain("candidates");
+		expect(result.repair).toContain("scan_summary");
+		expect(result.repair).toContain("Full expected shape:");
+	});
+
 	it("additionalProperties:false repair lists the undeclared field AND the declared set", () => {
 		const ctx = makeCtx(resolve(__dirname, "tmp-rq-extra"));
 		const unit = findUnit("scan_modelscope")!; // schema sets additionalProperties:false
@@ -363,9 +377,24 @@ describe("sure_feed gate scripts (real python3 spawnSync)", () => {
 		writeArtifact(runDir, "model_input_result.json", {
 			source_query: { source: "multi", query: "speech models", max_models: 3 },
 			model_inputs: [
-				modelInputEnvelope("damo/speech_paraformer_asr", "modelscope", "modelscope", "https://modelscope.cn/models/damo/speech_paraformer_asr"),
-				modelInputEnvelope("openai/whisper-tiny", "huggingface", "huggingface", "https://huggingface.co/openai/whisper-tiny"),
-				modelInputEnvelope("owner/speech-toolkit", "github", "release_or_pypi", "https://github.com/owner/speech-toolkit"),
+				modelInputEnvelope(
+					"damo/speech_paraformer_asr",
+					"modelscope",
+					"modelscope",
+					"https://modelscope.cn/models/damo/speech_paraformer_asr",
+				),
+				modelInputEnvelope(
+					"openai/whisper-tiny",
+					"huggingface",
+					"huggingface",
+					"https://huggingface.co/openai/whisper-tiny",
+				),
+				modelInputEnvelope(
+					"owner/speech-toolkit",
+					"github",
+					"release_or_pypi",
+					"https://github.com/owner/speech-toolkit",
+				),
 			],
 		});
 		const r = runGate("check_model_input.py", runDir, "model_input_result.json");
@@ -382,9 +411,11 @@ describe("sure_feed gate scripts (real python3 spawnSync)", () => {
 		);
 		const modelInput = envelope.model_input as Record<string, unknown>;
 		modelInput.entrypoints = {
-			import_test: "policy_resolved: use the sherpa-onnx runtime import or CLI surface selected during /sure_onboard",
+			import_test:
+				"policy_resolved: use the sherpa-onnx runtime import or CLI surface selected during /sure_onboard",
 			load_test: "policy_resolved: load ONNX checkpoint files from the model repository with sherpa-onnx",
-			infer_test: "policy_resolved: run sherpa-onnx ASR inference through its Python API or CLI on the selected SURE fixture",
+			infer_test:
+				"policy_resolved: run sherpa-onnx ASR inference through its Python API or CLI on the selected SURE fixture",
 		};
 		modelInput.runtime_strategy = {
 			type: "cli_or_library",
@@ -552,6 +583,30 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		expect(checkpoint?.data.retries.match_task).toBeUndefined();
 	});
 
+	it("resolves --produces for the gate script without doubling the run-dir prefix on an absolute path (Windows regression)", () => {
+		// runBackend's produces guard used `!val.startsWith("/")` to decide whether
+		// a --produces value needed joining under runDir/artifacts/. artifactPath()
+		// already returns an absolute path (e.g. Windows "E:\...\artifacts\..."),
+		// which does not start with "/", so the guard joined it a second time and
+		// the gate script could never find the artifact.
+		const { ctx, runDir } = freshCtx("advance-absolute-produces");
+		writeFileSync(
+			join(runDir, "state.json"),
+			JSON.stringify(
+				{ checkpoint: { data: { currentUnit: "match_task", completedUnits: ["scan_modelscope"], retries: {} } } },
+				null,
+				2,
+			),
+			"utf-8",
+		);
+		writeArtifact(runDir, "match_task_result.json", {
+			candidates: [{ model_id: "m1", match: { matched: true, match_source: "tasks", task_type: "asr" } }],
+		});
+		const result = postToolResult(ctx);
+		expect(result.ok).toBe(true);
+		expect(result.repair).toBeUndefined();
+	});
+
 	it("advances when the gate artifact lives under artifacts/debug", () => {
 		const { ctx, runDir } = freshCtx("advance-debug-artifact-pass");
 		writeFileSync(
@@ -594,7 +649,12 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		);
 		writeArtifact(runDir, "model_input_result.json", {
 			model_inputs: [
-				modelInputEnvelope("openai/whisper-tiny", "huggingface", "huggingface", "https://huggingface.co/openai/whisper-tiny"),
+				modelInputEnvelope(
+					"openai/whisper-tiny",
+					"huggingface",
+					"huggingface",
+					"https://huggingface.co/openai/whisper-tiny",
+				),
 			],
 		});
 		const result = postToolResult(ctx);
@@ -653,8 +713,74 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("After 3 consecutive blocked attempts");
-		expect(result.repair).toContain("confirm the model link");
-		expect(result.state_patch?.message).toContain('exhausted 3 blocked attempts');
+		expect(result.repair).toContain("model link");
+		expect(result.repair).toContain("confirm access permissions");
+		expect(result.state_patch?.message).toContain("exhausted 3 blocked attempts");
+	});
+
+	it("puts the actual blocking reason before the generic checklist in the terminal repair message", () => {
+		const { ctx, runDir } = freshCtx("advance-reason-first");
+		writeFileSync(
+			join(runDir, "state.json"),
+			JSON.stringify(
+				{
+					checkpoint: {
+						data: {
+							currentUnit: "match_task",
+							completedUnits: ["scan_modelscope"],
+							retries: { match_task: 2 },
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+		writeArtifact(runDir, "match_task_result.json", {
+			candidates: [{ model_id: "m1", match: { matched: true } }],
+		});
+		const result = postToolResult(ctx);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("Blocked because: gate script check_match_task.py failed");
+		const reasonIndex = result.repair?.indexOf("Blocked because:") ?? -1;
+		const checklistIndex = result.repair?.indexOf("model link") ?? -1;
+		expect(reasonIndex).toBeGreaterThanOrEqual(0);
+		expect(reasonIndex).toBeLessThan(checklistIndex);
+	});
+
+	it("honors max_retries from the /sure_feed command line", () => {
+		const { ctx, runDir } = freshCtx("advance-max-retries");
+		// Same state as "fails clearly on the third consecutive blocked gate
+		// attempt": retries.match_task = 2, so this call is the third attempt.
+		writeFileSync(
+			join(runDir, "state.json"),
+			JSON.stringify(
+				{
+					checkpoint: {
+						data: {
+							currentUnit: "match_task",
+							completedUnits: ["scan_modelscope"],
+							retries: { match_task: 2 },
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+		writeArtifact(runDir, "match_task_result.json", {
+			candidates: [{ model_id: "m1", match: { matched: true } }],
+		});
+		const result = postToolResult({ ...ctx, args: "max_retries=5" });
+		expect(result.ok).toBe(false);
+		// Quota raised to 5: the third attempt is blocked, not terminal.
+		expect(result.repair).not.toContain("After 3 consecutive blocked attempts");
+		expect(result.repair).not.toContain("confirm the model link");
+		// Still the real gate rejection (missing match_source), not the
+		// retry-exhaustion wrapper — proves it took the blocked-but-not-exhausted branch.
+		expect(result.repair).toContain("match_source");
 	});
 
 	it("stays on the unit (no block, no advance) when the artifact is not yet produced", () => {
@@ -740,5 +866,16 @@ describe("sure_feed preFinish terminal state", () => {
 		expect(result.ok).toBe(true);
 		expect(result.state_patch?.counters?.completed_units).toBe(7);
 		expect(result.state_patch?.counters?.total_units).toBe(7);
+	});
+});
+
+describe("sure_feed countersFor", () => {
+	it("keeps gate_blocks consistent with the retry ledger", () => {
+		const data: CheckpointData = {
+			currentUnit: "match_task",
+			completedUnits: [],
+			retries: { scan_modelscope: 4, match_task: 2 },
+		};
+		expect(countersFor(data, 0).gate_blocks).toBe(6);
 	});
 });

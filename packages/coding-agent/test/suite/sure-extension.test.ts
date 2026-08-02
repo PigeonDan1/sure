@@ -4,9 +4,10 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentSessionServices } from "../../src/core/agent-session-services.ts";
-import { SettingsManager } from "../../src/core/settings-manager.ts";
 import type { ExtensionFactory } from "../../src/core/extensions/index.ts";
+import { SettingsManager } from "../../src/core/settings-manager.ts";
 import { sureExtension } from "../../src/core/sure/index.ts";
+import { runPrintMode } from "../../src/modes/print-mode.ts";
 import { createHarness, getUserTexts, type Harness } from "./harness.ts";
 
 function writeJson(path: string, value: unknown): void {
@@ -62,7 +63,7 @@ function writeOnboardModelInput(path: string): void {
 	mkdirSync(resolve(path, ".."), { recursive: true });
 	writeFileSync(
 		path,
-		[
+		`${[
 			"model_id: rednote-hilab/dots.tts-base",
 			"model_name: rednote-hilab__dots.tts-base",
 			"task_type: tts",
@@ -74,7 +75,7 @@ function writeOnboardModelInput(path: string): void {
 			"environment_hint:",
 			"  preferred_backend: uv",
 			"  python_version: 3.10",
-		].join("\n") + "\n",
+		].join("\n")}\n`,
 		"utf-8",
 	);
 }
@@ -84,7 +85,7 @@ function writeEvalModel(tempDir: string, modelName = "demo-asr"): string {
 	mkdirSync(modelDir, { recursive: true });
 	writeFileSync(
 		join(modelDir, "config.yaml"),
-		["model:", `  name: ${modelName}`, "  task: ASR", "server:", "  command: [python, server.py]"].join("\n") + "\n",
+		`${["model:", `  name: ${modelName}`, "  task: ASR", "server:", "  command: [python, server.py]"].join("\n")}\n`,
 		"utf-8",
 	);
 	writeFileSync(join(modelDir, "model.py"), "# test fixture\n", "utf-8");
@@ -240,7 +241,9 @@ describe("Sure extension", () => {
 		writeFileSync(join(sourceDir, "predictions", "demo_dataset.txt"), "utt1\thello world\n", "utf-8");
 		harness.setResponses([fauxAssistantMessage("working")]);
 
-		await harness.session.prompt(`/sure_reval source=${sourceDir} model=demo_model datasets=demo_dataset max_samples=1`);
+		await harness.session.prompt(
+			`/sure_reval source=${sourceDir} model=demo_model datasets=demo_dataset max_samples=1`,
+		);
 		await harness.session.agent.waitForIdle();
 		await waitForCondition(() => getUserTexts(harness).length > 0);
 
@@ -249,9 +252,9 @@ describe("Sure extension", () => {
 		expect(getUserTexts(harness)[0]).toContain('skill="sure_reval" command="/sure_reval"');
 		expect(getUserTexts(harness)[0]).toContain("# /sure_reval");
 		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
-		expect(existsSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "prediction_source_resolved.json"))).toBe(
-			true,
-		);
+		expect(
+			existsSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "prediction_source_resolved.json")),
+		).toBe(true);
 		expect(readRunState(harness.tempDir, runId)).toMatchObject({
 			phase: { id: "prediction_source", status: "running" },
 		});
@@ -600,7 +603,9 @@ describe("Sure extension", () => {
 
 		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
-		await waitForCondition(() => harness.session.messages.filter((message) => message.role === "toolResult").length >= 2);
+		await waitForCondition(
+			() => harness.session.messages.filter((message) => message.role === "toolResult").length >= 2,
+		);
 
 		const runId = getOnlyRunId(harness.tempDir);
 		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
@@ -674,7 +679,10 @@ describe("Sure extension", () => {
 			() => {
 				const runId = getOnlyRunId(harness.tempDir);
 				mkdirSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts"), { recursive: true });
-				writeFileSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "model_input.yaml"), "model_id: demo\n");
+				writeFileSync(
+					join(harness.tempDir, ".sure", "runs", runId, "artifacts", "model_input.yaml"),
+					"model_id: demo\n",
+				);
 				writeValidManifest(harness.tempDir, runId, {
 					outputs: {
 						model_input: `.sure/runs/${runId}/artifacts/model_input.yaml`,
@@ -1014,5 +1022,42 @@ describe("Sure extension", () => {
 		if (stored?.type === "api_key") {
 			expect(stored.key).toBe("sk-test-123");
 		}
+	});
+});
+
+describe("print mode extension notify", () => {
+	function captureStdout(lines: string[]): () => void {
+		const spy = vi.spyOn(process.stdout, "write").mockImplementation(((
+			chunk: unknown,
+			callback?: unknown,
+		): boolean => {
+			lines.push(String(chunk));
+			if (typeof callback === "function") {
+				(callback as () => void)();
+			}
+			return true;
+		}) as typeof process.stdout.write);
+		return () => spy.mockRestore();
+	}
+
+	it("routes /sure notify output to stdout in print mode", async () => {
+		const harness = await createHarness({ extensionFactories: [sureExtension] });
+		const runtimeHost = {
+			session: harness.session,
+			setRebindSession: () => {},
+			dispose: async () => {},
+		} as unknown as Parameters<typeof runPrintMode>[0];
+
+		const lines: string[] = [];
+		const restore = captureStdout(lines);
+		try {
+			await runPrintMode(runtimeHost, { mode: "text", initialMessage: "/sure" });
+		} finally {
+			restore();
+			harness.cleanup();
+		}
+
+		expect(lines.join("")).not.toBe("");
+		expect(lines.join("")).toContain("No Sure skills found.");
 	});
 });

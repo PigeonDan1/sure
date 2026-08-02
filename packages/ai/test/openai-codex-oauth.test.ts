@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	loginOpenAICodex,
 	loginOpenAICodexDeviceCode,
 	openaiCodexOAuthProvider,
 	refreshOpenAICodexToken,
 } from "../src/utils/oauth/openai-codex.ts";
+import { CALLBACK_TIMEOUT_MS } from "../src/utils/oauth/types.ts";
 
 function jsonResponse(body: unknown, status: number = 200): Response {
 	return new Response(JSON.stringify(body), {
@@ -335,6 +337,76 @@ describe("OpenAI Codex OAuth", () => {
 		expect(rejection).toBeInstanceOf(Error);
 		expect((rejection as Error).message).toBe("Device flow timed out");
 	});
+
+	it(
+		"browser flow times out and releases the port when neither a callback nor manual code arrives",
+		{ timeout: 2000 },
+		async () => {
+			// Bug: with no onManualCodeInput supplied, loginOpenAICodex awaits the
+			// callback server forever. That holds the fixed callback port (1455)
+			// open indefinitely if the browser callback never arrives.
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+			// onAuth only fires once the callback server is listening and its
+			// timeout timer is already scheduled, so awaiting it here (before
+			// advancing the fake clock) avoids racing the real socket-listen
+			// I/O against the fake-timer registration.
+			let resolveAuthCalled: () => void;
+			const authCalled = new Promise<void>((resolve) => {
+				resolveAuthCalled = resolve;
+			});
+
+			const loginPromise = loginOpenAICodex({
+				onAuth: () => resolveAuthCalled(),
+				onPrompt: async () => {
+					throw new Error("onPrompt should not run before the callback timeout fires");
+				},
+			});
+			const rejection = loginPromise.then(
+				() => new Error("expected loginOpenAICodex to time out and reject"),
+				(error: unknown) => error,
+			);
+
+			await authCalled;
+			await vi.advanceTimersByTimeAsync(CALLBACK_TIMEOUT_MS);
+
+			const result = await rejection;
+			expect(result).toBeInstanceOf(Error);
+			expect((result as Error).message).toMatch(/timed out/i);
+
+			vi.useRealTimers();
+
+			// The port must be released: a second callback server should be
+			// able to bind to the same fixed port right after the timeout.
+			const accessToken = createAccessToken("account-timeout");
+			const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+				const url = getUrl(input);
+				if (url === "https://auth.openai.com/oauth/token") {
+					return jsonResponse({ access_token: accessToken, refresh_token: "refresh-token", expires_in: 3600 });
+				}
+				throw new Error(`Unexpected fetch URL: ${url}`);
+			});
+			vi.stubGlobal("fetch", fetchMock);
+
+			let authUrl = "";
+			const credentials = await loginOpenAICodex({
+				onAuth: (info) => {
+					authUrl = info.url;
+				},
+				onPrompt: async () => "",
+				onManualCodeInput: async () => {
+					const url = new URL(authUrl);
+					const state = url.searchParams.get("state");
+					const redirectUri = url.searchParams.get("redirect_uri");
+					if (!state || !redirectUri) {
+						throw new Error("Missing OAuth state or redirect_uri in auth URL");
+					}
+					return `${redirectUri}?code=manual-code&state=${state}`;
+				},
+			});
+			expect(credentials.access).toBe(accessToken);
+		},
+	);
 
 	it("treats OpenAI Codex device auth 403 and 404 responses as pending", async () => {
 		vi.useFakeTimers();

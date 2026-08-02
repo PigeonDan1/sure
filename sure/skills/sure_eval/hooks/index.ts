@@ -31,11 +31,12 @@ function phaseFor(unit: Unit, status: "running" | "blocked" | "success") {
 	return { id: unit.id, label: unit.label, status };
 }
 
-function countersFor(completed: CheckpointData, gateBlocks: number) {
+export function countersFor(completed: CheckpointData, gateBlocks?: number) {
+	const ledgerBlocks = Object.values(completed.retries ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
 	return {
 		completed_units: completed.completedUnits.length,
 		total_units: TOTAL_UNITS,
-		gate_blocks: gateBlocks,
+		gate_blocks: Math.max(ledgerBlocks, gateBlocks ?? 0),
 	};
 }
 
@@ -92,7 +93,11 @@ function modelDirFor(ctx: SureHookContext): string | undefined {
 	if (!model) {
 		return modelDir;
 	}
-	return candidateModelDirs(ctx, model, modelDir).find((candidate) => existsSync(candidate)) ?? modelDir ?? join(ctx.cwd, "sure", "models", model);
+	return (
+		candidateModelDirs(ctx, model, modelDir).find((candidate) => existsSync(candidate)) ??
+		modelDir ??
+		join(ctx.cwd, "sure", "models", model)
+	);
 }
 
 function parseArgs(raw: string): Record<string, string> {
@@ -253,11 +258,7 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const event = isRecord(ctx.event) ? ctx.event : {};
 	const toolCall = isRecord(event.toolCall) ? event.toolCall : {};
 	const toolName =
-		typeof event.toolName === "string"
-			? event.toolName
-			: typeof toolCall.name === "string"
-				? toolCall.name
-				: "";
+		typeof event.toolName === "string" ? event.toolName : typeof toolCall.name === "string" ? toolCall.name : "";
 	if (toolName !== "bash") {
 		// Only bash tool calls can invoke backend scripts.
 		return { ok: true };
