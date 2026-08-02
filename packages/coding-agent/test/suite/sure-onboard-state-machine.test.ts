@@ -1153,8 +1153,37 @@ describe("sure_onboard gate --kind routing (regression)", () => {
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("After 3 consecutive blocked attempts");
-		expect(result.repair).toContain("confirm the model_input_path or repo link");
+		expect(result.repair).toContain("model_input_path or repo link");
+		expect(result.repair).toContain("confirm access permissions");
 		expect(result.state_patch?.message).toContain("exhausted 3 blocked attempts");
+	});
+
+	it("puts the actual blocking reason before the generic checklist in the terminal repair message", () => {
+		const { ctx, runDir } = freshCtx("envcompat-reason-first");
+		seedCheckpoint(runDir, {
+			currentUnit: "validate_env_compat",
+			completedUnits: [
+				"load_model_input",
+				"context_selection",
+				"discover",
+				"classify",
+				"plan",
+				"build_plan",
+				"validate_spec",
+				"prepare_fixture",
+				"build_env",
+				"fetch_weights",
+			],
+			retries: { validate_env_compat: 2 },
+		});
+		writeArtifact(runDir, "env_compat_result.json", { compat_ok: false });
+		const result = postToolResult(ctx);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("Blocked because: gate script check_env_compat.py failed");
+		const reasonIndex = result.repair?.indexOf("Blocked because:") ?? -1;
+		const checklistIndex = result.repair?.indexOf("model_input_path or repo link") ?? -1;
+		expect(reasonIndex).toBeGreaterThanOrEqual(0);
+		expect(reasonIndex).toBeLessThan(checklistIndex);
 	});
 });
 

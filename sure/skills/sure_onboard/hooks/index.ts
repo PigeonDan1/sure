@@ -859,7 +859,7 @@ function failOrRetry(
 	const effectiveMax = Number.isFinite(maxRetries) && (maxRetries ?? 0) > 0 ? maxRetries : undefined;
 	if (retryExhausted(unit, next.data, effectiveMax)) {
 		return failure(
-			`${repair} After ${attempts} consecutive blocked attempts, /sure_onboard still cannot produce a valid artifact for unit "${unit.id}". Stop and ask the user to confirm the model_input_path or repo link, access permissions, and whether the referenced documentation contains enough install, load, inference, and artifact information.`,
+			`${repair} Blocked because: ${reason}. After ${attempts} consecutive blocked attempts, /sure_onboard still cannot produce a valid artifact for unit "${unit.id}". If the blocking reason above points at the model_input_path or repo link rather than the artifact you wrote, ask the user to confirm access permissions and whether the referenced documentation covers install, load, inference, and artifacts.`,
 			`Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`,
 			countersFor(next.data, attempts),
 			next,
