@@ -211,8 +211,8 @@ Docker 验证必须证明：
 镜像命名遵守总规范。ASR 示例：
 
 ```text
-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_<name>:v1.0
-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_x_asr_zh_en:v1.0
+registry.example.com/sure/sure_asr_<name>:v1.0
+registry.example.com/sure/sure_x_asr_zh_en:v1.0
 ```
 
 推送后必须用 `docker pull` 验证 registry 可拉取，并记录 digest。

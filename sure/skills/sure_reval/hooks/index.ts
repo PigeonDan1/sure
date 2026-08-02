@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 
 function parseArgs(raw: string): Record<string, string> {
@@ -29,6 +29,11 @@ function failure(repair: string): SureHookResult {
 	return { ok: false, repair, state_patch: { phase: { id: "blocked", label: "Blocked", status: "blocked" } } };
 }
 
+function resolveUserPath(value: string | undefined, cwd: string): string | undefined {
+	if (!value) return value;
+	return isAbsolute(value) ? value : resolve(cwd, value);
+}
+
 export function preStart(ctx: SureHookContext): SureHookResult {
 	const args = parseArgs(ctx.args);
 	const source = args.source ?? args.reuse_predictions_from;
@@ -39,9 +44,12 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	mkdirSync(artifactsDir, { recursive: true });
 	const resolver = resolve(ctx.packageDir, "..", "sure_eval", "scripts", "resolve_prediction_source.py");
 	const output = join(artifactsDir, "prediction_source_resolved.json");
-	const argv = [resolver, "--source", source, "--output", output];
+	const argv = [resolver, "--source", resolveUserPath(source, ctx.cwd) ?? source, "--output", output];
 	if (args.model) {
 		argv.push("--model", args.model);
+	}
+	if (args.model_dir) {
+		argv.push("--model-dir", resolveUserPath(args.model_dir, ctx.cwd) ?? args.model_dir);
 	}
 	if (args.datasets ?? args.dataset) {
 		argv.push("--datasets", args.datasets ?? args.dataset);

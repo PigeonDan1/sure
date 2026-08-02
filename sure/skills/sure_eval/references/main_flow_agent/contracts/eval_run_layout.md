@@ -18,7 +18,7 @@ The canonical run root is under the selected model directory:
 `selected_model_dir` is resolved in this order:
 
 1. explicit `MODEL_DIR` / `target.model_dir`
-2. `/hpc_stor03/sjtu_home/jing.peng/workspace/model/<model>`
+2. `<shared-model-root>/<model>`
 3. `src/sure_eval/models/<model>`
 
 This lets collaborators publish reusable model integrations and environments

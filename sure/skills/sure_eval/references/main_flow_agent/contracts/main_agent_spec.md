@@ -194,7 +194,7 @@ DECIDE_NEXT_ACTION
    - 例如：接入新模型、复跑评测、排查失败、审阅结果
 
 2. **模型上下文**
-   - explicit `MODEL_DIR`, or `/hpc_stor03/sjtu_home/jing.peng/workspace/model/<model>/`, or `src/sure_eval/models/<model>/`
+   - explicit `MODEL_DIR`, or `<shared-model-root>/<model>/`, or `src/sure_eval/models/<model>/`
    - README
    - config
    - artifacts

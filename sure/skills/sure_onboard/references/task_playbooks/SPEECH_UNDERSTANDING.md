@@ -435,7 +435,7 @@ ln -sfn /opt/asr_kimi_audio_venv /workspace/sure-eval/.venv
 Kimi-Audio 已验证镜像：
 
 ```text
-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_kimi_audio:v1.0
+registry.example.com/sure/sure_asr_kimi_audio:v1.0
 ```
 
 本地 Docker 调试：
@@ -467,16 +467,16 @@ KIMI_AUDIO_VALIDATE_TASKS=SLU sure/models/asr_kimi_audio/docker_validate_multita
 env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy \
 vc submit \
   -p pdgpu-a10 \
-  -i docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_kimi_audio:v1.0 \
+  -i registry.example.com/sure/sure_asr_kimi_audio:v1.0 \
   -j kimi-audio-five-task \
   -n 1 -c 8 -m 32G -g 1 \
   -pj sjtu \
-  -d /hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox/sure/models/asr_kimi_audio \
-  -e PYTHONPATH=/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox/src \
+  -d <legacy-sure-eval-root>/sure/models/asr_kimi_audio \
+  -e PYTHONPATH=<legacy-sure-eval-root>/src \
      KIMI_AUDIO_VALIDATE_TASKS=ASR,S2TT,SER,SLU,GR \
      KIMI_AUDIO_LOAD_IN_8BIT=0 \
      PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-     KIMI_AUDIO_MODEL_PATH=/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox/sure/models/asr_kimi_audio/.runtime/modelscope_cache/models/moonshotai/Kimi-Audio-7B-Instruct \
+     KIMI_AUDIO_MODEL_PATH=<legacy-sure-eval-root>/sure/models/asr_kimi_audio/.runtime/modelscope_cache/models/moonshotai/Kimi-Audio-7B-Instruct \
   --cmd '/opt/asr_kimi_audio_venv/bin/python validate_multitask.py'
 ```
 

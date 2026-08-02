@@ -39,7 +39,7 @@ Kimi-Audio re-onboarding example:
 
 ```text
 queue: pdgpu-5090
-image: docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-reonboard_asr_kimi_audio:v1.0
+image: registry.example.com/sure/reonboard_asr_kimi_audio:v1.0
 error: CUDA error: no kernel image is available for execution on the device
 ```
 

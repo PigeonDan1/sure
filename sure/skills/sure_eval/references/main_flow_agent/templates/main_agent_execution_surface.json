@@ -20,7 +20,7 @@
     "model_name": "",
     "model_dir": "",
     "model_dir_source": "",
-    "shared_model_root": "/hpc_stor03/sjtu_home/jing.peng/workspace/model",
+    "shared_model_root": "<shared-model-root>",
     "repo_model_root": "src/sure_eval/models",
     "dataset": "",
     "dataset_task": "",

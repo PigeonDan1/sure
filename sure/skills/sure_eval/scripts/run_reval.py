@@ -42,6 +42,13 @@ def _split_values(values: list[str] | None) -> list[str]:
     return out
 
 
+def _user_path(value: str | None, *, base: Path = HARNESS_ROOT) -> Path | None:
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else base / path
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as handle:
         value = json.load(handle)
@@ -65,7 +72,8 @@ def _run(command: list[str], *, cwd: Path = SCRIPT_DIR, env: dict[str, str] | No
 
 def _harness_config(run_dir: Path, explicit: str | None) -> Path:
     if explicit:
-        path = Path(explicit).expanduser()
+        path = _user_path(explicit)
+        assert path is not None
         if not path.exists():
             raise FileNotFoundError(path)
         return path.resolve()
@@ -165,11 +173,15 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_reval(args: argparse.Namespace) -> dict[str, Any]:
+    source = _user_path(args.source)
+    if source is None:
+        raise ValueError("--source is required")
+    model_dir_arg = _user_path(args.model_dir)
     source_payload = resolve_prediction_source(
         argparse.Namespace(
-            source=args.source,
+            source=str(source),
             model=args.model,
-            model_dir=args.model_dir,
+            model_dir=str(model_dir_arg) if model_dir_arg else None,
             datasets=args.datasets,
             protocol_id=args.protocol_id,
             output=None,
@@ -177,8 +189,10 @@ def run_reval(args: argparse.Namespace) -> dict[str, Any]:
     )
     model_name = args.model or str(source_payload.get("model_name") or "unknown_model")
     run_id = args.run_id or f"sure_reval_{_safe(model_name)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    tmp_root = Path(args.tmp_root).expanduser() if args.tmp_root else Path.home() / "tmp" / "sure_reval"
-    run_dir = Path(args.output_dir).expanduser() if args.output_dir else tmp_root / _safe(model_name) / run_id
+    tmp_root = _user_path(args.tmp_root) if args.tmp_root else Path.home() / "tmp" / "sure_reval"
+    assert tmp_root is not None
+    run_dir = _user_path(args.output_dir) if args.output_dir else tmp_root / _safe(model_name) / run_id
+    assert run_dir is not None
     run_dir = run_dir.resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -245,7 +259,7 @@ def run_reval(args: argparse.Namespace) -> dict[str, Any]:
         args.device,
         "--no-copy-source-report",
     ]
-    model_dir = args.model_dir or source_payload.get("model_dir")
+    model_dir = str(model_dir_arg) if model_dir_arg else source_payload.get("model_dir")
     if model_dir:
         eval_cmd.extend(["--model-dir", str(model_dir)])
     if args.evaluation_engine_root:

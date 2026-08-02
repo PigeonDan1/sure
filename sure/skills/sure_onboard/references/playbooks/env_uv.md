@@ -131,14 +131,14 @@ operation timed out
 
 ```bash
 set -o pipefail
-bash -lc '. /hpc_stor03/sjtu_home/junhao.du/.local/bin/ssr-on && \
+bash -lc '. <proxy-on-script> && \
   UV_CACHE_DIR="$PWD/.runtime/uv-cache" \
   uv pip install \
     --python .venv/bin/python \
     --index-url https://download.pytorch.org/whl/cu128 \
     torch==2.8.0+cu128 torchaudio==2.8.0+cu128; \
   status=$?; \
-  . /hpc_stor03/sjtu_home/junhao.du/.local/bin/ssr-off; \
+  . <proxy-off-script>; \
   exit $status' 2>&1 | tee artifacts/cuda_torch_install.log
 ```
 

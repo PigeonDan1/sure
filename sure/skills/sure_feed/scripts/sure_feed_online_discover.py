@@ -77,12 +77,6 @@ def reference_model_roots() -> list[Path]:
     for raw in env_value.split(os.pathsep):
         if raw.strip():
             roots.append(Path(raw).expanduser())
-    roots.extend(
-        [
-            Path("/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models"),
-            Path("/mnt/cloudstorfs/sjtu_home/junhao.du/sure-eval-sandbox/src/sure_eval/models"),
-        ]
-    )
     deduped: list[Path] = []
     seen: set[str] = set()
     for root in roots:

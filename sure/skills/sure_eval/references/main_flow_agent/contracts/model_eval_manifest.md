@@ -13,7 +13,7 @@ selected model directory:
 ```
 
 The selected model directory may come from an explicit `MODEL_DIR`, the shared
-model root `/hpc_stor03/sjtu_home/jing.peng/workspace/model/<model>`, or the
+model root `<shared-model-root>/<model>`, or the
 repo-local fallback `src/sure_eval/models/<model>`.
 
 Its role is to connect:

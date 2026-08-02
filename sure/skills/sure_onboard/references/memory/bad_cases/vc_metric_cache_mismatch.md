@@ -21,7 +21,7 @@ known-good metric images, but the cache directory still needs provider resources
 If TTS metrics have already populated:
 
 ```text
-/hpc_stor03/sjtu_home/junhao.du/.cache/sure-eval/tts-metrics
+<sure-eval-cache-root>/tts-metrics
 ```
 
 then VC should reuse that cache unless the task explicitly requires rebuilding
@@ -43,7 +43,7 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u al
   --sample-id <sample-id> \
   --gpu 0 \
   --device cuda:0 \
-  --cache-dir /hpc_stor03/sjtu_home/junhao.du/.cache/sure-eval/tts-metrics \
+  --cache-dir <sure-eval-cache-root>/tts-metrics \
   --work-dir <run_dir>/artifacts/vc_metric_parts_local_uv_tts_cache \
   --output <run_dir>/artifacts/vc_metric_report_local_uv_docker.json
 ```

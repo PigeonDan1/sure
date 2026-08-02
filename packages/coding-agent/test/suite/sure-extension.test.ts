@@ -260,6 +260,30 @@ describe("Sure extension", () => {
 		});
 	});
 
+	it("resolves /sure_reval relative source paths against the project cwd", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		linkRepositorySkill(harness.tempDir, "sure_eval");
+		linkRepositorySkill(harness.tempDir, "sure_reval");
+		const sourceDir = join(harness.tempDir, "relative-source-result");
+		mkdirSync(join(sourceDir, "predictions"), { recursive: true });
+		writeFileSync(join(sourceDir, "predictions", "demo_dataset.txt"), "utt1\thello world\n", "utf-8");
+		harness.setResponses([fauxAssistantMessage("working")]);
+
+		await harness.session.prompt(`/sure_reval source=relative-source-result model=demo_model datasets=demo_dataset`);
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => getUserTexts(harness).length > 0);
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const resolved = JSON.parse(
+			readFileSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "prediction_source_resolved.json"), "utf-8"),
+		);
+		expect(resolved.source).toBe(sourceDir);
+		expect(readRunState(harness.tempDir, runId)).toMatchObject({
+			phase: { id: "prediction_source", status: "running" },
+		});
+	});
+
 	it("passes output_dir from /sure_eval arguments into resolved input", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);

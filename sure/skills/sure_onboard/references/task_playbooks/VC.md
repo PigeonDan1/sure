@@ -110,7 +110,7 @@ sure-eval metric run \
   --samples-jsonl /tmp/vc_samples.jsonl \
   --output-dir /tmp/sure_eval/vc_eval \
   --device cuda \
-  --cache-dir /hpc_stor03/sjtu_home/junhao.du/.cache/sure-eval/tts-metrics \
+  --cache-dir <sure-eval-cache-root>/tts-metrics \
   --validate-env \
   --json
 ```
@@ -158,7 +158,7 @@ VC 上游常依赖 Hugging Face。规则：
 - 先关闭代理：
 
 ```bash
-. /hpc_stor03/sjtu_home/junhao.du/.local/bin/ssr-off
+. <proxy-off-script>
 ```
 
 - 再执行：
@@ -265,7 +265,7 @@ Seed-VC 经验：
 已验证镜像：
 
 ```text
-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-seed-vc:v1.0
+registry.example.com/sure/seed-vc:v1.0
 ```
 
 ## 8. Verdict 标准

@@ -8,12 +8,13 @@ image existence from the error wording without ever creating a job.
 from __future__ import annotations
 
 import re
+import os
 import shutil
 import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import PurePosixPath
 
-IMAGE_REGISTRY_PREFIX = "docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_"
+IMAGE_REGISTRY_PREFIX_ENV = "SURE_VC_IMAGE_REGISTRY_PREFIX"
 PROBE_QUEUE = "sure-precheck-nonexistent-queue"
 IMAGE_MISSING_MARKER = "镜像不存在"
 PARTITION_MISSING_MARKER = "partition not found"
@@ -38,10 +39,13 @@ def _run(args, timeout, run=subprocess.run):
 
 
 def list_local_sure_images(run=subprocess.run):
+    prefix = os.environ.get(IMAGE_REGISTRY_PREFIX_ENV, "").strip().lower()
+    if not prefix:
+        return []
     result = _run(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"], 30, run)
     if result is None or result.returncode != 0:
         return []
-    return [line.strip() for line in result.stdout.splitlines() if line.strip().lower().startswith(IMAGE_REGISTRY_PREFIX)]
+    return [line.strip() for line in result.stdout.splitlines() if line.strip().lower().startswith(prefix)]
 
 
 def image_is_local(image, run=subprocess.run):

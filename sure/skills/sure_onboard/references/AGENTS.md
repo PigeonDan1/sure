@@ -616,16 +616,16 @@ sure/models/{model}/checkpoints/                # 显式本地权重（如有）
 
 ### 8.2 镜像命名规则
 
-学校团队级公共镜像和个人镜像统一使用：
+团队级公共镜像和个人镜像统一使用：
 
 ```text
-docker.v2.aispeech.com/sjtu/<image_name>:<image_label>
+registry.example.com/sjtu/<image_name>:<image_label>
 ```
 
 SURE-EVAL 模型镜像必须使用：
 
 ```text
-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_{model_name}:v1.0
+registry.example.com/sure/sure_{model_name}:v1.0
 ```
 
 后续同一模型每次环境或脚本变更，递增 tag：
@@ -681,7 +681,7 @@ sure/models/{model}/
 
 ### 8.6 构建与推送步骤
 
-本地调试可以直接使用本机镜像；集群运行任务必须使用已经推送到公司仓库、且能从公司仓库重新 `docker pull` 的镜像。
+本地调试可以直接使用本机镜像；集群运行任务必须使用已经推送到远端 registry、且能从远端 registry重新 `docker pull` 的镜像。
 
 1. 检查本地镜像：
 
@@ -692,10 +692,10 @@ docker images
 2. 如果基础镜像来自仓库且本机不存在，先拉取：
 
 ```bash
-docker pull docker.v2.aispeech.com/<namespace>/<base_image>:<tag>
+docker pull registry.example.com/<namespace>/<base_image>:<tag>
 ```
 
-3. 构建模型镜像。本地调试镜像名可以先用短名，但最终提交集群前必须使用公司仓库完整 tag：
+3. 构建模型镜像。本地调试镜像名可以先用短名，但最终提交集群前必须使用远端 registry完整 tag：
 
 ```bash
 cd /absolute/path/to/sure-eval
@@ -705,7 +705,7 @@ sure/models/{model}/docker_build.sh
 `docker_build.sh` 必须支持覆盖：
 
 ```bash
-IMAGE_TAG=docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_{model}:v1.1 \
+IMAGE_TAG=registry.example.com/sure/sure_{model}:v1.1 \
 BASE_IMAGE=<base-image> \
 sure/models/{model}/docker_build.sh
 ```
@@ -713,24 +713,24 @@ sure/models/{model}/docker_build.sh
 4. 确认镜像存在：
 
 ```bash
-docker image inspect docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_{model}:v1.1
+docker image inspect registry.example.com/sure/sure_{model}:v1.1
 ```
 
-5. 推送镜像到公司仓库：
+5. 推送镜像到远端 registry：
 
 ```bash
-docker push docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_{model}:v1.1
+docker push registry.example.com/sure/sure_{model}:v1.1
 ```
 
-6. 等待仓库生效后，从公司仓库重新拉取验证。仓库生效可能需要十几分钟：
+6. 等待仓库生效后，从远端 registry重新拉取验证。仓库生效可能需要十几分钟：
 
 ```bash
-docker pull docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_{model}:v1.1
+docker pull registry.example.com/sure/sure_{model}:v1.1
 ```
 
 注意：`docker pull` 是从仓库拉取到本机；将本机镜像上传到仓库应使用 `docker push`。如果 `docker pull` 返回 `manifest unknown`，说明该 tag 当前不可从仓库拉取，不能作为集群任务镜像。
 
-如果 agent 执行 `docker push` 失败，不要立即放弃。公司仓库 push 可能受当前 shell 的代理变量或执行权限影响；`docker pull` 可成功不代表 `docker push` 一定走同一条网络路径。典型可恢复信号：
+如果 agent 执行 `docker push` 失败，不要立即放弃。远端 registry push 可能受当前 shell 的代理变量或执行权限影响；`docker pull` 可成功不代表 `docker push` 一定走同一条网络路径。典型可恢复信号：
 
 - `docker push` 输出 `请求失败，状态码：502` 或其他 registry/proxy 5xx。
 - `docker push` 退出码看似成功，但没有正常 layer push / digest 输出。
@@ -744,18 +744,18 @@ docker pull docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_{model}:v1.1
 
 ```bash
 env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy \
-  docker push docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_{model}:v1.1
+  docker push registry.example.com/sure/sure_{model}:v1.1
 ```
 
 3. 如果清除代理后因为沙箱网络返回 `operation not permitted`，应请求非沙箱/完整网络权限后用同一条命令重试。
-4. 如果 registry 返回 `镜像已存在,请更新tag`，说明 push 请求已经到达公司仓库，且当前 tag 不允许覆盖；此时递增 tag，例如 `v1.2`，重新 build/tag/push。
-5. push 成功或 tag 已存在后，都必须用 `docker pull` 验证公司仓库可拉取：
+4. 如果 registry 返回 `镜像已存在,请更新tag`，说明 push 请求已经到达远端 registry，且当前 tag 不允许覆盖；此时递增 tag，例如 `v1.2`，重新 build/tag/push。
+5. push 成功或 tag 已存在后，都必须用 `docker pull` 验证远端 registry可拉取：
 
 ```bash
-docker pull docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_{model}:v1.1
+docker pull registry.example.com/sure/sure_{model}:v1.1
 ```
 
-只有 `docker pull` 返回 digest / `Image is up to date`，才可将公司仓库镜像标记为可用于集群任务。如果上述恢复步骤仍失败，再在最终汇报中明确请用户在登录态完整的交互终端手动执行 push/pull。
+只有 `docker pull` 返回 digest / `Image is up to date`，才可将远端 registry镜像标记为可用于集群任务。如果上述恢复步骤仍失败，再在最终汇报中明确请用户在登录态完整的交互终端手动执行 push/pull。
 
 也可以按通用变量形式执行：
 
@@ -787,9 +787,9 @@ ln -sfn /opt/{model}_venv /workspace/sure-eval/.venv
 `docker_validate.sh` 必须使用宿主绝对路径，例如：
 
 ```bash
-MODEL_DIR=/hpc_stor03/.../sure/models/{model}
-MODELSCOPE_CACHE=/hpc_stor03/.../sure/models/{model}/.runtime/modelscope_cache
-ARTIFACTS_DIR=/hpc_stor03/.../sure/models/{model}/docker_artifacts
+MODEL_DIR=<shared-storage-root>/sure/models/{model}
+MODELSCOPE_CACHE=<shared-storage-root>/sure/models/{model}/.runtime/modelscope_cache
+ARTIFACTS_DIR=<shared-storage-root>/sure/models/{model}/docker_artifacts
 ```
 
 ### 8.8 vc submit 注意事项
@@ -818,7 +818,7 @@ ARTIFACTS_DIR=/absolute/path/to/sure/models/{model}/docker_artifacts \
 `asr_qwen3` 的验证镜像：
 
 ```text
-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_qwen3:v1.1
+registry.example.com/sure/sure_asr_qwen3:v1.1
 ```
 
 验证结果：

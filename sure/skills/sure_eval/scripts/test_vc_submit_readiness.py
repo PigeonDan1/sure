@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess as real_subprocess
 import sys
 import tempfile
@@ -9,6 +10,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+os.environ.setdefault("SURE_VC_IMAGE_REGISTRY_PREFIX", "registry.example.com/sure/sure_")
 
 from sure_eval.agent import vc_precheck  # noqa: E402
 
@@ -34,9 +37,9 @@ def make_runner(responses):
     return run
 
 
-IMG = "docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_nemo_stt_zh_conformer_transducer:v1.1"
+IMG = "registry.example.com/sure/sure_asr_nemo_stt_zh_conformer_transducer:v1.1"
 LOCAL_IMAGES = (
-    "docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_asr_kyutai_stt_1b:v1.0\n"
+    "registry.example.com/sure/sure_asr_kyutai_stt_1b:v1.0\n"
     + IMG
     + "\nubuntu:22.04\n"
 )
@@ -139,15 +142,15 @@ class PartitionCheckTests(unittest.TestCase):
 class PathCheckTests(unittest.TestCase):
     def test_paths_under_mount_pass(self):
         result = vc_precheck.check_paths(
-            ["/hpc_stor03/sjtu_home/ruichen.sun/WorkSpace/sure-harness/sure"],
-            "/hpc_stor03/sjtu_home:/hpc_stor03/sjtu_home",
+            ["/workspace/sure-harness/sure"],
+            "/workspace:/workspace",
         )
         self.assertEqual(result.status, "pass")
 
     def test_path_outside_mount_fails_and_names_it(self):
         result = vc_precheck.check_paths(
-            ["/hpc_stor03/sjtu_home/ruichen.sun/x", "/tmp/leak"],
-            "/hpc_stor03/sjtu_home:/hpc_stor03/sjtu_home",
+            ["/workspace/x", "/tmp/leak"],
+            "/workspace:/workspace",
         )
         self.assertEqual(result.status, "fail")
         self.assertIn("/tmp/leak", result.detail)
@@ -203,8 +206,8 @@ class RunPrecheckTests(unittest.TestCase):
         run = make_runner([(["docker", "image", "inspect"], FakeCompleted(1, "", "No such image"))])
         results = vc_precheck.run_precheck(
             image=IMG, image_source="cli_override", partition="pdcpu", memory="16G",
-            gpus=1, cpus=4, volume_mount="/hpc_stor03/sjtu_home:/hpc_stor03/sjtu_home",
-            paths=["/hpc_stor03/sjtu_home/x"], expected_venv="/opt/x_venv",
+            gpus=1, cpus=4, volume_mount="/workspace:/workspace",
+            paths=["/workspace/x"], expected_venv="/opt/x_venv",
             run=run, which=lambda name: None,
         )
         by_name = {r.name: r for r in results}
@@ -221,8 +224,8 @@ class RunPrecheckTests(unittest.TestCase):
         ])
         results = vc_precheck.run_precheck(
             image=IMG, image_source="auto_select_best_image", partition="pdcpu", memory="16G",
-            gpus=1, cpus=4, volume_mount="/hpc_stor03/sjtu_home:/hpc_stor03/sjtu_home",
-            paths=["/hpc_stor03/sjtu_home/x"], expected_venv="/opt/x_venv",
+            gpus=1, cpus=4, volume_mount="/workspace:/workspace",
+            paths=["/workspace/x"], expected_venv="/opt/x_venv",
             run=run, which=lambda name: "/usr/bin/vc",
         )
         self.assertFalse(vc_precheck.precheck_passed(results))
@@ -268,8 +271,8 @@ class CliTests(unittest.TestCase):
             [sys.executable, self.SCRIPT,
              "--image", IMG, "--image-source", "cli_override",
              "--partition", "pdcpu", "--memory", "16G",
-             "--volume", "/hpc_stor03/sjtu_home:/hpc_stor03/sjtu_home",
-             "--path", "/hpc_stor03/sjtu_home/x",
+             "--volume", "/workspace:/workspace",
+             "--path", "/workspace/x",
              "--expected-venv", "/opt/x_venv", *extra],
             capture_output=True, text=True,
         )
@@ -291,8 +294,8 @@ class CliTests(unittest.TestCase):
             [sys.executable, self.SCRIPT,
              "--image", IMG, "--image-source", "cli_override",
              "--partition", "pdcpu", "--memory", "16",
-             "--volume", "/hpc_stor03/sjtu_home:/hpc_stor03/sjtu_home",
-             "--path", "/hpc_stor03/sjtu_home/x",
+             "--volume", "/workspace:/workspace",
+             "--path", "/workspace/x",
              "--expected-venv", "/opt/x_venv"],
             capture_output=True, text=True,
         )

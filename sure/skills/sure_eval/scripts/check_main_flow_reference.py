@@ -11,13 +11,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
 from typing import Any
 
 
-DEFAULT_SOURCE_ROOT = Path("/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent")
+DEFAULT_SOURCE_ROOT = Path(os.environ.get("SURE_MAIN_FLOW_SOURCE_ROOT", "<legacy-sure-eval-root>/docs/agents/main_flow_agent"))
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MIRROR_ROOT = SKILL_ROOT / "references" / "main_flow_agent"
 DEFAULT_MANIFEST = DEFAULT_MIRROR_ROOT / "main_flow_reference_manifest.json"

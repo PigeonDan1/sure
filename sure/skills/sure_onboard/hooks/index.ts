@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import {
 	advance,
@@ -106,11 +106,39 @@ function parseArgs(raw: string): Record<string, string> {
 }
 
 function unboundedFilesystemSearchTarget(command: string): string | undefined {
-	const pattern = /\bfind\s+(['"]?)(\/|\/mnt|\/mnt\/cloudstorfs|\/hpc_stor03)\1(?=\s|$)/g;
+	const pattern = /\bfind\s+(['"]?)(\/[^\s'"]*)\1(?=\s|$)/g;
 	for (const match of command.matchAll(pattern)) {
-		return match[2];
+		if (isBlockedSearchRoot(match[2])) {
+			return match[2];
+		}
 	}
 	return undefined;
+}
+
+function isBlockedSearchRoot(target: string): boolean {
+	const normalizedTarget = normalizeRoot(target);
+	return blockedSearchRoots().some((root) => {
+		if (root === "/") {
+			return normalizedTarget === "/";
+		}
+		return normalizedTarget === root || normalizedTarget.startsWith(`${root}/`);
+	});
+}
+
+function blockedSearchRoots(): string[] {
+	const configured = (process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS ?? "")
+		.split(delimiter)
+		.map((root) => normalizeRoot(root))
+		.filter((root) => root.startsWith("/"));
+	return Array.from(new Set(["/", "/mnt", ...configured]));
+}
+
+function normalizeRoot(root: string): string {
+	const trimmed = root.trim();
+	if (!trimmed || trimmed === "/") {
+		return "/";
+	}
+	return trimmed.replace(/\/+$/, "");
 }
 
 function discoverHeavyOperation(command: string): string | undefined {
@@ -167,7 +195,7 @@ function boundedDiscoverRepair(ctx: SureHookContext, target: string): string {
 		boundedPaths.length > 0
 			? `Use bounded paths instead: ${boundedPaths.join(", ")}.`
 			: "Read model_input_resolved.json first, then derive a bounded path from model_dir, handoff artifacts, or weights.local_path.";
-	return `Blocked unbounded discover search rooted at "${target}". ${pathHint} Do not search /, /mnt, or /hpc_stor03 during /sure_onboard discover.`;
+	return `Blocked unbounded discover search rooted at "${target}". ${pathHint} Do not search filesystem roots during /sure_onboard discover.`;
 }
 
 function heavyDiscoverRepair(operation: string): string {

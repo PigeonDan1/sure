@@ -44,7 +44,7 @@ A compliant execution-surface materialization should:
 Model directory resolution must be deterministic:
 
 1. an explicit `MODEL_DIR` / `target.model_dir` wins
-2. otherwise check `/hpc_stor03/sjtu_home/jing.peng/workspace/model/<model>`
+2. otherwise check `<shared-model-root>/<model>`
 3. otherwise fall back to `src/sure_eval/models/<model>`
 
 The selected `model_dir`, `model_dir_source`, `shared_model_root`, and

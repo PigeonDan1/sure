@@ -11,7 +11,7 @@ unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
 REPO_ROOT="${REPO_ROOT:-/workspace/sure-eval}"
 MODEL_NAME="${MODEL_NAME:-my_model}"
 RUN_ID="${RUN_ID:-main_agent_${MODEL_NAME}_audio_eval}"
-SHARED_MODEL_ROOT="${SHARED_MODEL_ROOT:-/hpc_stor03/sjtu_home/jing.peng/workspace/model}"
+SHARED_MODEL_ROOT="${SHARED_MODEL_ROOT:-<shared-model-root>}"
 REPO_MODEL_ROOT="${REPO_MODEL_ROOT:-$REPO_ROOT/src/sure_eval/models}"
 if [[ -z "${MODEL_DIR:-}" ]]; then
   if [[ -d "$SHARED_MODEL_ROOT/$MODEL_NAME" ]]; then

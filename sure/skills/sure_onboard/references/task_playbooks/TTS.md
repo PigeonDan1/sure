@@ -145,7 +145,7 @@ sure-eval metric run \
   --samples-jsonl /tmp/tts_samples.jsonl \
   --output-dir /tmp/sure_eval/tts_eval \
   --device cuda \
-  --cache-dir /hpc_stor03/sjtu_home/junhao.du/.cache/sure-eval/tts-metrics \
+  --cache-dir <sure-eval-cache-root>/tts-metrics \
   --validate-env \
   --json
 ```
@@ -207,9 +207,9 @@ uv pip install --index-strategy unsafe-best-match --python .venv/bin/python -r r
 如果 PyTorch wheel 下载超时，可以临时：
 
 ```bash
-. /hpc_stor03/sjtu_home/junhao.du/.local/bin/ssr-on
+. <proxy-on-script>
 # install
-. /hpc_stor03/sjtu_home/junhao.du/.local/bin/ssr-off
+. <proxy-off-script>
 ```
 
 使用代理只限下载场景；Docker、GPU、registry 操作仍清代理。
@@ -290,18 +290,18 @@ TTS Docker 验证应遵守：
 示例：
 
 ```bash
-cd /hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox
+cd <legacy-sure-eval-root>
 env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy \
 GPU_DEVICE=0 DEVICE=cuda:0 \
-ARTIFACTS_DIR=/hpc_stor03/sjtu_home/${USER}/f5tts_eval_outputs \
+ARTIFACTS_DIR=<artifact-output-root>/f5tts_eval_outputs \
 sure/models/SWivid__F5-TTS_Emilia-ZH-EN/docker_validate.sh
 ```
 
 已验证镜像：
 
 ```text
-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-f5tts:v1.0
-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_tts_indextts2:v1.0
+registry.example.com/sure/f5tts:v1.0
+registry.example.com/sure/sure_tts_indextts2:v1.0
 ```
 
 推送/拉取成功后记录 registry digest。

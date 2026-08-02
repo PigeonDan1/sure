@@ -53,7 +53,7 @@ Instead:
 Preferred existing runner:
 
 ```bash
-cd /hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox
+cd <legacy-sure-eval-root>
 env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy \
 .venv.hostbak/bin/python scripts/run_tts_metric_pipeline_docker.py \
   --prediction-audio <generated.wav> \

@@ -8,6 +8,7 @@ inside the container.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import shutil
@@ -19,8 +20,7 @@ from sure_eval.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Fixed prefix for all model images in this project.
-IMAGE_REGISTRY_PREFIX = "docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_"
+IMAGE_REGISTRY_PREFIX_ENV = "SURE_VC_IMAGE_REGISTRY_PREFIX"
 
 # GPU partition priority (higher = better).  Only partitions listed here are
 # considered; if a partition is missing it gets priority 0.
@@ -60,10 +60,18 @@ def _run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess
 def _image_repo(model_name: str) -> str:
     """Return the Docker repository name for *model_name*.
 
-    Docker repositories are lowercase.  Historical SURE model images use the
-    model directory name lowercased after the common project prefix.
+    Docker repositories are lowercase.  Deployments that rely on automatic
+    image selection must provide the project image prefix through the
+    SURE_VC_IMAGE_REGISTRY_PREFIX environment variable.
     """
-    return f"{IMAGE_REGISTRY_PREFIX}{model_name}".lower()
+    prefix = _image_registry_prefix()
+    if not prefix:
+        raise RuntimeError(f"{IMAGE_REGISTRY_PREFIX_ENV} is required for automatic image selection")
+    return f"{prefix}{model_name}".lower()
+
+
+def _image_registry_prefix() -> str:
+    return os.environ.get(IMAGE_REGISTRY_PREFIX_ENV, "").strip().lower()
 
 
 def _infer_repo_root() -> Path:
@@ -151,6 +159,9 @@ def _parse_tag_version(tag: str) -> tuple[int, ...]:
 
 
 def _local_sure_images() -> list[str]:
+    prefix = _image_registry_prefix()
+    if not prefix:
+        return []
     result = _run_cmd(
         ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
         check=False,
@@ -158,7 +169,7 @@ def _local_sure_images() -> list[str]:
     return [
         line.strip()
         for line in result.stdout.splitlines()
-        if line.strip().lower().startswith(IMAGE_REGISTRY_PREFIX)
+        if line.strip().lower().startswith(prefix)
     ]
 
 

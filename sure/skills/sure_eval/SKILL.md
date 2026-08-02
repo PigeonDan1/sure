@@ -2,7 +2,7 @@
 
 Orchestrate a SURE-EVAL evaluation run for an already-onboarded audio model. This skill is the Sure port of the SURE-EVAL main-flow agent. The state machine lives in `hooks/state-machine.ts`; this document is what the agent reads to drive each unit.
 
-The upstream main-flow reference is mirrored read-only under `references/main_flow_agent/` for audit and parity review only. It is not a runtime template or execution source. Do not edit `/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox/docs/agents/main_flow_agent`; refresh the mirror with `scripts/check_main_flow_reference.py --sync` and adapt harness execution only under this skill package.
+The upstream main-flow reference is mirrored read-only under `references/main_flow_agent/` for audit and parity review only. It is not a runtime template or execution source. Do not edit `<legacy-sure-eval-root>/docs/agents/main_flow_agent`; refresh the mirror with `scripts/check_main_flow_reference.py --sync` and adapt harness execution only under this skill package.
 
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
 
@@ -181,7 +181,7 @@ scripts without doing cold-start `pip --target` installs inside the vc job.
 Local harness deployments may point at an existing runnable SURE-EVAL checkout without copying weights:
 
 ```bash
-export LEGACY_SURE_EVAL_ROOT=/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox
+export LEGACY_SURE_EVAL_ROOT=<legacy-sure-eval-root>
 python3 scripts/resolve_model_dir.py --model Qwen__Qwen3-ASR-1.7B --require-verdict --require-runtime-files
 ```
 
@@ -197,7 +197,7 @@ If `SURE_EVAL_CONFIG` is not supplied, harness runtime templates materialize
 rewrite results/cache paths to harness-local absolute paths. The default dataset
 entry is `data/datasets` under the harness repository; local deployments should
 symlink `data/datasets/sure_benchmark/jsonl` to the shared sandbox JSONL root:
-`/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox/data/datasets/sure_benchmark/jsonl`.
+`<legacy-sure-eval-root>/data/datasets/sure_benchmark/jsonl`.
 Override `SURE_EVAL_DATASETS_ROOT` only when pointing at another directory that
 contains `sure_benchmark/jsonl`.
 

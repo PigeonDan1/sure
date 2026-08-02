@@ -270,7 +270,7 @@ ln -sfn /opt/kws_wenwen_venv /workspace/sure-eval/.venv
 已验证镜像命名：
 
 ```text
-docker.v2.aispeech.com/sjtu/sjtu_yukai-dujunhao-sure_kws_wenwen:v1.0
+registry.example.com/sure/sure_kws_wenwen:v1.0
 ```
 
 注意：

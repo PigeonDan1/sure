@@ -15,7 +15,7 @@ from typing import Any
 from compare_main_flow_artifacts import compare_runs
 
 
-DEFAULT_REFERENCE_REPO = Path("/hpc_stor03/sjtu_home/junhao.du/sure-eval-sandbox")
+DEFAULT_REFERENCE_REPO = Path(os.environ.get("LEGACY_SURE_EVAL_ROOT", "<legacy-sure-eval-root>"))
 
 
 def _skill_root() -> Path:

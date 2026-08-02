@@ -249,7 +249,17 @@ def _scan_model_text(model_dir: Path, relative_paths: tuple[str, ...], pattern: 
     return ""
 
 
+def _configured_vc_image_prefix() -> str:
+    return os.environ.get("SURE_VC_IMAGE_REGISTRY_PREFIX", "").strip().lower()
+
+
 def _image_from_model_scripts(model_dir: Path) -> str:
+    prefix = _configured_vc_image_prefix()
+    pattern = (
+        rf"({re.escape(prefix)}[^\s\"'}}]+)"
+        if prefix
+        else r"((?:[a-z0-9.-]+(?::[0-9]+)?/)[^\s\"'}]+)"
+    )
     return _scan_model_text(
         model_dir,
         (
@@ -260,7 +270,7 @@ def _image_from_model_scripts(model_dir: Path) -> str:
             "artifacts/docker_build.log",
             "artifacts/docker_image_inspect.json",
         ),
-        r"(docker\.v2\.aispeech\.com/[^\s\"'}]+)",
+        pattern,
     )
 
 
@@ -297,8 +307,12 @@ def _image_from_model_metadata(model_dir: Path | None, model_cfg: dict[str, Any]
     return ""
 
 
-def _is_company_vc_image(image: str) -> bool:
-    return image.startswith("docker.v2.aispeech.com/") and "/" in image.removeprefix("docker.v2.aispeech.com/")
+def _is_configured_vc_image(image: str) -> bool:
+    image = image.strip().lower()
+    prefix = _configured_vc_image_prefix()
+    if prefix:
+        return image.startswith(prefix)
+    return bool(image and ("/" in image or ":" in image))
 
 
 def _resolve_vc_image(
@@ -314,9 +328,9 @@ def _resolve_vc_image(
 
     requested = str(requested_image or "").strip()
     metadata = _image_from_model_metadata(model_dir, model_cfg)
-    if requested and _is_company_vc_image(requested):
+    if requested and _is_configured_vc_image(requested):
         return requested, "resolved_input"
-    if requested and metadata and _is_company_vc_image(metadata):
+    if requested and metadata and _is_configured_vc_image(metadata):
         return metadata, f"model_metadata_over_invalid_requested_image:{requested}"
     if metadata:
         return metadata, "model_metadata"
