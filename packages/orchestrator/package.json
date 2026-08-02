@@ -4,6 +4,9 @@
 	"description": "experimental orchestrator package for pi",
 	"type": "module",
 	"main": "./dist/index.js",
+	"bin": {
+		"orchestrator": "./dist/cli.js"
+	},
 	"types": "./dist/index.d.ts",
 	"exports": {
 		".": {
