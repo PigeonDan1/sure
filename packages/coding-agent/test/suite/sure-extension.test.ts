@@ -7,6 +7,7 @@ import { createAgentSessionServices } from "../../src/core/agent-session-service
 import type { ExtensionFactory } from "../../src/core/extensions/index.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
 import { sureExtension } from "../../src/core/sure/index.ts";
+import { runPrintMode } from "../../src/modes/print-mode.ts";
 import { createHarness, getUserTexts, type Harness } from "./harness.ts";
 
 function writeJson(path: string, value: unknown): void {
@@ -1016,5 +1017,42 @@ describe("Sure extension", () => {
 		if (stored?.type === "api_key") {
 			expect(stored.key).toBe("sk-test-123");
 		}
+	});
+});
+
+describe("print mode extension notify", () => {
+	function captureStdout(lines: string[]): () => void {
+		const spy = vi.spyOn(process.stdout, "write").mockImplementation(((
+			chunk: unknown,
+			callback?: unknown,
+		): boolean => {
+			lines.push(String(chunk));
+			if (typeof callback === "function") {
+				(callback as () => void)();
+			}
+			return true;
+		}) as typeof process.stdout.write);
+		return () => spy.mockRestore();
+	}
+
+	it("routes /sure notify output to stdout in print mode", async () => {
+		const harness = await createHarness({ extensionFactories: [sureExtension] });
+		const runtimeHost = {
+			session: harness.session,
+			setRebindSession: () => {},
+			dispose: async () => {},
+		} as unknown as Parameters<typeof runPrintMode>[0];
+
+		const lines: string[] = [];
+		const restore = captureStdout(lines);
+		try {
+			await runPrintMode(runtimeHost, { mode: "text", initialMessage: "/sure" });
+		} finally {
+			restore();
+			harness.cleanup();
+		}
+
+		expect(lines.join("")).not.toBe("");
+		expect(lines.join("")).toContain("No Sure skills found.");
 	});
 });

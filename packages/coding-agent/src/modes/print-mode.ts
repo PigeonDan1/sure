@@ -8,6 +8,7 @@
 
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
+import { noOpUIContext } from "../core/extensions/index.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
 
@@ -71,6 +72,16 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
 		await session.bindExtensions({
+			uiContext: {
+				...noOpUIContext,
+				notify: (message: string) => {
+					if (mode === "json") {
+						writeRawStdout(`${JSON.stringify({ type: "extension_notify", message })}\n`);
+					} else {
+						writeRawStdout(`${message}\n`);
+					}
+				},
+			},
 			mode: mode === "json" ? "json" : "print",
 			commandContextActions: {
 				waitForIdle: () => session.agent.waitForIdle(),
