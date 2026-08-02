@@ -567,12 +567,19 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 		expect(context.selected_references.environment_playbooks).toContain("references/playbooks/env_conda.md");
 	});
 
-	it.each([
+	// sure/handoffs/ is listed in .gitignore, so these fixtures exist only on a
+	// machine that has already run /sure_feed. Skip rather than fail when the
+	// directory is absent: a fresh clone cannot produce it, and hand-writing a
+	// model_input.yaml would test a fixture we invented rather than the artifact
+	// the pipeline actually emits.
+	const HANDOFFS_DIR = resolve(__dirname, "../../../../sure/handoffs");
+
+	it.skipIf(!existsSync(HANDOFFS_DIR)).each([
 		["Qwen__Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-1.7B", "asr", "references/task_playbooks/ASR.md"],
 		["Qwen__Qwen3-TTS-12Hz-1.7B-Base", "Qwen/Qwen3-TTS-12Hz-1.7B-Base", "tts", "references/task_playbooks/TTS.md"],
 	])("materializes checked-in Qwen handoff %s", (modelName, modelId, taskType, taskPlaybook) => {
 		const { ctx, cwd, runDir } = preStartCtx(`materialize-${modelName}`, "");
-		const modelInputPath = resolve(__dirname, "../../../../sure/handoffs", modelName, "model_input.yaml");
+		const modelInputPath = join(HANDOFFS_DIR, modelName, "model_input.yaml");
 		const proc = spawnSync(
 			"python3",
 			[
