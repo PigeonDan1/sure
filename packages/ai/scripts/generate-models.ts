@@ -1572,8 +1572,9 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
 		return models;
 	} catch (error) {
-		console.error("Failed to load models.dev data:", error);
-		return [];
+		throw new Error(`Failed to load models.dev data: ${error instanceof Error ? error.message : String(error)}`, {
+			cause: error,
+		});
 	}
 }
 
