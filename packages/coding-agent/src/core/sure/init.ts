@@ -1,17 +1,12 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import type { KnownProvider, OAuthLoginCallbacks, OAuthProviderId } from "@earendil-works/pi-ai";
+import { join } from "node:path";
+import type { OAuthLoginCallbacks, OAuthProviderId } from "@earendil-works/pi-ai";
 import type { ExtensionCommandContext } from "../extensions/types.ts";
 import type { ModelRegistry } from "../model-registry.ts";
 import { SettingsManager } from "../settings-manager.ts";
+import type { SureInitArgs, SureInitManifest, SureInitProviderOption, SureInitResult } from "./init-types.ts";
 import { discoverSureSkillPackages } from "./manifest.ts";
-import type {
-	SureInitArgs,
-	SureInitManifest,
-	SureInitProviderOption,
-	SureInitResult,
-} from "./init-types.ts";
 
 export const SURE_INIT_VERSION = 1;
 
@@ -138,10 +133,7 @@ async function runOAuthLogin(
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 		onDeviceCode: (info) => {
-			ctx.ui.notify(
-				`Device code for ${option.name}: ${info.userCode}\nVisit: ${info.verificationUri}`,
-				"info",
-			);
+			ctx.ui.notify(`Device code for ${option.name}: ${info.userCode}\nVisit: ${info.verificationUri}`, "info");
 		},
 		onPrompt: async (prompt) => {
 			const value = await ctx.ui.input(prompt.message, prompt.placeholder);
@@ -243,7 +235,7 @@ function writeInitManifest(cwd: string, manifest: SureInitManifest): string {
 		mkdirSync(dir, { recursive: true });
 	}
 	const path = join(dir, "init.json");
-	writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n", "utf-8");
+	writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
 	return path;
 }
 

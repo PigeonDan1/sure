@@ -228,7 +228,12 @@ export function runBackend(
 	};
 }
 
-export function failure(repair: string, message: string, counters?: Record<string, number>, checkpoint?: RunCheckpoint): SureHookResult {
+export function failure(
+	repair: string,
+	message: string,
+	counters?: Record<string, number>,
+	checkpoint?: RunCheckpoint,
+): SureHookResult {
 	return {
 		ok: false,
 		repair,

@@ -13,7 +13,7 @@ import {
 	retryExhausted,
 	runBackend,
 } from "./checkpoints.ts";
-import { FIRST_UNIT, findUnit, LAST_UNIT, MODEL_TOOL_UNITS, TOTAL_UNITS, type Unit } from "./state-machine.ts";
+import { FIRST_UNIT, findUnit, LAST_UNIT, TOTAL_UNITS, type Unit } from "./state-machine.ts";
 import { validateProduces } from "./validate.ts";
 
 // SURE-EVAL model-tool skill hooks. Mixed drive with three gates:
@@ -40,7 +40,20 @@ function countersFor(completed: CheckpointData, gateBlocks: number) {
 
 // Resolve the model artifacts dir. sure_onboard binds model entity products to
 // the repo-level sure/models/<model_name>/ directory (product layout decision).
-const TASK_TYPES = ["asr", "s2tt", "sd", "ser", "tts", "vc", "kws", "slu", "gr", "speech_understanding", "sa-asr", "sa_asr"];
+const TASK_TYPES = [
+	"asr",
+	"s2tt",
+	"sd",
+	"ser",
+	"tts",
+	"vc",
+	"kws",
+	"slu",
+	"gr",
+	"speech_understanding",
+	"sa-asr",
+	"sa_asr",
+];
 const DEPLOYMENT_TYPES = ["local", "api"];
 const PACKAGE_PROFILES = ["none", "docker-local", "docker-registry"];
 
@@ -132,7 +145,11 @@ function discoverRuntimeProbe(command: string): string | undefined {
 	if (runtimeImportPattern.test(lower)) {
 		return "runtime dependency import probe";
 	}
-	if (/\b(from_pretrained|automodel|autoprocessor|cuda\.is_available|torch\.__version__|transformers\.__version__)\b/.test(lower)) {
+	if (
+		/\b(from_pretrained|automodel|autoprocessor|cuda\.is_available|torch\.__version__|transformers\.__version__)\b/.test(
+			lower,
+		)
+	) {
 		return "runtime dependency import probe";
 	}
 	return undefined;
@@ -281,11 +298,13 @@ function looksLikeModelInputPath(token: string): boolean {
 }
 
 function slugifyModelName(value: string): string {
-	return value
-		.trim()
-		.replace(/\/+/g, "__")
-		.replace(/[^A-Za-z0-9_.-]+/g, "_")
-		.replace(/^[._-]+|[._-]+$/g, "") || "model";
+	return (
+		value
+			.trim()
+			.replace(/\/+/g, "__")
+			.replace(/[^A-Za-z0-9_.-]+/g, "_")
+			.replace(/^[._-]+|[._-]+$/g, "") || "model"
+	);
 }
 
 function handoffNameCandidates(raw: string): string[] {
@@ -317,10 +336,7 @@ function cleanScalar(raw: string): string | undefined {
 	if (!trimmed || trimmed === "null" || trimmed === "~") {
 		return undefined;
 	}
-	if (
-		(trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-		(trimmed.startsWith("'") && trimmed.endsWith("'"))
-	) {
+	if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
 		return trimmed.slice(1, -1);
 	}
 	return trimmed.replace(/\s+#.*$/, "");
@@ -422,7 +438,7 @@ function resolveOnboardArgs(ctx: SureHookContext): ResolvedOnboardArgs {
 		if (!merged.weights_source && values["weights.source"]) {
 			merged.weights_source = values["weights.source"];
 		}
-		if (!merged.package_profile && !merged["package"]) {
+		if (!merged.package_profile && !merged.package) {
 			merged.package_profile = "none";
 		}
 		if (!merged.model_name && merged.model_id) {
@@ -441,8 +457,8 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		return failure(resolved.error, "Invalid model_input_path.");
 	}
 	const args = resolved.args;
-	if (!args.package_profile && args["package"]) {
-		args.package_profile = args["package"];
+	if (!args.package_profile && args.package) {
+		args.package_profile = args.package;
 	}
 	if (!args.package_profile) {
 		args.package_profile = "none";
@@ -519,7 +535,8 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		diagnostics.push({
 			severity: "info" as const,
 			message: `Loaded MODEL_INPUT from ${resolved.modelInputPath}.`,
-			repair: "Continue with discover/classify using the normalized MODEL_INPUT values unless an explicit argument overrides them.",
+			repair:
+				"Continue with discover/classify using the normalized MODEL_INPUT values unless an explicit argument overrides them.",
 		});
 	}
 	return {

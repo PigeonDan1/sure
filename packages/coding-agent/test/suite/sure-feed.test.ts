@@ -363,9 +363,24 @@ describe("sure_feed gate scripts (real python3 spawnSync)", () => {
 		writeArtifact(runDir, "model_input_result.json", {
 			source_query: { source: "multi", query: "speech models", max_models: 3 },
 			model_inputs: [
-				modelInputEnvelope("damo/speech_paraformer_asr", "modelscope", "modelscope", "https://modelscope.cn/models/damo/speech_paraformer_asr"),
-				modelInputEnvelope("openai/whisper-tiny", "huggingface", "huggingface", "https://huggingface.co/openai/whisper-tiny"),
-				modelInputEnvelope("owner/speech-toolkit", "github", "release_or_pypi", "https://github.com/owner/speech-toolkit"),
+				modelInputEnvelope(
+					"damo/speech_paraformer_asr",
+					"modelscope",
+					"modelscope",
+					"https://modelscope.cn/models/damo/speech_paraformer_asr",
+				),
+				modelInputEnvelope(
+					"openai/whisper-tiny",
+					"huggingface",
+					"huggingface",
+					"https://huggingface.co/openai/whisper-tiny",
+				),
+				modelInputEnvelope(
+					"owner/speech-toolkit",
+					"github",
+					"release_or_pypi",
+					"https://github.com/owner/speech-toolkit",
+				),
 			],
 		});
 		const r = runGate("check_model_input.py", runDir, "model_input_result.json");
@@ -382,9 +397,11 @@ describe("sure_feed gate scripts (real python3 spawnSync)", () => {
 		);
 		const modelInput = envelope.model_input as Record<string, unknown>;
 		modelInput.entrypoints = {
-			import_test: "policy_resolved: use the sherpa-onnx runtime import or CLI surface selected during /sure_onboard",
+			import_test:
+				"policy_resolved: use the sherpa-onnx runtime import or CLI surface selected during /sure_onboard",
 			load_test: "policy_resolved: load ONNX checkpoint files from the model repository with sherpa-onnx",
-			infer_test: "policy_resolved: run sherpa-onnx ASR inference through its Python API or CLI on the selected SURE fixture",
+			infer_test:
+				"policy_resolved: run sherpa-onnx ASR inference through its Python API or CLI on the selected SURE fixture",
 		};
 		modelInput.runtime_strategy = {
 			type: "cli_or_library",
@@ -594,7 +611,12 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		);
 		writeArtifact(runDir, "model_input_result.json", {
 			model_inputs: [
-				modelInputEnvelope("openai/whisper-tiny", "huggingface", "huggingface", "https://huggingface.co/openai/whisper-tiny"),
+				modelInputEnvelope(
+					"openai/whisper-tiny",
+					"huggingface",
+					"huggingface",
+					"https://huggingface.co/openai/whisper-tiny",
+				),
 			],
 		});
 		const result = postToolResult(ctx);
@@ -654,7 +676,7 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("After 3 consecutive blocked attempts");
 		expect(result.repair).toContain("confirm the model link");
-		expect(result.state_patch?.message).toContain('exhausted 3 blocked attempts');
+		expect(result.state_patch?.message).toContain("exhausted 3 blocked attempts");
 	});
 
 	it("stays on the unit (no block, no advance) when the artifact is not yet produced", () => {
