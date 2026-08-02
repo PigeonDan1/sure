@@ -24,6 +24,9 @@ function printHelp(): void {
 
 function printResponse(response: unknown): void {
 	console.log(JSON.stringify(response, null, 2));
+	if (response && typeof response === "object" && "ok" in response && response.ok === false) {
+		process.exitCode = 1;
+	}
 }
 
 function getFlagValue(args: string[], flag: string): string | undefined {
