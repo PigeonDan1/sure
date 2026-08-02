@@ -299,10 +299,12 @@ def run_reval(args: argparse.Namespace) -> dict[str, Any]:
             "source_run_dir": source_payload.get("source_run_dir"),
             "source_results_dir": source_payload.get("source_results_dir"),
             "source_run_id": source_payload.get("source_run_id"),
+            "source_inference_provenance": source_payload.get("source_inference_provenance"),
         },
         "artifacts": {
             "prediction_source_resolved": str(source_path),
             "prediction_reuse_manifest": str(run_dir / "prediction_reuse_manifest.json"),
+            "source_inference_provenance": str(run_dir / "source_inference_provenance.json"),
             "evaluation_route_plan": str(run_dir / "evaluation_route_plan.json"),
             "validation_payload": str(run_dir / "validation_payload.json"),
             "evaluation_payload": str(run_dir / "evaluation_payload.json"),

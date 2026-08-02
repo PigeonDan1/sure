@@ -235,7 +235,10 @@ sure/models/<model_name>/
 │   ├── sample_output.json
 │   ├── package_gate.json
 │   ├── verdict.json
-│   └── artifact_manifest.json
+│   ├── artifact_manifest.json
+│   ├── runtime_inventory.json                     # model-level runtime provenance
+│   ├── runtime_links_manifest.json
+│   └── runtime_links/                             # symlinks to small evidence files only
 ├── fixture/<task>/                                      # test audio + gt.jsonl (2–3 samples, max 5)
 ├── .runtime/ checkpoints/                               # weights convergence
 └── eval_runs/<run_id>/                                  # this model's eval runs (original layout)
@@ -243,7 +246,7 @@ sure/models/<model_name>/
 
 ## Backend
 
-The deterministic backend is bundled in `scripts/` (self-contained — no external repo reference). `scripts/sure_eval/` holds the model-tool framework (models/registry.py+base.py, inference/, protocols/). Gate scripts (`check_model_input.py`, `check_build_plan.py`, `check_spec.py`, `check_fixture.py`, `check_env.py`, `check_weights.py`, `check_env_compat.py`, `run_validate.py`, `check_artifact_manifest.py`, `check_package_gate.py`, `check_verdict.py`) validate each gate's artifact. Helpers are intentionally narrow: `materialize_onboard_inputs.py` creates only the deterministic early artifacts from a completed `/sure_feed` MODEL_INPUT; `prepare_fixture.py` stages an already-selected task fixture into the model directory; `stage_model_artifacts.py` stages already-produced run artifacts into the model-local artifact directory. Templates (model.spec.yaml, validate.py, verdict.json, artifact_manifest.json, spec_validation.json) live in `scripts/templates/`. Run as:
+The deterministic backend is bundled in `scripts/` (self-contained — no external repo reference). `scripts/sure_eval/` holds the model-tool framework (models/registry.py+base.py, inference/, protocols/). Gate scripts (`check_model_input.py`, `check_build_plan.py`, `check_spec.py`, `check_fixture.py`, `check_env.py`, `check_weights.py`, `check_env_compat.py`, `run_validate.py`, `check_artifact_manifest.py`, `check_package_gate.py`, `check_verdict.py`) validate each gate's artifact. Helpers are intentionally narrow: `materialize_onboard_inputs.py` creates only the deterministic early artifacts from a completed `/sure_feed` MODEL_INPUT; `prepare_fixture.py` stages an already-selected task fixture into the model directory; `stage_model_artifacts.py` stages already-produced run artifacts into the model-local artifact directory and automatically writes `runtime_inventory.json`; `write_runtime_inventory.py` can backfill runtime provenance for an existing model directory. Templates (model.spec.yaml, validate.py, verdict.json, artifact_manifest.json, spec_validation.json) live in `scripts/templates/`. Run as:
 
 ```bash
 python3 scripts/<script>.py <args>   # cwd = skill package dir

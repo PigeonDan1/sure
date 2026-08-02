@@ -242,19 +242,25 @@ sure/models/<model_name>/artifacts/
 | `import_result.json`, `load_result.json`, `infer_result.json`, `contract_result.json` | 运行时校验阶段。 |
 | `verdict.json` | 被 `/sure_eval` 消费的最终 readiness 判断。 |
 | `artifact_manifest.json` | 接入产物索引。 |
+| `runtime_inventory.json` | 模型级 runtime provenance：backend、Python、weights 摘要、runtime probe、证据链接。 |
+| `runtime_links/` | 只链接小型证据文件，不链接 checkpoint payload。 |
 
 ### Eval 输出
 
 | Artifact | 含义 |
 | --- | --- |
 | `predictions/<dataset>.txt` | scoring 使用的 key-tab-prediction 文件。 |
-| `predictions/<dataset>.jsonl` | 结构化 prediction rows。 |
+| `predictions/<dataset>.jsonl` | 结构化 prediction rows。`raw_response` 是模型输出证据，不是超参数来源。 |
+| `prediction_generation_status.json` | 真实推理 server command、环境 key snapshot、显式 tool args、protocol resolver 输出、dataset 生成状态。 |
+| `protocol.yaml` | 只记录推理协议：模型、runtime、参数、prediction contract、reuse flag、provenance。 |
 | `validation_payload.json` | missing/extra/duplicate/empty prediction 检查。 |
 | `evaluation_route_plan.json` | engine commit、selected routes、pipeline IDs、nodes、环境 readiness。 |
 | `evaluation_payload.json` | 机器可读 dataset-metric 结果。 |
 | `metrics/<dataset>/<metric_slug>/report.json` | Submodule engine 的 metric report。 |
 | `metrics/<dataset>/<metric_slug>/pipeline_description.json` | 选中 pipeline identity 和 node chain。 |
 | `sample_reports/<dataset>/<metric_slug>.jsonl` | 可用时的 per-sample 细节。 |
+| `report.jsonl` | 标准 per dataset-metric report 行。 |
+| `report_snapshot.md` | 面向人类阅读的评估协议和结果快照。 |
 | `main_agent_run_report.json` | 最终 run provenance、execution path、sample scope 和 artifacts。 |
 
 ### Reval 输出
@@ -263,10 +269,13 @@ sure/models/<model_name>/artifacts/
 | --- | --- |
 | `prediction_source_resolved.json` | source kind、模型/数据集推断、prediction 文件路径。 |
 | `prediction_reuse_manifest.json` | 复制/过滤后的 prediction 文件、样本数、source/destination hash。 |
+| `source_inference_provenance.json` | 可用时链接源 `protocol.yaml`、`prediction_generation_status.json` 和 runtime inventory。 |
+| `protocol.yaml` | 与 `/sure_eval` 相同的 inference-protocol 形态，且 `prediction_reuse.enabled=true`。 |
 | `validation_payload.json` | 请求样本范围内的 copied predictions 校验。 |
 | `evaluation_route_plan.json` | engine commit 和 selected re-evaluation routes。 |
 | `evaluation_payload.json` | 新 metric 结果。旧 metric payload 不复用。 |
 | `metrics/<dataset>/<metric__pipeline_id>/report.json` | exact pipeline route 的新 metric report。 |
+| `report.jsonl` / `report_snapshot.md` | 全新机器可读和人类可读报告。 |
 | `reval_run_report.json` | 面向用户的重评估总结和对比表。 |
 
 重要 `reval_run_report.json` 字段：
@@ -279,6 +288,22 @@ sure/models/<model_name>/artifacts/
 | `summary.comparisons[].pipelines[]` | 每条 pipeline 的 `pipeline_id`、有序 `nodes` 和 `score`。 |
 | `summary.comparisons[].score_spread` | 当前 dataset/metric 分组中最大分数与最小分数的差。 |
 | `artifacts` | 本次生成的 run artifacts 路径。 |
+
+### 推理 Protocol 与 Provenance
+
+`protocol.yaml` 只记录推理参数和 runtime evidence。Metric 选择、route
+nodes、分数和样本级报告属于 `evaluation_route_plan.json`、`report.jsonl` 和
+`report_snapshot.md`。
+
+参数来源优先级：
+
+1. `prediction_generation_status.json`
+2. `sure/models/<model>/artifacts/runtime_inventory.json`
+3. 模型 `config.yaml` protocol 设置
+4. 当前进程环境兜底
+
+对于 `/sure_reval`，`prediction_reuse.generation_policy` 必须是
+`reused_predictions_no_inference`；如果来源 run 提供推理证据，则会建立链接。
 
 ## 验收清单
 

@@ -242,19 +242,25 @@ Repeat `pipeline_id` to compare multiple chains for the same metric. The harness
 | `import_result.json`, `load_result.json`, `infer_result.json`, `contract_result.json` | Runtime validation stages. |
 | `verdict.json` | Final readiness decision consumed by `/sure_eval`. |
 | `artifact_manifest.json` | Index of onboard outputs. |
+| `runtime_inventory.json` | Model-level runtime provenance: backend, Python, weights summary, runtime probe, evidence links. |
+| `runtime_links/` | Symlinks to small evidence files only. Checkpoint payloads are not linked. |
 
 ### Eval Output
 
 | Artifact | Meaning |
 | --- | --- |
 | `predictions/<dataset>.txt` | Key-tab-prediction file used for scoring. |
-| `predictions/<dataset>.jsonl` | Structured prediction rows. |
+| `predictions/<dataset>.jsonl` | Structured prediction rows. `raw_response` is model output evidence, not a hyperparameter source. |
+| `prediction_generation_status.json` | Actual inference server command, environment key snapshot, explicit tool args, protocol resolver output, and dataset generation status. |
+| `protocol.yaml` | Inference-only protocol: model, runtime, parameters, prediction contract, reuse flag, and provenance. |
 | `validation_payload.json` | Missing/extra/duplicate/empty prediction checks. |
 | `evaluation_route_plan.json` | Engine commit, selected routes, pipeline IDs, nodes, and environment readiness. |
 | `evaluation_payload.json` | Machine-readable dataset-metric results. |
 | `metrics/<dataset>/<metric_slug>/report.json` | Submodule engine metric report. |
 | `metrics/<dataset>/<metric_slug>/pipeline_description.json` | Selected pipeline identity and node chain. |
 | `sample_reports/<dataset>/<metric_slug>.jsonl` | Per-sample score details when available. |
+| `report.jsonl` | Standard per dataset-metric report rows. |
+| `report_snapshot.md` | Human-readable evaluation protocol and result snapshot. |
 | `main_agent_run_report.json` | Final run provenance, execution path, sample scope, and artifacts. |
 
 ### Reval Output
@@ -263,10 +269,13 @@ Repeat `pipeline_id` to compare multiple chains for the same metric. The harness
 | --- | --- |
 | `prediction_source_resolved.json` | Source kind, model/dataset inference, and prediction file paths. |
 | `prediction_reuse_manifest.json` | Copied/filtered prediction files, sample counts, source/destination hashes. |
+| `source_inference_provenance.json` | Source `protocol.yaml`, `prediction_generation_status.json`, and runtime inventory links when available. |
+| `protocol.yaml` | Same inference-protocol shape as `/sure_eval`, with `prediction_reuse.enabled=true`. |
 | `validation_payload.json` | Validation of the copied predictions for the requested sample scope. |
 | `evaluation_route_plan.json` | Engine commit and selected re-evaluation routes. |
 | `evaluation_payload.json` | New metric results. Old metric payloads are not reused. |
 | `metrics/<dataset>/<metric__pipeline_id>/report.json` | Fresh metric report for an exact pipeline route. |
+| `report.jsonl` / `report_snapshot.md` | Fresh machine-readable and human-readable reports. |
 | `reval_run_report.json` | User-facing re-evaluation summary and comparison table. |
 
 Important `reval_run_report.json` fields:
@@ -279,6 +288,23 @@ Important `reval_run_report.json` fields:
 | `summary.comparisons[].pipelines[]` | Per-pipeline `pipeline_id`, ordered `nodes`, and `score`. |
 | `summary.comparisons[].score_spread` | Difference between max and min score for that dataset/metric group. |
 | `artifacts` | Paths to the generated run artifacts. |
+
+### Inference Protocol And Provenance
+
+`protocol.yaml` records inference parameters and runtime evidence only. Metric
+selection, route nodes, scores, and sample-level reports live in
+`evaluation_route_plan.json`, `report.jsonl`, and `report_snapshot.md`.
+
+Parameter source priority is:
+
+1. `prediction_generation_status.json`
+2. `sure/models/<model>/artifacts/runtime_inventory.json`
+3. model `config.yaml` protocol settings
+4. process environment fallback
+
+For `/sure_reval`, `prediction_reuse.generation_policy` must be
+`reused_predictions_no_inference`, and source inference evidence is linked when
+the source run exposes it.
 
 ## Verification Checklist
 

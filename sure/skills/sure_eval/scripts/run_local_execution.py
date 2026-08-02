@@ -190,6 +190,14 @@ def main() -> int:
             "SURE_EVAL_EXECUTION_PATH": "local_bash",
             "SURE_EVAL_EXECUTION_REQUESTED": execution["requested"],
             "SURE_EVAL_EXECUTION_JOB_ID": f"local:{host}:{run_dir.name}",
+            "SURE_EVAL_EXECUTION_SURFACE_TYPE": "main_flow_script",
+            "SURE_EVAL_CONTAINER_IMAGE": "",
+            "SURE_EVAL_CONTAINER_REPO_ROOT": str(cwd),
+            "SURE_EVAL_VC_PARTITION": "",
+            "SURE_EVAL_VC_GPU": "0",
+            "SURE_EVAL_VC_CPU": "",
+            "SURE_EVAL_VC_MEMORY": "",
+            "SURE_EVAL_VC_NODES": "0",
         }
     )
 

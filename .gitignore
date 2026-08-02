@@ -4,6 +4,13 @@ dist/
 .pi/
 .sure/
 .codegraph/
+.env
+.env.*
+!.env.example
+id_rsa
+id_rsa.pub
+*.pem
+*.key
 data/
 results/
 sure/skills/sure_eval/results/
@@ -25,6 +32,9 @@ venv/
 *.onnx
 *.gguf
 *.nemo
+*.bin
+*.h5
+*.npz
 *.tar
 *.tar.gz
 

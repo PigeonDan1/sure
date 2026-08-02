@@ -22,6 +22,8 @@ sure/skills/<skill-name>/
 ```bash
 npm run check:sure-hooks
 python3 -m py_compile sure/skills/sure_eval/scripts/*.py
+python3 -m unittest sure/skills/sure_onboard/scripts/test_runtime_inventory.py
+python3 -m unittest sure/skills/sure_eval/scripts/test_protocol_provenance.py
 ```
 
 当改动影响 setup、skill discovery 或 external engine 检测时，运行 doctor：
@@ -44,8 +46,19 @@ node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-extension.test.
 node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-feed.test.ts
 node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-onboard-state-machine.test.ts
 node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-eval-state-machine.test.ts
+node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-eval-runbackend.test.ts
 node ../../node_modules/vitest/dist/cli.js --run test/suite/sure-eval-red-lines.test.ts
 ```
+
+## Runtime Provenance 生命周期
+
+| 阶段 | 产物 | 规则 |
+| --- | --- | --- |
+| `/sure_onboard` | `runtime_inventory.json` | 汇总模型级 backend、Python、runtime probe、weights manifest 和小型证据链接。不要链接 checkpoint payload。 |
+| `/sure_eval` | `prediction_generation_status.json` | 记录真实 MCP server command、working directory、安全 env snapshot、显式 tool args、protocol resolver 输出和 dataset 生成状态。 |
+| `/sure_eval` | `protocol.yaml` | 读取优先级是 generation status、runtime inventory、model config、环境兜底。推理字段必须和评估结果分离。 |
+| `/sure_reval` | `prediction_reuse_manifest.json` | 只复制/过滤 predictions，不复用旧 metric artifacts。 |
+| `/sure_reval` | `source_inference_provenance.json` | 可用时链接源 protocol/status/runtime inventory；不可用时显式标记 unknown。 |
 
 ## 设计边界
 

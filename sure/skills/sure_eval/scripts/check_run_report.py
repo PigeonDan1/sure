@@ -156,12 +156,32 @@ def _validate_protocol(root: Path) -> list[str]:
         "protocol_selection",
         "inference_environment",
         "inference_constraints",
+        "inference_parameters",
         "execution_surface",
+        "prediction_reuse",
         "prediction_contract",
+        "provenance",
         "notes",
     ):
         if section not in protocol:
             errors.append(f"protocol.yaml missing section: {section}")
+    inference_parameters = protocol.get("inference_parameters") if isinstance(protocol.get("inference_parameters"), dict) else {}
+    prediction_reuse = protocol.get("prediction_reuse") if isinstance(protocol.get("prediction_reuse"), dict) else {}
+    if not isinstance(inference_parameters.get("source_priority"), list) or not inference_parameters.get("source_priority"):
+        errors.append("protocol.yaml inference_parameters.source_priority is required")
+    argument_policy = inference_parameters.get("argument_policy") if isinstance(inference_parameters.get("argument_policy"), dict) else {}
+    if not argument_policy and not prediction_reuse.get("enabled"):
+        errors.append("protocol.yaml inference_parameters.argument_policy is required for generated predictions")
+    provenance = protocol.get("provenance") if isinstance(protocol.get("provenance"), dict) else {}
+    if provenance.get("raw_response_source_of_truth") is not False:
+        errors.append("protocol.yaml provenance.raw_response_source_of_truth must be false")
+    if prediction_reuse.get("enabled"):
+        if prediction_reuse.get("generation_policy") != "reused_predictions_no_inference":
+            errors.append("protocol.yaml prediction_reuse.generation_policy must be reused_predictions_no_inference")
+        if prediction_reuse.get("old_evaluation_reused") is not False:
+            errors.append("protocol.yaml prediction_reuse.old_evaluation_reused must be false")
+    elif not provenance.get("prediction_generation_status"):
+        errors.append("protocol.yaml provenance.prediction_generation_status is required for generated predictions")
     return errors
 
 

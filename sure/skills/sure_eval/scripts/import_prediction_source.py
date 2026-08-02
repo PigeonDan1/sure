@@ -212,6 +212,54 @@ def _copy_or_link(source: Path, dest: Path, mode: str) -> str:
     return "copy"
 
 
+def _link_or_copy_evidence(source: Path, dest: Path) -> dict[str, str]:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists() or dest.is_symlink():
+        dest.unlink()
+    try:
+        relative = os.path.relpath(source, start=dest.parent)
+        dest.symlink_to(relative)
+        return {"mode": "symlink", "path": str(dest), "target": relative, "source": str(source)}
+    except OSError:
+        shutil.copy2(source, dest)
+        return {"mode": "copy", "path": str(dest), "target": str(source), "source": str(source)}
+
+
+def _write_source_provenance_links(run_dir: Path, source: dict[str, Any]) -> dict[str, Any]:
+    provenance = source.get("source_inference_provenance")
+    if not isinstance(provenance, dict):
+        provenance = {}
+    mapping = {
+        "source_protocol": "source_protocol.yaml",
+        "source_prediction_generation_status": "source_prediction_generation_status.json",
+        "source_runtime_inventory": "source_runtime_inventory.json",
+        "source_runtime_links_manifest": "source_runtime_links_manifest.json",
+    }
+    links: dict[str, Any] = {}
+    links_dir = run_dir / "provenance"
+    for key, filename in mapping.items():
+        raw = provenance.get(key)
+        path = Path(str(raw)).expanduser() if raw else None
+        if path and path.is_file():
+            links[key] = _link_or_copy_evidence(path.resolve(), links_dir / filename)
+    manifest = {
+        "schema": "sure.reval.source_inference_provenance.v1",
+        "generated_at": _utc_now(),
+        "policy": {
+            "generation_policy": "reused_predictions_no_inference",
+            "links_checkpoint_payloads": False,
+            "old_evaluation_reused": False,
+        },
+        "source_inference_provenance": provenance,
+        "links_dir": str(links_dir),
+        "links": links,
+        "inference_unknown": not bool(links),
+    }
+    output = run_dir / "source_inference_provenance.json"
+    output.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return manifest
+
+
 def _dataset_samples(manager: DatasetManager, dataset: str) -> tuple[Path, list[dict[str, Any]]]:
     canonical = manager.normalize_dataset_name(dataset)
     jsonl_path = manager.get_jsonl_path(canonical)
@@ -334,6 +382,7 @@ def import_predictions(args: argparse.Namespace) -> dict[str, Any]:
         imported=imported,
         source=source,
     )
+    provenance_manifest = _write_source_provenance_links(run_dir, source)
     manifest = {
         "schema": "sure.reval.prediction_reuse_manifest.v1",
         "generated_at": _utc_now(),
@@ -345,8 +394,11 @@ def import_predictions(args: argparse.Namespace) -> dict[str, Any]:
             "source_run_dir": source.get("source_run_dir"),
             "source_results_dir": source.get("source_results_dir"),
             "source_run_id": source.get("source_run_id"),
+            "source_inference_provenance": source.get("source_inference_provenance"),
             "old_evaluation_reused": False,
         },
+        "source_inference_provenance_manifest": str(run_dir / "source_inference_provenance.json"),
+        "source_inference_provenance": provenance_manifest,
         "predictions_dir": str(pred_dir),
         "prediction_manifest": str(prediction_manifest_path),
         "conversion_manifest": str(conversion_manifest_path),

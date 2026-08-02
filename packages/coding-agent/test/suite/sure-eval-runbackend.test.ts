@@ -29,10 +29,19 @@ describe("sure_eval runBackend — gate script invocation path (B1 regression)",
 	it("injects --run-dir when the caller passes only --produces (gate scripts declare --run-dir required)", () => {
 		const runDir = resolve(__dirname, "tmp-b1");
 		mkdirSync(join(runDir, "artifacts"), { recursive: true });
-		// A compliant submit_result with vc_submit — vc_check.py must PASS, not crash.
+		// A compliant submit_result that does not depend on this host having vc.
 		writeFileSync(
 			join(runDir, "artifacts", "submit_result.json"),
-			JSON.stringify({ execution_path: "vc_submit", vc_available: true }, null, 2),
+			JSON.stringify(
+				{
+					execution_path: "local_bash",
+					execution_requested: "auto",
+					fallback_approved: true,
+					local_fallback_reason: "test fixture intentionally avoids vc dependency",
+				},
+				null,
+				2,
+			),
 			"utf-8",
 		);
 		const produces = join(runDir, "artifacts", "submit_result.json");
@@ -50,7 +59,16 @@ describe("sure_eval runBackend — gate script invocation path (B1 regression)",
 		mkdirSync(join(runDir, "artifacts"), { recursive: true });
 		writeFileSync(
 			join(runDir, "artifacts", "submit_result.json"),
-			JSON.stringify({ execution_path: "vc_submit", vc_available: true }, null, 2),
+			JSON.stringify(
+				{
+					execution_path: "local_bash",
+					execution_requested: "auto",
+					fallback_approved: true,
+					local_fallback_reason: "test fixture intentionally avoids vc dependency",
+				},
+				null,
+				2,
+			),
 			"utf-8",
 		);
 		// Relative produces path — runBackend must resolve it under artifacts/.

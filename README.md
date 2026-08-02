@@ -105,6 +105,17 @@ run should produce real VC submission evidence.
 | Evaluate | Model, datasets, metrics, execution target. | `main_agent_run_report.json` plus metric artifacts. | Predictions validate and route reports exist. |
 | Re-evaluate | Previous results or predictions. | `reval_run_report.json` in a fresh tmp run. | `evaluation_only=true`; old metric artifacts are not reused. |
 
+## Standard Artifacts
+
+| Artifact | Produced by | What it proves |
+| --- | --- | --- |
+| `runtime_inventory.json` | `/sure_onboard` | Model-level runtime, Python/backend, weights manifest, and evidence links. |
+| `prediction_generation_status.json` | `/sure_eval` | Actual inference server command, environment snapshot, explicit tool args, protocol resolution, and dataset generation status. |
+| `protocol.yaml` | `/sure_eval` and `/sure_reval` | Inference protocol only: model, runtime, parameters, prediction reuse, and provenance. |
+| `report_snapshot.md` | `/sure_eval` and `/sure_reval` | Human-readable evaluation scope, route, metric, and result snapshot. |
+| `report.jsonl` | `/sure_eval` and `/sure_reval` | Machine-readable per dataset-metric results. |
+| `source_inference_provenance.json` | `/sure_reval` | Source protocol/status/runtime links when predictions are reused. |
+
 ## Docs
 
 | Need | Read |

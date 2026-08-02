@@ -1,0 +1,80 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "runtime_inventory.schema.json",
+	"title": "SURE onboard runtime inventory",
+	"description": "Model-level runtime evidence produced by /sure_onboard and consumed by /sure_eval.",
+	"type": "object",
+	"required": ["schema", "generated_at", "status", "model", "runtime", "weights", "evidence", "policy"],
+	"properties": {
+		"schema": { "const": "sure.onboard.runtime_inventory.v1" },
+		"generated_at": { "type": "string" },
+		"status": { "enum": ["ready", "partial"] },
+		"model": {
+			"type": "object",
+			"required": ["model_name", "model_dir"],
+			"properties": {
+				"model_id": { "type": "string" },
+				"model_name": { "type": "string" },
+				"model_dir": { "type": "string" },
+				"task_type": { "type": "string" },
+				"deployment_type": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
+		"runtime": {
+			"type": "object",
+			"properties": {
+				"backend": { "type": "string" },
+				"installer": { "type": "string" },
+				"python_version": { "type": "string" },
+				"python_executable": { "type": ["string", "null"] },
+				"lockfile_path": { "type": ["string", "null"] },
+				"docker_image": { "type": ["string", "null"] },
+				"log_path": { "type": ["string", "null"] },
+				"runtime_checks": { "type": "object" },
+				"runtime_probe": { "type": "object" }
+			},
+			"additionalProperties": true
+		},
+		"weights": {
+			"type": "object",
+			"properties": {
+				"weights_ready": { "type": ["boolean", "null"] },
+				"source": { "type": ["string", "null"] },
+				"repo_id": { "type": ["string", "null"] },
+				"resolved_local_model_path": { "type": ["string", "null"] },
+				"runtime_load_identity": { "type": ["string", "null"] },
+				"checkpoint_root": { "type": ["string", "null"] },
+				"cache_policy": { "type": ["string", "null"] },
+				"fallback_to_host_global": { "type": ["boolean", "null"] },
+				"dependencies": { "type": "array" },
+				"source_attempts": { "type": "array" }
+			},
+			"additionalProperties": true
+		},
+		"readiness": { "type": "object" },
+		"evidence": {
+			"type": "object",
+			"required": ["missing", "links_manifest", "links_dir", "link_entries"],
+			"properties": {
+				"model_core_files": { "type": "object" },
+				"missing": { "type": "array", "items": { "type": "string" } },
+				"links_manifest": { "type": "string" },
+				"links_dir": { "type": "string" },
+				"link_entries": { "type": "array", "items": { "type": "string" } }
+			},
+			"additionalProperties": true
+		},
+		"policy": {
+			"type": "object",
+			"required": ["checkpoint_payload_links", "consumer"],
+			"properties": {
+				"source_of_truth": { "type": "string" },
+				"checkpoint_payload_links": { "const": false },
+				"consumer": { "type": "string" }
+			},
+			"additionalProperties": true
+		}
+	},
+	"additionalProperties": true
+}

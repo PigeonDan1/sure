@@ -67,6 +67,7 @@ The backend writes a fresh tmp run with:
 ```text
 prediction_source_resolved.json
 prediction_reuse_manifest.json
+source_inference_provenance.json
 validation_payload.json
 evaluation_payload.json
 evaluation_route_plan.json
@@ -85,7 +86,11 @@ Important generated fields:
 | Artifact | Field | Expected value |
 |----------|-------|----------------|
 | `prediction_source_resolved.json` | `source_kind` | `results_dir`, `run_dir`, or `predictions_dir`. |
+| `prediction_source_resolved.json` | `source_inference_provenance.*` | Source `protocol.yaml`, `prediction_generation_status.json`, and runtime inventory paths when available. |
 | `prediction_reuse_manifest.json` | `source.old_evaluation_reused` | Always `false`. |
+| `source_inference_provenance.json` | `policy.generation_policy` | Always `reused_predictions_no_inference`. |
+| `protocol.yaml` | `prediction_reuse.enabled` | Always `true` for `/sure_reval`. |
+| `protocol.yaml` | `prediction_reuse.generation_policy` | Always `reused_predictions_no_inference`. |
 | `prediction_reuse_manifest.json` | `imported[].copy_mode` | `copy`, `hardlink`, or `filtered_copy`. Bounded runs usually use `filtered_copy`. |
 | `prediction_reuse_manifest.json` | `imported[].imported_samples` | Number of predictions copied into the fresh reval run. Must match `max_samples` when a positive cap is requested and enough source rows exist. |
 | `evaluation_route_plan.json` | `engine.commit` | Commit of the standalone `sure-evaluation` engine used for this reval run. |
@@ -131,6 +136,7 @@ in addition to any tmp output paths that are useful to the user:
     "evaluation_payload": "<output_dir>/evaluation_payload.json",
     "report_jsonl": "<output_dir>/report.jsonl",
     "report_snapshot": "<output_dir>/report_snapshot.md",
+    "source_inference_provenance": "<output_dir>/source_inference_provenance.json",
     "predictions_dir": "<output_dir>/predictions"
   }
 }
@@ -148,6 +154,8 @@ Before finishing `/sure_reval`, verify:
 - `main_agent_run_report.json` notes that no model server was started and no inference was run.
 - `reval_run_report.json.evaluation_only` is `true`.
 - `reval_run_report.json.old_evaluation_reused` is `false`.
+- `protocol.yaml.prediction_reuse.enabled` is `true` and `generation_policy` is `reused_predictions_no_inference`.
+- `source_inference_provenance.json` exists; bare prediction sources may mark source inference as unknown.
 - `prediction_reuse_manifest.json.imported[].imported_samples` matches the requested bounded sample scope.
 - `validation_payload.json.is_valid` is `true`.
 - For exact pipeline runs, `evaluation_payload.results[].pipeline_id`,

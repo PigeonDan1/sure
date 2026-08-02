@@ -215,7 +215,7 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		produces: "artifact_manifest.json",
 		schemaRef: "artifact_manifest.schema.json",
 		gateScript: "check_artifact_manifest.py",
-		helperScripts: ["stage_model_artifacts.py", "adopt_reference_model.py"],
+		helperScripts: ["stage_model_artifacts.py", "write_runtime_inventory.py", "adopt_reference_model.py"],
 	},
 	{
 		id: "package_gate",

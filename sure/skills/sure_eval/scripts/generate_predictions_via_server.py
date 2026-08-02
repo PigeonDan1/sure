@@ -412,6 +412,170 @@ def _parse_env_overrides(values: list[str] | None) -> dict[str, str]:
     return parsed
 
 
+SENSITIVE_KEY_PARTS = ("TOKEN", "SECRET", "PASSWORD", "PASSWD", "API_KEY", "ACCESS_KEY", "PRIVATE_KEY", "CREDENTIAL", "COOKIE", "AUTH")
+SAFE_ENV_VALUE_KEYS = {
+    "CUDA_VISIBLE_DEVICES",
+    "DEVICE",
+    "HF_ENDPOINT",
+    "HF_HOME",
+    "HARNESS_PYTHON_BIN",
+    "MODEL_PATH",
+    "MODEL_PYTHON",
+    "MODELSCOPE_CACHE",
+    "NO_RESUME",
+    "PYTHON_BIN",
+    "SURE_EVAL_ALLOW_PARTITION_FALLBACK",
+    "SURE_EVAL_CONTAINER_IMAGE",
+    "SURE_EVAL_CONTAINER_REPO_ROOT",
+    "SURE_EVAL_DEVICE_ACTUAL",
+    "SURE_EVAL_DEVICE_REQUEST",
+    "SURE_EVAL_EXECUTION_GENERATION_METHOD",
+    "SURE_EVAL_EXECUTION_JOB_ID",
+    "SURE_EVAL_EXECUTION_PATH",
+    "SURE_EVAL_EXECUTION_REQUESTED",
+    "SURE_EVAL_EXECUTION_SURFACE_TYPE",
+    "SURE_EVAL_REQUIRE_VC_SUBMIT",
+    "SURE_EVAL_VC_CPU",
+    "SURE_EVAL_VC_GPU",
+    "SURE_EVAL_VC_MEMORY",
+    "SURE_EVAL_VC_NODES",
+    "SURE_EVAL_VC_PARTITION",
+}
+PATH_ARGUMENT_HINTS = ("audio", "path", "file", "dir", "jsonl")
+TEXT_ARGUMENT_HINTS = ("text", "prompt", "reference", "target")
+
+
+def _is_sensitive_key(key: str) -> bool:
+    upper = key.upper()
+    return any(part in upper for part in SENSITIVE_KEY_PARTS)
+
+
+def _redact_mapping(values: dict[str, Any]) -> dict[str, Any]:
+    redacted: dict[str, Any] = {}
+    for key, value in values.items():
+        if _is_sensitive_key(str(key)):
+            redacted[str(key)] = "<redacted>"
+        else:
+            redacted[str(key)] = value
+    return redacted
+
+
+def _safe_env_snapshot(env: dict[str, str], *, extra_keys: set[str] | None = None) -> dict[str, Any]:
+    selected_keys = set(SAFE_ENV_VALUE_KEYS)
+    if extra_keys:
+        selected_keys.update(extra_keys)
+    safe_values = {
+        key: ("<redacted>" if _is_sensitive_key(key) else env.get(key))
+        for key in sorted(selected_keys)
+        if key in env
+    }
+    redacted_keys = sorted(key for key in env if _is_sensitive_key(key))
+    return {
+        "safe_env_values": safe_values,
+        "env_keys": sorted(env.keys()),
+        "redacted_env_keys": redacted_keys,
+        "policy": "Only allowlisted non-secret values are materialized; all other values are represented by keys.",
+    }
+
+
+def _load_runtime_inventory(model_dir: Path) -> dict[str, Any]:
+    path = model_dir / "artifacts" / "runtime_inventory.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _runtime_inventory_summary(model_dir: Path) -> dict[str, Any]:
+    inventory = _load_runtime_inventory(model_dir)
+    if not inventory:
+        return {
+            "path": str(model_dir / "artifacts" / "runtime_inventory.json"),
+            "status": "missing",
+            "runtime": {},
+            "evidence": {},
+        }
+    return {
+        "path": str(model_dir / "artifacts" / "runtime_inventory.json"),
+        "status": inventory.get("status"),
+        "runtime": inventory.get("runtime") if isinstance(inventory.get("runtime"), dict) else {},
+        "evidence": inventory.get("evidence") if isinstance(inventory.get("evidence"), dict) else {},
+    }
+
+
+def _resolve_protocol_parameters(protocol_id: str | None, model_dir: Path, env: dict[str, str]) -> dict[str, Any]:
+    if not protocol_id or protocol_id.lower() == "none":
+        return {"enabled": False, "status": "disabled", "protocol_id": None}
+    env["SURE_EVAL_PROTOCOL_ID"] = protocol_id
+    resolution: dict[str, Any] = {
+        "enabled": True,
+        "status": "not_resolved",
+        "protocol_id": protocol_id,
+        "standard_params": {},
+        "model_params": {},
+        "unmapped": {},
+        "error": None,
+    }
+    try:
+        from sure_eval.models.registry import ModelRegistry
+        from sure_eval.protocols.resolver import ProtocolResolver
+
+        resolver = ProtocolResolver()
+        registry = ModelRegistry(model_dir.parent)
+        model_info = registry.get_model(model_dir.name)
+        if model_info is None:
+            resolution["status"] = "model_not_registered"
+            return resolution
+        resolved = resolver.resolve(protocol_id, model_info)
+        standard_params = dict(getattr(resolved, "standard_params", {}) or {})
+        model_params = dict(getattr(resolved, "model_params", {}) or {})
+        unmapped = dict(getattr(resolved, "unmapped", {}) or {})
+        for key, value in standard_params.items():
+            env[f"SURE_EVAL_PROTOCOL_{key.upper()}"] = str(value)
+        for key, value in model_params.items():
+            env[f"SURE_EVAL_MODEL_{key.upper()}"] = str(value)
+        resolution.update(
+            {
+                "status": "resolved",
+                "standard_params": standard_params,
+                "model_params": model_params,
+                "unmapped": unmapped,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        resolution["status"] = "failed"
+        resolution["error"] = str(exc)
+    return resolution
+
+
+def _is_dynamic_argument_key(key: str) -> bool:
+    lower = key.lower()
+    return any(hint in lower for hint in PATH_ARGUMENT_HINTS) or any(hint in lower for hint in TEXT_ARGUMENT_HINTS)
+
+
+def _update_generation_observations(
+    status_payload: dict[str, Any],
+    *,
+    argument_keys_seen: set[str],
+    dynamic_argument_fields: set[str],
+    raw_response_types: set[str],
+    raw_response_keys: set[str],
+) -> None:
+    generation = status_payload.setdefault("generation", {})
+    argument_policy = generation.setdefault("argument_policy", {})
+    argument_policy["argument_keys"] = sorted(argument_keys_seen)
+    argument_policy["dynamic_argument_fields"] = sorted(dynamic_argument_fields)
+    generation["observed_raw_response"] = {
+        "source_of_truth": False,
+        "payload_types": sorted(raw_response_types),
+        "payload_keys": sorted(raw_response_keys),
+        "note": "raw_response is model wrapper output and is not used to infer protocol parameters.",
+    }
+
+
 def _remap_legacy_model_env_path(value: str, model_dir: Path) -> str:
     legacy_model_dir = f"/workspace/sure-eval/src/sure_eval/models/{model_dir.name}"
     if value == legacy_model_dir:
@@ -659,6 +823,11 @@ def _upsert_dataset_status(
             payload = dict(default_payload)
     else:
         payload = dict(default_payload)
+    for key, value in default_payload.items():
+        if key != "datasets":
+            if key == "generated_at" and payload.get("generated_at"):
+                continue
+            payload[key] = value
     datasets = list(payload.get("datasets") or [])
     dataset_name = dataset_status.get("dataset")
     for index, row in enumerate(datasets):
@@ -851,36 +1020,20 @@ def main() -> int:
     command = _resolve_server_command(model_dir, server_cfg, build_plan)
     working_dir = _resolve_working_dir(model_dir, server_cfg)
     env = os.environ.copy()
+    server_env_config: dict[str, str] = {}
     for key, value in (server_cfg.get("env", {}) or {}).items():
-        env[str(key)] = _remap_legacy_model_env_path(str(value), model_dir)
+        server_env_config[str(key)] = _remap_legacy_model_env_path(str(value), model_dir)
+        env[str(key)] = server_env_config[str(key)]
 
     # Override DEVICE if --device is explicitly provided
     if args.device:
         env["DEVICE"] = str(args.device)
         if str(args.device).lower() == "cpu" and "CUDA_VISIBLE_DEVICES" not in env:
             env["CUDA_VISIBLE_DEVICES"] = ""
-    env.update(_parse_env_overrides(args.env))
-
-    # Inject protocol parameters into environment (backward-compatible)
-    if args.protocol and args.protocol.lower() != "none":
-        env["SURE_EVAL_PROTOCOL_ID"] = args.protocol
-        # Load protocol resolver if available
-        try:
-            from sure_eval.protocols.resolver import ProtocolResolver
-            from sure_eval.models.registry import ModelRegistry
-
-            resolver = ProtocolResolver()
-            registry = ModelRegistry(model_dir.parent)
-            model_info = registry.get_model(model_dir.name)
-            if model_info is not None:
-                resolved = resolver.resolve(args.protocol, model_info)
-                for key, value in resolved.standard_params.items():
-                    env[f"SURE_EVAL_PROTOCOL_{key.upper()}"] = str(value)
-                for key, value in resolved.model_params.items():
-                    env[f"SURE_EVAL_MODEL_{key.upper()}"] = str(value)
-        except Exception:
-            # Protocol system not available or resolution failed — silent fallback
-            pass
+    env_overrides = _parse_env_overrides(args.env)
+    env.update(env_overrides)
+    protocol_id = args.protocol if args.protocol.lower() != "none" else None
+    protocol_resolution = _resolve_protocol_parameters(protocol_id, model_dir, env)
 
     local_model_path = _resolve_local_model_path(weights_manifest)
     configured_model_path = env.get("MODEL_PATH")
@@ -898,6 +1051,8 @@ def main() -> int:
     if not tool_name:
         raise ValueError("No tool name provided and config.yaml has no tools entry")
     tool_args = _parse_tool_args(args.tool_arg)
+    runtime_inventory = _runtime_inventory_summary(model_dir)
+    safe_env = _safe_env_snapshot(env, extra_keys=set(server_env_config) | set(env_overrides))
 
     prediction_path = predictions_dir / f"{canonical_dataset}.txt"
     structured_prediction_path = predictions_dir / f"{canonical_dataset}.jsonl"
@@ -923,18 +1078,72 @@ def main() -> int:
     structured_map = dict(existing_structured)
 
     default_status_payload: dict[str, Any] = {
+        "schema": "sure.eval.prediction_generation_status.v2",
+        "generated_at": _utc_now(),
+        "updated_at": _utc_now(),
         "run_id": run_dir.name,
+        "run_dir": str(run_dir),
         "model_name": model_dir.name,
+        "model_dir": str(model_dir),
         "execution_path": env.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
         "execution_requested": env.get("SURE_EVAL_EXECUTION_REQUESTED", ""),
         "execution_job_id": env.get("SURE_EVAL_EXECUTION_JOB_ID", ""),
         "inference_call_mode": "direct_server_use",
-        "protocol_id": args.protocol if args.protocol.lower() != "none" else None,
+        "protocol_id": protocol_id,
         "tool_name": tool_name,
         "host": socket.gethostname(),
         "device_request": env.get("SURE_EVAL_DEVICE_REQUEST", args.device or ""),
         "device_actual": env.get("SURE_EVAL_DEVICE_ACTUAL", args.device or ""),
         "cuda_visible_devices": env.get("CUDA_VISIBLE_DEVICES", ""),
+        "runtime": {
+            "server_command": command,
+            "server_working_dir": str(working_dir),
+            "model_python": command[0] if command else None,
+            "harness_python": sys.executable,
+            "server_config": {
+                "working_dir": server_cfg.get("working_dir", "."),
+                "timeout": server_cfg.get("timeout"),
+                "startup_timeout_sec": server_cfg.get("startup_timeout_sec"),
+                "env_keys": sorted(server_env_config),
+            },
+            "runtime_inventory": runtime_inventory,
+        },
+        "environment": {
+            **safe_env,
+            "server_env_values": _redact_mapping(server_env_config),
+            "cli_env_overrides": _redact_mapping(env_overrides),
+            "execution": {
+                "path": env.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
+                "requested": env.get("SURE_EVAL_EXECUTION_REQUESTED", ""),
+                "job_id": env.get("SURE_EVAL_EXECUTION_JOB_ID", ""),
+                "surface_type": env.get("SURE_EVAL_EXECUTION_SURFACE_TYPE", ""),
+            },
+            "device": {
+                "request": env.get("SURE_EVAL_DEVICE_REQUEST", args.device or ""),
+                "actual": env.get("SURE_EVAL_DEVICE_ACTUAL", args.device or ""),
+                "cuda_visible_devices": env.get("CUDA_VISIBLE_DEVICES", ""),
+            },
+        },
+        "generation": {
+            "protocol_id": protocol_id,
+            "protocol_resolution": _redact_mapping(protocol_resolution),
+            "tool_name": tool_name,
+            "tool_args": _redact_mapping(tool_args),
+            "argument_policy": {
+                "argument_name": args.argument_name,
+                "language_argument": args.language,
+                "constant_arguments": _redact_mapping(tool_args),
+                "dynamic_argument_fields": [],
+                "argument_keys": [],
+                "per_sample_arguments_materialized": False,
+                "note": "Actual MCP tools/call arguments are generated per sample; only key policy and explicit overrides are persisted.",
+            },
+            "observed_raw_response": {
+                "source_of_truth": False,
+                "payload_types": [],
+                "payload_keys": [],
+            },
+        },
     }
     dataset_status = {
         "dataset": canonical_dataset,
@@ -948,6 +1157,17 @@ def main() -> int:
         "error": None,
     }
     status_payload, current_dataset_status = _upsert_dataset_status(status_path, default_status_payload, dataset_status)
+    argument_keys_seen: set[str] = set()
+    dynamic_argument_fields: set[str] = set()
+    raw_response_types: set[str] = set()
+    raw_response_keys: set[str] = set()
+    _update_generation_observations(
+        status_payload,
+        argument_keys_seen=argument_keys_seen,
+        dynamic_argument_fields=dynamic_argument_fields,
+        raw_response_types=raw_response_types,
+        raw_response_keys=raw_response_keys,
+    )
     status_path.write_text(json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     with open(log_path, "w", encoding="utf-8") as log_handle, open(result_log_path, "w", encoding="utf-8") as result_log_handle:
@@ -1000,6 +1220,12 @@ def main() -> int:
                         output_audio_dir=output_audio_dir,
                         tool_args=tool_args,
                     )
+                    argument_keys_seen.update(str(key) for key in arguments)
+                    dynamic_argument_fields.update(
+                        str(key)
+                        for key in arguments
+                        if key not in tool_args and _is_dynamic_argument_key(str(key))
+                    )
 
                     response = _send_request(
                         process,
@@ -1012,6 +1238,9 @@ def main() -> int:
                     )
                     next_id += 1
                     raw_payload = _extract_response_payload(response)
+                    raw_response_types.add(type(raw_payload).__name__)
+                    if isinstance(raw_payload, dict):
+                        raw_response_keys.update(str(key) for key in raw_payload)
                     prediction, normalized_prediction = _normalize_prediction_payload(raw_payload, task=sample_task)
                     prediction_map[key] = prediction
                     structured_map[key] = {
@@ -1027,6 +1256,14 @@ def main() -> int:
                     result_log_handle.flush()
 
                     current_dataset_status["num_generated_samples"] = len(prediction_map)
+                    status_payload["updated_at"] = _utc_now()
+                    _update_generation_observations(
+                        status_payload,
+                        argument_keys_seen=argument_keys_seen,
+                        dynamic_argument_fields=dynamic_argument_fields,
+                        raw_response_types=raw_response_types,
+                        raw_response_keys=raw_response_keys,
+                    )
                     status_path.write_text(
                         json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8",
@@ -1072,6 +1309,14 @@ def main() -> int:
             current_dataset_status["num_generated_samples"] = len(samples)
             current_dataset_status["prediction_manifest"] = str(manifest_path)
             current_dataset_status["conversion_manifest"] = str(conversion_manifest_path)
+            status_payload["updated_at"] = _utc_now()
+            _update_generation_observations(
+                status_payload,
+                argument_keys_seen=argument_keys_seen,
+                dynamic_argument_fields=dynamic_argument_fields,
+                raw_response_types=raw_response_types,
+                raw_response_keys=raw_response_keys,
+            )
             status_path.write_text(
                 json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
@@ -1081,6 +1326,14 @@ def main() -> int:
             current_dataset_status["status"] = "failed"
             current_dataset_status["error"] = str(exc)
             current_dataset_status["num_generated_samples"] = len(prediction_map)
+            status_payload["updated_at"] = _utc_now()
+            _update_generation_observations(
+                status_payload,
+                argument_keys_seen=argument_keys_seen,
+                dynamic_argument_fields=dynamic_argument_fields,
+                raw_response_types=raw_response_types,
+                raw_response_keys=raw_response_keys,
+            )
             _write_prediction_snapshots(
                 samples=samples,
                 prediction_path=prediction_path,

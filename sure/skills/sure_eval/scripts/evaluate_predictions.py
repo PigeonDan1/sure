@@ -1261,6 +1261,30 @@ def _load_model_sidecar(model_dir: Path | None, relative: str) -> dict[str, Any]
     return _read_json_file(model_dir / relative)
 
 
+def _load_run_sidecar(run_dir: Path, name: str) -> dict[str, Any]:
+    return _read_json_file(run_dir / name)
+
+
+def _existing_path_or_none(path: Path) -> str | None:
+    return str(path) if path.exists() else None
+
+
+def _nested_dict(data: dict[str, Any], *keys: str) -> dict[str, Any]:
+    value: Any = data
+    for key in keys:
+        if not isinstance(value, dict):
+            return {}
+        value = value.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _nonempty_dict(*values: dict[str, Any]) -> dict[str, Any]:
+    for value in values:
+        if value:
+            return value
+    return {}
+
+
 def _ensure_prediction_manifests(
     *,
     run_dir: Path,
@@ -1419,6 +1443,45 @@ def _write_protocol_yaml(
         or ""
     )
     template_file = SKILL_ROOT / "scripts" / "templates" / "protocol.yaml"
+    generation_status = _load_run_sidecar(results_dir, "prediction_generation_status.json")
+    prediction_reuse_manifest = _load_run_sidecar(results_dir, "prediction_reuse_manifest.json")
+    runtime_inventory = _load_model_sidecar(model_dir, "artifacts/runtime_inventory.json")
+    status_runtime = _safe_dict(generation_status.get("runtime"))
+    status_env = _safe_dict(generation_status.get("environment"))
+    status_generation = _safe_dict(generation_status.get("generation"))
+    protocol_resolution = _safe_dict(status_generation.get("protocol_resolution"))
+    status_runtime_inventory = _nested_dict(status_runtime, "runtime_inventory")
+    inventory_runtime = _safe_dict(runtime_inventory.get("runtime"))
+    status_server_config = _safe_dict(status_runtime.get("server_config"))
+    server_command = status_runtime.get("server_command") or sanitized_server.get("command", [])
+    server_working_dir = status_runtime.get("server_working_dir") or sanitized_server.get("working_dir", ".")
+    env_keys = status_env.get("env_keys") if isinstance(status_env.get("env_keys"), list) else server_env_keys
+    safe_env_values = _safe_dict(status_env.get("safe_env_values"))
+    redacted_env_keys = status_env.get("redacted_env_keys") if isinstance(status_env.get("redacted_env_keys"), list) else []
+    selected_standard_params = _nonempty_dict(_safe_dict(protocol_resolution.get("standard_params")), standard_params)
+    selected_model_params = _nonempty_dict(_safe_dict(protocol_resolution.get("model_params")), resolved_model_params)
+    selected_unmapped = _nonempty_dict(_safe_dict(protocol_resolution.get("unmapped")), unmapped)
+    explicit_tool_args = _safe_dict(status_generation.get("tool_args"))
+    argument_policy = _safe_dict(status_generation.get("argument_policy"))
+    raw_response_observation = _safe_dict(status_generation.get("observed_raw_response"))
+    runtime_inventory_path = (
+        _existing_path_or_none(model_dir / "artifacts" / "runtime_inventory.json")
+        if model_dir
+        else None
+    )
+    generation_status_path = _existing_path_or_none(results_dir / "prediction_generation_status.json")
+    runtime_links_manifest = (
+        _existing_path_or_none(model_dir / "artifacts" / "runtime_links_manifest.json")
+        if model_dir
+        else None
+    )
+    source_reuse = _safe_dict(prediction_reuse_manifest.get("source"))
+    source_provenance_manifest = _safe_dict(prediction_reuse_manifest.get("source_inference_provenance"))
+    source_inference_provenance = _nonempty_dict(
+        _safe_dict(source_reuse.get("source_inference_provenance")),
+        _safe_dict(source_provenance_manifest.get("source_inference_provenance")),
+    )
+    prediction_reuse_enabled = bool(prediction_reuse_manifest)
 
     payload = {
         "schema": "sure.eval.inference_protocol.v1",
@@ -1436,11 +1499,11 @@ def _write_protocol_yaml(
             "model_dir_source": build_plan.get("model_dir_source") or build_plan.get("source") or None,
             "mcp_tool_name": selected_tool_name,
             "server_config": {
-                "command": sanitized_server.get("command", []),
-                "working_dir": sanitized_server.get("working_dir", "."),
-                "timeout": sanitized_server.get("timeout"),
-                "startup_timeout_sec": sanitized_server.get("startup_timeout_sec"),
-                "env_keys": server_env_keys,
+                "command": server_command,
+                "working_dir": server_working_dir,
+                "timeout": status_server_config.get("timeout", sanitized_server.get("timeout")),
+                "startup_timeout_sec": status_server_config.get("startup_timeout_sec", sanitized_server.get("startup_timeout_sec")),
+                "env_keys": env_keys,
             },
         },
         "protocol_selection": {
@@ -1449,9 +1512,11 @@ def _write_protocol_yaml(
             "model_protocol_config_path": str(config_yaml) if config_yaml and config_yaml.exists() else None,
             "is_default": protocol_id == str(model_cfg.get("default_protocol") or "strict_core"),
             "purpose": protocol_cfg.get("purpose") or "standardized model inference before route-backed evaluation",
-            "standard_params": standard_params,
-            "resolved_model_params": resolved_model_params,
-            "unmapped": unmapped,
+            "standard_params": selected_standard_params,
+            "resolved_model_params": selected_model_params,
+            "unmapped": selected_unmapped,
+            "resolution_status": protocol_resolution.get("status"),
+            "resolution_error": protocol_resolution.get("error"),
         },
         "inference_environment": {
             "execution_path": os.environ.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
@@ -1471,19 +1536,28 @@ def _write_protocol_yaml(
                 "dockerfile": os.environ.get("SURE_EVAL_DOCKERFILE") or model_cfg.get("dockerfile"),
                 "repo_root": os.environ.get("SURE_EVAL_CONTAINER_REPO_ROOT") or str(HARNESS_ROOT),
                 "model_dir": str(model_dir) if model_dir else None,
-                "python_executable": os.environ.get("MODEL_PYTHON") or sys.executable,
+                "python_executable": status_runtime.get("model_python") or inventory_runtime.get("python_executable") or os.environ.get("MODEL_PYTHON") or sys.executable,
             },
             "server": {
                 "transport": "stdio_jsonrpc",
-                "command": sanitized_server.get("command", []),
+                "command": server_command,
+                "working_dir": server_working_dir,
                 "tool_name": selected_tool_name,
-                "startup_timeout_sec": sanitized_server.get("startup_timeout_sec"),
-                "timeout": sanitized_server.get("timeout"),
+                "startup_timeout_sec": status_server_config.get("startup_timeout_sec", sanitized_server.get("startup_timeout_sec")),
+                "timeout": status_server_config.get("timeout", sanitized_server.get("timeout")),
             },
             "env": {
                 "device": os.environ.get("SURE_EVAL_DEVICE_ACTUAL") or os.environ.get("DEVICE") or os.environ.get("CUDA_VISIBLE_DEVICES") or None,
-                "env_keys": server_env_keys,
+                "env_keys": env_keys,
+                "safe_env_values": safe_env_values,
+                "redacted_env_keys": redacted_env_keys,
                 "modelscope_cache": os.environ.get("MODELSCOPE_CACHE"),
+            },
+            "runtime_inventory": {
+                "path": runtime_inventory_path,
+                "status": runtime_inventory.get("status") or status_runtime_inventory.get("status"),
+                "backend": inventory_runtime.get("backend") or _nested_dict(status_runtime_inventory, "runtime").get("backend"),
+                "links_manifest": runtime_links_manifest,
             },
             "mount_policy": {
                 "mount_stable_absolute_roots": [
@@ -1511,6 +1585,30 @@ def _write_protocol_yaml(
                 "model_server_smoke",
             ],
         },
+        "inference_parameters": {
+            "source_priority": [
+                "prediction_generation_status.json",
+                "runtime_inventory.json",
+                "model config.yaml protocols",
+                "process environment fallback",
+            ],
+            "protocol_id": protocol_id,
+            "protocol_resolution": {
+                "status": protocol_resolution.get("status"),
+                "error": protocol_resolution.get("error"),
+                "standard_params": selected_standard_params,
+                "model_params": selected_model_params,
+                "unmapped": selected_unmapped,
+            },
+            "explicit_tool_args": explicit_tool_args,
+            "argument_policy": argument_policy,
+            "raw_response_observation": raw_response_observation,
+            "model_config_protocol": {
+                "standard_params": standard_params,
+                "resolved_model_params": resolved_model_params,
+                "unmapped": unmapped,
+            },
+        },
         "execution_surface": {
             "materialized": (results_dir / "run_evaluation.sh").is_file(),
             "execution_surface_type": os.environ.get("SURE_EVAL_EXECUTION_SURFACE_TYPE") or "main_flow_script",
@@ -1524,6 +1622,18 @@ def _write_protocol_yaml(
                 "deviation_approved_by_user": False,
             },
         },
+        "prediction_reuse": {
+            "enabled": prediction_reuse_enabled,
+            "generation_policy": "reused_predictions_no_inference" if prediction_reuse_enabled else "generated_by_model_server",
+            "manifest": _existing_path_or_none(results_dir / "prediction_reuse_manifest.json"),
+            "source_run_dir": source_reuse.get("source_run_dir"),
+            "source_results_dir": source_reuse.get("source_results_dir"),
+            "source_run_id": source_reuse.get("source_run_id"),
+            "source_protocol": source_inference_provenance.get("source_protocol"),
+            "source_prediction_generation_status": source_inference_provenance.get("source_prediction_generation_status"),
+            "source_runtime_inventory": source_inference_provenance.get("source_runtime_inventory"),
+            "old_evaluation_reused": False,
+        },
         "prediction_contract": {
             "contract_path": "references/contracts/prediction_output_contract.md",
             "compatibility_tsv": "predictions/<dataset>.txt",
@@ -1531,6 +1641,22 @@ def _write_protocol_yaml(
             "format_used": "jsonl+txt",
             "generated_by": os.environ.get("SURE_EVAL_PREDICTION_GENERATED_BY") or "scripts/generate_predictions_via_server.py",
             "protocol_argument": protocol_id,
+        },
+        "provenance": {
+            "prediction_generation_status": generation_status_path,
+            "prediction_generation_status_schema": generation_status.get("schema"),
+            "runtime_inventory": runtime_inventory_path,
+            "runtime_inventory_schema": runtime_inventory.get("schema"),
+            "runtime_links_manifest": runtime_links_manifest,
+            "source_inference_provenance_manifest": _existing_path_or_none(results_dir / "source_inference_provenance.json"),
+            "source_protocol": source_inference_provenance.get("source_protocol"),
+            "source_prediction_generation_status": source_inference_provenance.get("source_prediction_generation_status"),
+            "source_runtime_inventory": source_inference_provenance.get("source_runtime_inventory"),
+            "raw_response_source_of_truth": False,
+            "notes": [
+                "Inference parameters come from model config, CLI overrides, protocol resolver output, and the actual MCP call policy.",
+                "raw_response is preserved in predictions JSONL as model output evidence only.",
+            ],
         },
         "notes": [
             "This file records inference protocol, runtime environment, inference parameters, and inference constraints only.",

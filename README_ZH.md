@@ -102,6 +102,17 @@ npm run sure:doctor
 | 评估 | 模型、datasets、metrics、执行面。 | `main_agent_run_report.json` 和 metric artifacts。 | predictions 校验通过，route reports 存在。 |
 | 重评估 | 历史结果或 predictions。 | 新 tmp run 中的 `reval_run_report.json`。 | `evaluation_only=true`，不复用旧 metric artifacts。 |
 
+## 标准产物
+
+| 产物 | 由谁产出 | 证明什么 |
+| --- | --- | --- |
+| `runtime_inventory.json` | `/sure_onboard` | 模型级 runtime、Python/backend、weights manifest 和证据链接。 |
+| `prediction_generation_status.json` | `/sure_eval` | 真实推理 server command、环境快照、显式 tool args、protocol resolution 和 dataset 生成状态。 |
+| `protocol.yaml` | `/sure_eval` 和 `/sure_reval` | 只记录推理协议：模型、runtime、参数、prediction reuse、provenance。 |
+| `report_snapshot.md` | `/sure_eval` 和 `/sure_reval` | 面向人类阅读的评估范围、route、metric 和结果快照。 |
+| `report.jsonl` | `/sure_eval` 和 `/sure_reval` | 机器可读的 per dataset-metric 结果。 |
+| `source_inference_provenance.json` | `/sure_reval` | 复用 predictions 时的源 protocol/status/runtime 链接。 |
+
 ## 文档
 
 | 需求 | 阅读 |

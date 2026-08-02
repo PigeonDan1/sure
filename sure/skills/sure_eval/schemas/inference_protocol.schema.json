@@ -12,8 +12,11 @@
 		"protocol_selection",
 		"inference_environment",
 		"inference_constraints",
+		"inference_parameters",
 		"execution_surface",
+		"prediction_reuse",
 		"prediction_contract",
+		"provenance",
 		"notes"
 	],
 	"properties": {
@@ -40,10 +43,25 @@
 			"additionalProperties": true
 		},
 		"inference_constraints": { "type": "object", "additionalProperties": true },
+		"inference_parameters": {
+			"type": "object",
+			"required": ["source_priority", "protocol_id", "protocol_resolution", "argument_policy"],
+			"additionalProperties": true
+		},
 		"execution_surface": { "type": "object", "additionalProperties": true },
+		"prediction_reuse": {
+			"type": "object",
+			"required": ["enabled", "generation_policy", "old_evaluation_reused"],
+			"additionalProperties": true
+		},
 		"prediction_contract": {
 			"type": "object",
 			"required": ["compatibility_tsv", "structured_jsonl", "format_used", "generated_by"],
+			"additionalProperties": true
+		},
+		"provenance": {
+			"type": "object",
+			"required": ["raw_response_source_of_truth"],
 			"additionalProperties": true
 		},
 		"notes": { "type": "array", "items": { "type": "string" } }

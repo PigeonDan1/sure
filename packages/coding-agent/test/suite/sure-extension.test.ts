@@ -984,7 +984,9 @@ describe("Sure extension", () => {
 	it("initializes SURE via /sure_init with headless args", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
-		setupSkillPackage(harness.tempDir);
+		for (const command of ["sure_feed", "sure_onboard", "sure_eval", "sure_reval"]) {
+			setupSkillPackage(harness.tempDir, { dirName: command, name: command, command });
+		}
 
 		const inMemorySettings = SettingsManager.inMemory();
 		const createSpy = vi.spyOn(SettingsManager, "create").mockReturnValue(inMemorySettings);
@@ -1000,6 +1002,9 @@ describe("Sure extension", () => {
 		expect(manifest.defaultProvider).toBe("kimi-coding");
 		expect(manifest.defaultModel).toBe("kimi-for-coding");
 		expect(manifest.availableSkills).toContain("/sure_feed");
+		expect(manifest.availableSkills).toContain("/sure_onboard");
+		expect(manifest.availableSkills).toContain("/sure_eval");
+		expect(manifest.availableSkills).toContain("/sure_reval");
 
 		expect(inMemorySettings.getGlobalSettings().defaultProvider).toBe("kimi-coding");
 		expect(inMemorySettings.getGlobalSettings().defaultModel).toBe("kimi-for-coding");

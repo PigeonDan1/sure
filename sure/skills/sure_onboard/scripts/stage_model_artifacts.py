@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from write_runtime_inventory import write_inventory
+
 
 CORE_FILES = ["model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml"]
 REQUIRED_RUN_ARTIFACTS = [
@@ -146,7 +148,19 @@ def build_manifest(
     }
 
 
-def main() -> int:
+def add_runtime_inventory_entries(manifest: dict[str, Any], model_dir: Path) -> None:
+    optional = manifest.setdefault("artifacts", {}).setdefault("optional", {})
+    runtime_paths = {
+        "runtime_inventory": "artifacts/runtime_inventory.json",
+        "runtime_links_manifest": "artifacts/runtime_links_manifest.json",
+        "runtime_links": "artifacts/runtime_links",
+    }
+    for key, path in runtime_paths.items():
+        if (model_dir / path).exists():
+            optional[key] = artifact_entry(path, f"Runtime provenance evidence: {path}.")
+
+
+def main_with_args(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--produces", required=True)
@@ -156,7 +170,7 @@ def main() -> int:
         action="store_true",
         help="Stage only present run artifacts. Use only for diagnostics; normal SAVE_ARTIFACTS should be strict.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     run_dir = Path(args.run_dir).expanduser().resolve()
     run_artifacts = run_dir / "artifacts"
@@ -208,6 +222,15 @@ def main() -> int:
     model_manifest = model_artifacts / "artifact_manifest.json"
     model_manifest.parent.mkdir(parents=True, exist_ok=True)
     model_manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    try:
+        write_inventory(model_dir, produces=model_artifacts / "runtime_inventory.json", run_dir=run_dir)
+    except Exception as exc:  # noqa: BLE001
+        print(f"stage_model_artifacts failed: runtime inventory generation failed: {exc}", file=sys.stderr)
+        return 1
+    add_runtime_inventory_entries(manifest, model_dir)
+    model_manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
     produces.parent.mkdir(parents=True, exist_ok=True)
     produces.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -217,6 +240,10 @@ def main() -> int:
         f"manifest={produces}"
     )
     return 0
+
+
+def main() -> int:
+    return main_with_args()
 
 
 if __name__ == "__main__":

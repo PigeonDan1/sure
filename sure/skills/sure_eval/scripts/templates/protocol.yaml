@@ -60,7 +60,15 @@ inference_environment:
     device: {device}
     env_keys:
 {server_env_keys_yaml}
+    safe_env_values:
+      {}
+    redacted_env_keys: []
     modelscope_cache: {modelscope_cache}
+  runtime_inventory:
+    path: {runtime_inventory_path}
+    status: {runtime_inventory_status}
+    backend: {runtime_inventory_backend}
+    links_manifest: {runtime_links_manifest}
   mount_policy:
     mount_stable_absolute_roots:
 {mount_stable_absolute_roots_yaml}
@@ -75,6 +83,38 @@ inference_constraints:
   metric_logic_in_inference_image_allowed: {metric_logic_in_inference_image_allowed}
   required_preflight_checks:
 {required_preflight_checks_yaml}
+inference_parameters:
+  source_priority:
+  - prediction_generation_status.json
+  - runtime_inventory.json
+  - model config.yaml protocols
+  - process environment fallback
+  protocol_id: {protocol_id}
+  protocol_resolution:
+    status: {protocol_resolution_status}
+    error: {protocol_resolution_error}
+    standard_params:
+{protocol_standard_params_yaml}
+    model_params:
+{resolved_model_params_yaml}
+    unmapped:
+{unmapped_protocol_params_yaml}
+  explicit_tool_args:
+    {}
+  argument_policy:
+    argument_keys: []
+    dynamic_argument_fields: []
+  raw_response_observation:
+    source_of_truth: false
+    payload_types: []
+    payload_keys: []
+  model_config_protocol:
+    standard_params:
+{protocol_standard_params_yaml}
+    resolved_model_params:
+{resolved_model_params_yaml}
+    unmapped:
+{unmapped_protocol_params_yaml}
 execution_surface:
   materialized: {execution_surface_materialized}
   execution_surface_type: {execution_surface_type}
@@ -86,6 +126,17 @@ execution_surface:
     eval_runs_referenced: {eval_runs_referenced}
     prior_run_scripts_copied: {prior_run_scripts_copied}
     deviation_approved_by_user: {deviation_approved_by_user}
+prediction_reuse:
+  enabled: false
+  generation_policy: generated_by_model_server
+  manifest:
+  source_run_dir:
+  source_results_dir:
+  source_run_id:
+  source_protocol:
+  source_prediction_generation_status:
+  source_runtime_inventory:
+  old_evaluation_reused: false
 prediction_contract:
   contract_path: {prediction_contract_path}
   compatibility_tsv: {prediction_compatibility_tsv}
@@ -93,6 +144,20 @@ prediction_contract:
   format_used: {prediction_format_used}
   generated_by: {prediction_generated_by}
   protocol_argument: {protocol_id}
+provenance:
+  prediction_generation_status: {prediction_generation_status}
+  prediction_generation_status_schema: sure.eval.prediction_generation_status.v2
+  runtime_inventory: {runtime_inventory_path}
+  runtime_inventory_schema: sure.onboard.runtime_inventory.v1
+  runtime_links_manifest: {runtime_links_manifest}
+  source_inference_provenance_manifest:
+  source_protocol:
+  source_prediction_generation_status:
+  source_runtime_inventory:
+  raw_response_source_of_truth: false
+  notes:
+  - Inference parameters come from model config, CLI overrides, protocol resolver output, and the actual MCP call policy.
+  - raw_response is preserved in predictions JSONL as model output evidence only.
 notes:
 - This file records inference protocol, runtime environment, inference parameters, and inference constraints only.
 - Dataset scope, evaluation routes, metric results, validation, and metric artifacts are recorded in report_snapshot.md and report.jsonl.

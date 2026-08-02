@@ -93,6 +93,44 @@ def _resolve_relative_path(value: str, anchors: list[Path]) -> str:
     return value
 
 
+def _existing_file(path: Path) -> str:
+    return str(path.resolve()) if path.is_file() else ""
+
+
+def _provenance_candidates(
+    *,
+    source: Path,
+    kind: str,
+    predictions_dir: Path,
+    canonical_run_dir: str,
+    model_dir: str,
+) -> dict[str, str]:
+    anchors: list[Path] = []
+    if canonical_run_dir:
+        anchors.append(Path(canonical_run_dir).expanduser())
+    if kind != "predictions_dir":
+        anchors.append(source)
+    anchors.append(predictions_dir.parent)
+
+    source_protocol = ""
+    source_generation_status = ""
+    for anchor in anchors:
+        if not source_protocol:
+            source_protocol = _existing_file(anchor / "protocol.yaml")
+        if not source_generation_status:
+            source_generation_status = _existing_file(anchor / "prediction_generation_status.json")
+
+    model_path = Path(model_dir).expanduser() if model_dir else None
+    runtime_inventory = _existing_file(model_path / "artifacts" / "runtime_inventory.json") if model_path else ""
+    runtime_links_manifest = _existing_file(model_path / "artifacts" / "runtime_links_manifest.json") if model_path else ""
+    return {
+        "source_protocol": source_protocol,
+        "source_prediction_generation_status": source_generation_status,
+        "source_runtime_inventory": runtime_inventory,
+        "source_runtime_links_manifest": runtime_links_manifest,
+    }
+
+
 def _infer_from_report(source: Path) -> dict[str, Any]:
     rows = _read_jsonl(source / "report.jsonl")
     if not rows:
@@ -180,6 +218,13 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     canonical_run_dir = protocol_info.get("canonical_run_dir") or report_info.get("canonical_run_dir") or (
         str(source) if kind == "run_dir" else ""
     )
+    provenance = _provenance_candidates(
+        source=source,
+        kind=kind,
+        predictions_dir=predictions_dir,
+        canonical_run_dir=canonical_run_dir,
+        model_dir=model_dir,
+    )
 
     predictions = []
     for dataset in selected_datasets:
@@ -205,6 +250,13 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         "source_run_dir": canonical_run_dir,
         "source_results_dir": str(source) if kind == "results_dir" else "",
         "source_run_id": protocol_info.get("run_id") or report_info.get("run_id") or "",
+        "source_inference_provenance": {
+            "source_protocol": provenance["source_protocol"],
+            "source_prediction_generation_status": provenance["source_prediction_generation_status"],
+            "source_runtime_inventory": provenance["source_runtime_inventory"],
+            "source_runtime_links_manifest": provenance["source_runtime_links_manifest"],
+            "inference_unknown": not any(provenance.values()),
+        },
         "protocol_id": args.protocol_id or protocol_info.get("protocol_id") or report_info.get("protocol_id") or "strict_core",
         "model_name": model_name,
         "model_dir": model_dir,

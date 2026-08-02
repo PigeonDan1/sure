@@ -123,6 +123,25 @@ The user controls where formal model inference runs:
    - `submit_result.json`, `execution_result.json`, `prediction_generation_status.json`, and `main_agent_run_report.json` must make the formal execution location auditable. Do not confuse `inference_call_mode=direct_server_use` with `execution_path=local_bash|vc_submit`.
 ```
 
+## Artifact Protocol
+
+Generated prediction runs write `prediction_generation_status.json` with schema
+`sure.eval.prediction_generation_status.v2`. The source of truth is what the
+harness actually sent and where it executed:
+
+- `runtime`: MCP server command, working directory, model Python, harness Python, and model `runtime_inventory.json` summary.
+- `environment`: allowlisted safe env values, all env keys, redacted secret-key names, execution path, and device binding.
+- `generation`: protocol resolver output, explicit `--tool-arg` values, argument key policy, and raw-response observation.
+- `datasets`: per-dataset prediction file, structured prediction file, generation count, logs, and status.
+
+`protocol.yaml` is inference-only. It must include `inference_parameters`,
+`prediction_reuse`, and `provenance`. For normal `/sure_eval`, provenance points
+to the current run's `prediction_generation_status.json`; for `/sure_reval`,
+`prediction_reuse.enabled=true` and provenance points to the source inference
+protocol/status/runtime inventory when available. `raw_response` is preserved in
+`predictions/<dataset>.jsonl` as model-output evidence only and must not be used
+to infer model hyperparameters.
+
 ## Backend
 
 The deterministic harness backend is bundled in `scripts/`. The package
