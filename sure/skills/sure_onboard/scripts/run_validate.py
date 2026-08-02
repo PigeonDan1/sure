@@ -122,7 +122,11 @@ def repo_root_for(run_dir: Path) -> Path:
 
 def normalize_repo_relative_text(value: str, repo_root: Path) -> str:
     replacement = str(repo_root / "sure" / "models") + "/"
-    return re.sub(r"(?<![A-Za-z0-9_./-])sure/models/", replacement, value)
+    # Pass a function, not the string, as the replacement. re.sub treats
+    # backslashes in a *string* replacement as escapes (\s, \1, ...), which
+    # raises on Windows where replacement contains path backslashes. A
+    # function's return value is inserted literally, with no escape parsing.
+    return re.sub(r"(?<![A-Za-z0-9_./-])sure/models/", lambda _match: replacement, value)
 
 
 def normalize_repo_relative_command(command: list[str] | str, repo_root: Path) -> list[str] | str:
