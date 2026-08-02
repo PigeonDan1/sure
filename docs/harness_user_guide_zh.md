@@ -132,7 +132,7 @@ sure/models/<model_name>/artifacts/
 | Command | 用途 | 必需输入 | 常见可选输入 | 期望输出 | 成功标准 |
 | --- | --- | --- | --- | --- | --- |
 | `/sure_init` | 配置 harness 项目和 agent 运行环境。 | 无 | provider/auth 配置 | 项目配置和 doctor 证据 | 能发现 skills 和必要依赖 |
-| `/sure_feed` | 发现模型并生成接入输入。 | 直接模型 URL 或 `source/query` | `max_models`, `download`, `handoff_root` | `sure/handoffs/<model>/model_input.yaml`, feed artifacts | 选中模型有任务证据、repo、weights source、fixture、IO contract |
+| `/sure_feed` | 发现模型并生成接入输入。 | 直接模型 URL 或 `source/query` | `max_models`, `max_retries`, `download`, `handoff_root` | `sure/handoffs/<model>/model_input.yaml`, feed artifacts | 选中模型有任务证据、repo、weights source、fixture、IO contract |
 | `/sure_onboard` | 将模型变成可运行的本地推理单元。 | `model=<handoff>` 或 `model_input_path=...` | `device`, `package`, `preferred_backend`, `skip_download` | `sure/models/<model>/` 下的 wrapper、spec、config、fixture、verdict | import/load/infer/contract 校验通过，`verdict.json` ready |
 | `/sure_eval` | 执行 prediction 生成和 route-backed evaluation。 | `model`, `datasets` | `metrics`, `max_samples`, `execution`, `device`, VC 资源 | predictions、validation、route plan、metric reports、run report | 记录正式执行面；predictions 校验通过；metric reports 存在 |
 | `/sure_reval` | 只基于已有 predictions 重新计算指标。 | `source` | `datasets`, `metrics`, 重复 `pipeline_id`, `max_samples`, `output_dir`, `device` | 新 tmp run，复制后的 predictions 和新 metric artifacts | `evaluation_only=true`，`old_evaluation_reused=false`，report pipeline ID 与请求 route 一致 |
@@ -193,7 +193,7 @@ sure/models/<model_name>/artifacts/
 | 字段 | 含义 |
 | --- | --- |
 | `model` | `sure/models/<model>/` 下已有 ready `verdict.json` 的模型名。 |
-| `datasets` | 数据集名或别名。任务和语言由 dataset JSONL 元数据决定。 |
+| `datasets` | 数据集名或别名。任务和语言由 dataset JSONL 元数据决定。`aishell1` 这类短别名只有在能唯一匹配到版本化数据集 ID 时才会展开。 |
 | `metrics` | 标准报告指标，例如 `cer`, `wer`, `spk_sim`, `dnsmos`。 |
 | `max_samples` | 有界样本数。`0` 或省略表示全量数据集。 |
 | `execution` | `local`, `vc`, `auto`。`vc` 必须真实提交 VC job，不允许静默 fallback。 |
@@ -208,6 +208,10 @@ sure/models/<model_name>/artifacts/
 | `results_dir` | 镜像 results 目录，包含 `predictions/`、`report.jsonl`，通常也有 `protocol.yaml`。 |
 | `run_dir` | 标准 evaluation run 目录，包含 `predictions/`。 |
 | `predictions_dir` | 裸 `<dataset>.txt` 和可选 `<dataset>.jsonl` 目录；当无法推断元数据时需要显式传 `model` 和 `datasets`。 |
+
+`/sure_reval` 会按和 `/sure_eval` 一致的规则解析 prediction source 中的数据集名：
+优先精确匹配文件 stem；否则 `aishell1` 这类短名可以解析到唯一的版本化 prediction
+stem，例如 `aishell1__v1.0.2__asr`。如果短名存在歧义，则失败而不是猜测。
 
 指标选择模式：
 

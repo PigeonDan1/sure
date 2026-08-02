@@ -90,8 +90,11 @@ Run the main path:
 Recompute metrics from existing predictions:
 
 ```text
-/sure_reval source=<results_or_run_dir> datasets=<dataset_name> max_samples=5 pipeline_id=<exact_pipeline_id>
+/sure_reval source=<results_or_run_dir> datasets=aishell1 max_samples=5 pipeline_id=<exact_pipeline_id>
 ```
+
+Dataset short names such as `aishell1` are accepted when exactly one versioned
+prediction file matches, for example `aishell1__v1.0.2__asr.txt`.
 
 Use `execution=local` for local development. Use `execution=vc` only when the
 run should produce real VC submission evidence.
@@ -115,6 +118,15 @@ run should produce real VC submission evidence.
 | `report_snapshot.md` | `/sure_eval` and `/sure_reval` | Human-readable evaluation scope, route, metric, and result snapshot. |
 | `report.jsonl` | `/sure_eval` and `/sure_reval` | Machine-readable per dataset-metric results. |
 | `source_inference_provenance.json` | `/sure_reval` | Source protocol/status/runtime links when predictions are reused. |
+
+## Operational Guardrails
+
+| Area | Behavior |
+| --- | --- |
+| Re-evaluation dataset names | `/sure_reval` accepts the same short dataset aliases as `/sure_eval` when the match is unique. |
+| Agent repair loop | Hook diagnostics report accumulated type mismatches, retry-derived `gate_blocks`, and the real blocking reason. |
+| Local verification | `npm run check` is non-mutating; use `npm run format` when you want Biome to rewrite files. |
+| Credential-safe tests | `test.sh`, `pi-test.sh --no-env`, and `pi-test.ps1 --no-env` read `scripts/credential-env.txt` and hide `auth.json` temporarily. Add variable names there, never secret values. |
 
 ## Docs
 

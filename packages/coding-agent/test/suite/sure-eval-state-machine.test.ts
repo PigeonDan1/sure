@@ -9,6 +9,14 @@ import type { SureHookContext } from "../../src/core/sure/types.ts";
 // sure_eval skill package root (repo-relative from the test file).
 const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_eval");
 
+type StatePatchForTest = {
+	counters?: { completed_units?: number; total_units?: number; gate_blocks?: number };
+};
+
+function statePatch(result: { state_patch?: unknown }): StatePatchForTest {
+	return (result.state_patch ?? {}) as StatePatchForTest;
+}
+
 function freshCtx(name: string): { ctx: SureHookContext; runDir: string } {
 	const runDir = resolve(__dirname, "tmp-sm", name);
 	mkdirSync(join(runDir, "artifacts"), { recursive: true });
@@ -475,9 +483,10 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 			artifact_root: artifactRoot,
 		});
 		const result = preFinish(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(true);
-		expect(result.state_patch?.counters?.completed_units).toBe(12);
-		expect(result.state_patch?.counters?.total_units).toBe(12);
+		expect(patch.counters?.completed_units).toBe(12);
+		expect(patch.counters?.total_units).toBe(12);
 	});
 });
 

@@ -1,16 +1,44 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 const dependencySections = ["dependencies", "devDependencies", "optionalDependencies"];
 const exactVersionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const ignoredDirectories = new Set([".git", "dist", "node_modules"]);
+const ignoredDirectories = new Set([
+	".git",
+	".mypy_cache",
+	".pytest_cache",
+	".ruff_cache",
+	".sure",
+	".tox",
+	".venv",
+	"__pycache__",
+	"dist",
+	"node_modules",
+	"venv",
+]);
+const ignoredPathPrefixes = [
+	"data/datasets",
+	"sure/handoffs",
+	"sure/models",
+	"sure/skills/sure_eval/results",
+];
 const packageJsonFiles = [];
+
+function normalizedRelativePath(path) {
+	return relative(".", path).replace(/\\/g, "/");
+}
+
+function isIgnoredPath(path) {
+	const rel = normalizedRelativePath(path);
+	return ignoredPathPrefixes.some((prefix) => rel === prefix || rel.startsWith(`${prefix}/`));
+}
 
 function collectPackageJsonFiles(directory) {
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
 		if (entry.isDirectory()) {
-			if (!ignoredDirectories.has(entry.name)) {
-				collectPackageJsonFiles(join(directory, entry.name));
+			const child = join(directory, entry.name);
+			if (!ignoredDirectories.has(entry.name) && !isIgnoredPath(child)) {
+				collectPackageJsonFiles(child);
 			}
 			continue;
 		}

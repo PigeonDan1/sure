@@ -38,6 +38,20 @@ npm run sure:doctor
 npm run check
 ```
 
+`npm run check` 设计为不改写源码。需要 Biome 自动格式化时使用 `npm run
+format`，推送前保持 `git diff --check` 通过。
+
+无密钥测试启动脚本（`test.sh`、`pi-test.sh --no-env` 和 `pi-test.ps1 --no-env`）
+统一从一个共享文件读取变量名：
+
+```text
+scripts/credential-env.txt
+```
+
+新增 credential 变量时只把变量名按字母序加入该文件，不要把 secret value 写进脚本或文档。
+no-env 启动脚本在 `--no-env` 运行期间会临时移走 agent config 目录中的 `auth.json`，
+退出时再恢复。
+
 ## SURE 定向测试
 
 ```bash

@@ -88,8 +88,11 @@ npm run sure:doctor
 基于已有 predictions 重新计算指标：
 
 ```text
-/sure_reval source=<results_or_run_dir> datasets=<dataset_name> max_samples=5 pipeline_id=<exact_pipeline_id>
+/sure_reval source=<results_or_run_dir> datasets=aishell1 max_samples=5 pipeline_id=<exact_pipeline_id>
 ```
+
+当且仅当能唯一匹配到版本化 prediction 文件时，`/sure_reval` 接受 `aishell1`
+这类短数据集名，例如 `aishell1__v1.0.2__asr.txt`。
 
 本地开发使用 `execution=local`。需要真实 VC 提交证据时再使用 `execution=vc`。
 
@@ -112,6 +115,15 @@ npm run sure:doctor
 | `report_snapshot.md` | `/sure_eval` 和 `/sure_reval` | 面向人类阅读的评估范围、route、metric 和结果快照。 |
 | `report.jsonl` | `/sure_eval` 和 `/sure_reval` | 机器可读的 per dataset-metric 结果。 |
 | `source_inference_provenance.json` | `/sure_reval` | 复用 predictions 时的源 protocol/status/runtime 链接。 |
+
+## 运行护栏
+
+| 范围 | 行为 |
+| --- | --- |
+| 重评估数据集名 | `/sure_reval` 在唯一匹配时接受和 `/sure_eval` 一致的短数据集别名。 |
+| Agent 修复循环 | Hook 诊断会汇总类型错误、从 retry ledger 计算 `gate_blocks`，并显示真实阻塞原因。 |
+| 本地验证 | `npm run check` 不改写源码；需要 Biome 自动格式化时使用 `npm run format`。 |
+| 无密钥测试 | `test.sh`、`pi-test.sh --no-env` 和 `pi-test.ps1 --no-env` 读取 `scripts/credential-env.txt`，并临时隐藏 `auth.json`、退出时恢复。只在这里添加变量名，不写 secret value。 |
 
 ## 文档
 

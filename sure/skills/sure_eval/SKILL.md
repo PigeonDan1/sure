@@ -13,7 +13,7 @@ Control principle: **agent decides scope, scripts enforce format and execution.*
 | Parameter | Required | Meaning |
 |-----------|----------|---------|
 | `model` | ✅ | Onboarded model name. Resolves to `sure/models/<model>/`; the hook reads `verdict.json`/`config.yaml`/`server.py` there to judge readiness. |
-| `datasets` | ✅ | Comma-separated dataset list in the `/sure_eval` command, e.g. `datasets=aishell1,seedtts_test_eval_zh`. Dataset metadata, not a user-supplied task flag, determines ASR/TTS/VC/etc. |
+| `datasets` | ✅ | Comma-separated dataset list in the `/sure_eval` command, e.g. `datasets=aishell1,seedtts_test_eval_zh`. Short aliases resolve only when they match one canonical/versioned dataset. Dataset metadata, not a user-supplied task flag, determines ASR/TTS/VC/etc. |
 | `device` | — | `auto \| cpu \| cuda \| cuda:<index>`. Default `auto`; resolved by `scripts/resolve_eval_input.py` and passed through inference/evaluation templates when materialized. For `execution=local`, `cuda:<index>` selects the local host GPU by setting `CUDA_VISIBLE_DEVICES=<index>`. For `execution=vc`, the allocated container GPU is addressed as `cuda:0`; choose hardware with `vc_partition`/`vc_gpu`, not a host CUDA ordinal. |
 | `target` | — | Target metric or paper to compare against. |
 | `max_samples` | — | Sample cap for bounded validation runs. Omitted or `0` means full dataset. |

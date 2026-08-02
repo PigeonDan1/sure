@@ -39,6 +39,21 @@ Full validation:
 npm run check
 ```
 
+`npm run check` is intentionally non-mutating. Use `npm run format` when Biome
+should rewrite files, and keep `git diff --check` clean before pushing.
+
+Credential-free test launchers (`test.sh`, `pi-test.sh --no-env`, and
+`pi-test.ps1 --no-env`) read their variable names from one shared file:
+
+```text
+scripts/credential-env.txt
+```
+
+Add new credential variable names there, sorted alphabetically. Do not place
+secret values in scripts or docs. The no-env launchers temporarily move
+`auth.json` out of the agent config directory during `--no-env` runs and
+restore it on exit.
+
 ## SURE-Focused Tests
 
 ```bash

@@ -22,6 +22,16 @@ import type { SureHookContext } from "../../src/core/sure/types.ts";
 // sure_onboard skill package root (repo-relative from the test file).
 const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_onboard");
 
+type StatePatchForTest = {
+	message?: string;
+	diagnostics?: Array<{ message: string }>;
+	phase?: { status?: string };
+};
+
+function statePatch(result: { state_patch?: unknown }): StatePatchForTest {
+	return (result.state_patch ?? {}) as StatePatchForTest;
+}
+
 function freshCtx(name: string): { ctx: SureHookContext; runDir: string } {
 	const runDir = resolve(__dirname, "tmp-ob", name);
 	rmSync(runDir, { recursive: true, force: true });
@@ -247,12 +257,13 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 		writeModelInput(modelInputPath);
 		ctx.args = `model_input_path=${modelInputPath}`;
 		const result = preStart(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(true);
-		expect(result.state_patch?.message).toContain("rednote-hilab/dots.tts-base");
-		expect(result.state_patch?.message).toContain('as "rednote-hilab__dots.tts-base"');
-		expect(result.state_patch?.message).toContain("sure/models/rednote-hilab__dots.tts-base");
-		expect(result.state_patch?.message).toContain("from MODEL_INPUT");
-		expect(result.state_patch?.diagnostics?.some((item) => item.message.includes("Loaded MODEL_INPUT"))).toBe(true);
+		expect(patch.message).toContain("rednote-hilab/dots.tts-base");
+		expect(patch.message).toContain('as "rednote-hilab__dots.tts-base"');
+		expect(patch.message).toContain("sure/models/rednote-hilab__dots.tts-base");
+		expect(patch.message).toContain("from MODEL_INPUT");
+		expect(patch.diagnostics?.some((item) => item.message.includes("Loaded MODEL_INPUT"))).toBe(true);
 	});
 
 	it("does not create the concrete model directory during preStart", () => {
@@ -270,8 +281,9 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 		const { ctx, cwd } = preStartCtx("positional-model-input", "artifacts/model_input.yaml");
 		writeModelInput(join(cwd, "artifacts", "model_input.yaml"));
 		const result = preStart(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(true);
-		expect(result.state_patch?.message).toContain("rednote-hilab/dots.tts-base");
+		expect(patch.message).toContain("rednote-hilab/dots.tts-base");
 	});
 
 	it("resolves /sure_feed handoff folders by model name", () => {
@@ -279,17 +291,19 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 		const modelInputPath = join(cwd, "sure", "handoffs", "rednote-hilab__dots.tts-base", "model_input.yaml");
 		writeModelInput(modelInputPath);
 		const result = preStart(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(true);
-		expect(result.state_patch?.message).toContain("rednote-hilab/dots.tts-base");
-		expect(result.state_patch?.diagnostics?.some((item) => item.message.includes(modelInputPath))).toBe(true);
+		expect(patch.message).toContain("rednote-hilab/dots.tts-base");
+		expect(patch.diagnostics?.some((item) => item.message.includes(modelInputPath))).toBe(true);
 	});
 
 	it("normalizes URL-like model arguments to the handoff folder name", () => {
 		const { ctx, cwd } = preStartCtx("handoff-url-name", "model=https://huggingface.co/rednote-hilab/dots.tts-base");
 		writeModelInput(join(cwd, "sure", "handoffs", "rednote-hilab__dots.tts-base", "model_input.yaml"));
 		const result = preStart(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(true);
-		expect(result.state_patch?.message).toContain("rednote-hilab/dots.tts-base");
+		expect(patch.message).toContain("rednote-hilab/dots.tts-base");
 	});
 
 	it("still rejects startup when neither MODEL_INPUT nor explicit required args are present", () => {
@@ -404,11 +418,12 @@ describe("sure_onboard aligned state machine", () => {
 		} as never;
 
 		const result = preToolCall(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("Blocked unbounded discover search");
 		expect(result.repair).toContain("/tmp/project/sure/models/Qwen__Qwen3-TTS-12Hz-1.7B-Base");
 		expect(result.repair).toContain("/tmp/project/sure/handoffs/Qwen__Qwen3-TTS-12Hz-1.7B-Base/artifacts");
-		expect(result.state_patch?.message).toContain("Blocked unbounded discover search");
+		expect(patch.message).toContain("Blocked unbounded discover search");
 	});
 
 	it("blocks checkpoint downloads during discover", () => {
@@ -430,10 +445,11 @@ describe("sure_onboard aligned state machine", () => {
 		} as never;
 
 		const result = preToolCall(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("Blocked checkpoint download during discover");
 		expect(result.repair).toContain("fetch_weights");
-		expect(result.state_patch?.message).toContain("Blocked heavy discover operation");
+		expect(patch.message).toContain("Blocked heavy discover operation");
 	});
 
 	it("blocks base-python runtime dependency probes during discover", () => {
@@ -454,12 +470,13 @@ describe("sure_onboard aligned state machine", () => {
 		} as never;
 
 		const result = preToolCall(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("Blocked runtime dependency import probe during discover");
 		expect(result.repair).toContain("base Python");
 		expect(result.repair).toContain("build_env");
 		expect(result.repair).toContain("validate_import");
-		expect(result.state_patch?.message).toContain("Blocked discover runtime probe");
+		expect(patch.message).toContain("Blocked discover runtime probe");
 	});
 
 	it("blocks long sleep polling during discover", () => {
@@ -1048,8 +1065,9 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 		ctx.point = "pre_finish";
 		ctx.event = { finish: { status: "success" } } as never;
 		const finish = preFinish(ctx);
+		const patch = statePatch(finish);
 		expect(finish.ok, finish.repair).toBe(true);
-		expect(finish.state_patch?.phase?.status).toBe("success");
+		expect(patch.phase?.status).toBe("success");
 	});
 });
 
@@ -1151,11 +1169,12 @@ describe("sure_onboard gate --kind routing (regression)", () => {
 		});
 		writeArtifact(runDir, "env_compat_result.json", { compat_ok: false });
 		const result = postToolResult(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("After 3 consecutive blocked attempts");
 		expect(result.repair).toContain("model_input_path or repo link");
 		expect(result.repair).toContain("confirm access permissions");
-		expect(result.state_patch?.message).toContain("exhausted 3 blocked attempts");
+		expect(patch.message).toContain("exhausted 3 blocked attempts");
 	});
 
 	it("puts the actual blocking reason before the generic checklist in the terminal repair message", () => {

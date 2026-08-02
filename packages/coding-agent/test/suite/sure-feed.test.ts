@@ -18,6 +18,15 @@ import type { SureHookContext } from "../../src/core/sure/types.ts";
 const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_feed");
 const SCRIPTS_DIR = join(PACKAGE_DIR, "scripts");
 
+type StatePatchForTest = {
+	message?: string;
+	counters?: { completed_units?: number; total_units?: number; gate_blocks?: number };
+};
+
+function statePatch(result: { state_patch?: unknown }): StatePatchForTest {
+	return (result.state_patch ?? {}) as StatePatchForTest;
+}
+
 // Minimal SureHookContext mock. runDir is a temp dir we populate with artifacts.
 function makeCtx(runDir: string): SureHookContext {
 	return {
@@ -711,11 +720,12 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 			candidates: [{ model_id: "m1", match: { matched: true } }],
 		});
 		const result = postToolResult(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("After 3 consecutive blocked attempts");
 		expect(result.repair).toContain("model link");
 		expect(result.repair).toContain("confirm access permissions");
-		expect(result.state_patch?.message).toContain("exhausted 3 blocked attempts");
+		expect(patch.message).toContain("exhausted 3 blocked attempts");
 	});
 
 	it("puts the actual blocking reason before the generic checklist in the terminal repair message", () => {
@@ -863,9 +873,10 @@ describe("sure_feed preFinish terminal state", () => {
 			"emit_handoff_manifest",
 		]);
 		const result = preFinish(ctx);
+		const patch = statePatch(result);
 		expect(result.ok).toBe(true);
-		expect(result.state_patch?.counters?.completed_units).toBe(7);
-		expect(result.state_patch?.counters?.total_units).toBe(7);
+		expect(patch.counters?.completed_units).toBe(7);
+		expect(patch.counters?.total_units).toBe(7);
 	});
 });
 

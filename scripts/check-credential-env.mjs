@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Guards the fix for FIX-112: test.sh and pi-test.ps1 --no-env used to keep
-// their own hand-written lists of credential env vars to clear, and the
-// lists drifted (pi-test.ps1 was missing 17 names, including
+// Guards the fix for FIX-112: test.sh, pi-test.sh, and pi-test.ps1 --no-env
+// used to keep their own hand-written lists of credential env vars to clear,
+// and the lists drifted (pi-test.ps1 was missing 17 names, including
 // DEEPSEEK_API_KEY, so "no keys" mode still made real billed requests).
 //
-// Both scripts now read scripts/credential-env.txt instead of inlining
-// names. This check fails if either script goes back to hardcoding one of
+// The launchers now read scripts/credential-env.txt instead of inlining
+// names. This check fails if any launcher goes back to hardcoding one of
 // the listed names, or stops reading the shared file.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -54,6 +54,7 @@ for (const name of names) {
 // of adding it to credential-env.txt.
 const scripts = [
 	{ label: "test.sh", path: join(repoRoot, "test.sh") },
+	{ label: "pi-test.sh", path: join(repoRoot, "pi-test.sh") },
 	{ label: "pi-test.ps1", path: join(repoRoot, "pi-test.ps1") },
 ];
 
@@ -78,4 +79,4 @@ if (failures.length > 0) {
 	process.exit(1);
 }
 
-console.log(`ok   scripts/credential-env.txt: ${names.length} names, test.sh and pi-test.ps1 both read from it`);
+console.log(`ok   scripts/credential-env.txt: ${names.length} names, test.sh, pi-test.sh, and pi-test.ps1 read from it`);

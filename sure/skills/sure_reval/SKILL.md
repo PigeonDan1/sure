@@ -10,7 +10,7 @@ This is a separate atomic capability from `/sure_eval`. `/sure_eval` owns model 
 |-----------|----------|---------|
 | `source` | yes | Existing results dir, canonical eval run dir, or bare `predictions/` dir. |
 | `model` | no | Model name override. Inferred from source when possible. |
-| `datasets` | no | Comma-separated dataset list. Inferred from source when omitted. |
+| `datasets` | no | Comma-separated dataset list. Inferred from source when omitted. Short aliases are accepted only when they resolve to one unique prediction file stem. |
 | `metrics` | no | Metric list for current default route selection, for example `cer` or `wer`. |
 | `pipeline_id` | no | Exact standalone sure-evaluation pipeline id. Repeat or comma-separate to compare multiple pipelines for the same metric. |
 | `max_samples` | no | Bounded validation/evaluation sample count. Existing predictions are filtered to the first N dataset samples. |

@@ -132,7 +132,7 @@ Expected output:
 | Command | Purpose | Required Input | Common Optional Input | Expected Output | Success Criteria |
 | --- | --- | --- | --- | --- | --- |
 | `/sure_init` | Configure the harness project and agent runtime. | none | provider/auth configuration | project-level config and doctor evidence | hooks discover skills and required dependencies |
-| `/sure_feed` | Discover models and synthesize onboarding input. | direct model URL or `source/query` | `max_models`, `download`, `handoff_root` | `sure/handoffs/<model>/model_input.yaml`, feed artifacts | selected model has task evidence, repo, weights source, fixture, IO contract |
+| `/sure_feed` | Discover models and synthesize onboarding input. | direct model URL or `source/query` | `max_models`, `max_retries`, `download`, `handoff_root` | `sure/handoffs/<model>/model_input.yaml`, feed artifacts | selected model has task evidence, repo, weights source, fixture, IO contract |
 | `/sure_onboard` | Turn a model into a runnable local inference unit. | `model=<handoff>` or `model_input_path=...` | `device`, `package`, `preferred_backend`, `skip_download` | `sure/models/<model>/` with wrapper, spec, config, fixture, verdict | import/load/infer/contract validations pass and `verdict.json` is ready |
 | `/sure_eval` | Run prediction plus route-backed evaluation. | `model`, `datasets` | `metrics`, `max_samples`, `execution`, `device`, VC resources | predictions, validation payload, route plan, metric reports, run report | formal execution path is recorded; predictions validate; metric reports exist |
 | `/sure_reval` | Recompute metrics from completed predictions only. | `source` | `datasets`, `metrics`, repeated `pipeline_id`, `max_samples`, `output_dir`, `device` | fresh tmp run with copied predictions and new metric artifacts | `evaluation_only=true`, `old_evaluation_reused=false`, report pipeline IDs match requested route |
@@ -193,7 +193,7 @@ Key fields:
 | Field | Meaning |
 | --- | --- |
 | `model` | Name under `sure/models/<model>/` with a ready `verdict.json`. |
-| `datasets` | Dataset names or aliases. Dataset JSONL metadata determines task and language. |
+| `datasets` | Dataset names or aliases. Dataset JSONL metadata determines task and language. Short aliases such as `aishell1` expand only when they match one versioned dataset ID. |
 | `metrics` | Canonical reported metrics such as `cer`, `wer`, `spk_sim`, `dnsmos`. |
 | `max_samples` | Bounded sample count. `0` or omitted means full dataset. |
 | `execution` | `local`, `vc`, or `auto`. `vc` must submit a real VC job; no silent local fallback. |
@@ -208,6 +208,11 @@ Key fields:
 | `results_dir` | A mirrored results folder with `predictions/`, `report.jsonl`, and usually `protocol.yaml`. |
 | `run_dir` | A canonical evaluation run directory with `predictions/`. |
 | `predictions_dir` | A bare directory of `<dataset>.txt` and optionally `<dataset>.jsonl`; pass `model` and `datasets` when metadata cannot be inferred. |
+
+`/sure_reval` resolves dataset names the same way `/sure_eval` does for the
+prediction source: exact file stems win first, then a short name such as
+`aishell1` may resolve to one unique versioned prediction stem such as
+`aishell1__v1.0.2__asr`. Ambiguous short names fail closed instead of guessing.
 
 Metric selection modes:
 

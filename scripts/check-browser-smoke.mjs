@@ -1,10 +1,11 @@
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
 
-const outputPath = join(tmpdir(), "pi-browser-smoke.js");
-const errorLogPath = join(tmpdir(), "pi-browser-smoke-errors.log");
+const outputDir = mkdtempSync(join(tmpdir(), "pi-browser-smoke-"));
+const outputPath = join(outputDir, "browser-smoke.js");
+const errorLogPath = join(outputDir, "errors.log");
 
 try {
 	await build({
@@ -15,6 +16,7 @@ try {
 		logLevel: "silent",
 		outfile: outputPath,
 	});
+	rmSync(outputDir, { recursive: true, force: true });
 	process.exit(0);
 } catch (error) {
 	let detailedErrors = "";

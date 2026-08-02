@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
-AUTH_FILE="$HOME/.pi/agent/auth.json"
-AUTH_BACKUP="$HOME/.pi/agent/auth.json.bak"
+AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+AUTH_FILE="$AGENT_DIR/auth.json"
+AUTH_BACKUP="$AGENT_DIR/auth.json.bak.$$"
 
 # Restore auth.json on exit (success or failure)
 cleanup() {
     if [[ -f "$AUTH_BACKUP" ]]; then
-        mv "$AUTH_BACKUP" "$AUTH_FILE"
+        mv -f "$AUTH_BACKUP" "$AUTH_FILE"
         echo "Restored auth.json"
     fi
 }
@@ -23,8 +24,8 @@ fi
 export PI_NO_LOCAL_LLM=1
 
 # Unset API keys (see packages/ai/src/stream.ts getEnvApiKey).
-# The variable list lives in scripts/credential-env.txt so test.sh and
-# pi-test.ps1 can't drift apart again.
+# The variable list lives in scripts/credential-env.txt so the test launchers
+# can't drift apart again.
 while read -r var; do
   case "$var" in ''|'#'*) continue;; esac
   unset "$var"
