@@ -188,6 +188,7 @@ export function validateProduces(ctx: SureHookContext, unit: Unit, artifact: unk
 	}
 
 	// Tier 2: format — property types per schema.
+	const typeViolations: string[] = [];
 	if (schema?.properties) {
 		for (const [field, typeSpec] of Object.entries(schema.properties)) {
 			if (!(field in record)) {
@@ -198,14 +199,19 @@ export function validateProduces(ctx: SureHookContext, unit: Unit, artifact: unk
 			if (declaredTypes.length > 0) {
 				const allowed = declaredTypes.flatMap((declaredType) => SCHEMA_TYPE_MAP[declaredType] ?? [declaredType]);
 				if (!allowed.includes(typeOf(record[field]))) {
-					return {
-						ok: false,
-						repair: `Field "${field}" in ${unit.produces} must be ${declaredTypes.length === 1 ? declaredTypes[0] : JSON.stringify(declaredTypes)} (got ${typeOf(record[field])}). Expected ${field}: ${describeExpected(spec)}.`,
-						reason: `type mismatch ${field}`,
-					};
+					typeViolations.push(
+						`Field "${field}" in ${unit.produces} must be ${declaredTypes.length === 1 ? declaredTypes[0] : JSON.stringify(declaredTypes)} (got ${typeOf(record[field])}). Expected ${field}: ${describeExpected(spec)}.`,
+					);
 				}
 			}
 		}
+	}
+	if (typeViolations.length > 0) {
+		return {
+			ok: false,
+			repair: `${typeViolations.join(" ")} Full expected shape: ${describeSchemaSummary(ctx, unit)}`,
+			reason: `type mismatch ${typeViolations.length} field(s)`,
+		};
 	}
 
 	// Tier 3: value domain — allowed enums. Merge unit.allowedValues (the unit
