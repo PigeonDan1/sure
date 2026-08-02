@@ -37,6 +37,24 @@ function getFlagValue(args: string[], flag: string): string | undefined {
 	return args[index + 1];
 }
 
+// Flags that consume the following argument as a free-form value (e.g. `spawn --label --help`
+// should spawn an instance labeled "--help", not print help). --help/-h must be ignored when
+// they appear in one of these positions.
+const VALUE_FLAGS = new Set(["--cwd", "--label"]);
+
+function hasHelpFlag(args: string[]): boolean {
+	for (let i = 0; i < args.length; i += 1) {
+		if (VALUE_FLAGS.has(args[i])) {
+			i += 1;
+			continue;
+		}
+		if (args[i] === "--help" || args[i] === "-h") {
+			return true;
+		}
+	}
+	return false;
+}
+
 async function rpcStream(instanceId: string): Promise<void> {
 	const socket = createConnection(getSocketPath());
 	let stdinBuffer = "";
@@ -82,7 +100,7 @@ async function rpcStream(instanceId: string): Promise<void> {
 async function main(): Promise<void> {
 	const args = process.argv.slice(2);
 
-	if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+	if (args.length === 0 || hasHelpFlag(args)) {
 		printHelp();
 		process.exit(0);
 	}
