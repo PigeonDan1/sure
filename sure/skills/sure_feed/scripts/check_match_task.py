@@ -14,6 +14,25 @@ import json
 import sys
 from pathlib import Path
 
+# Verbatim copy of TASK_TYPES from
+# sure/skills/sure_onboard/scripts/check_model_input.py:16-29. Keep in sync:
+# this gate and check_model_input.py must agree on what task_type values are
+# legal, since this gate exists to catch the same illegal value earlier.
+TASK_TYPES = {
+    "asr",
+    "s2tt",
+    "sd",
+    "ser",
+    "tts",
+    "vc",
+    "kws",
+    "slu",
+    "gr",
+    "speech_understanding",
+    "sa-asr",
+    "sa_asr",
+}
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -51,6 +70,12 @@ def main() -> int:
                 f'candidate "{model_id}" matched but match_source is empty '
                 '(record the evidence channel, e.g. "tasks", "pipeline_tag", '
                 '"repo_topics", "model_card", "readme", or "custom_tag")'
+            )
+        task_type = match.get("task_type")
+        if task_type is not None and task_type not in TASK_TYPES:
+            errors.append(
+                f'candidate "{model_id}" has task_type "{task_type}", '
+                f"which is not one of {sorted(TASK_TYPES)}"
             )
     if errors:
         print("MATCH_TASK gate failed:\n  - " + "\n  - ".join(errors), file=sys.stderr)
