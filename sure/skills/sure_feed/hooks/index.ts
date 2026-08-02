@@ -265,7 +265,7 @@ function failOrRetry(
 	const effectiveMax = Number.isFinite(maxRetries) && (maxRetries ?? 0) > 0 ? maxRetries : undefined;
 	if (retryExhausted(unit, next.data, effectiveMax)) {
 		return failure(
-			`${repair} After ${attempts} consecutive blocked attempts, /sure_feed still cannot produce a valid artifact for unit "${unit.id}". Stop and ask the user to confirm the model link, access permissions, and whether the model card/README contains enough install, load, and inference information.`,
+			`${repair} Blocked because: ${reason}. After ${attempts} consecutive blocked attempts, /sure_feed still cannot produce a valid artifact for unit "${unit.id}". If the blocking reason above points at the model link rather than the artifact you wrote, ask the user to confirm access permissions and whether the model card/README covers install, load, and inference.`,
 			`Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`,
 			countersFor(next.data, attempts),
 			next,

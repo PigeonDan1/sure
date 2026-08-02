@@ -713,8 +713,40 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("After 3 consecutive blocked attempts");
-		expect(result.repair).toContain("confirm the model link");
+		expect(result.repair).toContain("model link");
+		expect(result.repair).toContain("confirm access permissions");
 		expect(result.state_patch?.message).toContain("exhausted 3 blocked attempts");
+	});
+
+	it("puts the actual blocking reason before the generic checklist in the terminal repair message", () => {
+		const { ctx, runDir } = freshCtx("advance-reason-first");
+		writeFileSync(
+			join(runDir, "state.json"),
+			JSON.stringify(
+				{
+					checkpoint: {
+						data: {
+							currentUnit: "match_task",
+							completedUnits: ["scan_modelscope"],
+							retries: { match_task: 2 },
+						},
+					},
+				},
+				null,
+				2,
+			),
+			"utf-8",
+		);
+		writeArtifact(runDir, "match_task_result.json", {
+			candidates: [{ model_id: "m1", match: { matched: true } }],
+		});
+		const result = postToolResult(ctx);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("Blocked because: gate script check_match_task.py failed");
+		const reasonIndex = result.repair?.indexOf("Blocked because:") ?? -1;
+		const checklistIndex = result.repair?.indexOf("model link") ?? -1;
+		expect(reasonIndex).toBeGreaterThanOrEqual(0);
+		expect(reasonIndex).toBeLessThan(checklistIndex);
 	});
 
 	it("honors max_retries from the /sure_feed command line", () => {
