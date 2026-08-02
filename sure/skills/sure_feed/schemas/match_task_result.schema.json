@@ -22,7 +22,10 @@
 								"type": "string",
 								"description": "Strong or weak provenance such as tasks, pipeline_tag, model_card, readme, repo_topics, or custom_tag."
 							},
-							"task_type": { "type": "string" },
+							"task_type": {
+								"type": "string",
+								"enum": ["asr", "s2tt", "sd", "ser", "tts", "vc", "kws", "slu", "gr", "speech_understanding", "sa-asr", "sa_asr"]
+							},
 							"score": { "type": "number" },
 							"evidence": {
 								"type": "array",
