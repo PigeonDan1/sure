@@ -25,7 +25,9 @@
 					"default_metrics": { "type": "array", "items": { "type": "string" } },
 					"source": { "type": ["string", "null"] },
 					"num_samples": { "type": ["number", "null"] },
-					"display_name": { "type": "string" }
+					"display_name": { "type": "string" },
+					"dataset_task": { "type": "string" },
+					"task_source": { "type": "string" }
 				},
 				"additionalProperties": false
 			}

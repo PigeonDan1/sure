@@ -21,6 +21,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -213,6 +216,190 @@ def check_no_prior_run_leakage(surface_path: Path) -> dict[str, Any]:
     return {"passed": True, "evidence": "no prior-run leakage declared"}
 
 
+INTERPRETER_ENV_KEYS = ("MODEL_PYTHON", "PYTHON_BIN", "HARNESS_PYTHON_BIN")
+
+# The model interpreter must be pinned to one venv, so a bare command name is
+# not acceptable. The harness interpreter is resolved from PATH by the
+# template, so a bare command name is the normal value there.
+MODEL_INTERPRETER_ENV_KEYS = ("MODEL_PYTHON", "PYTHON_BIN")
+
+TASK_DEFAULT_TOOLS = {
+    "ASR": "transcribe_audio",
+    "S2TT": "translate_audio",
+    "TTS": "synthesize_speech",
+    "VC": "convert_voice",
+}
+
+
+def _interpreter_candidates(model_dir: Any) -> list[str]:
+    if not isinstance(model_dir, str) or not model_dir:
+        return []
+    root = Path(model_dir).expanduser()
+    if not root.is_dir():
+        return []
+    found: list[str] = []
+    for pattern in ("venv*/bin/python*", ".venv/bin/python*"):
+        found.extend(str(path) for path in sorted(root.glob(pattern)))
+    return found[:5]
+
+
+def _model_config(model_dir: Any) -> dict[str, Any]:
+    if not isinstance(model_dir, str) or not model_dir:
+        return {}
+    config_path = Path(model_dir).expanduser() / "config.yaml"
+    if not config_path.is_file():
+        return {}
+    try:
+        import yaml
+
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values = value.replace(",", " ").split()
+    elif isinstance(value, list):
+        values = value
+    else:
+        return []
+    out: list[str] = []
+    for item in values:
+        text = str(item or "").strip()
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
+def _expected_tool_names(model_dir: Any) -> list[str]:
+    config = _model_config(model_dir)
+    if not config:
+        return []
+    names = [str(tool["name"]) for tool in config.get("tools") or [] if isinstance(tool, dict) and tool.get("name")]
+    if names:
+        return names
+    model = config.get("model") if isinstance(config.get("model"), dict) else {}
+    task = str(model.get("task") or config.get("task") or config.get("task_type") or "").strip().upper()
+    return [TASK_DEFAULT_TOOLS.get(task, "predict")]
+
+
+def _required_imports(surface: dict[str, Any], model_dir: Any) -> list[str]:
+    required: list[str] = []
+    inference_runtime = surface.get("inference_runtime") if isinstance(surface.get("inference_runtime"), dict) else {}
+    required.extend(_string_list(inference_runtime.get("required_imports")))
+    config = _model_config(model_dir)
+    for section_name in ("runtime", "environment", "execution"):
+        section = config.get(section_name) if isinstance(config.get(section_name), dict) else {}
+        required.extend(_string_list(section.get("required_imports")))
+    required.extend(_string_list(config.get("required_imports")))
+    return _string_list(required)
+
+
+def _resolve_interpreter(key: str, value: str) -> tuple[str, str]:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        if key in MODEL_INTERPRETER_ENV_KEYS:
+            return "", f"{key} must be an absolute path, got: {value}"
+        found = shutil.which(value)
+        if not found:
+            return "", f"{key} is not resolvable on PATH: {value}"
+        path = Path(found)
+    if not path.exists():
+        return "", f"{key} does not exist: {value}"
+    if not os.access(path, os.X_OK):
+        return "", f"{key} is not executable: {value}"
+    return str(path), ""
+
+
+def _check_required_imports(model_python: str, imports: list[str]) -> list[str]:
+    issues: list[str] = []
+    for module in imports:
+        try:
+            probe = subprocess.run(
+                [
+                    model_python,
+                    "-c",
+                    "import importlib, sys; importlib.import_module(sys.argv[1])",
+                    module,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if probe.returncode == 0:
+                continue
+            detail = ((probe.stderr or probe.stdout or "").strip() or f"import {module} failed").splitlines()[-1]
+        except subprocess.TimeoutExpired:
+            detail = f"import {module} timed out after 60s"
+        issues.append(f"MODEL_PYTHON cannot import required module '{module}' ({detail})")
+    return issues
+
+
+def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
+    if not surface_path.exists():
+        return {"passed": False, "evidence": f"{surface_path.name} not found"}
+    try:
+        data = json.loads(surface_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return {"passed": False, "evidence": f"invalid JSON: {e}"}
+
+    execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
+    if str(execution.get("requested") or "local") == "vc" or str(execution.get("path_planned") or "") == "vc_submit":
+        return {"passed": True, "evidence": "vc execution: container runtime is validated at vc submit preflight"}
+
+    env = data.get("env") if isinstance(data.get("env"), dict) else {}
+    inference_runtime = data.get("inference_runtime") if isinstance(data.get("inference_runtime"), dict) else {}
+    resolved_inputs = data.get("resolved_inputs") if isinstance(data.get("resolved_inputs"), dict) else {}
+    issues: list[str] = []
+
+    declared = {key: str(env[key]) for key in INTERPRETER_ENV_KEYS if isinstance(env.get(key), str) and env[key]}
+    if not (declared.get("MODEL_PYTHON") or declared.get("PYTHON_BIN")):
+        issues.append("env must declare MODEL_PYTHON (absolute path to the model interpreter) for local execution")
+    model_python = ""
+    for key, value in declared.items():
+        resolved, issue = _resolve_interpreter(key, value)
+        if issue:
+            issues.append(issue)
+        elif key in MODEL_INTERPRETER_ENV_KEYS and not model_python:
+            model_python = resolved
+
+    import_probe_policy = str(inference_runtime.get("import_probe_policy") or "declared_only").strip().lower()
+    required_imports = _required_imports(data, resolved_inputs.get("model_dir"))
+    if import_probe_policy not in {"declared_only", "skip", "required"}:
+        issues.append(
+            f"inference_runtime.import_probe_policy must be one of declared_only, skip, required; got: {import_probe_policy}"
+        )
+    elif import_probe_policy == "skip":
+        required_imports = []
+    elif import_probe_policy == "required" and not required_imports:
+        issues.append("inference_runtime.import_probe_policy=required needs required_imports from the surface or model config")
+    if model_python and required_imports:
+        import_issues = _check_required_imports(model_python, required_imports)
+        if import_issues:
+            candidates = _interpreter_candidates(resolved_inputs.get("model_dir"))
+            suffix = f"; interpreter candidates: {', '.join(candidates)}" if candidates else ""
+            issues.extend(f"{issue}{suffix}" for issue in import_issues)
+
+    declared_tool = ""
+    for value in (env.get("TOOL_NAME"), resolved_inputs.get("tool_name")):
+        if isinstance(value, str) and value:
+            declared_tool = value
+            break
+    if declared_tool:
+        expected = _expected_tool_names(resolved_inputs.get("model_dir"))
+        if expected and declared_tool not in expected:
+            issues.append(f"tool name '{declared_tool}' is not declared by the model; expected one of: {', '.join(expected)}")
+
+    if issues:
+        return {"passed": False, "evidence": "; ".join(issues)}
+    if required_imports:
+        return {"passed": True, "evidence": f"interpreter, required imports ({', '.join(required_imports)}), and tool name verified"}
+    return {"passed": True, "evidence": "interpreter and tool name verified; import probe skipped (no required_imports declared)"}
+
+
 REQUIRED_EVALUATE_ARGS = [
     "--results-dir",
     "--protocol-id",
@@ -344,6 +531,7 @@ def main() -> int:
         "source_provenance": check_source_provenance(surface_path),
         "prior_run_leakage": check_no_prior_run_leakage(surface_path),
         "evaluate_predictions_args": check_evaluate_predictions_args(shell_path),
+        "inference_runtime": check_inference_runtime(surface_path),
         "evaluation_route_plan": check_evaluation_route_plan(artifacts_dir),
     }
 

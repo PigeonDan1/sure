@@ -290,7 +290,7 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const allowed = new Set<string>();
 	for (const unit of owningUnits) {
 		if (unit.gateScript) {
-			allowed.add(join("scripts", unit.gateScript));
+			allowed.add(`scripts/${unit.gateScript}`);
 		}
 	}
 	if (allowed.has(invokedScript)) {
@@ -445,6 +445,7 @@ function failOrRetry(
 			`${repair} (unit "${unit.id}" FAILED after ${attempts} retries; classify via failure_taxonomy and either repair manually or finish with status failed.)`,
 			`Gate "${unit.id}" exhausted retries: ${reason}`,
 			countersFor(next.data, attempts),
+			next,
 		);
 	}
 	return {

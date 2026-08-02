@@ -20,7 +20,22 @@
 		},
 		"entrypoint_path_actual": { "type": "string" },
 		"execution": { "type": "object", "additionalProperties": true },
-		"inference_runtime": { "type": "object", "additionalProperties": true },
+		"inference_runtime": {
+			"type": "object",
+			"properties": {
+				"required_imports": {
+					"type": "array",
+					"items": { "type": "string" },
+					"description": "Python modules that must import successfully in MODEL_PYTHON before local execution is approved."
+				},
+				"import_probe_policy": {
+					"type": "string",
+					"enum": ["declared_only", "skip", "required"],
+					"description": "declared_only is the default: imports are hard-gated only when required_imports is declared."
+				}
+			},
+			"additionalProperties": true
+		},
 		"evaluation_runtime": { "type": "object", "additionalProperties": true },
 		"vc_runtime": { "type": "object", "additionalProperties": true },
 		"generation_method": { "type": "string" },
@@ -52,7 +67,14 @@
 			},
 			"additionalProperties": false
 		},
-		"resolved_inputs": { "type": "object", "additionalProperties": true },
+		"resolved_inputs": {
+			"type": "object",
+			"properties": {
+				"model_dir": { "type": "string" },
+				"tool_name": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
 		"expected_outputs": { "type": "object", "additionalProperties": true },
 		"commands": { "type": "array", "items": { "type": "string" } },
 		"env": { "type": "object", "additionalProperties": { "type": "string" } },

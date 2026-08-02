@@ -538,11 +538,12 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const event = isRecord(ctx.event) ? ctx.event : {};
 	const toolCall = isRecord(event.toolCall) ? event.toolCall : {};
-	const toolName = typeof toolCall.name === "string" ? toolCall.name : "";
+	const toolName =
+		typeof event.toolName === "string" ? event.toolName : typeof toolCall.name === "string" ? toolCall.name : "";
 	if (toolName !== "bash") {
 		return { ok: true };
 	}
-	const input = isRecord(toolCall.input) ? toolCall.input : {};
+	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
 	const checkpoint = readCheckpoint(ctx);
 	const currentUnit = findUnit(checkpoint.data.currentUnit);
@@ -640,10 +641,10 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	}
 	const allowed = new Set<string>();
 	if (currentUnit.gateScript) {
-		allowed.add(join("scripts", currentUnit.gateScript));
+		allowed.add(`scripts/${currentUnit.gateScript}`);
 	}
 	for (const helperScript of currentUnit.helperScripts ?? []) {
-		allowed.add(join("scripts", helperScript));
+		allowed.add(`scripts/${helperScript}`);
 	}
 	if (allowed.has(invokedScript)) {
 		if (command.includes(".venv/bin/python")) {
@@ -843,6 +844,7 @@ function failOrRetry(
 			`${repair} After ${attempts} consecutive blocked attempts, /sure_onboard still cannot produce a valid artifact for unit "${unit.id}". Stop and ask the user to confirm the model_input_path or repo link, access permissions, and whether the referenced documentation contains enough install, load, inference, and artifact information.`,
 			`Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`,
 			countersFor(next.data, attempts),
+			next,
 		);
 	}
 	return {

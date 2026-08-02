@@ -15,6 +15,11 @@ const VC_AVAILABLE = (() => {
 	return r.status === 0;
 })();
 
+const PYTHON_BIN = (() => {
+	const r = spawnSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf-8", timeout: 10_000 });
+	return r.status === 0 ? r.stdout.trim() : process.execPath;
+})();
+
 function freshRunDir(name: string): string {
 	const dir = resolve(__dirname, "tmp-rl", name);
 	mkdirSync(join(dir, "artifacts"), { recursive: true });
@@ -78,6 +83,9 @@ describe("sure_eval red line 1 — EXECUTION_SURFACE_ISOLATION", () => {
 		expect(existsSync(templateFile)).toBe(true);
 		writeArtifact(runDir, "execution_surface.json", {
 			entrypoint: "run_evaluation.sh",
+			execution: { requested: "local", path_planned: "local_bash" },
+			env: { MODEL_PYTHON: PYTHON_BIN },
+			inference_runtime: { required_imports: [] },
 			source_provenance: {
 				template_file: templateFile,
 				isolation_compliance: {

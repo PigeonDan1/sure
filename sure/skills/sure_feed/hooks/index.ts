@@ -73,11 +73,12 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const event = isRecord(ctx.event) ? ctx.event : {};
 	const toolCall = isRecord(event.toolCall) ? event.toolCall : {};
-	const toolName = typeof toolCall.name === "string" ? toolCall.name : "";
+	const toolName =
+		typeof event.toolName === "string" ? event.toolName : typeof toolCall.name === "string" ? toolCall.name : "";
 	if (toolName !== "bash") {
 		return { ok: true };
 	}
-	const input = isRecord(toolCall.input) ? toolCall.input : {};
+	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
 	const scriptMatch = command.match(/scripts\/([A-Za-z0-9_]+\.py)\b/);
 	if (!scriptMatch) {
@@ -96,10 +97,10 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const allowed = new Set<string>();
 	for (const unit of owningUnits) {
 		if (unit.gateScript) {
-			allowed.add(join("scripts", unit.gateScript));
+			allowed.add(`scripts/${unit.gateScript}`);
 		}
 		for (const script of unit.ownedScripts ?? []) {
-			allowed.add(join("scripts", script));
+			allowed.add(`scripts/${script}`);
 		}
 	}
 	if (allowed.has(invokedScript)) {
@@ -238,6 +239,7 @@ function failOrRetry(
 			`${repair} After ${attempts} consecutive blocked attempts, /sure_feed still cannot produce a valid artifact for unit "${unit.id}". Stop and ask the user to confirm the model link, access permissions, and whether the model card/README contains enough install, load, and inference information.`,
 			`Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`,
 			countersFor(next.data, attempts),
+			next,
 		);
 	}
 	return {
