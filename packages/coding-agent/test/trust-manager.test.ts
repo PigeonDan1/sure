@@ -36,6 +36,17 @@ describe("ProjectTrustStore", () => {
 		expect(store.get(childDir)).toBe(true);
 	});
 
+	it("reads a trust store written with a UTF-8 BOM", () => {
+		// A UTF-8 BOM is exactly what PowerShell's `Out-File -Encoding utf8`
+		// writes. A Windows user hand-editing trust.json with that encoding
+		// should not get an unactionable JSON.parse error.
+		const store = new ProjectTrustStore(agentDir);
+		const bom = String.fromCharCode(0xfeff);
+		writeFileSync(join(agentDir, "trust.json"), `${bom}${JSON.stringify({ [cwd]: true })}`, "utf-8");
+
+		expect(store.get(cwd)).toBe(true);
+	});
+
 	it("detects trust-requiring project resources", () => {
 		const originalHome = process.env.HOME;
 		process.env.HOME = tempDir;
