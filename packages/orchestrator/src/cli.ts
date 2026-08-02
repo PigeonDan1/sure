@@ -179,4 +179,14 @@ async function main(): Promise<void> {
 	process.exit(1);
 }
 
-await main();
+try {
+	await main();
+} catch (error) {
+	const code = (error as NodeJS.ErrnoException)?.code;
+	if (code === "ENOENT" || code === "ECONNREFUSED") {
+		console.error("orchestrator daemon is not running; start it with `orchestrator serve`");
+		process.exit(1);
+	}
+	console.error(error instanceof Error ? error.message : String(error));
+	process.exit(1);
+}
