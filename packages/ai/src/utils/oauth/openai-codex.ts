@@ -29,6 +29,7 @@ import type {
 	OAuthPrompt,
 	OAuthProviderInterface,
 } from "./types.ts";
+import { CALLBACK_TIMEOUT_MS } from "./types.ts";
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const AUTH_BASE_URL = "https://auth.openai.com";
@@ -321,19 +322,32 @@ type OAuthServerInfo = {
 	close: () => void;
 	cancelWait: () => void;
 	waitForCode: () => Promise<{ code: string } | null>;
+	/** Set once the callback timeout has fired; undefined if the wait settled some other way. */
+	timeoutError: () => Error | undefined;
 };
 
-function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
+function startLocalOAuthServer(state: string, timeoutMs: number = CALLBACK_TIMEOUT_MS): Promise<OAuthServerInfo> {
 	if (!_http) {
 		throw new Error("OpenAI Codex OAuth is only available in Node.js environments");
 	}
 
 	let settleWait: ((value: { code: string } | null) => void) | undefined;
+	let timeoutError: Error | undefined;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
+	const clearCallbackTimer = () => {
+		if (timer !== undefined) {
+			clearTimeout(timer);
+			timer = undefined;
+		}
+	};
+
 	const waitForCodePromise = new Promise<{ code: string } | null>((resolve) => {
 		let settled = false;
 		settleWait = (value) => {
 			if (settled) return;
 			settled = true;
+			clearCallbackTimer();
 			resolve(value);
 		};
 	});
@@ -374,15 +388,24 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 	return new Promise((resolve) => {
 		server
 			.listen(1455, getCallbackHost(), () => {
+				timer = setTimeout(() => {
+					timeoutError = new Error(
+						`OpenAI Codex OAuth callback timed out after ${timeoutMs}ms: the browser never redirected back to ${REDIRECT_URI}. Close the browser and try logging in again.`,
+					);
+					settleWait?.(null);
+				}, timeoutMs);
+
 				resolve({
 					close: () => server.close(),
 					cancelWait: () => {
 						settleWait?.(null);
 					},
 					waitForCode: () => waitForCodePromise,
+					timeoutError: () => timeoutError,
 				});
 			})
 			.on("error", (_err: NodeJS.ErrnoException) => {
+				clearCallbackTimer();
 				settleWait?.(null);
 				resolve({
 					close: () => {
@@ -394,6 +417,7 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 					},
 					cancelWait: () => {},
 					waitForCode: async () => null,
+					timeoutError: () => undefined,
 				});
 			});
 	});
@@ -462,6 +486,7 @@ export async function loginOpenAICodexDeviceCode(options: {
  *                                    Races with browser callback - whichever completes first wins.
  *                                    Useful for showing paste input immediately alongside browser flow.
  * @param options.originator - OAuth originator parameter (defaults to "pi")
+ * @param options.callbackTimeoutMs - Override CALLBACK_TIMEOUT_MS for this login call.
  */
 export async function loginOpenAICodex(options: {
 	onAuth: (info: { url: string; instructions?: string }) => void;
@@ -469,9 +494,10 @@ export async function loginOpenAICodex(options: {
 	onProgress?: (message: string) => void;
 	onManualCodeInput?: () => Promise<string>;
 	originator?: string;
+	callbackTimeoutMs?: number;
 }): Promise<OAuthCredentials> {
 	const { verifier, state, url } = await createAuthorizationFlow(options.originator);
-	const server = await startLocalOAuthServer(state);
+	const server = await startLocalOAuthServer(state, options.callbackTimeoutMs);
 
 	options.onAuth({ url, instructions: "A browser window should open. Complete login to finish." });
 
@@ -530,6 +556,11 @@ export async function loginOpenAICodex(options: {
 			const result = await server.waitForCode();
 			if (result?.code) {
 				code = result.code;
+			} else {
+				const timeoutError = server.timeoutError();
+				if (timeoutError) {
+					throw timeoutError;
+				}
 			}
 		}
 
