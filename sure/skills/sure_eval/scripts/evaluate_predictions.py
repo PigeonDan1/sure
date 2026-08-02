@@ -52,6 +52,20 @@ LOWER_IS_BETTER_METRICS = {
     "vc_cer",
 }
 
+OBSERVED_RAW_RESPONSE_CONSTANT_KEYS = (
+    "device",
+    "max_new_tokens",
+    "max_new_frames",
+    "sample_rate",
+    "num_channels",
+)
+
+OBSERVED_RAW_RESPONSE_SUMMARY_KEYS = (
+    "content_length",
+    "num_samples",
+    "duration_ms",
+)
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -1261,6 +1275,172 @@ def _load_model_sidecar(model_dir: Path | None, relative: str) -> dict[str, Any]
     return _read_json_file(model_dir / relative)
 
 
+def _candidate_inference_context_dirs(results_dir: Path, results: list[dict[str, Any]] | None) -> list[Path]:
+    candidates = [results_dir]
+    source_run_dir = _infer_source_run_dir(results or [])
+    if source_run_dir is not None:
+        candidates.append(source_run_dir)
+    for result in results or []:
+        prediction_path = result.get("prediction_path")
+        if not prediction_path:
+            continue
+        path = Path(str(prediction_path))
+        if path.parent.name == "predictions":
+            candidates.append(path.parent.parent)
+        else:
+            candidates.append(path.parent)
+
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            resolved = candidate.expanduser()
+        if resolved not in seen:
+            seen.add(resolved)
+            deduped.append(resolved)
+    return deduped
+
+
+def _load_first_context_json(
+    dirs: list[Path],
+    filename: str,
+) -> tuple[Path | None, dict[str, Any]]:
+    for directory in dirs:
+        path = directory / filename
+        if not path.is_file():
+            continue
+        payload = _read_json_file(path)
+        if payload:
+            return path, payload
+    return None, {}
+
+
+def _jsonable_value_key(value: Any) -> str:
+    return json.dumps(_to_strict_jsonable(value), ensure_ascii=False, sort_keys=True)
+
+
+def _prediction_jsonl_candidates(results_dir: Path, results: list[dict[str, Any]] | None) -> list[Path]:
+    candidates: list[Path] = []
+    for result in results or []:
+        prediction_path = result.get("prediction_path")
+        if not prediction_path:
+            continue
+        path = Path(str(prediction_path))
+        candidates.append(path.with_suffix(".jsonl"))
+    if not candidates:
+        for directory in _candidate_inference_context_dirs(results_dir, results):
+            pred_dir = directory / "predictions"
+            if pred_dir.is_dir():
+                candidates.extend(sorted(pred_dir.glob("*.jsonl")))
+
+    deduped: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.expanduser().resolve()
+        except OSError:
+            resolved = candidate.expanduser()
+        if resolved not in seen:
+            seen.add(resolved)
+            deduped.append(resolved)
+    return deduped
+
+
+def _summarize_prediction_raw_response(
+    results_dir: Path,
+    results: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    global_values: dict[str, dict[str, Any]] = {}
+    datasets: list[dict[str, Any]] = []
+    total_raw_response_rows = 0
+
+    for path in _prediction_jsonl_candidates(results_dir, results):
+        if not path.is_file():
+            continue
+        row_count = 0
+        raw_response_rows = 0
+        per_dataset_values: dict[str, dict[str, Any]] = {}
+        with path.open("r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                row_count += 1
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                raw_response = row.get("raw_response")
+                if not isinstance(raw_response, dict):
+                    continue
+                raw_response_rows += 1
+                for key in OBSERVED_RAW_RESPONSE_CONSTANT_KEYS + OBSERVED_RAW_RESPONSE_SUMMARY_KEYS:
+                    if key not in raw_response:
+                        continue
+                    value = raw_response.get(key)
+                    value_key = _jsonable_value_key(value)
+                    per_dataset_values.setdefault(key, {})[value_key] = value
+                    global_values.setdefault(key, {})[value_key] = value
+        if row_count == 0 and raw_response_rows == 0:
+            continue
+        total_raw_response_rows += raw_response_rows
+        field_summary = {
+            key: {
+                "num_distinct": len(values),
+                "values": [_to_strict_jsonable(value) for value in list(values.values())[:5]],
+            }
+            for key, values in sorted(per_dataset_values.items())
+        }
+        datasets.append(
+            {
+                "dataset": path.stem,
+                "path": str(path),
+                "rows": row_count,
+                "raw_response_rows": raw_response_rows,
+                "fields": field_summary,
+            }
+        )
+
+    constants = {
+        key: _to_strict_jsonable(next(iter(values.values())))
+        for key, values in sorted(global_values.items())
+        if key in OBSERVED_RAW_RESPONSE_CONSTANT_KEYS and len(values) == 1
+    }
+    if not datasets:
+        return {}
+    return {
+        "source": "predictions_jsonl_raw_response",
+        "raw_response_rows": total_raw_response_rows,
+        "constants": constants,
+        "datasets": datasets,
+    }
+
+
+def _load_inference_context(results_dir: Path, results: list[dict[str, Any]] | None) -> dict[str, Any]:
+    dirs = _candidate_inference_context_dirs(results_dir, results)
+    provenance_path, provenance = _load_first_context_json(dirs, "inference_provenance.json")
+    status_path, prediction_status = _load_first_context_json(dirs, "prediction_generation_status.json")
+    eval_status_path, evaluation_status = _load_first_context_json(dirs, "evaluation_only_status.json")
+    raw_response_summary = _summarize_prediction_raw_response(results_dir, results)
+    return {
+        "inference_provenance_path": str(provenance_path) if provenance_path else None,
+        "prediction_status_path": str(status_path) if status_path else None,
+        "evaluation_status_path": str(eval_status_path) if eval_status_path else None,
+        "provenance": provenance,
+        "prediction_status": prediction_status,
+        "evaluation_status": evaluation_status,
+        "raw_response_summary": raw_response_summary,
+    }
+
+
+def _merge_nonempty(target: dict[str, Any], source: dict[str, Any]) -> None:
+    for key, value in source.items():
+        if value is None or value == "":
+            continue
+        target[key] = value
+
+
 def _ensure_prediction_manifests(
     *,
     run_dir: Path,
@@ -1394,23 +1574,100 @@ def _write_protocol_yaml(
     except Exception as exc:
         logger.warning("Failed to read model config for protocol.yaml", error=str(exc))
 
+    inference_context = _load_inference_context(results_dir, results)
+    provenance = _safe_dict(inference_context.get("provenance"))
+    prediction_status = _safe_dict(inference_context.get("prediction_status"))
+    evaluation_status = _safe_dict(inference_context.get("evaluation_status"))
+    raw_response_summary = _safe_dict(inference_context.get("raw_response_summary"))
+    raw_response_constants = _safe_dict(raw_response_summary.get("constants"))
+    provenance_model = _safe_dict(provenance.get("model"))
+    provenance_execution = _safe_dict(provenance.get("execution"))
+    provenance_runtime = _safe_dict(provenance.get("runtime"))
+    provenance_server = _safe_dict(provenance.get("server"))
+    provenance_protocol = _safe_dict(provenance.get("protocol_selection"))
+    provenance_generation = _safe_dict(provenance.get("generation"))
+    prediction_status_runtime = _safe_dict(prediction_status.get("runtime"))
+    prediction_status_server = _safe_dict(prediction_status.get("server"))
+    prediction_status_generation = _safe_dict(prediction_status.get("generation"))
+
     model_section = _safe_dict(model_cfg.get("model"))
     tool_section = model_cfg.get("tools") if isinstance(model_cfg.get("tools"), list) else []
     first_tool = tool_section[0] if tool_section and isinstance(tool_section[0], dict) else {}
-    selected_tool_name = tool_name or first_tool.get("name")
+    selected_tool_name = (
+        tool_name
+        or provenance_protocol.get("tool_name")
+        or prediction_status.get("tool_name")
+        or first_tool.get("name")
+    )
     server_env = _safe_dict(server_cfg.get("env"))
-    server_env_keys = sorted(str(key) for key in server_env)
+    server_env_keys_set = {str(key) for key in server_env}
+    for value in (provenance_server.get("env_keys"), prediction_status_server.get("env_keys")):
+        if isinstance(value, list):
+            server_env_keys_set.update(str(key) for key in value)
+    server_env_keys = sorted(server_env_keys_set)
     sanitized_server = dict(server_cfg)
     sanitized_server.pop("env", None)
     sanitized_server["env_keys"] = server_env_keys
 
+    runtime_python = (
+        provenance_runtime.get("python_executable")
+        or prediction_status_runtime.get("python_executable")
+        or model_cfg.get("python_executable")
+        or os.environ.get("MODEL_PYTHON")
+        or sys.executable
+    )
+    server_command = (
+        sanitized_server.get("command")
+        or provenance_server.get("command")
+        or prediction_status_server.get("command")
+        or []
+    )
+    if not server_command and model_dir is not None:
+        server_command = [
+            str(runtime_python),
+            str(SKILL_ROOT / "scripts" / "model_wrapper_mcp_server.py"),
+            "--model-dir",
+            str(model_dir),
+        ]
+    server_working_dir = (
+        sanitized_server.get("working_dir")
+        or provenance_server.get("working_dir")
+        or prediction_status_server.get("working_dir")
+        or "."
+    )
+    server_timeout = (
+        sanitized_server.get("timeout")
+        or provenance_server.get("timeout")
+        or prediction_status_server.get("timeout")
+    )
+    server_startup_timeout = (
+        sanitized_server.get("startup_timeout_sec")
+        or provenance_server.get("startup_timeout_sec")
+        or prediction_status_server.get("startup_timeout_sec")
+    )
+
     weights_manifest = _load_model_sidecar(model_dir, "artifacts/weights_manifest.json")
     build_plan = _load_model_sidecar(model_dir, "artifacts/build_plan.json")
     standard_params = _safe_dict(protocol_cfg.get("standard_params") or protocol_cfg.get("standard"))
+    _merge_nonempty(standard_params, _safe_dict(provenance_protocol.get("standard_params")))
     resolved_model_params = _safe_dict(
         protocol_cfg.get("resolved_model_params")
         or protocol_cfg.get("model_params")
         or protocol_cfg.get("params")
+    )
+    _merge_nonempty(resolved_model_params, _safe_dict(provenance_protocol.get("resolved_model_params")))
+    _merge_nonempty(resolved_model_params, _safe_dict(provenance_generation.get("resolved_parameters")))
+    _merge_nonempty(resolved_model_params, _safe_dict(prediction_status_generation.get("resolved_parameters")))
+    _merge_nonempty(
+        resolved_model_params,
+        {
+            key: raw_response_constants[key]
+            for key in ("max_new_tokens", "max_new_frames", "device")
+            if key in raw_response_constants
+        },
+    )
+    tool_args = _safe_dict(provenance_generation.get("tool_args")) or _safe_dict(
+        prediction_status_generation.get("tool_args")
     )
     unmapped = _safe_dict(protocol_cfg.get("unmapped"))
     protocol_definition_path = str(
@@ -1429,17 +1686,27 @@ def _write_protocol_yaml(
             "created_at": _utc_now(),
         },
         "model": {
-            "model_name": str(model_section.get("name") or model_cfg.get("name") or (model_dir.name if model_dir else tool_name or "unknown")),
+            "model_name": str(
+                provenance_model.get("name")
+                or prediction_status.get("model_name")
+                or model_section.get("name")
+                or model_cfg.get("name")
+                or (model_dir.name if model_dir else tool_name or "unknown")
+            ),
             "model_dir": str(model_dir) if model_dir else None,
             "model_source": model_section.get("source") or weights_manifest.get("model_id") or weights_manifest.get("source") or None,
             "weights_source": weights_manifest.get("snapshot_path") or weights_manifest.get("local_path") or weights_manifest.get("model_path") or None,
             "model_dir_source": build_plan.get("model_dir_source") or build_plan.get("source") or None,
+            "checkpoint_dir": provenance_model.get("checkpoint_dir")
+            or prediction_status_runtime.get("checkpoint_dir")
+            or model_cfg.get("checkpoint_dir")
+            or os.environ.get("MODEL_PATH"),
             "mcp_tool_name": selected_tool_name,
             "server_config": {
-                "command": sanitized_server.get("command", []),
-                "working_dir": sanitized_server.get("working_dir", "."),
-                "timeout": sanitized_server.get("timeout"),
-                "startup_timeout_sec": sanitized_server.get("startup_timeout_sec"),
+                "command": server_command,
+                "working_dir": server_working_dir,
+                "timeout": server_timeout,
+                "startup_timeout_sec": server_startup_timeout,
                 "env_keys": server_env_keys,
             },
         },
@@ -1453,10 +1720,30 @@ def _write_protocol_yaml(
             "resolved_model_params": resolved_model_params,
             "unmapped": unmapped,
         },
+        "inference_parameters": {
+            "source": {
+                "inference_provenance": inference_context.get("inference_provenance_path"),
+                "prediction_generation_status": inference_context.get("prediction_status_path"),
+                "evaluation_only_status": inference_context.get("evaluation_status_path"),
+                "raw_response": raw_response_summary.get("source"),
+            },
+            "tool_args": tool_args,
+            "standard_params": standard_params,
+            "resolved_model_params": resolved_model_params,
+            "observed_raw_response_constants": raw_response_constants,
+            "observed_raw_response_summary": raw_response_summary,
+            "generation_policy": evaluation_status.get("generation_policy"),
+        },
         "inference_environment": {
-            "execution_path": os.environ.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
+            "execution_path": provenance_execution.get("path")
+            or prediction_status.get("execution_path")
+            or os.environ.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
             "vc": {
-                "job_id": os.environ.get("SURE_EVAL_EXECUTION_JOB_ID") or os.environ.get("VC_JOB_ID"),
+                "job_id": provenance_execution.get("job_id")
+                or prediction_status.get("execution_job_id")
+                or os.environ.get("SURE_EVAL_JOB_ID")
+                or os.environ.get("SURE_EVAL_EXECUTION_JOB_ID")
+                or os.environ.get("VC_JOB_ID"),
                 "partition": os.environ.get("SURE_EVAL_VC_PARTITION") or os.environ.get("VC_PARTITION"),
                 "gpu_count": os.environ.get("SURE_EVAL_VC_GPU") or os.environ.get("VC_GPU"),
                 "memory": os.environ.get("SURE_EVAL_VC_MEMORY") or os.environ.get("VC_MEMORY"),
@@ -1467,23 +1754,43 @@ def _write_protocol_yaml(
                 "preflight_required": True,
             },
             "container": {
-                "image": os.environ.get("SURE_EVAL_CONTAINER_IMAGE") or server_cfg.get("image"),
+                "image": provenance_execution.get("container_image")
+                or os.environ.get("SURE_EVAL_CONTAINER_IMAGE")
+                or server_cfg.get("image"),
                 "dockerfile": os.environ.get("SURE_EVAL_DOCKERFILE") or model_cfg.get("dockerfile"),
-                "repo_root": os.environ.get("SURE_EVAL_CONTAINER_REPO_ROOT") or str(HARNESS_ROOT),
+                "repo_root": provenance_execution.get("container_repo_root")
+                or os.environ.get("SURE_EVAL_CONTAINER_REPO_ROOT")
+                or str(HARNESS_ROOT),
                 "model_dir": str(model_dir) if model_dir else None,
-                "python_executable": os.environ.get("MODEL_PYTHON") or sys.executable,
+                "python_executable": runtime_python,
             },
             "server": {
                 "transport": "stdio_jsonrpc",
-                "command": sanitized_server.get("command", []),
+                "command": server_command,
                 "tool_name": selected_tool_name,
-                "startup_timeout_sec": sanitized_server.get("startup_timeout_sec"),
-                "timeout": sanitized_server.get("timeout"),
+                "startup_timeout_sec": server_startup_timeout,
+                "timeout": server_timeout,
             },
             "env": {
-                "device": os.environ.get("SURE_EVAL_DEVICE_ACTUAL") or os.environ.get("DEVICE") or os.environ.get("CUDA_VISIBLE_DEVICES") or None,
+                "device": provenance_execution.get("device_actual")
+                or prediction_status.get("device_actual")
+                or raw_response_constants.get("device")
+                or os.environ.get("SURE_EVAL_DEVICE_ACTUAL")
+                or os.environ.get("DEVICE")
+                or os.environ.get("CUDA_VISIBLE_DEVICES")
+                or None,
+                "device_request": provenance_execution.get("device_request") or prediction_status.get("device_request"),
+                "cuda_visible_devices": provenance_execution.get("cuda_visible_devices")
+                or prediction_status.get("cuda_visible_devices")
+                or os.environ.get("CUDA_VISIBLE_DEVICES"),
                 "env_keys": server_env_keys,
                 "modelscope_cache": os.environ.get("MODELSCOPE_CACHE"),
+                "safe_env_values": _safe_dict(
+                    _safe_dict(provenance.get("environment")).get("safe_env_values")
+                ),
+                "generation_env_parameter_values": _safe_dict(
+                    provenance_generation.get("env_parameter_values")
+                ),
             },
             "mount_policy": {
                 "mount_stable_absolute_roots": [
@@ -1759,34 +2066,6 @@ def merge_payload_results(payload_paths: list[Path]) -> list[dict[str, Any]]:
     return results
 
 
-BRIDGE_NOISE_PREFIXES = ("Traceback (", 'File "', "^", "~", "STDOUT:", "STDERR:")
-
-
-def _summarize_bridge_error(exc: Exception) -> str:
-    lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
-    meaningful = [line for line in lines if not line.startswith(BRIDGE_NOISE_PREFIXES)]
-    return " | ".join((meaningful or lines)[-2:])[:400]
-
-
-def _unsupported_request_message(
-    *,
-    source: str,
-    dataset: str,
-    task: str,
-    dataset_task: str,
-    language: str,
-    requested: str,
-    failures: list[str],
-) -> str:
-    message = (
-        f"No requested metric/pipeline is supported by the {source} for dataset {dataset} "
-        f"(task={task}, dataset_task={dataset_task}, language={language}, requested={requested})"
-    )
-    if failures:
-        message += ". The engine rejected each request: " + "; ".join(failures)
-    return message
-
-
 def _external_metric_applies_to_task_language(
     *,
     engine_root: Path,
@@ -1795,7 +2074,6 @@ def _external_metric_applies_to_task_language(
     task: str,
     language: str,
     timeout: int,
-    failures: list[str] | None = None,
 ) -> bool:
     try:
         _describe_external_pipeline(
@@ -1806,9 +2084,7 @@ def _external_metric_applies_to_task_language(
             pipeline_id=pipeline_id,
             timeout=timeout,
         )
-    except Exception as exc:
-        if failures is not None:
-            failures.append(f"{pipeline_id or metric or 'default'}: {_summarize_bridge_error(exc)}")
+    except Exception:
         return False
     return True
 
@@ -2195,7 +2471,6 @@ def main() -> int:
         if not prediction_path.exists():
             raise FileNotFoundError(f"Prediction file not found: {prediction_path}")
 
-        request_failures: list[str] = []
         if args.evaluation_backend != "legacy" and resolved_engine is not None:
             applicable_requests = [
                 (metric_override, pipeline_id_override)
@@ -2207,7 +2482,6 @@ def main() -> int:
                     task=effective_task,
                     language=dataset_language,
                     timeout=args.evaluation_timeout,
-                    failures=request_failures,
                 )
             ]
         else:
@@ -2221,15 +2495,8 @@ def main() -> int:
             requested = ", ".join(pipeline_overrides or [metric for metric in metric_overrides if metric]) or "default"
             source = "current sure-evaluation engine" if args.evaluation_backend != "legacy" and resolved_engine else "legacy evaluator"
             raise ValueError(
-                _unsupported_request_message(
-                    source=source,
-                    dataset=canonical_name,
-                    task=effective_task,
-                    dataset_task=dataset_task,
-                    language=dataset_language,
-                    requested=requested,
-                    failures=request_failures,
-                )
+                f"No requested metric/pipeline is supported by the {source} for dataset {canonical_name} "
+                f"(task={effective_task}, dataset_task={dataset_task}, language={dataset_language}, requested={requested})"
             )
 
         for metric_override, pipeline_id_override in applicable_requests:

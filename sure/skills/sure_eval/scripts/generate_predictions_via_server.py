@@ -34,6 +34,39 @@ logger = get_logger(__name__)
 SURE_SUITES_ROOT = Path("data/datasets/sure_benchmark/SURE_Test_Suites")
 PREDICTION_SNAPSHOT_INTERVAL = 25
 
+SAFE_ENV_PROVENANCE_KEYS = (
+    "DEVICE",
+    "CUDA_VISIBLE_DEVICES",
+    "MODEL_PATH",
+    "HF_HOME",
+    "MODELSCOPE_CACHE",
+    "MODEL_PYTHON",
+    "HARNESS_PYTHON_BIN",
+    "SURE_EVAL_HARNESS_PYTHON_BIN",
+    "SURE_EVAL_EXECUTION_PATH",
+    "SURE_EVAL_EXECUTION_PATH_REQUESTED",
+    "SURE_EVAL_JOB_ID",
+    "SURE_EVAL_DEVICE_REQUEST",
+    "SURE_EVAL_DEVICE_ACTUAL",
+    "SURE_EVAL_CONTAINER_IMAGE",
+    "SURE_EVAL_CONTAINER_REPO_ROOT",
+    "SURE_MAX_NEW_TOKENS",
+    "SURE_MAX_NEW_FRAMES",
+    "SURE_AUDIO_TEMPERATURE",
+    "SURE_AUDIO_TOP_P",
+    "SURE_AUDIO_TOP_K",
+    "SURE_AUDIO_REPETITION_PENALTY",
+)
+
+GENERATION_PARAMETER_ENV = {
+    "max_new_tokens": "SURE_MAX_NEW_TOKENS",
+    "max_new_frames": "SURE_MAX_NEW_FRAMES",
+    "audio_temperature": "SURE_AUDIO_TEMPERATURE",
+    "audio_top_p": "SURE_AUDIO_TOP_P",
+    "audio_top_k": "SURE_AUDIO_TOP_K",
+    "audio_repetition_penalty": "SURE_AUDIO_REPETITION_PENALTY",
+}
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -75,6 +108,152 @@ def _load_weights_manifest(model_dir: Path) -> dict[str, Any]:
         return {}
 
 
+def _safe_env_values(env: dict[str, str]) -> dict[str, str]:
+    return {key: env[key] for key in SAFE_ENV_PROVENANCE_KEYS if key in env}
+
+
+def _server_env_keys(server_cfg: dict[str, Any], env_overrides: dict[str, str]) -> list[str]:
+    server_env = server_cfg.get("env")
+    keys = set(env_overrides)
+    if isinstance(server_env, dict):
+        keys.update(str(key) for key in server_env)
+    return sorted(keys)
+
+
+def _runtime_python_executable(command: list[str], env: dict[str, str]) -> str:
+    if command:
+        first = str(command[0])
+        name = Path(first).name.lower()
+        if name.startswith("python") or "python" in name:
+            return first
+    return env.get("MODEL_PYTHON") or sys.executable
+
+
+def _collect_generation_parameters(tool_args: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
+    params = dict(tool_args)
+    for name, env_key in GENERATION_PARAMETER_ENV.items():
+        if name not in params and env.get(env_key):
+            params[name] = _parse_tool_arg_value(env[env_key])
+    device = env.get("SURE_EVAL_DEVICE_ACTUAL") or env.get("DEVICE")
+    if device and "device" not in params:
+        params["device"] = device
+    return params
+
+
+def _overall_generation_status(status_payload: dict[str, Any]) -> str | None:
+    if status_payload.get("status"):
+        return str(status_payload["status"])
+    datasets = status_payload.get("datasets")
+    if not isinstance(datasets, list):
+        return None
+    statuses = {
+        str(dataset.get("status") or "").lower()
+        for dataset in datasets
+        if isinstance(dataset, dict) and dataset.get("status")
+    }
+    if not statuses:
+        return None
+    if "failed" in statuses:
+        return "failed"
+    if statuses == {"completed"}:
+        return "completed"
+    if "running" in statuses:
+        return "running"
+    return sorted(statuses)[0]
+
+
+def _write_inference_provenance(
+    path: Path,
+    *,
+    run_dir: Path,
+    model_dir: Path,
+    model_cfg: dict[str, Any],
+    build_plan: dict[str, Any],
+    weights_manifest: dict[str, Any],
+    command: list[str],
+    working_dir: Path,
+    env: dict[str, str],
+    server_cfg: dict[str, Any],
+    protocol_id: str | None,
+    tool_name: str,
+    tool_args: dict[str, Any],
+    protocol_standard_params: dict[str, Any],
+    protocol_model_params: dict[str, Any],
+    env_overrides: dict[str, str],
+    status_payload: dict[str, Any],
+) -> None:
+    generation_params = _collect_generation_parameters(tool_args, env)
+    resolved_model_params = dict(protocol_model_params)
+    resolved_model_params.update(generation_params)
+    datasets = status_payload.get("datasets")
+    if not isinstance(datasets, list):
+        datasets = []
+    payload = {
+        "schema": "sure.eval.inference_provenance.v1",
+        "generated_at": _utc_now(),
+        "run_id": status_payload.get("run_id"),
+        "run_dir": str(run_dir),
+        "model": {
+            "name": status_payload.get("model_name") or model_cfg.get("name") or model_dir.name,
+            "model_dir": str(model_dir),
+            "checkpoint_dir": env.get("MODEL_PATH") or model_cfg.get("checkpoint_dir"),
+            "artifacts": model_cfg.get("artifacts", {}),
+            "build_plan": build_plan,
+            "weights_manifest": weights_manifest,
+        },
+        "execution": {
+            "path": env.get("SURE_EVAL_EXECUTION_PATH"),
+            "requested_path": env.get("SURE_EVAL_EXECUTION_PATH_REQUESTED")
+            or env.get("SURE_EVAL_EXECUTION_REQUESTED"),
+            "job_id": env.get("SURE_EVAL_JOB_ID") or env.get("SURE_EVAL_EXECUTION_JOB_ID"),
+            "host": socket.gethostname(),
+            "device_request": env.get("SURE_EVAL_DEVICE_REQUEST") or env.get("DEVICE"),
+            "device_actual": env.get("SURE_EVAL_DEVICE_ACTUAL") or env.get("DEVICE"),
+            "cuda_visible_devices": env.get("CUDA_VISIBLE_DEVICES"),
+            "container_image": env.get("SURE_EVAL_CONTAINER_IMAGE"),
+            "container_repo_root": env.get("SURE_EVAL_CONTAINER_REPO_ROOT"),
+        },
+        "runtime": {
+            "python_executable": _runtime_python_executable(command, env),
+            "model_python": env.get("MODEL_PYTHON"),
+            "harness_python": env.get("SURE_EVAL_HARNESS_PYTHON_BIN")
+            or env.get("HARNESS_PYTHON_BIN")
+            or sys.executable,
+            "hf_home": env.get("HF_HOME"),
+            "modelscope_cache": env.get("MODELSCOPE_CACHE"),
+        },
+        "server": {
+            "command": command,
+            "working_dir": str(working_dir),
+            "env_keys": _server_env_keys(server_cfg, env_overrides),
+            "startup_timeout_sec": server_cfg.get("startup_timeout_sec"),
+            "timeout": server_cfg.get("timeout"),
+        },
+        "protocol_selection": {
+            "protocol_id": protocol_id,
+            "tool_name": tool_name,
+            "standard_params": protocol_standard_params,
+            "resolved_model_params": resolved_model_params,
+        },
+        "generation": {
+            "tool_args": tool_args,
+            "env_parameter_values": {
+                env_key: env[env_key]
+                for env_key in GENERATION_PARAMETER_ENV.values()
+                if env_key in env
+            },
+            "resolved_parameters": generation_params,
+        },
+        "environment": {
+            "safe_env_values": _safe_env_values(env),
+            "server_env_keys": _server_env_keys(server_cfg, env_overrides),
+        },
+        "datasets": datasets,
+        "status": _overall_generation_status(status_payload),
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _resolve_server_command(
     model_dir: Path,
     server_cfg: dict[str, Any],
@@ -90,7 +269,10 @@ def _resolve_server_command(
 
     server_script_override = os.environ.get("SURE_EVAL_SERVER_SCRIPT_OVERRIDE")
     if server_script_override:
-        if len(command) == 1:
+        if "--model-dir" in command:
+            # The default adapter command's final argument is the model directory, not a server script.
+            pass
+        elif len(command) == 1:
             command.append(server_script_override)
         else:
             command[-1] = server_script_override
@@ -859,9 +1041,12 @@ def main() -> int:
         env["DEVICE"] = str(args.device)
         if str(args.device).lower() == "cpu" and "CUDA_VISIBLE_DEVICES" not in env:
             env["CUDA_VISIBLE_DEVICES"] = ""
-    env.update(_parse_env_overrides(args.env))
+    env_overrides = _parse_env_overrides(args.env)
+    env.update(env_overrides)
 
     # Inject protocol parameters into environment (backward-compatible)
+    protocol_standard_params: dict[str, Any] = {}
+    protocol_model_params: dict[str, Any] = {}
     if args.protocol and args.protocol.lower() != "none":
         env["SURE_EVAL_PROTOCOL_ID"] = args.protocol
         # Load protocol resolver if available
@@ -874,6 +1059,8 @@ def main() -> int:
             model_info = registry.get_model(model_dir.name)
             if model_info is not None:
                 resolved = resolver.resolve(args.protocol, model_info)
+                protocol_standard_params = dict(resolved.standard_params)
+                protocol_model_params = dict(resolved.model_params)
                 for key, value in resolved.standard_params.items():
                     env[f"SURE_EVAL_PROTOCOL_{key.upper()}"] = str(value)
                 for key, value in resolved.model_params.items():
@@ -905,6 +1092,7 @@ def main() -> int:
     log_path = logs_dir / f"{canonical_dataset}.log"
     result_log_path = logs_dir / f"{canonical_dataset}_results.log"
     status_path = run_dir / "prediction_generation_status.json"
+    provenance_path = run_dir / "inference_provenance.json"
 
     resume_exclude_keys: set[str] = set()
     if args.resume and args.resume_exclude_keys_file:
@@ -926,15 +1114,36 @@ def main() -> int:
         "run_id": run_dir.name,
         "model_name": model_dir.name,
         "execution_path": env.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
-        "execution_requested": env.get("SURE_EVAL_EXECUTION_REQUESTED", ""),
-        "execution_job_id": env.get("SURE_EVAL_EXECUTION_JOB_ID", ""),
+        "execution_requested": env.get("SURE_EVAL_EXECUTION_PATH_REQUESTED")
+        or env.get("SURE_EVAL_EXECUTION_REQUESTED", ""),
+        "execution_job_id": env.get("SURE_EVAL_JOB_ID") or env.get("SURE_EVAL_EXECUTION_JOB_ID", ""),
         "inference_call_mode": "direct_server_use",
+        "inference_provenance": str(provenance_path),
         "protocol_id": args.protocol if args.protocol.lower() != "none" else None,
         "tool_name": tool_name,
         "host": socket.gethostname(),
         "device_request": env.get("SURE_EVAL_DEVICE_REQUEST", args.device or ""),
         "device_actual": env.get("SURE_EVAL_DEVICE_ACTUAL", args.device or ""),
         "cuda_visible_devices": env.get("CUDA_VISIBLE_DEVICES", ""),
+        "runtime": {
+            "python_executable": _runtime_python_executable(command, env),
+            "model_python": env.get("MODEL_PYTHON"),
+            "harness_python": env.get("SURE_EVAL_HARNESS_PYTHON_BIN")
+            or env.get("HARNESS_PYTHON_BIN")
+            or sys.executable,
+            "checkpoint_dir": env.get("MODEL_PATH"),
+        },
+        "server": {
+            "command": command,
+            "working_dir": str(working_dir),
+            "env_keys": _server_env_keys(server_cfg, env_overrides),
+            "startup_timeout_sec": server_cfg.get("startup_timeout_sec"),
+            "timeout": server_cfg.get("timeout"),
+        },
+        "generation": {
+            "tool_args": tool_args,
+            "resolved_parameters": _collect_generation_parameters(tool_args, env),
+        },
     }
     dataset_status = {
         "dataset": canonical_dataset,
@@ -948,7 +1157,29 @@ def main() -> int:
         "error": None,
     }
     status_payload, current_dataset_status = _upsert_dataset_status(status_path, default_status_payload, dataset_status)
+    for key, value in default_status_payload.items():
+        if key != "datasets":
+            status_payload[key] = value
     status_path.write_text(json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _write_inference_provenance(
+        provenance_path,
+        run_dir=run_dir,
+        model_dir=model_dir,
+        model_cfg=model_cfg,
+        build_plan=build_plan,
+        weights_manifest=weights_manifest,
+        command=command,
+        working_dir=working_dir,
+        env=env,
+        server_cfg=server_cfg,
+        protocol_id=args.protocol if args.protocol.lower() != "none" else None,
+        tool_name=tool_name,
+        tool_args=tool_args,
+        protocol_standard_params=protocol_standard_params,
+        protocol_model_params=protocol_model_params,
+        env_overrides=env_overrides,
+        status_payload=status_payload,
+    )
 
     with open(log_path, "w", encoding="utf-8") as log_handle, open(result_log_path, "w", encoding="utf-8") as result_log_handle:
         if args.resume and existing_predictions:
@@ -1076,6 +1307,25 @@ def main() -> int:
                 json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
             )
+            _write_inference_provenance(
+                provenance_path,
+                run_dir=run_dir,
+                model_dir=model_dir,
+                model_cfg=model_cfg,
+                build_plan=build_plan,
+                weights_manifest=weights_manifest,
+                command=command,
+                working_dir=working_dir,
+                env=env,
+                server_cfg=server_cfg,
+                protocol_id=args.protocol if args.protocol.lower() != "none" else None,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                protocol_standard_params=protocol_standard_params,
+                protocol_model_params=protocol_model_params,
+                env_overrides=env_overrides,
+                status_payload=status_payload,
+            )
 
         except Exception as exc:
             current_dataset_status["status"] = "failed"
@@ -1094,6 +1344,25 @@ def main() -> int:
             status_path.write_text(
                 json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
+            )
+            _write_inference_provenance(
+                provenance_path,
+                run_dir=run_dir,
+                model_dir=model_dir,
+                model_cfg=model_cfg,
+                build_plan=build_plan,
+                weights_manifest=weights_manifest,
+                command=command,
+                working_dir=working_dir,
+                env=env,
+                server_cfg=server_cfg,
+                protocol_id=args.protocol if args.protocol.lower() != "none" else None,
+                tool_name=tool_name,
+                tool_args=tool_args,
+                protocol_standard_params=protocol_standard_params,
+                protocol_model_params=protocol_model_params,
+                env_overrides=env_overrides,
+                status_payload=status_payload,
             )
             raise
         finally:

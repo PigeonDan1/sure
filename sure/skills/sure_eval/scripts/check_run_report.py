@@ -19,6 +19,7 @@ from typing import Any
 
 SUCCESS_STATUSES = {"success", "succeeded", "ok", "completed", "complete"}
 FAILURE_STATUSES = {"failed", "failure", "error"}
+RAW_RESPONSE_REQUIRED_PROTOCOL_KEYS = ("max_new_tokens", "max_new_frames", "device")
 
 
 def _read_json(path: Path) -> dict:
@@ -135,6 +136,93 @@ def _validate_prediction_projection(txt_path: Path, jsonl_path: Path) -> list[st
     return errors
 
 
+def _read_optional_json(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        value = _read_json(path)
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _value_key(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _collect_raw_response_constants(root: Path) -> dict[str, Any]:
+    pred_dir = root / "predictions"
+    if not pred_dir.is_dir():
+        return {"raw_response_rows": 0, "constants": {}}
+    values: dict[str, dict[str, Any]] = {}
+    raw_response_rows = 0
+    for path in sorted(pred_dir.glob("*.jsonl")):
+        try:
+            rows = _load_prediction_jsonl(path)
+        except Exception:
+            continue
+        for row in rows.values():
+            raw_response = row.get("raw_response")
+            if not isinstance(raw_response, dict):
+                continue
+            raw_response_rows += 1
+            for key in RAW_RESPONSE_REQUIRED_PROTOCOL_KEYS:
+                if key not in raw_response:
+                    continue
+                value = raw_response.get(key)
+                values.setdefault(key, {})[_value_key(value)] = value
+    constants = {
+        key: next(iter(field_values.values()))
+        for key, field_values in values.items()
+        if len(field_values) == 1
+    }
+    return {"raw_response_rows": raw_response_rows, "constants": constants}
+
+
+def _contains_mapping_key(value: Any, key: str) -> bool:
+    if isinstance(value, dict):
+        return key in value or any(_contains_mapping_key(item, key) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_mapping_key(item, key) for item in value)
+    return False
+
+
+def _validate_protocol_inference_provenance(root: Path, protocol: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    inference_provenance = _read_optional_json(root / "inference_provenance.json")
+    prediction_status = _read_optional_json(root / "prediction_generation_status.json")
+    raw_summary = _collect_raw_response_constants(root)
+    raw_constants = raw_summary.get("constants") if isinstance(raw_summary.get("constants"), dict) else {}
+    context_present = bool(inference_provenance) or bool(prediction_status) or bool(raw_summary.get("raw_response_rows"))
+
+    protocol_selection = protocol.get("protocol_selection") if isinstance(protocol.get("protocol_selection"), dict) else {}
+    inference_parameters = protocol.get("inference_parameters") if isinstance(protocol.get("inference_parameters"), dict) else {}
+    has_parameter_record = bool(
+        protocol_selection.get("standard_params")
+        or protocol_selection.get("resolved_model_params")
+        or inference_parameters.get("tool_args")
+        or inference_parameters.get("resolved_model_params")
+        or inference_parameters.get("observed_raw_response_constants")
+    )
+    if context_present and not has_parameter_record:
+        errors.append("protocol.yaml missing inference parameter provenance from generation/status/raw_response")
+
+    for key in RAW_RESPONSE_REQUIRED_PROTOCOL_KEYS:
+        if key not in raw_constants or raw_constants[key] is None:
+            continue
+        if not _contains_mapping_key(protocol, key):
+            errors.append(f"protocol.yaml missing observed inference parameter from raw_response: {key}")
+
+    provenance_server = inference_provenance.get("server") if isinstance(inference_provenance.get("server"), dict) else {}
+    protocol_model = protocol.get("model") if isinstance(protocol.get("model"), dict) else {}
+    protocol_server_config = (
+        protocol_model.get("server_config") if isinstance(protocol_model.get("server_config"), dict) else {}
+    )
+    if provenance_server.get("command") and not protocol_server_config.get("command"):
+        errors.append("protocol.yaml missing model.server_config.command from inference_provenance")
+    return errors
+
+
 def _validate_protocol(root: Path) -> list[str]:
     path = root / "protocol.yaml"
     if not path.is_file():
@@ -162,6 +250,7 @@ def _validate_protocol(root: Path) -> list[str]:
     ):
         if section not in protocol:
             errors.append(f"protocol.yaml missing section: {section}")
+    errors.extend(_validate_protocol_inference_provenance(root, protocol))
     return errors
 
 
