@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from dataset_alias import resolve_dataset_alias
 from sure_eval.core.config import Config
 from sure_eval.core.logging import get_logger
 
@@ -246,15 +247,17 @@ class DatasetManager:
         alias.  Prefer exact matches, then accept a unique versioned projection.
         Ambiguous projections are left unresolved so the normal download/error
         path can surface the configuration problem explicitly.
+
+        The exact-match-else-unique-projection rule is shared with
+        /sure_reval's prediction-source resolver (resolve_dataset_alias in
+        sure/skills/sure_eval/scripts/dataset_alias.py) so both skills agree
+        on what a short dataset name means.
         """
         exact = self.jsonl_dir / f"{dataset_name}.jsonl"
-        if exact.exists():
-            return exact
-
-        matches = sorted(self.jsonl_dir.glob(f"{dataset_name}__*.jsonl"))
-        if len(matches) == 1:
-            return matches[0]
-        return None
+        candidates = [dataset_name] if exact.exists() else []
+        candidates += [path.stem for path in self.jsonl_dir.glob(f"{dataset_name}__*.jsonl")]
+        resolved = resolve_dataset_alias(dataset_name, candidates)
+        return self.jsonl_dir / f"{resolved}.jsonl" if resolved else None
 
     def _oref_source_sample_jsonl_path(self, dataset_name: str, meta: dict[str, Any]) -> Path:
         if meta.get("sample_jsonl"):
