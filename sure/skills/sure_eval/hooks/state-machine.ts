@@ -104,7 +104,8 @@ function checkExecutionSurface(artifact: unknown): GateResult {
 	if (!entrypoint) {
 		return {
 			ok: false,
-			repair: "execution_surface.json must declare entrypoint_path or entrypoint (the materialized run_evaluation.sh path).",
+			repair:
+				"execution_surface.json must declare entrypoint_path or entrypoint (the materialized run_evaluation.sh path).",
 			reason: "entrypoint missing",
 		};
 	}

@@ -40,7 +40,10 @@ function writeEvalInput(runDir: string): void {
 		datasets: [
 			{
 				name: dataset,
-				jsonl_path: resolve(__dirname, "../../../../data/datasets/sure_benchmark/jsonl/aishell1__v1.0.2__asr.jsonl"),
+				jsonl_path: resolve(
+					__dirname,
+					"../../../../data/datasets/sure_benchmark/jsonl/aishell1__v1.0.2__asr.jsonl",
+				),
 				jsonl_exists: true,
 				task: "ASR",
 				language: "zh",

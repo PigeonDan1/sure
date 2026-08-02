@@ -10,9 +10,9 @@ import {
 	type ExtensionFactory,
 } from "../extensions/index.ts";
 import { SureHookRunner } from "./hooks.ts";
+import { runSureInit } from "./init.ts";
 import { discoverSureSkillPackages, SURE_COMMANDS, type SureDiscoveryDiagnostic } from "./manifest.ts";
 import { SureRunManager } from "./run-manager.ts";
-import { runSureInit } from "./init.ts";
 import { formatSureDisplayStatus, normalizeSureDisplayStatePatch } from "./state.ts";
 import type {
 	SureArtifactRequirement,

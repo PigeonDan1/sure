@@ -91,7 +91,9 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 		timeout: 120_000,
 	});
 	if (completed.status !== 0) {
-		return failure(completed.stderr.trim() || completed.stdout.trim() || "reval_run_report.json did not pass validation.");
+		return failure(
+			completed.stderr.trim() || completed.stdout.trim() || "reval_run_report.json did not pass validation.",
+		);
 	}
 	const payload = JSON.parse(readFileSync(report, "utf-8")) as { run_dir?: string };
 	return {

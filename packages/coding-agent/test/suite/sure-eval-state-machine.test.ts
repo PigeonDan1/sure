@@ -156,30 +156,56 @@ function seedCompletedEvaluationArtifacts(runDir: string): string {
 	);
 	writeFileSync(
 		join(root, "predictions", "manifest.json"),
-		JSON.stringify({
-			schema: "sure.eval.prediction_manifest.v1",
-			generated_at: "2026-07-12T00:00:00Z",
-			run_id: "model-eval-run",
-			predictions_dir: join(root, "predictions"),
-			datasets: [{ dataset, task: "ASR", language: "zh", format_used: "jsonl+txt", txt: predictionTxt, jsonl: predictionJsonl, num_rows: 1 }],
-		}, null, 2),
+		JSON.stringify(
+			{
+				schema: "sure.eval.prediction_manifest.v1",
+				generated_at: "2026-07-12T00:00:00Z",
+				run_id: "model-eval-run",
+				predictions_dir: join(root, "predictions"),
+				datasets: [
+					{
+						dataset,
+						task: "ASR",
+						language: "zh",
+						format_used: "jsonl+txt",
+						txt: predictionTxt,
+						jsonl: predictionJsonl,
+						num_rows: 1,
+					},
+				],
+			},
+			null,
+			2,
+		),
 		"utf-8",
 	);
 	writeFileSync(
 		join(root, "predictions", "conversion_manifest.json"),
-		JSON.stringify({
-			schema: "sure.eval.prediction_conversion_manifest.v1",
-			generated_at: "2026-07-12T00:00:00Z",
-			run_id: "model-eval-run",
-			generated_by: "fixture",
-			predictions_dir: join(root, "predictions"),
-			datasets: [{ dataset, source_format: "fixture", format_used: "jsonl+txt", steps: [], num_rows: 1 }],
-		}, null, 2),
+		JSON.stringify(
+			{
+				schema: "sure.eval.prediction_conversion_manifest.v1",
+				generated_at: "2026-07-12T00:00:00Z",
+				run_id: "model-eval-run",
+				generated_by: "fixture",
+				predictions_dir: join(root, "predictions"),
+				datasets: [{ dataset, source_format: "fixture", format_used: "jsonl+txt", steps: [], num_rows: 1 }],
+			},
+			null,
+			2,
+		),
 		"utf-8",
 	);
 	writeFileSync(join(root, "metrics", dataset, metric, "report.json"), JSON.stringify({ score: 0 }), "utf-8");
-	writeFileSync(join(root, "metrics", dataset, metric, "pipeline_description.json"), JSON.stringify({ pipeline_id: row.pipeline_id }), "utf-8");
-	writeFileSync(join(root, "sample_reports", dataset, `${metric}.jsonl`), `${JSON.stringify({ key: "utt", score: 0 })}\n`, "utf-8");
+	writeFileSync(
+		join(root, "metrics", dataset, metric, "pipeline_description.json"),
+		JSON.stringify({ pipeline_id: row.pipeline_id }),
+		"utf-8",
+	);
+	writeFileSync(
+		join(root, "sample_reports", dataset, `${metric}.jsonl`),
+		`${JSON.stringify({ key: "utt", score: 0 })}\n`,
+		"utf-8",
+	);
 	writeFileSync(
 		join(root, "report_snapshot.md"),
 		[

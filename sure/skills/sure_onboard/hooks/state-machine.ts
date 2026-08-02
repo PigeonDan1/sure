@@ -39,7 +39,20 @@ export interface Unit {
 	helperScripts?: string[];
 }
 
-const TASK_TYPES = ["asr", "s2tt", "sd", "ser", "tts", "vc", "kws", "slu", "gr", "speech_understanding", "sa-asr", "sa_asr"];
+const TASK_TYPES = [
+	"asr",
+	"s2tt",
+	"sd",
+	"ser",
+	"tts",
+	"vc",
+	"kws",
+	"slu",
+	"gr",
+	"speech_understanding",
+	"sa-asr",
+	"sa_asr",
+];
 const DEPLOYMENT_TYPES = ["local", "api"];
 const BACKENDS = ["uv", "pip", "conda", "pixi", "docker", "api"];
 const PACKAGE_PROFILES = ["none", "docker-local", "docker-registry"];
