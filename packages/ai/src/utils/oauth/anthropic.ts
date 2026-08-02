@@ -11,12 +11,15 @@ import { getProviderEnvValue } from "../provider-env.ts";
 import { oauthErrorHtml, oauthSuccessHtml } from "./oauth-page.ts";
 import { generatePKCE } from "./pkce.ts";
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthPrompt, OAuthProviderInterface } from "./types.ts";
+import { CALLBACK_TIMEOUT_MS } from "./types.ts";
 
 type CallbackServerInfo = {
 	server: Server;
 	redirectUri: string;
 	cancelWait: () => void;
 	waitForCode: () => Promise<{ code: string; state: string } | null>;
+	/** Set once the callback timeout has fired; undefined if the wait settled some other way. */
+	timeoutError: () => Error | undefined;
 };
 
 type NodeApis = {
@@ -97,16 +100,30 @@ function formatErrorDetails(error: unknown): string {
 	return String(error);
 }
 
-async function startCallbackServer(expectedState: string): Promise<CallbackServerInfo> {
+async function startCallbackServer(
+	expectedState: string,
+	timeoutMs: number = CALLBACK_TIMEOUT_MS,
+): Promise<CallbackServerInfo> {
 	const { createServer } = await getNodeApis();
 
 	return new Promise((resolve, reject) => {
 		let settleWait: ((value: { code: string; state: string } | null) => void) | undefined;
+		let timeoutError: Error | undefined;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+
+		const clearCallbackTimer = () => {
+			if (timer !== undefined) {
+				clearTimeout(timer);
+				timer = undefined;
+			}
+		};
+
 		const waitForCodePromise = new Promise<{ code: string; state: string } | null>((resolveWait) => {
 			let settled = false;
 			settleWait = (value) => {
 				if (settled) return;
 				settled = true;
+				clearCallbackTimer();
 				resolveWait(value);
 			};
 		});
@@ -152,10 +169,18 @@ async function startCallbackServer(expectedState: string): Promise<CallbackServe
 		});
 
 		server.on("error", (err) => {
+			clearCallbackTimer();
 			reject(err);
 		});
 
 		server.listen(CALLBACK_PORT, CALLBACK_HOST, () => {
+			timer = setTimeout(() => {
+				timeoutError = new Error(
+					`Anthropic OAuth callback timed out after ${timeoutMs}ms: the browser never redirected back to ${REDIRECT_URI}. Close the browser and try logging in again.`,
+				);
+				settleWait?.(null);
+			}, timeoutMs);
+
 			resolve({
 				server,
 				redirectUri: REDIRECT_URI,
@@ -163,6 +188,7 @@ async function startCallbackServer(expectedState: string): Promise<CallbackServe
 					settleWait?.(null);
 				},
 				waitForCode: () => waitForCodePromise,
+				timeoutError: () => timeoutError,
 			});
 		});
 	});
@@ -234,9 +260,11 @@ export async function loginAnthropic(options: {
 	onPrompt: (prompt: OAuthPrompt) => Promise<string>;
 	onProgress?: (message: string) => void;
 	onManualCodeInput?: () => Promise<string>;
+	/** Override CALLBACK_TIMEOUT_MS for this login call. */
+	callbackTimeoutMs?: number;
 }): Promise<OAuthCredentials> {
 	const { verifier, challenge } = await generatePKCE();
-	const server = await startCallbackServer(verifier);
+	const server = await startCallbackServer(verifier, options.callbackTimeoutMs);
 
 	let code: string | undefined;
 	let state: string | undefined;
@@ -313,6 +341,11 @@ export async function loginAnthropic(options: {
 				code = result.code;
 				state = result.state;
 				redirectUriForExchange = REDIRECT_URI;
+			} else {
+				const timeoutError = server.timeoutError();
+				if (timeoutError) {
+					throw timeoutError;
+				}
 			}
 		}
 

@@ -1,5 +1,13 @@
 import type { Api, Model } from "../../types.ts";
 
+/**
+ * Default time to wait for a local OAuth callback server to receive its
+ * request before giving up and releasing the port. Shared by every provider
+ * that spins up a callback server (anthropic.ts, openai-codex.ts) so they
+ * cannot silently drift apart. Callers may override this per login call.
+ */
+export const CALLBACK_TIMEOUT_MS = 5 * 60_000;
+
 export type OAuthCredentials = {
 	refresh: string;
 	access: string;
