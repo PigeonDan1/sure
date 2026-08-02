@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CheckpointData } from "../../../../sure/skills/sure_eval/hooks/checkpoints.ts";
-import { postToolResult, preFinish } from "../../../../sure/skills/sure_eval/hooks/index.ts";
+import { countersFor, postToolResult, preFinish } from "../../../../sure/skills/sure_eval/hooks/index.ts";
 import { findUnit, LAST_UNIT } from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
 import type { SureHookContext } from "../../src/core/sure/types.ts";
 
@@ -452,5 +452,16 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 		expect(result.ok).toBe(true);
 		expect(result.state_patch?.counters?.completed_units).toBe(12);
 		expect(result.state_patch?.counters?.total_units).toBe(12);
+	});
+});
+
+describe("sure_eval countersFor", () => {
+	it("keeps gate_blocks consistent with the retry ledger", () => {
+		const data: CheckpointData = {
+			currentUnit: "run_task",
+			completedUnits: [],
+			retries: { discover: 4, classify: 2 },
+		};
+		expect(countersFor(data, 0).gate_blocks).toBe(6);
 	});
 });

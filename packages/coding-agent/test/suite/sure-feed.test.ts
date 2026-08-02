@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { advance, type CheckpointData } from "../../../../sure/skills/sure_feed/hooks/checkpoints.ts";
-import { postToolResult, preFinish, preToolCall } from "../../../../sure/skills/sure_feed/hooks/index.ts";
+import { countersFor, postToolResult, preFinish, preToolCall } from "../../../../sure/skills/sure_feed/hooks/index.ts";
 import {
 	FIRST_UNIT,
 	findUnit,
@@ -834,5 +834,16 @@ describe("sure_feed preFinish terminal state", () => {
 		expect(result.ok).toBe(true);
 		expect(result.state_patch?.counters?.completed_units).toBe(7);
 		expect(result.state_patch?.counters?.total_units).toBe(7);
+	});
+});
+
+describe("sure_feed countersFor", () => {
+	it("keeps gate_blocks consistent with the retry ledger", () => {
+		const data: CheckpointData = {
+			currentUnit: "match_task",
+			completedUnits: [],
+			retries: { scan_modelscope: 4, match_task: 2 },
+		};
+		expect(countersFor(data, 0).gate_blocks).toBe(6);
 	});
 });
