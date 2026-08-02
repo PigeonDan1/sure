@@ -50,6 +50,19 @@ class ModelWrapper:
 
 **Purpose**: Service/MCP entrypoint only
 
+**Scope exemption**: A model wrapper does not need to provide its own `server.py`
+with `class MCPServer` when the harness-provided fallback wrapper serves MCP for
+it instead. The harness decides this from `config.yaml`: if the model's `server`
+section omits `command`, `_resolve_server_command()` in
+`sure/skills/sure_eval/scripts/generate_predictions_via_server.py` and
+`sure/skills/sure_eval/scripts/run_model_mcp_smoke.py` launches
+`model_wrapper_mcp_server.py --model-dir <model_dir>` instead of
+`<model_dir>/server.py`. That adapter implements `initialize`, `tools/list`, and
+`tools/call` itself and calls the model's `model.py` `ModelWrapper` directly (or
+the model's own `server.py` `create_model()` factory when one exists). A model
+only needs its own `class MCPServer` when `config.yaml` declares an explicit
+`server.command`.
+
 **Responsibilities**:
 - Implement MCP protocol (initialize, tools/list, tools/call)
 - Parse JSON-RPC requests
