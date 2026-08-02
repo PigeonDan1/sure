@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 const root = process.cwd();
@@ -117,20 +118,20 @@ if (existsSync(sparseCheckoutPath)) {
 	}
 }
 
-const home = process.env.HOME;
-if (home) {
-	const authPath = join(home, ".pi", "agent", "auth.json");
-	const modelsPath = join(home, ".pi", "agent", "models.json");
-	if (existsSync(authPath)) {
-		pass("Pi auth", `${authPath} exists`);
-	} else {
-		warn("Pi auth", "missing ~/.pi/agent/auth.json; /sure_init can create or update provider auth");
-	}
-	if (existsSync(modelsPath)) {
-		pass("Pi models", `${modelsPath} exists`);
-	} else {
-		warn("Pi models", "missing ~/.pi/agent/models.json; create it when using an OpenAI-compatible API gateway");
-	}
+// Mirrors the resolution order in packages/coding-agent/src/config.ts getAgentDir():
+// PI_CODING_AGENT_DIR env override, else os.homedir()/.pi/agent.
+const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+const authPath = join(agentDir, "auth.json");
+const modelsPath = join(agentDir, "models.json");
+if (existsSync(authPath)) {
+	pass("Pi auth", `${authPath} exists`);
+} else {
+	warn("Pi auth", `missing ${authPath}; /sure_init can create or update provider auth`);
+}
+if (existsSync(modelsPath)) {
+	pass("Pi models", `${modelsPath} exists`);
+} else {
+	warn("Pi models", `missing ${modelsPath}; create it when using an OpenAI-compatible API gateway`);
 }
 
 const defaultEngineRelPath = "sure/external/sure-evaluation";
