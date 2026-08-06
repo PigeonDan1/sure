@@ -1026,7 +1026,7 @@ describe("Sure extension", () => {
 		const inMemorySettings = SettingsManager.inMemory();
 		const createSpy = vi.spyOn(SettingsManager, "create").mockReturnValue(inMemorySettings);
 
-		await harness.session.prompt("/sure_init --option kimi-code --api-key sk-test-123");
+		await harness.session.prompt("/sure_init --option kimi-code --api-key sk-test-123 --model kimi-for-coding");
 		await harness.session.agent.waitForIdle();
 
 		createSpy.mockRestore();
