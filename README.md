@@ -87,6 +87,8 @@ Run the main path:
 /sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=vc
 ```
 
+Pick a provider — the five built-ins, any OpenAI-compatible gateway from your models.json, or add a new gateway (name, base URL, API key) — then pick a model from the provider's live model list.
+
 Recompute metrics from existing predictions:
 
 ```text

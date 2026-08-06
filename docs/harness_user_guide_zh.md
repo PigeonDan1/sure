@@ -56,6 +56,8 @@ npm run sure:doctor
 /sure_init
 ```
 
+非交互运行必须显式传 --model。
+
 5. 发现或提供模型。
 
 ```text
@@ -131,7 +133,7 @@ sure/models/<model_name>/artifacts/
 
 | Command | 用途 | 必需输入 | 常见可选输入 | 期望输出 | 成功标准 |
 | --- | --- | --- | --- | --- | --- |
-| `/sure_init` | 配置 harness 项目和 agent 运行环境。 | 无 | provider/auth 配置 | 项目配置和 doctor 证据 | 能发现 skills 和必要依赖 |
+| `/sure_init` | 配置 harness 项目和 agent 运行环境:选择供应商(内置服务、models.json 网关、或新建 OpenAI 兼容网关),并从供应商实时模型列表中选默认模型。非交互:`--option <id> --model <模型id>`;新建网关再加 `--name <名称> --base-url <地址> --api-key <key>`。 | 无 | 供应商/鉴权/模型配置 | 项目级配置与体检证据 | hooks 发现技能与依赖 |
 | `/sure_feed` | 发现模型并生成接入输入。 | 直接模型 URL 或 `source/query` | `max_models`, `max_retries`, `download`, `handoff_root` | `sure/handoffs/<model>/model_input.yaml`, feed artifacts | 选中模型有任务证据、repo、weights source、fixture、IO contract |
 | `/sure_onboard` | 将模型变成可运行的本地推理单元。 | `model=<handoff>` 或 `model_input_path=...` | `device`, `package`, `preferred_backend`, `skip_download` | `sure/models/<model>/` 下的 wrapper、spec、config、fixture、verdict | import/load/infer/contract 校验通过，`verdict.json` ready |
 | `/sure_eval` | 执行 prediction 生成和 route-backed evaluation。 | `model`, `datasets` | `metrics`, `max_samples`, `execution`, `device`, VC 资源 | predictions、validation、route plan、metric reports、run report | 记录正式执行面；predictions 校验通过；metric reports 存在 |

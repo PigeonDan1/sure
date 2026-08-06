@@ -85,6 +85,8 @@ npm run sure:doctor
 /sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=vc
 ```
 
+选择供应商——五个内置服务、models.json 里已配置的 OpenAI 兼容网关、或现场新建一个网关(名称、地址、API key)——然后从供应商实时返回的模型列表里选默认模型。
+
 基于已有 predictions 重新计算指标：
 
 ```text

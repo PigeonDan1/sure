@@ -56,6 +56,8 @@ npm run sure:doctor
 /sure_init
 ```
 
+Non-interactive runs must pass --model explicitly.
+
 5. Discover or provide a model.
 
 ```text
@@ -131,7 +133,7 @@ Expected output:
 
 | Command | Purpose | Required Input | Common Optional Input | Expected Output | Success Criteria |
 | --- | --- | --- | --- | --- | --- |
-| `/sure_init` | Configure the harness project and agent runtime. | none | provider/auth configuration | project-level config and doctor evidence | hooks discover skills and required dependencies |
+| `/sure_init` | Configure the harness project and agent runtime: pick a provider (built-ins, models.json gateways, or a new OpenAI-compatible gateway) and pick the default model from the provider's live model list. Non-interactive: `--option <id> --model <model-id>`; new gateway one-shot adds `--name <name> --base-url <url> --api-key <key>`. | none | provider/auth/model configuration | project-level config and doctor evidence | hooks discover skills and required dependencies |
 | `/sure_feed` | Discover models and synthesize onboarding input. | direct model URL or `source/query` | `max_models`, `max_retries`, `download`, `handoff_root` | `sure/handoffs/<model>/model_input.yaml`, feed artifacts | selected model has task evidence, repo, weights source, fixture, IO contract |
 | `/sure_onboard` | Turn a model into a runnable local inference unit. | `model=<handoff>` or `model_input_path=...` | `device`, `package`, `preferred_backend`, `skip_download` | `sure/models/<model>/` with wrapper, spec, config, fixture, verdict | import/load/infer/contract validations pass and `verdict.json` is ready |
 | `/sure_eval` | Run prediction plus route-backed evaluation. | `model`, `datasets` | `metrics`, `max_samples`, `execution`, `device`, VC resources | predictions, validation payload, route plan, metric reports, run report | formal execution path is recorded; predictions validate; metric reports exist |
