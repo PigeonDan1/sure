@@ -334,7 +334,7 @@ describe("runSureInit", () => {
 
 	describe("runSureInit new flow", () => {
 		it("fails non-interactively without --model", async () => {
-			const { ctx, settingsManager } = makeContext({ hasUI: false });
+			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option claude --api-key sk-1",
@@ -348,7 +348,7 @@ describe("runSureInit", () => {
 		it("uses --model verbatim for a built-in provider without any network call", async () => {
 			const fetchMock = vi.fn();
 			vi.stubGlobal("fetch", fetchMock);
-			const { ctx, settingsManager } = makeContext({ hasUI: false });
+			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option claude --api-key sk-1 --model claude-pinned",
@@ -367,7 +367,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "claude-live" }] })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true });
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, cwd: tempDir });
 			ui.select
 				.mockResolvedValueOnce("Anthropic Claude: Standard Anthropic API → anthropic")
 				.mockResolvedValueOnce("claude-live");
@@ -383,7 +383,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => new Response("down", { status: 503 })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true });
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, cwd: tempDir });
 			ui.select
 				.mockResolvedValueOnce("Anthropic Claude: Standard Anthropic API → anthropic")
 				.mockImplementationOnce(async (_title: string, choices: string[]) => choices[0]);
@@ -417,7 +417,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "g1" }, { id: "g2" }] })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath });
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
 			ui.select
 				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
 				.mockResolvedValueOnce("g2");
@@ -450,7 +450,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => new Response("down", { status: 502 })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath });
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
 			ui.select
 				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
 				.mockResolvedValueOnce("cached-1");
@@ -534,7 +534,7 @@ describe("runSureInit", () => {
 			);
 			const fetchMock = vi.fn();
 			vi.stubGlobal("fetch", fetchMock);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath });
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option relay --model g9",
@@ -547,7 +547,7 @@ describe("runSureInit", () => {
 		});
 
 		it("lists every missing flag for a non-interactive gateway creation", async () => {
-			const { ctx, settingsManager } = makeContext({ hasUI: false });
+			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option custom --name relay",
@@ -561,7 +561,7 @@ describe("runSureInit", () => {
 		});
 
 		it("rejects reserved names for a new gateway", async () => {
-			const { ctx, settingsManager } = makeContext({ hasUI: false });
+			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option custom --name openai --base-url https://gw.example.com/v1 --api-key sk-1 --model m",
@@ -578,7 +578,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "a" }] })),
 			);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath });
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option custom --name relay --base-url https://gw.example.com/v1 --api-key sk-1 --model b",
@@ -599,7 +599,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "a" }] })),
 			);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath });
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option custom --name relay --base-url https://gw.example.com/v1 --api-key sk-1 --model a",
@@ -616,7 +616,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => new Response("down", { status: 500 })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath });
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
 			ui.select
 				.mockResolvedValueOnce("Custom provider: add an OpenAI-compatible gateway")
 				.mockResolvedValueOnce("Enter a model id manually");
