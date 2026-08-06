@@ -254,7 +254,16 @@ async function initExistingGateway(
 	modelsJsonPath: string,
 ): Promise<GatewayOutcome> {
 	if (args.model) {
-		return { ok: true, providerName: gateway.name, modelId: args.model };
+		const cached = readGatewayModels(gateway.name, modelsJsonPath);
+		if (cached.some((model) => model.id === args.model)) {
+			return { ok: true, providerName: gateway.name, modelId: args.model };
+		}
+		// The id isn't in the gateway's model list yet; ModelRegistry only resolves custom-provider
+		// models from models.json, so a silent match failure would fall back to another model at
+		// startup. Append it and persist, mirroring the non-interactive new-gateway path below.
+		const models = [...cached, { id: args.model }];
+		writeGatewayProvider({ name: gateway.name, baseUrl: gateway.baseUrl, apiKey: undefined, models }, modelsJsonPath);
+		return { ok: true, providerName: gateway.name, modelId: args.model, wroteModelsJson: true };
 	}
 	const storedKey = await ctx.modelRegistry.getApiKeyForProvider(gateway.name);
 	let newKey: string | undefined;

@@ -546,6 +546,79 @@ describe("runSureInit", () => {
 			expect(fetchMock).not.toHaveBeenCalled();
 		});
 
+		it("appends a --model missing from an existing gateway's cached list and preserves the stored key", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeFileSync(
+				modelsPath,
+				`${JSON.stringify(
+					{
+						providers: {
+							relay: {
+								baseUrl: "https://gw.example.com/v1",
+								api: "openai-completions",
+								apiKey: "sk-relay",
+								models: [{ id: "cached-1" }],
+							},
+						},
+					},
+					null,
+					2,
+				)}\n`,
+				"utf-8",
+			);
+			const fetchMock = vi.fn();
+			vi.stubGlobal("fetch", fetchMock);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const refreshSpy = vi.spyOn(ctx.modelRegistry, "refresh");
+			const result = await runSureInit({
+				ctx,
+				args: "--option relay --model new-id",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+			});
+			expect(result.success).toBe(true);
+			expect(result.manifest?.defaultModel).toBe("new-id");
+			expect(fetchMock).not.toHaveBeenCalled();
+			const written = JSON.parse(readFileSync(modelsPath, "utf-8"));
+			expect(written.providers.relay.models).toEqual([{ id: "cached-1" }, { id: "new-id" }]);
+			expect(written.providers.relay.apiKey).toBe("sk-relay");
+			expect(refreshSpy).toHaveBeenCalled();
+		});
+
+		it("does not rewrite models.json when --model for an existing gateway is already cached", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			const original = `${JSON.stringify(
+				{
+					providers: {
+						relay: {
+							baseUrl: "https://gw.example.com/v1",
+							api: "openai-completions",
+							apiKey: "sk-relay",
+							models: [{ id: "cached-1" }],
+						},
+					},
+				},
+				null,
+				2,
+			)}\n`;
+			writeFileSync(modelsPath, original, "utf-8");
+			const fetchMock = vi.fn();
+			vi.stubGlobal("fetch", fetchMock);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const refreshSpy = vi.spyOn(ctx.modelRegistry, "refresh");
+			const result = await runSureInit({
+				ctx,
+				args: "--option relay --model cached-1",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+			});
+			expect(result.success).toBe(true);
+			expect(result.manifest?.defaultModel).toBe("cached-1");
+			expect(fetchMock).not.toHaveBeenCalled();
+			expect(readFileSync(modelsPath, "utf-8")).toBe(original);
+			expect(refreshSpy).not.toHaveBeenCalled();
+		});
+
 		it("lists every missing flag for a non-interactive gateway creation", async () => {
 			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
