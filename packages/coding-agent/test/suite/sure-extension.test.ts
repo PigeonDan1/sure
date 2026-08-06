@@ -276,7 +276,10 @@ describe("Sure extension", () => {
 
 		const runId = getOnlyRunId(harness.tempDir);
 		const resolved = JSON.parse(
-			readFileSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "prediction_source_resolved.json"), "utf-8"),
+			readFileSync(
+				join(harness.tempDir, ".sure", "runs", runId, "artifacts", "prediction_source_resolved.json"),
+				"utf-8",
+			),
 		);
 		expect(resolved.source).toBe(sourceDir);
 		expect(readRunState(harness.tempDir, runId)).toMatchObject({
