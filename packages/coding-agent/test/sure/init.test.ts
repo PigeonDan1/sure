@@ -118,6 +118,23 @@ describe("parseInitArgs", () => {
 	it("returns empty object for empty args", () => {
 		expect(parseInitArgs("")).toEqual({});
 	});
+
+	it("parses model and gateway flags", () => {
+		const args = parseInitArgs(
+			"--option custom --name relay --base-url https://gw.example.com/v1 --api-key sk-1 --model alpha",
+		);
+		expect(args).toEqual({
+			optionId: "custom",
+			gatewayName: "relay",
+			gatewayBaseUrl: "https://gw.example.com/v1",
+			apiKey: "sk-1",
+			model: "alpha",
+		});
+	});
+
+	it("keeps the legacy flags working", () => {
+		expect(parseInitArgs("--provider codex --api-key k")).toEqual({ optionId: "codex", apiKey: "k" });
+	});
 });
 
 describe("runSureInit", () => {

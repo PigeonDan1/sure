@@ -66,6 +66,12 @@ export function parseInitArgs(raw: string): SureInitArgs {
 			result.optionId = args[++i];
 		} else if (arg === "--api-key") {
 			result.apiKey = args[++i];
+		} else if (arg === "--model") {
+			result.model = args[++i];
+		} else if (arg === "--name") {
+			result.gatewayName = args[++i];
+		} else if (arg === "--base-url") {
+			result.gatewayBaseUrl = args[++i];
 		}
 	}
 	return result;

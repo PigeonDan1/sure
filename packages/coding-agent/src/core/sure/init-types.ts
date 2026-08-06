@@ -51,8 +51,14 @@ export interface SureInitResult {
 
 /** Parsed /sure_init command arguments. */
 export interface SureInitArgs {
-	/** Pre-selected option id. */
+	/** Pre-selected option: built-in option id, gateway provider name, or "custom". */
 	optionId?: string;
-	/** Pre-provided API key (only valid for api_key providers). */
+	/** Pre-provided API key (api_key providers and gateways). */
 	apiKey?: string;
+	/** Pre-selected model id. Required for non-interactive runs. */
+	model?: string;
+	/** New gateway provider name (used with --option custom). */
+	gatewayName?: string;
+	/** New gateway base URL (used with --option custom). */
+	gatewayBaseUrl?: string;
 }
