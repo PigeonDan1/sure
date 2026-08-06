@@ -38,6 +38,12 @@ function stripBom(raw: string): string {
 	return raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
 }
 
+/** True when the raw text contains `//` or `/*` comment syntax outside of string literals. */
+function containsJsonComments(raw: string): boolean {
+	const withoutStrings = raw.replace(/"(?:\\.|[^"\\])*"/g, "");
+	return withoutStrings.includes("//") || withoutStrings.includes("/*");
+}
+
 function parseModelsFile(raw: string, path: string): ModelsFile {
 	let parsed: unknown;
 	try {
@@ -111,12 +117,16 @@ export function readGatewayModels(name: string, modelsJsonPath: string = getMode
  * file — a rewrite would silently destroy the comments.
  */
 export function writeGatewayProvider(input: GatewayWriteInput, modelsJsonPath: string = getModelsPath()): void {
-	const { raw, file } = readModelsFile(modelsJsonPath);
-	if (raw !== undefined && stripJsonComments(stripBom(raw)) !== stripBom(raw)) {
-		throw new Error(
-			`models.json contains comments; refusing to rewrite it — add the provider manually. File: ${modelsJsonPath}`,
-		);
+	let raw: string | undefined;
+	if (existsSync(modelsJsonPath)) {
+		raw = readFileSync(modelsJsonPath, "utf-8");
+		if (containsJsonComments(stripBom(raw))) {
+			throw new Error(
+				`models.json contains comments; refusing to rewrite it — add the provider manually. File: ${modelsJsonPath}`,
+			);
+		}
 	}
+	const file = raw === undefined ? { providers: {} } : parseModelsFile(raw, modelsJsonPath);
 	const providers = file.providers ?? {};
 	const existing = providers[input.name] ?? {};
 	providers[input.name] = {

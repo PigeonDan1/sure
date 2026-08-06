@@ -123,6 +123,41 @@ describe("writeGatewayProvider", () => {
 		).toThrow(/comments/);
 	});
 
+	it("rewrites a file whose only JSONC feature is a trailing comma", () => {
+		mkdirSync(join(tempDir, "agent"), { recursive: true });
+		writeFileSync(
+			modelsPath,
+			`{\n\t"providers": { "relay": { "baseUrl": "https://gw.example.com/v1", "models": [{ "id": "a" },] } }\n}\n`,
+			"utf-8",
+		);
+		writeGatewayProvider({ name: "relay", baseUrl: "https://gw.example.com/v1", models: [{ id: "b" }] }, modelsPath);
+		const parsed = JSON.parse(readFileSync(modelsPath, "utf-8"));
+		expect(parsed.providers.relay.models).toEqual([{ id: "b" }]);
+	});
+
+	it("refuses files with block comments", () => {
+		mkdirSync(join(tempDir, "agent"), { recursive: true });
+		writeFileSync(modelsPath, `{\n\t/* hands off */\n\t"providers": {}\n}\n`, "utf-8");
+		expect(() =>
+			writeGatewayProvider(
+				{ name: "relay", baseUrl: "https://gw.example.com/v1", models: [{ id: "a" }] },
+				modelsPath,
+			),
+		).toThrow(/comments/);
+	});
+
+	it("does not mistake // inside a string value for a comment", () => {
+		mkdirSync(join(tempDir, "agent"), { recursive: true });
+		writeFileSync(
+			modelsPath,
+			`{\n\t"providers": { "relay": { "baseUrl": "https://gw.example.com/v1", "models": [{ "id": "a" }] } }\n}\n`,
+			"utf-8",
+		);
+		writeGatewayProvider({ name: "relay", baseUrl: "https://gw.example.com/v2", models: [{ id: "b" }] }, modelsPath);
+		const parsed = JSON.parse(readFileSync(modelsPath, "utf-8"));
+		expect(parsed.providers.relay.baseUrl).toBe("https://gw.example.com/v2");
+	});
+
 	it("throws with the file path on invalid JSON", () => {
 		mkdirSync(join(tempDir, "agent"), { recursive: true });
 		writeFileSync(modelsPath, "{ not json", "utf-8");
