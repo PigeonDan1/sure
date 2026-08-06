@@ -562,7 +562,6 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 	if (availableSkills.length > 0) {
 		lines.push(`Available SURE commands: ${availableSkills.join(", ")}`);
 	}
-	lines.push(`Run "${modelCommand}" to switch to the recommended model.`);
 
 	return {
 		success: true,

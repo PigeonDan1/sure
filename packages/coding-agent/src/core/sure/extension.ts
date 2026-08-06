@@ -11,6 +11,7 @@ import {
 } from "../extensions/index.ts";
 import { SureHookRunner } from "./hooks.ts";
 import { runSureInit } from "./init.ts";
+import type { SureInitManifest } from "./init-types.ts";
 import { discoverSureSkillPackages, SURE_COMMANDS, type SureDiscoveryDiagnostic } from "./manifest.ts";
 import { SureRunManager } from "./run-manager.ts";
 import { formatSureDisplayStatus, normalizeSureDisplayStatePatch } from "./state.ts";
@@ -520,6 +521,32 @@ function clearActiveRun(
 	setActiveRun(undefined);
 }
 
+/**
+ * After a successful /sure_init, switch the current session onto the model it just configured
+ * instead of leaving the user on whatever model they started with. Falls back to a hint if the
+ * model can't be resolved or has no configured auth yet — init itself already succeeded, so this
+ * degrades gracefully rather than surfacing as an error.
+ */
+async function switchToInitializedModel(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	manifest: SureInitManifest,
+): Promise<void> {
+	const { defaultProvider, defaultModel } = manifest;
+	ctx.modelRegistry.refresh();
+	const model = ctx.modelRegistry.find(defaultProvider, defaultModel);
+	const switched = model ? await pi.setModel(model) : false;
+	if (switched) {
+		ctx.ui.notify(`Switched to ${defaultProvider}/${defaultModel}.`, "info");
+	} else {
+		ctx.ui.notify(
+			`Default model set to ${defaultProvider}/${defaultModel}. ` +
+				`Run "/model ${defaultProvider}/${defaultModel}" to switch once credentials are configured.`,
+			"warning",
+		);
+	}
+}
+
 export function createSureExtension(): ExtensionFactory {
 	return (pi: ExtensionAPI) => {
 		let activeRun: ActiveRun | undefined;
@@ -760,6 +787,9 @@ export function createSureExtension(): ExtensionFactory {
 				}
 				const result = await runSureInit({ ctx, args: args.trim() });
 				ctx.ui.notify(result.message, result.success ? "info" : "error");
+				if (result.success && result.manifest) {
+					await switchToInitializedModel(pi, ctx, result.manifest);
+				}
 			},
 		});
 

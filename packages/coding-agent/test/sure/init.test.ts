@@ -236,6 +236,20 @@ describe("runSureInit", () => {
 		expect(settingsManager.getGlobalSettings().defaultModel).toBe("kimi-for-coding");
 	});
 
+	it("leaves the model switch to the caller instead of telling the user to run /model manually", async () => {
+		const { ctx, settingsManager } = makeContext({ cwd: tempDir });
+		const result = await runSureInit({
+			ctx,
+			args: "--option kimi-code --api-key sk-arg --model kimi-for-coding",
+			settingsManager,
+			modelsJsonPath: join(tempDir, "models.json"),
+		});
+
+		expect(result.success).toBe(true);
+		expect(result.message).not.toContain('Run "/model');
+		expect(result.nextAction).toBe("/model kimi-coding/kimi-for-coding");
+	});
+
 	it("runs OAuth login flow when provider is available", async () => {
 		const { ctx, settingsManager, ui } = makeContext({
 			selectedIndex: 0, // codex (oauth)

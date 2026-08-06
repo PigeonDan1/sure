@@ -4,7 +4,7 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentSessionServices } from "../../src/core/agent-session-services.ts";
-import type { ExtensionFactory } from "../../src/core/extensions/index.ts";
+import type { ExtensionFactory, ExtensionUIContext } from "../../src/core/extensions/index.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
 import { sureExtension } from "../../src/core/sure/index.ts";
 import { runPrintMode } from "../../src/modes/print-mode.ts";
@@ -12,6 +12,42 @@ import { createHarness, getUserTexts, type Harness } from "./harness.ts";
 
 function writeJson(path: string, value: unknown): void {
 	writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+}
+
+/** Minimal UI context that records notify() calls; every dialog method is a no-op stub. */
+function createNotifyCapturingUiContext(
+	onNotify: (message: string, type: "info" | "warning" | "error" | undefined) => void,
+): ExtensionUIContext {
+	return {
+		select: async () => undefined,
+		confirm: async () => false,
+		input: async () => undefined,
+		notify: onNotify,
+		onTerminalInput: () => () => {},
+		setStatus: () => {},
+		setWorkingMessage: () => {},
+		setWorkingVisible: () => {},
+		setWorkingIndicator: () => {},
+		setHiddenThinkingLabel: () => {},
+		setWidget: () => {},
+		setFooter: () => {},
+		setHeader: () => {},
+		setTitle: () => {},
+		custom: async <T>() => undefined as T,
+		pasteToEditor: () => {},
+		setEditorText: () => {},
+		getEditorText: () => "",
+		editor: async () => undefined,
+		addAutocompleteProvider: () => {},
+		setEditorComponent: () => {},
+		getEditorComponent: () => undefined,
+		theme: {} as ExtensionUIContext["theme"],
+		getAllThemes: () => [],
+		getTheme: () => undefined,
+		setTheme: () => ({ success: false, error: "Theme switching not available in tests" }),
+		getToolsExpanded: () => false,
+		setToolsExpanded: () => {},
+	};
 }
 
 function setupSkillPackage(
@@ -94,7 +130,10 @@ function writeEvalModel(tempDir: string, modelName = "demo-asr"): string {
 	return modelDir;
 }
 
-async function createSureHarness(options?: { projectTrusted?: boolean }): Promise<Harness> {
+async function createSureHarness(options?: {
+	projectTrusted?: boolean;
+	uiContext?: ExtensionUIContext;
+}): Promise<Harness> {
 	const harness = await createHarness({
 		extensionFactories: [sureExtension],
 		settings: {},
@@ -103,6 +142,7 @@ async function createSureHarness(options?: { projectTrusted?: boolean }): Promis
 		harness.settingsManager.setProjectTrusted(options.projectTrusted);
 	}
 	await harness.session.bindExtensions({
+		uiContext: options?.uiContext,
 		onError: (error) => {
 			throw new Error(JSON.stringify(error));
 		},
@@ -1049,6 +1089,57 @@ describe("Sure extension", () => {
 		if (stored?.type === "api_key") {
 			expect(stored.key).toBe("sk-test-123");
 		}
+
+		expect(harness.session.model?.provider).toBe("kimi-coding");
+		expect(harness.session.model?.id).toBe("kimi-for-coding");
+	});
+
+	it("switches the active session model and notifies success after /sure_init", async () => {
+		const notifications: Array<{ message: string; type: "info" | "warning" | "error" | undefined }> = [];
+		const harness = await createSureHarness({
+			uiContext: createNotifyCapturingUiContext((message, type) => notifications.push({ message, type })),
+		});
+		cleanups.push(harness.cleanup);
+
+		const previousModel = harness.session.model;
+		expect(previousModel?.provider).not.toBe("kimi-coding");
+
+		await harness.session.prompt("/sure_init --option kimi-code --api-key sk-test-123 --model kimi-for-coding");
+		await harness.session.agent.waitForIdle();
+
+		expect(harness.session.model?.provider).toBe("kimi-coding");
+		expect(harness.session.model?.id).toBe("kimi-for-coding");
+
+		expect(notifications).toContainEqual({ message: "Switched to kimi-coding/kimi-for-coding.", type: "info" });
+	});
+
+	it("degrades to a hint notify, without switching, when the initialized model can't be resolved", async () => {
+		const notifications: Array<{ message: string; type: "info" | "warning" | "error" | undefined }> = [];
+		const harness = await createSureHarness({
+			uiContext: createNotifyCapturingUiContext((message, type) => notifications.push({ message, type })),
+		});
+		cleanups.push(harness.cleanup);
+
+		const previousModel = harness.session.model;
+
+		await harness.session.prompt("/sure_init --option kimi-code --api-key sk-test-123 --model not-a-real-model-id");
+		await harness.session.agent.waitForIdle();
+
+		// Init itself still succeeds: the manifest records the (unresolvable) chosen model.
+		const manifestPath = join(harness.tempDir, ".sure", "init.json");
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+		expect(manifest.defaultProvider).toBe("kimi-coding");
+		expect(manifest.defaultModel).toBe("not-a-real-model-id");
+
+		// But the session's active model is left untouched, since there's nothing to switch to.
+		expect(harness.session.model?.provider).toBe(previousModel?.provider);
+		expect(harness.session.model?.id).toBe(previousModel?.id);
+
+		expect(notifications).toContainEqual({
+			message:
+				'Default model set to kimi-coding/not-a-real-model-id. Run "/model kimi-coding/not-a-real-model-id" to switch once credentials are configured.',
+			type: "warning",
+		});
 	});
 });
 
