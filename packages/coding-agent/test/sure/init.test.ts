@@ -460,6 +460,58 @@ describe("runSureInit", () => {
 			expect(readFileSync(modelsPath, "utf-8")).toBe(original);
 		});
 
+		it("leaves models.json untouched and skips refresh when the user cancels the model picker", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			const original = `${JSON.stringify(
+				{
+					providers: {
+						relay: {
+							baseUrl: "https://gw.example.com/v1",
+							api: "openai-completions",
+							apiKey: "sk-relay",
+							models: [{ id: "stale" }],
+						},
+					},
+				},
+				null,
+				2,
+			)}\n`;
+			writeFileSync(modelsPath, original, "utf-8");
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => Response.json({ data: [{ id: "g1" }, { id: "g2" }] })),
+			);
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const refreshSpy = vi.spyOn(ctx.modelRegistry, "refresh");
+			ui.select
+				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
+				.mockResolvedValueOnce(undefined);
+			const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: modelsPath });
+			expect(result.success).toBe(false);
+			expect(readFileSync(modelsPath, "utf-8")).toBe(original);
+			expect(refreshSpy).not.toHaveBeenCalled();
+		});
+
+		it("propagates a writeGatewayProvider failure instead of silently falling back to the cached list", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeFileSync(
+				modelsPath,
+				`{\n\t// keep my comments\n\t"providers": {\n\t\t"relay": {\n\t\t\t"baseUrl": "https://gw.example.com/v1",\n\t\t\t"api": "openai-completions",\n\t\t\t"apiKey": "sk-relay",\n\t\t\t"models": [{ "id": "cached-1" }]\n\t\t}\n\t}\n}\n`,
+				"utf-8",
+			);
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => Response.json({ data: [{ id: "g1" }] })),
+			);
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			ui.select
+				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
+				.mockImplementationOnce(async (_title: string, choices: string[]) => choices[0]);
+			const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: modelsPath });
+			expect(result.success).toBe(false);
+			expect(result.message).toMatch(/comments/);
+		});
+
 		it("accepts --model verbatim for an existing gateway without fetching", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeFileSync(

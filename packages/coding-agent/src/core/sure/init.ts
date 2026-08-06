@@ -269,11 +269,8 @@ async function initExistingGateway(
 	}
 	const apiKey = storedKey ?? newKey;
 	let listing: ModelListing;
-	let wroteModelsJson = false;
 	try {
 		const models = await fetchOpenAICompatibleModels(gateway.baseUrl, apiKey);
-		writeGatewayProvider({ name: gateway.name, baseUrl: gateway.baseUrl, apiKey: newKey, models }, modelsJsonPath);
-		wroteModelsJson = true;
 		listing = { source: "live", models };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -286,8 +283,20 @@ async function initExistingGateway(
 		}
 		listing = { source: "cached", models: cached, error: message };
 	}
+
 	const modelId = await pickModelId(ctx, listing, gateway.name);
 	if (!modelId) return { ok: false, message: "No model selected." };
+
+	let wroteModelsJson = false;
+	if (listing.source === "live") {
+		// Write failures (e.g. a comment-bearing models.json) must propagate as a hard failure,
+		// not be swallowed as if the live query itself had failed.
+		writeGatewayProvider(
+			{ name: gateway.name, baseUrl: gateway.baseUrl, apiKey: newKey, models: listing.models },
+			modelsJsonPath,
+		);
+		wroteModelsJson = true;
+	}
 	return { ok: true, providerName: gateway.name, modelId, listing, wroteModelsJson };
 }
 
