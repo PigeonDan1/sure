@@ -27,10 +27,13 @@ Harness 不替代指标引擎。metric 能力、route nodes、精确 `pipeline_i
 
 1. 克隆并安装 harness。
 
+先备好：Node.js >= 22.19.0、git、Python >= 3.10（一句话版本见 README 快速开始）。
+
 ```bash
 git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
+pip install -r requirements.txt
 npm run sure:doctor
 ```
 

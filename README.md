@@ -52,10 +52,16 @@ flowchart LR
 
 ## Quick Start
 
+Prerequisites: Node.js >= 22.19.0, git, and Python >= 3.10 with PyYAML
+(`pip install -r requirements.txt`). The evaluation engine used by
+`/sure_eval` needs its own install once:
+`pip install -e sure/external/sure-evaluation`.
+
 ```bash
 git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
+pip install -r requirements.txt
 ```
 
 If the repository was cloned without submodules:

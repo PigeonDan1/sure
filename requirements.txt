@@ -1,0 +1,6 @@
+# Python dependencies for the harness-side skill scripts.
+# The evaluation engine has its own dependencies, installed separately:
+#   pip install -e sure/external/sure-evaluation
+# Dataset download from ModelScope additionally needs:
+#   pip install modelscope
+pyyaml>=6.0

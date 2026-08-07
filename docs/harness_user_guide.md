@@ -27,10 +27,14 @@ The harness does not replace the metric engine. Metric capabilities, route nodes
 
 1. Clone and install the harness.
 
+Prerequisites: Node.js >= 22.19.0, git, and Python >= 3.10 (see the
+README's Quick Start for the one-line summary).
+
 ```bash
 git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
+pip install -r requirements.txt
 npm run sure:doctor
 ```
 

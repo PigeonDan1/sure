@@ -50,10 +50,15 @@ flowchart LR
 
 ## 快速开始
 
+先备好：Node.js >= 22.19.0、git、Python >= 3.10 并装上 PyYAML
+（`pip install -r requirements.txt`）。`/sure_eval` 用的评测引擎另装一次：
+`pip install -e sure/external/sure-evaluation`。
+
 ```bash
 git clone --recurse-submodules --depth 1 --single-branch --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
+pip install -r requirements.txt
 ```
 
 如果 clone 时没有拉取 submodule：
