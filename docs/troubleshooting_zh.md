@@ -72,6 +72,12 @@ export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
 本地 smoke 和开发使用 `execution=local`。只有期望真实提交到 VC 集群时才使用
 `execution=vc`。
 
+## 把作业投到指定 VC 分区
+
+在 `/sure_eval` 里配合 `execution=vc` 加 `vc_partition=<分区名>`。不传时由
+harness 自动选分区。分区名不在你的可用范围内时,输入解析阶段会直接报错,
+错误信息会列出你能用的分区(来自 `vc info -u`)。
+
 ## 精确 `pipeline_id` 失败
 
 精确 pipeline ID 由当前选择的 `sure-evaluation` checkout 决定。如果之前有效的 ID 失败：

@@ -372,5 +372,6 @@ When one reported metric has multiple route variants, use exact `pipeline_id` ra
 | `/sure_onboard` blocks at model input | Missing repo, weights, fixture, or IO contract | Repair the handoff or pass an explicit `model_input_path`. |
 | `/sure_eval` cannot resolve dataset | Benchmark JSONL root missing | Link `data/datasets/sure_benchmark/jsonl` or set `SURE_EVAL_DATASETS_ROOT`. |
 | `/sure_eval execution=vc` fails | VC CLI unavailable or submission failed | Fix VC access/resources; the harness must not fall back silently. |
+| Job should land on a specific VC partition | Without `vc_partition` the harness auto-selects a partition | Add `vc_partition=<partition>` to `/sure_eval`; unknown names fail fast and the error lists the allowed partitions. |
 | `/sure_reval` cannot infer metadata from a bare predictions directory | No report/protocol near the source | Pass `model=<name>` and `datasets=<dataset>`. |
 | exact `pipeline_id` fails | Route node environment missing | Run the setup command from `evaluation_route_plan.json` or install the required node extra. |
