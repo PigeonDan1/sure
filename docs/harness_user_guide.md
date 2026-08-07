@@ -111,7 +111,7 @@ sure/models/<model_name>/model.py
 sure/models/<model_name>/model.spec.yaml
 sure/models/<model_name>/config.yaml
 sure/models/<model_name>/server.py
-sure/models/<model_name>/verdict.json
+sure/models/<model_name>/artifacts/verdict.json
 sure/models/<model_name>/artifacts/
 ```
 
@@ -121,7 +121,9 @@ sure/models/<model_name>/artifacts/
 /sure_eval model=<model_name> datasets=aishell1-test_ASR metrics=cer max_samples=5 execution=local device=auto
 ```
 
-Expected output:
+Expected output — `<eval_run_dir>` defaults to
+`sure/models/<model>/eval_runs/<run_id>` and can be overridden with
+`output_dir=`:
 
 ```text
 <eval_run_dir>/predictions/<dataset>.txt
@@ -456,7 +458,8 @@ Use this checklist when reviewing a completed run.
 
 ### Onboarding
 
-- `sure/models/<model>/verdict.json` exists.
+- `sure/models/<model>/artifacts/verdict.json` exists (the top-level
+  `sure/models/<model>/verdict.json` location is also accepted).
 - The verdict does not claim GPU readiness after a CPU-only fallback unless the device policy records that fallback.
 - `model.py` or equivalent wrapper exists and is referenced by `model.spec.yaml`.
 - `import/load/infer/contract` validation artifacts exist and pass.

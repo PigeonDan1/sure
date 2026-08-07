@@ -156,7 +156,7 @@ overrides: `vc_gpu`, `vc_mem`, `vc_cpu`, `vc_image`, `vc_job_name`.
 | Stage | Primary input | Main output | Ready signal |
 | --- | --- | --- | --- |
 | Discover | Model URL or query. | `sure/handoffs/<model>/model_input.yaml` | Task evidence and IO contract are present. |
-| Prepare | `model=<handoff>` or `model_input_path=...` | `sure/models/<model>/verdict.json` | Import/load/infer/contract checks pass. |
+| Prepare | `model=<handoff>` or `model_input_path=...` | `sure/models/<model>/artifacts/verdict.json` | Import/load/infer/contract checks pass. |
 | Evaluate | Model, datasets, metrics, execution target. | `main_agent_run_report.json` plus metric artifacts. | Predictions validate and route reports exist. |
 | Re-evaluate | Previous results or predictions. | `reval_run_report.json` in a fresh tmp run. | `evaluation_only=true`; old metric artifacts are not reused. |
 
@@ -170,6 +170,22 @@ overrides: `vc_gpu`, `vc_mem`, `vc_cpu`, `vc_image`, `vc_job_name`.
 | `report_snapshot.md` | `/sure_eval` and `/sure_reval` | Human-readable evaluation scope, route, metric, and result snapshot. |
 | `report.jsonl` | `/sure_eval` and `/sure_reval` | Machine-readable per dataset-metric results. |
 | `source_inference_provenance.json` | `/sure_reval` | Source protocol/status/runtime links when predictions are reused. |
+
+### Where Results Land
+
+Evaluation runs write to `sure/models/<model>/eval_runs/<run_id>` by
+default (`output_dir=` overrides it). Onboarding writes its verdict to
+`sure/models/<model>/artifacts/verdict.json`. Live run state — useful
+when something hangs — is in `.sure/runs/<run_id>/state.json`.
+
+### Terms
+
+| Term | Meaning |
+| --- | --- |
+| VC (`execution=vc`) | The cluster job-submission CLI (`vc`) — unrelated to the voice-conversion (VC) task. |
+| handoff | The `sure/handoffs/<model>/` directory `/sure_feed` produces as input for `/sure_onboard`. |
+| verdict | `verdict.json`, the onboarding pass/fail record `/sure_eval` checks before evaluating. |
+| oref layout | The resource layout `/sure_feed` converts model metadata into. |
 
 ## Operational Guardrails
 

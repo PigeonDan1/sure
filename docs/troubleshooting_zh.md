@@ -9,6 +9,12 @@ npm run sure:doctor
 它会检查仓库根目录、Node 依赖面、SURE skills、`sure-evaluation` 和 benchmark JSONL
 发现路径。
 
+## 出错了先看哪
+
+- run 状态:`.sure/runs/<run_id>/state.json`——可恢复的进度和 `completed_units`。
+- 评估产物:`sure/models/<model>/eval_runs/<run_id>/`——predictions、route plan、metric reports。
+- 集群作业:提交步骤会打印查询命令——`vc info --job <id>`。
+
 ## `Cannot find module 'typebox'`
 
 SURE slash commands 会一起注册。某个 skill 的依赖缺失，可能会在另一个 command 启动时暴露。

@@ -105,7 +105,7 @@ sure/models/<model_name>/model.py
 sure/models/<model_name>/model.spec.yaml
 sure/models/<model_name>/config.yaml
 sure/models/<model_name>/server.py
-sure/models/<model_name>/verdict.json
+sure/models/<model_name>/artifacts/verdict.json
 sure/models/<model_name>/artifacts/
 ```
 
@@ -115,7 +115,8 @@ sure/models/<model_name>/artifacts/
 /sure_eval model=<model_name> datasets=aishell1-test_ASR metrics=cer max_samples=5 execution=local device=auto
 ```
 
-期望输出：
+期望输出——`<eval_run_dir>` 默认是
+`sure/models/<model>/eval_runs/<run_id>`,可用 `output_dir=` 覆盖：
 
 ```text
 <eval_run_dir>/predictions/<dataset>.txt
@@ -436,7 +437,8 @@ nodes、分数和样本级报告属于 `evaluation_route_plan.json`、`report.js
 
 ### Onboarding
 
-- `sure/models/<model>/verdict.json` 存在。
+- `sure/models/<model>/artifacts/verdict.json` 存在(顶层
+  `sure/models/<model>/verdict.json` 位置也被接受)。
 - 如果实际只通过 CPU fallback，不应声称 GPU ready，除非 device policy 记录了 fallback。
 - `model.py` 或等价 wrapper 存在，并被 `model.spec.yaml` 引用。
 - `import/load/infer/contract` validation artifacts 存在并通过。

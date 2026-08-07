@@ -9,6 +9,15 @@ npm run sure:doctor
 It checks the repository root, Node dependency surface, SURE skills,
 `sure-evaluation`, and benchmark JSONL discovery.
 
+## Where To Look First
+
+- Run state: `.sure/runs/<run_id>/state.json` — resumable progress and
+  `completed_units`.
+- Evaluation artifacts: `sure/models/<model>/eval_runs/<run_id>/` —
+  predictions, route plan, metric reports.
+- Cluster jobs: the submit step prints the query command — `vc info
+  --job <id>`.
+
 ## `Cannot find module 'typebox'`
 
 SURE slash commands are registered together. A missing dependency in one skill

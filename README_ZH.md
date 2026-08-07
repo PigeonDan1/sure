@@ -140,7 +140,7 @@ vc info` 得能通过),并且绝不会静默退回本地执行;本地开发和�
 | 阶段 | 主要输入 | 主要输出 | Ready 信号 |
 | --- | --- | --- | --- |
 | 发现 | 模型 URL 或 query。 | `sure/handoffs/<model>/model_input.yaml` | task evidence 和 IO contract 齐全。 |
-| 接入 | `model=<handoff>` 或 `model_input_path=...` | `sure/models/<model>/verdict.json` | import/load/infer/contract 检查通过。 |
+| 接入 | `model=<handoff>` 或 `model_input_path=...` | `sure/models/<model>/artifacts/verdict.json` | import/load/infer/contract 检查通过。 |
 | 评估 | 模型、datasets、metrics、执行面。 | `main_agent_run_report.json` 和 metric artifacts。 | predictions 校验通过，route reports 存在。 |
 | 重评估 | 历史结果或 predictions。 | 新 tmp run 中的 `reval_run_report.json`。 | `evaluation_only=true`，不复用旧 metric artifacts。 |
 
@@ -154,6 +154,21 @@ vc info` 得能通过),并且绝不会静默退回本地执行;本地开发和�
 | `report_snapshot.md` | `/sure_eval` 和 `/sure_reval` | 面向人类阅读的评估范围、route、metric 和结果快照。 |
 | `report.jsonl` | `/sure_eval` 和 `/sure_reval` | 机器可读的 per dataset-metric 结果。 |
 | `source_inference_provenance.json` | `/sure_reval` | 复用 predictions 时的源 protocol/status/runtime 链接。 |
+
+### 结果落在哪
+
+评估 run 默认写到 `sure/models/<model>/eval_runs/<run_id>`(`output_dir=`
+可覆盖)。接入的判定写在 `sure/models/<model>/artifacts/verdict.json`。
+run 卡住时看现场状态:`.sure/runs/<run_id>/state.json`。
+
+### 术语
+
+| 术语 | 含义 |
+| --- | --- |
+| VC(`execution=vc`) | 集群作业提交 CLI(`vc`)——和 voice conversion(VC)任务没有关系。 |
+| handoff | `/sure_feed` 产出、交给 `/sure_onboard` 的 `sure/handoffs/<model>/` 目录。 |
+| verdict | `verdict.json`,接入的通过/不通过记录,`/sure_eval` 评估前会查它。 |
+| oref 布局 | `/sure_feed` 把模型元数据转换成的资源布局格式。 |
 
 ## 运行护栏
 
