@@ -48,6 +48,22 @@ SURE run artifact 或模型 wrapper 无效。
 .sure/runs/<run_id>/state.json
 ```
 
+## `/sure_init` 模型列表与 key 问题
+
+供应商菜单在支持的地方实时拉模型列表。列表来源会以提示形式显示:
+
+- `live`——供应商刚返回的,不用管。
+- `cached`——在线查询失败,用了之前存下的网关列表;显示的模型可能过时。
+- `builtin`——条目来自内置目录,没跟供应商确认过(不支持列表接口或查询失败时出现)。
+
+`~/.pi/agent/models.json` 里的网关名和内置供应商重名时,菜单里会被跳过
+——给网关条目改个名。
+
+非交互 `/sure_init` 要传全参数:
+`--option <供应商id> --model <模型id> --api-key <key>`;新建网关再加
+`--name <名称> --base-url <地址>`。缺 key 会报
+`No API key configured for <provider>`——传 `--api-key` 或改用交互模式。
+
 ## 找不到 Benchmark JSONL
 
 如果 `/sure_eval` 或 `/sure_reval` 无法解析 dataset，确认下面路径存在：

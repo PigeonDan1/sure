@@ -56,8 +56,11 @@ npm run sure:doctor
 3. 启动 TUI。
 
 ```bash
-./pi-test.sh --provider openai --model <model-name> --thinking high --approve
+./pi-test.sh --approve
 ```
+
+启动不需要 API key,供应商和模型在下一步配。`--approve` 的作用是信任
+本项目配置。
 
 4. 初始化项目。
 
@@ -65,7 +68,16 @@ npm run sure:doctor
 /sure_init
 ```
 
-非交互运行必须显式传 --model。
+`/sure_init` 负责选供应商和默认模型:内置供应商、`~/.pi/agent/models.json`
+里已有的网关、或现场新建一个 OpenAI 兼容网关(名称、地址、API key)。
+支持在线查询的供应商,模型列表实时拉取。成功后写 `.sure/init.json`
+(所选供应商与模型、python 检查、发现的技能),并把当前会话切到所选
+模型——它不跑 doctor。之后 `/model` 默认只列当前供应商的模型,按 Tab
+切换范围。
+
+非交互运行要传全参数:
+`/sure_init --option <供应商id> --model <模型id> --api-key <key>`;
+新建网关再加 `--name <名称> --base-url <地址>`。
 
 5. 发现或提供模型。
 
@@ -239,7 +251,7 @@ JSONL 和音频必须同时就位。只有 JSONL 也能让 `npm run sure:doctor`
 
 | Command | 用途 | 必需输入 | 常见可选输入 | 期望输出 | 成功标准 |
 | --- | --- | --- | --- | --- | --- |
-| `/sure_init` | 配置 harness 项目和 agent 运行环境:选择供应商(内置服务、models.json 网关、或新建 OpenAI 兼容网关),并从供应商模型列表中选默认模型(支持在线查询则实时拉取,否则用内置目录)。非交互:`--option <id> --model <模型id>`;新建网关再加 `--name <名称> --base-url <地址> --api-key <key>`。 | 无 | 供应商/鉴权/模型配置 | 项目级配置与体检证据 | hooks 发现技能与依赖 |
+| `/sure_init` | 配置 harness 项目和 agent 运行环境:选择供应商(内置服务、models.json 网关、或新建 OpenAI 兼容网关),并从供应商模型列表中选默认模型(支持在线查询则实时拉取,否则用内置目录)。非交互:`--option <id> --model <模型id>`;新建网关再加 `--name <名称> --base-url <地址> --api-key <key>`。 | 无 | 供应商/鉴权/模型配置 | `.sure/init.json`(所选供应商与模型、python 检查、发现的技能);会话切到所选模型 | hooks 发现技能与依赖 |
 | `/sure_feed` | 发现模型并生成接入输入。 | 直接模型 URL 或 `source/query` | `max_models`, `max_retries`, `download`, `handoff_root` | `sure/handoffs/<model>/model_input.yaml`, feed artifacts | 选中模型有任务证据、repo、weights source、fixture、IO contract |
 | `/sure_onboard` | 将模型变成可运行的本地推理单元。 | `model=<handoff>` 或 `model_input_path=...` | `device`, `package`, `preferred_backend`, `skip_download` | `sure/models/<model>/` 下的 wrapper、spec、config、fixture、verdict | import/load/infer/contract 校验通过，`verdict.json` ready |
 | `/sure_eval` | 执行 prediction 生成和 route-backed evaluation。 | `model`, `datasets` | `metrics`, `max_samples`, `execution`, `device`, VC 资源 | predictions、validation、route plan、metric reports、run report | 记录正式执行面；predictions 校验通过；metric reports 存在 |

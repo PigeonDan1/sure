@@ -50,6 +50,27 @@ For long `/sure_onboard` runs, inspect:
 .sure/runs/<run_id>/state.json
 ```
 
+## `/sure_init` Model List and Key Questions
+
+The provider picker queries model lists live where the provider supports
+it. The listing source is shown as a notice:
+
+- `live` — fresh from the provider; nothing to do.
+- `cached` — the live query failed and a previously saved gateway list
+  was used; the models shown may be stale.
+- `builtin` — entries come from the built-in catalog and are not
+  confirmed with the provider (shown when listing is unsupported or the
+  query failed).
+
+A gateway entry in `~/.pi/agent/models.json` whose name collides with a
+built-in provider is skipped in the menu — rename the gateway entry.
+
+Non-interactive `/sure_init` needs full arguments:
+`--option <provider-id> --model <model-id> --api-key <key>`; a new
+gateway additionally takes `--name <name> --base-url <url>`. A missing
+key fails with `No API key configured for <provider>` — pass
+`--api-key` or run interactively.
+
 ## Missing Benchmark JSONL Files
 
 If `/sure_eval` or `/sure_reval` cannot resolve a dataset, check that one of

@@ -91,8 +91,17 @@ npm run sure:doctor
 启动 TUI：
 
 ```bash
-./pi-test.sh --provider openai --model <model-name> --thinking high --approve
+./pi-test.sh --approve
 ```
+
+启动不需要 API key,`--model` 也可以不传。进 TUI 先跑 `/sure_init`:
+选供应商、录 key 或现场建一个 OpenAI 兼容网关,配完自动把会话切到所选
+模型。凭证落在 `~/.pi/agent/auth.json`,自定义网关落在
+`~/.pi/agent/models.json`——两个文件都由 `/sure_init` 代管,一般不用手编
+(各家供应商认的环境变量见 `packages/coding-agent/docs/providers.md`)。
+已经 export 过 key 的话,
+`./pi-test.sh --provider <p> --model <m> --thinking high --approve`
+照旧能用。`--approve` 的作用是信任本项目配置;不带它,第一次启动会弹询问。
 
 运行主路径：
 

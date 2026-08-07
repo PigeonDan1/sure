@@ -99,8 +99,20 @@ Archive sizes, extraction checks, and naming details live in the
 Start the TUI:
 
 ```bash
-./pi-test.sh --provider openai --model <model-name> --thinking high --approve
+./pi-test.sh --approve
 ```
+
+You do not need an API key to start, and `--model` is optional. Inside
+the TUI, run `/sure_init` first: it picks a provider, takes an API key
+or sets up an OpenAI-compatible gateway interactively, and switches the
+session to the chosen model. Credentials land in `~/.pi/agent/auth.json`
+and custom gateways in `~/.pi/agent/models.json` — `/sure_init` manages
+both files, so you rarely edit them by hand
+(`packages/coding-agent/docs/providers.md` lists the env-var
+alternative per provider). If you already exported a key,
+`./pi-test.sh --provider <p> --model <m> --thinking high --approve`
+still works. `--approve` trusts this project's configuration for the
+session; without it the TUI asks on first start.
 
 Run the main path:
 

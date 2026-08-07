@@ -59,8 +59,12 @@ metrics. If you already have a prepared JSONL tree, link it instead:
 3. Start the TUI.
 
 ```bash
-./pi-test.sh --provider openai --model <model-name> --thinking high --approve
+./pi-test.sh --approve
 ```
+
+No API key is needed to start; provider and model are configured in the
+next step. `--approve` trusts this project's configuration for the
+session.
 
 4. Initialize the project.
 
@@ -68,7 +72,18 @@ metrics. If you already have a prepared JSONL tree, link it instead:
 /sure_init
 ```
 
-Non-interactive runs must pass --model explicitly.
+`/sure_init` picks the provider and default model: built-in providers,
+gateways already in `~/.pi/agent/models.json`, or a brand-new
+OpenAI-compatible gateway (name, base URL, API key). Model lists are
+queried live where the provider supports it. On success it writes
+`.sure/init.json` (chosen provider and model, python check, discovered
+skills) and switches the current session to the chosen model — it does
+not run the doctor. `/model` afterwards lists only the current
+provider's models by default; Tab widens the scope.
+
+Non-interactive runs must pass full arguments:
+`/sure_init --option <provider-id> --model <model-id> --api-key <key>`;
+a new gateway additionally takes `--name <name> --base-url <url>`.
 
 5. Discover or provide a model.
 
@@ -251,7 +266,7 @@ symlink inside the repository pointing at it.
 
 | Command | Purpose | Required Input | Common Optional Input | Expected Output | Success Criteria |
 | --- | --- | --- | --- | --- | --- |
-| `/sure_init` | Configure the harness project and agent runtime: pick a provider (built-ins, models.json gateways, or a new OpenAI-compatible gateway) and pick the default model from the provider's model list (live where supported, built-in catalog otherwise). Non-interactive: `--option <id> --model <model-id>`; new gateway one-shot adds `--name <name> --base-url <url> --api-key <key>`. | none | provider/auth/model configuration | project-level config and doctor evidence | hooks discover skills and required dependencies |
+| `/sure_init` | Configure the harness project and agent runtime: pick a provider (built-ins, models.json gateways, or a new OpenAI-compatible gateway) and pick the default model from the provider's model list (live where supported, built-in catalog otherwise). Non-interactive: `--option <id> --model <model-id>`; new gateway one-shot adds `--name <name> --base-url <url> --api-key <key>`. | none | provider/auth/model configuration | `.sure/init.json` with the chosen provider and model, python check, and discovered skills; session switched to the chosen model | hooks discover skills and required dependencies |
 | `/sure_feed` | Discover models and synthesize onboarding input. | direct model URL or `source/query` | `max_models`, `max_retries`, `download`, `handoff_root` | `sure/handoffs/<model>/model_input.yaml`, feed artifacts | selected model has task evidence, repo, weights source, fixture, IO contract |
 | `/sure_onboard` | Turn a model into a runnable local inference unit. | `model=<handoff>` or `model_input_path=...` | `device`, `package`, `preferred_backend`, `skip_download` | `sure/models/<model>/` with wrapper, spec, config, fixture, verdict | import/load/infer/contract validations pass and `verdict.json` is ready |
 | `/sure_eval` | Run prediction plus route-backed evaluation. | `model`, `datasets` | `metrics`, `max_samples`, `execution`, `device`, VC resources | predictions, validation payload, route plan, metric reports, run report | formal execution path is recorded; predictions validate; metric reports exist |
