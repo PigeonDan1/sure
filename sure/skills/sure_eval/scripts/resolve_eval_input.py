@@ -26,6 +26,8 @@ from evaluation_capabilities import default_metrics_for_task_language, supported
 from resolve_evaluation_engine import resolve_engine_root
 from resolve_model_dir import _candidate_model_dirs, _checks, _first_existing, _verdict_path
 
+from sure_eval.agent import vc_submitter
+
 
 MAIN_FLOW_SCRIPTS = [
     "scripts/prepare_sure_dataset.py",
@@ -333,6 +335,33 @@ def _vc_request(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+_VC_INFO_TIMEOUT_SECONDS = 30
+
+
+def _validate_vc_partition(vc_request: dict[str, Any], execution: dict[str, Any]) -> None:
+    """Fail fast when an explicit vc_partition is not in the user's allowed set.
+
+    Skips silently when the run is not planned for vc, when ``vc info -u``
+    fails or times out, or when the parsed partition list is empty: the later
+    ``vc submit`` stays authoritative, this check only shortens the feedback
+    loop for typos.
+    """
+    partition = str(vc_request.get("partition") or "").strip()
+    if not partition or execution.get("planned") != "vc":
+        return
+    try:
+        allowed = vc_submitter.get_user_partitions(timeout=_VC_INFO_TIMEOUT_SECONDS)
+    except Exception:
+        return
+    if not allowed:
+        return
+    if partition not in allowed:
+        raise EvalInputError(
+            f'vc_partition "{partition}" is not in your allowed partitions. '
+            f"Allowed: {', '.join(sorted(allowed))}"
+        )
+
+
 def _count_jsonl_rows(path: Path) -> int | None:
     if not path.exists():
         return None
@@ -515,6 +544,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     execution = _normalize_execution(args.execution, args.execution_path)
     device = _resolve_device(args.device, execution)
     vc_request = _vc_request(args)
+    _validate_vc_partition(vc_request, execution)
 
     main_flow_input = {
         "user_goal": args.user_goal,
