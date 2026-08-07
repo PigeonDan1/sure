@@ -463,7 +463,9 @@ nodes、分数和样本级报告属于 `evaluation_route_plan.json`、`report.js
 
 ## Route 和 Pipeline ID
 
-用 submodule engine 查看可用 route：
+用 submodule engine 查看可用 route。`sure-eval` CLI 不随 `npm install`
+安装——先装一次引擎(`pip install -e sure/external/sure-evaluation`,
+见[评估引擎文档](./evaluation_engine_zh.md)):
 
 ```bash
 cd sure/external/sure-evaluation
@@ -479,7 +481,9 @@ sure/external/sure-evaluation/docs/pipeline_catalog.jsonl
 sure/external/sure-evaluation/docs/pipeline_catalog.md
 ```
 
-当同一个 reported metric 有多个 route variants 时，应使用 exact `pipeline_id`，不要发明新的 metric 名。
+catalog 是生成物,可能落后于引擎的 route 定义——两边对不上时,以
+`metric describe` 的输出为准,真正跑的是它。当同一个 reported metric
+有多个 route variants 时，应使用 exact `pipeline_id`，不要发明新的 metric 名。
 
 ## 常见失败
 

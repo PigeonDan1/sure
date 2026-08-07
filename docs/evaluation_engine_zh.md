@@ -23,6 +23,17 @@ git submodule update --init --recursive
 export SURE_EVALUATION_HOME=/path/to/sure-evaluation
 ```
 
+装一次引擎的 Python 包——`sure-eval` CLI 就是它提供的,`npm install`
+不会装:
+
+```bash
+pip install -e sure/external/sure-evaluation
+```
+
+可选依赖组和节点本地环境见引擎自己的文档:
+`sure/external/sure-evaluation/` 下的 `docs/installation.md` 和
+`docs/environment.md`。
+
 配置后运行 doctor：
 
 ```bash

@@ -484,7 +484,10 @@ Use this checklist when reviewing a completed run.
 
 ## Route And Pipeline IDs
 
-Use the submodule engine to inspect available routes:
+Use the submodule engine to inspect available routes. The `sure-eval`
+CLI is not installed by `npm install` — install the engine once first
+(`pip install -e sure/external/sure-evaluation`, see
+[the engine doc](./evaluation_engine.md)):
 
 ```bash
 cd sure/external/sure-evaluation
@@ -500,7 +503,11 @@ sure/external/sure-evaluation/docs/pipeline_catalog.jsonl
 sure/external/sure-evaluation/docs/pipeline_catalog.md
 ```
 
-When one reported metric has multiple route variants, use exact `pipeline_id` rather than inventing a new metric name.
+The catalog is a generated file and can lag behind the engine's route
+definitions — when the two disagree, trust the `metric describe`
+output, which is what actually runs. When one reported metric has
+multiple route variants, use exact `pipeline_id` rather than inventing
+a new metric name.
 
 ## Common Failure Modes
 

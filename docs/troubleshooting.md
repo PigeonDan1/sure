@@ -141,6 +141,8 @@ git status --short
 git rev-parse HEAD
 ```
 
-Then compare the requested pipeline with the current engine catalog or describe
-command. Re-run `/sure_reval` into a fresh tmp output directory after updating
-the ID.
+Then check the requested pipeline with the engine's describe command
+(`sure-eval metric describe <task> --pipeline-id <id> --json`) — prefer
+it over the `pipeline_catalog.jsonl` file, which is generated and can
+lag behind the live route definitions. Re-run `/sure_reval` into a fresh
+tmp output directory after updating the ID.

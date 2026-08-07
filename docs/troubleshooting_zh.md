@@ -124,5 +124,7 @@ git status --short
 git rev-parse HEAD
 ```
 
-然后对照当前 engine catalog 或 describe 命令确认请求的 pipeline。修正 ID 后，把
-`/sure_reval` 输出到新的 tmp 目录重新运行。
+然后用引擎的 describe 命令确认请求的 pipeline
+(`sure-eval metric describe <task> --pipeline-id <id> --json`)——别只对
+`pipeline_catalog.jsonl`,那是生成物,可能落后于真实 route 定义。修正 ID
+后，把 `/sure_reval` 输出到新的 tmp 目录重新运行。

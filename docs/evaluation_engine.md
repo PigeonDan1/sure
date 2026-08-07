@@ -18,6 +18,17 @@ For an existing clone, initialize the submodule:
 git submodule update --init --recursive
 ```
 
+Install the engine's Python package — this provides the `sure-eval` CLI
+used for route inspection (it is not installed by `npm install`):
+
+```bash
+pip install -e sure/external/sure-evaluation
+```
+
+Optional extras and per-node environments are described in the engine's
+own `docs/installation.md` and `docs/environment.md` under
+`sure/external/sure-evaluation/`.
+
 Advanced users can still point the harness at another checkout:
 
 ```bash
