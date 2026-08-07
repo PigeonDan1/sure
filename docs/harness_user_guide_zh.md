@@ -435,6 +435,8 @@ nodes、分数和样本级报告属于 `evaluation_route_plan.json`、`report.js
 
 ## 验收清单
 
+复查一个已完成的 run 时按这份清单走。
+
 ### Onboarding
 
 - `sure/models/<model>/artifacts/verdict.json` 存在(顶层
@@ -495,4 +497,4 @@ catalog 是生成物,可能落后于引擎的 route 定义——两边对不上�
 | `/sure_eval execution=vc` 失败 | VC CLI 不可用或提交失败 | 修复 VC 权限/资源；harness 不会静默 fallback。 |
 | 作业想投指定分区 | 未传 `vc_partition` 时由 harness 自动选分区 | `/sure_eval` 加 `vc_partition=<分区名>`;传错会当场报错并列出可用分区。 |
 | `/sure_reval` 无法从裸 predictions 目录推断元数据 | source 附近没有 report/protocol | 显式传 `model=<name>` 和 `datasets=<dataset>`。 |
-| exact `pipeline_id` 失败 | route 节点环境缺失 | 按 `evaluation_route_plan.json` 中的 setup 提示准备对应 node 环境。 |
+| exact `pipeline_id` 失败 | route 节点环境缺失 | 按 `evaluation_route_plan.json` 中的 setup 提示准备对应 node 环境,或安装对应 node extra(`pip install -e ".[<extra>]"`)。 |

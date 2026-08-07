@@ -52,6 +52,9 @@ flowchart LR
 
 ## Quick Start
 
+This section is the shortest working path — step-by-step detail lives in
+the [user guide](./docs/harness_user_guide.md).
+
 Prerequisites: Node.js >= 22.19.0, git, and Python >= 3.10 with PyYAML
 (`pip install -r requirements.txt`). The evaluation engine used by
 `/sure_eval` needs its own install once:

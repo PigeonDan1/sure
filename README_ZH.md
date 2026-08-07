@@ -50,6 +50,8 @@ flowchart LR
 
 ## 快速开始
 
+这一节只给最短可跑通路径——逐步细节见[用户指南](./docs/harness_user_guide_zh.md)。
+
 先备好：Node.js >= 22.19.0、git、Python >= 3.10 并装上 PyYAML
 （`pip install -r requirements.txt`）。`/sure_eval` 用的评测引擎另装一次：
 `pip install -e sure/external/sure-evaluation`。
