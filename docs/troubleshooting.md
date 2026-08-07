@@ -116,7 +116,10 @@ only when the run is expected to submit to the VC cluster.
 Add `vc_partition=<partition>` to `/sure_eval` together with `execution=vc`.
 Without it the harness picks a partition automatically. If the name is not in
 your allowed set, input resolution fails immediately and the error message
-lists the partitions you can use (from `vc info -u`).
+lists the partitions you can use (from `vc info -u`). When `vc info -u`
+itself fails, times out, or returns nothing, this early check is skipped —
+no error at resolution does not prove the name is right; the final word is
+the `vc submit` result.
 
 ## Exact `pipeline_id` Fails
 

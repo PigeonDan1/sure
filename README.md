@@ -120,10 +120,12 @@ Run the main path:
 /sure_init
 /sure_feed source=modelscope query="english asr" max_models=20
 /sure_onboard model=<model>
-/sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=vc
+/sure_eval model=<model_name> datasets=aishell1-test_ASR metrics=cer max_samples=5 execution=local
 ```
 
-Pick a provider — the five built-ins, any OpenAI-compatible gateway from your models.json, or add a new gateway (name, base URL, API key) — then pick a model from the provider's model list (queried live where the provider supports listing; Codex falls back to the built-in catalog).
+Pair metrics with datasets: `aishell1-test_ASR` is Chinese, so it takes
+`cer`; `wer` only has English routes, so pair it with an English set
+such as `librispeech_test-clean_ASR`.
 
 Recompute metrics from existing predictions:
 
@@ -134,13 +136,20 @@ Recompute metrics from existing predictions:
 Dataset short names such as `aishell1` are accepted when exactly one
 matching prediction file exists, for example `aishell1-test_ASR.txt`.
 
-Use `execution=local` for local development. Use `execution=vc` only when the
-run should produce real VC submission evidence. With `execution=vc`, add
-`vc_partition=<partition>` to pick the cluster partition; when omitted the
-harness selects one automatically. A partition name outside your allowed set
-fails fast at input resolution, and the error lists the partitions you can
-use. Related overrides: `vc_gpu`, `vc_mem`, `vc_cpu`, `vc_image`,
-`vc_job_name`.
+## Cluster Execution
+
+`execution=vc` submits real jobs through the `vc` CLI — a cluster
+job-submission system, unrelated to the voice-conversion task. It
+requires a working `vc` CLI (`which vc && vc info` must succeed) and
+never falls back to local execution; use `execution=local` for
+development and smoke runs. With `execution=vc`, add
+`vc_partition=<partition>` to pick the cluster partition; when omitted
+the harness selects one automatically. A partition name outside your
+allowed set fails fast at input resolution and the error lists the
+partitions you can use — but when the partition list itself cannot be
+fetched (`vc info -u` failing or timing out), the early check is
+skipped and a bad name only surfaces at `vc submit` time. Related
+overrides: `vc_gpu`, `vc_mem`, `vc_cpu`, `vc_image`, `vc_job_name`.
 
 ## Inputs And Outputs
 

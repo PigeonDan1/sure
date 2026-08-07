@@ -109,10 +109,11 @@ npm run sure:doctor
 /sure_init
 /sure_feed source=modelscope query="english asr" max_models=20
 /sure_onboard model=<model>
-/sure_eval model=<model_name> datasets=<dataset_name> metrics=wer max_samples=5 execution=vc
+/sure_eval model=<model_name> datasets=aishell1-test_ASR metrics=cer max_samples=5 execution=local
 ```
 
-选择供应商——五个内置服务、models.json 里已配置的 OpenAI 兼容网关、或现场新建一个网关(名称、地址、API key)——然后从供应商的模型列表里选默认模型(支持在线查询的都实时拉取,Codex 这类没有列表接口的用内置目录)。
+metric 要和数据集配对:`aishell1-test_ASR` 是中文集,配 `cer`;`wer`
+只有英文路由,配 `librispeech_test-clean_ASR` 这类英文集。
 
 基于已有 predictions 重新计算指标：
 
@@ -123,10 +124,16 @@ npm run sure:doctor
 当且仅当能唯一匹配到一个 prediction 文件时，`/sure_reval` 接受 `aishell1`
 这类短数据集名，例如匹配到 `aishell1-test_ASR.txt`。
 
-本地开发使用 `execution=local`。需要真实 VC 提交证据时再使用 `execution=vc`。
-使用 `execution=vc` 时可加 `vc_partition=<分区名>` 指定作业投到哪个分区,不传
-则自动选择;分区名不在你的可用范围内会在输入解析阶段直接报错,并列出可用分
-区。同族参数:`vc_gpu`、`vc_mem`、`vc_cpu`、`vc_image`、`vc_job_name`。
+## 集群执行
+
+`execution=vc` 通过 `vc` CLI 提交真实作业——vc 是集群作业提交系统,和
+voice conversion 任务没有关系。它要求 `vc` CLI 真的可用(`which vc &&
+vc info` 得能通过),并且绝不会静默退回本地执行;本地开发和冒烟一律用
+`execution=local`。使用 `execution=vc` 时可加 `vc_partition=<分区名>`
+指定作业投到哪个分区,不传则自动选择;分区名不在你的可用范围内会在输入
+解析阶段直接报错,并列出可用分区——但分区列表本身拉不到时(`vc info -u`
+失败或超时),这道前置检查会跳过,错误的分区名要到 `vc submit` 才报出来。
+同族参数:`vc_gpu`、`vc_mem`、`vc_cpu`、`vc_image`、`vc_job_name`。
 
 ## 输入与输出
 
