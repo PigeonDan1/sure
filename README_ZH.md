@@ -90,7 +90,7 @@ npm run sure:doctor
 `ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl`。
 档案体量、解压校验、命名细节见[用户指南](./docs/harness_user_guide_zh.md)。
 
-启动 TUI：
+启动 TUI(Windows 用 PowerShell 跑 `pi-test.ps1`)：
 
 ```bash
 ./pi-test.sh --approve

@@ -56,7 +56,7 @@ extraction checks, and dataset naming. Only `/sure_eval` and
 metrics. If you already have a prepared JSONL tree, link it instead:
 `ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl`.
 
-3. Start the TUI.
+3. Start the TUI (Windows: use `pi-test.ps1` from PowerShell).
 
 ```bash
 ./pi-test.sh --approve

@@ -53,7 +53,7 @@ npm run sure:doctor
 用得到 benchmark 数据,这步可以等要出指标了再做。已经有现成 JSONL 的话
 直接软链:`ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl`。
 
-3. 启动 TUI。
+3. 启动 TUI(Windows 用 PowerShell 跑 `pi-test.ps1`)。
 
 ```bash
 ./pi-test.sh --approve

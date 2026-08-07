@@ -99,7 +99,7 @@ link it instead:
 Archive sizes, extraction checks, and naming details live in the
 [user guide](./docs/harness_user_guide.md).
 
-Start the TUI:
+Start the TUI (Windows: use `pi-test.ps1` from PowerShell):
 
 ```bash
 ./pi-test.sh --approve
