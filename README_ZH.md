@@ -97,6 +97,9 @@ npm run sure:doctor
 这类短数据集名，例如 `aishell1__v1.0.2__asr.txt`。
 
 本地开发使用 `execution=local`。需要真实 VC 提交证据时再使用 `execution=vc`。
+使用 `execution=vc` 时可加 `vc_partition=<分区名>` 指定作业投到哪个分区,不传
+则自动选择;分区名不在你的可用范围内会在输入解析阶段直接报错,并列出可用分
+区。同族参数:`vc_gpu`、`vc_mem`、`vc_cpu`、`vc_image`、`vc_job_name`。
 
 ## 输入与输出
 

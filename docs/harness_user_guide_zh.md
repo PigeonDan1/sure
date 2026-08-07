@@ -200,6 +200,8 @@ sure/models/<model_name>/artifacts/
 | `max_samples` | 有界样本数。`0` 或省略表示全量数据集。 |
 | `execution` | `local`, `vc`, `auto`。`vc` 必须真实提交 VC job，不允许静默 fallback。 |
 | `device` | `auto`, `cpu`, `cuda`, `cuda:<index>`。 |
+| `vc_partition` | `execution=vc` 时指定 VC 分区;不传则自动选择。分区名不在可用范围内会在输入解析阶段直接报错并列出可用分区。 |
+| `vc_gpu` / `vc_mem` / `vc_cpu` / `vc_image` / `vc_job_name` | 可选 VC 资源覆写:GPU 数、内存(GB)、CPU 数、Docker 镜像、作业名。 |
 
 ### Re-evaluation 输入
 
@@ -366,5 +368,6 @@ sure/external/sure-evaluation/docs/pipeline_catalog.md
 | `/sure_onboard` 卡在 model input | repo、weights、fixture 或 IO contract 缺失 | 修复 handoff，或显式传 `model_input_path`。 |
 | `/sure_eval` 无法解析 dataset | benchmark JSONL root 缺失 | 软链 `data/datasets/sure_benchmark/jsonl` 或设置 `SURE_EVAL_DATASETS_ROOT`。 |
 | `/sure_eval execution=vc` 失败 | VC CLI 不可用或提交失败 | 修复 VC 权限/资源；harness 不会静默 fallback。 |
+| 作业想投指定分区 | 未传 `vc_partition` 时由 harness 自动选分区 | `/sure_eval` 加 `vc_partition=<分区名>`;传错会当场报错并列出可用分区。 |
 | `/sure_reval` 无法从裸 predictions 目录推断元数据 | source 附近没有 report/protocol | 显式传 `model=<name>` 和 `datasets=<dataset>`。 |
 | exact `pipeline_id` 失败 | route 节点环境缺失 | 按 `evaluation_route_plan.json` 中的 setup 提示准备对应 node 环境。 |

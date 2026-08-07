@@ -99,7 +99,12 @@ Dataset short names such as `aishell1` are accepted when exactly one versioned
 prediction file matches, for example `aishell1__v1.0.2__asr.txt`.
 
 Use `execution=local` for local development. Use `execution=vc` only when the
-run should produce real VC submission evidence.
+run should produce real VC submission evidence. With `execution=vc`, add
+`vc_partition=<partition>` to pick the cluster partition; when omitted the
+harness selects one automatically. A partition name outside your allowed set
+fails fast at input resolution, and the error lists the partitions you can
+use. Related overrides: `vc_gpu`, `vc_mem`, `vc_cpu`, `vc_image`,
+`vc_job_name`.
 
 ## Inputs And Outputs
 

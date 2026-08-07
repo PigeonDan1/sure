@@ -200,6 +200,8 @@ Key fields:
 | `max_samples` | Bounded sample count. `0` or omitted means full dataset. |
 | `execution` | `local`, `vc`, or `auto`. `vc` must submit a real VC job; no silent local fallback. |
 | `device` | `auto`, `cpu`, `cuda`, or `cuda:<index>`. |
+| `vc_partition` | VC partition for `execution=vc`. Omitted means auto-selection. Unknown or unauthorized names fail at input resolution with the allowed list. |
+| `vc_gpu` / `vc_mem` / `vc_cpu` / `vc_image` / `vc_job_name` | Optional VC resource overrides: GPUs, memory (GB), CPUs, Docker image, job name. |
 
 ### Re-evaluation Input
 

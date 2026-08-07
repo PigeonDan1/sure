@@ -76,6 +76,13 @@ execution.
 Use `execution=local` for smoke runs and local development. Use `execution=vc`
 only when the run is expected to submit to the VC cluster.
 
+## Send the Job to a Specific VC Partition
+
+Add `vc_partition=<partition>` to `/sure_eval` together with `execution=vc`.
+Without it the harness picks a partition automatically. If the name is not in
+your allowed set, input resolution fails immediately and the error message
+lists the partitions you can use (from `vc info -u`).
+
 ## Exact `pipeline_id` Fails
 
 Exact pipeline IDs are owned by the selected `sure-evaluation` checkout. If a
