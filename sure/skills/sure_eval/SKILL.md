@@ -2,7 +2,7 @@
 
 Orchestrate a SURE-EVAL evaluation run for an already-onboarded audio model. This skill is the Sure port of the SURE-EVAL main-flow agent. The state machine lives in `hooks/state-machine.ts`; this document is what the agent reads to drive each unit.
 
-The upstream main-flow reference is mirrored read-only under `references/main_flow_agent/` for audit and parity review only. It is not a runtime template or execution source. Do not edit `<legacy-sure-eval-root>/docs/agents/main_flow_agent`; refresh the mirror with `scripts/check_main_flow_reference.py --sync` and adapt harness execution only under this skill package.
+The upstream main-flow reference is mirrored read-only under `references/main_flow_agent/` for audit and parity review only. It is not a runtime template or execution source. Do not edit the mirror in place; refresh it from its upstream source with `scripts/check_main_flow_reference.py --sync` and adapt harness execution only under this skill package.
 
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
 
@@ -20,6 +20,12 @@ Control principle: **agent decides scope, scripts enforce format and execution.*
 | `execution` | — | `auto \| local \| vc`. Default `auto`; `local` is an explicit user choice, `vc` requires a real vc submission, `auto` prefers vc when available. |
 | `execution_path` | — | Legacy alias: `auto \| vc_submit \| local_bash \| local_docker`. Normalize this into `execution` in `eval_input_resolved.json`. |
 | `vc_partition` / `vc_cpu` / `vc_mem` / `vc_gpu` / `vc_image` | — | Optional vc resource overrides recorded in the execution surface and submit result. |
+| `metrics` | — | Comma-separated reported metrics, e.g. `metrics=cer`. Selects the current default route per metric; use an exact `pipeline_id` via `/sure_reval` for route variants. |
+| `vc_job_name` | — | Optional vc job name recorded with the submit result. |
+| `output_dir` | — | Override the evaluation run directory (default `sure/models/<model>/eval_runs/<run_id>`). |
+| `config` | — | Explicit harness evaluation config path (otherwise materialized from the engine's `config/default.yaml`). |
+| `evaluation_backend` | — | `external` (default) delegates metrics to the engine; `legacy` is compatibility/debug only. |
+| `evaluation_engine_root` | — | Explicit engine checkout override, same role as `SURE_EVALUATION_HOME`. |
 | `audit` | — | When true, triage existing results instead of running a new evaluation. |
 | `model_dir` | — | Override model directory resolution. If omitted, resolution checks `SURE_MODELS_DIR`, `SURE_MODEL_ROOT`, `LEGACY_SURE_MODELS_DIR`, `LEGACY_SURE_EVAL_ROOT`, then `sure/models/<model>/`. |
 | `run_id` | — | Resume a specific run. |
@@ -32,7 +38,7 @@ At `pre_start`, the hook resolves the product input into
 `scripts/resolve_eval_input.py`. This artifact is the bridge from the
 user-friendly `/sure_eval model=... datasets=... device=...` surface to the
 upstream `MAIN_FLOW_INPUT` shape documented in
-`docs/agents/main_flow_agent/README.md`:
+`references/main_flow_agent/contracts/main_agent_spec.md`:
 
 - `target.model_name/model_dir/tool_workflow_ready/integration_state` comes from
   the onboarded model directory.
@@ -195,9 +201,10 @@ override; the workspace checkout is not an implicit fallback.
 If `SURE_EVAL_CONFIG` is not supplied, harness runtime templates materialize
 `<run_dir>/_harness_config.yaml` from the submodule's `config/default.yaml` and
 rewrite results/cache paths to harness-local absolute paths. The default dataset
-entry is `data/datasets` under the harness repository; local deployments should
-symlink `data/datasets/sure_benchmark/jsonl` to the shared sandbox JSONL root:
-`<legacy-sure-eval-root>/data/datasets/sure_benchmark/jsonl`.
+entry is `data/datasets` under the harness repository; deployments either
+download and convert benchmark data with the repository scripts (see the user
+guide's Benchmark Data section) or symlink an existing
+`sure_benchmark/jsonl` tree into `data/datasets/sure_benchmark/jsonl`.
 Override `SURE_EVAL_DATASETS_ROOT` only when pointing at another directory that
 contains `sure_benchmark/jsonl`.
 
