@@ -46,7 +46,9 @@ _MEM_MIN_GB = 8
 _MEM_MAX_GB = 64
 
 
-def _run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
+def _run_cmd(
+    args: list[str], check: bool = True, timeout: float | None = None
+) -> subprocess.CompletedProcess[str]:
     """Run a shell command and return the result."""
     logger.debug("Running command", command=" ".join(args))
     return subprocess.run(
@@ -54,6 +56,7 @@ def _run_cmd(args: list[str], check: bool = True) -> subprocess.CompletedProcess
         capture_output=True,
         text=True,
         check=check,
+        timeout=timeout,
     )
 
 
@@ -206,9 +209,9 @@ def select_best_image(model_name: str) -> str:
     return best_image
 
 
-def get_user_partitions() -> set[str]:
+def get_user_partitions(timeout: float | None = None) -> set[str]:
     """Parse ``vc info -u`` and return the set of partitions the user may use."""
-    result = _run_cmd(["vc", "info", "-u"], check=False)
+    result = _run_cmd(["vc", "info", "-u"], check=False, timeout=timeout)
     partitions: set[str] = set()
     in_partition_block = False
     for line in result.stdout.splitlines():
@@ -219,7 +222,9 @@ def get_user_partitions() -> set[str]:
         if in_partition_block:
             if stripped.startswith("["):
                 break
-            if stripped:
+            # `vc info -u` prints a dashed separator between blocks; it is
+            # not a partition name.
+            if stripped and stripped.strip("-"):
                 partitions.add(stripped)
     return partitions
 
