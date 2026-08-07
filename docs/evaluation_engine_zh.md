@@ -63,24 +63,30 @@ git commit -m "chore(sure): bump sure-evaluation submodule"
 
 ## 数据集根目录
 
-`/sure_eval` 和 `/sure_reval` 需要 benchmark JSONL 文件。默认位置是：
+`/sure_eval` 和 `/sure_reval` 需要 benchmark JSONL 文件和配套音频。JSONL 默认位置是：
 
 ```text
 data/datasets/sure_benchmark/jsonl
 ```
 
-常见本地设置：
+数据本身来自 ModelScope——下载和转换命令见用户指南的「Benchmark 数据」一节。
+已经有现成 JSONL 的话直接软链：
 
 ```bash
 mkdir -p data/datasets/sure_benchmark
 ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
 ```
 
-也可以通过环境变量指向包含 `sure_benchmark/jsonl` 的数据根目录：
+`SURE_EVAL_DATASETS_ROOT` 可以指向另一个包含 `sure_benchmark/jsonl` 的数据根，
+但它只挪 JSONL 的查找位置：
 
 ```bash
 export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
 ```
+
+音频永远按仓库根固定路径解析
+（`data/datasets/sure_benchmark/SURE_Test_Suites/`），音频放在别处的话，
+仓库里要留一条软链接指过去。
 
 ## Route 选择
 

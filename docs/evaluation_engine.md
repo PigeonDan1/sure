@@ -67,25 +67,32 @@ that run.
 
 ## Dataset Root
 
-`/sure_eval` and `/sure_reval` need benchmark JSONL files. The default location
-is:
+`/sure_eval` and `/sure_reval` need benchmark JSONL files plus the
+matching audio. The default JSONL location is:
 
 ```text
 data/datasets/sure_benchmark/jsonl
 ```
 
-Typical local setup:
+The data itself comes from ModelScope — the user guide's Benchmark Data
+section has the download and conversion commands. If a prepared JSONL
+tree already exists elsewhere, link it:
 
 ```bash
 mkdir -p data/datasets/sure_benchmark
 ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
 ```
 
-Or use an explicit root that contains `sure_benchmark/jsonl`:
+`SURE_EVAL_DATASETS_ROOT` can point at another root containing
+`sure_benchmark/jsonl`, but it moves only the JSONL lookup:
 
 ```bash
 export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
 ```
+
+Audio is always resolved against the repository root
+(`data/datasets/sure_benchmark/SURE_Test_Suites/`), so when audio lives
+elsewhere, keep a symlink inside the repository pointing at it.
 
 ## Route Selection
 

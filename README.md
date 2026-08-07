@@ -70,13 +70,31 @@ If the repository was cloned without submodules:
 git submodule update --init --recursive
 ```
 
-Prepare benchmark data:
+Prepare benchmark data. Only `/sure_eval` and `/sure_reval` need it —
+feed and onboard run without it, so you can defer this step. The data
+lives on ModelScope (`SUREBenchmark/SURE_Test_csv`, 14 annotation CSVs,
+~34 MB; `SUREBenchmark/SURE_Test_Suites`, 12 audio archives, 52.5 GB in
+total; Apache-2.0, no login):
 
 ```bash
-mkdir -p data/datasets/sure_benchmark
-ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
+pip install -e "sure/external/sure-evaluation[download]"
+python sure/external/sure-evaluation/scripts/download_sure_data.py --csv
+modelscope download --dataset SUREBenchmark/SURE_Test_Suites aishell-1_test.tar.gz --local_dir data/datasets/sure_benchmark/SURE_Test_Suites
+cd data/datasets/sure_benchmark/SURE_Test_Suites && mkdir -p aishell-1_test && tar -xzf aishell-1_test.tar.gz -C aishell-1_test && cd -
+python sure/external/sure-evaluation/scripts/convert_sure_to_jsonl.py --csv-dir data/datasets/sure_benchmark/SURE_Test_csv --output-dir data/datasets/sure_benchmark/jsonl
 npm run sure:doctor
 ```
+
+This example fetches one archive (AISHELL-1, 866 MB) — download the
+archives for the datasets you plan to evaluate the same way, or fetch
+everything at once with `download_sure_data.py --suites` (52.5 GB, and
+it prints no progress while it runs). Converted files are named after
+the CSVs, for example `aishell1-test_ASR.jsonl`; pass those names minus
+`.jsonl` as `datasets=`. If you already have the JSONL tree somewhere,
+link it instead:
+`ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl`.
+Archive sizes, extraction checks, and naming details live in the
+[user guide](./docs/harness_user_guide.md).
 
 Start the TUI:
 
@@ -101,8 +119,8 @@ Recompute metrics from existing predictions:
 /sure_reval source=<results_or_run_dir> datasets=aishell1 max_samples=5 pipeline_id=<exact_pipeline_id>
 ```
 
-Dataset short names such as `aishell1` are accepted when exactly one versioned
-prediction file matches, for example `aishell1__v1.0.2__asr.txt`.
+Dataset short names such as `aishell1` are accepted when exactly one
+matching prediction file exists, for example `aishell1-test_ASR.txt`.
 
 Use `execution=local` for local development. Use `execution=vc` only when the
 run should produce real VC submission evidence. With `execution=vc`, add

@@ -67,6 +67,20 @@ export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
 
 points at a root containing `sure_benchmark/jsonl`.
 
+If you have no data yet, it is downloaded from ModelScope and converted
+with the repository's own scripts — the user guide's Benchmark Data
+section has the full command sequence (`download_sure_data.py --csv`,
+per-archive audio downloads, `convert_sure_to_jsonl.py`).
+
+## A Short Dataset Alias Starts a Huge Download
+
+Passing a short alias such as `datasets=aishell1` while the audio suites
+are not fully in place makes the dataset manager treat the data as
+missing and start a full 52.5 GB ModelScope download — no prompt, no
+progress output, no timeout. A run that goes silent right after dataset
+resolution is usually this. Prefer full JSONL file names such as
+`datasets=aishell1-test_ASR`; they never trigger downloads.
+
 ## VC Execution Did Not Produce Submission Evidence
 
 When `execution=vc` is requested, a successful run must include real VC

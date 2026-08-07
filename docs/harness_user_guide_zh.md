@@ -37,15 +37,21 @@ pip install -r requirements.txt
 npm run sure:doctor
 ```
 
-2. 准备指标引擎和 benchmark JSONL。
+2. 准备指标引擎和 benchmark 数据。
 
 ```bash
 git submodule update --init --recursive
 
-mkdir -p data/datasets/sure_benchmark
-ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
+pip install -e "sure/external/sure-evaluation[download]"
+python sure/external/sure-evaluation/scripts/download_sure_data.py --csv
+python sure/external/sure-evaluation/scripts/convert_sure_to_jsonl.py --csv-dir data/datasets/sure_benchmark/SURE_Test_csv --output-dir data/datasets/sure_benchmark/jsonl
 npm run sure:doctor
 ```
+
+音频档案按数据集单独下——来源、体量、解压校验、数据集命名见下面的
+[Benchmark 数据](#benchmark-数据)一节。只有 `/sure_eval` 和 `/sure_reval`
+用得到 benchmark 数据,这步可以等要出指标了再做。已经有现成 JSONL 的话
+直接软链:`ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl`。
 
 3. 启动 TUI。
 
@@ -94,7 +100,7 @@ sure/models/<model_name>/artifacts/
 7. 评估已接入模型。
 
 ```text
-/sure_eval model=<model_name> datasets=aishell1__v1.0.2__asr metrics=cer max_samples=5 execution=local device=auto
+/sure_eval model=<model_name> datasets=aishell1-test_ASR metrics=cer max_samples=5 execution=local device=auto
 ```
 
 期望输出：
@@ -115,7 +121,7 @@ sure/models/<model_name>/artifacts/
 8. 基于已有结果重新评估，不重新推理。
 
 ```text
-/sure_reval source=<results_or_run_dir> datasets=aishell1__v1.0.2__asr max_samples=5 pipeline_id=asr.zh.cer.wetext_norm_zh_itn_v1.wenet_cer_v1 pipeline_id=asr.zh.cer.aispeech_norm_zh_v1.wenet_cer_v1
+/sure_reval source=<results_or_run_dir> datasets=aishell1-test_ASR max_samples=5 pipeline_id=asr.zh.cer.wetext_norm_zh_itn_v1.wenet_cer_v1 pipeline_id=asr.zh.cer.aispeech_norm_zh_v1.wenet_cer_v1
 ```
 
 期望输出：
@@ -131,6 +137,103 @@ sure/models/<model_name>/artifacts/
 <tmp_reval_run>/main_agent_run_report.json
 <tmp_reval_run>/reval_run_report.json
 ```
+
+## Benchmark 数据
+
+评估真正要读的是两样东西:JSONL 标注和音频。CSV 只是原料,转完就用不上了。
+
+哪些命令需要 benchmark 数据:
+
+| 命令 | 是否需要 |
+| --- | --- |
+| `/sure_init`、`/sure_feed` | 否 |
+| `/sure_onboard` | 否——用仓库自带的 `fixtures/` |
+| `/sure_eval` | 是——所评数据集的 JSONL 加音频 |
+| `/sure_reval` | 要的是已有 run 的 predictions,不是原始数据 |
+
+### 来源与体量
+
+两个仓库都在 ModelScope 公开(Apache-2.0,不用登录):
+
+| 仓库 | 内容 | 体量 |
+| --- | --- | --- |
+| `SUREBenchmark/SURE_Test_csv` | 14 个标注 CSV | 约 34 MB |
+| `SUREBenchmark/SURE_Test_Suites` | 12 个音频档案 | 共 52.5 GB |
+
+档案从 225 MB(`IEMOCAP_test.tar.gz`)到 41.5 GB(`contextasr_test.tar.gz`)
+不等。注意:转换脚本把 `contextasr_*` 两个数据集的音频指到了
+`librispeech-test-clean/` 和 `aishell-1_test/`,41.5 GB 那个档案在这条
+转换链路上读不到;跳过它,音频总量降到 11 GB 左右。磁盘要同时容下
+压缩包和解压后的文件。
+
+### 下载、解压、转换
+
+```bash
+pip install -e "sure/external/sure-evaluation[download]"
+python sure/external/sure-evaluation/scripts/download_sure_data.py --csv
+modelscope download --dataset SUREBenchmark/SURE_Test_Suites aishell-1_test.tar.gz --local_dir data/datasets/sure_benchmark/SURE_Test_Suites
+cd data/datasets/sure_benchmark/SURE_Test_Suites && mkdir -p aishell-1_test && tar -xzf aishell-1_test.tar.gz -C aishell-1_test && cd -
+python sure/external/sure-evaluation/scripts/convert_sure_to_jsonl.py --csv-dir data/datasets/sure_benchmark/SURE_Test_csv --output-dir data/datasets/sure_benchmark/jsonl
+npm run sure:doctor
+```
+
+`download_sure_data.py --suites` 一次全下,最长跑两个小时,中间一个字都
+不打印——想看进度就照上面的样子用 `modelscope download` 一个档案一个
+档案地下。
+
+解压完检查目录层级。期望结构:
+
+```text
+data/datasets/sure_benchmark/SURE_Test_Suites/aishell-1_test/<key>.wav
+```
+
+档案自带一层同名目录的话就会变成
+`aishell-1_test/aishell-1_test/<key>.wav`,JSONL 里的相对路径全对不上。
+把里层文件提上来一层就好。下载脚本末尾那行 `Total audio files` 只数第
+一层——解压明明成功了这个数却是 0,多半就是多套了一层。
+
+`npm run sure:doctor` 报 `PASS ...(14 jsonl files)` 只说明目录和文件名
+摆对了——它不看文件内容,也不查音频。真正的证据是 `max_samples=5` 的
+评估跑出 metric report。
+
+### JSONL 行格式
+
+每行六个字段:`key`、`path`、`target`、`task`、`language`、`dataset`。
+`path` 是相对路径,运行时按这个顺序找音频:
+
+```text
+<repo_root>/data/datasets/sure_benchmark/SURE_Test_Suites/<path>
+<repo_root>/<path>
+```
+
+JSONL 和音频必须同时就位。只有 JSONL 也能让 `npm run sure:doctor`
+变 PASS,但推理阶段会因为找不到音频挂掉。
+
+### 数据集命名
+
+转出来的文件按 CSV 命名。`datasets=` 填文件名去掉 `.jsonl` 后缀:
+
+| 命名形式 | 示例 | 自己下的数据能用吗 |
+| --- | --- | --- |
+| JSONL 文件名 | `aishell1-test_ASR` | 能用,推荐 |
+| 代码里的短别名 | `aishell1` | 能用,但有副作用:音频没备齐时,短别名会触发一次 52.5 GB 的全量下载,不提示、不出进度 |
+| 内部版本名 | `aishell1__v1.0.2__asr` | 不能用,这个名字只存在于内部共享数据目录 |
+
+数据集和常用 metric 的对应:
+
+| 数据集 | 任务 | metric |
+| --- | --- | --- |
+| `aishell1-test_ASR`、`aishell-5_eval1`、`kespeech`、`contextasr_mandarin` | 中文 ASR | `cer` |
+| `librispeech_test-clean_ASR`、`librispeech_test-other_ASR`、`voxpopuli_test`、`contextasr_english` | 英文 ASR | `wer` |
+| `CS_dialogue` | 中英混说 ASR | `mer` |
+| `CoVoST2_S2TT_en2zh_test`、`CoVoST2_S2TT_zh2en_test` | S2TT | `bleu` |
+| `IEMOCAP_SER_test`、`librispeech_test_clean_GR`、`mmsu` | SER / GR / SLU | 见引擎 catalog |
+
+### 自定义数据根目录
+
+`SURE_EVAL_DATASETS_ROOT` 只挪 JSONL 的查找位置——那个目录下必须有
+`sure_benchmark/jsonl`。音频永远按上面写的仓库根固定路径解析,音频要
+挪走的话,仓库里得留一条软链接指过去。
 
 ## 功能参考
 
@@ -218,7 +321,8 @@ sure/models/<model_name>/artifacts/
 
 `/sure_reval` 会按和 `/sure_eval` 一致的规则解析 prediction source 中的数据集名：
 优先精确匹配文件 stem；否则 `aishell1` 这类短名可以解析到唯一的版本化 prediction
-stem，例如 `aishell1__v1.0.2__asr`。如果短名存在歧义，则失败而不是猜测。
+stem，例如 `aishell1-test_ASR`（在内部共享数据目录上跑出来的 run 则是
+`aishell1__v1.0.2__asr` 这种带版本的 stem）。如果短名存在歧义，则失败而不是猜测。
 
 指标选择模式：
 

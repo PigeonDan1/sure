@@ -38,15 +38,23 @@ pip install -r requirements.txt
 npm run sure:doctor
 ```
 
-2. Prepare the metric engine and benchmark JSONL files.
+2. Prepare the metric engine and benchmark data.
 
 ```bash
 git submodule update --init --recursive
 
-mkdir -p data/datasets/sure_benchmark
-ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
+pip install -e "sure/external/sure-evaluation[download]"
+python sure/external/sure-evaluation/scripts/download_sure_data.py --csv
+python sure/external/sure-evaluation/scripts/convert_sure_to_jsonl.py --csv-dir data/datasets/sure_benchmark/SURE_Test_csv --output-dir data/datasets/sure_benchmark/jsonl
 npm run sure:doctor
 ```
+
+Audio archives are downloaded per dataset — see the
+[Benchmark Data](#benchmark-data) section below for sources, sizes,
+extraction checks, and dataset naming. Only `/sure_eval` and
+`/sure_reval` need benchmark data, so this step can wait until you want
+metrics. If you already have a prepared JSONL tree, link it instead:
+`ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl`.
 
 3. Start the TUI.
 
@@ -95,7 +103,7 @@ sure/models/<model_name>/artifacts/
 7. Evaluate the onboarded model.
 
 ```text
-/sure_eval model=<model_name> datasets=aishell1__v1.0.2__asr metrics=cer max_samples=5 execution=local device=auto
+/sure_eval model=<model_name> datasets=aishell1-test_ASR metrics=cer max_samples=5 execution=local device=auto
 ```
 
 Expected output:
@@ -116,7 +124,7 @@ Expected output:
 8. Re-evaluate an existing result without inference.
 
 ```text
-/sure_reval source=<results_or_run_dir> datasets=aishell1__v1.0.2__asr max_samples=5 pipeline_id=asr.zh.cer.wetext_norm_zh_itn_v1.wenet_cer_v1 pipeline_id=asr.zh.cer.aispeech_norm_zh_v1.wenet_cer_v1
+/sure_reval source=<results_or_run_dir> datasets=aishell1-test_ASR max_samples=5 pipeline_id=asr.zh.cer.wetext_norm_zh_itn_v1.wenet_cer_v1 pipeline_id=asr.zh.cer.aispeech_norm_zh_v1.wenet_cer_v1
 ```
 
 Expected output:
@@ -132,6 +140,112 @@ Expected output:
 <tmp_reval_run>/main_agent_run_report.json
 <tmp_reval_run>/reval_run_report.json
 ```
+
+## Benchmark Data
+
+Evaluation reads two things: JSONL annotation files and audio files. The
+annotation CSVs are raw material — once converted, only the JSONL and
+audio matter.
+
+Which commands need benchmark data:
+
+| Command | Needs benchmark data? |
+| --- | --- |
+| `/sure_init`, `/sure_feed` | No |
+| `/sure_onboard` | No — uses the repository's `fixtures/` |
+| `/sure_eval` | Yes — JSONL plus audio for the chosen datasets |
+| `/sure_reval` | Needs an existing run's predictions, not raw data |
+
+### Sources and sizes
+
+Both repositories are public on ModelScope (Apache-2.0, no login):
+
+| Repository | Content | Size |
+| --- | --- | --- |
+| `SUREBenchmark/SURE_Test_csv` | 14 annotation CSVs | ~34 MB |
+| `SUREBenchmark/SURE_Test_Suites` | 12 audio archives | 52.5 GB total |
+
+Archives range from 225 MB (`IEMOCAP_test.tar.gz`) to 41.5 GB
+(`contextasr_test.tar.gz`). Note that the converter maps the two
+`contextasr_*` datasets to `librispeech-test-clean/` and
+`aishell-1_test/` audio, so the 41.5 GB archive is not read by this
+conversion chain; skipping it brings the audio total down to roughly
+11 GB. Budget disk for both the archives and the extracted files.
+
+### Download, extract, convert
+
+```bash
+pip install -e "sure/external/sure-evaluation[download]"
+python sure/external/sure-evaluation/scripts/download_sure_data.py --csv
+modelscope download --dataset SUREBenchmark/SURE_Test_Suites aishell-1_test.tar.gz --local_dir data/datasets/sure_benchmark/SURE_Test_Suites
+cd data/datasets/sure_benchmark/SURE_Test_Suites && mkdir -p aishell-1_test && tar -xzf aishell-1_test.tar.gz -C aishell-1_test && cd -
+python sure/external/sure-evaluation/scripts/convert_sure_to_jsonl.py --csv-dir data/datasets/sure_benchmark/SURE_Test_csv --output-dir data/datasets/sure_benchmark/jsonl
+npm run sure:doctor
+```
+
+`download_sure_data.py --suites` fetches all archives at once. It can
+run for a couple of hours and prints nothing while it works — for
+visible progress, download archives one at a time with `modelscope
+download` as above.
+
+After extracting, check the directory depth. The expected layout is:
+
+```text
+data/datasets/sure_benchmark/SURE_Test_Suites/aishell-1_test/<key>.wav
+```
+
+If an archive carries its own top-level directory you end up with
+`aishell-1_test/aishell-1_test/<key>.wav` and every JSONL path misses.
+Fix it by moving the inner files up one level. The downloader's final
+`Total audio files` count only counts the first level — extraction
+succeeded but the count is 0 usually means exactly this nesting problem.
+
+`npm run sure:doctor` reporting `PASS ... (14 jsonl files)` only means
+the directory and file names are in place — it does not open the files
+or check audio. The real proof is a `max_samples=5` evaluation
+producing a metric report.
+
+### JSONL line format
+
+Each JSONL line has six fields: `key`, `path`, `target`, `task`,
+`language`, `dataset`. `path` is relative; at runtime audio is resolved
+in this order:
+
+```text
+<repo_root>/data/datasets/sure_benchmark/SURE_Test_Suites/<path>
+<repo_root>/<path>
+```
+
+Both JSONL and audio must be in place. JSONL alone makes
+`npm run sure:doctor` PASS, but inference then fails on missing audio.
+
+### Dataset naming
+
+Converted files are named after the CSVs. `datasets=` takes those file
+names minus the `.jsonl` suffix:
+
+| Naming form | Example | Works with self-downloaded data? |
+| --- | --- | --- |
+| JSONL file name | `aishell1-test_ASR` | Yes — recommended |
+| Short alias in code | `aishell1` | Works, but with a side effect: if the audio suites are missing, the alias triggers a full 52.5 GB download with no prompt and no progress output |
+| Internal versioned name | `aishell1__v1.0.2__asr` | No — this form only exists in internal shared data trees |
+
+Common dataset-to-metric pairings:
+
+| Datasets | Task | Metric |
+| --- | --- | --- |
+| `aishell1-test_ASR`, `aishell-5_eval1`, `kespeech`, `contextasr_mandarin` | Chinese ASR | `cer` |
+| `librispeech_test-clean_ASR`, `librispeech_test-other_ASR`, `voxpopuli_test`, `contextasr_english` | English ASR | `wer` |
+| `CS_dialogue` | Code-switching ASR | `mer` |
+| `CoVoST2_S2TT_en2zh_test`, `CoVoST2_S2TT_zh2en_test` | S2TT | `bleu` |
+| `IEMOCAP_SER_test`, `librispeech_test_clean_GR`, `mmsu` | SER / GR / SLU | see the engine catalog |
+
+### Custom dataset root
+
+`SURE_EVAL_DATASETS_ROOT` moves only the JSONL lookup — the root must
+contain `sure_benchmark/jsonl`. Audio is always resolved against the
+repository root as shown above, so if you move audio elsewhere, leave a
+symlink inside the repository pointing at it.
 
 ## Command Reference
 
@@ -219,8 +333,10 @@ Key fields:
 
 `/sure_reval` resolves dataset names the same way `/sure_eval` does for the
 prediction source: exact file stems win first, then a short name such as
-`aishell1` may resolve to one unique versioned prediction stem such as
-`aishell1__v1.0.2__asr`. Ambiguous short names fail closed instead of guessing.
+`aishell1` may resolve to one unique prediction stem such as
+`aishell1-test_ASR` (runs made against internal shared data trees use
+versioned stems like `aishell1__v1.0.2__asr` instead). Ambiguous short
+names fail closed instead of guessing.
 
 Metric selection modes:
 

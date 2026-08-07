@@ -64,6 +64,18 @@ export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
 
 并确保该 root 下包含 `sure_benchmark/jsonl`。
 
+还没有数据的话，用仓库自带脚本从 ModelScope 下载并转换——完整命令序列
+见用户指南「Benchmark 数据」一节（`download_sure_data.py --csv`、按档案
+下音频、`convert_sure_to_jsonl.py`）。
+
+## 数据集短别名触发几十 GB 下载
+
+音频档案没备齐时传短别名（比如 `datasets=aishell1`），dataset manager
+会判定数据缺失,直接启动一次 52.5 GB 的 ModelScope 全量下载——不提示、
+不出进度、没有超时。run 在数据集解析之后突然没了动静,多半就是这个。
+一律填完整 JSONL 文件名（比如 `datasets=aishell1-test_ASR`）就绕开了,
+它们永远不会触发下载。
+
 ## VC 执行没有提交证据
 
 当请求 `execution=vc` 时，成功运行必须包含真实 VC 提交证据。Harness 不应静默 fallback

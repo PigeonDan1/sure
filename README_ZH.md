@@ -67,13 +67,26 @@ pip install -r requirements.txt
 git submodule update --init --recursive
 ```
 
-准备 benchmark 数据：
+准备 benchmark 数据。只有 `/sure_eval` 和 `/sure_reval` 用得到——feed 和
+onboard 不需要,这步可以先跳过。数据在 ModelScope(`SUREBenchmark/SURE_Test_csv`,
+14 个标注 CSV,约 34 MB;`SUREBenchmark/SURE_Test_Suites`,12 个音频档案,
+共 52.5 GB;Apache-2.0,不用登录):
 
 ```bash
-mkdir -p data/datasets/sure_benchmark
-ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl
+pip install -e "sure/external/sure-evaluation[download]"
+python sure/external/sure-evaluation/scripts/download_sure_data.py --csv
+modelscope download --dataset SUREBenchmark/SURE_Test_Suites aishell-1_test.tar.gz --local_dir data/datasets/sure_benchmark/SURE_Test_Suites
+cd data/datasets/sure_benchmark/SURE_Test_Suites && mkdir -p aishell-1_test && tar -xzf aishell-1_test.tar.gz -C aishell-1_test && cd -
+python sure/external/sure-evaluation/scripts/convert_sure_to_jsonl.py --csv-dir data/datasets/sure_benchmark/SURE_Test_csv --output-dir data/datasets/sure_benchmark/jsonl
 npm run sure:doctor
 ```
+
+上面示例只下了一个档案(AISHELL-1,866 MB)——要评哪个数据集就照这个样子下
+对应档案;也可以 `download_sure_data.py --suites` 一次全下(52.5 GB,跑的
+时候一个字都不打印)。转出来的文件按 CSV 命名,比如 `aishell1-test_ASR.jsonl`;
+`datasets=` 就填这些文件名去掉 `.jsonl`。已经有现成 JSONL 的话直接软链:
+`ln -s /path/to/sure_benchmark/jsonl data/datasets/sure_benchmark/jsonl`。
+档案体量、解压校验、命名细节见[用户指南](./docs/harness_user_guide_zh.md)。
 
 启动 TUI：
 
@@ -98,8 +111,8 @@ npm run sure:doctor
 /sure_reval source=<results_or_run_dir> datasets=aishell1 max_samples=5 pipeline_id=<exact_pipeline_id>
 ```
 
-当且仅当能唯一匹配到版本化 prediction 文件时，`/sure_reval` 接受 `aishell1`
-这类短数据集名，例如 `aishell1__v1.0.2__asr.txt`。
+当且仅当能唯一匹配到一个 prediction 文件时，`/sure_reval` 接受 `aishell1`
+这类短数据集名，例如匹配到 `aishell1-test_ASR.txt`。
 
 本地开发使用 `execution=local`。需要真实 VC 提交证据时再使用 `execution=vc`。
 使用 `execution=vc` 时可加 `vc_partition=<分区名>` 指定作业投到哪个分区,不传
