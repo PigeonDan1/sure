@@ -873,7 +873,7 @@ sure/models/asr_qwen3/docker_artifacts/
 
 ### 9.6 Registry (模型特异性记录)
 
-- [已知问题注册表](../../registry/known_issues.md) - 模型级例外与工作区
+- [已知问题记录（bad cases）](memory/bad_cases/README.md) - 模型级例外与踩坑记录
 
 ### 9.7 Templates (模板文件)
 
