@@ -4,7 +4,8 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentSessionServices } from "../../src/core/agent-session-services.ts";
-import type { ExtensionFactory, ExtensionUIContext } from "../../src/core/extensions/index.ts";
+import type { ExtensionFactory, ExtensionMode, ExtensionUIContext } from "../../src/core/extensions/index.ts";
+import { emitSessionShutdownEvent } from "../../src/core/extensions/runner.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
 import { sureExtension } from "../../src/core/sure/index.ts";
 import { runPrintMode } from "../../src/modes/print-mode.ts";
@@ -133,6 +134,7 @@ function writeEvalModel(tempDir: string, modelName = "demo-asr"): string {
 async function createSureHarness(options?: {
 	projectTrusted?: boolean;
 	uiContext?: ExtensionUIContext;
+	mode?: ExtensionMode;
 }): Promise<Harness> {
 	const harness = await createHarness({
 		extensionFactories: [sureExtension],
@@ -143,6 +145,7 @@ async function createSureHarness(options?: {
 	}
 	await harness.session.bindExtensions({
 		uiContext: options?.uiContext,
+		mode: options?.mode ?? "tui",
 		onError: (error) => {
 			throw new Error(JSON.stringify(error));
 		},
@@ -678,6 +681,78 @@ describe("Sure extension", () => {
 		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
 		expect(run.status).toBe("success");
 		expect(run.lastRepair).toBeUndefined();
+	});
+
+	it("nudges a print-mode run to continue when a turn ends without sure_finish", async () => {
+		const harness = await createSureHarness({ mode: "print" });
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			fauxAssistantMessage("pausing before the manifest"),
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId);
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("success");
+		expect(getUserTexts(harness).some((text) => text.includes("is still active"))).toBe(true);
+	});
+
+	it("stops nudging a print-mode run after the retry budget and fails it on shutdown", async () => {
+		const harness = await createSureHarness({ mode: "print" });
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			fauxAssistantMessage("turn 1"),
+			fauxAssistantMessage("turn 2"),
+			fauxAssistantMessage("turn 3"),
+			fauxAssistantMessage("turn 4"),
+			fauxAssistantMessage("turn 5"),
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		expect(harness.getPendingResponseCount()).toBe(1);
+
+		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("failed");
+		expect(run.lastRepair).toContain("sure_finish");
+	});
+
+	it("keeps cancelled status when the run was interrupted rather than left unfinished", async () => {
+		const harness = await createSureHarness({ mode: "print" });
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([fauxAssistantMessage("interrupted", { stopReason: "aborted" })]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("cancelled");
 	});
 
 	it("accepts required artifacts recorded with concrete run-relative paths", async () => {

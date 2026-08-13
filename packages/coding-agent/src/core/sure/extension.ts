@@ -87,6 +87,21 @@ interface ActiveRun {
 	skillPackage: SureSkillPackage;
 	hooks: SureHookRunner;
 	previousActiveTools: string[];
+	/** Set when an agent turn ended without sure_finish (excluding user aborts). */
+	finishMissing?: boolean;
+	/** Headless continuation prompts sent for this run. */
+	finishNudges?: number;
+}
+
+/** Cap on automatic continuation prompts for headless (print/json) runs. */
+const MAX_FINISH_NUDGES = 3;
+
+function buildFinishNudge(run: SureRunRecord): string {
+	return [
+		`Sure run ${run.runId} is still active, but the last turn ended without calling ${FINISH_TOOL_NAME}.`,
+		`Continue the run now: complete the remaining work, then call ${FINISH_TOOL_NAME} with the final manifest.`,
+		`If the run cannot proceed, call ${FINISH_TOOL_NAME} with status "failed" and summarize the blocker.`,
+	].join(" ");
 }
 
 function formatDiagnostics(diagnostics: SureDiscoveryDiagnostic[]): string {
@@ -892,7 +907,7 @@ export function createSureExtension(): ExtensionFactory {
 			return undefined;
 		});
 
-		pi.on("agent_end", async (_event, ctx) => {
+		pi.on("agent_end", async (event, ctx) => {
 			const active = activeRun;
 			if (!active) {
 				return;
@@ -909,6 +924,19 @@ export function createSureExtension(): ExtensionFactory {
 				"finish_missing",
 			);
 			ctx.ui.notify(`Sure run ${active.record.runId} is still waiting for ${FINISH_TOOL_NAME}.`, "warning");
+			const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+			const aborted =
+				lastAssistant !== undefined && "stopReason" in lastAssistant && lastAssistant.stopReason === "aborted";
+			if (aborted) {
+				// A deliberate interrupt keeps its cancel semantics on shutdown.
+				return;
+			}
+			active.finishMissing = true;
+			const headless = ctx.mode === "print" || ctx.mode === "json";
+			if (headless && (active.finishNudges ?? 0) < MAX_FINISH_NUDGES) {
+				active.finishNudges = (active.finishNudges ?? 0) + 1;
+				await pi.sendUserMessage(buildFinishNudge(active.record), { deliverAs: "followUp" });
+			}
 		});
 
 		pi.on("session_shutdown", async (_event, ctx) => {
@@ -917,7 +945,13 @@ export function createSureExtension(): ExtensionFactory {
 				return;
 			}
 			const runManager = new SureRunManager(active.record.cwd);
-			active.record = runManager.setStatus(active.record, "cancelled", "session_shutdown");
+			// A run abandoned by the agent (turn ended, no sure_finish) failed;
+			// "cancelled" is reserved for runs interrupted mid-work.
+			active.record = runManager.setStatus(
+				active.record,
+				active.finishMissing ? "failed" : "cancelled",
+				"session_shutdown",
+			);
 			pi.appendEntry("sure.run", active.record);
 			const onError = await active.hooks.run("on_error", {
 				run: active.record,
