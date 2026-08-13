@@ -2003,13 +2003,15 @@ def _write_run_artifacts(
         row = payload_rows[index] if index < len(payload_rows) and isinstance(payload_rows[index], dict) else _dataset_metric_row(result)
         row = dict(row)
         artifacts = dict(row.get("artifacts") or {})
+        # check_run_report resolves relative payload paths against the run
+        # root, so record absolute paths even when --run-dir was relative.
         artifacts.update(
             {
-                "metric_artifact_dir": str(metric_dir),
-                "report": str(report_path),
-                "pipeline_description": str(pipeline_path),
-                "sample_report": str(sample_report_path),
-                "prediction_file": str(Path(result["prediction_path"])),
+                "metric_artifact_dir": str(metric_dir.resolve()),
+                "report": str(report_path.resolve()),
+                "pipeline_description": str(pipeline_path.resolve()),
+                "sample_report": str(sample_report_path.resolve()),
+                "prediction_file": str(Path(result["prediction_path"]).resolve()),
             }
         )
         row["artifacts"] = artifacts
@@ -2017,8 +2019,8 @@ def _write_run_artifacts(
         pipeline_payload.update(
             {
                 "pipeline_id": row.get("pipeline_id") or result.get("pipeline_id"),
-                "report_path": str(report_path),
-                "description_path": str(pipeline_path),
+                "report_path": str(report_path.resolve()),
+                "description_path": str(pipeline_path.resolve()),
             }
         )
         row["pipeline"] = pipeline_payload
