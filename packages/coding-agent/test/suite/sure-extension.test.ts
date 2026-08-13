@@ -1233,6 +1233,76 @@ describe("print mode extension notify", () => {
 		return () => spy.mockRestore();
 	}
 
+	it("marks an active run terminal when print mode receives SIGINT", async () => {
+		const harness = await createHarness({ extensionFactories: [sureExtension] });
+		setupSkillPackage(harness.tempDir);
+
+		let releaseTurn: (() => void) | undefined;
+		harness.setResponses([
+			() =>
+				new Promise((resolve) => {
+					releaseTurn = () => resolve(fauxAssistantMessage("interrupted", { stopReason: "aborted" }));
+				}),
+		]);
+
+		const runtimeHost = {
+			session: harness.session,
+			setRebindSession: () => {},
+			dispose: async () => {
+				await emitSessionShutdownEvent(harness.session.extensionRunner, {
+					type: "session_shutdown",
+					reason: "quit",
+				});
+			},
+		} as unknown as Parameters<typeof runPrintMode>[0];
+
+		const exitCalls: number[] = [];
+		const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+			exitCalls.push(code ?? 0);
+			return undefined as never;
+		}) as typeof process.exit);
+		const previousSigintListeners = process.listeners("SIGINT");
+		process.removeAllListeners("SIGINT");
+
+		const runFile = () => {
+			const runsDir = join(harness.tempDir, ".sure", "runs");
+			if (!existsSync(runsDir)) {
+				return undefined;
+			}
+			const runIds = readdirSync(runsDir);
+			if (runIds.length !== 1) {
+				return undefined;
+			}
+			return join(runsDir, runIds[0], "run.json");
+		};
+
+		try {
+			const printPromise = runPrintMode(runtimeHost, { mode: "text", initialMessage: "/sure_feed topic" });
+			await waitForCondition(() => {
+				const file = runFile();
+				return file !== undefined && JSON.parse(readFileSync(file, "utf-8")).status === "running";
+			});
+
+			process.emit("SIGINT");
+			await waitForCondition(() => exitCalls.length > 0);
+
+			expect(exitCalls[0]).toBe(130);
+			const file = runFile();
+			expect(file).toBeDefined();
+			expect(JSON.parse(readFileSync(file as string, "utf-8")).status).toBe("cancelled");
+
+			releaseTurn?.();
+			await printPromise;
+		} finally {
+			process.removeAllListeners("SIGINT");
+			for (const listener of previousSigintListeners) {
+				process.on("SIGINT", listener);
+			}
+			exitSpy.mockRestore();
+			harness.cleanup();
+		}
+	});
+
 	it("routes /sure notify output to stdout in print mode", async () => {
 		const harness = await createHarness({ extensionFactories: [sureExtension] });
 		const runtimeHost = {
