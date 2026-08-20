@@ -27,7 +27,10 @@
 					"num_samples": { "type": ["number", "null"] },
 					"display_name": { "type": "string" },
 					"dataset_task": { "type": "string" },
-					"task_source": { "type": "string" }
+					"task_source": { "type": "string" },
+					"source_root": { "type": "string" },
+					"source_dataset_name": { "type": "string" },
+					"version_id": { "type": "string" }
 				},
 				"additionalProperties": false
 			}

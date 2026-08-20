@@ -14,6 +14,14 @@
     "fallback_allowed": true,
     "reason": ""
   },
+  "deployment_binding": {
+    "schema": "sure.eval.deployment_binding.v1",
+    "target_image_ref": "",
+    "bundle_identity_sha256": null,
+    "execution_mode": "container_only",
+    "model_mount_read_only": true,
+    "result_mount_writable": true
+  },
   "inference_runtime": {
     "device_request": "auto",
     "device_actual": "",

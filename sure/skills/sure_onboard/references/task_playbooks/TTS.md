@@ -113,7 +113,7 @@ TTS metric namespace:
 src/sure_eval/evaluation/tts/
 ```
 
-`/sure_onboard` local-ready 以 task-local `validate.py` 检查 import/load/infer/audio
+`/sure_onboard` 的本地验证以 task-local `validate.py` 检查 import/load/infer/audio
 contract 为最小门槛，但不能把“输出音频存在、可解码、不是 prompt copy”当作 TTS
 评测完成。正式 TTS 指标必须通过 SURE evaluation 工具链计算。
 

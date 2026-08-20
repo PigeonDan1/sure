@@ -1,0 +1,10 @@
+# Root dependencies declared by sure-evaluation at engine commit 7097967a6a7.
+pydantic>=2.0.0
+sacrebleu>=2.3.0
+regex>=2024.0.0
+numpy>=1.24.0
+tqdm>=4.66.0
+PyYAML>=6.0.0
+rich>=13.0.0
+structlog>=23.0.0
+typer>=0.16.0,<1.0.0

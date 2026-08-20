@@ -3,7 +3,7 @@
 	"$id": "reval_run_report.schema.json",
 	"title": "SURE re-evaluation run report",
 	"type": "object",
-	"required": ["schema", "run_id", "run_dir", "evaluation_only", "old_evaluation_reused", "artifacts", "summary"],
+	"required": ["schema", "run_id", "run_dir", "evaluation_only", "old_evaluation_reused", "artifacts", "summary", "source_identity", "staging_append"],
 	"properties": {
 		"schema": { "type": "string", "enum": ["sure.reval.run_report.v1"] },
 		"run_id": { "type": "string" },
@@ -15,7 +15,64 @@
 		"evaluation_only": { "type": "boolean" },
 		"old_evaluation_reused": { "type": "boolean" },
 		"artifacts": { "type": "object", "additionalProperties": { "type": "string" } },
-		"summary": { "type": "object", "additionalProperties": true }
+		"summary": { "type": "object", "additionalProperties": true },
+		"source_identity": {
+			"type": "object",
+			"required": ["model_fingerprint", "protocol_id", "dataset_set_digest", "source_report_sha256"],
+			"properties": {
+				"model_fingerprint": { "type": "string", "minLength": 64, "maxLength": 64 },
+				"protocol_id": { "type": "string", "enum": ["standard_system", "strict_core"] },
+				"dataset_set_digest": { "type": "string", "minLength": 64, "maxLength": 64 },
+				"source_report_sha256": { "type": "string", "minLength": 64, "maxLength": 64 }
+			},
+			"additionalProperties": false
+		},
+		"staging_append": {
+			"type": "object",
+			"required": [
+				"staging_result_dir",
+				"staging_report",
+				"staging_snapshot",
+				"approved_base_result_dir",
+				"approved_base_report",
+				"approved_base_sha256",
+				"batch_id",
+				"batch_dir",
+				"artifact_manifest",
+				"artifact_manifest_sha256",
+				"persisted_artifacts",
+				"persisted_artifact_count",
+				"base_materialized",
+				"batch_materialized",
+				"appended_record_ids",
+				"requested_record_ids",
+				"idempotent",
+				"staging_report_sha256",
+				"staging_snapshot_sha256"
+			],
+			"properties": {
+				"staging_result_dir": { "type": "string" },
+				"staging_report": { "type": "string" },
+				"staging_snapshot": { "type": "string" },
+				"approved_base_result_dir": { "type": "string" },
+				"approved_base_report": { "type": "string" },
+				"approved_base_sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+				"batch_id": { "type": "string", "pattern": "^sure_reval_[a-f0-9]{24}$" },
+				"batch_dir": { "type": "string" },
+				"artifact_manifest": { "type": "string" },
+				"artifact_manifest_sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+				"persisted_artifacts": { "type": "object", "additionalProperties": { "type": "string" } },
+				"persisted_artifact_count": { "type": "integer", "minimum": 1 },
+				"base_materialized": { "type": "boolean" },
+				"batch_materialized": { "type": "boolean" },
+				"appended_record_ids": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+				"requested_record_ids": { "type": "array", "minItems": 1, "items": { "type": "string" }, "uniqueItems": true },
+				"idempotent": { "type": "boolean" },
+				"staging_report_sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+				"staging_snapshot_sha256": { "type": "string", "minLength": 64, "maxLength": 64 }
+			},
+			"additionalProperties": false
+		}
 	},
 	"additionalProperties": false
 }

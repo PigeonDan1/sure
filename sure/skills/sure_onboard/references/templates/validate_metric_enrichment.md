@@ -43,9 +43,9 @@ For `/sure_onboard`, keep validation and metric enrichment separated:
    - `speech_understanding_metric_report.json`
    - `tts_metric_report.json`
    - `vc_metric_report_local_pipeline.json`
-5. `verdict.json` may reference metric reports, but local-ready success for
-   `package=none` must still be based on import/load/infer/contract and package
-   readiness, not on benchmark score.
+5. `verdict.json` may reference metric reports, but deployment success remains
+   based on import/load/infer/contract and container package readiness, not on
+   benchmark score.
 
 ## Required Metric Evidence
 

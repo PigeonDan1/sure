@@ -17,14 +17,27 @@ from typing import Any
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "site" / "loader.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
 
 from sure_eval.core.config import Config
 from sure_eval.datasets import DatasetManager
 from sure_eval.datasets.dataset_manager import CSV_DATASETS
+from sure_eval.datasets.source_resolver import (
+    SourceResolutionError,
+    accepted_source_root,
+    is_source_entry,
+    read_source_language,
+    resolve_aispeech_source_entry,
+)
 
 from evaluation_capabilities import default_metrics_for_task_language, supported_metrics_for_task_language
+from harness_runtime import HarnessRuntimeBindingError, load_harness_runtime
 from resolve_evaluation_engine import resolve_engine_root
-from resolve_model_dir import _candidate_model_dirs, _checks, _first_existing, _verdict_path
+from resolve_model_dir import APPROVED_MODELS_ROOT, resolve_approved_model
+from sure.site.loader import load_site_policy
 
 from sure_eval.agent import vc_submitter
 
@@ -50,6 +63,16 @@ TEXT_DEFAULT_METRICS = {
     "SLU": "accuracy",
     "SPEECH_UNDERSTANDING": "accuracy",
 }
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._=-]{0,199}$")
+
+# Approved models and promoted results both live below the configured trust
+# root. Evaluation products never stage inside it; promotion stays human.
+_configured_site_policy = load_site_policy()
+NFS_ROOT = (
+    Path(_configured_site_policy["policy"]["storage"]["forbidden_output_roots"][0])
+    if _configured_site_policy
+    else Path("<site-policy-required>")
+)
 
 def _repo_root_from_script() -> Path:
     return Path(__file__).resolve().parents[4]
@@ -120,6 +143,54 @@ class EvalInputError(ValueError):
     pass
 
 
+def _validate_run_id(value: str) -> str:
+    if not RUN_ID_RE.fullmatch(value):
+        raise EvalInputError(
+            "run_id must be one safe path segment (1-200 ASCII letters, digits, '.', '_', '=', or '-')"
+        )
+    return value
+
+
+def _resolve_output_dir(value: str | None, staged_dir: Path) -> Path:
+    """Resolve where this run's evaluation products go.
+
+    Without `output_dir` products stay in the repository-local staging path.
+    An override becomes the product directory itself, which is what a caller
+    driving the harness from a script reads afterwards. It must be an absolute
+    path outside NFS, because promotion into NFS stays a human step, and it
+    must be usable before the state machine starts.
+    """
+    if not value:
+        return staged_dir
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        raise EvalInputError(
+            f"output_dir must be an absolute path, for example "
+            f"output_dir={(NFS_ROOT.parent / 'jobs' / 'job-1234').as_posix()} (got {value!r})"
+        )
+    output_dir = candidate.resolve()
+    if output_dir.is_relative_to(NFS_ROOT.resolve()):
+        raise EvalInputError(
+            f"output_dir must stay outside {NFS_ROOT}: promotion into NFS is a human step"
+        )
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise EvalInputError(f"output_dir cannot be created: {output_dir} ({exc})") from exc
+    if not os.access(output_dir, os.W_OK):
+        raise EvalInputError(f"output_dir is not writable: {output_dir}")
+    return output_dir
+
+
+def _stage_output_dir(results_root: Path, model: str, protocol: str, run_id: str) -> Path:
+    output_dir = (results_root / model / protocol / run_id).resolve()
+    try:
+        output_dir.relative_to(results_root)
+    except ValueError as exc:
+        raise EvalInputError(f"evaluation staging path escapes {results_root}: {output_dir}") from exc
+    return output_dir
+
+
 def _task_label(task: str) -> str:
     word = TASK_WORDS.get(task)
     return f"{task} ({word})" if word else task
@@ -149,6 +220,27 @@ def _check_task_compatibility(model: dict[str, Any], datasets: list[dict[str, An
     )
 
 
+def _check_dataset_input_policy(datasets: list[dict[str, Any]]) -> None:
+    """Strict main flow only accepts aispeech source roots (or their outputs)."""
+    offenders = []
+    for item in datasets:
+        requested = str(item.get("requested_name") or item.get("name") or "")
+        if is_source_entry(requested) or item.get("source_root"):
+            continue
+        offenders.append(requested or str(item.get("name")))
+    if not offenders:
+        return
+    root = accepted_source_root()
+    raise EvalInputError(
+        "Strict main flow accepts only aispeech source-root dataset inputs. "
+        f"Rejected: {', '.join(offenders)}. Pass a source root such as "
+        f"{root}/g001/store002/ds_pool/<source_dataset_name>, or re-prepare the "
+        "dataset from its source root so its JSONL carries source metadata. "
+        "Legacy dataset names remain usable for /sure_reval on historical runs, "
+        "or pass --no-strict-main-flow explicitly."
+    )
+
+
 def _write_harness_config(*, run_dir: Path, config_path: str | None) -> Path:
     if config_path:
         path = Path(config_path).expanduser()
@@ -165,11 +257,17 @@ def _write_harness_config(*, run_dir: Path, config_path: str | None) -> Path:
 
     harness_root = _repo_root_from_script()
     base_config = harness_root / "sure" / "external" / "sure-evaluation" / "config" / "default.yaml"
-    datasets_root = Path(os.environ.get("SURE_EVAL_DATASETS_ROOT", harness_root / "data" / "datasets"))
+    env_root = os.environ.get("SURE_EVAL_DATASETS_ROOT", "").strip()
+    datasets_root = Path(env_root) if env_root else harness_root / "data" / "datasets"
     if not base_config.exists():
         raise FileNotFoundError(f"Submodule config not found: {base_config}")
-    if not (datasets_root / "sure_benchmark" / "jsonl").is_dir():
-        raise FileNotFoundError(f"SURE_EVAL_DATASETS_ROOT must contain sure_benchmark/jsonl: {datasets_root}")
+    jsonl_dir = datasets_root / "sure_benchmark" / "jsonl"
+    if not jsonl_dir.is_dir():
+        # An explicit env root must already exist so a mistyped path fails fast;
+        # the in-repo default is scaffolding that source prepare fills on demand.
+        if env_root:
+            raise FileNotFoundError(f"SURE_EVAL_DATASETS_ROOT must contain sure_benchmark/jsonl: {datasets_root}")
+        jsonl_dir.mkdir(parents=True, exist_ok=True)
 
     config = yaml.safe_load(base_config.read_text(encoding="utf-8")) or {}
     data = dict(config.get("data") or {})
@@ -257,7 +355,11 @@ def _vc_available() -> bool:
     return completed.returncode == 0
 
 
-def _normalize_execution(execution: str | None, execution_path: str | None) -> dict[str, Any]:
+def _normalize_execution(
+    execution: str | None,
+    execution_path: str | None,
+    allowed_surfaces: list[str] | None = None,
+) -> dict[str, Any]:
     requested_raw = (execution or "").strip().lower()
     path_raw = (execution_path or "").strip().lower()
     path_to_execution = {
@@ -290,11 +392,11 @@ def _normalize_execution(execution: str | None, execution_path: str | None) -> d
             )
 
     if path_raw and path_raw != "auto":
-        planned_path = path_raw
+        planned_path = "local_docker" if path_raw == "local_bash" else path_raw
     elif requested == "vc":
         planned_path = "vc_submit"
     elif requested == "local":
-        planned_path = "local_bash"
+        planned_path = "local_docker"
     else:
         planned_path = "auto"
     if planned_path not in {"auto", "vc_submit", "local_bash", "local_docker"}:
@@ -302,8 +404,18 @@ def _normalize_execution(execution: str | None, execution_path: str | None) -> d
 
     available = _vc_available()
     if planned_path == "auto":
-        planned_path = "vc_submit" if available else "local_bash"
+        allowed = set(allowed_surfaces or ("local", "vc"))
+        if available and "vc" in allowed:
+            planned_path = "vc_submit"
+        elif "local" in allowed:
+            planned_path = "local_docker"
+        elif "vc" in allowed:
+            planned_path = "vc_submit"
+        else:
+            raise ValueError("site policy enables no supported execution surface")
     planned = "vc" if planned_path == "vc_submit" else "local"
+    if allowed_surfaces is not None and planned not in set(allowed_surfaces):
+        raise ValueError(f'execution surface "{planned}" is not enabled by the active site policy')
     reason = (
         "user_requested_vc"
         if requested == "vc"
@@ -424,9 +536,20 @@ def _dataset_details(
         info = manager.get_info(dataset_name) or {}
         jsonl_path = Path(str(info.get("jsonl_path") or manager.get_jsonl_path(dataset_name)))
         first_sample = _first_jsonl_sample(jsonl_path)
+        sample_meta = first_sample.get("metadata") if isinstance(first_sample.get("metadata"), dict) else {}
+        source_root = info.get("source_root") or sample_meta.get("source_dataset_root")
+        source_name = info.get("source_dataset_name") or sample_meta.get("source_dataset_name")
+        version_id = info.get("version_id") or sample_meta.get("version_id")
         dataset_task = _normalize_task(info.get("task") or first_sample.get("task") or "")
-        task = _effective_dataset_task(dataset_task, model_task, requested_metrics)
         language = str(info.get("language") or first_sample.get("language") or "").lower()
+        if is_source_entry(requested_name) and not jsonl_path.exists():
+            ref = resolve_aispeech_source_entry(requested_name)
+            source_root = source_root or ref.source_root
+            source_name = source_name or ref.source_dataset_name
+            version_id = version_id or ref.version_id
+            dataset_task = dataset_task or "ASR"
+            language = language or (read_source_language(ref) or "auto").lower()
+        task = _effective_dataset_task(dataset_task, model_task, requested_metrics)
         if not task:
             task = "UNKNOWN"
         metrics = requested_metrics or _default_metrics(task, language, engine_root)
@@ -442,6 +565,12 @@ def _dataset_details(
             "num_samples": info.get("num_samples") or _count_jsonl_rows(jsonl_path),
             "display_name": info.get("display_name") or dataset_name,
         }
+        if source_root:
+            detail["source_root"] = str(source_root)
+        if source_name:
+            detail["source_dataset_name"] = str(source_name)
+        if version_id:
+            detail["version_id"] = str(version_id)
         if dataset_task and dataset_task != task:
             detail["dataset_task"] = dataset_task
             detail["task_source"] = "model_or_metric_intent"
@@ -469,6 +598,13 @@ def _dataset_details(
                 "num_samples": info.get("num_samples") or _count_jsonl_rows(jsonl_path),
                 "display_name": info.get("display_name") or dataset_name,
             }
+            sample_meta = first_sample.get("metadata") if isinstance(first_sample.get("metadata"), dict) else {}
+            if sample_meta.get("source_dataset_root"):
+                detail["source_root"] = str(sample_meta["source_dataset_root"])
+            if sample_meta.get("source_dataset_name"):
+                detail["source_dataset_name"] = str(sample_meta["source_dataset_name"])
+            if sample_meta.get("version_id"):
+                detail["version_id"] = str(sample_meta["version_id"])
             if dataset_task and dataset_task != task:
                 detail["dataset_task"] = dataset_task
                 detail["task_source"] = "model_or_metric_intent"
@@ -484,25 +620,25 @@ def _dedupe(values: list[str]) -> list[str]:
     return out
 
 
-def _resolve_model(model: str, explicit_model_dir: str | None, cwd: Path) -> dict[str, Any]:
-    candidates = _candidate_model_dirs(model, explicit_model_dir, cwd)
-    selected = _first_existing(candidates)
-    source = selected[0] if selected else None
-    model_dir = selected[1].resolve() if selected else None
-    verdict = _verdict_path(model_dir) if model_dir else None
-    checks = _checks(model_dir)
-    runtime_ready = bool(checks["config_yaml"] and checks["model_py"] and checks["server_py"])
-    verdict_ready = verdict is not None
+def _resolve_model(model: str) -> dict[str, Any]:
+    resolution = resolve_approved_model(model)
+    model_dir = Path(resolution["model_dir"]) if resolution.get("model_dir") else None
+    checks = resolution["checks"]
+    runtime_ready = bool(resolution["runtime_ready"])
+    verdict_ready = bool(resolution["verdict_ready"])
     declared_task = _read_model_task(model_dir)
     return {
         "name": model,
         "model_dir": str(model_dir) if model_dir else None,
         "declared_task": declared_task,
-        "source": source,
-        "verdict_path": str(verdict.resolve()) if verdict else None,
+        "source": resolution["source"],
+        "approved_models_root": resolution["approved_models_root"],
+        "verdict_path": resolution["verdict_path"],
         "workflow_ready": runtime_ready and verdict_ready,
         "integration_state": "onboarded" if runtime_ready and verdict_ready else "needs_onboarding",
         "checks": checks,
+        "deployment_binding": resolution.get("deployment_binding"),
+        "deployment_error": resolution.get("deployment_error"),
         "evidence": {
             "readme_path": str(model_dir / "README.md") if model_dir else "",
             "config_path": str(model_dir / "config.yaml") if model_dir else "",
@@ -511,17 +647,47 @@ def _resolve_model(model: str, explicit_model_dir: str | None, cwd: Path) -> dic
             "server_path": str(model_dir / "server.py") if model_dir else "",
             "model_py_path": str(model_dir / "model.py") if model_dir else "",
         },
-        "candidates": [{"source": item_source, "path": str(path)} for item_source, path in candidates],
+        "candidates": [
+            {
+                "source": resolution["source"],
+                "path": str(Path(resolution["approved_models_root"]) / model),
+            }
+        ],
     }
 
 
 def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     repo_root = _repo_root_from_script()
-    cwd = Path(args.cwd).expanduser().resolve()
-    run_id = args.run_id or f"main_agent_{args.model}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-    model = _resolve_model(args.model, args.model_dir, cwd)
-    model_dir = Path(model["model_dir"]) if model.get("model_dir") else repo_root / "sure" / "models" / args.model
-    output_dir = Path(args.output_dir).expanduser() if args.output_dir else model_dir / "eval_runs" / run_id
+    try:
+        active_site_policy = load_site_policy(required=True)
+    except ValueError as exc:
+        raise EvalInputError(str(exc)) from exc
+    try:
+        harness_runtime = load_harness_runtime()
+    except HarnessRuntimeBindingError as exc:
+        raise EvalInputError(str(exc)) from exc
+    protocol = str(getattr(args, "protocol", None) or "standard_system")
+    run_id = _validate_run_id(
+        args.run_id or f"main_agent_{args.model}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+    )
+    model = _resolve_model(args.model)
+    if not model.get("workflow_ready"):
+        raise EvalInputError(
+            f"model {args.model!r} is not an approved runtime-ready NFS model under "
+            f"{model.get('approved_models_root')}"
+        )
+    model_dir = Path(str(model["model_dir"]))
+    image_harness = ((model.get("deployment_binding") or {}).get("container") or {}).get("harness_runtime")
+    if isinstance(image_harness, dict):
+        if image_harness.get("runtime_id") != harness_runtime.get("runtime_id"):
+            raise EvalInputError("approved image Harness Runtime ID differs from the active Harness Runtime")
+        if image_harness.get("lock_sha256") != harness_runtime.get("lock_sha256"):
+            raise EvalInputError("approved image Harness Runtime lock differs from the active Harness Runtime")
+    results_root = (repo_root / "sure" / "results").resolve()
+    output_dir = _resolve_output_dir(
+        getattr(args, "output_dir", ""),
+        _stage_output_dir(results_root, args.model, protocol, run_id),
+    )
     config_path = _write_harness_config(run_dir=output_dir, config_path=args.config)
     cfg = Config.from_yaml(config_path)
     manager = DatasetManager(cfg)
@@ -538,12 +704,20 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     )
     if args.strict_main_flow:
         _check_task_compatibility(model, datasets)
+        _check_dataset_input_policy(datasets)
     tasks = _dedupe([str(item.get("task") or "UNKNOWN") for item in datasets])
     languages = _dedupe([str(item.get("language") or "") for item in datasets if item.get("language")])
     metric_list = _dedupe([metric for item in datasets for metric in item.get("default_metrics", [])])
-    execution = _normalize_execution(args.execution, args.execution_path)
+    allowed_surfaces = list(active_site_policy["policy"]["execution"]["surfaces"])
+    execution = _normalize_execution(args.execution, args.execution_path, allowed_surfaces)
     device = _resolve_device(args.device, execution)
     vc_request = _vc_request(args)
+    approved_image = str((model.get("deployment_binding") or {}).get("target_image_ref") or "")
+    if vc_request.get("image") and vc_request["image"] != approved_image:
+        raise EvalInputError(
+            f"vc_image cannot override the approved digest-pinned image {approved_image}"
+        )
+    vc_request["image"] = approved_image
     _validate_vc_partition(vc_request, execution)
 
     main_flow_input = {
@@ -576,6 +750,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "execution": execution,
             "execution_path": execution["path_planned"],
             "max_samples": args.max_samples,
+            "deployment_binding": model["deployment_binding"],
+            "harness_runtime": harness_runtime,
         },
     }
 
@@ -585,6 +761,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         "user_input": {
             "model": args.model,
             "datasets": requested_datasets,
+            "protocol": protocol,
             "device": args.device,
             "metrics": requested_metrics,
             "max_samples": args.max_samples,
@@ -605,12 +782,15 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         "runtime": {
             "run_id": run_id,
             "run_dir": str(output_dir),
+            "protocol_id": protocol,
             "max_samples": args.max_samples,
             "sample_scope": "full_dataset" if args.max_samples == 0 else "bounded",
             "device": device,
             "execution": execution,
             "execution_path": execution["path_planned"],
             "vc": vc_request,
+            "deployment_binding": model["deployment_binding"],
+            "harness_runtime": harness_runtime,
         },
         "evaluation": {
             "backend": args.evaluation_backend,
@@ -634,10 +814,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def main() -> int:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Resolve /sure_eval input into a main-flow contract")
     parser.add_argument("--model", required=True)
     parser.add_argument("--datasets", nargs="+", required=True)
+    parser.add_argument("--protocol", choices=("standard_system", "strict_core"), default="standard_system")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--metrics", nargs="*", default=[])
     parser.add_argument("--max-samples", type=int, default=0)
@@ -657,17 +838,19 @@ def main() -> int:
     parser.add_argument("--allow-tool-workflow", action="store_true", default=True)
     parser.add_argument("--no-allow-tool-workflow", dest="allow_tool_workflow", action="store_false")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--model-dir")
     parser.add_argument("--run-id")
-    parser.add_argument("--output-dir")
     parser.add_argument("--config")
-    parser.add_argument("--cwd", default=os.getcwd())
     parser.add_argument("--output")
-    args = parser.parse_args()
+    parser.add_argument("--output-dir", default="")
+    return parser
+
+
+def main() -> int:
+    args = _build_parser().parse_args()
 
     try:
         payload = build_payload(args)
-    except EvalInputError as exc:
+    except (EvalInputError, SourceResolutionError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     text = json.dumps(payload, indent=2, ensure_ascii=False)

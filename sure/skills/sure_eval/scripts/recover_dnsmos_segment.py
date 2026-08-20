@@ -173,7 +173,7 @@ def _write_protocol(path: Path, *, dataset: str, metric: str, language: str, mod
             "protocol_id": protocol_id,
             "definition_path": None,
             "model_protocol_config_path": None,
-            "is_default": protocol_id == "strict_core",
+            "is_default": protocol_id == "standard_system",
             "purpose": "recovered audio-quality segment from existing predictions",
             "standard_params": {},
             "resolved_model_params": {},
@@ -365,7 +365,7 @@ def main() -> int:
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--model-dir", required=True)
     parser.add_argument("--tool-name", required=True)
-    parser.add_argument("--protocol-id", default="strict_core")
+    parser.add_argument("--protocol-id", choices=("standard_system", "strict_core"), default="standard_system")
     parser.add_argument("--progress-interval", type=int, default=10)
     args = parser.parse_args()
 

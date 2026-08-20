@@ -1,0 +1,6 @@
+PyYAML==6.0.3
+pydantic==2.13.3
+pydantic-settings==2.14.0
+rich==15.0.0
+structlog==25.5.0
+typer==0.25.0

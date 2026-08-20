@@ -2,7 +2,9 @@
 
 Feed ModelScope, HuggingFace, or GitHub speech models into the SURE pipeline: discover candidates, match to a SURE task family, collect metadata, optionally convert fetched resources to the SURE resource layout (oref), synthesize canonical `MODEL_INPUT`, rank/select, and emit a handoff manifest that `/sure_onboard` consumes. This skill is the Sure port of the XForge→SURE bridge. The state machine lives in `hooks/state-machine.ts`; this document is what the agent reads to drive each unit.
 
-**Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
+**Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project. The pre-start hook resolves the versioned common Harness Runtime and exports `HARNESS_PYTHON_BIN`; run deterministic backend scripts with `"$HARNESS_PYTHON_BIN"`, never a model Python or bare `python3`.
+
+The pre-start hook also writes `artifacts/runtime_binding.json` (`sure.skill.runtime_binding.v1`). It binds the materialized Harness Runtime by ID, lock hash, executable, and manifest. The same document explicitly marks Model Runtime and Evaluation Runtime as not required because Feed performs neither inference nor evaluation. The terminal gate revalidates this declaration and its materialized manifest.
 
 Control principle: **agent decides scope, scripts enforce format and execution.** You (the agent) choose the source, query, filters, and watch mode; the deterministic scripts under `scripts/` and the hook gates enforce that every artifact is in the right place, the right format, and the right value domain — and that the strong-plus-weak matching contract holds.
 
@@ -21,7 +23,7 @@ This skill is **self-contained**: all backend code is bundled under `scripts/` (
 | `download` | — | When true, materialize/fetch weights where supported. Default false for feed discovery. |
 | `handoff` | — | When true (default), publish `sure/handoffs/<model_name>/model_input.yaml` plus an `artifacts/` evidence folder for `/sure_onboard`. |
 | `handoff_root` | — | Override the handoff publication root. Default: repo-level `sure/handoffs`. |
-| `output_dir` | — | Defaults to the run directory. |
+| `output_dir` | — | Absolute directory where the harness collects this invocation's `result.json` and control artifacts. The harness consumes it before the agent starts, so the handoff still belongs under `sure/handoffs/<model_name>/` where `/sure_onboard` looks for it; use `handoff_root` to publish somewhere else. The directory must be outside every configured `forbidden_output_roots` entry and writable. |
 | `since` | — | Incremental-scan timestamp (watch mode). |
 | `max_retries` | — | Consecutive blocked gate attempts allowed per unit before the run terminates. Default `3`. |
 
@@ -135,7 +137,7 @@ Each unit below lists: **Inputs** (what to read), **Output** (produces + schema)
 
 - `scripts/sure_feed_online_discover.py` is the preferred no-download online discovery entrypoint. It writes run-local audit products under `<run_dir>/artifacts/` and publishes the clean onboarding product under `sure/handoffs/<model_name>/model_input.yaml`. The skeleton artifacts (`scan_result.json`, `match_task_result.json`, `metadata_result.json`, `oref_result.json`, `model_input_result.json`, `rank_select_result.json`, `handoff_manifest.json`) are debug-only in the run and copied into the handoff `artifacts/` folder.
 - Flat scripts (`xforge_*.py`) do the network/disk work; the `sure_feed/` inner package provides catalog/bridge/watcher logic imported by the flat scripts.
-- Only `xforge_modelscope_dataset_to_oref.py` imports `modelscope` at module top level; the `sure_feed/` package itself imports cleanly without it, so gate scripts run under bare `python3`.
+- Only `xforge_modelscope_dataset_to_oref.py` imports `modelscope` at module top level; the `sure_feed/` package itself imports cleanly without it, so gate scripts run under the locked common `HARNESS_PYTHON_BIN`.
 - Network ModelScope calls need proxy variables removed (`env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy`). A transient `502 Bad Gateway` is not "no candidates" — rerun first.
 - HuggingFace metadata calls use the canonical `https://huggingface.co` repo URL in `MODEL_INPUT` even when the actual API request used `https://hf-mirror.com`; mirror usage is evidence, not the canonical model identity.
 - Per-skill dependency declaration lives in `scripts/pyproject.toml` (pyyaml, modelscope).

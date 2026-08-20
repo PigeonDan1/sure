@@ -66,6 +66,30 @@ function readModelsFile(path: string): { raw: string | undefined; file: ModelsFi
 	return { raw, file: parseModelsFile(raw, path) };
 }
 
+function modelRecord(model: ListedModel): Record<string, unknown> {
+	return Object.fromEntries(Object.entries(model).filter(([, value]) => value !== undefined));
+}
+
+function writeModelsFile(file: ModelsFile, path: string): void {
+	mkdirSync(dirname(path), { recursive: true });
+	const tmpPath = `${path}.sure-init-tmp`;
+	writeFileSync(tmpPath, `${JSON.stringify(file, null, 2)}\n`, "utf-8");
+	renameSync(tmpPath, path);
+}
+
+function readEditableModelsFile(path: string): ModelsFile {
+	if (!existsSync(path)) {
+		return { providers: {} };
+	}
+	const raw = readFileSync(path, "utf-8");
+	if (containsJsonComments(stripBom(raw))) {
+		throw new Error(
+			`models.json contains comments; refusing to rewrite it — add the provider manually. File: ${path}`,
+		);
+	}
+	return parseModelsFile(raw, path);
+}
+
 /** Enumerate models.json providers that are not built-in and carry a baseUrl. Unreadable file → empty list. */
 export function listGatewayProviders(modelsJsonPath: string = getModelsPath()): GatewayProviderSummary[] {
 	let file: ModelsFile;
@@ -112,33 +136,72 @@ export function readGatewayModels(name: string, modelsJsonPath: string = getMode
 }
 
 /**
- * Replace one gateway provider entry (create if absent). The model list is replaced wholesale;
- * every other provider and unknown field is preserved. Refuses to rewrite a comment-bearing
- * file — a rewrite would silently destroy the comments.
+ * Defaults written for a model /sure_init just configured. The gateway cannot be asked
+ * for either number: measured 2026-08-17, it accepted 606584 input tokens and an absurd
+ * max_output_tokens without complaint. contextWindow is therefore a local compaction
+ * threshold, not an upstream fact. The registry would otherwise fall back to 128000 and
+ * 16384, and 16384 truncates reasoning models because reasoning counts as output.
+ */
+export const NEW_MODEL_DEFAULTS = { contextWindow: 256_000, maxTokens: 64_000 } as const;
+
+function modelId(entry: unknown): string | undefined {
+	if (typeof entry !== "object" || entry === null) return undefined;
+	const id = (entry as { id?: unknown }).id;
+	return typeof id === "string" && id.length > 0 ? id : undefined;
+}
+
+/**
+ * Replace one gateway provider entry (create if absent). Membership comes from the given
+ * list, but a model that survives keeps every field it already had, so refreshing the
+ * list no longer throws away the protocol and effort annotations. Refuses to rewrite a
+ * comment-bearing file, since a rewrite would silently destroy the comments.
  */
 export function writeGatewayProvider(input: GatewayWriteInput, modelsJsonPath: string = getModelsPath()): void {
-	let raw: string | undefined;
-	if (existsSync(modelsJsonPath)) {
-		raw = readFileSync(modelsJsonPath, "utf-8");
-		if (containsJsonComments(stripBom(raw))) {
-			throw new Error(
-				`models.json contains comments; refusing to rewrite it — add the provider manually. File: ${modelsJsonPath}`,
-			);
-		}
-	}
-	const file = raw === undefined ? { providers: {} } : parseModelsFile(raw, modelsJsonPath);
+	const file = readEditableModelsFile(modelsJsonPath);
 	const providers = file.providers ?? {};
 	const existing = providers[input.name] ?? {};
+	const priorById = new Map<string, Record<string, unknown>>();
+	for (const entry of Array.isArray(existing.models) ? existing.models : []) {
+		const id = modelId(entry);
+		if (id) priorById.set(id, entry as Record<string, unknown>);
+	}
 	providers[input.name] = {
 		...existing,
 		baseUrl: input.baseUrl,
 		api: typeof existing.api === "string" && existing.api.length > 0 ? existing.api : "openai-completions",
 		...(input.apiKey !== undefined ? { apiKey: input.apiKey } : {}),
-		models: input.models.map((model) => (model.name ? { id: model.id, name: model.name } : { id: model.id })),
+		models: input.models.map((model) => ({ ...(priorById.get(model.id) ?? {}), ...modelRecord(model) })),
 	};
 	file.providers = providers;
-	mkdirSync(dirname(modelsJsonPath), { recursive: true });
-	const tmpPath = `${modelsJsonPath}.sure-init-tmp`;
-	writeFileSync(tmpPath, `${JSON.stringify(file, null, 2)}\n`, "utf-8");
-	renameSync(tmpPath, modelsJsonPath);
+	writeModelsFile(file, modelsJsonPath);
+}
+
+/**
+ * Add or refresh one model's annotation without touching the provider's other models.
+ * Missing context window and output cap get NEW_MODEL_DEFAULTS; values already on disk win.
+ */
+export function upsertProviderModel(
+	providerName: string,
+	baseUrl: string,
+	model: ListedModel,
+	modelsJsonPath: string = getModelsPath(),
+): void {
+	const file = readEditableModelsFile(modelsJsonPath);
+	const providers = file.providers ?? {};
+	const existingProvider = providers[providerName] ?? {};
+	const existingModels = Array.isArray(existingProvider.models) ? existingProvider.models : [];
+	const modelIndex = existingModels.findIndex((entry) => modelId(entry) === model.id);
+	const prior = modelIndex >= 0 ? (existingModels[modelIndex] as Record<string, unknown>) : {};
+	const merged: Record<string, unknown> = { ...prior, ...modelRecord(model) };
+	if (merged.contextWindow === undefined) merged.contextWindow = NEW_MODEL_DEFAULTS.contextWindow;
+	if (merged.maxTokens === undefined) merged.maxTokens = NEW_MODEL_DEFAULTS.maxTokens;
+	const nextModels = [...existingModels];
+	if (modelIndex >= 0) {
+		nextModels[modelIndex] = merged;
+	} else {
+		nextModels.push(merged);
+	}
+	providers[providerName] = { ...existingProvider, baseUrl, models: nextModels };
+	file.providers = providers;
+	writeModelsFile(file, modelsJsonPath);
 }

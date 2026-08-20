@@ -8,6 +8,7 @@ import {
 	fetchOpenAICompatibleModels,
 	listBuiltInProviderModels,
 	openAICompatibleModelsUrl,
+	openAICompatibleUrl,
 } from "../../src/core/sure/init-model-listing.ts";
 
 function optionById(id: string) {
@@ -20,13 +21,25 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-describe("openAICompatibleModelsUrl", () => {
-	it("appends /models when the base already ends with a version segment", () => {
-		expect(openAICompatibleModelsUrl("https://api.openai.com/v1")).toBe("https://api.openai.com/v1/models");
-		expect(openAICompatibleModelsUrl("http://127.0.0.1:9999/v1/")).toBe("http://127.0.0.1:9999/v1/models");
+describe("openAICompatibleUrl", () => {
+	it("appends the path when the base already ends with a version segment", () => {
+		expect(openAICompatibleUrl("https://api.openai.com/v1", "models")).toBe("https://api.openai.com/v1/models");
+		expect(openAICompatibleUrl("http://127.0.0.1:9999/v1/", "chat/completions")).toBe(
+			"http://127.0.0.1:9999/v1/chat/completions",
+		);
 	});
 
-	it("appends /v1/models otherwise", () => {
+	it("inserts /v1 when the base has no version segment", () => {
+		expect(openAICompatibleUrl("https://gw.example.com", "responses")).toBe("https://gw.example.com/v1/responses");
+	});
+
+	it("tolerates a leading slash on the path", () => {
+		expect(openAICompatibleUrl("https://gw.example.com/v1", "/messages")).toBe("https://gw.example.com/v1/messages");
+	});
+});
+
+describe("openAICompatibleModelsUrl", () => {
+	it("still resolves the model list URL", () => {
 		expect(openAICompatibleModelsUrl("https://gw.example.com")).toBe("https://gw.example.com/v1/models");
 	});
 });
@@ -45,6 +58,15 @@ describe("fetchOpenAICompatibleModels", () => {
 				headers: expect.objectContaining({ Authorization: "Bearer sk-test" }),
 			}),
 		);
+	});
+
+	it("returns bare ids without inventing runtime metadata", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => Response.json({ data: [{ id: "gpt-5.6-sol" }, { id: "gpt-5.6-luna" }] })),
+		);
+		const models = await fetchOpenAICompatibleModels("https://gw.example.com/v1", "sk-test");
+		expect(models).toEqual([{ id: "gpt-5.6-sol" }, { id: "gpt-5.6-luna" }]);
 	});
 
 	it("throws on non-2xx responses", async () => {

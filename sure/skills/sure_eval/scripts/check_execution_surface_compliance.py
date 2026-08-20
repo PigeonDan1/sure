@@ -21,14 +21,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
-import shutil
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from resolve_evaluation_route_plan import build_route_plan
+from harness_runtime import HarnessRuntimeBindingError, harness_runtime_from_eval_input
+from container_execution import resolve_container_harness_runtime
 
 
 def _sha256_file(path: Path) -> str:
@@ -216,128 +217,6 @@ def check_no_prior_run_leakage(surface_path: Path) -> dict[str, Any]:
     return {"passed": True, "evidence": "no prior-run leakage declared"}
 
 
-INTERPRETER_ENV_KEYS = ("MODEL_PYTHON", "PYTHON_BIN", "HARNESS_PYTHON_BIN")
-
-# The model interpreter must be pinned to one venv, so a bare command name is
-# not acceptable. The harness interpreter is resolved from PATH by the
-# template, so a bare command name is the normal value there.
-MODEL_INTERPRETER_ENV_KEYS = ("MODEL_PYTHON", "PYTHON_BIN")
-
-TASK_DEFAULT_TOOLS = {
-    "ASR": "transcribe_audio",
-    "S2TT": "translate_audio",
-    "TTS": "synthesize_speech",
-    "VC": "convert_voice",
-}
-
-
-def _interpreter_candidates(model_dir: Any) -> list[str]:
-    if not isinstance(model_dir, str) or not model_dir:
-        return []
-    root = Path(model_dir).expanduser()
-    if not root.is_dir():
-        return []
-    found: list[str] = []
-    for pattern in ("venv*/bin/python*", ".venv/bin/python*"):
-        found.extend(str(path) for path in sorted(root.glob(pattern)))
-    return found[:5]
-
-
-def _model_config(model_dir: Any) -> dict[str, Any]:
-    if not isinstance(model_dir, str) or not model_dir:
-        return {}
-    config_path = Path(model_dir).expanduser() / "config.yaml"
-    if not config_path.is_file():
-        return {}
-    try:
-        import yaml
-
-        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return {}
-    return config if isinstance(config, dict) else {}
-
-
-def _string_list(value: Any) -> list[str]:
-    if isinstance(value, str):
-        values = value.replace(",", " ").split()
-    elif isinstance(value, list):
-        values = value
-    else:
-        return []
-    out: list[str] = []
-    for item in values:
-        text = str(item or "").strip()
-        if text and text not in out:
-            out.append(text)
-    return out
-
-
-def _expected_tool_names(model_dir: Any) -> list[str]:
-    config = _model_config(model_dir)
-    if not config:
-        return []
-    names = [str(tool["name"]) for tool in config.get("tools") or [] if isinstance(tool, dict) and tool.get("name")]
-    if names:
-        return names
-    model = config.get("model") if isinstance(config.get("model"), dict) else {}
-    task = str(model.get("task") or config.get("task") or config.get("task_type") or "").strip().upper()
-    return [TASK_DEFAULT_TOOLS.get(task, "predict")]
-
-
-def _required_imports(surface: dict[str, Any], model_dir: Any) -> list[str]:
-    required: list[str] = []
-    inference_runtime = surface.get("inference_runtime") if isinstance(surface.get("inference_runtime"), dict) else {}
-    required.extend(_string_list(inference_runtime.get("required_imports")))
-    config = _model_config(model_dir)
-    for section_name in ("runtime", "environment", "execution"):
-        section = config.get(section_name) if isinstance(config.get(section_name), dict) else {}
-        required.extend(_string_list(section.get("required_imports")))
-    required.extend(_string_list(config.get("required_imports")))
-    return _string_list(required)
-
-
-def _resolve_interpreter(key: str, value: str) -> tuple[str, str]:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        if key in MODEL_INTERPRETER_ENV_KEYS:
-            return "", f"{key} must be an absolute path, got: {value}"
-        found = shutil.which(value)
-        if not found:
-            return "", f"{key} is not resolvable on PATH: {value}"
-        path = Path(found)
-    if not path.exists():
-        return "", f"{key} does not exist: {value}"
-    if not os.access(path, os.X_OK):
-        return "", f"{key} is not executable: {value}"
-    return str(path), ""
-
-
-def _check_required_imports(model_python: str, imports: list[str]) -> list[str]:
-    issues: list[str] = []
-    for module in imports:
-        try:
-            probe = subprocess.run(
-                [
-                    model_python,
-                    "-c",
-                    "import importlib, sys; importlib.import_module(sys.argv[1])",
-                    module,
-                ],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                check=False,
-            )
-            if probe.returncode == 0:
-                continue
-            detail = ((probe.stderr or probe.stdout or "").strip() or f"import {module} failed").splitlines()[-1]
-        except subprocess.TimeoutExpired:
-            detail = f"import {module} timed out after 60s"
-        issues.append(f"MODEL_PYTHON cannot import required module '{module}' ({detail})")
-    return issues
-
-
 def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
     if not surface_path.exists():
         return {"passed": False, "evidence": f"{surface_path.name} not found"}
@@ -346,58 +225,145 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
     except json.JSONDecodeError as e:
         return {"passed": False, "evidence": f"invalid JSON: {e}"}
 
-    execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
-    if str(execution.get("requested") or "local") == "vc" or str(execution.get("path_planned") or "") == "vc_submit":
-        return {"passed": True, "evidence": "vc execution: container runtime is validated at vc submit preflight"}
-
+    eval_input_path = surface_path.parent / "eval_input_resolved.json"
+    try:
+        eval_input = json.loads(eval_input_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"passed": False, "evidence": f"approved eval input is unavailable: {exc}"}
+    model = eval_input.get("model") if isinstance(eval_input.get("model"), dict) else {}
+    approved = model.get("deployment_binding")
+    declared_binding = data.get("deployment_binding")
+    if not isinstance(approved, dict) or approved.get("schema") != "sure.eval.deployment_binding.v1":
+        return {"passed": False, "evidence": "eval input has no approved deployment binding"}
+    if not isinstance(declared_binding, dict):
+        return {"passed": False, "evidence": "execution surface must declare deployment_binding"}
     env = data.get("env") if isinstance(data.get("env"), dict) else {}
-    inference_runtime = data.get("inference_runtime") if isinstance(data.get("inference_runtime"), dict) else {}
     resolved_inputs = data.get("resolved_inputs") if isinstance(data.get("resolved_inputs"), dict) else {}
+    execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
     issues: list[str] = []
+    try:
+        approved_harness = harness_runtime_from_eval_input(eval_input)
+    except HarnessRuntimeBindingError as exc:
+        issues.append(str(exc))
+        approved_harness = {}
 
-    declared = {key: str(env[key]) for key in INTERPRETER_ENV_KEYS if isinstance(env.get(key), str) and env[key]}
-    if not (declared.get("MODEL_PYTHON") or declared.get("PYTHON_BIN")):
-        issues.append("env must declare MODEL_PYTHON (absolute path to the model interpreter) for local execution")
-    model_python = ""
-    for key, value in declared.items():
-        resolved, issue = _resolve_interpreter(key, value)
-        if issue:
-            issues.append(issue)
-        elif key in MODEL_INTERPRETER_ENV_KEYS and not model_python:
-            model_python = resolved
+    expected_fields = {
+        "schema": approved.get("schema"),
+        "target_image_ref": approved.get("target_image_ref"),
+        "bundle_identity_sha256": (approved.get("evidence") or {}).get("bundle_identity_sha256"),
+        "execution_mode": "container_only",
+        "model_mount_read_only": True,
+        "result_mount_writable": True,
+    }
+    for key, expected in expected_fields.items():
+        if declared_binding.get(key) != expected:
+            issues.append(f"deployment_binding.{key} must equal approved value {expected!r}")
+    path_planned = str(execution.get("path_planned") or "")
+    if path_planned not in {"local_docker", "vc_submit"}:
+        issues.append("formal inference path must be local_docker or vc_submit")
+    if isinstance(env.get("SURE_EVAL_CONTAINER_IMAGE"), str) and env["SURE_EVAL_CONTAINER_IMAGE"] != approved.get("target_image_ref"):
+        issues.append("execution surface image differs from the approved digest-pinned image")
+    for key in ("MODEL_PYTHON", "PYTHON_BIN"):
+        value = env.get(key)
+        if isinstance(value, str) and (".venv" in value or value == "/usr/bin/python3"):
+            issues.append(f"{key} must not bind a host interpreter; the container runner injects approved runtime Python")
+    declared_harness_python = env.get("HARNESS_PYTHON_BIN")
+    if isinstance(declared_harness_python, str) and declared_harness_python:
+        if declared_harness_python != approved_harness.get("python_executable"):
+            issues.append("HARNESS_PYTHON_BIN differs from the approved common Harness Runtime")
+    if declared_harness_python and declared_harness_python in {
+        env.get("MODEL_PYTHON"),
+        env.get("PYTHON_BIN"),
+    }:
+        issues.append("Harness Python and Model Python must be separate execution roles")
 
-    import_probe_policy = str(inference_runtime.get("import_probe_policy") or "declared_only").strip().lower()
-    required_imports = _required_imports(data, resolved_inputs.get("model_dir"))
-    if import_probe_policy not in {"declared_only", "skip", "required"}:
-        issues.append(
-            f"inference_runtime.import_probe_policy must be one of declared_only, skip, required; got: {import_probe_policy}"
-        )
-    elif import_probe_policy == "skip":
-        required_imports = []
-    elif import_probe_policy == "required" and not required_imports:
-        issues.append("inference_runtime.import_probe_policy=required needs required_imports from the surface or model config")
-    if model_python and required_imports:
-        import_issues = _check_required_imports(model_python, required_imports)
-        if import_issues:
-            candidates = _interpreter_candidates(resolved_inputs.get("model_dir"))
-            suffix = f"; interpreter candidates: {', '.join(candidates)}" if candidates else ""
-            issues.extend(f"{issue}{suffix}" for issue in import_issues)
-
-    declared_tool = ""
-    for value in (env.get("TOOL_NAME"), resolved_inputs.get("tool_name")):
-        if isinstance(value, str) and value:
-            declared_tool = value
-            break
-    if declared_tool:
-        expected = _expected_tool_names(resolved_inputs.get("model_dir"))
-        if expected and declared_tool not in expected:
-            issues.append(f"tool name '{declared_tool}' is not declared by the model; expected one of: {', '.join(expected)}")
+    declared_tool = next(
+        (value for value in (env.get("TOOL_NAME"), resolved_inputs.get("tool_name")) if isinstance(value, str) and value),
+        "",
+    )
+    approved_tools = ((approved.get("container") or {}).get("tool_names") or [])
+    if declared_tool and declared_tool not in approved_tools:
+        issues.append(f"tool name {declared_tool!r} is not in the approved deployment binding: {approved_tools}")
 
     if issues:
         return {"passed": False, "evidence": "; ".join(issues)}
-    if required_imports:
-        return {"passed": True, "evidence": f"interpreter, required imports ({', '.join(required_imports)}), and tool name verified"}
-    return {"passed": True, "evidence": "interpreter and tool name verified; import probe skipped (no required_imports declared)"}
+    live_probe = _live_runtime_probe(approved, approved_harness)
+    if not live_probe["passed"]:
+        return {
+            "passed": False,
+            "failure_class": live_probe["failure_class"],
+            "live_runtime_probe": live_probe,
+            "evidence": live_probe["evidence"],
+        }
+    return {
+        "passed": True,
+        "live_runtime_probe": live_probe,
+        "evidence": f"approved container-only deployment verified: {approved.get('target_image_ref')}",
+    }
+
+
+def _live_runtime_probe(
+    binding: dict[str, Any],
+    host_harness: dict[str, Any],
+    *,
+    run=subprocess.run,
+) -> dict[str, Any]:
+    repo_root = Path(__file__).resolve().parents[4]
+    try:
+        harness, mounted = resolve_container_harness_runtime(binding, host_harness, repo_root)
+    except ValueError as exc:
+        return {
+            "passed": False,
+            "failure_class": "HARNESS_RUNTIME_NOT_READY",
+            "exit_code": None,
+            "evidence": str(exc),
+        }
+    container = binding.get("container") if isinstance(binding.get("container"), dict) else {}
+    model_python = str(container.get("python_executable") or "python")
+    harness_python = str(harness["python_executable"])
+    script = (
+        f"test {shlex.quote(harness_python)} != {shlex.quote(model_python)} || exit 40; "
+        f"{shlex.quote(harness_python)} -s -c "
+        + shlex.quote("import pydantic,pydantic_settings,rich,structlog,typer,yaml")
+        + " || exit 41; "
+        + f"{shlex.quote(model_python)} -c "
+        + shlex.quote("import sys; print(sys.executable)")
+        + " || exit 42"
+    )
+    command = ["docker", "run", "--rm", "--entrypoint", "bash"]
+    if mounted:
+        command.extend(["--mount", f"type=bind,src={repo_root},dst={repo_root},readonly"])
+    command.extend([str(binding["target_image_ref"]), "-lc", script])
+    try:
+        completed = run(command, capture_output=True, text=True, check=False, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {
+            "passed": False,
+            "failure_class": "CONTAINER_RUNTIME_UNAVAILABLE",
+            "exit_code": None,
+            "evidence": f"runtime probe could not start: {exc}",
+        }
+    categories = {
+        40: "HARNESS_MODEL_RUNTIME_ALIAS",
+        41: "HARNESS_RUNTIME_NOT_READY",
+        42: "MODEL_RUNTIME_NEEDS_REPAIR",
+    }
+    failure_class = categories.get(completed.returncode, "CONTAINER_RUNTIME_UNAVAILABLE")
+    detail = (completed.stderr or completed.stdout or "").strip()
+    return {
+        "passed": completed.returncode == 0,
+        "failure_class": None if completed.returncode == 0 else failure_class,
+        "exit_code": completed.returncode,
+        "image_ref": binding.get("target_image_ref"),
+        "harness_runtime_id": harness.get("runtime_id"),
+        "harness_lock_sha256": harness.get("lock_sha256"),
+        "harness_python": harness_python,
+        "model_python": model_python,
+        "harness_runtime_source": harness.get("execution_source"),
+        "evidence": "exact-image Harness/Model runtime probe passed"
+        if completed.returncode == 0
+        else f"{failure_class}: {detail or f'exit {completed.returncode}'}",
+    }
 
 
 REQUIRED_EVALUATE_ARGS = [

@@ -36,6 +36,12 @@
 		"vc_gpu": { "type": "number" },
 		"vc_cpu": { "type": "number" },
 		"vc_image": { "type": "string" },
+		"image_digest": { "type": "string" },
+		"image_identity_ref": { "type": "string" },
+		"deployment_binding": { "type": "object", "additionalProperties": true },
+		"harness_runtime": { "type": "object", "additionalProperties": true },
+		"harness_runtime_mounted_from_repo": { "type": "boolean" },
+		"model_runtime": { "type": "object", "additionalProperties": true },
 		"vc_submission": {
 			"type": "object",
 			"description": "Effective VC submission snapshot mirrored into execution_surface.vc_runtime.resolved_submission.",

@@ -21,7 +21,7 @@
 	],
 	"properties": {
 		"schema": { "type": "string", "enum": ["sure.eval.inference_protocol.v1"] },
-		"protocol_id": { "type": "string" },
+		"protocol_id": { "type": "string", "enum": ["standard_system", "strict_core"] },
 		"run": {
 			"type": "object",
 			"required": ["run_id", "run_dir", "created_at"],
@@ -39,7 +39,7 @@
 		},
 		"inference_environment": {
 			"type": "object",
-			"required": ["execution_path", "vc", "container", "server", "env", "mount_policy"],
+			"required": ["execution_path", "vc", "container", "harness_runtime", "server", "env", "mount_policy"],
 			"additionalProperties": true
 		},
 		"inference_constraints": { "type": "object", "additionalProperties": true },

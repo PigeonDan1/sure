@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from container_execution import build_local_container_command, effective_container_exit_code
+
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -118,6 +120,42 @@ def _local_device_env(device_request: str) -> dict[str, str]:
     return env
 
 
+def _user_datasets(eval_input: dict[str, Any]) -> list[str]:
+    user_input = eval_input.get("user_input")
+    if not isinstance(user_input, dict):
+        return []
+    raw = user_input.get("datasets")
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list):
+        return [str(entry) for entry in raw if entry]
+    return []
+
+
+def _find_dropped_version(candidates: list[str], user_datasets: list[str]) -> tuple[str, str] | None:
+    """Return (surface_value, user_value) when a user-supplied @version suffix was dropped."""
+    for user_value in user_datasets:
+        if "@" not in user_value:
+            continue
+        base = user_value.split("@", 1)[0].rstrip("/")
+        for candidate in candidates:
+            if candidate and "@" not in candidate and candidate.rstrip("/") == base:
+                return candidate, user_value
+    return None
+
+
+def _canonical_dataset(eval_input: dict[str, Any], surface_dataset: str) -> str:
+    resolved = eval_input.get("datasets")
+    rows = [row for row in resolved if isinstance(row, dict)] if isinstance(resolved, list) else []
+    if len(rows) == 1 and rows[0].get("name"):
+        return str(rows[0]["name"])
+    for row in rows:
+        candidates = {str(row.get(key) or "") for key in ("name", "source_root", "jsonl_path")}
+        if surface_dataset in candidates and row.get("name"):
+            return str(row["name"])
+    return surface_dataset
+
+
 def _execution_requested(surface: dict[str, Any]) -> str:
     execution = surface.get("execution") if isinstance(surface.get("execution"), dict) else {}
     requested = execution.get("requested")
@@ -189,6 +227,24 @@ def main() -> int:
         print("resolved dataset/run_dir missing", file=sys.stderr)
         return 1
 
+    surface_env_values = _surface_env(surface)
+    version_candidates = [dataset] + [str(entry) for entry in datasets]
+    for env_key in ("DATASET", "DATASETS"):
+        env_value = surface_env_values.get(env_key)
+        if env_value:
+            version_candidates.extend(env_value.split())
+    dropped = _find_dropped_version(version_candidates, _user_datasets(eval_input))
+    if dropped:
+        surface_value, user_value = dropped
+        message = (
+            f"execution surface dropped the dataset @version suffix: got '{surface_value}' "
+            f"but the user input was '{user_value}'; carry the full source path including "
+            "'@<version>' into execution_surface resolved_inputs and env DATASET/DATASETS"
+        )
+        _write_result(path, passed=False, sample_count=0, exit_code=1, stdout="", failures=[message])
+        print(message, file=sys.stderr)
+        return 1
+
     max_samples = resolved.get("max_samples")
     smoke_samples = 1
     if isinstance(max_samples, int) and max_samples > 0:
@@ -197,24 +253,30 @@ def main() -> int:
     logs_dir = run_dir / "local_logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / "smoke_test.log"
-    env = os.environ.copy()
-    env.update(_surface_env(surface))
-    env.update(_local_device_env(_device_request(surface, eval_input)))
-    if env.get("SURE_EVAL_HARNESS_PYTHON_BIN") and not env.get("HARNESS_PYTHON_BIN"):
-        env["HARNESS_PYTHON_BIN"] = env["SURE_EVAL_HARNESS_PYTHON_BIN"]
-    env.setdefault("REPO_ROOT", str(Path(__file__).resolve().parents[1]))
-    env["SMOKE_ONLY"] = "1"
-    env["SMOKE_TEST_SAMPLES"] = str(smoke_samples)
-    env.setdefault("SURE_EVAL_EXECUTION_PATH", "local_smoke")
-    env.setdefault("SURE_EVAL_EXECUTION_REQUESTED", _execution_requested(surface))
+    device_request = _device_request(surface, eval_input)
+    command, _ = build_local_container_command(
+        surface=surface,
+        eval_input=eval_input,
+        control_run_dir=run_dir.resolve(),
+        entrypoint=entrypoint_path.resolve(),
+        repo_root=Path(__file__).resolve().parents[4],
+        device_request=device_request,
+        extra_env={
+            **_local_device_env(device_request),
+            "SMOKE_ONLY": "1",
+            "SMOKE_TEST_SAMPLES": str(smoke_samples),
+            "SURE_EVAL_EXECUTION_PATH": "local_docker_smoke",
+            "SURE_EVAL_EXECUTION_REQUESTED": _execution_requested(surface),
+        },
+    )
 
     exit_code = 1
     try:
         with log_path.open("w", encoding="utf-8") as log:
             completed = subprocess.run(
-                ["bash", str(entrypoint_path)],
-                cwd=str(entrypoint_path.parent),
-                env=env,
+                command,
+                cwd=str(Path(__file__).resolve().parents[4]),
+                env=os.environ.copy(),
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -236,7 +298,9 @@ def main() -> int:
         return 1
 
     log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
-    pred_path = eval_run_dir / "predictions" / f"{dataset}.txt"
+    exit_code = effective_container_exit_code(exit_code, log_text)
+    canonical_dataset = _canonical_dataset(eval_input, dataset)
+    pred_path = eval_run_dir / "predictions" / f"{canonical_dataset}.txt"
     total, valid = _count_valid_predictions(pred_path)
     failures: list[str] = []
     if exit_code != 0:

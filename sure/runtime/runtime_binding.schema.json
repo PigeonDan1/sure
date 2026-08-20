@@ -1,0 +1,48 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "runtime_binding.schema.json",
+	"title": "SURE skill runtime responsibility declaration",
+	"type": "object",
+	"required": ["schema", "skill", "generated_at", "runtimes"],
+	"properties": {
+		"schema": { "const": "sure.skill.runtime_binding.v1" },
+		"skill": { "type": "string", "minLength": 1 },
+		"generated_at": { "type": "string", "format": "date-time" },
+		"runtimes": {
+			"type": "object",
+			"required": ["harness", "model", "evaluation"],
+			"properties": {
+				"harness": { "$ref": "#/definitions/runtimeSlot" },
+				"model": { "$ref": "#/definitions/runtimeSlot" },
+				"evaluation": { "$ref": "#/definitions/runtimeSlot" }
+			},
+			"additionalProperties": false
+		}
+	},
+	"definitions": {
+		"runtimeSlot": {
+			"oneOf": [
+				{
+					"type": "object",
+					"required": ["required", "role", "binding"],
+					"properties": {
+						"required": { "const": true },
+						"role": { "type": "string", "minLength": 1 },
+						"binding": { "type": "object", "additionalProperties": true }
+					},
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"required": ["required", "reason"],
+					"properties": {
+						"required": { "const": false },
+						"reason": { "type": "string", "minLength": 1 }
+					},
+					"additionalProperties": false
+				}
+			]
+		}
+	},
+	"additionalProperties": false
+}

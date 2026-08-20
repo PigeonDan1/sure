@@ -26,6 +26,7 @@
 				"local_ready": { "type": "boolean" },
 				"docker_ready": { "type": "boolean" },
 				"registry_ready": { "type": "boolean" },
+				"bundle_ready": { "type": "boolean" },
 				"vc_ready": { "type": ["boolean", "null"] }
 			},
 			"additionalProperties": true

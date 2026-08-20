@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import { harnessRuntimeEnv, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
 import { FIRST_UNIT, LAST_UNIT, nextUnit } from "./state-machine.ts";
 
 // Checkpoint persisted in state.json -> checkpoint.data. Drives the mixed
@@ -26,6 +27,7 @@ export interface CheckpointData {
 	currentUnit: string;
 	completedUnits: string[];
 	retries: Record<string, number>;
+	failedArtifactDigests: Record<string, string>;
 }
 
 export interface RunCheckpoint {
@@ -79,6 +81,7 @@ export function readCheckpoint(ctx: SureHookContext): RunCheckpoint {
 		currentUnit: FIRST_UNIT.id,
 		completedUnits: [],
 		retries: {},
+		failedArtifactDigests: {},
 	};
 	try {
 		const state = readJson(stateJsonPath(ctx));
@@ -96,12 +99,19 @@ export function readCheckpoint(ctx: SureHookContext): RunCheckpoint {
 				retries[key] = value;
 			}
 		}
+		const failedArtifactDigestsRaw = isRecord(data.failedArtifactDigests) ? data.failedArtifactDigests : {};
+		const failedArtifactDigests: Record<string, string> = {};
+		for (const [key, value] of Object.entries(failedArtifactDigestsRaw)) {
+			if (typeof value === "string") {
+				failedArtifactDigests[key] = value;
+			}
+		}
 		return {
 			id: "main_flow",
 			label: "SURE model-feed state machine",
 			resumable: true,
 			resume_hint: `Resume at unit "${currentUnit}".`,
-			data: { currentUnit, completedUnits, retries },
+			data: { currentUnit, completedUnits, retries, failedArtifactDigests },
 		};
 	} catch {
 		return {
@@ -123,14 +133,16 @@ export function advance(unit: Unit, completed: CheckpointData): RunCheckpoint | 
 		? completed.completedUnits
 		: [...completed.completedUnits, unit.id];
 	const retries = { ...completed.retries };
+	const failedArtifactDigests = { ...completed.failedArtifactDigests };
 	delete retries[unit.id];
+	delete failedArtifactDigests[unit.id];
 	if (!next) {
 		return {
 			id: "main_flow",
 			label: "SURE model-feed state machine",
 			resumable: false,
 			resume_hint: "State machine reached the terminal unit.",
-			data: { currentUnit: LAST_UNIT.id, completedUnits, retries },
+			data: { currentUnit: LAST_UNIT.id, completedUnits, retries, failedArtifactDigests },
 		};
 	}
 	return {
@@ -138,20 +150,24 @@ export function advance(unit: Unit, completed: CheckpointData): RunCheckpoint | 
 		label: "SURE model-feed state machine",
 		resumable: true,
 		resume_hint: `Advanced to unit "${next.id}".`,
-		data: { currentUnit: next.id, completedUnits, retries },
+		data: { currentUnit: next.id, completedUnits, retries, failedArtifactDigests },
 	};
 }
 
 // Bump the retry counter for a unit; return the new checkpoint (no advance).
-export function bumpRetry(unit: Unit, current: CheckpointData): RunCheckpoint {
+export function bumpRetry(unit: Unit, current: CheckpointData, artifactDigest?: string): RunCheckpoint {
 	const retries = { ...current.retries };
+	const failedArtifactDigests = { ...current.failedArtifactDigests };
 	retries[unit.id] = (retries[unit.id] ?? 0) + 1;
+	if (artifactDigest) {
+		failedArtifactDigests[unit.id] = artifactDigest;
+	}
 	return {
 		id: "main_flow",
 		label: "SURE model-feed state machine",
 		resumable: true,
 		resume_hint: `Retry unit "${unit.id}" (attempt ${retries[unit.id]}).`,
-		data: { currentUnit: unit.id, completedUnits: current.completedUnits, retries },
+		data: { currentUnit: unit.id, completedUnits: current.completedUnits, retries, failedArtifactDigests },
 	};
 }
 
@@ -215,10 +231,20 @@ export function runBackend(
 			finalArgs[idx + 1] = join(ctx.runDir, "artifacts", val);
 		}
 	}
-	const r = spawnSync("python3", [py, ...finalArgs], {
+	const runtime = resolveHarnessPython(ctx.packageDir);
+	if (!runtime.ok || !runtime.contract) {
+		return {
+			ok: false,
+			status: null,
+			stdout: "",
+			stderr: runtime.error ?? "HARNESS_RUNTIME_NOT_READY",
+		};
+	}
+	const r = spawnSync(runtime.contract.python_executable, [py, ...finalArgs], {
 		cwd: ctx.packageDir,
 		encoding: "utf-8",
 		timeout: 300_000,
+		env: { ...process.env, ...harnessRuntimeEnv(runtime.contract) },
 	});
 	return {
 		ok: r.status === 0,

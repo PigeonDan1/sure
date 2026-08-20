@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Gate script for PACKAGE_GATE.
-
-Default /sure_onboard completion is local-ready. Docker is opt-in via
-package=docker-local or package=docker-registry. VC/HPC readiness is never a
-core success condition here.
-"""
+"""Cross-check local validation and Docker delivery readiness."""
 from __future__ import annotations
 
 import argparse
@@ -13,6 +8,13 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+from deployment_contract import (
+    load_artifact,
+    resolve_model_dir,
+    sha256_file,
+    validate_container_documents,
+)
 
 PACKAGE_PROFILES = {"none", "docker-local", "docker-registry"}
 STAGE_RESULTS = {
@@ -135,7 +137,7 @@ def main() -> int:
     parser.add_argument("--produces", required=True)
     args = parser.parse_args()
 
-    run_dir = Path(args.run_dir).expanduser()
+    run_dir = Path(args.run_dir).expanduser().resolve()
     path = Path(args.produces)
     if not path.exists():
         print(f"package_gate.json not found at {path}", file=sys.stderr)
@@ -149,6 +151,9 @@ def main() -> int:
     status = data.get("status")
     if status != "passed":
         print(f"PACKAGE_GATE failed: status must be passed, got {status!r}.", file=sys.stderr)
+        return 1
+    if data.get("schema") != "sure.onboard.package_gate.v2":
+        print("PACKAGE_GATE failed: schema must be sure.onboard.package_gate.v2.", file=sys.stderr)
         return 1
 
     package_profile = data.get("package_profile")
@@ -164,8 +169,11 @@ def main() -> int:
         print("PACKAGE_GATE failed: local_ready must be true before any final verdict.", file=sys.stderr)
         return 1
 
-    model_dir_raw = data.get("model_dir")
-    model_dir = Path(str(model_dir_raw)).expanduser() if model_dir_raw else None
+    try:
+        model_dir, resolved = resolve_model_dir(run_dir)
+    except (OSError, ValueError) as exc:
+        print(f"PACKAGE_GATE failed: {exc}", file=sys.stderr)
+        return 1
     manifest_path = resolve_manifest_path(data.get("artifact_manifest_path"), run_dir, model_dir)
     if not manifest_path:
         print(
@@ -179,7 +187,6 @@ def main() -> int:
     except ValueError as exc:
         print(f"PACKAGE_GATE failed: {exc}", file=sys.stderr)
         return 1
-    model_dir = model_dir or infer_model_dir(manifest_data, manifest_path)
     manifest_ok, manifest_message = check_artifact_manifest(run_dir, manifest_path)
     if not manifest_ok:
         print(f"PACKAGE_GATE failed: {manifest_message}", file=sys.stderr)
@@ -195,36 +202,56 @@ def main() -> int:
         print("PACKAGE_GATE failed: local.validation_passed and local.artifacts_complete must not be false.", file=sys.stderr)
         return 1
 
-    if package_profile in {"docker-local", "docker-registry"} and readiness.get("docker_ready") is not True:
+    deployment_type = resolved.get("deployment_type")
+    if package_profile != resolved.get("package_profile"):
+        print("PACKAGE_GATE failed: package_profile disagrees with model_input_resolved.json.", file=sys.stderr)
+        return 1
+    if deployment_type == "api":
+        if package_profile != "none" or readiness.get("bundle_ready") is not True:
+            print("PACKAGE_GATE failed: API deployment requires package=none and bundle_ready=true.", file=sys.stderr)
+            return 1
+    if deployment_type == "local" and package_profile in {"docker-local", "docker-registry"} and readiness.get("docker_ready") is not True:
         print(
             f"PACKAGE_GATE failed: package={package_profile} requires readiness.docker_ready=true.",
             file=sys.stderr,
         )
         return 1
-    if package_profile in {"docker-local", "docker-registry"}:
-        docker = data.get("docker") if isinstance(data.get("docker"), dict) else {}
-        if docker.get("build_passed") is not True or docker.get("validate_passed") is not True:
-            print(
-                f"PACKAGE_GATE failed: package={package_profile} requires "
-                "docker.build_passed=true and docker.validate_passed=true.",
-                file=sys.stderr,
-            )
+    if deployment_type == "local" and package_profile in {"docker-local", "docker-registry"}:
+        try:
+            build = load_artifact(run_dir, model_dir, "docker_build_result.json")
+            validation = load_artifact(run_dir, model_dir, "docker_validation.json")
+            docker = data.get("docker") if isinstance(data.get("docker"), dict) else {}
+            dockerfile = model_dir / str(docker.get("dockerfile_path") or "Dockerfile")
+            if not dockerfile.is_file() or docker.get("dockerfile_sha256") != sha256_file(dockerfile):
+                raise ValueError("package gate Dockerfile hash does not match the model bundle")
+            if package_profile == "docker-registry":
+                registry_result = load_artifact(run_dir, model_dir, "docker_registry_result.json")
+                image, digest, image_ref = validate_container_documents(build, validation, registry_result)
+                if any(
+                    docker.get(key) != expected
+                    for key, expected in (
+                        ("target_image", image),
+                        ("target_image_digest", digest),
+                        ("target_image_ref", image_ref),
+                    )
+                ):
+                    raise ValueError("package gate image binding disagrees with container evidence")
+        except (OSError, ValueError) as exc:
+            print(f"PACKAGE_GATE failed: {exc}", file=sys.stderr)
             return 1
-    if package_profile == "docker-registry" and readiness.get("registry_ready") is not True:
+    if deployment_type == "local" and package_profile == "docker-registry" and readiness.get("registry_ready") is not True:
         print(
             "PACKAGE_GATE failed: package=docker-registry requires readiness.registry_ready=true.",
             file=sys.stderr,
         )
         return 1
-    if package_profile == "docker-registry":
-        registry = data.get("registry") if isinstance(data.get("registry"), dict) else {}
-        if registry.get("push_passed") is not True or registry.get("pull_verify_passed") is not True:
-            print(
-                "PACKAGE_GATE failed: package=docker-registry requires "
-                "registry.push_passed=true and registry.pull_verify_passed=true.",
-                file=sys.stderr,
-            )
+    if deployment_type == "local" and package_profile == "docker-registry":
+        if readiness.get("container_ready") is not True or readiness.get("bundle_ready") is not True:
+            print("PACKAGE_GATE failed: docker-registry requires container_ready=true and bundle_ready=true.", file=sys.stderr)
             return 1
+    if deployment_type == "local" and package_profile != "docker-registry" and readiness.get("bundle_ready") is not False:
+        print("PACKAGE_GATE failed: non-registry local package must declare bundle_ready=false.", file=sys.stderr)
+        return 1
 
     print(
         "check_package_gate OK: "

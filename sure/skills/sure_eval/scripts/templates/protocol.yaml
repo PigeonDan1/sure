@@ -45,10 +45,24 @@ inference_environment:
     preflight_required: {preflight_required}
   container:
     image: {docker_image}
+    image_digest: {docker_image_digest}
+    image_ref: {docker_image_ref}
     dockerfile: {dockerfile}
     repo_root: {container_repo_root}
     model_dir: {container_model_dir}
     python_executable: {container_python_executable}
+    working_dir: {container_working_dir}
+    execution_mode: container_only
+    host_python_fallback: false
+  harness_runtime:
+    schema: sure.harness.runtime.binding.v1
+    runtime_id: {harness_runtime_id}
+    runtime_type: harness_python
+    python_executable: {harness_python_executable}
+    process_python_executable: {harness_process_python_executable}
+    lock_sha256: {harness_lock_sha256}
+    manifest_path: {harness_manifest_path}
+    runtime_root: {harness_runtime_root}
   server:
     transport: {server_transport}
     command:
@@ -67,12 +81,18 @@ inference_environment:
   runtime_inventory:
     path: {runtime_inventory_path}
     status: {runtime_inventory_status}
-    backend: {runtime_inventory_backend}
-    links_manifest: {runtime_links_manifest}
+    schema: sure.onboard.runtime_inventory.v2
+    local_evidence_backend: {runtime_inventory_backend}
+    execution_mode: container_only
+    target_image_ref: {docker_image_ref}
   mount_policy:
     mount_stable_absolute_roots:
 {mount_stable_absolute_roots_yaml}
     reject_repo_internal_runtime_mount_overlays: {reject_repo_internal_runtime_mount_overlays}
+    nfs_models_read_only: true
+    result_workspace:
+      target: {container_result_dir}
+      read_only: false
 inference_constraints:
   no_external_lm: {no_external_lm}
   no_retrieval: {no_retrieval}
@@ -145,11 +165,16 @@ prediction_contract:
   generated_by: {prediction_generated_by}
   protocol_argument: {protocol_id}
 provenance:
+  harness_commit: {harness_commit}
+  evaluation_engine:
+    root: {evaluation_engine_root}
+    commit: {evaluation_engine_commit}
   prediction_generation_status: {prediction_generation_status}
   prediction_generation_status_schema: sure.eval.prediction_generation_status.v2
   runtime_inventory: {runtime_inventory_path}
-  runtime_inventory_schema: sure.onboard.runtime_inventory.v1
-  runtime_links_manifest: {runtime_links_manifest}
+  runtime_inventory_schema: sure.onboard.runtime_inventory.v2
+  deployment_ready: {deployment_ready_path}
+  package_gate: {package_gate_path}
   source_inference_provenance_manifest:
   source_protocol:
   source_prediction_generation_status:

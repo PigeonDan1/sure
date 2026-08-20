@@ -1,80 +1,117 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "runtime_inventory.schema.json",
-	"title": "SURE onboard runtime inventory",
-	"description": "Model-level runtime evidence produced by /sure_onboard and consumed by /sure_eval.",
+	"title": "SURE onboard runtime inventory v2",
+	"description": "Portable model runtime contract written after the Docker package gate.",
 	"type": "object",
-	"required": ["schema", "generated_at", "status", "model", "runtime", "weights", "evidence", "policy"],
+	"required": ["schema", "generated_at", "status", "model", "local_runtime", "model_runtime", "harness_runtime", "container_runtime", "weights", "readiness", "evidence", "policy"],
 	"properties": {
-		"schema": { "const": "sure.onboard.runtime_inventory.v1" },
+		"schema": { "const": "sure.onboard.runtime_inventory.v2" },
 		"generated_at": { "type": "string" },
-		"status": { "enum": ["ready", "partial"] },
+		"status": { "enum": ["ready", "local_only", "api_ready", "partial"] },
 		"model": {
 			"type": "object",
-			"required": ["model_name", "model_dir"],
+			"required": ["name", "deployment_type", "bundle_root"],
 			"properties": {
-				"model_id": { "type": "string" },
-				"model_name": { "type": "string" },
-				"model_dir": { "type": "string" },
-				"task_type": { "type": "string" },
-				"deployment_type": { "type": "string" }
+				"name": { "type": "string" },
+				"id": { "type": ["string", "null"] },
+				"task": { "type": ["string", "null"] },
+				"deployment_type": { "enum": ["local", "api"] },
+				"bundle_root": { "const": "." },
+				"bundle_identity_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
 			},
 			"additionalProperties": true
 		},
-		"runtime": {
+		"local_runtime": {
 			"type": "object",
+			"required": ["purpose", "eligible_for_eval"],
 			"properties": {
-				"backend": { "type": "string" },
-				"installer": { "type": "string" },
-				"python_version": { "type": "string" },
+				"purpose": { "type": "string" },
+				"eligible_for_eval": { "const": false },
+				"backend": { "type": ["string", "null"] },
 				"python_executable": { "type": ["string", "null"] },
-				"lockfile_path": { "type": ["string", "null"] },
-				"docker_image": { "type": ["string", "null"] },
-				"log_path": { "type": ["string", "null"] },
-				"runtime_checks": { "type": "object" },
-				"runtime_probe": { "type": "object" }
+				"python_version": { "type": ["string", "null"] },
+				"lockfiles": { "type": "array", "items": { "type": "string" } }
 			},
 			"additionalProperties": true
 		},
-		"weights": {
+		"model_runtime": {
 			"type": "object",
+			"required": ["required", "runtime_type"],
 			"properties": {
-				"weights_ready": { "type": ["boolean", "null"] },
-				"source": { "type": ["string", "null"] },
-				"repo_id": { "type": ["string", "null"] },
-				"resolved_local_model_path": { "type": ["string", "null"] },
-				"runtime_load_identity": { "type": ["string", "null"] },
-				"checkpoint_root": { "type": ["string", "null"] },
-				"cache_policy": { "type": ["string", "null"] },
-				"fallback_to_host_global": { "type": ["boolean", "null"] },
-				"dependencies": { "type": "array" },
-				"source_attempts": { "type": "array" }
+				"required": { "type": "boolean" },
+				"runtime_type": { "type": "string" },
+				"python_executable": { "type": ["string", "null"] },
+				"python_version": { "type": ["string", "null"] },
+				"checks": { "type": "object" }
 			},
 			"additionalProperties": true
 		},
+		"harness_runtime": {
+			"type": "object",
+			"required": ["required", "runtime_type"],
+			"properties": {
+				"required": { "type": "boolean" },
+				"schema": { "type": "string" },
+				"runtime_id": { "type": "string" },
+				"runtime_type": { "const": "harness_python" },
+				"python_executable": { "type": ["string", "null"] },
+				"python_version": { "type": ["string", "null"] },
+				"python_abi": { "type": ["string", "null"] },
+				"lock_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+				"manifest_path": { "type": ["string", "null"] },
+				"runtime_root": { "type": ["string", "null"] },
+				"materialization": { "type": ["string", "null"] },
+				"checks": { "type": "object" }
+			},
+			"additionalProperties": true
+		},
+		"container_runtime": {
+			"type": "object",
+			"required": ["required"],
+			"properties": {
+				"required": { "type": "boolean" },
+				"base_image": { "type": ["string", "null"] },
+				"target_image": { "type": ["string", "null"] },
+				"target_image_digest": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+				"target_image_ref": { "type": ["string", "null"] },
+				"dockerfile": {
+					"type": ["object", "null"],
+					"properties": {
+						"path": { "type": "string" },
+						"sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+					},
+					"required": ["path", "sha256"],
+					"additionalProperties": false
+				},
+				"python_executable": { "type": ["string", "null"] },
+				"working_dir": { "type": ["string", "null"] },
+				"server_command": { "type": "array", "items": { "type": "string" } },
+				"tool_names": { "type": "array", "items": { "type": "string" } },
+				"gpu_required": { "type": "boolean" },
+				"mount_policy": {
+					"type": "object",
+					"required": ["nfs_models_read_only"],
+					"properties": { "nfs_models_read_only": { "const": true } },
+					"additionalProperties": true
+				}
+			},
+			"additionalProperties": true
+		},
+		"weights": { "type": "object" },
 		"readiness": { "type": "object" },
-		"evidence": {
-			"type": "object",
-			"required": ["missing", "links_manifest", "links_dir", "link_entries"],
-			"properties": {
-				"model_core_files": { "type": "object" },
-				"missing": { "type": "array", "items": { "type": "string" } },
-				"links_manifest": { "type": "string" },
-				"links_dir": { "type": "string" },
-				"link_entries": { "type": "array", "items": { "type": "string" } }
-			},
-			"additionalProperties": true
-		},
+		"evidence": { "type": "object" },
 		"policy": {
 			"type": "object",
-			"required": ["checkpoint_payload_links", "consumer"],
+			"required": ["eval_runtime", "host_python_fallback", "image_override_allowed", "nfs_models_mutable_by_eval"],
 			"properties": {
-				"source_of_truth": { "type": "string" },
-				"checkpoint_payload_links": { "const": false },
-				"consumer": { "type": "string" }
+				"eval_runtime": { "enum": ["container_only", "api_only", "unavailable"] },
+				"host_python_fallback": { "const": false },
+				"image_override_allowed": { "const": false },
+				"nfs_models_mutable_by_eval": { "const": false }
 			},
 			"additionalProperties": true
 		}
 	},
-	"additionalProperties": true
+	"additionalProperties": false
 }

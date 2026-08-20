@@ -1,147 +1,42 @@
 # Backend Selection Policy
 
-**Version**: 1.0  
-**Scope**: Builder Agent, Harness Controller  
-**Purpose**: Define backend selection rules and constraints
+**Version**: 2.0
+**Scope**: `/sure_onboard` local adaptation and container delivery
 
----
+## Two separate decisions
 
-## 核心原则
+`backend_choice.json.backend` selects the environment used to adapt and validate the model locally. It may be `uv`, `pip`, `conda`, `pixi`, or `docker`. `package_profile` selects the delivered Eval runtime.
 
-### 1. preferred_backend 仅为初始建议
+For every local model, these decisions converge as follows:
 
-`model.spec.yaml.environment.preferred_backend` 或 `environment_hint` **仅作为初始建议**，不是强制命令。
+1. Adapt with the repository-compatible backend.
+2. Run import, load, inference, and contract checks in that environment.
+3. Adapt a Dockerfile that reproduces the passing environment.
+4. Build and repeat the bounded checks inside the image.
+5. Push the image and pull-verify its immutable registry digest.
+6. Publish `runtime_inventory.json` with `execution_mode=container_only`.
 
-Backend 选择必须服从：
-- Phase-1 runtime target（最小可调用路径验证）
-- 基础设施约束（Docker daemon 可用性、网络策略等）
-- Evidence Priority（运行时证据优先于配置建议）
+The local backend is evidence used to create the image. It is not an Eval fallback.
 
-`requires_gpu: true` 默认表示兼容性风险和后续能力边界，不自动等于 phase-1 必须在 GPU 上通过。
+## Local backend routing
 
-### 2. 最轻量可行路径优先
+| Evidence | Adaptation backend |
+|---|---|
+| API-only model | `api`; package profile must be `none` |
+| Upstream Dockerfile or complex OS/CUDA dependencies | `docker` |
+| Conda metadata or packages | `pixi` or `conda` |
+| Pure Python packaging | `uv` or `pip` |
 
-如果更轻量的 backend 能满足最小成功目标，**不得强行走更重路径**。
+Record repository evidence, executable availability, selected version, and any fallback in `backend_choice.json`. A fallback may change the adaptation backend, but may not waive Docker registry delivery for a local model.
 
-| Backend | 复杂度 | 适用场景 |
-|---------|--------|----------|
-| uv | 低 | 纯 Python，无系统依赖 |
-| pixi/conda | 中 | 需要 conda 包或系统库 |
-| docker | 高 | 复杂系统依赖、CUDA 版本隔离 |
+## Package policy
 
-### 3. Backend 不可执行时必须记录原因
+- `docker-registry`: default and only successful local-model profile.
+- `docker-local`: diagnostic; final verdict must not claim Eval readiness.
+- `none`: API or explicit local diagnostic; final local verdict must not be success.
 
-当首选 backend 不可用时：
-- 必须记录具体原因（如 "Docker daemon unreachable"）
-- 必须尝试降级到可行 backend
-- 必须在 `backend_choice.json` 中记录切换决策
+If Docker, registry push, digest resolution, or digest pull verification is unavailable, stop with a repairable partial/blocked result. Do not convert host `.venv`, base Python, or a locally guessed image tag into deployment readiness.
 
----
+## Device policy
 
-## 决策流程
-
-```
-用户指定 preferred_backend
-    ↓
-检查基础设施约束
-    ├── 不可用 → 尝试降级 → 记录原因
-    ↓
-检查 Phase-1 最小需求
-    ├── 轻量 backend 可满足 → 使用轻量
-    ↓
-选择最优 backend
-    ↓
-记录决策到 backend_choice.json
-```
-
----
-
-## 记录要求
-
-### backend_choice.json 必须包含
-
-```json
-{
-  "chosen_backend": "uv",
-  "reason": "Docker daemon unreachable; uv satisfies phase-1 requirements",
-  "evidence": [
-    "docker info failed: Cannot connect to daemon",
-    "uv available at /usr/bin/uv",
-    "phase-1 only requires import/load/infer, no complex system deps"
-  ],
-  "evidence_conflicts": [
-    {
-      "field": "preferred_backend",
-      "sources": [
-        {"value": "docker", "source": "user_input", "priority": 3},
-        {"value": "uv", "source": "runtime_preflight", "priority": 1}
-      ],
-      "chosen": "uv",
-      "reason": "Runtime evidence (docker unavailable) overrides user preference"
-    }
-  ]
-}
-```
-
----
-
-## 与 Evidence Priority 的关系
-
-Backend 选择遵循 [Evidence Priority Policy](./evidence_priority.md) 的层级：
-
-1. **Runtime evidence** (priority 1): backend 实际可执行性
-2. **Infrastructure constraints** (priority 2): 网络、权限、存储
-3. **User preference** (priority 3): preferred_backend 建议
-4. **Repo configuration** (priority 4): pyproject.toml 中的依赖暗示
-
----
-
-## 常见场景
-
-### 场景 1: Docker 不可用
-
-**情况**: User 指定 `preferred_backend: docker`，但 daemon 不可达
-
-**处理**:
-1. 记录失败原因
-2. 尝试 uv/pixi（根据 repo 配置）
-3. 在 backend_choice.json 中标记冲突与解决
-
-### 场景 2: 轻量 backend 足够
-
-**情况**: Model 是简单 Python 包，但 user 指定 `preferred_backend: docker`
-
-**处理**:
-1. 评估 phase-1 需求：仅需 pip install + import/load/infer
-2. 选择 uv（更轻量、更快）
-3. 记录理由："uv satisfies phase-1 requirements, docker is overkill"
-
-### 场景 3: Backend 降级后失败
-
-**情况**: Docker 不可用，降级到 uv，但缺少系统依赖（如 ffmpeg）
-
-**处理**:
-1. 记录 uv 失败原因
-2. 评估是否可安装系统包
-3. 必要时升级到 docker（如果问题解决）或标记为失败
-
-### 场景 4: 标注 requires_gpu，但 phase-1 可走 CPU fallback
-
-**情况**: 输入要求 GPU，但 phase-1 目标仅是最小 callable path，host GPU 不可用或 driver 不兼容
-
-**处理**:
-1. 若 host CUDA 可见且 `device=auto`，必须先用 CUDA 尝试 `validate_env_compat`；不得直接写 `device=cpu` 通过。
-2. CUDA 失败后不能立即 CPU fallback；必须根据 host driver/CUDA 尝试修复模型运行环境，例如重装/pin torch+torchaudio 到 host 可用的 CUDA wheel、切换到文档支持的 CUDA backend、或重建 model-local env。
-3. 只有在记录至少 3 次 CUDA-first 失败（或 `cpu_fallback_after_cuda_failures` 指定的次数）并记录至少 3 次 CUDA 环境修复尝试（或 `cuda_repair_attempts_before_cpu` 指定的次数）后，才允许切到 CPU fallback。
-4. 检查 CPU fallback 是否仍是同一条 repo-native path。
-5. 若是，则保留当前 backend，记录 limitation。
-6. 在 verdict 中明确：phase-1 passed with CPU fallback，不宣称 GPU readiness。
-
----
-
-## 禁止行为
-
-1. **不得盲从 preferred_backend** - 必须验证可行性
-2. **不得过度工程化** - 能用 uv 就不用 docker
-3. **不得无记录切换** - 所有 backend 变更必须记录在案
-4. **不得忽略基础设施约束** - 网络、存储、权限必须检查
+Apply CUDA-first validation rules during local adaptation. The image must then repeat the selected device-path checks. CPU fallback evidence may be retained, but the final bundle must accurately describe the validated device and must not claim unsupported GPU readiness.

@@ -93,4 +93,4 @@ The shell must respect this order:
 
 ## Recommended Template
 
-- [run_single_model.sh](docs/agents/main_flow_agent/templates/run_single_model.sh)
+- [run_single_model.sh](../../scripts/templates/run_single_model.sh)

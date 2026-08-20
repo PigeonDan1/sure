@@ -22,7 +22,9 @@ from typing import Any
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from model_child_env import model_child_env
 
 from sure_eval.core.config import Config
 from sure_eval.core.logging import configure_logging, get_logger
@@ -37,6 +39,10 @@ PREDICTION_SNAPSHOT_INTERVAL = 25
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _artifact_run_id(run_dir: Path) -> str:
+    return os.environ.get("RUN_ID") or run_dir.name
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -55,96 +61,42 @@ def _load_yaml(path: Path) -> dict[str, Any]:
         return yaml.safe_load(handle) or {}
 
 
-def _load_build_plan(model_dir: Path) -> dict[str, Any]:
-    build_plan_path = model_dir / "artifacts" / "build_plan.json"
-    if not build_plan_path.exists():
-        return {}
-    try:
-        return json.loads(build_plan_path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def _load_weights_manifest(model_dir: Path) -> dict[str, Any]:
-    weights_manifest_path = model_dir / "artifacts" / "weights_manifest.json"
-    if not weights_manifest_path.exists():
-        return {}
-    try:
-        return json.loads(weights_manifest_path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
 def _resolve_server_command(
     model_dir: Path,
-    server_cfg: dict[str, Any],
-    build_plan: dict[str, Any],
+    runtime_inventory: dict[str, Any],
 ) -> list[str]:
-    if "command" not in server_cfg:
-        adapter = Path(__file__).resolve().parent / "model_wrapper_mcp_server.py"
-        command = ["python", str(adapter), "--model-dir", str(model_dir)]
-    else:
-        command = list(server_cfg.get("command", ["python", "server.py"]))
-    if not command:
-        raise ValueError("server.command must not be empty")
-
-    server_script_override = os.environ.get("SURE_EVAL_SERVER_SCRIPT_OVERRIDE")
-    if server_script_override:
-        if len(command) == 1:
-            command.append(server_script_override)
-        else:
-            command[-1] = server_script_override
-
-    preferred_python = os.environ.get("MODEL_PYTHON")
-    if preferred_python and Path(command[0]).name.startswith("python"):
-        command[0] = preferred_python
-    elif command[0] == "python":
-        venv_python = model_dir / ".venv" / "bin" / "python"
-        build_plan_python = build_plan.get("venv_path")
-        if venv_python.exists():
-            command[0] = str(venv_python)
-        elif build_plan_python:
-            command[0] = str(Path(build_plan_python) / "bin" / "python")
-
+    container = runtime_inventory.get("container_runtime")
+    policy = runtime_inventory.get("policy")
+    if runtime_inventory.get("schema") != "sure.onboard.runtime_inventory.v2":
+        raise ValueError(f"approved model has unsupported runtime inventory: {model_dir}")
+    if runtime_inventory.get("status") != "ready":
+        raise ValueError("approved model runtime inventory is not ready")
+    if not isinstance(policy, dict) or policy.get("eval_runtime") != "container_only":
+        raise ValueError("approved model is not bound to container-only execution")
+    if policy.get("host_python_fallback") is not False or policy.get("image_override_allowed") is not False:
+        raise ValueError("approved model runtime policy permits a forbidden fallback or image override")
+    if not isinstance(container, dict):
+        raise ValueError("approved model container runtime is missing")
+    command = container.get("server_command")
+    if not isinstance(command, list) or not all(isinstance(item, str) and item for item in command):
+        raise ValueError("approved model container server_command is invalid")
+    expected_image = str(container.get("target_image_ref") or "")
+    actual_image = os.environ.get("SURE_EVAL_CONTAINER_IMAGE", "")
+    if "@sha256:" not in expected_image or actual_image != expected_image:
+        raise ValueError(
+            "inference container does not match the approved digest-pinned image: "
+            f"expected={expected_image!r} actual={actual_image!r}"
+        )
     return command
 
 
-def _infer_hf_home(weights_manifest: dict[str, Any]) -> str | None:
-    for key in ("hf_home", "cache_root", "cache_dir"):
-        value = weights_manifest.get(key)
-        if value:
-            return str(value)
-
-    hub_cache_path = weights_manifest.get("hub_cache_path")
-    if hub_cache_path:
-        hub_cache = Path(str(hub_cache_path))
-        if hub_cache.name == "hub":
-            return str(hub_cache.parent)
-        if "hub" in hub_cache.parts:
-            hub_index = hub_cache.parts.index("hub")
-            return str(Path(*hub_cache.parts[:hub_index]))
-
-    snapshot_path = weights_manifest.get("snapshot_path")
-    if snapshot_path:
-        snapshot = Path(str(snapshot_path))
-        if "hub" in snapshot.parts:
-            hub_index = snapshot.parts.index("hub")
-            return str(Path(*snapshot.parts[:hub_index]))
-
-    return None
-
-
-def _resolve_local_model_path(weights_manifest: dict[str, Any]) -> str | None:
-    for key in ("local_path", "model_path", "checkpoint_path", "snapshot_path"):
-        value = weights_manifest.get(key)
-        if value and Path(str(value)).exists():
-            return str(value)
-    return None
-
-
-def _resolve_working_dir(model_dir: Path, server_cfg: dict[str, Any]) -> Path:
-    working_dir = server_cfg.get("working_dir", ".")
-    return (model_dir / working_dir).resolve()
+def _resolve_working_dir(model_dir: Path, runtime_inventory: dict[str, Any]) -> Path:
+    container = runtime_inventory.get("container_runtime")
+    working_dir = container.get("working_dir") if isinstance(container, dict) else None
+    path = Path(str(working_dir or ""))
+    if not path.is_absolute() or not path.is_dir():
+        raise ValueError(f"approved container working_dir does not exist: {path}")
+    return path
 
 
 def _resolve_audio_path(repo_root: Path, sample: dict[str, Any]) -> Path:
@@ -440,6 +392,10 @@ SAFE_ENV_VALUE_KEYS = {
     "SURE_EVAL_VC_MEMORY",
     "SURE_EVAL_VC_NODES",
     "SURE_EVAL_VC_PARTITION",
+    "SURE_HARNESS_LOCK_SHA256",
+    "SURE_HARNESS_MANIFEST_PATH",
+    "SURE_HARNESS_RUNTIME_ID",
+    "SURE_HARNESS_RUNTIME_ROOT",
 }
 PATH_ARGUMENT_HINTS = ("audio", "path", "file", "dir", "jsonl")
 TEXT_ARGUMENT_HINTS = ("text", "prompt", "reference", "target")
@@ -501,54 +457,110 @@ def _runtime_inventory_summary(model_dir: Path) -> dict[str, Any]:
     return {
         "path": str(model_dir / "artifacts" / "runtime_inventory.json"),
         "status": inventory.get("status"),
-        "runtime": inventory.get("runtime") if isinstance(inventory.get("runtime"), dict) else {},
+        "schema": inventory.get("schema"),
+        "container_runtime": inventory.get("container_runtime") if isinstance(inventory.get("container_runtime"), dict) else {},
+        "policy": inventory.get("policy") if isinstance(inventory.get("policy"), dict) else {},
         "evidence": inventory.get("evidence") if isinstance(inventory.get("evidence"), dict) else {},
     }
 
 
-def _resolve_protocol_parameters(protocol_id: str | None, model_dir: Path, env: dict[str, str]) -> dict[str, Any]:
-    if not protocol_id or protocol_id.lower() == "none":
-        return {"enabled": False, "status": "disabled", "protocol_id": None}
+def _harness_runtime_summary(env: dict[str, str]) -> dict[str, Any]:
+    return {
+        "schema": "sure.harness.runtime.binding.v1",
+        "runtime_id": env.get("SURE_HARNESS_RUNTIME_ID"),
+        "runtime_type": "harness_python",
+        "python_executable": env.get("HARNESS_PYTHON_BIN"),
+        "process_python_executable": sys.executable,
+        "lock_sha256": env.get("SURE_HARNESS_LOCK_SHA256"),
+        "manifest_path": env.get("SURE_HARNESS_MANIFEST_PATH"),
+        "runtime_root": env.get("SURE_HARNESS_RUNTIME_ROOT"),
+    }
+
+
+def _resolve_protocol_parameters(protocol_id: str, model_dir: Path, env: dict[str, str]) -> dict[str, Any]:
     env["SURE_EVAL_PROTOCOL_ID"] = protocol_id
-    resolution: dict[str, Any] = {
+    from sure_eval.models.registry import ModelRegistry
+    from sure_eval.protocols.resolver import ProtocolResolver
+
+    resolver = ProtocolResolver()
+    env["SURE_EVAL_PROTOCOL_DEFINITION_PATH"] = str(resolver.protocols_path.resolve())
+    registry = ModelRegistry(model_dir.parent)
+    model_info = registry.get_model(model_dir.name)
+    if model_info is None:
+        raise ValueError(f"approved model is not registered from config.yaml: {model_dir}")
+    resolved = resolver.resolve(protocol_id, model_info)
+    standard_params = dict(resolved.standard_params or {})
+    model_params = dict(resolved.model_params or {})
+    for key, value in standard_params.items():
+        env[f"SURE_EVAL_PROTOCOL_{key.upper()}"] = str(value)
+    for key, value in model_params.items():
+        env[f"SURE_EVAL_MODEL_{key.upper()}"] = str(value)
+    config_path = model_dir / "config.yaml"
+    return {
         "enabled": True,
-        "status": "not_resolved",
+        "status": "resolved",
         "protocol_id": protocol_id,
-        "standard_params": {},
-        "model_params": {},
-        "unmapped": {},
+        "parameter_policy": "upstream_native" if protocol_id == "standard_system" else "strict_mapped",
+        "standard_params": standard_params,
+        "model_params": model_params,
+        "unmapped": dict(resolved.unmapped or {}),
+        "parameter_status": dict(resolved.parameter_status or {}),
+        "config_sources": [
+            {
+                "path": str(config_path),
+                "sha256": _sha256(config_path),
+                "role": "approved_model_runtime_config",
+            }
+        ],
         "error": None,
     }
-    try:
-        from sure_eval.models.registry import ModelRegistry
-        from sure_eval.protocols.resolver import ProtocolResolver
 
-        resolver = ProtocolResolver()
-        registry = ModelRegistry(model_dir.parent)
-        model_info = registry.get_model(model_dir.name)
-        if model_info is None:
-            resolution["status"] = "model_not_registered"
-            return resolution
-        resolved = resolver.resolve(protocol_id, model_info)
-        standard_params = dict(getattr(resolved, "standard_params", {}) or {})
-        model_params = dict(getattr(resolved, "model_params", {}) or {})
-        unmapped = dict(getattr(resolved, "unmapped", {}) or {})
-        for key, value in standard_params.items():
-            env[f"SURE_EVAL_PROTOCOL_{key.upper()}"] = str(value)
-        for key, value in model_params.items():
-            env[f"SURE_EVAL_MODEL_{key.upper()}"] = str(value)
-        resolution.update(
-            {
-                "status": "resolved",
-                "standard_params": standard_params,
-                "model_params": model_params,
-                "unmapped": unmapped,
-            }
+
+def _merge_protocol_tool_args(
+    protocol_id: str,
+    protocol_resolution: dict[str, Any],
+    explicit_tool_args: dict[str, Any],
+    allowed_tool_args: set[str] | None = None,
+) -> dict[str, Any]:
+    protocol_tool_args = dict(protocol_resolution.get("model_params") or {})
+    if protocol_id == "standard_system" and explicit_tool_args:
+        raise ValueError(
+            "standard_system forbids explicit --tool-arg generation overrides; "
+            "declare upstream defaults in the approved model package"
         )
-    except Exception as exc:  # noqa: BLE001
-        resolution["status"] = "failed"
-        resolution["error"] = str(exc)
-    return resolution
+    extra_strict_args = sorted(set(explicit_tool_args) - set(protocol_tool_args))
+    if protocol_id == "strict_core" and extra_strict_args:
+        raise ValueError(
+            "strict_core forbids tool arguments outside the resolved protocol mapping: "
+            + ", ".join(extra_strict_args)
+        )
+    undeclared_protocol_args = sorted(set(protocol_tool_args) - (allowed_tool_args or set()))
+    if protocol_id == "strict_core" and undeclared_protocol_args:
+        raise ValueError(
+            "strict_core mappings must name arguments declared by the selected MCP tool input_schema: "
+            + ", ".join(undeclared_protocol_args)
+        )
+    conflicts = {
+        key: {"requested": explicit_tool_args[key], "required": value}
+        for key, value in protocol_tool_args.items()
+        if key in explicit_tool_args and explicit_tool_args[key] != value
+    }
+    if conflicts:
+        raise ValueError(
+            "explicit --tool-arg values conflict with strict_core: "
+            + json.dumps(conflicts, ensure_ascii=False, sort_keys=True)
+        )
+    return {**explicit_tool_args, **protocol_tool_args}
+
+
+def _declared_tool_args(model_cfg: dict[str, Any], tool_name: str) -> set[str]:
+    for tool in model_cfg.get("tools") or []:
+        if not isinstance(tool, dict) or tool.get("name") != tool_name:
+            continue
+        schema = tool.get("input_schema") if isinstance(tool.get("input_schema"), dict) else {}
+        properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+        return {str(key) for key in properties}
+    raise ValueError(f"selected tool {tool_name!r} is not declared in approved config.yaml")
 
 
 def _is_dynamic_argument_key(key: str) -> bool:
@@ -920,7 +932,7 @@ def _write_prediction_manifests(
     prediction_manifest = {
         "schema": "sure.eval.prediction_manifest.v1",
         "generated_at": generated_at,
-        "run_id": run_dir.name,
+        "run_id": _artifact_run_id(run_dir),
         "run_dir": str(run_dir),
         "model_name": model_name,
         "tool_name": tool_name,
@@ -930,7 +942,7 @@ def _write_prediction_manifests(
     conversion_manifest = {
         "schema": "sure.eval.prediction_conversion_manifest.v1",
         "generated_at": generated_at,
-        "run_id": run_dir.name,
+        "run_id": _artifact_run_id(run_dir),
         "run_dir": str(run_dir),
         "generated_by": "scripts/generate_predictions_via_server.py",
         "predictions_dir": str(predictions_dir),
@@ -958,8 +970,9 @@ def main() -> int:
     parser.add_argument("--config", help="Optional sure-eval config path")
     parser.add_argument(
         "--protocol",
-        default="strict_core",
-        help="Inference protocol ID (default: strict_core). Set to 'none' to disable.",
+        choices=("standard_system", "strict_core"),
+        default="standard_system",
+        help="Inference protocol ID (default: standard_system).",
     )
     parser.add_argument(
         "--device",
@@ -1014,16 +1027,27 @@ def main() -> int:
         model_cfg,
         _split_metrics(os.environ.get("SURE_EVAL_METRICS") or os.environ.get("METRICS")),
     )
-    build_plan = _load_build_plan(model_dir)
-    weights_manifest = _load_weights_manifest(model_dir)
+    runtime_inventory_document = _load_runtime_inventory(model_dir)
     server_cfg = model_cfg.get("server", {})
-    command = _resolve_server_command(model_dir, server_cfg, build_plan)
-    working_dir = _resolve_working_dir(model_dir, server_cfg)
-    env = os.environ.copy()
+    command = _resolve_server_command(model_dir, runtime_inventory_document)
+    working_dir = _resolve_working_dir(model_dir, runtime_inventory_document)
+    env = model_child_env()
     server_env_config: dict[str, str] = {}
+    writable_cache_keys = {
+        "HF_HOME",
+        "HF_HUB_CACHE",
+        "TRANSFORMERS_CACHE",
+        "MODELSCOPE_CACHE",
+        "TORCH_HOME",
+        "XDG_CACHE_HOME",
+    }
     for key, value in (server_cfg.get("env", {}) or {}).items():
-        server_env_config[str(key)] = _remap_legacy_model_env_path(str(value), model_dir)
-        env[str(key)] = server_env_config[str(key)]
+        key = str(key)
+        configured = _remap_legacy_model_env_path(str(value), model_dir)
+        if key in writable_cache_keys and env.get(key):
+            configured = env[key]
+        server_env_config[key] = configured
+        env[key] = configured
 
     # Override DEVICE if --device is explicitly provided
     if args.device:
@@ -1032,25 +1056,23 @@ def main() -> int:
             env["CUDA_VISIBLE_DEVICES"] = ""
     env_overrides = _parse_env_overrides(args.env)
     env.update(env_overrides)
-    protocol_id = args.protocol if args.protocol.lower() != "none" else None
+    protocol_id = args.protocol
     protocol_resolution = _resolve_protocol_parameters(protocol_id, model_dir, env)
-
-    local_model_path = _resolve_local_model_path(weights_manifest)
-    configured_model_path = env.get("MODEL_PATH")
-    if local_model_path and (not configured_model_path or not Path(configured_model_path).exists()):
-        env["MODEL_PATH"] = local_model_path
-
-    inferred_hf_home = _infer_hf_home(weights_manifest)
-    if inferred_hf_home and not env.get("HF_HOME"):
-        env["HF_HOME"] = inferred_hf_home
-    if build_plan.get("hf_cache_path") and not env.get("HF_HOME"):
-        env["HF_HOME"] = str(build_plan["hf_cache_path"])
 
     tools = model_cfg.get("tools", [])
     tool_name = args.tool_name or (tools[0]["name"] if tools else None)
     if not tool_name:
         raise ValueError("No tool name provided and config.yaml has no tools entry")
-    tool_args = _parse_tool_args(args.tool_arg)
+    container_runtime = runtime_inventory_document.get("container_runtime")
+    approved_tools = container_runtime.get("tool_names") if isinstance(container_runtime, dict) else []
+    if tool_name not in approved_tools:
+        raise ValueError(f"tool {tool_name!r} is not present in the approved runtime inventory: {approved_tools}")
+    tool_args = _merge_protocol_tool_args(
+        protocol_id,
+        protocol_resolution,
+        _parse_tool_args(args.tool_arg),
+        _declared_tool_args(model_cfg, tool_name),
+    )
     runtime_inventory = _runtime_inventory_summary(model_dir)
     safe_env = _safe_env_snapshot(env, extra_keys=set(server_env_config) | set(env_overrides))
 
@@ -1081,7 +1103,7 @@ def main() -> int:
         "schema": "sure.eval.prediction_generation_status.v2",
         "generated_at": _utc_now(),
         "updated_at": _utc_now(),
-        "run_id": run_dir.name,
+        "run_id": _artifact_run_id(run_dir),
         "run_dir": str(run_dir),
         "model_name": model_dir.name,
         "model_dir": str(model_dir),
@@ -1099,7 +1121,8 @@ def main() -> int:
             "server_command": command,
             "server_working_dir": str(working_dir),
             "model_python": command[0] if command else None,
-            "harness_python": sys.executable,
+            "harness_python": env.get("HARNESS_PYTHON_BIN") or sys.executable,
+            "harness_runtime": _harness_runtime_summary(env),
             "server_config": {
                 "working_dir": server_cfg.get("working_dir", "."),
                 "timeout": server_cfg.get("timeout"),
@@ -1358,7 +1381,10 @@ def main() -> int:
             except Exception:
                 pass
             if process.stdin is not None:
-                process.stdin.close()
+                try:
+                    process.stdin.close()
+                except BrokenPipeError:
+                    pass
             process.wait(timeout=30)
 
     logger.info(

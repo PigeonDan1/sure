@@ -1,0 +1,74 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/schemas/site-policy-v1.json",
+	"title": "SURE site policy",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schema", "site_id", "policy_version", "storage", "datasets", "execution"],
+	"properties": {
+		"schema": { "const": "sure.site.policy.v1" },
+		"site_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+		"policy_version": { "const": 1 },
+		"storage": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["approved_models_roots", "approved_results_roots", "forbidden_output_roots", "runtime_root"],
+			"properties": {
+				"approved_models_roots": { "$ref": "#/$defs/absolutePaths" },
+				"approved_results_roots": { "$ref": "#/$defs/absolutePaths" },
+				"forbidden_output_roots": { "$ref": "#/$defs/absolutePaths" },
+				"runtime_root": { "$ref": "#/$defs/absolutePath" }
+			}
+		},
+		"datasets": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["allowed_source_roots"],
+			"properties": {
+				"allowed_source_roots": { "$ref": "#/$defs/absolutePaths" }
+			}
+		},
+		"execution": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["surfaces"],
+			"properties": {
+				"surfaces": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": { "enum": ["local", "vc"] }
+				},
+				"vc_partitions": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": { "type": "string", "minLength": 1 }
+				},
+				"vc_partition_priority": {
+					"type": "object",
+					"propertyNames": { "minLength": 1 },
+					"additionalProperties": { "type": "integer", "minimum": 0 }
+				}
+			}
+		},
+		"network": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"internal_git_host": { "type": "string", "minLength": 1 },
+				"gateway_portal": { "type": "string", "pattern": "^https?://" }
+			}
+		}
+	},
+	"$defs": {
+		"absolutePath": { "type": "string", "pattern": "^/" },
+		"absolutePaths": {
+			"type": "array",
+			"minItems": 1,
+			"maxItems": 1,
+			"uniqueItems": true,
+			"items": { "$ref": "#/$defs/absolutePath" }
+		}
+	}
+}

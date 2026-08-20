@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	listGatewayProviders,
 	readGatewayModels,
+	upsertProviderModel,
 	writeGatewayProvider,
 } from "../../src/core/sure/init-gateway-store.ts";
 
@@ -167,5 +168,131 @@ describe("writeGatewayProvider", () => {
 				modelsPath,
 			),
 		).toThrow();
+	});
+});
+
+describe("upsertProviderModel", () => {
+	it("preserves provider fields and other models while refreshing one model profile", () => {
+		writeModelsFile({
+			note: "keep",
+			providers: {
+				openai: {
+					baseUrl: "https://old.example.com/v1",
+					headers: { "x-route": "sure" },
+					models: [
+						{ id: "keep", api: "openai-completions" },
+						{ id: "gpt-5.6-luna", name: "old", contextWindow: 1, custom: "preserve" },
+					],
+				},
+			},
+		});
+		upsertProviderModel(
+			"openai",
+			"https://gw.example.com/v1",
+			{
+				id: "gpt-5.6-luna",
+				name: "GPT-5.6 Luna",
+				api: "openai-responses",
+				reasoning: true,
+				contextWindow: 272_000,
+			},
+			modelsPath,
+		);
+		const parsed = JSON.parse(readFileSync(modelsPath, "utf-8"));
+		expect(parsed.note).toBe("keep");
+		expect(parsed.providers.openai.headers).toEqual({ "x-route": "sure" });
+		expect(parsed.providers.openai.models[0]).toEqual({ id: "keep", api: "openai-completions" });
+		expect(parsed.providers.openai.models[1]).toMatchObject({
+			id: "gpt-5.6-luna",
+			name: "GPT-5.6 Luna",
+			api: "openai-responses",
+			reasoning: true,
+			contextWindow: 272_000,
+			custom: "preserve",
+		});
+	});
+});
+
+describe("writeGatewayProvider merge behaviour", () => {
+	it("keeps existing per-model annotations when the live list is refreshed", () => {
+		const path = join(tempDir, "models.json");
+		writeFileSync(
+			path,
+			`${JSON.stringify(
+				{
+					providers: {
+						apifusion: {
+							baseUrl: "https://gw.example.com/v1",
+							api: "openai-completions",
+							models: [
+								{
+									id: "gpt-5.6-sol",
+									api: "openai-responses",
+									reasoning: true,
+									thinkingLevelMap: { off: "none", high: "high", xhigh: "xhigh" },
+									contextWindow: 400000,
+								},
+								{ id: "retired-model" },
+							],
+						},
+					},
+				},
+				null,
+				2,
+			)}\n`,
+			"utf-8",
+		);
+
+		writeGatewayProvider(
+			{
+				name: "apifusion",
+				baseUrl: "https://gw.example.com/v1",
+				models: [{ id: "gpt-5.6-sol", name: "GPT-5.6 Sol" }, { id: "deepseek-chat" }],
+			},
+			path,
+		);
+
+		const written = JSON.parse(readFileSync(path, "utf-8"));
+		const models = written.providers.apifusion.models as Array<Record<string, unknown>>;
+		expect(models.map((model) => model.id)).toEqual(["gpt-5.6-sol", "deepseek-chat"]);
+		expect(models[0]).toMatchObject({
+			id: "gpt-5.6-sol",
+			name: "GPT-5.6 Sol",
+			api: "openai-responses",
+			reasoning: true,
+			contextWindow: 400000,
+		});
+		expect(models[0].thinkingLevelMap).toEqual({ off: "none", high: "high", xhigh: "xhigh" });
+		expect(models[1]).toEqual({ id: "deepseek-chat" });
+	});
+});
+
+describe("upsertProviderModel defaults", () => {
+	it("fills the context window and output cap only when they are missing", () => {
+		const path = join(tempDir, "models.json");
+		writeFileSync(
+			path,
+			`${JSON.stringify(
+				{
+					providers: {
+						apifusion: { baseUrl: "https://gw.example.com/v1", models: [{ id: "kept", contextWindow: 400000 }] },
+					},
+				},
+				null,
+				2,
+			)}\n`,
+			"utf-8",
+		);
+
+		upsertProviderModel("apifusion", "https://gw.example.com/v1", { id: "fresh", api: "openai-responses" }, path);
+		upsertProviderModel("apifusion", "https://gw.example.com/v1", { id: "kept", api: "openai-responses" }, path);
+
+		const models = JSON.parse(readFileSync(path, "utf-8")).providers.apifusion.models as Array<
+			Record<string, unknown>
+		>;
+		const fresh = models.find((model) => model.id === "fresh");
+		const kept = models.find((model) => model.id === "kept");
+		expect(fresh).toMatchObject({ contextWindow: 256000, maxTokens: 64000 });
+		expect(kept).toMatchObject({ contextWindow: 400000, maxTokens: 64000 });
 	});
 });

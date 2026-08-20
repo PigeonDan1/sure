@@ -1,65 +1,33 @@
-# Main Agent TOOL_READINESS_AND_ROUTING_UNIT Contract
+# Main Agent Tool Readiness Contract
 
 ## Purpose
 
-`TOOL_READINESS_AND_ROUTING_UNIT` is the gate between task classification and main-flow execution.
-
-Its job is to decide whether the current model should:
-
-- be used directly through its existing server/tool harness
-- receive a lightweight server smoke test first
-- be handed off to the existing tool workflow
-
-This unit exists to prevent the main-flow agent from prematurely dropping into
-environment repair, wrapper-level debugging, or ad hoc model execution.
+This unit prevents `/sure_eval` from repairing, guessing, or executing an unapproved model runtime. It consumes only the exact model directory below the configured approved model root.
 
 ## Required Output
 
-- `tool_readiness_state`
-- `preferred_execution_path`
-- `server_smoke_test_required`
-- `handoff_to_tool_agent`
-- `reason`
-- `evidence`
+- `readiness`: `ready | needs_onboarding | needs_repair | unavailable`
+- `model_dir`: exact approved NFS directory
+- optional `verdict_status`, `server_present`, `model_py_present`, `handoff_to_tool_agent`, and `routing_reason`
 
-## Allowed Tool Readiness States
+## Required Evidence
 
-- `server_ready`
-- `server_declared_but_unverified`
-- `not_tool_ready`
-- `tool_broken_needs_repair`
+For a local model, `ready` requires all of the following:
 
-## Allowed Preferred Execution Paths
+- `artifacts/deployment_ready.json` with status `ready` and package `docker-registry`;
+- `artifacts/runtime_inventory.json` schema v2 with `container_only` execution;
+- `artifacts/package_gate.json` schema v2 with local, Docker, registry, and bundle readiness;
+- exact tag, digest, and digest-pinned image agreement across those files;
+- valid hashes declared by the deployment marker;
+- read-only NFS model policy, writable separate results, no host Python fallback, and no image override.
 
-- `direct_server_use`
-- `server_smoke_test_then_use`
-- `handoff_to_tool_workflow`
-- `stop_and_report`
+`config.yaml`, `model.py`, `server.py`, and verdict remain model evidence, but they cannot replace the deployment binding. `.venv`, Dockerfile text, logs, local image listings, and similar image names are never readiness sources.
 
-## Required Evidence Sources
+## Routing
 
-The readiness decision should prefer:
+1. Binding valid: `readiness=ready`, continue to planning.
+2. Approved directory absent: `readiness=needs_onboarding`, finish `/sure_onboard` and promote after human review.
+3. Directory exists but the binding is missing/inconsistent: `readiness=needs_repair`; do not infer a replacement runtime.
+4. Never modify NFS from `/sure_eval`.
 
-- model-local `config.yaml`
-- model-local `README.md`
-- presence of `server.py`, `model.py`, and `.venv`
-- model-local artifacts such as `verdict.json`, `validation.log`, `build.log`
-- explicit user instruction
-
-## Routing Rules
-
-1. If the model declares a server path and has evidence of prior readiness, prefer `direct_server_use`.
-2. If the model declares a server path but readiness evidence is incomplete, prefer `server_smoke_test_then_use`.
-3. If server startup or minimal tool call fails due to integration or environment issues, set `handoff_to_tool_agent = true`.
-4. Main-flow should not jump directly into wrapper-native or dependency-level repair before this unit finishes.
-
-## Must Not Do
-
-- must not select datasets yet
-- must not modify tool workflow policy
-- must not perform deep dependency repair
-- must not bypass model-local environment conventions
-
-## Output Template
-
-- [main_agent_tool_readiness_routing.json](../templates/main_agent_tool_readiness_routing.json)
+The output template is `scripts/templates/main_agent_tool_readiness_routing.json`.

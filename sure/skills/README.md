@@ -23,10 +23,9 @@ A minimal package needs:
 - `SKILL.md`: instructions the agent follows when the slash command starts
 - `hooks/index.ts`: gates for startup, tool calls, final artifacts, and error handling
 - `scripts/`: executable implementation code used by the prompt
-- `examples/`: minimal input and expected manifest examples
+- `examples/` (optional): minimal input and expected manifest examples; recommended for reviewed shared skills
 
-See `docs/development.md` at the repository root for the full developer
-guide.
+See `AGENTS.md` at the repository root for the full developer guide.
 
 ## Review Rules
 

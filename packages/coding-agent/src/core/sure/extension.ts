@@ -13,6 +13,7 @@ import { SureHookRunner } from "./hooks.ts";
 import { runSureInit } from "./init.ts";
 import type { SureInitManifest } from "./init-types.ts";
 import { discoverSureSkillPackages, SURE_COMMANDS, type SureDiscoveryDiagnostic } from "./manifest.ts";
+import { resolveOutputDir, stripOutputDir } from "./output-dir.ts";
 import { SureRunManager } from "./run-manager.ts";
 import { formatSureDisplayStatus, normalizeSureDisplayStatePatch } from "./state.ts";
 import type {
@@ -108,13 +109,14 @@ function formatDiagnostics(diagnostics: SureDiscoveryDiagnostic[]): string {
 	return diagnostics.map((diagnostic) => `${diagnostic.type}: ${diagnostic.message}`).join("\n");
 }
 
-function buildInvocationPrompt(skillPackage: SureSkillPackage, run: SureRunRecord): string {
+export function buildInvocationPrompt(skillPackage: SureSkillPackage, run: SureRunRecord): string {
 	const relativePackage = relative(run.cwd, skillPackage.packageDir) || ".";
+	const agentArgs = stripOutputDir(run.args);
 	return [
 		`<sure_invocation run_id="${run.runId}" skill="${skillPackage.manifest.name}" command="/${skillPackage.manifest.command}">`,
 		`Package directory: ${relativePackage}`,
 		`Run directory: ${relative(run.cwd, run.runDir)}`,
-		`User arguments: ${run.args || "(none)"}`,
+		`User arguments: ${agentArgs || "(none)"}`,
 		"",
 		"Run this Sure skill as a scientific task. Produce durable artifacts in the run directory or project workspace.",
 		"Use the skill instructions below. References are relative to the package directory.",
@@ -454,8 +456,14 @@ async function startRun(
 		return;
 	}
 
+	const outputDir = resolveOutputDir(args);
+	if (!outputDir.ok) {
+		ctx.ui.notify(outputDir.error ?? "Sure rejected the requested output_dir.", "error");
+		return;
+	}
+
 	const runManager = new SureRunManager(ctx.cwd);
-	const record = runManager.createRun(skillPackage, args);
+	const record = runManager.createRun(skillPackage, args, outputDir.dir);
 	const active: ActiveRun = {
 		record,
 		skillPackage,
@@ -538,28 +546,36 @@ function clearActiveRun(
 
 /**
  * After a successful /sure_init, switch the current session onto the model it just configured
- * instead of leaving the user on whatever model they started with. Falls back to a hint if the
- * model can't be resolved or has no configured auth yet — init itself already succeeded, so this
- * degrades gracefully rather than surfacing as an error.
+ * instead of leaving the user on whatever model they started with. Returns the success line for
+ * the caller to print rather than printing it here: the TUI rewrites the same status line on
+ * every consecutive info notify, so notifying here would wipe out everything init reported.
+ * Falls back to a warning of its own if the model can't be resolved or has no configured auth
+ * yet — init itself already succeeded, so this degrades gracefully rather than as an error.
  */
-async function switchToInitializedModel(
+export async function switchToInitializedModel(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	manifest: SureInitManifest,
-): Promise<void> {
+): Promise<string | undefined> {
 	const { defaultProvider, defaultModel } = manifest;
 	ctx.modelRegistry.refresh();
 	const model = ctx.modelRegistry.find(defaultProvider, defaultModel);
 	const switched = model ? await pi.setModel(model) : false;
-	if (switched) {
-		ctx.ui.notify(`Switched to ${defaultProvider}/${defaultModel}.`, "info");
-	} else {
+	if (!switched) {
 		ctx.ui.notify(
 			`Default model set to ${defaultProvider}/${defaultModel}. ` +
 				`Run "/model ${defaultProvider}/${defaultModel}" to switch once credentials are configured.`,
 			"warning",
 		);
+		return undefined;
 	}
+	// The level init measured went into the manifest and the global settings but never into
+	// the session, which is why the session used to sit on medium after an init that said high.
+	const level = manifest.defaultThinkingLevel;
+	if (level && level !== "off") {
+		pi.setThinkingLevel(level);
+	}
+	return `Switched to ${defaultProvider}/${defaultModel}.`;
 }
 
 export function createSureExtension(): ExtensionFactory {
@@ -801,10 +817,14 @@ export function createSureExtension(): ExtensionFactory {
 					return;
 				}
 				const result = await runSureInit({ ctx, args: args.trim() });
-				ctx.ui.notify(result.message, result.success ? "info" : "error");
-				if (result.success && result.manifest) {
-					await switchToInitializedModel(pi, ctx, result.manifest);
+				if (!result.success) {
+					ctx.ui.notify(result.message, "error");
+					return;
 				}
+				const switchedLine = result.manifest ? await switchToInitializedModel(pi, ctx, result.manifest) : undefined;
+				// One info notify at the very end. Two in a row overwrite each other in the TUI,
+				// which is how the probe, round-trip and table lines used to vanish on success.
+				ctx.ui.notify([result.message, switchedLine].filter(Boolean).join("\n"), "info");
 			},
 		});
 

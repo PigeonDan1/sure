@@ -1,13 +1,33 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { mergeSureDisplayState } from "./state.ts";
 import type { SureDisplayState, SureRunRecord, SureRunStatus, SureSkillPackage } from "./types.ts";
 
 const SURE_RUNS_DIR = ".sure/runs";
+const RESULT_FILE = "result.json";
+const TERMINAL_RUN_STATUSES = new Set<SureRunStatus>(["success", "failed", "incomplete", "cancelled"]);
 
 function nowIso(): string {
 	return new Date().toISOString();
+}
+
+// Everything the run put in the output directory, result.json aside, as paths
+// relative to that directory.
+function listProducts(outputDir: string): string[] {
+	const products: string[] = [];
+	const walk = (dir: string, prefix: string): void => {
+		for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+			const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+			if (entry.isDirectory()) {
+				walk(join(dir, entry.name), relPath);
+			} else if (relPath !== RESULT_FILE) {
+				products.push(relPath);
+			}
+		}
+	};
+	walk(outputDir, "");
+	return products;
 }
 
 function safeTimestamp(): string {
@@ -40,7 +60,7 @@ export class SureRunManager {
 		return join(this.cwd, SURE_RUNS_DIR);
 	}
 
-	createRun(skillPackage: SureSkillPackage, args: string): SureRunRecord {
+	createRun(skillPackage: SureSkillPackage, args: string, outputDir?: string): SureRunRecord {
 		const runId = `${safeTimestamp()}-${randomUUID().slice(0, 8)}`;
 		const runDir = join(this.runsRoot, runId);
 		mkdirSync(runDir, { recursive: true });
@@ -56,6 +76,7 @@ export class SureRunManager {
 			packageDir: skillPackage.packageDir,
 			runDir,
 			args,
+			outputDir,
 			startedAt: nowIso(),
 			updatedAt: nowIso(),
 		};
@@ -115,6 +136,37 @@ export class SureRunManager {
 	private writeRecord(record: SureRunRecord): void {
 		mkdirSync(record.runDir, { recursive: true });
 		writeJson(join(record.runDir, "run.json"), record);
+		this.writeResult(record);
+	}
+
+	// Callers that drive Sure from a script read one directory per invocation,
+	// so every status change republishes result.json there. Products of a
+	// finished run are copied next to it.
+	private writeResult(record: SureRunRecord): void {
+		const outputDir = record.outputDir;
+		if (!outputDir) {
+			return;
+		}
+		mkdirSync(outputDir, { recursive: true });
+		if (TERMINAL_RUN_STATUSES.has(record.status)) {
+			const artifactsDir = join(record.runDir, "artifacts");
+			if (existsSync(artifactsDir)) {
+				cpSync(artifactsDir, join(outputDir, "artifacts"), { recursive: true });
+			}
+		}
+		writeJson(join(outputDir, RESULT_FILE), {
+			schema: "sure.run_result.v1",
+			command: `/${record.command.replace(/^\//, "")}`,
+			args: record.args,
+			run_id: record.runId,
+			run_dir: record.runDir,
+			status: record.status,
+			started_at: record.startedAt,
+			updated_at: record.updatedAt,
+			finished_at: record.finishedAt,
+			error: record.lastRepair ?? record.errorSummary,
+			products: listProducts(outputDir),
+		});
 	}
 
 	private writeState(record: SureRunRecord, state: SureDisplayState): void {

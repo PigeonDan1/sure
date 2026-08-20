@@ -99,20 +99,30 @@ class SOTAManager:
         except Exception as e:
             logger.error(f"Failed to load SOTA baselines: {e}")
     
-    def get_baseline(self, dataset: str) -> SOTABaseline | None:
+    def get_baseline(self, dataset: str, fallback_names: tuple[str, ...] | list[str] = ()) -> SOTABaseline | None:
         """Get SOTA baseline for a dataset.
-        
+
+        Falls back to alternative names (e.g. the source dataset name for a
+        versioned dataset id) when the primary key has no baseline.
+
         Args:
             dataset: Dataset name
-            
+            fallback_names: Alternative names to try if `dataset` has no baseline
+
         Returns:
             SOTABaseline if found, None otherwise
         """
-        return self._baselines.get(dataset)
+        baseline = self._baselines.get(dataset)
+        if baseline is not None:
+            return baseline
+        for name in fallback_names:
+            if name and name in self._baselines:
+                return self._baselines[name]
+        return None
 
-    def get_metric(self, dataset: str) -> str | None:
+    def get_metric(self, dataset: str, fallback_names: tuple[str, ...] | list[str] = ()) -> str | None:
         """Get the canonical baseline metric for a dataset."""
-        baseline = self.get_baseline(dataset)
+        baseline = self.get_baseline(dataset, fallback_names=fallback_names)
         return baseline.metric if baseline else None
 
     @staticmethod
@@ -168,20 +178,21 @@ class SOTAManager:
         """
         return sorted(self._baselines.keys())
     
-    def calculate_rps(self, dataset: str, score: float) -> float | None | dict:
+    def calculate_rps(self, dataset: str, score: float, fallback_names: tuple[str, ...] | list[str] = ()) -> float | None | dict:
         """Calculate RPS for a score against SOTA.
-        
+
         Args:
             dataset: Dataset name
             score: Score to evaluate
-            
+            fallback_names: Alternative dataset names to try if `dataset` has no baseline
+
         Returns:
             RPS value (1.0 = SOTA, <1.0 = worse than SOTA, >1.0 = better than SOTA)
             None if no baseline exists for the dataset
             dict with status='missing_baseline' if baseline is missing and caller
             should handle interactively
         """
-        baseline = self.get_baseline(dataset)
+        baseline = self.get_baseline(dataset, fallback_names=fallback_names)
         if not baseline:
             return {"status": "missing_baseline", "dataset": dataset, "score": score}
 

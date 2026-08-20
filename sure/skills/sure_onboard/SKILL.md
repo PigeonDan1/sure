@@ -1,10 +1,15 @@
+---
+name: sure-onboard
+description: Adapt an audio model, validate it locally and in Docker, publish a digest-pinned image, and seal a container-only deployment bundle for SURE Eval.
+---
+
 # /sure_onboard
 
-Onboard or repair an audio model into a reproducible local inference unit. This skill is the Sure port of the SURE-EVAL model-tool agent. The state machine lives in `hooks/state-machine.ts`; this document is what the agent reads to drive each unit.
+Onboard or repair an audio model into a reproducible, container-delivered inference unit. The state machine lives in `hooks/state-machine.ts`; this document is what the agent reads to drive each unit.
 
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
 
-Control principle: **agent decides scope, scripts enforce format and execution.** You load the MODEL_INPUT, select context, discover the repo, classify the task, choose a backend, create an executable build plan, build the env, fetch weights, validate, and emit a wrapper + verdict; the deterministic scripts under `scripts/` and the hook gates enforce that every artifact lands in `sure/models/<model_name>/` in the right format, the right value domain, and that the verdict is internally consistent.
+Control principle: **agent decides scope, scripts enforce format and execution.** Local validation may use a model-local environment, but a local model is Eval-ready only after Docker build, container validation, registry push, digest-pinned pull verification, and final bundle sealing. API models are the only exception.
 
 ## Parameters
 
@@ -20,7 +25,7 @@ Control principle: **agent decides scope, scripts enforce format and execution.*
 | `preferred_backend` | — | `uv \| pip \| conda \| pixi \| docker \| api` (overrides auto-selection). |
 | `python_version` | — | Pin a Python version. |
 | `weights_source` | — | Weights URL / local path. |
-| `package` | — | `none` (default), `docker-local`, or `docker-registry`. `none` means local-ready only. |
+| `package` | — | Local models default to and require `docker-registry` for success. `none` is API/local-diagnostic only; `docker-local` cannot produce an Eval-ready local bundle. |
 | `package_profile` | — | Alias for `package`; use only one. |
 | `weights_link_policy` | — | `auto` (default), `copy`, `symlink`, `reuse-existing`, or `no-reuse`. |
 | `skip_download` | — | bool — use existing local weights only. |
@@ -56,11 +61,11 @@ The `sure/handoffs/<model>/` folder is not deleted after onboard. It remains a s
 Recommended first command after start, when a `MODEL_INPUT` path is available:
 
 ```bash
-python3 scripts/materialize_onboard_inputs.py \
+"$HARNESS_PYTHON_BIN" scripts/materialize_onboard_inputs.py \
   --model-input-path sure/handoffs/<model>/model_input.yaml \
   --run-dir <run_dir> \
   --repo-root <repo_root> \
-  --package-profile none
+  --package-profile docker-registry
 ```
 
 This helper emits only `model_input_resolved.json` and `context_selection.json`. It deliberately does **not** emit `backend_choice.json` or `build_plan.json`; those must remain agent-research-first outputs based on repository evidence and documented import/load/inference paths.
@@ -75,7 +80,7 @@ There are two command families and they must not be mixed:
 
 ```bash
 cd sure/skills/sure_onboard
-python3 scripts/<script>.py --run-dir <run_dir> --produces <run_dir>/artifacts/<artifact>.json
+"$HARNESS_PYTHON_BIN" scripts/<script>.py --run-dir <run_dir> --produces <run_dir>/artifacts/<artifact>.json
 ```
 
 Do not invoke harness scripts with `sure/models/<model>/.venv/bin/python` or with a bare `.venv/bin/python` from the repo root. The hook automatically runs the current gate script after the current unit's artifact exists; manual gate invocations are only diagnostics.
@@ -126,25 +131,14 @@ Default device policy is **CUDA-first** for local deployment:
 Recommended command at `save_artifacts`, after wrapper generation and validation artifacts exist:
 
 ```bash
-python3 scripts/stage_model_artifacts.py \
+"$HARNESS_PYTHON_BIN" scripts/stage_model_artifacts.py \
   --run-dir <run_dir> \
   --produces <run_dir>/artifacts/artifact_manifest.json
 ```
 
 This helper copies already-created run artifacts into `sure/models/<model_name>/artifacts/` and writes the preferred `artifact_manifest.json` both in the run directory and in the model directory. It does not create `model.py`, `model.spec.yaml`, validation results, weights, or verdicts; missing previous state-machine outputs remain a blocking error.
 
-Migration command at `save_artifacts`, when a proven reference model directory from the original SURE workspace is being adopted into the harness:
-
-```bash
-python3 scripts/adopt_reference_model.py \
-  --reference-model-dir /path/to/original/src/sure_eval/models/<model_name> \
-  --target-model-dir sure/models/<model_name> \
-  --model-id <owner/model> \
-  --model-name <model_name> \
-  --replace-symlink
-```
-
-This helper creates a thin harness-local model directory: large/runtime files and most wrapper files are symlinked to the reference model, `validate.py` is copied locally so re-runs write into harness-local `artifacts/`, and `artifacts/` is normalized to the harness contract (`artifact_manifest.json`, derived validation stage results, `package_gate.json`, and a local-ready `verdict.json`). Use it only when the reference directory already has passing validation/verdict evidence; do not use it to bypass a failed onboard.
+Historical model migration is an administrator-only metadata operation. It is not a `/sure_onboard` helper and cannot synthesize passing validation, packaging, or verdict evidence from an old local environment.
 
 Isolation rule: `sure/models/<model_name>/` itself must be a real harness-owned directory. Do not leave it as a symlink to the original SURE-EVAL workspace. Only large immutable assets under subdirectories such as `checkpoints/`, `.runtime/modelscope_cache/`, `.runtime/huggingface/`, or `.runtime/vocoder/` may be symlinked, and those links must be recorded in `weights_manifest.json`.
 
@@ -152,11 +146,11 @@ Isolation rule: `sure/models/<model_name>/` itself must be a real harness-owned 
 
 Advance happens **only** when the current unit's `produces` is compliant. Linear units are agent self-driven; gate units additionally run a Python semantic check. Produce the current unit's artifact, then call `sure_update_state`.
 
-Default target is **local-ready**. Docker is optional and controlled by `package`:
+Default target for local models is **registry-backed container-ready**:
 
-- `package=none`: stop after local deployment artifacts and validation are ready.
-- `package=docker-local`: require Docker build + Docker validation evidence before final success.
-- `package=docker-registry`: require Docker build + validation + push + pull verification before final success.
+- `package=docker-registry`: required for local-model success; build, validate, push, resolve the immutable digest, and pull-verify that exact digest.
+- `package=docker-local`: diagnostic only; it may prove a local image but cannot produce an Eval-ready bundle.
+- `package=none`: accepted for API deployments and explicit local diagnostics only; it cannot produce a successful local verdict.
 
 VC/HPC submission is not part of this core skill. If needed later, implement it as a separate deployment skill/command.
 
@@ -178,9 +172,12 @@ VC/HPC submission is not part of this core skill. If needed later, implement it 
 | 14 | `validate_load` | **gate** | `load_result.json` | `scripts/run_validate.py --kind load` |
 | 15 | `validate_infer` | **gate** | `infer_result.json` | `scripts/run_validate.py --kind infer` |
 | 16 | `validate_contract` | **gate** | `contract_result.json` | `scripts/run_validate.py --kind contract` |
-| 17 | `save_artifacts` | **gate** | `artifact_manifest.json` | `scripts/check_artifact_manifest.py` |
-| 18 | `package_gate` | **gate** | `package_gate.json` | `scripts/check_package_gate.py` |
-| 19 | `verdict` | **gate** | `verdict.json` | `scripts/check_verdict.py` |
+| 17 | `package_container` | **gate** | `docker_registry_result.json` | `scripts/check_container_package.py` |
+| 18 | `save_artifacts` | **gate** | `artifact_manifest.json` | `scripts/check_artifact_manifest.py` |
+| 19 | `package_gate` | **gate** | `package_gate.json` | `scripts/check_package_gate.py` |
+| 20 | `write_runtime_inventory` | **gate** | `runtime_inventory.json` | `scripts/check_runtime_inventory.py` |
+| 21 | `verdict` | **gate** | `verdict.json` | `scripts/check_verdict.py` |
+| 22 | `finalize_model_bundle` | **gate** | `deployment_ready.json` | `scripts/check_finalized_bundle.py` |
 
 > `validate_env_compat` (unit 11) was missing from the skeleton and is added here: the env built in `build_env` must actually load the resolved weights on the available device, match the declared python version, and support the adapter protocol. `generate_wrapper` then materializes `validate.py` before the import/load/infer/contract tests execute.
 
@@ -197,12 +194,15 @@ VC/HPC submission is not part of this core skill. If needed later, implement it 
 - **build_env**: Output = `build_env_result.json` {env_ready, backend, python_executable, lockfile_path|docker_image, log_path, runtime_checks, runtime_probe, repairs, ...}. env_ready=true. Declared `lockfile_path` and `log_path` must resolve under `model_dir` or run artifacts; Docker backend must declare `docker_image`. For `uv`, create/use the model-local `.venv` under `sure/models/<model_name>/` and ensure `.venv/bin/python` exists. For `conda`/`pixi`, record the selected env and its model-local evidence instead of opportunistically treating base Python as the runtime. If `model.py` already exists, the gate imports it with the selected runtime. If `runtime_checks.required_imports` is set, every declared import must pass. If the resolved request is `device=cuda`, the build env gate must also prove CUDA is visible in that runtime; do not write `env_ready=true` while the selected Python cannot import required packages or has an incompatible torch/transformers stack. If CUDA/dependency repair was needed, preserve it in `repairs` instead of deleting that evidence.
 - **fetch_weights**: Output = `weights_manifest.json` {weights_ready|status=fetched, source, resolved_local_model_path, ...}. If `weights.required=true`, non-API/non-PyPI sources must resolve to an existing local checkpoint path. Prefer model-local `.runtime/` or `checkpoints/`; if the declared load path is outside `model_dir`, record `fallback_to_host_global=true` and a non-empty `fallback_reason`. For HuggingFace in restricted networks, first try direct metadata with timeout, then retry with `HF_ENDPOINT=https://hf-mirror.com`; if large files redirect to Xet/CAS (`cas-bridge.xethub.hf.co`) and that host times out, record the CAS/Xet failure in `source_attempts` and fail this unit with a user-actionable repair instead of looping. Rich upstream-style fields such as `required`, `repo_id`, `dependencies`, `checkpoint_root`, and `source_attempts` are accepted but must point to existing paths. See `references/contracts/model_local_checkpoint_rule.md`.
 - **validate_env_compat**: Output = `env_compat_result.json` {compat_ok, device, requested_device, python_executable, python_version_match, adapter_protocol_supported, weights_loadable, runtime, weights, adapter, ...}. compat_ok=true must not contradict explicit false checks for python version, adapter protocol, or weights loadability. For local `device=auto`, visible host CUDA forces CUDA-first; CPU fallback must record `cuda_available`, `cuda_attempts`, `cuda_failures`, `cuda_repair_attempts`, and `fallback_reason`.
-- **generate_wrapper**: Output = `wrapper_manifest.json` {wrapper_path, model_py, server_py, ...}. The wrapper set lands in `sure/models/<model_name>/` (model.py, server.py, __init__.py, validate.py). Generated `validate.py` must preserve the template CLI: `--stage import|load|infer|contract|all`, write `artifacts/<stage>_result.json`, write `artifacts/sample_output.json` during infer, and validate contract from `io_contract`. Templates live in `scripts/templates/`.
-- **metric enrichment reference**: Metric reports are optional enrichment for `/sure_onboard package=none`, not the local-ready gate. When implementing or repairing metric reports, read `references/templates/validate_metric_enrichment.md` and the task playbook, reuse existing `sample_output.json` / generated audio whenever possible, and do not rerun model inference only to repair metric semantics.
+- **generate_wrapper**: Output = `wrapper_manifest.json` {wrapper_path, model_py, server_py, ...}. The wrapper set lands in `sure/models/<model_name>/` (model.py, server.py, __init__.py, validate.py). Generated `validate.py` must preserve the template CLI: `--stage import|load|infer|contract|all`, write `artifacts/<stage>_result.json`, write `artifacts/sample_output.json` during infer, and validate contract from `io_contract`. Templates live in `scripts/templates/`. `config.yaml` may enable `protocols.strict_core` only when every conservative parameter (`temperature`, `do_sample`, `num_beams`, `num_return_sequences`, `seed`) maps to a property declared by the selected MCP tool `input_schema`, or is explicitly marked `model_param: null`, `status: not_applicable` with an architecture-specific reason. Omit/disable `strict_core` when that proof is unavailable; `/sure_eval` will still use `standard_system` by default.
+- **metric enrichment reference**: Metric reports are optional enrichment, not a deployment gate. Reuse existing `sample_output.json` / generated audio whenever possible; do not rerun inference only to repair metric semantics.
 - **validate_import/load/infer/contract**: Output = `{*_passed, error, run_command|validate_py, log_path, ...}`. The gate executes `run_command` or `validate_py`; a boolean alone is not accepted. `validate_infer` is additionally Hook-guarded: `fixture_manifest.json` must exist, point to `model_dir/fixture/<task>/.../gt.jsonl`, and declare 1-5 samples before inference can run. `validate_infer` must also leave a non-empty `sample_output.json` under the run or model artifacts directory. `validate_contract` re-reads that sample output and checks it against `MODEL_INPUT.io_contract` (`required_fields`, `nonempty_fields`, `primary_field`, and audio-output evidence).
-- **save_artifacts**: Output = `artifact_manifest.json` {model_dir, artifacts.{required,conditional,optional}}. Gate checks model-local files exist: model.spec.yaml, model.py, server.py, __init__.py, validate.py, config.yaml. Prefer `scripts/stage_model_artifacts.py` here so run artifacts are durably copied to `sure/models/<model_name>/artifacts/` before the manifest gate runs.
-- **package_gate**: Output = `package_gate.json` {status, package_profile, readiness, model_dir, artifact_manifest_path}. `package=none` requires `readiness.local_ready=true` **and** real evidence from the previous units: a gate-valid `artifact_manifest.json`, `env_compat_result.json` with `compat_ok=true`, passing `import_result.json`/`load_result.json`/`infer_result.json`/`contract_result.json`, and a JSON `sample_output.json` under the run or model artifacts directory. Docker readiness is required only for Docker package profiles; Docker profiles must also include docker evidence. VC is ignored.
-- **verdict**: Output = `verdict.json` {status, instance_id, package, readiness, build, validation, artifacts}. status ∈ {passed/success/PASS/PASSED, failed, partial}. A harness-format success requires build.success, all four validation tests passed, package readiness matching `package_profile`, agreement with the preceding `package_gate.json`, and existing declared artifact paths (`spec_path`, `wrapper_path`, manifest/log/sample paths when present). Older upstream `PASS`/`PASSED` verdicts remain accepted through compatibility parsing.
+- **package_container**: First run `"$HARNESS_PYTHON_BIN" scripts/describe_harness_runtime.py`. Add its exact named build context and `COPY --from=sure_harness_runtime` line to the model Docker build. Output `docker_registry_result.json` plus `docker_build_result.json` and `docker_validation.json`. For local models, evidence must name one target image, its registry digest, the resulting `<image>@sha256:...` reference, the Dockerfile/sample hashes, distinct `model_runtime` and `harness_runtime` bindings, both groups of passing checks, and passing push/pull verification. The gate independently executes both Python roles in the digest-pinned image.
+- **save_artifacts**: Output = `artifact_manifest.json` {model_dir, artifacts.{required,conditional,optional}}. Gate checks model-local files exist and stages the Docker evidence; it does not create runtime readiness.
+- **package_gate**: Output schema v2 = `package_gate.json` {status, package_profile, readiness, bundle_ready, model_dir, artifact_manifest_path}. A local `passed` result requires `docker-registry`, all local validations, and exact Docker tag/digest/ref agreement. `none` and `docker-local` stay non-Eval-ready.
+- **write_runtime_inventory**: Output schema v2 = `runtime_inventory.json`. Local models explicitly separate `model_runtime` and the common `harness_runtime`, and expose only `execution_mode=container_only`, the digest-pinned image, server command/tool names, and read-only model/write-separated result mount policy. Host Model Python is evidence only and is never an Eval fallback.
+- **verdict**: Output = `verdict.json` {status, instance_id, package, readiness, build, validation, artifacts}. A local success requires `package_profile=docker-registry` and `bundle_ready=true`; local-only profiles must remain `partial` or failed.
+- **finalize_model_bundle**: Copies terminal evidence to the model directory, rewrites manifest/package paths to be portable, verifies hashes, and atomically writes `deployment_ready.json`. This file is the only terminal readiness marker consumed by `/sure_eval`.
 
 ## Backend Routing Rules (Phase 1)
 
@@ -233,12 +233,12 @@ sure/models/<model_name>/
 │   ├── build_plan.json
 │   ├── validation.log
 │   ├── sample_output.json
-│   ├── package_gate.json
-│   ├── verdict.json
+│   ├── docker_build_result.json / docker_validation.json
+│   ├── docker_registry_result.json
+│   ├── package_gate.json / verdict.json
 │   ├── artifact_manifest.json
-│   ├── runtime_inventory.json                     # model-level runtime provenance
-│   ├── runtime_links_manifest.json
-│   └── runtime_links/                             # symlinks to small evidence files only
+│   ├── runtime_inventory.json                     # container-only Eval binding
+│   └── deployment_ready.json                      # terminal immutable readiness marker
 ├── fixture/<task>/                                      # test audio + gt.jsonl (2–3 samples, max 5)
 ├── .runtime/ checkpoints/                               # weights convergence
 └── eval_runs/<run_id>/                                  # this model's eval runs (original layout)
@@ -246,10 +246,10 @@ sure/models/<model_name>/
 
 ## Backend
 
-The deterministic backend is bundled in `scripts/` (self-contained — no external repo reference). `scripts/sure_eval/` holds the model-tool framework (models/registry.py+base.py, inference/, protocols/). Gate scripts (`check_model_input.py`, `check_build_plan.py`, `check_spec.py`, `check_fixture.py`, `check_env.py`, `check_weights.py`, `check_env_compat.py`, `run_validate.py`, `check_artifact_manifest.py`, `check_package_gate.py`, `check_verdict.py`) validate each gate's artifact. Helpers are intentionally narrow: `materialize_onboard_inputs.py` creates only the deterministic early artifacts from a completed `/sure_feed` MODEL_INPUT; `prepare_fixture.py` stages an already-selected task fixture into the model directory; `stage_model_artifacts.py` stages already-produced run artifacts into the model-local artifact directory and automatically writes `runtime_inventory.json`; `write_runtime_inventory.py` can backfill runtime provenance for an existing model directory. Templates (model.spec.yaml, validate.py, verdict.json, artifact_manifest.json, spec_validation.json) live in `scripts/templates/`. Run as:
+The deterministic backend is bundled in `scripts/`. Gate scripts validate each unit. `stage_model_artifacts.py` stages existing run evidence; `write_runtime_inventory.py` writes runtime provenance only after the package gate; `finalize_model_bundle.py` seals the portable bundle. No helper may infer an Eval runtime from `.venv`, host Python, a Dockerfile, or an image name alone.
 
 ```bash
-python3 scripts/<script>.py <args>   # cwd = skill package dir
+"$HARNESS_PYTHON_BIN" scripts/<script>.py <args>   # cwd = skill package dir
 ```
 
 ## Failure Handling
@@ -260,4 +260,4 @@ If the same hook/gate blocks three consecutive attempts, stop and ask the user t
 
 ## Success Criteria
 
-The `pre_finish` hook enforces: `verdict.json` exists, the terminal gate passes, and the state machine reached the terminal unit. On success call `sure_finish` with `status: "success"` and `manifest_path: ".sure/runs/<run_id>/manifest.json"`. If incomplete or failed, finish with `status: "incomplete"` or `status: "failed"` and a repair summary.
+The `pre_finish` hook enforces that the state machine reached `finalize_model_bundle` and that `deployment_ready.json` passes its hash, portability, package, and execution-policy checks. A local model cannot finish successfully without immutable registry evidence.

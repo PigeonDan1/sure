@@ -63,8 +63,8 @@ class ProtocolResolver:
         for protocol_id, protocol in protocols.items():
             if protocol.is_default:
                 return protocol_id
-        # Fallback to strict_core if no default is set
-        return "strict_core"
+        # Keep future onboard-generated protocol declarations aligned with eval.
+        return "standard_system"
 
     def resolve(
         self,

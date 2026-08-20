@@ -90,7 +90,7 @@ KWS metric namespace:
 src/sure_eval/evaluation/kws/
 ```
 
-`/sure_onboard` local-ready 仍以 task-local `validate.py` 同时验证正负样例为最小通过
+`/sure_onboard` 的本地验证仍以 task-local `validate.py` 同时验证正负样例为最小通过
 条件；但 KWS 经验资产不能降级为只有 smoke。只要 wrapper 产出
 `sample_output.json`，后续 metric enrichment 或 evaluation 应继续调用 canonical KWS
 route，而不是只读 `validate.py` 的正负例断言。

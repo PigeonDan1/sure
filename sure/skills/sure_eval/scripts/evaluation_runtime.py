@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+"""Resolve and materialize the locked sure-evaluation root runtime."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import grp
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+SPEC_ROOT = REPO_ROOT / "sure" / "runtime" / "evaluation"
+CACHE_ROOT = REPO_ROOT / "sure" / ".runtime" / "evaluation"
+
+
+class EvaluationRuntimeError(RuntimeError):
+    pass
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _apply_acl(setfacl: str, entries: str, paths: list[Path]) -> None:
+    for offset in range(0, len(paths), 256):
+        command = [setfacl, "-m", entries, "--", *(str(path) for path in paths[offset : offset + 256])]
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "setfacl failed").strip()
+            raise OSError(f"cannot make runtime group-collaborative: {detail}")
+
+
+def _make_group_writable(root: Path, *, recursive: bool = True) -> None:
+    """Preserve executable bits and grant the runtime's owning group inherited write access."""
+    paths = [root, *root.rglob("*")] if recursive else [root]
+    paths = [path for path in paths if not path.is_symlink()]
+    directories = [path for path in paths if path.is_dir()]
+    executables = [
+        path
+        for path in paths
+        if not path.is_dir()
+        and stat.S_IMODE(path.stat().st_mode) & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    ]
+    regular = [path for path in paths if not path.is_dir() and path not in executables]
+    setfacl = shutil.which("setfacl")
+    if setfacl:
+        group_id = root.stat().st_gid
+        try:
+            group = grp.getgrgid(group_id).gr_name
+        except KeyError:
+            group = str(group_id)
+        _apply_acl(setfacl, f"g:{group}:rwx,m::rwx", [*directories, *executables])
+        _apply_acl(setfacl, f"g:{group}:rw-,m::rw-", regular)
+        _apply_acl(setfacl, f"d:g:{group}:rwx,d:m::rwx", directories)
+        return
+
+    for path in paths:
+        mode = stat.S_IMODE(path.stat().st_mode)
+        group_bits = stat.S_IRGRP | stat.S_IWGRP
+        if path.is_dir():
+            group_bits |= stat.S_IXGRP | stat.S_ISGID
+        elif mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
+            group_bits |= stat.S_IXGRP
+        path.chmod(mode | group_bits)
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise EvaluationRuntimeError(f"invalid runtime JSON {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise EvaluationRuntimeError(f"runtime JSON root must be an object: {path}")
+    return payload
+
+
+def evaluation_child_environment(parent: dict[str, str] | None = None) -> dict[str, str]:
+    """Remove Harness-only dynamic libraries before launching evaluation tools."""
+    env = dict(parent if parent is not None else os.environ)
+    harness_root = env.get("SURE_HARNESS_RUNTIME_ROOT", "").strip()
+    harness_lib = str(Path(harness_root) / "base" / "lib") if harness_root else ""
+    entries = [entry for entry in env.get("LD_LIBRARY_PATH", "").split(":") if entry]
+    entries = [entry for entry in entries if entry != harness_lib]
+    if entries:
+        env["LD_LIBRARY_PATH"] = ":".join(entries)
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def _engine_commit(engine_root: Path) -> str:
+    completed = subprocess.run(
+        ["git", "-c", f"safe.directory={engine_root}", "rev-parse", "HEAD"],
+        cwd=engine_root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=evaluation_child_environment(),
+    )
+    return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def _expected_binding(engine_root: Path) -> dict[str, Any]:
+    engine_root = engine_root.expanduser().resolve()
+    spec = _load_json(SPEC_ROOT / "runtime.json")
+    lock_path = SPEC_ROOT / str(spec.get("lock_file") or "requirements.lock.txt")
+    pyproject = engine_root / "pyproject.toml"
+    if not lock_path.is_file() or not pyproject.is_file():
+        raise EvaluationRuntimeError("evaluation runtime lock or engine pyproject.toml is missing")
+    commit = _engine_commit(engine_root)
+    if commit != spec.get("engine_commit"):
+        raise EvaluationRuntimeError(
+            f"evaluation engine commit differs from the locked runtime: expected={spec.get('engine_commit')} actual={commit}"
+        )
+    pyproject_sha = _sha256(pyproject)
+    if pyproject_sha != spec.get("engine_pyproject_sha256"):
+        raise EvaluationRuntimeError("evaluation engine pyproject.toml differs from the locked runtime")
+
+    harness_root_raw = os.environ.get("SURE_HARNESS_RUNTIME_ROOT", "").strip()
+    harness_id = os.environ.get("SURE_HARNESS_RUNTIME_ID", "").strip()
+    if not harness_root_raw or not harness_id:
+        raise EvaluationRuntimeError("approved Harness Runtime binding is required")
+    harness_root = Path(harness_root_raw).expanduser().resolve()
+    harness_manifest = _load_json(harness_root / "runtime-manifest.json")
+    if harness_manifest.get("runtime_id") != harness_id:
+        raise EvaluationRuntimeError("Harness Runtime environment and manifest identities differ")
+
+    lock_sha = _sha256(lock_path)
+    runtime_version = str(spec.get("runtime_version") or "root-v1")
+    materialization_version = int(spec.get("materialization_version") or 1)
+    dynamic_loader = Path(str(spec.get("dynamic_loader") or ""))
+    if not dynamic_loader.is_file():
+        raise EvaluationRuntimeError(f"evaluation runtime dynamic loader is missing: {dynamic_loader}")
+    runtime_id = (
+        f"sure-evaluation-{runtime_version}-m{materialization_version}-"
+        f"{commit[:12]}-py311-{lock_sha[:12]}"
+    )
+    runtime_root = CACHE_ROOT / runtime_id
+    return {
+        "schema": "sure.evaluation.runtime.binding.v1",
+        "runtime_id": runtime_id,
+        "runtime_type": "evaluation_python",
+        "runtime_version": runtime_version,
+        "materialization_version": materialization_version,
+        "dynamic_loader": str(dynamic_loader),
+        "python_executable": str(runtime_root / "bin" / "python"),
+        "runtime_root": str(runtime_root),
+        "manifest_path": str(runtime_root / "runtime-manifest.json"),
+        "site_packages": str(runtime_root / "site-packages"),
+        "lock_path": str(lock_path),
+        "lock_sha256": lock_sha,
+        "engine_root": str(engine_root),
+        "engine_commit": commit,
+        "engine_pyproject_sha256": pyproject_sha,
+        "harness_runtime_id": harness_id,
+        "harness_runtime_root": str(harness_root),
+        "required_imports": list(spec.get("required_imports") or []),
+    }
+
+
+def _verify(binding: dict[str, Any]) -> tuple[bool, str]:
+    python = Path(str(binding["python_executable"]))
+    manifest_path = Path(str(binding["manifest_path"]))
+    if not python.is_file() or not manifest_path.is_file():
+        return False, "runtime executable or manifest is missing"
+    try:
+        manifest = _load_json(manifest_path)
+    except EvaluationRuntimeError as exc:
+        return False, str(exc)
+    for key in (
+        "runtime_id",
+        "runtime_type",
+        "runtime_version",
+        "materialization_version",
+        "dynamic_loader",
+        "lock_sha256",
+        "engine_commit",
+        "engine_pyproject_sha256",
+        "harness_runtime_id",
+    ):
+        if manifest.get(key) != binding.get(key):
+            return False, f"runtime manifest {key} mismatch"
+    if python.read_text(encoding="utf-8") != _wrapper(binding):
+        return False, "runtime wrapper differs from the materialization contract"
+    code = "\n".join(f"import {name}" for name in binding["required_imports"])
+    completed = subprocess.run(
+        [str(python), "-s", "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    if completed.returncode != 0:
+        return False, (completed.stderr or completed.stdout or "import verification failed").strip()
+    return True, "locked Evaluation Runtime imports passed"
+
+
+def _wrapper(binding: dict[str, Any]) -> str:
+    runtime_root = str(binding["runtime_root"])
+    harness_root = str(binding["harness_runtime_root"])
+    engine_root = str(binding["engine_root"])
+    dynamic_loader = str(binding["dynamic_loader"])
+    harness_lib = f"{harness_root}/base/lib"
+    return f"""#!/usr/bin/env bash
+set -euo pipefail
+unset PYTHONHOME PYTHONEXECUTABLE
+_sure_eval_ld=()
+IFS=: read -r -a _sure_eval_parent_ld <<< "${{LD_LIBRARY_PATH:-}}"
+for _sure_eval_entry in "${{_sure_eval_parent_ld[@]}}"; do
+  if [[ -n "$_sure_eval_entry" && "$_sure_eval_entry" != {harness_lib!r} ]]; then
+    _sure_eval_ld+=("$_sure_eval_entry")
+  fi
+done
+if ((${{#_sure_eval_ld[@]}})); then
+  IFS=:; export LD_LIBRARY_PATH="${{_sure_eval_ld[*]}}"; unset IFS
+else
+  unset LD_LIBRARY_PATH
+fi
+export PYTHONNOUSERSITE=1
+export PYTHONPATH={runtime_root!r}/site-packages:{engine_root!r}/src
+exec {dynamic_loader!r} --library-path {harness_root!r}/base/lib {harness_root!r}/base/bin/python3.11 "$@"
+"""
+
+
+def _materialize(binding: dict[str, Any]) -> None:
+    CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    _make_group_writable(CACHE_ROOT, recursive=False)
+    lock_file = CACHE_ROOT / ".prepare.lock"
+    with lock_file.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        ok, _ = _verify(binding)
+        if ok:
+            return
+        uv = shutil.which("uv")
+        if not uv:
+            raise EvaluationRuntimeError("uv is required to prepare the locked Evaluation Runtime")
+        runtime_root = Path(str(binding["runtime_root"]))
+        staging = Path(tempfile.mkdtemp(prefix=f".{binding['runtime_id']}.tmp-", dir=CACHE_ROOT))
+        log_dir = CACHE_ROOT / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        _make_group_writable(log_dir, recursive=False)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        log_path = log_dir / f"bootstrap-{stamp}-{os.getpid()}.log"
+        try:
+            site_packages = staging / "site-packages"
+            site_packages.mkdir(parents=True)
+            command = [
+                uv,
+                "pip",
+                "install",
+                "--python",
+                str(Path(str(binding["harness_runtime_root"])) / "bin" / "python"),
+                "--target",
+                str(site_packages),
+                "--require-hashes",
+                "-r",
+                str(binding["lock_path"]),
+            ]
+            completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=600)
+            log_path.write_text(
+                "$ " + " ".join(command) + "\n" + completed.stdout + "\n" + completed.stderr,
+                encoding="utf-8",
+            )
+            if completed.returncode != 0:
+                raise EvaluationRuntimeError(
+                    f"Evaluation Runtime dependency install failed; see {log_path}"
+                )
+            (staging / "bin").mkdir()
+            wrapper = staging / "bin" / "python"
+            wrapper.write_text(_wrapper(binding), encoding="utf-8")
+            wrapper.chmod(0o755)
+            manifest = {
+                **binding,
+                "runtime_root": str(runtime_root),
+                "python_executable": str(runtime_root / "bin" / "python"),
+                "manifest_path": str(runtime_root / "runtime-manifest.json"),
+                "site_packages": str(runtime_root / "site-packages"),
+                "prepared_at": datetime.now(timezone.utc).isoformat(),
+                "install_log": str(log_path),
+                "package_source": "configured uv index (credentials omitted)",
+            }
+            (staging / "runtime-manifest.json").write_text(
+                json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            _make_group_writable(staging)
+            _make_group_writable(log_dir)
+            if runtime_root.exists():
+                invalid = CACHE_ROOT / f".{runtime_root.name}.invalid-{stamp}-{os.getpid()}"
+                runtime_root.rename(invalid)
+            staging.rename(runtime_root)
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+
+
+def ensure_evaluation_runtime(engine_root: Path, *, prepare: bool) -> dict[str, Any]:
+    binding = _expected_binding(engine_root)
+    ok, evidence = _verify(binding)
+    if not ok and prepare:
+        _materialize(binding)
+        ok, evidence = _verify(binding)
+    if not ok:
+        raise EvaluationRuntimeError(f"Evaluation Runtime is not ready: {evidence}")
+    manifest = _load_json(Path(str(binding["manifest_path"])))
+    return {**binding, "install_log": manifest.get("install_log"), "verification": evidence}
+
+
+def evaluation_runtime_from_eval_input(
+    eval_input: dict[str, Any], *, prepare: bool
+) -> dict[str, Any] | None:
+    evaluation = eval_input.get("evaluation") if isinstance(eval_input.get("evaluation"), dict) else {}
+    if evaluation.get("backend") not in (None, "external"):
+        return None
+    engine = evaluation.get("engine") if isinstance(evaluation.get("engine"), dict) else {}
+    engine_root = str(engine.get("engine_root") or "").strip()
+    if not engine_root:
+        return None
+    return ensure_evaluation_runtime(Path(engine_root), prepare=prepare)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--engine-root", required=True)
+    parser.add_argument("--prepare", action="store_true")
+    args = parser.parse_args()
+    binding = ensure_evaluation_runtime(Path(args.engine_root), prepare=args.prepare)
+    print(json.dumps(binding, indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,20 @@
+schema: sure.site.policy.v1
+site_id: public-example
+policy_version: 1
+
+storage:
+  approved_models_roots:
+    - /srv/sure/models
+  approved_results_roots:
+    - /srv/sure/results
+  forbidden_output_roots:
+    - /srv/sure
+  runtime_root: /var/cache/sure/runtime
+
+datasets:
+  allowed_source_roots:
+    - /srv/sure/datasets
+
+execution:
+  surfaces:
+    - local

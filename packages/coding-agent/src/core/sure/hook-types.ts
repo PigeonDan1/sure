@@ -62,6 +62,7 @@ export interface SureRunRecord {
 	packageDir: string;
 	runDir: string;
 	args: string;
+	outputDir?: string;
 	startedAt: string;
 	updatedAt: string;
 	finishedAt?: string;

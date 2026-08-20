@@ -110,6 +110,9 @@ def main() -> int:
     if package_profile not in PACKAGE_PROFILES:
         print(f"LOAD_MODEL_INPUT gate: unsupported package_profile={package_profile!r}", file=sys.stderr)
         return 1
+    if deployment_type == "api" and package_profile != "none":
+        print("LOAD_MODEL_INPUT gate: API deployments must use package_profile=none.", file=sys.stderr)
+        return 1
 
     model_name = str(data.get("model_name"))
     if "/" in model_name or "\\" in model_name:

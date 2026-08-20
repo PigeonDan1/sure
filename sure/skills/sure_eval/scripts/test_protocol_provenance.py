@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import yaml
 
@@ -16,7 +16,6 @@ import check_run_report  # noqa: E402
 import evaluate_predictions  # noqa: E402
 import generate_predictions_via_server  # noqa: E402
 import import_prediction_source  # noqa: E402
-from resolve_prediction_source import build_payload as resolve_prediction_source  # noqa: E402
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -53,15 +52,29 @@ class ProtocolProvenanceTests(unittest.TestCase):
         write_json(
             artifacts / "runtime_inventory.json",
             {
-                "schema": "sure.onboard.runtime_inventory.v1",
+                "schema": "sure.onboard.runtime_inventory.v2",
                 "status": "ready",
-                "runtime": {
+                "local_runtime": {
                     "backend": "uv",
-                    "python_executable": str(self.model_dir / ".venv" / "bin" / "python"),
+                    "eligible_for_eval": False,
                 },
+                "container_runtime": {
+                    "target_image": "registry.example.com/sure/demo:v1",
+                    "target_image_digest": "sha256:" + "a" * 64,
+                    "target_image_ref": "registry.example.com/sure/demo@sha256:" + "a" * 64,
+                    "python_executable": "python",
+                    "working_dir": "/workspace/model",
+                    "mount_policy": {
+                        "nfs_models_read_only": True,
+                        "result_workspace": {"read_only": False},
+                    },
+                },
+                "policy": {"eval_runtime": "container_only", "host_python_fallback": False},
                 "evidence": {"links_manifest": str(artifacts / "runtime_links_manifest.json")},
             },
         )
+        write_json(artifacts / "deployment_ready.json", {"schema": "sure.onboard.deployment_ready.v1"})
+        write_json(artifacts / "package_gate.json", {"schema": "sure.onboard.package_gate.v2"})
         write_json(artifacts / "runtime_links_manifest.json", {"schema": "sure.onboard.runtime_links_manifest.v1"})
 
     def test_protocol_yaml_prefers_generation_status_and_runtime_inventory(self) -> None:
@@ -76,6 +89,16 @@ class ProtocolProvenanceTests(unittest.TestCase):
                     "server_working_dir": str(self.model_dir),
                     "model_python": "/model/python",
                     "server_config": {"timeout": 120, "env_keys": ["MODEL_PATH"]},
+                    "harness_runtime": {
+                        "schema": "sure.harness.runtime.binding.v1",
+                        "runtime_id": "sure-harness-v1-py311-demo",
+                        "runtime_type": "harness_python",
+                        "python_executable": "/harness/bin/python",
+                        "process_python_executable": "/harness/base/bin/python3.11",
+                        "lock_sha256": "c" * 64,
+                        "manifest_path": "/harness/runtime-manifest.json",
+                        "runtime_root": "/harness",
+                    },
                 },
                 "environment": {
                     "safe_env_values": {"MODEL_PATH": "checkpoints/demo"},
@@ -98,19 +121,32 @@ class ProtocolProvenanceTests(unittest.TestCase):
                 },
             },
         )
-        evaluate_predictions._write_protocol_yaml(
-            run_dir,
-            "strict_core",
-            self.model_dir,
-            results=[],
-            tool_name="transcribe_audio",
-        )
+        with patch.dict("os.environ", {"RUN_ID": "published-run-id"}):
+            evaluate_predictions._write_protocol_yaml(
+                run_dir,
+                "strict_core",
+                self.model_dir,
+                results=[],
+                tool_name="transcribe_audio",
+            )
         protocol = yaml.safe_load((run_dir / "protocol.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(protocol["run"]["run_id"], "published-run-id")
         self.assertEqual(protocol["model"]["server_config"]["command"], ["/model/python", "server.py"])
         self.assertEqual(protocol["protocol_selection"]["standard_params"]["beam_size"], 4)
         self.assertEqual(protocol["inference_parameters"]["explicit_tool_args"]["max_new_tokens"], 64)
         self.assertFalse(protocol["provenance"]["raw_response_source_of_truth"])
         self.assertEqual(protocol["inference_environment"]["runtime_inventory"]["status"], "ready")
+        self.assertEqual(
+            protocol["inference_environment"]["container"]["image_ref"],
+            "registry.example.com/sure/demo@sha256:" + "a" * 64,
+        )
+        self.assertFalse(protocol["inference_environment"]["container"]["host_python_fallback"])
+        self.assertIn("harness_commit", protocol["provenance"])
+        self.assertIn("evaluation_engine", protocol["provenance"])
+        self.assertEqual(
+            protocol["inference_environment"]["harness_runtime"]["runtime_id"],
+            "sure-harness-v1-py311-demo",
+        )
         self.assertEqual(check_run_report._validate_protocol(run_dir), [])
 
     def test_reval_resolves_and_links_source_inference_provenance(self) -> None:
@@ -136,26 +172,17 @@ class ProtocolProvenanceTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        payload = resolve_prediction_source(
-            argparse.Namespace(
-                source=str(source_run),
-                model=None,
-                model_dir=None,
-                datasets=[],
-                protocol_id=None,
-                output=None,
-            )
-        )
-        provenance = payload["source_inference_provenance"]
-        self.assertEqual(provenance["source_protocol"], str((source_run / "protocol.yaml").resolve()))
-        self.assertEqual(
-            provenance["source_prediction_generation_status"],
-            str((source_run / "prediction_generation_status.json").resolve()),
-        )
+        payload = {
+            "schema": "sure.reval.approved_prediction_source.v2",
+            "source_kind": "approved_nfs_results",
+            "source_results_dir": str(source_run),
+            "source_protocol": str((source_run / "protocol.yaml").resolve()),
+            "protocol_id": "strict_core",
+            "model_name": "demo__asr",
+        }
         manifest = import_prediction_source._write_source_provenance_links(self.root / "reval_run", payload)
         self.assertFalse(manifest["policy"]["links_checkpoint_payloads"])
         self.assertIn("source_protocol", manifest["links"])
-        self.assertIn("source_prediction_generation_status", manifest["links"])
 
         reval_run = self.root / "reval_run"
         write_json(
@@ -164,7 +191,7 @@ class ProtocolProvenanceTests(unittest.TestCase):
                 "schema": "sure.reval.prediction_reuse_manifest.v1",
                 "source": {
                     "source_run_dir": str(source_run),
-                    "source_inference_provenance": payload["source_inference_provenance"],
+                    "source_inference_provenance": {},
                     "old_evaluation_reused": False,
                 },
                 "source_inference_provenance": manifest,
@@ -181,10 +208,7 @@ class ProtocolProvenanceTests(unittest.TestCase):
         self.assertTrue(protocol["prediction_reuse"]["enabled"])
         self.assertEqual(protocol["prediction_reuse"]["generation_policy"], "reused_predictions_no_inference")
         self.assertEqual(protocol["prediction_reuse"]["source_protocol"], str((source_run / "protocol.yaml").resolve()))
-        self.assertEqual(
-            protocol["provenance"]["source_prediction_generation_status"],
-            str((source_run / "prediction_generation_status.json").resolve()),
-        )
+        self.assertIsNone(protocol["provenance"].get("source_prediction_generation_status"))
 
     def test_generation_status_upsert_preserves_initial_generated_at(self) -> None:
         status_path = self.root / "eval_run" / "prediction_generation_status.json"

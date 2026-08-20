@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ from sure_eval.evaluation.sure_evaluator import SUREEvaluator
 from sure_eval.reports import SOTAManager
 
 from resolve_evaluation_engine import resolve_engine_root
+from evaluation_runtime import ensure_evaluation_runtime, evaluation_child_environment
 
 configure_logging(level="INFO")
 logger = get_logger(__name__)
@@ -55,6 +57,25 @@ LOWER_IS_BETTER_METRICS = {
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _artifact_run_id(run_dir: Path) -> str:
+    return os.environ.get("RUN_ID") or run_dir.name
+
+
+def _git_commit(root: Path | None) -> str | None:
+    if root is None or not root.exists():
+        return None
+    completed = subprocess.run(
+        ["git", "-c", f"safe.directory={root}", "-C", str(root), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+        env=evaluation_child_environment(),
+    )
+    value = completed.stdout.strip()
+    return value if completed.returncode == 0 and value else None
 
 
 class ExternalEvaluationUnsupported(RuntimeError):
@@ -179,8 +200,10 @@ def _describe_evaluation_context(task: str, language: str, metric: str) -> dict[
     return context
 
 
-def _metric_from_sota(sota_manager: SOTAManager, dataset_name: str) -> str | None:
-    metric = sota_manager.get_metric(dataset_name)
+def _metric_from_sota(
+    sota_manager: SOTAManager, dataset_name: str, fallback_names: tuple[str, ...] | list[str] = ()
+) -> str | None:
+    metric = sota_manager.get_metric(dataset_name, fallback_names=fallback_names)
     return str(metric) if metric else None
 
 
@@ -407,10 +430,19 @@ def _safe_path_component(value: str) -> str:
 
 
 def _external_env(engine_root: Path) -> dict[str, str]:
-    env = os.environ.copy()
+    env = evaluation_child_environment()
     src = str(engine_root / "src")
     env["PYTHONPATH"] = f"{src}:{env.get('PYTHONPATH', '')}" if env.get("PYTHONPATH") else src
     return env
+
+
+@lru_cache(maxsize=8)
+def _evaluation_runtime_binding(engine_root: Path) -> dict[str, Any]:
+    return ensure_evaluation_runtime(engine_root, prepare=False)
+
+
+def _evaluation_python(engine_root: Path) -> str:
+    return str(_evaluation_runtime_binding(engine_root)["python_executable"])
 
 
 def _describe_external_pipeline(
@@ -456,7 +488,7 @@ print(json.dumps(pipeline, ensure_ascii=False))
 """
     try:
         completed = subprocess.run(
-            [sys.executable, "-c", code],
+            [_evaluation_python(engine_root), "-c", code],
             cwd=engine_root,
             env=env,
             capture_output=True,
@@ -560,7 +592,7 @@ print(json.dumps({"pipeline": pipeline, "summary": summary, "report": report}, e
 
     try:
         completed = subprocess.run(
-            [sys.executable, "-c", code],
+            [_evaluation_python(engine_root), "-c", code],
             cwd=engine_root,
             env=env,
             capture_output=True,
@@ -622,7 +654,9 @@ def evaluate_prediction_file_external(
     dataset_task = str(all_samples[0].get("task", "ASR")).upper()
     task = str(task_override or dataset_task).upper()
     language = str(all_samples[0].get("language", "auto"))
-    requested_metric = metric_override or _metric_from_sota(sota_manager, canonical_name)
+    requested_metric = metric_override or _metric_from_sota(
+        sota_manager, canonical_name, fallback_names=_source_fallback_names(jsonl_path)
+    )
     pipeline = _describe_external_pipeline(
         engine_root=engine_root,
         task=task,
@@ -681,7 +715,9 @@ def evaluate_prediction_file_external(
     report = external_payload.get("report") or {}
     metric = str(summary.get("metric") or pipeline.get("metric") or requested_metric or "")
     score = summary.get("score", report.get("score", 0.0))
-    rps = sota_manager.calculate_rps(canonical_name, score)
+    rps = sota_manager.calculate_rps(
+        canonical_name, score, fallback_names=_source_fallback_names(jsonl_path)
+    )
 
     return {
         "dataset": canonical_name,
@@ -703,6 +739,7 @@ def evaluate_prediction_file_external(
             "backend": "sure-evaluation",
             "engine_source": engine_source,
             "engine_root": str(engine_root),
+            "evaluation_runtime": _evaluation_runtime_binding(engine_root),
             "dataset_task": dataset_task,
             "pipeline_id": summary.get("pipeline_id") or pipeline.get("pipeline_id"),
             "route_id": pipeline.get("route_id"),
@@ -750,7 +787,9 @@ def evaluate_audio_prediction_file_external(
     dataset_task = str(all_samples[0].get("task", "")).upper()
     task = str(task_override or dataset_task).upper()
     language = str(all_samples[0].get("language") or "en")
-    requested_metric = metric_override or _metric_from_sota(sota_manager, canonical_name)
+    requested_metric = metric_override or _metric_from_sota(
+        sota_manager, canonical_name, fallback_names=_source_fallback_names(jsonl_path)
+    )
     pipeline = _describe_external_pipeline(
         engine_root=engine_root,
         task=task,
@@ -810,7 +849,9 @@ def evaluate_audio_prediction_file_external(
     report = external_payload.get("report") or {}
     metric = str(summary.get("metric") or pipeline.get("metric") or requested_metric or "")
     score = summary.get("score", report.get("score", 0.0))
-    rps = sota_manager.calculate_rps(canonical_name, score)
+    rps = sota_manager.calculate_rps(
+        canonical_name, score, fallback_names=_source_fallback_names(jsonl_path)
+    )
 
     return {
         "dataset": canonical_name,
@@ -833,6 +874,7 @@ def evaluate_audio_prediction_file_external(
             "backend": "sure-evaluation",
             "engine_source": engine_source,
             "engine_root": str(engine_root),
+            "evaluation_runtime": _evaluation_runtime_binding(engine_root),
             "dataset_task": dataset_task,
             "pipeline_id": summary.get("pipeline_id") or pipeline.get("pipeline_id"),
             "route_id": pipeline.get("route_id"),
@@ -915,7 +957,9 @@ def evaluate_prediction_file(
     else:
         score = details.get("score", 0.0)
 
-    rps = sota_manager.calculate_rps(canonical_name, score)
+    rps = sota_manager.calculate_rps(
+        canonical_name, score, fallback_names=_source_fallback_names(jsonl_path)
+    )
 
     return {
         "dataset": canonical_name,
@@ -1002,6 +1046,37 @@ def _result_pipeline(result: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _dataset_source_fields(jsonl_path: str | Path | None) -> dict[str, Any]:
+    """Source provenance from the first dataset-JSONL row's metadata."""
+    if not jsonl_path:
+        return {}
+    row: Any = {}
+    try:
+        with open(jsonl_path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.strip():
+                    row = json.loads(line)
+                    break
+    except Exception:
+        return {}
+    if not isinstance(row, dict):
+        return {}
+    meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    fields: dict[str, Any] = {}
+    if meta.get("source_dataset_name"):
+        fields["source_dataset_name"] = meta["source_dataset_name"]
+    if meta.get("version_id"):
+        fields["version_id"] = meta["version_id"]
+    if meta.get("source_dataset_root"):
+        fields["source_root"] = meta["source_dataset_root"]
+    return fields
+
+
+def _source_fallback_names(jsonl_path: str | Path | None) -> list[str]:
+    name = _dataset_source_fields(jsonl_path).get("source_dataset_name")
+    return [str(name)] if name else []
+
+
 def _dataset_metric_row(result: dict[str, Any]) -> dict[str, Any]:
     report = _result_report(result)
     pipeline = _result_pipeline(result)
@@ -1031,6 +1106,7 @@ def _dataset_metric_row(result: dict[str, Any]) -> dict[str, Any]:
             "nodes": nodes,
             "conversion_steps": pipeline.get("conversion_steps", []),
         },
+        "source": _dataset_source_fields(result.get("jsonl_path")),
         "inputs": {
             "jsonl_path": result.get("jsonl_path"),
             "prediction_path": result.get("prediction_path"),
@@ -1152,6 +1228,7 @@ def _standard_report_row_v1(
                 "language": row.get("language"),
                 "jsonl_path": inputs.get("jsonl_path") or row.get("jsonl_path") or validation.get("jsonl_path"),
                 "num_samples": row.get("num_samples"),
+                **_dataset_source_fields(inputs.get("jsonl_path") or row.get("jsonl_path")),
             },
             "prediction": {
                 "file": prediction_file,
@@ -1372,7 +1449,7 @@ def _ensure_prediction_manifests(
     manifest = {
         "schema": "sure.eval.prediction_manifest.v1",
         "generated_at": generated_at,
-        "run_id": run_dir.name,
+        "run_id": _artifact_run_id(run_dir),
         "run_dir": str(run_dir),
         "model_name": tool_name,
         "tool_name": tool_name,
@@ -1382,7 +1459,7 @@ def _ensure_prediction_manifests(
     conversion_manifest = {
         "schema": "sure.eval.prediction_conversion_manifest.v1",
         "generated_at": generated_at,
-        "run_id": run_dir.name,
+        "run_id": _artifact_run_id(run_dir),
         "run_dir": str(run_dir),
         "generated_by": os.environ.get("SURE_EVAL_PREDICTION_GENERATED_BY") or "scripts/evaluate_predictions.py",
         "predictions_dir": str(pred_dir),
@@ -1451,7 +1528,10 @@ def _write_protocol_yaml(
     status_generation = _safe_dict(generation_status.get("generation"))
     protocol_resolution = _safe_dict(status_generation.get("protocol_resolution"))
     status_runtime_inventory = _nested_dict(status_runtime, "runtime_inventory")
-    inventory_runtime = _safe_dict(runtime_inventory.get("runtime"))
+    harness_runtime = _safe_dict(status_runtime.get("harness_runtime"))
+    inventory_container = _safe_dict(runtime_inventory.get("container_runtime"))
+    inventory_local = _safe_dict(runtime_inventory.get("local_runtime"))
+    inventory_policy = _safe_dict(runtime_inventory.get("policy"))
     status_server_config = _safe_dict(status_runtime.get("server_config"))
     server_command = status_runtime.get("server_command") or sanitized_server.get("command", [])
     server_working_dir = status_runtime.get("server_working_dir") or sanitized_server.get("working_dir", ".")
@@ -1470,11 +1550,6 @@ def _write_protocol_yaml(
         else None
     )
     generation_status_path = _existing_path_or_none(results_dir / "prediction_generation_status.json")
-    runtime_links_manifest = (
-        _existing_path_or_none(model_dir / "artifacts" / "runtime_links_manifest.json")
-        if model_dir
-        else None
-    )
     source_reuse = _safe_dict(prediction_reuse_manifest.get("source"))
     source_provenance_manifest = _safe_dict(prediction_reuse_manifest.get("source_inference_provenance"))
     source_inference_provenance = _nonempty_dict(
@@ -1482,12 +1557,33 @@ def _write_protocol_yaml(
         _safe_dict(source_provenance_manifest.get("source_inference_provenance")),
     )
     prediction_reuse_enabled = bool(prediction_reuse_manifest)
+    engine_root = next(
+        (
+            Path(str(context["engine_root"]))
+            for row in results or []
+            if isinstance(row, dict)
+            for context in [row.get("evaluation_context")]
+            if isinstance(context, dict) and context.get("engine_root")
+        ),
+        None,
+    )
+    evaluation_runtime = next(
+        (
+            context.get("evaluation_runtime")
+            for row in results or []
+            if isinstance(row, dict)
+            for context in [row.get("evaluation_context")]
+            if isinstance(context, dict) and isinstance(context.get("evaluation_runtime"), dict)
+        ),
+        {},
+    )
+    execution_entrypoint = os.environ.get("SURE_EVAL_EXECUTION_ENTRYPOINT")
 
     payload = {
         "schema": "sure.eval.inference_protocol.v1",
         "protocol_id": protocol_id,
         "run": {
-            "run_id": results_dir.name,
+            "run_id": _artifact_run_id(results_dir),
             "run_dir": str(results_dir),
             "created_at": _utc_now(),
         },
@@ -1510,11 +1606,13 @@ def _write_protocol_yaml(
             "protocol_id": protocol_id,
             "definition_path": protocol_definition_path,
             "model_protocol_config_path": str(config_yaml) if config_yaml and config_yaml.exists() else None,
-            "is_default": protocol_id == str(model_cfg.get("default_protocol") or "strict_core"),
+            "is_default": protocol_id == str(model_cfg.get("default_protocol") or "standard_system"),
             "purpose": protocol_cfg.get("purpose") or "standardized model inference before route-backed evaluation",
             "standard_params": selected_standard_params,
             "resolved_model_params": selected_model_params,
             "unmapped": selected_unmapped,
+            "parameter_status": _safe_dict(protocol_resolution.get("parameter_status")),
+            "config_sources": protocol_resolution.get("config_sources") or [],
             "resolution_status": protocol_resolution.get("status"),
             "resolution_error": protocol_resolution.get("error"),
         },
@@ -1532,12 +1630,28 @@ def _write_protocol_yaml(
                 "preflight_required": True,
             },
             "container": {
-                "image": os.environ.get("SURE_EVAL_CONTAINER_IMAGE") or server_cfg.get("image"),
+                "image": inventory_container.get("target_image"),
+                "image_digest": inventory_container.get("target_image_digest"),
+                "image_ref": inventory_container.get("target_image_ref") or os.environ.get("SURE_EVAL_CONTAINER_IMAGE"),
                 "dockerfile": os.environ.get("SURE_EVAL_DOCKERFILE") or model_cfg.get("dockerfile"),
                 "repo_root": os.environ.get("SURE_EVAL_CONTAINER_REPO_ROOT") or str(HARNESS_ROOT),
                 "model_dir": str(model_dir) if model_dir else None,
-                "python_executable": status_runtime.get("model_python") or inventory_runtime.get("python_executable") or os.environ.get("MODEL_PYTHON") or sys.executable,
+                "python_executable": inventory_container.get("python_executable"),
+                "working_dir": inventory_container.get("working_dir"),
+                "execution_mode": inventory_policy.get("eval_runtime"),
+                "host_python_fallback": inventory_policy.get("host_python_fallback"),
             },
+            "harness_runtime": {
+                "schema": harness_runtime.get("schema"),
+                "runtime_id": harness_runtime.get("runtime_id"),
+                "runtime_type": harness_runtime.get("runtime_type"),
+                "python_executable": harness_runtime.get("python_executable"),
+                "process_python_executable": harness_runtime.get("process_python_executable"),
+                "lock_sha256": harness_runtime.get("lock_sha256"),
+                "manifest_path": harness_runtime.get("manifest_path"),
+                "runtime_root": harness_runtime.get("runtime_root"),
+            },
+            "evaluation_runtime": evaluation_runtime,
             "server": {
                 "transport": "stdio_jsonrpc",
                 "command": server_command,
@@ -1556,8 +1670,10 @@ def _write_protocol_yaml(
             "runtime_inventory": {
                 "path": runtime_inventory_path,
                 "status": runtime_inventory.get("status") or status_runtime_inventory.get("status"),
-                "backend": inventory_runtime.get("backend") or _nested_dict(status_runtime_inventory, "runtime").get("backend"),
-                "links_manifest": runtime_links_manifest,
+                "schema": runtime_inventory.get("schema"),
+                "local_evidence_backend": inventory_local.get("backend"),
+                "execution_mode": inventory_policy.get("eval_runtime"),
+                "target_image_ref": inventory_container.get("target_image_ref"),
             },
             "mount_policy": {
                 "mount_stable_absolute_roots": [
@@ -1569,6 +1685,8 @@ def _write_protocol_yaml(
                     if path is not None
                 ],
                 "reject_repo_internal_runtime_mount_overlays": True,
+                "nfs_models_read_only": _nested_dict(inventory_container, "mount_policy").get("nfs_models_read_only"),
+                "result_workspace": _nested_dict(_nested_dict(inventory_container, "mount_policy"), "result_workspace"),
             },
         },
         "inference_constraints": {
@@ -1590,7 +1708,7 @@ def _write_protocol_yaml(
                 "prediction_generation_status.json",
                 "runtime_inventory.json",
                 "model config.yaml protocols",
-                "process environment fallback",
+                "explicit MCP tool arguments",
             ],
             "protocol_id": protocol_id,
             "protocol_resolution": {
@@ -1610,9 +1728,9 @@ def _write_protocol_yaml(
             },
         },
         "execution_surface": {
-            "materialized": (results_dir / "run_evaluation.sh").is_file(),
+            "materialized": bool(execution_entrypoint) or (results_dir / "run_evaluation.sh").is_file(),
             "execution_surface_type": os.environ.get("SURE_EVAL_EXECUTION_SURFACE_TYPE") or "main_flow_script",
-            "entrypoint_path": str(results_dir / "run_evaluation.sh") if (results_dir / "run_evaluation.sh").is_file() else None,
+            "entrypoint_path": execution_entrypoint or (str(results_dir / "run_evaluation.sh") if (results_dir / "run_evaluation.sh").is_file() else None),
             "generation_method": os.environ.get("SURE_EVAL_EXECUTION_GENERATION_METHOD") or "harness_template",
             "template_file": os.environ.get("SURE_EVAL_EXECUTION_TEMPLATE_FILE"),
             "template_sha256": os.environ.get("SURE_EVAL_EXECUTION_TEMPLATE_SHA256") or _sha256_file(template_file),
@@ -1643,11 +1761,17 @@ def _write_protocol_yaml(
             "protocol_argument": protocol_id,
         },
         "provenance": {
+            "harness_commit": _git_commit(HARNESS_ROOT),
+            "evaluation_engine": {
+                "root": str(engine_root) if engine_root else None,
+                "commit": _git_commit(engine_root),
+            },
             "prediction_generation_status": generation_status_path,
             "prediction_generation_status_schema": generation_status.get("schema"),
             "runtime_inventory": runtime_inventory_path,
             "runtime_inventory_schema": runtime_inventory.get("schema"),
-            "runtime_links_manifest": runtime_links_manifest,
+            "deployment_ready": _existing_path_or_none(model_dir / "artifacts" / "deployment_ready.json") if model_dir else None,
+            "package_gate": _existing_path_or_none(model_dir / "artifacts" / "package_gate.json") if model_dir else None,
             "source_inference_provenance_manifest": _existing_path_or_none(results_dir / "source_inference_provenance.json"),
             "source_protocol": source_inference_provenance.get("source_protocol"),
             "source_prediction_generation_status": source_inference_provenance.get("source_prediction_generation_status"),
@@ -2024,7 +2148,7 @@ def _write_run_artifacts(
             }
         )
         row["pipeline"] = pipeline_payload
-        row["run_id"] = run_dir.name
+        row["run_id"] = _artifact_run_id(run_dir)
         row["tool_uid"] = tool_name
         row["protocol_id"] = protocol_id
         report_rows.append(row)
@@ -2040,7 +2164,7 @@ def _write_run_artifacts(
         _standard_report_row_v1(
             row=row,
             validation=validations.get(str(row.get("dataset") or ""), {}),
-            run_id=run_dir.name,
+            run_id=_artifact_run_id(run_dir),
             protocol_id=protocol_id,
             model_dir=model_dir,
             tool_name=tool_name,
@@ -2146,7 +2270,12 @@ def main() -> int:
     parser.add_argument("--config", type=str, help="Config path")
     parser.add_argument("--output", type=str, help="Optional JSON output path")
     parser.add_argument("--results-dir", type=str, help="Results output directory (e.g., results/asr_qwen3/strict_core)")
-    parser.add_argument("--protocol-id", type=str, default="strict_core", help="Inference protocol ID")
+    parser.add_argument(
+        "--protocol-id",
+        choices=("standard_system", "strict_core"),
+        default="standard_system",
+        help="Inference protocol ID",
+    )
     parser.add_argument("--model-dir", type=str, help="Model directory to extract protocol.yaml from config.yaml")
     parser.add_argument("--run-dir", type=str, help="Main-flow run directory for run-local artifacts")
     parser.add_argument("--report-jsonl", type=str, help="Optional run-local report.jsonl output path")
@@ -2252,7 +2381,11 @@ def main() -> int:
             _evaluation_payload_v2(
                 evaluation_backend="external",
                 external_engine=(
-                    {"source": resolved_engine[0], "engine_root": str(resolved_engine[1])}
+                    {
+                        "source": resolved_engine[0],
+                        "engine_root": str(resolved_engine[1]),
+                        "runtime": _evaluation_runtime_binding(resolved_engine[1]),
+                    }
                     if resolved_engine is not None
                     else None
                 ),
@@ -2453,7 +2586,11 @@ def main() -> int:
         _evaluation_payload_v2(
             evaluation_backend=args.evaluation_backend,
             external_engine=(
-                {"source": resolved_engine[0], "engine_root": str(resolved_engine[1])}
+                {
+                    "source": resolved_engine[0],
+                    "engine_root": str(resolved_engine[1]),
+                    "runtime": _evaluation_runtime_binding(resolved_engine[1]),
+                }
                 if resolved_engine is not None
                 else None
             ),

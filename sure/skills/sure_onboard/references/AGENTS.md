@@ -1,8 +1,8 @@
 # SURE-EVAL 模型接入 Harness 规范 (第一阶段)
 
 **版本**: v1.0  
-**目标**: 将语音模型仓库接入为**可复现的本地推理单元**  
-**范围**: 第一阶段聚焦环境适配、本地格式化管理、最小推理调用
+**目标**: 将语音模型仓库接入为**本地验证、容器交付的可复现推理单元**
+**范围**: 环境适配、最小推理验证、镜像发布与不可变运行时绑定
 
 ---
 
@@ -14,14 +14,14 @@
 
 ### 1.0 Harness 分支边界覆盖规则
 
-本 `sure_onboard` harness 版本以 **本地可运行模型部署闭环** 为默认成功条件：
+本 `sure_onboard` harness 版本以 **registry-backed container-ready** 为本地模型默认成功条件：
 
-- `package=none`：默认路径，只要求本地环境、权重、wrapper、fixture、import/load/infer/contract validation 和 artifact/verdict 完整。
-- `package=docker-local`：在本地闭环通过后，额外要求 Docker build 和 Docker validate 通过。
-- `package=docker-registry`：在 Docker local 通过后，额外要求 push 和 registry pull verify 通过。
+- `package=docker-registry`：本地模型默认且唯一可成功交付的路径，要求 Docker build、容器验证、push、digest 解析与 pull verify。
+- `package=docker-local`：仅诊断，不能产生 Eval-ready 成功产物。
+- `package=none`：用于 API 或显式本地诊断；本地模型不得产出 success verdict。
 - VC/HPC submit/validate 不属于核心 `/sure_onboard` 成功条件；如需支持，应作为独立 deployment plugin 或独立 slash command。
 
-当本文档后续历史段落与以上边界冲突时，以本节和 `SKILL.md` 状态机为准。Docker/registry/VC 相关内容可以作为可选部署参考，不得让 `package=none` 的本地可运行模型被判失败。
+当本文档后续历史段落与以上边界冲突时，以本节和 `SKILL.md` 状态机为准。本地适配环境只用于验证和制作镜像，不能成为 `/sure_eval` 的 host fallback。
 
 本文档定义第一阶段模型接入的标准 workflow，确保：
 
@@ -595,24 +595,22 @@ sure/models/{model}/checkpoints/                # 显式本地权重（如有）
 
 ---
 
-## 8. 可选 Docker 镜像制作与集群提交
+## 8. 必选 Docker 镜像制作与可选集群提交
 
-本节定义模型 onboarding 完成后的可选 Docker 化步骤。目标是让模型可以通过容器提交到集群运行，同时保持模型之间的环境隔离。本节不改变前述 harness 状态机；只有用户选择 `package=docker-local` 或 `package=docker-registry` 时，才把 Docker/registry readiness 纳入 `/sure_onboard` 成功条件。VC/HPC submit 仍然是外部部署能力，不是核心 `/sure_onboard` gate。
+本节定义本地模型 onboarding 的必选 Docker 交付步骤。Docker registry readiness 属于 `/sure_onboard` 成功条件；VC/HPC submit 仍然是外部部署能力。
 
 ### 8.1 适用范围
 
-**选择 Docker package profile 时需要制作独立 Docker 镜像**:
-- `/sure_onboard package=docker-local`
-- `/sure_onboard package=docker-registry`
+**本地模型需要制作独立 Docker 镜像**:
+- `/sure_onboard package=docker-registry`（默认成功路径）
+- `/sure_onboard package=docker-local`（仅诊断）
 - 需要本地 Python/系统依赖、模型权重、GPU/CPU runtime 的模型
 - 需要通过未来独立部署命令提交到集群容器任务运行的模型
 
-**可以跳过或降级记录**:
-- 默认 `package=none` 且本地 import/load/infer/contract validation 已通过
+**可以跳过**:
 - 纯 API 模型，且运行时只需要远程 endpoint/token
-- 工具本身已经是系统命令且无 Python runtime 依赖
 
-跳过 Docker 时，在 `package_gate.json` / `verdict.json` 中记录 `readiness.local_ready=true`、`docker_ready=false` 即可；这不构成失败。
+本地模型无法完成 Docker registry 交付时只能记录为 partial/blocked，不能写入 Eval-ready 成功标记。
 
 ### 8.2 镜像命名规则
 

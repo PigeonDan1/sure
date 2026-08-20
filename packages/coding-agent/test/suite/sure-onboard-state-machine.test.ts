@@ -26,6 +26,7 @@ type StatePatchForTest = {
 	message?: string;
 	diagnostics?: Array<{ message: string }>;
 	phase?: { status?: string };
+	checkpoint?: { data: CheckpointData };
 };
 
 function statePatch(result: { state_patch?: unknown }): StatePatchForTest {
@@ -325,9 +326,54 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 });
 
 describe("sure_onboard aligned state machine", () => {
+	it("does not consume retries again for unchanged invalid artifacts", () => {
+		const { ctx, runDir } = freshCtx("unchanged-invalid-artifact");
+		seedCheckpoint(runDir, {
+			currentUnit: "context_selection",
+			completedUnits: ["load_model_input"],
+			retries: {},
+		});
+		writeArtifact(runDir, "context_selection.json", {
+			task_type: "invalid",
+			selected_references: [],
+		});
+		const first = postToolResult(ctx);
+		const firstCheckpoint = persistCheckpointFrom(runDir, first);
+		expect(first.ok).toBe(false);
+		expect(firstCheckpoint?.retries.context_selection).toBe(1);
+
+		const unchanged = postToolResult({ ...ctx, event: { toolName: "read", isError: false } });
+		expect(unchanged.ok).toBe(true);
+		expect(statePatch(unchanged).message).toContain("unchanged artifact content");
+		expect(statePatch(unchanged).checkpoint?.data.retries.context_selection).toBe(1);
+	});
+
+	it("consumes a new retry after invalid artifact content changes", () => {
+		const { ctx, runDir } = freshCtx("changed-invalid-artifact");
+		seedCheckpoint(runDir, {
+			currentUnit: "context_selection",
+			completedUnits: ["load_model_input"],
+			retries: {},
+		});
+		writeArtifact(runDir, "context_selection.json", {
+			task_type: "invalid",
+			selected_references: [],
+		});
+		const first = postToolResult(ctx);
+		persistCheckpointFrom(runDir, first);
+		writeArtifact(runDir, "context_selection.json", {
+			task_type: "still-invalid",
+			selected_references: [],
+		});
+
+		const changed = postToolResult(ctx);
+		expect(changed.ok).toBe(false);
+		expect(statePatch(changed).checkpoint?.data.retries.context_selection).toBe(2);
+	});
+
 	it("uses explicit load/context/build-plan/package-gate units around the original model-tool chain", () => {
 		expect(FIRST_UNIT.id).toBe("load_model_input");
-		expect(LAST_UNIT.id).toBe("verdict");
+		expect(LAST_UNIT.id).toBe("finalize_model_bundle");
 		expect(MODEL_TOOL_UNITS.map((unit) => unit.id)).toEqual([
 			"load_model_input",
 			"context_selection",
@@ -345,9 +391,12 @@ describe("sure_onboard aligned state machine", () => {
 			"validate_load",
 			"validate_infer",
 			"validate_contract",
+			"package_container",
 			"save_artifacts",
 			"package_gate",
+			"write_runtime_inventory",
 			"verdict",
+			"finalize_model_bundle",
 		]);
 	});
 
@@ -1024,6 +1073,13 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			join(modelArtifacts, "contract_result.json"),
 			JSON.parse(readFileSync(join(runDir, "artifacts", "contract_result.json"), "utf-8")),
 		);
+		advance("package_container");
+
+		writeArtifact(runDir, "docker_registry_result.json", {
+			schema: "sure.onboard.docker_registry_result.v2",
+			status: "skipped",
+			reason: "package=none is diagnostic-only",
+		});
 		advance("save_artifacts");
 
 		const manifest = {
@@ -1059,14 +1115,17 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 		advance("package_gate");
 
 		writeArtifact(runDir, "package_gate.json", {
+			schema: "sure.onboard.package_gate.v2",
 			status: "passed",
 			package_profile: "none",
 			model_dir: modelDir,
 			artifact_manifest_path: join(runDir, "artifacts", "artifact_manifest.json"),
 			readiness: {
 				local_ready: true,
+				container_ready: false,
 				docker_ready: false,
 				registry_ready: false,
+				bundle_ready: false,
 				vc_ready: null,
 			},
 			local: {
@@ -1075,10 +1134,30 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				evidence: ["artifacts/artifact_manifest.json", "artifacts/sample_output.json"],
 			},
 		});
+		writeJson(
+			join(modelArtifacts, "package_gate.json"),
+			JSON.parse(readFileSync(join(runDir, "artifacts", "package_gate.json"), "utf-8")),
+		);
+		advance("write_runtime_inventory");
+
+		const inventory = spawnSync(
+			"python3",
+			[
+				join(PACKAGE_DIR, "scripts", "write_runtime_inventory.py"),
+				"--run-dir",
+				runDir,
+				"--produces",
+				join(runDir, "artifacts", "runtime_inventory.json"),
+				"--model-dir",
+				modelDir,
+			],
+			{ encoding: "utf-8" },
+		);
+		expect(inventory.status, inventory.stderr || inventory.stdout).toBe(0);
 		advance("verdict");
 
 		writeArtifact(runDir, "verdict.json", {
-			status: "passed",
+			status: "partial",
 			model_id: resolved.model_id,
 			model_name: resolved.model_name,
 			package: { profile: "none" },
@@ -1086,6 +1165,7 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				local_ready: true,
 				docker_ready: false,
 				registry_ready: false,
+				bundle_ready: false,
 				vc_ready: null,
 			},
 			build: { success: true, log_path: "artifacts/build.log" },
@@ -1103,15 +1183,28 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				sample_output_path: "artifacts/sample_output.json",
 			},
 		});
-		const terminal = advance("verdict");
-		expect(terminal.completedUnits).toContain("verdict");
+		advance("finalize_model_bundle");
+		const finalize = spawnSync(
+			"python3",
+			[
+				join(PACKAGE_DIR, "scripts", "finalize_model_bundle.py"),
+				"--run-dir",
+				runDir,
+				"--produces",
+				join(runDir, "artifacts", "deployment_ready.json"),
+			],
+			{ encoding: "utf-8" },
+		);
+		expect(finalize.status, finalize.stderr || finalize.stdout).toBe(0);
+		const terminal = advance("finalize_model_bundle");
+		expect(terminal.completedUnits).toContain("finalize_model_bundle");
 
 		ctx.point = "pre_finish";
-		ctx.event = { finish: { status: "success" } } as never;
+		ctx.event = { finish: { status: "incomplete" } } as never;
 		const finish = preFinish(ctx);
 		const patch = statePatch(finish);
 		expect(finish.ok, finish.repair).toBe(true);
-		expect(patch.phase?.status).toBe("success");
+		expect(patch.phase?.status).toBe("incomplete");
 	});
 });
 
@@ -1282,6 +1375,11 @@ describe("sure_onboard new alignment gates", () => {
 
 	it("advances from build_plan only when build_plan.json is executable and VC-free", () => {
 		const { ctx, runDir } = freshCtx("build-plan-pass");
+		seedModelInputResolved(runDir, {
+			model_id: "Qwen/Qwen3-ASR-1.7B",
+			model_name: "Qwen__Qwen3-ASR-1.7B",
+			model_dir: "/tmp/sure/models/Qwen__Qwen3-ASR-1.7B",
+		});
 		seedCheckpoint(runDir, {
 			currentUnit: "build_plan",
 			completedUnits: ["load_model_input", "context_selection", "discover", "classify", "plan"],
@@ -1308,6 +1406,11 @@ describe("sure_onboard new alignment gates", () => {
 
 	it("blocks build_plan when VC/HPC is made a required core step", () => {
 		const { ctx, runDir } = freshCtx("build-plan-vc-block");
+		seedModelInputResolved(runDir, {
+			model_id: "Qwen/Qwen3-ASR-1.7B",
+			model_name: "Qwen__Qwen3-ASR-1.7B",
+			model_dir: "/tmp/sure/models/Qwen__Qwen3-ASR-1.7B",
+		});
 		seedCheckpoint(runDir, {
 			currentUnit: "build_plan",
 			completedUnits: ["load_model_input", "context_selection", "discover", "classify", "plan"],
@@ -2252,7 +2355,7 @@ describe("sure_onboard new alignment gates", () => {
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(true);
 		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
-		expect(checkpoint?.data.currentUnit).toBe("save_artifacts");
+		expect(checkpoint?.data.currentUnit).toBe("package_container");
 	});
 
 	it("accepts contract_result.json with an explicit io_contract", () => {
@@ -2294,7 +2397,7 @@ describe("sure_onboard new alignment gates", () => {
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(true);
 		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
-		expect(checkpoint?.data.currentUnit).toBe("save_artifacts");
+		expect(checkpoint?.data.currentUnit).toBe("package_container");
 	});
 
 	it("generated validate.py template supports the stage CLI and writes validation artifacts", () => {
@@ -2360,6 +2463,7 @@ describe("sure_onboard new alignment gates", () => {
 	it("advances package_gate for package=none when local_ready is true", () => {
 		const { ctx, runDir } = freshCtx("package-gate-none-pass");
 		const modelDir = seedLocalReadyArtifacts(runDir);
+		seedModelInputResolved(runDir, { model_dir: modelDir });
 		seedCheckpoint(runDir, {
 			currentUnit: "package_gate",
 			completedUnits: [
@@ -2384,25 +2488,29 @@ describe("sure_onboard new alignment gates", () => {
 			retries: {},
 		});
 		writeArtifact(runDir, "package_gate.json", {
+			schema: "sure.onboard.package_gate.v2",
 			status: "passed",
 			package_profile: "none",
 			model_dir: modelDir,
 			artifact_manifest_path: join(runDir, "artifacts", "artifact_manifest.json"),
 			readiness: {
 				local_ready: true,
+				container_ready: false,
 				docker_ready: false,
 				registry_ready: false,
+				bundle_ready: false,
 				vc_ready: null,
 			},
 		});
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(true);
 		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
-		expect(checkpoint?.data.currentUnit).toBe("verdict");
+		expect(checkpoint?.data.currentUnit).toBe("write_runtime_inventory");
 	});
 
 	it("blocks package_gate when local_ready is claimed without an artifact manifest", () => {
 		const { ctx, runDir } = freshCtx("package-gate-missing-manifest");
+		seedModelInputResolved(runDir);
 		writeArtifact(runDir, "import_result.json", { import_passed: true });
 		writeArtifact(runDir, "load_result.json", { load_passed: true });
 		writeArtifact(runDir, "infer_result.json", { infer_passed: true });
@@ -2432,12 +2540,16 @@ describe("sure_onboard new alignment gates", () => {
 			retries: {},
 		});
 		writeArtifact(runDir, "package_gate.json", {
+			schema: "sure.onboard.package_gate.v2",
 			status: "passed",
 			package_profile: "none",
+			model_dir: join(runDir, "model-dir"),
 			readiness: {
 				local_ready: true,
+				container_ready: false,
 				docker_ready: false,
 				registry_ready: false,
+				bundle_ready: false,
 				vc_ready: null,
 			},
 		});
@@ -2486,7 +2598,7 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 		expect(result.ok).toBe(true);
 	});
 
-	it("allows the reference adoption helper during SAVE_ARTIFACTS", () => {
+	it("blocks the legacy reference adoption helper during SAVE_ARTIFACTS", () => {
 		const { ctx, runDir } = freshCtx("allow-adopt-reference-model");
 		ctx.point = "pre_tool_call";
 		ctx.event = {
@@ -2521,7 +2633,8 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 			retries: {},
 		});
 		const result = preToolCall(ctx);
-		expect(result.ok).toBe(true);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("not permitted");
 	});
 
 	it("adopts an upstream reference model into a harness-local package-gated model dir", () => {
@@ -2703,6 +2816,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 
 	it("accepts upstream PASSED/steps verdicts semantically without requiring package_gate", () => {
 		const { runDir } = freshCtx("verdict-upstream-passed-steps");
+		seedModelInputResolved(runDir, { deployment_type: "api" });
 		const verdictPath = join(runDir, "artifacts", "verdict.json");
 		writeArtifact(runDir, "verdict.json", {
 			status: "PASSED",
@@ -2731,9 +2845,10 @@ describe("sure_onboard verdict structure compatibility", () => {
 		expect(proc.status, proc.stderr || proc.stdout).toBe(0);
 	});
 
-	it("advances verdict only when package_gate and declared local artifacts agree", () => {
+	it("rejects a success verdict for a non-registry local package", () => {
 		const { ctx, runDir } = freshCtx("verdict-local-ready-pass");
 		const modelDir = seedLocalReadyArtifacts(runDir);
+		seedModelInputResolved(runDir, { model_dir: modelDir });
 		seedCheckpoint(runDir, {
 			currentUnit: "verdict",
 			completedUnits: [
@@ -2759,14 +2874,17 @@ describe("sure_onboard verdict structure compatibility", () => {
 			retries: {},
 		});
 		writeArtifact(runDir, "package_gate.json", {
+			schema: "sure.onboard.package_gate.v2",
 			status: "passed",
 			package_profile: "none",
 			model_dir: modelDir,
 			artifact_manifest_path: join(runDir, "artifacts", "artifact_manifest.json"),
 			readiness: {
 				local_ready: true,
+				container_ready: false,
 				docker_ready: false,
 				registry_ready: false,
+				bundle_ready: false,
 				vc_ready: null,
 			},
 		});
@@ -2795,7 +2913,8 @@ describe("sure_onboard verdict structure compatibility", () => {
 			},
 		});
 		const result = postToolResult(ctx);
-		expect(result.ok).toBe(true);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("local_only");
 	});
 
 	it("accepts verdict artifact paths relative to the repository root", () => {
@@ -2807,6 +2926,14 @@ describe("sure_onboard verdict structure compatibility", () => {
 		const modelArtifacts = join(modelDir, "artifacts");
 		mkdirSync(modelArtifacts, { recursive: true });
 		mkdirSync(artifactsDir, { recursive: true });
+		writeJson(join(artifactsDir, "model_input_resolved.json"), {
+			model_id: "owner/verdict-model",
+			model_name: "verdict-model",
+			model_dir: "sure/models/verdict-model",
+			repo_url: "https://example.test/owner/verdict-model",
+			deployment_type: "api",
+			package_profile: "none",
+		});
 		for (const name of ["model.spec.yaml", "model.py"]) {
 			writeFileSync(join(modelDir, name), `${name}\n`, "utf-8");
 		}
@@ -2814,11 +2941,18 @@ describe("sure_onboard verdict structure compatibility", () => {
 			writeFileSync(join(modelArtifacts, name), `${name}\n`, "utf-8");
 		}
 		writeJson(join(artifactsDir, "package_gate.json"), {
+			schema: "sure.onboard.package_gate.v2",
 			status: "passed",
 			package_profile: "none",
 			model_dir: "sure/models/verdict-model",
 			artifact_manifest_path: "sure/models/verdict-model/artifacts/artifact_manifest.json",
-			readiness: { local_ready: true, docker_ready: false, registry_ready: false },
+			readiness: {
+				local_ready: true,
+				container_ready: false,
+				docker_ready: false,
+				registry_ready: false,
+				bundle_ready: true,
+			},
 		});
 		const produces = join(artifactsDir, "verdict.json");
 		writeJson(produces, {
@@ -2852,6 +2986,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 	it("blocks verdict when a declared sample_output_path does not exist", () => {
 		const { ctx, runDir } = freshCtx("verdict-missing-sample-path");
 		const modelDir = seedLocalReadyArtifacts(runDir);
+		seedModelInputResolved(runDir, { model_dir: modelDir, deployment_type: "api" });
 		seedCheckpoint(runDir, {
 			currentUnit: "verdict",
 			completedUnits: [
@@ -2877,14 +3012,17 @@ describe("sure_onboard verdict structure compatibility", () => {
 			retries: {},
 		});
 		writeArtifact(runDir, "package_gate.json", {
+			schema: "sure.onboard.package_gate.v2",
 			status: "passed",
 			package_profile: "none",
 			model_dir: modelDir,
 			artifact_manifest_path: join(runDir, "artifacts", "artifact_manifest.json"),
 			readiness: {
 				local_ready: true,
+				container_ready: false,
 				docker_ready: false,
 				registry_ready: false,
+				bundle_ready: true,
 				vc_ready: null,
 			},
 		});

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { writeSkillRuntimeBinding } from "../../../../sure/runtime/usage.ts";
 import { advance, type CheckpointData } from "../../../../sure/skills/sure_feed/hooks/checkpoints.ts";
 import { countersFor, postToolResult, preFinish, preToolCall } from "../../../../sure/skills/sure_feed/hooks/index.ts";
 import {
@@ -21,6 +22,7 @@ const SCRIPTS_DIR = join(PACKAGE_DIR, "scripts");
 type StatePatchForTest = {
 	message?: string;
 	counters?: { completed_units?: number; total_units?: number; gate_blocks?: number };
+	checkpoint?: { data: CheckpointData };
 };
 
 function statePatch(result: { state_patch?: unknown }): StatePatchForTest {
@@ -211,6 +213,7 @@ describe("sure_feed state machine", () => {
 			currentUnit: "match_task",
 			completedUnits: ["scan_modelscope"],
 			retries: {},
+			failedArtifactDigests: {},
 		};
 		const next = advance(findUnit("match_task")!, completed);
 		expect(next?.data.currentUnit).toBe("collect_metadata");
@@ -227,9 +230,11 @@ describe("sure_feed state machine", () => {
 			currentUnit: "match_task",
 			completedUnits: ["scan_modelscope"],
 			retries: { match_task: 2 },
+			failedArtifactDigests: { match_task: "old" },
 		};
 		const next = advance(findUnit("match_task")!, completed);
 		expect(next?.data.retries.match_task).toBeUndefined();
+		expect(next?.data.failedArtifactDigests.match_task).toBeUndefined();
 	});
 });
 
@@ -697,6 +702,60 @@ describe("sure_feed postToolResult end-to-end (real hook → gate script → adv
 		expect(checkpoint?.data.currentUnit).toBe("match_task");
 	});
 
+	it("does not consume another retry for unchanged invalid artifact content", () => {
+		const { ctx, runDir } = freshCtx("advance-unchanged-block");
+		writeFileSync(
+			join(runDir, "state.json"),
+			JSON.stringify(
+				{ checkpoint: { data: { currentUnit: "match_task", completedUnits: ["scan_modelscope"], retries: {} } } },
+				null,
+				2,
+			),
+			"utf-8",
+		);
+		writeArtifact(runDir, "match_task_result.json", {
+			candidates: [{ model_id: "m1", match: { matched: true } }],
+		});
+
+		const first = postToolResult(ctx);
+		const firstCheckpoint = statePatch(first).checkpoint;
+		expect(first.ok).toBe(false);
+		expect(firstCheckpoint?.data.retries.match_task).toBe(1);
+		writeFileSync(join(runDir, "state.json"), JSON.stringify({ checkpoint: firstCheckpoint }, null, 2), "utf-8");
+
+		const unchanged = postToolResult({ ...ctx, event: { toolName: "read", isError: false } });
+		const unchangedPatch = statePatch(unchanged);
+		expect(unchanged.ok).toBe(true);
+		expect(unchangedPatch.message).toContain("unchanged artifact content");
+		expect(unchangedPatch.checkpoint?.data.retries.match_task).toBe(1);
+	});
+
+	it("consumes a new retry after invalid artifact content changes", () => {
+		const { ctx, runDir } = freshCtx("advance-changed-block");
+		writeFileSync(
+			join(runDir, "state.json"),
+			JSON.stringify(
+				{ checkpoint: { data: { currentUnit: "match_task", completedUnits: ["scan_modelscope"], retries: {} } } },
+				null,
+				2,
+			),
+			"utf-8",
+		);
+		writeArtifact(runDir, "match_task_result.json", {
+			candidates: [{ model_id: "m1", match: { matched: true } }],
+		});
+		const first = postToolResult(ctx);
+		const firstCheckpoint = statePatch(first).checkpoint;
+		writeFileSync(join(runDir, "state.json"), JSON.stringify({ checkpoint: firstCheckpoint }, null, 2), "utf-8");
+		writeArtifact(runDir, "match_task_result.json", {
+			candidates: [{ model_id: "m1", match: { matched: true, evidence: ["new"] } }],
+		});
+
+		const changed = postToolResult(ctx);
+		expect(changed.ok).toBe(false);
+		expect(statePatch(changed).checkpoint?.data.retries.match_task).toBe(2);
+	});
+
 	it("fails clearly on the third consecutive blocked gate attempt", () => {
 		const { ctx, runDir } = freshCtx("advance-third-block");
 		writeFileSync(
@@ -827,6 +886,38 @@ describe("sure_feed preFinish terminal state", () => {
 	}
 
 	function seedTerminalFeedRun(runDir: string, completedUnits: string[]): void {
+		const runtimeRoot = join(runDir, "test-harness-runtime");
+		const python = join(runtimeRoot, "bin", "python");
+		const manifestPath = join(runtimeRoot, "runtime-manifest.json");
+		mkdirSync(join(runtimeRoot, "bin"), { recursive: true });
+		writeFileSync(python, "#!/bin/sh\n", "utf-8");
+		writeFileSync(
+			manifestPath,
+			JSON.stringify({
+				schema: "sure.harness.runtime.manifest.v1",
+				runtime_id: "sure-harness-test",
+				runtime_type: "harness_python",
+				lock_sha256: "a".repeat(64),
+			}),
+			"utf-8",
+		);
+		writeSkillRuntimeBinding({
+			runDir,
+			skill: "sure_feed",
+			harnessRuntime: {
+				runtime_id: "sure-harness-test",
+				python_executable: python,
+				python_abi: "cp311",
+				python_version: "3.11",
+				lock_sha256: "a".repeat(64),
+				harness_version: "test",
+				manifest_path: manifestPath,
+				runtime_root: runtimeRoot,
+			},
+			harnessRole: "test",
+			modelRuntimeReason: "feed performs no inference",
+			evaluationRuntime: { reason: "feed performs no evaluation" },
+		});
 		writeFileSync(
 			join(runDir, "state.json"),
 			JSON.stringify(
@@ -886,6 +977,7 @@ describe("sure_feed countersFor", () => {
 			currentUnit: "match_task",
 			completedUnits: [],
 			retries: { scan_modelscope: 4, match_task: 2 },
+			failedArtifactDigests: {},
 		};
 		expect(countersFor(data, 0).gate_blocks).toBe(6);
 	});

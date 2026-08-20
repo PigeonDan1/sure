@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Model } from "@earendil-works/pi-ai";
+import type { Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
 import type { ExtensionCommandContext } from "../../src/core/extensions/types.ts";
@@ -115,6 +115,44 @@ function makeContext(options?: {
 	return { ctx, settingsManager, ui };
 }
 
+/** What the probe reports for a reasoning model on the responses protocol. */
+const SOL_PROBE_OUTCOME = {
+	ok: true as const,
+	result: {
+		api: "openai-responses" as const,
+		reasoning: true,
+		thinkingLevelMap: { off: "none", minimal: null, low: null, medium: null, high: "high", xhigh: "xhigh" },
+		supportedLevels: ["xhigh", "high", "off"] as ModelThinkingLevel[],
+		steps: [
+			{ api: "openai-completions" as const, status: 400, verdict: "wrong-protocol" as const, detail: "" },
+			{ api: "openai-responses" as const, status: 200, verdict: "ok" as const, detail: "" },
+		],
+		effortNote: "effort 上游确认:xhigh、high",
+	},
+};
+
+/** What the probe reports for a plain model that does not reason. */
+const PLAIN_PROBE_OUTCOME = {
+	ok: true as const,
+	result: {
+		api: "openai-completions" as const,
+		reasoning: false,
+		supportedLevels: [] as ModelThinkingLevel[],
+		steps: [{ api: "openai-completions" as const, status: 200, verdict: "ok" as const, detail: "" }],
+		effortNote: "effort:上游不接受任何档位,这个模型不做推理",
+	},
+};
+
+/** A stand-in probe that reports a reasoning model on the responses protocol. */
+const solProbe = () => vi.fn(async () => SOL_PROBE_OUTCOME);
+
+/**
+ * A stand-in for the real round trip. These tests fake the transport, so the one live
+ * request /sure_init sends at the end has nothing real to answer it; the E2E suite covers
+ * that request against an actual HTTP server.
+ */
+const okVerify = () => vi.fn(async () => ({ ok: true }));
+
 describe("parseInitArgs", () => {
 	it("parses --option", () => {
 		expect(parseInitArgs("--option kimi-code")).toEqual({ optionId: "kimi-code" });
@@ -146,6 +184,22 @@ describe("parseInitArgs", () => {
 
 	it("keeps the legacy flags working", () => {
 		expect(parseInitArgs("--provider codex --api-key k")).toEqual({ optionId: "codex", apiKey: "k" });
+	});
+
+	it("parses the effort and probe-all flags", () => {
+		const args = parseInitArgs("--option apifusion --model gpt-5.6-sol --effort high --probe-all");
+		expect(args).toMatchObject({
+			optionId: "apifusion",
+			model: "gpt-5.6-sol",
+			effort: "high",
+			probeAll: true,
+		});
+	});
+
+	it("leaves the new flags undefined when they are absent", () => {
+		const args = parseInitArgs("--option codex --model gpt-5.5");
+		expect(args.effort).toBeUndefined();
+		expect(args.probeAll).toBeUndefined();
 	});
 });
 
@@ -208,7 +262,7 @@ describe("runSureInit", () => {
 		expect(existsSync(manifestPath)).toBe(true);
 		const parsed: SureInitManifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
 		expect(parsed.defaultProvider).toBe("kimi-coding");
-		expect(parsed.version).toBe(1);
+		expect(parsed.version).toBe(3);
 
 		expect(settingsManager.getGlobalSettings().defaultProvider).toBe("kimi-coding");
 		expect(settingsManager.getGlobalSettings().defaultModel).toBe("kimi-for-coding");
@@ -359,37 +413,64 @@ describe("runSureInit", () => {
 			expect(result.message).toContain("--model");
 		});
 
-		it("uses --model verbatim for a built-in provider without any network call", async () => {
-			const fetchMock = vi.fn();
-			vi.stubGlobal("fetch", fetchMock);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
-			const result = await runSureInit({
-				ctx,
-				args: "--option claude --api-key sk-1 --model claude-pinned",
-				settingsManager,
-				modelsJsonPath: join(tempDir, "models.json"),
-			});
-			expect(result.success).toBe(true);
-			expect(result.manifest?.defaultProvider).toBe("anthropic");
-			expect(result.manifest?.defaultModel).toBe("claude-pinned");
-			expect(settingsManager.getDefaultModel()).toBe("claude-pinned");
-			expect(fetchMock).not.toHaveBeenCalled();
-		});
-
 		it("lists live models for a built-in provider and lets the user pick", async () => {
 			vi.stubGlobal(
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "claude-live" }] })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, cwd: tempDir });
+			const modelsPath = join(tempDir, "models.json");
+			// Needs the file-backed registry (not ModelRegistry.inMemory) so that ctx.modelRegistry.refresh()
+			// after the probe actually re-reads what applyProbedModel just wrote to modelsPath.
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
 			ui.select
 				.mockResolvedValueOnce("Anthropic Claude: Standard Anthropic API → anthropic")
 				.mockResolvedValueOnce("claude-live");
 			ui.input.mockResolvedValueOnce("sk-1");
-			const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: join(tempDir, "models.json") });
+			const probe = solProbe();
+			const result = await runSureInit({
+				ctx,
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe,
+				verify: okVerify(),
+			});
 			expect(result.success).toBe(true);
 			expect(result.manifest?.defaultModel).toBe("claude-live");
 			expect(result.message).toContain("live");
+			// Pins what the built-in path hands to the probe: the anthropic catalog's baseUrl,
+			// the key ensureAuth just stored via ui.input, and the picked model id.
+			expect(probe).toHaveBeenCalledWith(
+				{ baseUrl: "https://api.anthropic.com", apiKey: "sk-1", modelId: "claude-live" },
+				undefined,
+			);
+			// The deleted "selects Sol with Luna absent" test used to carry these two for the
+			// built-in path: the annotation landed on disk, and the registry sees it after refresh.
+			expect(JSON.parse(readFileSync(modelsPath, "utf-8")).providers.anthropic.models[0]).toMatchObject({
+				id: "claude-live",
+				api: "openai-responses",
+			});
+			expect(ctx.modelRegistry.find("anthropic", "claude-live")?.api).toBe("openai-responses");
+		});
+
+		it("puts the built-in default model first in the picker", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => Response.json({ data: [{ id: "gpt-5.6-terra" }, { id: "gpt-5.6-sol" }] })),
+			);
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, cwd: tempDir });
+			ui.select
+				.mockResolvedValueOnce("OpenAI GPT: Standard OpenAI API → openai")
+				.mockImplementationOnce(async (_title: string, choices: string[]) => choices[0]);
+			ui.input.mockResolvedValueOnce("sk-1");
+			const result = await runSureInit({
+				ctx,
+				settingsManager,
+				modelsJsonPath: join(tempDir, "models.json"),
+				probe: solProbe(),
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(true);
+			expect(result.manifest?.defaultModel).toBe("gpt-5.6-sol");
 		});
 
 		it("falls back to the built-in catalog when the live query fails", async () => {
@@ -435,15 +516,23 @@ describe("runSureInit", () => {
 			ui.select
 				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
 				.mockResolvedValueOnce("g2");
-			const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: modelsPath });
+			const result = await runSureInit({
+				ctx,
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
+			});
 			expect(result.success).toBe(true);
 			expect(result.manifest?.defaultProvider).toBe("relay");
 			expect(result.manifest?.defaultModel).toBe("g2");
 			const rewritten = JSON.parse(readFileSync(modelsPath, "utf-8"));
-			expect(rewritten.providers.relay.models).toEqual([{ id: "g1" }, { id: "g2" }]);
+			expect(rewritten.providers.relay.models.map((model: { id: string }) => model.id)).toEqual(["g1", "g2"]);
+			expect(rewritten.providers.relay.models[0]).toEqual({ id: "g1" });
+			expect(rewritten.providers.relay.models[1]).toMatchObject({ id: "g2", api: "openai-responses" });
 		});
 
-		it("offers the cached list when the gateway live query fails and does not rewrite the file", async () => {
+		it("offers the cached list when the gateway live query fails and keeps that list on disk", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			const original = `${JSON.stringify(
 				{
@@ -468,10 +557,20 @@ describe("runSureInit", () => {
 			ui.select
 				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
 				.mockResolvedValueOnce("cached-1");
-			const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: modelsPath });
+			const result = await runSureInit({
+				ctx,
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
+			});
 			expect(result.success).toBe(true);
 			expect(result.message).toContain("cached");
-			expect(readFileSync(modelsPath, "utf-8")).toBe(original);
+			// The failed live query must not replace the cached list; only the probed model gains an annotation.
+			const written = JSON.parse(readFileSync(modelsPath, "utf-8"));
+			expect(written.providers.relay.models.map((model: { id: string }) => model.id)).toEqual(["cached-1"]);
+			expect(written.providers.relay.models[0]).toMatchObject({ id: "cached-1", api: "openai-responses" });
+			expect(written.providers.relay.apiKey).toBe("sk-relay");
 		});
 
 		it("leaves models.json untouched and skips refresh when the user cancels the model picker", async () => {
@@ -554,6 +653,8 @@ describe("runSureInit", () => {
 				args: "--option relay --model g9",
 				settingsManager,
 				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
 			});
 			expect(result.success).toBe(true);
 			expect(result.manifest?.defaultModel).toBe("g9");
@@ -589,48 +690,21 @@ describe("runSureInit", () => {
 				args: "--option relay --model new-id",
 				settingsManager,
 				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
 			});
 			expect(result.success).toBe(true);
 			expect(result.manifest?.defaultModel).toBe("new-id");
 			expect(fetchMock).not.toHaveBeenCalled();
 			const written = JSON.parse(readFileSync(modelsPath, "utf-8"));
-			expect(written.providers.relay.models).toEqual([{ id: "cached-1" }, { id: "new-id" }]);
+			expect(written.providers.relay.models.map((model: { id: string }) => model.id)).toEqual([
+				"cached-1",
+				"new-id",
+			]);
+			expect(written.providers.relay.models[0]).toEqual({ id: "cached-1" });
+			expect(written.providers.relay.models[1]).toMatchObject({ id: "new-id", api: "openai-responses" });
 			expect(written.providers.relay.apiKey).toBe("sk-relay");
 			expect(refreshSpy).toHaveBeenCalled();
-		});
-
-		it("does not rewrite models.json when --model for an existing gateway is already cached", async () => {
-			const modelsPath = join(tempDir, "models.json");
-			const original = `${JSON.stringify(
-				{
-					providers: {
-						relay: {
-							baseUrl: "https://gw.example.com/v1",
-							api: "openai-completions",
-							apiKey: "sk-relay",
-							models: [{ id: "cached-1" }],
-						},
-					},
-				},
-				null,
-				2,
-			)}\n`;
-			writeFileSync(modelsPath, original, "utf-8");
-			const fetchMock = vi.fn();
-			vi.stubGlobal("fetch", fetchMock);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
-			const refreshSpy = vi.spyOn(ctx.modelRegistry, "refresh");
-			const result = await runSureInit({
-				ctx,
-				args: "--option relay --model cached-1",
-				settingsManager,
-				modelsJsonPath: modelsPath,
-			});
-			expect(result.success).toBe(true);
-			expect(result.manifest?.defaultModel).toBe("cached-1");
-			expect(fetchMock).not.toHaveBeenCalled();
-			expect(readFileSync(modelsPath, "utf-8")).toBe(original);
-			expect(refreshSpy).not.toHaveBeenCalled();
 		});
 
 		it("lists every missing flag for a non-interactive gateway creation", async () => {
@@ -671,11 +745,15 @@ describe("runSureInit", () => {
 				args: "--option custom --name relay --base-url https://gw.example.com/v1 --api-key sk-1 --model b",
 				settingsManager,
 				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
 			});
 			expect(result.success).toBe(true);
 			expect(result.manifest?.defaultProvider).toBe("relay");
 			const written = JSON.parse(readFileSync(modelsPath, "utf-8"));
-			expect(written.providers.relay.models).toEqual([{ id: "a" }, { id: "b" }]);
+			expect(written.providers.relay.models.map((model: { id: string }) => model.id)).toEqual(["a", "b"]);
+			expect(written.providers.relay.models[0]).toEqual({ id: "a" });
+			expect(written.providers.relay.models[1]).toMatchObject({ id: "b", api: "openai-responses" });
 			expect(written.providers.relay.apiKey).toBe("sk-1");
 		});
 
@@ -712,12 +790,451 @@ describe("runSureInit", () => {
 				.mockResolvedValueOnce("https://gw.example.com/v1")
 				.mockResolvedValueOnce("sk-1")
 				.mockResolvedValueOnce("m1");
-			const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: modelsPath });
+			const result = await runSureInit({
+				ctx,
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
+			});
 			expect(result.success).toBe(true);
 			expect(result.manifest?.defaultModel).toBe("m1");
 			expect(result.message).toContain("manually");
 			const written = JSON.parse(readFileSync(modelsPath, "utf-8"));
-			expect(written.providers.relay.models).toEqual([{ id: "m1" }]);
+			expect(written.providers.relay.models.map((model: { id: string }) => model.id)).toEqual(["m1"]);
+			expect(written.providers.relay.models[0]).toMatchObject({ id: "m1", api: "openai-responses" });
+		});
+	});
+
+	describe("runSureInit with capability probing", () => {
+		function writeGatewayFile(modelsPath: string, modelIds: string[] = ["gpt-5.6-sol"]) {
+			writeFileSync(
+				modelsPath,
+				`${JSON.stringify(
+					{
+						providers: {
+							apifusion: {
+								baseUrl: "https://gw.example.com/v1",
+								api: "openai-completions",
+								models: modelIds.map((id) => ({ id })),
+							},
+						},
+					},
+					null,
+					2,
+				)}\n`,
+				"utf-8",
+			);
+		}
+
+		it("asks for the effort and writes the probed protocol for a gateway", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => Response.json({ data: [{ id: "gpt-5.6-sol", display_name: "GPT-5.6 Sol" }] })),
+			);
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			ui.select
+				.mockResolvedValueOnce("apifusion (custom): https://gw.example.com/v1, 1 models")
+				.mockResolvedValueOnce("gpt-5.6-sol — GPT-5.6 Sol")
+				.mockResolvedValueOnce("xhigh");
+			ui.input.mockResolvedValueOnce("sk-1");
+
+			const verify = okVerify();
+			const result = await runSureInit({
+				ctx,
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify,
+			});
+
+			expect(result.success).toBe(true);
+			// The level the user picked has to be the level the round trip actually sends.
+			expect(verify).toHaveBeenCalledWith(
+				expect.objectContaining({ provider: "apifusion", modelId: "gpt-5.6-sol", thinkingLevel: "xhigh" }),
+			);
+			expect(result.manifest).toMatchObject({
+				defaultProvider: "apifusion",
+				defaultModel: "gpt-5.6-sol",
+				defaultApi: "openai-responses",
+				defaultThinkingLevel: "xhigh",
+				supportedThinkingLevels: ["xhigh", "high", "off"],
+				version: 3,
+			});
+			expect(result.manifest?.capabilityProbe?.steps).toHaveLength(2);
+			expect(settingsManager.getDefaultThinkingLevel()).toBe("xhigh");
+			// If the effort question were never asked, applyProbedModel's headless fallback
+			// (medium clamped upward within the supported levels) also lands on "high", so the
+			// assertions above alone cannot tell "asked and answered xhigh" apart from "never
+			// asked". Pin the question itself: the third select call must be the effort prompt
+			// with exactly the label list init-apply.ts's levelLabel builds from supportedLevels.
+			expect(ui.select).toHaveBeenNthCalledWith(3, expect.stringContaining("effort"), [
+				"xhigh",
+				"high",
+				"off(不推理)",
+			]);
+			// The TUI only ever shows the last notification, so every probe note has to reach the
+			// caller through the result message instead.
+			expect(result.message).toContain("openai-responses");
+			expect(result.message).toContain("effort 上游确认");
+			expect(result.message).toContain("真实通路验证通过");
+			expect(ui.notify).not.toHaveBeenCalledWith(expect.stringContaining("effort"), expect.anything());
+			const written = JSON.parse(readFileSync(modelsPath, "utf-8"));
+			expect(written.providers.apifusion.models[0]).toMatchObject({
+				id: "gpt-5.6-sol",
+				api: "openai-responses",
+				reasoning: true,
+			});
+		});
+
+		it("fails when the gateway rejects the client", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-luna",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: vi.fn(async () => ({
+					ok: false as const,
+					error: { kind: "client-rejected" as const, detail: "客户端异常", steps: [] },
+				})),
+			});
+			expect(result.success).toBe(false);
+			expect(result.message).toContain("客户端");
+			expect(result.message).toContain("gpt-5.6-luna");
+			// A failed probe must leave nothing behind: no default written to settings, no manifest on disk.
+			expect(settingsManager.getDefaultModel()).toBeUndefined();
+			expect(existsSync(join(tempDir, ".sure", "init.json"))).toBe(false);
+		});
+
+		it("does not probe a model the built-in catalog already knows", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			const probe = vi.fn();
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option claude --api-key sk-1 --model claude-opus-4-8",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: probe as never,
+			});
+			expect(result.success).toBe(true);
+			expect(probe).not.toHaveBeenCalled();
+			expect(result.manifest?.defaultApi).toBeUndefined();
+		});
+
+		it("still probes when --model hits the cached list", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const probe = solProbe();
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe,
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(true);
+			expect(probe).toHaveBeenCalledTimes(1);
+			// The cached-list path has to hand the probe the same target as the live one.
+			// applyProbedModel passes no probe options, so the second argument is undefined here;
+			// expect.anything() would not match it.
+			expect(probe).toHaveBeenCalledWith(
+				expect.objectContaining({ modelId: "gpt-5.6-sol", apiKey: "sk-1" }),
+				undefined,
+			);
+			expect(result.manifest?.defaultThinkingLevel).toBe("high");
+			expect(result.manifest?.defaultApi).toBe("openai-responses");
+		});
+
+		it("refuses to run without a key it can probe with", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --model gpt-5.6-sol",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(false);
+			expect(result.message).toContain("--api-key");
+		});
+
+		it("hands the typed key to the probe when the live list fails", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => new Response("down", { status: 502 })),
+			);
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			ui.input.mockResolvedValueOnce("sk-typed");
+			ui.select
+				.mockResolvedValueOnce("apifusion (custom): https://gw.example.com/v1, 1 models")
+				.mockResolvedValueOnce("gpt-5.6-sol")
+				.mockResolvedValueOnce("high");
+			const probe = solProbe();
+			const result = await runSureInit({
+				ctx,
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe,
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(true);
+			// The cached fallback used to drop the typed key: it was neither stored nor handed to
+			// the probe, so the probe ran unauthenticated and then blamed the key.
+			expect(probe).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "sk-typed" }), undefined);
+			expect(JSON.parse(readFileSync(modelsPath, "utf-8")).providers.apifusion.apiKey).toBe("sk-typed");
+		});
+
+		it("lets --api-key replace a stale stored key", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeFileSync(
+				modelsPath,
+				`${JSON.stringify(
+					{
+						providers: {
+							apifusion: {
+								baseUrl: "https://gw.example.com/v1",
+								api: "openai-completions",
+								apiKey: "sk-old",
+								models: [{ id: "gpt-5.6-sol" }],
+							},
+						},
+					},
+					null,
+					2,
+				)}\n`,
+				"utf-8",
+			);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const probe = solProbe();
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-new --model gpt-5.6-sol",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe,
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(true);
+			// Every failure message tells the user to rerun /sure_init with another key, which
+			// only works if an explicit --api-key outranks the dead one already on disk.
+			expect(probe).toHaveBeenCalledWith(expect.objectContaining({ apiKey: "sk-new" }), undefined);
+			expect(JSON.parse(readFileSync(modelsPath, "utf-8")).providers.apifusion.apiKey).toBe("sk-new");
+		});
+
+		it("sets the clamped level in print mode where the UI is a no-op", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => Response.json({ data: [{ id: "gpt-5.6-sol" }] })),
+			);
+			// print/json mode reports hasUI true and answers every dialog with undefined, so the
+			// effort question is asked and nobody picks. That must clamp, not leave the level unset.
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			ui.input.mockResolvedValueOnce("sk-1");
+			ui.select
+				.mockResolvedValueOnce("apifusion (custom): https://gw.example.com/v1, 1 models")
+				.mockResolvedValueOnce("gpt-5.6-sol");
+			const result = await runSureInit({
+				ctx,
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(true);
+			expect(ui.select).toHaveBeenCalledTimes(3);
+			expect(result.manifest?.defaultThinkingLevel).toBe("high");
+			expect(settingsManager.getDefaultThinkingLevel()).toBe("high");
+		});
+
+		it("rejects an effort upstream never confirmed", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol --effort medium",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(false);
+			expect(result.message).toContain("xhigh");
+		});
+
+		it("fails init when the real round trip does not come back", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: vi.fn(async () => ({ ok: false, detail: "HTTP 502" })),
+			});
+			expect(result.success).toBe(false);
+			expect(result.message).toContain("502");
+			// The annotation stays (it is measured), but nothing that points a session at a model
+			// that cannot answer may be written.
+			expect(settingsManager.getDefaultModel()).toBeUndefined();
+			expect(existsSync(join(tempDir, ".sure", "init.json"))).toBe(false);
+			expect(result.message).toContain("默认模型没有切换");
+		});
+
+		it("reports a thrown round trip as a failure", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: vi.fn(async () => {
+					throw new Error("boom");
+				}),
+			});
+			expect(result.success).toBe(false);
+			expect(result.message).toContain("boom");
+			expect(settingsManager.getDefaultModel()).toBeUndefined();
+		});
+
+		it("--probe-all annotates the rest of the table without re-probing the chosen model", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath, ["gpt-5.6-sol", "deepseek-chat", "glm-5.1"]);
+			const probed: string[] = [];
+			const probe = vi.fn(async (target: { modelId: string }) => {
+				probed.push(target.modelId);
+				return target.modelId === "gpt-5.6-sol" ? SOL_PROBE_OUTCOME : PLAIN_PROBE_OUTCOME;
+			});
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol --probe-all",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: probe as never,
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(true);
+			expect(probe).toHaveBeenCalledTimes(3);
+			expect(probed.filter((id) => id === "gpt-5.6-sol")).toEqual(["gpt-5.6-sol"]);
+			expect([...probed].sort()).toEqual(["deepseek-chat", "glm-5.1", "gpt-5.6-sol"]);
+			expect(result.message).toContain("标注 2 个");
+			const written = JSON.parse(readFileSync(modelsPath, "utf-8"));
+			expect(written.providers.apifusion.models.map((model: { api?: string }) => model.api)).toEqual([
+				"openai-responses",
+				"openai-completions",
+				"openai-completions",
+			]);
+		});
+
+		it("--probe-all does not fail init when the table run aborts", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath, ["gpt-5.6-sol", "deepseek-chat", "glm-5.1"]);
+			const probe = vi.fn(async (target: { modelId: string }) =>
+				target.modelId === "gpt-5.6-sol"
+					? SOL_PROBE_OUTCOME
+					: { ok: false as const, error: { kind: "bad-key" as const, detail: "Invalid token", steps: [] } },
+			);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol --probe-all",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: probe as never,
+				verify: okVerify(),
+			});
+			// The chosen model is already probed, written and verified; the table is a bonus.
+			expect(result.success).toBe(true);
+			expect(result.message).toContain("整表探测中止");
+			expect(settingsManager.getDefaultModel()).toBe("gpt-5.6-sol");
+		});
+
+		it("--probe-all is refused for a built-in provider", async () => {
+			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option claude --api-key sk-1 --model claude-opus-4-8 --probe-all",
+				settingsManager,
+				modelsJsonPath: join(tempDir, "models.json"),
+				probe: vi.fn() as never,
+			});
+			expect(result.success).toBe(false);
+			expect(result.message).toContain("只对中转站有效");
+		});
+
+		it("--probe-all is refused for a built-in provider even when the model was probed", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => Response.json({ data: [{ id: "claude-live" }] })),
+			);
+			const modelsPath = join(tempDir, "models.json");
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			ui.select
+				.mockResolvedValueOnce("Anthropic Claude: Standard Anthropic API → anthropic")
+				.mockResolvedValueOnce("claude-live");
+			ui.input.mockResolvedValueOnce("sk-1");
+			const result = await runSureInit({
+				ctx,
+				args: "--probe-all",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(false);
+			expect(result.message).toContain("只对中转站有效");
+		});
+
+		it("refuses --effort for a model the built-in catalog already knows", async () => {
+			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option claude --api-key sk-1 --model claude-opus-4-8 --effort high",
+				settingsManager,
+				modelsJsonPath: join(tempDir, "models.json"),
+				probe: vi.fn() as never,
+			});
+			expect(result.success).toBe(false);
+			expect(result.message).toContain("--effort 只对探测过的模型有效");
+		});
+
+		it("passes --effort through to the probe layer and records it", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const { ctx, settingsManager, ui } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol --effort xhigh",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify: okVerify(),
+			});
+			expect(result.success).toBe(true);
+			expect(result.manifest?.defaultThinkingLevel).toBe("xhigh");
+			expect(settingsManager.getDefaultThinkingLevel()).toBe("xhigh");
+			expect(ui.select).not.toHaveBeenCalled();
 		});
 	});
 });

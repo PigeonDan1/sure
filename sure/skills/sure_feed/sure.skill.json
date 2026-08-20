@@ -13,6 +13,12 @@
 	},
 	"artifacts": [
 		{
+			"type": "runtime_binding",
+			"path": "artifacts/runtime_binding.json",
+			"required": true,
+			"description": "Formal three-runtime responsibility declaration: sure_feed binds the common Harness Runtime and explicitly marks Model/Evaluation runtimes as not required."
+		},
+		{
 			"type": "model_input",
 			"path": "artifacts/model_input.yaml",
 			"required": true,
@@ -39,7 +45,7 @@
 	],
 	"ui": {
 		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
-		"artifactTypes": ["model_input", "feed_report", "handoff_manifest", "model_input_result", "scan_result", "rank_select_result"],
+		"artifactTypes": ["runtime_binding", "model_input", "feed_report", "handoff_manifest", "model_input_result", "scan_result", "rank_select_result"],
 		"defaultExpandedSections": ["diagnostics", "artifacts"]
 	}
 }

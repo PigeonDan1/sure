@@ -4,10 +4,18 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAgentSessionServices } from "../../src/core/agent-session-services.ts";
-import type { ExtensionFactory, ExtensionMode, ExtensionUIContext } from "../../src/core/extensions/index.ts";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionFactory,
+	ExtensionMode,
+	ExtensionUIContext,
+} from "../../src/core/extensions/index.ts";
 import { emitSessionShutdownEvent } from "../../src/core/extensions/runner.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
+import { switchToInitializedModel } from "../../src/core/sure/extension.ts";
 import { sureExtension } from "../../src/core/sure/index.ts";
+import type { SureInitManifest } from "../../src/core/sure/init-types.ts";
 import { runPrintMode } from "../../src/modes/print-mode.ts";
 import { createHarness, getUserTexts, type Harness } from "./harness.ts";
 
@@ -335,14 +343,40 @@ describe("Sure extension", () => {
 		cleanups.push(harness.cleanup);
 		linkRepositorySkill(harness.tempDir, "sure_eval");
 		writeEvalModel(harness.tempDir);
+		const datasetsRoot = join(harness.tempDir, "data", "datasets");
+		const jsonlDir = join(datasetsRoot, "sure_benchmark", "jsonl");
+		mkdirSync(jsonlDir, { recursive: true });
+		const datasetId = "aispeech_phy_librispeech-test-clean__v1.0.1";
+		writeFileSync(
+			join(jsonlDir, `${datasetId}.jsonl`),
+			`${JSON.stringify({
+				key: "utt1",
+				path: "utt1.wav",
+				target: "hello",
+				task: "ASR",
+				language: "en",
+				dataset: datasetId,
+				metadata: {
+					source: "aispeech_ds_pool",
+					source_dataset_root: "/srv/sure/datasets/group/store/ds_pool/example-librispeech-test-clean",
+					source_dataset_name: "aispeech_phy_librispeech-test-clean",
+					version_id: "v1.0.1",
+				},
+			})}\n`,
+			"utf-8",
+		);
 		const outputDir = join(harness.tempDir, "custom-eval-output");
 		harness.setResponses([fauxAssistantMessage("working")]);
-
-		await harness.session.prompt(
-			`/sure_eval model=demo-asr datasets=librispeech_clean__v1.0.1__asr max_samples=1 metrics=wer output_dir=${outputDir}`,
-		);
-		await harness.session.agent.waitForIdle();
-		await waitForCondition(() => getUserTexts(harness).length > 0);
+		process.env.SURE_EVAL_DATASETS_ROOT = datasetsRoot;
+		try {
+			await harness.session.prompt(
+				`/sure_eval model=demo-asr datasets=${datasetId} max_samples=1 metrics=wer output_dir=${outputDir}`,
+			);
+			await harness.session.agent.waitForIdle();
+			await waitForCondition(() => getUserTexts(harness).length > 0);
+		} finally {
+			delete process.env.SURE_EVAL_DATASETS_ROOT;
+		}
 
 		const runId = getOnlyRunId(harness.tempDir);
 		const resolvedInput = JSON.parse(
@@ -1185,36 +1219,72 @@ describe("Sure extension", () => {
 		expect(harness.session.model?.provider).toBe("kimi-coding");
 		expect(harness.session.model?.id).toBe("kimi-for-coding");
 
-		expect(notifications).toContainEqual({ message: "Switched to kimi-coding/kimi-for-coding.", type: "info" });
+		// The TUI rewrites the status line on every consecutive info notify, so the switch used
+		// to erase everything init reported. Both have to arrive in the one info notify.
+		const lastInfo = notifications.filter((entry) => entry.type === "info").at(-1);
+		expect(lastInfo?.message).toContain("SURE initialized");
+		expect(lastInfo?.message).toContain("Switched to kimi-coding/kimi-for-coding.");
+	});
+});
+
+describe("switchToInitializedModel", () => {
+	function makeSwitchContext(found: boolean) {
+		const notify = vi.fn();
+		const ctx = {
+			ui: { notify },
+			modelRegistry: {
+				refresh: vi.fn(),
+				find: vi.fn(() => (found ? { provider: "apifusion", id: "gpt-5.6-sol" } : undefined)),
+			},
+		} as unknown as ExtensionCommandContext;
+		return { ctx, notify };
+	}
+
+	it("applies the level init measured and returns the line instead of notifying", async () => {
+		const { ctx, notify } = makeSwitchContext(true);
+		const setThinkingLevel = vi.fn();
+		const pi = { setModel: vi.fn(async () => true), setThinkingLevel } as unknown as ExtensionAPI;
+
+		const line = await switchToInitializedModel(pi, ctx, {
+			defaultProvider: "apifusion",
+			defaultModel: "gpt-5.6-sol",
+			defaultThinkingLevel: "high",
+		} as SureInitManifest);
+
+		// Old docs said「init 记 high 但会话停在 medium」: the switch never applied the level.
+		expect(setThinkingLevel).toHaveBeenCalledWith("high");
+		expect(line).toBe("Switched to apifusion/gpt-5.6-sol.");
+		expect(notify).not.toHaveBeenCalled();
 	});
 
-	it("degrades to a hint notify, without switching, when the initialized model can't be resolved", async () => {
-		const notifications: Array<{ message: string; type: "info" | "warning" | "error" | undefined }> = [];
-		const harness = await createSureHarness({
-			uiContext: createNotifyCapturingUiContext((message, type) => notifications.push({ message, type })),
-		});
-		cleanups.push(harness.cleanup);
+	it("leaves the session level alone when init recorded none", async () => {
+		const { ctx } = makeSwitchContext(true);
+		const setThinkingLevel = vi.fn();
+		const pi = { setModel: vi.fn(async () => true), setThinkingLevel } as unknown as ExtensionAPI;
 
-		const previousModel = harness.session.model;
+		const line = await switchToInitializedModel(pi, ctx, {
+			defaultProvider: "apifusion",
+			defaultModel: "gpt-5.6-sol",
+		} as SureInitManifest);
 
-		await harness.session.prompt("/sure_init --option kimi-code --api-key sk-test-123 --model not-a-real-model-id");
-		await harness.session.agent.waitForIdle();
+		expect(setThinkingLevel).not.toHaveBeenCalled();
+		expect(line).toBe("Switched to apifusion/gpt-5.6-sol.");
+	});
 
-		// Init itself still succeeds: the manifest records the (unresolvable) chosen model.
-		const manifestPath = join(harness.tempDir, ".sure", "init.json");
-		const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
-		expect(manifest.defaultProvider).toBe("kimi-coding");
-		expect(manifest.defaultModel).toBe("not-a-real-model-id");
+	it("warns and returns nothing when the model does not resolve", async () => {
+		const { ctx, notify } = makeSwitchContext(false);
+		const setThinkingLevel = vi.fn();
+		const pi = { setModel: vi.fn(async () => true), setThinkingLevel } as unknown as ExtensionAPI;
 
-		// But the session's active model is left untouched, since there's nothing to switch to.
-		expect(harness.session.model?.provider).toBe(previousModel?.provider);
-		expect(harness.session.model?.id).toBe(previousModel?.id);
+		const line = await switchToInitializedModel(pi, ctx, {
+			defaultProvider: "apifusion",
+			defaultModel: "gpt-5.6-sol",
+			defaultThinkingLevel: "high",
+		} as SureInitManifest);
 
-		expect(notifications).toContainEqual({
-			message:
-				'Default model set to kimi-coding/not-a-real-model-id. Run "/model kimi-coding/not-a-real-model-id" to switch once credentials are configured.',
-			type: "warning",
-		});
+		expect(line).toBeUndefined();
+		expect(setThinkingLevel).not.toHaveBeenCalled();
+		expect(notify).toHaveBeenCalledWith(expect.stringContaining("Default model set to"), "warning");
 	});
 });
 

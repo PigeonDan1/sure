@@ -1,30 +1,48 @@
+# Dependencies and builds
 node_modules/
 dist/
+coverage/
+*.tsbuildinfo
 
-.pi/
-.sure/
-.codegraph/
-.env
-.env.*
-!.env.example
+# Tool and runtime state
+/.pi/
+/.sure/
+/.codegraph/
+/.pytest_cache/
+/.mypy_cache/
+/.ruff_cache/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local configuration and credentials
+**/.env
+**/.env.*
+!**/.env.example
+/config/*.local.yaml
+/config/local/
+**/auth.json
+**/models.json
 id_rsa
 id_rsa.pub
 *.pem
 *.key
-data/
-results/
-sure/skills/sure_eval/results/
-sure/handoffs/
-sure/models/*
-!sure/models/
-!sure/models/whisper_tiny/
-!sure/models/whisper_tiny/**
+*.p12
+*.pfx
 
-*.pyc
-__pycache__/
-.venv/
-venv/
-*.log
+# Repository-local datasets and generated results
+/data/
+/results/
+/results_*/
+/events.jsonl
+/sure/results/
+/sure/skills/sure_eval/results/
+/sure/.runtime/
+/sure/handoffs/
+
+# Models and large artifacts
+/sure/models/*
 *.pt
 *.pth
 *.ckpt
@@ -37,6 +55,11 @@ venv/
 *.npz
 *.tar
 *.tar.gz
-.nfs*
+*.zip
 
+# Logs and temporary files
+*.log
+.nfs*
+/.public-export/
+/.public-export-second/
 packages/coding-agent/test/suite/tmp-*/

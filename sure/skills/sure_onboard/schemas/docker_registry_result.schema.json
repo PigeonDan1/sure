@@ -1,0 +1,20 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "docker_registry_result.schema.json",
+	"title": "SURE Docker registry result",
+	"type": "object",
+	"required": ["schema", "status"],
+	"properties": {
+		"schema": { "const": "sure.onboard.docker_registry_result.v2" },
+		"generated_at": { "type": "string" },
+		"status": { "enum": ["passed", "failed", "blocked", "skipped"] },
+		"reason": { "type": "string" },
+		"target_image": { "type": "string" },
+		"target_image_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+		"target_image_ref": { "type": "string" },
+		"push": { "type": "object" },
+		"pull_verify": { "type": "object" },
+		"evidence": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": true
+}

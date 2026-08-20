@@ -1,292 +1,305 @@
 #!/usr/bin/env python3
-"""Resolve an existing prediction source for /sure_reval.
-
-The source may be:
-- a canonical model eval run directory containing predictions/
-- a compatibility results/<model>/<protocol>/ directory containing predictions/
-- a bare predictions/ directory
-
-This script only discovers immutable prediction inputs. It never treats old
-evaluation reports, metric artifacts, or sample reports as reusable outputs.
-"""
+"""Resolve an exact, approved NFS prediction set for /sure_reval."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from dataset_alias import resolve_dataset_alias
+from resolve_model_dir import APPROVED_MODELS_ROOT, resolve_approved_model
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "site" / "loader.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.site.loader import load_site_policy
+
+
+_configured_policy = load_site_policy()
+APPROVED_RESULTS_ROOT = (
+    Path(_configured_policy["policy"]["storage"]["approved_results_roots"][0])
+    if _configured_policy
+    else None
+)
+ALLOWED_PROTOCOLS = frozenset({"standard_system", "strict_core"})
+DATASET_ID_RE = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)__(?P<version>v[0-9][A-Za-z0-9.-]*)$")
+LEGACY_VERSION_RE = re.compile(
+    r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*?)(?:__|_)(?P<version>v[0-9][A-Za-z0-9.-]*)(?:__[A-Za-z0-9_-]+)?$"
+)
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if not path.is_file():
-        return rows
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if not line.strip():
-            continue
-        try:
-            value = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            rows.append(value)
-    return rows
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
-def _read_yaml(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    try:
-        value = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return value if isinstance(value, dict) else {}
+def _count_nonempty_lines(path: Path) -> int:
+    with path.open(encoding="utf-8", errors="replace") as handle:
+        return sum(1 for line in handle if line.strip())
 
 
 def _split_values(values: list[str] | None) -> list[str]:
     out: list[str] = []
     for value in values or []:
         for item in str(value).replace(",", " ").split():
-            item = item.strip()
             if item and item not in out:
                 out.append(item)
     return out
 
 
-def _source_kind(source: Path) -> tuple[str, Path]:
-    if source.name == "predictions":
-        return "predictions_dir", source
-    if (source / "predictions").is_dir():
-        if (source / "evaluation_payload.json").is_file() or (source / "main_agent_run_report.json").is_file():
-            return "run_dir", source / "predictions"
-        return "results_dir", source / "predictions"
-    raise FileNotFoundError(f"source does not contain a predictions directory: {source}")
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
-def _prediction_files(predictions_dir: Path) -> dict[str, dict[str, str | None]]:
-    files: dict[str, dict[str, str | None]] = {}
-    for txt in sorted(predictions_dir.glob("*.txt")):
-        dataset = txt.stem
-        files.setdefault(dataset, {"txt": None, "jsonl": None})["txt"] = str(txt.resolve())
-    for jsonl in sorted(predictions_dir.glob("*.jsonl")):
-        dataset = jsonl.stem
-        files.setdefault(dataset, {"txt": None, "jsonl": None})["jsonl"] = str(jsonl.resolve())
-    return files
-
-
-def _resolve_relative_path(value: str, anchors: list[Path]) -> str:
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return str(path.resolve()) if path.exists() else str(path)
-    for anchor in anchors:
-        candidate = anchor / path
-        if candidate.exists():
-            return str(candidate.resolve())
-    return value
-
-
-def _existing_file(path: Path) -> str:
-    return str(path.resolve()) if path.is_file() else ""
-
-
-def _provenance_candidates(
-    *,
-    source: Path,
-    kind: str,
-    predictions_dir: Path,
-    canonical_run_dir: str,
-    model_dir: str,
-) -> dict[str, str]:
-    anchors: list[Path] = []
-    if canonical_run_dir:
-        anchors.append(Path(canonical_run_dir).expanduser())
-    if kind != "predictions_dir":
-        anchors.append(source)
-    anchors.append(predictions_dir.parent)
-
-    source_protocol = ""
-    source_generation_status = ""
-    for anchor in anchors:
-        if not source_protocol:
-            source_protocol = _existing_file(anchor / "protocol.yaml")
-        if not source_generation_status:
-            source_generation_status = _existing_file(anchor / "prediction_generation_status.json")
-
-    model_path = Path(model_dir).expanduser() if model_dir else None
-    runtime_inventory = _existing_file(model_path / "artifacts" / "runtime_inventory.json") if model_path else ""
-    runtime_links_manifest = _existing_file(model_path / "artifacts" / "runtime_links_manifest.json") if model_path else ""
-    return {
-        "source_protocol": source_protocol,
-        "source_prediction_generation_status": source_generation_status,
-        "source_runtime_inventory": runtime_inventory,
-        "source_runtime_links_manifest": runtime_links_manifest,
-    }
-
-
-def _infer_from_report(source: Path) -> dict[str, Any]:
-    rows = _read_jsonl(source / "report.jsonl")
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="strict").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid JSONL at {path}:{line_number}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ValueError(f"report row must be an object at {path}:{line_number}")
+        rows.append(value)
     if not rows:
-        return {}
-    first = rows[0]
-    run = first.get("run") if isinstance(first.get("run"), dict) else {}
-    model = first.get("model") if isinstance(first.get("model"), dict) else {}
-    dataset_rows: list[dict[str, Any]] = []
-    anchors = [source, *source.parents]
-    for row in rows:
-        dataset = row.get("dataset") if isinstance(row.get("dataset"), dict) else {}
-        prediction = row.get("prediction") if isinstance(row.get("prediction"), dict) else {}
-        prediction_file = prediction.get("file") if isinstance(prediction.get("file"), str) else ""
-        dataset_rows.append(
-            {
-                "name": dataset.get("name") or row.get("dataset"),
-                "task": dataset.get("task") or row.get("task"),
-                "language": dataset.get("language") or row.get("language"),
-                "metric": (row.get("metric") or {}).get("name") if isinstance(row.get("metric"), dict) else row.get("metric"),
-                "prediction_file": _resolve_relative_path(prediction_file, anchors) if prediction_file else "",
-            }
-        )
-    prediction_files = [Path(str(item.get("prediction_file"))) for item in dataset_rows if item.get("prediction_file")]
-    canonical_run_dir = ""
-    for prediction_file in prediction_files:
-        if prediction_file.parent.name == "predictions":
-            canonical_run_dir = str(prediction_file.parent.parent)
-            break
-    return {
-        "run_id": run.get("run_id") or first.get("run_id"),
-        "protocol_id": run.get("protocol_id") or first.get("protocol_id"),
-        "model_name": model.get("model_name") or first.get("tool_uid"),
-        "model_dir": _resolve_relative_path(str(model.get("model_dir") or ""), anchors) if model.get("model_dir") else "",
-        "canonical_run_dir": canonical_run_dir,
-        "datasets": [item for item in dataset_rows if item.get("name")],
-    }
+        raise ValueError(f"approved report has no rows: {path}")
+    return rows
 
 
-def _infer_from_protocol(source: Path) -> dict[str, Any]:
-    protocol = _read_yaml(source / "protocol.yaml")
-    if not protocol:
-        return {}
-    model = protocol.get("model") if isinstance(protocol.get("model"), dict) else {}
-    run = protocol.get("run") if isinstance(protocol.get("run"), dict) else {}
-    datasets = protocol.get("datasets") if isinstance(protocol.get("datasets"), list) else []
-    return {
-        "run_id": run.get("run_id"),
-        "protocol_id": protocol.get("protocol_id"),
-        "model_name": model.get("tool_name") or source.parent.name,
-        "model_dir": model.get("model_dir") or "",
-        "canonical_run_dir": run.get("run_dir") or "",
-        "datasets": [item for item in datasets if isinstance(item, dict)],
-    }
+def _canonical_dataset_id(value: str) -> str:
+    value = value.strip()
+    match = LEGACY_VERSION_RE.fullmatch(value)
+    if match:
+        return f"{match.group('name')}__{match.group('version')}"
+    raise ValueError(
+        f"dataset identity {value!r} has no exact version; expected <dataset_name>__<version_id>"
+    )
 
 
-def build_payload(args: argparse.Namespace) -> dict[str, Any]:
-    source = Path(args.source).expanduser().resolve()
-    kind, predictions_dir = _source_kind(source)
-    discovered = _prediction_files(predictions_dir)
-    if not discovered:
-        raise FileNotFoundError(f"no prediction files found under {predictions_dir}")
+def _requested_dataset_id(value: str) -> str:
+    value = value.strip()
+    if DATASET_ID_RE.fullmatch(value):
+        return value
+    raise ValueError(
+        f"requested dataset identity {value!r} is not canonical; expected <dataset_name>__<version_id>"
+    )
 
-    report_info = _infer_from_report(source if kind != "predictions_dir" else predictions_dir.parent)
-    protocol_info = _infer_from_protocol(source if kind != "predictions_dir" else predictions_dir.parent)
+
+def _dataset_from_row(row: dict[str, Any]) -> str:
+    dataset = row.get("dataset")
+    if isinstance(dataset, dict):
+        value = dataset.get("id") or dataset.get("name")
+    else:
+        value = dataset
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("approved report row has no dataset identity")
+    return _canonical_dataset_id(value)
+
+
+def _protocol_from_row(row: dict[str, Any]) -> str:
+    run = row.get("run") if isinstance(row.get("run"), dict) else {}
+    value = run.get("protocol_id") or row.get("protocol_id")
+    return str(value or "")
+
+
+def _model_from_row(row: dict[str, Any]) -> str:
+    model = row.get("model") if isinstance(row.get("model"), dict) else {}
+    return str(model.get("model_name") or row.get("tool_uid") or "")
+
+
+def _prediction_stem(row: dict[str, Any]) -> str:
+    prediction = row.get("prediction") if isinstance(row.get("prediction"), dict) else {}
+    value = prediction.get("file")
+    return Path(str(value)).stem if value else ""
+
+
+def _model_fingerprint(model_dir: Path, verdict_path: str) -> str:
+    digest = hashlib.sha256()
+    for path in (model_dir / "config.yaml", Path(verdict_path)):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(_sha256(path).encode("ascii"))
+    return digest.hexdigest()
+
+
+def build_payload(
+    args: argparse.Namespace,
+    *,
+    approved_models_root: Path | None = APPROVED_MODELS_ROOT,
+    approved_results_root: Path | None = APPROVED_RESULTS_ROOT,
+) -> dict[str, Any]:
+    model = str(args.model)
+    protocol_id = str(getattr(args, "protocol_id", None) or "standard_system")
+    if protocol_id not in ALLOWED_PROTOCOLS:
+        raise ValueError(f"unsupported protocol {protocol_id!r}; expected {sorted(ALLOWED_PROTOCOLS)}")
     requested_datasets = _split_values(args.datasets)
-    selected_datasets = requested_datasets or [
-        str(item.get("name"))
-        for item in (protocol_info.get("datasets") or report_info.get("datasets") or [])
-        if item.get("name")
-    ] or sorted(discovered)
-    # Accept the same short dataset aliases /sure_eval accepts (e.g.
-    # "aishell1" for predictions actually saved as
-    # "aishell1__v1.0.2__asr.txt"). A name already present in `discovered`
-    # (including any name /sure_eval could not itself have expanded) passes
-    # through unchanged; only a short alias with a unique versioned match
-    # gets rewritten. Unmatched or ambiguous names are left as-is so the
-    # existing missing-file check below still reports them.
-    selected_datasets = [resolve_dataset_alias(dataset, discovered) or dataset for dataset in selected_datasets]
+    if not requested_datasets:
+        raise ValueError("--datasets requires the complete approved dataset__version set")
+    requested = sorted(_requested_dataset_id(item) for item in requested_datasets)
+    if len(requested) != len(set(requested)):
+        raise ValueError("requested datasets contain duplicate canonical identities")
 
-    missing = [dataset for dataset in selected_datasets if dataset not in discovered or not discovered[dataset].get("txt")]
-    if missing:
-        raise FileNotFoundError(f"missing prediction txt file(s) for dataset(s): {', '.join(missing)}")
+    model_resolution = resolve_approved_model(model, approved_root=approved_models_root)
+    if not model_resolution["ok"]:
+        raise ValueError(f"model {model!r} is not approved and runtime-ready in NFS")
+    model_dir = Path(str(model_resolution["model_dir"]))
 
-    dataset_meta: dict[str, dict[str, Any]] = {}
-    for item in (protocol_info.get("datasets") or []) + (report_info.get("datasets") or []):
-        if isinstance(item, dict) and item.get("name"):
-            dataset_meta.setdefault(str(item["name"]), item)
+    if approved_results_root is None:
+        resolved_policy = load_site_policy(required=True)
+        approved_results_root = Path(resolved_policy["policy"]["storage"]["approved_results_roots"][0])
+    results_root = approved_results_root.expanduser().resolve()
+    model_results_dir = (results_root / model).resolve(strict=False)
+    if not _is_relative_to(model_results_dir, results_root):
+        raise ValueError(f"approved model result path escapes NFS root: {model_results_dir}")
+    if not model_results_dir.is_dir():
+        raise FileNotFoundError(f"approved model has no result directory: {model_results_dir}")
+    candidates: list[tuple[Path, list[dict[str, Any]], dict[str, set[str]]]] = []
+    discovered: list[dict[str, Any]] = []
+    for candidate in sorted(path for path in model_results_dir.iterdir() if path.is_dir()):
+        if candidate.is_symlink():
+            raise ValueError(f"approved result candidates must be real NFS directories, not symlink aliases: {candidate}")
+        resolved_candidate = candidate.resolve()
+        if not _is_relative_to(resolved_candidate, results_root):
+            raise ValueError(f"approved result candidate escapes NFS root: {candidate} -> {resolved_candidate}")
+        candidate_protocol = candidate / "protocol.yaml"
+        candidate_report = candidate / "report.jsonl"
+        candidate_predictions = candidate / "predictions"
+        if not candidate_protocol.is_file() or not candidate_report.is_file() or not candidate_predictions.is_dir():
+            continue
+        for label, artifact in (
+            ("protocol", candidate_protocol),
+            ("report", candidate_report),
+            ("predictions", candidate_predictions),
+        ):
+            if not _is_relative_to(artifact.resolve(), resolved_candidate):
+                raise ValueError(f"approved result {label} escapes its result directory: {artifact}")
+        candidate_protocol_payload = yaml.safe_load(candidate_protocol.read_text(encoding="utf-8")) or {}
+        candidate_protocol_id = candidate_protocol_payload.get("protocol_id") if isinstance(candidate_protocol_payload, dict) else None
+        if candidate_protocol_id != protocol_id:
+            discovered.append({"path": str(candidate), "protocol_id": candidate_protocol_id})
+            continue
+        candidate_rows = _read_jsonl(candidate_report)
+        row_protocols = {value for value in (_protocol_from_row(row) for row in candidate_rows) if value}
+        row_models = {value for value in (_model_from_row(row) for row in candidate_rows) if value}
+        if row_protocols != {protocol_id}:
+            raise ValueError(
+                f"report protocol identities do not exactly match {protocol_id!r} in {candidate}: {sorted(row_protocols)}"
+            )
+        if row_models != {model}:
+            raise ValueError(f"report model identities do not exactly match {model!r} in {candidate}: {sorted(row_models)}")
+        candidate_stems: dict[str, set[str]] = {}
+        for row in candidate_rows:
+            dataset_id = _dataset_from_row(row)
+            stem = _prediction_stem(row)
+            candidate_stems.setdefault(dataset_id, set())
+            if stem:
+                candidate_stems[dataset_id].add(stem)
+        candidate_datasets = sorted(candidate_stems)
+        discovered.append(
+            {"path": str(candidate), "protocol_id": candidate_protocol_id, "datasets": candidate_datasets}
+        )
+        if candidate_datasets == requested:
+            candidates.append((resolved_candidate, candidate_rows, candidate_stems))
+    if not candidates:
+        raise FileNotFoundError(
+            "no approved NFS result exactly matches model, protocol, and dataset set; "
+            f"model={model!r}, protocol={protocol_id!r}, datasets={requested}, discovered={discovered}"
+        )
+    if len(candidates) != 1:
+        raise ValueError(
+            "approved NFS result identity is ambiguous for model, protocol, and dataset set: "
+            + ", ".join(str(item[0]) for item in candidates)
+        )
+    result_dir, rows, stems_by_dataset = candidates[0]
+    protocol_path = result_dir / "protocol.yaml"
+    report_path = result_dir / "report.jsonl"
+    predictions_dir = result_dir / "predictions"
+    approved = sorted(stems_by_dataset)
 
-    model_name = args.model or protocol_info.get("model_name") or report_info.get("model_name") or (
-        source.parent.name if kind == "results_dir" else ""
-    )
-    model_dir = args.model_dir or protocol_info.get("model_dir") or report_info.get("model_dir") or ""
-    canonical_run_dir = protocol_info.get("canonical_run_dir") or report_info.get("canonical_run_dir") or (
-        str(source) if kind == "run_dir" else ""
-    )
-    provenance = _provenance_candidates(
-        source=source,
-        kind=kind,
-        predictions_dir=predictions_dir,
-        canonical_run_dir=canonical_run_dir,
-        model_dir=model_dir,
-    )
-
-    predictions = []
-    for dataset in selected_datasets:
-        meta = dataset_meta.get(dataset, {})
-        files = discovered[dataset]
+    predictions: list[dict[str, Any]] = []
+    for dataset_id in approved:
+        stems = stems_by_dataset[dataset_id]
+        existing = sorted(stem for stem in stems if (predictions_dir / f"{stem}.txt").is_file())
+        if len(existing) != 1:
+            raise ValueError(
+                f"dataset {dataset_id!r} must resolve to exactly one approved prediction stem; found={existing}"
+            )
+        stem = existing[0]
+        txt = (predictions_dir / f"{stem}.txt").resolve()
+        jsonl = (predictions_dir / f"{stem}.jsonl").resolve()
+        if not _is_relative_to(txt, predictions_dir.resolve()):
+            raise ValueError(f"prediction path escapes approved result: {txt}")
+        if jsonl.is_file() and not _is_relative_to(jsonl, predictions_dir.resolve()):
+            raise ValueError(f"structured prediction path escapes approved result: {jsonl}")
         predictions.append(
             {
-                "dataset": dataset,
-                "task": meta.get("task"),
-                "language": meta.get("language"),
-                "metrics": meta.get("metrics") or ([meta.get("metric")] if meta.get("metric") else []),
-                "txt": files.get("txt"),
-                "jsonl": files.get("jsonl"),
+                "dataset": dataset_id,
+                "prediction_stem": stem,
+                "txt": str(txt),
+                "txt_sha256": _sha256(txt),
+                "txt_samples": _count_nonempty_lines(txt),
+                "jsonl": str(jsonl) if jsonl.is_file() else None,
+                "jsonl_sha256": _sha256(jsonl) if jsonl.is_file() else None,
+                "jsonl_samples": _count_nonempty_lines(jsonl) if jsonl.is_file() else 0,
             }
         )
 
     return {
-        "schema": "sure.reval.prediction_source_resolved.v1",
+        "schema": "sure.reval.approved_prediction_source.v2",
         "generated_at": _utc_now(),
-        "source": str(source),
-        "source_kind": kind,
+        "source_kind": "approved_nfs_results",
+        "model_name": model,
+        "model_dir": str(model_dir),
+        "model_fingerprint": _model_fingerprint(model_dir, str(model_resolution["verdict_path"])),
+        "verdict_path": model_resolution["verdict_path"],
+        "protocol_id": protocol_id,
+        "datasets": approved,
+        "dataset_set_digest": hashlib.sha256("\n".join(approved).encode("utf-8")).hexdigest(),
+        "source_results_dir": str(result_dir),
+        "source_result_relative_path": str(result_dir.relative_to(results_root)),
         "source_predictions_dir": str(predictions_dir.resolve()),
-        "source_run_dir": canonical_run_dir,
-        "source_results_dir": str(source) if kind == "results_dir" else "",
-        "source_run_id": protocol_info.get("run_id") or report_info.get("run_id") or "",
-        "source_inference_provenance": {
-            "source_protocol": provenance["source_protocol"],
-            "source_prediction_generation_status": provenance["source_prediction_generation_status"],
-            "source_runtime_inventory": provenance["source_runtime_inventory"],
-            "source_runtime_links_manifest": provenance["source_runtime_links_manifest"],
-            "inference_unknown": not any(provenance.values()),
-        },
-        "protocol_id": args.protocol_id or protocol_info.get("protocol_id") or report_info.get("protocol_id") or "strict_core",
-        "model_name": model_name,
-        "model_dir": model_dir,
-        "datasets": selected_datasets,
+        "source_protocol": str(protocol_path.resolve()),
+        "source_report": str(report_path.resolve()),
+        "source_report_sha256": _sha256(report_path),
         "predictions": predictions,
         "old_evaluation_reused": False,
+        "inference_allowed": False,
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Resolve an existing SURE prediction source")
-    parser.add_argument("--source", required=True)
-    parser.add_argument("--model")
-    parser.add_argument("--model-dir")
-    parser.add_argument("--datasets", nargs="*")
-    parser.add_argument("--protocol-id")
+    parser = argparse.ArgumentParser(description="Resolve an exact approved NFS prediction source")
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--datasets", nargs="+", required=True)
+    parser.add_argument("--protocol-id", choices=sorted(ALLOWED_PROTOCOLS), default="standard_system")
     parser.add_argument("--output")
     args = parser.parse_args()
-
-    payload = build_payload(args)
+    try:
+        payload = build_payload(args)
+    except (FileNotFoundError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     text = json.dumps(payload, indent=2, ensure_ascii=False)
     print(text)
     if args.output:

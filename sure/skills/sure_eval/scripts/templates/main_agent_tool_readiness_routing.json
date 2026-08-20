@@ -1,15 +1,9 @@
 {
-  "run_id": "",
-  "timestamp": "",
-  "tool_readiness_state": "server_declared_but_unverified",
-  "preferred_execution_path": "server_smoke_test_then_use",
-  "server_smoke_test_required": true,
+  "readiness": "ready",
+  "model_dir": "",
+  "verdict_status": "passed",
+  "server_present": true,
+  "model_py_present": true,
   "handoff_to_tool_agent": false,
-  "reason": "",
-  "evidence": [
-    {
-      "source": "",
-      "signal": ""
-    }
-  ]
+  "routing_reason": "approved NFS deployment binding is ready"
 }

@@ -392,7 +392,7 @@ Kimi-Audio 7B 多任务验证显存压力大。
 - 本地 11GB 卡容易 OOM。
 - 本地 Docker 使用全部可见 GPU 可能出现自动 placement 后某张卡爆显存。
 - 8bit + device_map=auto 可以用于 debug，但不保证稳定通过完整五任务。
-- 完整五任务更适合 VC/A10 或更大显存队列。
+- 完整五任务更适合站点批准且显存充足的 VC GPU partition。
 
 常用环境变量：
 
@@ -461,12 +461,13 @@ KIMI_AUDIO_VALIDATE_TASKS=SLU sure/models/asr_kimi_audio/docker_validate_multita
 
 ## 9. VC / 集群运行
 
-完整五任务建议通过 VC 独占资源跑。Kimi-Audio handoff 中 A10 示例：
+完整五任务建议通过 VC 独占资源跑。先从 `vc info -u` 选择当前站点允许的
+partition，并通过环境变量显式传入：
 
 ```bash
 env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy \
 vc submit \
-  -p pdgpu-a10 \
+  -p "$SURE_VC_PARTITION" \
   -i registry.example.com/sure/sure_asr_kimi_audio:v1.0 \
   -j kimi-audio-five-task \
   -n 1 -c 8 -m 32G -g 1 \

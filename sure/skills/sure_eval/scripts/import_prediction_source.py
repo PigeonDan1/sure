@@ -229,6 +229,8 @@ def _write_source_provenance_links(run_dir: Path, source: dict[str, Any]) -> dic
     provenance = source.get("source_inference_provenance")
     if not isinstance(provenance, dict):
         provenance = {}
+    if source.get("source_protocol"):
+        provenance["source_protocol"] = source["source_protocol"]
     mapping = {
         "source_protocol": "source_protocol.yaml",
         "source_prediction_generation_status": "source_prediction_generation_status.json",
@@ -388,7 +390,7 @@ def import_predictions(args: argparse.Namespace) -> dict[str, Any]:
         "generated_at": _utc_now(),
         "run_dir": str(run_dir),
         "source": {
-            "source": source.get("source"),
+            "source": source.get("source_results_dir"),
             "source_kind": source.get("source_kind"),
             "source_predictions_dir": source.get("source_predictions_dir"),
             "source_run_dir": source.get("source_run_dir"),

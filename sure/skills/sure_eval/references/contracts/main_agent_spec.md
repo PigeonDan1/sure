@@ -242,7 +242,7 @@ DECIDE_NEXT_ACTION
   "need_tool_workflow": false,
   "tool_readiness_state": "server_ready",
   "preferred_execution_path": "direct_server_use",
-  "selected_datasets": ["aishell1", "librispeech_clean"],
+  "selected_datasets": ["/srv/sure/datasets/group/store/ds_pool/example-asr-test"],
   "skipped_datasets": [
     {
       "dataset": "covost2_en2zh",

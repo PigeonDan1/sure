@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from evaluation_capabilities import discover_engine_capabilities, normalize_engine_task
+from evaluation_runtime import ensure_evaluation_runtime
 from resolve_evaluation_engine import resolve_engine_root
 
 
@@ -33,7 +34,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def _engine_commit(root: Path) -> str:
     completed = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+        ["git", "-c", f"safe.directory={root}", "rev-parse", "HEAD"],
         cwd=root,
         capture_output=True,
         text=True,
@@ -82,6 +83,7 @@ def build_route_plan(
     if resolved_engine is None:
         raise FileNotFoundError("Unable to resolve sure-evaluation engine root")
     engine_source, engine_root = resolved_engine
+    evaluation_runtime = ensure_evaluation_runtime(engine_root, prepare=True)
     from evaluation_capabilities import _insert_engine_src
 
     _insert_engine_src(engine_root)
@@ -173,6 +175,7 @@ def build_route_plan(
             "source": engine_source,
             "engine_root": str(engine_root),
             "commit": _engine_commit(engine_root),
+            "runtime": evaluation_runtime,
         },
         "datasets": dataset_plans,
         "can_run_now": not blocking_issues,

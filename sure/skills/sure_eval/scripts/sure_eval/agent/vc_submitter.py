@@ -13,28 +13,28 @@ import re
 import shlex
 import shutil
 import subprocess
-from pathlib import Path
+import sys
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from sure_eval.core.logging import get_logger
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "site" / "loader.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.site.loader import load_site_policy
 
 logger = get_logger(__name__)
 
 IMAGE_REGISTRY_PREFIX_ENV = "SURE_VC_IMAGE_REGISTRY_PREFIX"
 
-# GPU partition priority (higher = better).  Only partitions listed here are
-# considered; if a partition is missing it gets priority 0.
-_GPU_PRIORITY: dict[str, int] = {
-    "pdgpu-5090": 100,
-    "pdgpu-4090": 90,
-    "pdgpu-3090": 80,
-    "pdgpu-a10": 70,
-    "pdgpu-v100": 60,
-    "pdgpu-2080ti": 50,
-    "pdgpu-2080ti-dsp": 45,
-    "pdgpu-2080ti-data": 40,
-    "pdgpu-ezkws": 30,
-}
+# GPU partition priority is supplied by the site policy.
+def _gpu_priority() -> dict[str, int]:
+    resolved = load_site_policy(required=True)
+    configured = (resolved or {}).get("policy", {}).get("execution", {}).get("vc_partition_priority", {})
+    return {str(name): int(value) for name, value in configured.items()}
 
 # Default mount is inferred from the current checkout.  Keep this module free
 # of user-specific repository paths: harness deployments may live beside a
@@ -96,6 +96,22 @@ def _infer_default_volume_mount(repo_root: Path) -> str:
         if parent.name == "sjtu_home":
             return f"{parent}:{parent}"
     return f"{repo_root}:{repo_root}"
+
+
+def _merge_volume_mounts(primary: str, extra_roots: list[str] | tuple[str, ...]) -> str:
+    """Append identity mounts for roots not covered by the primary volume."""
+    mounts = [primary]
+    covered = [PurePosixPath(volume.split(":", 1)[0]) for volume in primary.split(",") if volume.strip()]
+    for root in extra_roots:
+        value = str(root or "").strip()
+        if not value:
+            continue
+        candidate = PurePosixPath(value)
+        if any(candidate.is_relative_to(host) for host in covered):
+            continue
+        mounts.append(f"{value}:{value}")
+        covered.append(candidate)
+    return ",".join(mounts)
 
 
 def _translate_to_container_path(path: Path, volume_mount: str) -> str:
@@ -234,7 +250,7 @@ def get_partition_status() -> dict[str, dict[str, Any]]:
     result = _run_cmd(["vc", "info"], check=False)
     status: dict[str, dict[str, Any]] = {}
     # Example line:
-    # pdgpu-5090         | 2/8                  | 16/124               | 64Gi/495.0Gi
+    # gpu-standard       | 2/8                  | 16/124               | 64Gi/495.0Gi
     pattern = re.compile(
         r"^(\S+)\s+\|\s+(\d+)/(\d+)\s+\|\s+(\d+)/(\d+)\s+\|\s+([\d.]+)Gi/([\d.]+)Gi"
     )
@@ -259,8 +275,9 @@ def get_partition_status() -> dict[str, dict[str, Any]]:
 def select_best_partition() -> str:
     """Pick the best partition the user has access to that also has free GPUs.
 
-    Priority order (highest first): 5090 > 4090 > 3090 > A10 > V100 > 2080ti > others.
+    Priority order comes from the active site policy; unknown partitions have priority zero.
     """
+    priority = _gpu_priority()
     allowed = get_user_partitions()
     status = get_partition_status()
 
@@ -270,14 +287,13 @@ def select_best_partition() -> str:
             continue
         if info["gpu_free"] <= 0:
             continue
-        priority = _GPU_PRIORITY.get(name, 0)
-        candidates.append((priority, name))
+        candidates.append((priority.get(name, 0), name))
 
     if not candidates:
         # No partition with free GPUs; fall back to the highest-priority allowed partition
         # and let vc queue the job.
-        for name in sorted(allowed, key=lambda n: _GPU_PRIORITY.get(n, 0), reverse=True):
-            candidates.append((_GPU_PRIORITY.get(name, 0), name))
+        for name in sorted(allowed, key=lambda n: priority.get(n, 0), reverse=True):
+            candidates.append((priority.get(name, 0), name))
 
     if not candidates:
         raise RuntimeError("No GPU partitions available for this user.")

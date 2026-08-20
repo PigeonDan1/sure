@@ -408,6 +408,8 @@ def build_snapshot(run_dir: Path) -> str:
     ]
     model_name = next((str(value) for value in model_values if value), "unknown_model")
     model_source = protocol.get("model", {}).get("model_source") if isinstance(protocol.get("model"), dict) else None
+    protocol_run = protocol.get("run") if isinstance(protocol.get("run"), dict) else {}
+    run_id = str(protocol_run.get("run_id") or run_dir.name)
     status = "success" if rows and all(_status(row).lower() in {"success", "succeeded", "ok", "completed", "complete"} for row in rows) else "incomplete"
     require_nonempty = any(
         bool((_prediction(row).get("validation") or {}).get("require_nonempty"))
@@ -426,7 +428,7 @@ def build_snapshot(run_dir: Path) -> str:
         f"| Model source | {_escape(model_source)} |",
         f"| Task | {_escape(', '.join(tasks) or 'N/A')} |",
         f"| Dataset scope | {_bt(', '.join(datasets) or 'N/A')} |",
-        f"| Run ID | {_bt(run_dir.name)} |",
+        f"| Run ID | {_bt(run_id)} |",
         f"| Output directory | {_bt(run_dir)} |",
         f"| Standard results mirror | {_bt('N/A')} |",
         f"| Report JSONL | {_bt(report_path)} |",

@@ -222,13 +222,23 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		gateScript: "run_validate.py",
 	},
 	{
+		id: "package_container",
+		label: "Package container",
+		kind: "gate",
+		produces: "docker_registry_result.json",
+		schemaRef: "docker_registry_result.schema.json",
+		requiredFields: ["schema", "status"],
+		gateScript: "check_container_package.py",
+		helperScripts: ["describe_harness_runtime.py"],
+	},
+	{
 		id: "save_artifacts",
 		label: "Save artifacts",
 		kind: "gate",
 		produces: "artifact_manifest.json",
 		schemaRef: "artifact_manifest.schema.json",
 		gateScript: "check_artifact_manifest.py",
-		helperScripts: ["stage_model_artifacts.py", "write_runtime_inventory.py", "adopt_reference_model.py"],
+		helperScripts: ["stage_model_artifacts.py"],
 	},
 	{
 		id: "package_gate",
@@ -244,6 +254,16 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		gateScript: "check_package_gate.py",
 	},
 	{
+		id: "write_runtime_inventory",
+		label: "Write runtime inventory",
+		kind: "gate",
+		produces: "runtime_inventory.json",
+		schemaRef: "runtime_inventory.schema.json",
+		requiredFields: ["schema", "status", "model", "local_runtime", "container_runtime", "policy"],
+		gateScript: "check_runtime_inventory.py",
+		helperScripts: ["write_runtime_inventory.py"],
+	},
+	{
 		id: "verdict",
 		label: "Verdict",
 		kind: "gate",
@@ -251,6 +271,16 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		schemaRef: "verdict.schema.json",
 		requiredFields: ["status"],
 		gateScript: "check_verdict.py",
+	},
+	{
+		id: "finalize_model_bundle",
+		label: "Finalize model bundle",
+		kind: "gate",
+		produces: "deployment_ready.json",
+		schemaRef: "deployment_ready.schema.json",
+		requiredFields: ["schema", "status", "model_name", "package_profile", "execution_policy"],
+		gateScript: "check_finalized_bundle.py",
+		helperScripts: ["finalize_model_bundle.py"],
 	},
 ];
 

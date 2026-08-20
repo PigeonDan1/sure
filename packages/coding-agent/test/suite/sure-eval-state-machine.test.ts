@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CheckpointData } from "../../../../sure/skills/sure_eval/hooks/checkpoints.ts";
@@ -11,6 +12,8 @@ const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_eval");
 
 type StatePatchForTest = {
 	counters?: { completed_units?: number; total_units?: number; gate_blocks?: number };
+	message?: string;
+	checkpoint?: { data: CheckpointData };
 };
 
 function statePatch(result: { state_patch?: unknown }): StatePatchForTest {
@@ -139,10 +142,23 @@ function seedCompletedEvaluationArtifacts(runDir: string): string {
 			"inference_environment:",
 			"  execution_path: vc_submit",
 			"  vc: {}",
-			"  container: {}",
+			"  container:",
+			"    image_ref: registry.example.com/sure/fixture@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"    execution_mode: container_only",
+			"    host_python_fallback: false",
+			"  harness_runtime:",
+			"    schema: sure.harness.runtime.binding.v1",
+			"    runtime_id: sure-harness-test",
+			"    python_executable: /opt/sure-harness/bin/python",
+			"    lock_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			"    manifest_path: /opt/sure-harness/runtime-manifest.json",
+			"    runtime_root: /opt/sure-harness",
 			"  server: {}",
 			"  env: {}",
-			"  mount_policy: {}",
+			"  runtime_inventory:",
+			"    schema: sure.onboard.runtime_inventory.v2",
+			"  mount_policy:",
+			"    nfs_models_read_only: true",
 			"inference_constraints: {}",
 			"inference_parameters:",
 			"  source_priority:",
@@ -170,6 +186,8 @@ function seedCompletedEvaluationArtifacts(runDir: string): string {
 			"  generated_by: scripts/generate_predictions_via_server.py",
 			"provenance:",
 			`  prediction_generation_status: ${join(root, "prediction_generation_status.json")}`,
+			"  deployment_ready: /approved/model/artifacts/deployment_ready.json",
+			"  package_gate: /approved/model/artifacts/package_gate.json",
 			"  raw_response_source_of_truth: false",
 			"notes:",
 			"  - inference-only fixture",
@@ -313,6 +331,82 @@ describe("sure_eval tool_readiness_routing handoff gate", () => {
 		expect(result.ok).toBe(true);
 		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
 		expect(checkpoint?.data.currentUnit).toBe("plan");
+	});
+
+	it("does not consume retries again when an invalid artifact is unchanged", () => {
+		const { ctx, runDir } = freshCtx("handoff-unchanged");
+		seedCheckpoint(runDir, {
+			currentUnit: "tool_readiness_routing",
+			completedUnits: ["task_classification"],
+			retries: {},
+		});
+		writeArtifact(runDir, "tool_readiness_routing.json", {
+			readiness: "needs_onboarding",
+			model_dir: "sure/models/missing_model",
+			handoff_to_tool_agent: true,
+		});
+
+		const first = postToolResult(ctx);
+		const firstCheckpoint = statePatch(first).checkpoint;
+		expect(first.ok).toBe(false);
+		expect(firstCheckpoint?.data.retries.tool_readiness_routing).toBe(1);
+		seedCheckpoint(runDir, firstCheckpoint!.data);
+
+		const unchanged = postToolResult({ ...ctx, event: { toolName: "read", isError: false } });
+		expect(unchanged.ok).toBe(true);
+		expect(statePatch(unchanged).message).toContain("unchanged artifact content");
+		expect(statePatch(unchanged).checkpoint?.data.retries.tool_readiness_routing).toBe(1);
+	});
+
+	it("consumes a new retry when invalid artifact content changes", () => {
+		const { ctx, runDir } = freshCtx("handoff-changed");
+		seedCheckpoint(runDir, {
+			currentUnit: "tool_readiness_routing",
+			completedUnits: ["task_classification"],
+			retries: {},
+		});
+		writeArtifact(runDir, "tool_readiness_routing.json", {
+			readiness: "needs_onboarding",
+			model_dir: "sure/models/missing_model",
+			handoff_to_tool_agent: true,
+		});
+		const first = postToolResult(ctx);
+		seedCheckpoint(runDir, statePatch(first).checkpoint!.data);
+		writeArtifact(runDir, "tool_readiness_routing.json", {
+			readiness: "needs_onboarding",
+			model_dir: "sure/models/missing_model",
+			handoff_to_tool_agent: true,
+			routing_reason: "new evidence",
+		});
+
+		const changed = postToolResult(ctx);
+		expect(changed.ok).toBe(false);
+		expect(statePatch(changed).checkpoint?.data.retries.tool_readiness_routing).toBe(2);
+	});
+
+	it("does not rerun an expensive gate for an unchanged failed artifact", () => {
+		const { ctx, runDir } = freshCtx("smoke-unchanged");
+		writeArtifact(runDir, "smoke_test_result.json", {
+			smoke_passed: false,
+			sample_count: 0,
+			exit_code: 23,
+			stdout_excerpt: "failed",
+			stderr_excerpt: "",
+			failures: ["fixture failure"],
+		});
+		const artifactPath = join(runDir, "artifacts", "smoke_test_result.json");
+		const digest = createHash("sha256").update(readFileSync(artifactPath)).digest("hex");
+		seedCheckpoint(runDir, {
+			currentUnit: "smoke_test",
+			completedUnits: ["execution_readiness"],
+			retries: { smoke_test: 1 },
+			failedArtifactDigests: { smoke_test: digest },
+		});
+
+		const unchanged = postToolResult({ ...ctx, event: { toolName: "read", isError: false } });
+		expect(unchanged.ok).toBe(true);
+		expect(statePatch(unchanged).message).toContain("unchanged artifact content");
+		expect(statePatch(unchanged).checkpoint?.data.retries.smoke_test).toBe(1);
 	});
 });
 

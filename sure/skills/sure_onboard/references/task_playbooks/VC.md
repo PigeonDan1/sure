@@ -38,7 +38,7 @@ io_contract:
   json_serializable: true
 ```
 
-VC `/sure_onboard` local-ready 阶段不以音色相似度指标作为通过条件，只验证可加载、
+VC `/sure_onboard` 本地验证阶段不以音色相似度指标作为通过条件，只验证可加载、
 可推理、输出音频契约正确。但正式 VC 指标经验必须保留，后续 evaluation 或 metric
 enrichment 应复用已生成 converted audio，不应为刷新指标重新跑模型推理。
 

@@ -40,6 +40,23 @@
 				"additionalProperties": false
 			}
 		},
+		"resolved_datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["dataset_id"],
+				"properties": {
+					"dataset_id": { "type": "string" },
+					"source_root": { "type": "string" },
+					"source_dataset_name": { "type": "string" },
+					"version_id": { "type": "string" },
+					"task": { "type": "string" },
+					"language": { "type": "string" },
+					"jsonl_path": { "type": "string" }
+				},
+				"additionalProperties": false
+			}
+		},
 		"auto_selected": { "type": "boolean" }
 	},
 	"additionalProperties": false

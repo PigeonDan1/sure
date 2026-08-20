@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -21,6 +22,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from container_execution import build_local_container_command, effective_container_exit_code
 
 
 def _utc_now() -> str:
@@ -65,7 +68,7 @@ def _execution_from_surface(surface: dict[str, Any], eval_input: dict[str, Any])
         execution = runtime.get("execution") if isinstance(runtime.get("execution"), dict) else {}
     requested = str(execution.get("requested") or "local")
     planned = str(execution.get("planned") or ("vc" if execution.get("path_planned") == "vc_submit" else "local"))
-    path_planned = str(execution.get("path_planned") or ("vc_submit" if planned == "vc" else "local_bash"))
+    path_planned = str(execution.get("path_planned") or ("vc_submit" if planned == "vc" else "local_docker"))
     return {
         "requested": requested,
         "planned": planned,
@@ -89,18 +92,6 @@ def _device_request(surface: dict[str, Any], eval_input: dict[str, Any]) -> str:
     if isinstance(resolved_inputs.get("device"), str) and resolved_inputs["device"]:
         return resolved_inputs["device"]
     return "auto"
-
-
-def _surface_env(surface: dict[str, Any]) -> dict[str, str]:
-    raw_env = surface.get("env")
-    if not isinstance(raw_env, dict):
-        return {}
-    values: dict[str, str] = {}
-    for key, value in raw_env.items():
-        if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or value is None:
-            continue
-        values[key] = str(value)
-    return values
 
 
 def _local_device_env(device_request: str) -> tuple[dict[str, str], str, str | None]:
@@ -160,6 +151,8 @@ def main() -> int:
     vc_available = _vc_available()
     if execution["requested"] == "vc" or execution["path_planned"] == "vc_submit":
         raise RuntimeError("Refusing local execution because the resolved execution plan requires vc_submit.")
+    if execution["path_planned"] != "local_docker":
+        raise RuntimeError("Refusing host execution: local inference must use local_docker.")
     if execution["requested"] == "auto" and vc_available and not args.allow_auto_local_override:
         raise RuntimeError("Refusing local execution because execution=auto and vc is available; submit through vc instead.")
 
@@ -167,8 +160,7 @@ def main() -> int:
     host = socket.gethostname()
     device_request = _device_request(surface, eval_input)
     device_env, device_actual, cuda_visible = _local_device_env(device_request)
-    command = ["bash", str(entrypoint)]
-    cwd = Path(args.cwd).expanduser().resolve() if args.cwd else Path.cwd()
+    cwd = Path(args.cwd).expanduser().resolve() if args.cwd else Path(__file__).resolve().parents[4]
     stdout_path = artifacts_dir / "local_execution.stdout.log"
     stderr_path = artifacts_dir / "local_execution.stderr.log"
     submit_output = Path(args.submit_output).expanduser().resolve() if args.submit_output else artifacts_dir / "submit_result.json"
@@ -182,46 +174,49 @@ def main() -> int:
         local_fallback_reason = "execution=auto local override was explicitly allowed while vc was available"
         fallback_approved = True
 
-    env = os.environ.copy()
-    env.update(_surface_env(surface))
-    env.update(device_env)
-    env.update(
-        {
-            "SURE_EVAL_EXECUTION_PATH": "local_bash",
+    command, container_binding = build_local_container_command(
+        surface=surface,
+        eval_input=eval_input,
+        control_run_dir=run_dir,
+        entrypoint=entrypoint,
+        repo_root=cwd,
+        device_request=device_request,
+        extra_env={
+            **device_env,
+            "SURE_EVAL_EXECUTION_PATH": "local_docker",
             "SURE_EVAL_EXECUTION_REQUESTED": execution["requested"],
             "SURE_EVAL_EXECUTION_JOB_ID": f"local:{host}:{run_dir.name}",
-            "SURE_EVAL_EXECUTION_SURFACE_TYPE": "main_flow_script",
-            "SURE_EVAL_CONTAINER_IMAGE": "",
             "SURE_EVAL_CONTAINER_REPO_ROOT": str(cwd),
             "SURE_EVAL_VC_PARTITION": "",
             "SURE_EVAL_VC_GPU": "0",
             "SURE_EVAL_VC_CPU": "",
             "SURE_EVAL_VC_MEMORY": "",
             "SURE_EVAL_VC_NODES": "0",
-        }
+        },
     )
 
     start = time.monotonic()
     started_at = _utc_now()
     with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open("w", encoding="utf-8") as stderr:
-        process = subprocess.Popen(command, cwd=cwd, env=env, stdout=stdout, stderr=stderr, text=True)
+        process = subprocess.Popen(command, cwd=cwd, env=os.environ.copy(), stdout=stdout, stderr=stderr, text=True)
         submit_payload = {
-            "execution_path": "local_bash",
+            "execution_path": "local_docker",
             "execution_requested": execution["requested"],
             "execution": {
                 "requested": execution["requested"],
                 "actual": "local",
-                "path_actual": "local_bash",
+                "path_actual": "local_docker",
             },
             "vc_available": vc_available,
             "vc_job_id": "",
             "vc_info": "local execution selected by user or auto policy",
+            "vc_image": str(container_binding["image_ref"]),
             "fallback_approved": fallback_approved,
             "local_fallback_reason": local_fallback_reason,
             "submitted_at": started_at,
             "host": host,
             "pid": process.pid,
-            "command": " ".join(command),
+            "command": shlex.join(command),
             "cwd": str(cwd),
             "device_request": device_request,
             "device_actual": device_actual,
@@ -231,11 +226,14 @@ def main() -> int:
         }
         _write_json(submit_output, submit_payload)
         returncode = process.wait()
+    stdout_text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
+    stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
+    returncode = effective_container_exit_code(returncode, stdout_text, stderr_text)
     duration = time.monotonic() - start
     job_status = "succeeded" if returncode == 0 else "failed"
     execution_payload = {
         "job_status": job_status,
-        "execution_path": "local_bash",
+        "execution_path": "local_docker",
         "execution_requested": execution["requested"],
         "host": host,
         "pid": submit_payload["pid"],

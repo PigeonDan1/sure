@@ -1,55 +1,48 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "package_gate.schema.json",
-	"title": "SURE onboard package gate",
-	"description": "Structured output of PACKAGE_GATE. It declares whether the required readiness target has been met for package=none, package=docker-local, or package=docker-registry. VC/HPC is intentionally not required by this gate.",
+	"title": "SURE onboard package gate v2",
+	"description": "Cross-checks local validation and Docker delivery readiness. Local Eval-ready bundles require docker-registry.",
 	"type": "object",
-	"required": ["status", "package_profile", "readiness"],
+	"required": ["schema", "status", "package_profile", "readiness", "model_dir"],
 	"properties": {
-		"status": { "type": "string", "enum": ["passed", "failed", "blocked", "skipped"] },
-		"package_profile": { "type": "string", "enum": ["none", "docker-local", "docker-registry"] },
+		"schema": { "const": "sure.onboard.package_gate.v2" },
+		"generated_at": { "type": "string" },
+		"status": { "enum": ["passed", "failed", "blocked", "skipped"] },
+		"package_profile": { "enum": ["none", "docker-local", "docker-registry"] },
+		"model_dir": { "type": "string" },
+		"artifact_manifest_path": { "type": "string" },
 		"readiness": {
 			"type": "object",
-			"required": ["local_ready"],
+			"required": ["local_ready", "docker_ready", "registry_ready", "bundle_ready"],
 			"properties": {
 				"local_ready": { "type": "boolean" },
+				"container_ready": { "type": "boolean" },
 				"docker_ready": { "type": "boolean" },
 				"registry_ready": { "type": "boolean" },
+				"bundle_ready": { "type": "boolean" },
 				"vc_ready": { "type": ["boolean", "null"] }
 			},
 			"additionalProperties": false
 		},
-		"model_dir": { "type": "string" },
-		"artifact_manifest_path": { "type": "string" },
-		"local": {
-			"type": "object",
-			"properties": {
-				"validation_passed": { "type": "boolean" },
-				"artifacts_complete": { "type": "boolean" },
-				"evidence": { "type": "array", "items": { "type": "string" } }
-			},
-			"additionalProperties": true
-		},
+		"local": { "type": "object" },
 		"docker": {
 			"type": "object",
 			"properties": {
-				"build_passed": { "type": "boolean" },
-				"validate_passed": { "type": "boolean" },
-				"image_tag": { "type": "string" },
-				"evidence": { "type": "array", "items": { "type": "string" } }
+				"dockerfile_path": { "type": "string" },
+				"dockerfile_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+				"base_image": { "type": "string" },
+				"target_image": { "type": "string" },
+				"target_image_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+				"target_image_ref": { "type": "string" },
+				"build_result_path": { "type": "string" },
+				"validation_result_path": { "type": "string" },
+				"registry_result_path": { "type": "string" }
 			},
 			"additionalProperties": true
 		},
-		"registry": {
-			"type": "object",
-			"properties": {
-				"push_passed": { "type": "boolean" },
-				"pull_verify_passed": { "type": "boolean" },
-				"image_tag": { "type": "string" },
-				"evidence": { "type": "array", "items": { "type": "string" } }
-			},
-			"additionalProperties": true
-		},
+		"registry": { "type": "object" },
+		"bundle": { "type": "object" },
 		"notes": { "type": "string" }
 	},
 	"additionalProperties": false

@@ -15,6 +15,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
+from model_child_env import model_child_env
+
 
 LOCAL_RUNTIME_BACKENDS = {"uv", "pip", "conda", "pixi"}
 
@@ -206,9 +209,8 @@ if require_cuda:
 print(json.dumps(result, ensure_ascii=False, sort_keys=True))
 sys.exit(0 if ok else 31)
 """
-    env = os.environ.copy()
-    existing_pythonpath = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = str(cwd) if not existing_pythonpath else f"{cwd}:{existing_pythonpath}"
+    env = model_child_env()
+    env["PYTHONPATH"] = str(cwd)
     try:
         proc = subprocess.run(
             [str(python_executable), "-c", script, json.dumps(imports), "1" if require_cuda else "0"],

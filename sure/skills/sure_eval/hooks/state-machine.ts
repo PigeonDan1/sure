@@ -33,8 +33,8 @@ import type { GateResult } from "./checkpoints.ts";
 //     mirror is audit-only and is rejected for runtime execution surfaces.
 //     Checked by execution_readiness gate
 //     (scripts/check_execution_surface_compliance.py).
-//   EXECUTION_POLICY — execution=vc must use vc_submit; execution=local may use
-//     local_bash/local_docker even when vc is available; execution=auto prefers
+//   EXECUTION_POLICY — execution=vc must use vc_submit; execution=local must use
+//     local_docker even when vc is available; execution=auto prefers
 //     vc when available and requires an explicit fallback reason otherwise.
 //     Checked by scripts/vc_check.py, which probes the REAL environment (the
 //     agent-declared vc_available field is NOT trusted in-process).
@@ -211,7 +211,7 @@ export const MAIN_FLOW_UNITS: Unit[] = [
 		kind: "gate",
 		produces: "execution_surface.json",
 		schemaRef: "execution_surface.schema.json",
-		requiredFields: ["source_provenance"],
+		requiredFields: ["source_provenance", "deployment_binding"],
 		forbiddenFields: ["report_persisted", "execution_path_actual"],
 		gateCheck: checkExecutionSurface,
 	},

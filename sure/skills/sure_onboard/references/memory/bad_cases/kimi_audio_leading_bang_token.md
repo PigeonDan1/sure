@@ -86,11 +86,11 @@ Full five-task verification after the fix:
 
 ```text
 date: 2026-06-21
-job_id: job-178203365706261330226-junhao-du
-partition: pdgpu-3090-data
+job_id: <job-id>
+partition: site-gpu-data
 status: Completed
 duration: 1m23s
-token_debug: src/sure_eval/models_reonboard/runs/asr_kimi_audio/artifacts/kimi_token_debug_full_3090_data.jsonl
+token_debug: src/sure_eval/models_reonboard/runs/asr_kimi_audio/artifacts/kimi_token_debug_full.jsonl
 sample_output: src/sure_eval/models_reonboard/runs/asr_kimi_audio/artifacts/multitask_sample_output.json
 metric_report: src/sure_eval/models_reonboard/runs/asr_kimi_audio/artifacts/speech_understanding_metric_report.json
 ```

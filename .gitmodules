@@ -1,4 +1,4 @@
 [submodule "sure/external/sure-evaluation"]
 	path = sure/external/sure-evaluation
-	url = https://github.com/PigeonDan1/sure-evaluation.git
+	url = ../sure-evaluation.git
 	branch = main

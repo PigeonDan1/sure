@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import { resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
 import {
 	advance,
 	artifactPath,
@@ -258,7 +260,7 @@ function modelDirFromResolvedArtifact(ctx: SureHookContext): string | undefined 
 }
 
 function skillScriptRepair(ctx: SureHookContext, currentUnit: Unit, invokedScript: string): string {
-	const command = `cd ${shellSingleQuote(ctx.packageDir)} && python3 ${invokedScript} --run-dir ${shellSingleQuote(ctx.runDir)} --produces ${shellSingleQuote(artifactPath(ctx, currentUnit.produces))}`;
+	const command = `cd ${shellSingleQuote(ctx.packageDir)} && "$HARNESS_PYTHON_BIN" ${invokedScript} --run-dir ${shellSingleQuote(ctx.runDir)} --produces ${shellSingleQuote(artifactPath(ctx, currentUnit.produces))}`;
 	return `Harness gate/helper scripts must run from the skill package with harness Python, not the model runtime. Use this shape when a manual diagnostic is needed: ${command}. The hook will also run the current gate script automatically after ${currentUnit.produces} is produced.`;
 }
 
@@ -468,7 +470,7 @@ function resolveOnboardArgs(ctx: SureHookContext): ResolvedOnboardArgs {
 			merged.weights_source = values["weights.source"];
 		}
 		if (!merged.package_profile && !merged.package) {
-			merged.package_profile = "none";
+			merged.package_profile = merged.deployment_type === "api" ? "none" : "docker-registry";
 		}
 		if (!merged.model_name && merged.model_id) {
 			merged.model_name = slugifyModelName(merged.model_id);
@@ -490,7 +492,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		args.package_profile = args.package;
 	}
 	if (!args.package_profile) {
-		args.package_profile = "none";
+		args.package_profile = args.deployment_type === "api" ? "none" : "docker-registry";
 	}
 	if (!args.model_name && args.model_id) {
 		args.model_name = slugifyModelName(args.model_id);
@@ -510,7 +512,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_onboard parameters: ${missing.join(", ")}. Usage: /sure_onboard model=<handoff_name> OR /sure_onboard model_input_path=sure/handoffs/<handoff_name>/model_input.yaml OR /sure_onboard model_id=<owner/model> model_name=<owner__model> repo=<url|path> task_type=<${TASK_TYPES.join("|")}> deployment_type=<local|api> [preferred_backend=uv|pip|conda|pixi|docker|api] [python_version=...] [weights_source=...] [package=none|docker-local|docker-registry] [force_repair=true] [existing_model_dir=...] [max_retries=3]`,
+			`Missing required /sure_onboard parameters: ${missing.join(", ")}. Usage: /sure_onboard model=<handoff_name> OR /sure_onboard model_input_path=sure/handoffs/<handoff_name>/model_input.yaml OR /sure_onboard model_id=<owner/model> model_name=<owner__model> repo=<url|path> task_type=<${TASK_TYPES.join("|")}> deployment_type=<local|api> [preferred_backend=uv|pip|conda|pixi|docker|api] [python_version=...] [weights_source=...] [package=docker-registry] [force_repair=true] [existing_model_dir=...] [max_retries=3]`,
 			"Missing required parameters.",
 		);
 	}
@@ -531,8 +533,15 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (!PACKAGE_PROFILES.includes(args.package_profile)) {
 		return failure(
-			`package "${args.package_profile}" is not one of ${JSON.stringify(PACKAGE_PROFILES)}. Use package=none for the default local-ready flow, package=docker-local to require a local image, or package=docker-registry to require push/pull verification.`,
+			`package "${args.package_profile}" is not one of ${JSON.stringify(PACKAGE_PROFILES)}. Local models default to package=docker-registry; package=none is diagnostic/local-only and cannot produce an Eval-ready bundle.`,
 			"Invalid package profile.",
+		);
+	}
+	const runtime = resolveHarnessPython(ctx.packageDir);
+	if (!runtime.ok || !runtime.contract) {
+		return failure(
+			runtime.error ?? "Bootstrap the locked common Harness Runtime and retry /sure_onboard.",
+			"HARNESS_RUNTIME_NOT_READY",
 		);
 	}
 
@@ -572,7 +581,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		ok: true,
 		state_patch: {
 			phase: phaseFor(findUnit(checkpoint.data.currentUnit) ?? FIRST_UNIT, "running"),
-			message: `SURE model-tool skill loaded for model "${args.model_id}" as "${args.model_name}"${resolved.modelInputPath ? " from MODEL_INPUT" : ""}; package=${args.package_profile} (→ ${modelDir ?? "(no dir)"}).`,
+			message: `SURE model-tool skill loaded for model "${args.model_id}" as "${args.model_name}"${resolved.modelInputPath ? " from MODEL_INPUT" : ""}; package=${args.package_profile}; Harness Runtime ${runtime.contract.runtime_id} (→ ${modelDir ?? "(no dir)"}).`,
 			counters: countersFor(checkpoint.data, 0),
 			diagnostics,
 			checkpoint,
@@ -812,6 +821,10 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 	}
 
 	const artifact = readArtifact(ctx, currentUnit.produces);
+	const unchangedFailure = unchangedFailedArtifact(ctx, currentUnit, checkpoint);
+	if (unchangedFailure) {
+		return unchangedFailure;
+	}
 	const producesResult = validateProduces(ctx, currentUnit, artifact);
 	if (!producesResult.ok) {
 		if (producesResult.missing) {
@@ -871,6 +884,39 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 	};
 }
 
+function unchangedFailedArtifact(
+	ctx: SureHookContext,
+	unit: Unit,
+	checkpoint: { data: CheckpointData },
+): SureHookResult | undefined {
+	const previousDigest = checkpoint.data.failedArtifactDigests?.[unit.id];
+	const path = artifactPath(ctx, unit.produces);
+	if (!previousDigest || !existsSync(path)) {
+		return undefined;
+	}
+	const digest = createHash("sha256").update(readFileSync(path)).digest("hex");
+	if (digest !== previousDigest) {
+		return undefined;
+	}
+	const attempts = checkpoint.data.retries[unit.id] ?? 0;
+	return {
+		ok: true,
+		state_patch: {
+			phase: phaseFor(unit, "blocked"),
+			message: `Gate "${unit.id}" remains blocked on unchanged artifact content; retry ${attempts} was not consumed again.`,
+			counters: countersFor(checkpoint.data, attempts),
+			checkpoint,
+			diagnostics: [
+				{
+					severity: "warning",
+					message: `Gate "${unit.id}" is still blocked on the same artifact.`,
+					repair: `Repair the supporting inputs, then explicitly regenerate ${unit.produces}; diagnostic reads do not rerun the gate.`,
+				},
+			],
+		},
+	};
+}
+
 function failOrRetry(
 	ctx: SureHookContext,
 	unit: Unit,
@@ -878,7 +924,23 @@ function failOrRetry(
 	repair: string,
 	reason: string,
 ): SureHookResult {
-	const next = bumpRetry(unit, checkpoint.data);
+	const artifactDigest = createHash("sha256")
+		.update(readFileSync(artifactPath(ctx, unit.produces)))
+		.digest("hex");
+	if (checkpoint.data.failedArtifactDigests?.[unit.id] === artifactDigest) {
+		const attempts = checkpoint.data.retries[unit.id] ?? 0;
+		return {
+			ok: true,
+			state_patch: {
+				phase: phaseFor(unit, "blocked"),
+				message: `Gate "${unit.id}" remains blocked on unchanged artifact content; retry ${attempts} was not consumed again.`,
+				counters: countersFor(checkpoint.data, attempts),
+				checkpoint,
+				diagnostics: [{ severity: "warning", message: reason, repair }],
+			},
+		};
+	}
+	const next = bumpRetry(unit, checkpoint.data, artifactDigest);
 	const attempts = next.data.retries[unit.id] ?? 1;
 	// Honor the user's max_retries parameter (default 3). Read from ctx.args so a
 	// run started with /sure_onboard ... max_retries=5 actually gets 5 attempts.
@@ -908,15 +970,15 @@ function failOrRetry(
 
 export function preFinish(ctx: SureHookContext): SureHookResult {
 	const checkpoint = readCheckpoint(ctx);
-	const verdictArtifact = readArtifact(ctx, LAST_UNIT.produces);
-	if (!verdictArtifact) {
+	const terminalArtifact = readArtifact(ctx, LAST_UNIT.produces);
+	if (!terminalArtifact) {
 		return failure(
 			`Produce ${LAST_UNIT.produces} under the run artifacts directory before calling sure_finish.`,
-			"Missing final verdict artifact.",
+			"Missing finalized bundle artifact.",
 			countersFor(checkpoint.data, 0),
 		);
 	}
-	const producesResult = validateProduces(ctx, LAST_UNIT, verdictArtifact);
+	const producesResult = validateProduces(ctx, LAST_UNIT, terminalArtifact);
 	if (!producesResult.ok) {
 		return failure(
 			producesResult.repair ?? "Final verdict invalid.",
@@ -924,10 +986,42 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 			countersFor(checkpoint.data, 1),
 		);
 	}
-	// Final backstop: re-run the terminal unit's python gate script (verdict)
-	// so a verdict mutated between postToolResult and sure_finish is still caught.
-	// The in-process gateCheck was removed (redundant with the python script); the
-	// python script is the authoritative semantic checker, so it runs here too.
+	const finishStatus = isRecord(ctx.event) && isRecord(ctx.event.finish) ? ctx.event.finish.status : undefined;
+	if (finishStatus !== "success") {
+		const packageGate = readArtifact(ctx, "package_gate.json");
+		const incompleteError = incompleteDeploymentError(terminalArtifact, packageGate, finishStatus);
+		if (incompleteError) {
+			return failure(
+				incompleteError,
+				"Invalid non-success Onboard terminal evidence.",
+				countersFor(checkpoint.data, 1),
+			);
+		}
+		return {
+			ok: true,
+			state_patch: {
+				phase: {
+					id: "finish",
+					label: "SURE model-tool stopped before registry delivery",
+					status: finishStatus as "failed" | "incomplete",
+					progress: 1,
+				},
+				message: "Local model and container evidence retained; no Eval-ready deployment was claimed.",
+				counters: countersFor(checkpoint.data, 1),
+				artifacts: [
+					{
+						type: "deployment_ready",
+						name: "Blocked deployment marker",
+						path: `.sure/runs/${ctx.run.runId}/artifacts/${LAST_UNIT.produces}`,
+						status: "blocked",
+						summary: "Container validation evidence is present, but registry delivery is incomplete.",
+					},
+				],
+			},
+		};
+	}
+	// Final backstop: re-run the finalized-bundle gate so mutations after the
+	// normal state transition cannot bypass deployment readiness checks.
 	const gateResult = LAST_UNIT.gateScript ? runGateScript(ctx, LAST_UNIT) : { ok: true };
 	if (gateResult && !gateResult.ok) {
 		return failure(
@@ -936,7 +1030,6 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 			countersFor(checkpoint.data, 1),
 		);
 	}
-	const finishStatus = isRecord(ctx.event) && isRecord(ctx.event.finish) ? ctx.event.finish.status : undefined;
 	if (
 		finishStatus === "success" &&
 		checkpoint.data.currentUnit !== LAST_UNIT.id &&
@@ -961,6 +1054,7 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 					currentUnit: LAST_UNIT.id,
 					completedUnits,
 					retries: checkpoint.data.retries,
+					failedArtifactDigests: checkpoint.data.failedArtifactDigests,
 				},
 				0,
 			),
@@ -968,13 +1062,50 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 				{
 					type: "verdict",
 					name: "SURE verdict",
-					path: `.sure/runs/${ctx.run.runId}/artifacts/${LAST_UNIT.produces}`,
+					path: `.sure/runs/${ctx.run.runId}/artifacts/verdict.json`,
 					status: "ready",
 					summary: "Validated SURE model-tool verdict.",
+				},
+				{
+					type: "deployment_ready",
+					name: "SURE deployment binding",
+					path: `.sure/runs/${ctx.run.runId}/artifacts/${LAST_UNIT.produces}`,
+					status: "ready",
+					summary: "Finalized model bundle with immutable deployment binding.",
 				},
 			],
 		},
 	};
+}
+
+export function incompleteDeploymentError(
+	deployment: unknown,
+	packageGate: unknown,
+	finishStatus: unknown,
+): string | undefined {
+	if (finishStatus !== "incomplete" && finishStatus !== "failed") {
+		return "non-success Onboard finish must declare status=incomplete or status=failed";
+	}
+	if (!isRecord(deployment) || (deployment.status !== "blocked" && deployment.status !== "local_only")) {
+		return "non-success Onboard requires deployment_ready.status=blocked or local_only";
+	}
+	if (!isRecord(packageGate) || !isRecord(packageGate.readiness)) {
+		return "non-success Onboard requires structured package_gate readiness evidence";
+	}
+	if (packageGate.status !== "passed" && packageGate.status !== "blocked" && packageGate.status !== "failed") {
+		return "non-success Onboard package_gate.status must be passed, blocked, or failed";
+	}
+	if (packageGate.bundle_ready !== false && packageGate.readiness.bundle_ready !== false) {
+		return "non-success Onboard must prove bundle_ready=false";
+	}
+	if (packageGate.readiness.registry_ready !== false) {
+		return "non-success Onboard must prove registry_ready=false";
+	}
+	const policy = deployment.execution_policy;
+	if (!isRecord(policy) || policy.container_only !== false) {
+		return "blocked deployment marker must not claim container_only Eval readiness";
+	}
+	return undefined;
 }
 
 export function postFinish(ctx: SureHookContext): SureHookResult {

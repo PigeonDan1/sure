@@ -4,6 +4,9 @@
 Both skills need to accept a short dataset alias such as ``aishell1`` and
 resolve it to the fully qualified, versioned dataset id that /sure_eval
 actually writes artifacts under, e.g. ``aishell1__v1.0.2__asr``.
+Source-root pipelines carry the same shape, e.g.
+``aispeech_phy_aishell-1-test__v1.0.2``; the same prefix-match rule applies
+regardless of how many ``__``-separated segments the id has.
 
 /sure_eval already implements this rule for its own dataset directory in
 ``sure_eval.datasets.dataset_manager.DatasetManager._existing_jsonl_for_dataset``.
@@ -25,7 +28,10 @@ def resolve_dataset_alias(name: str, available_names: Iterable[str]) -> str | No
     - An exact match in ``available_names`` is returned unchanged.
     - Otherwise, if exactly one name in ``available_names`` is a versioned
       projection of ``name`` (starts with ``"{name}__"``, e.g. ``aishell1``
-      -> ``aishell1__v1.0.2__asr``), that unique match is returned.
+      -> ``aishell1__v1.0.2__asr``), that unique match is returned. Source-root
+      pipeline ids follow the same ``<source_dataset_name>__<version_id>``
+      shape, e.g. ``aispeech_phy_aishell-1-test__v1.0.2``; the prefix match
+      applies the same way regardless of segment count.
     - If there is no match, or more than one (an ambiguous short name),
       this returns ``None`` so the caller keeps its own "not found"
       handling instead of guessing a winner.

@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import { resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import { validateSkillRuntimeBinding, writeSkillRuntimeBinding } from "../../../runtime/usage.ts";
 import {
 	advance,
 	artifactPath,
@@ -69,6 +72,29 @@ function parseArgs(raw: string): Record<string, string> {
 // failOrRetry does parse ctx.args, but only to read the optional max_retries override.
 
 export function preStart(ctx: SureHookContext): SureHookResult {
+	const runtime = resolveHarnessPython(ctx.packageDir);
+	if (!runtime.ok || !runtime.contract) {
+		return failure(
+			runtime.error ?? "Bootstrap the locked common Harness Runtime and retry /sure_feed.",
+			"HARNESS_RUNTIME_NOT_READY",
+		);
+	}
+	let runtimeBindingPath: string;
+	try {
+		runtimeBindingPath = writeSkillRuntimeBinding({
+			runDir: ctx.runDir,
+			skill: "sure_feed",
+			harnessRuntime: runtime.contract,
+			harnessRole: "Agent research, provider access, structured artifact generation, and state-machine gates.",
+			modelRuntimeReason: "sure_feed performs no model inference; it only prepares onboarding input.",
+			evaluationRuntime: { reason: "sure_feed performs no evaluation." },
+		});
+	} catch (error) {
+		return failure(
+			`Failed to write the runtime responsibility declaration: ${error instanceof Error ? error.message : String(error)}`,
+			"RUNTIME_BINDING_WRITE_FAILED",
+		);
+	}
 	const scriptsDir = join(ctx.packageDir, "scripts");
 	const backendPresent = existsSync(scriptsDir) && existsSync(join(scriptsDir, "sure_feed", "bridge.py"));
 	const checkpoint = readCheckpoint(ctx);
@@ -85,9 +111,18 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		ok: true,
 		state_patch: {
 			phase: phaseFor(findUnit(checkpoint.data.currentUnit) ?? FIRST_UNIT, "running"),
-			message: "SURE model-feed skill loaded.",
+			message: `SURE model-feed skill loaded with Harness Runtime ${runtime.contract.runtime_id}.`,
 			counters: countersFor(checkpoint.data, 0),
 			diagnostics,
+			artifacts: [
+				{
+					type: "runtime_binding",
+					name: "Skill runtime binding",
+					path: runtimeBindingPath,
+					status: "ready",
+					summary: "Harness Runtime required; Model and Evaluation runtimes are explicitly out of scope.",
+				},
+			],
 			checkpoint,
 		},
 	};
@@ -199,6 +234,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 			ctx,
 			currentUnit,
 			checkpoint,
+			artifact,
 			producesResult.repair ?? `Unit "${currentUnit.id}" produces invalid.`,
 			producesResult.reason ?? "produces invalid",
 		);
@@ -214,6 +250,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 					ctx,
 					currentUnit,
 					checkpoint,
+					artifact,
 					inProcess.repair ?? `Gate "${currentUnit.id}" failed.`,
 					inProcess.reason ?? "gate check failed",
 				);
@@ -228,6 +265,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 				ctx,
 				currentUnit,
 				checkpoint,
+				artifact,
 				scriptResult.repair ?? `Gate script "${currentUnit.id}" failed.`,
 				scriptResult.reason ?? "gate script failed",
 			);
@@ -253,10 +291,25 @@ function failOrRetry(
 	ctx: SureHookContext,
 	unit: Unit,
 	checkpoint: { data: CheckpointData },
+	artifact: unknown,
 	repair: string,
 	reason: string,
 ): SureHookResult {
-	const next = bumpRetry(unit, checkpoint.data);
+	const artifactDigest = createHash("sha256").update(JSON.stringify(artifact)).digest("hex");
+	if (checkpoint.data.failedArtifactDigests[unit.id] === artifactDigest) {
+		const attempts = checkpoint.data.retries[unit.id] ?? 0;
+		return {
+			ok: true,
+			state_patch: {
+				phase: phaseFor(unit, "blocked"),
+				message: `Gate "${unit.id}" remains blocked on unchanged artifact content; retry ${attempts} was not consumed again.`,
+				counters: countersFor(checkpoint.data, attempts),
+				checkpoint,
+				diagnostics: [{ severity: "warning", message: reason, repair }],
+			},
+		};
+	}
+	const next = bumpRetry(unit, checkpoint.data, artifactDigest);
 	const attempts = next.data.retries[unit.id] ?? 1;
 	// Honor the user's max_retries parameter (default 3). Read from ctx.args so a
 	// run started with /sure_feed ... max_retries=5 actually gets 5 attempts.
@@ -285,6 +338,14 @@ function failOrRetry(
 }
 
 export function preFinish(ctx: SureHookContext): SureHookResult {
+	const runtimeBindingError = validateSkillRuntimeBinding(
+		join(ctx.runDir, "artifacts", "runtime_binding.json"),
+		"sure_feed",
+		false,
+	);
+	if (runtimeBindingError) {
+		return failure(runtimeBindingError, "Runtime responsibility declaration is invalid.");
+	}
 	const checkpoint = readCheckpoint(ctx);
 	const manifestArtifact = readArtifact(ctx, LAST_UNIT.produces);
 	if (!manifestArtifact) {
@@ -326,10 +387,18 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 						? checkpoint.data.completedUnits
 						: [...checkpoint.data.completedUnits, LAST_UNIT.id],
 					retries: checkpoint.data.retries,
+					failedArtifactDigests: checkpoint.data.failedArtifactDigests,
 				},
 				0,
 			),
 			artifacts: [
+				{
+					type: "runtime_binding",
+					name: "Skill runtime binding",
+					path: `.sure/runs/${ctx.run.runId}/artifacts/runtime_binding.json`,
+					status: "ready",
+					summary: "Verified Harness Runtime binding and explicit non-required runtime slots.",
+				},
 				{
 					type: "model_input",
 					name: "SURE MODEL_INPUT",

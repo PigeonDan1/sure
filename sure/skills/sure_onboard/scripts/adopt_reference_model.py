@@ -436,14 +436,17 @@ def write_package_gate(target_dir: Path, manifest_path: Path) -> None:
     write_json(
         target_dir / "artifacts" / "package_gate.json",
         {
+            "schema": "sure.onboard.package_gate.v2",
             "status": "passed",
             "package_profile": "none",
             "model_dir": str(target_dir),
             "artifact_manifest_path": str(manifest_path),
             "readiness": {
                 "local_ready": True,
+                "container_ready": False,
                 "docker_ready": False,
                 "registry_ready": False,
+                "bundle_ready": False,
                 "vc_ready": None,
             },
             "local": {
@@ -472,12 +475,13 @@ def write_verdict(target_dir: Path, model_id: str, model_name: str, verdict: dic
             "timestamp": now_iso(),
             "model_id": model_id,
             "model_name": model_name,
-            "status": "passed",
+            "status": "partial",
             "package": {"profile": "none"},
             "readiness": {
                 "local_ready": True,
                 "docker_ready": False,
                 "registry_ready": False,
+                "bundle_ready": False,
                 "vc_ready": None,
             },
             "backend": {
@@ -499,6 +503,22 @@ def write_verdict(target_dir: Path, model_id: str, model_name: str, verdict: dic
                 "sample_output_path": "artifacts/sample_output.json",
             },
             "notes": "Normalized harness verdict generated from reference verdict evidence.",
+        },
+    )
+
+
+def write_model_input(target_dir: Path, model_id: str, model_name: str, reference_dir: Path) -> None:
+    write_json(
+        target_dir / "artifacts" / "model_input_resolved.json",
+        {
+            "model_id": model_id,
+            "model_name": model_name,
+            "model_dir": str(target_dir),
+            "repo_url": reference_dir.as_uri(),
+            "task_type": "asr",
+            "deployment_type": "local",
+            "package_profile": "none",
+            "normalized_model_input": {},
         },
     )
 
@@ -536,6 +556,7 @@ def main() -> int:
         ensure_env_compat_result(target_dir, source_verdict)
         ensure_build_plan(target_dir, args.model_id, args.model_name, source_verdict)
         ensure_weights_manifest(target_dir, args.model_id, source_verdict)
+        write_model_input(target_dir, args.model_id, args.model_name, reference_dir)
         manifest_path = write_artifact_manifest(target_dir, args.model_id, args.model_name)
         write_package_gate(target_dir, manifest_path)
         write_verdict(target_dir, args.model_id, args.model_name, source_verdict)

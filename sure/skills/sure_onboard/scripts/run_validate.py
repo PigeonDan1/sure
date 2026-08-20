@@ -32,6 +32,9 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
+from model_child_env import model_child_env
+
 KIND_TO_PASS_KEY = {
     "import": "import_passed",
     "load": "load_passed",
@@ -88,7 +91,7 @@ def log_path_for(data: dict, kind: str, run_dir: Path, cwd: Path) -> Path:
 
 
 def env_for(data: dict, validation_device: str | None = None) -> dict[str, str]:
-    env = os.environ.copy()
+    env = model_child_env()
     if validation_device in ACTUAL_DEVICES:
         env.setdefault("SURE_DEVICE", validation_device)
         env.setdefault("DEVICE", validation_device)

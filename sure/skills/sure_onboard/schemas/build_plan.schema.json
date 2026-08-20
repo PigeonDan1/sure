@@ -2,7 +2,7 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "build_plan.schema.json",
 	"title": "SURE onboard build plan",
-	"description": "Structured output of BUILD_PLAN. It is the executable plan that bridges backend selection to spec/env/weights/validation, and records package policy separately from the core local-ready path.",
+	"description": "Executable local adaptation and Docker delivery plan. Local Eval-ready bundles use package_profile=docker-registry.",
 	"type": "object",
 	"required": ["model_id", "model_dir", "backend", "steps", "package_profile"],
 	"properties": {
@@ -24,6 +24,18 @@
 				"cache_policy": { "type": "string" },
 				"fallback_to_host_global": { "type": "boolean" },
 				"fallback_reason": { "type": "string" }
+			},
+			"additionalProperties": true
+		},
+		"container_delivery": {
+			"type": "object",
+			"required": ["dockerfile_path", "target_image", "registry_required"],
+			"properties": {
+				"dockerfile_path": { "type": "string" },
+				"target_image": { "type": "string" },
+				"registry_required": { "type": "boolean" },
+				"model_mount_read_only": { "type": "boolean" },
+				"result_mount_separate": { "type": "boolean" }
 			},
 			"additionalProperties": true
 		},

@@ -63,7 +63,7 @@ class ProbeTests(unittest.TestCase):
         vc_precheck.probe_registry_image(IMG, run)
         submit_args = run.calls[0]
         queue = submit_args[submit_args.index("-p") + 1]
-        self.assertNotIn(queue, {"pdcpu", "pdgpu-3090", "pdgpu-4090", "pdgpu-5090"})
+        self.assertNotIn(queue, {"cpu-standard", "gpu-a", "gpu-b", "gpu-c"})
 
 
 class ImageCheckTests(unittest.TestCase):
@@ -120,23 +120,23 @@ class ImageCheckTests(unittest.TestCase):
         self.assertEqual(vc_precheck.check_image(IMG, "model_metadata", make_runner(responses)).status, "warn")
 
 
-VC_INFO_U = "User: ruichen.sun\n[Partition]\n------------------------------\npdcpu\npdgpu-3090\npdgpu-4090\n[Quota]\nGPU: 32\n"
+VC_INFO_U = "User: example\n[Partition]\n------------------------------\ncpu-standard\ngpu-standard\ngpu-priority\n[Quota]\nGPU: 32\n"
 
 
 class PartitionCheckTests(unittest.TestCase):
     def test_allowed_partition_passes(self):
         run = make_runner([(["vc", "info", "-u"], FakeCompleted(0, VC_INFO_U, ""))])
-        self.assertEqual(vc_precheck.check_partition("pdcpu", run).status, "pass")
+        self.assertEqual(vc_precheck.check_partition("cpu-standard", run).status, "pass")
 
     def test_unknown_partition_fails_with_candidates(self):
         run = make_runner([(["vc", "info", "-u"], FakeCompleted(0, VC_INFO_U, ""))])
         result = vc_precheck.check_partition("mlops", run)
         self.assertEqual(result.status, "fail")
-        self.assertEqual(result.candidates, ["pdcpu", "pdgpu-3090", "pdgpu-4090"])
+        self.assertEqual(result.candidates, ["cpu-standard", "gpu-priority", "gpu-standard"])
 
     def test_unlistable_partitions_warn(self):
         run = make_runner([(["vc", "info", "-u"], FakeCompleted(1, "", "boom"))])
-        self.assertEqual(vc_precheck.check_partition("pdcpu", run).status, "warn")
+        self.assertEqual(vc_precheck.check_partition("cpu-standard", run).status, "warn")
 
 
 class PathCheckTests(unittest.TestCase):
@@ -205,7 +205,7 @@ class RunPrecheckTests(unittest.TestCase):
     def test_no_vc_marks_cluster_checks_skipped(self):
         run = make_runner([(["docker", "image", "inspect"], FakeCompleted(1, "", "No such image"))])
         results = vc_precheck.run_precheck(
-            image=IMG, image_source="cli_override", partition="pdcpu", memory="16G",
+            image=IMG, image_source="cli_override", partition="cpu-standard", memory="16G",
             gpus=1, cpus=4, volume_mount="/workspace:/workspace",
             paths=["/workspace/x"], expected_venv="/opt/x_venv",
             run=run, which=lambda name: None,
@@ -223,7 +223,7 @@ class RunPrecheckTests(unittest.TestCase):
             (["vc", "info", "-u"], FakeCompleted(0, VC_INFO_U, "")),
         ])
         results = vc_precheck.run_precheck(
-            image=IMG, image_source="auto_select_best_image", partition="pdcpu", memory="16G",
+            image=IMG, image_source="auto_select_best_image", partition="cpu-standard", memory="16G",
             gpus=1, cpus=4, volume_mount="/workspace:/workspace",
             paths=["/workspace/x"], expected_venv="/opt/x_venv",
             run=run, which=lambda name: "/usr/bin/vc",
@@ -270,7 +270,7 @@ class CliTests(unittest.TestCase):
         return real_subprocess.run(
             [sys.executable, self.SCRIPT,
              "--image", IMG, "--image-source", "cli_override",
-             "--partition", "pdcpu", "--memory", "16G",
+             "--partition", "cpu-standard", "--memory", "16G",
              "--volume", "/workspace:/workspace",
              "--path", "/workspace/x",
              "--expected-venv", "/opt/x_venv", *extra],
@@ -293,7 +293,7 @@ class CliTests(unittest.TestCase):
         completed = real_subprocess.run(
             [sys.executable, self.SCRIPT,
              "--image", IMG, "--image-source", "cli_override",
-             "--partition", "pdcpu", "--memory", "16",
+             "--partition", "cpu-standard", "--memory", "16",
              "--volume", "/workspace:/workspace",
              "--path", "/workspace/x",
              "--expected-venv", "/opt/x_venv"],
@@ -301,6 +301,60 @@ class CliTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 1)
         self.assertIn("resources", completed.stderr)
+
+
+class MultiMountPathTests(unittest.TestCase):
+    def test_path_under_secondary_mount_passes(self) -> None:
+        result = vc_precheck.check_paths(
+            [
+                "/srv/workspace/user/repo/entrypoint.sh",
+                "/srv/datasets/group/store/ds_pool/demo_ds",
+            ],
+            "/srv/workspace:/srv/workspace,"
+            "/srv/datasets/group/store/ds_pool/demo_ds:"
+            "/srv/datasets/group/store/ds_pool/demo_ds",
+        )
+        self.assertEqual(result.status, "pass")
+
+    def test_path_outside_all_mounts_fails(self) -> None:
+        result = vc_precheck.check_paths(
+            ["/srv/datasets/group/store/ds_pool/demo_ds"],
+            "/srv/workspace:/srv/workspace",
+        )
+        self.assertEqual(result.status, "fail")
+        self.assertIn("demo_ds", result.detail)
+
+    def test_single_mount_behaviour_unchanged(self) -> None:
+        result = vc_precheck.check_paths(
+            ["/srv/workspace/user/repo"],
+            "/srv/workspace:/srv/workspace",
+        )
+        self.assertEqual(result.status, "pass")
+
+
+class MergeVolumeMountTests(unittest.TestCase):
+    def test_appends_identity_mount_for_outside_root(self) -> None:
+        from sure_eval.agent.vc_submitter import _merge_volume_mounts
+
+        merged = _merge_volume_mounts(
+            "/srv/workspace:/srv/workspace",
+            ["/srv/datasets/group/store/ds_pool/demo_ds"],
+        )
+        self.assertEqual(
+            merged,
+            "/srv/workspace:/srv/workspace,"
+            "/srv/datasets/group/store/ds_pool/demo_ds:"
+            "/srv/datasets/group/store/ds_pool/demo_ds",
+        )
+
+    def test_root_already_covered_is_not_duplicated(self) -> None:
+        from sure_eval.agent.vc_submitter import _merge_volume_mounts
+
+        merged = _merge_volume_mounts(
+            "/srv/workspace:/srv/workspace",
+            ["/srv/workspace/user/data", "", None],
+        )
+        self.assertEqual(merged, "/srv/workspace:/srv/workspace")
 
 
 if __name__ == "__main__":

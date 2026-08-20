@@ -4,20 +4,25 @@ set -euo pipefail
 # SURE-EVAL Main Flow Shell Entrypoint
 # Supports single or multiple datasets via the DATASETS environment variable.
 #
+# Dataset paths accept an optional @<version_id> suffix.
+# The suffix is REQUIRED when the dataset has multiple versions under sample_files/ —
+# the strict resolver refuses ambiguous versions. Always carry the user's @<version_id>
+# through unchanged; dropping it fails the smoke gate.
+#
 # Usage (single dataset):
-#   DATASETS="aishell1" ./run_single_model.sh
+#   DATASETS="${SURE_DATASET_SOURCE_ROOT}/group/store/ds_pool/example@v1.0.2" ./run_single_model.sh
 #
 # Usage (multiple datasets):
-#   DATASETS="aishell1 librispeech_clean" ./run_single_model.sh
+#   DATASETS="${SURE_DATASET_SOURCE_ROOT}/group/store/ds_pool/example-a ${SURE_DATASET_SOURCE_ROOT}/group/store/ds_pool/example-b" ./run_single_model.sh
 #
 # Usage (explicit metrics):
-#   DATASETS="aishell1" METRICS="cer wer" ./run_single_model.sh
+#   DATASETS="${SURE_DATASET_SOURCE_ROOT}/group/store/ds_pool/example" METRICS="cer wer" ./run_single_model.sh
 #
 # Usage (bounded smoke test only):
-#   DATASETS="aishell1" MAX_SAMPLES=10 ./run_single_model.sh
+#   DATASETS="${SURE_DATASET_SOURCE_ROOT}/group/store/ds_pool/example" MAX_SAMPLES=10 ./run_single_model.sh
 #
 # Usage (skip validation and evaluation):
-#   DATASETS="aishell1" SKIP_VALIDATE_AND_EVAL=1 ./run_single_model.sh
+#   DATASETS="${SURE_DATASET_SOURCE_ROOT}/group/store/ds_pool/example" SKIP_VALIDATE_AND_EVAL=1 ./run_single_model.sh
 #
 # NOTE: The following variables SHOULD be explicitly set at materialization time
 # by the main-flow agent. Defaults are provided for local testing only.
@@ -42,47 +47,63 @@ if [[ ! -d "$REPO_ROOT/scripts" ]]; then
 fi
 
 MODEL_NAME="${MODEL_NAME:-my_model}"
-SHARED_MODEL_ROOT="${SHARED_MODEL_ROOT:-<shared-model-root>}"
-REPO_MODEL_ROOT="${REPO_MODEL_ROOT:-$REPO_ROOT/src/sure_eval/models}"
-if [[ -z "${MODEL_DIR:-}" ]]; then
-  if [[ -d "$SHARED_MODEL_ROOT/$MODEL_NAME" ]]; then
-    MODEL_DIR="$SHARED_MODEL_ROOT/$MODEL_NAME"
-    MODEL_DIR_SOURCE="shared_model_root"
-  else
-    MODEL_DIR="$REPO_MODEL_ROOT/$MODEL_NAME"
-    MODEL_DIR_SOURCE="repo_model_root"
-  fi
+if [[ -n "${SURE_APPROVED_MODEL_ROOT:-}" ]]; then
+  APPROVED_MODEL_ROOT="$SURE_APPROVED_MODEL_ROOT"
+elif [[ -n "${SURE_EVAL_APPROVED_MODEL_DIR:-}" ]]; then
+  APPROVED_MODEL_ROOT="$(dirname "$SURE_EVAL_APPROVED_MODEL_DIR")"
 else
-  MODEL_DIR_SOURCE="explicit_model_dir"
+  HARNESS_ROOT="$(cd "$REPO_ROOT/../../.." && pwd)"
+  APPROVED_MODEL_ROOT="$(node --import tsx "$HARNESS_ROOT/scripts/sure-site-value.mjs" storage.approved_models_roots | head -n 1)"
 fi
-if [[ ! -d "$MODEL_DIR" ]]; then
-  echo "ERROR: Model directory not found: $MODEL_DIR"
-  echo "Checked shared root: $SHARED_MODEL_ROOT/$MODEL_NAME"
-  echo "Checked repo root: $REPO_MODEL_ROOT/$MODEL_NAME"
+SHARED_MODEL_ROOT="$APPROVED_MODEL_ROOT"
+REPO_MODEL_ROOT="$APPROVED_MODEL_ROOT"
+# The trusted container launcher injects the read-only mount target. Direct host
+# execution keeps using the canonical approved NFS root.
+APPROVED_MODEL_DIR="${SURE_EVAL_APPROVED_MODEL_DIR:-$APPROVED_MODEL_ROOT/$MODEL_NAME}"
+if [[ ! -d "${MODEL_DIR:-}" ]]; then
+  MODEL_DIR="$APPROVED_MODEL_DIR"
+fi
+if [[ ! -d "$MODEL_DIR" || "$(readlink -f "$MODEL_DIR")" != "$(readlink -f "$APPROVED_MODEL_DIR")" ]]; then
+  echo "ERROR: MODEL_DIR must be the approved NFS model: $APPROVED_MODEL_DIR"
+  exit 1
+fi
+MODEL_DIR="$(readlink -f "$APPROVED_MODEL_DIR")"
+MODEL_DIR_SOURCE="approved_nfs_models"
+PROTOCOL_ID="${PROTOCOL_ID:-standard_system}"
+if [[ "$PROTOCOL_ID" != "standard_system" && "$PROTOCOL_ID" != "strict_core" ]]; then
+  echo "ERROR: PROTOCOL_ID must be standard_system or strict_core"
   exit 1
 fi
 RUN_ID="${RUN_ID:-main_agent_${MODEL_NAME}_$(date +%Y%m%d_%H%M%S)}"
-RUN_DIR="${RUN_DIR:-$MODEL_DIR/eval_runs/$RUN_ID}"
-PYTHON_BIN="${PYTHON_BIN:-python}"
-HARNESS_PYTHON_BIN="${HARNESS_PYTHON_BIN:-$PYTHON_BIN}"
-MODEL_PYTHON="${MODEL_PYTHON:-$PYTHON_BIN}"
+HARNESS_REPO_ROOT="$(cd "$REPO_ROOT/../../.." && pwd)"
+EXPECTED_RUN_ROOT="$HARNESS_REPO_ROOT/sure/results/$MODEL_NAME/$PROTOCOL_ID"
+RUN_DIR="${RUN_DIR:-$EXPECTED_RUN_ROOT/$RUN_ID}"
+APPROVED_CONTAINER_RESULT_DIR="${SURE_EVAL_APPROVED_RESULT_DIR:-}"
+if [[ "$(readlink -m "$RUN_DIR")" != "$(readlink -m "$EXPECTED_RUN_ROOT")/"* \
+  && ( -z "$APPROVED_CONTAINER_RESULT_DIR" || "$(readlink -m "$RUN_DIR")" != "$(readlink -m "$APPROVED_CONTAINER_RESULT_DIR")" ) ]]; then
+  echo "ERROR: RUN_DIR must stay under local staging root or equal the approved container result mount"
+  exit 1
+fi
+MODEL_PYTHON="${MODEL_PYTHON:-${PYTHON_BIN:-python}}"
+PYTHON_BIN="$MODEL_PYTHON"
+: "${HARNESS_PYTHON_BIN:?HARNESS_PYTHON_BIN must be injected from the approved common Harness Runtime}"
 _harness_python_works() {
   "$1" - <<'PY' >/dev/null 2>&1
+import pydantic
+import pydantic_settings
+import rich
 import structlog
+import typer
 import yaml
 PY
 }
 if ! _harness_python_works "$HARNESS_PYTHON_BIN"; then
-  for candidate in "${SURE_EVAL_HARNESS_PYTHON_BIN:-}" python3 python; do
-    if [[ -n "$candidate" ]] && _harness_python_works "$candidate"; then
-      HARNESS_PYTHON_BIN="$candidate"
-      break
-    fi
-  done
-fi
-if ! _harness_python_works "$HARNESS_PYTHON_BIN"; then
   echo "ERROR: HARNESS_PYTHON_BIN cannot import required harness modules: $HARNESS_PYTHON_BIN"
-  echo "Set HARNESS_PYTHON_BIN or SURE_EVAL_HARNESS_PYTHON_BIN to a Python environment with structlog and PyYAML."
+  echo "Repair the locked common Harness Runtime before retrying; Eval must not install into Model Python."
+  exit 1
+fi
+if [[ "$(readlink -f "$HARNESS_PYTHON_BIN")" == "$(readlink -f "$(command -v "$MODEL_PYTHON")")" ]]; then
+  echo "ERROR: HARNESS_PYTHON_BIN and MODEL_PYTHON resolved to the same executable"
   exit 1
 fi
 TOOL_NAME="${TOOL_NAME:-}"
@@ -123,7 +144,7 @@ MAX_SAMPLES="${MAX_SAMPLES:-0}"
 SKIP_VALIDATE_AND_EVAL="${SKIP_VALIDATE_AND_EVAL:-0}"
 NO_RESUME="${NO_RESUME:-0}"
 LANGUAGE="${LANGUAGE:-}"
-export HF_HUB_CACHE="${HF_HUB_CACHE:-$MODEL_DIR/.runtime/hf_cache}"
+export HF_HUB_CACHE="${HF_HUB_CACHE:-$RUN_DIR/.runtime/cache/huggingface/hub}"
 export HARNESS_PYTHON_BIN
 export SURE_EVAL_HARNESS_PYTHON_BIN="$HARNESS_PYTHON_BIN"
 export MODEL_PYTHON
@@ -132,7 +153,6 @@ if [[ -n "${SERVER_SCRIPT_OVERRIDE:-}" ]]; then
 fi
 export PYTHONPATH="${REPO_DEPS_TARGET}:${REPO_ROOT}/scripts:${REPO_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 RESULTS_DIR="${RESULTS_DIR:-$RUN_DIR/results}"
-PROTOCOL_ID="${PROTOCOL_ID:-strict_core}"
 METRICS="${METRICS:-}"
 export SURE_EVAL_METRICS="$METRICS"
 EVALUATION_BACKEND="${EVALUATION_BACKEND:-external}"
@@ -225,7 +245,11 @@ export SURE_EVAL_EXECUTION_PATH="$EXECUTION_PATH"
 # Accepts space-separated dataset names via DATASETS.
 # For backward compatibility, falls back to DATASET if DATASETS is unset.
 if [[ -z "${DATASETS:-}" ]]; then
-  DATASETS="${DATASET:-aishell1}"
+  DATASETS="${DATASET:-}"
+fi
+if [[ -z "$DATASETS" ]]; then
+  echo "ERROR: No datasets specified. Set DATASETS to one or more source roots allowed by the active site policy."
+  exit 1
 fi
 read -ra DATASET_ARRAY <<< "$DATASETS"
 
@@ -236,42 +260,6 @@ if [[ ${#DATASET_ARRAY[@]} -eq 0 ]]; then
 fi
 
 mkdir -p "$RUN_DIR/predictions/logs"
-
-ensure_python_pip() {
-  local python_bin="$1"
-  if "$python_bin" -m pip --version >/dev/null 2>&1; then
-    return 0
-  fi
-  echo "Python runtime has no pip; bootstrapping with ensurepip: $python_bin"
-  if "$python_bin" -m ensurepip --upgrade >/dev/null 2>&1 \
-    && "$python_bin" -m pip --version >/dev/null 2>&1; then
-    return 0
-  fi
-  echo "ERROR: Python runtime cannot install repository dependencies because pip is unavailable: $python_bin"
-  echo "Hint: recreate the venv with pip/seed enabled, or run: $python_bin -m ensurepip --upgrade"
-  exit 2
-}
-
-if ! "$HARNESS_PYTHON_BIN" - <<'PY' >/dev/null 2>&1
-import pydantic
-import pydantic_settings
-import rich
-import structlog
-import yaml
-PY
-then
-  ensure_python_pip "$HARNESS_PYTHON_BIN"
-  echo "Installing missing repository runtime dependencies into $REPO_DEPS_TARGET..."
-  rm -rf "$REPO_DEPS_TARGET"
-  "$HARNESS_PYTHON_BIN" -m pip install --retries 10 --timeout 60 --target "$REPO_DEPS_TARGET" \
-    'pydantic==2.10.6' \
-    'pydantic-settings==2.7.1' \
-    'structlog==25.5.0' \
-    'PyYAML==6.0.2' \
-    'rich>=13.0' \
-    'typer>=0.12' \
-    'click>=8.0'
-fi
 
 echo "========================================"
 echo "SURE-EVAL Run: $RUN_ID"
@@ -502,8 +490,10 @@ fi
 # ---------------------------------------------------------------------------
 echo "Writing prediction generation status..."
 PRED_STATUS_FILE="$RUN_DIR/prediction_generation_status.json"
+if [[ ! -f "$PRED_STATUS_FILE" ]]; then
 cat > "$PRED_STATUS_FILE" <<EOF
 {
+  "schema": "sure.eval.prediction_generation_status.v2",
   "run_id": "$RUN_ID",
   "model_name": "$MODEL_NAME",
   "model_dir": "$MODEL_DIR",
@@ -550,6 +540,7 @@ cat >> "$PRED_STATUS_FILE" <<EOF
   ]
 }
 EOF
+fi
 
 # ---------------------------------------------------------------------------
 # Early exit if only preparing predictions
@@ -770,6 +761,10 @@ if [[ -f "$RUN_DIR/report_snapshot.md" ]]; then
   mkdir -p "$RESULTS_DIR"
   cp "$RUN_DIR/report_snapshot.md" "$RESULTS_DIR/report_snapshot.md"
 fi
+
+"$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/finalize_result_bundle.py" \
+  --run-dir "$RUN_DIR" \
+  --published-run-dir "${SURE_EVAL_PUBLISHED_RUN_DIR:-$RUN_DIR}"
 
 echo "========================================"
 echo "Run completed: $RUN_ID"

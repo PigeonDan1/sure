@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from sure_eval.core.config import Config
 from sure_eval.core.logging import configure_logging, get_logger
 from sure_eval.datasets import DatasetManager
+from sure_eval.datasets.source_resolver import is_source_entry
 
 configure_logging(level="INFO")
 logger = get_logger(__name__)
@@ -31,11 +32,12 @@ def prepare_dataset(
 ) -> dict[str, Any]:
     """Prepare a single dataset and return a summary."""
     canonical_name = manager.normalize_dataset_name(dataset_name)
-    jsonl_path = manager.download_and_convert(dataset_name)
+    source_request = requested_name if requested_name and is_source_entry(requested_name) else None
+    jsonl_path = manager.download_and_convert(source_request or dataset_name)
     prepared_name = jsonl_path.stem
     info = manager.get_info(prepared_name) or manager.get_info(canonical_name) or {}
 
-    return {
+    summary = {
         "dataset": prepared_name,
         "requested_name": requested_name or dataset_name,
         "jsonl_path": str(jsonl_path),
@@ -45,6 +47,13 @@ def prepare_dataset(
         "num_samples": info.get("num_samples"),
         "display_name": info.get("display_name"),
     }
+    if info.get("source_dataset_name"):
+        summary["source_dataset_name"] = info["source_dataset_name"]
+    if info.get("version_id"):
+        summary["version_id"] = info["version_id"]
+    if info.get("source_root"):
+        summary["source_dataset_root"] = info["source_root"]
+    return summary
 
 
 def main() -> int:

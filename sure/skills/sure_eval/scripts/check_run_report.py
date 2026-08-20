@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -173,6 +174,27 @@ def _validate_protocol(root: Path) -> list[str]:
     if not argument_policy and not prediction_reuse.get("enabled"):
         errors.append("protocol.yaml inference_parameters.argument_policy is required for generated predictions")
     provenance = protocol.get("provenance") if isinstance(protocol.get("provenance"), dict) else {}
+    inference_environment = protocol.get("inference_environment") if isinstance(protocol.get("inference_environment"), dict) else {}
+    container = inference_environment.get("container") if isinstance(inference_environment.get("container"), dict) else {}
+    runtime_inventory = inference_environment.get("runtime_inventory") if isinstance(inference_environment.get("runtime_inventory"), dict) else {}
+    harness_runtime = inference_environment.get("harness_runtime") if isinstance(inference_environment.get("harness_runtime"), dict) else {}
+    mount_policy = inference_environment.get("mount_policy") if isinstance(inference_environment.get("mount_policy"), dict) else {}
+    if "@sha256:" not in str(container.get("image_ref") or ""):
+        errors.append("protocol.yaml container.image_ref must be digest-pinned")
+    if container.get("execution_mode") != "container_only":
+        errors.append("protocol.yaml container.execution_mode must be container_only")
+    if container.get("host_python_fallback") is not False:
+        errors.append("protocol.yaml must disable container host_python_fallback")
+    if runtime_inventory.get("schema") != "sure.onboard.runtime_inventory.v2":
+        errors.append("protocol.yaml must record runtime_inventory schema v2")
+    if not prediction_reuse.get("enabled"):
+        if harness_runtime.get("schema") != "sure.harness.runtime.binding.v1":
+            errors.append("protocol.yaml must record the common Harness Runtime binding")
+        for key in ("runtime_id", "python_executable", "lock_sha256", "manifest_path", "runtime_root"):
+            if not harness_runtime.get(key):
+                errors.append(f"protocol.yaml harness_runtime.{key} is required for generated predictions")
+    if mount_policy.get("nfs_models_read_only") is not True:
+        errors.append("protocol.yaml must record a read-only NFS model mount")
     if provenance.get("raw_response_source_of_truth") is not False:
         errors.append("protocol.yaml provenance.raw_response_source_of_truth must be false")
     if prediction_reuse.get("enabled"):
@@ -182,6 +204,8 @@ def _validate_protocol(root: Path) -> list[str]:
             errors.append("protocol.yaml prediction_reuse.old_evaluation_reused must be false")
     elif not provenance.get("prediction_generation_status"):
         errors.append("protocol.yaml provenance.prediction_generation_status is required for generated predictions")
+    if not provenance.get("deployment_ready") or not provenance.get("package_gate"):
+        errors.append("protocol.yaml provenance must link deployment_ready and package_gate")
     return errors
 
 
@@ -447,8 +471,19 @@ def _execution_result(run_dir: Path, report_path: Path) -> dict[str, Any]:
 def _validate_failed_execution_report(run_dir: Path, report_path: Path, data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     execution_result = _execution_result(run_dir, report_path)
-    if not execution_result:
+    failed_pre_submit = _is_failed_pre_submit(data)
+    if not execution_result and not failed_pre_submit:
         errors.append("failed run report requires artifacts/execution_result.json")
+    elif not execution_result:
+        smoke = _read_optional_json(run_dir / "artifacts" / "smoke_test_result.json")
+        readiness = _read_optional_json(run_dir / "artifacts" / "execution_readiness_report.json")
+        smoke_failed = bool(smoke) and smoke.get("smoke_passed") is False
+        readiness_failed = bool(readiness) and readiness.get("execution_ready") is False
+        if not smoke_failed and not readiness_failed:
+            errors.append(
+                "failed pre-submit report requires a failed smoke_test_result.json "
+                "or execution_readiness_report.json"
+            )
     else:
         job_status = str(execution_result.get("job_status") or execution_result.get("status") or "").lower()
         exit_code = execution_result.get("exit_code")
@@ -475,6 +510,30 @@ def _validate_failed_execution_report(run_dir: Path, report_path: Path, data: di
         errors.append("failed run report requires next_action describing the required repair or blocker")
 
     return errors
+
+
+def _submitted_image_error(execution_path: str, submit_result: dict, approved: dict) -> str | None:
+    approved_ref = str(approved.get("target_image_ref") or "")
+    if execution_path != "vc_submit":
+        actual_ref = ((submit_result.get("container_binding") or {}).get("image_ref")) or submit_result.get("vc_image")
+        return None if actual_ref == approved_ref else "local container image differs from approved digest identity"
+
+    submission = submit_result.get("vc_submission") if isinstance(submit_result.get("vc_submission"), dict) else {}
+    actual_tag = str(submission.get("image") or submit_result.get("vc_image") or "")
+    actual_digest = str(submission.get("image_digest") or submit_result.get("image_digest") or "")
+    actual_identity = str(submission.get("image_identity_ref") or submit_result.get("image_identity_ref") or "")
+    if actual_tag != str(approved.get("target_image") or ""):
+        return "VC submission tag differs from approved target_image"
+    if actual_digest != str(approved.get("target_image_digest") or "") or actual_identity != approved_ref:
+        return "VC submission digest identity differs from approved deployment binding"
+    try:
+        command = shlex.split(str(submit_result.get("vc_submit_command") or ""))
+        command_image = command[command.index("-i") + 1]
+    except (ValueError, IndexError):
+        return "VC submit command does not contain a parseable -i image"
+    if command_image != actual_tag:
+        return "VC submit command image differs from structured submission tag"
+    return None
 
 
 def main() -> int:
@@ -510,18 +569,17 @@ def main() -> int:
         )
         return 1
 
+    requested = _execution_requested(data, Path(args.run_dir), path)
+    submit_result = _submit_result(Path(args.run_dir), path)
+    evaluation_only = bool(data.get("evaluation_only"))
+    failed_pre_submit = _is_failed_pre_submit(data)
     if execution_path_actual != "vc_submit":
-        requested = _execution_requested(data, Path(args.run_dir), path)
-        submit_result = _submit_result(Path(args.run_dir), path)
         vc_available = bool(data.get("vc_available", submit_result.get("vc_available", False)))
         fallback_approved = bool(data.get("fallback_approved", submit_result.get("fallback_approved", False)))
         fallback_reason = data.get("local_fallback_reason") or submit_result.get("local_fallback_reason", "")
-        evaluation_only = bool(data.get("evaluation_only"))
-        failed_pre_submit = _is_failed_pre_submit(data)
-        if requested == "vc" and not failed_pre_submit:
+        if execution_path_actual == "local_bash" and not evaluation_only and not failed_pre_submit:
             print(
-                "RUN_REPORT_UNIT gate: user requested execution=vc, but "
-                f"execution_path_actual={execution_path_actual}.",
+                "RUN_REPORT_UNIT gate: formal model inference cannot use local_bash; expected local_docker.",
                 file=sys.stderr,
             )
             return 1
@@ -536,6 +594,24 @@ def main() -> int:
             print(
                 "RUN_REPORT_UNIT gate: execution=auto used local execution even though vc was available; "
                 "set fallback_approved=true for this intentional override.",
+                file=sys.stderr,
+            )
+            return 1
+        if requested == "vc" and not failed_pre_submit:
+            print(
+                "RUN_REPORT_UNIT gate: user requested execution=vc, but "
+                f"execution_path_actual={execution_path_actual}.",
+                file=sys.stderr,
+            )
+            return 1
+
+    eval_input = _read_optional_json(Path(args.run_dir) / "artifacts" / "eval_input_resolved.json")
+    approved = ((eval_input.get("model") or {}).get("deployment_binding") or {})
+    if approved and not evaluation_only and not failed_pre_submit:
+        image_error = _submitted_image_error(execution_path_actual, submit_result, approved)
+        if image_error:
+            print(
+                f"RUN_REPORT_UNIT gate: {image_error}.",
                 file=sys.stderr,
             )
             return 1

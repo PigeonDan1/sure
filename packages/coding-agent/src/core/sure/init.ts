@@ -1,21 +1,30 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { OAuthLoginCallbacks, OAuthProviderId } from "@earendil-works/pi-ai";
+import type { KnownProvider, ModelThinkingLevel, OAuthLoginCallbacks, OAuthProviderId } from "@earendil-works/pi-ai";
+import { getModels } from "@earendil-works/pi-ai/compat";
 import { getModelsPath } from "../../config.ts";
 import type { ExtensionCommandContext } from "../extensions/types.ts";
 import type { ModelRegistry } from "../model-registry.ts";
 import { SettingsManager } from "../settings-manager.ts";
+import { applyProbedModel, probeWholeGateway, verifyModelRoundTrip } from "./init-apply.ts";
+import type { probeModelCapability } from "./init-capability-probe.ts";
 import type { GatewayProviderSummary } from "./init-gateway-store.ts";
 import { listGatewayProviders, readGatewayModels, writeGatewayProvider } from "./init-gateway-store.ts";
 import type { InitMenuEntry } from "./init-menu.ts";
 import { buildInitMenu, findMenuEntry, isReservedProviderName, menuEntryLabel } from "./init-menu.ts";
 import type { ListedModel, ModelListing } from "./init-model-listing.ts";
 import { describeListingSource, fetchOpenAICompatibleModels, listBuiltInProviderModels } from "./init-model-listing.ts";
-import type { SureInitArgs, SureInitManifest, SureInitProviderOption, SureInitResult } from "./init-types.ts";
+import type {
+	ProbeStep,
+	SureInitArgs,
+	SureInitManifest,
+	SureInitProviderOption,
+	SureInitResult,
+} from "./init-types.ts";
 import { discoverSureSkillPackages } from "./manifest.ts";
 
-export const SURE_INIT_VERSION = 1;
+export const SURE_INIT_VERSION = 3;
 
 /** Supported agent/provider options for /sure_init. */
 export const SURE_INIT_PROVIDER_OPTIONS: SureInitProviderOption[] = [
@@ -55,11 +64,22 @@ export const SURE_INIT_PROVIDER_OPTIONS: SureInitProviderOption[] = [
 		id: "openai",
 		name: "OpenAI GPT",
 		provider: "openai",
-		defaultModel: "gpt-5.5",
+		// Measured 2026-08-17: gpt-5.6-luna answers 403 through a relay (anti-forwarding
+		// check), so it cannot be the default. Sol answers on the responses protocol.
+		defaultModel: "gpt-5.6-sol",
 		authType: "api_key",
 		description: "Standard OpenAI API",
 	},
 ];
+
+/** True when models.json has to carry this model's protocol because pi-ai's catalog does not. */
+export function needsCapabilityProbe(provider: string, modelId: string): boolean {
+	try {
+		return !getModels(provider as KnownProvider).some((model) => model.id === modelId);
+	} catch {
+		return true;
+	}
+}
 
 /** Parse /sure_init command arguments. */
 export function parseInitArgs(raw: string): SureInitArgs {
@@ -77,6 +97,10 @@ export function parseInitArgs(raw: string): SureInitArgs {
 			result.gatewayName = args[++i];
 		} else if (arg === "--base-url") {
 			result.gatewayBaseUrl = args[++i];
+		} else if (arg === "--effort") {
+			result.effort = args[++i];
+		} else if (arg === "--probe-all") {
+			result.probeAll = true;
 		}
 	}
 	return result;
@@ -223,19 +247,40 @@ function writeInitManifest(cwd: string, manifest: SureInitManifest): string {
 
 const NON_INTERACTIVE_MODEL_ERROR = "Non-interactive /sure_init requires --model <model-id>.";
 
+/** Probe verdicts as they read on the 跳过 line of a --probe-all summary. */
+const SKIP_REASON_LABELS: Record<string, string> = {
+	"no-channel": "没渠道",
+	"client-rejected": "拒绝客户端",
+	"no-protocol": "协议不通",
+	flaky: "时通时不通",
+	unreachable: "连不上",
+	"bad-key": "key 无效",
+};
+
 async function pickModelId(
 	ctx: ExtensionCommandContext,
 	listing: ModelListing,
 	providerLabel: string,
+	preferredModelIds: string[] = [],
 ): Promise<string | undefined> {
 	if (listing.source === "manual" && listing.models.length === 1) {
 		return listing.models[0].id;
 	}
 	ctx.ui.notify(describeListingSource(listing), listing.source === "live" ? "info" : "warning");
-	const choices = listing.models.map((model) => (model.name ? `${model.id} — ${model.name}` : model.id));
+	const models =
+		preferredModelIds.length > 0
+			? [...listing.models].sort((a, b) => {
+					const aIndex = preferredModelIds.indexOf(a.id);
+					const bIndex = preferredModelIds.indexOf(b.id);
+					const aRank = aIndex < 0 ? preferredModelIds.length : aIndex;
+					const bRank = bIndex < 0 ? preferredModelIds.length : bIndex;
+					return aRank - bRank;
+				})
+			: listing.models;
+	const choices = models.map((model) => (model.name ? `${model.id} — ${model.name}` : model.id));
 	const selected = await ctx.ui.select(`Select the model for ${providerLabel}:`, choices);
 	if (selected === undefined) return undefined;
-	return listing.models[choices.indexOf(selected)]?.id;
+	return models[choices.indexOf(selected)]?.id;
 }
 
 interface GatewayOutcome {
@@ -245,6 +290,9 @@ interface GatewayOutcome {
 	modelId?: string;
 	listing?: ModelListing;
 	wroteModelsJson?: boolean;
+	baseUrl?: string;
+	/** The key this run settled on, so the probe uses it even before the registry sees it. */
+	apiKey?: string;
 }
 
 async function initExistingGateway(
@@ -253,30 +301,41 @@ async function initExistingGateway(
 	args: SureInitArgs,
 	modelsJsonPath: string,
 ): Promise<GatewayOutcome> {
-	if (args.model) {
-		const cached = readGatewayModels(gateway.name, modelsJsonPath);
-		if (cached.some((model) => model.id === args.model)) {
-			return { ok: true, providerName: gateway.name, modelId: args.model };
-		}
-		// The id isn't in the gateway's model list yet; ModelRegistry only resolves custom-provider
-		// models from models.json, so a silent match failure would fall back to another model at
-		// startup. Append it and persist, mirroring the non-interactive new-gateway path below.
-		const models = [...cached, { id: args.model }];
-		writeGatewayProvider({ name: gateway.name, baseUrl: gateway.baseUrl, apiKey: undefined, models }, modelsJsonPath);
-		return { ok: true, providerName: gateway.name, modelId: args.model, wroteModelsJson: true };
-	}
+	// A cached hit used to short-circuit here. It cannot any more: the protocol and the
+	// effort table have to come from a live probe, and the probe needs a key.
 	const storedKey = await ctx.modelRegistry.getApiKeyForProvider(gateway.name);
-	let newKey: string | undefined;
-	if (!storedKey) {
-		newKey = args.apiKey?.trim();
-		if (!newKey && ctx.hasUI) {
-			newKey = (await ctx.ui.input(`Enter the API key for ${gateway.name}:`))?.trim();
-		}
-		if (!newKey) {
-			return { ok: false, message: `No API key for ${gateway.name}. Pass --api-key <key> or run interactively.` };
-		}
+	let typedKey: string | undefined;
+	if (!args.apiKey?.trim() && !storedKey && ctx.hasUI) {
+		typedKey = (await ctx.ui.input(`Enter the API key for ${gateway.name}:`))?.trim();
 	}
-	const apiKey = storedKey ?? newKey;
+	// An explicit --api-key outranks what is on disk. Every failure message tells the user to
+	// rerun /sure_init with another key, and that only works if the new one replaces the old.
+	const apiKey = args.apiKey?.trim() || storedKey || typedKey;
+	if (!apiKey) {
+		return {
+			ok: false,
+			message: `No API key stored for ${gateway.name}, and the capability probe needs one. Pass --api-key <key>.`,
+		};
+	}
+	const keyIsNew = apiKey !== storedKey;
+	if (args.model) {
+		// ModelRegistry only resolves custom-provider models from models.json, so an id missing
+		// from the list would fall back to another model at startup. Append it and persist.
+		const cached = readGatewayModels(gateway.name, modelsJsonPath);
+		const models = cached.some((model) => model.id === args.model) ? cached : [...cached, { id: args.model }];
+		writeGatewayProvider(
+			{ name: gateway.name, baseUrl: gateway.baseUrl, apiKey: keyIsNew ? apiKey : undefined, models },
+			modelsJsonPath,
+		);
+		return {
+			ok: true,
+			providerName: gateway.name,
+			modelId: args.model,
+			baseUrl: gateway.baseUrl,
+			wroteModelsJson: true,
+			apiKey,
+		};
+	}
 	let listing: ModelListing;
 	try {
 		const models = await fetchOpenAICompatibleModels(gateway.baseUrl, apiKey);
@@ -301,12 +360,33 @@ async function initExistingGateway(
 		// Write failures (e.g. a comment-bearing models.json) must propagate as a hard failure,
 		// not be swallowed as if the live query itself had failed.
 		writeGatewayProvider(
-			{ name: gateway.name, baseUrl: gateway.baseUrl, apiKey: newKey, models: listing.models },
+			{
+				name: gateway.name,
+				baseUrl: gateway.baseUrl,
+				apiKey: keyIsNew ? apiKey : undefined,
+				models: listing.models,
+			},
+			modelsJsonPath,
+		);
+		wroteModelsJson = true;
+	} else if (keyIsNew) {
+		// A cached fallback used to drop a freshly typed key on the floor. The store merges by
+		// id, so writing the same cached list back keeps every annotation and adds the key.
+		writeGatewayProvider(
+			{ name: gateway.name, baseUrl: gateway.baseUrl, apiKey, models: listing.models },
 			modelsJsonPath,
 		);
 		wroteModelsJson = true;
 	}
-	return { ok: true, providerName: gateway.name, modelId, listing, wroteModelsJson };
+	return {
+		ok: true,
+		providerName: gateway.name,
+		modelId,
+		listing,
+		wroteModelsJson,
+		baseUrl: gateway.baseUrl,
+		apiKey,
+	};
 }
 
 async function initNewGateway(
@@ -344,6 +424,8 @@ async function initNewGateway(
 			modelId: args.model,
 			listing: { source: "live", models },
 			wroteModelsJson: true,
+			baseUrl: args.gatewayBaseUrl,
+			apiKey: args.apiKey,
 		};
 	}
 
@@ -396,7 +478,7 @@ async function initNewGateway(
 	const modelId = await pickModelId(ctx, listing, name);
 	if (!modelId) return { ok: false, message: "No model selected." };
 	writeGatewayProvider({ name, baseUrl, apiKey, models: listing.models }, modelsJsonPath);
-	return { ok: true, providerName: name, modelId, listing, wroteModelsJson: true };
+	return { ok: true, providerName: name, modelId, listing, wroteModelsJson: true, baseUrl, apiKey };
 }
 
 export interface RunSureInitOptions {
@@ -405,6 +487,10 @@ export interface RunSureInitOptions {
 	settingsManager?: SettingsManager;
 	/** Override for tests; defaults to the agent-dir models.json. */
 	modelsJsonPath?: string;
+	/** Override for tests; defaults to the real capability probe. */
+	probe?: typeof probeModelCapability;
+	/** Override for tests; defaults to the real round-trip check. */
+	verify?: typeof verifyModelRoundTrip;
 }
 
 /** Main entry point for /sure_init. */
@@ -459,6 +545,8 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 	let modelId: string | undefined;
 	let listing: ModelListing | undefined;
 	let refreshRegistry = false;
+	let gatewayBaseUrl: string | undefined;
+	let gatewayApiKey: string | undefined;
 
 	if (entry.kind === "builtin") {
 		const option = entry.option;
@@ -476,7 +564,7 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 			if (listing.models.length === 0) {
 				return { success: false, message: `No models known for ${option.name}.` };
 			}
-			modelId = await pickModelId(ctx, listing, option.name);
+			modelId = await pickModelId(ctx, listing, option.name, [option.defaultModel]);
 			if (!modelId) {
 				return { success: false, message: "No model selected." };
 			}
@@ -499,6 +587,8 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 		providerKey = outcome.providerName;
 		providerLabel = outcome.providerName;
 		modelId = outcome.modelId;
+		gatewayBaseUrl = outcome.baseUrl;
+		gatewayApiKey = outcome.apiKey;
 		listing = outcome.listing;
 		refreshRegistry = outcome.wroteModelsJson === true;
 	} else {
@@ -514,6 +604,8 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 		providerKey = outcome.providerName;
 		providerLabel = outcome.providerName;
 		modelId = outcome.modelId;
+		gatewayBaseUrl = outcome.baseUrl;
+		gatewayApiKey = outcome.apiKey;
 		listing = outcome.listing;
 		refreshRegistry = outcome.wroteModelsJson === true;
 	}
@@ -522,8 +614,127 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 		ctx.modelRegistry.refresh();
 	}
 
+	let probedApi: string | undefined;
+	let thinkingLevel: ModelThinkingLevel | undefined;
+	let supportedLevels: ModelThinkingLevel[] | undefined;
+	let probeSteps: ProbeStep[] | undefined;
+	let effortNote: string | undefined;
+	let probeNotes: string[] = [];
+
+	if (needsCapabilityProbe(providerKey, modelId)) {
+		const baseUrl =
+			entry.kind === "gateway"
+				? entry.gateway.baseUrl
+				: (ctx.modelRegistry.getAll().find((model) => model.provider === providerKey)?.baseUrl ?? gatewayBaseUrl);
+		if (!baseUrl) {
+			return { success: false, message: `不知道 ${providerKey}/${modelId} 的 base URL,探不了。` };
+		}
+		const apiKey = gatewayApiKey ?? (await ctx.modelRegistry.getApiKeyForProvider(providerKey)) ?? args.apiKey;
+		// The probe takes 8 to 30 seconds. Say what is happening; the final message replaces this.
+		ctx.ui.notify(`探测 ${providerKey}/${modelId} …`, "info");
+		const applied = await applyProbedModel({
+			ctx,
+			providerName: providerKey,
+			baseUrl,
+			apiKey,
+			modelId,
+			modelName: listing?.models.find((model) => model.id === modelId)?.name,
+			modelsJsonPath,
+			requestedEffort: args.effort,
+			probe: options.probe,
+		});
+		if (!applied.ok) {
+			return { success: false, message: applied.message ?? `Capability probe failed for ${modelId}.` };
+		}
+		probeNotes = applied.notes;
+		probedApi = applied.api;
+		thinkingLevel = applied.thinkingLevel;
+		supportedLevels = applied.supportedLevels;
+		probeSteps = applied.steps;
+		effortNote = applied.effortNote;
+	} else if (args.effort) {
+		return {
+			success: false,
+			message: `--effort 只对探测过的模型有效;${providerKey}/${modelId} 在内置目录里,不用探。`,
+		};
+	}
+
+	// Nothing below may point a session at this model until the real round trip proves it
+	// answers: on 2026-08-18 the relay let the probe through and then refused the first
+	// real request, which used to leave a persisted default nobody could use.
+	if (probedApi) {
+		const verify = options.verify ?? verifyModelRoundTrip;
+		let verified: { ok: boolean; detail?: string };
+		try {
+			verified = await verify({
+				registry: ctx.modelRegistry,
+				provider: providerKey,
+				modelId,
+				thinkingLevel,
+			});
+		} catch (error) {
+			return {
+				success: false,
+				message: `${providerKey}/${modelId} 真发一句话时出错:${error instanceof Error ? error.message : String(error)}`,
+			};
+		}
+		if (!verified.ok) {
+			return {
+				success: false,
+				message: [
+					`${providerKey}/${modelId} 的探测结果:`,
+					...probeNotes,
+					`模型标注已写进 models.json,但真发一句话没通过:${verified.detail}。默认模型没有切换。`,
+				].join("\n"),
+			};
+		}
+	}
+
+	const probeAllLines: string[] = [];
+	if (args.probeAll) {
+		if (entry.kind === "builtin") {
+			return { success: false, message: "--probe-all 只对中转站有效,内置目录里的模型不需要探测。" };
+		}
+		const baseUrl = entry.kind === "gateway" ? entry.gateway.baseUrl : gatewayBaseUrl;
+		if (!baseUrl) {
+			return { success: false, message: `不知道 ${providerKey} 的 base URL,整表探不了。` };
+		}
+		const apiKey = gatewayApiKey ?? (await ctx.modelRegistry.getApiKeyForProvider(providerKey)) ?? args.apiKey;
+		const ids = readGatewayModels(providerKey, modelsJsonPath).map((model) => model.id);
+		try {
+			const all = await probeWholeGateway({
+				providerName: providerKey,
+				baseUrl,
+				apiKey,
+				modelIds: ids.filter((id) => id !== modelId),
+				modelsJsonPath,
+				probe: options.probe,
+			});
+			ctx.modelRegistry.refresh();
+			if (!all.ok) {
+				probeAllLines.push(`整表探测中止:${all.message ?? "整表探测失败。"}`);
+			}
+			probeAllLines.push(`整表探测:标注 ${all.annotated.length} 个,跳过 ${all.skipped.length} 个`);
+			if (all.skipped.length > 0) {
+				probeAllLines.push(
+					`跳过:${all.skipped
+						.map(
+							(skip) =>
+								`${skip.modelId}:${SKIP_REASON_LABELS[skip.reason] ?? skip.reason}${skip.detail ? `(${skip.detail})` : ""}`,
+						)
+						.join("、")}`,
+				);
+			}
+		} catch (error) {
+			probeAllLines.push(`整表探测出错:${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
 	const settings = options.settingsManager ?? SettingsManager.create(ctx.cwd);
 	settings.setDefaultModelAndProvider(providerKey, modelId);
+	if (thinkingLevel) {
+		settings.setDefaultThinkingLevel(thinkingLevel);
+	}
 
 	const discovered = discoverSureSkillPackages(ctx.cwd);
 	const availableSkills = discovered.packages.map((pkg) => `/${pkg.manifest.command}`);
@@ -534,6 +745,12 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 		initializedAt: new Date().toISOString(),
 		defaultProvider: providerKey,
 		defaultModel: modelId,
+		...(probedApi ? { defaultApi: probedApi } : {}),
+		...(thinkingLevel ? { defaultThinkingLevel: thinkingLevel } : {}),
+		...(supportedLevels ? { supportedThinkingLevels: supportedLevels } : {}),
+		...(probeSteps
+			? { capabilityProbe: { probedAt: new Date().toISOString(), steps: probeSteps, effortNote: effortNote ?? "" } }
+			: {}),
 		trusted: true,
 		pythonOk: python.ok,
 		availableSkills,
@@ -542,11 +759,14 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 
 	const manifestPath = writeInitManifest(ctx.cwd, manifest);
 
-	const modelCommand = `/model ${providerKey}/${modelId}`;
-	const lines = [
-		`SURE initialized for ${providerLabel} (${providerKey}/${modelId}).`,
-		`Manifest written to ${manifestPath}.`,
-	];
+	const modelCommand = `/model ${providerKey}/${modelId}${thinkingLevel ? `:${thinkingLevel}` : ""}`;
+	// The TUI shows only the last notification, so everything worth reading goes here: the
+	// notes, the round-trip verdict and the table summary all reach print/json callers too.
+	const lines = [`SURE initialized for ${providerLabel} (${providerKey}/${modelId}).`, ...probeNotes];
+	if (probedApi) {
+		lines.push(`真实通路验证通过:${providerKey}/${modelId}`);
+	}
+	lines.push(...probeAllLines, `Manifest written to ${manifestPath}.`);
 	if (listing) {
 		lines.push(describeListingSource(listing));
 	}

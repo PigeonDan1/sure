@@ -94,7 +94,18 @@ evidence:
     "README states ASR support",
     "allowed_tasks=[ASR]"
   ],
-  "selected_datasets": ["aishell1", "librispeech_clean"],
+  "selected_datasets": ["/srv/sure/datasets/group/store/ds_pool/example-asr-test"],
+  "resolved_datasets": [
+    {
+      "dataset_id": "aispeech_phy_aishell-1-test__v1.0.2",
+      "source_root": "/srv/sure/datasets/group/store/ds_pool/example-asr-test",
+      "source_dataset_name": "aispeech_phy_aishell-1-test",
+      "version_id": "v1.0.2",
+      "task": "ASR",
+      "language": "zh",
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/aispeech_phy_aishell-1-test__v1.0.2.jsonl"
+    }
+  ],
   "skipped_datasets": [
     {
       "dataset": "covost2_en2zh",
@@ -118,14 +129,14 @@ evidence:
       "name": "prepare_dataset",
       "script": "scripts/prepare_sure_dataset.py",
       "inputs": {
-        "datasets": ["aishell1", "librispeech_clean"]
+        "datasets": ["/srv/sure/datasets/group/store/ds_pool/example-asr-test"]
       }
     },
     {
       "name": "materialize_templates",
       "script": "scripts/materialize_predictions_template.py",
       "inputs": {
-        "datasets": ["aishell1", "librispeech_clean"]
+        "datasets": ["aispeech_phy_aishell-1-test__v1.0.2"]
       }
     },
     {
@@ -165,7 +176,7 @@ evidence:
   "timestamp": "2026-04-09T00:10:01Z",
   "task_type": "evaluate_existing_model",
   "goal": "Evaluate an already integrated ASR model on selected ASR datasets",
-  "selected_datasets": ["aishell1", "librispeech_clean"],
+  "selected_datasets": ["/srv/sure/datasets/group/store/ds_pool/example-asr-test"],
   "executed_steps": [
     "prepare_dataset",
     "materialize_templates"

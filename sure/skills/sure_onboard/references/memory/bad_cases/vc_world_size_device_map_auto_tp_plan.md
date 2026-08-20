@@ -131,6 +131,6 @@ python -m pytest tests/<model_wrapper_test>.py -q
 - `src/sure_eval/models/IndexTeam__IndexTTS-2/eval_runs/main_agent_IndexTeam__IndexTTS-2_010`
 - `src/sure_eval/models/IndexTeam__IndexTTS-2/eval_runs/main_agent_IndexTeam__IndexTTS-2_011`
 
-Both runs reached TTS smoke generation on `pdgpu-3090-data` and failed before
+Both runs reached TTS smoke generation on an approved GPU partition and failed before
 predictions because an IndexTTS-2 Qwen emotion submodel loaded with
 `device_map="auto"` while `vc` had injected `WORLD_SIZE=1`.

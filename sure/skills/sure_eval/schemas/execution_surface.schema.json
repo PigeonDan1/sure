@@ -4,7 +4,7 @@
 	"title": "SURE-EVAL execution surface",
 	"description": "Structured output of the EXECUTION_SURFACE_UNIT. Compatible with the read-only main-flow execution-surface template while preserving the harness entrypoint field.",
 	"type": "object",
-	"required": ["source_provenance"],
+	"required": ["source_provenance", "deployment_binding"],
 	"properties": {
 		"run_id": { "type": "string" },
 		"timestamp": { "type": "string" },
@@ -20,6 +20,19 @@
 		},
 		"entrypoint_path_actual": { "type": "string" },
 		"execution": { "type": "object", "additionalProperties": true },
+		"deployment_binding": {
+			"type": "object",
+			"required": ["schema", "target_image_ref", "execution_mode", "model_mount_read_only", "result_mount_writable"],
+			"properties": {
+				"schema": { "const": "sure.eval.deployment_binding.v1" },
+				"target_image_ref": { "type": "string", "pattern": "@sha256:[0-9a-f]{64}$" },
+				"bundle_identity_sha256": { "type": ["string", "null"] },
+				"execution_mode": { "const": "container_only" },
+				"model_mount_read_only": { "const": true },
+				"result_mount_writable": { "const": true }
+			},
+			"additionalProperties": false
+		},
 		"inference_runtime": {
 			"type": "object",
 			"properties": {

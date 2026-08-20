@@ -1,0 +1,30 @@
+version: 1
+
+exclude:
+  - private/aispeech/**
+  - docs/internal/**
+  - config/site.bundled.yaml
+  # Frozen upstream audit mirror, intentionally GitLab-only; see
+  # sure/skills/sure_eval/SKILL.md. This is the single grandfathered
+  # export exception: all other private content must live under private/.
+  - sure/skills/sure_eval/references/main_flow_agent/**
+  - .gitlab-ci.yml
+
+forbidden_content:
+  # Company domains are forbidden in any form.
+  - "git[.]aispeech[.]com[.]cn"
+  - "(?:[a-z0-9-]+[.])*aispeech[.]com[.]cn"
+  # Company storage cluster IDs are forbidden even without a leading slash,
+  # so log fragments and test fixtures cannot evade the scan.
+  - "hpc_stor0[0-9]"
+  # The shared mount point is only identifying as an absolute path.
+  - "/mnt/cloudstor[f]s"
+  - "\\b(?:[p]dgpu-[a-z0-9-]+|[p]dcpu)\\b"
+
+forbidden_paths:
+  - "**/.env"
+  - "**/auth.json"
+  - "**/models.json"
+  - "**/events.jsonl"
+  - "**/results/**"
+  - "**/*.safetensors"

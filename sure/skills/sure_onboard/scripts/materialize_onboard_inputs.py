@@ -259,7 +259,10 @@ def env_playbooks_for(deployment_type: str, preferred_backend: str | None) -> li
         "docker": "references/playbooks/env_docker.md",
         "api": "references/playbooks/model_api.md",
     }
-    return [mapping[backend]] if backend in mapping else []
+    selected = [mapping[backend]] if backend in mapping else []
+    if "references/playbooks/env_docker.md" not in selected:
+        selected.append("references/playbooks/env_docker.md")
+    return selected
 
 
 def handoff_dir_for(model_input_path: Path) -> Path | None:
@@ -412,7 +415,7 @@ def main() -> int:
     parser.add_argument("--model-input-path", required=True)
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--repo-root", default=".")
-    parser.add_argument("--package-profile", default="none", choices=sorted(PACKAGE_PROFILES))
+    parser.add_argument("--package-profile", choices=sorted(PACKAGE_PROFILES))
     parser.add_argument("--weights-link-policy", default="auto", choices=sorted(WEIGHTS_LINK_POLICIES))
     parser.add_argument("--device", default="auto", choices=sorted(DEVICES))
     parser.add_argument("--force-repair", action="store_true")
@@ -431,11 +434,13 @@ def main() -> int:
 
     try:
         model_input = read_model_input(model_input_path)
+        deployment_type = normalize_required_string(model_input.get("deployment_type"), "deployment_type")
+        package_profile = args.package_profile or ("none" if deployment_type == "api" else "docker-registry")
         resolved = make_model_input_resolved(
             model_input,
             model_input_path=model_input_path,
             repo_root=repo_root,
-            package_profile=args.package_profile,
+            package_profile=package_profile,
             weights_link_policy=args.weights_link_policy,
             device=args.device,
             force_repair=bool(args.force_repair),

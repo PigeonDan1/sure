@@ -13,21 +13,27 @@
 	},
 	"artifacts": [
 		{
+			"type": "runtime_binding",
+			"path": "artifacts/runtime_binding.json",
+			"required": true,
+			"description": "Formal three-runtime responsibility declaration: sure_reval binds Harness and Evaluation runtimes and proves that Model Runtime is not used."
+		},
+		{
 			"type": "prediction_source_resolved",
 			"path": "artifacts/prediction_source_resolved.json",
 			"required": true,
-			"description": "Resolved source predictions, inferred model/dataset metadata, and source provenance."
+			"description": "Exact approved NFS model/result identity, canonical dataset set, and prediction/report fingerprints."
 		},
 		{
 			"type": "reval_run_report",
 			"path": "artifacts/reval_run_report.json",
 			"required": true,
-			"description": "Final re-evaluation report indexing the tmp run, route comparisons, and generated artifacts."
+			"description": "Final evaluation-only report proving source identity, route execution, complete artifact persistence, and the atomic local result-bundle append."
 		}
 	],
 	"ui": {
 		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
-		"artifactTypes": ["prediction_source_resolved", "reval_run_report", "evaluation_payload", "report_jsonl", "model_eval_manifest"],
+		"artifactTypes": ["runtime_binding", "prediction_source_resolved", "reval_run_report", "evaluation_payload", "report_jsonl", "model_eval_manifest"],
 		"defaultExpandedSections": ["diagnostics", "artifacts"]
 	}
 }

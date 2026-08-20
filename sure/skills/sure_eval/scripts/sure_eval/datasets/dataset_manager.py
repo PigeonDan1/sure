@@ -21,6 +21,11 @@ from typing import Any
 from dataset_alias import resolve_dataset_alias
 from sure_eval.core.config import Config
 from sure_eval.core.logging import get_logger
+from .source_resolver import (
+    DatasetSourceRef,
+    is_source_entry,
+    resolve_aispeech_source_entry,
+)
 
 logger = get_logger(__name__)
 
@@ -248,6 +253,11 @@ class DatasetManager:
         Ambiguous projections are left unresolved so the normal download/error
         path can surface the configuration problem explicitly.
 
+        Source-root pipelines produce ids of the same
+        ``<source_dataset_name>__<version_id>`` shape, e.g.
+        ``aispeech_phy_aishell-1-test__v1.0.2``; the same rule resolves them
+        regardless of how many ``__``-separated segments the id has.
+
         The exact-match-else-unique-projection rule is shared with
         /sure_reval's prediction-source resolver (resolve_dataset_alias in
         sure/skills/sure_eval/scripts/dataset_alias.py) so both skills agree
@@ -321,6 +331,11 @@ class DatasetManager:
         Returns:
             Path to JSONL file
         """
+        if is_source_entry(dataset_name):
+            return self._convert_source_root_to_jsonl(
+                resolve_aispeech_source_entry(dataset_name)
+            )
+
         if dataset_name in self.oref_local_datasets:
             meta = self.oref_local_datasets[dataset_name]
             if meta.get("source") == "oref_platform":
@@ -662,6 +677,85 @@ class DatasetManager:
             return candidate
         return raw_dir / audio_path.name
 
+    def _project_sample_rows(
+        self,
+        *,
+        sample_jsonl_path: Path,
+        raw_dir: Path,
+        task: str,
+        language: str,
+        dataset_label: str,
+        metadata_base: dict[str, Any],
+        require_audio_exists: bool = True,
+        check_size: bool = True,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+        rows: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        source_records = 0
+        seen_keys: set[str] = set()
+
+        with sample_jsonl_path.open("r", encoding="utf-8") as handle:
+            for line_no, line in enumerate(handle, start=1):
+                line = line.strip()
+                if not line:
+                    continue
+                source_records += 1
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    skipped.append({"line": line_no, "reason": f"invalid_json: {exc.msg}"})
+                    continue
+
+                attr = record.get("attribute") or {}
+                raw_path = str(attr.get("path") or "")
+                if not raw_path:
+                    skipped.append({"line": line_no, "reason": "missing attribute.path"})
+                    continue
+                audio_path = self._resolve_oref_audio_path(raw_path, raw_dir)
+                if require_audio_exists and not audio_path.exists():
+                    skipped.append({"line": line_no, "reason": f"audio_not_found: {audio_path}"})
+                    continue
+                if check_size and audio_path.exists() and attr.get("size") is not None:
+                    actual_size = audio_path.stat().st_size
+                    if int(attr["size"]) != actual_size:
+                        skipped.append({
+                            "line": line_no,
+                            "reason": f"audio_size_mismatch: expected {attr['size']} got {actual_size}",
+                        })
+                        continue
+
+                text = self._extract_oref_transcription_text(record)
+                if not text:
+                    skipped.append({"line": line_no, "reason": "missing transcription text"})
+                    continue
+
+                key = str(record.get("sample_id") or audio_path.stem)
+                if key in seen_keys:
+                    skipped.append({"line": line_no, "reason": f"duplicate sample_id: {key}"})
+                    continue
+                seen_keys.add(key)
+
+                rows.append({
+                    "key": key,
+                    "path": str(audio_path),
+                    "target": text,
+                    "task": task,
+                    "language": language,
+                    "dataset": dataset_label,
+                    "sample_rate": attr.get("sample_rate"),
+                    "duration_ms": attr.get("duration", 0),
+                    "metadata": {
+                        **metadata_base,
+                        "sample_id": record.get("sample_id"),
+                        "parent_sample_id": record.get("parent_sample_id"),
+                        "raw_data_md5": attr.get("raw_data_md5"),
+                        "raw_data_format": attr.get("raw_data_format"),
+                        "size": attr.get("size"),
+                        "channels": attr.get("channels"),
+                    },
+                })
+        return rows, skipped, source_records
+
     def _copy_oref_source_files(
         self,
         *,
@@ -715,75 +809,23 @@ class DatasetManager:
         projection_dir = package_dir / "projections" / "asr_transcription_v1"
         projection_dir.mkdir(parents=True, exist_ok=True)
 
-        rows: list[dict[str, Any]] = []
-        skipped: list[dict[str, Any]] = []
-        source_records = 0
-        seen_keys: set[str] = set()
         require_audio_exists = bool((meta.get("validation") or {}).get("require_audio_exists", True))
         check_size = bool((meta.get("validation") or {}).get("check_size", True))
 
-        with sample_jsonl_path.open("r", encoding="utf-8") as handle:
-            for line_no, line in enumerate(handle, start=1):
-                line = line.strip()
-                if not line:
-                    continue
-                source_records += 1
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError as exc:
-                    skipped.append({"line": line_no, "reason": f"invalid_json: {exc.msg}"})
-                    continue
-
-                attr = record.get("attribute") or {}
-                raw_path = str(attr.get("path") or "")
-                if not raw_path:
-                    skipped.append({"line": line_no, "reason": "missing attribute.path"})
-                    continue
-                audio_path = self._resolve_oref_audio_path(raw_path, raw_dir)
-                if require_audio_exists and not audio_path.exists():
-                    skipped.append({"line": line_no, "reason": f"audio_not_found: {audio_path}"})
-                    continue
-                if check_size and audio_path.exists() and attr.get("size") is not None:
-                    actual_size = audio_path.stat().st_size
-                    if int(attr["size"]) != actual_size:
-                        skipped.append({
-                            "line": line_no,
-                            "reason": f"audio_size_mismatch: expected {attr['size']} got {actual_size}",
-                        })
-                        continue
-
-                text = self._extract_oref_transcription_text(record)
-                if not text:
-                    skipped.append({"line": line_no, "reason": "missing transcription text"})
-                    continue
-
-                key = str(record.get("sample_id") or audio_path.stem)
-                if key in seen_keys:
-                    skipped.append({"line": line_no, "reason": f"duplicate sample_id: {key}"})
-                    continue
-                seen_keys.add(key)
-
-                rows.append({
-                    "key": key,
-                    "path": str(audio_path),
-                    "target": text,
-                    "task": task,
-                    "language": language,
-                    "dataset": projection_name,
-                    "sample_rate": attr.get("sample_rate"),
-                    "duration_ms": attr.get("duration", 0),
-                    "metadata": {
-                        "source": "oref_platform",
-                        "oref_dataset": oref_dataset_name,
-                        "version_id": version_id,
-                        "sample_id": record.get("sample_id"),
-                        "parent_sample_id": record.get("parent_sample_id"),
-                        "raw_data_md5": attr.get("raw_data_md5"),
-                        "raw_data_format": attr.get("raw_data_format"),
-                        "size": attr.get("size"),
-                        "channels": attr.get("channels"),
-                    },
-                })
+        rows, skipped, source_records = self._project_sample_rows(
+            sample_jsonl_path=sample_jsonl_path,
+            raw_dir=raw_dir,
+            task=task,
+            language=language,
+            dataset_label=projection_name,
+            metadata_base={
+                "source": "oref_platform",
+                "oref_dataset": oref_dataset_name,
+                "version_id": version_id,
+            },
+            require_audio_exists=require_audio_exists,
+            check_size=check_size,
+        )
 
         if skipped:
             reasons = ", ".join(f"line {item['line']}: {item['reason']}" for item in skipped[:5])
@@ -909,7 +951,173 @@ class DatasetManager:
             jsonl=str(jsonl_path),
         )
         return jsonl_path
-    
+
+    def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef) -> Path:
+        """Project an aispeech ds_pool source root into SURE-EVAL JSONL."""
+        jsonl_path = self.jsonl_dir / f"{ref.dataset_id}.jsonl"
+        if jsonl_path.exists():
+            logger.info(
+                "Using existing source-root projection",
+                dataset=ref.dataset_id,
+                jsonl=str(jsonl_path),
+            )
+            return jsonl_path
+
+        sample_jsonl_path = Path(ref.sample_jsonl)
+        ds_jsonl_path = Path(ref.ds_jsonl)
+        raw_dir = Path(ref.raw_dir)
+        if not sample_jsonl_path.exists():
+            raise FileNotFoundError(f"source sample.jsonl not found: {sample_jsonl_path}")
+        if not raw_dir.exists():
+            raise FileNotFoundError(f"source raw_dir not found: {raw_dir}")
+        task = "ASR"
+        ds_meta = self._load_single_json_object(ds_jsonl_path)
+        language = str(
+            (((ds_meta.get("audio") or {}).get("speech") or {}).get("language")) or "auto"
+        )
+        package_dir = self.sure_dir / ref.source_dataset_name
+        projection_dir = package_dir / "projections" / "asr_transcription_v1"
+        projection_dir.mkdir(parents=True, exist_ok=True)
+
+        rows, skipped, source_records = self._project_sample_rows(
+            sample_jsonl_path=sample_jsonl_path,
+            raw_dir=raw_dir,
+            task=task,
+            language=language,
+            dataset_label=ref.dataset_id,
+            metadata_base={
+                "source": "aispeech_ds_pool",
+                "source_dataset_root": ref.source_root,
+                "source_dataset_name": ref.source_dataset_name,
+                "version_id": ref.version_id,
+            },
+        )
+        if skipped:
+            reasons = ", ".join(f"line {item['line']}: {item['reason']}" for item in skipped[:5])
+            raise ValueError(
+                f"source-root conversion skipped {len(skipped)} of {source_records} records "
+                f"for {ref.source_root}; first issues: {reasons}"
+            )
+        if not rows:
+            raise ValueError(f"source-root conversion produced no samples for {ref.source_root}")
+
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        with jsonl_path.open("w", encoding="utf-8") as handle:
+            for row in rows:
+                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+        sure_jsonl = projection_dir / "sure.jsonl"
+        shutil.copy2(jsonl_path, sure_jsonl)
+
+        source_payload = {
+            "source": "aispeech_ds_pool",
+            "source_dataset_name": ref.source_dataset_name,
+            "version_id": ref.version_id,
+            "dataset_root": ref.source_root,
+            "raw_dir": ref.raw_dir,
+            "ds_jsonl": ref.ds_jsonl,
+            "sample_jsonl": ref.sample_jsonl,
+            "created_at": _utc_now(),
+        }
+        self._copy_oref_source_files(
+            package_dir=package_dir,
+            ds_jsonl_path=ds_jsonl_path,
+            sample_jsonl_path=sample_jsonl_path,
+            source_payload=source_payload,
+        )
+
+        mapping = {
+            "projector": "asr_transcription_v1",
+            "source_format": "aispeech_ds_pool_sample_jsonl",
+            "target_format": "sure_eval_jsonl_v1",
+            "fields": {
+                "key": "sample_id",
+                "path": "attribute.path",
+                "target": "annotation[0].transcription.text[0]",
+                "task": f"constant:{task}",
+                "language": "ds.audio.speech.language",
+                "sample_rate": "attribute.sample_rate",
+                "duration_ms": "attribute.duration",
+            },
+        }
+        try:
+            import yaml
+
+            mapping_text = yaml.safe_dump(mapping, allow_unicode=True, sort_keys=False)
+        except Exception:
+            mapping_text = json.dumps(mapping, indent=2, ensure_ascii=False) + "\n"
+        (projection_dir / "mapping.yaml").write_text(mapping_text, encoding="utf-8")
+
+        io_contract = {
+            "task": task,
+            "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
+            "output": {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"},
+            "reference": {"primary_field": "target", "type": "text"},
+        }
+        (projection_dir / "io_contract.json").write_text(
+            json.dumps(io_contract, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+        conversion_report = {
+            "source": "aispeech_ds_pool",
+            "dataset": ref.dataset_id,
+            "source_dataset_name": ref.source_dataset_name,
+            "source_dataset_root": ref.source_root,
+            "version_id": ref.version_id,
+            "source_sample_jsonl": ref.sample_jsonl,
+            "source_ds_jsonl": ref.ds_jsonl,
+            "output_jsonl": str(jsonl_path),
+            "package_sure_jsonl": str(sure_jsonl),
+            "task": task,
+            "language": language,
+            "num_input_records": source_records,
+            "num_output_records": len(rows),
+            "num_skipped": len(skipped),
+            "field_mapping": mapping["fields"],
+            "lossiness": "none",
+            "validation": {
+                "require_audio_exists": True,
+                "check_size": True,
+                "check_md5": False,
+            },
+            "created_at": _utc_now(),
+        }
+        (projection_dir / "conversion_report.json").write_text(
+            json.dumps(conversion_report, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+        manifest = {
+            "dataset": ref.source_dataset_name,
+            "default_projection": "asr_transcription_v1",
+            "source": "aispeech_ds_pool",
+            "source_dataset_root": ref.source_root,
+            "version_id": ref.version_id,
+            "projections": {
+                "asr_transcription_v1": {
+                    "dataset": ref.dataset_id,
+                    "sure_jsonl": sure_jsonl.relative_to(package_dir).as_posix(),
+                    "mapping": "projections/asr_transcription_v1/mapping.yaml",
+                    "io_contract": "projections/asr_transcription_v1/io_contract.json",
+                    "conversion_report": "projections/asr_transcription_v1/conversion_report.json",
+                }
+            },
+        }
+        (package_dir / "dataset_manifest.json").write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+
+        logger.info(
+            "Converted aispeech source root",
+            dataset=ref.dataset_id,
+            source=ref.source_root,
+            samples=len(rows),
+            jsonl=str(jsonl_path),
+        )
+        return jsonl_path
+
     def _config_to_csv_name(self, dataset_name: str) -> str:
         """Map config name to CSV filename."""
         # Direct match
@@ -1034,6 +1242,9 @@ class DatasetManager:
             'CoVoST2_S2TT_en2zh_test' -> 'covost2_en2zh'
             'aishell1-test_ASR' -> 'aishell1'
         """
+        if is_source_entry(name):
+            return resolve_aispeech_source_entry(name).dataset_id
+
         existing_jsonl = self._existing_jsonl_for_dataset(name)
         if existing_jsonl:
             return existing_jsonl.stem
@@ -1256,7 +1467,7 @@ class DatasetManager:
                         first_sample = json.loads(line)
                         break
             sample_meta = first_sample.get("metadata") if isinstance(first_sample.get("metadata"), dict) else {}
-            return {
+            info = {
                 "name": existing_jsonl.stem,
                 "display_name": existing_jsonl.stem,
                 "config_name": existing_jsonl.stem,
@@ -1267,7 +1478,14 @@ class DatasetManager:
                 "num_samples": self._count_jsonl_rows(existing_jsonl),
                 "is_available": True,
             }
-        
+            if sample_meta.get("source_dataset_name"):
+                info["source_dataset_name"] = sample_meta["source_dataset_name"]
+            if sample_meta.get("version_id"):
+                info["version_id"] = sample_meta["version_id"]
+            if sample_meta.get("source_dataset_root"):
+                info["source_root"] = sample_meta["source_dataset_root"]
+            return info
+
         # Check OREF local datasets
         if canonical_name in self.oref_local_datasets:
             meta = self.oref_local_datasets[canonical_name]

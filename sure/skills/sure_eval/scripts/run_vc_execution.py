@@ -9,12 +9,12 @@ EXECUTE_WAIT unit owns polling and final ``execution_result.json``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import shlex
 import shutil
-import socket
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -23,14 +23,15 @@ from typing import Any
 
 import yaml
 
+from container_execution import deployment_binding, resolve_container_harness_runtime
+from evaluation_runtime import evaluation_runtime_from_eval_input
+from harness_runtime import harness_runtime_from_eval_input
 from sure_eval.agent import vc_precheck
 from sure_eval.agent.vc_submitter import (
     _infer_default_volume_mount,
     _infer_repo_root,
+    _merge_volume_mounts,
     _translate_to_container_path,
-    estimate_memory_gb,
-    infer_venv_path,
-    select_best_image,
     select_best_partition,
 )
 
@@ -70,6 +71,17 @@ def _surface_path(run_dir: Path, explicit: str | None) -> Path:
     return (run_dir / "artifacts" / "execution_surface.json").resolve()
 
 
+def _dataset_source_roots(eval_input: dict) -> list[str]:
+    datasets = eval_input.get("datasets") if isinstance(eval_input.get("datasets"), list) else []
+    roots: list[str] = []
+    for item in datasets:
+        if isinstance(item, dict) and item.get("source_root"):
+            root = str(item["source_root"])
+            if root not in roots:
+                roots.append(root)
+    return roots
+
+
 def _execution_from_surface(surface: dict[str, Any], eval_input: dict[str, Any]) -> dict[str, Any]:
     execution = surface.get("execution") if isinstance(surface.get("execution"), dict) else {}
     if not execution:
@@ -77,7 +89,7 @@ def _execution_from_surface(surface: dict[str, Any], eval_input: dict[str, Any])
         execution = runtime.get("execution") if isinstance(runtime.get("execution"), dict) else {}
     requested = str(execution.get("requested") or "auto")
     planned = str(execution.get("planned") or ("vc" if execution.get("path_planned") == "vc_submit" else "local"))
-    path_planned = str(execution.get("path_planned") or ("vc_submit" if planned == "vc" else "local_bash"))
+    path_planned = str(execution.get("path_planned") or ("vc_submit" if planned == "vc" else "local_docker"))
     return {
         "requested": requested,
         "planned": planned,
@@ -135,15 +147,54 @@ def _memory_gb(value: Any) -> int | None:
     return number if number > 0 else None
 
 
+def _approved_memory_gb(model_dir: Path) -> int:
+    declared: list[float] = []
+    weight_sizes: list[float] = []
+    for name in ("config.yaml", "model.spec.yaml"):
+        path = model_dir / name
+        if not path.is_file():
+            continue
+        try:
+            payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        resources = payload.get("resources") if isinstance(payload.get("resources"), dict) else {}
+        weights = payload.get("weights") if isinstance(payload.get("weights"), dict) else {}
+        for values, raw in ((declared, resources.get("memory_gb")), (weight_sizes, weights.get("size_gb"))):
+            try:
+                number = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if number > 0:
+                values.append(number)
+    weight_heuristic = max((size * 2.5 + 4 for size in weight_sizes), default=0)
+    requested = max([16.0, weight_heuristic, *declared])
+    return max(8, min(64, int(requested + 0.999)))
+
+
+_VC_JOB_NAME_MAX_LENGTH = 60
+
+
+def _normalize_job_name(value: str) -> str:
+    name = re.sub(r"[^a-z0-9.-]+", "-", value.lower()).strip("-") or "sure-eval"
+    if len(name) <= _VC_JOB_NAME_MAX_LENGTH:
+        return name
+    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
+    prefix_length = _VC_JOB_NAME_MAX_LENGTH - len(digest) - 1
+    prefix = name[:prefix_length].rstrip("-") or "sure-eval"
+    return f"{prefix}-{digest}"
+
+
 def _job_name(model_name: str, eval_input: dict[str, Any], surface: dict[str, Any], vc_request: dict[str, Any]) -> str:
     explicit = vc_request.get("job_name")
     if isinstance(explicit, str) and explicit.strip():
-        return explicit.strip()
+        return _normalize_job_name(explicit)
     runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
     run_id = str(runtime.get("run_id") or surface.get("run_id") or "sure-eval")
     stem = model_name.split("__", 1)[-1] or model_name
-    name = re.sub(r"[^a-z0-9.-]+", "-", f"{stem}-{run_id}".lower()).strip("-")
-    return name[:63] or "sure-eval"
+    return _normalize_job_name(f"{stem}-{run_id}")
 
 
 def _model_name(surface: dict[str, Any], eval_input: dict[str, Any]) -> str:
@@ -174,19 +225,6 @@ def _model_dir(surface: dict[str, Any], eval_input: dict[str, Any]) -> Path | No
     return None
 
 
-def _model_eval_run_id(surface: dict[str, Any], eval_input: dict[str, Any]) -> str:
-    runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
-    if isinstance(runtime.get("run_id"), str) and runtime["run_id"]:
-        return runtime["run_id"]
-    resolved = surface.get("resolved_inputs") if isinstance(surface.get("resolved_inputs"), dict) else {}
-    run_dir = resolved.get("run_dir")
-    if isinstance(run_dir, str) and run_dir:
-        return Path(run_dir).name
-    if isinstance(surface.get("run_id"), str) and surface["run_id"]:
-        return surface["run_id"]
-    return "sure-eval"
-
-
 def _surface_env_for_container(surface: dict[str, Any], volume_mount: str) -> dict[str, str]:
     raw_env = surface.get("env")
     if not isinstance(raw_env, dict):
@@ -202,255 +240,6 @@ def _surface_env_for_container(surface: dict[str, Any], volume_mount: str) -> di
     return values
 
 
-def _load_yaml(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    try:
-        value = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
-def _artifact_text(model_dir: Path, relative_path: str) -> str:
-    path = model_dir / relative_path
-    if not path.is_file():
-        return ""
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except Exception:
-        return ""
-
-
-def _artifact_json(model_dir: Path, relative_path: str) -> dict[str, Any]:
-    path = model_dir / relative_path
-    if not path.is_file():
-        return {}
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
-def _scan_model_text(model_dir: Path, relative_paths: tuple[str, ...], pattern: str) -> str:
-    regex = re.compile(pattern)
-    for relative_path in relative_paths:
-        path = model_dir / relative_path
-        if not path.is_file():
-            continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-        match = regex.search(text)
-        if match:
-            return match.group(1) if match.groups() else match.group(0)
-    return ""
-
-
-def _configured_vc_image_prefix() -> str:
-    return os.environ.get("SURE_VC_IMAGE_REGISTRY_PREFIX", "").strip().lower()
-
-
-def _image_from_model_scripts(model_dir: Path) -> str:
-    prefix = _configured_vc_image_prefix()
-    pattern = (
-        rf"({re.escape(prefix)}[^\s\"'}}]+)"
-        if prefix
-        else r"((?:[a-z0-9.-]+(?::[0-9]+)?/)[^\s\"'}]+)"
-    )
-    return _scan_model_text(
-        model_dir,
-        (
-            "docker_validate.sh",
-            "docker_build.sh",
-            "Dockerfile",
-            "artifacts/build.log",
-            "artifacts/docker_build.log",
-            "artifacts/docker_image_inspect.json",
-        ),
-        pattern,
-    )
-
-
-def _image_from_model_metadata(model_dir: Path | None, model_cfg: dict[str, Any]) -> str:
-    runtime = model_cfg.get("runtime") if isinstance(model_cfg.get("runtime"), dict) else {}
-    docker_image = runtime.get("docker_image")
-    if isinstance(docker_image, str) and docker_image.strip():
-        return docker_image.strip()
-    if model_dir is None:
-        return ""
-    tagged = _artifact_text(model_dir, "artifacts/docker_image_tag.txt")
-    if tagged:
-        return tagged.splitlines()[0].strip()
-    for relative_path in (
-        "artifacts/docker_validation.json",
-        "artifacts/verdict.json",
-        "artifacts/build_plan.json",
-    ):
-        payload = _artifact_json(model_dir, relative_path)
-        for key in ("image", "target_image"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        for section in ("docker", "runtime"):
-            nested = payload.get(section)
-            if isinstance(nested, dict):
-                for key in ("image", "docker_image", "target_image"):
-                    value = nested.get(key)
-                    if isinstance(value, str) and value.strip():
-                        return value.strip()
-    scripted = _image_from_model_scripts(model_dir)
-    if scripted:
-        return scripted
-    return ""
-
-
-def _is_configured_vc_image(image: str) -> bool:
-    image = image.strip().lower()
-    prefix = _configured_vc_image_prefix()
-    if prefix:
-        return image.startswith(prefix)
-    return bool(image and ("/" in image or ":" in image))
-
-
-def _resolve_vc_image(
-    *,
-    model_name: str,
-    cli_image: str | None,
-    requested_image: Any,
-    model_dir: Path | None,
-    model_cfg: dict[str, Any],
-) -> tuple[str, str]:
-    if isinstance(cli_image, str) and cli_image.strip():
-        return cli_image.strip(), "cli_override"
-
-    requested = str(requested_image or "").strip()
-    metadata = _image_from_model_metadata(model_dir, model_cfg)
-    if requested and _is_configured_vc_image(requested):
-        return requested, "resolved_input"
-    if requested and metadata and _is_configured_vc_image(metadata):
-        return metadata, f"model_metadata_over_invalid_requested_image:{requested}"
-    if metadata:
-        return metadata, "model_metadata"
-    if requested:
-        return requested, "invalid_requested_image_no_metadata_fallback"
-    return select_best_image(model_name), "auto_select_best_image"
-
-
-def _resolve_model_python_bin(
-    *,
-    model_name: str,
-    model_dir: Path | None,
-    model_cfg: dict[str, Any],
-    volume_mount: str,
-) -> str:
-    runtime = model_cfg.get("runtime") if isinstance(model_cfg.get("runtime"), dict) else {}
-    container_python = runtime.get("container_python_path")
-    if isinstance(container_python, str) and container_python.strip():
-        return container_python.strip()
-
-    if model_dir is not None:
-        scripted_python = _scan_model_text(
-            model_dir,
-            (
-                "docker_validate.sh",
-                "Dockerfile",
-                "artifacts/docker_image_inspect.json",
-                "artifacts/docker_validation.json",
-                "artifacts/verdict.json",
-            ),
-            r"(/opt/[^\s\"';&|]+/bin/python(?:3(?:\.\d+)?)?)",
-        )
-        if scripted_python:
-            return scripted_python
-        if _scan_model_text(
-            model_dir,
-            ("docker_validate.sh", "Dockerfile"),
-            r"\b(python(?:3(?:\.\d+)?)?)\s+validate\.py\b",
-        ):
-            return "python"
-
-    server_cfg = model_cfg.get("server") if isinstance(model_cfg.get("server"), dict) else {}
-    command = server_cfg.get("command")
-    if isinstance(command, list) and command:
-        first = command[0]
-        if isinstance(first, str) and first.strip():
-            command_path = Path(first)
-            if command_path.is_absolute():
-                return _translate_to_container_path(command_path, volume_mount)
-            if model_dir is not None:
-                return _translate_to_container_path(model_dir / command_path, volume_mount)
-
-    return f"{infer_venv_path(model_name)}/bin/python"
-
-
-def _model_pythonpath_entries(model_dir: Path | None, volume_mount: str) -> list[str]:
-    if model_dir is None:
-        return []
-    entries: list[Path] = []
-    if model_dir.is_dir():
-        entries.append(model_dir)
-        parts = model_dir.parts
-        if len(parts) >= 3 and parts[-3:] and parts[-3:-1] == ("sure_eval", "models"):
-            src_root = Path(*parts[:-3])
-            if src_root.is_dir():
-                entries.append(src_root)
-        source_root = model_dir / ".runtime" / "source"
-        if source_root.is_dir():
-            for source_dir in sorted(source_root.iterdir()):
-                if not source_dir.is_dir():
-                    continue
-                src_dir = source_dir / "src"
-                if src_dir.is_dir():
-                    entries.append(src_dir)
-                entries.append(source_dir)
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for entry in entries:
-        translated = _translate_to_container_path(entry.resolve(), volume_mount)
-        if translated not in seen:
-            deduped.append(translated)
-            seen.add(translated)
-    return deduped
-
-
-def _python_shared_library_dirs(python_bin: str | None, volume_mount: str) -> list[str]:
-    if not python_bin:
-        return []
-    python_path = Path(python_bin).expanduser()
-    if not python_path.exists():
-        return []
-    env_root = python_path.parent.parent
-    entries: list[str] = []
-    seen: set[str] = set()
-    for candidate in (env_root / "lib", env_root / "lib64"):
-        if not candidate.is_dir() or not any(candidate.glob("libpython*.so*")):
-            continue
-        translated = _translate_to_container_path(candidate.resolve(), volume_mount)
-        if translated not in seen:
-            entries.append(translated)
-            seen.add(translated)
-    return entries
-
-
-def _python_home_prefix(python_bin: str | None, volume_mount: str) -> str:
-    if not python_bin:
-        return ""
-    python_path = Path(python_bin).expanduser()
-    if not python_path.exists():
-        return ""
-    env_root = python_path.parent.parent
-    if (env_root / "pyvenv.cfg").exists() or (env_root / "conda-meta").exists():
-        return ""
-    for lib_root in (env_root / "lib", env_root / "lib64"):
-        if any((candidate / "encodings").is_dir() for candidate in lib_root.glob("python3.*")):
-            return _translate_to_container_path(env_root.resolve(), volume_mount)
-    return ""
-
-
 def _command_text(cmd: list[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
@@ -458,6 +247,8 @@ def _command_text(cmd: list[str]) -> str:
 def _resolved_submission(
     *,
     image: str,
+    image_digest: str,
+    image_identity_ref: str,
     partition: str,
     memory_gb: int,
     gpus: int,
@@ -469,9 +260,13 @@ def _resolved_submission(
     run_evaluation_path: str,
     log_path: Path,
     command: str,
+    harness_runtime: dict[str, Any],
+    model_runtime: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "image": image,
+        "image_digest": image_digest,
+        "image_identity_ref": image_identity_ref,
         "partition": partition,
         "memory": f"{memory_gb}G",
         "memory_gb": memory_gb,
@@ -484,6 +279,8 @@ def _resolved_submission(
         "run_evaluation_host": run_evaluation_path,
         "log_path": str(log_path),
         "command": command,
+        "harness_runtime": harness_runtime,
+        "model_runtime": model_runtime,
     }
 
 
@@ -576,7 +373,7 @@ def main() -> int:
     parser.add_argument("--surface", help="Path to execution_surface.json; defaults to <run-dir>/artifacts/execution_surface.json")
     parser.add_argument("--submit-output", help="Path to submit_result.json")
     parser.add_argument("--cwd", help="Working directory for vc submit")
-    parser.add_argument("--image", help="Override vc image")
+    parser.add_argument("--image", help="Deprecated: must equal the approved digest-pinned image")
     parser.add_argument("--partition", help="Override vc partition")
     parser.add_argument("--memory", type=int, help="Override vc memory in GB")
     parser.add_argument("--gpus", type=int, help="Override GPUs per task")
@@ -584,8 +381,8 @@ def main() -> int:
     parser.add_argument("--job-name", help="Override vc job name")
     parser.add_argument(
         "--harness-python-bin",
-        default=os.environ.get("SURE_EVAL_HARNESS_PYTHON_BIN", ""),
-        help="Optional Python interpreter for harness scripts inside the vc mount.",
+        default="",
+        help="Disabled compatibility option; Harness Runtime comes from eval_input_resolved.json.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print the vc command without submitting")
     args = parser.parse_args()
@@ -605,8 +402,20 @@ def main() -> int:
 
     model_name = _model_name(surface, eval_input)
     model_dir = _model_dir(surface, eval_input)
-    model_cfg = _load_yaml(model_dir / "config.yaml") if model_dir is not None else {}
-    model_eval_run_id = _model_eval_run_id(surface, eval_input)
+    binding = deployment_binding(eval_input)
+    host_harness_runtime = harness_runtime_from_eval_input(eval_input)
+    container = binding.get("container") if isinstance(binding.get("container"), dict) else {}
+    if model_dir is None or model_dir.resolve() != Path(str(binding.get("model_dir"))).resolve():
+        raise RuntimeError("execution surface model_dir differs from the approved deployment binding")
+    image = str(binding["target_image"])
+    image_digest = str(binding["target_image_digest"])
+    image_identity_ref = str(binding["target_image_ref"])
+    requested_image = str(_vc_request(eval_input).get("image") or "")
+    for source, override in (("--image", args.image or ""), ("vc_image", requested_image)):
+        if override and override not in {image, image_identity_ref}:
+            raise RuntimeError(f"{source} cannot override approved image {image_identity_ref}")
+    if args.harness_python_bin:
+        raise RuntimeError("host harness Python override is disabled; use the approved container runtime")
     vc_request = _vc_request(eval_input)
     device_request, device_actual = _device(eval_input, surface)
     log_path = run_dir / "vc_logs" / "job.log"
@@ -615,37 +424,104 @@ def main() -> int:
     cwd = Path(args.cwd).expanduser().resolve() if args.cwd else Path.cwd()
     repo_root = _infer_repo_root()
     volume_mount = _infer_default_volume_mount(repo_root)
-    entrypoint_container = _translate_to_container_path(entrypoint_path, volume_mount)
-    model_python_bin = _resolve_model_python_bin(
-        model_name=model_name,
-        model_dir=model_dir,
-        model_cfg=model_cfg,
-        volume_mount=volume_mount,
+    dataset_source_roots = _dataset_source_roots(eval_input)
+    harness_runtime, harness_mounted_from_repo = resolve_container_harness_runtime(
+        binding,
+        host_harness_runtime,
+        repo_root,
     )
-    model_pythonpath = _model_pythonpath_entries(model_dir, volume_mount)
-    harness_library_paths = _python_shared_library_dirs(args.harness_python_bin or None, volume_mount)
-    harness_python_home = _python_home_prefix(args.harness_python_bin or None, volume_mount)
+    harness_root = Path(str(harness_runtime["runtime_root"]))
+    evaluation_runtime = evaluation_runtime_from_eval_input(eval_input, prepare=False)
+    volume_mount = _merge_volume_mounts(volume_mount, [str(model_dir), *dataset_source_roots])
+    model_mount = container.get("model_mount") if isinstance(container.get("model_mount"), dict) else {}
+    model_target = str(model_mount.get("target") or "")
+    result_mount = container.get("result_mount") if isinstance(container.get("result_mount"), dict) else {}
+    result_source = Path(str((eval_input.get("runtime") or {}).get("run_dir") or "")).resolve()
+    result_target = str(result_mount.get("target") or "/sure-output")
+    if not Path(model_target).is_absolute() or not Path(result_target).is_absolute():
+        raise RuntimeError("approved deployment container mount targets must be absolute")
+    result_source.mkdir(parents=True, exist_ok=True)
+    volume_mount = f"{volume_mount},{model_dir}:{model_target}:ro,{result_source}:{result_target}"
+    entrypoint_container = _translate_to_container_path(entrypoint_path, volume_mount)
+    model_python_bin = str(container.get("python_executable") or "python")
+    harness_python_bin = str(harness_runtime["python_executable"])
+    model_pythonpath: list[str] = []
+    harness_library_paths: list[str] = []
+    harness_python_home = ""
     entrypoint_env = _surface_env_for_container(surface, volume_mount)
+    source_provenance = surface.get("source_provenance") if isinstance(surface.get("source_provenance"), dict) else {}
+    for key in (
+        "MODEL_PYTHON",
+        "PYTHON_BIN",
+        "HARNESS_PYTHON_BIN",
+        "MODEL_DIR",
+        "SURE_EVAL_APPROVED_MODEL_DIR",
+        "RUN_DIR",
+        "SURE_EVAL_APPROVED_RESULT_DIR",
+        "SURE_EVAL_CONTAINER_IMAGE",
+    ):
+        entrypoint_env.pop(key, None)
     entrypoint_env.setdefault(
         "REPO_ROOT",
         _translate_to_container_path(repo_root / "sure" / "skills" / "sure_eval", volume_mount),
     )
-    image, image_source = _resolve_vc_image(
-        model_name=model_name,
-        cli_image=args.image,
-        requested_image=vc_request.get("image"),
-        model_dir=model_dir,
-        model_cfg=model_cfg,
+    entrypoint_env.update(
+        {
+            "MODEL_DIR": model_target,
+            "SURE_EVAL_APPROVED_MODEL_DIR": model_target,
+            "RUN_DIR": result_target,
+            "SURE_EVAL_APPROVED_RESULT_DIR": result_target,
+            "SURE_HARNESS_RUNTIME_ID": str(harness_runtime["runtime_id"]),
+            "SURE_HARNESS_LOCK_SHA256": str(harness_runtime["lock_sha256"]),
+            "SURE_HARNESS_MANIFEST_PATH": _translate_to_container_path(
+                Path(str(harness_runtime["manifest_path"])), volume_mount
+            ),
+            "SURE_HARNESS_RUNTIME_ROOT": _translate_to_container_path(harness_root, volume_mount),
+            "SURE_EVAL_CONTAINER_IMAGE": image_identity_ref,
+            "SURE_EVAL_CONTAINER_IMAGE_DIGEST": image_digest,
+            "SURE_EVAL_CONTAINER_IMAGE_REF": image_identity_ref,
+            "SURE_EVAL_CONTAINER_WORKING_DIR": str(container.get("working_dir") or model_target),
+            "SURE_EVAL_EXECUTION_ENTRYPOINT": entrypoint_container,
+            "SURE_EVAL_EXECUTION_GENERATION_METHOD": str(surface.get("generation_method") or "harness_template"),
+            "SURE_EVAL_EXECUTION_TEMPLATE_FILE": str(source_provenance.get("template_file") or ""),
+            "SURE_EVAL_EXECUTION_TEMPLATE_SHA256": str(source_provenance.get("template_sha256") or ""),
+            "SURE_EVAL_PUBLISHED_RUN_DIR": str(result_source),
+            "SURE_EVAL_WRITABLE_CACHE_ROOT": f"{result_target}/.runtime/cache",
+            "SURE_EVAL_CACHE_DIR": f"{result_target}/.runtime/cache/sure-eval",
+            "HF_HOME": f"{result_target}/.runtime/cache/huggingface",
+            "HF_HUB_CACHE": f"{result_target}/.runtime/cache/huggingface/hub",
+            "TRANSFORMERS_CACHE": f"{result_target}/.runtime/cache/huggingface/transformers",
+            "MODELSCOPE_CACHE": f"{result_target}/.runtime/cache/modelscope",
+            "TORCH_HOME": f"{result_target}/.runtime/cache/torch",
+            "XDG_CACHE_HOME": f"{result_target}/.runtime/cache/xdg",
+        }
     )
+    if evaluation_runtime is not None:
+        entrypoint_env.update(
+            {
+                "SURE_EVALUATION_PYTHON": _translate_to_container_path(
+                    Path(str(evaluation_runtime["python_executable"])), volume_mount
+                ),
+                "SURE_EVALUATION_RUNTIME_ID": str(evaluation_runtime["runtime_id"]),
+                "SURE_EVALUATION_LOCK_SHA256": str(evaluation_runtime["lock_sha256"]),
+                "SURE_EVALUATION_RUNTIME_MANIFEST": _translate_to_container_path(
+                    Path(str(evaluation_runtime["manifest_path"])), volume_mount
+                ),
+                "SURE_EVALUATION_HOME": _translate_to_container_path(
+                    Path(str(evaluation_runtime["engine_root"])), volume_mount
+                ),
+            }
+        )
+    image_source = "approved_deployment_binding"
     partition = args.partition or str(vc_request.get("partition") or "") or select_best_partition()
-    memory_gb = args.memory or _memory_gb(vc_request.get("mem")) or estimate_memory_gb(model_name)
+    memory_gb = args.memory or _memory_gb(vc_request.get("mem")) or _approved_memory_gb(model_dir)
     gpus = _positive_int(args.gpus if args.gpus is not None else vc_request.get("gpu"), 1)
     cpus = _positive_int(args.cpus if args.cpus is not None else vc_request.get("cpu"), 4)
-    job_name = args.job_name or _job_name(model_name, eval_input, surface, vc_request)
+    job_name = _normalize_job_name(args.job_name) if args.job_name else _job_name(model_name, eval_input, surface, vc_request)
     _write_entrypoint(
         path=entrypoint_path,
         volume_mount=volume_mount,
-        container_image=image,
+        container_image=image_identity_ref,
         container_repo_root=_translate_to_container_path(repo_root, volume_mount),
         vc_partition=partition,
         vc_memory=f"{memory_gb}G",
@@ -658,7 +534,7 @@ def main() -> int:
         execution_requested=execution["requested"],
         device_request=device_request,
         device_actual=device_actual,
-        harness_python_bin=args.harness_python_bin or None,
+        harness_python_bin=harness_python_bin,
         harness_library_paths=harness_library_paths,
         harness_python_home=harness_python_home,
         entrypoint_env=entrypoint_env,
@@ -688,6 +564,8 @@ def main() -> int:
     command = _command_text(cmd)
     submission = _resolved_submission(
         image=image,
+        image_digest=image_digest,
+        image_identity_ref=image_identity_ref,
         partition=partition,
         memory_gb=memory_gb,
         gpus=gpus,
@@ -699,14 +577,25 @@ def main() -> int:
         run_evaluation_path=str(_entrypoint(surface)),
         log_path=log_path,
         command=command,
+        harness_runtime=harness_runtime,
+        model_runtime={
+            "runtime_type": "model_python",
+            "python_executable": model_python_bin,
+            "image_ref": image,
+        },
     )
     if args.dry_run:
         print(command)
         return 0
 
     precheck_paths = [str(repo_root), str(entrypoint_path)]
+    if evaluation_runtime is not None:
+        precheck_paths.append(str(evaluation_runtime["runtime_root"]))
     if model_dir is not None:
         precheck_paths.append(str(model_dir))
+    precheck_paths.extend(dataset_source_roots)
+    identity_check = vc_precheck.check_image(image_identity_ref, image_source)
+    identity_check.name = "image_identity"
     precheck_results = vc_precheck.run_precheck(
         image=image,
         image_source=image_source,
@@ -716,8 +605,10 @@ def main() -> int:
         cpus=cpus,
         volume_mount=volume_mount,
         paths=precheck_paths,
-        expected_venv=infer_venv_path(model_name),
+        expected_venv=None,
     )
+    precheck_results[0].name = "image_submission"
+    precheck_results.insert(0, identity_check)
     _write_json(artifacts_dir / "vc_precheck.json", vc_precheck.as_payload(precheck_results))
     if not vc_precheck.precheck_passed(precheck_results):
         print(vc_precheck.format_report(precheck_results), file=sys.stderr)
@@ -760,6 +651,21 @@ def main() -> int:
         "vc_gpu": gpus,
         "vc_cpu": cpus,
         "vc_image": image,
+        "image_digest": image_digest,
+        "image_identity_ref": image_identity_ref,
+        "deployment_binding": {
+            "target_image_ref": image_identity_ref,
+            "bundle_identity_sha256": (binding.get("evidence") or {}).get("bundle_identity_sha256"),
+            "host_python_fallback": False,
+            "model_mount_read_only": True,
+        },
+        "harness_runtime": harness_runtime,
+        "harness_runtime_mounted_from_repo": harness_mounted_from_repo,
+        "model_runtime": {
+            "runtime_type": "model_python",
+            "python_executable": model_python_bin,
+            "image_ref": image,
+        },
         "vc_submission": submission,
     }
     _write_surface_resolved_submission(surface_path, surface, submission)

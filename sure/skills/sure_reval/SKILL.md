@@ -1,167 +1,145 @@
 # /sure_reval
 
-Reuse existing SURE prediction files and recompute evaluation routes without running model inference.
+Recompute one or more exact evaluation pipelines from an approved NFS prediction set. This skill is evaluation-only: it must not start a model server, invoke an MCP model tool, generate predictions, or reuse old evaluation scores.
 
-This is a separate atomic capability from `/sure_eval`. `/sure_eval` owns model inference plus evaluation. `/sure_reval` owns the case where predictions already exist and the user wants to change metrics, normalization, route choices, or exact `pipeline_id` selections.
+## Trust Boundary
+
+Approved inputs are read only from:
+
+```text
+<approved_models_root>/<model>
+<approved_results_root>/<model>/<approved-result>/
+```
+
+The runtime must never write to either NFS root. Permanent output is a complete append-only result mirror below:
+
+```text
+sure/results/<same-relative-path-as-nfs-result>/
+```
+
+The first reval copies the complete approved NFS result as its baseline. Each new evaluation is preserved as `evaluation_runs/<deterministic-batch-id>/`, while root `report.jsonl` and `report_snapshot.md` are aggregate views. An operator reviews this local result mirror and promotes it into NFS manually. Invocation evidence and evaluator scratch files also remain under `.sure/runs/<run_id>/`.
+
+At pre-start, `artifacts/runtime_binding.json` records the exact materialized Harness Runtime and Evaluation Runtime, including IDs, lock hashes, executables, manifests, engine commit, and their cross-binding. Model Runtime is explicitly `required=false`: Reval consumes approved predictions and running any model environment is a contract violation. The declaration is required for both successful and incomplete terminal reports.
 
 ## Parameters
 
 | Parameter | Required | Meaning |
 |-----------|----------|---------|
-| `source` | yes | Existing results dir, canonical eval run dir, or bare `predictions/` dir. |
-| `model` | no | Model name override. Inferred from source when possible. |
-| `datasets` | no | Comma-separated dataset list. Inferred from source when omitted. Short aliases are accepted only when they resolve to one unique prediction file stem. |
-| `metrics` | no | Metric list for current default route selection, for example `cer` or `wer`. |
-| `pipeline_id` | no | Exact standalone sure-evaluation pipeline id. Repeat or comma-separate to compare multiple pipelines for the same metric. |
-| `max_samples` | no | Bounded validation/evaluation sample count. Existing predictions are filtered to the first N dataset samples. |
-| `output_dir` | no | Fresh re-evaluation run directory. Defaults under `~/tmp/sure_reval/`. |
-| `tmp_root` | no | Tmp root used when `output_dir` is omitted. |
-| `device` | no | Evaluation device. Default `cpu`; audio metrics may need `cuda`. |
-| `copy_mode` | no | `copy` or `hardlink`. Default `copy`; filtered runs always write new files. |
+| `model` | yes | Exact approved NFS model directory name. No aliases or paths. |
+| `datasets` | yes | Complete comma-separated approved set. Every item must be `<dataset_name>__<version_id>`. |
+| `pipeline_id` | yes | One or more exact sure-evaluation pipeline IDs. |
+| `protocol` | no | `standard_system` (default) or `strict_core`; must equal the approved result protocol. |
+| `device` | no | Evaluation device. This never changes prediction identity. |
+| `output_dir` | no | Absolute directory where the harness collects this invocation's `result.json` and control artifacts. The harness consumes it before the agent starts, so re-evaluation products keep their approved mirror layout. The directory must be outside every configured `forbidden_output_roots` entry and writable. |
 
-## Source Types
+The removed parameters `source`, `reuse_predictions_from`, `model_dir`, `tmp_root`, `copy_mode`, `max_samples`, `metrics`, `config`, and `evaluation_engine_root` are forbidden. They weaken source identity, replace the approved evaluator, or turn a full re-evaluation into a bounded test.
 
-`source` can point at any of these shapes:
+Example:
 
-| Source kind | Required files | Notes |
-|-------------|----------------|-------|
-| `results_dir` | `predictions/`, usually `report.jsonl` and `protocol.yaml` | Preferred when reusing a published or mirrored evaluation result. Model, protocol, and datasets are inferred when possible. |
-| `run_dir` | `predictions/` plus run-local metadata | Preferred when continuing from a canonical model-local evaluation run. |
-| `predictions_dir` | `<dataset>.txt` and optionally `<dataset>.jsonl` | Use `model=...` and `datasets=...` when source metadata cannot be inferred. |
+```text
+/sure_reval model=Qwen__Qwen3-ASR-1.7B datasets=aishell1__v1.0.2 pipeline_id=asr.zh.cer.identity_norm_v1.wenet_cer_v1
+```
 
-## Metric Selection
+## State Machine
 
-Use `metrics` when the user wants the current default route for a reported
-metric. Use `pipeline_id` when the user wants an exact route variant such as a
-specific normalizer, transcriber, scorer, or speaker/MOS provider.
+1. `resolve_approved_model`: resolve the exact model below the NFS model root and require runtime files plus verdict existence.
+2. `resolve_approved_result`: inspect only immediate approved result directories for that model.
+3. `verify_source_identity`: require exact model, protocol, and sorted dataset-set equality; bind the NFS report, model fingerprint, prediction hashes, and sample counts.
+4. `resolve_evaluation_route`: resolve every requested exact `pipeline_id` through the standalone sure-evaluation engine.
+5. `run_evaluation_in_scratch`: copy approved predictions into invocation scratch, validate them, and run current evaluation nodes. No inference surface is allowed.
+6. `append_local_result_bundle`: after every validation/report gate passes, persist the complete evaluation artifact tree in a deterministic batch, append route rows to root `report.jsonl`, and refresh root `report_snapshot.md`.
+7. `finish`: validate the terminal report, source identity, protocol reuse evidence, reference-data hash, evaluator commit/source hash, route identity, NFS baseline mirror, artifact manifest, report paths, and appended record IDs.
 
-Do not pass both `metrics` and `pipeline_id` for the same user intent. Prefer
-`pipeline_id` for comparability experiments because it makes the selected route
-identity explicit in `evaluation_payload.json`, `pipeline_description.json`, and
-`report.json`.
+The source gate rejects aliases, unversioned datasets, subsets, supersets, protocol drift, model drift, missing predictions, symlink escapes, malformed reports, and ambiguous approved results.
+It also requires the approved NFS result or model bundle to contain
+`references/sure_benchmark/jsonl`. `/sure_reval` never reads a harness-local,
+dataset-platform, sandbox, or environment-overridden reference root. Legacy
+approved results without the reference projection stop with
+`INPUT_EVIDENCE_MISSING` and must be repaired and promoted by an operator
+before re-evaluation.
 
-## Rules
+## Deterministic Backend
 
-- Do not start model servers.
-- Do not call model inference scripts.
-- Do not copy old `evaluation_payload.json`, `report.jsonl`, `protocol.yaml`, `metrics/`, or `sample_reports/` from the source run.
-- Reuse only prediction files, then validate and recompute metrics through the current `sure/external/sure-evaluation` engine.
-- Prefer `pipeline_id` when the user wants to compare route or normalizer changes for the same metric.
-- Keep verification outputs in tmp unless the user explicitly asks for a compatibility `results/` mirror.
-
-## Backend
-
-Use the shared deterministic backend under `../sure_eval/scripts/`:
+The agent runs:
 
 ```bash
-python3 ../sure_eval/scripts/run_reval.py \
-  --source <source> \
-  --datasets <dataset> \
-  --max-samples 5 \
-  --pipeline-id <pipeline-id-1> \
-  --pipeline-id <pipeline-id-2>
+"$HARNESS_PYTHON_BIN" ../sure_eval/scripts/run_reval.py \
+  --model <model> \
+  --datasets <dataset__version> \
+  --protocol-id <standard_system|strict_core> \
+  --pipeline-id <exact-pipeline-id> \
+  --invocation-run-dir <sure-run-dir>
 ```
 
-The backend writes a fresh tmp run with:
+`--invocation-run-dir` is an internal harness path and must resolve below the repository `.sure/runs/` root. The backend writes scratch evidence below `<sure-run-dir>/scratch/` and copies the terminal report to `<sure-run-dir>/artifacts/reval_run_report.json`.
+
+## Required Invocation Artifacts
+
+### `artifacts/runtime_binding.json`
+
+Must use `schema=sure.skill.runtime_binding.v1`, bind the common Harness Runtime and locked Evaluation Runtime, prove the Evaluation Runtime was built against that Harness Runtime, and declare why Model Runtime is not required.
+
+### `artifacts/prediction_source_resolved.json`
+
+Must use `schema=sure.reval.approved_prediction_source.v2` and include:
+
+- exact model name, NFS model path, verdict path, and model fingerprint;
+- exact protocol ID;
+- sorted canonical dataset set and its digest;
+- NFS result/report/protocol paths and base report SHA256;
+- each prediction path, SHA256, and non-empty row count;
+- `source_kind=approved_nfs_results`;
+- `inference_allowed=false`.
+
+### `artifacts/reval_run_report.json`
+
+Must use `schema=sure.reval.run_report.v1` and prove:
+
+- `evaluation_only=true`;
+- `old_evaluation_reused=false`;
+- source identity equals `prediction_source_resolved.json`;
+- `validation_payload.is_valid=true`;
+- requested exact pipelines occur in the evaluation payload;
+- protocol reuse policy is `reused_predictions_no_inference`;
+- the local staging result is based on the current approved NFS result and report hash;
+- every scratch evaluation artifact is covered by the persisted batch manifest;
+- every requested deterministic `record_id` exists in the staging report and points into that batch;
+- the aggregate snapshot and report hashes match the append receipt.
+
+## Append Semantics
+
+The first reval for an approved result mirrors its complete NFS directory into the matching `sure/results` path. Later runs require the current NFS `report.jsonl` as an exact prefix and every other immutable NFS artifact as an exact hash match. Root `protocol.yaml` and `predictions/` retain the approved inference identity; reval does not overwrite them.
+
+Each evaluation is an immutable unit at:
 
 ```text
-prediction_source_resolved.json
-prediction_reuse_manifest.json
-source_inference_provenance.json
-validation_payload.json
-evaluation_payload.json
-evaluation_route_plan.json
-protocol.yaml
-report.jsonl
-metrics/
-sample_reports/
-report_snapshot.md
-model_eval_manifest.json
-main_agent_run_report.json
-reval_run_report.json
+evaluation_runs/sure_reval_<24-hex-id>/
 ```
 
-Important generated fields:
+It contains the complete scratch evaluation tree plus `artifact_manifest.json`, including validation, route plan, reuse provenance, protocol evidence, evaluation payload, raw evaluator runs, metrics, pipeline descriptions, sample reports, predictions, and run manifests. Paths stored in structured artifacts are result-relative so the result directory can be promoted without retaining scratch or `sure/results` absolute paths.
 
-| Artifact | Field | Expected value |
-|----------|-------|----------------|
-| `prediction_source_resolved.json` | `source_kind` | `results_dir`, `run_dir`, or `predictions_dir`. |
-| `prediction_source_resolved.json` | `source_inference_provenance.*` | Source `protocol.yaml`, `prediction_generation_status.json`, and runtime inventory paths when available. |
-| `prediction_reuse_manifest.json` | `source.old_evaluation_reused` | Always `false`. |
-| `source_inference_provenance.json` | `policy.generation_policy` | Always `reused_predictions_no_inference`. |
-| `protocol.yaml` | `prediction_reuse.enabled` | Always `true` for `/sure_reval`. |
-| `protocol.yaml` | `prediction_reuse.generation_policy` | Always `reused_predictions_no_inference`. |
-| `prediction_reuse_manifest.json` | `imported[].copy_mode` | `copy`, `hardlink`, or `filtered_copy`. Bounded runs usually use `filtered_copy`. |
-| `prediction_reuse_manifest.json` | `imported[].imported_samples` | Number of predictions copied into the fresh reval run. Must match `max_samples` when a positive cap is requested and enough source rows exist. |
-| `evaluation_route_plan.json` | `engine.commit` | Commit of the standalone `sure-evaluation` engine used for this reval run. |
-| `evaluation_payload.json` | `results[].pipeline_id` | Exact pipeline executed for that dataset-metric result. |
-| `evaluation_payload.json` | `results[].artifacts.metric_artifact_dir` | Fresh metric artifact directory. Duplicate metric names are disambiguated with `metric__pipeline_id`. |
-| `reval_run_report.json` | `evaluation_only` | Always `true`. |
-| `reval_run_report.json` | `old_evaluation_reused` | Always `false`. |
-| `reval_run_report.json` | `summary.comparisons[].pipelines[]` | Per-pipeline `pipeline_id`, ordered `nodes`, and `score`. |
-| `reval_run_report.json` | `summary.comparisons[].score_spread` | Max score minus min score for that dataset/metric comparison group. |
+After the batch is durable, root `report.jsonl` receives the new rows and root `report_snapshot.md` is regenerated from the aggregate report. A directory lock, temporary directories/files, `fsync`, atomic directory rename, and atomic file replace protect concurrent writers. The report is the final commit point.
 
-After the backend completes, copy or write the generated `reval_run_report.json`
-into the Sure invocation artifact path:
+Each appended row retains the normal dataset-metric report fields and adds `reval` metadata containing:
 
-```text
-<sure-run-dir>/artifacts/reval_run_report.json
-```
+- deterministic `record_id`;
+- model fingerprint;
+- protocol ID;
+- canonical dataset ID;
+- prediction SHA256;
+- reference dataset JSONL path, SHA256, and non-empty row count;
+- exact pipeline and ordered nodes;
+- evaluation engine commit and evaluation-source tree SHA256 (covers uncommitted custom routes);
+- approved base report hash;
+- `inference_executed=false` and `old_evaluation_reused=false`.
 
-The `pre_finish` hook rejects completion until `artifacts/reval_run_report.json`
-exists and points to a valid tmp re-evaluation run.
+Re-running the same route is an idempotent no-op. The same identity with different content is a hard collision and requires operator review.
 
-## Final Manifest Contract
+## Forbidden Actions
 
-`sure_finish` validates required artifacts before running the `pre_finish` hook.
-The final manifest must therefore list the run-local required artifacts exactly,
-in addition to any tmp output paths that are useful to the user:
-
-```json
-{
-  "artifacts": [
-    {
-      "type": "prediction_source_resolved",
-      "path": "artifacts/prediction_source_resolved.json"
-    },
-    {
-      "type": "reval_run_report",
-      "path": "artifacts/reval_run_report.json"
-    }
-  ],
-  "outputs": {
-    "sure_artifact_prediction_source_resolved": "artifacts/prediction_source_resolved.json",
-    "sure_artifact_reval_run_report": "artifacts/reval_run_report.json",
-    "tmp_reval_run_dir": "<output_dir>",
-    "evaluation_payload": "<output_dir>/evaluation_payload.json",
-    "report_jsonl": "<output_dir>/report.jsonl",
-    "report_snapshot": "<output_dir>/report_snapshot.md",
-    "source_inference_provenance": "<output_dir>/source_inference_provenance.json",
-    "predictions_dir": "<output_dir>/predictions"
-  }
-}
-```
-
-Do not rely only on absolute tmp paths for `prediction_source_resolved.json` or
-`reval_run_report.json`; they are useful user-facing outputs but do not satisfy
-the required run-local artifact contract.
-
-## Completion Checklist
-
-Before finishing `/sure_reval`, verify:
-
-- `reval_run_report.json` exists and passes `scripts/check_reval_run_report.py`.
-- `main_agent_run_report.json` notes that no model server was started and no inference was run.
-- `reval_run_report.json.evaluation_only` is `true`.
-- `reval_run_report.json.old_evaluation_reused` is `false`.
-- `protocol.yaml.prediction_reuse.enabled` is `true` and `generation_policy` is `reused_predictions_no_inference`.
-- `source_inference_provenance.json` exists; bare prediction sources may mark source inference as unknown.
-- `prediction_reuse_manifest.json.imported[].imported_samples` matches the requested bounded sample scope.
-- `validation_payload.json.is_valid` is `true`.
-- For exact pipeline runs, `evaluation_payload.results[].pipeline_id`,
-  `metrics/<dataset>/<metric_slug>/pipeline_description.json.pipeline_id`, and
-  `metrics/<dataset>/<metric_slug>/report.json.pipeline_id` are equal.
-- `evaluation_payload.results[].nodes` matches the node order in
-  `report.json.pipeline_trace`.
-- Multiple pipelines for the same dataset and metric have separate
-  `metric_artifact_dir` paths and separate sample reports.
+- Never write to `nfs/models` or `nfs/results` from this skill.
+- Never accept a user-provided filesystem source.
+- Never run `generate_predictions_via_server.py`, model smoke/server scripts, or MCP `tools/call`.
+- Never select a dataset subset or infer a missing version.
+- Never change the inference protocol during re-evaluation.
+- Never append before prediction validation, evaluation, report validation, and route checks all pass.

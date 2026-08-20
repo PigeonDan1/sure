@@ -38,16 +38,16 @@ Record the chosen CUDA/PyTorch pairing in the model-local spec or README.
 Kimi-Audio re-onboarding example:
 
 ```text
-queue: pdgpu-5090
+queue: site-new-gpu
 image: registry.example.com/sure/reonboard_asr_kimi_audio:v1.0
 error: CUDA error: no kernel image is available for execution on the device
 ```
 
-The same ASR-only validation completed on `pdgpu-3090-data`, and the full
-ASR/S2TT/SER/SLU/GR re-onboarding run also completed on `pdgpu-3090-data`:
+The same ASR-only validation completed on a compatible site GPU partition, and
+the full ASR/S2TT/SER/SLU/GR re-onboarding run completed there as well:
 
 ```text
-job_id: job-178203365706261330226-junhao-du
+job_id: <job-id>
 status: Completed
 duration: 1m23s
 ```

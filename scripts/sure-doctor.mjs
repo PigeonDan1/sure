@@ -154,19 +154,39 @@ if (engineOverride) {
 	const moduleBranch = existsSync(gitmodulesPath)
 		? runGit(["config", "--file", ".gitmodules", "--get", `submodule.${defaultEngineRelPath}.branch`])
 		: undefined;
+	const engineFilesReady =
+		existsSync(defaultEnginePath) && existsSync(join(defaultEnginePath, "pyproject.toml"));
+	const engineHead = engineFilesReady
+		? runGit(["-c", `safe.directory=${defaultEnginePath}`, "rev-parse", "HEAD"], defaultEnginePath)
+		: undefined;
 
 	if (!existsSync(gitmodulesPath) || !indexedCommit) {
-		warn(
-			"sure-evaluation submodule",
-			"not registered as a git submodule; expected sure/external/sure-evaluation for /sure_eval and /sure_reval",
-		);
-	} else if (!existsSync(defaultEnginePath) || !existsSync(join(defaultEnginePath, "pyproject.toml"))) {
+		const runtimeSpec = readJson(join(root, "sure", "runtime", "evaluation", "runtime.json"));
+		const expectedCommit =
+			typeof runtimeSpec?.engine_commit === "string" ? runtimeSpec.engine_commit : undefined;
+		if (!engineFilesReady || !engineHead) {
+			warn(
+				"sure-evaluation checkout",
+				"missing or not a readable Git checkout at sure/external/sure-evaluation",
+			);
+		} else if (expectedCommit && engineHead !== expectedCommit) {
+			warn(
+				"sure-evaluation checkout",
+				`standalone checkout ${engineHead.slice(0, 12)} differs from runtime lock ${expectedCommit.slice(0, 12)}`,
+			);
+		} else {
+			pass(
+				"sure-evaluation checkout",
+				`standalone Git checkout @ ${engineHead.slice(0, 12)}; runtime lock matches`,
+			);
+		}
+	} else if (!engineFilesReady) {
 		warn(
 			"sure-evaluation submodule",
 			"not initialized; run git submodule update --init --recursive",
 		);
 	} else {
-		const headCommit = runGit(["rev-parse", "HEAD"], defaultEnginePath);
+		const headCommit = engineHead;
 		const commitDetail = headCommit
 			? `${headCommit.slice(0, 12)}${headCommit !== indexedCommit ? `; indexed ${indexedCommit.slice(0, 12)}` : ""}`
 			: `indexed ${indexedCommit.slice(0, 12)}`;

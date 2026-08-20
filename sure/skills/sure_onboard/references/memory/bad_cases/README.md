@@ -24,7 +24,7 @@ Do not pre-load every historical story into default context.
 | VC validation only checks converted audio contract or writes ad hoc similarity/MOS fields instead of using `src/sure_eval/evaluation/tasks/vc` | `vc_metric_bypass.md` | Use when VC artifacts lack `vc_metric_report_local_pipeline.json` or do not reference `sure_eval.evaluation.tasks.vc`. |
 | Re-onboarding local uv points to an existing model `.venv` instead of a run-local environment | `reonboard_env_reuse.md` | Use when `models_reonboard/runs/<model>/.venv` is a symlink or validation uses `src/sure_eval/models/<model>/.venv`. |
 | VC metric report has semantic/speaker metrics but MOS provider resources are missing after using a new cache dir | `vc_metric_cache_mismatch.md` | Use when errors mention missing `dnsmos`, `EmergentTTS-Eval repo_dir`, or `UTMOS-demo repo_dir`. |
-| `vc submit` fails with `partition not found` after using a shorthand queue name | `vc_partition_name_mismatch.md` | Use when a human-facing queue alias such as `3090-data` differs from the exact `vc submit -p` partition name. |
+| `vc submit` fails with `partition not found` after using a shorthand queue name | `vc_partition_name_mismatch.md` | Use when a human-facing queue alias differs from the exact `vc submit -p` partition name. |
 | VC smoke/load fails with `tp_plan='auto'`, `WORLD_SIZE`, and `device_map="auto"` in Transformers or ModelScope code | `vc_world_size_device_map_auto_tp_plan.md` | Use when a single-GPU `vc submit` job accidentally triggers tensor-parallel/distributed loading. |
 
 ## Adding A Bad Case

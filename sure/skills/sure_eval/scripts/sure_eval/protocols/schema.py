@@ -86,6 +86,7 @@ class ModelParamMapping:
     model_param: str | None  # Name of the model's own parameter, or null if unsupported
     mapping: dict[str, Any] = field(default_factory=dict)  # protocol_value -> model_value
     note: str = ""  # Human-readable explanation if unsupported
+    status: str = "applied"  # "applied" | "not_applicable" | "unsupported"
 
 
 @dataclass
@@ -105,6 +106,7 @@ class ModelProtocolConfig:
                 model_param=mapping_data.get("model_param"),
                 mapping=mapping_data.get("mapping", {}),
                 note=mapping_data.get("note", ""),
+                status=mapping_data.get("status", "applied"),
             )
 
         return cls(
@@ -123,6 +125,7 @@ class ResolvedParams:
     standard_params: dict[str, Any]  # Protocol standard param name -> value
     model_params: dict[str, Any]  # Model actual param name -> value
     unmapped: dict[str, str]  # Protocol param name -> explanation note
+    parameter_status: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -130,6 +133,7 @@ class ResolvedParams:
             "standard_params": self.standard_params,
             "model_params": self.model_params,
             "unmapped": self.unmapped,
+            "parameter_status": self.parameter_status,
         }
 
 

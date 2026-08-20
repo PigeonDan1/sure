@@ -18,7 +18,7 @@ IMAGE_REGISTRY_PREFIX_ENV = "SURE_VC_IMAGE_REGISTRY_PREFIX"
 PROBE_QUEUE = "sure-precheck-nonexistent-queue"
 IMAGE_MISSING_MARKER = "镜像不存在"
 PARTITION_MISSING_MARKER = "partition not found"
-CODE_DERIVED_IMAGE_SOURCES = {"auto_select_best_image"}
+CODE_DERIVED_IMAGE_SOURCES = {"auto_select_best_image", "approved_deployment_binding"}
 MAX_GPUS = 32
 MEMORY_PATTERN = re.compile(r"^[1-9]\d*G$")
 
@@ -121,25 +121,30 @@ def check_partition(partition, run=subprocess.run):
 
 
 def check_paths(paths, volume_mount):
-    volume = volume_mount.split(",", 1)[0]
-    host_root = PurePosixPath(volume.split(":", 1)[0])
+    host_roots = []
+    for volume in str(volume_mount).split(","):
+        host = volume.split(":", 1)[0].strip()
+        if host:
+            host_roots.append(PurePosixPath(host))
     outside = []
     for value in paths:
         if not value:
             continue
         candidate = PurePosixPath(str(value))
-        if not candidate.is_relative_to(host_root):
+        if not any(candidate.is_relative_to(root) for root in host_roots):
             outside.append(str(value))
     if outside:
         return CheckResult(
             "paths", "fail",
-            "paths invisible inside the container (outside the vc volume): " + ", ".join(outside),
-            [str(host_root)],
+            "paths invisible inside the container (outside the vc volumes): " + ", ".join(outside),
+            [str(root) for root in host_roots],
         )
-    return CheckResult("paths", "pass", f"all paths are under {host_root}")
+    return CheckResult("paths", "pass", "all paths are under " + ", ".join(str(root) for root in host_roots))
 
 
 def check_venv(image, expected_venv, run=subprocess.run):
+    if not expected_venv:
+        return CheckResult("venv", "skip", "deployment binding does not use a host/model .venv contract")
     if not image_is_local(image, run):
         return CheckResult("venv", "skip", f"{image} is not available locally; venv layout not verified")
     result = _run(["docker", "run", "--rm", "--entrypoint", "sh", image, "-c", "ls -d /opt/*"], 120, run)
@@ -166,7 +171,7 @@ def check_resources(memory, gpus, cpus):
     return CheckResult("resources", "pass", f"memory={memory} gpus={gpus} cpus={cpus}")
 
 
-def run_precheck(*, image, image_source, partition, memory, gpus, cpus, volume_mount, paths, expected_venv, run=subprocess.run, which=shutil.which):
+def run_precheck(*, image, image_source, partition, memory, gpus, cpus, volume_mount, paths, expected_venv=None, run=subprocess.run, which=shutil.which):
     results = []
     if which("vc"):
         results.append(check_image(image, image_source, run))

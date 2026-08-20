@@ -1,10 +1,17 @@
+import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "../model-registry.ts";
 import type { SureInitProviderOption } from "./init-types.ts";
 
-/** One selectable model as reported by a provider. */
+/** One selectable model as reported by a provider, plus anything /sure_init probed about it. */
 export interface ListedModel {
 	id: string;
 	name?: string;
+	api?: string;
+	reasoning?: boolean;
+	thinkingLevelMap?: ThinkingLevelMap;
+	input?: Array<"text" | "image">;
+	contextWindow?: number;
+	maxTokens?: number;
 }
 
 /** Where a model list came from. */
@@ -21,10 +28,16 @@ const MODEL_LIST_TIMEOUT_MS = 10_000;
 const ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+/** Join a base URL that may or may not carry a version segment with an API path. */
+export function openAICompatibleUrl(baseUrl: string, path: string): string {
+	const trimmed = baseUrl.replace(/\/+$/, "");
+	const suffix = path.replace(/^\/+/, "");
+	return /\/v\d+$/.test(trimmed) ? `${trimmed}/${suffix}` : `${trimmed}/v1/${suffix}`;
+}
+
 /** Build the OpenAI-compatible model-list URL for a base URL that may or may not carry a version segment. */
 export function openAICompatibleModelsUrl(baseUrl: string): string {
-	const trimmed = baseUrl.replace(/\/+$/, "");
-	return /\/v\d+$/.test(trimmed) ? `${trimmed}/models` : `${trimmed}/v1/models`;
+	return openAICompatibleUrl(baseUrl, "models");
 }
 
 function parseModelList(payload: unknown): ListedModel[] {
@@ -38,7 +51,8 @@ function parseModelList(payload: unknown): ListedModel[] {
 		const id = (entry as { id?: unknown }).id;
 		if (typeof id !== "string" || id.length === 0) continue;
 		const displayName = (entry as { display_name?: unknown }).display_name;
-		models.push(typeof displayName === "string" && displayName.length > 0 ? { id, name: displayName } : { id });
+		const name = typeof displayName === "string" && displayName.length > 0 ? displayName : undefined;
+		models.push(name ? { id, name } : { id });
 	}
 	if (models.length === 0) {
 		throw new Error("model list response contained no model ids");

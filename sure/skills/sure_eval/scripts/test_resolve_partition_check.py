@@ -16,12 +16,12 @@ VC_INFO_U_OUTPUT = """[Quota]
 GPU:  32
 ------------------------------
 [Partition]
-pdgpu-3090
-pdgpu-4090
-pdgpu-2080ti
+gpu-standard
+gpu-priority
+gpu-legacy
 ------------------------------
 [Storage quota]
-hpc_stor03  limit: 3.00 TB used:  1.15 TB
+storage01  limit: 3.00 TB used:  1.15 TB
 """
 
 
@@ -40,7 +40,7 @@ class GetUserPartitionsTests(unittest.TestCase):
     def test_parses_partition_block_without_separator_lines(self):
         vc_submitter._run_cmd = lambda args, check=True, timeout=None: FakeCompleted(0, VC_INFO_U_OUTPUT)
         partitions = vc_submitter.get_user_partitions()
-        self.assertEqual(partitions, {"pdgpu-3090", "pdgpu-4090", "pdgpu-2080ti"})
+        self.assertEqual(partitions, {"gpu-standard", "gpu-priority", "gpu-legacy"})
 
     def test_timeout_reaches_subprocess(self):
         seen = {}
@@ -77,31 +77,31 @@ class ValidateVcPartitionTests(unittest.TestCase):
 
     def test_allowed_partition_passes(self):
         self.stub_vc_info(result=FakeCompleted(0, VC_INFO_U_OUTPUT))
-        resolve_eval_input._validate_vc_partition({"partition": "pdgpu-3090"}, VC_EXECUTION)
+        resolve_eval_input._validate_vc_partition({"partition": "gpu-standard"}, VC_EXECUTION)
 
     def test_unknown_partition_raises_with_allowed_list(self):
         self.stub_vc_info(result=FakeCompleted(0, VC_INFO_U_OUTPUT))
         with self.assertRaises(resolve_eval_input.EvalInputError) as ctx:
-            resolve_eval_input._validate_vc_partition({"partition": "pdgpu-9999"}, VC_EXECUTION)
+            resolve_eval_input._validate_vc_partition({"partition": "gpu-unknown"}, VC_EXECUTION)
         message = str(ctx.exception)
-        self.assertIn('vc_partition "pdgpu-9999" is not in your allowed partitions.', message)
-        self.assertIn("Allowed: pdgpu-2080ti, pdgpu-3090, pdgpu-4090", message)
+        self.assertIn('vc_partition "gpu-unknown" is not in your allowed partitions.', message)
+        self.assertIn("Allowed: gpu-legacy, gpu-priority, gpu-standard", message)
 
     def test_query_timeout_skips_validation(self):
         self.stub_vc_info(error=subprocess.TimeoutExpired(cmd="vc info -u", timeout=30))
-        resolve_eval_input._validate_vc_partition({"partition": "pdgpu-9999"}, VC_EXECUTION)
+        resolve_eval_input._validate_vc_partition({"partition": "gpu-unknown"}, VC_EXECUTION)
 
     def test_missing_vc_binary_skips_validation(self):
         self.stub_vc_info(error=FileNotFoundError("vc"))
-        resolve_eval_input._validate_vc_partition({"partition": "pdgpu-9999"}, VC_EXECUTION)
+        resolve_eval_input._validate_vc_partition({"partition": "gpu-unknown"}, VC_EXECUTION)
 
     def test_empty_partition_list_skips_validation(self):
         self.stub_vc_info(result=FakeCompleted(0, "[Partition]\n------\n[Next]\n"))
-        resolve_eval_input._validate_vc_partition({"partition": "pdgpu-9999"}, VC_EXECUTION)
+        resolve_eval_input._validate_vc_partition({"partition": "gpu-unknown"}, VC_EXECUTION)
 
     def test_local_plan_never_queries_vc(self):
         self.stub_vc_info(result=FakeCompleted(0, VC_INFO_U_OUTPUT))
-        resolve_eval_input._validate_vc_partition({"partition": "pdgpu-9999"}, LOCAL_EXECUTION)
+        resolve_eval_input._validate_vc_partition({"partition": "gpu-unknown"}, LOCAL_EXECUTION)
         self.assertEqual(self.calls, [])
 
     def test_no_partition_is_noop(self):
@@ -111,7 +111,7 @@ class ValidateVcPartitionTests(unittest.TestCase):
 
     def test_timeout_value_is_30(self):
         self.stub_vc_info(result=FakeCompleted(0, VC_INFO_U_OUTPUT))
-        resolve_eval_input._validate_vc_partition({"partition": "pdgpu-3090"}, VC_EXECUTION)
+        resolve_eval_input._validate_vc_partition({"partition": "gpu-standard"}, VC_EXECUTION)
         self.assertEqual(self.calls[0][1], 30)
 
 

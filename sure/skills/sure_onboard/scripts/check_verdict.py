@@ -5,9 +5,9 @@ Verifies the verdict status is a terminal value. A success/passed verdict
 requires build.success, all four validation tests passed, and readiness that
 matches the selected package profile:
 
-  - package=none: local_ready=true is sufficient
-  - package=docker-local: local_ready=true and docker_ready=true
-  - package=docker-registry: local_ready=true, docker_ready=true, registry_ready=true
+  - local package=docker-registry: local/docker/registry/bundle readiness
+  - local package=none or docker-local: terminal status must remain partial
+  - API package=none: local client readiness is sufficient
 
 VC/HPC readiness is intentionally not part of this core /sure_onboard gate.
 
@@ -151,7 +151,7 @@ def required_readiness_keys(profile: str) -> list[str]:
     if profile in {"docker-local", "docker-registry"}:
         keys.append("docker_ready")
     if profile == "docker-registry":
-        keys.append("registry_ready")
+        keys.extend(["registry_ready", "bundle_ready"])
     return keys
 
 
@@ -225,6 +225,19 @@ def main() -> int:
             print(
                 "VERDICT gate: harness success verdict requires artifacts/package_gate.json "
                 "from the preceding PACKAGE_GATE unit.",
+                file=sys.stderr,
+            )
+            return 1
+        resolved_path = run_dir / "artifacts" / "model_input_resolved.json"
+        try:
+            resolved = read_json(resolved_path)
+        except (OSError, ValueError) as exc:
+            print(f"VERDICT gate: cannot read model_input_resolved.json: {exc}", file=sys.stderr)
+            return 1
+        if resolved.get("deployment_type") == "local" and profile != "docker-registry":
+            print(
+                "VERDICT gate: local package=none/docker-local is local_only and cannot use a success status; "
+                "emit status=partial or complete docker-registry delivery.",
                 file=sys.stderr,
             )
             return 1

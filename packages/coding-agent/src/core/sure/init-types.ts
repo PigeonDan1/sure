@@ -1,4 +1,4 @@
-import type { KnownProvider } from "@earendil-works/pi-ai";
+import type { KnownProvider, ModelThinkingLevel } from "@earendil-works/pi-ai";
 
 /** Persistent record written by /sure_init to .sure/init.json. */
 export interface SureInitManifest {
@@ -8,6 +8,8 @@ export interface SureInitManifest {
 	defaultProvider: string;
 	/** Selected model id (e.g. "gpt-5.5", "kimi-for-coding"). */
 	defaultModel: string;
+	/** Model reasoning level selected by SURE when the model has a defined profile. */
+	defaultThinkingLevel?: ModelThinkingLevel;
 	/** Whether the project was trusted at initialization time. */
 	trusted: boolean;
 	/** Whether the Python backend environment check passed. */
@@ -16,6 +18,12 @@ export interface SureInitManifest {
 	availableSkills: string[];
 	/** Manifest format version. */
 	version: number;
+	/** Protocol /sure_init measured for the selected model. */
+	defaultApi?: string;
+	/** Reasoning levels upstream confirmed for the selected model, highest first. */
+	supportedThinkingLevels?: ModelThinkingLevel[];
+	/** What the probe did. Each step keeps its verdict plus a short upstream error snippet (detail, at most 240 characters); never a full body, never a credential. */
+	capabilityProbe?: { probedAt: string; steps: ProbeStep[]; effortNote: string };
 }
 
 /** Auth mechanism for a SURE init provider option. */
@@ -61,4 +69,28 @@ export interface SureInitArgs {
 	gatewayName?: string;
 	/** New gateway base URL (used with --option custom). */
 	gatewayBaseUrl?: string;
+	/** Pre-selected reasoning effort. Must be one of the levels upstream confirmed. */
+	effort?: string;
+	/** Probe and annotate every model on the gateway, not just the selected one. */
+	probeAll?: boolean;
+}
+
+/** Protocols /sure_init knows how to try against a relay. */
+export type ProbeApi = "openai-completions" | "openai-responses" | "anthropic-messages";
+
+export type ProbeVerdict =
+	| "ok"
+	| "wrong-protocol"
+	| "no-channel"
+	| "bad-key"
+	| "client-rejected"
+	| "unreachable"
+	| "unknown";
+
+/** One probe attempt, kept for the screen and for .sure/init.json. detail is the upstream body collapsed to one line and cut at 240 characters. */
+export interface ProbeStep {
+	api: ProbeApi;
+	status: number | "network";
+	verdict: ProbeVerdict;
+	detail: string;
 }

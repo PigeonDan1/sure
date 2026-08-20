@@ -22,6 +22,13 @@ from .schema import (
 )
 
 
+ALLOWED_PROTOCOL_IDS = frozenset({"standard_system", "strict_core"})
+
+
+class ProtocolResolutionError(ValueError):
+    """Raised when a requested inference protocol cannot be proven effective."""
+
+
 class ProtocolResolver:
     """Resolves protocol standard parameters to model-specific parameters."""
 
@@ -63,8 +70,7 @@ class ProtocolResolver:
         for protocol_id, protocol in protocols.items():
             if protocol.is_default:
                 return protocol_id
-        # Fallback to strict_core if no default is set
-        return "strict_core"
+        raise ProtocolResolutionError("protocol catalog has no default protocol")
 
     def resolve(
         self,
@@ -80,16 +86,35 @@ class ProtocolResolver:
         3. Map each protocol standard param to model param
         4. Return resolved params + unmapped notes
         """
+        if protocol_id not in ALLOWED_PROTOCOL_IDS:
+            raise ProtocolResolutionError(
+                f"unsupported protocol {protocol_id!r}; expected one of {sorted(ALLOWED_PROTOCOL_IDS)}"
+            )
         protocol = self.get_protocol(protocol_id)
         if protocol is None:
-            raise ValueError(f"Unknown protocol: {protocol_id}")
+            raise ProtocolResolutionError(f"protocol catalog does not define {protocol_id!r}")
+
+        if protocol_id == "standard_system":
+            return ResolvedParams(
+                protocol_id=protocol_id,
+                standard_params={},
+                model_params={},
+                unmapped={},
+                parameter_status={},
+            )
 
         # Load model protocol config
         model_protocol_config = self._load_model_protocol_config(model_info, protocol_id)
+        if not model_protocol_config.enabled:
+            raise ProtocolResolutionError(
+                f"approved model {model_info.name!r} does not enable protocol {protocol_id!r}"
+            )
 
         standard_params: dict[str, Any] = {}
         model_params: dict[str, Any] = {}
         unmapped: dict[str, str] = {}
+        parameter_status: dict[str, dict[str, Any]] = {}
+        hard_failures: list[str] = []
 
         for param_name, protocol_param in protocol.params.items():
             # Standard param value
@@ -98,14 +123,28 @@ class ProtocolResolver:
             # Check if model has a mapping for this param
             mapping = model_protocol_config.param_map.get(param_name)
             if mapping is None:
-                # Model didn't declare this param at all
-                unmapped[param_name] = f"Model '{model_info.name}' did not declare mapping for '{param_name}'"
+                reason = f"model {model_info.name!r} did not declare a mapping"
+                unmapped[param_name] = reason
+                parameter_status[param_name] = {"status": "unsupported", "reason": reason}
+                hard_failures.append(f"{param_name}: {reason}")
                 continue
 
             if mapping.model_param is None:
-                # Model explicitly declared this param as unsupported
-                note = mapping.note or f"Model '{model_info.name}' does not support '{param_name}'"
+                note = mapping.note or f"model {model_info.name!r} does not support {param_name!r}"
                 unmapped[param_name] = note
+                if mapping.status != "not_applicable" or not mapping.note.strip():
+                    parameter_status[param_name] = {"status": "unsupported", "reason": note}
+                    hard_failures.append(
+                        f"{param_name}: null model_param requires status=not_applicable and an explicit reason"
+                    )
+                else:
+                    parameter_status[param_name] = {"status": "not_applicable", "reason": note}
+                continue
+
+            if mapping.status != "applied":
+                reason = f"non-null model_param requires status=applied, got {mapping.status!r}"
+                parameter_status[param_name] = {"status": "unsupported", "reason": reason}
+                hard_failures.append(f"{param_name}: {reason}")
                 continue
 
             # Map protocol value to model value
@@ -116,13 +155,33 @@ class ProtocolResolver:
             if param_name == "precision" and mapping.model_param == "dtype":
                 model_value = self._map_precision_to_dtype(str(protocol_value))
 
+            if mapping.model_param in model_params and model_params[mapping.model_param] != model_value:
+                reason = (
+                    f"model parameter {mapping.model_param!r} has conflicting strict values "
+                    f"{model_params[mapping.model_param]!r} and {model_value!r}"
+                )
+                parameter_status[param_name] = {"status": "unsupported", "reason": reason}
+                hard_failures.append(f"{param_name}: {reason}")
+                continue
             model_params[mapping.model_param] = model_value
+            parameter_status[param_name] = {
+                "status": "applied",
+                "model_param": mapping.model_param,
+                "value": model_value,
+            }
+
+        if hard_failures:
+            raise ProtocolResolutionError(
+                f"strict_core cannot be proven for approved model {model_info.name!r}: "
+                + "; ".join(hard_failures)
+            )
 
         return ResolvedParams(
             protocol_id=protocol_id,
             standard_params=standard_params,
             model_params=model_params,
             unmapped=unmapped,
+            parameter_status=parameter_status,
         )
 
     def _load_model_protocol_config(

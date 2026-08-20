@@ -12,8 +12,8 @@ routed files.
   explicitly requires shared harness changes. `model_name` must be the
   single-segment normalized id derived from the provider id by replacing `/`
   with `__`; never derive it from task prefixes or informal aliases.
-- Docker image tags, when optional Docker packaging is requested, must align
-  with the same repo id slug. Docker is not required for `package=none`.
+- Docker image tags must align with the same repo id slug; local-model success
+  requires registry push and immutable digest pull verification.
 - Validate `model.spec.yaml` before building the runtime.
 - Keep weights and provider caches model-local by default.
 - Validate the four minimum checks: import, load, infer, output contract.
@@ -23,8 +23,8 @@ routed files.
 - Save structured artifacts: `backend_choice.json`, `build.log`,
   `validation.log`, `sample_output.json`, `verdict.json`, and
   `artifact_manifest.json`.
-- For local models that will run on cluster, build and validate a model-specific
-  Docker image.
+- For every local model, build and validate a model-specific Docker image and
+  publish a digest-pinned container-only runtime binding.
 
 ## Context Selection Rule
 

@@ -90,7 +90,7 @@ logic. The two gate scripts are thin semantic validators:
 
 **Heavy dependency note**: only `xforge_modelscope_dataset_to_oref.py` imports
 `modelscope` at module top level. The `sure_feed/` package itself imports
-cleanly without it, so gate scripts run under a bare `python3`.
+cleanly without it, so gate scripts run under the locked common `HARNESS_PYTHON_BIN`.
 
 **HuggingFace endpoint policy**: try canonical `https://huggingface.co` first.
 If the request fails because the endpoint is unreachable or returns a transient

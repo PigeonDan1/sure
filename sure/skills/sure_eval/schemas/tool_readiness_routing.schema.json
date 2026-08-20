@@ -2,7 +2,7 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "tool_readiness_routing.schema.json",
 	"title": "SURE-EVAL tool readiness & routing",
-	"description": "Structured output of the TOOL_READINESS_ROUTING_UNIT. Reads the model's verdict.json from sure/models/<model>/ and decides readiness.",
+	"description": "Structured output of the TOOL_READINESS_ROUTING_UNIT. Reads the approved NFS deployment binding and decides readiness.",
 	"type": "object",
 	"required": ["readiness", "model_dir"],
 	"properties": {
@@ -12,7 +12,7 @@
 		},
 		"model_dir": {
 			"type": "string",
-			"description": "Resolved model artifacts directory (sure/models/<model>/ or --model-dir override)."
+			"description": "Exact approved directory below a configured approved model root."
 		},
 		"verdict_status": { "type": "string" },
 		"server_present": { "type": "boolean" },

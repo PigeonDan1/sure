@@ -27,7 +27,7 @@
 
 - After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
 - Never run `npm run build` or `npm test` unless requested by the user.
-- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
+- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root (it takes no arguments: it always hides `auth.json`, unsets the credential variables, then runs `npm test`). Otherwise run specific tests from the package root: `node node_modules/vitest/dist/cli.js --run test/specific.test.ts` (vitest is installed per-package, not hoisted to the repo root; `npx vitest --run <file>` works too).
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
@@ -156,6 +156,96 @@ Attribution:
 4. **CI publishes npm packages**: pushing the `vX.Y.Z` tag triggers `.github/workflows/build-binaries.yml`. The `publish-npm` job uses npm trusted publishing through GitHub Actions OIDC with environment `npm-publish`; no local `npm publish`, `npm whoami`, OTP, or WebAuthn flow is required.
 
 5. **If CI publish fails**: inspect the failed `publish-npm` job. The publish helper is idempotent and skips package versions already present on npm, so rerun the tag workflow after fixing CI or transient npm issues. Do not rerun `npm run release:patch` or `npm run release:minor` for the same version.
+
+## SURE Harness
+
+This fork adds the SURE evaluation control plane (`/sure_feed`, `/sure_onboard`, `/sure_eval`, `/sure_reval`). The common user entry point is `README.md`; bundled company distributions also carry `private/aispeech/docs/handbook.md`. This section is the maintainer side.
+
+### Skill Package Layout
+
+```text
+sure/skills/<skill-name>/
+  sure.skill.json   # skill manifest
+  SKILL.md          # agent-facing operating manual
+  hooks/            # state-machine gates
+  scripts/          # deterministic execution
+  schemas/          # artifact contracts
+  references/       # domain references
+  examples/         # usage examples
+```
+
+### Targeted Checks
+
+```bash
+npm run check:sure-hooks
+python3 -m py_compile sure/skills/sure_eval/scripts/*.py
+cd sure/skills/sure_onboard/scripts && python3 -m unittest test_runtime_inventory.py
+```
+
+- `test_runtime_inventory.py` imports its siblings without touching `sys.path`, so it only runs from inside that directory.
+- `python3 -m unittest sure/skills/sure_eval/scripts/test_protocol_provenance.py` needs an interpreter that has the harness-runtime dependencies (see `sure/runtime/harness/requirements.in`, which pins pydantic). The root `requirements.txt` is PyYAML-only and is not enough: on a bare interpreter this test fails with `ModuleNotFoundError: No module named 'pydantic'`. Skills at runtime use the locked venv that `sure/runtime/harness/bootstrap.py` materializes, not the system Python.
+- Run `npm run sure:doctor` after changes that affect setup, skill discovery, or external engine detection.
+- `npm run check` covers repo checks only and never runs tests; it is non-mutating, so use `npm run format` when Biome should rewrite files.
+
+SURE test files live in `packages/coding-agent/test/suite/` (`sure-extension`, `sure-feed`, `sure-onboard-state-machine`, `sure-onboard-terminal`, `sure-eval-state-machine`, `sure-eval-runbackend`, `sure-eval-red-lines`, `sure-reval-terminal`, `sure-run-output-dir`, `sure-runtime-binding`, `sure-skill-output-dir`) plus the init suites under `packages/coding-agent/test/sure/`. Run them from `packages/coding-agent` per the vitest rule in Commands.
+
+### Credential-Free Launchers
+
+The variable names live in one shared file:
+
+```text
+scripts/credential-env.txt
+```
+
+Add new credential variable names there, sorted alphabetically, names only, never secret values. `pi-test.sh --no-env` and `pi-test.ps1 --no-env` temporarily move `auth.json` out of the agent config directory for that run and restore it on exit; `test.sh` always runs credential-free and takes no flags.
+
+### Runtime Provenance Lifecycle
+
+| Stage | Artifact | Rule |
+| --- | --- | --- |
+| `/sure_onboard` | `runtime_inventory.json` | Summarize model-level backend, Python, runtime probe, weights manifest, and small evidence links. Do not link checkpoint payloads. |
+| `/sure_eval` | `prediction_generation_status.json` | Record the actual MCP server command, working directory, safe env snapshot, explicit tool args, protocol resolver output, and dataset generation status. |
+| `/sure_eval` | `protocol.yaml` | Read generation status first, runtime inventory second, model config third, environment fallback last. Keep inference fields separate from evaluation results. |
+| `/sure_reval` | `prediction_reuse_manifest.json` | Copy/filter predictions only; do not reuse old metric artifacts. |
+| `/sure_reval` | `source_inference_provenance.json` | Link source protocol/status/runtime inventory when available and mark unknown sources explicitly. |
+
+### Design Boundary
+
+| Harness owns | Skill packages own |
+| --- | --- |
+| Slash-command discovery, run lifecycle, state persistence. | Domain prompts, deterministic scripts. |
+| Hook execution, tool gates, final manifest validation. | State machines, schemas, checkpoints. |
+| Shared runtime contracts. | Validation rules and repair instructions. |
+
+Do not move task-specific metrics, dataset assumptions, or SURE business logic into the common harness unless the rule is truly shared by every skill.
+
+### Repository Hygiene
+
+Generated paths kept out of Git include:
+
+```gitignore
+/.sure/
+/data/
+/results/
+/results_*/
+/sure/results/
+/sure/skills/sure_eval/results/
+/sure/.runtime/
+/sure/handoffs/
+/sure/models/*
+```
+
+Never commit API keys, provider tokens, auth files, model weights, checkpoints, large datasets, prediction dumps, metric result dumps, virtual environments, or cache directories.
+
+`sure/external/sure-evaluation` is a Git submodule. When bumping the verified engine, commit the gitlink together with the refreshed `sure/runtime/evaluation/runtime.json` lock (`engine_commit` and `engine_pyproject_sha256`). A gitlink-only commit makes the next `/sure_eval` fail on the locked-runtime check. Full procedure and the submodule contract: `docs/evaluation_engine.md`.
+
+### Public Export
+
+`npm run public:export` produces the public tree by deleting the paths listed in `public-export.yaml`; it never rewrites public file content. New private content must live under `private/`. `sure/skills/sure_eval/references/main_flow_agent/` is the single grandfathered export exception (a frozen upstream audit mirror; see `sure/skills/sure_eval/SKILL.md`). The exclusion list is closed: `check:site-boundary` fails if `public-export.yaml` gains an entry outside the approved exception set.
+
+### Handbook Copies
+
+When the private company distribution is present, `private/aispeech/docs/handbook.md` is the single source and `private/aispeech/scripts/build-handbook.py` produces the markdown/HTML/PDF copies. It refuses to build from a dirty source unless `--dev` is passed, and dev builds are stamped `dev-*` so they cannot be mistaken for a release copy. See the maintenance note at the end of the private handbook.
 
 ## User Override
 

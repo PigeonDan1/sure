@@ -1,7 +1,7 @@
 {
 	"name": "sure_onboard",
 	"command": "/sure_onboard",
-	"description": "Onboard or repair an audio model into a reproducible local inference unit: load MODEL_INPUT, select context, discover, classify, plan backend/build steps, prepare fixture, build env, fetch weights, generate wrapper, run real validation, package-gate readiness, and save artifacts with a verdict.",
+	"description": "Onboard or repair an audio model, validate it locally and in Docker, publish a digest-pinned image, and seal a container-only Eval deployment bundle.",
 	"prompt": "SKILL.md",
 	"hooks": {
 		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
@@ -44,12 +44,24 @@
 			"type": "package_gate",
 			"path": "artifacts/package_gate.json",
 			"required": false,
-			"description": "Local/Docker package readiness gate result."
+			"description": "Docker registry package readiness gate result."
+		},
+		{
+			"type": "runtime_inventory",
+			"path": "artifacts/runtime_inventory.json",
+			"required": true,
+			"description": "Container-only Eval runtime binding."
+		},
+		{
+			"type": "deployment_ready",
+			"path": "artifacts/deployment_ready.json",
+			"required": true,
+			"description": "Terminal portable bundle and immutable image readiness marker."
 		}
 	],
 	"ui": {
 		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
-		"artifactTypes": ["verdict", "model_spec", "wrapper", "build_plan", "fixture_manifest", "package_gate", "artifact_manifest"],
+		"artifactTypes": ["verdict", "deployment_ready", "runtime_inventory", "model_spec", "wrapper", "build_plan", "fixture_manifest", "package_gate", "artifact_manifest"],
 		"defaultExpandedSections": ["diagnostics", "artifacts"]
 	}
 }

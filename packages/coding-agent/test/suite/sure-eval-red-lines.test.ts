@@ -55,7 +55,7 @@ function writeEvalInput(runDir: string): void {
 		runtime: {
 			run_dir: runDir,
 			device: { request: "cpu", resolved: "cpu" },
-			execution: { requested: "local", planned: "local", path_planned: "local_bash" },
+			execution: { requested: "local", planned: "local", path_planned: "local_docker" },
 		},
 		evaluation: { backend: "external", strict_main_flow: true },
 		main_flow_input: {},
@@ -103,8 +103,20 @@ describe("sure_eval red line 1 — EXECUTION_SURFACE_ISOLATION", () => {
 			"python evaluate_predictions.py --results-dir x --protocol-id y --model-dir z --evaluation-backend external || EVAL_EXIT=$?\n",
 			"utf-8",
 		);
-		const r = runGate("check_execution_surface_compliance.py", runDir, "execution_surface.json");
-		expect(r.ok).toBe(true);
+		const surfacePath = join(runDir, "artifacts", "execution_surface.json");
+		const result = spawnSync("python3", ["-"], {
+			cwd: SCRIPTS_DIR,
+			input: `
+from pathlib import Path
+from check_execution_surface_compliance import check_template_source
+result = check_template_source(Path(${JSON.stringify(surfacePath)}), Path(${JSON.stringify(templateFile)}))
+assert result["passed"], result
+`,
+			encoding: "utf-8",
+			env: { ...process.env, PYTHONPATH: SCRIPTS_DIR },
+		});
+		expect(result.status).toBe(0);
+		expect(result.stderr).toBe("");
 	});
 
 	it("blocks when the surface references a template OUTSIDE scripts/templates/", () => {
@@ -136,7 +148,7 @@ describe("sure_eval execution policy gate", () => {
 		writeEvalInput(runDir);
 
 		writeArtifact(runDir, "submit_result.json", {
-			execution_path: "local_bash",
+			execution_path: "local_docker",
 			execution_requested: "local",
 			vc_available: true,
 			fallback_approved: false,
@@ -228,7 +240,7 @@ assert indexed["notes"], indexed
 from sure_eval.agent import vc_submitter as v
 
 v.select_best_image = lambda model: "repo/image:v1"
-v.select_best_partition = lambda: "pdgpu-test"
+v.select_best_partition = lambda: "gpu-test"
 v.estimate_memory_gb = lambda model: 16
 
 cmd = v.build_vc_submit_command(
@@ -275,7 +287,9 @@ surface_path = Path(${JSON.stringify(join(runDir, "artifacts", "execution_surfac
 surface = {"source_provenance": {"template_file": "scripts/templates/run_single_model.sh"}}
 submission = r._resolved_submission(
     image="repo/image:v1",
-    partition="pdgpu-ezkws",
+    image_digest="sha256:" + "a" * 64,
+    image_identity_ref="repo/image@sha256:" + "a" * 64,
+    partition="gpu-example",
     memory_gb=32,
     gpus=1,
     cpus=8,
@@ -286,6 +300,8 @@ submission = r._resolved_submission(
     run_evaluation_path="/host/repo/.sure/runs/r/artifacts/run_evaluation.sh",
     log_path=Path("/host/repo/.sure/runs/r/vc_logs/job.log"),
     command="vc submit ...",
+    harness_runtime={"runtime_id": "sure-harness-test"},
+    model_runtime={"runtime_type": "model_python", "python_executable": "python"},
 )
 r._write_surface_resolved_submission(surface_path, surface, submission)
 data = json.loads(surface_path.read_text())

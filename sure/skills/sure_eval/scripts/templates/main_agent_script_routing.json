@@ -75,7 +75,7 @@
         "pred_dir": "predictions",
         "results_dir": "<run_dir>/results",
         "model_dir": "",
-        "protocol_id": "strict_core",
+		"protocol_id": "standard_system",
         "metrics": []
       },
       "outputs": {

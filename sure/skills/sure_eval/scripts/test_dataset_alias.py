@@ -1,30 +1,26 @@
 #!/usr/bin/env python3
-"""Regression tests: /sure_reval must accept the short dataset aliases that
-/sure_eval already accepts (FIX-502 / Task 18).
+"""Regression tests for the eval/reval dataset identity boundary.
 
 /sure_eval expands a short alias such as "aishell1" to the fully qualified,
 versioned dataset id it actually writes artifacts under (e.g.
 "aishell1__v1.0.2__asr") via
 DatasetManager._existing_jsonl_for_dataset -> normalize_dataset_name.
-/sure_reval's resolve_prediction_source.py required the caller to already
-know and pass that fully qualified id, so the two-step eval-then-reval
-workflow documented by both skills broke at step two: `/sure_eval
-datasets=aishell1` works, `/sure_reval datasets=aishell1` did not.
+/sure_reval deliberately has a stricter public identity: callers must provide
+the exact ``<dataset>__<version>`` value approved in NFS. It does not accept a
+short alias or the historical ``__task`` report suffix.
 
 These tests exercise:
   - the shared resolve_dataset_alias() rule directly,
   - /sure_eval's own DatasetManager._existing_jsonl_for_dataset using that
     rule (proves the eval side keeps resolving exactly as before), and
-  - /sure_reval's resolve_prediction_source.build_payload() using the same
-    rule against its predictions directory (proves reval now accepts the
-    short name, and resolves it to the identical qualified name eval would).
+  - /sure_reval's canonical request validator (proves aliases and historical
+    report suffixes cannot weaken exact dataset-set equality).
 
 Run directly:
     cd sure/skills/sure_eval/scripts && python test_dataset_alias.py
 """
 from __future__ import annotations
 
-import argparse
 import sys
 import tempfile
 import unittest
@@ -58,6 +54,19 @@ class ResolveDatasetAliasTests(unittest.TestCase):
 
     def test_unknown_name_is_not_resolved(self) -> None:
         result = dataset_alias.resolve_dataset_alias("no_such_dataset", ["aishell1__v1.0.2__asr"])
+        self.assertIsNone(result)
+
+    def test_two_segment_source_id_resolves_from_short_name(self) -> None:
+        result = dataset_alias.resolve_dataset_alias(
+            "aispeech_phy_aishell-1-test",
+            ["aispeech_phy_aishell-1-test__v1.0.2", "other_ds__v1.0.1"],
+        )
+        self.assertEqual(result, "aispeech_phy_aishell-1-test__v1.0.2")
+
+    def test_two_segment_id_ambiguous_versions_fail_closed(self) -> None:
+        result = dataset_alias.resolve_dataset_alias(
+            "demo_ds", ["demo_ds__v1.0.1", "demo_ds__v1.0.2"]
+        )
         self.assertIsNone(result)
 
 
@@ -99,62 +108,24 @@ class EvalResolutionUnchangedTests(unittest.TestCase):
         self.assertIsNone(result)
 
 
-class RevalAcceptsShortDatasetNameTests(unittest.TestCase):
-    """/sure_reval must accept the same short name /sure_eval accepts, and
-    resolve it to the identical qualified dataset id."""
-
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        root = Path(self._tmp.name)
-        self.predictions_dir = root / "predictions"
-        self.predictions_dir.mkdir()
-        (self.predictions_dir / "aishell1__v1.0.2__asr.txt").write_text("hello\n", encoding="utf-8")
-
-    def tearDown(self) -> None:
-        self._tmp.cleanup()
-
-    def _args(self, datasets: list[str] | None) -> argparse.Namespace:
-        return argparse.Namespace(
-            source=str(self.predictions_dir),
-            model=None,
-            model_dir=None,
-            datasets=datasets,
-            protocol_id=None,
+class RevalRequiresCanonicalDatasetIdTests(unittest.TestCase):
+    def test_exact_dataset_and_version_is_unchanged(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._requested_dataset_id("aishell1__v1.0.2"),
+            "aishell1__v1.0.2",
         )
 
-    def test_short_dataset_name_now_resolves(self) -> None:
-        payload = resolve_prediction_source.build_payload(self._args(["aishell1"]))
-        self.assertEqual(payload["datasets"], ["aishell1__v1.0.2__asr"])
-        self.assertEqual(payload["predictions"][0]["dataset"], "aishell1__v1.0.2__asr")
+    def test_short_alias_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not canonical"):
+            resolve_prediction_source._requested_dataset_id("aishell1")
 
-    def test_short_name_resolves_to_the_same_value_eval_gives_it(self) -> None:
-        # A directory laid out the way /sure_eval's dataset jsonl root would
-        # be for this dataset: eval writes predictions using exactly the
-        # canonical name it resolves, so give the eval-side resolver the
-        # same file stem (as a .jsonl) that reval's predictions dir has (as
-        # a .txt), and confirm both land on the identical qualified name.
-        eval_jsonl_dir = Path(self._tmp.name) / "eval_jsonl_dir"
-        eval_jsonl_dir.mkdir()
-        (eval_jsonl_dir / "aishell1__v1.0.2__asr.jsonl").write_text("{}\n", encoding="utf-8")
-        eval_manager = _FakeDatasetManager(eval_jsonl_dir)
-        eval_resolved = DatasetManager._existing_jsonl_for_dataset(eval_manager, "aishell1").stem
+    def test_historical_task_suffix_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not canonical"):
+            resolve_prediction_source._requested_dataset_id("aishell1__v1.0.2__asr")
 
-        payload = resolve_prediction_source.build_payload(self._args(["aishell1"]))
-
-        self.assertEqual(payload["datasets"], [eval_resolved])
-
-    def test_fully_qualified_dataset_name_is_unchanged(self) -> None:
-        payload = resolve_prediction_source.build_payload(self._args(["aishell1__v1.0.2__asr"]))
-        self.assertEqual(payload["datasets"], ["aishell1__v1.0.2__asr"])
-
-    def test_ambiguous_short_name_still_fails_closed(self) -> None:
-        (self.predictions_dir / "aishell1__v2.0.0__asr.txt").write_text("hello\n", encoding="utf-8")
-        with self.assertRaises(FileNotFoundError):
-            resolve_prediction_source.build_payload(self._args(["aishell1"]))
-
-    def test_unresolvable_short_name_still_fails_closed(self) -> None:
-        with self.assertRaises(FileNotFoundError):
-            resolve_prediction_source.build_payload(self._args(["no_such_dataset"]))
+    def test_legacy_single_underscore_version_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not canonical"):
+            resolve_prediction_source._requested_dataset_id("aishell1_v1.0.2")
 
 
 if __name__ == "__main__":

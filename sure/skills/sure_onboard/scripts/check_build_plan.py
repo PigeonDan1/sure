@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-"""Gate script for BUILD_PLAN.
-
-The build plan must be an executable, auditable bridge from backend selection to
-local validation. VC/HPC submission is intentionally not part of this core
-harness chain; any required VC step in build_plan.json is rejected here.
-"""
+"""Gate an executable local adaptation and Docker delivery plan."""
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -67,8 +63,20 @@ def main() -> int:
     if data.get("backend") not in BACKENDS:
         print(f"BUILD_PLAN gate: unsupported backend={data.get('backend')!r}", file=sys.stderr)
         return 1
-    if data.get("package_profile") not in PACKAGE_PROFILES:
+    package_profile = data.get("package_profile")
+    if package_profile not in PACKAGE_PROFILES:
         print(f"BUILD_PLAN gate: unsupported package_profile={data.get('package_profile')!r}", file=sys.stderr)
+        return 1
+
+    resolved_path = Path(args.run_dir).expanduser() / "artifacts" / "model_input_resolved.json"
+    try:
+        resolved = load_json(resolved_path)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"BUILD_PLAN gate: cannot read model_input_resolved.json: {exc}", file=sys.stderr)
+        return 1
+    deployment_type = data.get("deployment_type") or resolved.get("deployment_type")
+    if package_profile != resolved.get("package_profile"):
+        print("BUILD_PLAN gate: package_profile disagrees with model_input_resolved.json.", file=sys.stderr)
         return 1
 
     steps = data.get("steps")
@@ -96,6 +104,44 @@ def main() -> int:
             )
             return 1
 
+    if deployment_type == "local" and package_profile in {"docker-local", "docker-registry"}:
+        delivery = data.get("container_delivery") if isinstance(data.get("container_delivery"), dict) else {}
+        missing_delivery = [
+            key for key in ("dockerfile_path", "target_image") if not delivery.get(key)
+        ]
+        if missing_delivery:
+            print(
+                "BUILD_PLAN gate: local Docker delivery is missing container_delivery fields: "
+                + ", ".join(missing_delivery),
+                file=sys.stderr,
+            )
+            return 1
+        if package_profile == "docker-registry" and delivery.get("registry_required") is not True:
+            print("BUILD_PLAN gate: docker-registry requires container_delivery.registry_required=true.", file=sys.stderr)
+            return 1
+        if delivery.get("model_mount_read_only") is not True or delivery.get("result_mount_separate") is not True:
+            print(
+                "BUILD_PLAN gate: container delivery must use a read-only model mount and a separate result mount.",
+                file=sys.stderr,
+            )
+            return 1
+        plan_text = "\n".join(step_text(step) for step in steps)
+        requirements = {
+            "Dockerfile adaptation": r"dockerfile",
+            "target image build": r"docker\s+build|buildx\s+build",
+            "container validation": r"docker\s+run|container.{0,30}validat|docker.{0,30}validat",
+        }
+        if package_profile == "docker-registry":
+            requirements.update(
+                {
+                    "registry push": r"docker\s+push|registry.{0,30}push",
+                    "digest pull verification": r"pull.{0,30}(digest|sha256)|digest.{0,30}pull",
+                }
+            )
+        missing_steps = [label for label, pattern in requirements.items() if not re.search(pattern, plan_text)]
+        if missing_steps:
+            print("BUILD_PLAN gate: missing required Docker steps: " + ", ".join(missing_steps), file=sys.stderr)
+            return 1
     blockers = data.get("blockers") or []
     if blockers:
         print("BUILD_PLAN gate: unresolved blockers: " + "; ".join(map(str, blockers)), file=sys.stderr)

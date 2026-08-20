@@ -1,7 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import { harnessRuntimeEnv, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import { requireSitePolicy } from "../../../site/loader.ts";
 import {
 	advance,
 	artifactPath,
@@ -40,39 +43,10 @@ export function countersFor(completed: CheckpointData, gateBlocks?: number) {
 	};
 }
 
-function legacyModelsDir(root: string): string {
-	if (root.endsWith("/models")) {
-		return root;
-	}
-	return join(root, "src", "sure_eval", "models");
-}
+const PROTOCOLS = new Set(["standard_system", "strict_core"]);
 
-function candidateModelDirs(ctx: SureHookContext, model: string, explicit?: string): string[] {
-	const candidates: string[] = [];
-	if (explicit) {
-		candidates.push(explicit);
-	}
-	for (const root of [process.env.SURE_MODELS_DIR, process.env.SURE_MODEL_ROOT]) {
-		if (root) {
-			candidates.push(join(root, model));
-		}
-	}
-	if (process.env.LEGACY_SURE_MODELS_DIR) {
-		candidates.push(join(process.env.LEGACY_SURE_MODELS_DIR, model));
-	}
-	if (process.env.LEGACY_SURE_EVAL_ROOT) {
-		candidates.push(join(legacyModelsDir(process.env.LEGACY_SURE_EVAL_ROOT), model));
-	}
-	candidates.push(join(ctx.cwd, "sure", "models", model));
-
-	const seen = new Set<string>();
-	return candidates.filter((candidate) => {
-		if (seen.has(candidate)) {
-			return false;
-		}
-		seen.add(candidate);
-		return true;
-	});
+function approvedModelsRoot(): string {
+	return requireSitePolicy().policy.storage.approved_models_roots[0];
 }
 
 function verdictPathFor(modelDir: string): string | undefined {
@@ -84,20 +58,10 @@ function verdictPathFor(modelDir: string): string | undefined {
 	return undefined;
 }
 
-// Resolve the model dir for this run. /sure_eval prefers explicit model_dir,
-// then externally configured model roots, then the repo-level sure/models root.
-function modelDirFor(ctx: SureHookContext): string | undefined {
+function modelDirFor(ctx: SureHookContext, approvedRoot: string): string | undefined {
 	const args = parseArgs(ctx.args);
 	const model = typeof args.model === "string" ? args.model : undefined;
-	const modelDir = typeof args.model_dir === "string" ? args.model_dir : undefined;
-	if (!model) {
-		return modelDir;
-	}
-	return (
-		candidateModelDirs(ctx, model, modelDir).find((candidate) => existsSync(candidate)) ??
-		modelDir ??
-		join(ctx.cwd, "sure", "models", model)
-	);
+	return model ? join(approvedRoot, model) : undefined;
 }
 
 function parseArgs(raw: string): Record<string, string> {
@@ -135,20 +99,43 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> datasets=<dataset[,dataset...]> [execution=auto|local|vc] [device=auto|cpu|cuda[:index]] [max_samples=...] [model_dir=...]`,
+			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> datasets=<dataset__version[,dataset__version...]> [protocol=standard_system|strict_core] [execution=auto|local|vc] [device=auto|cpu|cuda[:index]] [max_samples=...]`,
 			"Missing required parameters.",
+		);
+	}
+	let approvedRoot: string;
+	try {
+		approvedRoot = approvedModelsRoot();
+	} catch (error) {
+		return failure(error instanceof Error ? error.message : String(error), "Site policy is not configured.");
+	}
+	if ("model_dir" in args) {
+		return failure(
+			`/sure_eval no longer accepts model_dir; approved models are read only from ${approvedRoot}.`,
+			"Untrusted path override rejected.",
+		);
+	}
+	const protocol = args.protocol ?? args.protocol_id ?? "standard_system";
+	if (!PROTOCOLS.has(protocol)) {
+		return failure(
+			`Unsupported protocol ${JSON.stringify(protocol)}. Use standard_system (default) or strict_core.`,
+			"Unsupported inference protocol.",
+		);
+	}
+	const runtime = resolveHarnessPython(ctx.packageDir);
+	if (!runtime.ok || !runtime.contract) {
+		return failure(
+			runtime.error ?? "Bootstrap the locked common Harness Runtime and retry /sure_eval.",
+			"HARNESS_RUNTIME_NOT_READY",
 		);
 	}
 
 	// Verify the onboarded model dir exists with a verdict.json (cross-skill handoff).
-	const modelDir = modelDirFor(ctx);
+	const modelDir = modelDirFor(ctx, approvedRoot);
 	const verdictPath = modelDir ? verdictPathFor(modelDir) : undefined;
 	if (!modelDir || !existsSync(modelDir) || !verdictPath) {
-		const searched = args.model
-			? candidateModelDirs(ctx, args.model, typeof args.model_dir === "string" ? args.model_dir : undefined)
-			: [];
 		return failure(
-			`Model "${args.model}" is not onboarded: verdict.json not found. Searched: ${searched.join(", ") || "(no model dirs)"}. Set model_dir=..., SURE_MODELS_DIR, SURE_MODEL_ROOT, LEGACY_SURE_MODELS_DIR, or LEGACY_SURE_EVAL_ROOT; or run /sure_onboard to materialize the model into sure/models/${args.model}/ first.`,
+			`Model "${args.model}" is not approved: runtime files and verdict.json must exist under ${approvedRoot}/${args.model}. Run /sure_onboard into sure/models first, then complete the human promotion into NFS.`,
 			"Model not onboarded (handoff incomplete).",
 		);
 	}
@@ -162,16 +149,13 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		args.model,
 		"--datasets",
 		datasetsArg,
+		"--protocol",
+		protocol,
 		"--device",
 		typeof args.device === "string" ? args.device : "auto",
-		"--cwd",
-		ctx.cwd,
 		"--output",
 		resolvedInputPath,
 	];
-	if (typeof args.model_dir === "string") {
-		resolveArgs.push("--model-dir", args.model_dir);
-	}
 	if (typeof args.max_samples === "string") {
 		resolveArgs.push("--max-samples", args.max_samples);
 	}
@@ -183,9 +167,6 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (typeof args.execution_path === "string") {
 		resolveArgs.push("--execution-path", args.execution_path);
-	}
-	if (typeof args.output_dir === "string") {
-		resolveArgs.push("--output-dir", args.output_dir);
 	}
 	for (const [argKey, cliKey] of [
 		["vc_partition", "--vc-partition"],
@@ -202,6 +183,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (typeof args.run_id === "string") {
 		resolveArgs.push("--run-id", args.run_id);
 	}
+	if (typeof args.output_dir === "string") {
+		resolveArgs.push("--output-dir", args.output_dir);
+	}
 	if (typeof args.evaluation_backend === "string") {
 		resolveArgs.push("--evaluation-backend", args.evaluation_backend);
 	}
@@ -211,10 +195,11 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (typeof args.config === "string") {
 		resolveArgs.push("--config", args.config);
 	}
-	const resolvedInput = spawnSync("python3", resolveArgs, {
+	const resolvedInput = spawnSync(runtime.contract.python_executable, resolveArgs, {
 		cwd: ctx.packageDir,
 		encoding: "utf-8",
 		timeout: 120_000,
+		env: { ...process.env, ...harnessRuntimeEnv(runtime.contract) },
 	});
 	if (resolvedInput.status !== 0) {
 		const detail = resolvedInput.stderr.trim() || resolvedInput.stdout.trim() || "resolve_eval_input.py failed";
@@ -242,7 +227,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		ok: true,
 		state_patch: {
 			phase: phaseFor(findUnit(checkpoint.data.currentUnit) ?? FIRST_UNIT, "running"),
-			message: `SURE-EVAL main-flow skill loaded for model "${args.model}" from ${modelDir}; resolved input: ${resolvedInputPath}.`,
+			message: `SURE-EVAL main-flow skill loaded for model "${args.model}" from ${modelDir}; Harness Runtime ${runtime.contract.runtime_id}; resolved input: ${resolvedInputPath}.`,
 			counters: countersFor(checkpoint.data, 0),
 			diagnostics,
 			checkpoint,
@@ -275,7 +260,6 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 		invokedScript === "scripts/resolve_eval_input.py" ||
 		invokedScript === "scripts/resolve_evaluation_engine.py" ||
 		invokedScript === "scripts/resolve_evaluation_route_plan.py" ||
-		invokedScript === "scripts/run_model_mcp_smoke.py" ||
 		invokedScript === "scripts/run_local_execution.py" ||
 		invokedScript === "scripts/run_vc_execution.py"
 	) {
@@ -285,6 +269,15 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const currentUnit = findUnit(checkpoint.data.currentUnit);
 	if (!currentUnit) {
 		return { ok: true };
+	}
+	if (retryExhausted(currentUnit, checkpoint.data)) {
+		const attempts = checkpoint.data.retries[currentUnit.id] ?? 0;
+		return failure(
+			`Unit "${currentUnit.id}" already exhausted ${attempts} attempts. Do not rerun it from unrelated tool calls; persist an accurate failed run report or apply a deliberate repair and reset this unit's retry counter.`,
+			`Gate "${currentUnit.id}" is in a terminal failed state.`,
+			countersFor(checkpoint.data, attempts),
+			checkpoint,
+		);
 	}
 	// A script is allowed if the current unit (or any prior completed unit) owns it.
 	const owningUnits = [currentUnit, ...MAIN_FLOW_UNITS_UP_TO(checkpoint.data, currentUnit)];
@@ -369,6 +362,10 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 	// is not yet produced, stay on the unit (the agent may still be gathering
 	// evidence within it).
 	const artifact = readArtifact(ctx, currentUnit.produces);
+	const unchangedFailure = unchangedFailedArtifact(ctx, currentUnit, checkpoint);
+	if (unchangedFailure) {
+		return unchangedFailure;
+	}
 	const producesResult = validateProduces(ctx, currentUnit, artifact);
 	if (!producesResult.ok) {
 		if (producesResult.missing) {
@@ -431,17 +428,66 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 	};
 }
 
+function unchangedFailedArtifact(
+	ctx: SureHookContext,
+	unit: Unit,
+	checkpoint: { data: CheckpointData },
+): SureHookResult | undefined {
+	const previousDigest = checkpoint.data.failedArtifactDigests?.[unit.id];
+	const path = artifactPath(ctx, unit.produces);
+	if (!previousDigest || !existsSync(path)) {
+		return undefined;
+	}
+	const digest = createHash("sha256").update(readFileSync(path)).digest("hex");
+	if (digest !== previousDigest) {
+		return undefined;
+	}
+	const attempts = checkpoint.data.retries[unit.id] ?? 0;
+	return {
+		ok: true,
+		state_patch: {
+			phase: phaseFor(unit, "blocked"),
+			message: `Gate "${unit.id}" remains blocked on unchanged artifact content; retry ${attempts} was not consumed again.`,
+			counters: countersFor(checkpoint.data, attempts),
+			checkpoint,
+			diagnostics: [
+				{
+					severity: "warning",
+					message: `Gate "${unit.id}" is still blocked on the same artifact.`,
+					repair: `Repair the supporting inputs, then explicitly regenerate ${unit.produces}; diagnostic reads do not rerun the gate.`,
+				},
+			],
+		},
+	};
+}
+
 // On gate failure: bump retry; if exhausted, mark the unit FAILED (stay, no advance).
 function failOrRetry(
-	_ctx: SureHookContext,
+	ctx: SureHookContext,
 	unit: Unit,
 	checkpoint: { data: CheckpointData },
 	repair: string,
 	reason: string,
 ): SureHookResult {
-	const next = bumpRetry(unit, checkpoint.data);
+	const artifactDigest = createHash("sha256")
+		.update(readFileSync(artifactPath(ctx, unit.produces)))
+		.digest("hex");
+	if (checkpoint.data.failedArtifactDigests?.[unit.id] === artifactDigest) {
+		const attempts = checkpoint.data.retries[unit.id] ?? 0;
+		return {
+			ok: true,
+			state_patch: {
+				phase: phaseFor(unit, "blocked"),
+				message: `Gate "${unit.id}" remains blocked on unchanged artifact content; retry ${attempts} was not consumed again.`,
+				counters: countersFor(checkpoint.data, attempts),
+				checkpoint,
+				diagnostics: [{ severity: "warning", message: reason, repair }],
+			},
+		};
+	}
+	const next = bumpRetry(unit, checkpoint.data, artifactDigest);
 	const attempts = next.data.retries[unit.id] ?? 1;
-	if (retryExhausted(unit, checkpoint.data)) {
+	if (retryExhausted(unit, next.data)) {
 		return failure(
 			`${repair} (unit "${unit.id}" FAILED after ${attempts} retries; classify via failure_taxonomy and either repair manually or finish with status failed.)`,
 			`Gate "${unit.id}" exhausted retries: ${reason}`,
@@ -521,6 +567,7 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 						? checkpoint.data.completedUnits
 						: [...checkpoint.data.completedUnits, LAST_UNIT.id],
 					retries: checkpoint.data.retries,
+					failedArtifactDigests: checkpoint.data.failedArtifactDigests,
 				},
 				0,
 			),

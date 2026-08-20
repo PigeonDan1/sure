@@ -6,12 +6,13 @@
   "model_name": "",
   "status": "pending",
   "package": {
-    "profile": "none"
+    "profile": "docker-registry"
   },
   "readiness": {
     "local_ready": false,
     "docker_ready": false,
     "registry_ready": false,
+    "bundle_ready": false,
     "vc_ready": null
   },
   "backend": {

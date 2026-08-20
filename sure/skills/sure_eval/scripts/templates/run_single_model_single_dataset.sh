@@ -23,44 +23,76 @@ if [[ -z "${REPO_ROOT:-}" ]]; then
   exit 1
 fi
 MODEL_NAME="${MODEL_NAME:-my_model}"
-PYTHON_BIN="${PYTHON_BIN:-python}"
-HARNESS_PYTHON_BIN="${HARNESS_PYTHON_BIN:-$PYTHON_BIN}"
-MODEL_PYTHON="${MODEL_PYTHON:-$PYTHON_BIN}"
+if [[ -n "${SURE_APPROVED_MODEL_ROOT:-}" ]]; then
+  APPROVED_MODEL_ROOT="$SURE_APPROVED_MODEL_ROOT"
+elif [[ -n "${SURE_EVAL_APPROVED_MODEL_DIR:-}" ]]; then
+  APPROVED_MODEL_ROOT="$(dirname "$SURE_EVAL_APPROVED_MODEL_DIR")"
+else
+  HARNESS_ROOT="$(cd "$REPO_ROOT/../../.." && pwd)"
+  APPROVED_MODEL_ROOT="$(node --import tsx "$HARNESS_ROOT/scripts/sure-site-value.mjs" storage.approved_models_roots | head -n 1)"
+fi
+# The trusted container launcher injects the read-only mount target. Direct host
+# execution keeps using the canonical approved NFS root.
+APPROVED_MODEL_DIR="${SURE_EVAL_APPROVED_MODEL_DIR:-$APPROVED_MODEL_ROOT/$MODEL_NAME}"
+MODEL_PYTHON="${MODEL_PYTHON:-${PYTHON_BIN:-python}}"
+PYTHON_BIN="$MODEL_PYTHON"
+: "${HARNESS_PYTHON_BIN:?HARNESS_PYTHON_BIN must be injected from the approved common Harness Runtime}"
 _harness_python_works() {
   "$1" - <<'PY' >/dev/null 2>&1
+import pydantic
+import pydantic_settings
+import rich
 import structlog
+import typer
 import yaml
 PY
 }
 if ! _harness_python_works "$HARNESS_PYTHON_BIN"; then
-  for candidate in "${SURE_EVAL_HARNESS_PYTHON_BIN:-}" python3 python; do
-    if [[ -n "$candidate" ]] && _harness_python_works "$candidate"; then
-      HARNESS_PYTHON_BIN="$candidate"
-      break
-    fi
-  done
-fi
-if ! _harness_python_works "$HARNESS_PYTHON_BIN"; then
   echo "ERROR: HARNESS_PYTHON_BIN cannot import required harness modules: $HARNESS_PYTHON_BIN"
-  echo "Set HARNESS_PYTHON_BIN or SURE_EVAL_HARNESS_PYTHON_BIN to a Python environment with structlog and PyYAML."
+  echo "Repair the locked common Harness Runtime before retrying; Eval must not install into Model Python."
+  exit 1
+fi
+if [[ "$(readlink -f "$HARNESS_PYTHON_BIN")" == "$(readlink -f "$(command -v "$MODEL_PYTHON")")" ]]; then
+  echo "ERROR: HARNESS_PYTHON_BIN and MODEL_PYTHON resolved to the same executable"
   exit 1
 fi
 MODEL_RESOLUTION_JSON="${MODEL_RESOLUTION_JSON:-}"
-if [[ -z "${MODEL_DIR:-}" ]]; then
-  MODEL_RESOLVE_ARGS=(--model "$MODEL_NAME" --require-verdict --require-runtime-files)
-  if [[ -n "$MODEL_RESOLUTION_JSON" ]]; then
-    MODEL_RESOLVE_ARGS+=(--output "$MODEL_RESOLUTION_JSON")
-  fi
-  MODEL_DIR="$("$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/resolve_model_dir.py" "${MODEL_RESOLVE_ARGS[@]}" | "$HARNESS_PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["model_dir"] or "")')"
+MODEL_RESOLVE_ARGS=(--model "$MODEL_NAME" --require-verdict --require-runtime-files)
+if [[ -n "$MODEL_RESOLUTION_JSON" ]]; then
+  MODEL_RESOLVE_ARGS+=(--output "$MODEL_RESOLUTION_JSON")
 fi
-if [[ -z "$MODEL_DIR" || ! -d "$MODEL_DIR" ]]; then
-  echo "ERROR: Model directory not found or not runtime-ready for MODEL_NAME=$MODEL_NAME"
-  echo "Set MODEL_DIR directly, or set SURE_MODELS_DIR/SURE_MODEL_ROOT/LEGACY_SURE_MODELS_DIR/LEGACY_SURE_EVAL_ROOT."
+if [[ -z "${SURE_EVAL_APPROVED_MODEL_DIR:-}" ]]; then
+  APPROVED_MODEL_DIR="$("$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/resolve_model_dir.py" "${MODEL_RESOLVE_ARGS[@]}" | "$HARNESS_PYTHON_BIN" -c 'import json,sys; print(json.load(sys.stdin)["model_dir"] or "")')"
+  if [[ -z "$APPROVED_MODEL_DIR" || ! -d "$APPROVED_MODEL_DIR" ]]; then
+    echo "ERROR: Approved NFS model is not runtime-ready for MODEL_NAME=$MODEL_NAME"
+    exit 1
+  fi
+fi
+if [[ -n "${MODEL_DIR:-}" && "$(readlink -f "$MODEL_DIR")" != "$(readlink -f "$APPROVED_MODEL_DIR")" ]]; then
+  echo "ERROR: MODEL_DIR override is not the approved NFS model: $APPROVED_MODEL_DIR"
   exit 1
 fi
-DATASET="${DATASET:-aishell1}"
+MODEL_DIR="$(readlink -f "$APPROVED_MODEL_DIR")"
+DATASET="${DATASET:-}"
+if [[ -z "$DATASET" ]]; then
+  echo "ERROR: DATASET must be a source root allowed by the active site policy and may include @<version_id> when required."
+  exit 1
+fi
 RUN_ID="${RUN_ID:-main_agent_${MODEL_NAME}_$(date +%Y%m%d_%H%M%S)}"
-RUN_DIR="${RUN_DIR:-$MODEL_DIR/eval_runs/$RUN_ID}"
+PROTOCOL_ID="${PROTOCOL_ID:-standard_system}"
+if [[ "$PROTOCOL_ID" != "standard_system" && "$PROTOCOL_ID" != "strict_core" ]]; then
+  echo "ERROR: PROTOCOL_ID must be standard_system or strict_core"
+  exit 1
+fi
+HARNESS_REPO_ROOT="$(cd "$REPO_ROOT/../../.." && pwd)"
+RUN_DIR="${RUN_DIR:-$HARNESS_REPO_ROOT/sure/results/$MODEL_NAME/$PROTOCOL_ID/$RUN_ID}"
+EXPECTED_RUN_ROOT="$HARNESS_REPO_ROOT/sure/results/$MODEL_NAME/$PROTOCOL_ID"
+APPROVED_CONTAINER_RESULT_DIR="${SURE_EVAL_APPROVED_RESULT_DIR:-}"
+if [[ "$(readlink -m "$RUN_DIR")" != "$(readlink -m "$EXPECTED_RUN_ROOT")/"* \
+  && ( -z "$APPROVED_CONTAINER_RESULT_DIR" || "$(readlink -m "$RUN_DIR")" != "$(readlink -m "$APPROVED_CONTAINER_RESULT_DIR")" ) ]]; then
+  echo "ERROR: RUN_DIR must stay under local staging root or equal the approved container result mount"
+  exit 1
+fi
 TOOL_NAME="${TOOL_NAME:-}"
 if [[ -z "$TOOL_NAME" && -f "$MODEL_DIR/config.yaml" ]]; then
   TOOL_NAME="$("$HARNESS_PYTHON_BIN" - "$MODEL_DIR/config.yaml" <<'PY'
@@ -94,7 +126,6 @@ DEVICE="${DEVICE:-${DEVICE_RESOLVED:-${SURE_EVAL_DEVICE:-}}}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"
 SKIP_VALIDATE_AND_EVAL="${SKIP_VALIDATE_AND_EVAL:-0}"
 RESULTS_DIR="${RESULTS_DIR:-$RUN_DIR/results}"
-PROTOCOL_ID="${PROTOCOL_ID:-strict_core}"
 METRICS="${METRICS:-}"
 EVALUATION_BACKEND="${EVALUATION_BACKEND:-external}"
 STRICT_MAIN_FLOW="${STRICT_MAIN_FLOW:-1}"
