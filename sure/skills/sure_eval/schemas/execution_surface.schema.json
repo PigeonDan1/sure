@@ -22,14 +22,17 @@
 		"execution": { "type": "object", "additionalProperties": true },
 		"deployment_binding": {
 			"type": "object",
-			"required": ["schema", "target_image_ref", "execution_mode", "model_mount_read_only", "result_mount_writable"],
+			"required": ["schema", "execution_mode", "model_mount_read_only", "result_mount_writable"],
 			"properties": {
 				"schema": { "const": "sure.eval.deployment_binding.v1" },
-				"target_image_ref": { "type": "string", "pattern": "@sha256:[0-9a-f]{64}$" },
+				"target_image_ref": { "type": ["string", "null"], "pattern": "@sha256:[0-9a-f]{64}$" },
 				"bundle_identity_sha256": { "type": ["string", "null"] },
-				"execution_mode": { "const": "container_only" },
+				"execution_mode": { "enum": ["container_only", "api_only"] },
 				"model_mount_read_only": { "const": true },
-				"result_mount_writable": { "const": true }
+				"result_mount_writable": { "const": true },
+				"api_key_env": { "type": "string" },
+				"api_model_id": { "type": "string" },
+				"api_endpoint": { "type": ["string", "null"] }
 			},
 			"additionalProperties": false
 		},

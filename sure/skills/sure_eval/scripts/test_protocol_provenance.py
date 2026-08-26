@@ -149,6 +149,85 @@ class ProtocolProvenanceTests(unittest.TestCase):
         )
         self.assertEqual(check_run_report._validate_protocol(run_dir), [])
 
+    def test_api_only_protocol_does_not_require_container_digest(self) -> None:
+        run_dir = self.root / "api_eval_run"
+        run_dir.mkdir()
+        (run_dir / "protocol.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema": "sure.eval.inference_protocol.v1",
+                    "protocol_id": "standard_system",
+                    "run": {"run_id": "api", "run_dir": str(run_dir), "created_at": "now"},
+                    "model": {
+                        "model_name": "demo__api",
+                        "model_dir": str(self.model_dir),
+                        "mcp_tool_name": "transcribe_audio",
+                        "server_config": {},
+                    },
+                    "protocol_selection": {
+                        "protocol_id": "standard_system",
+                        "standard_params": {},
+                        "resolved_model_params": {},
+                        "unmapped": {},
+                    },
+                    "inference_environment": {
+                        "execution_path": "api",
+                        "vc": {},
+                        "container": {
+                            "image_ref": None,
+                            "execution_mode": "api_only",
+                            "host_python_fallback": False,
+                        },
+                        "harness_runtime": {
+                            "schema": "sure.harness.runtime.binding.v1",
+                            "runtime_id": "sure-harness-v1-py311-demo",
+                            "python_executable": "/harness/bin/python",
+                            "lock_sha256": "c" * 64,
+                            "manifest_path": "/harness/runtime-manifest.json",
+                            "runtime_root": "/harness",
+                        },
+                        "server": {"transport": "api_wrapper", "tool_name": "transcribe_audio"},
+                        "env": {"env_keys": ["DASHSCOPE_API_KEY"], "redacted_env_keys": ["DASHSCOPE_API_KEY"]},
+                        "runtime_inventory": {
+                            "schema": "sure.onboard.runtime_inventory.v2",
+                            "status": "api_ready",
+                            "execution_mode": "api_only",
+                        },
+                        "mount_policy": {"nfs_models_read_only": True},
+                    },
+                    "inference_constraints": {},
+                    "inference_parameters": {
+                        "source_priority": ["prediction_generation_status.json"],
+                        "protocol_id": "standard_system",
+                        "protocol_resolution": {"status": "resolved"},
+                        "argument_policy": {"argument_keys": ["audio_path"]},
+                    },
+                    "execution_surface": {},
+                    "prediction_reuse": {
+                        "enabled": False,
+                        "generation_policy": "generated_predictions",
+                        "old_evaluation_reused": False,
+                    },
+                    "prediction_contract": {
+                        "compatibility_tsv": "predictions/demo.txt",
+                        "structured_jsonl": "predictions/demo.jsonl",
+                        "format_used": "jsonl+txt",
+                        "generated_by": "generate_predictions_via_server.py",
+                    },
+                    "provenance": {
+                        "raw_response_source_of_truth": False,
+                        "prediction_generation_status": str(run_dir / "prediction_generation_status.json"),
+                        "deployment_ready": str(self.model_dir / "artifacts" / "deployment_ready.json"),
+                        "package_gate": str(self.model_dir / "artifacts" / "package_gate.json"),
+                    },
+                    "notes": [],
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(check_run_report._validate_protocol(run_dir), [])
+
     def test_reval_resolves_and_links_source_inference_provenance(self) -> None:
         source_run = self.root / "source_run"
         predictions = source_run / "predictions"

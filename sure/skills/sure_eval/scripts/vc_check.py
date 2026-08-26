@@ -68,6 +68,8 @@ def _execution_requested(data: dict, run_dir: Path) -> str:
         return "vc"
     if execution_path in {"local_bash", "local_docker", "local_python"}:
         return "local"
+    if execution_path == "api":
+        return "api"
     return "auto"
 
 
@@ -117,6 +119,20 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
+
+    if requested == "api":
+        if execution_path != "api":
+            print(
+                "SUBMIT_EXECUTION gate: user requested execution=api, so "
+                "submit_result.json.execution_path must be api.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"vc_check OK: requested={requested}, vc_available={available}, execution_path={execution_path}")
+        return 0
+    if execution_path == "api":
+        print(f"vc_check OK: requested={requested}, vc_available={available}, execution_path={execution_path}")
+        return 0
 
     if requested == "vc" and execution_path != "vc_submit":
         print(

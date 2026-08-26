@@ -79,11 +79,11 @@
 		},
 		"execution_path_actual": {
 			"type": "string",
-			"description": "Actual execution path used: vc_submit | local_bash | local_docker | local_python."
+			"description": "Actual execution path used: vc_submit | local_bash | local_docker | local_python | api."
 		},
 		"execution_path_requested": {
 			"type": "string",
-			"description": "User-facing execution request: auto | local | vc, or legacy path alias."
+			"description": "User-facing execution request: auto | local | vc | api, or legacy path alias."
 		},
 		"execution": { "type": "object", "additionalProperties": true },
 		"execution_path_declared": {

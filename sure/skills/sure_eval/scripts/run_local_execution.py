@@ -23,7 +23,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from container_execution import build_local_container_command, effective_container_exit_code
+from container_execution import (
+    build_api_execution_command,
+    build_local_container_command,
+    deployment_execution_mode,
+    effective_container_exit_code,
+)
 from python_execution import build_local_python_command, verify_model_integrity
 
 
@@ -69,8 +74,18 @@ def _execution_from_surface(surface: dict[str, Any], eval_input: dict[str, Any])
         execution = runtime.get("execution") if isinstance(runtime.get("execution"), dict) else {}
     requested = str(execution.get("requested") or "local")
     planned = str(execution.get("planned") or ("vc" if execution.get("path_planned") == "vc_submit" else "local"))
+    try:
+        deployment_mode = deployment_execution_mode(eval_input)
+    except ValueError:
+        deployment_mode = ""
     runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
-    local_path = "local_python" if runtime.get("model_runtime") == "python" else "local_docker"
+    local_path = (
+        "api"
+        if deployment_mode == "api_only"
+        else "local_python"
+        if runtime.get("model_runtime") == "python"
+        else "local_docker"
+    )
     path_planned = str(execution.get("path_planned") or ("vc_submit" if planned == "vc" else local_path))
     return {
         "requested": requested,
@@ -151,10 +166,18 @@ def main() -> int:
         raise FileNotFoundError(f"execution_surface.json not found or invalid: {surface_path}")
     eval_input = _read_json(artifacts_dir / "eval_input_resolved.json")
     execution = _execution_from_surface(surface, eval_input)
+    deployment_mode = deployment_execution_mode(eval_input)
+    api_only = deployment_mode == "api_only"
     vc_available = _vc_available()
-    if execution["requested"] == "vc" or execution["path_planned"] == "vc_submit":
+    if api_only:
+        if execution["requested"] == "vc" or execution["path_planned"] == "vc_submit":
+            raise RuntimeError("Refusing API execution because the resolved execution plan requires vc_submit.")
+    elif execution["requested"] == "vc" or execution["path_planned"] == "vc_submit":
         raise RuntimeError("Refusing local execution because the resolved execution plan requires vc_submit.")
-    if execution["path_planned"] not in {"local_docker", "local_python"}:
+    if api_only:
+        if execution["path_planned"] != "api":
+            raise RuntimeError("Refusing API execution because the resolved execution plan is not api.")
+    elif execution["path_planned"] not in {"local_docker", "local_python"}:
         raise RuntimeError("Resolved local execution path must be local_python or local_docker.")
     if (
         execution["path_planned"] == "local_docker"
@@ -168,6 +191,9 @@ def main() -> int:
     host = socket.gethostname()
     device_request = _device_request(surface, eval_input)
     device_env, device_actual, cuda_visible = _local_device_env(device_request)
+    if api_only:
+        device_actual = "api_remote"
+        cuda_visible = ""
     cwd = Path(args.cwd).expanduser().resolve() if args.cwd else Path(__file__).resolve().parents[4]
     stdout_path = artifacts_dir / "local_execution.stdout.log"
     stderr_path = artifacts_dir / "local_execution.stderr.log"
@@ -176,7 +202,9 @@ def main() -> int:
 
     local_fallback_reason = ""
     fallback_approved = False
-    if execution["requested"] == "auto" and execution["path_planned"] == "local_python":
+    if api_only:
+        local_fallback_reason = ""
+    elif execution["requested"] == "auto" and execution["path_planned"] == "local_python":
         local_fallback_reason = "the approved Python runtime is local-only and cannot be submitted to vc"
         fallback_approved = vc_available
     elif execution["requested"] == "auto" and not vc_available:
@@ -185,19 +213,39 @@ def main() -> int:
         local_fallback_reason = "execution=auto local override was explicitly allowed while vc was available"
         fallback_approved = True
 
-    execution_path = execution["path_planned"]
+    execution_path_actual = "api" if api_only else execution["path_planned"]
+    runtime_kind_actual = (
+        "api"
+        if api_only
+        else "python"
+        if execution_path_actual == "local_python"
+        else "container"
+    )
     extra_env = {
         **device_env,
-        "SURE_EVAL_EXECUTION_PATH": execution_path,
+        "SURE_EVAL_EXECUTION_PATH": execution_path_actual,
         "SURE_EVAL_EXECUTION_REQUESTED": execution["requested"],
-        "SURE_EVAL_EXECUTION_JOB_ID": f"local:{host}:{run_dir.name}",
+        "SURE_EVAL_EXECUTION_JOB_ID": f"{execution_path_actual}:{host}:{run_dir.name}",
+        "SURE_EVAL_CONTAINER_REPO_ROOT": str(cwd),
         "SURE_EVAL_VC_PARTITION": "",
         "SURE_EVAL_VC_GPU": "0",
         "SURE_EVAL_VC_CPU": "",
         "SURE_EVAL_VC_MEMORY": "",
         "SURE_EVAL_VC_NODES": "0",
     }
-    if execution_path == "local_python":
+    if api_only:
+        command, launch_binding, command_env = build_api_execution_command(
+            surface=surface,
+            eval_input=eval_input,
+            control_run_dir=run_dir,
+            entrypoint=entrypoint,
+            repo_root=cwd,
+            device_request=device_request,
+            extra_env=extra_env,
+        )
+        process_env = os.environ.copy()
+        process_env.update(command_env)
+    elif execution_path_actual == "local_python":
         command, process_env, launch_binding = build_local_python_command(
             surface=surface,
             eval_input=eval_input,
@@ -222,19 +270,25 @@ def main() -> int:
     with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open("w", encoding="utf-8") as stderr:
         process = subprocess.Popen(command, cwd=cwd, env=process_env, stdout=stdout, stderr=stderr, text=True)
         submit_payload = {
-            "execution_path": execution_path,
-            "runtime_kind": "python" if execution_path == "local_python" else "container",
+            "execution_path": execution_path_actual,
+            "runtime_kind": runtime_kind_actual,
             "execution_requested": execution["requested"],
             "execution": {
                 "requested": execution["requested"],
-                "actual": "local",
-                "path_actual": execution_path,
+                "actual": "api" if api_only else "local",
+                "path_actual": execution_path_actual,
             },
             "vc_available": vc_available,
             "vc_job_id": "",
             "vc_info": "local execution selected by user or auto policy",
             "vc_image": str(launch_binding.get("image_ref") or ""),
-            "deployment_binding": launch_binding,
+            "image_digest": str(launch_binding.get("image_digest") or ""),
+            "image_identity_ref": str(launch_binding.get("image_ref") or ""),
+            "deployment_binding": (
+                ((eval_input.get("model") or {}).get("deployment_binding") or {})
+                if api_only
+                else launch_binding
+            ),
             "model_runtime": launch_binding.get("model_runtime") or {},
             "harness_runtime": launch_binding.get("harness_runtime") or {},
             "fallback_approved": fallback_approved,
@@ -254,9 +308,9 @@ def main() -> int:
         returncode = process.wait()
     stdout_text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
     stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
-    if execution_path == "local_docker":
+    if execution_path_actual == "local_docker":
         returncode = effective_container_exit_code(returncode, stdout_text, stderr_text)
-    else:
+    elif execution_path_actual == "local_python":
         binding = (eval_input.get("model") or {}).get("deployment_binding") or (
             eval_input.get("runtime") or {}
         ).get("deployment_binding")
@@ -270,8 +324,8 @@ def main() -> int:
     job_status = "succeeded" if returncode == 0 else "failed"
     execution_payload = {
         "job_status": job_status,
-        "execution_path": execution_path,
-        "runtime_kind": "python" if execution_path == "local_python" else "container",
+        "execution_path": execution_path_actual,
+        "runtime_kind": runtime_kind_actual,
         "execution_requested": execution["requested"],
         "host": host,
         "pid": submit_payload["pid"],

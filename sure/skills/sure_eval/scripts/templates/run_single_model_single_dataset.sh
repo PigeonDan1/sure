@@ -23,6 +23,7 @@ if [[ -z "${REPO_ROOT:-}" ]]; then
   exit 1
 fi
 MODEL_NAME="${MODEL_NAME:-my_model}"
+DEPLOYMENT_MODE="${SURE_EVAL_DEPLOYMENT_MODE:-container_only}"
 if [[ -n "${SURE_APPROVED_MODEL_ROOT:-}" ]]; then
   APPROVED_MODEL_ROOT="$SURE_APPROVED_MODEL_ROOT"
 elif [[ -n "${SURE_EVAL_APPROVED_MODEL_DIR:-}" ]]; then
@@ -34,7 +35,7 @@ fi
 # The trusted container launcher injects the read-only mount target. Direct host
 # execution keeps using the canonical approved NFS root.
 APPROVED_MODEL_DIR="${SURE_EVAL_APPROVED_MODEL_DIR:-$APPROVED_MODEL_ROOT/$MODEL_NAME}"
-MODEL_PYTHON="${MODEL_PYTHON:-${PYTHON_BIN:-python}}"
+MODEL_PYTHON="${MODEL_PYTHON:-${PYTHON_BIN:-${HARNESS_PYTHON_BIN:-python}}}"
 PYTHON_BIN="$MODEL_PYTHON"
 : "${HARNESS_PYTHON_BIN:?HARNESS_PYTHON_BIN must be injected from the approved common Harness Runtime}"
 _harness_python_works() {
@@ -52,7 +53,7 @@ if ! _harness_python_works "$HARNESS_PYTHON_BIN"; then
   echo "Repair the locked common Harness Runtime before retrying; Eval must not install into Model Python."
   exit 1
 fi
-if [[ "$(readlink -f "$HARNESS_PYTHON_BIN")" == "$(readlink -f "$(command -v "$MODEL_PYTHON")")" ]]; then
+if [[ "$DEPLOYMENT_MODE" != "api_only" && "$(readlink -f "$HARNESS_PYTHON_BIN")" == "$(readlink -f "$(command -v "$MODEL_PYTHON")")" ]]; then
   echo "ERROR: HARNESS_PYTHON_BIN and MODEL_PYTHON resolved to the same executable"
   exit 1
 fi

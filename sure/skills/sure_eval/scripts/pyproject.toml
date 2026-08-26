@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "sure-eval-backend"
 version = "0.1.0"
@@ -12,6 +16,9 @@ dependencies = [
     "structlog>=24.0",
     "openai>=1.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["sure_eval*"]
 
 [tool.uv]
 # Lightweight: no torch/librosa/modelscope here. Those live in the model

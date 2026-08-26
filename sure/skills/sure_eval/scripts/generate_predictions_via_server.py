@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 import os
 import socket
@@ -70,6 +71,10 @@ def _resolve_server_command(
     policy = runtime_inventory.get("policy")
     if runtime_inventory.get("schema") != "sure.onboard.runtime_inventory.v2":
         raise ValueError(f"approved model has unsupported runtime inventory: {model_dir}")
+    if _is_api_only_runtime(runtime_inventory):
+        api = _load_yaml(model_dir / "config.yaml").get("api", {})
+        model_id = api.get("model_id") if isinstance(api, dict) else None
+        return ["api", str(model_id or model_dir.name)]
     if runtime_inventory.get("status") != "ready":
         raise ValueError("approved model runtime inventory is not ready")
     if not isinstance(policy, dict):
@@ -105,6 +110,8 @@ def _resolve_server_command(
 
 
 def _resolve_working_dir(model_dir: Path, runtime_inventory: dict[str, Any]) -> Path:
+    if _is_api_only_runtime(runtime_inventory):
+        return model_dir
     policy = runtime_inventory.get("policy") if isinstance(runtime_inventory.get("policy"), dict) else {}
     if policy.get("eval_runtime") == "python":
         raw = os.environ.get("SURE_EVAL_MODEL_WORKING_DIR", "")
@@ -138,6 +145,67 @@ def _resolve_audio_path(repo_root: Path, sample: dict[str, Any]) -> Path:
         return relative_candidate
 
     raise FileNotFoundError(f"Unable to resolve audio path for sample: {sample}")
+
+
+def _is_api_only_runtime(runtime_inventory: dict[str, Any]) -> bool:
+    policy = runtime_inventory.get("policy") if isinstance(runtime_inventory.get("policy"), dict) else {}
+    return runtime_inventory.get("status") == "api_ready" and policy.get("eval_runtime") == "api_only"
+
+
+def _declared_config_tool_names(model_cfg: dict[str, Any]) -> list[str]:
+    tools = model_cfg.get("tools") if isinstance(model_cfg.get("tools"), list) else []
+    names = [
+        str(tool.get("name"))
+        for tool in tools
+        if isinstance(tool, dict) and isinstance(tool.get("name"), str) and tool.get("name")
+    ]
+    return names or ["transcribe_audio"]
+
+
+def _load_api_wrapper(model_dir: Path, model_cfg: dict[str, Any]) -> Any:
+    api = model_cfg.get("api") if isinstance(model_cfg.get("api"), dict) else {}
+    module_name = str(api.get("wrapper_module") or "model")
+    class_name = str(api.get("wrapper_class") or "")
+    if not class_name:
+        raise ValueError("API model config.yaml must declare api.wrapper_class")
+    if module_name == "model":
+        module_path = model_dir / "model.py"
+        if not module_path.is_file():
+            raise FileNotFoundError(f"API wrapper module not found: {module_path}")
+        module_cache_key = hashlib.sha256(str(module_path.resolve()).encode("utf-8")).hexdigest()[:16]
+        spec = importlib.util.spec_from_file_location(f"sure_eval_api_model_{module_cache_key}", module_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Unable to load API wrapper module from {module_path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+    else:
+        if str(model_dir) not in sys.path:
+            sys.path.insert(0, str(model_dir))
+        module = importlib.import_module(module_name)
+    wrapper_cls = getattr(module, class_name)
+    wrapper = wrapper_cls()
+    if hasattr(wrapper, "load"):
+        wrapper.load()
+    return wrapper
+
+
+def _invoke_api_wrapper(wrapper: Any, model_cfg: dict[str, Any], arguments: dict[str, Any]) -> Any:
+    api = model_cfg.get("api") if isinstance(model_cfg.get("api"), dict) else {}
+    method_name = str(api.get("predict_method") or "predict")
+    method = getattr(wrapper, method_name, None) or getattr(wrapper, "predict", None)
+    if method is None:
+        raise AttributeError(f"API wrapper has neither {method_name!r} nor 'predict'")
+    try:
+        return method(arguments)
+    except TypeError:
+        audio_path = arguments.get("audio_path") or arguments.get("audio")
+        if audio_path is None:
+            raise
+        language = arguments.get("language")
+        if language is None:
+            return method(str(audio_path))
+        return method(str(audio_path), language=str(language))
 
 
 def _materialize_sample_audio(repo_root: Path, sample: dict[str, Any], scratch_dir: Path) -> Path:
@@ -402,8 +470,14 @@ SAFE_ENV_VALUE_KEYS = {
     "NO_RESUME",
     "PYTHON_BIN",
     "SURE_EVAL_ALLOW_PARTITION_FALLBACK",
+    "SURE_EVAL_API_BASE_URL",
+    "SURE_EVAL_API_ENDPOINT",
+    "SURE_EVAL_API_KEY_ENV",
+    "SURE_EVAL_API_MODEL_ID",
+    "SURE_EVAL_API_PROVIDER",
     "SURE_EVAL_CONTAINER_IMAGE",
     "SURE_EVAL_CONTAINER_REPO_ROOT",
+    "SURE_EVAL_DEPLOYMENT_MODE",
     "SURE_EVAL_DEVICE_ACTUAL",
     "SURE_EVAL_DEVICE_REQUEST",
     "SURE_EVAL_EXECUTION_GENERATION_METHOD",
@@ -421,6 +495,9 @@ SAFE_ENV_VALUE_KEYS = {
     "SURE_HARNESS_MANIFEST_PATH",
     "SURE_HARNESS_RUNTIME_ID",
     "SURE_HARNESS_RUNTIME_ROOT",
+}
+SAFE_ENV_PLAINTEXT_KEYS = {
+    "SURE_EVAL_API_KEY_ENV",
 }
 PATH_ARGUMENT_HINTS = ("audio", "path", "file", "dir", "jsonl")
 TEXT_ARGUMENT_HINTS = ("text", "prompt", "reference", "target")
@@ -446,11 +523,11 @@ def _safe_env_snapshot(env: dict[str, str], *, extra_keys: set[str] | None = Non
     if extra_keys:
         selected_keys.update(extra_keys)
     safe_values = {
-        key: ("<redacted>" if _is_sensitive_key(key) else env.get(key))
+        key: ("<redacted>" if _is_sensitive_key(key) and key not in SAFE_ENV_PLAINTEXT_KEYS else env.get(key))
         for key in sorted(selected_keys)
         if key in env
     }
-    redacted_keys = sorted(key for key in env if _is_sensitive_key(key))
+    redacted_keys = sorted(key for key in env if _is_sensitive_key(key) and key not in SAFE_ENV_PLAINTEXT_KEYS)
     return {
         "safe_env_values": safe_values,
         "env_keys": sorted(env.keys()),
@@ -899,6 +976,7 @@ def _write_prediction_manifests(
     protocol_id: str | None,
     source_samples: int,
     generated_samples: int,
+    source_format: str = "model_mcp_tool_response",
 ) -> tuple[Path, Path]:
     predictions_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = predictions_dir / "manifest.json"
@@ -922,7 +1000,7 @@ def _write_prediction_manifests(
     }
     conversion_row = {
         "dataset": dataset,
-        "source_format": "model_mcp_tool_response",
+        "source_format": source_format,
         "format_used": row["format_used"],
         "num_rows": row["num_rows"],
         "source_artifacts": {
@@ -933,7 +1011,9 @@ def _write_prediction_manifests(
         "steps": [
             {
                 "name": "raw_response_to_prediction",
-                "input": "MCP tools/call JSON-RPC response payload",
+                "input": "API wrapper response payload"
+                if source_format == "api_wrapper_response"
+                else "MCP tools/call JSON-RPC response payload",
                 "output": "prediction object and normalized_prediction scalar/path",
                 "script": "scripts/generate_predictions_via_server.py:_normalize_prediction_payload",
             },
@@ -1059,6 +1139,7 @@ def main() -> int:
         _split_metrics(os.environ.get("SURE_EVAL_METRICS") or os.environ.get("METRICS")),
     )
     runtime_inventory_document = _load_runtime_inventory(model_dir)
+    api_mode = _is_api_only_runtime(runtime_inventory_document)
     server_cfg = model_cfg.get("server", {})
     command = _resolve_server_command(model_dir, runtime_inventory_document)
     working_dir = _resolve_working_dir(model_dir, runtime_inventory_document)
@@ -1100,7 +1181,11 @@ def main() -> int:
         if runtime_policy.get("eval_runtime") == "python"
         else runtime_inventory_document.get("container_runtime")
     )
-    approved_tools = selected_runtime.get("tool_names") if isinstance(selected_runtime, dict) else []
+    approved_tools = (
+        _declared_config_tool_names(model_cfg)
+        if api_mode
+        else selected_runtime.get("tool_names") if isinstance(selected_runtime, dict) else []
+    )
     if tool_name not in approved_tools:
         raise ValueError(f"tool {tool_name!r} is not present in the approved runtime inventory: {approved_tools}")
     tool_args = _merge_protocol_tool_args(
@@ -1146,7 +1231,7 @@ def main() -> int:
         "execution_path": env.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
         "execution_requested": env.get("SURE_EVAL_EXECUTION_REQUESTED", ""),
         "execution_job_id": env.get("SURE_EVAL_EXECUTION_JOB_ID", ""),
-        "inference_call_mode": "direct_server_use",
+        "inference_call_mode": "direct_api" if api_mode else "direct_server_use",
         "protocol_id": protocol_id,
         "tool_name": tool_name,
         "host": socket.gethostname(),
@@ -1195,7 +1280,11 @@ def main() -> int:
                 "dynamic_argument_fields": [],
                 "argument_keys": [],
                 "per_sample_arguments_materialized": False,
-                "note": "Actual MCP tools/call arguments are generated per sample; only key policy and explicit overrides are persisted.",
+                "note": (
+                    "Actual API wrapper arguments are generated per sample; only key policy and explicit overrides are persisted."
+                    if api_mode
+                    else "Actual MCP tools/call arguments are generated per sample; only key policy and explicit overrides are persisted."
+                ),
             },
             "observed_raw_response": {
                 "source_of_truth": False,
@@ -1234,31 +1323,51 @@ def main() -> int:
             _write_existing_result_log_entries(result_log_handle, samples, existing_predictions)
             result_log_handle.flush()
 
-        process = subprocess.Popen(
-            command,
-            cwd=str(working_dir),
-            env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=log_handle,
-            text=True,
-            bufsize=1,
-        )
-
         try:
-            initialize = _send_request(
-                process,
-                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-            )
-            if "error" in initialize:
-                raise RuntimeError(initialize["error"].get("message", "initialize failed"))
+            process: subprocess.Popen[str] | None = None
+            api_wrapper: Any | None = None
+            if api_mode:
+                os.environ.update(env_overrides)
+                api_wrapper = _load_api_wrapper(model_dir, model_cfg)
+                log_handle.write(
+                    json.dumps(
+                        {
+                            "event": "api_wrapper_loaded",
+                            "model_dir": str(model_dir),
+                            "tool_name": tool_name,
+                            "api_key_env": (model_cfg.get("api") or {}).get("api_key_env")
+                            if isinstance(model_cfg.get("api"), dict)
+                            else None,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+                log_handle.flush()
+            else:
+                process = subprocess.Popen(
+                    command,
+                    cwd=str(working_dir),
+                    env=env,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=log_handle,
+                    text=True,
+                    bufsize=1,
+                )
+                initialize = _send_request(
+                    process,
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                )
+                if "error" in initialize:
+                    raise RuntimeError(initialize["error"].get("message", "initialize failed"))
 
-            tools_list = _send_request(
-                process,
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-            )
-            if "error" in tools_list:
-                raise RuntimeError(tools_list["error"].get("message", "tools/list failed"))
+                tools_list = _send_request(
+                    process,
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                )
+                if "error" in tools_list:
+                    raise RuntimeError(tools_list["error"].get("message", "tools/list failed"))
 
             next_id = 3
             with tempfile.TemporaryDirectory(prefix=f"sure-eval-{canonical_dataset}-audio-") as scratch:
@@ -1286,17 +1395,24 @@ def main() -> int:
                         if key not in tool_args and _is_dynamic_argument_key(str(key))
                     )
 
-                    response = _send_request(
-                        process,
-                        {
-                            "jsonrpc": "2.0",
-                            "id": next_id,
-                            "method": "tools/call",
-                            "params": {"name": tool_name, "arguments": arguments},
-                        },
-                    )
-                    next_id += 1
-                    raw_payload = _extract_response_payload(response)
+                    if api_mode:
+                        if api_wrapper is None:
+                            raise RuntimeError("API wrapper was not initialized")
+                        raw_payload = _invoke_api_wrapper(api_wrapper, model_cfg, arguments)
+                    else:
+                        if process is None:
+                            raise RuntimeError("model server process was not initialized")
+                        response = _send_request(
+                            process,
+                            {
+                                "jsonrpc": "2.0",
+                                "id": next_id,
+                                "method": "tools/call",
+                                "params": {"name": tool_name, "arguments": arguments},
+                            },
+                        )
+                        next_id += 1
+                        raw_payload = _extract_response_payload(response)
                     raw_response_types.add(type(raw_payload).__name__)
                     if isinstance(raw_payload, dict):
                         raw_response_keys.update(str(key) for key in raw_payload)
@@ -1362,6 +1478,7 @@ def main() -> int:
                 protocol_id=args.protocol if args.protocol.lower() != "none" else None,
                 source_samples=len(samples),
                 generated_samples=len(prediction_map),
+                source_format="api_wrapper_response" if api_mode else "model_mcp_tool_response",
             )
 
             current_dataset_status["status"] = "completed"
@@ -1409,22 +1526,23 @@ def main() -> int:
             )
             raise
         finally:
-            try:
-                _send_request(
-                    process,
-                    {"jsonrpc": "2.0", "id": 999999, "method": "shutdown", "params": {}},
-                )
-            except Exception:
-                pass
-            if process.stdin is not None:
+            if not api_mode and "process" in locals() and process is not None:
                 try:
-                    process.stdin.close()
-                except BrokenPipeError:
+                    _send_request(
+                        process,
+                        {"jsonrpc": "2.0", "id": 999999, "method": "shutdown", "params": {}},
+                    )
+                except Exception:
                     pass
-            process.wait(timeout=30)
+                if process.stdin is not None:
+                    try:
+                        process.stdin.close()
+                    except BrokenPipeError:
+                        pass
+                process.wait(timeout=30)
 
     logger.info(
-        "Generated predictions via model-local server",
+        "Generated predictions via API wrapper" if api_mode else "Generated predictions via model-local server",
         dataset=canonical_dataset,
         prediction_file=str(prediction_path),
         result_log_file=str(result_log_path),

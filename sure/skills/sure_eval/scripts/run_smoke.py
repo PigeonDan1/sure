@@ -17,7 +17,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from container_execution import build_local_container_command, effective_container_exit_code
+from container_execution import (
+    build_api_execution_command,
+    build_local_container_command,
+    deployment_execution_mode,
+    effective_container_exit_code,
+)
 from python_execution import build_local_python_command, verify_model_integrity
 
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -259,14 +264,31 @@ def main() -> int:
         eval_input.get("runtime") or {}
     ).get("deployment_binding") or {}
     runtime_kind = str(binding.get("runtime_kind") or "container")
+    deployment_mode = deployment_execution_mode(eval_input)
+    api_only = deployment_mode == "api_only"
+    if api_only:
+        runtime_kind = "api"
+    smoke_execution_path = "api" if api_only else f"local_{runtime_kind}_smoke"
     extra_env = {
         **_local_device_env(device_request),
         "SMOKE_ONLY": "1",
         "SMOKE_TEST_SAMPLES": str(smoke_samples),
-        "SURE_EVAL_EXECUTION_PATH": f"local_{runtime_kind}_smoke",
+        "SURE_EVAL_EXECUTION_PATH": smoke_execution_path,
         "SURE_EVAL_EXECUTION_REQUESTED": _execution_requested(surface),
     }
-    if runtime_kind == "python":
+    if api_only:
+        command, _, command_env = build_api_execution_command(
+            surface=surface,
+            eval_input=eval_input,
+            control_run_dir=run_dir.resolve(),
+            entrypoint=entrypoint_path.resolve(),
+            repo_root=Path(__file__).resolve().parents[4],
+            device_request=device_request,
+            extra_env=extra_env,
+        )
+        process_env = os.environ.copy()
+        process_env.update(command_env)
+    elif runtime_kind == "python":
         command, process_env, _ = build_local_python_command(
             surface=surface,
             eval_input=eval_input,
@@ -316,7 +338,7 @@ def main() -> int:
     log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
     if runtime_kind == "container":
         exit_code = effective_container_exit_code(exit_code, log_text)
-    else:
+    elif runtime_kind == "python":
         try:
             verify_model_integrity(binding)
         except ValueError as exc:

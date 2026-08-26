@@ -246,6 +246,45 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
     resolved_inputs = data.get("resolved_inputs") if isinstance(data.get("resolved_inputs"), dict) else {}
     execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
     issues: list[str] = []
+    approved_policy = approved.get("policy") if isinstance(approved.get("policy"), dict) else {}
+    approved_mode = str(approved_policy.get("execution_mode") or "")
+    if approved_mode == "api_only":
+        expected_fields = {
+            "schema": approved.get("schema"),
+            "bundle_identity_sha256": (approved.get("evidence") or {}).get("bundle_identity_sha256"),
+            "execution_mode": "api_only",
+            "model_mount_read_only": True,
+            "result_mount_writable": True,
+        }
+        for key, expected in expected_fields.items():
+            if declared_binding.get(key) != expected:
+                issues.append(f"deployment_binding.{key} must equal approved value {expected!r}")
+        path_planned = str(execution.get("path_planned") or "")
+        if path_planned != "api":
+            issues.append("API-only formal inference path must be api")
+        api = approved.get("api") if isinstance(approved.get("api"), dict) else {}
+        api_key_env = str(api.get("api_key_env") or "")
+        if api_key_env and api_key_env in env:
+            issues.append("execution_surface.env must not materialize the API key value; inherit it from runtime env")
+        declared_tool = next(
+            (value for value in (env.get("TOOL_NAME"), resolved_inputs.get("tool_name")) if isinstance(value, str) and value),
+            "",
+        )
+        approved_tools = api.get("tool_names") if isinstance(api.get("tool_names"), list) else []
+        if declared_tool and declared_tool not in approved_tools:
+            issues.append(f"tool name {declared_tool!r} is not in the approved API binding: {approved_tools}")
+        if issues:
+            return {"passed": False, "evidence": "; ".join(issues)}
+        return {
+            "passed": True,
+            "live_runtime_probe": {
+                "passed": True,
+                "failure_class": None,
+                "evidence": "API-only binding does not require a container runtime probe",
+            },
+            "evidence": f"approved API-only deployment verified: {api.get('provider')}/{api.get('model_id')}",
+        }
+
     try:
         approved_harness = harness_runtime_from_eval_input(eval_input)
     except HarnessRuntimeBindingError as exc:

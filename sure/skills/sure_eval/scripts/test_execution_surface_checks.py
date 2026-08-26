@@ -204,6 +204,68 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("approved common Harness Runtime", result["evidence"])
 
+    def write_api_eval_input(self) -> dict:
+        approved = {
+            "schema": "sure.eval.deployment_binding.v1",
+            "target_image_ref": None,
+            "api": {
+                "provider": "bailian_native",
+                "model_id": "qwen3-asr-flash",
+                "endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+                "api_key_env": "DASHSCOPE_API_KEY",
+                "tool_names": ["transcribe_audio"],
+            },
+            "policy": {"execution_mode": "api_only", "host_python_fallback": False},
+            "evidence": {"bundle_identity_sha256": "b" * 64},
+        }
+        (self.artifacts / "eval_input_resolved.json").write_text(
+            json.dumps({"model": {"deployment_binding": approved}}),
+            encoding="utf-8",
+        )
+        return approved
+
+    def test_approved_api_binding_passes(self) -> None:
+        self.write_api_eval_input()
+        result = checks.check_inference_runtime(
+            self.write_surface(
+                execution={"requested": "api", "path_planned": "api"},
+                deployment_binding={
+                    "schema": "sure.eval.deployment_binding.v1",
+                    "target_image_ref": None,
+                    "bundle_identity_sha256": "b" * 64,
+                    "execution_mode": "api_only",
+                    "model_mount_read_only": True,
+                    "result_mount_writable": True,
+                    "api_key_env": "DASHSCOPE_API_KEY",
+                    "api_model_id": "qwen3-asr-flash",
+                    "api_endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+                },
+            )
+        )
+        self.assertTrue(result["passed"], result.get("evidence"))
+
+    def test_api_surface_rejects_materialized_secret_env(self) -> None:
+        self.write_api_eval_input()
+        result = checks.check_inference_runtime(
+            self.write_surface(
+                execution={"requested": "api", "path_planned": "api"},
+                deployment_binding={
+                    "schema": "sure.eval.deployment_binding.v1",
+                    "target_image_ref": None,
+                    "bundle_identity_sha256": "b" * 64,
+                    "execution_mode": "api_only",
+                    "model_mount_read_only": True,
+                    "result_mount_writable": True,
+                    "api_key_env": "DASHSCOPE_API_KEY",
+                    "api_model_id": "qwen3-asr-flash",
+                    "api_endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+                },
+                env={"TOOL_NAME": "transcribe_audio", "DASHSCOPE_API_KEY": "secret"},
+            )
+        )
+        self.assertFalse(result["passed"])
+        self.assertIn("must not materialize", result["evidence"])
+
 
 class LiveRuntimeProbeTests(unittest.TestCase):
     def test_exact_image_probe_executes_node_override(self) -> None:

@@ -8,16 +8,16 @@
 	"properties": {
 		"execution_path": {
 			"type": "string",
-			"enum": ["vc_submit", "local_bash", "local_docker", "local_python"]
+			"enum": ["vc_submit", "local_bash", "local_docker", "local_python", "api"]
 		},
-		"runtime_kind": { "type": "string", "enum": ["container", "python"] },
+		"runtime_kind": { "type": "string", "enum": ["container", "python", "api"] },
 		"vc_available": {
 			"type": "boolean",
 			"description": "True when `which vc && vc info` both pass (set by scripts/vc_check.py)."
 		},
 		"vc_job_id": { "type": "string" },
 		"vc_info": { "type": "string" },
-		"execution_requested": { "type": "string", "enum": ["auto", "local", "vc"] },
+		"execution_requested": { "type": "string", "enum": ["auto", "local", "vc", "api"] },
 		"execution": { "type": "object", "additionalProperties": true },
 		"fallback_approved": { "type": "boolean" },
 		"local_fallback_reason": { "type": "string" },

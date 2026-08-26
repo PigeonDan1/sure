@@ -11,9 +11,9 @@
 			"enum": ["succeeded", "running", "failed", "partial"]
 		},
 		"vc_job_id": { "type": "string" },
-		"execution_path": { "type": "string", "enum": ["vc_submit", "local_bash", "local_docker", "local_python"] },
-		"runtime_kind": { "type": "string", "enum": ["container", "python"] },
-		"execution_requested": { "type": "string", "enum": ["auto", "local", "vc"] },
+		"execution_path": { "type": "string", "enum": ["vc_submit", "local_bash", "local_docker", "local_python", "api"] },
+		"runtime_kind": { "type": "string", "enum": ["container", "python", "api"] },
+		"execution_requested": { "type": "string", "enum": ["auto", "local", "vc", "api"] },
 		"predictions_path": { "type": "string" },
 		"log_path": { "type": "string" },
 		"host": { "type": "string" },

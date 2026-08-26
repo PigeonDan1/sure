@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from container_execution import build_local_container_command
+from container_execution import build_api_execution_command, build_local_container_command
 from deployment_binding import DeploymentBindingError, load_deployment_binding
 from check_run_report import _submitted_image_error
 from run_vc_execution import (
@@ -280,6 +280,117 @@ class DeploymentBindingTests(unittest.TestCase):
         write_json(self.artifacts / "deployment_ready.json", marker)
         with self.assertRaisesRegex(DeploymentBindingError, "bundle identity"):
             load_deployment_binding(self.model, "demo")
+
+    def _write_api_bundle(self) -> None:
+        (self.model / "config.yaml").write_text(
+            "\n".join(
+                [
+                    'name: "demo"',
+                    'task: "ASR"',
+                    'deployment_type: "api"',
+                    "api:",
+                    '  provider: "bailian_native"',
+                    '  endpoint: "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"',
+                    '  api_key_env: "DASHSCOPE_API_KEY"',
+                    '  model_id: "qwen3-asr-flash"',
+                    '  wrapper_class: "DemoWrapper"',
+                    "tools:",
+                    '  - name: "transcribe_audio"',
+                    "    input_schema:",
+                    '      type: "object"',
+                    "      properties:",
+                    "        audio_path:",
+                    '          type: "string"',
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        write_json(
+            self.artifacts / "runtime_inventory.json",
+            {
+                "schema": "sure.onboard.runtime_inventory.v2",
+                "status": "api_ready",
+                "model": {"name": "demo", "deployment_type": "api"},
+                "container_runtime": {"required": False},
+                "model_runtime": {"required": False, "runtime_type": "api"},
+                "policy": {
+                    "eval_runtime": "api_only",
+                    "host_python_fallback": False,
+                    "image_override_allowed": False,
+                    "nfs_models_mutable_by_eval": False,
+                },
+            },
+        )
+        write_json(
+            self.artifacts / "package_gate.json",
+            {
+                "schema": "sure.onboard.package_gate.v2",
+                "status": "passed",
+                "package_profile": "none",
+                "model_name": "demo",
+                "readiness": {"local_ready": True, "bundle_ready": True},
+            },
+        )
+        hashes = {
+            "config.yaml": sha256(self.model / "config.yaml"),
+            "artifacts/runtime_inventory.json": sha256(self.artifacts / "runtime_inventory.json"),
+            "artifacts/package_gate.json": sha256(self.artifacts / "package_gate.json"),
+        }
+        bundle_identity = hashlib.sha256(
+            json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        write_json(
+            self.artifacts / "deployment_ready.json",
+            {
+                "schema": "sure.onboard.deployment_ready.v1",
+                "status": "api_ready",
+                "model_name": "demo",
+                "package_profile": "none",
+                "target_image": None,
+                "target_image_digest": None,
+                "target_image_ref": None,
+                "bundle_identity_sha256": bundle_identity,
+                "required_artifact_sha256": hashes,
+                "execution_policy": {
+                    "container_only": False,
+                    "nfs_models_read_only": True,
+                    "host_python_fallback": False,
+                    "approved_image_override": False,
+                },
+            },
+        )
+
+    def test_loads_api_ready_binding_without_secret_values(self) -> None:
+        self._write_api_bundle()
+        binding = load_deployment_binding(self.model, "demo")
+        self.assertEqual(binding["policy"]["execution_mode"], "api_only")
+        self.assertEqual(binding["api"]["api_key_env"], "DASHSCOPE_API_KEY")
+        self.assertEqual(binding["api"]["tool_names"], ["transcribe_audio"])
+        self.assertIsNone(binding["target_image_ref"])
+
+    def test_api_command_injects_harness_runtime_and_secret_env_name_only(self) -> None:
+        self._write_api_bundle()
+        binding = load_deployment_binding(self.model, "demo")
+        command, provenance, env = build_api_execution_command(
+            surface={"env": {"TOOL_NAME": "transcribe_audio"}},
+            eval_input={
+                "model": {"deployment_binding": binding},
+                "runtime": {
+                    "run_dir": str(self.output),
+                    "harness_runtime": self._runtime_binding(),
+                },
+            },
+            control_run_dir=self.control,
+            entrypoint=self.entrypoint,
+            repo_root=self.repo,
+            device_request="auto",
+        )
+        self.assertEqual(command, ["bash", str(self.entrypoint.resolve())])
+        self.assertEqual(env["SURE_EVAL_DEPLOYMENT_MODE"], "api_only")
+        self.assertEqual(env["SURE_EVAL_API_KEY_ENV"], "DASHSCOPE_API_KEY")
+        self.assertNotIn("DASHSCOPE_API_KEY", env)
+        self.assertEqual(provenance["execution_mode"], "api_only")
 
     def test_local_command_uses_digest_and_read_only_model(self) -> None:
         binding = load_deployment_binding(self.model, "demo")

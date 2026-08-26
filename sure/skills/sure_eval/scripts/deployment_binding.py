@@ -228,6 +228,147 @@ def _load_python_binding(
     }
 
 
+def _is_sensitive_config_key(key: str) -> bool:
+    upper = key.upper()
+    if upper in {"API_KEY_ENV", "KEY_ENV", "CREDENTIAL_ENV"}:
+        return False
+    return any(part in upper for part in ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "ACCESS_KEY", "PRIVATE_KEY"))
+
+
+def _read_yaml(model_dir: Path, relative: str) -> dict[str, Any]:
+    path = _artifact_path(model_dir, relative)
+    try:
+        import yaml
+
+        value = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        raise DeploymentBindingError(f"invalid YAML deployment artifact {relative}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise DeploymentBindingError(f"deployment artifact must be a YAML object: {relative}")
+    return value
+
+
+def _api_config(model_dir: Path) -> dict[str, Any]:
+    config = _read_yaml(model_dir, "config.yaml")
+    api = config.get("api")
+    if not isinstance(api, dict):
+        raise DeploymentBindingError("API deployment config.yaml must contain an api mapping")
+    leaked_keys = sorted(str(key) for key in api if _is_sensitive_config_key(str(key)))
+    if leaked_keys:
+        raise DeploymentBindingError(
+            "API deployment config.yaml must not store secret values; "
+            f"use api_key_env instead of {', '.join(leaked_keys)}"
+        )
+    api_key_env = str(api.get("api_key_env") or "").strip()
+    model_id = str(api.get("model_id") or "").strip()
+    endpoint = str(api.get("endpoint") or "").strip()
+    base_url = str(api.get("base_url") or "").strip()
+    if not api_key_env:
+        raise DeploymentBindingError("API deployment api.api_key_env is required")
+    if not model_id:
+        raise DeploymentBindingError("API deployment api.model_id is required")
+    if not endpoint and not base_url:
+        raise DeploymentBindingError("API deployment requires api.endpoint or api.base_url")
+    tools = config.get("tools") if isinstance(config.get("tools"), list) else []
+    tool_names = [
+        str(tool.get("name"))
+        for tool in tools
+        if isinstance(tool, dict) and isinstance(tool.get("name"), str) and tool.get("name")
+    ]
+    if not tool_names:
+        tool_names = ["transcribe_audio"]
+    return {
+        "provider": str(api.get("provider") or "api"),
+        "base_url": base_url or None,
+        "endpoint": endpoint or None,
+        "model_id": model_id,
+        "api_key_env": api_key_env,
+        "default_language": api.get("default_language"),
+        "timeout": api.get("timeout"),
+        "wrapper_module": str(api.get("wrapper_module") or "model"),
+        "wrapper_class": str(api.get("wrapper_class") or ""),
+        "predict_method": str(api.get("predict_method") or "predict"),
+        "tool_names": tool_names,
+    }
+
+
+def _load_api_deployment_binding(
+    model_dir: Path,
+    model_name: str,
+    marker: dict[str, Any],
+    inventory: dict[str, Any],
+    package: dict[str, Any],
+) -> dict[str, Any]:
+    _require(marker.get("status") == "api_ready", "API deployment_ready status must be api_ready")
+    _require(marker.get("model_name") == model_name, "deployment_ready model_name does not match requested model")
+    _require(marker.get("package_profile") == "none", "approved API model must use package_profile=none")
+
+    execution_policy = marker.get("execution_policy")
+    _require(isinstance(execution_policy, dict), "deployment_ready execution_policy is missing")
+    _require(execution_policy.get("container_only") is False, "API deployment must not claim container_only")
+    _require(execution_policy.get("nfs_models_read_only") is True, "NFS model mount must be read-only")
+    _require(execution_policy.get("host_python_fallback") is False, "host Python fallback must be disabled")
+    _require(execution_policy.get("approved_image_override") is False, "image override must be disabled")
+
+    _require(inventory.get("schema") == "sure.onboard.runtime_inventory.v2", "unsupported runtime_inventory schema")
+    _require(inventory.get("status") == "api_ready", "runtime_inventory status must be api_ready")
+    model = inventory.get("model")
+    policy = inventory.get("policy")
+    container = inventory.get("container_runtime")
+    model_runtime = inventory.get("model_runtime")
+    _require(isinstance(model, dict) and model.get("name") == model_name, "runtime_inventory model does not match")
+    _require(model.get("deployment_type") == "api", "runtime_inventory model.deployment_type must be api")
+    _require(isinstance(policy, dict) and policy.get("eval_runtime") == "api_only", "runtime inventory is not API-only")
+    _require(policy.get("host_python_fallback") is False, "runtime inventory enables host fallback")
+    _require(policy.get("image_override_allowed") is False, "runtime inventory enables image override")
+    _require(policy.get("nfs_models_mutable_by_eval") is False, "runtime inventory allows NFS mutation")
+    _require(isinstance(container, dict) and container.get("required") is False, "API deployment must not require a container runtime")
+    _require(isinstance(model_runtime, dict) and model_runtime.get("runtime_type") == "api", "model runtime must be api")
+
+    _require(package.get("schema") == "sure.onboard.package_gate.v2", "unsupported package_gate schema")
+    _require(package.get("status") == "passed", "package_gate status must be passed")
+    _require(package.get("package_profile") == "none", "API package_gate must use package_profile=none")
+    _require(package.get("model_name", model_name) == model_name, "package_gate model does not match")
+    readiness = package.get("readiness")
+    _require(isinstance(readiness, dict), "package_gate readiness is missing")
+    _require(readiness.get("local_ready") is True, "API package_gate readiness.local_ready must be true")
+    _require(readiness.get("bundle_ready") is True, "API package_gate readiness.bundle_ready must be true")
+
+    verified_hashes, bundle_identity = _verified_bundle_evidence(model_dir, marker)
+    _require("config.yaml" in verified_hashes, "API deployment_ready must hash config.yaml")
+    api = _api_config(model_dir)
+    if not api["wrapper_class"]:
+        raise DeploymentBindingError("API deployment api.wrapper_class is required")
+
+    return {
+        "schema": DEPLOYMENT_BINDING_V1,
+        "runtime_kind": "api",
+        "model_name": model_name,
+        "model_dir": str(model_dir),
+        "source": "approved_nfs_models",
+        "package_profile": "none",
+        "target_image": None,
+        "target_image_digest": None,
+        "target_image_ref": None,
+        "api": api,
+        "policy": {
+            "execution_mode": "api_only",
+            "host_python_fallback": False,
+            "image_override_allowed": False,
+            "nfs_models_read_only": True,
+        },
+        "evidence": {
+            "deployment_ready": str(_artifact_path(model_dir, "artifacts/deployment_ready.json")),
+            "runtime_inventory": str(_artifact_path(model_dir, "artifacts/runtime_inventory.json")),
+            "package_gate": str(_artifact_path(model_dir, "artifacts/package_gate.json")),
+            "verified_sha256": verified_hashes,
+            "bundle_identity_sha256": bundle_identity,
+            "api_config_path": str(_artifact_path(model_dir, "config.yaml")),
+            "secret_policy": "API secret values are read only from the declared api_key_env at runtime.",
+        },
+    }
+
+
 def _normalize_harness_runtime(binding: dict[str, Any]) -> dict[str, Any]:
     """Accept legacy bindings by deriving root from their manifest location."""
     manifest_value = str(binding.get("manifest_path") or "")
@@ -249,6 +390,23 @@ def _normalize_harness_runtime(binding: dict[str, Any]) -> dict[str, Any]:
 
 
 TERMINAL_VERDICT_STATUSES = {"success", "passed", "pass"}
+
+
+def _verify_artifact_hashes(model_dir: Path, marker: dict[str, Any]) -> tuple[dict[str, str], str]:
+    declared_hashes = marker.get("required_artifact_sha256")
+    _require(isinstance(declared_hashes, dict) and declared_hashes, "deployment_ready artifact hashes are missing")
+    verified_hashes: dict[str, str] = {}
+    for relative, expected in declared_hashes.items():
+        _require(isinstance(relative, str) and isinstance(expected, str), "deployment artifact hash entry is invalid")
+        actual = _sha256(_artifact_path(model_dir, relative))
+        _require(actual == expected, f"deployment artifact hash mismatch: {relative}")
+        verified_hashes[relative] = actual
+    bundle_identity = str(marker.get("bundle_identity_sha256") or "")
+    calculated_bundle_identity = hashlib.sha256(
+        json.dumps(declared_hashes, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    _require(bundle_identity == calculated_bundle_identity, "deployment bundle identity does not match required artifact hashes")
+    return verified_hashes, bundle_identity
 
 
 def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
@@ -273,6 +431,10 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     marker = _read_json(model_dir, "artifacts/deployment_ready.json")
     inventory = _read_json(model_dir, "artifacts/runtime_inventory.json")
     package = _read_json(model_dir, "artifacts/package_gate.json")
+
+    if marker.get("status") == "api_ready":
+        _require(marker.get("schema") == DEPLOYMENT_READY_V1, "unsupported API deployment_ready schema")
+        return _load_api_deployment_binding(model_dir, model_name, marker, inventory, package)
 
     if marker.get("package_profile") == "none":
         _require(marker.get("schema") == DEPLOYMENT_READY_V2, "unsupported Python deployment_ready schema")
@@ -379,19 +541,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     else:
         normalized_harness = None
 
-    declared_hashes = marker.get("required_artifact_sha256")
-    _require(isinstance(declared_hashes, dict) and declared_hashes, "deployment_ready artifact hashes are missing")
-    verified_hashes: dict[str, str] = {}
-    for relative, expected in declared_hashes.items():
-        _require(isinstance(relative, str) and isinstance(expected, str), "deployment artifact hash entry is invalid")
-        actual = _sha256(_artifact_path(model_dir, relative))
-        _require(actual == expected, f"deployment artifact hash mismatch: {relative}")
-        verified_hashes[relative] = actual
-    bundle_identity = str(marker.get("bundle_identity_sha256") or "")
-    calculated_bundle_identity = hashlib.sha256(
-        json.dumps(declared_hashes, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    _require(bundle_identity == calculated_bundle_identity, "deployment bundle identity does not match required artifact hashes")
+    verified_hashes, bundle_identity = _verify_artifact_hashes(model_dir, marker)
 
     return {
         "schema": DEPLOYMENT_BINDING_V2,

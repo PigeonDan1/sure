@@ -181,14 +181,8 @@ def _validate_protocol(root: Path) -> list[str]:
     runtime_inventory = inference_environment.get("runtime_inventory") if isinstance(inference_environment.get("runtime_inventory"), dict) else {}
     harness_runtime = inference_environment.get("harness_runtime") if isinstance(inference_environment.get("harness_runtime"), dict) else {}
     mount_policy = inference_environment.get("mount_policy") if isinstance(inference_environment.get("mount_policy"), dict) else {}
-    if runtime_kind == "container":
-        if "@sha256:" not in str(container.get("image_ref") or ""):
-            errors.append("protocol.yaml container.image_ref must be digest-pinned")
-        if container.get("execution_mode") != "container_only":
-            errors.append("protocol.yaml container.execution_mode must be container_only")
-        if container.get("host_python_fallback") is not False:
-            errors.append("protocol.yaml must disable container host_python_fallback")
-    elif runtime_kind == "python":
+    execution_mode = str(container.get("execution_mode") or runtime_inventory.get("execution_mode") or "")
+    if runtime_kind == "python":
         for key in ("runtime_id", "python_executable", "lock_sha256", "manifest_sha256"):
             if not model_runtime.get(key):
                 errors.append(f"protocol.yaml model_runtime.{key} is required for Python inference")
@@ -196,6 +190,18 @@ def _validate_protocol(root: Path) -> list[str]:
             errors.append("protocol.yaml model_runtime.execution_mode must be python")
         if model_runtime.get("host_python_fallback") is not False:
             errors.append("protocol.yaml must disable Python host fallback")
+    elif execution_mode == "api_only" or runtime_kind == "api":
+        if container.get("image_ref"):
+            errors.append("protocol.yaml API-only container.image_ref must be empty")
+        if container.get("host_python_fallback") is not False:
+            errors.append("protocol.yaml must disable API-only host_python_fallback")
+    elif runtime_kind == "container":
+        if "@sha256:" not in str(container.get("image_ref") or ""):
+            errors.append("protocol.yaml container.image_ref must be digest-pinned")
+        if execution_mode != "container_only":
+            errors.append("protocol.yaml container.execution_mode must be container_only")
+        if container.get("host_python_fallback") is not False:
+            errors.append("protocol.yaml must disable container host_python_fallback")
     else:
         errors.append(f"protocol.yaml inference_environment.runtime_kind is unsupported: {runtime_kind}")
     if runtime_inventory.get("schema") != "sure.onboard.runtime_inventory.v2":
@@ -430,6 +436,8 @@ def _execution_requested(data: dict[str, Any], run_dir: Path, report_path: Path)
                 return value
             if value == "vc_submit":
                 return "vc"
+            if value == "api":
+                return "api"
             if value in {"local_bash", "local_docker", "local_python"}:
                 return "local"
 
@@ -442,6 +450,8 @@ def _execution_requested(data: dict[str, Any], run_dir: Path, report_path: Path)
     execution_path_declared = str(data.get("execution_path_declared") or "")
     if execution_path_declared == "vc_submit":
         return "vc"
+    if execution_path_declared == "api":
+        return "api"
     if execution_path_declared in {"local_bash", "local_docker", "local_python"}:
         return "local"
     return "auto"
@@ -539,6 +549,8 @@ def _submitted_image_error(execution_path: str, submit_result: dict, approved: d
         actual_runtime = submit_result.get("model_runtime") if isinstance(submit_result.get("model_runtime"), dict) else {}
         if actual_runtime.get("runtime_id") != expected_runtime.get("runtime_id"):
             return "local Python runtime differs from the approved runtime identity"
+    policy = approved.get("policy") if isinstance(approved.get("policy"), dict) else {}
+    if policy.get("execution_mode") == "api_only":
         return None
     approved_ref = str(approved.get("target_image_ref") or "")
     if execution_path != "vc_submit":
@@ -593,14 +605,15 @@ def main() -> int:
         "local_bash",
         "local_docker",
         "local_python",
+        "api",
         "blocked_before_submit",
         "not_submitted",
         "failed_before_submit",
     }
     if execution_path_actual not in allowed_execution_paths:
         print(
-            "RUN_REPORT_UNIT gate: execution_path_actual must be one of "
-            "vc_submit / local_bash / local_docker / local_python.",
+            "RUN_REPORT_UNIT gate: execution_path_actual must be declared "
+            "(vc_submit / local_bash / local_docker / local_python / api).",
             file=sys.stderr,
         )
         return 1
@@ -619,14 +632,27 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        if not failed_pre_submit and not evaluation_only and requested != "local" and not fallback_reason:
+        if (
+            execution_path_actual != "api"
+            and not failed_pre_submit
+            and not evaluation_only
+            and requested != "local"
+            and not fallback_reason
+        ):
             print(
                 "RUN_REPORT_UNIT gate: a non-vc execution path with execution=auto "
                 "requires a non-empty local_fallback_reason unless evaluation_only=true.",
                 file=sys.stderr,
             )
             return 1
-        if not failed_pre_submit and not evaluation_only and requested == "auto" and vc_available and not fallback_approved:
+        if (
+            execution_path_actual != "api"
+            and not failed_pre_submit
+            and not evaluation_only
+            and requested == "auto"
+            and vc_available
+            and not fallback_approved
+        ):
             print(
                 "RUN_REPORT_UNIT gate: execution=auto used local execution even though vc was available; "
                 "set fallback_approved=true for this intentional override.",

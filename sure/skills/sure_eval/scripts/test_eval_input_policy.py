@@ -34,10 +34,11 @@ class DatasetInputPolicyTests(unittest.TestCase):
         )
 
     def test_legacy_name_is_rejected_with_migration_hint(self) -> None:
-        with self.assertRaises(resolve_eval_input.EvalInputError) as ctx:
-            resolve_eval_input._check_dataset_input_policy(
-                [{"name": "aishell1__v1.0.2__asr", "requested_name": "aishell1"}]
-            )
+        with mock.patch.object(resolve_eval_input, "accepted_source_root", return_value="/srv/sure/datasets"):
+            with self.assertRaises(resolve_eval_input.EvalInputError) as ctx:
+                resolve_eval_input._check_dataset_input_policy(
+                    [{"name": "aishell1__v1.0.2__asr", "requested_name": "aishell1"}]
+                )
         message = str(ctx.exception)
         self.assertIn("aishell1", message)
         self.assertIn("ds_pool", message)
@@ -92,6 +93,16 @@ class ExecutionSurfacePolicyTests(unittest.TestCase):
                 "python",
                 ["container", "python"],
             )
+
+    def test_api_only_execution_resolves_to_api_path(self) -> None:
+        execution = resolve_eval_input._normalize_api_execution("auto", "auto")
+        self.assertEqual(execution["planned"], "api")
+        self.assertEqual(execution["path_planned"], "api")
+
+    def test_api_only_execution_rejects_vc_path(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            resolve_eval_input._normalize_api_execution("vc", "vc_submit")
+        self.assertIn("API-only", str(ctx.exception))
 
 
 class OutputDirPolicyTests(unittest.TestCase):

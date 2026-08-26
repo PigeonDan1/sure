@@ -44,6 +44,42 @@ def deployment_binding(eval_input: dict[str, Any]) -> dict[str, Any]:
     return binding
 
 
+def approved_deployment_binding(eval_input: dict[str, Any]) -> dict[str, Any]:
+    model = eval_input.get("model") if isinstance(eval_input.get("model"), dict) else {}
+    binding = model.get("deployment_binding")
+    if not isinstance(binding, dict):
+        runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
+        binding = runtime.get("deployment_binding")
+    if not isinstance(binding, dict) or binding.get("schema") not in {
+        DEPLOYMENT_BINDING_V1,
+        DEPLOYMENT_BINDING_V2,
+    }:
+        raise ValueError("eval input does not contain an approved deployment binding")
+    policy = binding.get("policy") if isinstance(binding.get("policy"), dict) else {}
+    if policy.get("host_python_fallback") is not False:
+        raise ValueError("approved deployment binding enables host Python fallback")
+    return binding
+
+
+def deployment_execution_mode(eval_input: dict[str, Any]) -> str:
+    binding = approved_deployment_binding(eval_input)
+    policy = binding.get("policy") if isinstance(binding.get("policy"), dict) else {}
+    return str(policy.get("execution_mode") or "")
+
+
+def api_deployment_binding(eval_input: dict[str, Any]) -> dict[str, Any]:
+    binding = approved_deployment_binding(eval_input)
+    policy = binding.get("policy") if isinstance(binding.get("policy"), dict) else {}
+    if policy.get("execution_mode") != "api_only":
+        raise ValueError("approved deployment binding is not API-only")
+    api = binding.get("api")
+    if not isinstance(api, dict):
+        raise ValueError("API deployment binding is missing api config")
+    if not api.get("api_key_env") or not api.get("model_id"):
+        raise ValueError("API deployment binding must declare api_key_env and model_id")
+    return binding
+
+
 def surface_env(surface: dict[str, Any]) -> dict[str, str]:
     raw = surface.get("env")
     if not isinstance(raw, dict):
@@ -135,6 +171,80 @@ def resolve_container_harness_runtime(
     except ValueError as exc:
         raise ValueError("external Harness Runtime must be materialized under the mounted repository") from exc
     return {**host_runtime, "execution_source": "mounted_common_runtime"}, True
+
+
+def build_api_execution_command(
+    *,
+    surface: dict[str, Any],
+    eval_input: dict[str, Any],
+    control_run_dir: Path,
+    entrypoint: Path,
+    repo_root: Path,
+    device_request: str,
+    extra_env: dict[str, str] | None = None,
+) -> tuple[list[str], dict[str, Any], dict[str, str]]:
+    binding = api_deployment_binding(eval_input)
+    harness_runtime = harness_runtime_from_eval_input(eval_input)
+    api = binding.get("api") if isinstance(binding.get("api"), dict) else {}
+    output_source = Path(str((eval_input.get("runtime") or {}).get("run_dir") or "")).resolve()
+    if not output_source.is_dir():
+        output_source.mkdir(parents=True, exist_ok=True)
+    env = surface_env(surface)
+    env.update(extra_env or {})
+    env.update(
+        {
+            "MODEL_DIR": str(Path(str(binding["model_dir"])).resolve()),
+            "SURE_EVAL_APPROVED_MODEL_DIR": str(Path(str(binding["model_dir"])).resolve()),
+            "RUN_DIR": str(output_source),
+            "SURE_EVAL_APPROVED_RESULT_DIR": str(output_source),
+            "HARNESS_PYTHON_BIN": str(harness_runtime["python_executable"]),
+            "SURE_HARNESS_RUNTIME_ID": str(harness_runtime["runtime_id"]),
+            "SURE_HARNESS_LOCK_SHA256": str(harness_runtime["lock_sha256"]),
+            "SURE_HARNESS_MANIFEST_PATH": str(harness_runtime["manifest_path"]),
+            "SURE_HARNESS_RUNTIME_ROOT": str(harness_runtime["runtime_root"]),
+            "SURE_EVAL_DEPLOYMENT_MODE": "api_only",
+            "SURE_EVAL_API_PROVIDER": str(api.get("provider") or "api"),
+            "SURE_EVAL_API_MODEL_ID": str(api.get("model_id") or ""),
+            "SURE_EVAL_API_ENDPOINT": str(api.get("endpoint") or ""),
+            "SURE_EVAL_API_BASE_URL": str(api.get("base_url") or ""),
+            "SURE_EVAL_API_KEY_ENV": str(api.get("api_key_env") or ""),
+            "SURE_EVAL_EXECUTION_SURFACE_TYPE": "main_flow_script",
+            "SURE_EVAL_EXECUTION_ENTRYPOINT": str(entrypoint.resolve()),
+            "SURE_EVAL_EXECUTION_GENERATION_METHOD": str(surface.get("generation_method") or "harness_template"),
+            "SURE_EVAL_PUBLISHED_RUN_DIR": str(output_source),
+            "SURE_EVAL_WRITABLE_CACHE_ROOT": str(output_source / ".runtime" / "cache"),
+            "SURE_EVAL_CACHE_DIR": str(output_source / ".runtime" / "cache" / "sure-eval"),
+            "DEVICE": device_request,
+            "SURE_EVAL_DEVICE_REQUEST": device_request,
+            "SURE_EVAL_DEVICE_ACTUAL": "api_remote",
+        }
+    )
+    evaluation_runtime = evaluation_runtime_from_eval_input(eval_input, prepare=False)
+    if evaluation_runtime is not None:
+        env.update(
+            {
+                "SURE_EVALUATION_PYTHON": str(evaluation_runtime["python_executable"]),
+                "SURE_EVALUATION_RUNTIME_ID": str(evaluation_runtime["runtime_id"]),
+                "SURE_EVALUATION_LOCK_SHA256": str(evaluation_runtime["lock_sha256"]),
+                "SURE_EVALUATION_RUNTIME_MANIFEST": str(evaluation_runtime["manifest_path"]),
+                "SURE_EVALUATION_HOME": str(evaluation_runtime["engine_root"]),
+            }
+        )
+    command = ["bash", str(entrypoint.resolve())]
+    return command, {
+        "api": {
+            "provider": api.get("provider"),
+            "model_id": api.get("model_id"),
+            "endpoint": api.get("endpoint"),
+            "base_url": api.get("base_url"),
+            "api_key_env": api.get("api_key_env"),
+        },
+        "harness_runtime": harness_runtime,
+        "evaluation_runtime": evaluation_runtime,
+        "model_runtime": {"runtime_type": "api", "required": False},
+        "execution_mode": "api_only",
+        "host_python_fallback": False,
+    }, env
 
 
 def build_local_container_command(
