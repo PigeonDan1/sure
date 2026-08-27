@@ -2,6 +2,13 @@
 
 > An agent-driven harness for system-level reproducible model evaluation.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/harness-terminal-dark.svg">
+  <img src="docs/assets/harness-terminal.svg" alt="One SURE session in the interactive terminal: /sure_init, /sure_feed, /sure_onboard, then /sure_eval ending in a persisted run report" width="100%">
+</picture>
+
+*One discover, onboard, evaluate session, replayed as a self-contained SVG animation. Regenerate with `node scripts/generate-readme-terminal.mjs`.*
+
 SURE is an agent-based, system-level reproducible evaluation harness built on [Pi](https://github.com/badlogic/pi-mono), with an interactive terminal UI. It turns model discovery, local deployment, environment adaptation, inference, evaluation, and re-evaluation into integrated workflows instead of leaving users to connect them by hand.
 
 SURE works with coding agents including OpenAI Codex, Kimi Code, GitHub Copilot, Anthropic Claude, OpenAI, and custom OpenAI-compatible gateways such as DeepSeek.
