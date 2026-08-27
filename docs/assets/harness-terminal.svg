@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 314" role="img" aria-label="SURE harness terminal session"><title>SURE harness: one /sure_feed → /sure_onboard → /sure_eval session in the interactive terminal</title><style>.t{font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:12.5px;white-space:pre}
+.line{opacity:0}
+.fade{animation:fade 25.29s linear infinite}
+@keyframes fade{0%,96.441%{opacity:1}98.754%,100%{opacity:0}}
+.a0{animation:ka0 25.29s linear infinite}
+@keyframes ka0{0%,2.373%{opacity:0}2.412%,100%{opacity:1}}
+.c1{animation:kc1 25.29s linear infinite;transform:translateX(0)}
+@keyframes kc1{0%,2.294%{opacity:0;transform:translateX(0)}2.373%{opacity:1;transform:translateX(0);animation-timing-function:steps(10)}3.717%{opacity:1;transform:translateX(76.0px)}4.706%,100%{opacity:0;transform:translateX(76.0px)}}
+.a2{animation:ka2 25.29s linear infinite}
+@keyframes ka2{0%,5.892%{opacity:0;transform:translateY(3px)}6.762%,100%{opacity:1;transform:translateY(0)}}
+.a3{animation:ka3 25.29s linear infinite}
+@keyframes ka3{0%,7.869%{opacity:0}7.909%,100%{opacity:1}}
+.c4{animation:kc4 25.29s linear infinite;transform:translateX(0)}
+@keyframes kc4{0%,7.790%{opacity:0;transform:translateX(0)}7.869%{opacity:1;transform:translateX(0);animation-timing-function:steps(56)}15.399%{opacity:1;transform:translateX(425.6px)}16.387%,100%{opacity:0;transform:translateX(425.6px)}}
+.a5{animation:ka5 25.29s linear infinite}
+@keyframes ka5{0%,17.574%{opacity:0;transform:translateY(3px)}18.444%{opacity:1;transform:translateY(0)}24.296%{opacity:1}24.771%,100%{opacity:0}}
+.a6{animation:ka6 25.29s linear infinite}
+@keyframes ka6{0%,24.296%{opacity:0;transform:translateY(3px)}25.166%,100%{opacity:1;transform:translateY(0)}}
+.a7{animation:ka7 25.29s linear infinite}
+@keyframes ka7{0%,26.273%{opacity:0;transform:translateY(3px)}27.143%,100%{opacity:1;transform:translateY(0)}}
+.a8{animation:ka8 25.29s linear infinite}
+@keyframes ka8{0%,28.251%{opacity:0}28.290%,100%{opacity:1}}
+.c9{animation:kc9 25.29s linear infinite;transform:translateX(0)}
+@keyframes kc9{0%,28.171%{opacity:0;transform:translateX(0)}28.251%{opacity:1;transform:translateX(0);animation-timing-function:steps(68)}37.393%{opacity:1;transform:translateX(516.8px)}38.382%,100%{opacity:0;transform:translateX(516.8px)}}
+.a10{animation:ka10 25.29s linear infinite}
+@keyframes ka10{0%,39.568%{opacity:0;transform:translateY(3px)}40.438%{opacity:1;transform:translateY(0)}47.082%{opacity:1}47.556%,100%{opacity:0}}
+.a11{animation:ka11 25.29s linear infinite}
+@keyframes ka11{0%,47.082%{opacity:0;transform:translateY(3px)}47.952%,100%{opacity:1;transform:translateY(0)}}
+.a12{animation:ka12 25.29s linear infinite}
+@keyframes ka12{0%,49.059%{opacity:0}49.098%,100%{opacity:1}}
+.c13{animation:kc13 25.29s linear infinite;transform:translateX(0)}
+@keyframes kc13{0%,48.980%{opacity:0;transform:translateX(0)}49.059%{opacity:1;transform:translateX(0);animation-timing-function:steps(98)}62.235%{opacity:1;transform:translateX(744.8px)}63.224%,100%{opacity:0;transform:translateX(744.8px)}}
+.a14{animation:ka14 25.29s linear infinite}
+@keyframes ka14{0%,64.410%{opacity:0;transform:translateY(3px)}65.280%,100%{opacity:1;transform:translateY(0)}}
+.a15{animation:ka15 25.29s linear infinite}
+@keyframes ka15{0%,66.387%{opacity:0;transform:translateY(3px)}67.257%{opacity:1;transform:translateY(0)}74.692%{opacity:1}75.166%,100%{opacity:0}}
+.a16{animation:ka16 25.29s linear infinite}
+@keyframes ka16{0%,74.692%{opacity:0;transform:translateY(3px)}75.562%,100%{opacity:1;transform:translateY(0)}}
+.a17{animation:ka17 25.29s linear infinite}
+@keyframes ka17{0%,76.669%{opacity:0}76.708%,100%{opacity:1}}
+.b18{animation:blink 1.06s linear infinite}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+*{animation:none!important}
+.line{opacity:1!important;transform:none!important}
+.st,.cover{opacity:0!important}
+}</style><rect x="1" y="1" width="858" height="312" rx="12" fill="#ffffff" stroke="#e0ded8" stroke-width="1.5"/><path d="M 1 40 H 859" stroke="#e0ded8" stroke-width="1"/><circle cx="26" cy="20" r="5.2" fill="#e8615a"/><circle cx="44" cy="20" r="5.2" fill="#f5bd4f"/><circle cx="62" cy="20" r="5.2" fill="#61c454"/><text class="t" x="384.4" y="24.5" textLength="91.2" fill="#8a8a86">sure-harness</text><g class="fade"><g class="line a0"><text class="t " x="26.0" y="69.5" textLength="15.2" fill="#1f6f66">› </text><text class="t " x="41.2" y="69.5" textLength="76.0" font-weight="600" fill="#1f6f66">/sure_init</text></g><g class="cover c1"><rect x="41.2" y="57.0" width="80.0" height="18.8" fill="#ffffff"/><rect x="41.2" y="58.0" width="7.6" height="16.3" fill="#1f6f66"/></g><g class="line a2"><text class="t " x="26.0" y="91.5" textLength="15.2" fill="#047857">✓ </text><text class="t " x="41.2" y="91.5" textLength="524.4" fill="#047857">provider linked · auth ok · skills discovered · backend checks passed</text></g><g class="line a3"><text class="t " x="26.0" y="113.5" textLength="15.2" fill="#1f6f66">› </text><text class="t " x="41.2" y="113.5" textLength="76.0" font-weight="600" fill="#1f6f66">/sure_feed</text><text class="t " x="117.2" y="113.5" textLength="349.6" fill="#52514e"> https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf</text></g><g class="cover c4"><rect x="41.2" y="101.0" width="429.6" height="18.8" fill="#ffffff"/><rect x="41.2" y="102.0" width="7.6" height="16.3" fill="#1f6f66"/></g><g class="line st a5"><text class="t " x="26.0" y="135.5" textLength="471.2" fill="#98968f">⠋ researching model card · resolving runtime and I/O contract…</text></g><g class="line a6"><text class="t " x="41.2" y="135.5" textLength="357.2" fill="#52514e">task=ASR · runtime=transformers · io=audio→text</text></g><g class="line a7"><text class="t " x="26.0" y="157.5" textLength="15.2" fill="#047857">✓ </text><text class="t " x="41.2" y="157.5" textLength="266.0" fill="#047857">model_input.yaml · feed_report.json</text></g><g class="line a8"><text class="t " x="26.0" y="179.5" textLength="15.2" fill="#1f6f66">› </text><text class="t " x="41.2" y="179.5" textLength="98.8" font-weight="600" fill="#1f6f66">/sure_onboard</text><text class="t " x="140.0" y="179.5" textLength="418.0" fill="#52514e"> model=Qwen__Qwen3-ASR-0.6B-hf device=auto package=none</text></g><g class="cover c9"><rect x="41.2" y="167.0" width="520.8" height="18.8" fill="#ffffff"/><rect x="41.2" y="168.0" width="7.6" height="16.3" fill="#1f6f66"/></g><g class="line st a10"><text class="t " x="26.0" y="201.5" textLength="532.0" fill="#98968f">⠋ wrapper synthesis · environment plan · fixture smoke · package gate…</text></g><g class="line a11"><text class="t " x="26.0" y="201.5" textLength="15.2" fill="#047857">✓ </text><text class="t " x="41.2" y="201.5" textLength="402.8" fill="#047857">verdict.json · image digest pinned · deployment ready</text></g><g class="line a12"><text class="t " x="26.0" y="223.5" textLength="15.2" fill="#1f6f66">› </text><text class="t " x="41.2" y="223.5" textLength="76.0" font-weight="600" fill="#1f6f66">/sure_eval</text><text class="t " x="117.2" y="223.5" textLength="668.8" fill="#52514e"> model=Qwen__Qwen3-ASR-0.6B-hf datasets=aishell1 metrics=cer execution=local device=auto</text></g><g class="cover c13"><rect x="41.2" y="211.0" width="748.8" height="18.8" fill="#ffffff"/><rect x="41.2" y="212.0" width="7.6" height="16.3" fill="#1f6f66"/></g><g class="line a14"><text class="t " x="41.2" y="245.5" textLength="577.6" fill="#52514e">route asr.zh.cer.aispeech_norm_zh_v1.wenet_cer_v1 · protocol standard_system</text></g><g class="line st a15"><text class="t " x="26.0" y="267.5" textLength="456.0" fill="#98968f">⠋ inference 1/1 · deterministic evaluation pipeline running…</text></g><g class="line a16"><text class="t " x="26.0" y="267.5" textLength="15.2" fill="#047857">✓ </text><text class="t " x="41.2" y="267.5" textLength="744.8" fill="#047857">run_report · main_agent_run_report.json · report_persisted=true · execution_path_actual=local_bash</text></g><g class="line a17"><text class="t " x="26.0" y="289.5" textLength="15.2" fill="#1f6f66">› </text><g class="b18"><rect x="41.2" y="278.0" width="7.6" height="16.3" fill="#1f6f66"/></g></g></g></svg>
