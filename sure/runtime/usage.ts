@@ -28,9 +28,9 @@ export interface SkillRuntimeBindingOptions {
 
 function harnessBinding(contract: HarnessRuntimeContract): Record<string, unknown> {
 	return {
+		...contract,
 		schema: "sure.harness.runtime.binding.v1",
 		runtime_type: "harness_python",
-		...contract,
 	};
 }
 
