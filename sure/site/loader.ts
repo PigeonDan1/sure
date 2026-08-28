@@ -8,6 +8,7 @@ export const SITE_POLICY_ENV = "SURE_SITE_POLICY";
 export const SITE_POLICY_SCHEMA = "sure.site.policy.v1";
 
 export type ExecutionSurface = "local" | "vc";
+export type LocalRuntime = "container" | "python";
 export type SitePolicySource = "environment" | "bundled" | "local";
 
 export interface SitePolicy {
@@ -25,6 +26,7 @@ export interface SitePolicy {
 	};
 	execution: {
 		surfaces: ExecutionSurface[];
+		local_runtimes: LocalRuntime[];
 		vc_partitions?: string[];
 		vc_partition_priority?: Record<string, number>;
 	};
@@ -100,10 +102,18 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	const datasets = expectRecord(root.datasets, "datasets");
 	rejectUnknown(datasets, ["allowed_source_roots"], "datasets");
 	const execution = expectRecord(root.execution, "execution");
-	rejectUnknown(execution, ["surfaces", "vc_partitions", "vc_partition_priority"], "execution");
+	rejectUnknown(execution, ["surfaces", "local_runtimes", "vc_partitions", "vc_partition_priority"], "execution");
 	const surfaces = expectUniqueStrings(execution.surfaces, "execution.surfaces", false);
 	if (surfaces.some((surface) => surface !== "local" && surface !== "vc")) {
 		throw new Error("execution.surfaces contains an unsupported value");
+	}
+	const localRuntimes = expectUniqueStrings(
+		execution.local_runtimes ?? ["container"],
+		"execution.local_runtimes",
+		false,
+	);
+	if (localRuntimes.some((runtime) => runtime !== "container" && runtime !== "python")) {
+		throw new Error("execution.local_runtimes contains an unsupported value");
 	}
 
 	let network: SitePolicy["network"];
@@ -140,6 +150,7 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 		},
 		execution: {
 			surfaces: surfaces as ExecutionSurface[],
+			local_runtimes: localRuntimes as LocalRuntime[],
 		},
 	};
 	if (execution.vc_partitions !== undefined) {

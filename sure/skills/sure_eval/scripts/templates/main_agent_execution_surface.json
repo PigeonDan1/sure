@@ -16,9 +16,11 @@
   },
   "deployment_binding": {
     "schema": "sure.eval.deployment_binding.v1",
-    "target_image_ref": "",
+    "runtime_kind": "",
+    "target_image_ref": null,
+    "model_python": null,
     "bundle_identity_sha256": null,
-    "execution_mode": "container_only",
+    "execution_mode": "",
     "model_mount_read_only": true,
     "result_mount_writable": true
   },

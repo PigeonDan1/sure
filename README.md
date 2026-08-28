@@ -22,7 +22,7 @@ A model score is useful only when people can establish exactly how it was produc
 SURE gives you both automation and experimental credibility:
 
 - **Deploy and evaluate with integrated commands.** Start a complete discovery, adaptation, deployment, or evaluation stage with one slash command instead of manually assembling scripts and environments.
-- **Reproduce the whole system, not just the score.** Every result is tied to the inference implementation, model and Harness Runtime, immutable image digest, parameters, dataset version, evaluation engine commit, exact pipeline, and reports.
+- **Reproduce the whole system, not just the score.** Every result is tied to the inference implementation, approved model and Harness Runtime identities, parameters, dataset version, evaluation engine commit, exact pipeline, and reports. Container runs also bind an immutable image digest.
 - **Make results credible and comparable.** Two results can be compared against the concrete framework, configuration, inputs, normalization, and metric route that produced them, rather than against an unexplained number.
 - **Keep automation accountable.** Agents handle research and adaptation, while deterministic state machines, schemas, smoke tests, and container checks reject incomplete or inconsistent work.
 
@@ -39,7 +39,7 @@ Model repository       Runnable deployment       Predictions + metrics       New
 | Workflow | What the agent does | Reproducible product |
 | --- | --- | --- |
 | Discover | Researches a Hugging Face, ModelScope, or GitHub model and resolves its capabilities, runtime, fixtures, and I/O contract | Canonical `model_input.yaml` plus source evidence |
-| Onboard | Adapts and validates the model, generates a runnable inference package when needed, and seals local models in a digest-pinned OCI image | Portable model bundle plus `deployment_ready.json` |
+| Onboard | Adapts and validates the model, then seals either an approved Python runtime or a digest-pinned OCI image | Portable model bundle plus `deployment_ready.json` |
 | Evaluate | Runs approved inference, resolves a deterministic evaluation route, and computes metrics | Predictions, protocol, reports, metrics, and sample-level evidence |
 | Re-evaluate | Reuses approved predictions with an explicit pipeline | A new evaluation batch without repeating inference |
 
@@ -64,9 +64,9 @@ The following path was designed for a Bash-compatible Linux environment.
 - Git
 - Python 3.11 and [uv](https://docs.astral.sh/uv/)
 - Credentials for at least one supported coding-agent provider
-- Docker and access to an OCI registry when onboarding or evaluating a local model
+- Docker and access to an OCI registry only when using `package=docker-registry`
 
-The registry must support authenticated push and digest-pinned pull from the machine that runs SURE. API-only model onboarding does not require a local model image.
+`uv` bootstraps SURE's locked Harness Runtime. Model runtimes may use `uv`, `pip`, `conda`, or `pixi`. For container delivery, the registry must support authenticated push and digest-pinned pull from the machine that runs SURE.
 
 ### 2. Clone and install
 
@@ -111,6 +111,9 @@ datasets:
 execution:
   surfaces:
     - local
+  local_runtimes:
+    - python
+    - container
 EOF
 
 npm run sure:site-info
@@ -167,7 +170,7 @@ Consume the handoff by its normalized directory name:
 /sure_onboard model=Qwen__Qwen3-ASR-1.7B
 ```
 
-For a local model, SURE researches the upstream implementation, materializes an isolated model runtime, generates or repairs the adapter, validates import/load/inference and the tool contract, builds an OCI image, pushes it, and verifies the immutable digest. A successful bundle ends with:
+For a local model, SURE researches the upstream implementation, materializes an isolated model runtime, generates or repairs the adapter, and validates import/load/inference and the tool contract. The default public policy publishes that locked Python runtime directly. A successful bundle ends with:
 
 ```text
 sure/models/Qwen__Qwen3-ASR-1.7B/artifacts/deployment_ready.json
@@ -175,7 +178,7 @@ sure/models/Qwen__Qwen3-ASR-1.7B/artifacts/deployment_ready.json
 
 `deployment_ready.json` is a readiness marker, not an approval. Review the complete model directory, then copy that directory into one of the configured `approved_models_roots`. `/sure_eval` only accepts the exact directory name below an approved root.
 
-Local models require the default `docker-registry` package profile and a usable registry; a local-only Docker tag is not Eval-ready. See [`/sure_onboard`](./sure/skills/sure_onboard/SKILL.md) for API models, explicit handoff paths, device selection, and repair flows.
+Use `package=docker-registry` when you need immutable container delivery or VC execution; it adds image build, validation, registry push, digest resolution, and pull verification. `package=docker-local` remains diagnostic-only. See [`/sure_onboard`](./sure/skills/sure_onboard/SKILL.md) for runtime selection, API models, explicit handoff paths, device selection, and repair flows.
 
 ### Evaluate an approved model with `/sure_eval`
 
@@ -236,7 +239,7 @@ Each metric is an explicit pipeline of versioned nodes. You can select different
 Provider credentials and site policy are separate:
 
 - `/sure_init` configures the coding-agent provider and authentication.
-- The site policy configures approved storage roots, forbidden output roots, dataset roots, a runtime cache root, and allowed execution surfaces.
+- The site policy configures approved storage roots, forbidden output roots, dataset roots, a runtime cache root, allowed execution surfaces, and allowed local runtime kinds.
 
 Site-policy sources use this fixed precedence:
 

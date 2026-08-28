@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import json
 import hashlib
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+import check_runtime_inventory
 import stage_model_artifacts
 from write_runtime_inventory import write_inventory
 
@@ -37,7 +40,7 @@ class RuntimeInventoryTests(unittest.TestCase):
             encoding="utf-8",
         )
         (self.model_dir / ".venv" / "bin").mkdir(parents=True)
-        (self.model_dir / ".venv" / "bin" / "python").write_text("", encoding="utf-8")
+        (self.model_dir / ".venv" / "bin" / "python").symlink_to(sys.executable)
         (self.model_dir / "requirements.lock").write_text("torch\n", encoding="utf-8")
         resolved = {
             "model_id": "demo/asr",
@@ -166,6 +169,64 @@ class RuntimeInventoryTests(unittest.TestCase):
         (self.run_artifacts / "package_gate.json").unlink()
         with self.assertRaises(ValueError):
             write_inventory(self.model_dir, self.run_artifacts / "runtime_inventory.json", self.run_dir)
+
+    def test_package_none_publishes_python_eval_runtime(self) -> None:
+        resolved_path = self.run_artifacts / "model_input_resolved.json"
+        resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+        resolved["package_profile"] = "none"
+        write_json(resolved_path, resolved)
+        write_json(
+            self.run_artifacts / "package_gate.json",
+            {
+                "schema": "sure.onboard.package_gate.v2",
+                "status": "passed",
+                "package_profile": "none",
+                "readiness": {
+                    "local_ready": True,
+                    "container_ready": False,
+                    "docker_ready": False,
+                    "registry_ready": False,
+                    "bundle_ready": False,
+                },
+            },
+        )
+
+        inventory = write_inventory(
+            self.model_dir,
+            self.run_artifacts / "runtime_inventory.json",
+            self.run_dir,
+        )
+
+        self.assertEqual(inventory["status"], "ready")
+        self.assertEqual(inventory["policy"]["eval_runtime"], "python_only")
+        self.assertTrue(inventory["local_runtime"]["eligible_for_eval"])
+        self.assertEqual(inventory["local_runtime"]["path_scope"], "model_relative")
+        self.assertEqual(inventory["local_runtime"]["python_executable"], ".venv/bin/python")
+        self.assertEqual(inventory["local_runtime"]["server_command"][0], ".venv/bin/python")
+        self.assertEqual(inventory["local_runtime"]["tool_names"], ["asr_transcribe"])
+        self.assertFalse(inventory["container_runtime"]["required"])
+        for name in ("docker_build_result.json", "docker_validation.json", "docker_registry_result.json"):
+            (self.run_artifacts / name).unlink()
+            self.assertFalse((self.artifacts / name).exists())
+        with (
+            patch.object(
+                check_runtime_inventory,
+                "load_site_policy",
+                return_value={"policy": {"execution": {"local_runtimes": ["python", "container"]}}},
+            ),
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "check_runtime_inventory.py",
+                    "--run-dir",
+                    str(self.run_dir),
+                    "--produces",
+                    str(self.run_artifacts / "runtime_inventory.json"),
+                ],
+            ),
+        ):
+            self.assertEqual(check_runtime_inventory.main(), 0)
 
     def test_stage_model_artifacts_does_not_write_inventory_early(self) -> None:
         for name in stage_model_artifacts.REQUIRED_RUN_ARTIFACTS:

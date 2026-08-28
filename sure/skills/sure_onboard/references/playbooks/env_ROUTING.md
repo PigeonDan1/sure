@@ -34,7 +34,7 @@ it. Do not load all backend playbooks as a substitute for classification.
 | `backend: pip`, `requirements.txt`, no lockfile/tooling | `playbooks/env_pip.md` | Prefer uv as the installer if available, but keep pip-specific context small. |
 | `backend: conda`, `environment.yml` | `playbooks/env_conda.md` | Record env name, channels, CUDA/PyTorch package choices. |
 | `backend: pixi`, `pixi.toml` | `playbooks/env_pixi.md` | Use pixi lockfile and `pixi run` execution pattern. |
-| `backend: docker`, complex CUDA/C++/system deps, upstream Dockerfile | `playbooks/env_docker.md` | Required for reproducible cluster-ready local models. |
+| `backend: docker`, a Docker package profile, complex CUDA/C++/system deps, upstream Dockerfile | `playbooks/env_docker.md` | Use when container delivery is selected or Python-only delivery is impractical. |
 | XForge-generated scaffold | `playbooks/xforge_sure_bridge.md` plus selected backend playbook | Only when the input comes from XForge bridge workflow. |
 
 ## Escalation Rules

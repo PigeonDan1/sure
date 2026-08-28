@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import { resolveSitePolicy } from "../../../site/loader.ts";
 import {
 	advance,
 	artifactPath,
@@ -59,6 +60,14 @@ const TASK_TYPES = [
 ];
 const DEPLOYMENT_TYPES = ["local", "api"];
 const PACKAGE_PROFILES = ["none", "docker-local", "docker-registry"];
+
+function defaultPackageProfile(deploymentType: string | undefined, repositoryRoot: string): string {
+	if (deploymentType === "api") {
+		return "none";
+	}
+	const localRuntimes = resolveSitePolicy({ repositoryRoot })?.policy.execution.local_runtimes ?? ["container"];
+	return localRuntimes.includes("python") ? "none" : "docker-registry";
+}
 
 interface ResolvedOnboardArgs {
 	args: Record<string, string>;
@@ -470,7 +479,7 @@ function resolveOnboardArgs(ctx: SureHookContext): ResolvedOnboardArgs {
 			merged.weights_source = values["weights.source"];
 		}
 		if (!merged.package_profile && !merged.package) {
-			merged.package_profile = merged.deployment_type === "api" ? "none" : "docker-registry";
+			merged.package_profile = defaultPackageProfile(merged.deployment_type, ctx.cwd);
 		}
 		if (!merged.model_name && merged.model_id) {
 			merged.model_name = slugifyModelName(merged.model_id);
@@ -492,7 +501,11 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		args.package_profile = args.package;
 	}
 	if (!args.package_profile) {
-		args.package_profile = args.deployment_type === "api" ? "none" : "docker-registry";
+		try {
+			args.package_profile = defaultPackageProfile(args.deployment_type, ctx.cwd);
+		} catch (error) {
+			return failure(error instanceof Error ? error.message : String(error), "Invalid site policy.");
+		}
 	}
 	if (!args.model_name && args.model_id) {
 		args.model_name = slugifyModelName(args.model_id);
@@ -512,7 +525,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_onboard parameters: ${missing.join(", ")}. Usage: /sure_onboard model=<handoff_name> OR /sure_onboard model_input_path=sure/handoffs/<handoff_name>/model_input.yaml OR /sure_onboard model_id=<owner/model> model_name=<owner__model> repo=<url|path> task_type=<${TASK_TYPES.join("|")}> deployment_type=<local|api> [preferred_backend=uv|pip|conda|pixi|docker|api] [python_version=...] [weights_source=...] [package=docker-registry] [force_repair=true] [existing_model_dir=...] [max_retries=3]`,
+			`Missing required /sure_onboard parameters: ${missing.join(", ")}. Usage: /sure_onboard model=<handoff_name> OR /sure_onboard model_input_path=sure/handoffs/<handoff_name>/model_input.yaml OR /sure_onboard model_id=<owner/model> model_name=<owner__model> repo=<url|path> task_type=<${TASK_TYPES.join("|")}> deployment_type=<local|api> [preferred_backend=uv|pip|conda|pixi|docker|api] [python_version=...] [weights_source=...] [package=none|docker-local|docker-registry] [force_repair=true] [existing_model_dir=...] [max_retries=3]`,
 			"Missing required parameters.",
 		);
 	}
@@ -533,9 +546,22 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (!PACKAGE_PROFILES.includes(args.package_profile)) {
 		return failure(
-			`package "${args.package_profile}" is not one of ${JSON.stringify(PACKAGE_PROFILES)}. Local models default to package=docker-registry; package=none is diagnostic/local-only and cannot produce an Eval-ready bundle.`,
+			`package "${args.package_profile}" is not one of ${JSON.stringify(PACKAGE_PROFILES)}. Sites that allow local Python default to package=none; choose package=docker-registry for immutable container delivery.`,
 			"Invalid package profile.",
 		);
+	}
+	if (args.deployment_type === "local" && args.package_profile === "none") {
+		try {
+			const sitePolicy = resolveSitePolicy({ repositoryRoot: ctx.cwd });
+			if (sitePolicy && !sitePolicy.policy.execution.local_runtimes.includes("python")) {
+				return failure(
+					"package=none requires python in execution.local_runtimes; enable it in the site policy or use package=docker-registry.",
+					"Local Python runtime is disabled by site policy.",
+				);
+			}
+		} catch (error) {
+			return failure(error instanceof Error ? error.message : String(error), "Invalid site policy.");
+		}
 	}
 	const runtime = resolveHarnessPython(ctx.packageDir);
 	if (!runtime.ok || !runtime.contract) {

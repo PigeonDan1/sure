@@ -78,6 +78,13 @@ def main() -> int:
     if package_profile != resolved.get("package_profile"):
         print("BUILD_PLAN gate: package_profile disagrees with model_input_resolved.json.", file=sys.stderr)
         return 1
+    if deployment_type == "local" and package_profile == "none" and data.get("backend") not in {"uv", "pip", "conda", "pixi"}:
+        print(
+            "BUILD_PLAN gate: local package=none requires a uv, pip, conda, or pixi Python runtime; "
+            "use package=docker-registry for backend=docker.",
+            file=sys.stderr,
+        )
+        return 1
 
     steps = data.get("steps")
     if not isinstance(steps, list) or not steps:

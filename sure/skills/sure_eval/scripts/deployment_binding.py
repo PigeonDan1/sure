@@ -5,8 +5,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Any
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "site" / "loader.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.site.loader import load_site_policy
 
 
 class DeploymentBindingError(ValueError):
@@ -61,6 +69,147 @@ def _require(condition: bool, message: str) -> None:
         raise DeploymentBindingError(message)
 
 
+def _verified_bundle_evidence(model_dir: Path, marker: dict[str, Any]) -> tuple[dict[str, str], str]:
+    declared_hashes = marker.get("required_artifact_sha256")
+    _require(isinstance(declared_hashes, dict) and bool(declared_hashes), "deployment artifact hashes are missing")
+    verified_hashes: dict[str, str] = {}
+    for relative, expected in declared_hashes.items():
+        _require(isinstance(relative, str) and isinstance(expected, str), "deployment artifact hash entry is invalid")
+        actual = _sha256(_artifact_path(model_dir, relative))
+        _require(actual == expected, f"deployment artifact hash mismatch: {relative}")
+        verified_hashes[relative] = actual
+    bundle_identity = str(marker.get("bundle_identity_sha256") or "")
+    calculated_bundle_identity = hashlib.sha256(
+        json.dumps(declared_hashes, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    _require(bundle_identity == calculated_bundle_identity, "deployment bundle identity does not match required artifact hashes")
+    return verified_hashes, bundle_identity
+
+
+def _python_runtime_path(
+    model_dir: Path,
+    raw: object,
+    scope: object,
+    *,
+    executable: bool = True,
+) -> Path:
+    _require(isinstance(raw, str) and bool(raw), "approved Model Python path is missing")
+    path = Path(raw).expanduser()
+    if scope == "model_relative":
+        _require(not path.is_absolute(), "model_relative Python path must be relative")
+        candidate = model_dir / path
+        resolved = candidate.parent.resolve() / candidate.name if executable else candidate.resolve()
+        _require(_is_relative_to(resolved, model_dir), "model_relative Python path escapes approved model")
+    elif scope == "site_runtime":
+        _require(path.is_absolute(), "site_runtime Python path must be absolute")
+        configured = load_site_policy(required=True)
+        runtime_root = Path(configured["policy"]["storage"]["runtime_root"]).expanduser().resolve()
+        resolved = path.parent.resolve() / path.name if executable else path.resolve()
+        _require(_is_relative_to(resolved, runtime_root), f"site_runtime Python path escapes {runtime_root}")
+    else:
+        raise DeploymentBindingError(f"unsupported Python runtime path_scope: {scope!r}")
+    _require(resolved.is_file(), f"approved runtime path does not exist: {resolved}")
+    if executable:
+        _require(bool(resolved.stat().st_mode & 0o111), f"approved Model Python is not executable: {resolved}")
+    return resolved
+
+
+def _load_python_deployment_binding(
+    model_dir: Path,
+    model_name: str,
+    marker: dict[str, Any],
+    inventory: dict[str, Any],
+    package: dict[str, Any],
+) -> dict[str, Any]:
+    site_policy = load_site_policy(required=True)["policy"]
+    _require(
+        "python" in site_policy["execution"]["local_runtimes"],
+        "local Python Eval is disabled by site policy; add python to execution.local_runtimes",
+    )
+    _require(marker.get("schema") == "sure.onboard.deployment_ready.v1", "unsupported deployment_ready schema")
+    _require(marker.get("status") == "ready", "deployment_ready status must be ready")
+    _require(marker.get("model_name") == model_name, "deployment_ready model_name does not match requested model")
+    _require(marker.get("package_profile") == "none", "approved Python model must use package=none")
+    execution_policy = marker.get("execution_policy")
+    _require(isinstance(execution_policy, dict), "deployment_ready execution_policy is missing")
+    _require(execution_policy.get("container_only") is False, "Python deployment must not be container_only")
+    _require(execution_policy.get("eval_runtime") == "python", "deployment is not approved for Python Eval")
+    _require(execution_policy.get("nfs_models_read_only") is True, "approved model policy must remain read-only")
+    _require(execution_policy.get("host_python_fallback") is False, "Python runtime must be explicit, not a fallback")
+
+    _require(inventory.get("schema") == "sure.onboard.runtime_inventory.v2", "unsupported runtime_inventory schema")
+    _require(inventory.get("status") == "ready", "runtime_inventory status must be ready")
+    model = inventory.get("model")
+    policy = inventory.get("policy")
+    local = inventory.get("local_runtime")
+    _require(isinstance(model, dict) and model.get("name") == model_name, "runtime_inventory model does not match")
+    _require(isinstance(policy, dict) and policy.get("eval_runtime") == "python_only", "runtime inventory is not Python-ready")
+    _require(policy.get("host_python_fallback") is False, "runtime inventory enables host fallback")
+    _require(policy.get("nfs_models_mutable_by_eval") is False, "runtime inventory allows approved model mutation")
+    _require(isinstance(local, dict) and local.get("eligible_for_eval") is True, "approved Python runtime is missing")
+    _require(local.get("backend") in {"uv", "pip", "conda", "pixi"}, "approved Python backend is unsupported")
+    python = _python_runtime_path(model_dir, local.get("python_executable"), local.get("path_scope"))
+
+    lockfiles = local.get("lockfiles")
+    lock_scopes = local.get("lockfile_scopes")
+    lock_hashes = local.get("lockfile_sha256")
+    _require(isinstance(lockfiles, list) and bool(lockfiles), "approved Python runtime has no lockfile")
+    _require(isinstance(lock_scopes, dict) and isinstance(lock_hashes, dict), "approved Python lock evidence is missing")
+    verified_locks: dict[str, str] = {}
+    for lockfile in lockfiles:
+        lock_path = _python_runtime_path(model_dir, lockfile, lock_scopes.get(lockfile), executable=False)
+        actual = _sha256(lock_path)
+        _require(lock_hashes.get(lockfile) == actual, f"approved Python lockfile hash mismatch: {lockfile}")
+        verified_locks[str(lock_path)] = actual
+
+    command = local.get("server_command")
+    tools = local.get("tool_names")
+    _require(isinstance(command, list) and bool(command) and all(isinstance(item, str) and item for item in command), "approved Python server_command is invalid")
+    _require(command[0] == local.get("python_executable"), "approved Python server_command must use the bound interpreter")
+    _require(isinstance(tools, list) and bool(tools) and all(isinstance(item, str) and item for item in tools), "approved Python tool_names are invalid")
+    working_dir = (model_dir / str(local.get("working_dir") or ".")).resolve()
+    _require(_is_relative_to(working_dir, model_dir) and working_dir.is_dir(), "approved Python working_dir is invalid")
+
+    _require(package.get("schema") == "sure.onboard.package_gate.v2", "unsupported package_gate schema")
+    _require(package.get("status") == "passed" and package.get("package_profile") == "none", "package_gate is not Python-ready")
+    readiness = package.get("readiness")
+    _require(isinstance(readiness, dict) and readiness.get("local_ready") is True, "package_gate local readiness is missing")
+    verified_hashes, bundle_identity = _verified_bundle_evidence(model_dir, marker)
+    return {
+        "schema": "sure.eval.deployment_binding.v1",
+        "runtime_kind": "python",
+        "model_name": model_name,
+        "model_dir": str(model_dir),
+        "source": "approved_nfs_models",
+        "package_profile": "none",
+        "python": {
+            "backend": local.get("backend"),
+            "python_executable": str(python),
+            "python_version": local.get("python_version"),
+            "working_dir": str(working_dir),
+            "server_command": [str(python), *command[1:]],
+            "tool_names": tools,
+            "required_imports": local.get("required_imports") if isinstance(local.get("required_imports"), list) else [],
+            "gpu_required": local.get("gpu_required") is True,
+            "lock_sha256": verified_locks,
+        },
+        "policy": {
+            "execution_mode": "python",
+            "host_python_fallback": False,
+            "image_override_allowed": False,
+            "nfs_models_read_only": True,
+        },
+        "evidence": {
+            "deployment_ready": str(_artifact_path(model_dir, "artifacts/deployment_ready.json")),
+            "runtime_inventory": str(_artifact_path(model_dir, "artifacts/runtime_inventory.json")),
+            "package_gate": str(_artifact_path(model_dir, "artifacts/package_gate.json")),
+            "verified_sha256": verified_hashes,
+            "bundle_identity_sha256": bundle_identity,
+            "runtime_lock_sha256": verified_locks,
+        },
+    }
+
+
 def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     """Return the only execution binding that `/sure_eval` may consume."""
 
@@ -68,6 +217,9 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     marker = _read_json(model_dir, "artifacts/deployment_ready.json")
     inventory = _read_json(model_dir, "artifacts/runtime_inventory.json")
     package = _read_json(model_dir, "artifacts/package_gate.json")
+
+    if marker.get("package_profile") == "none":
+        return _load_python_deployment_binding(model_dir, model_name, marker, inventory, package)
 
     _require(marker.get("schema") == "sure.onboard.deployment_ready.v1", "unsupported deployment_ready schema")
     _require(marker.get("status") == "ready", "deployment_ready status must be ready")
@@ -168,22 +320,11 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     else:
         normalized_harness = None
 
-    declared_hashes = marker.get("required_artifact_sha256")
-    _require(isinstance(declared_hashes, dict) and declared_hashes, "deployment_ready artifact hashes are missing")
-    verified_hashes: dict[str, str] = {}
-    for relative, expected in declared_hashes.items():
-        _require(isinstance(relative, str) and isinstance(expected, str), "deployment artifact hash entry is invalid")
-        actual = _sha256(_artifact_path(model_dir, relative))
-        _require(actual == expected, f"deployment artifact hash mismatch: {relative}")
-        verified_hashes[relative] = actual
-    bundle_identity = str(marker.get("bundle_identity_sha256") or "")
-    calculated_bundle_identity = hashlib.sha256(
-        json.dumps(declared_hashes, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    _require(bundle_identity == calculated_bundle_identity, "deployment bundle identity does not match required artifact hashes")
+    verified_hashes, bundle_identity = _verified_bundle_evidence(model_dir, marker)
 
     return {
         "schema": "sure.eval.deployment_binding.v1",
+        "runtime_kind": "container",
         "model_name": model_name,
         "model_dir": str(model_dir),
         "source": "approved_nfs_models",

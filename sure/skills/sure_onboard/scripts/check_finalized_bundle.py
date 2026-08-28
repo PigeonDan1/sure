@@ -49,7 +49,11 @@ def main() -> int:
         if manifest.get("status") != "finalized" or manifest.get("model_dir") != ".":
             raise ValueError("artifact_manifest.json was not refreshed into portable finalized form")
         if resolved.get("deployment_type") == "local" and resolved.get("package_profile") == "docker-registry":
-            if data.get("status") != "ready" or policy.get("container_only") is not True:
+            if (
+                data.get("status") != "ready"
+                or policy.get("container_only") is not True
+                or policy.get("eval_runtime") != "container"
+            ):
                 raise ValueError("local docker-registry bundle must be container-only ready")
             image, digest, image_ref = validate_image_and_digest(
                 data.get("target_image"), data.get("target_image_digest")
@@ -66,6 +70,21 @@ def main() -> int:
             harness = data.get("harness_runtime") if isinstance(data.get("harness_runtime"), dict) else {}
             if harness.get("schema") != "sure.harness.runtime.binding.v1" or not harness.get("runtime_id"):
                 raise ValueError("ready deployment must expose the common Harness Runtime binding")
+        elif resolved.get("deployment_type") == "local" and resolved.get("package_profile") == "none":
+            if (
+                data.get("status") != "ready"
+                or policy.get("container_only") is not False
+                or policy.get("eval_runtime") != "python"
+            ):
+                raise ValueError("local package=none bundle must be Python ready")
+            inventory = read_json(model_dir / "artifacts" / "runtime_inventory.json")
+            inventory_policy = inventory.get("policy") if isinstance(inventory.get("policy"), dict) else {}
+            local = inventory.get("local_runtime") if isinstance(inventory.get("local_runtime"), dict) else {}
+            if inventory_policy.get("eval_runtime") != "python_only" or local.get("eligible_for_eval") is not True:
+                raise ValueError("Python deployment marker disagrees with runtime inventory")
+        elif resolved.get("deployment_type") == "local" and resolved.get("package_profile") == "docker-local":
+            if data.get("status") != "local_only" or policy.get("eval_runtime") != "unavailable":
+                raise ValueError("docker-local bundle must remain diagnostic-only")
         portable = [
             read_json(model_dir / "artifacts" / name)
             for name in ("runtime_inventory.json", "package_gate.json", "artifact_manifest.json", "deployment_ready.json")

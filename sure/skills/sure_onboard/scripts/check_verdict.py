@@ -6,7 +6,8 @@ requires build.success, all four validation tests passed, and readiness that
 matches the selected package profile:
 
   - local package=docker-registry: local/docker/registry/bundle readiness
-  - local package=none or docker-local: terminal status must remain partial
+  - local package=none: local readiness is sufficient for Python Eval
+  - local package=docker-local: terminal status must remain partial
   - API package=none: local client readiness is sufficient
 
 VC/HPC readiness is intentionally not part of this core /sure_onboard gate.
@@ -234,10 +235,10 @@ def main() -> int:
         except (OSError, ValueError) as exc:
             print(f"VERDICT gate: cannot read model_input_resolved.json: {exc}", file=sys.stderr)
             return 1
-        if resolved.get("deployment_type") == "local" and profile != "docker-registry":
+        if resolved.get("deployment_type") == "local" and profile == "docker-local":
             print(
-                "VERDICT gate: local package=none/docker-local is local_only and cannot use a success status; "
-                "emit status=partial or complete docker-registry delivery.",
+                "VERDICT gate: local package=docker-local is diagnostic-only and cannot use a success status; "
+                "emit status=partial, use package=none for Python Eval, or complete docker-registry delivery.",
                 file=sys.stderr,
             )
             return 1

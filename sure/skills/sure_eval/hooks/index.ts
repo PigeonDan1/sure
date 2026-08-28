@@ -99,7 +99,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> datasets=<dataset__version[,dataset__version...]> [protocol=standard_system|strict_core] [execution=auto|local|vc] [device=auto|cpu|cuda[:index]] [max_samples=...]`,
+			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> datasets=<dataset__version[,dataset__version...]> [protocol=standard_system|strict_core] [execution=auto|local|vc] [runtime=auto|python|container] [device=auto|cpu|cuda[:index]] [max_samples=...]`,
 			"Missing required parameters.",
 		);
 	}
@@ -167,6 +167,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (typeof args.execution_path === "string") {
 		resolveArgs.push("--execution-path", args.execution_path);
+	}
+	if (typeof args.runtime === "string") {
+		resolveArgs.push("--runtime", args.runtime);
 	}
 	for (const [argKey, cliKey] of [
 		["vc_partition", "--vc-partition"],

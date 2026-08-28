@@ -2,7 +2,7 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "runtime_inventory.schema.json",
 	"title": "SURE onboard runtime inventory v2",
-	"description": "Portable model runtime contract written after the Docker package gate.",
+	"description": "Portable model runtime contract written after the package gate.",
 	"type": "object",
 	"required": ["schema", "generated_at", "status", "model", "local_runtime", "model_runtime", "harness_runtime", "container_runtime", "weights", "readiness", "evidence", "policy"],
 	"properties": {
@@ -27,11 +27,19 @@
 			"required": ["purpose", "eligible_for_eval"],
 			"properties": {
 				"purpose": { "type": "string" },
-				"eligible_for_eval": { "const": false },
+				"eligible_for_eval": { "type": "boolean" },
 				"backend": { "type": ["string", "null"] },
 				"python_executable": { "type": ["string", "null"] },
+				"path_scope": { "type": ["string", "null"], "enum": ["model_relative", "site_runtime", null] },
 				"python_version": { "type": ["string", "null"] },
-				"lockfiles": { "type": "array", "items": { "type": "string" } }
+				"lockfiles": { "type": "array", "items": { "type": "string" } },
+				"lockfile_scopes": { "type": "object", "additionalProperties": { "enum": ["model_relative", "site_runtime"] } },
+				"lockfile_sha256": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" } },
+				"working_dir": { "type": "string" },
+				"server_command": { "type": "array", "items": { "type": "string" } },
+				"tool_names": { "type": "array", "items": { "type": "string" } },
+				"required_imports": { "type": "array", "items": { "type": "string" } },
+				"gpu_required": { "type": "boolean" }
 			},
 			"additionalProperties": true
 		},
@@ -105,7 +113,7 @@
 			"type": "object",
 			"required": ["eval_runtime", "host_python_fallback", "image_override_allowed", "nfs_models_mutable_by_eval"],
 			"properties": {
-				"eval_runtime": { "enum": ["container_only", "api_only", "unavailable"] },
+				"eval_runtime": { "enum": ["python_only", "container_only", "api_only", "unavailable"] },
 				"host_python_fallback": { "const": false },
 				"image_override_allowed": { "const": false },
 				"nfs_models_mutable_by_eval": { "const": false }

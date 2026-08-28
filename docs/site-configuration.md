@@ -46,6 +46,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `storage.runtime_root` | yes | Declared site-owned cache root for adapters and future runtime placement |
 | `datasets.allowed_source_roots` | yes | Roots accepted by the strict dataset source resolver |
 | `execution.surfaces` | yes | Enabled execution surfaces: `local`, `vc`, or both |
+| `execution.local_runtimes` | optional | Local runtime kinds: `python`, `container`, or both; omitted policies default to `container` |
 | `execution.vc_partitions` | when needed | Declared VC partitions for adapters and deployment documentation |
 | `execution.vc_partition_priority` | optional | Numeric priority map used by automatic VC selection |
 | `network` | optional | Non-secret site endpoints used by private adapters and documentation |
@@ -55,6 +56,8 @@ Unknown fields, duplicate list values, unsupported surfaces, and relative paths 
 Policy v1 accepts exactly one path in each root list. The list shape leaves room for a future multi-root contract, but the current workflow preserves its historical single-root selection semantics.
 
 `execution.surfaces` constrains automatic and explicit execution selection. `execution.vc_partitions` documents site choices but does not replace the existing live `vc info -u` authorization check; changing partition authorization semantics is outside this separation phase.
+
+`execution.local_runtimes` is an execution permission, not a package-manager choice. `python` allows an approved model runtime created by `uv`, `pip`, `conda`, or `pixi`; `container` allows local Docker execution. Existing policy files that omit the field remain container-only.
 
 ## Path Semantics
 
@@ -89,6 +92,9 @@ datasets:
 execution:
   surfaces:
     - local
+  local_runtimes:
+    - python
+    - container
 ```
 
 For shared storage, replace these placeholders with roots visible to every host and container that executes a workflow. For a local-only fixture, create temporary model, result, dataset, and runtime roots and point the local policy at them.

@@ -637,6 +637,7 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 		expect(existsSync(join(cwd, "sure", "models", "rednote-hilab__dots.tts-base"))).toBe(false);
 		expect(context.selected_references.task_playbooks).toContain("references/task_playbooks/TTS.md");
 		expect(context.selected_references.environment_playbooks).toContain("references/playbooks/env_uv.md");
+		expect(context.selected_references.environment_playbooks).not.toContain("references/playbooks/env_docker.md");
 	});
 
 	it("falls back to scalar parsing for legacy handoffs with unquoted multiline code", () => {
@@ -694,6 +695,7 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 		expect(context.selected_references.task_playbooks).toContain("references/task_playbooks/SPEECH_UNDERSTANDING.md");
 		expect(context.selected_references.task_playbooks).toContain("references/task_playbooks/ASR.md");
 		expect(context.selected_references.environment_playbooks).toContain("references/playbooks/env_conda.md");
+		expect(context.selected_references.environment_playbooks).toContain("references/playbooks/env_docker.md");
 	});
 
 	// sure/handoffs/ is listed in .gitignore, so these fixtures exist only on a
@@ -831,6 +833,12 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			const content = name === "model.py" ? "class Model:\n\tpass\n" : `${name}\n`;
 			writeFileSync(join(modelDir, name), content, "utf-8");
 		}
+		writeFileSync(
+			join(modelDir, "config.yaml"),
+			"server:\n  command: [.venv/bin/python, server.py]\ntools:\n  - name: synthesize\nresources:\n  gpu: false\n",
+			"utf-8",
+		);
+		writeFileSync(join(modelDir, "requirements.lock"), "sure-replay-fixture==1.0.0\n", "utf-8");
 		const checkpointDir = join(modelDir, "checkpoints", "tiny");
 		mkdirSync(checkpointDir, { recursive: true });
 		writeFileSync(join(checkpointDir, "config.json"), "{}\n", "utf-8");
@@ -969,7 +977,7 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			python_executable: pythonExecutable,
 			model_dir: modelDir,
 			artifacts_dir: modelArtifacts,
-			lockfile_path: null,
+			lockfile_path: "requirements.lock",
 			duration_seconds: 0,
 			log_path: "build.log",
 			failures: [],
@@ -1154,10 +1162,20 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			{ encoding: "utf-8" },
 		);
 		expect(inventory.status, inventory.stderr || inventory.stdout).toBe(0);
-		advance("verdict");
+		const previousSitePolicy = process.env.SURE_SITE_POLICY;
+		process.env.SURE_SITE_POLICY = resolve(PACKAGE_DIR, "../../../config/site.example.yaml");
+		try {
+			advance("verdict");
+		} finally {
+			if (previousSitePolicy === undefined) {
+				delete process.env.SURE_SITE_POLICY;
+			} else {
+				process.env.SURE_SITE_POLICY = previousSitePolicy;
+			}
+		}
 
 		writeArtifact(runDir, "verdict.json", {
-			status: "partial",
+			status: "passed",
 			model_id: resolved.model_id,
 			model_name: resolved.model_name,
 			package: { profile: "none" },
@@ -1200,11 +1218,11 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 		expect(terminal.completedUnits).toContain("finalize_model_bundle");
 
 		ctx.point = "pre_finish";
-		ctx.event = { finish: { status: "incomplete" } } as never;
+		ctx.event = { finish: { status: "success" } } as never;
 		const finish = preFinish(ctx);
 		const patch = statePatch(finish);
 		expect(finish.ok, finish.repair).toBe(true);
-		expect(patch.phase?.status).toBe("incomplete");
+		expect(patch.phase?.status).toBe("success");
 	});
 });
 
@@ -2845,7 +2863,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 		expect(proc.status, proc.stderr || proc.stdout).toBe(0);
 	});
 
-	it("rejects a success verdict for a non-registry local package", () => {
+	it("accepts a success verdict for a Python-ready local package", () => {
 		const { ctx, runDir } = freshCtx("verdict-local-ready-pass");
 		const modelDir = seedLocalReadyArtifacts(runDir);
 		seedModelInputResolved(runDir, { model_dir: modelDir });
@@ -2913,8 +2931,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 			},
 		});
 		const result = postToolResult(ctx);
-		expect(result.ok).toBe(false);
-		expect(result.repair).toContain("local_only");
+		expect(result.ok).toBe(true);
 	});
 
 	it("accepts verdict artifact paths relative to the repository root", () => {

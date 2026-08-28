@@ -2,7 +2,7 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "build_plan.schema.json",
 	"title": "SURE onboard build plan",
-	"description": "Executable local adaptation and Docker delivery plan. Local Eval-ready bundles use package_profile=docker-registry.",
+	"description": "Executable local adaptation and optional container delivery plan.",
 	"type": "object",
 	"required": ["model_id", "model_dir", "backend", "steps", "package_profile"],
 	"properties": {

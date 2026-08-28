@@ -196,6 +196,8 @@ def main_with_args(argv: list[str] | None = None) -> int:
             copy_artifact(source, model_artifacts / name)
             copied_required.append(name)
     for name in OPTIONAL_RUN_ARTIFACTS:
+        if resolved.get("package_profile") == "none" and name.startswith("docker_"):
+            continue
         source = run_artifacts / name
         if source.exists():
             copy_artifact(source, model_artifacts / name)

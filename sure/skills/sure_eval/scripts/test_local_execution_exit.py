@@ -63,6 +63,54 @@ class LocalExecutionExitTests(unittest.TestCase):
         self.assertEqual(result["exit_code"], 37)
         self.assertEqual(result["job_status"], "failed")
 
+    def test_local_python_dispatch_never_builds_a_docker_command(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir(parents=True)
+            entrypoint = artifacts / "run.sh"
+            entrypoint.write_text("#!/bin/sh\n", encoding="utf-8")
+            (artifacts / "execution_surface.json").write_text(
+                json.dumps(
+                    {
+                        "entrypoint_path": str(entrypoint),
+                        "execution": {
+                            "requested": "local",
+                            "planned": "local",
+                            "path_planned": "local_python",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (artifacts / "eval_input_resolved.json").write_text(
+                json.dumps({"runtime": {"model_runtime": "python"}}),
+                encoding="utf-8",
+            )
+            argv = ["run_local_execution.py", "--run-dir", str(run_dir)]
+            with (
+                patch.object(sys, "argv", argv),
+                patch.object(run_local_execution, "_vc_available", return_value=False),
+                patch.object(
+                    run_local_execution,
+                    "build_local_python_command",
+                    return_value=(
+                        ["bash", "-c", "exit 0"],
+                        {},
+                        {"runtime_kind": "python"},
+                    ),
+                ) as python_builder,
+                patch.object(run_local_execution, "build_local_container_command") as container_builder,
+            ):
+                return_code = run_local_execution.main()
+
+            self.assertEqual(return_code, 0)
+            python_builder.assert_called_once()
+            container_builder.assert_not_called()
+            result = json.loads((artifacts / "execution_result.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["execution_path"], "local_python")
+            self.assertEqual(result["runtime_kind"], "python")
+
 
 if __name__ == "__main__":
     unittest.main()

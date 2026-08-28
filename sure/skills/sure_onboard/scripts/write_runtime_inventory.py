@@ -40,15 +40,27 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def relative_existing(raw: object, model_dir: Path) -> str | None:
+def runtime_path(
+    raw: object,
+    model_dir: Path,
+    *,
+    preserve_executable_entrypoint: bool = False,
+) -> tuple[str | None, str | None]:
     if not isinstance(raw, str) or not raw:
-        return None
+        return None, None
     path = Path(raw).expanduser()
     candidate = path if path.is_absolute() else model_dir / path
+    if not candidate.exists():
+        return None, None
+    resolved = (
+        candidate.parent.resolve() / candidate.name
+        if preserve_executable_entrypoint
+        else candidate.resolve()
+    )
     try:
-        return str(candidate.resolve().relative_to(model_dir.resolve())) if candidate.exists() else None
+        return str(resolved.relative_to(model_dir.resolve())), "model_relative"
     except ValueError:
-        return None
+        return str(resolved), "site_runtime"
 
 
 def load_config(model_dir: Path) -> dict[str, Any]:
@@ -93,15 +105,54 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
     readiness = package.get("readiness") if isinstance(package.get("readiness"), dict) else {}
     hashes, bundle_identity = core_identity(model_dir)
 
-    local_python = relative_existing(build_env.get("python_executable"), model_dir)
-    lockfile = relative_existing(build_env.get("lockfile_path"), model_dir)
+    local_python, python_scope = runtime_path(
+        build_env.get("python_executable"),
+        model_dir,
+        preserve_executable_entrypoint=True,
+    )
+    lockfile, lockfile_scope = runtime_path(build_env.get("lockfile_path"), model_dir)
+    runtime_checks = build_env.get("runtime_checks") if isinstance(build_env.get("runtime_checks"), dict) else {}
+    server = config.get("server") if isinstance(config.get("server"), dict) else {}
+    server_command = normalize_command(server.get("command"))
+    if local_python:
+        if not server_command:
+            server_command = [local_python, "server.py"]
+        elif server_command[0] in {"python", "python3"} or server_command[0].startswith((".venv/", ".pixi/")):
+            server_command[0] = local_python
+    tool_names = [
+        str(tool["name"])
+        for tool in config.get("tools", [])
+        if isinstance(tool, dict) and isinstance(tool.get("name"), str)
+    ]
+    python_ready = bool(
+        deployment_type == "local"
+        and profile == "none"
+        and readiness.get("local_ready") is True
+        and build_env.get("backend") in {"uv", "pip", "conda", "pixi"}
+        and local_python
+        and lockfile
+        and server_command
+        and tool_names
+    )
     local_runtime = {
-        "purpose": "onboard_validation_evidence_only",
-        "eligible_for_eval": False,
+        "purpose": "eval_runtime" if python_ready else "onboard_validation_evidence_only",
+        "eligible_for_eval": python_ready,
         "backend": build_env.get("backend"),
         "python_executable": local_python,
+        "path_scope": python_scope,
         "python_version": build_env.get("python_version"),
         "lockfiles": [lockfile] if lockfile else [],
+        "lockfile_scopes": {lockfile: lockfile_scope} if lockfile and lockfile_scope else {},
+        "lockfile_sha256": {lockfile: sha256_file(Path(lockfile) if Path(lockfile).is_absolute() else model_dir / lockfile)}
+        if lockfile
+        else {},
+        "working_dir": ".",
+        "server_command": server_command,
+        "tool_names": tool_names,
+        "required_imports": [str(item) for item in runtime_checks.get("required_imports", []) if isinstance(item, str)],
+        "gpu_required": bool((config.get("resources") or {}).get("gpu", True))
+        if isinstance(config.get("resources"), dict)
+        else True,
     }
 
     if deployment_type == "api":
@@ -138,10 +189,9 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
             "materialization": validated_harness_runtime.get("materialization"),
             "checks": validated_harness_runtime.get("checks"),
         }
-        server = config.get("server") if isinstance(config.get("server"), dict) else {}
-        server_command = normalize_command(runtime.get("server_command")) or normalize_command(server.get("command"))
-        if server_command and server_command[0].startswith(".venv/"):
-            server_command[0] = str(runtime.get("python_executable") or "python")
+        container_server_command = normalize_command(runtime.get("server_command")) or normalize_command(server.get("command"))
+        if container_server_command and container_server_command[0].startswith((".venv/", ".pixi/")):
+            container_server_command[0] = str(runtime.get("python_executable") or "python")
         container_runtime = {
             "required": True,
             "base_image": build.get("base_image"),
@@ -151,12 +201,8 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
             "dockerfile": {"path": str(build.get("dockerfile_path") or "Dockerfile"), "sha256": build["dockerfile_sha256"]},
             "python_executable": model_runtime["python_executable"],
             "working_dir": runtime.get("working_dir") or "/workspace/model",
-            "server_command": server_command or ["python", "server.py"],
-            "tool_names": [
-                str(tool["name"])
-                for tool in config.get("tools", [])
-                if isinstance(tool, dict) and isinstance(tool.get("name"), str)
-            ],
+            "server_command": container_server_command or ["python", "server.py"],
+            "tool_names": tool_names,
             "gpu_required": bool((config.get("resources") or {}).get("gpu", True))
             if isinstance(config.get("resources"), dict)
             else True,
@@ -168,6 +214,18 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
         }
         status = "ready"
         eval_runtime = "container_only"
+    elif python_ready:
+        status = "ready"
+        container_runtime = {"required": False}
+        model_runtime = {
+            "required": True,
+            "runtime_type": "model_python",
+            "python_executable": local_python,
+            "python_version": build_env.get("python_version"),
+            "checks": build_env.get("runtime_probe") if isinstance(build_env.get("runtime_probe"), dict) else {},
+        }
+        harness_runtime = {"required": False, "runtime_type": "harness_python"}
+        eval_runtime = "python_only"
     else:
         status = "local_only" if readiness.get("local_ready") is True else "partial"
         container_runtime = {"required": profile != "none"}
@@ -200,9 +258,9 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
         "readiness": readiness,
         "evidence": {
             "package_gate": "artifacts/package_gate.json",
-            "docker_build": "artifacts/docker_build_result.json" if deployment_type == "local" else None,
-            "docker_validation": "artifacts/docker_validation.json" if deployment_type == "local" else None,
-            "docker_registry": "artifacts/docker_registry_result.json" if deployment_type == "local" else None,
+            "docker_build": "artifacts/docker_build_result.json" if profile in {"docker-local", "docker-registry"} else None,
+            "docker_validation": "artifacts/docker_validation.json" if profile in {"docker-local", "docker-registry"} else None,
+            "docker_registry": "artifacts/docker_registry_result.json" if profile == "docker-registry" else None,
             "core_sha256": hashes,
         },
         "policy": {

@@ -6,7 +6,7 @@
   "model_name": "",
   "status": "pending",
   "package": {
-    "profile": "docker-registry"
+    "profile": "none"
   },
   "readiness": {
     "local_ready": false,

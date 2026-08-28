@@ -39,6 +39,13 @@
 					"uniqueItems": true,
 					"items": { "enum": ["local", "vc"] }
 				},
+				"local_runtimes": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": { "enum": ["container", "python"] },
+					"default": ["container"]
+				},
 				"vc_partitions": {
 					"type": "array",
 					"minItems": 1,

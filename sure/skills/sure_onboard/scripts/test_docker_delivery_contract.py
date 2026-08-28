@@ -223,6 +223,69 @@ class DockerDeliveryContractTests(unittest.TestCase):
         proc = self.run_script("check_finalized_bundle.py", output)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
+    def test_python_finalizer_needs_no_docker_artifacts(self) -> None:
+        self.resolved["package_profile"] = "none"
+        write_json(self.run_artifacts / "model_input_resolved.json", self.resolved)
+        for name in ("docker_build_result.json", "docker_validation.json"):
+            (self.run_artifacts / name).unlink()
+        write_json(
+            self.run_artifacts / "docker_registry_result.json",
+            {
+                "schema": "sure.onboard.docker_registry_result.v2",
+                "status": "skipped",
+                "reason": "package=none uses the approved Python runtime",
+            },
+        )
+        package = {
+            "schema": "sure.onboard.package_gate.v2",
+            "status": "passed",
+            "package_profile": "none",
+            "readiness": {
+                "local_ready": True,
+                "container_ready": False,
+                "docker_ready": False,
+                "registry_ready": False,
+                "bundle_ready": False,
+            },
+        }
+        inventory = {
+            "schema": "sure.onboard.runtime_inventory.v2",
+            "status": "ready",
+            "model": {"name": "demo__asr", "deployment_type": "local", "bundle_root": "."},
+            "local_runtime": {"purpose": "eval_runtime", "eligible_for_eval": True},
+            "container_runtime": {"required": False},
+            "policy": {
+                "eval_runtime": "python_only",
+                "host_python_fallback": False,
+                "image_override_allowed": False,
+                "nfs_models_mutable_by_eval": False,
+            },
+        }
+        manifest = {
+            "model_dir": str(self.model_dir),
+            "artifacts": {"required": {"model": {"path": "model.py"}}, "conditional": {}, "optional": {}},
+        }
+        for name, value in (
+            ("package_gate.json", package),
+            ("runtime_inventory.json", inventory),
+            ("verdict.json", {"status": "passed"}),
+        ):
+            write_json(self.run_artifacts / name, value)
+        write_json(self.model_artifacts / "artifact_manifest.json", manifest)
+
+        output = self.run_artifacts / "deployment_ready.json"
+        deployment = finalize(self.run_dir, output)
+
+        self.assertEqual(deployment["status"], "ready")
+        self.assertEqual(deployment["execution_policy"]["eval_runtime"], "python")
+        self.assertFalse(any("docker" in name for name in deployment["required_artifact_sha256"]))
+        for name in ("docker_build_result.json", "docker_validation.json", "docker_registry_result.json"):
+            self.assertFalse((self.model_artifacts / name).exists())
+        required = read_json(self.model_artifacts / "artifact_manifest.json")["artifacts"]["required"]
+        self.assertFalse(any("docker" in name for name in required))
+        proc = self.run_script("check_finalized_bundle.py", output)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
     def test_container_gate_rejects_harness_model_alias(self) -> None:
         self.validation["harness_runtime"]["python_executable"] = "python"
         write_json(self.run_artifacts / "docker_validation.json", self.validation)

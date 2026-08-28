@@ -157,6 +157,7 @@ function seedCompletedEvaluationArtifacts(runDir: string): string {
 			"  env: {}",
 			"  runtime_inventory:",
 			"    schema: sure.onboard.runtime_inventory.v2",
+			"    execution_mode: container_only",
 			"  mount_policy:",
 			"    nfs_models_read_only: true",
 			"inference_constraints: {}",

@@ -79,7 +79,7 @@
 		},
 		"execution_path_actual": {
 			"type": "string",
-			"description": "Actual execution path used: vc_submit | local_bash | local_docker."
+			"description": "Actual execution path used: vc_submit | local_bash | local_python | local_docker."
 		},
 		"execution_path_requested": {
 			"type": "string",

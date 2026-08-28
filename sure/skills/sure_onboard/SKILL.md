@@ -1,15 +1,15 @@
 ---
 name: sure-onboard
-description: Adapt an audio model, validate it locally and in Docker, publish a digest-pinned image, and seal a container-only deployment bundle for SURE Eval.
+description: Adapt and validate an audio model, then seal an approved Python runtime or digest-pinned container for SURE Eval.
 ---
 
 # /sure_onboard
 
-Onboard or repair an audio model into a reproducible, container-delivered inference unit. The state machine lives in `hooks/state-machine.ts`; this document is what the agent reads to drive each unit.
+Onboard or repair an audio model into a reproducible inference unit. The state machine lives in `hooks/state-machine.ts`; this document is what the agent reads to drive each unit.
 
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
 
-Control principle: **agent decides scope, scripts enforce format and execution.** Local validation may use a model-local environment, but a local model is Eval-ready only after Docker build, container validation, registry push, digest-pinned pull verification, and final bundle sealing. API models are the only exception.
+Control principle: **agent decides scope, scripts enforce format and execution.** A local model is Eval-ready after one selected runtime is validated and sealed: `package=none` publishes an explicit locked Python runtime, while `package=docker-registry` publishes a digest-pinned container. Python readiness is never inferred from the current shell or base Python.
 
 ## Parameters
 
@@ -25,7 +25,7 @@ Control principle: **agent decides scope, scripts enforce format and execution.*
 | `preferred_backend` | — | `uv \| pip \| conda \| pixi \| docker \| api` (overrides auto-selection). |
 | `python_version` | — | Pin a Python version. |
 | `weights_source` | — | Weights URL / local path. |
-| `package` | — | Local models default to and require `docker-registry` for success. `none` is API/local-diagnostic only; `docker-local` cannot produce an Eval-ready local bundle. |
+| `package` | — | Defaults to `none` when the site permits local Python, otherwise `docker-registry`. `none` requires a validated `uv`, `pip`, `conda`, or `pixi` runtime; `docker-registry` requires immutable registry delivery; `docker-local` is diagnostic-only. |
 | `package_profile` | — | Alias for `package`; use only one. |
 | `weights_link_policy` | — | `auto` (default), `copy`, `symlink`, `reuse-existing`, or `no-reuse`. |
 | `skip_download` | — | bool — use existing local weights only. |
@@ -65,8 +65,10 @@ Recommended first command after start, when a `MODEL_INPUT` path is available:
   --model-input-path sure/handoffs/<model>/model_input.yaml \
   --run-dir <run_dir> \
   --repo-root <repo_root> \
-  --package-profile docker-registry
+  --package-profile <resolved_package_profile>
 ```
+
+Use the package profile reported by the `pre_start` hook; do not replace a resolved `docker-registry` profile with `none`.
 
 This helper emits only `model_input_resolved.json` and `context_selection.json`. It deliberately does **not** emit `backend_choice.json` or `build_plan.json`; those must remain agent-research-first outputs based on repository evidence and documented import/load/inference paths.
 
@@ -146,11 +148,11 @@ Isolation rule: `sure/models/<model_name>/` itself must be a real harness-owned 
 
 Advance happens **only** when the current unit's `produces` is compliant. Linear units are agent self-driven; gate units additionally run a Python semantic check. Produce the current unit's artifact, then call `sure_update_state`.
 
-Default target for local models is **registry-backed container-ready**:
+The selected package profile defines the only Eval runtime published by the bundle:
 
-- `package=docker-registry`: required for local-model success; build, validate, push, resolve the immutable digest, and pull-verify that exact digest.
+- `package=none`: the default when `execution.local_runtimes` permits `python`; validate and seal the explicit Model Python, lockfile hashes, server command, and tool names. It can produce a successful local verdict without Docker.
+- `package=docker-registry`: build, validate, push, resolve the immutable digest, and pull-verify that exact digest.
 - `package=docker-local`: diagnostic only; it may prove a local image but cannot produce an Eval-ready bundle.
-- `package=none`: accepted for API deployments and explicit local diagnostics only; it cannot produce a successful local verdict.
 
 VC/HPC submission is not part of this core skill. If needed later, implement it as a separate deployment skill/command.
 
@@ -197,11 +199,11 @@ VC/HPC submission is not part of this core skill. If needed later, implement it 
 - **generate_wrapper**: Output = `wrapper_manifest.json` {wrapper_path, model_py, server_py, ...}. The wrapper set lands in `sure/models/<model_name>/` (model.py, server.py, __init__.py, validate.py). Generated `validate.py` must preserve the template CLI: `--stage import|load|infer|contract|all`, write `artifacts/<stage>_result.json`, write `artifacts/sample_output.json` during infer, and validate contract from `io_contract`. Templates live in `scripts/templates/`. `config.yaml` may enable `protocols.strict_core` only when every conservative parameter (`temperature`, `do_sample`, `num_beams`, `num_return_sequences`, `seed`) maps to a property declared by the selected MCP tool `input_schema`, or is explicitly marked `model_param: null`, `status: not_applicable` with an architecture-specific reason. Omit/disable `strict_core` when that proof is unavailable; `/sure_eval` will still use `standard_system` by default.
 - **metric enrichment reference**: Metric reports are optional enrichment, not a deployment gate. Reuse existing `sample_output.json` / generated audio whenever possible; do not rerun inference only to repair metric semantics.
 - **validate_import/load/infer/contract**: Output = `{*_passed, error, run_command|validate_py, log_path, ...}`. The gate executes `run_command` or `validate_py`; a boolean alone is not accepted. `validate_infer` is additionally Hook-guarded: `fixture_manifest.json` must exist, point to `model_dir/fixture/<task>/.../gt.jsonl`, and declare 1-5 samples before inference can run. `validate_infer` must also leave a non-empty `sample_output.json` under the run or model artifacts directory. `validate_contract` re-reads that sample output and checks it against `MODEL_INPUT.io_contract` (`required_fields`, `nonempty_fields`, `primary_field`, and audio-output evidence).
-- **package_container**: First run `"$HARNESS_PYTHON_BIN" scripts/describe_harness_runtime.py`. Add its exact named build context and `COPY --from=sure_harness_runtime` line to the model Docker build. Output `docker_registry_result.json` plus `docker_build_result.json` and `docker_validation.json`. For local models, evidence must name one target image, its registry digest, the resulting `<image>@sha256:...` reference, the Dockerfile/sample hashes, distinct `model_runtime` and `harness_runtime` bindings, both groups of passing checks, and passing push/pull verification. The gate independently executes both Python roles in the digest-pinned image.
-- **save_artifacts**: Output = `artifact_manifest.json` {model_dir, artifacts.{required,conditional,optional}}. Gate checks model-local files exist and stages the Docker evidence; it does not create runtime readiness.
-- **package_gate**: Output schema v2 = `package_gate.json` {status, package_profile, readiness, bundle_ready, model_dir, artifact_manifest_path}. A local `passed` result requires `docker-registry`, all local validations, and exact Docker tag/digest/ref agreement. `none` and `docker-local` stay non-Eval-ready.
-- **write_runtime_inventory**: Output schema v2 = `runtime_inventory.json`. Local models explicitly separate `model_runtime` and the common `harness_runtime`, and expose only `execution_mode=container_only`, the digest-pinned image, server command/tool names, and read-only model/write-separated result mount policy. Host Model Python is evidence only and is never an Eval fallback.
-- **verdict**: Output = `verdict.json` {status, instance_id, package, readiness, build, validation, artifacts}. A local success requires `package_profile=docker-registry` and `bundle_ready=true`; local-only profiles must remain `partial` or failed.
+- **package_container**: For `package=none`, emit `docker_registry_result.json` with `status=skipped` and a reason; do not call Docker or create Docker sidecars. For a Docker profile, first run `"$HARNESS_PYTHON_BIN" scripts/describe_harness_runtime.py`, then build and validate the image. `docker-registry` additionally requires push, digest resolution, and pull verification.
+- **save_artifacts**: Output = `artifact_manifest.json` {model_dir, artifacts.{required,conditional,optional}}. Gate checks model-local files exist and stages only evidence relevant to the selected package profile; it does not create runtime readiness.
+- **package_gate**: Output schema v2 = `package_gate.json` {status, package_profile, readiness, bundle_ready, model_dir, artifact_manifest_path}. `none` requires passing local validation with `local_ready=true`; `docker-registry` additionally requires exact Docker tag/digest/ref agreement and all container/registry readiness fields. `docker-local` stays non-Eval-ready.
+- **write_runtime_inventory**: Output schema v2 = `runtime_inventory.json`. `package=none` binds one approved `uv`, `pip`, `conda`, or `pixi` Model Python plus lock hashes and launch metadata. `docker-registry` binds one digest-pinned container. Neither path may fall back to an unrecorded interpreter or mutate the approved model bundle.
+- **verdict**: Output = `verdict.json` {status, instance_id, package, readiness, build, validation, artifacts}. `package=none` or `docker-registry` may succeed when its own gates pass; `docker-local` must remain `partial` or failed.
 - **finalize_model_bundle**: Copies terminal evidence to the model directory, rewrites manifest/package paths to be portable, verifies hashes, and atomically writes `deployment_ready.json`. This file is the only terminal readiness marker consumed by `/sure_eval`.
 
 ## Backend Routing Rules (Phase 1)
@@ -209,11 +211,11 @@ VC/HPC submission is not part of this core skill. If needed later, implement it 
 Rule-based backend selection (record the reason in `backend_choice.json`):
 
 1. API-only model → `api`.
-2. Repo has Dockerfile + complex deps → `docker`.
+2. Repo has Dockerfile + complex deps and `package=docker-registry` → `docker`.
 3. Repo has `environment.yml` / conda signals → `pixi` (or `conda`).
 4. Repo has only `pyproject.toml` / `requirements.txt`, pure Python → `uv`.
-5. CUDA compilation / custom C++ / k2 / complex submodules → `docker` first.
-6. High host-pollution risk → `docker` first.
+5. CUDA compilation / custom C++ / k2 / complex submodules → use `docker` with `package=docker-registry`, or stop early if the user selected `package=none`.
+6. High host-pollution risk → prefer `conda`/`pixi` for `package=none`, or use `docker-registry`.
 
 ## Model-Local Checkpoint Rule
 
@@ -233,11 +235,11 @@ sure/models/<model_name>/
 │   ├── build_plan.json
 │   ├── validation.log
 │   ├── sample_output.json
-│   ├── docker_build_result.json / docker_validation.json
-│   ├── docker_registry_result.json
+│   ├── docker_build_result.json / docker_validation.json    # container package only
+│   ├── docker_registry_result.json                          # container package only
 │   ├── package_gate.json / verdict.json
 │   ├── artifact_manifest.json
-│   ├── runtime_inventory.json                     # container-only Eval binding
+│   ├── runtime_inventory.json                     # approved Python or container binding
 │   └── deployment_ready.json                      # terminal immutable readiness marker
 ├── fixture/<task>/                                      # test audio + gt.jsonl (2–3 samples, max 5)
 ├── .runtime/ checkpoints/                               # weights convergence
@@ -246,7 +248,7 @@ sure/models/<model_name>/
 
 ## Backend
 
-The deterministic backend is bundled in `scripts/`. Gate scripts validate each unit. `stage_model_artifacts.py` stages existing run evidence; `write_runtime_inventory.py` writes runtime provenance only after the package gate; `finalize_model_bundle.py` seals the portable bundle. No helper may infer an Eval runtime from `.venv`, host Python, a Dockerfile, or an image name alone.
+The deterministic backend is bundled in `scripts/`. Gate scripts validate each unit. `stage_model_artifacts.py` stages existing run evidence; `write_runtime_inventory.py` writes runtime provenance only after the package gate; `finalize_model_bundle.py` seals the portable bundle. No helper may infer an Eval runtime from the presence of `.venv`, host Python, a Dockerfile, or an image name alone.
 
 ```bash
 "$HARNESS_PYTHON_BIN" scripts/<script>.py <args>   # cwd = skill package dir
@@ -260,4 +262,4 @@ If the same hook/gate blocks three consecutive attempts, stop and ask the user t
 
 ## Success Criteria
 
-The `pre_finish` hook enforces that the state machine reached `finalize_model_bundle` and that `deployment_ready.json` passes its hash, portability, package, and execution-policy checks. A local model cannot finish successfully without immutable registry evidence.
+The `pre_finish` hook enforces that the state machine reached `finalize_model_bundle` and that `deployment_ready.json` passes its hash, portability, package, and execution-policy checks. A local model must finish with either an explicitly approved Python identity or immutable registry evidence.

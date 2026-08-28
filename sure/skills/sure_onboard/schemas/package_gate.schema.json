@@ -2,7 +2,7 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "package_gate.schema.json",
 	"title": "SURE onboard package gate v2",
-	"description": "Cross-checks local validation and Docker delivery readiness. Local Eval-ready bundles require docker-registry.",
+	"description": "Cross-checks local validation and the selected Python or container delivery readiness.",
 	"type": "object",
 	"required": ["schema", "status", "package_profile", "readiness", "model_dir"],
 	"properties": {

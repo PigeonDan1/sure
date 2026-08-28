@@ -1618,6 +1618,18 @@ def _write_protocol_yaml(
         },
         "inference_environment": {
             "execution_path": os.environ.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
+            "model_runtime": {
+                "kind": "python" if inventory_policy.get("eval_runtime") == "python_only" else "container",
+                "backend": inventory_local.get("backend"),
+                "python_executable": (
+                    os.environ.get("MODEL_PYTHON")
+                    if inventory_policy.get("eval_runtime") == "python_only"
+                    else inventory_container.get("python_executable")
+                ),
+                "python_version": inventory_local.get("python_version"),
+                "working_dir": server_working_dir,
+                "lockfile_sha256": inventory_local.get("lockfile_sha256"),
+            },
             "vc": {
                 "job_id": os.environ.get("SURE_EVAL_EXECUTION_JOB_ID") or os.environ.get("VC_JOB_ID"),
                 "partition": os.environ.get("SURE_EVAL_VC_PARTITION") or os.environ.get("VC_PARTITION"),
@@ -1685,8 +1697,16 @@ def _write_protocol_yaml(
                     if path is not None
                 ],
                 "reject_repo_internal_runtime_mount_overlays": True,
-                "nfs_models_read_only": _nested_dict(inventory_container, "mount_policy").get("nfs_models_read_only"),
-                "result_workspace": _nested_dict(_nested_dict(inventory_container, "mount_policy"), "result_workspace"),
+                "nfs_models_read_only": (
+                    _nested_dict(inventory_container, "mount_policy").get("nfs_models_read_only")
+                    if inventory_policy.get("eval_runtime") == "container_only"
+                    else inventory_policy.get("nfs_models_mutable_by_eval") is False
+                ),
+                "result_workspace": (
+                    _nested_dict(_nested_dict(inventory_container, "mount_policy"), "result_workspace")
+                    if inventory_policy.get("eval_runtime") == "container_only"
+                    else {"target": str(results_dir), "read_only": False}
+                ),
             },
         },
         "inference_constraints": {

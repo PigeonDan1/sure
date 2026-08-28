@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,9 +30,11 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
             },
         )
         live.start()
+        self.live_probe_patch = live
         self.addCleanup(live.stop)
         self.approved = {
             "schema": "sure.eval.deployment_binding.v1",
+            "runtime_kind": "container",
             "target_image_ref": IMAGE_REF,
             "container": {"tool_names": ["transcribe_audio"]},
             "policy": {"execution_mode": "container_only", "host_python_fallback": False},
@@ -79,6 +82,7 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
             "execution": {"requested": "local", "path_planned": "local_docker"},
             "deployment_binding": {
                 "schema": "sure.eval.deployment_binding.v1",
+                "runtime_kind": "container",
                 "target_image_ref": IMAGE_REF,
                 "bundle_identity_sha256": "b" * 64,
                 "execution_mode": "container_only",
@@ -113,6 +117,7 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
     def test_image_mismatch_is_rejected(self) -> None:
         declared = {
             "schema": "sure.eval.deployment_binding.v1",
+            "runtime_kind": "container",
             "target_image_ref": "registry.example.com/sure/other@sha256:" + "c" * 64,
             "bundle_identity_sha256": "b" * 64,
             "execution_mode": "container_only",
@@ -150,6 +155,26 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
         )
         self.assertFalse(result["passed"])
         self.assertIn("separate execution roles", result["evidence"])
+
+    def test_python_runtime_probe_uses_model_interpreter_without_docker(self) -> None:
+        self.live_probe_patch.stop()
+        result = checks._live_runtime_probe(
+            {
+                "runtime_kind": "python",
+                "model_dir": self.temp.name,
+                "python": {
+                    "backend": "pip",
+                    "python_executable": sys.executable,
+                    "working_dir": self.temp.name,
+                    "required_imports": ["json"],
+                },
+            },
+            {"python_executable": str(self.harness_python)},
+        )
+
+        self.assertTrue(result["passed"], result["evidence"])
+        self.assertEqual(result["model_python"], sys.executable)
+        self.assertEqual(result["required_imports"], ["json"])
 
 
 if __name__ == "__main__":

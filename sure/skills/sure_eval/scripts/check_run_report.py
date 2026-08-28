@@ -175,16 +175,28 @@ def _validate_protocol(root: Path) -> list[str]:
         errors.append("protocol.yaml inference_parameters.argument_policy is required for generated predictions")
     provenance = protocol.get("provenance") if isinstance(protocol.get("provenance"), dict) else {}
     inference_environment = protocol.get("inference_environment") if isinstance(protocol.get("inference_environment"), dict) else {}
+    model_runtime = inference_environment.get("model_runtime") if isinstance(inference_environment.get("model_runtime"), dict) else {}
     container = inference_environment.get("container") if isinstance(inference_environment.get("container"), dict) else {}
     runtime_inventory = inference_environment.get("runtime_inventory") if isinstance(inference_environment.get("runtime_inventory"), dict) else {}
     harness_runtime = inference_environment.get("harness_runtime") if isinstance(inference_environment.get("harness_runtime"), dict) else {}
     mount_policy = inference_environment.get("mount_policy") if isinstance(inference_environment.get("mount_policy"), dict) else {}
-    if "@sha256:" not in str(container.get("image_ref") or ""):
-        errors.append("protocol.yaml container.image_ref must be digest-pinned")
-    if container.get("execution_mode") != "container_only":
-        errors.append("protocol.yaml container.execution_mode must be container_only")
-    if container.get("host_python_fallback") is not False:
-        errors.append("protocol.yaml must disable container host_python_fallback")
+    runtime_mode = runtime_inventory.get("execution_mode")
+    if runtime_mode == "container_only":
+        if model_runtime.get("kind") not in {None, "container"}:
+            errors.append("protocol.yaml model_runtime.kind must be container")
+        if "@sha256:" not in str(container.get("image_ref") or ""):
+            errors.append("protocol.yaml container.image_ref must be digest-pinned")
+        if container.get("execution_mode") != "container_only":
+            errors.append("protocol.yaml container.execution_mode must be container_only")
+        if container.get("host_python_fallback") is not False:
+            errors.append("protocol.yaml must disable container host_python_fallback")
+    elif runtime_mode == "python_only":
+        if model_runtime.get("kind") != "python" or not model_runtime.get("python_executable"):
+            errors.append("protocol.yaml must record the approved Python Model Runtime")
+        if not model_runtime.get("lockfile_sha256"):
+            errors.append("protocol.yaml Python Model Runtime must record lockfile hashes")
+    else:
+        errors.append("protocol.yaml runtime_inventory.execution_mode must be python_only or container_only")
     if runtime_inventory.get("schema") != "sure.onboard.runtime_inventory.v2":
         errors.append("protocol.yaml must record runtime_inventory schema v2")
     if not prediction_reuse.get("enabled"):
@@ -412,7 +424,7 @@ def _execution_requested(data: dict[str, Any], run_dir: Path, report_path: Path)
                 return value
             if value == "vc_submit":
                 return "vc"
-            if value in {"local_bash", "local_docker"}:
+            if value in {"local_bash", "local_python", "local_docker"}:
                 return "local"
 
     eval_input = _read_optional_json(run_dir / "artifacts" / "eval_input_resolved.json")
@@ -424,7 +436,7 @@ def _execution_requested(data: dict[str, Any], run_dir: Path, report_path: Path)
     execution_path_declared = str(data.get("execution_path_declared") or "")
     if execution_path_declared == "vc_submit":
         return "vc"
-    if execution_path_declared in {"local_bash", "local_docker"}:
+    if execution_path_declared in {"local_bash", "local_python", "local_docker"}:
         return "local"
     return "auto"
 
@@ -513,6 +525,10 @@ def _validate_failed_execution_report(run_dir: Path, report_path: Path, data: di
 
 
 def _submitted_image_error(execution_path: str, submit_result: dict, approved: dict) -> str | None:
+    if approved.get("runtime_kind") == "python":
+        if execution_path != "local_python" or submit_result.get("runtime_kind") != "python":
+            return "local Python execution differs from approved runtime identity"
+        return None
     approved_ref = str(approved.get("target_image_ref") or "")
     if execution_path != "vc_submit":
         actual_ref = ((submit_result.get("container_binding") or {}).get("image_ref")) or submit_result.get("vc_image")
@@ -564,7 +580,7 @@ def main() -> int:
     if not execution_path_actual:
         print(
             "RUN_REPORT_UNIT gate: execution_path_actual must be declared "
-            "(vc_submit / local_bash / local_docker).",
+            "(vc_submit / local_bash / local_python / local_docker).",
             file=sys.stderr,
         )
         return 1
@@ -579,7 +595,7 @@ def main() -> int:
         fallback_reason = data.get("local_fallback_reason") or submit_result.get("local_fallback_reason", "")
         if execution_path_actual == "local_bash" and not evaluation_only and not failed_pre_submit:
             print(
-                "RUN_REPORT_UNIT gate: formal model inference cannot use local_bash; expected local_docker.",
+                "RUN_REPORT_UNIT gate: formal model inference cannot use local_bash; expected local_python or local_docker.",
                 file=sys.stderr,
             )
             return 1

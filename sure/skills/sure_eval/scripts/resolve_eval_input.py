@@ -359,6 +359,8 @@ def _normalize_execution(
     execution: str | None,
     execution_path: str | None,
     allowed_surfaces: list[str] | None = None,
+    runtime_kind: str = "container",
+    allowed_local_runtimes: list[str] | None = None,
 ) -> dict[str, Any]:
     requested_raw = (execution or "").strip().lower()
     path_raw = (execution_path or "").strip().lower()
@@ -366,6 +368,7 @@ def _normalize_execution(
         "vc_submit": "vc",
         "local_bash": "local",
         "local_docker": "local",
+        "local_python": "local",
         "auto": "auto",
     }
     if not requested_raw:
@@ -377,6 +380,7 @@ def _normalize_execution(
         "local": "local",
         "local_bash": "local",
         "local_docker": "local",
+        "local_python": "local",
         "bash": "local",
         "auto": "auto",
     }
@@ -391,31 +395,47 @@ def _normalize_execution(
                 "Use execution=auto|local|vc, or the matching legacy execution_path."
             )
 
+    if requested == "vc" and runtime_kind != "container":
+        raise ValueError("execution=vc requires an approved container runtime")
+    local_path = "local_python" if runtime_kind == "python" else "local_docker"
     if path_raw and path_raw != "auto":
-        planned_path = "local_docker" if path_raw == "local_bash" else path_raw
+        planned_path = local_path if path_raw == "local_bash" else path_raw
+        if planned_path.startswith("local_") and planned_path != local_path:
+            raise ValueError(
+                f"execution_path={planned_path} conflicts with approved runtime={runtime_kind}; expected {local_path}"
+            )
     elif requested == "vc":
         planned_path = "vc_submit"
     elif requested == "local":
-        planned_path = "local_docker"
+        planned_path = local_path
     else:
         planned_path = "auto"
-    if planned_path not in {"auto", "vc_submit", "local_bash", "local_docker"}:
-        raise ValueError(f"Unsupported execution_path: {execution_path}. Use auto, vc_submit, local_bash, or local_docker.")
+    if planned_path not in {"auto", "vc_submit", "local_bash", "local_docker", "local_python"}:
+        raise ValueError(
+            f"Unsupported execution_path: {execution_path}. Use auto, vc_submit, local_python, or local_docker."
+        )
 
     available = _vc_available()
+    allowed = set(allowed_surfaces or ("local", "vc"))
+    local_runtime_allowed = runtime_kind in set(allowed_local_runtimes or ("container",))
     if planned_path == "auto":
-        allowed = set(allowed_surfaces or ("local", "vc"))
-        if available and "vc" in allowed:
+        if runtime_kind == "container" and available and "vc" in allowed:
             planned_path = "vc_submit"
-        elif "local" in allowed:
-            planned_path = "local_docker"
-        elif "vc" in allowed:
+        elif "local" in allowed and local_runtime_allowed:
+            planned_path = local_path
+        elif runtime_kind == "container" and "vc" in allowed:
             planned_path = "vc_submit"
         else:
-            raise ValueError("site policy enables no supported execution surface")
+            raise ValueError(
+                f"site policy enables no execution surface for the approved {runtime_kind} runtime"
+            )
     planned = "vc" if planned_path == "vc_submit" else "local"
     if allowed_surfaces is not None and planned not in set(allowed_surfaces):
         raise ValueError(f'execution surface "{planned}" is not enabled by the active site policy')
+    if planned == "local" and not local_runtime_allowed:
+        raise ValueError(
+            f'local runtime "{runtime_kind}" is not enabled by execution.local_runtimes'
+        )
     reason = (
         "user_requested_vc"
         if requested == "vc"
@@ -677,6 +697,15 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             f"{model.get('approved_models_root')}"
         )
     model_dir = Path(str(model["model_dir"]))
+    deployment_binding = model.get("deployment_binding") or {}
+    approved_runtime = str(deployment_binding.get("runtime_kind") or "container")
+    requested_runtime = str(getattr(args, "runtime", None) or "auto")
+    selected_runtime = approved_runtime if requested_runtime == "auto" else requested_runtime
+    if selected_runtime != approved_runtime:
+        raise EvalInputError(
+            f"runtime={requested_runtime} is not available in the approved model binding; "
+            f"approved runtime is {approved_runtime}"
+        )
     image_harness = ((model.get("deployment_binding") or {}).get("container") or {}).get("harness_runtime")
     if isinstance(image_harness, dict):
         if image_harness.get("runtime_id") != harness_runtime.get("runtime_id"):
@@ -709,7 +738,14 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     languages = _dedupe([str(item.get("language") or "") for item in datasets if item.get("language")])
     metric_list = _dedupe([metric for item in datasets for metric in item.get("default_metrics", [])])
     allowed_surfaces = list(active_site_policy["policy"]["execution"]["surfaces"])
-    execution = _normalize_execution(args.execution, args.execution_path, allowed_surfaces)
+    allowed_local_runtimes = list(active_site_policy["policy"]["execution"]["local_runtimes"])
+    execution = _normalize_execution(
+        args.execution,
+        args.execution_path,
+        allowed_surfaces=allowed_surfaces,
+        runtime_kind=selected_runtime,
+        allowed_local_runtimes=allowed_local_runtimes,
+    )
     device = _resolve_device(args.device, execution)
     vc_request = _vc_request(args)
     approved_image = str((model.get("deployment_binding") or {}).get("target_image_ref") or "")
@@ -749,6 +785,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "device_resolved": device["resolved"],
             "execution": execution,
             "execution_path": execution["path_planned"],
+            "model_runtime": selected_runtime,
             "max_samples": args.max_samples,
             "deployment_binding": model["deployment_binding"],
             "harness_runtime": harness_runtime,
@@ -767,6 +804,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "max_samples": args.max_samples,
             "execution": execution["requested"],
             "execution_path": args.execution_path or "auto",
+            "runtime": requested_runtime,
             "user_goal": args.user_goal,
             "vc": vc_request,
         },
@@ -788,6 +826,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "device": device,
             "execution": execution,
             "execution_path": execution["path_planned"],
+            "model_runtime": selected_runtime,
             "vc": vc_request,
             "deployment_binding": model["deployment_binding"],
             "harness_runtime": harness_runtime,
@@ -823,7 +862,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--metrics", nargs="*", default=[])
     parser.add_argument("--max-samples", type=int, default=0)
     parser.add_argument("--execution", choices=("auto", "local", "vc"))
-    parser.add_argument("--execution-path", default="auto", choices=("local_bash", "local_docker", "vc_submit", "auto"))
+    parser.add_argument("--execution-path", default="auto", choices=("local_bash", "local_docker", "local_python", "vc_submit", "auto"))
+    parser.add_argument("--runtime", default="auto", choices=("auto", "python", "container"))
     parser.add_argument("--vc-partition", default="")
     parser.add_argument("--vc-cpu", type=int, default=0)
     parser.add_argument("--vc-mem", default="")

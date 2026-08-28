@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,7 @@ from unittest.mock import patch
 from container_execution import build_local_container_command
 from deployment_binding import DeploymentBindingError, load_deployment_binding
 from check_run_report import _submitted_image_error
+from python_execution import build_local_python_command
 from run_vc_execution import _approved_memory_gb, _job_name, _normalize_job_name, _write_entrypoint
 
 
@@ -214,10 +216,135 @@ class DeploymentBindingTests(unittest.TestCase):
             },
         )
 
+    def _write_python_bundle(self) -> Path:
+        model_python = self.model / ".venv" / "bin" / "python"
+        model_python.parent.mkdir(parents=True)
+        model_python.symlink_to(sys.executable)
+        lockfile = self.model / "requirements.lock"
+        lockfile.write_text("demo==1.0\n", encoding="utf-8")
+        write_json(
+            self.artifacts / "runtime_inventory.json",
+            {
+                "schema": "sure.onboard.runtime_inventory.v2",
+                "status": "ready",
+                "model": {"name": "demo"},
+                "local_runtime": {
+                    "purpose": "eval_runtime",
+                    "eligible_for_eval": True,
+                    "backend": "pip",
+                    "python_executable": ".venv/bin/python",
+                    "path_scope": "model_relative",
+                    "python_version": "3.11.5",
+                    "lockfiles": ["requirements.lock"],
+                    "lockfile_scopes": {"requirements.lock": "model_relative"},
+                    "lockfile_sha256": {"requirements.lock": sha256(lockfile)},
+                    "working_dir": ".",
+                    "server_command": [".venv/bin/python", "server.py"],
+                    "tool_names": ["transcribe_audio"],
+                    "required_imports": [],
+                    "gpu_required": False,
+                },
+                "container_runtime": {"required": False},
+                "policy": {
+                    "eval_runtime": "python_only",
+                    "host_python_fallback": False,
+                    "image_override_allowed": False,
+                    "nfs_models_mutable_by_eval": False,
+                },
+            },
+        )
+        write_json(
+            self.artifacts / "package_gate.json",
+            {
+                "schema": "sure.onboard.package_gate.v2",
+                "status": "passed",
+                "package_profile": "none",
+                "readiness": {
+                    "local_ready": True,
+                    "docker_ready": False,
+                    "registry_ready": False,
+                    "bundle_ready": False,
+                },
+            },
+        )
+        hashes = {
+            "artifacts/runtime_inventory.json": sha256(self.artifacts / "runtime_inventory.json"),
+            "artifacts/package_gate.json": sha256(self.artifacts / "package_gate.json"),
+        }
+        bundle_identity = hashlib.sha256(
+            json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        write_json(
+            self.artifacts / "deployment_ready.json",
+            {
+                "schema": "sure.onboard.deployment_ready.v1",
+                "status": "ready",
+                "model_name": "demo",
+                "package_profile": "none",
+                "bundle_identity_sha256": bundle_identity,
+                "required_artifact_sha256": hashes,
+                "execution_policy": {
+                    "container_only": False,
+                    "eval_runtime": "python",
+                    "nfs_models_read_only": True,
+                    "host_python_fallback": False,
+                    "approved_image_override": False,
+                },
+            },
+        )
+        return model_python
+
+    def _python_site_policy(self, *runtimes: str) -> dict:
+        return {
+            "policy": {
+                "storage": {"runtime_root": str(self.root / "runtime")},
+                "execution": {"local_runtimes": list(runtimes)},
+            }
+        }
+
     def test_loads_exact_digest_binding(self) -> None:
         binding = load_deployment_binding(self.model, "demo")
         self.assertEqual(binding["target_image_ref"], self.image_ref)
         self.assertTrue(binding["container"]["model_mount"]["read_only"])
+
+    def test_loads_python_binding_without_container_artifacts(self) -> None:
+        model_python = self._write_python_bundle()
+
+        with patch("deployment_binding.load_site_policy", return_value=self._python_site_policy("python", "container")):
+            binding = load_deployment_binding(self.model, "demo")
+
+        self.assertEqual(binding["runtime_kind"], "python")
+        self.assertEqual(binding["python"]["python_executable"], str(model_python))
+        self.assertNotIn("target_image_ref", binding)
+
+    def test_python_binding_requires_site_policy_opt_in(self) -> None:
+        self._write_python_bundle()
+
+        with patch("deployment_binding.load_site_policy", return_value=self._python_site_policy("container")):
+            with self.assertRaisesRegex(DeploymentBindingError, "execution.local_runtimes"):
+                load_deployment_binding(self.model, "demo")
+
+    def test_python_command_uses_approved_interpreter_without_docker(self) -> None:
+        model_python = self._write_python_bundle()
+        with patch("deployment_binding.load_site_policy", return_value=self._python_site_policy("python")):
+            binding = load_deployment_binding(self.model, "demo")
+        command, env, provenance = build_local_python_command(
+            surface={"env": {"TOOL_NAME": "transcribe_audio"}},
+            eval_input={
+                "model": {"deployment_binding": binding},
+                "runtime": {
+                    "run_dir": str(self.output),
+                    "harness_runtime": self._runtime_binding(),
+                },
+            },
+            entrypoint=self.entrypoint,
+            repo_root=Path(__file__).resolve().parents[4],
+        )
+
+        self.assertEqual(command, ["bash", str(self.entrypoint)])
+        self.assertEqual(env["MODEL_PYTHON"], str(model_python))
+        self.assertEqual(provenance["runtime_kind"], "python")
+        self.assertNotIn("docker", " ".join(command).lower())
 
     def test_hash_tamper_is_rejected(self) -> None:
         package = json.loads((self.artifacts / "package_gate.json").read_text())

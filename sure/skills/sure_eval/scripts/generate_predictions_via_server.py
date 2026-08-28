@@ -65,22 +65,42 @@ def _resolve_server_command(
     model_dir: Path,
     runtime_inventory: dict[str, Any],
 ) -> list[str]:
-    container = runtime_inventory.get("container_runtime")
     policy = runtime_inventory.get("policy")
     if runtime_inventory.get("schema") != "sure.onboard.runtime_inventory.v2":
         raise ValueError(f"approved model has unsupported runtime inventory: {model_dir}")
     if runtime_inventory.get("status") != "ready":
         raise ValueError("approved model runtime inventory is not ready")
-    if not isinstance(policy, dict) or policy.get("eval_runtime") != "container_only":
-        raise ValueError("approved model is not bound to container-only execution")
+    if not isinstance(policy, dict):
+        raise ValueError("approved model runtime policy is missing")
     if policy.get("host_python_fallback") is not False or policy.get("image_override_allowed") is not False:
         raise ValueError("approved model runtime policy permits a forbidden fallback or image override")
-    if not isinstance(container, dict):
+    runtime_kind = policy.get("eval_runtime")
+    if runtime_kind == "python_only":
+        runtime = runtime_inventory.get("local_runtime")
+        if not isinstance(runtime, dict) or runtime.get("eligible_for_eval") is not True:
+            raise ValueError("approved model Python runtime is missing")
+        command = runtime.get("server_command")
+        if not isinstance(command, list) or not all(isinstance(item, str) and item for item in command):
+            raise ValueError("approved model Python server_command is invalid")
+        python = Path(str(runtime.get("python_executable") or ""))
+        if runtime.get("path_scope") == "model_relative":
+            python = model_dir / python
+        python = Path(os.path.abspath(python))
+        if not python.is_file() or os.environ.get("MODEL_PYTHON") != str(python):
+            raise ValueError(
+                "inference Model Python does not match the approved runtime: "
+                f"expected={str(python)!r} actual={os.environ.get('MODEL_PYTHON', '')!r}"
+            )
+        return [str(python), *command[1:]]
+    if runtime_kind != "container_only":
+        raise ValueError(f"approved model has unsupported Eval runtime: {runtime_kind!r}")
+    runtime = runtime_inventory.get("container_runtime")
+    if not isinstance(runtime, dict):
         raise ValueError("approved model container runtime is missing")
-    command = container.get("server_command")
+    command = runtime.get("server_command")
     if not isinstance(command, list) or not all(isinstance(item, str) and item for item in command):
         raise ValueError("approved model container server_command is invalid")
-    expected_image = str(container.get("target_image_ref") or "")
+    expected_image = str(runtime.get("target_image_ref") or "")
     actual_image = os.environ.get("SURE_EVAL_CONTAINER_IMAGE", "")
     if "@sha256:" not in expected_image or actual_image != expected_image:
         raise ValueError(
@@ -91,11 +111,16 @@ def _resolve_server_command(
 
 
 def _resolve_working_dir(model_dir: Path, runtime_inventory: dict[str, Any]) -> Path:
-    container = runtime_inventory.get("container_runtime")
-    working_dir = container.get("working_dir") if isinstance(container, dict) else None
+    policy = runtime_inventory.get("policy") if isinstance(runtime_inventory.get("policy"), dict) else {}
+    runtime_key = "local_runtime" if policy.get("eval_runtime") == "python_only" else "container_runtime"
+    runtime = runtime_inventory.get(runtime_key)
+    working_dir = runtime.get("working_dir") if isinstance(runtime, dict) else None
     path = Path(str(working_dir or ""))
-    if not path.is_absolute() or not path.is_dir():
-        raise ValueError(f"approved container working_dir does not exist: {path}")
+    if runtime_key == "local_runtime" and not path.is_absolute():
+        path = model_dir / path
+    path = path.resolve()
+    if not path.is_dir():
+        raise ValueError(f"approved model working_dir does not exist: {path}")
     return path
 
 
@@ -458,6 +483,7 @@ def _runtime_inventory_summary(model_dir: Path) -> dict[str, Any]:
         "path": str(model_dir / "artifacts" / "runtime_inventory.json"),
         "status": inventory.get("status"),
         "schema": inventory.get("schema"),
+        "local_runtime": inventory.get("local_runtime") if isinstance(inventory.get("local_runtime"), dict) else {},
         "container_runtime": inventory.get("container_runtime") if isinstance(inventory.get("container_runtime"), dict) else {},
         "policy": inventory.get("policy") if isinstance(inventory.get("policy"), dict) else {},
         "evidence": inventory.get("evidence") if isinstance(inventory.get("evidence"), dict) else {},
@@ -1063,8 +1089,10 @@ def main() -> int:
     tool_name = args.tool_name or (tools[0]["name"] if tools else None)
     if not tool_name:
         raise ValueError("No tool name provided and config.yaml has no tools entry")
-    container_runtime = runtime_inventory_document.get("container_runtime")
-    approved_tools = container_runtime.get("tool_names") if isinstance(container_runtime, dict) else []
+    inventory_policy = runtime_inventory_document.get("policy") if isinstance(runtime_inventory_document.get("policy"), dict) else {}
+    runtime_key = "local_runtime" if inventory_policy.get("eval_runtime") == "python_only" else "container_runtime"
+    approved_runtime = runtime_inventory_document.get(runtime_key)
+    approved_tools = approved_runtime.get("tool_names") if isinstance(approved_runtime, dict) else []
     if tool_name not in approved_tools:
         raise ValueError(f"tool {tool_name!r} is not present in the approved runtime inventory: {approved_tools}")
     tool_args = _merge_protocol_tool_args(

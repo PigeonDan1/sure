@@ -25,9 +25,10 @@
 		"bundle_identity_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
 		"execution_policy": {
 			"type": "object",
-			"required": ["container_only", "nfs_models_read_only", "host_python_fallback", "approved_image_override"],
+			"required": ["container_only", "eval_runtime", "nfs_models_read_only", "host_python_fallback", "approved_image_override"],
 			"properties": {
 				"container_only": { "type": "boolean" },
+				"eval_runtime": { "enum": ["python", "container", "api", "unavailable"] },
 				"nfs_models_read_only": { "const": true },
 				"host_python_fallback": { "const": false },
 				"approved_image_override": { "const": false }

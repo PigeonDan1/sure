@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -247,11 +248,15 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
         issues.append(str(exc))
         approved_harness = {}
 
+    runtime_kind = str(approved.get("runtime_kind") or "container")
+    approved_python = approved.get("python") if isinstance(approved.get("python"), dict) else {}
     expected_fields = {
         "schema": approved.get("schema"),
-        "target_image_ref": approved.get("target_image_ref"),
+        "runtime_kind": runtime_kind,
+        "target_image_ref": approved.get("target_image_ref") if runtime_kind == "container" else None,
+        "model_python": approved_python.get("python_executable") if runtime_kind == "python" else None,
         "bundle_identity_sha256": (approved.get("evidence") or {}).get("bundle_identity_sha256"),
-        "execution_mode": "container_only",
+        "execution_mode": "python" if runtime_kind == "python" else "container_only",
         "model_mount_read_only": True,
         "result_mount_writable": True,
     }
@@ -259,13 +264,16 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
         if declared_binding.get(key) != expected:
             issues.append(f"deployment_binding.{key} must equal approved value {expected!r}")
     path_planned = str(execution.get("path_planned") or "")
-    if path_planned not in {"local_docker", "vc_submit"}:
-        issues.append("formal inference path must be local_docker or vc_submit")
-    if isinstance(env.get("SURE_EVAL_CONTAINER_IMAGE"), str) and env["SURE_EVAL_CONTAINER_IMAGE"] != approved.get("target_image_ref"):
+    allowed_paths = {"local_python"} if runtime_kind == "python" else {"local_docker", "vc_submit"}
+    if path_planned not in allowed_paths:
+        issues.append(f"formal {runtime_kind} inference path must be one of {sorted(allowed_paths)}")
+    if runtime_kind == "container" and isinstance(env.get("SURE_EVAL_CONTAINER_IMAGE"), str) and env["SURE_EVAL_CONTAINER_IMAGE"] != approved.get("target_image_ref"):
         issues.append("execution surface image differs from the approved digest-pinned image")
     for key in ("MODEL_PYTHON", "PYTHON_BIN"):
         value = env.get(key)
-        if isinstance(value, str) and (".venv" in value or value == "/usr/bin/python3"):
+        if runtime_kind == "python" and isinstance(value, str) and value and value != approved_python.get("python_executable"):
+            issues.append(f"{key} differs from the approved Model Python")
+        elif runtime_kind == "container" and isinstance(value, str) and (".venv" in value or value == "/usr/bin/python3"):
             issues.append(f"{key} must not bind a host interpreter; the container runner injects approved runtime Python")
     declared_harness_python = env.get("HARNESS_PYTHON_BIN")
     if isinstance(declared_harness_python, str) and declared_harness_python:
@@ -281,7 +289,8 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
         (value for value in (env.get("TOOL_NAME"), resolved_inputs.get("tool_name")) if isinstance(value, str) and value),
         "",
     )
-    approved_tools = ((approved.get("container") or {}).get("tool_names") or [])
+    approved_runtime = approved_python if runtime_kind == "python" else (approved.get("container") or {})
+    approved_tools = approved_runtime.get("tool_names") or []
     if declared_tool and declared_tool not in approved_tools:
         issues.append(f"tool name {declared_tool!r} is not in the approved deployment binding: {approved_tools}")
 
@@ -298,7 +307,7 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
     return {
         "passed": True,
         "live_runtime_probe": live_probe,
-        "evidence": f"approved container-only deployment verified: {approved.get('target_image_ref')}",
+        "evidence": f"approved {runtime_kind} deployment verified",
     }
 
 
@@ -308,6 +317,55 @@ def _live_runtime_probe(
     *,
     run=subprocess.run,
 ) -> dict[str, Any]:
+    if binding.get("runtime_kind") == "python":
+        python = binding.get("python") if isinstance(binding.get("python"), dict) else {}
+        model_python = str(python.get("python_executable") or "")
+        harness_python = str(host_harness.get("python_executable") or "")
+        if not model_python or not harness_python or model_python == harness_python:
+            return {
+                "passed": False,
+                "failure_class": "HARNESS_MODEL_RUNTIME_ALIAS",
+                "exit_code": None,
+                "evidence": "approved Harness Python and Model Python must be distinct",
+            }
+        imports = [str(item) for item in python.get("required_imports") or [] if isinstance(item, str)]
+        script = (
+            "import importlib,json; "
+            f"[importlib.import_module(name) for name in json.loads({json.dumps(imports)!r})]"
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONHOME", None)
+        env.pop("PYTHONPATH", None)
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        try:
+            completed = run(
+                [model_python, "-c", script],
+                cwd=str(python.get("working_dir") or binding.get("model_dir") or ""),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return {
+                "passed": False,
+                "failure_class": "MODEL_RUNTIME_NOT_MATERIALIZED",
+                "exit_code": None,
+                "evidence": f"Python runtime probe could not start: {exc}",
+            }
+        detail = (completed.stderr or completed.stdout or "").strip()
+        return {
+            "passed": completed.returncode == 0,
+            "failure_class": None if completed.returncode == 0 else "MODEL_RUNTIME_NEEDS_REPAIR",
+            "exit_code": completed.returncode,
+            "model_python": model_python,
+            "backend": python.get("backend"),
+            "required_imports": imports,
+            "evidence": "approved Python runtime probe passed"
+            if completed.returncode == 0
+            else f"MODEL_RUNTIME_NEEDS_REPAIR: {detail or f'exit {completed.returncode}'}",
+        }
     repo_root = Path(__file__).resolve().parents[4]
     try:
         harness, mounted = resolve_container_harness_runtime(binding, host_harness, repo_root)

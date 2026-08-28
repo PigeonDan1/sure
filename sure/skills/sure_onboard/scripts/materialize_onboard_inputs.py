@@ -28,7 +28,6 @@ except Exception as exc:  # noqa: BLE001
 else:
     YAML_IMPORT_ERROR = None
 
-
 TASK_TYPES = {
     "asr",
     "s2tt",
@@ -247,7 +246,11 @@ def task_playbooks_for(task_type: str) -> list[str]:
     return []
 
 
-def env_playbooks_for(deployment_type: str, preferred_backend: str | None) -> list[str]:
+def env_playbooks_for(
+    deployment_type: str,
+    preferred_backend: str | None,
+    package_profile: str,
+) -> list[str]:
     if deployment_type == "api":
         return ["references/playbooks/model_api.md"]
     backend = (preferred_backend or "").strip().lower()
@@ -260,7 +263,7 @@ def env_playbooks_for(deployment_type: str, preferred_backend: str | None) -> li
         "api": "references/playbooks/model_api.md",
     }
     selected = [mapping[backend]] if backend in mapping else []
-    if "references/playbooks/env_docker.md" not in selected:
+    if package_profile in {"docker-local", "docker-registry"} and "references/playbooks/env_docker.md" not in selected:
         selected.append("references/playbooks/env_docker.md")
     return selected
 
@@ -355,8 +358,13 @@ def make_context_selection(resolved: dict[str, Any], model_input: dict[str, Any]
     task_type = str(resolved["task_type"])
     preferred_backend = get_nested(model_input, "environment_hint", "preferred_backend")
     deployment_type = str(resolved["deployment_type"])
+    package_profile = str(resolved["package_profile"])
     task_playbooks = task_playbooks_for(task_type)
-    env_playbooks = env_playbooks_for(deployment_type, str(preferred_backend) if preferred_backend else None)
+    env_playbooks = env_playbooks_for(
+        deployment_type,
+        str(preferred_backend) if preferred_backend else None,
+        package_profile,
+    )
 
     selected = {
         "default": [
@@ -435,7 +443,12 @@ def main() -> int:
     try:
         model_input = read_model_input(model_input_path)
         deployment_type = normalize_required_string(model_input.get("deployment_type"), "deployment_type")
-        package_profile = args.package_profile or ("none" if deployment_type == "api" else "docker-registry")
+        if args.package_profile:
+            package_profile = args.package_profile
+        elif deployment_type == "api":
+            package_profile = "none"
+        else:
+            package_profile = "docker-registry"
         resolved = make_model_input_resolved(
             model_input,
             model_input_path=model_input_path,

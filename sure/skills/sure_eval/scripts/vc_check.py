@@ -4,7 +4,7 @@
 Probes vc availability (`which vc && vc info`) and validates that the produced
 submit_result.json matches the user-requested execution surface:
 - execution=vc must submit through vc.
-- execution=local must run through the approved local Docker binding.
+- execution=local must run through the approved local Python or Docker binding.
 - execution=auto prefers vc when available; local auto fallback must explain why.
 The environment-derived vc_available field is stamped into the artifact.
 
@@ -66,7 +66,7 @@ def _execution_requested(data: dict, run_dir: Path) -> str:
     execution_path = str(data.get("execution_path") or "")
     if execution_path == "vc_submit":
         return "vc"
-    if execution_path in {"local_bash", "local_docker"}:
+    if execution_path in {"local_bash", "local_python", "local_docker"}:
         return "local"
     return "auto"
 
@@ -101,7 +101,7 @@ def main() -> int:
 
     execution_path = data.get("execution_path", "")
     requested = _execution_requested(data, run_dir)
-    local_paths = {"local_docker"}
+    local_paths = {"local_python", "local_docker"}
 
     if requested == "vc" and execution_path != "vc_submit":
         print(
@@ -118,7 +118,7 @@ def main() -> int:
         return 1
     if requested == "local" and execution_path not in local_paths:
         print(
-            "SUBMIT_EXECUTION gate: user requested execution=local, so execution_path must be local_docker.",
+            "SUBMIT_EXECUTION gate: user requested execution=local, so execution_path must be local_python or local_docker.",
             file=sys.stderr,
         )
         return 1
