@@ -26,6 +26,7 @@ APPROVED_MODELS_ROOT = (
     else None
 )
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SUCCESSFUL_VERDICT_STATUSES = frozenset({"pass", "passed", "success"})
 
 
 def configured_approved_models_root() -> Path:
@@ -44,13 +45,10 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 def _verdict_path(model_dir: Path | None) -> Path | None:
     if model_dir is None:
         return None
-    for path in (model_dir / "verdict.json", model_dir / "artifacts" / "verdict.json"):
+    for path in (model_dir / "artifacts" / "verdict.json", model_dir / "verdict.json"):
         if path.is_file() and _is_relative_to(path.resolve(), model_dir):
             return path
     return None
-
-
-TERMINAL_VERDICT_STATUSES = {"success", "passed", "pass"}
 
 
 def verdict_is_ready(model_dir: Path | None) -> bool:
@@ -59,14 +57,8 @@ def verdict_is_ready(model_dir: Path | None) -> bool:
     The file existing proves a transformation ran, not that it succeeded; a
     bundle sealed alongside a failed verdict would otherwise resolve as ready.
     """
-    path = _verdict_path(model_dir)
-    if path is None:
-        return False
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    return isinstance(value, dict) and str(value.get("status", "")).lower() in TERMINAL_VERDICT_STATUSES
+    ready, _, _ = _successful_verdict(_verdict_path(model_dir))
+    return ready
 
 
 def _checks(model_dir: Path | None) -> dict[str, bool]:
@@ -101,7 +93,28 @@ def _checks(model_dir: Path | None) -> dict[str, bool]:
     }
 
 
-def resolve_approved_model(model: str, *, approved_root: Path | None = APPROVED_MODELS_ROOT) -> dict[str, Any]:
+def _successful_verdict(path: Path | None) -> tuple[bool, str | None, str | None]:
+    if path is None:
+        return False, None, "approved model verdict is missing"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, None, f"approved model verdict is invalid: {exc}"
+    if not isinstance(value, dict):
+        return False, None, "approved model verdict must be a JSON object"
+    status = str(value.get("status") or "")
+    if status.lower() not in SUCCESSFUL_VERDICT_STATUSES:
+        return False, status or None, f"approved model verdict status is not successful: {status!r}"
+    return True, status, None
+
+
+def resolve_approved_model_identity(
+    model: str,
+    *,
+    approved_root: Path | None = APPROVED_MODELS_ROOT,
+) -> dict[str, Any]:
+    """Resolve approved model identity without requiring an inference runtime."""
+
     if not MODEL_ID_RE.fullmatch(model):
         raise ValueError(f"invalid model id {model!r}; path separators and aliases are not allowed")
     root = (approved_root or configured_approved_models_root()).expanduser().resolve()
@@ -114,6 +127,30 @@ def resolve_approved_model(model: str, *, approved_root: Path | None = APPROVED_
     selected = model_dir if model_dir.is_dir() else None
     verdict = _verdict_path(selected)
     checks = _checks(selected)
+    verdict_ready, verdict_status, verdict_error = _successful_verdict(verdict)
+    config_ready = checks["config_yaml"]
+    identity_error = verdict_error
+    if selected is not None and not config_ready:
+        identity_error = "approved model config.yaml is missing"
+    return {
+        "schema": "sure.approved_model.identity.v1",
+        "ok": bool(selected and config_ready and verdict_ready),
+        "model": model,
+        "model_dir": str(selected) if selected else None,
+        "source": "approved_nfs_models",
+        "approved_models_root": str(root),
+        "config_path": str((selected / "config.yaml").resolve()) if selected and config_ready else None,
+        "verdict_path": str(verdict.resolve()) if verdict else None,
+        "verdict_status": verdict_status,
+        "verdict_ready": verdict_ready,
+        "identity_error": identity_error,
+        "checks": checks,
+    }
+
+
+def resolve_approved_model(model: str, *, approved_root: Path | None = APPROVED_MODELS_ROOT) -> dict[str, Any]:
+    identity = resolve_approved_model_identity(model, approved_root=approved_root)
+    selected = Path(identity["model_dir"]) if identity["model_dir"] else None
     deployment_binding = None
     deployment_error = None
     if selected is not None:
@@ -122,20 +159,22 @@ def resolve_approved_model(model: str, *, approved_root: Path | None = APPROVED_
         except DeploymentBindingError as exc:
             deployment_error = str(exc)
     runtime_ready = deployment_binding is not None
-    verdict_ready = verdict_is_ready(selected)
+    verdict_ready = bool(identity["verdict_ready"])
     return {
         "schema": "sure.eval.approved_model_resolution.v1",
-        "ok": bool(selected and runtime_ready and verdict_ready),
+        "ok": bool(identity["ok"] and runtime_ready),
         "model": model,
-        "model_dir": str(selected) if selected else None,
-        "source": "approved_nfs_models",
-        "approved_models_root": str(root),
-        "verdict_path": str(verdict.resolve()) if verdict else None,
+        "model_dir": identity["model_dir"],
+        "source": identity["source"],
+        "approved_models_root": identity["approved_models_root"],
+        "verdict_path": identity["verdict_path"],
+        "verdict_status": identity["verdict_status"],
         "runtime_ready": runtime_ready,
         "verdict_ready": verdict_ready,
         "deployment_binding": deployment_binding,
         "deployment_error": deployment_error,
-        "checks": checks,
+        "identity_error": identity["identity_error"],
+        "checks": identity["checks"],
     }
 
 

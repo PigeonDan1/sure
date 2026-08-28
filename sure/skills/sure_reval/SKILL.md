@@ -42,7 +42,7 @@ Example:
 
 ## State Machine
 
-1. `resolve_approved_model`: resolve the exact model below the NFS model root and require runtime files plus verdict existence.
+1. `resolve_approved_model`: resolve the exact model below the NFS model root and require `config.yaml` plus a successful verdict. Model deployment runtime files are not read because re-evaluation never runs inference.
 2. `resolve_approved_result`: inspect only immediate approved result directories for that model.
 3. `verify_source_identity`: require exact model, protocol, and sorted dataset-set equality; bind the NFS report, model fingerprint, prediction hashes, and sample counts.
 4. `resolve_evaluation_route`: resolve every requested exact `pipeline_id` through the standalone sure-evaluation engine.

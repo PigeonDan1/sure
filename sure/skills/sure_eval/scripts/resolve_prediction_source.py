@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from resolve_model_dir import APPROVED_MODELS_ROOT, resolve_approved_model
+from resolve_model_dir import APPROVED_MODELS_ROOT, resolve_approved_model_identity
 
 for _parent in Path(__file__).resolve().parents:
     if (_parent / "sure" / "site" / "loader.py").is_file():
@@ -160,9 +160,10 @@ def build_payload(
     if len(requested) != len(set(requested)):
         raise ValueError("requested datasets contain duplicate canonical identities")
 
-    model_resolution = resolve_approved_model(model, approved_root=approved_models_root)
+    model_resolution = resolve_approved_model_identity(model, approved_root=approved_models_root)
     if not model_resolution["ok"]:
-        raise ValueError(f"model {model!r} is not approved and runtime-ready in NFS")
+        detail = model_resolution.get("identity_error") or "approved model identity is incomplete"
+        raise ValueError(f"model {model!r} is not approved with a successful verdict in NFS: {detail}")
     model_dir = Path(str(model_resolution["model_dir"]))
 
     if approved_results_root is None:
