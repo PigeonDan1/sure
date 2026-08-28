@@ -7,6 +7,7 @@ import {
 	harnessRuntimeEnv,
 	resolveHarnessPython,
 } from "../../../runtime/harness/resolve.ts";
+import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
 import { validateSkillRuntimeBinding, writeSkillRuntimeBinding } from "../../../runtime/usage.ts";
 import { requireSitePolicy } from "../../../site/loader.ts";
 
@@ -217,10 +218,14 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	}
 	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
-	const backendMatch = command.match(/sure_eval\/scripts\/([A-Za-z0-9_]+\.py)\b/);
-	if (backendMatch && backendMatch[1] !== "run_reval.py" && backendMatch[1] !== "resolve_prediction_source.py") {
+	const backendScripts = invokedSkillScripts(command, "sure_eval/scripts");
+	const forbiddenBackend = backendScripts.find(
+		(script) =>
+			script !== "sure_eval/scripts/run_reval.py" && script !== "sure_eval/scripts/resolve_prediction_source.py",
+	);
+	if (forbiddenBackend) {
 		return failure(
-			`/sure_reval must use the atomic run_reval.py backend; direct call to ${backendMatch[1]} is forbidden.`,
+			`/sure_reval must use the atomic run_reval.py backend; direct call to ${forbiddenBackend} is forbidden.`,
 		);
 	}
 	for (const forbidden of [

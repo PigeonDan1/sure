@@ -1,0 +1,7 @@
+{
+	"dockerfile": "/path/to/Dockerfile",
+	"model": "/path/to/model",
+	"inference_entrypoint": "/path/to/infer.py",
+	"framework": "pytorch_transformers",
+	"task_type": "asr"
+}

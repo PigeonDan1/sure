@@ -149,6 +149,27 @@ class DockerDeliveryContractTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
+    def test_container_gate_derives_legacy_runtime_root(self) -> None:
+        self.validation["harness_runtime"].pop("runtime_root")
+        write_json(self.run_artifacts / "docker_validation.json", self.validation)
+        proc = self.run_script(
+            "check_container_package.py",
+            self.run_artifacts / "docker_registry_result.json",
+            env=self.fake_docker_env(),
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_container_gate_rejects_runtime_root_outside_manifest_parent(self) -> None:
+        self.validation["harness_runtime"]["runtime_root"] = "/opt/sure-harness/other"
+        write_json(self.run_artifacts / "docker_validation.json", self.validation)
+        proc = self.run_script(
+            "check_container_package.py",
+            self.run_artifacts / "docker_registry_result.json",
+            env=self.fake_docker_env(),
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("manifest_path", proc.stderr)
+
     def test_container_gate_rejects_digest_disagreement(self) -> None:
         bad = dict(self.registry)
         bad["target_image_digest"] = "sha256:" + "c" * 64
@@ -222,6 +243,12 @@ class DockerDeliveryContractTests(unittest.TestCase):
         self.assertEqual(read_json(self.model_artifacts / "artifact_manifest.json")["model_dir"], ".")
         proc = self.run_script("check_finalized_bundle.py", output)
         self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        broken_inventory = json.loads((self.run_artifacts / "runtime_inventory.json").read_text())
+        broken_inventory["harness_runtime"].pop("runtime_root")
+        write_json(self.run_artifacts / "runtime_inventory.json", broken_inventory)
+        with self.assertRaisesRegex(ValueError, "runtime_root is missing"):
+            finalize(self.run_dir, output)
 
     def test_container_gate_rejects_harness_model_alias(self) -> None:
         self.validation["harness_runtime"]["python_executable"] = "python"

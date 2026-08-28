@@ -222,6 +222,21 @@ def _uv_binary() -> str:
     return str(Path(candidate).resolve())
 
 
+def _shared_library_name(libdir: Path, declared: str, python_version: str) -> str:
+    """Return the libpython actually present in libdir.
+
+    Statically linked builds leave INSTSONAME empty, so the probe falls back to
+    LDLIBRARY, which names an archive those builds do not ship. The usable
+    shared object sits in the same directory under its conventional name.
+    """
+    if declared and (libdir / declared).is_file():
+        return declared
+    for candidate in (f"libpython{python_version}.so.1.0", f"libpython{python_version}.so"):
+        if (libdir / candidate).is_file():
+            return candidate
+    return declared
+
+
 def _source_python(python_version: str) -> tuple[Path, dict[str, str]]:
     candidate = shutil.which(f"python{python_version}") or ""
     if not candidate:
@@ -246,6 +261,9 @@ def _source_python(python_version: str) -> tuple[Path, dict[str, str]]:
     metadata = json.loads(completed.stdout)
     if not isinstance(metadata, dict) or not all(isinstance(value, str) for value in metadata.values()):
         raise HarnessRuntimeError("host bootstrap Python returned invalid path metadata")
+    metadata["ldlibrary"] = _shared_library_name(
+        Path(metadata["libdir"]), metadata["ldlibrary"], python_version
+    )
     return source, metadata
 
 

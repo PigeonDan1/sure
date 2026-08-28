@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from deployment_contract import read_json, resolve_model_dir, sha256_file
+from deployment_contract import normalize_harness_runtime, read_json, resolve_model_dir, sha256_file
 
 
 TERMINAL_ARTIFACTS = (
@@ -113,6 +113,8 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict[str, A
     ).hexdigest()
     container = inventory.get("container_runtime") if isinstance(inventory.get("container_runtime"), dict) else {}
     harness_runtime = inventory.get("harness_runtime") if isinstance(inventory.get("harness_runtime"), dict) else {}
+    if status == "ready":
+        harness_runtime = normalize_harness_runtime(harness_runtime, allow_derive=False)
     return {
         "schema": "sure.onboard.deployment_ready.v1",
         "generated_at": now_iso(),

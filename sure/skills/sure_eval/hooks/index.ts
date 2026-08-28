@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { harnessRuntimeEnv, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
 import { requireSitePolicy } from "../../../site/loader.ts";
 import {
 	advance,
@@ -209,6 +210,37 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		);
 	}
 
+	// Preflight: verify the evaluation package supports every requested route
+	// before any unit runs. An unsupported route is terminal — no retry can
+	// make it runnable, so the flow stops here with the fixed reason.
+	const preflightPath = join(artifactsDir, "evaluation_preflight.json");
+	const preflight = spawnSync(
+		runtime.contract.python_executable,
+		[
+			join(ctx.packageDir, "scripts", "preflight_evaluation_support.py"),
+			"--input",
+			resolvedInputPath,
+			"--output",
+			preflightPath,
+		],
+		{
+			cwd: ctx.packageDir,
+			encoding: "utf-8",
+			timeout: 120_000,
+			env: { ...process.env, ...harnessRuntimeEnv(runtime.contract) },
+		},
+	);
+	if (preflight.status !== 0) {
+		const detail = preflight.stderr.trim() || preflight.stdout.trim() || "preflight_evaluation_support.py failed";
+		if (preflight.status === 3) {
+			return failure(
+				`The evaluation package does not support the requested evaluation: ${detail} See ${preflightPath}.`,
+				"Evaluation package unsupported.",
+			);
+		}
+		return failure(`Unable to complete the evaluation preflight: ${detail}`, "Evaluation preflight failed.");
+	}
+
 	// Backend presence check (warn, do not block — gate scripts will surface real failures).
 	const scriptsDir = join(ctx.packageDir, "scripts");
 	const backendPresent =
@@ -239,6 +271,17 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 // read/write/search, but deterministic backend scripts (scripts/*.py) may only
 // be invoked from the unit that owns them. This prevents out-of-order script
 // calls (e.g. calling evaluate_predictions before execution_readiness passes).
+// Resolvers and executors any unit may call; they carry no state-machine position.
+const UNIT_AGNOSTIC_SCRIPTS = new Set([
+	"scripts/resolve_model_dir.py",
+	"scripts/resolve_eval_input.py",
+	"scripts/resolve_evaluation_engine.py",
+	"scripts/resolve_evaluation_route_plan.py",
+	"scripts/preflight_evaluation_support.py",
+	"scripts/run_local_execution.py",
+	"scripts/run_vc_execution.py",
+]);
+
 export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const event = isRecord(ctx.event) ? ctx.event : {};
 	const toolCall = isRecord(event.toolCall) ? event.toolCall : {};
@@ -250,19 +293,8 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	}
 	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
-	const scriptMatch = command.match(/scripts\/([A-Za-z0-9_]+\.py)\b/);
-	if (!scriptMatch) {
-		return { ok: true };
-	}
-	const invokedScript = `scripts/${scriptMatch[1]}`;
-	if (
-		invokedScript === "scripts/resolve_model_dir.py" ||
-		invokedScript === "scripts/resolve_eval_input.py" ||
-		invokedScript === "scripts/resolve_evaluation_engine.py" ||
-		invokedScript === "scripts/resolve_evaluation_route_plan.py" ||
-		invokedScript === "scripts/run_local_execution.py" ||
-		invokedScript === "scripts/run_vc_execution.py"
-	) {
+	const invokedScripts = invokedSkillScripts(command).filter((script) => !UNIT_AGNOSTIC_SCRIPTS.has(script));
+	if (invokedScripts.length === 0) {
 		return { ok: true };
 	}
 	const checkpoint = readCheckpoint(ctx);
@@ -287,7 +319,8 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 			allowed.add(`scripts/${unit.gateScript}`);
 		}
 	}
-	if (allowed.has(invokedScript)) {
+	const invokedScript = invokedScripts.find((script) => !allowed.has(script));
+	if (!invokedScript) {
 		return { ok: true };
 	}
 	return {

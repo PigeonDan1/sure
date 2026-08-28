@@ -1,6 +1,6 @@
 import { accessSync, constants, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { resolveSitePolicy, requireSitePolicy } from "../../../../../sure/site/loader.ts";
+import { requireSitePolicy, resolveSitePolicy } from "../../../../../sure/site/loader.ts";
 
 // Approved models and promoted results both live below this root. Runs never
 // write inside it; a human promotes reviewed products there.

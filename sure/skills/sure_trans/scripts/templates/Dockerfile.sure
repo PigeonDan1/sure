@@ -1,0 +1,4 @@
+FROM __SOURCE_IMAGE__
+COPY model.py server.py config.yaml model.spec.yaml __init__.py validate.py mcp_smoke.py /opt/sure_trans/
+WORKDIR /opt/sure_trans
+ENTRYPOINT ["python", "/opt/sure_trans/server.py"]

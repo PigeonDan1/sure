@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
 import {
 	advance,
 	artifactPath,
@@ -686,11 +687,10 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 			};
 		}
 	}
-	const scriptMatch = command.match(/scripts\/([A-Za-z0-9_]+\.py)\b/);
-	if (!scriptMatch) {
+	const invokedScripts = invokedSkillScripts(command);
+	if (invokedScripts.length === 0) {
 		return { ok: true };
 	}
-	const invokedScript = `scripts/${scriptMatch[1]}`;
 	if (!currentUnit) {
 		return { ok: true };
 	}
@@ -701,7 +701,9 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	for (const helperScript of currentUnit.helperScripts ?? []) {
 		allowed.add(`scripts/${helperScript}`);
 	}
-	if (allowed.has(invokedScript)) {
+	const disallowed = invokedScripts.find((script) => !allowed.has(script));
+	const invokedScript = disallowed ?? invokedScripts[0];
+	if (!disallowed) {
 		if (command.includes(".venv/bin/python")) {
 			const repair = skillScriptRepair(ctx, currentUnit, invokedScript);
 			return {
@@ -1013,7 +1015,9 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 						type: "deployment_ready",
 						name: "Blocked deployment marker",
 						path: `.sure/runs/${ctx.run.runId}/artifacts/${LAST_UNIT.produces}`,
-						status: "blocked",
+						// The marker itself says blocked; the display only knows the four
+						// statuses in ARTIFACT_STATUSES, and an unknown one drops the patch.
+						status: "incomplete",
 						summary: "Container validation evidence is present, but registry delivery is incomplete.",
 					},
 				],

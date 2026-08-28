@@ -70,6 +70,14 @@ export const SURE_INIT_PROVIDER_OPTIONS: SureInitProviderOption[] = [
 		authType: "api_key",
 		description: "Standard OpenAI API",
 	},
+	{
+		id: "azure-openai",
+		name: "Azure OpenAI (Responses)",
+		provider: "azure-openai-responses",
+		defaultModel: "gpt-5.5",
+		authType: "api_key",
+		description: "Azure OpenAI Responses API",
+	},
 ];
 
 /** True when models.json has to carry this model's protocol because pi-ai's catalog does not. */

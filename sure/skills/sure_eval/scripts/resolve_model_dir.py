@@ -50,6 +50,25 @@ def _verdict_path(model_dir: Path | None) -> Path | None:
     return None
 
 
+TERMINAL_VERDICT_STATUSES = {"success", "passed", "pass"}
+
+
+def verdict_is_ready(model_dir: Path | None) -> bool:
+    """A bundle is only verdict-ready when the verdict says the model passed.
+
+    The file existing proves a transformation ran, not that it succeeded; a
+    bundle sealed alongside a failed verdict would otherwise resolve as ready.
+    """
+    path = _verdict_path(model_dir)
+    if path is None:
+        return False
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(value, dict) and str(value.get("status", "")).lower() in TERMINAL_VERDICT_STATUSES
+
+
 def _checks(model_dir: Path | None) -> dict[str, bool]:
     if model_dir is None:
         return {
@@ -103,7 +122,7 @@ def resolve_approved_model(model: str, *, approved_root: Path | None = APPROVED_
         except DeploymentBindingError as exc:
             deployment_error = str(exc)
     runtime_ready = deployment_binding is not None
-    verdict_ready = verdict is not None
+    verdict_ready = verdict_is_ready(selected)
     return {
         "schema": "sure.eval.approved_model_resolution.v1",
         "ok": bool(selected and runtime_ready and verdict_ready),

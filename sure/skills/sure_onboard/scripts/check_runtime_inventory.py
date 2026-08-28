@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 
-from deployment_contract import read_json, resolve_model_dir, validate_image_and_digest
+from deployment_contract import normalize_harness_runtime, read_json, resolve_model_dir, validate_image_and_digest
 
 
 LEGACY_PATH = re.compile(r"/(?:mnt/cloudstorfs|hpc_stor\d+|hpc_\d+)/")
@@ -59,6 +59,7 @@ def main() -> int:
                 raise ValueError("ready inventory must declare required model_runtime")
             if harness_runtime.get("schema") != "sure.harness.runtime.binding.v1" or harness_runtime.get("required") is not True:
                 raise ValueError("ready inventory must declare required common harness_runtime")
+            normalize_harness_runtime(harness_runtime, allow_derive=False)
             if model_runtime.get("python_executable") == harness_runtime.get("python_executable"):
                 raise ValueError("Harness Python and Model Python must remain distinct")
             expected_id = os.environ.get("SURE_HARNESS_RUNTIME_ID")

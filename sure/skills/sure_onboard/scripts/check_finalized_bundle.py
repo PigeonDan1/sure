@@ -10,7 +10,13 @@ import re
 import sys
 from pathlib import Path
 
-from deployment_contract import read_json, resolve_model_dir, sha256_file, validate_image_and_digest
+from deployment_contract import (
+    normalize_harness_runtime,
+    read_json,
+    resolve_model_dir,
+    sha256_file,
+    validate_image_and_digest,
+)
 
 
 LEGACY_PATH = re.compile(r"/(?:mnt/cloudstorfs|hpc_stor\d+|hpc_\d+)/")
@@ -57,13 +63,14 @@ def main() -> int:
             if data.get("target_image_ref") != image_ref:
                 raise ValueError("deployment target_image_ref is not digest pinned")
             inventory = read_json(model_dir / "artifacts" / "runtime_inventory.json")
-            if data.get("harness_runtime") != inventory.get("harness_runtime"):
-                declared = data.get("harness_runtime") if isinstance(data.get("harness_runtime"), dict) else {}
-                source = inventory.get("harness_runtime") if isinstance(inventory.get("harness_runtime"), dict) else {}
-                projected = {key: source.get(key) for key in declared}
-                if declared != projected:
-                    raise ValueError("deployment Harness Runtime binding disagrees with runtime inventory")
-            harness = data.get("harness_runtime") if isinstance(data.get("harness_runtime"), dict) else {}
+            declared = data.get("harness_runtime") if isinstance(data.get("harness_runtime"), dict) else {}
+            source = inventory.get("harness_runtime") if isinstance(inventory.get("harness_runtime"), dict) else {}
+            declared = normalize_harness_runtime(declared, allow_derive=False)
+            source = normalize_harness_runtime(source, allow_derive=False)
+            projected = {key: source.get(key) for key in declared}
+            if declared != projected:
+                raise ValueError("deployment Harness Runtime binding disagrees with runtime inventory")
+            harness = declared
             if harness.get("schema") != "sure.harness.runtime.binding.v1" or not harness.get("runtime_id"):
                 raise ValueError("ready deployment must expose the common Harness Runtime binding")
         portable = [

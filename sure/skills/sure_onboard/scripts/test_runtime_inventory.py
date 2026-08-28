@@ -162,6 +162,22 @@ class RuntimeInventoryTests(unittest.TestCase):
         self.assertEqual(inventory["container_runtime"]["tool_names"], ["asr_transcribe"])
         self.assertEqual(output.read_bytes(), (self.artifacts / "runtime_inventory.json").read_bytes())
 
+    def test_inventory_persists_derived_runtime_root(self) -> None:
+        validation_path = self.run_artifacts / "docker_validation.json"
+        validation = json.loads(validation_path.read_text())
+        validation["harness_runtime"].pop("runtime_root")
+        write_json(validation_path, validation)
+
+        inventory = write_inventory(self.model_dir, self.run_artifacts / "runtime_inventory.json", self.run_dir)
+        self.assertEqual(
+            inventory["harness_runtime"]["runtime_root"],
+            "/opt/sure-harness/test",
+        )
+        self.assertEqual(
+            json.loads((self.artifacts / "runtime_inventory.json").read_text())["harness_runtime"]["runtime_root"],
+            "/opt/sure-harness/test",
+        )
+
     def test_missing_package_gate_blocks_inventory(self) -> None:
         (self.run_artifacts / "package_gate.json").unlink()
         with self.assertRaises(ValueError):

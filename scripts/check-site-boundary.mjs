@@ -6,7 +6,10 @@ import { spawnSync } from "node:child_process";
 import { parse } from "yaml";
 
 function run(command, args, options = {}) {
-	return spawnSync(command, args, { encoding: "utf8", ...options });
+	// npm resolves to npm.cmd on Windows, which spawnSync cannot execute
+	// directly; without a shell it returns no stderr and every caller crashes.
+	const shell = process.platform === "win32" && command === "npm";
+	return spawnSync(command, args, { encoding: "utf8", shell, ...options });
 }
 
 const failures = [];

@@ -53,6 +53,16 @@ upstream `MAIN_FLOW_INPUT` shape documented in
   request/plan, `max_samples` sample scope, and
   `available_scripts` are recorded before the state machine starts.
 
+Immediately after input resolution, `pre_start` runs
+`scripts/preflight_evaluation_support.py`, which writes
+`<run_dir>/artifacts/evaluation_preflight.json`. When the sure-evaluation
+package has no route for a requested (task, language, metric), the artifact
+records `supported: false`, the fixed reason code
+`EVALUATION_PACKAGE_UNSUPPORTED`, and the fixed reason string, and the flow
+stops before any unit runs — an unsupported route is terminal, so no retry is
+attempted. When the engine is unavailable the preflight is skipped and later
+stages report the engine problem themselves.
+
 Do not ask the user for `task` as the primary input. If a legacy prompt includes
 `task=asr` or similar, treat it only as a consistency hint; the source of truth
 for evaluation task routing is the dataset metadata resolved into

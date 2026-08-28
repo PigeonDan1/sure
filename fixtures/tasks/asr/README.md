@@ -12,14 +12,24 @@ Use:
 
 ```text
 fixtures/tasks/asr/qwen3_asr_smoke/
+├── asr-ar/
 ├── asr_en/
 └── asr_zh/
 ```
 
-Source:
+Chinese and English source:
 
 ```text
 src/sure_eval/models/asr_qwen3/fixture/asr/
+```
+
+Arabic source:
+
+```text
+Dataset: aispeech_phy_gigaspeechbench_low_resource_languages_syr_test
+Subset: raws/sample, Syrian Arabic (SYR)
+Fixture records: SYR#0d54cea98e7d__seg_000018 through _000020
+License: not declared in the source metadata; internal-use fixture pending owner confirmation
 ```
 
 ## Other Existing Sources
@@ -34,6 +44,9 @@ src/sure_eval/models/asr_qwen3/fixture/asr/
 
 ```text
 sure/models/<model>/fixture/asr/
+├── asr-ar/
+│   ├── gt.jsonl
+│   └── sample_*.wav
 ├── asr_zh/
 │   ├── gt.jsonl
 │   └── sample_*.wav
@@ -63,6 +76,7 @@ src/sure_eval/evaluation/nodes/scoring/wenet_wer/
 
 Expected metric routing:
 
+- Arabic ASR: CER
 - Chinese ASR: CER
 - English ASR: WER
 

@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
 import { validateSkillRuntimeBinding, writeSkillRuntimeBinding } from "../../../runtime/usage.ts";
 import {
 	advance,
@@ -139,11 +140,10 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	}
 	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
-	const scriptMatch = command.match(/scripts\/([A-Za-z0-9_]+\.py)\b/);
-	if (!scriptMatch) {
+	const invokedScripts = invokedSkillScripts(command);
+	if (invokedScripts.length === 0) {
 		return { ok: true };
 	}
-	const invokedScript = `scripts/${scriptMatch[1]}`;
 	const checkpoint = readCheckpoint(ctx);
 	const currentUnit = findUnit(checkpoint.data.currentUnit);
 	if (!currentUnit) {
@@ -162,7 +162,8 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 			allowed.add(`scripts/${script}`);
 		}
 	}
-	if (allowed.has(invokedScript)) {
+	const invokedScript = invokedScripts.find((script) => !allowed.has(script));
+	if (!invokedScript) {
 		return { ok: true };
 	}
 	return {

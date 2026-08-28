@@ -431,10 +431,15 @@ function validateManifestEnvelope(
 	if (artifactError) {
 		return artifactError;
 	}
-	for (const requirement of skillPackage.manifest.artifacts ?? []) {
-		const requirementError = validateRequiredArtifact(requirement, manifest, runManager, run);
-		if (requirementError) {
-			return requirementError;
+	// Required artifacts describe what a completed run delivers. Demanding them
+	// from a run that stopped early leaves the agent no way to report the failure
+	// except by fabricating the evidence, so only a success finish is held to them.
+	if (finish.status === "success") {
+		for (const requirement of skillPackage.manifest.artifacts ?? []) {
+			const requirementError = validateRequiredArtifact(requirement, manifest, runManager, run);
+			if (requirementError) {
+				return requirementError;
+			}
 		}
 	}
 	return undefined;

@@ -21,6 +21,7 @@ export const SURE_COMMANDS = [
 	"sure_eval",
 	"sure_reval",
 	"sure_onboard",
+	"sure_trans",
 	"sure_feed",
 ] as const;
 

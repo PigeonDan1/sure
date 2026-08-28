@@ -1,0 +1,29 @@
+{
+  "name": "sure_trans",
+  "command": "/sure_trans",
+  "description": "Transform an existing Dockerfile, model path, and inference entrypoint into a digest-pinned SURE Eval deployment bundle.",
+  "prompt": "SKILL.md",
+  "hooks": {
+    "pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
+    "pre_tool_call": [{ "module": "hooks/index.ts", "handler": "preToolCall" }],
+    "post_tool_result": [{ "module": "hooks/index.ts", "handler": "postToolResult" }],
+    "pre_finish": [{ "module": "hooks/index.ts", "handler": "preFinish" }],
+    "post_finish": [{ "module": "hooks/index.ts", "handler": "postFinish" }],
+    "on_error": [{ "module": "hooks/index.ts", "handler": "onError" }]
+  },
+  "artifacts": [
+    { "type": "dependency_report", "path": "artifacts/inference_dependency_report.json", "required": true, "description": "Resolved static and dynamic inference dependency evidence." },
+    { "type": "fixture", "path": "artifacts/fixture_manifest.json", "required": true, "description": "Bounded real smoke fixture staged for original and adapter inference." },
+    { "type": "execution_compat", "path": "artifacts/execution_compat.json", "required": true, "description": "Source-container Python, framework, CUDA, and BF16 compatibility probe." },
+    { "type": "source_image", "path": "artifacts/source_image_result.json", "required": true, "description": "Verified Docker load or Dockerfile build evidence for the source image." },
+    { "type": "model_payload", "path": "artifacts/model_payload_manifest.json", "required": true, "description": "Materialized model payload manifest for the final approved bundle." },
+    { "type": "runtime_inventory", "path": "artifacts/runtime_inventory.json", "required": true, "description": "Container-only Eval runtime binding." },
+    { "type": "verdict", "path": "artifacts/verdict.json", "required": true, "description": "Original and adapter inference validation verdict." },
+    { "type": "deployment_ready", "path": "artifacts/deployment_ready.json", "required": true, "description": "Terminal digest-pinned Eval readiness marker." }
+  ],
+  "ui": {
+    "primaryCounters": ["completed_units", "total_units", "gate_blocks"],
+    "artifactTypes": ["dependency_report", "fixture", "execution_compat", "model_payload", "runtime_inventory", "verdict", "deployment_ready"],
+    "defaultExpandedSections": ["diagnostics", "artifacts"]
+  }
+}

@@ -90,6 +90,38 @@ def passed(value: object) -> bool:
     return value is True or str(value).strip().lower() in {"pass", "passed", "success", "succeeded", "ready"}
 
 
+def normalize_harness_runtime(
+    harness: dict[str, Any],
+    *,
+    allow_derive: bool = True,
+) -> dict[str, Any]:
+    """Normalize the image Harness Runtime binding without site-specific paths."""
+    manifest_value = str(harness.get("manifest_path") or "")
+    python_value = str(harness.get("python_executable") or "")
+    if not Path(manifest_value).is_absolute() or not Path(python_value).is_absolute():
+        raise ValueError("image Harness Runtime paths must be absolute")
+
+    root_value = str(harness.get("runtime_root") or "")
+    if not root_value:
+        if not allow_derive:
+            raise ValueError("image Harness Runtime runtime_root is missing")
+        root_value = str(Path(manifest_value).parent)
+    root = Path(root_value)
+    manifest = Path(manifest_value)
+    python = Path(python_value)
+    if not root.is_absolute():
+        raise ValueError("image Harness Runtime runtime_root must be absolute")
+    if manifest.parent != root:
+        raise ValueError("image Harness Runtime manifest_path must be directly under runtime_root")
+    try:
+        python.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("image Harness Runtime python_executable must be under runtime_root") from exc
+    normalized = dict(harness)
+    normalized["runtime_root"] = str(root)
+    return normalized
+
+
 def validate_runtime_roles(
     validation: dict[str, Any],
     *,
@@ -109,8 +141,8 @@ def validate_runtime_roles(
     harness_python = str(harness.get("python_executable") or "")
     if not model_python or not harness_python or model_python == harness_python:
         raise ValueError("Harness Python and Model Python must be non-empty and distinct")
-    if not Path(harness_python).is_absolute() or not Path(str(harness.get("manifest_path") or "")).is_absolute():
-        raise ValueError("image Harness Runtime paths must be absolute")
+    harness = normalize_harness_runtime(harness)
+    harness_python = str(harness.get("python_executable") or "")
     if not str(harness.get("runtime_id") or "") or not str(harness.get("lock_sha256") or ""):
         raise ValueError("image Harness Runtime identity and lock hash are required")
     if expected_runtime_id and harness.get("runtime_id") != expected_runtime_id:

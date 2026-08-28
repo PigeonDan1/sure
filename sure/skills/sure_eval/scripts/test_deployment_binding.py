@@ -219,6 +219,43 @@ class DeploymentBindingTests(unittest.TestCase):
         self.assertEqual(binding["target_image_ref"], self.image_ref)
         self.assertTrue(binding["container"]["model_mount"]["read_only"])
 
+    def test_derives_legacy_image_runtime_root_from_manifest(self) -> None:
+        inventory = json.loads((self.artifacts / "runtime_inventory.json").read_text())
+        legacy_binding = self._runtime_binding()
+        legacy_binding.pop("runtime_root")
+        inventory["harness_runtime"] = {"required": True, **legacy_binding}
+        write_json(self.artifacts / "runtime_inventory.json", inventory)
+
+        marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
+        marker["harness_runtime"] = legacy_binding
+        hashes = marker["required_artifact_sha256"]
+        hashes["artifacts/runtime_inventory.json"] = sha256(self.artifacts / "runtime_inventory.json")
+        marker["bundle_identity_sha256"] = hashlib.sha256(
+            json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        write_json(self.artifacts / "deployment_ready.json", marker)
+
+        binding = load_deployment_binding(self.model, "demo")
+        self.assertEqual(binding["container"]["harness_runtime"]["runtime_root"], str(self.harness_runtime))
+
+    def test_rejects_explicit_harness_runtime_root_mismatch(self) -> None:
+        inventory = json.loads((self.artifacts / "runtime_inventory.json").read_text())
+        declared = {"required": True, **self._runtime_binding(), "runtime_root": str(self.repo / "wrong")}
+        inventory["harness_runtime"] = declared
+        write_json(self.artifacts / "runtime_inventory.json", inventory)
+
+        marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
+        marker["harness_runtime"] = {key: value for key, value in declared.items() if key != "required"}
+        hashes = marker["required_artifact_sha256"]
+        hashes["artifacts/runtime_inventory.json"] = sha256(self.artifacts / "runtime_inventory.json")
+        marker["bundle_identity_sha256"] = hashlib.sha256(
+            json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        write_json(self.artifacts / "deployment_ready.json", marker)
+
+        with self.assertRaisesRegex(DeploymentBindingError, "disagrees with runtime_root"):
+            load_deployment_binding(self.model, "demo")
+
     def test_hash_tamper_is_rejected(self) -> None:
         package = json.loads((self.artifacts / "package_gate.json").read_text())
         package["readiness"]["bundle_ready"] = False

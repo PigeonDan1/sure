@@ -11,6 +11,7 @@
 		"error": { "type": ["string", "null"] },
 		"output_summary": { "type": "string" },
 		"sample_output_path": { "type": "string" },
+		"sample_outputs_path": { "type": "string" },
 		"model_dir": { "type": "string" },
 		"wrapper_path": { "type": "string" },
 		"validate_py": { "type": "string" },

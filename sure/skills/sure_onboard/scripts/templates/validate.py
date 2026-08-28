@@ -10,9 +10,9 @@ CLI contract stable:
     python validate.py --stage contract
     python validate.py --stage all
 
-Each stage writes artifacts/<stage>_result.json. Inference writes
-artifacts/sample_output.json, and contract validates that sample against
-model.spec.yaml io_contract or the agent-filled IO_CONTRACT constant.
+Each stage writes artifacts/<stage>_result.json. Inference writes the first
+result to artifacts/sample_output.json for contract compatibility and all
+fixture results to artifacts/sample_outputs.jsonl.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ MODEL_DIR = Path(__file__).resolve().parent
 ARTIFACTS_DIR = MODEL_DIR / "artifacts"
 VALIDATION_LOG = ARTIFACTS_DIR / "validation.log"
 SAMPLE_OUTPUT = ARTIFACTS_DIR / "sample_output.json"
+SAMPLE_OUTPUTS = ARTIFACTS_DIR / "sample_outputs.jsonl"
 
 # Agent-filled constants.
 MODEL_ID = "__MODEL_ID__"
@@ -61,12 +62,20 @@ def append_log(stage: str, status: str, message: str, extra: dict[str, Any] | No
     if extra:
         payload.update(extra)
     with VALIDATION_LOG.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=True) + "\n")
+        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
 
 
 def result_path(stage: str) -> Path:
@@ -122,16 +131,17 @@ def load_wrapper() -> Any:
     return wrapper
 
 
-def first_fixture_payload() -> dict[str, Any]:
+def fixture_payloads() -> list[dict[str, Any]]:
     raw_payload = os.environ.get("SURE_VALIDATE_INPUT_JSON")
     if raw_payload:
         parsed = json.loads(raw_payload)
         if not isinstance(parsed, dict):
             raise ValueError("SURE_VALIDATE_INPUT_JSON must decode to an object.")
-        return parsed
+        return [{"input": parsed, "fixture": {}}]
 
     fixture_root = MODEL_DIR / "fixture"
     for gt_path in sorted(fixture_root.glob("**/gt.jsonl")):
+        payloads: list[dict[str, Any]] = []
         for line in gt_path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
@@ -152,9 +162,40 @@ def first_fixture_payload() -> dict[str, Any]:
             if isinstance(item.get("language"), str):
                 payload["language"] = item["language"]
             if payload:
-                return payload
+                payloads.append(
+                    {
+                        "input": payload,
+                        "fixture": {
+                            "key": item.get("key"),
+                            "audio": item.get("audio"),
+                            "language": item.get("language"),
+                            "dataset": item.get("dataset"),
+                            "ground_truth": item.get("ground_truth"),
+                        },
+                    }
+                )
+        if payloads:
+            if len(payloads) > 5:
+                raise ValueError(f"Fixture set exceeds the 5-sample validation limit: {gt_path}")
+            return payloads
     raise FileNotFoundError(
         "No validation payload found. Set SURE_VALIDATE_INPUT_JSON or provide fixture/**/gt.jsonl."
+    )
+
+
+def output_summary(outputs: list[dict[str, Any]]) -> str:
+    first = outputs[0]
+    summarized: dict[str, Any] = {}
+    for key, value in first.items():
+        if isinstance(value, str):
+            summarized[key] = value[:200]
+        elif isinstance(value, (int, float, bool)) or value is None:
+            summarized[key] = value
+        else:
+            summarized[key] = {"type": type(value).__name__}
+    return json.dumps(
+        {"sample_count": len(outputs), "first_output": summarized},
+        ensure_ascii=False,
     )
 
 
@@ -283,21 +324,39 @@ def stage_infer() -> bool:
     started = time.time()
     try:
         wrapper = load_wrapper()
-        payload = first_fixture_payload()
-        sample = run_predict(wrapper, payload)
-        if not sample:
-            raise AssertionError("prediction output is empty")
-        write_json(SAMPLE_OUTPUT, sample)
+        payloads = fixture_payloads()
+        outputs: list[dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
+        for index, fixture in enumerate(payloads, start=1):
+            payload = fixture["input"]
+            sample = run_predict(wrapper, payload)
+            if not sample:
+                raise AssertionError(f"prediction output is empty for fixture {index}")
+            outputs.append(sample)
+            rows.append(
+                {
+                    "id": index,
+                    "key": fixture["fixture"].get("key"),
+                    "audio": fixture["fixture"].get("audio"),
+                    "language": fixture["fixture"].get("language") or payload.get("language"),
+                    "dataset": fixture["fixture"].get("dataset"),
+                    "ground_truth": fixture["fixture"].get("ground_truth"),
+                    "output": sample,
+                }
+            )
+        write_json(SAMPLE_OUTPUT, outputs[0])
+        write_jsonl(SAMPLE_OUTPUTS, rows)
     except Exception as exc:  # noqa: BLE001
         append_log("VALIDATE_INFER", "failed", str(exc))
         write_stage_result("infer", False, started, str(exc))
         return False
-    append_log("VALIDATE_INFER", "passed", "Inference produced sample_output.json.")
+    append_log("VALIDATE_INFER", "passed", f"Inference passed for {len(outputs)} fixture sample(s).")
     write_stage_result(
         "infer",
         True,
         started,
-        output_summary=json.dumps(sample, ensure_ascii=True)[:500],
+        output_summary=output_summary(outputs),
+        sample_outputs_path="artifacts/sample_outputs.jsonl",
     )
     return True
 

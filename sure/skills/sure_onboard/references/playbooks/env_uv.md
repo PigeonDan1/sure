@@ -18,9 +18,15 @@ cd sure/models/{model_name}
 # 每个模型使用 model-local cache，避免污染全局环境或被其它 run 影响
 export UV_CACHE_DIR="$PWD/.runtime/uv-cache"
 export UV_PYTHON_INSTALL_DIR="$PWD/.runtime/uv-python"
-export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
+# 不要设 UV_LINK_MODE。uv 默认用硬链接装包；上面的 cache 和 .venv 在同一个目录树下，
+# 同一个文件系统，硬链接不搬任何字节。设成 copy 会强制逐文件全量拷贝，在共享存储上
+# 每个文件一次同步往返：torch 那一档实测 59 秒 vs 55 分钟。详见「常见失败」第 5 条。
 export MPLCONFIGDIR="$PWD/.runtime/matplotlib"
 mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$MPLCONFIGDIR"
+
+# 自检：确认 uv 真的用了这个 cache。环境变量设了不等于生效，没生效就会落回
+# ~/.cache/uv，跟 .venv 未必同盘，硬链接就用不上了。
+uv cache dir   # 应当输出上面的 $UV_CACHE_DIR
 
 # 创建环境
 uv venv --python=python3.10
@@ -148,8 +154,29 @@ bash -lc '. <proxy-on-script> && \
 Failed to hardlink files; falling back to full copy
 ```
 
-这是 cache 与目标目录跨文件系统导致的性能警告；设置 `UV_LINK_MODE=copy` 可消除噪声，
-不应把它当成安装失败。
+不要设 `UV_LINK_MODE=copy` 把它压掉。这条提示说明 uv 退回了全量拷贝，安装会慢一个
+数量级，先查是不是真的跨文件系统：
+
+```bash
+stat -c '%d' "$UV_CACHE_DIR" "$PWD/.venv"
+```
+
+两个值相同就是同盘，硬链接本来可用，不要动 `UV_LINK_MODE`。共享存储上强制 copy 的代价
+是每个文件一次同步往返。torch 2.8.0 + torchaudio 2.8.0 这一档（26 个包、约 2.7 万个
+文件、6.9G）在同一台调试机、同一个共享盘上的实测：
+
+| `UV_LINK_MODE` | `Installed` 耗时 | 数据来源 |
+|---|---|---|
+| 默认（硬链接） | 59.42 秒 | 热缓存下重测 |
+| `copy` | 55 分 26 秒 | Voxtral-Mini-4B onboarding 实跑 |
+
+慢 56 倍。copy 那次的 `Prepared` 只用了 436ms，包早就在缓存里，55 分钟全花在往 `.venv`
+逐个文件搬，跟下载无关。
+
+两个值不同才是真跨盘。这时的正确做法是把 `UV_CACHE_DIR` 挪到和 `.venv` 同一个文件系统上，
+让硬链接重新可用，而不是设 copy。
+
+顺带：`Failed to hardlink` 确实不是安装失败，别把它当错误去 retry。
 
 ### 6. TTS 本地 uv 依赖 pinning
 
@@ -168,6 +195,16 @@ F5-TTS / IndexTTS-2 re-onboarding 经验：
      `transformers>=5`。
   任何 `transformers` import 报 “PyTorch >= X is required” 都是 build_env 失败，
   不允许进入后续 validate 节点。
+- 装 `transformers` 之前先读 checkpoint 自己声明的版本，不要直接装源上的最新版：
+
+```bash
+python3 -c "import json;print(json.load(open('checkpoints/config.json')).get('transformers_version'))"
+```
+
+  读到 `5.2.0.dev0` 就 pin `transformers==5.2.0`。装成更新的版本，模型代码往往要到
+  `validate_load` / `validate_infer` 才报错，那时 docker image 已经建过一次，
+  返工要重装依赖再重建镜像。Voxtral-Mini-4B 那次就是装了 5.15.0，checkpoint 要 5.2.0，
+  多花约 25 分钟。
 - `datasets` 与新版 pyarrow 可能出现 `AttributeError: module 'pyarrow' has no attribute
   'PyExtensionType'`，应 pin `pyarrow<21`。
 - ModelScope 依赖可能要求不可解的旧包；已验证组合可以从 `modelscope==1.27.0` 加
@@ -188,6 +225,44 @@ TTS/VC 等模型 import 阶段可能触发 matplotlib cache；每个模型本地
 export MPLCONFIGDIR="$PWD/.runtime/matplotlib"
 mkdir -p "$MPLCONFIGDIR"
 ```
+
+### 7. 前台安装被 timeout 杀掉，留下装了一半的包
+
+**症状**: 安装看着「失败」了，之后 import 报
+
+```text
+AttributeError: module 'torch' has no attribute '__version__'
+```
+
+或某个包目录存在但内容不全。
+
+**原因**: 在前台用 `timeout N` 跑 `uv pip install`，N 猜短了，进程在写文件的中途被杀。
+torch/CUDA 这一档就算一切正常也可能十几分钟以上，猜不准。
+
+**修复原则**: 预计超过 10 分钟的安装和下载一律放后台，不要在前台猜时长。
+
+```bash
+nohup bash -c 'set -o pipefail; \
+  uv pip install --python .venv/bin/python \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    -r requirements.txt > artifacts/build_env.log 2>&1; \
+  echo $? > artifacts/build_env.rc' > /dev/null 2>&1 &
+```
+
+轮询等 `build_env.rc` 出现，再按退出码判断成败。不能只看进程没了就当成功：
+
+```bash
+while [ ! -f artifacts/build_env.rc ]; do sleep 30; done
+rc=$(cat artifacts/build_env.rc)
+tail -5 artifacts/build_env.log
+[ "$rc" = 0 ] || { echo "build_env failed rc=$rc"; exit 1; }
+```
+
+已经被杀出半个包的，重装要带 `--reinstall`。不带的话 uv 只看包元数据，认为已安装就跳过，
+只打印一行 `Checked N packages in ...`，看着像成功，其实什么都没干。
+
+`SKILL.md` 里 “no long `sleep` polling” 只约束 `discover` 阶段（不许用轮询等权重下载），
+`build_env` / `fetch_weights` 的长任务不在此列，应当后台加轮询。
 
 ## 集群网络限制
 

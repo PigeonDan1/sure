@@ -1,0 +1,15 @@
+schema_version: 1
+model:
+  id: __MODEL_NAME__
+task: __TASK_TYPE__
+framework: pytorch_transformers
+runtime:
+  type: container
+  model_mount_target: __MODEL_MOUNT_TARGET__
+entrypoints:
+  server: ["python", "/opt/sure_trans/server.py"]
+io_contract:
+  input:
+    audio_path: string
+  output:
+    text: string

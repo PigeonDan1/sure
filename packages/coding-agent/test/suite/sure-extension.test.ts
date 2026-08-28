@@ -837,6 +837,44 @@ describe("Sure extension", () => {
 		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
 	});
 
+	it("does not demand required artifacts from a run that finished failed", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir, {
+			artifacts: [
+				{
+					type: "verdict",
+					path: "artifacts/verdict.json",
+					required: true,
+					description: "Final verdict.",
+				},
+			],
+		});
+
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId, { status: "failed", artifacts: [] });
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "failed",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "stopped before the verdict",
+						error_summary: "source image push was rejected",
+					}),
+				);
+			},
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("failed");
+	});
+
 	it("accepts required artifacts recorded in final manifest outputs", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
@@ -1168,7 +1206,7 @@ describe("Sure extension", () => {
 	it("initializes SURE via /sure_init with headless args", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
-		for (const command of ["sure_feed", "sure_onboard", "sure_eval", "sure_reval"]) {
+		for (const command of ["sure_feed", "sure_onboard", "sure_trans", "sure_eval", "sure_reval"]) {
 			setupSkillPackage(harness.tempDir, { dirName: command, name: command, command });
 		}
 
@@ -1187,6 +1225,7 @@ describe("Sure extension", () => {
 		expect(manifest.defaultModel).toBe("kimi-for-coding");
 		expect(manifest.availableSkills).toContain("/sure_feed");
 		expect(manifest.availableSkills).toContain("/sure_onboard");
+		expect(manifest.availableSkills).toContain("/sure_trans");
 		expect(manifest.availableSkills).toContain("/sure_eval");
 		expect(manifest.availableSkills).toContain("/sure_reval");
 

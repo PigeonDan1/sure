@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
@@ -27,10 +27,12 @@ export interface SitePolicy {
 		surfaces: ExecutionSurface[];
 		vc_partitions?: string[];
 		vc_partition_priority?: Record<string, number>;
+		vc_default_partition?: string;
 	};
 	network?: {
 		internal_git_host?: string;
 		gateway_portal?: string;
+		container_registry?: string;
 	};
 }
 
@@ -73,7 +75,9 @@ function expectString(value: unknown, location: string): string {
 
 function expectAbsolutePath(value: unknown, location: string): string {
 	const path = expectString(value, location);
-	if (!isAbsolute(path)) throw new Error(`${location} must be an absolute path`);
+	// Site policy paths are POSIX cluster paths, declared as "^/" in
+	// policy.schema.json; win32 isAbsolute would also accept C:/....
+	if (!posix.isAbsolute(path)) throw new Error(`${location} must be an absolute path`);
 	return path;
 }
 
@@ -100,7 +104,7 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	const datasets = expectRecord(root.datasets, "datasets");
 	rejectUnknown(datasets, ["allowed_source_roots"], "datasets");
 	const execution = expectRecord(root.execution, "execution");
-	rejectUnknown(execution, ["surfaces", "vc_partitions", "vc_partition_priority"], "execution");
+	rejectUnknown(execution, ["surfaces", "vc_partitions", "vc_partition_priority", "vc_default_partition"], "execution");
 	const surfaces = expectUniqueStrings(execution.surfaces, "execution.surfaces", false);
 	if (surfaces.some((surface) => surface !== "local" && surface !== "vc")) {
 		throw new Error("execution.surfaces contains an unsupported value");
@@ -109,10 +113,13 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	let network: SitePolicy["network"];
 	if (root.network !== undefined) {
 		const source = expectRecord(root.network, "network");
-		rejectUnknown(source, ["internal_git_host", "gateway_portal"], "network");
+		rejectUnknown(source, ["internal_git_host", "gateway_portal", "container_registry"], "network");
 		network = {};
 		if (source.internal_git_host !== undefined) {
 			network.internal_git_host = expectString(source.internal_git_host, "network.internal_git_host");
+		}
+		if (source.container_registry !== undefined) {
+			network.container_registry = expectString(source.container_registry, "network.container_registry");
 		}
 		if (source.gateway_portal !== undefined) {
 			network.gateway_portal = expectString(source.gateway_portal, "network.gateway_portal");
@@ -155,6 +162,14 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 			parsed[name] = value;
 		}
 		policy.execution.vc_partition_priority = parsed;
+	}
+	if (execution.vc_default_partition !== undefined) {
+		const defaultPartition = expectString(execution.vc_default_partition, "execution.vc_default_partition");
+		const allowed = policy.execution.vc_partitions;
+		if (allowed !== undefined && !allowed.includes(defaultPartition)) {
+			throw new Error("execution.vc_default_partition must be listed in execution.vc_partitions");
+		}
+		policy.execution.vc_default_partition = defaultPartition;
 	}
 	if (network !== undefined) policy.network = network;
 	return policy;

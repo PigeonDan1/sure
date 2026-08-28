@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
@@ -45,8 +45,11 @@ def _string(value: Any, location: str) -> str:
 
 
 def _absolute_path(value: Any, location: str) -> str:
+    # Site policy paths are POSIX cluster paths; policy.schema.json declares
+    # them as "^/". Path() would answer by host platform, so a Windows host
+    # rejected the site's own roots and accepted drive-letter paths.
     path = _string(value, location)
-    if not Path(path).is_absolute():
+    if not PurePosixPath(path).is_absolute():
         raise SitePolicyError(f"{location} must be an absolute path")
     return path
 
@@ -79,7 +82,7 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
     datasets = _mapping(root.get("datasets"), "datasets")
     _reject_unknown(datasets, {"allowed_source_roots"}, "datasets")
     execution = _mapping(root.get("execution"), "execution")
-    _reject_unknown(execution, {"surfaces", "vc_partitions", "vc_partition_priority"}, "execution")
+    _reject_unknown(execution, {"surfaces", "vc_partitions", "vc_partition_priority", "vc_default_partition"}, "execution")
     surfaces = _unique_strings(execution.get("surfaces"), "execution.surfaces", absolute=False)
     if any(surface not in {"local", "vc"} for surface in surfaces):
         raise SitePolicyError("execution.surfaces contains an unsupported value")
@@ -109,12 +112,20 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
                 raise SitePolicyError(f"execution.vc_partition_priority.{name} must be a non-negative integer")
             parsed_priority[name] = value
         policy["execution"]["vc_partition_priority"] = parsed_priority
+    if "vc_default_partition" in execution:
+        default_partition = _string(execution["vc_default_partition"], "execution.vc_default_partition")
+        allowed_partitions = policy["execution"].get("vc_partitions")
+        if allowed_partitions is not None and default_partition not in allowed_partitions:
+            raise SitePolicyError("execution.vc_default_partition must be listed in execution.vc_partitions")
+        policy["execution"]["vc_default_partition"] = default_partition
     if "network" in root:
         source = _mapping(root["network"], "network")
-        _reject_unknown(source, {"internal_git_host", "gateway_portal"}, "network")
+        _reject_unknown(source, {"internal_git_host", "gateway_portal", "container_registry"}, "network")
         network = {}
         if "internal_git_host" in source:
             network["internal_git_host"] = _string(source["internal_git_host"], "network.internal_git_host")
+        if "container_registry" in source:
+            network["container_registry"] = _string(source["container_registry"], "network.container_registry")
         if "gateway_portal" in source:
             portal = _string(source["gateway_portal"], "network.gateway_portal")
             parsed_portal = urlparse(portal)

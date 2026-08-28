@@ -40,6 +40,7 @@ OPTIONAL_RUN_ARTIFACTS = [
     "build.log",
     "validation.log",
     "sample_output.json",
+    "sample_outputs.jsonl",
     "local_env.json",
     "requirements.lock",
     "uv.lock",

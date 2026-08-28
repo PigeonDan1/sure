@@ -1,0 +1,41 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "deployment_ready.schema.json",
+	"title": "SURE trans finalized deployment binding",
+	"description": "Same terminal marker consumed by /sure_eval as /sure_onboard. A trans bundle is always local + docker-registry. A run that stopped early seals status=blocked with execution_policy.container_only=false; scripts/check_artifact.py enforces the ready-side policy constants.",
+	"type": "object",
+	"required": ["schema", "generated_at", "status", "model_name", "package_profile", "execution_policy", "required_artifact_sha256", "bundle_identity_sha256"],
+	"properties": {
+		"schema": { "const": "sure.onboard.deployment_ready.v1" },
+		"generated_at": { "type": "string" },
+		"status": { "enum": ["ready", "blocked"] },
+		"blocked_reason": { "type": "string" },
+		"model_name": { "type": "string" },
+		"package_profile": { "const": "docker-registry" },
+		"target_image": { "type": "string" },
+		"target_image_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+		"target_image_ref": { "type": "string", "pattern": "@sha256:[0-9a-f]{64}$" },
+		"harness_runtime": { "type": "object" },
+		"runtime_inventory": { "type": "string" },
+		"package_gate": { "type": "string" },
+		"verdict": { "type": "string" },
+		"artifact_manifest": { "type": "string" },
+		"required_artifact_sha256": {
+			"type": "object",
+			"additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+		},
+		"bundle_identity_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+		"execution_policy": {
+			"type": "object",
+			"required": ["container_only", "nfs_models_read_only", "host_python_fallback", "approved_image_override"],
+			"properties": {
+				"container_only": { "type": "boolean" },
+				"nfs_models_read_only": { "type": "boolean" },
+				"host_python_fallback": { "type": "boolean" },
+				"approved_image_override": { "type": "boolean" }
+			},
+			"additionalProperties": false
+		}
+	},
+	"additionalProperties": false
+}

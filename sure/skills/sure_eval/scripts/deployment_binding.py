@@ -61,10 +61,48 @@ def _require(condition: bool, message: str) -> None:
         raise DeploymentBindingError(message)
 
 
+def _normalize_harness_runtime(binding: dict[str, Any]) -> dict[str, Any]:
+    """Accept legacy bindings by deriving root from their manifest location."""
+    manifest_value = str(binding.get("manifest_path") or "")
+    python_value = str(binding.get("python_executable") or "")
+    _require(Path(manifest_value).is_absolute(), "container Harness Runtime manifest_path must be absolute")
+    _require(Path(python_value).is_absolute(), "container Harness Runtime python_executable must be absolute")
+
+    root_value = str(binding.get("runtime_root") or "")
+    root = Path(root_value) if root_value else Path(manifest_value).parent
+    _require(root.is_absolute(), "container Harness Runtime runtime_root must be absolute")
+    _require(Path(manifest_value).parent == root, "container Harness Runtime manifest_path disagrees with runtime_root")
+    try:
+        Path(python_value).relative_to(root)
+    except ValueError as exc:
+        raise DeploymentBindingError("container Harness Runtime python_executable escapes runtime_root") from exc
+    normalized = dict(binding)
+    normalized["runtime_root"] = str(root)
+    return normalized
+
+
+TERMINAL_VERDICT_STATUSES = {"success", "passed", "pass"}
+
+
 def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     """Return the only execution binding that `/sure_eval` may consume."""
 
     model_dir = model_dir.expanduser().resolve()
+
+    # A sealed bundle is supposed to carry a passing verdict; nothing here used to
+    # look at it, so a bundle sitting next to a failed verdict resolved as usable.
+    # Bundles that predate the verdict sidecar have none, so absence stays allowed.
+    verdict_path = model_dir / "artifacts" / "verdict.json"
+    if verdict_path.is_file():
+        try:
+            verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+        except ValueError as error:
+            raise DeploymentBindingError(f"verdict.json is not readable JSON: {error}") from error
+        _require(
+            isinstance(verdict, dict) and str(verdict.get("status", "")).lower() in TERMINAL_VERDICT_STATUSES,
+            "verdict must be terminal-success for the bundle to be usable",
+        )
+
     marker = _read_json(model_dir, "artifacts/deployment_ready.json")
     inventory = _read_json(model_dir, "artifacts/runtime_inventory.json")
     package = _read_json(model_dir, "artifacts/package_gate.json")
@@ -137,6 +175,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     _require(bool(python_executable), "container python_executable is missing")
     image_harness = inventory.get("harness_runtime")
     if isinstance(image_harness, dict) and image_harness.get("required") is True:
+        image_harness = _normalize_harness_runtime(image_harness)
         _require(
             image_harness.get("schema") == "sure.harness.runtime.binding.v1",
             "container Harness Runtime schema is invalid",
@@ -155,6 +194,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
         )
         marker_harness = marker.get("harness_runtime")
         if isinstance(marker_harness, dict):
+            marker_harness = _normalize_harness_runtime(marker_harness)
             for key in ("runtime_id", "lock_sha256", "python_executable", "manifest_path", "runtime_root"):
                 _require(
                     marker_harness.get(key) == image_harness.get(key),

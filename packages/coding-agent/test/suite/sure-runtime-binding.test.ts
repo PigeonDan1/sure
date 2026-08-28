@@ -50,6 +50,28 @@ describe("SURE skill runtime responsibility binding", () => {
 		expect(payload.runtimes.evaluation.required).toBe(false);
 	});
 
+	it("keeps the harness binding schema when the contract carries its own", () => {
+		// bootstrap.py copies the runtime manifest schema onto the contract object,
+		// so the contract can arrive carrying a schema of its own.
+		const carriesSchema = {
+			...harness,
+			schema: "sure.harness.runtime.manifest.v1",
+			runtime_type: "not_harness_python",
+		} as HarnessRuntimeContract;
+		const path = writeSkillRuntimeBinding({
+			runDir: root,
+			skill: "sure_feed",
+			harnessRuntime: carriesSchema,
+			harnessRole: "research and gates",
+			modelRuntimeReason: "no inference",
+			evaluationRuntime: { reason: "no evaluation" },
+		});
+		const payload = JSON.parse(readFileSync(path, "utf-8"));
+		expect(payload.runtimes.harness.binding.schema).toBe("sure.harness.runtime.binding.v1");
+		expect(payload.runtimes.harness.binding.runtime_type).toBe("harness_python");
+		expect(payload.runtimes.harness.binding.runtime_id).toBe("harness-test");
+	});
+
 	it("validates Reval with Harness and Evaluation runtimes cross-bound", () => {
 		const evaluationRoot = join(root, "evaluation");
 		const evaluationPython = join(evaluationRoot, "bin", "python");

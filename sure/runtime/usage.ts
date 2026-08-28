@@ -27,10 +27,13 @@ export interface SkillRuntimeBindingOptions {
 }
 
 function harnessBinding(contract: HarnessRuntimeContract): Record<string, unknown> {
+	// Spread the contract first so the binding always declares its own schema and
+	// runtime_type: bootstrap.py copies the manifest schema onto the contract
+	// object, which would otherwise overwrite them.
 	return {
+		...contract,
 		schema: "sure.harness.runtime.binding.v1",
 		runtime_type: "harness_python",
-		...contract,
 	};
 }
 
