@@ -53,6 +53,8 @@ def _default_metric(task: str | None, language: str | None) -> str:
         return "tts_cer" if language_name.startswith(("zh", "cmn", "yue")) else "tts_wer"
     if task_name == "ASR" and language_name == "cs":
         return "mer"
+    if task_name == "ASR" and language_name in {"multi", "multilingual"}:
+        return "wer"
     if task_name == "ASR" and language_name == "en":
         return "wer"
     return "cer"

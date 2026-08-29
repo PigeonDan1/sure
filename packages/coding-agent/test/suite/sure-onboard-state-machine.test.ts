@@ -755,49 +755,51 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 	});
 
 	// sure/handoffs/ is listed in .gitignore, so these fixtures exist only on a
-	// machine that has already run /sure_feed. Skip rather than fail when the
-	// directory is absent: a fresh clone cannot produce it, and hand-writing a
-	// model_input.yaml would test a fixture we invented rather than the artifact
-	// the pipeline actually emits.
+	// machine that has already run /sure_feed for that exact model. Skip rather
+	// than fail when a specific model_input.yaml is absent: a fresh clone cannot
+	// produce it, and hand-writing one would test a fixture we invented rather
+	// than the artifact the pipeline actually emits.
 	const HANDOFFS_DIR = resolve(__dirname, "../../../../sure/handoffs");
 
-	it.skipIf(!existsSync(HANDOFFS_DIR)).each([
+	for (const [modelName, modelId, taskType, taskPlaybook] of [
 		["Qwen__Qwen3-ASR-1.7B", "Qwen/Qwen3-ASR-1.7B", "asr", "references/task_playbooks/ASR.md"],
 		["Qwen__Qwen3-TTS-12Hz-1.7B-Base", "Qwen/Qwen3-TTS-12Hz-1.7B-Base", "tts", "references/task_playbooks/TTS.md"],
-	])("materializes checked-in Qwen handoff %s", (modelName, modelId, taskType, taskPlaybook) => {
-		const { ctx, cwd, runDir } = preStartCtx(`materialize-${modelName}`, "");
+	] as const) {
 		const modelInputPath = join(HANDOFFS_DIR, modelName, "model_input.yaml");
-		const proc = spawnSync(
-			"python3",
-			[
-				join(PACKAGE_DIR, "scripts", "materialize_onboard_inputs.py"),
-				"--model-input-path",
-				modelInputPath,
-				"--run-dir",
-				runDir,
-				"--repo-root",
-				cwd,
-				"--package-profile",
-				"none",
-				"--raw-args",
-				`model=${modelName}`,
-			],
-			{ encoding: "utf-8" },
-		);
-		expect(proc.status, proc.stderr || proc.stdout).toBe(0);
+		it.skipIf(!existsSync(modelInputPath))(`materializes checked-in Qwen handoff ${modelName}`, () => {
+			const { ctx, cwd, runDir } = preStartCtx(`materialize-${modelName}`, "");
+			const proc = spawnSync(
+				"python3",
+				[
+					join(PACKAGE_DIR, "scripts", "materialize_onboard_inputs.py"),
+					"--model-input-path",
+					modelInputPath,
+					"--run-dir",
+					runDir,
+					"--repo-root",
+					cwd,
+					"--package-profile",
+					"none",
+					"--raw-args",
+					`model=${modelName}`,
+				],
+				{ encoding: "utf-8" },
+			);
+			expect(proc.status, proc.stderr || proc.stdout).toBe(0);
 
-		const resolved = JSON.parse(readFileSync(join(runDir, "artifacts", "model_input_resolved.json"), "utf-8"));
-		const context = JSON.parse(readFileSync(join(runDir, "artifacts", "context_selection.json"), "utf-8"));
-		expect(validateProduces(ctx, findUnit("load_model_input")!, resolved).ok).toBe(true);
-		expect(validateProduces(ctx, findUnit("context_selection")!, context).ok).toBe(true);
-		expect(resolved.model_id).toBe(modelId);
-		expect(resolved.model_name).toBe(modelName);
-		expect(resolved.task_type).toBe(taskType);
-		expect(resolved.package_profile).toBe("none");
-		expect(resolved.model_dir).toBe(join(cwd, "sure", "models", modelName));
-		expect(context.selected_references.task_playbooks).toContain(taskPlaybook);
-		expect(context.selected_references.environment_playbooks).toContain("references/playbooks/env_uv.md");
-	});
+			const resolved = JSON.parse(readFileSync(join(runDir, "artifacts", "model_input_resolved.json"), "utf-8"));
+			const context = JSON.parse(readFileSync(join(runDir, "artifacts", "context_selection.json"), "utf-8"));
+			expect(validateProduces(ctx, findUnit("load_model_input")!, resolved).ok).toBe(true);
+			expect(validateProduces(ctx, findUnit("context_selection")!, context).ok).toBe(true);
+			expect(resolved.model_id).toBe(modelId);
+			expect(resolved.model_name).toBe(modelName);
+			expect(resolved.task_type).toBe(taskType);
+			expect(resolved.package_profile).toBe("none");
+			expect(resolved.model_dir).toBe(join(cwd, "sure", "models", modelName));
+			expect(context.selected_references.task_playbooks).toContain(taskPlaybook);
+			expect(context.selected_references.environment_playbooks).toContain("references/playbooks/env_uv.md");
+		});
+	}
 
 	it("allows the materializer helper script during LOAD_MODEL_INPUT", () => {
 		const { ctx, runDir } = freshCtx("allow-materializer");

@@ -220,6 +220,7 @@ def _legacy_default_metric(task: str, language: str) -> str:
         else "tts_cer" if task == "TTS" and _is_chinese_family_language(language)
         else "tts_wer" if task == "TTS"
         else "mer" if task == "ASR" and language == "cs"
+        else "wer" if task == "ASR" and language in {"multi", "multilingual"}
         else "wer" if task == "ASR" and language == "en"
         else "cer"
     )

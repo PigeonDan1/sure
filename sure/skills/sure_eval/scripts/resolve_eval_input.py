@@ -641,7 +641,9 @@ def _fallback_default_metrics(task: str, language: str) -> list[str]:
     if task_upper == "ASR":
         if language_lower == "cs":
             return ["mer"]
-        return ["wer"] if language_lower == "en" else ["cer"]
+        if language_lower in {"en", "multi", "multilingual"}:
+            return ["wer"]
+        return ["cer"]
     if task_upper in {"TTS", "VC"}:
         return []
     return [TEXT_DEFAULT_METRICS.get(task_upper, "accuracy")]

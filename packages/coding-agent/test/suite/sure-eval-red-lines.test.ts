@@ -31,27 +31,24 @@ function writeArtifact(runDir: string, produces: string, value: unknown): void {
 }
 
 function writeEvalInput(runDir: string): void {
-	const dataset = "aishell1__v1.0.2__asr";
+	const dataset = "asr_en_smoke";
 	writeArtifact(runDir, "eval_input_resolved.json", {
 		schema: "sure.eval.input_resolved.v1",
 		generated_at: "2026-01-01T00:00:00Z",
-		user_input: { model: "demo", datasets: [dataset], device: "cpu", metrics: ["cer"], execution: "local" },
+		user_input: { model: "demo", datasets: [dataset], device: "cpu", metrics: ["wer"], execution: "local" },
 		model: {},
 		datasets: [
 			{
 				name: dataset,
-				jsonl_path: resolve(
-					__dirname,
-					"../../../../data/datasets/sure_benchmark/jsonl/aishell1__v1.0.2__asr.jsonl",
-				),
+				jsonl_path: resolve(__dirname, "../../../../data/datasets/sure_benchmark/jsonl/asr_en_smoke.jsonl"),
 				jsonl_exists: true,
 				task: "ASR",
-				language: "zh",
-				default_metrics: ["cer"],
+				language: "en",
+				default_metrics: ["wer"],
 				display_name: dataset,
 			},
 		],
-		task_summary: { evaluation_tasks: ["ASR"], languages: ["zh"], metrics: ["cer"] },
+		task_summary: { evaluation_tasks: ["ASR"], languages: ["en"], metrics: ["wer"] },
 		runtime: {
 			run_dir: runDir,
 			device: { request: "cpu", resolved: "cpu" },
@@ -69,6 +66,15 @@ function runGate(script: string, runDir: string, produces: string): { ok: boolea
 		{ cwd: PACKAGE_DIR, encoding: "utf-8", timeout: 30_000 },
 	);
 	return { ok: r.status === 0, stderr: r.stderr ?? "" };
+}
+
+function runPythonSnippet(cwd: string, script: string) {
+	return spawnSync("python3", ["-c", script], {
+		cwd,
+		encoding: "utf-8",
+		env: { ...process.env, PYTHONPATH: SCRIPTS_DIR },
+		timeout: 30_000,
+	});
 }
 
 const cleanups: Array<() => void> = [];
@@ -104,17 +110,15 @@ describe("sure_eval red line 1 — EXECUTION_SURFACE_ISOLATION", () => {
 			"utf-8",
 		);
 		const surfacePath = join(runDir, "artifacts", "execution_surface.json");
-		const result = spawnSync("python3", ["-"], {
-			cwd: SCRIPTS_DIR,
-			input: `
+		const result = runPythonSnippet(
+			SCRIPTS_DIR,
+			`
 from pathlib import Path
 from check_execution_surface_compliance import check_template_source
 result = check_template_source(Path(${JSON.stringify(surfacePath)}), Path(${JSON.stringify(templateFile)}))
 assert result["passed"], result
 `,
-			encoding: "utf-8",
-			env: { ...process.env, PYTHONPATH: SCRIPTS_DIR },
-		});
+		);
 		expect(result.status).toBe(0);
 		expect(result.stderr).toBe("");
 	});
@@ -240,12 +244,7 @@ assert indexed["request"] == "cuda:3", indexed
 assert indexed["resolved"] == "cuda:0", indexed
 assert indexed["notes"], indexed
 `;
-		const result = spawnSync("python3", ["-"], {
-			cwd: SCRIPTS_DIR,
-			input: script,
-			encoding: "utf-8",
-			env: { ...process.env, PYTHONPATH: SCRIPTS_DIR },
-		});
+		const result = runPythonSnippet(SCRIPTS_DIR, script);
 		expect(result.status).toBe(0);
 		expect(result.stderr).toBe("");
 	});
@@ -281,12 +280,7 @@ assert "SURE_EVAL_DEVICE_REQUEST=auto" in text, text
 assert "SURE_EVAL_DEVICE_ACTUAL=cuda:0" in text, text
 assert "HARNESS_PYTHON_BIN=/ctr/repo/.runtime/harness-py311/bin/python" in text, text
 `;
-		const result = spawnSync("python3", ["-"], {
-			cwd: PACKAGE_DIR,
-			input: script,
-			encoding: "utf-8",
-			env: { ...process.env, PYTHONPATH: SCRIPTS_DIR },
-		});
+		const result = runPythonSnippet(PACKAGE_DIR, script);
 		expect(result.status).toBe(0);
 		expect(result.stderr).toBe("");
 	});
@@ -324,12 +318,7 @@ r._write_surface_resolved_submission(surface_path, surface, submission)
 data = json.loads(surface_path.read_text())
 assert data["vc_runtime"]["resolved_submission"] == submission, data
 `;
-		const result = spawnSync("python3", ["-"], {
-			cwd: SCRIPTS_DIR,
-			input: script,
-			encoding: "utf-8",
-			env: { ...process.env, PYTHONPATH: SCRIPTS_DIR },
-		});
+		const result = runPythonSnippet(SCRIPTS_DIR, script);
 		expect(result.status).toBe(0);
 		expect(result.stderr).toBe("");
 	});

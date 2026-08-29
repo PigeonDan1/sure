@@ -42,8 +42,8 @@ if [[ "$NO_ENV" == "true" ]]; then
   echo "Running without API keys..."
 fi
 
-if [[ ! -x "$SCRIPT_DIR/node_modules/.bin/tsx" ]]; then
-  echo "Missing node_modules/.bin/tsx."
+if ! node -e "require.resolve('tsx', { paths: ['$SCRIPT_DIR'] });" >/dev/null 2>&1; then
+  echo "Missing tsx package."
   echo "Run from the repository root:"
   echo "  npm install --ignore-scripts"
   echo "  npm run sure:doctor"
@@ -58,4 +58,5 @@ if ! node -e "const base = '$SCRIPT_DIR/packages/coding-agent/src/core/sure'; fo
   exit 1
 fi
 
-"$SCRIPT_DIR/node_modules/.bin/tsx" --tsconfig "$SCRIPT_DIR/tsconfig.json" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
+cd "$SCRIPT_DIR"
+node --import tsx "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
