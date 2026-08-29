@@ -13,6 +13,7 @@
   },
   "artifacts": [
     { "type": "dependency_report", "path": "artifacts/inference_dependency_report.json", "required": true, "description": "Resolved static and dynamic inference dependency evidence." },
+    { "type": "framework_detection", "path": "artifacts/framework_detection.json", "required": true, "description": "Declared and detected computation/model framework evidence with architecture clarification." },
     { "type": "fixture", "path": "artifacts/fixture_manifest.json", "required": true, "description": "Bounded real smoke fixture staged for original and adapter inference." },
     { "type": "execution_compat", "path": "artifacts/execution_compat.json", "required": true, "description": "Source-container Python, framework, CUDA, and BF16 compatibility probe." },
     { "type": "source_image", "path": "artifacts/source_image_result.json", "required": true, "description": "Verified Docker load or Dockerfile build evidence for the source image." },
@@ -23,7 +24,7 @@
   ],
   "ui": {
     "primaryCounters": ["completed_units", "total_units", "gate_blocks"],
-    "artifactTypes": ["dependency_report", "fixture", "execution_compat", "model_payload", "runtime_inventory", "verdict", "deployment_ready"],
+    "artifactTypes": ["dependency_report", "framework_detection", "fixture", "execution_compat", "model_payload", "runtime_inventory", "verdict", "deployment_ready"],
     "defaultExpandedSections": ["diagnostics", "artifacts"]
   }
 }

@@ -82,6 +82,8 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		["model", modelPath],
 		["inference_entrypoint", inferenceEntrypoint],
 		["framework", args.framework],
+		["model_framework", args.model_framework],
+		["model_name", args.model_name],
 	]
 		.filter((entry) => !entry[1])
 		.map((entry) => entry[0]);
@@ -89,8 +91,18 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		return failure(
 			`Provide required parameters: ${missing.join(", ")}. Example: ` +
 				"/sure_trans dockerfile=/abs/Dockerfile model=/abs/model " +
-				"inference_entrypoint=/abs/infer.py framework=pytorch_transformers",
+				"inference_entrypoint=/abs/infer.py framework=pytorch model_framework=transformers " +
+				"model_name=organization__model",
 			"TRANS_INPUT_MISSING",
+		);
+	}
+	if (!new Set(["pytorch", "torch"]).has(args.framework?.toLowerCase() ?? "")) {
+		return failure("framework must be pytorch (torch is accepted as an alias)", "TRANS_INPUT_INVALID");
+	}
+	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(args.model_framework ?? "")) {
+		return failure(
+			"model_framework must be a non-empty identifier using letters, digits, '.', '_' or '-'",
+			"TRANS_INPUT_INVALID",
 		);
 	}
 	for (const [name, value] of [
@@ -107,6 +119,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	const vcMemoryGb = args.vc_memory_gb;
 	const vcGpus = args.vc_gpus;
 	const imageVersion = args.image_version;
+	if (!/^[A-Za-z0-9][A-Za-z0-9.-]*__[A-Za-z0-9][A-Za-z0-9._-]*$/.test(args.model_name ?? "")) {
+		return failure("model_name must use <organization>__<model_name>", "TRANS_INPUT_INVALID");
+	}
 	const safeTag = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 	if (vcPartition !== undefined && !safeTag.test(vcPartition)) {
 		return failure(`vc_partition must be a registry-style safe name: ${vcPartition}`, "TRANS_INPUT_INVALID");

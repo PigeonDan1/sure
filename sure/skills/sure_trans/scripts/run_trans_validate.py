@@ -6,6 +6,7 @@ import json
 import math
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -86,7 +87,89 @@ def model_payload_bytes(run_dir: Path, resolved: dict, kind: str) -> int:
     return sum(entry.stat().st_size for entry in path.rglob("*") if entry.is_file())
 
 
+def prepare_container_outputs(spec: object, run_dir: Path) -> None:
+    """Clear the directory the container writes its stage output into.
+
+    The target is the mount SURE_VALIDATE_ARTIFACTS_DIR names, which is what
+    SKILL.md prescribes and what container_stage_error already reads; guessing
+    at /output and /artifacts instead cleared nothing on the documented path and
+    would have emptied the run's own artifacts directory on an undocumented one.
+
+    The mounts come from the run_command the agent under test wrote into its
+    own <stage>_result.json, so a host path here is untrusted input. Refuse
+    anything that resolves outside the run directory, and refuse the run's own
+    artifacts directory, which holds gate products rather than container output.
+    """
+    root = run_dir.resolve()
+    target = str((getattr(spec, "env", None) or {}).get("SURE_VALIDATE_ARTIFACTS_DIR", "") or "")
+    if not target:
+        return
+    mounts = getattr(spec, "mounts", ())
+    for mount in mounts:
+        parts = str(mount).split(":")
+        if len(parts) < 2 or parts[1] != target:
+            continue
+        output_dir = Path(parts[0]).expanduser()
+        if not output_dir.is_absolute():
+            raise ValueError(f"validation output mount host path must be absolute: {mount!r}")
+        resolved = output_dir.resolve()
+        if root not in resolved.parents:
+            raise ValueError(
+                f"validation output mount must stay inside the run directory: {mount!r}"
+            )
+        if resolved == root / "artifacts":
+            raise ValueError(
+                f"validation output mount must not target the run artifacts directory: {mount!r}"
+            )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for child in output_dir.iterdir():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+
+
 MCP_STEPS = ("initialize", "tools_list", "tools_call")
+GPU_OOM_MAX_ATTEMPTS = 8
+# Leave the gate room to collect diagnostics and write the stage result after
+# the last attempt it is allowed to start.
+GATE_BUDGET_RESERVE_SECONDS = 120.0
+
+
+def gate_budget_seconds() -> float:
+    """Wall clock the hook allows this script before it kills it.
+
+    checkpoints.ts spawns the gate with a fixed timeout and exports it here, so
+    the two stay in step. Eight OOM retries at the default per-stage timeout run
+    four times past that budget; a retry started with no room to finish is
+    killed mid-flight, which loses the stage result, orphans the vc job and
+    spends a state-machine retry on work that was still running.
+    """
+    try:
+        return max(0.0, float(os.environ.get("SURE_TRANS_GATE_BUDGET_SECONDS", "") or 0.0))
+    except ValueError:
+        return 0.0
+
+
+def is_gpu_oom(result: object, stage_error: str = "") -> bool:
+    """Decide whether a failed job died of a GPU out-of-memory condition.
+
+    The exit code has to agree. A recovered OutOfMemoryError leaves its
+    traceback in the log of a job that goes on to exit 0, and resubmitting that
+    job wastes a GPU allocation and then judges the stage on a later attempt.
+    stage_error carries what the container wrote to <stage>_result.json, which
+    is the only place templates/validate.py records a caught exception, so a
+    real OOM that never reached the job log still counts.
+    """
+    if getattr(result, "exit_code", None) in (0, None):
+        return False
+    evidence = "\n".join(
+        [stage_error] + [
+            str(getattr(result, field, "") or "")
+            for field in ("stdout", "stderr", "vc_diagnostics")
+        ]
+    )
+    return "cuda out of memory" in evidence.lower()
 
 
 def validate_mcp_evidence(evidence_path: Path, tool_name: str) -> str | None:
@@ -268,6 +351,7 @@ def run_vc_validation(
 ) -> tuple[int, dict, str]:
     command, _ = command_for(data.get("run_command"))
     spec = docker_run_to_vc(command)
+    prepare_container_outputs(spec, run_dir)
     registry_ref, _, _ = ensure_validation_image(run_dir, resolved, kind, artifacts)
     env: dict[str, str] = dict(spec.env)
     for key, value in (data.get("env") or {}).items():
@@ -286,20 +370,44 @@ def run_vc_validation(
             f"command or trans_input_resolved.json, then rerun the gate."
         )
     log_dir = run_dir / "artifacts" / "vc_logs" / kind
-    result = run_vc_job(
-        image=registry_ref,
-        command=shlex.join(spec.command),
-        log_dir=log_dir,
-        mounts=spec.mounts,
-        workdir=spec.workdir,
-        env=env,
-        partition=partition,
-        gpus=gpus,
-        memory_gb=memory_gb,
-        cpus=cpus,
-        job_name=f"sure-trans-{resolved.get('model_name')}-{kind}",
-        timeout_seconds=timeout,
-    )
+    attempts: list[dict[str, object]] = []
+    result = None
+    budget = gate_budget_seconds()
+    budget_started = time.monotonic()
+    budget_exhausted = False
+    for attempt in range(1, GPU_OOM_MAX_ATTEMPTS + 1):
+        if attempt > 1 and budget:
+            spent = time.monotonic() - budget_started
+            if budget - GATE_BUDGET_RESERVE_SECONDS - spent < timeout:
+                budget_exhausted = True
+                break
+        prepare_container_outputs(spec, run_dir)
+        attempt_log_dir = log_dir if attempt == 1 else log_dir / f"oom-attempt-{attempt}"
+        result = run_vc_job(
+            image=registry_ref,
+            command=shlex.join(spec.command),
+            log_dir=attempt_log_dir,
+            mounts=spec.mounts,
+            workdir=spec.workdir,
+            env=env,
+            partition=partition,
+            gpus=gpus,
+            memory_gb=memory_gb,
+            cpus=cpus,
+            job_name=f"sure-trans-{resolved.get('model_name')}-{kind}-attempt-{attempt}",
+            timeout_seconds=timeout,
+        )
+        gpu_oom = is_gpu_oom(result, container_stage_error(data.get("run_command"), kind))
+        attempts.append({
+            "attempt": attempt,
+            "job_id": result.job_id,
+            "log_path": str(result.log_dir),
+            "exit_code": result.exit_code,
+            "gpu_oom": gpu_oom,
+        })
+        if not gpu_oom:
+            break
+    assert result is not None
     exit_code = -1 if result.exit_code is None else result.exit_code
     extra = {
         "execution_surface": "vc",
@@ -312,6 +420,10 @@ def run_vc_validation(
         "vc_timed_out": result.timed_out,
         "registry_ref": registry_ref,
         "vc_diagnostics": result.vc_diagnostics[:4000],
+        "vc_attempts": attempts,
+        "gpu_oom_attempts": len(attempts) if attempts[-1]["gpu_oom"] else len(attempts) - 1,
+        "gpu_oom_retry_exhausted": bool(attempts[-1]["gpu_oom"]),
+        "gpu_oom_retry_budget_exhausted": budget_exhausted,
     }
     rendered = (
         f"$ {' '.join(result.submit_command)}\n$ {shlex.join(spec.command)}\n"

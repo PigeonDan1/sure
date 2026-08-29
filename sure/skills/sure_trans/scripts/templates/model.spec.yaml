@@ -2,7 +2,8 @@ schema_version: 1
 model:
   id: __MODEL_NAME__
 task: __TASK_TYPE__
-framework: pytorch_transformers
+framework: __FRAMEWORK__
+model_framework: __MODEL_FRAMEWORK__
 runtime:
   type: container
   model_mount_target: __MODEL_MOUNT_TARGET__

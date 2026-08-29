@@ -61,4 +61,26 @@ describe("sure_trans preStart", () => {
 			process.env.PATH = previous;
 		}
 	});
+
+	it("requires model_framework separately from framework", () => {
+		const result = preStart({
+			args:
+				"dockerfile=/abs/Dockerfile model=/abs/model inference_entrypoint=/abs/infer.py " +
+				"framework=pytorch model_name=organization__model",
+		} as SureHookContext);
+
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("model_framework");
+	});
+
+	it("rejects the old combined framework value", () => {
+		const result = preStart({
+			args:
+				"dockerfile=/abs/Dockerfile model=/abs/model inference_entrypoint=/abs/infer.py " +
+				"framework=pytorch_transformers model_framework=transformers model_name=organization__model",
+		} as SureHookContext);
+
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("framework must be pytorch");
+	});
 });

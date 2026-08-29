@@ -15,6 +15,13 @@ import { FIRST_UNIT, LAST_UNIT, nextUnit } from "./state-machine.ts";
 //   2. validateProduces — every unit's produces validated (linear + gate).
 //   3. gateCheck — gate units run a Python semantic script via spawnSync.
 
+/**
+ * Wall clock a gate script gets. Also exported to the script as
+ * SURE_TRANS_GATE_BUDGET_SECONDS so its own GPU OOM retry loop stops before
+ * this spawn kills it; keep the two in step by changing only this constant.
+ */
+const GATE_TIMEOUT_MS = 3_600_000;
+
 export interface GateResult {
 	ok: boolean;
 	repair?: string;
@@ -242,12 +249,19 @@ export function runBackend(
 	}
 	// Trans gates push images and poll vc jobs; they own their own budgets and
 	// run well past five minutes. Killing one mid-push reports a gate failure
-	// for work that is still in flight, so the hook waits as long as sure_onboard.
+	// for work that is still in flight, so the hook waits as long as sure_onboard
+	// and hands the same budget to the script.
 	const r = spawnSync(runtime.contract.python_executable, [py, ...finalArgs], {
 		cwd: ctx.packageDir,
 		encoding: "utf-8",
-		timeout: 3_600_000,
-		env: { ...process.env, ...harnessRuntimeEnv(runtime.contract) },
+		timeout: GATE_TIMEOUT_MS,
+		env: {
+			...process.env,
+			...harnessRuntimeEnv(runtime.contract),
+			// The gate retries GPU OOM failures itself; tell it how long it has
+			// so it stops starting attempts this spawn cannot outlive.
+			SURE_TRANS_GATE_BUDGET_SECONDS: String(GATE_TIMEOUT_MS / 1000),
+		},
 	});
 	return {
 		ok: r.status === 0,

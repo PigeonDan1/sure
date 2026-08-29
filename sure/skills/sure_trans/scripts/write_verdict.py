@@ -34,6 +34,7 @@ def main() -> int:
     registry = read_object(artifacts / "docker_registry_result.json")
     runtime = read_object(artifacts / "runtime_inventory.json")
     source_image = read_object(artifacts / "source_image_result.json")
+    framework = read_object(artifacts / "framework_detection.json")
     if execution.get("compat_ok") is not True or original.get("status") != "passed":
         raise ValueError("execution compatibility and original inference must pass")
     for name, (_, pass_key) in validation_files.items():
@@ -43,14 +44,39 @@ def main() -> int:
         raise ValueError("registry and runtime inventory must be ready")
     if registry.get("pull_verified") is not True:
         raise ValueError("docker-registry verdict requires digest-pinned pull verification")
+    if framework.get("status") != "ready" or framework.get("framework_requirement_met") is not True:
+        raise ValueError("computation framework must be verified as PyTorch")
+    if framework.get("declared_framework") != resolved.get("framework") or framework.get(
+        "declared_model_framework"
+    ) != resolved.get("model_framework"):
+        raise ValueError("framework detection declarations must match the resolved input")
+    if framework.get("clarification_required") is True and not str(
+        framework.get("architecture_clarification") or ""
+    ).strip():
+        raise ValueError("required model architecture clarification is missing")
     payload = {
-        "schema": "sure.trans.verdict.v1",
+        "schema": "sure.trans.verdict.v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": "success",
         "instance_id": artifacts.parent.name,
         "model_id": resolved["model_name"],
         "model_name": resolved["model_name"],
         "package": {"profile": "docker-registry"},
+        "framework": {
+            "computation": {
+                "declared": framework.get("declared_framework"),
+                "detected": framework.get("detected_framework"),
+                "requirement_met": framework.get("framework_requirement_met"),
+            },
+            "model": {
+                "declared": framework.get("declared_model_framework"),
+                "detected": framework.get("detected_model_framework"),
+                "matches": framework.get("model_framework_matches"),
+                "transformers_preferred": framework.get("transformers_preferred"),
+            },
+            "architecture_signals": framework.get("architecture_signals", []),
+            "architecture_clarification": framework.get("architecture_clarification"),
+        },
         "readiness": {
             "local_ready": True,
             "docker_ready": True,
@@ -79,6 +105,7 @@ def main() -> int:
         },
         "artifacts": {
             "runtime_inventory": "artifacts/runtime_inventory.json",
+            "framework_detection": "artifacts/framework_detection.json",
             "registry": "artifacts/docker_registry_result.json",
             "execution_compat": "artifacts/execution_compat.json",
             "import": "artifacts/import_result.json",

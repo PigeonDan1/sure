@@ -15,6 +15,22 @@ from vc_exec import agent_bin_cleared_env
 
 
 ARCHIVE_SUFFIXES = (".tar", ".tar.gz", ".tgz")
+GIT_INSTALL_RUN = """RUN set -eux; \
+if command -v git >/dev/null 2>&1; then \
+  :; \
+elif command -v apt-get >/dev/null 2>&1; then \
+  apt-get update; apt-get install -y --no-install-recommends git ca-certificates; rm -rf /var/lib/apt/lists/*; \
+elif command -v apk >/dev/null 2>&1; then \
+  apk add --no-cache git ca-certificates; \
+elif command -v dnf >/dev/null 2>&1; then \
+  dnf install -y git ca-certificates; dnf clean all; \
+elif command -v yum >/dev/null 2>&1; then \
+  yum install -y git ca-certificates; yum clean all; \
+elif command -v microdnf >/dev/null 2>&1; then \
+  microdnf install -y git ca-certificates; microdnf clean all; \
+else \
+  echo 'SURE source image requires git, but no supported package manager was found' >&2; exit 42; \
+fi"""
 
 
 def sha256_file(path: Path) -> str:
@@ -35,6 +51,43 @@ def read_object(path: Path) -> dict:
 def image_tag(model_name: str, dockerfile_sha256: str) -> str:
     safe_name = "".join(character.lower() if character.isalnum() else "-" for character in model_name).strip("-")
     return f"sure-trans/{safe_name}:source-{dockerfile_sha256[:16]}"
+
+
+def last_user_instruction(text: str) -> str | None:
+    """USER that applies to the final build stage.
+
+    A USER set in an earlier stage of a multi-stage build does not carry over.
+    Restoring it after the git layer names an account the final base image does
+    not have; docker accepts that at build time and every later run fails with
+    "unable to find user", long after the source image gate has passed.
+    """
+    value = None
+    for line in text.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        if re.match(r"^\s*FROM\s", line, re.IGNORECASE):
+            value = None
+            continue
+        match = re.match(r"^\s*USER\s+(.+?)\s*$", line, re.IGNORECASE)
+        if match:
+            value = match.group(1)
+    return value
+
+
+def write_git_wrapper_dockerfile(base: str, output: Path, restore_user: str | None = None) -> Path:
+    suffix = f"\nUSER {restore_user}" if restore_user else ""
+    output.write_text(f"FROM {base}\nUSER root\n{GIT_INSTALL_RUN}{suffix}\n", encoding="utf-8")
+    return output
+
+
+def write_git_augmented_dockerfile(source: Path, output: Path) -> Path:
+    text = source.read_text(encoding="utf-8")
+    restore_user = last_user_instruction(text)
+    content = f"{text.rstrip()}\n\nUSER root\n{GIT_INSTALL_RUN}"
+    if restore_user:
+        content += f"\nUSER {restore_user}"
+    output.write_text(content + "\n", encoding="utf-8")
+    return output
 
 
 def inside(path: Path, root: Path) -> bool:
@@ -274,8 +327,36 @@ def main() -> int:
                     selected_tag = reference
                     break
         if selected_tag and inspected:
+            injected_dockerfile = write_git_wrapper_dockerfile(
+                selected_tag,
+                run_dir / "source.Dockerfile.sure",
+                str((inspected.get("Config") or {}).get("User") or "") or None,
+            )
+            build_command = [
+                "docker", "build", "--progress", "plain", "--file", str(injected_dockerfile),
+                "--tag", image, str(build_context),
+            ]
+            build_result = execute(build_command, args.timeout_seconds)
+            build_log = artifacts / "source_image_build.log"
+            write_log(build_log, build_command, build_result)
+            augmented, _ = inspect_image(image, min(args.timeout_seconds, 60)) if build_result["exit_code"] == 0 else (None, {})
+            if not augmented or image not in (augmented.get("RepoTags") or []):
+                error = (build_result["stderr"] or build_result["stdout"]).strip() or "git augmentation build failed"
+                attempts.append({"mode": "git_augmentation", "command": build_command, "exit_code": build_result["exit_code"], "error": error})
+                payload = {
+                    "schema": "sure.trans.source_image_result.v1", "status": "failed", "image": image, "image_id": None,
+                    "dockerfile": str(dockerfile), "dockerfile_sha256": dockerfile_digest, "build_context": str(build_context),
+                    "source_image_policy": "load", "requested_source_image_policy": requested_policy,
+                    "source_image_log_path": str(load_log), "source_image_attempts": attempts,
+                    "git_augmentation_dockerfile": str(injected_dockerfile), "git_augmentation_build_log_path": str(build_log),
+                    "git_augmentation_build_command": build_command, "git_augmentation_build_exit_code": build_result["exit_code"],
+                    "error": error,
+                }
+                output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                raise RuntimeError(error)
+            inspected = augmented
             payload = {
-                "schema": "sure.trans.source_image_result.v1", "status": "passed", "image": selected_tag,
+                "schema": "sure.trans.source_image_result.v1", "status": "passed", "image": image,
                 "image_id": inspected["Id"], "dockerfile": str(dockerfile), "dockerfile_sha256": dockerfile_digest,
                 "build_context": str(build_context), "source_image_policy": "load",
                 "requested_source_image_policy": requested_policy, "source_image_log_path": str(load_log),
@@ -283,7 +364,9 @@ def main() -> int:
                 "load_executed": True, "load_exit_code": 0, "load_duration_ms": load_result["duration_ms"],
                 "load_log_path": str(load_log), "load_verified": True, "fallback_to_build": False,
                 "source_image_attempts": attempts, "image_repo_tags": inspected.get("RepoTags"),
-                "image_created": inspected.get("Created"),
+                "image_created": inspected.get("Created"), "loaded_image": selected_tag, "git_required": True,
+                "git_augmentation_dockerfile": str(injected_dockerfile), "git_augmentation_build_log_path": str(build_log),
+                "git_augmentation_build_command": build_command, "git_augmentation_build_exit_code": build_result["exit_code"],
             }
             output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             print(output)
@@ -303,7 +386,8 @@ def main() -> int:
             output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             raise RuntimeError(load_error)
 
-    build_command = ["docker", "build", "--progress", "plain", "--file", str(dockerfile), "--tag", image, str(build_context)]
+    injected_dockerfile = write_git_augmented_dockerfile(dockerfile, run_dir / "source.Dockerfile.sure")
+    build_command = ["docker", "build", "--progress", "plain", "--file", str(injected_dockerfile), "--tag", image, str(build_context)]
     build_result = execute(build_command, args.timeout_seconds)
     build_log = artifacts / "source_image_build.log"
     write_log(build_log, build_command, build_result)
@@ -314,6 +398,7 @@ def main() -> int:
         "source_image_log_path": str(build_log), "build_command": build_command, "build_executed": True,
         "build_exit_code": build_result["exit_code"], "build_duration_ms": build_result["duration_ms"],
         "build_log_path": str(build_log), "fallback_to_build": bool(attempts), "source_image_attempts": attempts,
+        "git_required": True, "git_augmentation_dockerfile": str(injected_dockerfile),
     }
     if build_result["exit_code"] == 0:
         inspected, _ = inspect_image(image, min(args.timeout_seconds, 60))

@@ -1,1 +1,58 @@
-{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","required":["declared","detected","primary_model_compatible","conversion_required","conversion_succeeded","status","evidence"],"properties":{"declared":{"const":"pytorch_transformers"},"detected":{"enum":["pytorch_transformers","pytorch_non_transformers","tensorflow","jax_flax","unknown"]},"primary_model_compatible":{"type":"boolean"},"conversion_required":{"type":"boolean"},"conversion_succeeded":{"type":"boolean"},"status":{"enum":["ready","converted","blocked"]},"evidence":{"type":"array","items":{"type":"string"}},"conversion":{"type":"object","properties":{"converter":{"type":"string"},"artifact_path":{"type":"string"},"equivalence_report":{"type":"string"},"equivalence_passed":{"type":"boolean"}},"additionalProperties":true}},"additionalProperties":true}
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"type": "object",
+	"required": [
+		"schema",
+		"declared_framework",
+		"declared_model_framework",
+		"detected_framework",
+		"detected_model_framework",
+		"framework_requirement_met",
+		"model_framework_matches",
+		"transformers_preferred",
+		"clarification_required",
+		"architecture_signals",
+		"architecture_clarification",
+		"status",
+		"evidence"
+	],
+	"properties": {
+		"schema": { "const": "sure.trans.framework_detection.v2" },
+		"declared_framework": { "const": "pytorch" },
+		"declared_model_framework": {
+			"type": "string",
+			"pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+		},
+		"detected_framework": { "enum": ["pytorch", "tensorflow", "jax_flax", "unknown"] },
+		"detected_model_framework": { "enum": ["transformers", "custom", "unknown"] },
+		"framework_requirement_met": { "type": "boolean" },
+		"model_framework_matches": { "type": "boolean" },
+		"transformers_preferred": { "const": true },
+		"clarification_required": { "type": "boolean" },
+		"architecture_signals": {
+			"type": "array",
+			"items": { "type": "string" },
+			"uniqueItems": true
+		},
+		"architecture_clarification": { "type": ["string", "null"] },
+		"status": { "enum": ["ready", "blocked"] },
+		"evidence": { "type": "array", "items": { "type": "string" } },
+		"auxiliary_runtimes_allowed": {
+			"type": "array",
+			"items": { "type": "string" }
+		},
+		"scanned_python_files": { "type": "integer", "minimum": 0 }
+	},
+	"allOf": [
+		{
+			"if": { "properties": { "clarification_required": { "const": true } } },
+			"then": {
+				"properties": {
+					"architecture_clarification": { "type": "string", "minLength": 1 }
+				}
+			},
+			"else": { "properties": { "architecture_clarification": { "type": "null" } } }
+		}
+	],
+	"additionalProperties": true
+}

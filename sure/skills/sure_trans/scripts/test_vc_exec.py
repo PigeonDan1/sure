@@ -840,6 +840,7 @@ class ExecutionCompatVcTest(unittest.TestCase):
                 artifacts / "trans_input_resolved.json",
                 {
                     "device": "cuda",
+                    "model_framework": "transformers",
                     "gpu_required": True,
                     "bf16_required": False,
                     "model_name": "demo",
@@ -882,6 +883,95 @@ class ExecutionCompatVcTest(unittest.TestCase):
             self.assertEqual(source["registry_ref"], f"{REGISTRY}/hpc/ai_asr-demo-source:0.1.0")
             self.assertEqual(source["registry_push"]["digest"], digest)
 
+    def test_non_transformer_model_does_not_require_transformers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            write_artifact(
+                artifacts / "trans_input_resolved.json",
+                {
+                    "device": "cpu",
+                    "model_framework": "rnn",
+                    "gpu_required": False,
+                    "bf16_required": False,
+                    "model_name": "demo",
+                    "image_version": "0.1.0",
+                },
+            )
+            write_artifact(artifacts / "source_image_result.json", {"image": "demo-source", "image_id": "sha256:" + "b" * 64})
+            probe_output = json.dumps(
+                {
+                    "python_ok": True,
+                    "torch": "2.9.1",
+                    "cuda_available": False,
+                    "bf16_supported": False,
+                    "transformers_error": "No module named 'transformers'",
+                }
+            )
+            output = artifacts / "execution_compat.json"
+            with mock.patch.object(
+                run_execution_compat,
+                "run_probe",
+                return_value=(
+                    ["docker", "run", "--rm", "demo-source", "python", "-c", "<probe>"],
+                    completed(["docker"], stdout=probe_output),
+                    1.0,
+                ),
+            ), mock.patch.object(
+                sys, "argv", ["run_execution_compat.py", "--run-dir", str(run_dir), "--produces", str(output)]
+            ):
+                self.assertEqual(run_execution_compat.main(), 0)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "ready")
+            self.assertTrue(payload["compat_ok"])
+            self.assertEqual(payload["model_framework"], "rnn")
+            self.assertFalse(payload["transformers_required"])
+            self.assertNotIn("Transformers import failed in the source image", payload["incompatibilities"])
+
+    def test_transformer_model_still_requires_transformers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            write_artifact(
+                artifacts / "trans_input_resolved.json",
+                {
+                    "device": "cpu",
+                    "model_framework": "transformers",
+                    "gpu_required": False,
+                    "bf16_required": False,
+                    "model_name": "demo",
+                    "image_version": "0.1.0",
+                },
+            )
+            write_artifact(artifacts / "source_image_result.json", {"image": "demo-source", "image_id": "sha256:" + "b" * 64})
+            probe_output = json.dumps(
+                {
+                    "python_ok": True,
+                    "torch": "2.9.1",
+                    "cuda_available": False,
+                    "bf16_supported": False,
+                    "transformers_error": "No module named 'transformers'",
+                }
+            )
+            output = artifacts / "execution_compat.json"
+            with mock.patch.object(
+                run_execution_compat,
+                "run_probe",
+                return_value=(
+                    ["docker", "run", "--rm", "demo-source", "python", "-c", "<probe>"],
+                    completed(["docker"], stdout=probe_output),
+                    1.0,
+                ),
+            ), mock.patch.object(
+                sys, "argv", ["run_execution_compat.py", "--run-dir", str(run_dir), "--produces", str(output)]
+            ):
+                with self.assertRaises(ValueError) as raised:
+                    run_execution_compat.main()
+            self.assertIn("Transformers import failed", str(raised.exception))
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "blocked")
+            self.assertTrue(payload["transformers_required"])
+
     def test_auto_falls_back_to_local_cpu_after_vc_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -894,7 +984,7 @@ class ExecutionCompatVcTest(unittest.TestCase):
             fake_docker.chmod(0o755)
             write_artifact(
                 artifacts / "trans_input_resolved.json",
-                {"device": "auto", "gpu_required": False, "bf16_required": False, "model_name": "demo", "image_version": "0.1.0"},
+                {"device": "auto", "model_framework": "transformers", "gpu_required": False, "bf16_required": False, "model_name": "demo", "image_version": "0.1.0"},
             )
             write_artifact(artifacts / "source_image_result.json", {"image": "demo-source", "image_id": "sha256:" + "b" * 64})
             failed = VcJobResult(
@@ -1016,6 +1106,136 @@ class TransValidateVcTest(unittest.TestCase):
             payload = json.loads(load_result.read_text(encoding="utf-8"))
             self.assertEqual(payload["status"], "failed")
             self.assertIn("vc_gpus=2 vc_memory_gb=64", payload["error"])
+
+    def test_gpu_oom_retries_with_fresh_vc_jobs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "trans_input_resolved.json",
+                {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test"},
+            )
+            load_result = artifacts / "load_result.json"
+            write_artifact(
+                load_result,
+                {"status": "pending", "run_command": ["docker", "run", "--rm", "demo-adapter", "python", "validate.py", "--stage", "load"]},
+            )
+            spec = VcSpec(image="demo-adapter", mounts=[], command=["python", "validate.py", "--stage", "load"], env={}, workdir="")
+            def result(exit_code: int, stderr: str, job_id: str, log_dir: Path) -> VcJobResult:
+                return VcJobResult(
+                    exit_code=exit_code,
+                    stdout="",
+                    stderr=stderr,
+                    job_id=job_id,
+                    partition="gpu-test",
+                    submit_command=["vc", "submit"],
+                    duration_ms=1.0,
+                    timed_out=False,
+                    log_dir=log_dir,
+                    vc_diagnostics="",
+                )
+            first = result(1, "torch.OutOfMemoryError: CUDA out of memory", "job-load-oom", artifacts / "vc_logs" / "load")
+            second = result(0, "ok", "job-load-ok", artifacts / "vc_logs" / "load" / "oom-attempt-2")
+            with mock.patch.object(run_trans_validate, "docker_run_to_vc", return_value=spec), mock.patch.object(
+                run_trans_validate, "run_vc_job", side_effect=[first, second]
+            ), mock.patch.object(
+                sys, "argv", ["run_trans_validate.py", "--run-dir", str(run_dir), "--produces", str(load_result), "--kind", "load"]
+            ):
+                self.assertEqual(run_trans_validate.main(), 0)
+            payload = json.loads(load_result.read_text(encoding="utf-8"))
+            self.assertTrue(payload["load_passed"])
+            self.assertEqual([entry["job_id"] for entry in payload["vc_attempts"]], ["job-load-oom", "job-load-ok"])
+            self.assertEqual(payload["gpu_oom_attempts"], 1)
+            self.assertFalse(payload["gpu_oom_retry_exhausted"])
+
+    def test_a_passing_job_is_not_resubmitted_because_its_log_mentions_oom(self) -> None:
+        """A recovered OOM leaves its traceback in the log of a job that exits 0."""
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "trans_input_resolved.json",
+                {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test"},
+            )
+            load_result = artifacts / "load_result.json"
+            write_artifact(
+                load_result,
+                {"status": "pending", "run_command": ["docker", "run", "--rm", "demo-adapter", "python", "validate.py", "--stage", "load"]},
+            )
+            spec = VcSpec(image="demo-adapter", mounts=[], command=["python", "validate.py", "--stage", "load"], env={}, workdir="")
+            passed = VcJobResult(
+                exit_code=0,
+                stdout="torch.OutOfMemoryError: CUDA out of memory; retrying with beam 1, then ok",
+                stderr="",
+                job_id="job-load-ok",
+                partition="gpu-test",
+                submit_command=["vc", "submit"],
+                duration_ms=1.0,
+                timed_out=False,
+                log_dir=artifacts / "vc_logs" / "load",
+                vc_diagnostics="",
+            )
+            extra = VcJobResult(
+                exit_code=1, stdout="", stderr="unrelated failure", job_id="job-load-second",
+                partition="gpu-test", submit_command=["vc", "submit"], duration_ms=1.0, timed_out=False,
+                log_dir=artifacts / "vc_logs" / "load" / "oom-attempt-2", vc_diagnostics="",
+            )
+            with mock.patch.object(run_trans_validate, "docker_run_to_vc", return_value=spec), mock.patch.object(
+                run_trans_validate, "run_vc_job", side_effect=[passed, extra]
+            ), mock.patch.object(
+                sys, "argv", ["run_trans_validate.py", "--run-dir", str(run_dir), "--produces", str(load_result), "--kind", "load"]
+            ):
+                self.assertEqual(run_trans_validate.main(), 0)
+            payload = json.loads(load_result.read_text(encoding="utf-8"))
+            self.assertTrue(payload["load_passed"])
+            self.assertEqual([entry["job_id"] for entry in payload["vc_attempts"]], ["job-load-ok"])
+            self.assertEqual(payload["gpu_oom_attempts"], 0)
+
+    def test_oom_retry_stops_when_the_hook_budget_cannot_fit_another_attempt(self) -> None:
+        """The hook kills the gate at its own timeout; a retry it cannot outlive loses the result."""
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "trans_input_resolved.json",
+                {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test"},
+            )
+            load_result = artifacts / "load_result.json"
+            write_artifact(
+                load_result,
+                {
+                    "status": "pending",
+                    "timeout_seconds": 1800,
+                    "run_command": ["docker", "run", "--rm", "demo-adapter", "python", "validate.py", "--stage", "load"],
+                },
+            )
+            spec = VcSpec(image="demo-adapter", mounts=[], command=["python", "validate.py", "--stage", "load"], env={}, workdir="")
+            oom = VcJobResult(
+                exit_code=1, stdout="", stderr="torch.OutOfMemoryError: CUDA out of memory",
+                job_id="job-load-oom", partition="gpu-test", submit_command=["vc", "submit"],
+                duration_ms=1.0, timed_out=False, log_dir=artifacts / "vc_logs" / "load", vc_diagnostics="",
+            )
+            second = VcJobResult(
+                exit_code=1, stdout="", stderr="torch.OutOfMemoryError: CUDA out of memory",
+                job_id="job-load-oom-2", partition="gpu-test", submit_command=["vc", "submit"],
+                duration_ms=1.0, timed_out=False,
+                log_dir=artifacts / "vc_logs" / "load" / "oom-attempt-2", vc_diagnostics="",
+            )
+            # 1800s per attempt, 120s reserve: one attempt fits in 1900s, a second does not.
+            with mock.patch.dict(os.environ, {"SURE_TRANS_GATE_BUDGET_SECONDS": "1900"}), \
+                 mock.patch.object(run_trans_validate, "docker_run_to_vc", return_value=spec), \
+                 mock.patch.object(run_trans_validate, "run_vc_job", side_effect=[oom, second]), \
+                 mock.patch.object(
+                     sys, "argv", ["run_trans_validate.py", "--run-dir", str(run_dir), "--produces", str(load_result), "--kind", "load"]
+                 ):
+                with self.assertRaises(ValueError):
+                    run_trans_validate.main()
+            payload = json.loads(load_result.read_text(encoding="utf-8"))
+            self.assertEqual([entry["job_id"] for entry in payload["vc_attempts"]], ["job-load-oom"])
+            self.assertTrue(payload["gpu_oom_retry_budget_exhausted"])
 
     def test_permission_denied_repair_hint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

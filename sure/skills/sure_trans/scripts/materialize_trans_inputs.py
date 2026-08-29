@@ -9,12 +9,19 @@ from pathlib import Path
 
 
 FRAMEWORK_ALIASES = {
-    "pytorch": "pytorch_transformers",
-    "torch": "pytorch_transformers",
-    "transformers": "pytorch_transformers",
-    "pytorch-transformers": "pytorch_transformers",
-    "pytorch_transformers": "pytorch_transformers",
+    "pytorch": "pytorch",
+    "torch": "pytorch",
 }
+MODEL_FRAMEWORK_ALIASES = {
+    "transformer": "transformers",
+    "transformers": "transformers",
+    "huggingface": "transformers",
+    "huggingface-transformers": "transformers",
+    "huggingface_transformers": "transformers",
+    "pytorch-transformers": "transformers",
+    "pytorch_transformers": "transformers",
+}
+MODEL_FRAMEWORK = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 
 TASK_TYPES = {"asr", "s2tt", "tts", "vc"}
 TASK_MARKERS = {
@@ -25,7 +32,7 @@ TASK_MARKERS = {
 }
 
 try:
-    from vc_exec import DEFAULT_GPUS, DEFAULT_MEMORY_GB, default_partition
+    from vc_exec import DEFAULT_GPUS, DEFAULT_MEMORY_GB, default_partition, resolve_image_version
 except ImportError:  # kept standalone when vc_exec.py is not bundled
     DEFAULT_GPUS = 1
     DEFAULT_MEMORY_GB = 32
@@ -33,7 +40,14 @@ except ImportError:  # kept standalone when vc_exec.py is not bundled
     def default_partition() -> str:
         raise ValueError("vc_exec.py is not bundled; pass --vc-partition explicitly")
 
-DEFAULT_IMAGE_VERSION = "0.1.0"
+    def resolve_image_version(model_name: str, requested: str | None = None) -> tuple[str, dict[str, object]]:
+        # Only the registry lookup needs vc_exec. An explicit version is the
+        # escape hatch this branch's own error message points at, so honour it
+        # rather than rejecting the flag it just asked for.
+        if requested is not None:
+            return requested, {"mode": "explicit", "repositories": [], "existing_tags": []}
+        raise ValueError("vc_exec.py is not bundled; pass --image-version explicitly")
+
 SAFE_TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
@@ -41,6 +55,8 @@ def normalized_name(value: str) -> str:
     name = re.sub(r"[^A-Za-z0-9._-]+", "__", value).strip("._-")
     if not name or "/" in name or "\\" in name:
         raise ValueError(f"invalid model name: {value!r}")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*__[A-Za-z0-9][A-Za-z0-9._-]*", name):
+        raise ValueError("model_name must use <organization>__<model_name>")
     return name
 
 
@@ -81,6 +97,7 @@ def main() -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--inference-entrypoint", required=True)
     parser.add_argument("--framework", required=True)
+    parser.add_argument("--model-framework", required=True)
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--build-context")
@@ -116,10 +133,14 @@ def main() -> int:
 
     framework = FRAMEWORK_ALIASES.get(args.framework.strip().lower())
     if framework is None:
+        raise ValueError(f"unsupported framework {args.framework!r}; framework must be pytorch")
+    raw_model_framework = args.model_framework.strip().lower()
+    model_framework = MODEL_FRAMEWORK_ALIASES.get(raw_model_framework, raw_model_framework)
+    if not MODEL_FRAMEWORK.fullmatch(model_framework):
         raise ValueError(
-            f"unsupported framework {args.framework!r}; only PyTorch Transformers is supported"
+            "model_framework must be a non-empty lowercase identifier using letters, digits, '.', '_' or '-'"
         )
-    model_name = normalized_name(args.model_name or model_path.name)
+    model_name = normalized_name(args.model_name) if args.model_name else re.sub(r"[^A-Za-z0-9._-]+", "__", model_path.name).strip("._-")
     task_type = resolve_task_type(args.task_type, inference_entrypoint, model_path)
     fixture_path = existing_absolute(args.fixture, "fixture") if args.fixture else None
     image_tar = existing_absolute(args.image_tar, "image tar") if args.image_tar else None
@@ -149,19 +170,20 @@ def main() -> int:
         raise ValueError("vc gpus must be positive")
     if vc_memory_gb < 1:
         raise ValueError("vc memory must be positive")
-    image_version = args.image_version or DEFAULT_IMAGE_VERSION
+    image_version, image_version_resolution = resolve_image_version(model_name, args.image_version)
     if not SAFE_TAG.fullmatch(image_version):
         raise ValueError(f"invalid image version: {image_version!r}")
     gpu_surface = args.device != "cpu"
 
     payload = {
-        "schema": "sure.trans.input.v1",
+        "schema": "sure.trans.input.v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "dockerfile": str(dockerfile),
         "build_context": str(build_context),
         "model_path": str(model_path),
         "inference_entrypoint": str(inference_entrypoint),
         "framework": framework,
+        "model_framework": model_framework,
         "model_name": model_name,
         "model_dir": str(model_dir),
         "task_type": task_type,
@@ -177,6 +199,7 @@ def main() -> int:
         "model_stage_policy": args.model_stage_policy,
         "max_retries": args.max_retries,
         "image_version": image_version,
+        "image_version_resolution": image_version_resolution,
         "path_policy": {
             "model_read_only": True,
             "source_paths_read_only": True,

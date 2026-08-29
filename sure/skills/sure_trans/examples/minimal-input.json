@@ -2,6 +2,8 @@
 	"dockerfile": "/path/to/Dockerfile",
 	"model": "/path/to/model",
 	"inference_entrypoint": "/path/to/infer.py",
-	"framework": "pytorch_transformers",
+	"framework": "pytorch",
+	"model_framework": "transformers",
+	"model_name": "organization__model",
 	"task_type": "asr"
 }

@@ -1,1 +1,82 @@
-{"$schema":"http://json-schema.org/draft-07/schema#","type":"object","required":["dockerfile","build_context","model_path","inference_entrypoint","framework","model_name","model_dir","task_type","package_profile","model_mount_target","model_stage_policy","device","execution_surface","gpu_required","bf16_required","source_image_policy"],"properties":{"dockerfile":{"type":"string"},"build_context":{"type":"string"},"model_path":{"type":"string"},"inference_entrypoint":{"type":"string"},"framework":{"const":"pytorch_transformers"},"model_name":{"type":"string"},"model_dir":{"type":"string"},"task_type":{"enum":["asr","s2tt","tts","vc"]},"fixture_path":{"type":["string","null"]},"device":{"enum":["auto","cuda","cpu"]},"execution_surface":{"enum":["local_docker","vc"]},"gpu_required":{"type":"boolean"},"bf16_required":{"type":"boolean"},"source_image_policy":{"enum":["auto","build","load"]},"image_tar":{"type":["string","null"]},"package_profile":{"const":"docker-registry"},"model_mount_target":{"type":"string"},"model_stage_policy":{"enum":["copy","hardlink","auto"]},"max_retries":{"type":"integer","minimum":1},"image_version":{"type":"string"},"vc_partition":{"type":"string"},"vc_memory_gb":{"type":"integer","minimum":1},"vc_gpus":{"type":"integer","minimum":1}},"additionalProperties":true}
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"type": "object",
+	"required": [
+		"schema",
+		"dockerfile",
+		"build_context",
+		"model_path",
+		"inference_entrypoint",
+		"framework",
+		"model_framework",
+		"model_name",
+		"model_dir",
+		"task_type",
+		"package_profile",
+		"model_mount_target",
+		"model_stage_policy",
+		"device",
+		"execution_surface",
+		"gpu_required",
+		"bf16_required",
+		"source_image_policy",
+		"image_version",
+		"image_version_resolution"
+	],
+	"properties": {
+		"schema": { "const": "sure.trans.input.v2" },
+		"dockerfile": { "type": "string" },
+		"build_context": { "type": "string" },
+		"model_path": { "type": "string" },
+		"inference_entrypoint": { "type": "string" },
+		"framework": { "const": "pytorch" },
+		"model_framework": {
+			"type": "string",
+			"pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+		},
+		"model_name": { "type": "string" },
+		"model_dir": { "type": "string" },
+		"task_type": { "enum": ["asr", "s2tt", "tts", "vc"] },
+		"fixture_path": { "type": ["string", "null"] },
+		"device": { "enum": ["auto", "cuda", "cpu"] },
+		"execution_surface": { "enum": ["local_docker", "vc"] },
+		"gpu_required": { "type": "boolean" },
+		"bf16_required": { "type": "boolean" },
+		"source_image_policy": { "enum": ["auto", "build", "load"] },
+		"image_tar": { "type": ["string", "null"] },
+		"package_profile": { "const": "docker-registry" },
+		"model_mount_target": { "type": "string" },
+		"model_stage_policy": { "enum": ["copy", "hardlink", "auto"] },
+		"max_retries": { "type": "integer", "minimum": 1 },
+		"image_version": {
+			"type": "string",
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+		},
+		"image_version_resolution": {
+			"type": "object",
+			"required": ["mode", "repositories", "existing_tags"],
+			"properties": {
+				"mode": { "enum": ["explicit", "registry_auto"] },
+				"repositories": { "type": "array", "items": { "type": "string" } },
+				"existing_tags": {
+					"type": "array",
+					"items": { "type": "string" },
+					"uniqueItems": true
+				},
+				"tags_by_repository": {
+					"type": "object",
+					"additionalProperties": {
+						"type": "array",
+						"items": { "type": "string" },
+						"uniqueItems": true
+					}
+				}
+			},
+			"additionalProperties": false
+		},
+		"vc_partition": { "type": "string" },
+		"vc_memory_gb": { "type": "integer", "minimum": 1 },
+		"vc_gpus": { "type": "integer", "minimum": 1 }
+	},
+	"additionalProperties": true
+}

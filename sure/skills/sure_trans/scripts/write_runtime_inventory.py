@@ -20,6 +20,29 @@ def read_object_optional(path: Path) -> dict:
     return read_object(path)
 
 
+def identity_evidence(build_context: str) -> dict:
+    """What the inventory can honestly claim about the embedded Harness Runtime.
+
+    The runtime_id/lock_sha256 comparison in main() proves the adapter manifest
+    is not stale against the currently active binding, which is worth checking
+    after a runtime upgrade. It proves nothing about the image contents: both
+    sides were copied out of runtime_binding.json when the adapter was
+    scaffolded, so reporting that comparison as an identity match overstated it.
+
+    Only an image-backed build context carries evidence about what was actually
+    copied in, because scaffold_adapter checks the runtime labels build_image.py
+    stamps before it accepts the reference. A directory build context is
+    whatever the build command happened to point at.
+    """
+    image_backed = build_context.startswith("docker-image://")
+    return {
+        "embedded": True,
+        "binding_current": True,
+        "identity_source": "image-digest" if image_backed else "build-directory",
+        "identity_verified": image_backed,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
@@ -32,6 +55,7 @@ def main() -> int:
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
     registry = read_object(artifacts / "docker_registry_result.json")
+    adapter_manifest = read_object(artifacts / "adapter_manifest.json")
     runtime_binding = read_object_optional(artifacts / "runtime_binding.json")
     validation_files = {
         "import": "import_result.json",
@@ -50,20 +74,34 @@ def main() -> int:
     tool_name = args.tool_name or default_tools.get(task_type, "transcribe_audio")
     harness = runtime_binding.get("runtimes", {}).get("harness", {}) if isinstance(runtime_binding, dict) else {}
     harness_binding = harness.get("binding") if isinstance(harness, dict) else None
-    if isinstance(harness_binding, dict):
-        harness_runtime = {
-            "required": False,
-            "reason": "The adapter image does not bake in a Harness Runtime; the site execution layer mounts the locked common Harness Runtime from the repository when required.",
-            "runtime_id": harness_binding.get("runtime_id"),
-            "lock_sha256": harness_binding.get("lock_sha256"),
-            "python_version": harness_binding.get("python_version"),
-            "python_abi": harness_binding.get("python_abi"),
-        }
-    else:
-        harness_runtime = {
-            "required": False,
-            "reason": "Harness Runtime binding was not recorded in runtime_binding.json.",
-        }
+    embedded = adapter_manifest.get("harness_runtime_embedded") is True
+    image_harness = adapter_manifest.get("harness_runtime")
+    if not embedded or not isinstance(harness_binding, dict) or not isinstance(image_harness, dict):
+        raise ValueError(
+            "adapter image must embed the locked Harness Runtime; regenerate adapter/Dockerfile.sure "
+            "with runtime_binding.json before writing runtime_inventory.json"
+        )
+    if image_harness.get("runtime_id") != harness_binding.get("runtime_id") or image_harness.get("lock_sha256") != harness_binding.get("lock_sha256"):
+        raise ValueError(
+            "adapter manifest was scaffolded against a different Harness Runtime than the active "
+            "one; rerun scaffold_adapter.py and rebuild the adapter image"
+        )
+    build_context = str(adapter_manifest.get("harness_runtime_build_context") or "directory")
+    image_backed = build_context.startswith("docker-image://")
+    harness_runtime = {
+        "required": True,
+        "schema": "sure.harness.runtime.binding.v1",
+        "runtime_id": image_harness.get("runtime_id"),
+        "runtime_type": "harness_python",
+        "python_executable": image_harness.get("python_executable"),
+        "python_version": harness_binding.get("python_version"),
+        "python_abi": harness_binding.get("python_abi"),
+        "lock_sha256": image_harness.get("lock_sha256"),
+        "manifest_path": image_harness.get("manifest_path"),
+        "runtime_root": image_harness.get("runtime_root"),
+        "materialization": "image_copy",
+        "checks": identity_evidence(build_context),
+    }
     mcp = validations["mcp"]
     equivalence = validations["equivalence"]
     payload = {

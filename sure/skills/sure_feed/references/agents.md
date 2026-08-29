@@ -171,6 +171,10 @@ EMIT_HANDOFF_MANIFEST unit) is retained for auditability:
 }
 ```
 
-`/sure_onboard` reads `MODEL_INPUT` from `artifacts/model_input.yaml`, onboards
-the model into the global `sure/models/<model_id>/`, and writes `verdict.json`.
-`/sure_eval` then reads that `verdict.json` to judge readiness.
+`/sure_onboard` reads `MODEL_INPUT` from `artifacts/model_input.yaml` and stages
+the model in the global `sure/models/<model_name>/`, writing
+`artifacts/verdict.json` and, once the bundle is sealed,
+`artifacts/deployment_ready.json`. Staging is not approval: an operator reviews
+the bundle and copies the complete model directory into a configured
+`approved_models_roots` entry. `/sure_eval model=<model_name>` resolves only
+that approved copy, and reads the `verdict.json` inside it to judge readiness.

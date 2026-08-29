@@ -20,25 +20,35 @@
 | `dockerfile` | 是 | 既有 Dockerfile 绝对路径。 |
 | `model` | 是 | 既有模型文件或目录绝对路径。 |
 | `inference_entrypoint` | 是 | 既有推理入口绝对路径,别名 `inference_code`。 |
-| `framework` | 是 | `pytorch_transformers`,接受 `pytorch`/`torch`/`transformers` 别名。 |
+| `framework` | 是 | 计算框架，必须为 `pytorch`；接受 `torch` 别名。 |
+| `model_framework` | 是 | 模型实现框架，推荐 `transformers`，也可填写 `wenet`、`funasr`、`custom` 等安全标识符。非 Transformers 不会单独阻断。 |
 | `task_type` | 否 | 默认从证据推断,歧义时强制显式给出,例如 `asr`。 |
 | `source_image_policy` | 否 | `auto`(默认)/`load`/`build`。`auto` 先找 build context 下的镜像 tar,失败回退 build。 |
 | `build_context` | 否 | 默认取 Dockerfile 父目录。 |
 | `image_tar` | 否 | 显式指定镜像 tar,必须位于 `build_context` 内。 |
-| `model_name` | 否 | 默认取模型路径 basename。 |
+| `model_name` | 是 | 必须使用 `<组织>__<模型名称>` 格式；后续 bundle、镜像和 registry 命名均使用此值。 |
 | `fixture` | 否 | 冒烟输入绝对路径,否则自动选择 build context 下无歧义的 `examples/smoke.*`。 |
 | `device` | 否 | `auto`(默认)/`cuda`/`cpu`。核心转换目前只用本地 Docker 验证。 |
 | `model_mount_target` | 否 | 默认 `/models/<model_name>`。 |
 | `model_stage_policy` | 否 | `auto`(默认)/`copy`/`hardlink`。 |
+| `image_version` | 否 | 显式 registry tag 覆盖项。省略时查询 source/adapter 仓库已有的三段数字版本，选择最高版本的下一个 patch；空仓库从 `0.1.0` 开始。 |
 | `max_retries` | 否 | 默认 3。 |
 
 启动示例:
 
 ```text
-/sure_trans dockerfile=/path/to/Dockerfile model=/path/to/model inference_entrypoint=/path/to/infer.py framework=pytorch_transformers task_type=asr source_image_policy=auto
+/sure_trans dockerfile=/path/to/Dockerfile model=/path/to/model inference_entrypoint=/path/to/infer.py framework=pytorch model_framework=transformers model_name=organization__model task_type=asr source_image_policy=auto
 ```
 
 `examples/minimal-input.json` 是同一组参数的 JSON 形式。
+
+框架检测只把 PyTorch 作为硬门槛。`model_framework=transformers` 是推荐路径；若申报其他模型框架，或静态分析发现 PyTorch 实现未使用 Transformers，流程继续运行，并在 `framework_detection.json` 和最终 `verdict.json.framework` 中记录申报值、检测分类、架构线索与澄清。后续原始推理、adapter 推理和等价性 gate 仍必须全部通过。
+
+自动版本解析结果记录在 `trans_input_resolved.json.image_version_resolution`。查询复用 Docker 登录凭据但不把凭据写入 artifact；registry 查询失败会阻断，不会猜测可能重复的版本。并发运行仍可能同时选中同一版本，最终由 registry 的不可覆盖策略阻止冲突，失败的一方重新解析版本后再提交。
+
+source 镜像构建会自动追加一层：若基础镜像没有 `git`，按镜像内可用的 apt/apk/dnf/yum/microdnf 安装 `git` 和 `ca-certificates`；原始 Dockerfile 不会被改写，最终 `USER` 会恢复。这样 adapter 镜像继承该工具，避免 `/sure_eval` 运行时缺少 `git`。
+
+adapter 镜像同时复制当前锁定的 Harness Runtime。默认从 `SURE_HARNESS_RUNTIME_ROOT` 目录复制；配置 digest 固定的 runtime image 后，设置 `SURE_HARNESS_RUNTIME_IMAGE=<repository>@sha256:<digest>`，并传入 `--build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>`。最终 `/sure_eval` 使用镜像内的 Model Python 和 Harness Python 两个独立运行时，不再把仓库 Harness Runtime 挂载进模型容器。
 
 ## 工作流(20 个单元)
 
@@ -102,7 +112,7 @@ sure/models/<model_name>/
 
 - `package_gate.json` 使用 `sure.onboard.package_gate.v2`,`model_dir="."`、`artifact_manifest_path="artifacts/artifact_manifest.json"`,`readiness.{local_ready,docker_ready,registry_ready,bundle_ready}=true`,`docker.dockerfile_sha256` 对应 bundle 根目录的 `Dockerfile.sure`。
 - `artifact_manifest.json` 使用 `sure.onboard.artifact_manifest.v1`,`phase=deployment_ready`、`status=finalized`,required 含全部 terminal sidecar。
-- `runtime_inventory.json` 使用 `sure.onboard.runtime_inventory.v2`,`policy.eval_runtime=container_only`、`host_python_fallback=false`、`image_override_allowed=false`、`nfs_models_mutable_by_eval=false`。adapter 镜像不内置 Harness Runtime,`harness_runtime.required=false`,`/sure_eval` 从仓库挂载锁定版公共 Harness Runtime。
+- `runtime_inventory.json` 使用 `sure.onboard.runtime_inventory.v2`,`policy.eval_runtime=container_only`、`host_python_fallback=false`、`image_override_allowed=false`、`nfs_models_mutable_by_eval=false`。adapter 镜像内置锁定版 Harness Runtime,`harness_runtime.required=true`,`/sure_eval` 使用镜像内的 Harness Python。
 - `deployment_ready.json` 使用 `sure.onboard.deployment_ready.v1`,与 run 目录逐字节一致;`required_artifact_sha256` 覆盖 terminal sidecar 的 sha256,`bundle_identity_sha256` 为哈希表的摘要,四个 portable sidecar 不允许残留宿主机共享存储的绝对路径。
 - `check_artifact.py --kind deployment_ready` 与 `/sure_onboard` 的 `check_finalized_bundle.py` 执行同一组校验:bundle 与 run 双写一致、哈希复验、bundle identity 重算、portable manifest、Dockerfile 哈希、执行策略与 digest 固定引用。
 
@@ -112,11 +122,12 @@ sure/models/<model_name>/
 
 `check_artifact.py` 各 `--kind` 的语义校验与 `/sure_onboard` 的确定性脚本一一对应:
 
-- `input`:`dockerfile`/`build_context`/`model_path`/`inference_entrypoint` 必须为存在的绝对路径;`model_dir` 必须精确等于 `<repo>/sure/models/<model_name>` 且不能是目录软链,对齐 `check_model_input.py`。
+- `input`:`dockerfile`/`build_context`/`model_path`/`inference_entrypoint` 必须为存在的绝对路径；`framework=pytorch` 和非空 `model_framework` 必须同时存在；`model_dir` 必须精确等于 `<repo>/sure/models/<model_name>` 且不能是目录软链,对齐 `check_model_input.py`。
+- `framework`:静态分析必须检测到 PyTorch；Transformers 是推荐项而非硬门槛，其他模型框架必须写入架构澄清。
 - `model_payload`:`destination` 必须等于 harness 拥有的 bundle 目录,外部路径复用被阻塞。
 - `adapter`:`model.py`/`__init__.py`/`validate.py`/`server.py`/`config.yaml`/`model.spec.yaml`/`dockerfile` 七类文件必须全部存在,`model.py` 不允许残留 `NotImplementedError`/`TODO`。
 - `registry`:`status=passed`、`pull_verified=true`,`target_image_ref` 与 digest 必须 digest 固定。
-- `runtime_inventory`:`policy.eval_runtime=container_only`、`host_python_fallback=false`、`nfs_models_mutable_by_eval=false`,模型挂载只读;若 `harness_runtime.required=true`,必须是镜像内 runtime binding,不允许写入宿主机绝对路径。
+- `runtime_inventory`:`policy.eval_runtime=container_only`、`host_python_fallback=false`、`nfs_models_mutable_by_eval=false`,模型挂载只读;`harness_runtime.required=true` 且必须是镜像内 runtime binding,不允许写入宿主机绝对路径。
 - `verdict`:`status=success` 且 `readiness` 为对象,`bundle_ready=true`、`registry_ready=true`。
 - `deployment_ready`:见上文,与 `check_finalized_bundle.py` 同套校验,遗留的宿主机绝对路径直接拒绝。
 
@@ -129,6 +140,8 @@ sure/models/<model_name>/
 | Docker | source 与 adapter 镜像的 load、build、运行、push/pull 全部依赖本地 Docker daemon。部分站点的 `docker` 是包装脚本,容器内进程失败时仍可能返回 0,gate 不能只信退出码。 |
 | GPU | 视模型规格而定,7B BF16 模型约需 14 GiB 空闲显存。 |
 | PyPI 网络 | 首次运行从 PyPI 物化 Harness Runtime 依赖,可通过 `UV_DEFAULT_INDEX` 指定镜像源。 |
+
+确认是 `CUDA out of memory` 时,验证 gate 会在当前 VC partition 自动重新提交最多 8 次,让调度器重新分配 GPU;每次尝试保留独立日志。VC 接口不能指定物理卡,因此不保证 8 次对应 8 张不同 GPU。8 次都失败后才报告显存修复建议。
 
 ## 相关文档
 

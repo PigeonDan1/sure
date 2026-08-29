@@ -14,11 +14,12 @@ Convert an existing model delivery into the same Eval-ready contract produced by
 | `dockerfile` | yes | Existing Dockerfile absolute path. |
 | `model` | yes | Existing model file or directory absolute path. |
 | `inference_entrypoint` | yes | Existing inference entrypoint absolute path. `inference_code` is an alias. |
-| `framework` | yes | `pytorch_transformers`; accept `pytorch`, `torch`, or `transformers` as aliases. |
+| `framework` | yes | Computation framework. Must be `pytorch`; accept `torch` as an alias. |
+| `model_framework` | yes | Model implementation framework. Prefer `transformers`; other safe identifiers such as `wenet`, `funasr`, or `custom` are allowed and require an architecture clarification. |
 | `build_context` | no | Default to the Dockerfile parent directory. |
 | `source_image_policy` | no | `auto` (default), `load`, or `build`. `auto` tries a tar below `build_context`, then falls back to Dockerfile build. |
 | `image_tar` | no | Explicit image archive absolute path. It must be inside `build_context`. |
-| `model_name` | no | Default to the model path basename. |
+| `model_name` | yes | Must use `<organization>__<model-name>`; all bundle and image names use this value. |
 | `task_type` | no | Infer from evidence; require an explicit value when ambiguous. |
 | `fixture` | no | Absolute smoke input path. Otherwise select an unambiguous `examples/smoke.*` file from the build context. |
 | `device` | no | `auto` (default), `cuda`, or `cpu`. `cpu` validates with local Docker only; `cuda` and GPU-capable `auto` submit VC jobs to the dedicated partition `<vc_default_partition>`. |
@@ -27,13 +28,13 @@ Convert an existing model delivery into the same Eval-ready contract produced by
 | `vc_partition` | no | VC partition for GPU validation; default and site requirement `<vc_default_partition>`. |
 | `vc_memory_gb` | no | VC memory request in GiB; default 32. `<vc_default_partition>` caps each GPU at 32 GiB, so do not exceed it there. |
 | `vc_gpus` | no | VC GPU count; default 1. |
-| `image_version` | no | Registry version tag for `<container_registry>/hpc/ai_asr-<model_name>:<version>`; default `0.1.0`. Bump on content change because the registry rejects tag reuse. |
+| `image_version` | no | Explicit registry tag override for `<container_registry>/hpc/ai_asr-<model_name>:<version>`. When omitted, query both source and adapter repositories, find the highest `major.minor.patch` tag, and select the next unused patch version; an empty repository starts at `0.1.0`. |
 | `max_retries` | no | Default 3. |
 
 Example:
 
 ```text
-/sure_trans dockerfile=/path/to/Dockerfile model=/path/to/model inference_entrypoint=/path/to/infer.py framework=pytorch_transformers task_type=asr
+/sure_trans dockerfile=/path/to/Dockerfile model=/path/to/model inference_entrypoint=/path/to/infer.py framework=pytorch model_framework=transformers model_name=organization__model task_type=asr
 ```
 
 ## Boundaries
@@ -44,8 +45,8 @@ Example:
 - Do not modify the supplied Dockerfile, model, or inference source in place.
 - Keep model data outside the image, materialize it into `sure/models/<model_name>/`, and mount that approved bundle read-only.
 - Treat MCP as the model invocation protocol. CPU validation runs in local Docker; GPU-touching validation submits VC jobs to `<vc_default_partition>`.
-- Require the primary model to use PyTorch Transformers. Auxiliary preprocessing may use native binaries or ONNX Runtime when recorded as a support dependency.
-- Attempt framework conversion only through a concrete deterministic converter. Compare original and converted inference; block when conversion is unavailable or non-equivalent.
+- Require the primary computation framework to be PyTorch. Auxiliary preprocessing may use native binaries or ONNX Runtime when recorded as a support dependency.
+- Prefer Transformers as the model framework, but do not block a custom or other declared PyTorch model framework. Record the declaration, detected category, architecture signals, and clarification in `framework_detection.json`; rely on original inference, adapter inference, and equivalence gates for behavioral proof.
 
 ## Workflow
 
@@ -85,18 +86,18 @@ Resolve the inputs first:
   --dockerfile <absolute-Dockerfile> \
   --model <absolute-model-path> \
   --inference-entrypoint <absolute-inference-file> \
-  --framework pytorch_transformers \
+  --framework pytorch \
+  --model-framework transformers \
   --task-type <task> \
   --device <auto|cuda|cpu> \
   --vc-partition <partition> \
   --vc-memory-gb <gib> \
   --vc-gpus <count> \
-  --image-version <version> \
   --run-dir <run_dir> \
   --repo-root <repo_root>
 ```
 
-Forward every user-provided optional parameter from the slash command into this invocation. Omitted `--vc-*` and `--image-version` flags resolve to `<vc_default_partition>`, 32 GiB, 1 GPU, and `0.1.0`.
+Forward every user-provided optional parameter from the slash command into this invocation. Omitted `--vc-*` flags resolve to `<vc_default_partition>`, 32 GiB, and 1 GPU. Forward `--image-version` only when the user supplied it; otherwise input materialization reads the authenticated Registry V2 tag lists for both `<model_name>-source` and `<model_name>`, selects the next patch version, and records the repositories and observed tags in `trans_input_resolved.json.image_version_resolution`. Registry lookup failure blocks instead of guessing a possibly occupied tag.
 
 Inspect the static dependency closure:
 
@@ -106,6 +107,8 @@ Inspect the static dependency closure:
 "$HARNESS_PYTHON_BIN" scripts/prepare_fixture.py --run-dir <run_dir>
 ```
 
+`detect_framework.py` blocks only when static evidence cannot establish PyTorch as the primary computation framework. A non-Transformers PyTorch model remains `status=ready`; the script writes `architecture_clarification` and any detected architecture signals, and the final verdict carries the same review information.
+
 Materialize the source image with the resolved policy:
 
 ```bash
@@ -113,6 +116,8 @@ Materialize the source image with the resolved policy:
   --run-dir <run_dir> \
   --produces <run_dir>/artifacts/source_image_result.json
 ```
+
+The source build automatically uses a generated Dockerfile layer that installs `git` and `ca-certificates` when `git` is absent. It supports apt, apk, dnf, yum, and microdnf; the supplied Dockerfile is never modified and its final `USER` is restored. A loaded source image tar receives the same derived layer before validation.
 
 With `source_image_policy=auto`, the runner recursively searches only below `build_context` for `.tar`, `.tar.gz`, or `.tgz` files. An explicit `image_tar` wins; otherwise candidates are ranked deterministically using in-context `delivery.json`, `SHA256SUMS`, and adjacent `image-inspect.json` evidence. Paths declared outside the current build context and symlinked archives are ignored.
 
@@ -176,7 +181,7 @@ Equivalence is decided by the gate, not by the command. Write `equivalence_resul
 ## Image Packaging
 
 1. Materialize the source image with `run_docker_build.py`; default `auto` loads an in-context image tar first and falls back to a deterministic Dockerfile build.
-2. Use `adapter/Dockerfile.sure` to layer `/opt/sure_trans/model.py`, `server.py`, `config.yaml`, `model.spec.yaml`, `__init__.py`, `validate.py`, and `mcp_smoke.py` onto the source image.
+2. Use `adapter/Dockerfile.sure` to layer `/opt/sure_trans/model.py`, `server.py`, `config.yaml`, `model.spec.yaml`, `__init__.py`, `validate.py`, and `mcp_smoke.py` onto the source image. The generated Dockerfile also copies the locked Harness Runtime into `/opt/sure-harness/<runtime_id>/`. If `SURE_HARNESS_RUNTIME_IMAGE` is set to a digest-pinned runtime image, build with `--build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>`; otherwise use `--build-context sure_harness_runtime=<SURE_HARNESS_RUNTIME_ROOT>`.
 3. Mount the staged `sure/models/<model_name>/` bundle read-only at `model_mount_target` for load, infer, MCP, and pull-verification tests.
 4. Validate import, persistent load, real inference, output contract, MCP initialize/list/call, and equivalence with original inference as separate gates.
 5. Push the adapter image, resolve `sha256:...`, pull the exact `repository@sha256:...` reference, and repeat the MCP smoke test. The deployment registry for this site is `<container_registry>` (registered as an insecure registry in the local Docker daemon, so plain-HTTP push/pull works; credentials live in `~/.docker/config.json`). Tag the image as `<container_registry>/hpc/ai_asr-<model_name>:<version>`; the registry enforces this naming spec server-side and rejects other names (`hpc` namespace, `ai_asr-` prefix, version tag). When the model was validated on GPU, the post-pull MCP smoke must itself run on VC through `mcp_smoke.py`; submit the **tag** with `--expect-digest` (see the VC section below — `vc submit` rejects digest-pinned references) and record its `vc_job_id`, `vc_partition=<vc_default_partition>`, `exit_code=0`, `image_ref`, the `resolved_digest` the submission proved, and the log path as `post_pull_smoke` in `docker_registry_result.json`, keeping `mcp_smoke.json` evidence next to that log path (the registry gate checks `resolved_digest` against `target_image_digest` and the initialize/tools/list/tools/call evidence).
@@ -184,6 +189,8 @@ Equivalence is decided by the gate, not by the command. Write `equivalence_resul
 The source image is pushed before unit 6 and the adapter image before unit 11 by the gate scripts; both record `registry_ref` and `registry_push` evidence into `source_image_result.json` and `adapter_image_result.json` respectively. The unit 17 post-pull smoke reuses the same registry name without repushing.
 
 Naming, image boundary, tag increment, and push-failure recovery conventions live in `references/image_packaging.md`; on conflict, this section and the gates win.
+
+Automatic selection is advisory until the immutable push succeeds: another run can claim the selected tag after input resolution. The registry's no-overwrite policy remains the final concurrency guard. On that race, rerun input materialization to select the next free version, or pass an explicit unused `image_version`; never overwrite the existing tag.
 
 ## VC Execution
 
@@ -221,8 +228,19 @@ Memory sizing is enforced deterministically:
   gate compares the payload size with 2x loading headroom against
   `vc_memory_gb` and blocks with the exact fix (`vc_gpus=2 vc_memory_gb=64`).
 - When a job fails with exit 137 / `OOMKilled` / `std::bad_alloc` / `Killed`,
-  the gate repairs with the RAM sizing fix; `CUDA out of memory` repairs with
-  the VRAM guidance (reduce batch/beam, bf16, or shard).
+  the gate repairs with the RAM sizing fix. A `CUDA out of memory` failure is
+  confirmed from a non-zero exit code plus the OOM evidence, in the job log or
+  in the stage result file the container wrote, and is then resubmitted up to
+  eight times on the selected VC partition so the scheduler can place it on
+  another available GPU allocation. A job that logs a recovered OOM and still
+  exits 0 is a pass, not a retry. Retries also stop once the hook's gate budget
+  no longer fits another attempt, which `gpu_oom_retry_budget_exhausted`
+  records. The first attempt logs in `artifacts/vc_logs/<stage>/` and each
+  resubmission gets its own `artifacts/vc_logs/<stage>/oom-attempt-N/`.
+  The VC interface does not expose a physical GPU selector, so this is bounded
+  rescheduling, not a guarantee of eight distinct cards. After the eighth CUDA
+  OOM, the gate reports the existing VRAM guidance (reduce batch/beam, enable
+  bf16, or shard the model).
 
 ## Eval Handoff
 
@@ -251,7 +269,7 @@ Write a successful `verdict.json`, then run:
 
 This seals the already-staged model payload, adapter, and small evidence under `sure/models/<model_name>/`. The sealed bundle matches the `/sure_onboard` product layout: wrapper set plus `Dockerfile.sure` at the bundle root, `fixture/<task>/` with `gt.jsonl`, and `artifacts/` carrying `package_gate.json` (`sure.onboard.package_gate.v2`), `artifact_manifest.json` (`sure.onboard.artifact_manifest.v1`), `runtime_inventory.json`, `verdict.json`, `docker_registry_result.json`, and `deployment_ready.json` (`sure.onboard.deployment_ready.v1`, written identically to the run directory). The terminal gate re-verifies hashes, bundle identity, portable paths, the Dockerfile hash, and the digest-pinned execution policy.
 
-The generated `validate.py` keeps the same CLI contract as `/sure_onboard`: `--stage import|load|infer|contract|all`, writing `<stage>_result.json` and, during infer, `sample_output.json` into `SURE_VALIDATE_ARTIFACTS_DIR`, then validating that sample against the filled `io_contract` in the contract stage — from the same directory. The adapter image does not bake in a Harness Runtime; `runtime_inventory.harness_runtime.required=false`, so `/sure_eval` mounts the locked common Harness Runtime from the repository.
+The generated `validate.py` keeps the same CLI contract as `/sure_onboard`: `--stage import|load|infer|contract|all`, writing `<stage>_result.json` and, during infer, `sample_output.json` into `SURE_VALIDATE_ARTIFACTS_DIR`, then validating that sample against the filled `io_contract` in the contract stage — from the same directory. The adapter image embeds the locked Harness Runtime; `runtime_inventory.harness_runtime.required=true`, so `/sure_eval` uses the image binding and does not mount the repository Harness Runtime into the model container.
 
 After completion, run evaluation locally or through VC without changing the model protocol:
 
@@ -286,7 +304,7 @@ what you recorded.
 
 - Block on unresolved Docker `COPY`/`ADD` sources or undeclared external file paths.
 - Block when original inference cannot load the supplied model.
-- Block when framework conversion is required but not proven equivalent.
+- Block when the primary computation framework is not PyTorch.
 - Block when the adapter reloads a large model for every sample without explicit acceptance.
 - Block when MCP output differs from original inference on the fixture: the equivalence gate compares the two recorded output files itself and fails on a mismatch even when the command exited 0.
 - Block when the MCP gate has no `mcp_smoke.json` protocol evidence (initialize/tools/list/tools/call all passed with non-empty text); placeholder `run_command` values such as `/bin/true` or `print(...)` are rejected.

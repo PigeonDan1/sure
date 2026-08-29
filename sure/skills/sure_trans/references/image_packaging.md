@@ -43,8 +43,8 @@ sure-trans/<model_name>:adapter
   <container_registry>/hpc/ai_asr-<model_name>:<version>
   ```
 
-- 同一模型后续环境或脚本变更后重新交付，递增版本标签（`0.1.0` → `0.1.1`）。
-  不得复用已经推送过且语义不同的 tag。
+- 未显式传 `image_version` 时，`materialize_trans_inputs.py` 使用 Docker 登录凭据查询 source 与 adapter 两个 Registry V2 tag 列表，只识别 `major.minor.patch` 三段数字版本，取最高版本并递增 patch；两边都没有版本时从 `0.1.0` 开始。查询证据写入 `trans_input_resolved.json.image_version_resolution`，认证信息不落盘。
+- 同一模型后续环境或脚本变更后重新交付，递增版本标签（`0.1.0` → `0.1.1`）。显式 `image_version` 保留为人工覆盖项。不得复用已经推送过且语义不同的 tag。
 - 无论 tag 怎么变，最终交接引用一律使用 digest 固定形式 `<repo>@sha256:<digest>`；
   `docker_registry_result.json` 的 `pull_verified=true` 是硬要求。
 
@@ -54,6 +54,7 @@ source 镜像只固化可复现运行环境：
 
 - Python 版本、torch/CUDA（或 CPU）runtime、模型依赖包
 - 交付 runtime（如 `longwavsplit`）与必要系统包（如 `ffmpeg`、`libsndfile1`）
+- `git` 与 `ca-certificates`：source 构建阶段在缺少 `git` 时自动安装，adapter 通过基础层继承。
 
 adapter 镜像 = source 镜像 + adapter 层，不额外安装包。
 
@@ -64,8 +65,7 @@ adapter 镜像 = source 镜像 + adapter 层，不额外安装包。
 - run 输出目录（`/sure-output` 类可写挂载）
 - 宿主 `.venv` 与开发代码
 
-trans 与 onboard 的一个有意差异：adapter 镜像**不打包 Harness Runtime**
-（`runtime_inventory.harness_runtime.required=false`），由 `/sure_eval` 挂载仓库锁定的公共 Harness Runtime。
+trans 与 onboard 现在使用相同的 runtime 边界：adapter 镜像打包锁定的 Harness Runtime（`runtime_inventory.harness_runtime.required=true`），`/sure_eval` 直接使用镜像内 binding。
 
 ## 4. 必备文件
 
@@ -99,10 +99,10 @@ trans 与 onboard 的一个有意差异：adapter 镜像**不打包 Harness Runt
    docker push <container_registry>/hpc/ai_asr-<model_name>-source:<version>
    ```
 
-3. 构建 adapter 镜像（`adapter/Dockerfile.sure` 以 digest 固定的 source 镜像为基底）：
+3. 构建 adapter 镜像（`adapter/Dockerfile.sure` 以 digest 固定的 source 镜像为基底，并复制锁定的 Harness Runtime）：
 
    ```bash
-   docker build -f adapter/Dockerfile.sure -t sure-trans/<model_name>:adapter <context>
+  docker build --build-context sure_harness_runtime=<harness_runtime_root> -f adapter/Dockerfile.sure -t sure-trans/<model_name>:adapter <context>
    ```
 
 4. 在 adapter 镜像内完成 import/load/infer/contract/mcp/equivalence 验证。GPU 模式下
@@ -126,7 +126,7 @@ trans 与 onboard 的一个有意差异：adapter 镜像**不打包 Harness Runt
 
 - 退出码看似成功但没有正常 layer push / digest 输出 → 视为失败，记录原始输出。
 - 清除代理后报 `operation not permitted` → 沙箱网络拦截直连 registry，请求非沙箱/完整网络权限后重试。
-- registry 返回"镜像已存在，请更新 tag" → 当前 tag 不允许覆盖，递增版本 tag（如 `:adapter-v1.2`）后重新 build/tag/push。
+- registry 返回"镜像已存在，请更新 tag" → 当前 tag 不允许覆盖。若版本是自动解析的，说明另一个并发 run 在解析后抢先占用了 tag，重新运行输入解析选择下一个版本；也可显式传入新的未占用版本。不要覆盖旧 tag。
 - `docker pull` 返回 `manifest unknown` → 该 tag 当前不可从仓库拉取，不能作为集群任务镜像。
 - push 成功或 tag 已存在后，都必须用 `docker pull <repo>@sha256:<digest>` 验证远端可拉取，只有 pull 返回 digest / `Image is up to date` 才可标记为可用。
 - 以上恢复步骤仍失败时，在最终汇报中请用户在登录态完整的交互终端手动执行 push/pull。

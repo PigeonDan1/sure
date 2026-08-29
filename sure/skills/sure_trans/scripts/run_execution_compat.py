@@ -90,6 +90,9 @@ def main() -> int:
     if not image:
         raise ValueError("source image identity is missing")
     model_name = str(resolved.get("model_name") or "")
+    # Input materialization canonicalizes Transformers aliases to this value.
+    model_framework = str(resolved["model_framework"]).strip().lower()
+    transformers_required = model_framework == "transformers"
     requested = str(resolved.get("device") or "auto")
     gpu_required = resolved.get("gpu_required") is True or requested == "cuda"
     bf16_required = resolved.get("bf16_required") is True
@@ -195,7 +198,7 @@ def main() -> int:
         incompatibilities.append("model requires CUDA but the selected container cannot access a GPU")
     if bf16_required and not bf16_supported:
         incompatibilities.append("model requires BF16 but the selected GPU does not report BF16 support")
-    if "transformers" not in probe:
+    if transformers_required and "transformers" not in probe:
         incompatibilities.append("Transformers import failed in the source image")
     payload = {
         "schema": "sure.trans.execution_compat.v1",
@@ -203,6 +206,8 @@ def main() -> int:
         "compat_ok": not incompatibilities,
         "execution_surface": execution_surface,
         "requested_device": requested,
+        "model_framework": model_framework,
+        "transformers_required": transformers_required,
         "selected_device": selected,
         "gpu_required": gpu_required,
         "bf16_required": bf16_required,

@@ -68,7 +68,11 @@ def main() -> int:
         for key in ("dockerfile", "build_context", "model_path", "inference_entrypoint"):
             candidate = Path(str(value.get(key, "")))
             require(candidate.is_absolute() and candidate.exists(), f"{key} must exist and be absolute")
-        require(value.get("framework") == "pytorch_transformers", "framework must normalize to pytorch_transformers")
+        require(value.get("framework") == "pytorch", "framework must normalize to pytorch")
+        require(
+            isinstance(value.get("model_framework"), str) and bool(value["model_framework"].strip()),
+            "model_framework is required",
+        )
         expected_model_dir = harness_model_dir(run_dir)
         declared_model_dir = Path(str(value.get("model_dir") or "")).expanduser()
         try:
@@ -86,19 +90,45 @@ def main() -> int:
         require(value.get("unresolved") == [], "dependency report contains unresolved paths")
         require(value.get("external_paths") == [], "dependency report contains undeclared external paths")
     elif kind == "framework":
-        require(value.get("status") in {"ready", "converted"}, "framework conversion did not complete")
-        if value.get("primary_model_compatible") is True:
-            require(value.get("detected") == "pytorch_transformers", "compatible model must detect as PyTorch Transformers")
-            require(value.get("conversion_required") is False, "compatible model must not require conversion")
+        resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+        require(value.get("status") == "ready", "primary computation framework must be PyTorch")
+        require(
+            value.get("declared_framework") == resolved.get("framework") == "pytorch",
+            "declared computation framework must match the resolved PyTorch input",
+        )
+        require(value.get("detected_framework") == "pytorch", "static inspection must detect PyTorch")
+        require(value.get("framework_requirement_met") is True, "PyTorch framework requirement was not met")
+        declared_model_framework = value.get("declared_model_framework")
+        detected_model_framework = value.get("detected_model_framework")
+        require(
+            isinstance(declared_model_framework, str) and bool(declared_model_framework.strip()),
+            "declared_model_framework is required",
+        )
+        require(
+            declared_model_framework == resolved.get("model_framework"),
+            "declared_model_framework must match the resolved input",
+        )
+        require(
+            detected_model_framework in {"transformers", "custom"},
+            "ready framework detection must identify the model framework category",
+        )
+        needs_clarification = (
+            declared_model_framework != "transformers"
+            or detected_model_framework != "transformers"
+            or value.get("model_framework_matches") is not True
+        )
+        require(
+            value.get("clarification_required") is needs_clarification,
+            "clarification_required does not match the framework evidence",
+        )
+        clarification = value.get("architecture_clarification")
+        if needs_clarification:
+            require(
+                isinstance(clarification, str) and bool(clarification.strip()),
+                "non-Transformers or mismatched model frameworks require architecture clarification",
+            )
         else:
-            require(value.get("conversion_required") is True, "incompatible model must require conversion")
-            require(value.get("conversion_succeeded") is True, "required framework conversion was not proven")
-            require(value.get("status") == "converted", "converted framework must use status=converted")
-            conversion = value.get("conversion") or {}
-            require(bool(conversion.get("converter")), "conversion evidence must name the deterministic converter")
-            require(Path(str(conversion.get("artifact_path", ""))).exists(), "converted artifact path is missing")
-            require(Path(str(conversion.get("equivalence_report", ""))).is_file(), "conversion equivalence report is missing")
-            require(conversion.get("equivalence_passed") is True, "conversion equivalence did not pass")
+            require(clarification is None, "matching Transformers models must not carry a stale clarification")
     elif kind == "fixture":
         require(value.get("status") == "ready", "fixture manifest is not ready")
         staged = Path(str(value.get("staged_path", "")))
@@ -193,12 +223,28 @@ def main() -> int:
         )
     elif kind == "adapter":
         require(value.get("status") == "ready", "adapter manifest must be ready")
+        require(value.get("harness_runtime_embedded") is True, "adapter image must embed the common Harness Runtime")
+        harness = value.get("harness_runtime") if isinstance(value.get("harness_runtime"), dict) else {}
+        require(
+            all(harness.get(key) for key in ("runtime_id", "lock_sha256", "python_executable", "manifest_path", "runtime_root")),
+            "adapter manifest must declare the embedded Harness Runtime binding",
+        )
         for key in ("model_py", "init_py", "validate_py", "server_py", "config_yaml", "model_spec", "dockerfile", "mcp_smoke_py"):
             candidate = Path(str(value.get(key, "")))
             require(candidate.is_file(), f"adapter file missing: {key}")
         dockerfile = Path(str(value.get("dockerfile", "")))
         require(dockerfile.is_file(), "adapter Dockerfile is missing")
         dockerfile_text = dockerfile.read_text(encoding="utf-8")
+        require(
+            "COPY --from=sure_harness_runtime" in dockerfile_text,
+            "adapter Dockerfile must copy the locked Harness Runtime with the sure_harness_runtime build context",
+        )
+        build_context = str(value.get("harness_runtime_build_context") or "directory")
+        if build_context.startswith("docker-image://"):
+            require(
+                re.fullmatch(r"docker-image://.+@sha256:[0-9a-f]{64}", build_context) is not None,
+                "image-backed Harness Runtime build context must be digest-pinned",
+            )
         for key in ("model_py", "init_py", "server_py", "config_yaml", "model_spec", "validate_py", "mcp_smoke_py"):
             declared = Path(str(value.get(key, "")))
             require(
@@ -219,16 +265,16 @@ def main() -> int:
         require(policy.get("host_python_fallback") is False, "host Python fallback must be disabled")
         require(policy.get("nfs_models_mutable_by_eval") is False, "Eval must not mutate the approved model bundle")
         harness = value.get("harness_runtime") if isinstance(value.get("harness_runtime"), dict) else {}
-        if harness.get("required") is True:
-            require(harness.get("schema") == "sure.harness.runtime.binding.v1", "required Harness Runtime binding must use the common schema")
-            require(
-                all(harness.get(key) for key in ("runtime_id", "lock_sha256", "python_executable", "manifest_path", "runtime_root")),
-                "required Harness Runtime binding is missing identity or path fields",
-            )
-            require(
-                not LEGACY_PATH.search(json.dumps(harness, ensure_ascii=False)),
-                "host Harness Runtime paths cannot be declared as the container runtime; sure_eval mounts the common runtime from the repo when the image has none",
-            )
+        require(harness.get("required") is True, "trans adapter image must embed the Harness Runtime")
+        require(harness.get("schema") == "sure.harness.runtime.binding.v1", "required Harness Runtime binding must use the common schema")
+        require(
+            all(harness.get(key) for key in ("runtime_id", "lock_sha256", "python_executable", "manifest_path", "runtime_root")),
+            "required Harness Runtime binding is missing identity or path fields",
+        )
+        require(
+            not LEGACY_PATH.search(json.dumps(harness, ensure_ascii=False)),
+            "host Harness Runtime paths cannot be declared as the container runtime",
+        )
         mount_policy = container.get("mount_policy") or {}
         require((mount_policy.get("model_bundle") or {}).get("read_only") is True, "model bundle mount must be read-only")
         require((mount_policy.get("result_workspace") or {}).get("read_only") is False, "result workspace mount must be writable")

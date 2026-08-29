@@ -1,7 +1,8 @@
 import type { GateResult, Unit } from "./checkpoints.ts";
 
-const FRAMEWORKS = ["pytorch_transformers"];
-const DETECTED_FRAMEWORKS = ["pytorch_transformers", "pytorch_non_transformers", "tensorflow", "jax_flax", "unknown"];
+const FRAMEWORKS = ["pytorch"];
+const DETECTED_FRAMEWORKS = ["pytorch", "tensorflow", "jax_flax", "unknown"];
+const DETECTED_MODEL_FRAMEWORKS = ["transformers", "custom", "unknown"];
 
 function checked(kind: string): Pick<Unit, "gateScript" | "gateScriptArgs"> {
 	return { gateScript: "check_artifact.py", gateScriptArgs: () => ["--kind", kind] };
@@ -45,6 +46,7 @@ export const TRANS_UNITS: Unit[] = [
 			"model_path",
 			"inference_entrypoint",
 			"framework",
+			"model_framework",
 			"model_name",
 			"model_dir",
 			"task_type",
@@ -85,8 +87,25 @@ export const TRANS_UNITS: Unit[] = [
 		kind: "gate",
 		produces: "framework_detection.json",
 		schemaRef: "framework_detection.schema.json",
-		requiredFields: ["declared", "detected", "primary_model_compatible", "conversion_required", "status", "evidence"],
-		allowedValues: { declared: FRAMEWORKS, detected: DETECTED_FRAMEWORKS },
+		requiredFields: [
+			"declared_framework",
+			"declared_model_framework",
+			"detected_framework",
+			"detected_model_framework",
+			"framework_requirement_met",
+			"model_framework_matches",
+			"transformers_preferred",
+			"clarification_required",
+			"architecture_signals",
+			"architecture_clarification",
+			"status",
+			"evidence",
+		],
+		allowedValues: {
+			declared_framework: FRAMEWORKS,
+			detected_framework: DETECTED_FRAMEWORKS,
+			detected_model_framework: DETECTED_MODEL_FRAMEWORKS,
+		},
 		ownedScripts: ["detect_framework.py"],
 		...checked("framework"),
 	},

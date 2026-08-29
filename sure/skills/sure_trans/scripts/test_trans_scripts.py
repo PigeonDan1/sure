@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,9 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import run_docker_build  # noqa: E402
+import run_trans_validate  # noqa: E402
+import scaffold_adapter  # noqa: E402
+import write_runtime_inventory  # noqa: E402
 
 
 # The partition name and registry host are site data; tests pin their own site
@@ -89,7 +93,151 @@ class DockerBinaryResolutionTest(unittest.TestCase):
 
 
 class TransScriptsTest(unittest.TestCase):
-    def test_source_image_runner_loads_tar_before_build(self) -> None:
+    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
+    def test_output_cleanup_refuses_a_mount_outside_the_run_directory(self) -> None:
+        """The gate must not delete a host path the agent chose for it.
+
+        run_command comes from the <stage>_result.json the agent under test
+        writes, so a mount host path is attacker-controlled input.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            outside = root / "shared-checkout"
+            outside.mkdir(parents=True)
+            keep = outside / "products"
+            keep.mkdir()
+            spec = mock.Mock(
+                mounts=[f"{outside}:/validation:ro"],
+                env={"SURE_VALIDATE_ARTIFACTS_DIR": "/validation"},
+            )
+            with self.assertRaises(ValueError) as caught:
+                run_trans_validate.prepare_container_outputs(spec, run_dir)
+            self.assertIn("run directory", str(caught.exception))
+            self.assertTrue(keep.is_dir(), "refused mount must not be touched")
+
+    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
+    def test_output_cleanup_refuses_to_follow_a_symlink_out_of_the_run_directory(self) -> None:
+        """A symlink planted inside the run dir must not widen the blast radius."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            outside = root / "shared-checkout"
+            outside.mkdir()
+            keep = outside / "products"
+            keep.mkdir()
+            link = run_dir / "escape"
+            link.symlink_to(outside, target_is_directory=True)
+            spec = mock.Mock(
+                mounts=[f"{link}:/validation:rw"],
+                env={"SURE_VALIDATE_ARTIFACTS_DIR": "/validation"},
+            )
+            with self.assertRaises(ValueError) as caught:
+                run_trans_validate.prepare_container_outputs(spec, run_dir)
+            self.assertIn("run directory", str(caught.exception))
+            self.assertTrue(keep.is_dir(), "symlinked-out mount must not be touched")
+
+    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
+    def test_output_cleanup_refuses_to_wipe_the_run_artifacts_directory(self) -> None:
+        """artifacts/ holds the gate's own products, not container output."""
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir(parents=True)
+            resolved_input = artifacts / "trans_input_resolved.json"
+            resolved_input.write_text("{}", encoding="utf-8")
+            spec = mock.Mock(
+                mounts=[f"{artifacts}:/validation:rw"],
+                env={"SURE_VALIDATE_ARTIFACTS_DIR": "/validation"},
+            )
+            with self.assertRaises(ValueError) as caught:
+                run_trans_validate.prepare_container_outputs(spec, run_dir)
+            self.assertIn("run artifacts directory", str(caught.exception))
+            self.assertTrue(resolved_input.is_file(), "gate products must survive")
+
+    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
+    def test_output_cleanup_clears_the_mount_the_skill_documents(self) -> None:
+        """SKILL.md prescribes -v <run_dir>/artifacts/adapter_validation:/validation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            output = run_dir / "artifacts" / "adapter_validation"
+            output.mkdir(parents=True)
+            (output / "stale_result.json").write_text("{}", encoding="utf-8")
+            (output / "stale_dir").mkdir()
+            spec = mock.Mock(
+                mounts=[f"{output}:/validation:rw"],
+                env={"SURE_VALIDATE_ARTIFACTS_DIR": "/validation"},
+            )
+            run_trans_validate.prepare_container_outputs(spec, run_dir)
+            self.assertEqual(list(output.iterdir()), [])
+
+    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
+    def test_output_cleanup_leaves_mounts_the_container_does_not_write_stage_output_into(self) -> None:
+        """Only the declared stage output directory is the gate's to clear."""
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            models = run_dir / "models"
+            models.mkdir(parents=True)
+            (models / "weights.bin").write_bytes(b"weights")
+            spec = mock.Mock(
+                mounts=[f"{models}:/models:ro"],
+                env={"SURE_VALIDATE_ARTIFACTS_DIR": "/validation"},
+            )
+            run_trans_validate.prepare_container_outputs(spec, run_dir)
+            self.assertTrue((models / "weights.bin").is_file())
+
+    def test_source_dockerfile_gets_git_install_and_restores_user(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "Dockerfile"
+            augmented = Path(temporary) / "source.Dockerfile.sure"
+            source.write_text("FROM python:3.12\nUSER 1000\n", encoding="utf-8")
+            run_docker_build.write_git_augmented_dockerfile(source, augmented)
+            text = augmented.read_text(encoding="utf-8")
+        self.assertIn("apt-get install -y --no-install-recommends git ca-certificates", text)
+        self.assertIn("USER root", text)
+        self.assertTrue(text.rstrip().endswith("USER 1000"))
+
+    def test_a_builder_stage_user_is_not_restored_onto_the_final_stage(self) -> None:
+        """USER does not carry across a stage boundary, and docker only notices at run time."""
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "Dockerfile"
+            augmented = Path(temporary) / "source.Dockerfile.sure"
+            source.write_text(
+                "FROM python:3.12 AS builder\n"
+                "USER appuser\n"
+                "RUN pip wheel -w /wheels .\n"
+                "\n"
+                "FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04\n"
+                "COPY --from=builder /wheels /wheels\n"
+                'ENTRYPOINT ["python", "-m", "infer"]\n',
+                encoding="utf-8",
+            )
+            run_docker_build.write_git_augmented_dockerfile(source, augmented)
+            text = augmented.read_text(encoding="utf-8")
+            self.assertIsNone(run_docker_build.last_user_instruction(source.read_text(encoding="utf-8")))
+        self.assertFalse(text.rstrip().endswith("USER appuser"))
+        self.assertTrue(text.rstrip().endswith(run_docker_build.GIT_INSTALL_RUN.rstrip()))
+
+    def test_final_stage_user_is_still_restored_in_a_multi_stage_build(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "Dockerfile"
+            augmented = Path(temporary) / "source.Dockerfile.sure"
+            source.write_text(
+                "FROM python:3.12 AS builder\n"
+                "USER appuser\n"
+                "RUN pip wheel -w /wheels .\n"
+                "\n"
+                "FROM python:3.12\n"
+                "COPY --from=builder /wheels /wheels\n"
+                "USER 1000\n",
+                encoding="utf-8",
+            )
+            run_docker_build.write_git_augmented_dockerfile(source, augmented)
+            text = augmented.read_text(encoding="utf-8")
+        self.assertTrue(text.rstrip().endswith("USER 1000"))
+
+    def test_source_image_runner_loads_tar_before_git_augmentation_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             delivery = root / "delivery"
@@ -103,6 +251,7 @@ class TransScriptsTest(unittest.TestCase):
             image_tar.write_bytes(b"docker-image")
             image_id = "sha256:" + "a" * 64
             repo_tag = "example/demo:source"
+            augmented_tag = "sure-trans/demo:source-" + hashlib.sha256((delivery / "Dockerfile").read_bytes()).hexdigest()[:16]
             (environment_dir / "image-inspect.json").write_text(
                 json.dumps({"Id": image_id, "RepoTags": [repo_tag]}) + "\n",
                 encoding="utf-8",
@@ -129,8 +278,9 @@ class TransScriptsTest(unittest.TestCase):
                 "#!/bin/sh\n"
                 "echo \"$*\" >> \"$DOCKER_CALLS\"\n"
                 f"if [ \"$1\" = \"load\" ]; then echo 'Loaded image: {repo_tag}'; exit 0; fi\n"
+                "if [ \"$1\" = \"build\" ]; then exit 0; fi\n"
                 "if [ \"$1\" = \"image\" ] && [ \"$2\" = \"inspect\" ]; then "
-                f"printf '%s\\n' '{{\"Id\":\"{image_id}\",\"RepoTags\":[\"{repo_tag}\"]}}'; exit 0; fi\n"
+                f"printf '%s\\n' '{{\"Id\":\"{image_id}\",\"RepoTags\":[\"{repo_tag}\",\"{augmented_tag}\"]}}'; exit 0; fi\n"
                 "echo unexpected docker invocation >&2; exit 1\n",
                 encoding="utf-8",
             )
@@ -151,7 +301,8 @@ class TransScriptsTest(unittest.TestCase):
             self.assertEqual(payload["source_image_policy"], "load")
             self.assertEqual(payload["image_tar"], str(image_tar))
             self.assertTrue(payload["load_verified"])
-            self.assertNotIn("build ", calls.read_text(encoding="utf-8"))
+            self.assertIn("build ", calls.read_text(encoding="utf-8"))
+            self.assertTrue(payload["git_required"])
 
     def test_source_image_runner_falls_back_when_load_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -285,12 +436,16 @@ class TransScriptsTest(unittest.TestCase):
                     str(code / "infer.py"),
                     "--framework",
                     "pytorch",
+                    "--model-framework",
+                    "transformers",
                     "--task-type",
                     "asr",
                     "--run-dir",
                     str(run_dir),
                     "--repo-root",
                     str(root),
+                    "--image-version",
+                    "0.1.0",
                 ],
                 check=True,
                 capture_output=True,
@@ -319,7 +474,8 @@ class TransScriptsTest(unittest.TestCase):
             report = json.loads((run_dir / "artifacts" / "inference_dependency_report.json").read_text(encoding="utf-8"))
             framework = json.loads((run_dir / "artifacts" / "framework_detection.json").read_text(encoding="utf-8"))
             fixture = json.loads((run_dir / "artifacts" / "fixture_manifest.json").read_text(encoding="utf-8"))
-            self.assertEqual(resolved["framework"], "pytorch_transformers")
+            self.assertEqual(resolved["framework"], "pytorch")
+            self.assertEqual(resolved["model_framework"], "transformers")
             self.assertEqual(resolved["task_type"], "asr")
             self.assertEqual(resolved["package_profile"], "docker-registry")
             self.assertEqual(resolved["source_image_policy"], "auto")
@@ -328,6 +484,9 @@ class TransScriptsTest(unittest.TestCase):
             self.assertIn("torch", report["python_imports"])
             self.assertIn("code/", report["docker_copy_sources"])
             self.assertEqual(framework["status"], "ready")
+            self.assertEqual(framework["detected_framework"], "pytorch")
+            self.assertEqual(framework["detected_model_framework"], "transformers")
+            self.assertFalse(framework["clarification_required"])
             self.assertEqual(fixture["sample_count"], 1)
             self.assertTrue(Path(fixture["staged_path"]).is_file())
 
@@ -494,7 +653,7 @@ class TransScriptsTest(unittest.TestCase):
             )
             docker.chmod(0o755)
             (artifacts / "trans_input_resolved.json").write_text(
-                json.dumps({"device": "cpu", "gpu_required": False, "bf16_required": False}) + "\n",
+                json.dumps({"device": "cpu", "gpu_required": False, "bf16_required": False, "model_framework": "transformers"}) + "\n",
                 encoding="utf-8",
             )
             (artifacts / "source_image_result.json").write_text(
@@ -530,7 +689,7 @@ class TransScriptsTest(unittest.TestCase):
             )
             docker.chmod(0o755)
             (artifacts / "trans_input_resolved.json").write_text(
-                json.dumps({"device": "auto", "gpu_required": False, "bf16_required": False, "model_name": "demo"}) + "\n",
+                json.dumps({"device": "auto", "gpu_required": False, "bf16_required": False, "model_name": "demo", "model_framework": "transformers"}) + "\n",
                 encoding="utf-8",
             )
             (artifacts / "source_image_result.json").write_text(
@@ -774,17 +933,186 @@ class TransScriptsTest(unittest.TestCase):
             (model / "weights.bin").write_bytes(b"weights")
             subprocess.run([
                 sys.executable, str(SCRIPTS_DIR / "materialize_trans_inputs.py"), "--dockerfile", str(delivery / "Dockerfile"),
-                "--model", str(model), "--inference-entrypoint", str(code / "infer.py"), "--framework", "pytorch_transformers",
-                "--run-dir", str(run_dir), "--repo-root", str(root),
+                "--model", str(model), "--inference-entrypoint", str(code / "infer.py"), "--framework", "pytorch",
+                "--model-framework", "transformers",
+                "--run-dir", str(run_dir), "--repo-root", str(root), "--image-version", "0.1.0",
             ], check=True, capture_output=True, text=True)
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "inspect_dependencies.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "detect_framework.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
             resolved = json.loads((run_dir / "artifacts" / "trans_input_resolved.json").read_text(encoding="utf-8"))
             framework = json.loads((run_dir / "artifacts" / "framework_detection.json").read_text(encoding="utf-8"))
             self.assertEqual(resolved["task_type"], "asr")
-            self.assertEqual(framework["detected"], "tensorflow")
+            self.assertEqual(framework["detected_framework"], "tensorflow")
             self.assertEqual(framework["status"], "blocked")
-            self.assertTrue(framework["conversion_required"])
+            self.assertFalse(framework["framework_requirement_met"])
+
+    def test_runtime_inventory_claims_a_verified_identity_only_for_an_image_build_context(self) -> None:
+        """A directory build context is whatever the build command pointed at."""
+        pinned = "docker-image://registry.example/sure-harness@sha256:" + "c" * 64
+        verified = write_runtime_inventory.identity_evidence(pinned)
+        self.assertTrue(verified["identity_verified"])
+        self.assertEqual(verified["identity_source"], "image-digest")
+
+        unverified = write_runtime_inventory.identity_evidence("directory")
+        self.assertFalse(unverified["identity_verified"])
+        self.assertEqual(unverified["identity_source"], "build-directory")
+        self.assertTrue(unverified["embedded"])
+
+    def test_standalone_materialize_accepts_the_image_version_it_asks_for(self) -> None:
+        """Without vc_exec bundled the script demands --image-version, so it has to honour it."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            standalone = root / "standalone"
+            standalone.mkdir()
+            shutil.copyfile(
+                SCRIPTS_DIR / "materialize_trans_inputs.py",
+                standalone / "materialize_trans_inputs.py",
+            )
+            self.assertFalse((standalone / "vc_exec.py").exists())
+            delivery = root / "delivery"
+            code = delivery / "code"
+            model = delivery / "model" / "demo"
+            run_dir = root / "run"
+            code.mkdir(parents=True)
+            model.mkdir(parents=True)
+            (delivery / "Dockerfile").write_text("FROM python:3.12\n", encoding="utf-8")
+            (code / "infer.py").write_text("import torch\n", encoding="utf-8")
+            (model / "weights.bin").write_bytes(b"weights")
+            subprocess.run([
+                sys.executable, str(standalone / "materialize_trans_inputs.py"),
+                "--dockerfile", str(delivery / "Dockerfile"), "--model", str(model),
+                "--inference-entrypoint", str(code / "infer.py"), "--framework", "pytorch",
+                "--model-framework", "transformers", "--run-dir", str(run_dir),
+                "--repo-root", str(root), "--image-version", "0.2.0",
+                "--vc-partition", TEST_PARTITION, "--task-type", "asr",
+            ], check=True, capture_output=True, text=True)
+            resolved = json.loads((run_dir / "artifacts" / "trans_input_resolved.json").read_text(encoding="utf-8"))
+            self.assertEqual(resolved["image_version"], "0.2.0")
+            self.assertEqual(resolved["image_version_resolution"]["mode"], "explicit")
+
+    def test_a_torch_token_does_not_settle_a_delivery_that_also_ships_tensorflow(self) -> None:
+        """SKILL.md blocks when PyTorch is not the primary computation framework."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            delivery = root / "delivery"
+            code = delivery / "code"
+            model = delivery / "model" / "demo"
+            run_dir = root / "run"
+            code.mkdir(parents=True)
+            model.mkdir(parents=True)
+            (delivery / "Dockerfile").write_text("FROM python:3.12\nCOPY code/ /opt/code/\n", encoding="utf-8")
+            (code / "infer.py").write_text(
+                "import tensorflow as tf\nimport torch\n\n"
+                "def transcribe(audio_path):\n"
+                "    features = torch.zeros(1)\n"
+                "    return tf.constant(audio_path)\n",
+                encoding="utf-8",
+            )
+            (model / "weights.bin").write_bytes(b"weights")
+            subprocess.run([
+                sys.executable, str(SCRIPTS_DIR / "materialize_trans_inputs.py"), "--dockerfile", str(delivery / "Dockerfile"),
+                "--model", str(model), "--inference-entrypoint", str(code / "infer.py"), "--framework", "pytorch",
+                "--model-framework", "transformers",
+                "--run-dir", str(run_dir), "--repo-root", str(root), "--image-version", "0.1.0",
+            ], check=True, capture_output=True, text=True)
+            subprocess.run([sys.executable, str(SCRIPTS_DIR / "inspect_dependencies.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
+            subprocess.run([sys.executable, str(SCRIPTS_DIR / "detect_framework.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
+            framework = json.loads((run_dir / "artifacts" / "framework_detection.json").read_text(encoding="utf-8"))
+            self.assertEqual(framework["detected_framework"], "tensorflow")
+            self.assertEqual(framework["status"], "blocked")
+            self.assertFalse(framework["framework_requirement_met"])
+
+    def test_custom_pytorch_model_framework_continues_with_architecture_clarification(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            delivery = root / "delivery"
+            code = delivery / "code"
+            model = delivery / "model" / "demo"
+            run_dir = root / "run"
+            code.mkdir(parents=True)
+            model.mkdir(parents=True)
+            (delivery / "Dockerfile").write_text("FROM python:3.12\nCOPY code/ /opt/code/\n", encoding="utf-8")
+            (code / "infer.py").write_text(
+                "import torch\nfrom torch import nn\n"
+                "class AcousticModel(nn.Module):\n"
+                "    def __init__(self):\n"
+                "        super().__init__()\n"
+                "        self.encoder = nn.Conv1d(80, 256, 3)\n"
+                "def transcribe(audio_path): return audio_path\n",
+                encoding="utf-8",
+            )
+            (model / "weights.bin").write_bytes(b"weights")
+            subprocess.run([
+                sys.executable, str(SCRIPTS_DIR / "materialize_trans_inputs.py"),
+                "--dockerfile", str(delivery / "Dockerfile"),
+                "--model", str(model),
+                "--inference-entrypoint", str(code / "infer.py"),
+                "--framework", "pytorch",
+                "--model-framework", "wenet",
+                "--run-dir", str(run_dir),
+                "--repo-root", str(root),
+                "--image-version", "0.1.0",
+            ], check=True, capture_output=True, text=True)
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "inspect_dependencies.py"), "--run-dir", str(run_dir)],
+                check=True, capture_output=True, text=True,
+            )
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "detect_framework.py"), "--run-dir", str(run_dir)],
+                check=True, capture_output=True, text=True,
+            )
+            output = run_dir / "artifacts" / "framework_detection.json"
+            framework = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(framework["status"], "ready")
+            self.assertEqual(framework["declared_model_framework"], "wenet")
+            self.assertEqual(framework["detected_model_framework"], "custom")
+            self.assertTrue(framework["model_framework_matches"])
+            self.assertTrue(framework["clarification_required"])
+            self.assertIn("cnn", framework["architecture_signals"])
+            self.assertIn("custom PyTorch", framework["architecture_clarification"])
+            subprocess.run([
+                sys.executable, str(SCRIPTS_DIR / "check_artifact.py"),
+                "--run-dir", str(run_dir),
+                "--produces", str(output),
+                "--kind", "framework",
+            ], check=True, capture_output=True, text=True)
+
+    def _harness_binding(self) -> dict[str, str]:
+        return {
+            "runtime_id": "sure-harness-v1-py311-abc123",
+            "lock_sha256": "a" * 64,
+            "python_executable": "/opt/sure-harness/sure-harness-v1-py311-abc123/bin/python",
+            "manifest_path": "/opt/sure-harness/sure-harness-v1-py311-abc123/runtime-manifest.json",
+            "runtime_root": "/opt/sure-harness/sure-harness-v1-py311-abc123",
+        }
+
+    def test_env_supplied_runtime_image_must_carry_the_active_runtime(self) -> None:
+        """The env override is the path the README documents, so it must be checked too."""
+        harness = self._harness_binding()
+        reference = "registry.example/sure-harness@sha256:" + "c" * 64
+        stale = mock.Mock(returncode=0, stdout=json.dumps({
+            "Config": {"Labels": {
+                "org.sure.harness.runtime_id": "sure-harness-v1-py311-old",
+                "org.sure.harness.lock_sha256": "b" * 64,
+            }},
+        }), stderr="")
+        with mock.patch.dict(os.environ, {"SURE_HARNESS_RUNTIME_IMAGE": reference}),              mock.patch.object(scaffold_adapter.subprocess, "run", return_value=stale):
+            with self.assertRaises(ValueError) as caught:
+                scaffold_adapter.harness_runtime_build_context(harness)
+        self.assertIn("active Harness Runtime", str(caught.exception))
+
+    def test_env_supplied_runtime_image_is_accepted_when_the_labels_match(self) -> None:
+        harness = self._harness_binding()
+        reference = "registry.example/sure-harness@sha256:" + "c" * 64
+        good = mock.Mock(returncode=0, stdout=json.dumps({
+            "Config": {"Labels": {
+                "org.sure.harness.runtime_id": harness["runtime_id"],
+                "org.sure.harness.lock_sha256": harness["lock_sha256"],
+            }},
+        }), stderr="")
+        with mock.patch.dict(os.environ, {"SURE_HARNESS_RUNTIME_IMAGE": reference}),              mock.patch.object(scaffold_adapter.subprocess, "run", return_value=good):
+            context = scaffold_adapter.harness_runtime_build_context(harness)
+        self.assertEqual(context, f"docker-image://{reference}")
 
     def test_scaffold_prefers_the_source_image_tag_over_the_image_id(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -792,7 +1120,14 @@ class TransScriptsTest(unittest.TestCase):
             artifacts = run_dir / "artifacts"
             artifacts.mkdir(parents=True)
             (artifacts / "trans_input_resolved.json").write_text(
-                json.dumps({"model_name": "demo", "task_type": "asr", "model_mount_target": "/models/demo", "inference_entrypoint": "infer.py"}) + "\n",
+                json.dumps({
+                    "model_name": "demo",
+                    "task_type": "asr",
+                    "framework": "pytorch",
+                    "model_framework": "transformers",
+                    "model_mount_target": "/models/demo",
+                    "inference_entrypoint": "infer.py",
+                }) + "\n",
                 encoding="utf-8",
             )
             (artifacts / "source_image_result.json").write_text(
@@ -804,7 +1139,10 @@ class TransScriptsTest(unittest.TestCase):
                 check=True, capture_output=True, text=True,
             )
             dockerfile = (run_dir / "adapter" / "Dockerfile.sure").read_text(encoding="utf-8")
+            model_spec = (run_dir / "adapter" / "model.spec.yaml").read_text(encoding="utf-8")
             self.assertEqual(dockerfile.splitlines()[0], "FROM demo-source:0.1.0")
+            self.assertIn("framework: pytorch", model_spec)
+            self.assertIn("model_framework: transformers", model_spec)
 
     def test_final_bundle_matches_eval_deployment_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -823,12 +1161,25 @@ class TransScriptsTest(unittest.TestCase):
             (examples / "smoke.wav").write_bytes(b"RIFF-smoke")
             subprocess.run([
                 sys.executable, str(SCRIPTS_DIR / "materialize_trans_inputs.py"), "--dockerfile", str(delivery / "Dockerfile"),
-                "--model", str(model), "--inference-entrypoint", str(code / "infer.py"), "--framework", "pytorch_transformers",
-                "--task-type", "asr", "--run-dir", str(run_dir), "--repo-root", str(root),
+                "--model", str(model), "--inference-entrypoint", str(code / "infer.py"), "--framework", "pytorch",
+                "--model-framework", "custom",
+                "--task-type", "asr", "--run-dir", str(run_dir), "--repo-root", str(root), "--image-version", "0.1.0",
             ], check=True, capture_output=True, text=True)
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "stage_model_payload.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "prepare_fixture.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
             artifacts = run_dir / "artifacts"
+            (artifacts / "runtime_binding.json").write_text(json.dumps({
+                "runtimes": {
+                    "harness": {
+                        "binding": {
+                            "runtime_id": "sure-harness-test",
+                            "lock_sha256": "e" * 64,
+                            "python_version": "3.11",
+                            "python_abi": "cp311",
+                        }
+                    }
+                }
+            }) + "\n", encoding="utf-8")
             digest = "sha256:" + "a" * 64
             image = "registry.example/demo:latest"
             image_ref = f"registry.example/demo@{digest}"
@@ -844,7 +1195,7 @@ class TransScriptsTest(unittest.TestCase):
                 "equivalence_result.json": {"status": "passed", "baseline_output": "baseline.json", "adapter_output": "adapter.json", "run_command": ["true"], "equivalent": True, "executed": True},
                 "adapter_image_result.json": {"status": "passed", "source_image": "demo-source", "target_image": "demo-adapter", "image_id": "sha256:" + "d" * 64, "server_command": ["python", "server.py"], "working_dir": "/opt/sure_trans"},
                 "docker_registry_result.json": {"schema": "sure.trans.docker_registry_result.v1", "status": "passed", "target_image": image, "target_image_digest": digest, "target_image_ref": image_ref, "pull_verified": True},
-                "framework_detection.json": {"declared": "pytorch_transformers", "detected": "pytorch_transformers", "primary_model_compatible": True, "conversion_required": False, "status": "ready", "evidence": ["torch import"]},
+                "framework_detection.json": {"schema": "sure.trans.framework_detection.v2", "declared_framework": "pytorch", "declared_model_framework": "custom", "detected_framework": "pytorch", "detected_model_framework": "custom", "framework_requirement_met": True, "model_framework_matches": True, "transformers_preferred": True, "clarification_required": True, "architecture_signals": [], "architecture_clarification": "Custom PyTorch implementation; no specific architecture family proven.", "status": "ready", "evidence": ["torch import"]},
                 "inference_dependency_report.json": {"entrypoint": str(code / "infer.py"), "build_context": str(delivery), "docker_copy_sources": ["code/"], "python_imports": ["torch"], "support_paths": [str(code)], "unresolved": [], "external_paths": [], "status": "ready"},
             }
             for name, value in values.items():
@@ -856,7 +1207,18 @@ class TransScriptsTest(unittest.TestCase):
                 encoding="utf-8",
             )
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "write_runtime_inventory.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
+            inventory = json.loads((artifacts / "runtime_inventory.json").read_text(encoding="utf-8"))
+            self.assertTrue(inventory["harness_runtime"]["required"])
+            self.assertEqual(
+                inventory["harness_runtime"]["python_executable"],
+                "/opt/sure-harness/sure-harness-test/bin/python",
+            )
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "write_verdict.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
+            verdict = json.loads((artifacts / "verdict.json").read_text(encoding="utf-8"))
+            self.assertEqual(verdict["schema"], "sure.trans.verdict.v2")
+            self.assertEqual(verdict["framework"]["computation"]["detected"], "pytorch")
+            self.assertEqual(verdict["framework"]["model"]["declared"], "custom")
+            self.assertTrue(verdict["framework"]["architecture_clarification"])
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "finalize_trans_bundle.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
             model_dir = root / "sure" / "models" / "demo"
             check = subprocess.run(
@@ -972,6 +1334,7 @@ class TransScriptsTest(unittest.TestCase):
             dockerfile = adapter / "Dockerfile.sure"
             dockerfile.write_text(
                 "FROM demo-source\n"
+                "COPY --from=sure_harness_runtime / /opt/sure-harness/sure-harness-test/\n"
                 "COPY model.py server.py config.yaml model.spec.yaml __init__.py mcp_smoke.py /opt/sure_trans/\n",
                 encoding="utf-8",
             )
@@ -985,6 +1348,14 @@ class TransScriptsTest(unittest.TestCase):
                 "model_spec": str(adapter / "model.spec.yaml"),
                 "dockerfile": str(dockerfile),
                 "mcp_smoke_py": str(adapter / "mcp_smoke.py"),
+                "harness_runtime_embedded": True,
+                "harness_runtime": {
+                    "runtime_id": "sure-harness-test",
+                    "lock_sha256": "e" * 64,
+                    "python_executable": "/opt/sure-harness/sure-harness-test/bin/python",
+                    "manifest_path": "/opt/sure-harness/sure-harness-test/runtime-manifest.json",
+                    "runtime_root": "/opt/sure-harness/sure-harness-test",
+                },
             }
             produces = artifacts / "adapter_manifest.json"
             produces.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
@@ -997,6 +1368,7 @@ class TransScriptsTest(unittest.TestCase):
 
             dockerfile.write_text(
                 "FROM demo-source\n"
+                "COPY --from=sure_harness_runtime / /opt/sure-harness/sure-harness-test/\n"
                 "COPY model.py server.py config.yaml model.spec.yaml __init__.py validate.py mcp_smoke.py /opt/sure_trans/\n",
                 encoding="utf-8",
             )

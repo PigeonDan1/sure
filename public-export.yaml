@@ -14,6 +14,11 @@ forbidden_content:
   # Company domains are forbidden in any form.
   - "git[.]aispeech[.]com[.]cn"
   - "(?:[a-z0-9-]+[.])*aispeech[.]com[.]cn"
+  # The .com.cn suffix is not the only company domain: the container registry
+  # and staff mail sit one level up, and a scan pinned to the longer suffix let
+  # a maintainer's address ship in public core. Written with [.] like the rules
+  # above so this file does not match itself.
+  - "(?:[a-z0-9-]+[.])*aispeech[.]com\\b"
   # Company storage cluster IDs are forbidden even without a leading slash,
   # so log fragments and test fixtures cannot evade the scan.
   - "hpc_stor0[0-9]"
