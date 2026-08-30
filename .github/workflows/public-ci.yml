@@ -45,6 +45,7 @@ jobs:
       - name: Install the locked Harness Runtime
         run: |
           python -m venv "$RUNNER_TEMP/sure-harness-venv"
+          "$RUNNER_TEMP/sure-harness-venv/bin/pip" install "uv==0.7.13"
           "$RUNNER_TEMP/sure-harness-venv/bin/pip" install --require-hashes -r sure/runtime/harness/requirements.lock.txt
           echo "$RUNNER_TEMP/sure-harness-venv/bin" >> "$GITHUB_PATH"
 
