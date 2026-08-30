@@ -27,7 +27,17 @@
 		"stderr_log": { "type": "string" },
 		"device_request": { "type": "string" },
 		"device_actual": { "type": "string" },
-		"cuda_visible_devices": { "type": "string" }
+		"cuda_visible_devices": { "type": "string" },
+		"completion_source": {
+			"type": "string",
+			"enum": ["terminal_sentinel", "vc_terminal_without_sentinel", "wait_timeout", "local_process"]
+		},
+		"submission_token": { "type": "string" },
+		"terminal_sentinel": { "type": "string" },
+		"timed_out": { "type": "boolean" },
+		"poll_count": { "type": "integer", "minimum": 0 },
+		"vc_info_excerpt": { "type": "string" },
+		"vc_describe_excerpt": { "type": "string" }
 	},
 	"additionalProperties": false
 }

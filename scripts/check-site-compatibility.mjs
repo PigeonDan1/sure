@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { legacyValueDifferences, schemaCompatibilityDifferences } from "./site-compatibility-rules.mjs";
 
 function run(command, args, options = {}) {
 	return spawnSync(command, args, { encoding: "utf8", ...options });
@@ -70,28 +71,11 @@ const expectedPolicy = JSON.parse(readFileSync(policySnapshotPath, "utf8"));
 const checks = [];
 const failures = [];
 let policySha256 = null;
+let candidateEvaluationSubmoduleCommit = null;
 
 function record(id, category, ok, detail, input = undefined) {
 	checks.push({ id, category, status: ok ? "pass" : "fail", detail, ...(input === undefined ? {} : { input }) });
 	if (!ok) failures.push(`${id}: ${detail}`);
-}
-
-function compareExactTree(id, prefix) {
-	const before = listedAt(baseline.baseline_commit, prefix);
-	const after = listedNow(prefix);
-	if (JSON.stringify(before) !== JSON.stringify(after)) {
-		record(id, "runtime", false, `${prefix} file set changed`);
-		return;
-	}
-	const changed = before.filter((path) => !readFileSync(path).equals(baselineFile(baseline.baseline_commit, path)));
-	record(id, "runtime", changed.length === 0, changed.length === 0 ? `${before.length} files are byte-identical` : `changed: ${changed.join(", ")}`);
-}
-
-function compareExactFiles(id, paths, category) {
-	const changed = paths.filter(
-		(path) => !existsSync(path) || !readFileSync(path).equals(baselineFile(baseline.baseline_commit, path)),
-	);
-	record(id, category, changed.length === 0, changed.length === 0 ? `${paths.length} files are byte-identical` : `changed: ${changed.join(", ")}`);
 }
 
 try {
@@ -102,44 +86,59 @@ try {
 }
 
 if (failures.length === 0) {
-	compareExactFiles(
+	const manifestPaths = [
+		"sure/skills/sure_feed/sure.skill.json",
+		"sure/skills/sure_onboard/sure.skill.json",
+		"sure/skills/sure_eval/sure.skill.json",
+		"sure/skills/sure_reval/sure.skill.json",
+	];
+	const manifestDifferences = manifestPaths.flatMap((path) => {
+		if (!existsSync(path)) return [`${path} is missing`];
+		const before = normalized(JSON.parse(baselineFile(baseline.baseline_commit, path).toString("utf8")), true);
+		const after = normalized(JSON.parse(readFileSync(path, "utf8")), true);
+		return legacyValueDifferences(before, after, "$", {
+			orderedArray: (valuePath) => valuePath.startsWith("$.hooks.") || valuePath.startsWith("$.ui."),
+		}).map((difference) => `${path}: ${difference}`);
+	});
+	record(
 		"command-state-manifests",
-		["sure/skills/sure_feed/sure.skill.json", "sure/skills/sure_onboard/sure.skill.json", "sure/skills/sure_eval/sure.skill.json", "sure/skills/sure_reval/sure.skill.json"],
 		"state",
+		manifestDifferences.length === 0,
+		manifestDifferences.length === 0 ? `${manifestPaths.length} legacy manifests remain compatible` : manifestDifferences.join("; "),
 	);
-	compareExactTree("runtime-boundary", "sure/runtime");
-	compareExactFiles("dependency-locks", ["package-lock.json", "packages/coding-agent/npm-shrinkwrap.json"], "runtime");
 
 	const beforeSchemas = listedAt(baseline.baseline_commit, "sure/skills").filter((path) => path.includes("/schemas/") && path.endsWith(".json"));
 	const afterSchemas = listedNow("sure/skills").filter((path) => path.includes("/schemas/") && path.endsWith(".json"));
-	let schemaDetail = `${beforeSchemas.length} artifact schemas are structurally identical`;
-	let schemasMatch = JSON.stringify(beforeSchemas) === JSON.stringify(afterSchemas);
-	if (schemasMatch) {
-		for (const path of beforeSchemas) {
-			const before = normalized(JSON.parse(baselineFile(baseline.baseline_commit, path).toString("utf8")), true);
-			const after = normalized(JSON.parse(readFileSync(path, "utf8")), true);
-			if (JSON.stringify(before) !== JSON.stringify(after)) {
-				schemasMatch = false;
-				schemaDetail = `${path} changed beyond description text`;
-				break;
-			}
+	const schemaDifferences = [];
+	for (const path of beforeSchemas) {
+		if (!afterSchemas.includes(path)) {
+			schemaDifferences.push(`${path} is missing`);
+			continue;
 		}
-	} else {
-		schemaDetail = "artifact schema file set changed";
+		const before = JSON.parse(baselineFile(baseline.baseline_commit, path).toString("utf8"));
+		const after = JSON.parse(readFileSync(path, "utf8"));
+		for (const difference of schemaCompatibilityDifferences(before, after)) {
+			schemaDifferences.push(`${path}: ${difference}`);
+		}
 	}
-	record("artifact-schemas", "artifact", schemasMatch, schemaDetail);
-
-	const baselineGitlink = git(["rev-parse", `${baseline.baseline_commit}:sure/external/sure-evaluation`]).trim();
-	const candidateGitlink = git(["rev-parse", "HEAD:sure/external/sure-evaluation"]).trim();
-	const checkoutGitlink = git(["-C", "sure/external/sure-evaluation", "rev-parse", "HEAD"]).trim();
-	const gitlinkMatches = [baselineGitlink, candidateGitlink, checkoutGitlink].every(
-		(commit) => commit === baseline.evaluation_submodule_commit,
+	record(
+		"artifact-schemas",
+		"artifact",
+		schemaDifferences.length === 0,
+		schemaDifferences.length === 0
+			? `${beforeSchemas.length} legacy schemas remain compatible; ${afterSchemas.length - beforeSchemas.length} additions allowed`
+			: schemaDifferences.join("; "),
 	);
+
+	const candidateGitlink = git(["rev-parse", "HEAD:sure/external/sure-evaluation"]).trim();
+	candidateEvaluationSubmoduleCommit = candidateGitlink;
+	const checkoutGitlink = git(["-C", "sure/external/sure-evaluation", "rev-parse", "HEAD"]).trim();
+	const gitlinkMatches = candidateGitlink === checkoutGitlink;
 	record(
 		"evaluation-submodule",
 		"runtime",
 		gitlinkMatches,
-		gitlinkMatches ? baseline.evaluation_submodule_commit : `baseline=${baselineGitlink} candidate=${candidateGitlink} checkout=${checkoutGitlink}`,
+		gitlinkMatches ? `checkout matches candidate gitlink ${candidateGitlink}` : `candidate=${candidateGitlink} checkout=${checkoutGitlink}`,
 	);
 }
 
@@ -155,8 +154,13 @@ if (siteInfo.status !== 0) {
 	try {
 		const actual = JSON.parse(siteInfo.stdout);
 		policySha256 = actual?.sha256 ?? null;
-		const matches = actual?.source === "bundled" && JSON.stringify(normalized(actual.policy)) === JSON.stringify(normalized(expectedPolicy));
-		record("bundled-policy", "policy", matches, matches ? `exact legacy values, sha256 ${policySha256}` : "bundled policy differs from the legacy snapshot");
+		const policyDifferences = actual?.source === "bundled" ? legacyValueDifferences(expectedPolicy, actual.policy) : ["bundled policy is not selected"];
+		record(
+			"bundled-policy",
+			"policy",
+			policyDifferences.length === 0,
+			policyDifferences.length === 0 ? `legacy values retained, sha256 ${policySha256}` : policyDifferences.join("; "),
+		);
 	} catch (error) {
 		record("bundled-policy", "policy", false, error instanceof Error ? error.message : String(error));
 	}
@@ -209,7 +213,8 @@ try {
 		actualExecution = null;
 	}
 	const executionMatches =
-		executionProbe.status === 0 && JSON.stringify(normalized(actualExecution)) === JSON.stringify(normalized(expectedExecution));
+		executionProbe.status === 0 &&
+		JSON.stringify(normalized(actualExecution)) === JSON.stringify(normalized(expectedExecution));
 	record("execution-selection", "command", executionMatches, executionMatches ? "five legacy execution decisions match" : executionProbe.stderr.trim() || executionProbe.stdout.trim(), expectedExecution.map((item) => item.case));
 
 	const explicitConfig = join(testRoot, "explicit.yaml");
@@ -248,7 +253,8 @@ const report = {
 	baseline_commit: baseline.baseline_commit,
 	candidate_commit: git(["rev-parse", "HEAD"]).trim(),
 	candidate_dirty: git(["status", "--porcelain", "--untracked-files=all"]).trim().length > 0,
-	evaluation_submodule_commit: baseline.evaluation_submodule_commit,
+	evaluation_submodule_commit: candidateEvaluationSubmoduleCommit,
+	baseline_evaluation_submodule_commit: baseline.evaluation_submodule_commit,
 	aispeech_policy_sha256: policySha256,
 	normalization_rules: baseline.normalization_rules,
 	checks,

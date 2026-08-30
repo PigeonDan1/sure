@@ -51,6 +51,26 @@ def surface_env(surface: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def dataset_projection_root_from_eval_input(eval_input: dict[str, Any]) -> Path | None:
+    runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
+    projection = runtime.get("dataset_projection")
+    if projection is None:
+        return None
+    if not isinstance(projection, dict):
+        raise ValueError("eval input dataset_projection must be an object")
+    raw_root = str(projection.get("host_root") or "")
+    root = Path(raw_root).expanduser()
+    if not raw_root or not root.is_absolute():
+        raise ValueError("eval input dataset_projection.host_root must be absolute")
+    root = root.resolve()
+    if not (root / "sure_benchmark" / "jsonl").is_dir():
+        raise ValueError(
+            "eval input dataset projection must contain sure_benchmark/jsonl: "
+            f"{root}"
+        )
+    return root
+
+
 def _mount(
     command: list[str],
     mounted_targets: dict[str, tuple[Path, bool]],
@@ -147,6 +167,7 @@ def build_local_container_command(
     harness_python = str(harness_runtime["python_executable"])
     harness_manifest = str(harness_runtime["manifest_path"])
     evaluation_runtime = evaluation_runtime_from_eval_input(eval_input, prepare=False)
+    dataset_projection_root = dataset_projection_root_from_eval_input(eval_input)
 
     command = ["docker", "run", "--rm", "--init", "--entrypoint", "bash"]
     mounted_targets: dict[str, tuple[Path, bool]] = {}
@@ -163,6 +184,14 @@ def build_local_container_command(
     _mount(command, mounted_targets, model_source, str(model_source), read_only=True)
     if model_target != str(model_source):
         _mount(command, mounted_targets, model_source, model_target, read_only=True)
+    if dataset_projection_root is not None:
+        _mount(
+            command,
+            mounted_targets,
+            dataset_projection_root,
+            str(dataset_projection_root),
+            read_only=False,
+        )
 
     for item in eval_input.get("datasets", []):
         if not isinstance(item, dict):
@@ -173,6 +202,13 @@ def build_local_container_command(
                 continue
             declared_path = Path(raw).expanduser()
             path = declared_path.resolve()
+            if key == "jsonl_path" and dataset_projection_root is not None:
+                try:
+                    path.relative_to(dataset_projection_root)
+                except ValueError:
+                    pass
+                else:
+                    continue
             mount_source = path if path.is_dir() else path.parent
             mount_target = declared_path if path.is_dir() else declared_path.parent
             if mount_source.exists():
@@ -194,6 +230,7 @@ def build_local_container_command(
             "MODEL_PYTHON": str(container.get("python_executable") or "python"),
             "PYTHON_BIN": str(container.get("python_executable") or "python"),
             "HARNESS_PYTHON_BIN": harness_python,
+            "SURE_EVAL_NODE_LOCAL_PYTHON": harness_python,
             "SURE_HARNESS_RUNTIME_ID": str(harness_runtime["runtime_id"]),
             "SURE_HARNESS_LOCK_SHA256": str(harness_runtime["lock_sha256"]),
             "SURE_HARNESS_MANIFEST_PATH": harness_manifest,
@@ -216,6 +253,8 @@ def build_local_container_command(
             "XDG_CACHE_HOME": f"{output_target}/.runtime/cache/xdg",
         }
     )
+    if dataset_projection_root is not None:
+        env["SURE_EVAL_DATASETS_ROOT"] = str(dataset_projection_root)
     if evaluation_runtime is not None:
         env.update(
             {
@@ -235,8 +274,22 @@ def build_local_container_command(
         "image_ref": binding["target_image_ref"],
         "model_mount": {"source": str(model_source), "target": model_target, "read_only": True},
         "result_mount": {"source": str(output_source), "target": output_target, "read_only": False},
+        "dataset_projection_mount": (
+            {
+                "source": str(dataset_projection_root),
+                "target": str(dataset_projection_root),
+                "read_only": False,
+            }
+            if dataset_projection_root is not None
+            else None
+        ),
         "harness_runtime": harness_runtime,
         "evaluation_runtime": evaluation_runtime,
+        "evaluation_node_runtime": {
+            "runtime_type": "evaluation_node_python",
+            "python_executable": harness_python,
+            "source": "approved_common_harness_runtime",
+        },
         "harness_runtime_mounted_from_repo": harness_mounted_from_repo,
         "model_runtime": {
             "runtime_type": "model_python",

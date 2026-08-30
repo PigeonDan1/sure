@@ -19,6 +19,7 @@
 		"check:repository-hygiene": "node scripts/check-repository-hygiene.mjs",
 		"check:site-boundary": "node scripts/check-site-boundary.mjs",
 		"check:site-compatibility": "node scripts/check-site-compatibility.mjs",
+		"test:site-compatibility-rules": "node --test scripts/site-compatibility-rules.test.mjs",
 		"public:export": "node scripts/export-public.mjs",
 		"sure:site-info": "node --import tsx scripts/sure-site-info.ts",
 		"sure:site-check": "node --import tsx scripts/sure-site-check.ts",

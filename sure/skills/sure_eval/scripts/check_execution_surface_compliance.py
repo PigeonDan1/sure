@@ -276,6 +276,10 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
         env.get("PYTHON_BIN"),
     }:
         issues.append("Harness Python and Model Python must be separate execution roles")
+    declared_node_python = env.get("SURE_EVAL_NODE_LOCAL_PYTHON")
+    if isinstance(declared_node_python, str) and declared_node_python:
+        if declared_node_python != approved_harness.get("python_executable"):
+            issues.append("SURE_EVAL_NODE_LOCAL_PYTHON differs from the approved common Harness Runtime")
 
     declared_tool = next(
         (value for value in (env.get("TOOL_NAME"), resolved_inputs.get("tool_name")) if isinstance(value, str) and value),
@@ -321,6 +325,11 @@ def _live_runtime_probe(
     container = binding.get("container") if isinstance(binding.get("container"), dict) else {}
     model_python = str(container.get("python_executable") or "python")
     harness_python = str(harness["python_executable"])
+    node_probe = (
+        "import os,subprocess;"
+        "python=os.environ['SURE_EVAL_NODE_LOCAL_PYTHON'];"
+        "subprocess.run([python,'-S','-c','import sys'],check=True)"
+    )
     script = (
         f"test {shlex.quote(harness_python)} != {shlex.quote(model_python)} || exit 40; "
         f"{shlex.quote(harness_python)} -s -c "
@@ -328,7 +337,9 @@ def _live_runtime_probe(
         + " || exit 41; "
         + f"{shlex.quote(model_python)} -c "
         + shlex.quote("import sys; print(sys.executable)")
-        + " || exit 42"
+        + " || exit 42; "
+        + f"export SURE_EVAL_NODE_LOCAL_PYTHON={shlex.quote(harness_python)}; "
+        + f"{shlex.quote(harness_python)} -s -c {shlex.quote(node_probe)} || exit 43"
     )
     command = ["docker", "run", "--rm", "--entrypoint", "bash"]
     if mounted:
@@ -347,6 +358,7 @@ def _live_runtime_probe(
         40: "HARNESS_MODEL_RUNTIME_ALIAS",
         41: "HARNESS_RUNTIME_NOT_READY",
         42: "MODEL_RUNTIME_NEEDS_REPAIR",
+        43: "EVALUATION_NODE_RUNTIME_NOT_READY",
     }
     failure_class = categories.get(completed.returncode, "CONTAINER_RUNTIME_UNAVAILABLE")
     detail = (completed.stderr or completed.stdout or "").strip()
@@ -358,9 +370,10 @@ def _live_runtime_probe(
         "harness_runtime_id": harness.get("runtime_id"),
         "harness_lock_sha256": harness.get("lock_sha256"),
         "harness_python": harness_python,
+        "node_local_python": harness_python,
         "model_python": model_python,
         "harness_runtime_source": harness.get("execution_source"),
-        "evidence": "exact-image Harness/Model runtime probe passed"
+        "evidence": "exact-image Harness/Model/Node runtime probe passed"
         if completed.returncode == 0
         else f"{failure_class}: {detail or f'exit {completed.returncode}'}",
     }

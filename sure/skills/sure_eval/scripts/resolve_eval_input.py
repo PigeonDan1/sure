@@ -51,6 +51,7 @@ MAIN_FLOW_SCRIPTS = [
     "scripts/refresh_report_snapshot.py",
     "scripts/run_local_execution.py",
     "scripts/run_vc_execution.py",
+    "scripts/wait_vc_execution.py",
 ]
 
 TEXT_DEFAULT_METRICS = {
@@ -241,50 +242,140 @@ def _check_dataset_input_policy(datasets: list[dict[str, Any]]) -> None:
     )
 
 
-def _write_harness_config(*, run_dir: Path, config_path: str | None) -> Path:
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _select_harness_config(config_path: str | None, harness_root: Path) -> tuple[Path, str]:
     if config_path:
         path = Path(config_path).expanduser()
-        if not path.exists():
-            raise FileNotFoundError(f"Config file not found: {path}")
-        return path.resolve()
+        label = "--config"
+    else:
+        env_config = os.environ.get("SURE_EVAL_CONFIG", "").strip()
+        if env_config:
+            path = Path(env_config).expanduser()
+            label = "SURE_EVAL_CONFIG"
+        else:
+            path = harness_root / "sure" / "external" / "sure-evaluation" / "config" / "default.yaml"
+            label = "submodule config"
+    if not path.is_file():
+        raise FileNotFoundError(f"{label} file not found: {path}")
+    return path.resolve(), label
 
-    env_config = os.environ.get("SURE_EVAL_CONFIG")
-    if env_config:
-        path = Path(env_config).expanduser()
-        if not path.exists():
-            raise FileNotFoundError(f"SURE_EVAL_CONFIG file not found: {path}")
-        return path.resolve()
 
-    harness_root = _repo_root_from_script()
-    base_config = harness_root / "sure" / "external" / "sure-evaluation" / "config" / "default.yaml"
+def _resolve_dataset_projection(
+    *,
+    explicit_root: str | None,
+    configured_root: object,
+    harness_root: Path,
+    site_policy: dict[str, Any],
+    reserved_write_roots: tuple[Path, ...] = (),
+) -> dict[str, str]:
     env_root = os.environ.get("SURE_EVAL_DATASETS_ROOT", "").strip()
-    datasets_root = Path(env_root) if env_root else harness_root / "data" / "datasets"
-    if not base_config.exists():
-        raise FileNotFoundError(f"Submodule config not found: {base_config}")
-    jsonl_dir = datasets_root / "sure_benchmark" / "jsonl"
-    if not jsonl_dir.is_dir():
-        # An explicit env root must already exist so a mistyped path fails fast;
-        # the in-repo default is scaffolding that source prepare fills on demand.
-        if env_root:
-            raise FileNotFoundError(f"SURE_EVAL_DATASETS_ROOT must contain sure_benchmark/jsonl: {datasets_root}")
-        jsonl_dir.mkdir(parents=True, exist_ok=True)
+    policy = site_policy["policy"]
+    policy_root = str((policy.get("datasets") or {}).get("projection_root") or "").strip()
+    config_root = str(configured_root or "").strip()
+    candidates = (
+        (str(explicit_root or "").strip(), "command"),
+        (env_root, "environment"),
+        (policy_root, "site_policy"),
+        (config_root, "config"),
+        (str(harness_root / "data" / "datasets"), "development_default"),
+    )
+    raw_root, source = next((value, origin) for value, origin in candidates if value)
+    candidate = Path(raw_root).expanduser()
+    if not candidate.is_absolute():
+        raise EvalInputError(f"dataset projection root from {source} must be absolute: {candidate}")
+    projection_root = candidate.resolve()
 
+    for raw_forbidden in policy["storage"]["forbidden_output_roots"]:
+        forbidden = Path(str(raw_forbidden)).resolve()
+        if _is_within(projection_root, forbidden):
+            raise EvalInputError(
+                f"dataset projection root is under a forbidden output root: {projection_root}"
+            )
+    for raw_source in policy["datasets"]["allowed_source_roots"]:
+        source_root = Path(str(raw_source)).resolve()
+        if _is_within(projection_root, source_root) or _is_within(source_root, projection_root):
+            raise EvalInputError(
+                "dataset projection root must not overlap an allowed source root: "
+                f"{projection_root} vs {source_root}"
+            )
+    for reserved_root in reserved_write_roots:
+        reserved = reserved_root.resolve()
+        if _is_within(projection_root, reserved) or _is_within(reserved, projection_root):
+            raise EvalInputError(
+                "dataset projection root must not overlap the evaluation output directory: "
+                f"{projection_root} vs {reserved}"
+            )
+
+    jsonl_root = projection_root / "sure_benchmark" / "jsonl"
+    try:
+        jsonl_root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise EvalInputError(f"cannot create dataset projection root {projection_root}: {exc}") from exc
+    if not os.access(projection_root, os.W_OK) or not os.access(jsonl_root, os.W_OK):
+        raise EvalInputError(f"dataset projection root is not writable: {projection_root}")
+    return {
+        "host_root": str(projection_root),
+        "jsonl_root": str(jsonl_root),
+        "source": source,
+        "content": "generated_jsonl_indexes_and_metadata",
+        "raw_data_policy": "reference_only_no_copy_or_move",
+    }
+
+
+def _materialize_harness_config(
+    *,
+    run_dir: Path,
+    config_path: str | None,
+    datasets_root: str | None = None,
+    site_policy: dict[str, Any] | None = None,
+) -> tuple[Path, dict[str, str]]:
+    harness_root = _repo_root_from_script()
+    base_config, config_source = _select_harness_config(config_path, harness_root)
     config = yaml.safe_load(base_config.read_text(encoding="utf-8")) or {}
+    if not isinstance(config, dict):
+        raise EvalInputError(f"evaluation config must be a mapping: {base_config}")
     data = dict(config.get("data") or {})
-    data.update(
-        {
+    active_site_policy = site_policy or load_site_policy(repository_root=harness_root, required=True)
+    projection = _resolve_dataset_projection(
+        explicit_root=datasets_root,
+        configured_root=data.get("datasets") if config_source != "submodule config" else None,
+        harness_root=harness_root,
+        site_policy=active_site_policy,
+        reserved_write_roots=(run_dir,),
+    )
+    if config_source == "submodule config":
+        data.update({
             "root": str(harness_root / "data"),
             "cache": str(harness_root / "data" / "cache"),
             "models": str(harness_root / "data" / "models"),
-            "datasets": str(datasets_root),
             "results": str(run_dir / "results"),
-        }
-    )
+        })
+    data["datasets"] = projection["host_root"]
     config["data"] = data
     output = run_dir / "_harness_config.yaml"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
-    return output.resolve()
+    return output.resolve(), projection
+
+
+def _write_harness_config(*, run_dir: Path, config_path: str | None) -> Path:
+    """Compatibility helper preserving the historical config selection contract."""
+    harness_root = _repo_root_from_script()
+    selected, source = _select_harness_config(config_path, harness_root)
+    if source != "submodule config":
+        return selected
+    output, _ = _materialize_harness_config(
+        run_dir=run_dir,
+        config_path=None,
+    )
+    return output
 
 
 def _nvidia_smi_available() -> bool:
@@ -688,7 +779,12 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         getattr(args, "output_dir", ""),
         _stage_output_dir(results_root, args.model, protocol, run_id),
     )
-    config_path = _write_harness_config(run_dir=output_dir, config_path=args.config)
+    config_path, dataset_projection = _materialize_harness_config(
+        run_dir=output_dir,
+        config_path=args.config,
+        datasets_root=getattr(args, "datasets_root", None),
+        site_policy=active_site_policy,
+    )
     cfg = Config.from_yaml(config_path)
     manager = DatasetManager(cfg)
     requested_datasets = _split_values(args.datasets)
@@ -752,6 +848,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "max_samples": args.max_samples,
             "deployment_binding": model["deployment_binding"],
             "harness_runtime": harness_runtime,
+            "dataset_projection": dataset_projection,
         },
     }
 
@@ -769,6 +866,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "execution_path": args.execution_path or "auto",
             "user_goal": args.user_goal,
             "vc": vc_request,
+            "datasets_root": getattr(args, "datasets_root", None),
         },
         "model": model,
         "datasets": datasets,
@@ -791,6 +889,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "vc": vc_request,
             "deployment_binding": model["deployment_binding"],
             "harness_runtime": harness_runtime,
+            "dataset_projection": dataset_projection,
         },
         "evaluation": {
             "backend": args.evaluation_backend,
@@ -840,6 +939,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--run-id")
     parser.add_argument("--config")
+    parser.add_argument("--datasets-root")
     parser.add_argument("--output")
     parser.add_argument("--output-dir", default="")
     return parser

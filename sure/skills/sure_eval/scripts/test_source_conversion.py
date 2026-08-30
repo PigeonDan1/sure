@@ -95,6 +95,10 @@ class SourceConversionTests(unittest.TestCase):
         self.assertEqual(row["task"], "ASR")
         self.assertEqual(row["language"], "zh")
         self.assertEqual(row["target"], "你好")
+        expected_audio = self.dataset_root / "raws" / "sample" / "utt1.wav"
+        self.assertEqual(row["path"], str(expected_audio))
+        self.assertTrue(expected_audio.is_file())
+        self.assertFalse((self.manager.sure_dir / "demo_ds" / "raws").exists())
         meta = row["metadata"]
         self.assertEqual(meta["source"], "aispeech_ds_pool")
         self.assertEqual(meta["source_dataset_root"], str(self.dataset_root))

@@ -100,7 +100,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> datasets=<dataset__version[,dataset__version...]> [protocol=standard_system|strict_core] [execution=auto|local|vc] [device=auto|cpu|cuda[:index]] [max_samples=...]`,
+			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> datasets=<source_root[,source_root...]> [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local|vc] [device=auto|cpu|cuda[:index]] [max_samples=...]`,
 			"Missing required parameters.",
 		);
 	}
@@ -195,6 +195,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (typeof args.config === "string") {
 		resolveArgs.push("--config", args.config);
+	}
+	if (typeof args.datasets_root === "string") {
+		resolveArgs.push("--datasets-root", args.datasets_root);
 	}
 	const resolvedInput = spawnSync(runtime.contract.python_executable, resolveArgs, {
 		cwd: ctx.packageDir,

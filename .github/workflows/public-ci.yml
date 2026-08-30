@@ -1,0 +1,134 @@
+name: Public CI
+
+on:
+  pull_request:
+    branches: [harness-tui-agent]
+  push:
+    branches: [harness-tui-agent]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality and contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the public tree
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+
+      - name: Install system and Node dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep
+          npm ci --ignore-scripts
+
+      - name: Install the locked Harness Runtime
+        run: |
+          python -m venv "$RUNNER_TEMP/sure-harness-venv"
+          "$RUNNER_TEMP/sure-harness-venv/bin/pip" install --require-hashes -r sure/runtime/harness/requirements.lock.txt
+          echo "$RUNNER_TEMP/sure-harness-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Configure the public CI fixture
+        run: |
+          cp config/site.example.yaml config/site.local.yaml
+          npm run sure:site-check
+
+      - name: Run repository checks
+        run: npm run check
+
+      - name: Check public compatibility rules
+        run: |
+          npm run check:site-compatibility -- --report "$RUNNER_TEMP/site-compatibility-report.json"
+          npm run test:site-compatibility-rules
+
+      - name: Run Python tests
+        run: |
+          python -m unittest discover -s sure/skills/sure_eval/scripts -p "test_*.py"
+          python -m unittest discover -s sure/skills/sure_trans/scripts -p "test_*.py"
+          python -m unittest discover -s sure/skills/sure_onboard/scripts -p "test_*.py"
+          python -m unittest discover -s sure/skills/sure_feed/scripts -p "test_*.py"
+          python -m unittest discover -s sure/site -p "test_*.py"
+
+      - name: Run coding-agent SURE tests
+        working-directory: packages/coding-agent
+        run: |
+          node node_modules/vitest/dist/cli.js --run \
+            test/suite/sure-*.test.ts \
+            test/sure/*.test.ts \
+            --exclude test/suite/sure-extension.test.ts
+
+  public-smoke:
+    name: Public export and startup
+    runs-on: ubuntu-24.04
+    env:
+      PUBLIC_TREE: ${{ runner.temp }}/sure-public-one
+      PUBLIC_TREE_SECOND: ${{ runner.temp }}/sure-public-two
+      PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-agent
+    steps:
+      - name: Check out the public tree
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Export the public tree twice
+        run: |
+          npm run public:export -- --output "$PUBLIC_TREE"
+          npm run public:export -- --output "$PUBLIC_TREE_SECOND"
+          test ! -e "$PUBLIC_TREE/config/site.bundled.yaml"
+          test ! -e "$PUBLIC_TREE/private/aispeech"
+          test ! -e "$PUBLIC_TREE/.gitlab-ci.yml"
+          test -f "$PUBLIC_TREE/public-export-manifest.json"
+          diff -ru "$PUBLIC_TREE" "$PUBLIC_TREE_SECOND"
+
+      - name: Install the exported tree
+        working-directory: ${{ runner.temp }}/sure-public-two
+        run: npm ci --ignore-scripts
+
+      - name: Require fail-closed public defaults
+        working-directory: ${{ runner.temp }}/sure-public-two
+        run: |
+          npm run sure:site-info | tee "$RUNNER_TEMP/sure-site-info.txt"
+          grep -F "configured: false" "$RUNNER_TEMP/sure-site-info.txt"
+          if npm run sure:site-check > "$RUNNER_TEMP/sure-site-check-missing.txt" 2>&1; then
+            echo "site check unexpectedly accepted an unconfigured public tree" >&2
+            exit 1
+          fi
+          grep -F "site policy is not configured" "$RUNNER_TEMP/sure-site-check-missing.txt"
+
+      - name: Validate configured public startup
+        working-directory: ${{ runner.temp }}/sure-public-two
+        run: |
+          cp config/site.example.yaml config/site.local.yaml
+          npm run sure:site-check
+          npm run sure:doctor
+          PI_OFFLINE=1 ./pi-test.sh --help > /dev/null

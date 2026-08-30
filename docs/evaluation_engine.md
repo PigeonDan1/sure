@@ -82,11 +82,18 @@ data/datasets/sure_benchmark/jsonl
 
 它**不是** `datasets=` 参数该填的东西。`datasets=` 传活动站点策略允许的数据源路径，详见 [`/sure_eval` skill 契约](../sure/skills/sure_eval/SKILL.md)。
 
-`SURE_EVAL_DATASETS_ROOT` 可以指向另一个包含 `sure_benchmark/jsonl` 的数据根,但它**只挪 JSONL 的查找位置**:
+投影根目录是独立的可写工作区。首次运行会创建
+`sure_benchmark/jsonl` 以及索引和元数据；原始音频仍从站点策略允许的源目录读取，
+不会复制或迁移。优先级是 `/sure_eval datasets_root=`、
+`SURE_EVAL_DATASETS_ROOT`、站点策略 `datasets.projection_root`、显式配置的
+`data.datasets`，最后才是仓库内开发默认值。环境变量示例:
 
 ```bash
 export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
 ```
+
+投影根必须是绝对路径，不能落在 `forbidden_output_roots` 下，也不能与
+`allowed_source_roots` 重叠。容器只读挂载原始数据和模型，只对投影根与本次结果目录开放写入。
 
 音频路径先看数据集 JSONL 里写的值:绝对路径直接用;相对路径依次试这五处,取第一个存在的:
 

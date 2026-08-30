@@ -10,6 +10,7 @@ function isWithin(path: string, root: string): boolean {
 try {
 	const resolved = requireSitePolicy();
 	const { datasets, execution, storage } = resolved.policy;
+	const projectionRoot = datasets.projection_root;
 	const failures: string[] = [];
 	for (const [kind, roots] of [
 		["approved model", storage.approved_models_roots],
@@ -23,6 +24,20 @@ try {
 	}
 	if (storage.forbidden_output_roots.some((forbidden) => isWithin(storage.runtime_root, forbidden))) {
 		failures.push(`runtime root must stay outside forbidden output roots: ${storage.runtime_root}`);
+	}
+	if (
+		projectionRoot &&
+		storage.forbidden_output_roots.some((forbidden) => isWithin(projectionRoot, forbidden))
+	) {
+		failures.push(`dataset projection root must stay outside forbidden output roots: ${projectionRoot}`);
+	}
+	if (
+		projectionRoot &&
+		datasets.allowed_source_roots.some(
+			(source) => isWithin(projectionRoot, source) || isWithin(source, projectionRoot),
+		)
+	) {
+		failures.push(`dataset projection root must not overlap an allowed source root: ${projectionRoot}`);
 	}
 	if (execution.surfaces.includes("vc") && !execution.vc_partitions?.length) {
 		failures.push("execution.vc_partitions is required when the vc surface is enabled");

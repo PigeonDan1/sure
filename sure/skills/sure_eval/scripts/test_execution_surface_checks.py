@@ -5,12 +5,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import check_execution_surface_compliance as checks
 
 
 IMAGE_REF = "registry.example.com/sure/demo@sha256:" + "a" * 64
+LIVE_RUNTIME_PROBE = checks._live_runtime_probe
 
 
 class InferenceRuntimeCheckTests(unittest.TestCase):
@@ -150,6 +152,49 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
         )
         self.assertFalse(result["passed"])
         self.assertIn("separate execution roles", result["evidence"])
+
+    def test_declared_node_python_must_match_harness_runtime(self) -> None:
+        result = checks.check_inference_runtime(
+            self.write_surface(
+                env={
+                    "TOOL_NAME": "transcribe_audio",
+                    "SURE_EVAL_NODE_LOCAL_PYTHON": "/usr/bin/python3.11",
+                }
+            )
+        )
+        self.assertFalse(result["passed"])
+        self.assertIn("approved common Harness Runtime", result["evidence"])
+
+
+class LiveRuntimeProbeTests(unittest.TestCase):
+    def test_exact_image_probe_executes_node_override(self) -> None:
+        commands: list[list[str]] = []
+
+        def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+            commands.append(command)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        harness = {
+            "runtime_id": "sure-harness-test",
+            "lock_sha256": "c" * 64,
+            "python_executable": "/opt/sure-harness/bin/python",
+            "manifest_path": "/opt/sure-harness/runtime-manifest.json",
+            "runtime_root": "/opt/sure-harness",
+        }
+        binding = {
+            "target_image_ref": IMAGE_REF,
+            "container": {
+                "python_executable": "python",
+                "harness_runtime": harness,
+            },
+        }
+
+        result = LIVE_RUNTIME_PROBE(binding, harness, run=run)
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["node_local_python"], harness["python_executable"])
+        self.assertIn("SURE_EVAL_NODE_LOCAL_PYTHON", commands[0][-1])
+        self.assertIn("subprocess.run", commands[0][-1])
 
 
 if __name__ == "__main__":

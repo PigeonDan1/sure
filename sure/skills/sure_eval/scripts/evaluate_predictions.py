@@ -34,7 +34,11 @@ from sure_eval.evaluation.sure_evaluator import SUREEvaluator
 from sure_eval.reports import SOTAManager
 
 from resolve_evaluation_engine import resolve_engine_root
-from evaluation_runtime import ensure_evaluation_runtime, evaluation_child_environment
+from evaluation_runtime import (
+    EvaluationRuntimeError,
+    ensure_evaluation_runtime,
+    evaluation_child_environment,
+)
 
 configure_logging(level="INFO")
 logger = get_logger(__name__)
@@ -995,6 +999,16 @@ def _to_strict_jsonable(value: Any) -> Any:
 def _metric_slug(metric: str) -> str:
     slug = "".join(ch if ch.isalnum() or ch in "._=-" else "_" for ch in str(metric).lower())
     return slug or "metric"
+
+
+def _run_relative_artifact_path(path: str | Path, run_dir: Path) -> str:
+    """Return a portable artifact path, rejecting references outside the run."""
+    resolved_run_dir = run_dir.resolve()
+    resolved_path = Path(path).resolve()
+    try:
+        return resolved_path.relative_to(resolved_run_dir).as_posix()
+    except ValueError as exc:
+        raise ValueError(f"artifact path must stay under the run root: {resolved_path}") from exc
 
 
 def _primary_result(metric: str, score: Any, report: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -2056,6 +2070,12 @@ def _external_metric_applies_to_task_language(
             pipeline_id=pipeline_id,
             timeout=timeout,
         )
+    except (OSError, EvaluationRuntimeError):
+        # The engine never got asked: a missing binary or an unusable evaluation
+        # runtime says nothing about whether it supports this metric. Recording
+        # it as "not applicable" turns a broken environment into a silent
+        # "no metric is supported" at the end of the run.
+        raise
     except Exception as exc:
         if failures is not None:
             failures.append(f"{pipeline_id or metric or 'default'}: {_summarize_bridge_error(exc)}")
@@ -2127,24 +2147,25 @@ def _write_run_artifacts(
         row = payload_rows[index] if index < len(payload_rows) and isinstance(payload_rows[index], dict) else _dataset_metric_row(result)
         row = dict(row)
         artifacts = dict(row.get("artifacts") or {})
-        # check_run_report resolves relative payload paths against the run
-        # root, so record absolute paths even when --run-dir was relative.
         artifacts.update(
             {
-                "metric_artifact_dir": str(metric_dir.resolve()),
-                "report": str(report_path.resolve()),
-                "pipeline_description": str(pipeline_path.resolve()),
-                "sample_report": str(sample_report_path.resolve()),
-                "prediction_file": str(Path(result["prediction_path"]).resolve()),
+                "metric_artifact_dir": _run_relative_artifact_path(metric_dir, run_dir),
+                "report": _run_relative_artifact_path(report_path, run_dir),
+                "pipeline_description": _run_relative_artifact_path(pipeline_path, run_dir),
+                "sample_report": _run_relative_artifact_path(sample_report_path, run_dir),
+                "prediction_file": _run_relative_artifact_path(result["prediction_path"], run_dir),
             }
         )
         row["artifacts"] = artifacts
+        inputs = dict(row.get("inputs") or {})
+        inputs["prediction_path"] = artifacts["prediction_file"]
+        row["inputs"] = inputs
         pipeline_payload = dict(row.get("pipeline") or {})
         pipeline_payload.update(
             {
                 "pipeline_id": row.get("pipeline_id") or result.get("pipeline_id"),
-                "report_path": str(report_path.resolve()),
-                "description_path": str(pipeline_path.resolve()),
+                "report_path": artifacts["report"],
+                "description_path": artifacts["pipeline_description"],
             }
         )
         row["pipeline"] = pipeline_payload

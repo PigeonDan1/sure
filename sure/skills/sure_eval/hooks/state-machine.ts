@@ -249,12 +249,13 @@ export const MAIN_FLOW_UNITS: Unit[] = [
 	{
 		id: "execute_wait",
 		label: "Execute & wait for completion",
-		kind: "linear",
+		kind: "gate",
 		produces: "execution_result.json",
 		schemaRef: "execution_result.schema.json",
 		requiredFields: ["job_status"],
 		allowedValues: { job_status: ["succeeded", "running", "failed", "partial"] },
 		forbiddenFields: ["report_persisted"],
+		gateScript: "wait_vc_execution.py",
 	},
 	{
 		id: "assessment",

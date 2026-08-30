@@ -171,6 +171,21 @@ describe("sure_eval execution policy gate", () => {
 		expect(blocked.stderr).toContain("execution=vc");
 	});
 
+	it("blocks vc_submit artifacts that cannot be correlated by the wait gate", () => {
+		const runDir = freshRunDir("execution-vc-missing-control-fields");
+		writeArtifact(runDir, "submit_result.json", {
+			execution_path: "vc_submit",
+			execution_requested: "auto",
+			vc_available: VC_AVAILABLE,
+		});
+
+		const blocked = runGate("vc_check.py", runDir, "submit_result.json");
+		expect(blocked.ok).toBe(false);
+		expect(blocked.stderr).toContain("vc_job_id");
+		expect(blocked.stderr).toContain("submission_token");
+		expect(blocked.stderr).toContain("terminal_status_path");
+	});
+
 	it("blocks execution=auto local_bash when vc is available unless fallback is approved", () => {
 		if (!VC_AVAILABLE) {
 			return;
@@ -300,6 +315,8 @@ submission = r._resolved_submission(
     run_evaluation_path="/host/repo/.sure/runs/r/artifacts/run_evaluation.sh",
     log_path=Path("/host/repo/.sure/runs/r/vc_logs/job.log"),
     command="vc submit ...",
+    submission_token="a" * 32,
+    terminal_status_path="artifacts/vc_terminal_status." + "a" * 32 + ".json",
     harness_runtime={"runtime_id": "sure-harness-test"},
     model_runtime={"runtime_type": "model_python", "python_executable": "python"},
 )

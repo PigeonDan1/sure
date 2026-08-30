@@ -21,6 +21,8 @@
 		"fallback_approved": { "type": "boolean" },
 		"local_fallback_reason": { "type": "string" },
 		"submitted_at": { "type": "string" },
+		"submission_token": { "type": "string" },
+		"terminal_status_path": { "type": "string" },
 		"host": { "type": "string" },
 		"pid": { "type": "number" },
 		"command": { "type": "string" },

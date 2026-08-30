@@ -188,7 +188,14 @@ class ModelRegistry:
                     )
                 except Exception as e:
                     print(f"Error loading model config {item}: {e}")
-    
+
+        # Callers hold a directory, not a declared name: the container mounts the
+        # bundle at /workspace/model and looks it up as "model". Register the
+        # directory name too, in a second pass so a name some config.yaml really
+        # declares is never shadowed by another directory that shares it.
+        for info in list(self._models.values()):
+            self._models.setdefault(info.path.name, info)
+
     def list_models(self) -> list[str]:
         """List all model names."""
         return list(self._models.keys())

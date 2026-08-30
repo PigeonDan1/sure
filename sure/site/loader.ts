@@ -22,6 +22,7 @@ export interface SitePolicy {
 	};
 	datasets: {
 		allowed_source_roots: string[];
+		projection_root?: string;
 	};
 	execution: {
 		surfaces: ExecutionSurface[];
@@ -102,7 +103,7 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	const storage = expectRecord(root.storage, "storage");
 	rejectUnknown(storage, ["approved_models_roots", "approved_results_roots", "forbidden_output_roots", "runtime_root"], "storage");
 	const datasets = expectRecord(root.datasets, "datasets");
-	rejectUnknown(datasets, ["allowed_source_roots"], "datasets");
+	rejectUnknown(datasets, ["allowed_source_roots", "projection_root"], "datasets");
 	const execution = expectRecord(root.execution, "execution");
 	rejectUnknown(execution, ["surfaces", "vc_partitions", "vc_partition_priority", "vc_default_partition"], "execution");
 	const surfaces = expectUniqueStrings(execution.surfaces, "execution.surfaces", false);
@@ -149,6 +150,9 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 			surfaces: surfaces as ExecutionSurface[],
 		},
 	};
+	if (datasets.projection_root !== undefined) {
+		policy.datasets.projection_root = expectAbsolutePath(datasets.projection_root, "datasets.projection_root");
+	}
 	if (execution.vc_partitions !== undefined) {
 		policy.execution.vc_partitions = expectUniqueStrings(execution.vc_partitions, "execution.vc_partitions", false);
 	}

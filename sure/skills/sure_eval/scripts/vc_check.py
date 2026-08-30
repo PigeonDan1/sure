@@ -103,6 +103,21 @@ def main() -> int:
     requested = _execution_requested(data, run_dir)
     local_paths = {"local_docker"}
 
+    if execution_path == "vc_submit":
+        required = ("vc_job_id", "submission_token", "terminal_status_path")
+        missing = [
+            field
+            for field in required
+            if not isinstance(data.get(field), str) or not data[field].strip()
+        ]
+        if missing:
+            print(
+                "SUBMIT_EXECUTION gate: vc_submit requires non-empty control fields: "
+                + ", ".join(missing),
+                file=sys.stderr,
+            )
+            return 1
+
     if requested == "vc" and execution_path != "vc_submit":
         print(
             "SUBMIT_EXECUTION gate: user requested execution=vc, so "

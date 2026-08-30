@@ -45,6 +45,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `storage.forbidden_output_roots` | yes | Roots where automated `output_dir` writes are forbidden |
 | `storage.runtime_root` | yes | Declared site-owned cache root for adapters and future runtime placement |
 | `datasets.allowed_source_roots` | yes | Roots accepted by the strict dataset source resolver |
+| `datasets.projection_root` | optional | Writable root for generated dataset JSONL indexes and metadata; raw data remains in the allowed source root |
 | `execution.surfaces` | yes | Enabled execution surfaces: `local`, `vc`, or both |
 | `execution.vc_partitions` | when needed | Declared VC partitions for adapters and deployment documentation |
 | `execution.vc_partition_priority` | optional | Numeric priority map used by automatic VC selection |
@@ -61,6 +62,7 @@ Policy v1 accepts exactly one path in each root list. The list shape leaves room
 - Every configured root is absolute.
 - Approved model and result roots must be protected by a configured forbidden output root.
 - The declared runtime root must stay outside forbidden output roots.
+- A configured dataset projection root must stay outside forbidden output roots and must not overlap an allowed source root.
 - Path authorization resolves existing symlinks before comparison, so alternate names cannot bypass a protected root.
 - The policy validator does not create directories and does not require network access. Runtime commands perform their existing availability and permission checks at the same stages as before.
 - This compatibility phase does not redirect the locked Harness Runtime or Evaluation Runtime. They continue to materialize in their pre-existing repository-local locations; changing that behavior requires a separate differential migration.
@@ -85,13 +87,14 @@ storage:
 datasets:
   allowed_source_roots:
     - /srv/datasets
+  projection_root: /var/lib/sure/dataset-projections
 
 execution:
   surfaces:
     - local
 ```
 
-For shared storage, replace these placeholders with roots visible to every host and container that executes a workflow. For a local-only fixture, create temporary model, result, dataset, and runtime roots and point the local policy at them.
+For shared storage, replace these placeholders with roots visible to every host and container that executes a workflow. The projection root is the only writable dataset workspace; source roots are mounted read-only. For a local-only fixture, create temporary model, result, dataset, projection, and runtime roots and point the local policy at them.
 
 ## Diagnostics
 

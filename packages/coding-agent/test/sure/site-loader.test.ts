@@ -52,6 +52,31 @@ describe("validateSitePolicy absolute paths", () => {
 			),
 		).toThrow(/storage\.approved_models_roots\[0\]/);
 	});
+
+	it("returns an absolute dataset projection root", () => {
+		const result = validateSitePolicy(
+			policy({
+				datasets: {
+					allowed_source_roots: [`${ROOT}/datasets`],
+					projection_root: "/var/lib/sure/dataset-projections",
+				},
+			}),
+		);
+		expect(result.datasets.projection_root).toBe("/var/lib/sure/dataset-projections");
+	});
+
+	it("rejects a relative dataset projection root", () => {
+		expect(() =>
+			validateSitePolicy(
+				policy({
+					datasets: {
+						allowed_source_roots: [`${ROOT}/datasets`],
+						projection_root: "data/projections",
+					},
+				}),
+			),
+		).toThrow(/datasets\.projection_root/);
+	});
 });
 
 describe("validateSitePolicy network.container_registry", () => {

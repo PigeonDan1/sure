@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from evaluation_runtime import (
+    EvaluationRuntimeError,
+    _engine_commit,
     _make_group_writable,
     _wrapper,
     evaluation_child_environment,
@@ -72,6 +76,20 @@ class EvaluationRuntimeTests(unittest.TestCase):
                 prepare=False,
             )
         )
+
+
+class EngineCommitTests(unittest.TestCase):
+    def test_absent_git_binary_is_reported_as_an_evaluation_runtime_error(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            empty_bin = root / "bin"
+            empty_bin.mkdir()
+            engine_root = root / "engine"
+            engine_root.mkdir()
+            with mock.patch.dict(os.environ, {"PATH": str(empty_bin)}):
+                with self.assertRaises(EvaluationRuntimeError) as caught:
+                    _engine_commit(engine_root)
+        self.assertIn("git", str(caught.exception))
 
 
 if __name__ == "__main__":

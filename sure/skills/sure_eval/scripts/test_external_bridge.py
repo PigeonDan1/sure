@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import evaluate_predictions as ep  # noqa: E402
+from evaluation_runtime import EvaluationRuntimeError  # noqa: E402
 
 
 class BridgeFailureReportingTests(unittest.TestCase):
@@ -54,6 +55,26 @@ class BridgeFailureReportingTests(unittest.TestCase):
         failures: list[str] = []
         self.assertFalse(self._applies(failures, metric=None, pipeline_id="asr.zh.cer.v1"))
         self.assertIn("asr.zh.cer.v1", failures[0])
+
+    def test_a_broken_environment_is_raised_instead_of_recorded_as_unsupported(self) -> None:
+        def boom(**_: object) -> dict[str, object]:
+            raise FileNotFoundError(2, "No such file or directory", "git")
+
+        ep._describe_external_pipeline = boom
+        failures: list[str] = []
+        with self.assertRaises(FileNotFoundError):
+            self._applies(failures)
+        self.assertEqual(failures, [])
+
+    def test_an_unusable_evaluation_runtime_is_raised_instead_of_recorded(self) -> None:
+        def boom(**_: object) -> dict[str, object]:
+            raise EvaluationRuntimeError("evaluation engine commit is unavailable: git is not installed")
+
+        ep._describe_external_pipeline = boom
+        failures: list[str] = []
+        with self.assertRaises(EvaluationRuntimeError):
+            self._applies(failures)
+        self.assertEqual(failures, [])
 
     def test_supported_request_records_nothing(self) -> None:
         ep._describe_external_pipeline = lambda **_: {"pipeline_id": "asr.zh.cer.v1"}

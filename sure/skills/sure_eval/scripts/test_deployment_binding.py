@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +13,13 @@ from unittest.mock import patch
 from container_execution import build_local_container_command
 from deployment_binding import DeploymentBindingError, load_deployment_binding
 from check_run_report import _submitted_image_error
-from run_vc_execution import _approved_memory_gb, _job_name, _normalize_job_name, _write_entrypoint
+from run_vc_execution import (
+    _approved_memory_gb,
+    _build_vc_volume_mounts,
+    _job_name,
+    _normalize_job_name,
+    _write_entrypoint,
+)
 
 
 def write_json(path: Path, payload: dict) -> None:
@@ -95,6 +103,8 @@ class DeploymentBindingTests(unittest.TestCase):
         self.image_ref = "registry.example.com/sure/demo@" + self.digest
         self.output = self.root / "results" / "run"
         self.output.mkdir(parents=True)
+        self.projection = self.root / "dataset-projection"
+        (self.projection / "sure_benchmark" / "jsonl").mkdir(parents=True)
         self.control = self.root / "control"
         self.control.mkdir()
         self.entrypoint = self.control / "run_evaluation.sh"
@@ -273,12 +283,18 @@ class DeploymentBindingTests(unittest.TestCase):
     def test_local_command_uses_digest_and_read_only_model(self) -> None:
         binding = load_deployment_binding(self.model, "demo")
         command, provenance = build_local_container_command(
-            surface={"env": {"TOOL_NAME": "transcribe_audio"}},
+            surface={
+                "env": {
+                    "TOOL_NAME": "transcribe_audio",
+                    "SURE_EVAL_NODE_LOCAL_PYTHON": "/usr/bin/python3.11",
+                }
+            },
             eval_input={
                 "model": {"deployment_binding": binding},
                 "runtime": {
                     "run_dir": str(self.output),
                     "harness_runtime": self._runtime_binding(),
+                    "dataset_projection": {"host_root": str(self.projection)},
                 },
                 "datasets": [],
             },
@@ -291,11 +307,26 @@ class DeploymentBindingTests(unittest.TestCase):
         self.assertIn("device=2", command)
         self.assertTrue(any("src=" + str(self.model) in item and "readonly" in item for item in command))
         self.assertIn(f"HARNESS_PYTHON_BIN={self.harness_python}", command)
+        self.assertIn(f"SURE_EVAL_NODE_LOCAL_PYTHON={self.harness_python}", command)
+        self.assertNotIn("SURE_EVAL_NODE_LOCAL_PYTHON=/usr/bin/python3.11", command)
         self.assertIn("MODEL_PYTHON=python", command)
         self.assertIn("SURE_EVAL_APPROVED_MODEL_DIR=/workspace/model", command)
         self.assertIn("SURE_EVAL_APPROVED_RESULT_DIR=/sure-output", command)
         self.assertIn("SURE_EVAL_CACHE_DIR=/sure-output/.runtime/cache/sure-eval", command)
+        self.assertIn(f"SURE_EVAL_DATASETS_ROOT={self.projection}", command)
+        self.assertIn(
+            f"type=bind,src={self.projection},dst={self.projection}",
+            command,
+        )
+        self.assertEqual(
+            provenance["dataset_projection_mount"],
+            {"source": str(self.projection), "target": str(self.projection), "read_only": False},
+        )
         self.assertNotEqual(provenance["harness_runtime"]["python_executable"], "python")
+        self.assertEqual(
+            provenance["evaluation_node_runtime"]["python_executable"],
+            str(self.harness_python),
+        )
         self.assertFalse(provenance["host_python_fallback"])
 
     def test_local_command_preserves_declared_dataset_mount_target(self) -> None:
@@ -323,6 +354,56 @@ class DeploymentBindingTests(unittest.TestCase):
             f"type=bind,src={real_dataset},dst={dataset_alias},readonly",
             command,
         )
+
+    def test_local_command_does_not_remount_projection_jsonl_read_only(self) -> None:
+        binding = load_deployment_binding(self.model, "demo")
+        jsonl_path = self.projection / "sure_benchmark" / "jsonl" / "demo.jsonl"
+        command, _ = build_local_container_command(
+            surface={"env": {}},
+            eval_input={
+                "model": {"deployment_binding": binding},
+                "runtime": {
+                    "run_dir": str(self.output),
+                    "harness_runtime": self._runtime_binding(),
+                    "dataset_projection": {"host_root": str(self.projection)},
+                },
+                "datasets": [{"jsonl_path": str(jsonl_path)}],
+            },
+            control_run_dir=self.control,
+            entrypoint=self.entrypoint,
+            repo_root=self.repo,
+            device_request="cpu",
+        )
+        projection_mounts = [
+            command[index + 1]
+            for index, value in enumerate(command[:-1])
+            if value == "--mount" and str(self.projection) in command[index + 1]
+        ]
+        self.assertEqual(
+            projection_mounts,
+            [f"type=bind,src={self.projection},dst={self.projection}"],
+        )
+
+    def test_vc_mounts_keep_models_and_sources_read_only(self) -> None:
+        dataset_source = self.root / "source-dataset"
+        dataset_source.mkdir()
+        dataset_alias = self.root / "source-dataset-alias"
+        dataset_alias.symlink_to(dataset_source, target_is_directory=True)
+        volume = _build_vc_volume_mounts(
+            primary=f"{self.repo}:{self.repo}",
+            model_dir=self.model,
+            model_target="/workspace/model",
+            result_source=self.output,
+            result_target="/sure-output",
+            dataset_source_roots=[str(dataset_alias)],
+            dataset_projection_root=self.projection,
+        )
+        self.assertIn(f"{self.model}:{self.model}:ro", volume)
+        self.assertIn(f"{self.model}:/workspace/model:ro", volume)
+        self.assertIn(f"{dataset_alias}:{dataset_alias}:ro", volume)
+        self.assertIn(f"{self.projection}:{self.projection}", volume)
+        self.assertNotIn(f"{self.projection}:{self.projection}:ro", volume)
+        self.assertIn(f"{self.output}:/sure-output", volume)
 
     def test_local_command_injects_separate_evaluation_runtime(self) -> None:
         binding = load_deployment_binding(self.model, "demo")
@@ -356,6 +437,7 @@ class DeploymentBindingTests(unittest.TestCase):
 
     def test_vc_entrypoint_never_rewrites_model_runtime(self) -> None:
         path = self.control / "vc_entrypoint.sh"
+        terminal_status = self.control / "vc_terminal_status.json"
         _write_entrypoint(
             path=path,
             volume_mount=f"{self.root}:{self.root}",
@@ -381,7 +463,10 @@ class DeploymentBindingTests(unittest.TestCase):
                 "RUN_DIR": "/sure-output",
                 "SURE_EVAL_APPROVED_RESULT_DIR": "/sure-output",
                 "SURE_EVAL_CACHE_DIR": "/sure-output/.runtime/cache/sure-eval",
+                "SURE_EVAL_NODE_LOCAL_PYTHON": "/usr/bin/python3.11",
             },
+            submission_token="d" * 32,
+            terminal_status_path=terminal_status,
         )
         text = path.read_text(encoding="utf-8")
         self.assertIn(self.image_ref, text)
@@ -389,11 +474,37 @@ class DeploymentBindingTests(unittest.TestCase):
         self.assertNotIn(".venv", text)
         self.assertNotIn("/usr/bin/python3", text)
         self.assertIn(f"export HARNESS_PYTHON_BIN={self.harness_python}", text)
+        self.assertIn(f"export SURE_EVAL_NODE_LOCAL_PYTHON={self.harness_python}", text)
+        self.assertNotIn("export SURE_EVAL_NODE_LOCAL_PYTHON=/usr/bin/python3.11", text)
         self.assertIn("export MODEL_PYTHON=python", text)
         self.assertIn("export SURE_EVAL_APPROVED_MODEL_DIR=/workspace/model", text)
         self.assertIn("export SURE_EVAL_APPROVED_RESULT_DIR=/sure-output", text)
         self.assertIn("export SURE_EVAL_CACHE_DIR=/sure-output/.runtime/cache/sure-eval", text)
-        self.assertNotRegex(text, r"(?m)^\s*(mv|ln|rm)\b")
+        self.assertIn("sure.eval.vc_terminal_status.v1", text)
+        self.assertIn("trap _sure_eval_write_terminal EXIT", text)
+        mutation_lines = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip().split(" ", 1)[0] in {"mv", "ln", "rm"}
+        ]
+        self.assertEqual(
+            mutation_lines,
+            ['mv -f -- "$terminal_tmp" "$_SURE_EVAL_TERMINAL_STATUS"'],
+        )
+        syntax = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True, check=False)
+        self.assertEqual(syntax.returncode, 0, syntax.stderr)
+        completed = subprocess.run(
+            ["bash", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, "VC_JOB_ID": "job-test"},
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        sentinel = json.loads(terminal_status.read_text(encoding="utf-8"))
+        self.assertEqual(sentinel["submission_token"], "d" * 32)
+        self.assertEqual(sentinel["job_status"], "succeeded")
+        self.assertEqual(sentinel["exit_code"], 0)
 
     def test_local_command_prefers_matching_image_harness_runtime(self) -> None:
         binding = load_deployment_binding(self.model, "demo")

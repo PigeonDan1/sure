@@ -653,6 +653,11 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
             prediction = dict(payload)
         if task_name in {"ASR", "S2TT"}:
             value = prediction.get("text") or prediction.get("transcript") or payload.get("text") or ""
+            if isinstance(value, (list, tuple)) and len(value) == 1:
+                # A wrapper that hands back {"text": ["…"]} is a normal MCP shape;
+                # str() on the list would write the Python literal, brackets and
+                # quotes included, straight into the prediction file.
+                value = value[0]
             return str(value), {"text": str(value)}
         if task_name in {"TTS", "VC"}:
             value = (

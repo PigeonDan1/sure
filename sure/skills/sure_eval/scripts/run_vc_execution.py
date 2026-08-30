@@ -17,20 +17,24 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from container_execution import deployment_binding, resolve_container_harness_runtime
+from container_execution import (
+    dataset_projection_root_from_eval_input,
+    deployment_binding,
+    resolve_container_harness_runtime,
+)
 from evaluation_runtime import evaluation_runtime_from_eval_input
 from harness_runtime import harness_runtime_from_eval_input
 from sure_eval.agent import vc_precheck
 from sure_eval.agent.vc_submitter import (
     _infer_default_volume_mount,
     _infer_repo_root,
-    _merge_volume_mounts,
     _translate_to_container_path,
     select_best_partition,
 )
@@ -80,6 +84,78 @@ def _dataset_source_roots(eval_input: dict) -> list[str]:
             if root not in roots:
                 roots.append(root)
     return roots
+
+
+def _append_vc_mount(
+    volume_mount: str,
+    *,
+    source: Path,
+    target: str,
+    read_only: bool,
+) -> str:
+    source_text = str(source.expanduser())
+    source_identity = str(source.resolve())
+    target_path = Path(target)
+    if not target_path.is_absolute():
+        raise ValueError(f"vc mount target must be absolute: {target}")
+    mode = "ro" if read_only else "rw"
+    for raw_mount in volume_mount.split(","):
+        parts = raw_mount.split(":")
+        if len(parts) < 2 or parts[1] != target:
+            continue
+        existing_source = str(Path(parts[0]).resolve())
+        existing_mode = parts[2] if len(parts) > 2 else "rw"
+        if existing_source == source_identity and existing_mode == mode:
+            return volume_mount
+        raise ValueError(f"conflicting vc mount target: {target}")
+    suffix = ":ro" if read_only else ""
+    return f"{volume_mount},{source_text}:{target}{suffix}"
+
+
+def _build_vc_volume_mounts(
+    *,
+    primary: str,
+    model_dir: Path,
+    model_target: str,
+    result_source: Path,
+    result_target: str,
+    dataset_source_roots: list[str],
+    dataset_projection_root: Path | None,
+) -> str:
+    volume_mount = primary
+    if dataset_projection_root is not None:
+        volume_mount = _append_vc_mount(
+            volume_mount,
+            source=dataset_projection_root,
+            target=str(dataset_projection_root),
+            read_only=False,
+        )
+    for dataset_source_root in dataset_source_roots:
+        declared_source = Path(dataset_source_root).expanduser()
+        volume_mount = _append_vc_mount(
+            volume_mount,
+            source=declared_source,
+            target=str(declared_source),
+            read_only=True,
+        )
+    volume_mount = _append_vc_mount(
+        volume_mount,
+        source=model_dir,
+        target=str(model_dir),
+        read_only=True,
+    )
+    volume_mount = _append_vc_mount(
+        volume_mount,
+        source=model_dir,
+        target=model_target,
+        read_only=True,
+    )
+    return _append_vc_mount(
+        volume_mount,
+        source=result_source,
+        target=result_target,
+        read_only=False,
+    )
 
 
 def _execution_from_surface(surface: dict[str, Any], eval_input: dict[str, Any]) -> dict[str, Any]:
@@ -260,6 +336,8 @@ def _resolved_submission(
     run_evaluation_path: str,
     log_path: Path,
     command: str,
+    submission_token: str,
+    terminal_status_path: str,
     harness_runtime: dict[str, Any],
     model_runtime: dict[str, Any],
 ) -> dict[str, Any]:
@@ -279,6 +357,8 @@ def _resolved_submission(
         "run_evaluation_host": run_evaluation_path,
         "log_path": str(log_path),
         "command": command,
+        "submission_token": submission_token,
+        "terminal_status_path": terminal_status_path,
         "harness_runtime": harness_runtime,
         "model_runtime": model_runtime,
     }
@@ -318,16 +398,41 @@ def _write_entrypoint(
     harness_library_paths: list[str],
     harness_python_home: str,
     entrypoint_env: dict[str, str],
+    submission_token: str,
+    terminal_status_path: Path,
 ) -> None:
     run_evaluation_container = _translate_to_container_path(Path(run_evaluation_path), volume_mount)
     log_path_container = _translate_to_container_path(log_path, volume_mount)
     harness_python_container = (
         _translate_to_container_path(Path(harness_python_bin), volume_mount) if harness_python_bin else ""
     )
+    terminal_status_container = _translate_to_container_path(terminal_status_path, volume_mount)
     q = shlex.quote
     lines = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
+        f"_SURE_EVAL_TERMINAL_STATUS={q(terminal_status_container)}",
+        f"_SURE_EVAL_SUBMISSION_TOKEN={q(submission_token)}",
+        '_SURE_EVAL_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"',
+        '_SURE_EVAL_STARTED_EPOCH="$(date +%s)"',
+        "_sure_eval_write_terminal() {",
+        "  local exit_code=$?",
+        "  trap - EXIT INT TERM",
+        '  local ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"',
+        '  local ended_epoch="$(date +%s)"',
+        '  local job_status="failed"',
+        '  if [[ "$exit_code" -eq 0 ]]; then job_status="succeeded"; fi',
+        '  local terminal_tmp="${_SURE_EVAL_TERMINAL_STATUS}.tmp.$$"',
+        '  mkdir -p "$(dirname "$_SURE_EVAL_TERMINAL_STATUS")"',
+        "  printf '%s\\n' \"{\\\"schema\\\":\\\"sure.eval.vc_terminal_status.v1\\\",\\\"submission_token\\\":\\\"${_SURE_EVAL_SUBMISSION_TOKEN}\\\",\\\"job_status\\\":\\\"${job_status}\\\",\\\"exit_code\\\":${exit_code},\\\"started_at\\\":\\\"${_SURE_EVAL_STARTED_AT}\\\",\\\"ended_at\\\":\\\"${ended_at}\\\",\\\"duration_seconds\\\":$((ended_epoch - _SURE_EVAL_STARTED_EPOCH))}\" > \"$terminal_tmp\"",
+        '  mv -f -- "$terminal_tmp" "$_SURE_EVAL_TERMINAL_STATUS"',
+        '  exit "$exit_code"',
+        "}",
+        "_sure_eval_handle_int() { exit 130; }",
+        "_sure_eval_handle_term() { exit 143; }",
+        "trap _sure_eval_handle_int INT",
+        "trap _sure_eval_handle_term TERM",
+        "trap _sure_eval_write_terminal EXIT",
         f"export PYTHON_BIN={q(model_python_bin)}",
         f"export MODEL_PYTHON={q(model_python_bin)}",
         "export SURE_EVAL_EXECUTION_PATH=vc_submit",
@@ -350,11 +455,14 @@ def _write_entrypoint(
         lines.append(f"export PYTHONPATH={q(':'.join(model_pythonpath))}:${{PYTHONPATH:-}}")
     if harness_python_container:
         lines.append(f"export HARNESS_PYTHON_BIN={q(harness_python_container)}")
+        lines.append(f"export SURE_EVAL_NODE_LOCAL_PYTHON={q(harness_python_container)}")
     if harness_library_paths:
         lines.append(f"export LD_LIBRARY_PATH={q(':'.join(harness_library_paths))}:${{LD_LIBRARY_PATH:-}}")
     if harness_python_home:
         lines.append(f"export PYTHONHOME={q(harness_python_home)}")
     for key in sorted(entrypoint_env):
+        if key == "SURE_EVAL_NODE_LOCAL_PYTHON":
+            continue
         lines.append(f"export {key}={q(entrypoint_env[key])}")
     lines.extend(
         [
@@ -420,6 +528,12 @@ def main() -> int:
     device_request, device_actual = _device(eval_input, surface)
     log_path = run_dir / "vc_logs" / "job.log"
     entrypoint_path = artifacts_dir / "vc_entrypoint.sh"
+    submitted_at = _utc_now()
+    submission_token = hashlib.sha256(
+        f"{run_dir}:{submitted_at}:{os.getpid()}:{time.time_ns()}".encode("utf-8")
+    ).hexdigest()[:32]
+    terminal_status_path = artifacts_dir / f"vc_terminal_status.{submission_token}.json"
+    terminal_status_relative = terminal_status_path.relative_to(run_dir).as_posix()
     submit_output = Path(args.submit_output).expanduser().resolve() if args.submit_output else artifacts_dir / "submit_result.json"
     cwd = Path(args.cwd).expanduser().resolve() if args.cwd else Path.cwd()
     repo_root = _infer_repo_root()
@@ -432,7 +546,7 @@ def main() -> int:
     )
     harness_root = Path(str(harness_runtime["runtime_root"]))
     evaluation_runtime = evaluation_runtime_from_eval_input(eval_input, prepare=False)
-    volume_mount = _merge_volume_mounts(volume_mount, [str(model_dir), *dataset_source_roots])
+    dataset_projection_root = dataset_projection_root_from_eval_input(eval_input)
     model_mount = container.get("model_mount") if isinstance(container.get("model_mount"), dict) else {}
     model_target = str(model_mount.get("target") or "")
     result_mount = container.get("result_mount") if isinstance(container.get("result_mount"), dict) else {}
@@ -441,7 +555,15 @@ def main() -> int:
     if not Path(model_target).is_absolute() or not Path(result_target).is_absolute():
         raise RuntimeError("approved deployment container mount targets must be absolute")
     result_source.mkdir(parents=True, exist_ok=True)
-    volume_mount = f"{volume_mount},{model_dir}:{model_target}:ro,{result_source}:{result_target}"
+    volume_mount = _build_vc_volume_mounts(
+        primary=volume_mount,
+        model_dir=model_dir,
+        model_target=model_target,
+        result_source=result_source,
+        result_target=result_target,
+        dataset_source_roots=dataset_source_roots,
+        dataset_projection_root=dataset_projection_root,
+    )
     entrypoint_container = _translate_to_container_path(entrypoint_path, volume_mount)
     model_python_bin = str(container.get("python_executable") or "python")
     harness_python_bin = str(harness_runtime["python_executable"])
@@ -454,6 +576,7 @@ def main() -> int:
         "MODEL_PYTHON",
         "PYTHON_BIN",
         "HARNESS_PYTHON_BIN",
+        "SURE_EVAL_NODE_LOCAL_PYTHON",
         "MODEL_DIR",
         "SURE_EVAL_APPROVED_MODEL_DIR",
         "RUN_DIR",
@@ -496,6 +619,8 @@ def main() -> int:
             "XDG_CACHE_HOME": f"{result_target}/.runtime/cache/xdg",
         }
     )
+    if dataset_projection_root is not None:
+        entrypoint_env["SURE_EVAL_DATASETS_ROOT"] = str(dataset_projection_root)
     if evaluation_runtime is not None:
         entrypoint_env.update(
             {
@@ -538,6 +663,8 @@ def main() -> int:
         harness_library_paths=harness_library_paths,
         harness_python_home=harness_python_home,
         entrypoint_env=entrypoint_env,
+        submission_token=submission_token,
+        terminal_status_path=terminal_status_path,
     )
     cmd = [
         "vc",
@@ -577,6 +704,8 @@ def main() -> int:
         run_evaluation_path=str(_entrypoint(surface)),
         log_path=log_path,
         command=command,
+        submission_token=submission_token,
+        terminal_status_path=terminal_status_relative,
         harness_runtime=harness_runtime,
         model_runtime={
             "runtime_type": "model_python",
@@ -594,6 +723,8 @@ def main() -> int:
     if model_dir is not None:
         precheck_paths.append(str(model_dir))
     precheck_paths.extend(dataset_source_roots)
+    if dataset_projection_root is not None:
+        precheck_paths.append(str(dataset_projection_root))
     identity_check = vc_precheck.check_image(image_identity_ref, image_source)
     identity_check.name = "image_identity"
     precheck_results = vc_precheck.run_precheck(
@@ -636,7 +767,9 @@ def main() -> int:
         },
         "fallback_approved": False,
         "local_fallback_reason": "",
-        "submitted_at": _utc_now(),
+        "submitted_at": submitted_at,
+        "submission_token": submission_token,
+        "terminal_status_path": terminal_status_relative,
         "host": job_id,
         "command": "bash " + str(_entrypoint(surface)),
         "cwd": str(cwd),

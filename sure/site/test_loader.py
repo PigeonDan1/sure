@@ -72,6 +72,32 @@ class AbsolutePathTest(unittest.TestCase):
             validate_site_policy(_policy(storage=storage))
         self.assertIn("storage.approved_models_roots[0]", str(raised.exception))
 
+    def test_accepts_an_absolute_dataset_projection_root(self) -> None:
+        policy = validate_site_policy(
+            _policy(
+                datasets={
+                    "allowed_source_roots": [f"{_ROOT}/datasets"],
+                    "projection_root": "/var/lib/sure/dataset-projections",
+                }
+            )
+        )
+        self.assertEqual(
+            policy["datasets"]["projection_root"],
+            "/var/lib/sure/dataset-projections",
+        )
+
+    def test_rejects_a_relative_dataset_projection_root(self) -> None:
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(
+                _policy(
+                    datasets={
+                        "allowed_source_roots": [f"{_ROOT}/datasets"],
+                        "projection_root": "data/projections",
+                    }
+                )
+            )
+        self.assertIn("datasets.projection_root", str(raised.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

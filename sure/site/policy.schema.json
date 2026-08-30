@@ -25,7 +25,8 @@
 			"additionalProperties": false,
 			"required": ["allowed_source_roots"],
 			"properties": {
-				"allowed_source_roots": { "$ref": "#/$defs/absolutePaths" }
+				"allowed_source_roots": { "$ref": "#/$defs/absolutePaths" },
+				"projection_root": { "$ref": "#/$defs/absolutePath" }
 			}
 		},
 		"execution": {

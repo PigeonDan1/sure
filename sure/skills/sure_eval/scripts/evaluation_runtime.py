@@ -100,14 +100,22 @@ def evaluation_child_environment(parent: dict[str, str] | None = None) -> dict[s
 
 
 def _engine_commit(engine_root: Path) -> str:
-    completed = subprocess.run(
-        ["git", "-c", f"safe.directory={engine_root}", "rev-parse", "HEAD"],
-        cwd=engine_root,
-        capture_output=True,
-        text=True,
-        check=False,
-        env=evaluation_child_environment(),
-    )
+    try:
+        completed = subprocess.run(
+            ["git", "-c", f"safe.directory={engine_root}", "rev-parse", "HEAD"],
+            cwd=engine_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=evaluation_child_environment(),
+        )
+    except OSError as exc:
+        # An empty commit means "git looked and found nothing pinned here"; a git
+        # that will not run at all is a broken environment and has to say so,
+        # otherwise the caller reports it as a commit mismatch against "".
+        raise EvaluationRuntimeError(
+            f"cannot read the evaluation engine commit: git is unavailable ({exc})"
+        ) from exc
     return completed.stdout.strip() if completed.returncode == 0 else ""
 
 

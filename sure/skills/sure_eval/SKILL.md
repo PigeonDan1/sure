@@ -19,6 +19,7 @@ Control principle: **agent decides scope, scripts enforce format and execution.*
 |-----------|----------|---------|
 | `model` | ✅ | Exact approved directory name below a configured `approved_models_roots` entry. No path, alias, environment-root, or local-model fallback is accepted. |
 | `datasets` | ✅ | Comma-separated source paths below a configured `allowed_source_roots` entry, e.g. `datasets=/srv/sure/datasets/group/store/ds_pool/example@v1.0.2`. The strict main flow rejects legacy dataset names and short aliases; multi-version sources require the trailing `@<version_id>` (single-version sources may omit it). Dataset metadata, not a user-supplied task flag, determines ASR/TTS/VC/etc. |
+| `datasets_root` | — | Absolute writable projection root for generated JSONL indexes and metadata. Resolution precedence is this parameter, `SURE_EVAL_DATASETS_ROOT`, `datasets.projection_root` in site policy, an explicit config's `data.datasets`, then the repository development default. It must stay outside forbidden output roots and must not overlap a source root. Raw data is referenced in place and is never copied or moved. |
 | `protocol` | — | `standard_system` (default) follows the approved model's upstream configuration. `strict_core` requires every conservative parameter to be mapped to an MCP argument or explicitly proven not applicable. |
 | `device` | — | `auto \| cpu \| cuda \| cuda:<index>`. Default `auto`; resolved by `scripts/resolve_eval_input.py` and passed through inference/evaluation templates when materialized. For `execution=local`, `cuda:<index>` selects the local host GPU by setting `CUDA_VISIBLE_DEVICES=<index>`. For `execution=vc`, the allocated container GPU is addressed as `cuda:0`; choose hardware with `vc_partition`/`vc_gpu`, not a host CUDA ordinal. |
 | `target` | — | Target metric or paper to compare against. |
@@ -92,7 +93,7 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 | 7 | `execution_readiness` | **gate** | `execution_readiness_report.json` | `scripts/check_execution_surface_compliance.py` |
 | 8 | `smoke_test` | **gate** | `smoke_test_result.json` | `scripts/run_smoke.py` |
 | 9 | `submit_vc_run` | **gate** | `submit_result.json` | `scripts/vc_check.py` |
-| 10 | `execute_wait` | linear | `execution_result.json` | — |
+| 10 | `execute_wait` | **gate** | `execution_result.json` | `scripts/wait_vc_execution.py` |
 | 11 | `assessment` | **gate** | `assessment_report.json` | `scripts/check_assessment.py` |
 | 12 | `run_report` | **gate** | `main_agent_run_report.json` | `scripts/check_run_report.py` |
 
@@ -110,6 +111,7 @@ Each unit must satisfy: **Inputs** (previous unit's produces + evidence sources 
 - **execution_readiness**: `check_execution_surface_compliance.py` compares the surface binding with the approved input, rejects `local_bash`, `.venv`, `/usr/bin/python3`, image changes, writable NFS models, and tool mismatches. It also preserves template isolation and validates the standalone evaluation route plan.
 - **smoke_test**: bounded smoke on a tiny slice using local Docker and the approved digest-pinned image; `smoke_passed` true.
 - **submit_vc_run**: `execution=vc` uses the same approved image through `vc_submit`; `execution=local` uses `local_docker`; `auto` prefers VC when available. VC precheck verifies the immutable image, partition, mounts, and resources. It does not infer or rewrite a model `.venv`.
+- **execute_wait**: For VC, run `scripts/wait_vc_execution.py --run-dir <sure_run_dir> --wait` once. The waiter matches the current submission token, prefers the atomic terminal sentinel, and uses `vc info`/`vc describe` only to classify missing-container and timeout cases. Do not hand-author polling or a terminal result. Local Docker already writes its own result, which this gate validates.
 - **assessment**: {anomaly_detected, user_confirmed}. Anomaly (e.g. WER/CER > 50%, Accuracy < 20%) requires user confirmation.
 - **run_report**: {report_persisted, execution_path_actual}. Record `execution_path_requested`, `execution_path_actual`, `device_request`, `device_actual`, `max_samples`, total dataset samples, and evaluated samples. Non-vc paths are valid for explicit `execution=local`; auto local fallback requires a reason and, if vc was available, explicit fallback approval.
 
@@ -183,6 +185,7 @@ standalone `sure-evaluation` engine when it is available. Flat scripts under
 `materialize_predictions_template.py`, `generate_predictions_via_server.py`,
 `validate_prediction_files.py`, `evaluate_predictions.py`,
 `refresh_report_snapshot.py`, `run_local_execution.py`, `run_vc_execution.py`,
+`wait_vc_execution.py`,
 `check_execution_surface_compliance.py`) are the routing targets. Templates live
 in `scripts/templates/`. Run them as:
 
@@ -196,7 +199,10 @@ both `submit_result.json` and `execution_result.json`. For `execution=vc`, use
 `scripts/run_vc_execution.py --run-dir <sure_run_dir>` from the submit unit. It
 writes `submit_result.json`, includes the exact `vc submit` command and a
 persistent `<sure_run_dir>/vc_logs/job.log`, and leaves final
-`execution_result.json` to the following `execute_wait` unit. When vc resources
+`execution_result.json` to `scripts/wait_vc_execution.py --run-dir <sure_run_dir> --wait`
+in the following `execute_wait` unit. The generated VC entrypoint atomically
+writes a tokenized terminal sentinel on exit, so pod cleanup cannot erase the
+authoritative exit code. When vc resources
 are selected at submit time, the effective digest-pinned image, partition, CPU,
 GPU, memory, entrypoint, and log snapshot is recorded in both `submit_result.vc_submission`
 and `execution_surface.vc_runtime.resolved_submission`.
@@ -227,15 +233,14 @@ default. In a GitHub-backed harness worktree, this path should be a Git
 submodule that points at the independent `sure-evaluation` repository. Use
 `SURE_EVALUATION_HOME` or `--evaluation-engine-root` only as an explicit local
 override; the workspace checkout is not an implicit fallback.
-If `SURE_EVAL_CONFIG` is not supplied, harness runtime templates materialize
-`<run_dir>/_harness_config.yaml` from the submodule's `config/default.yaml` and
-rewrite results/cache paths to harness-local absolute paths. The default dataset
-entry is `data/datasets` under the harness repository; deployments either
-download and convert benchmark data with the repository scripts (see the user
-guide's Benchmark Data section) or symlink an existing
-`sure_benchmark/jsonl` tree into `data/datasets/sure_benchmark/jsonl`.
-Override `SURE_EVAL_DATASETS_ROOT` only when pointing at another directory that
-contains `sure_benchmark/jsonl`.
+Input resolution always materializes `<run_dir>/_harness_config.yaml` from the
+selected config and binds its dataset entry to the resolved writable projection
+root. The first run creates `sure_benchmark/jsonl` plus generated indexes and
+metadata there. Source `sample.jsonl`, `ds.jsonl`, and raw audio remain under the
+configured `allowed_source_roots`; execution mounts those source roots and the
+approved model read-only. Configure the projection with `datasets_root`,
+`SURE_EVAL_DATASETS_ROOT`, or site policy `datasets.projection_root`. The
+repository-local `data/datasets` path is only the development fallback.
 
 `evaluate_predictions.py` accepts `--evaluation-backend auto|external|legacy`
 and `--strict-main-flow`. Harness main-flow templates default to
@@ -262,6 +267,7 @@ inside that container; it never starts a host model runtime.
 - `execution_readiness`: `execution_ready && isolation_audit.audit_passed`; `check_execution_surface_compliance.py` (red line 1) also prepares/verifies the locked Evaluation Python, writes `evaluation_route_plan.json`, and blocks when standalone `sure-evaluation` reports root or selected node environment issues. The plan must include engine commit, Evaluation Runtime ID/lock, supported/default metrics, selected metrics, route choices, selected routes, and setup commands for blocking node-local environments. Bounded smoke is enforced by the next `smoke_test` gate.
 - `smoke_test`: `smoke_passed` true; entrypoint exists.
 - `submit_vc_run`: `vc_check.py` enforces `execution=local|vc|auto` semantics against real `which vc && vc info` availability.
+- `execute_wait`: `wait_vc_execution.py` rejects `running` as incomplete, validates the current submission token, and accepts terminal success or failure for downstream assessment.
 - `assessment`: anomaly → `user_confirmed` true.
 - `run_report`: `report_persisted` true, `execution_path_actual` declared, and execution/device/sample provenance recorded. Completed runs should index `eval_input_resolved.json` and `evaluation_route_plan.json`, and must contain model-local `evaluation_payload.json`, `protocol.yaml`, `report.jsonl`, `metrics/<dataset>/<metric_slug>/{report.json,pipeline_description.json}`, `sample_reports/<dataset>/<metric_slug>.jsonl`, and `predictions/<dataset>.txt/.jsonl`.
 
