@@ -9,12 +9,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO_ROOT))
+
 from deployment_contract import (
     load_artifact,
     resolve_model_dir,
     sha256_file,
     validate_container_documents,
 )
+from sure.runtime.model.bootstrap import ModelRuntimeError, verify_runtime
+from sure.site.loader import SitePolicyError, load_site_policy
 
 PACKAGE_PROFILES = {"none", "docker-local", "docker-registry"}
 STAGE_RESULTS = {
@@ -129,6 +134,22 @@ def validation_results_pass(run_dir: Path, model_dir: Path | None) -> tuple[bool
     except ValueError as exc:
         return False, str(exc)
     return True, "validation artifacts passed"
+
+
+def validate_model_runtime(run_dir: Path, model_dir: Path) -> None:
+    run_manifest = load_json(run_dir / "artifacts" / "model_runtime_manifest.json")
+    model_manifest_path = model_dir / "artifacts" / "model_runtime_manifest.json"
+    if not model_manifest_path.is_file() or model_manifest_path.read_bytes() != (
+        run_dir / "artifacts" / "model_runtime_manifest.json"
+    ).read_bytes():
+        raise ValueError("model_runtime_manifest.json must be staged identically into the model bundle")
+    policy = load_site_policy(repository_root=REPO_ROOT, required=True)
+    assert policy is not None
+    if "local" not in policy["policy"]["execution"]["surfaces"]:
+        raise ValueError("local Python runtimes require local in execution.surfaces")
+    if "python" not in policy["policy"]["execution"]["local_runtimes"]:
+        raise ValueError("local Python runtimes are disabled by execution.local_runtimes")
+    verify_runtime(Path(policy["policy"]["storage"]["runtime_root"]) / "models", run_manifest)
 
 
 def main() -> int:
@@ -249,8 +270,20 @@ def main() -> int:
         if readiness.get("container_ready") is not True or readiness.get("bundle_ready") is not True:
             print("PACKAGE_GATE failed: docker-registry requires container_ready=true and bundle_ready=true.", file=sys.stderr)
             return 1
-    if deployment_type == "local" and package_profile != "docker-registry" and readiness.get("bundle_ready") is not False:
-        print("PACKAGE_GATE failed: non-registry local package must declare bundle_ready=false.", file=sys.stderr)
+    if deployment_type == "local" and package_profile == "none":
+        if any(readiness.get(key) is not False for key in ("container_ready", "docker_ready", "registry_ready")):
+            print("PACKAGE_GATE failed: package=none must keep container/docker/registry readiness false.", file=sys.stderr)
+            return 1
+        if readiness.get("bundle_ready") is not True:
+            print("PACKAGE_GATE failed: package=none requires bundle_ready=true after Model Runtime sealing.", file=sys.stderr)
+            return 1
+        try:
+            validate_model_runtime(run_dir, model_dir)
+        except (OSError, ValueError, ModelRuntimeError, SitePolicyError) as exc:
+            print(f"PACKAGE_GATE failed: {exc}", file=sys.stderr)
+            return 1
+    if deployment_type == "local" and package_profile == "docker-local" and readiness.get("bundle_ready") is not False:
+        print("PACKAGE_GATE failed: package=docker-local must declare bundle_ready=false.", file=sys.stderr)
         return 1
 
     print(

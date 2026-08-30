@@ -55,6 +55,7 @@ OPTIONAL_RUN_ARTIFACTS = [
     "package_gate.json",
     "verdict.json",
 ]
+MODEL_RUNTIME_ARTIFACT = "model_runtime_manifest.json"
 
 
 def now_iso() -> str:
@@ -180,7 +181,10 @@ def main_with_args(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    missing_required = [name for name in REQUIRED_RUN_ARTIFACTS if not (run_artifacts / name).exists()]
+    required_run_artifacts = list(REQUIRED_RUN_ARTIFACTS)
+    if resolved.get("deployment_type") == "local" and resolved.get("package_profile") == "none":
+        required_run_artifacts.append(MODEL_RUNTIME_ARTIFACT)
+    missing_required = [name for name in required_run_artifacts if not (run_artifacts / name).exists()]
     if missing_required and not args.allow_missing_run_artifacts:
         print(
             "stage_model_artifacts failed: run artifacts missing required state-machine outputs: "
@@ -191,12 +195,14 @@ def main_with_args(argv: list[str] | None = None) -> int:
 
     copied_required: list[str] = []
     copied_optional: list[str] = []
-    for name in REQUIRED_RUN_ARTIFACTS:
+    for name in required_run_artifacts:
         source = run_artifacts / name
         if source.exists():
             copy_artifact(source, model_artifacts / name)
             copied_required.append(name)
     for name in OPTIONAL_RUN_ARTIFACTS:
+        if resolved.get("package_profile") == "none" and name.startswith("docker_"):
+            continue
         source = run_artifacts / name
         if source.exists():
             copy_artifact(source, model_artifacts / name)

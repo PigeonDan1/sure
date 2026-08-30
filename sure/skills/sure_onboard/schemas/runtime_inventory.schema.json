@@ -2,7 +2,7 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "runtime_inventory.schema.json",
 	"title": "SURE onboard runtime inventory v2",
-	"description": "Portable model runtime contract written after the Docker package gate.",
+	"description": "Portable model runtime contract written after the selected delivery gate.",
 	"type": "object",
 	"required": ["schema", "generated_at", "status", "model", "local_runtime", "model_runtime", "harness_runtime", "container_runtime", "weights", "readiness", "evidence", "policy"],
 	"properties": {
@@ -40,9 +40,23 @@
 			"required": ["required", "runtime_type"],
 			"properties": {
 				"required": { "type": "boolean" },
+				"schema": { "type": "string" },
+				"runtime_id": { "type": "string" },
 				"runtime_type": { "type": "string" },
+				"backend": { "type": "string" },
 				"python_executable": { "type": ["string", "null"] },
 				"python_version": { "type": ["string", "null"] },
+				"python_abi": { "type": ["string", "null"] },
+				"python_platform": { "type": ["string", "null"] },
+				"manifest_path": { "type": "string" },
+				"manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+				"lockfile_path": { "type": "string" },
+				"lock_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+				"working_dir": { "type": "string" },
+				"server_command": { "type": "array", "items": { "type": "string" } },
+				"tool_names": { "type": "array", "items": { "type": "string" } },
+				"required_imports": { "type": "array", "items": { "type": "string" } },
+				"gpu_required": { "type": "boolean" },
 				"checks": { "type": "object" }
 			},
 			"additionalProperties": true
@@ -55,6 +69,7 @@
 				"schema": { "type": "string" },
 				"runtime_id": { "type": "string" },
 				"runtime_type": { "const": "harness_python" },
+				"binding_source": { "type": "string" },
 				"python_executable": { "type": ["string", "null"] },
 				"python_version": { "type": ["string", "null"] },
 				"python_abi": { "type": ["string", "null"] },
@@ -105,7 +120,7 @@
 			"type": "object",
 			"required": ["eval_runtime", "host_python_fallback", "image_override_allowed", "nfs_models_mutable_by_eval"],
 			"properties": {
-				"eval_runtime": { "enum": ["container_only", "api_only", "unavailable"] },
+				"eval_runtime": { "enum": ["container_only", "python", "api_only", "unavailable"] },
 				"host_python_fallback": { "const": false },
 				"image_override_allowed": { "const": false },
 				"nfs_models_mutable_by_eval": { "const": false }

@@ -82,10 +82,21 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
     datasets = _mapping(root.get("datasets"), "datasets")
     _reject_unknown(datasets, {"allowed_source_roots", "projection_root"}, "datasets")
     execution = _mapping(root.get("execution"), "execution")
-    _reject_unknown(execution, {"surfaces", "vc_partitions", "vc_partition_priority", "vc_default_partition"}, "execution")
+    _reject_unknown(
+        execution,
+        {"surfaces", "local_runtimes", "vc_partitions", "vc_partition_priority", "vc_default_partition"},
+        "execution",
+    )
     surfaces = _unique_strings(execution.get("surfaces"), "execution.surfaces", absolute=False)
     if any(surface not in {"local", "vc"} for surface in surfaces):
         raise SitePolicyError("execution.surfaces contains an unsupported value")
+    local_runtimes = _unique_strings(
+        execution.get("local_runtimes", ["container"]),
+        "execution.local_runtimes",
+        absolute=False,
+    )
+    if any(runtime not in {"python", "container"} for runtime in local_runtimes):
+        raise SitePolicyError("execution.local_runtimes contains an unsupported value")
 
     policy: dict[str, Any] = {
         "schema": SITE_POLICY_SCHEMA,
@@ -100,7 +111,7 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
         "datasets": {
             "allowed_source_roots": _unique_strings(datasets.get("allowed_source_roots"), "datasets.allowed_source_roots", absolute=True),
         },
-        "execution": {"surfaces": surfaces},
+        "execution": {"surfaces": surfaces, "local_runtimes": local_runtimes},
     }
     if "projection_root" in datasets:
         policy["datasets"]["projection_root"] = _absolute_path(

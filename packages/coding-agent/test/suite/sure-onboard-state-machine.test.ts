@@ -98,6 +98,31 @@ function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
 	}
 }
 
+function writePythonSitePolicy(cwd: string): string {
+	const path = join(cwd, "config", "site.local.yaml");
+	mkdirSync(resolve(path, ".."), { recursive: true });
+	writeFileSync(
+		path,
+		[
+			"schema: sure.site.policy.v1",
+			"site_id: test",
+			"policy_version: 1",
+			"storage:",
+			`  approved_models_roots: [${join(cwd, "sure", "models")}]`,
+			`  approved_results_roots: [${join(cwd, "sure", "results")}]`,
+			`  forbidden_output_roots: [${join(cwd, "forbidden")}]`,
+			`  runtime_root: ${join(cwd, ".runtime")}`,
+			"datasets:",
+			`  allowed_source_roots: [${join(cwd, "datasets")}]`,
+			"execution:",
+			"  surfaces: [local]",
+			"  local_runtimes: [python]",
+		].join("\n") + "\n",
+		"utf-8",
+	);
+	return path;
+}
+
 function seedModelInputResolved(runDir: string, overrides: Record<string, unknown> = {}): void {
 	writeArtifact(runDir, "model_input_resolved.json", {
 		model_id: "owner/model",
@@ -322,6 +347,37 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 		const result = preStart(ctx);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain('package "vc" is not one of');
+	});
+
+	it("rejects package=none when the site has no local execution surface", () => {
+		const { ctx, cwd } = preStartCtx(
+			"python-without-local-surface",
+			"model_id=owner/model repo=https://example.test/model task_type=asr deployment_type=local package=none",
+		);
+		const sitePolicy = join(cwd, "config", "site.local.yaml");
+		mkdirSync(resolve(sitePolicy, ".."), { recursive: true });
+		writeFileSync(
+			sitePolicy,
+			[
+				"schema: sure.site.policy.v1",
+				"site_id: test",
+				"policy_version: 1",
+				"storage:",
+				`  approved_models_roots: [${join(cwd, "models")}]`,
+				`  approved_results_roots: [${join(cwd, "results")}]`,
+				`  forbidden_output_roots: [${join(cwd, "forbidden")}]`,
+				`  runtime_root: ${join(cwd, ".runtime")}`,
+				"datasets:",
+				`  allowed_source_roots: [${join(cwd, "datasets")}]`,
+				"execution:",
+				"  surfaces: [vc]",
+				"  local_runtimes: [python]",
+			].join("\n") + "\n",
+			"utf-8",
+		);
+		const result = withEnv("SURE_SITE_POLICY", sitePolicy, () => preStart(ctx));
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("execution.surfaces");
 	});
 });
 
@@ -786,10 +842,11 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 describe("sure_onboard end-to-end state-machine replay", () => {
 	it("replays MODEL_INPUT to final sure_finish through all gates", () => {
 		const { ctx, cwd, runDir } = preStartCtx("full-replay-reference-adoption", "");
+		const sitePolicy = writePythonSitePolicy(cwd);
 		const modelInputPath = join(cwd, "sure", "handoffs", "rednote-hilab__dots.tts-base", "model_input.yaml");
 		writeModelInput(modelInputPath);
 		ctx.args = `model_input_path=${modelInputPath} package=none`;
-		const start = preStart(ctx);
+		const start = withEnv("SURE_SITE_POLICY", sitePolicy, () => preStart(ctx));
 		expect(start.ok).toBe(true);
 
 		const materialize = spawnSync(
@@ -813,7 +870,7 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 
 		ctx.point = "post_tool_result";
 		const advance = (expectedCurrentUnit: string): CheckpointData => {
-			const result = postToolResult(ctx);
+			const result = withEnv("SURE_SITE_POLICY", sitePolicy, () => postToolResult(ctx));
 			expect(result.ok, result.repair).toBe(true);
 			const checkpoint = persistCheckpointFrom(runDir, result);
 			expect(checkpoint?.currentUnit).toBe(expectedCurrentUnit);
@@ -828,7 +885,12 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 		const modelArtifacts = join(modelDir, "artifacts");
 		mkdirSync(modelArtifacts, { recursive: true });
 		for (const name of ["model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml"]) {
-			const content = name === "model.py" ? "class Model:\n\tpass\n" : `${name}\n`;
+			const content =
+				name === "model.py"
+					? "class Model:\n\tpass\n"
+					: name === "config.yaml"
+						? "server:\n  command: [.venv/bin/python, server.py]\n  working_dir: .\ntools:\n  - name: synthesize\nresources:\n  gpu: false\n"
+						: `${name}\n`;
 			writeFileSync(join(modelDir, name), content, "utf-8");
 		}
 		const checkpointDir = join(modelDir, "checkpoints", "tiny");
@@ -890,6 +952,11 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			context_selection_path: "artifacts/context_selection.json",
 			backend_choice_path: "artifacts/backend_choice.json",
 			steps: [
+				{
+					state: "build_env",
+					action: "seal Model Python runtime",
+					command: "python3 scripts/materialize_model_runtime.py --input build_env_draft.json",
+				},
 				{ state: "validate_spec", action: "check generated spec" },
 				{ state: "prepare_fixture", action: "stage task fixture into model_dir" },
 				{ state: "build_env", action: "reuse test python" },
@@ -962,18 +1029,33 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 		advance("build_env");
 
 		const pythonExecutable = writePythonShim(modelDir);
-		writeArtifact(runDir, "build_env_result.json", {
+		writeFileSync(join(modelDir, "requirements.lock"), "", "utf-8");
+		writeArtifact(runDir, "build_env_draft.json", {
 			env_ready: true,
 			backend: "uv",
-			python_version: "3.11",
 			python_executable: pythonExecutable,
 			model_dir: modelDir,
 			artifacts_dir: modelArtifacts,
-			lockfile_path: null,
+			lockfile_path: "requirements.lock",
+			runtime_checks: { required_imports: [] },
 			duration_seconds: 0,
 			log_path: "build.log",
 			failures: [],
 		});
+		const modelRuntime = spawnSync(
+			"python3",
+			[
+				join(PACKAGE_DIR, "scripts", "materialize_model_runtime.py"),
+				"--run-dir",
+				runDir,
+				"--input",
+				join(runDir, "artifacts", "build_env_draft.json"),
+				"--produces",
+				join(runDir, "artifacts", "build_env_result.json"),
+			],
+			{ cwd, encoding: "utf-8", env: { ...process.env, SURE_SITE_POLICY: sitePolicy } },
+		);
+		expect(modelRuntime.status, modelRuntime.stderr || modelRuntime.stdout).toBe(0);
 		advance("fetch_weights");
 
 		writeArtifact(runDir, "weights_manifest.json", {
@@ -1078,7 +1160,7 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 		writeArtifact(runDir, "docker_registry_result.json", {
 			schema: "sure.onboard.docker_registry_result.v2",
 			status: "skipped",
-			reason: "package=none is diagnostic-only",
+			reason: "package=none uses the sealed local Python runtime",
 		});
 		advance("save_artifacts");
 
@@ -1103,6 +1185,7 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 					load_result: { path: "artifacts/load_result.json" },
 					infer_result: { path: "artifacts/infer_result.json" },
 					contract_result: { path: "artifacts/contract_result.json" },
+					model_runtime_manifest: { path: "artifacts/model_runtime_manifest.json" },
 					sample_output: { path: "artifacts/sample_output.json" },
 					manifest: { path: "artifacts/artifact_manifest.json" },
 				},
@@ -1110,6 +1193,10 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				optional: {},
 			},
 		};
+		writeFileSync(
+			join(modelArtifacts, "model_runtime_manifest.json"),
+			readFileSync(join(runDir, "artifacts", "model_runtime_manifest.json")),
+		);
 		writeArtifact(runDir, "artifact_manifest.json", manifest);
 		writeJson(join(modelArtifacts, "artifact_manifest.json"), manifest);
 		advance("package_gate");
@@ -1125,7 +1212,7 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				container_ready: false,
 				docker_ready: false,
 				registry_ready: false,
-				bundle_ready: false,
+				bundle_ready: true,
 				vc_ready: null,
 			},
 			local: {
@@ -1151,13 +1238,13 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				"--model-dir",
 				modelDir,
 			],
-			{ encoding: "utf-8" },
+			{ cwd, encoding: "utf-8", env: { ...process.env, SURE_SITE_POLICY: sitePolicy } },
 		);
 		expect(inventory.status, inventory.stderr || inventory.stdout).toBe(0);
 		advance("verdict");
 
 		writeArtifact(runDir, "verdict.json", {
-			status: "partial",
+			status: "passed",
 			model_id: resolved.model_id,
 			model_name: resolved.model_name,
 			package: { profile: "none" },
@@ -1165,7 +1252,7 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				local_ready: true,
 				docker_ready: false,
 				registry_ready: false,
-				bundle_ready: false,
+				bundle_ready: true,
 				vc_ready: null,
 			},
 			build: { success: true, log_path: "artifacts/build.log" },
@@ -1193,19 +1280,19 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				"--produces",
 				join(runDir, "artifacts", "deployment_ready.json"),
 			],
-			{ encoding: "utf-8" },
+			{ cwd, encoding: "utf-8", env: { ...process.env, SURE_SITE_POLICY: sitePolicy } },
 		);
 		expect(finalize.status, finalize.stderr || finalize.stdout).toBe(0);
 		const terminal = advance("finalize_model_bundle");
 		expect(terminal.completedUnits).toContain("finalize_model_bundle");
 
 		ctx.point = "pre_finish";
-		ctx.event = { finish: { status: "incomplete" } } as never;
-		const finish = preFinish(ctx);
+		ctx.event = { finish: { status: "success" } } as never;
+		const finish = withEnv("SURE_SITE_POLICY", sitePolicy, () => preFinish(ctx));
 		const patch = statePatch(finish);
 		expect(finish.ok, finish.repair).toBe(true);
-		expect(patch.phase?.status).toBe("incomplete");
-	});
+		expect(patch.phase?.status).toBe("success");
+	}, 30_000);
 });
 
 // Regression guard for the --kind routing bug: runGateScript injected
@@ -1394,6 +1481,11 @@ describe("sure_onboard new alignment gates", () => {
 			package_profile: "none",
 			steps: [
 				{ state: "BUILD_ENV", action: "create uv env", command: "uv sync" },
+				{
+					state: "BUILD_ENV",
+					action: "seal Model Python runtime",
+					command: "python3 scripts/materialize_model_runtime.py --input build_env_draft.json",
+				},
 				{ state: "VALIDATE_IMPORT", action: "run documented import command" },
 			],
 			blockers: [],
@@ -2460,7 +2552,7 @@ describe("sure_onboard new alignment gates", () => {
 		expect(contract.io_contract_satisfied).toBe(true);
 	});
 
-	it("advances package_gate for package=none when local_ready is true", () => {
+	it("blocks package=none until the Model Runtime is sealed", () => {
 		const { ctx, runDir } = freshCtx("package-gate-none-pass");
 		const modelDir = seedLocalReadyArtifacts(runDir);
 		seedModelInputResolved(runDir, { model_dir: modelDir });
@@ -2503,9 +2595,8 @@ describe("sure_onboard new alignment gates", () => {
 			},
 		});
 		const result = postToolResult(ctx);
-		expect(result.ok).toBe(true);
-		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
-		expect(checkpoint?.data.currentUnit).toBe("write_runtime_inventory");
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("Model Runtime sealing");
 	});
 
 	it("blocks package_gate when local_ready is claimed without an artifact manifest", () => {
@@ -2637,7 +2728,7 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 		expect(result.repair).toContain("not permitted");
 	});
 
-	it("adopts an upstream reference model into a harness-local package-gated model dir", () => {
+	it("adopts an upstream reference model without claiming a sealed Python runtime", () => {
 		const { cwd } = preStartCtx("adopt-reference-model", "");
 		const referenceDir = join(cwd, "reference", "models", "AdoptedModel");
 		const targetDir = join(cwd, "sure", "models", "AdoptedModel");
@@ -2693,7 +2784,6 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 
 		for (const [script, artifact] of [
 			["check_artifact_manifest.py", "artifact_manifest.json"],
-			["check_package_gate.py", "package_gate.json"],
 			["check_verdict.py", "verdict.json"],
 		]) {
 			const gate = spawnSync(
@@ -2709,6 +2799,19 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 			);
 			expect(gate.status, gate.stderr || gate.stdout).toBe(0);
 		}
+		const packageGate = spawnSync(
+			"python3",
+			[
+				join(PACKAGE_DIR, "scripts", "check_package_gate.py"),
+				"--run-dir",
+				targetDir,
+				"--produces",
+				join(targetDir, "artifacts", "package_gate.json"),
+			],
+			{ encoding: "utf-8" },
+		);
+		expect(packageGate.status).not.toBe(0);
+		expect(packageGate.stderr).toContain("Model Runtime sealing");
 	});
 
 	it("stages run artifacts into the model directory and writes a gate-valid preferred manifest", () => {
@@ -2727,7 +2830,7 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 			repo_url: "https://modelscope.cn/models/Qwen/Qwen3-ASR-1.7B",
 			task_type: "asr",
 			deployment_type: "local",
-			package_profile: "none",
+			package_profile: "docker-local",
 		});
 		for (const name of [
 			"context_selection.json",
@@ -2845,10 +2948,10 @@ describe("sure_onboard verdict structure compatibility", () => {
 		expect(proc.status, proc.stderr || proc.stdout).toBe(0);
 	});
 
-	it("rejects a success verdict for a non-registry local package", () => {
+	it("rejects a success verdict for diagnostic docker-local packaging", () => {
 		const { ctx, runDir } = freshCtx("verdict-local-ready-pass");
 		const modelDir = seedLocalReadyArtifacts(runDir);
-		seedModelInputResolved(runDir, { model_dir: modelDir });
+		seedModelInputResolved(runDir, { model_dir: modelDir, package_profile: "docker-local" });
 		seedCheckpoint(runDir, {
 			currentUnit: "verdict",
 			completedUnits: [
@@ -2876,7 +2979,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 		writeArtifact(runDir, "package_gate.json", {
 			schema: "sure.onboard.package_gate.v2",
 			status: "passed",
-			package_profile: "none",
+			package_profile: "docker-local",
 			model_dir: modelDir,
 			artifact_manifest_path: join(runDir, "artifacts", "artifact_manifest.json"),
 			readiness: {
@@ -2890,7 +2993,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 		});
 		writeArtifact(runDir, "verdict.json", {
 			status: "passed",
-			package: { profile: "none" },
+			package: { profile: "docker-local" },
 			readiness: {
 				local_ready: true,
 				docker_ready: false,
@@ -2914,7 +3017,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 		});
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(false);
-		expect(result.repair).toContain("local_only");
+		expect(result.repair).toContain("diagnostic-only");
 	});
 
 	it("accepts verdict artifact paths relative to the repository root", () => {

@@ -7,7 +7,7 @@
 
 `backend_choice.json.backend` selects the environment used to adapt and validate the model locally. It may be `uv`, `pip`, `conda`, `pixi`, or `docker`. `package_profile` selects the delivered Eval runtime.
 
-For every local model, these decisions converge as follows:
+Docker registry delivery remains the default. For that profile, the decisions converge as follows:
 
 1. Adapt with the repository-compatible backend.
 2. Run import, load, inference, and contract checks in that environment.
@@ -16,7 +16,7 @@ For every local model, these decisions converge as follows:
 5. Push the image and pull-verify its immutable registry digest.
 6. Publish `runtime_inventory.json` with `execution_mode=container_only`.
 
-The local backend is evidence used to create the image. It is not an Eval fallback.
+The local backend is evidence used to create the image. It is not an implicit Eval fallback. An explicit `package=none` follows the separate sealed Python policy below.
 
 ## Local backend routing
 
@@ -27,15 +27,15 @@ The local backend is evidence used to create the image. It is not an Eval fallba
 | Conda metadata or packages | `pixi` or `conda` |
 | Pure Python packaging | `uv` or `pip` |
 
-Record repository evidence, executable availability, selected version, and any fallback in `backend_choice.json`. A fallback may change the adaptation backend, but may not waive Docker registry delivery for a local model.
+Record repository evidence, executable availability, selected version, and any fallback in `backend_choice.json`. A fallback may change the adaptation backend, but may not silently change the selected package profile.
 
 ## Package policy
 
-- `docker-registry`: default and only successful local-model profile.
+- `docker-registry`: default successful local-model profile.
 - `docker-local`: diagnostic; final verdict must not claim Eval readiness.
-- `none`: API or explicit local diagnostic; final local verdict must not be success.
+- `none`: API delivery, or an explicit local Python profile when the site permits Python, backend=`uv`, and a hash-locked Model Runtime has been materialized and sealed. It never enables VC execution.
 
-If Docker, registry push, digest resolution, or digest pull verification is unavailable, stop with a repairable partial/blocked result. Do not convert host `.venv`, base Python, or a locally guessed image tag into deployment readiness.
+If the selected profile's required delivery checks are unavailable, stop with a repairable partial/blocked result. Do not convert a model-local `.venv`, arbitrary base Python, or a locally guessed image tag into deployment readiness.
 
 ## Device policy
 

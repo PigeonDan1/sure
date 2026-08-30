@@ -12,16 +12,26 @@ This unit prevents `/sure_eval` from repairing, guessing, or executing an unappr
 
 ## Required Evidence
 
-For a local model, `ready` requires all of the following:
+For a local model, `ready` requires exactly one approved deployment binding.
 
-- `artifacts/deployment_ready.json` with status `ready` and package `docker-registry`;
-- `artifacts/runtime_inventory.json` schema v2 with `container_only` execution;
-- `artifacts/package_gate.json` schema v2 with local, Docker, registry, and bundle readiness;
-- exact tag, digest, and digest-pinned image agreement across those files;
-- valid hashes declared by the deployment marker;
-- read-only NFS model policy, writable separate results, no host Python fallback, and no image override.
+Container binding:
 
-`config.yaml`, `model.py`, `server.py`, and verdict remain model evidence, but they cannot replace the deployment binding. `.venv`, Dockerfile text, logs, local image listings, and similar image names are never readiness sources.
+- `deployment_ready.json` has status `ready` and package `docker-registry`;
+- `runtime_inventory.json` declares `container_only` execution;
+- `package_gate.json` proves local, Docker, registry, and bundle readiness;
+- tag, digest, and digest-pinned image agree across all artifacts;
+- approved model storage is read-only and results are written separately.
+
+Local Python binding:
+
+- the active site permits `local` plus the `python` local runtime;
+- `deployment_ready.json` has status `ready` and package `none`;
+- `runtime_inventory.json` declares `eval_runtime=python` and `execution_mode=local_only`;
+- `package_gate.json` proves local and bundle readiness without Docker or registry claims;
+- the sealed uv Model Runtime manifest resolves below the active site's `storage.runtime_root` and passes live verification;
+- model-core hashes are declared and verified before and after trusted-host execution.
+
+Both bindings require valid deployment-marker hashes and an independently writable results directory. `config.yaml`, `model.py`, `server.py`, and verdict remain model evidence, but they cannot replace the deployment binding. A model-local `.venv`, Dockerfile text, logs, local image listings, and similar image names are never readiness sources.
 
 ## Routing
 

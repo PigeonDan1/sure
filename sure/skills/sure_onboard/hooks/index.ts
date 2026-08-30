@@ -4,6 +4,7 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:pa
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
 import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
+import { requireSitePolicy } from "../../../site/loader.ts";
 import {
 	advance,
 	artifactPath,
@@ -534,9 +535,31 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (!PACKAGE_PROFILES.includes(args.package_profile)) {
 		return failure(
-			`package "${args.package_profile}" is not one of ${JSON.stringify(PACKAGE_PROFILES)}. Local models default to package=docker-registry; package=none is diagnostic/local-only and cannot produce an Eval-ready bundle.`,
+			`package "${args.package_profile}" is not one of ${JSON.stringify(PACKAGE_PROFILES)}. Local models default to package=docker-registry; package=none selects an explicitly approved local Python runtime.`,
 			"Invalid package profile.",
 		);
+	}
+	if (args.deployment_type === "local" && args.package_profile === "none") {
+		try {
+			const policy = requireSitePolicy({ repositoryRoot: ctx.cwd }).policy;
+			if (!policy.execution.surfaces.includes("local")) {
+				return failure(
+					"package=none requires local in execution.surfaces because Python runtimes cannot run on VC.",
+					"Local execution is disabled by site policy.",
+				);
+			}
+			if (!policy.execution.local_runtimes.includes("python")) {
+				return failure(
+					"package=none requires python in execution.local_runtimes. Enable it in the active site policy or use package=docker-registry.",
+					"Local Python runtime is disabled by site policy.",
+				);
+			}
+		} catch (error) {
+			return failure(
+				error instanceof Error ? error.message : String(error),
+				"Local Python site policy is unavailable.",
+			);
+		}
 	}
 	const runtime = resolveHarnessPython(ctx.packageDir);
 	if (!runtime.ok || !runtime.contract) {

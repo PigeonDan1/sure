@@ -71,6 +71,28 @@ class ExecutionSurfacePolicyTests(unittest.TestCase):
                 resolve_eval_input._normalize_execution("vc", "auto", ["local"])
         self.assertIn("not enabled by the active site policy", str(ctx.exception))
 
+    def test_python_runtime_is_local_even_when_vc_is_available(self) -> None:
+        with mock.patch.object(resolve_eval_input, "_vc_available", return_value=True):
+            execution = resolve_eval_input._normalize_execution(
+                "auto",
+                "auto",
+                ["local", "vc"],
+                "python",
+                ["container", "python"],
+            )
+        self.assertEqual(execution["path_planned"], "local_python")
+        self.assertEqual(execution["reason"], "auto_selected_local_runtime_only")
+
+    def test_python_runtime_cannot_be_submitted_to_vc(self) -> None:
+        with self.assertRaisesRegex(ValueError, "approved container runtime"):
+            resolve_eval_input._normalize_execution(
+                "vc",
+                "vc_submit",
+                ["local", "vc"],
+                "python",
+                ["container", "python"],
+            )
+
 
 class OutputDirPolicyTests(unittest.TestCase):
     def setUp(self) -> None:

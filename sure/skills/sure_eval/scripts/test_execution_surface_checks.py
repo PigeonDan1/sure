@@ -33,10 +33,15 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
         live.start()
         self.addCleanup(live.stop)
         self.approved = {
-            "schema": "sure.eval.deployment_binding.v1",
+            "schema": "sure.eval.deployment_binding.v2",
+            "runtime_kind": "container",
             "target_image_ref": IMAGE_REF,
             "container": {"tool_names": ["transcribe_audio"]},
-            "policy": {"execution_mode": "container_only", "host_python_fallback": False},
+            "policy": {
+                "execution_mode": "container_only",
+                "model_integrity": "image_digest",
+                "host_python_fallback": False,
+            },
             "evidence": {"bundle_identity_sha256": "b" * 64},
         }
         self.harness_root = Path(self.temp.name) / "harness"
@@ -80,10 +85,12 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
         surface = {
             "execution": {"requested": "local", "path_planned": "local_docker"},
             "deployment_binding": {
-                "schema": "sure.eval.deployment_binding.v1",
+                "schema": "sure.eval.deployment_binding.v2",
+                "runtime_kind": "container",
                 "target_image_ref": IMAGE_REF,
                 "bundle_identity_sha256": "b" * 64,
                 "execution_mode": "container_only",
+                "model_integrity": "image_digest",
                 "model_mount_read_only": True,
                 "result_mount_writable": True,
             },
@@ -105,6 +112,36 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
         )
         self.assertTrue(result["passed"], result.get("evidence"))
 
+    def test_legacy_v1_container_surface_still_passes(self) -> None:
+        legacy_approved = {
+            "schema": "sure.eval.deployment_binding.v1",
+            "target_image_ref": IMAGE_REF,
+            "container": {"tool_names": ["transcribe_audio"]},
+            "policy": {
+                "execution_mode": "container_only",
+                "host_python_fallback": False,
+            },
+            "evidence": {"bundle_identity_sha256": "b" * 64},
+        }
+        eval_input_path = self.artifacts / "eval_input_resolved.json"
+        eval_input = json.loads(eval_input_path.read_text(encoding="utf-8"))
+        eval_input["model"]["deployment_binding"] = legacy_approved
+        eval_input_path.write_text(json.dumps(eval_input), encoding="utf-8")
+        legacy_declared = {
+            "schema": "sure.eval.deployment_binding.v1",
+            "target_image_ref": IMAGE_REF,
+            "bundle_identity_sha256": "b" * 64,
+            "execution_mode": "container_only",
+            "model_mount_read_only": True,
+            "result_mount_writable": True,
+        }
+
+        result = checks.check_inference_runtime(
+            self.write_surface(deployment_binding=legacy_declared)
+        )
+
+        self.assertTrue(result["passed"], result.get("evidence"))
+
     def test_local_bash_is_rejected(self) -> None:
         result = checks.check_inference_runtime(
             self.write_surface(execution={"requested": "local", "path_planned": "local_bash"})
@@ -114,10 +151,12 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
 
     def test_image_mismatch_is_rejected(self) -> None:
         declared = {
-            "schema": "sure.eval.deployment_binding.v1",
+            "schema": "sure.eval.deployment_binding.v2",
+            "runtime_kind": "container",
             "target_image_ref": "registry.example.com/sure/other@sha256:" + "c" * 64,
             "bundle_identity_sha256": "b" * 64,
             "execution_mode": "container_only",
+            "model_integrity": "image_digest",
             "model_mount_read_only": True,
             "result_mount_writable": True,
         }

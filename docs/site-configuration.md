@@ -43,10 +43,11 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `storage.approved_models_roots` | yes | Read-only roots containing human-approved model packages |
 | `storage.approved_results_roots` | yes | Read-only roots containing human-approved evaluation results |
 | `storage.forbidden_output_roots` | yes | Roots where automated `output_dir` writes are forbidden |
-| `storage.runtime_root` | yes | Declared site-owned cache root for adapters and future runtime placement |
+| `storage.runtime_root` | yes | Site-owned cache root for content-addressed Model Python runtimes and adapters |
 | `datasets.allowed_source_roots` | yes | Roots accepted by the strict dataset source resolver |
 | `datasets.projection_root` | optional | Writable root for generated dataset JSONL indexes and metadata; raw data remains in the allowed source root |
 | `execution.surfaces` | yes | Enabled execution surfaces: `local`, `vc`, or both |
+| `execution.local_runtimes` | optional | Permitted local runtimes: `python`, `container`, or both; omission remains container-only |
 | `execution.vc_partitions` | when needed | Declared VC partitions for adapters and deployment documentation |
 | `execution.vc_partition_priority` | optional | Numeric priority map used by automatic VC selection |
 | `network` | optional | Non-secret site endpoints used by private adapters and documentation |
@@ -57,6 +58,8 @@ Policy v1 accepts exactly one path in each root list. The list shape leaves room
 
 `execution.surfaces` constrains automatic and explicit execution selection. `execution.vc_partitions` documents site choices but does not replace the existing live `vc info -u` authorization check; changing partition authorization semantics is outside this separation phase.
 
+`execution.local_runtimes` is a permission boundary, not a package-manager choice. Enabling `python` permits an explicitly sealed Model Python runtime; it does not make host execution the default and does not permit Python execution on VC.
+
 ## Path Semantics
 
 - Every configured root is absolute.
@@ -65,7 +68,8 @@ Policy v1 accepts exactly one path in each root list. The list shape leaves room
 - A configured dataset projection root must stay outside forbidden output roots and must not overlap an allowed source root.
 - Path authorization resolves existing symlinks before comparison, so alternate names cannot bypass a protected root.
 - The policy validator does not create directories and does not require network access. Runtime commands perform their existing availability and permission checks at the same stages as before.
-- This compatibility phase does not redirect the locked Harness Runtime or Evaluation Runtime. They continue to materialize in their pre-existing repository-local locations; changing that behavior requires a separate differential migration.
+- Sealed Model Python runtimes materialize under `storage.runtime_root/models/<runtime_id>`. The promoted model stores only the portable runtime identity and manifest; `/sure_eval` resolves and verifies the matching site runtime before use.
+- The locked Harness Runtime and Evaluation Runtime remain in their repository-local locations. `storage.runtime_root` does not redirect either role.
 - Container deployments must mount configured roots at paths that preserve the command's existing host/container path contract.
 
 ## Minimal Local Example
@@ -92,6 +96,9 @@ datasets:
 execution:
   surfaces:
     - local
+  local_runtimes:
+    - python
+    - container
 ```
 
 For shared storage, replace these placeholders with roots visible to every host and container that executes a workflow. The projection root is the only writable dataset workspace; source roots are mounted read-only. For a local-only fixture, create temporary model, result, dataset, projection, and runtime roots and point the local policy at them.

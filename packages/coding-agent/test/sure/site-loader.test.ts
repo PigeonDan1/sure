@@ -37,6 +37,26 @@ describe("validateSitePolicy execution.vc_default_partition", () => {
 	});
 });
 
+describe("validateSitePolicy execution.local_runtimes", () => {
+	it("keeps omitted policies container-only", () => {
+		const result = validateSitePolicy(policy({ execution: { surfaces: ["local"] } }));
+		expect(result.execution.local_runtimes).toEqual(["container"]);
+	});
+
+	it("returns explicitly permitted Python and container runtimes", () => {
+		const result = validateSitePolicy(
+			policy({ execution: { surfaces: ["local"], local_runtimes: ["python", "container"] } }),
+		);
+		expect(result.execution.local_runtimes).toEqual(["python", "container"]);
+	});
+
+	it("rejects an unsupported local runtime", () => {
+		expect(() =>
+			validateSitePolicy(policy({ execution: { surfaces: ["local"], local_runtimes: ["virtualenv"] } })),
+		).toThrow(/execution\.local_runtimes/);
+	});
+});
+
 describe("validateSitePolicy absolute paths", () => {
 	it("rejects a path that does not start with a slash", () => {
 		expect(() =>

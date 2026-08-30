@@ -66,15 +66,29 @@ def _resolve_server_command(
     runtime_inventory: dict[str, Any],
 ) -> list[str]:
     container = runtime_inventory.get("container_runtime")
+    model_runtime = runtime_inventory.get("model_runtime")
     policy = runtime_inventory.get("policy")
     if runtime_inventory.get("schema") != "sure.onboard.runtime_inventory.v2":
         raise ValueError(f"approved model has unsupported runtime inventory: {model_dir}")
     if runtime_inventory.get("status") != "ready":
         raise ValueError("approved model runtime inventory is not ready")
-    if not isinstance(policy, dict) or policy.get("eval_runtime") != "container_only":
-        raise ValueError("approved model is not bound to container-only execution")
+    if not isinstance(policy, dict):
+        raise ValueError("approved model runtime policy is missing")
     if policy.get("host_python_fallback") is not False or policy.get("image_override_allowed") is not False:
         raise ValueError("approved model runtime policy permits a forbidden fallback or image override")
+    if policy.get("eval_runtime") == "python":
+        if not isinstance(model_runtime, dict) or model_runtime.get("required") is not True:
+            raise ValueError("approved Model Python runtime is missing")
+        command = model_runtime.get("server_command")
+        if not isinstance(command, list) or not command or not all(isinstance(item, str) and item for item in command):
+            raise ValueError("approved Model Python server_command is invalid")
+        actual_python = os.environ.get("MODEL_PYTHON", "")
+        runtime_id = os.environ.get("SURE_EVAL_MODEL_RUNTIME_ID", "")
+        if not actual_python or runtime_id != model_runtime.get("runtime_id"):
+            raise ValueError("active Model Python does not match the approved runtime identity")
+        return [actual_python, *command[1:]]
+    if policy.get("eval_runtime") != "container_only":
+        raise ValueError("approved model has no supported Eval runtime")
     if not isinstance(container, dict):
         raise ValueError("approved model container runtime is missing")
     command = container.get("server_command")
@@ -91,6 +105,17 @@ def _resolve_server_command(
 
 
 def _resolve_working_dir(model_dir: Path, runtime_inventory: dict[str, Any]) -> Path:
+    policy = runtime_inventory.get("policy") if isinstance(runtime_inventory.get("policy"), dict) else {}
+    if policy.get("eval_runtime") == "python":
+        raw = os.environ.get("SURE_EVAL_MODEL_WORKING_DIR", "")
+        path = Path(raw).expanduser().resolve()
+        try:
+            path.relative_to(model_dir.resolve())
+        except ValueError as exc:
+            raise ValueError("approved Model Python working_dir escapes the model bundle") from exc
+        if not path.is_dir():
+            raise ValueError(f"approved Model Python working_dir does not exist: {path}")
+        return path
     container = runtime_inventory.get("container_runtime")
     working_dir = container.get("working_dir") if isinstance(container, dict) else None
     path = Path(str(working_dir or ""))
@@ -459,6 +484,7 @@ def _runtime_inventory_summary(model_dir: Path) -> dict[str, Any]:
         "status": inventory.get("status"),
         "schema": inventory.get("schema"),
         "container_runtime": inventory.get("container_runtime") if isinstance(inventory.get("container_runtime"), dict) else {},
+        "model_runtime": inventory.get("model_runtime") if isinstance(inventory.get("model_runtime"), dict) else {},
         "policy": inventory.get("policy") if isinstance(inventory.get("policy"), dict) else {},
         "evidence": inventory.get("evidence") if isinstance(inventory.get("evidence"), dict) else {},
     }
@@ -1068,8 +1094,13 @@ def main() -> int:
     tool_name = args.tool_name or (tools[0]["name"] if tools else None)
     if not tool_name:
         raise ValueError("No tool name provided and config.yaml has no tools entry")
-    container_runtime = runtime_inventory_document.get("container_runtime")
-    approved_tools = container_runtime.get("tool_names") if isinstance(container_runtime, dict) else []
+    runtime_policy = runtime_inventory_document.get("policy") if isinstance(runtime_inventory_document.get("policy"), dict) else {}
+    selected_runtime = (
+        runtime_inventory_document.get("model_runtime")
+        if runtime_policy.get("eval_runtime") == "python"
+        else runtime_inventory_document.get("container_runtime")
+    )
+    approved_tools = selected_runtime.get("tool_names") if isinstance(selected_runtime, dict) else []
     if tool_name not in approved_tools:
         raise ValueError(f"tool {tool_name!r} is not present in the approved runtime inventory: {approved_tools}")
     tool_args = _merge_protocol_tool_args(

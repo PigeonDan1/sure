@@ -79,6 +79,14 @@ def main() -> int:
         print("BUILD_PLAN gate: package_profile disagrees with model_input_resolved.json.", file=sys.stderr)
         return 1
 
+    if deployment_type == "local" and package_profile == "none" and data.get("backend") != "uv":
+        print(
+            "BUILD_PLAN gate: local package=none initially requires backend=uv so the locked "
+            "Model Runtime can be materialized reproducibly.",
+            file=sys.stderr,
+        )
+        return 1
+
     steps = data.get("steps")
     if not isinstance(steps, list) or not steps:
         print("BUILD_PLAN gate: steps must be a non-empty array.", file=sys.stderr)
@@ -141,6 +149,15 @@ def main() -> int:
         missing_steps = [label for label, pattern in requirements.items() if not re.search(pattern, plan_text)]
         if missing_steps:
             print("BUILD_PLAN gate: missing required Docker steps: " + ", ".join(missing_steps), file=sys.stderr)
+            return 1
+    if deployment_type == "local" and package_profile == "none":
+        plan_text = "\n".join(step_text(step) for step in steps)
+        if not re.search(r"materialize_model_runtime|require-hashes|hash.{0,20}lock", plan_text):
+            print(
+                "BUILD_PLAN gate: package=none must plan locked Model Runtime materialization "
+                "with scripts/materialize_model_runtime.py.",
+                file=sys.stderr,
+            )
             return 1
     blockers = data.get("blockers") or []
     if blockers:

@@ -1,0 +1,44 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "deployment_ready_v2.schema.json",
+	"title": "SURE finalized local Python deployment binding",
+	"type": "object",
+	"required": ["schema", "generated_at", "status", "model_name", "package_profile", "model_runtime", "execution_policy", "required_artifact_sha256", "bundle_identity_sha256"],
+	"properties": {
+		"schema": { "const": "sure.onboard.deployment_ready.v2" },
+		"generated_at": { "type": "string" },
+		"status": { "enum": ["ready", "local_only", "blocked"] },
+		"model_name": { "type": "string" },
+		"package_profile": { "const": "none" },
+		"target_image": { "type": "null" },
+		"target_image_digest": { "type": "null" },
+		"target_image_ref": { "type": "null" },
+		"harness_runtime": { "type": "object" },
+		"model_runtime": { "type": "object" },
+		"runtime_inventory": { "type": "string" },
+		"package_gate": { "type": "string" },
+		"verdict": { "type": "string" },
+		"artifact_manifest": { "type": "string" },
+		"required_artifact_sha256": {
+			"type": "object",
+			"additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+		},
+		"bundle_identity_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+		"execution_policy": {
+			"type": "object",
+			"required": ["container_only", "eval_runtime", "isolation", "model_integrity", "nfs_models_read_only", "model_bundle_mutation_allowed", "host_python_fallback", "approved_image_override"],
+			"properties": {
+				"container_only": { "const": false },
+				"eval_runtime": { "const": "python" },
+				"isolation": { "const": "trusted_host" },
+				"model_integrity": { "const": "verify_before_after" },
+				"nfs_models_read_only": { "const": false },
+				"model_bundle_mutation_allowed": { "const": false },
+				"host_python_fallback": { "const": false },
+				"approved_image_override": { "const": false }
+			},
+			"additionalProperties": false
+		}
+	},
+	"additionalProperties": false
+}

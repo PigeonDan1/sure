@@ -1544,8 +1544,10 @@ def _write_protocol_yaml(
     status_runtime_inventory = _nested_dict(status_runtime, "runtime_inventory")
     harness_runtime = _safe_dict(status_runtime.get("harness_runtime"))
     inventory_container = _safe_dict(runtime_inventory.get("container_runtime"))
+    inventory_model_runtime = _safe_dict(runtime_inventory.get("model_runtime"))
     inventory_local = _safe_dict(runtime_inventory.get("local_runtime"))
     inventory_policy = _safe_dict(runtime_inventory.get("policy"))
+    runtime_kind = "python" if inventory_policy.get("eval_runtime") == "python" else "container"
     status_server_config = _safe_dict(status_runtime.get("server_config"))
     server_command = status_runtime.get("server_command") or sanitized_server.get("command", [])
     server_working_dir = status_runtime.get("server_working_dir") or sanitized_server.get("working_dir", ".")
@@ -1632,6 +1634,7 @@ def _write_protocol_yaml(
         },
         "inference_environment": {
             "execution_path": os.environ.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
+            "runtime_kind": runtime_kind,
             "vc": {
                 "job_id": os.environ.get("SURE_EVAL_EXECUTION_JOB_ID") or os.environ.get("VC_JOB_ID"),
                 "partition": os.environ.get("SURE_EVAL_VC_PARTITION") or os.environ.get("VC_PARTITION"),
@@ -1652,6 +1655,15 @@ def _write_protocol_yaml(
                 "model_dir": str(model_dir) if model_dir else None,
                 "python_executable": inventory_container.get("python_executable"),
                 "working_dir": inventory_container.get("working_dir"),
+                "execution_mode": inventory_policy.get("eval_runtime"),
+                "host_python_fallback": inventory_policy.get("host_python_fallback"),
+            },
+            "model_runtime": {
+                "runtime_id": inventory_model_runtime.get("runtime_id"),
+                "python_executable": os.environ.get("MODEL_PYTHON") if runtime_kind == "python" else None,
+                "lock_sha256": inventory_model_runtime.get("lock_sha256"),
+                "manifest_sha256": inventory_model_runtime.get("manifest_sha256"),
+                "working_dir": os.environ.get("SURE_EVAL_MODEL_WORKING_DIR") if runtime_kind == "python" else None,
                 "execution_mode": inventory_policy.get("eval_runtime"),
                 "host_python_fallback": inventory_policy.get("host_python_fallback"),
             },
@@ -1699,7 +1711,12 @@ def _write_protocol_yaml(
                     if path is not None
                 ],
                 "reject_repo_internal_runtime_mount_overlays": True,
-                "nfs_models_read_only": _nested_dict(inventory_container, "mount_policy").get("nfs_models_read_only"),
+                "nfs_models_read_only": (
+                    False
+                    if runtime_kind == "python"
+                    else _nested_dict(inventory_container, "mount_policy").get("nfs_models_read_only")
+                ),
+                "model_integrity": "verify_before_after" if runtime_kind == "python" else "image_digest",
                 "result_workspace": _nested_dict(_nested_dict(inventory_container, "mount_policy"), "result_workspace"),
             },
         },
