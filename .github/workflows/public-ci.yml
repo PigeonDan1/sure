@@ -80,10 +80,6 @@ jobs:
   public-smoke:
     name: Public export and startup
     runs-on: ubuntu-24.04
-    env:
-      PUBLIC_TREE: ${{ runner.temp }}/sure-public-one
-      PUBLIC_TREE_SECOND: ${{ runner.temp }}/sure-public-two
-      PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-agent
     steps:
       - name: Check out the public tree
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -101,6 +97,9 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Export the public tree twice
+        env:
+          PUBLIC_TREE: ${{ runner.temp }}/sure-public-one
+          PUBLIC_TREE_SECOND: ${{ runner.temp }}/sure-public-two
         run: |
           npm run public:export -- --output "$PUBLIC_TREE"
           npm run public:export -- --output "$PUBLIC_TREE_SECOND"
@@ -127,6 +126,8 @@ jobs:
 
       - name: Validate configured public startup
         working-directory: ${{ runner.temp }}/sure-public-two
+        env:
+          PI_CODING_AGENT_DIR: ${{ runner.temp }}/pi-agent
         run: |
           cp config/site.example.yaml config/site.local.yaml
           npm run sure:site-check
