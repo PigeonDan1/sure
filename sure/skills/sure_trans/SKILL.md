@@ -28,7 +28,7 @@ Convert an existing model delivery into the same Eval-ready contract produced by
 | `vc_partition` | no | VC partition for GPU validation; default and site requirement `<vc_default_partition>`. |
 | `vc_memory_gb` | no | VC memory request in GiB; default 32. `<vc_default_partition>` caps each GPU at 32 GiB, so do not exceed it there. |
 | `vc_gpus` | no | VC GPU count; default 1. |
-| `image_version` | no | Explicit registry tag override for `<container_registry>/hpc/ai_asr-<model_name>:<version>`. When omitted, query both source and adapter repositories, find the highest `major.minor.patch` tag, and select the next unused patch version; an empty repository starts at `0.1.0`. |
+| `image_version` | no | Explicit tag override for the site-resolved target repository. When omitted, query both resolved source and adapter repositories, find the highest `major.minor.patch` tag, and select the next unused patch version; an empty repository starts at `0.1.0`. |
 | `max_retries` | no | Default 3. |
 
 Example:
@@ -128,7 +128,7 @@ Static analysis is evidence, not proof. Build the source image, create `executio
 Execution surfaces split by device:
 
 - `device=cpu`: the probe runs in local Docker without `--gpus`; `execution_surface=local_docker`.
-- `device=cuda` or GPU-capable `auto`: the gate pushes the source image to the registry as `<container_registry>/hpc/ai_asr-<model_name>-source:<version>` and submits the probe through `vc submit` on `<vc_default_partition>`; `execution_surface=vc` with `vc_partition`, `vc_job_id`, `vc_memory_gb`, `vc_gpus`, and `vc_submit_command` recorded.
+- `device=cuda` or GPU-capable `auto`: the gate pushes the source image to `trans_input_resolved.json.container_delivery.source_image` and submits the probe through `vc submit` on `<vc_default_partition>`; `execution_surface=vc` with `vc_partition`, `vc_job_id`, `vc_memory_gb`, `vc_gpus`, and `vc_submit_command` recorded.
 - `auto` with a model that does not require CUDA falls back to a local CPU probe only after the VC CUDA probe fails or times out; the fallback evidence is recorded in `fallback` and `execution_surface` stays `vc`. When `vc` is unavailable or the partition is not permitted, the gate blocks with a clear repair instead of silently falling back.
 
 For original and adapter smoke units, write the stage artifact with a real `run_command`. The original inference and adapter inference artifacts also need `input`, the staged fixture the command consumes (`staged_path` from `fixture_manifest.json`), and the MCP artifact needs `tool_name`, the tool the adapter exposes. The gate executes the command through `run_trans_validate.py`, captures stdout/stderr and exit status, and only then writes the matching pass field. A manually written `status=passed` is not sufficient. A required field the artifact omits blocks the unit and spends a retry before the command ever runs, so write them all in one go.
@@ -184,7 +184,7 @@ Equivalence is decided by the gate, not by the command. Write `equivalence_resul
 2. Use `adapter/Dockerfile.sure` to layer `/opt/sure_trans/model.py`, `server.py`, `config.yaml`, `model.spec.yaml`, `__init__.py`, `validate.py`, and `mcp_smoke.py` onto the source image. The generated Dockerfile also copies the locked Harness Runtime into `/opt/sure-harness/<runtime_id>/`. If `SURE_HARNESS_RUNTIME_IMAGE` is set to a digest-pinned runtime image, build with `--build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>`; otherwise use `--build-context sure_harness_runtime=<SURE_HARNESS_RUNTIME_ROOT>`.
 3. Mount the staged `sure/models/<model_name>/` bundle read-only at `model_mount_target` for load, infer, MCP, and pull-verification tests.
 4. Validate import, persistent load, real inference, output contract, MCP initialize/list/call, and equivalence with original inference as separate gates.
-5. Push the adapter image, resolve `sha256:...`, pull the exact `repository@sha256:...` reference, and repeat the MCP smoke test. The deployment registry for this site is `<container_registry>` (registered as an insecure registry in the local Docker daemon, so plain-HTTP push/pull works; credentials live in `~/.docker/config.json`). Tag the image as `<container_registry>/hpc/ai_asr-<model_name>:<version>`; the registry enforces this naming spec server-side and rejects other names (`hpc` namespace, `ai_asr-` prefix, version tag). When the model was validated on GPU, the post-pull MCP smoke must itself run on VC through `mcp_smoke.py`; submit the **tag** with `--expect-digest` (see the VC section below — `vc submit` rejects digest-pinned references) and record its `vc_job_id`, `vc_partition=<vc_default_partition>`, `exit_code=0`, `image_ref`, the `resolved_digest` the submission proved, and the log path as `post_pull_smoke` in `docker_registry_result.json`, keeping `mcp_smoke.json` evidence next to that log path (the registry gate checks `resolved_digest` against `target_image_digest` and the initialize/tools/list/tools/call evidence).
+5. Push the adapter image to `trans_input_resolved.json.container_delivery.target_image`, resolve `sha256:...`, pull the exact `repository@sha256:...` reference, and repeat the MCP smoke test. Registry transport and authentication are deployment concerns; use the Docker daemon configuration for the active site. When the model was validated on GPU, the post-pull MCP smoke must itself run on VC through `mcp_smoke.py`; submit the **tag** with `--expect-digest` (see the VC section below — `vc submit` rejects digest-pinned references) and record its `vc_job_id`, `vc_partition=<vc_default_partition>`, `exit_code=0`, `image_ref`, the `resolved_digest` the submission proved, and the log path as `post_pull_smoke` in `docker_registry_result.json`, keeping `mcp_smoke.json` evidence next to that log path (the registry gate checks `resolved_digest` against `target_image_digest` and the initialize/tools/list/tools/call evidence).
 
 The source image is pushed before unit 6 and the adapter image before unit 11 by the gate scripts; both record `registry_ref` and `registry_push` evidence into `source_image_result.json` and `adapter_image_result.json` respectively. The unit 17 post-pull smoke reuses the same registry name without repushing.
 
@@ -194,13 +194,13 @@ Automatic selection is advisory until the immutable push succeeds: another run c
 
 ## VC Execution
 
-`<vc_default_partition>` and `<container_registry>` are site policy values, not constants: `execution.vc_default_partition` and `network.container_registry` in `config/site.bundled.yaml` (or `config/site.local.yaml`). Read them with `npm run sure:site-info`; never hardcode a site value in this skill.
+`<vc_default_partition>` and the source/target image repositories are site policy values, not constants. Repositories are resolved from `network.container_registry` plus `container_delivery.repository_template` in `config/site.bundled.yaml` (or `config/site.local.yaml`) and persisted in `trans_input_resolved.json`. Read policy with `npm run sure:site-info`; never hardcode a site value in this skill.
 
 GPU-touching work never runs `docker run --gpus all` on the login node. Gates submit to `<vc_default_partition>` through `scripts/vc_exec.py`; the same CLI drives the unit 17 post-pull MCP smoke:
 
 ```bash
 "$HARNESS_PYTHON_BIN" scripts/vc_exec.py \
-  --image <container_registry>/hpc/ai_asr-<model_name>:<version> \
+  --image <target_repository>:<version> \
   --expect-digest sha256:<digest> \
   --command "python /opt/sure_trans/mcp_smoke.py --audio /fixture/smoke.wav --tool <tool_name> --produces <run_dir>/artifacts/vc_logs/post_pull_smoke/mcp_smoke.json" \
   --mount <bundle_dir>:/models/<model_name>:ro \

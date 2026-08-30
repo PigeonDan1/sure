@@ -103,7 +103,7 @@ function writePythonSitePolicy(cwd: string): string {
 	mkdirSync(resolve(path, ".."), { recursive: true });
 	writeFileSync(
 		path,
-		[
+		`${[
 			"schema: sure.site.policy.v1",
 			"site_id: test",
 			"policy_version: 1",
@@ -117,7 +117,7 @@ function writePythonSitePolicy(cwd: string): string {
 			"execution:",
 			"  surfaces: [local]",
 			"  local_runtimes: [python]",
-		].join("\n") + "\n",
+		].join("\n")}\n`,
 		"utf-8",
 	);
 	return path;
@@ -358,7 +358,7 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 		mkdirSync(resolve(sitePolicy, ".."), { recursive: true });
 		writeFileSync(
 			sitePolicy,
-			[
+			`${[
 				"schema: sure.site.policy.v1",
 				"site_id: test",
 				"policy_version: 1",
@@ -372,7 +372,7 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 				"execution:",
 				"  surfaces: [vc]",
 				"  local_runtimes: [python]",
-			].join("\n") + "\n",
+			].join("\n")}\n`,
 			"utf-8",
 		);
 		const result = withEnv("SURE_SITE_POLICY", sitePolicy, () => preStart(ctx));
@@ -738,6 +738,8 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 				runDir,
 				"--repo-root",
 				cwd,
+				"--package-profile",
+				"none",
 			],
 			{ encoding: "utf-8" },
 		);

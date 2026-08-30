@@ -4,9 +4,24 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "site" / "loader.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+try:
+    from sure.site.container_delivery import resolve_container_image, resolve_container_repository
+    from sure.site.container_registry import resolve_image_version
+    from sure.site.loader import load_site_policy
+except ImportError as error:
+    raise RuntimeError(
+        "the SURE site resolver is not bundled; run materialize_trans_inputs.py "
+        "from a complete sure-harness checkout"
+    ) from error
 
 FRAMEWORK_ALIASES = {
     "pytorch": "pytorch",
@@ -32,21 +47,13 @@ TASK_MARKERS = {
 }
 
 try:
-    from vc_exec import DEFAULT_GPUS, DEFAULT_MEMORY_GB, default_partition, resolve_image_version
+    from vc_exec import DEFAULT_GPUS, DEFAULT_MEMORY_GB, default_partition
 except ImportError:  # kept standalone when vc_exec.py is not bundled
     DEFAULT_GPUS = 1
     DEFAULT_MEMORY_GB = 32
 
     def default_partition() -> str:
         raise ValueError("vc_exec.py is not bundled; pass --vc-partition explicitly")
-
-    def resolve_image_version(model_name: str, requested: str | None = None) -> tuple[str, dict[str, object]]:
-        # Only the registry lookup needs vc_exec. An explicit version is the
-        # escape hatch this branch's own error message points at, so honour it
-        # rather than rejecting the flag it just asked for.
-        if requested is not None:
-            return requested, {"mode": "explicit", "repositories": [], "existing_tags": []}
-        raise ValueError("vc_exec.py is not bundled; pass --image-version explicitly")
 
 SAFE_TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
@@ -142,6 +149,16 @@ def main() -> int:
         )
     model_name = normalized_name(args.model_name) if args.model_name else re.sub(r"[^A-Za-z0-9._-]+", "__", model_path.name).strip("._-")
     task_type = resolve_task_type(args.task_type, inference_entrypoint, model_path)
+    site = load_site_policy(required=True) or {}
+    policy = site.get("policy")
+    if not isinstance(policy, dict):
+        raise ValueError("site policy did not resolve to an object")
+    source_repository = resolve_container_repository(
+        policy, task_type=task_type, model_name=model_name, stage="source"
+    )
+    target_repository = resolve_container_repository(
+        policy, task_type=task_type, model_name=model_name
+    )
     fixture_path = existing_absolute(args.fixture, "fixture") if args.fixture else None
     image_tar = existing_absolute(args.image_tar, "image tar") if args.image_tar else None
     if image_tar is not None and not image_tar.is_file():
@@ -170,7 +187,9 @@ def main() -> int:
         raise ValueError("vc gpus must be positive")
     if vc_memory_gb < 1:
         raise ValueError("vc memory must be positive")
-    image_version, image_version_resolution = resolve_image_version(model_name, args.image_version)
+    image_version, image_version_resolution = resolve_image_version(
+        [source_repository, target_repository], args.image_version
+    )
     if not SAFE_TAG.fullmatch(image_version):
         raise ValueError(f"invalid image version: {image_version!r}")
     gpu_surface = args.device != "cpu"
@@ -200,6 +219,25 @@ def main() -> int:
         "max_retries": args.max_retries,
         "image_version": image_version,
         "image_version_resolution": image_version_resolution,
+        "container_delivery": {
+            "source_repository": source_repository,
+            "source_image": resolve_container_image(
+                policy,
+                task_type=task_type,
+                model_name=model_name,
+                version=image_version,
+                stage="source",
+            ),
+            "target_repository": target_repository,
+            "target_image": resolve_container_image(
+                policy,
+                task_type=task_type,
+                model_name=model_name,
+                version=image_version,
+            ),
+            "site_policy_path": site.get("path"),
+            "site_policy_sha256": site.get("sha256"),
+        },
         "path_policy": {
             "model_read_only": True,
             "source_paths_read_only": True,

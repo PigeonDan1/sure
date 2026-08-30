@@ -50,6 +50,8 @@ def setUpModule() -> None:
         f"  vc_default_partition: {TEST_PARTITION}",
         "network:",
         f"  container_registry: {TEST_REGISTRY}",
+        "container_delivery:",
+        '  repository_template: "{registry}/hpc/ai_{task}-{model_name}"',
         "",
     ])
     path = Path(_SITE_POLICY_DIR.name) / "site.yaml"
@@ -958,8 +960,7 @@ class TransScriptsTest(unittest.TestCase):
         self.assertEqual(unverified["identity_source"], "build-directory")
         self.assertTrue(unverified["embedded"])
 
-    def test_standalone_materialize_accepts_the_image_version_it_asks_for(self) -> None:
-        """Without vc_exec bundled the script demands --image-version, so it has to honour it."""
+    def test_standalone_materialize_requires_the_shared_site_resolver(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             standalone = root / "standalone"
@@ -978,17 +979,16 @@ class TransScriptsTest(unittest.TestCase):
             (delivery / "Dockerfile").write_text("FROM python:3.12\n", encoding="utf-8")
             (code / "infer.py").write_text("import torch\n", encoding="utf-8")
             (model / "weights.bin").write_bytes(b"weights")
-            subprocess.run([
+            result = subprocess.run([
                 sys.executable, str(standalone / "materialize_trans_inputs.py"),
                 "--dockerfile", str(delivery / "Dockerfile"), "--model", str(model),
                 "--inference-entrypoint", str(code / "infer.py"), "--framework", "pytorch",
                 "--model-framework", "transformers", "--run-dir", str(run_dir),
                 "--repo-root", str(root), "--image-version", "0.2.0",
                 "--vc-partition", TEST_PARTITION, "--task-type", "asr",
-            ], check=True, capture_output=True, text=True)
-            resolved = json.loads((run_dir / "artifacts" / "trans_input_resolved.json").read_text(encoding="utf-8"))
-            self.assertEqual(resolved["image_version"], "0.2.0")
-            self.assertEqual(resolved["image_version_resolution"]["mode"], "explicit")
+            ], check=False, capture_output=True, text=True, cwd=standalone)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("complete sure-harness checkout", result.stderr)
 
     def test_a_torch_token_does_not_settle_a_delivery_that_also_ships_tensorflow(self) -> None:
         """SKILL.md blocks when PyTorch is not the primary computation framework."""

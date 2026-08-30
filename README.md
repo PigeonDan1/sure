@@ -114,6 +114,12 @@ execution:
   local_runtimes:
     - python
     - container
+
+network:
+  container_registry: registry.example.com
+
+container_delivery:
+  repository_template: "{registry}/my-org/sure-{task}-{model_name}"
 EOF
 
 npm run sure:site-info
@@ -122,6 +128,8 @@ npm run sure:doctor
 ```
 
 `sure:site-info` should report `configured: true` and `source: local`; `sure:site-check` must pass. Before provider and dataset setup, `sure:doctor` may warn about missing Pi authentication or evaluation data.
+
+Before using the default `docker-registry` profile, replace the registry and repository namespace placeholders. `container_delivery.repository_template` is site configuration; SURE resolves it before building an image and does not invent a registry destination. API-only onboarding and local `package=none` Python execution do not use these fields.
 
 For shared storage or additional execution surfaces, start from [`config/site.example.yaml`](./config/site.example.yaml) and read the [site configuration guide](./docs/site-configuration.md). Keep `config/site.local.yaml` local, or set `SURE_SITE_POLICY` to an absolute policy path outside the repository.
 
@@ -245,7 +253,7 @@ Each metric is an explicit pipeline of versioned nodes. You can select different
 Provider credentials and site policy are separate:
 
 - `/sure_init` configures the coding-agent provider and authentication.
-- The site policy configures approved storage roots, forbidden output roots, dataset roots, a runtime cache root, and allowed execution surfaces.
+- The site policy configures approved storage roots, forbidden output roots, dataset roots, a runtime cache root, allowed execution surfaces, and optional container delivery naming.
 
 Site-policy sources use this fixed precedence:
 

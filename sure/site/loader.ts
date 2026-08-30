@@ -37,6 +37,9 @@ export interface SitePolicy {
 		gateway_portal?: string;
 		container_registry?: string;
 	};
+	container_delivery?: {
+		repository_template: string;
+	};
 }
 
 export interface ResolvedSitePolicy {
@@ -94,9 +97,38 @@ function expectUniqueStrings(value: unknown, location: string, absolute: boolean
 	return items;
 }
 
+function expectRepositoryTemplate(value: unknown): string {
+	const template = expectString(value, "container_delivery.repository_template");
+	const fields = new Set(Array.from(template.matchAll(/\{([^{}]+)\}/g), (match) => match[1]));
+	const remainder = template.replaceAll(/\{[^{}]+\}/g, "");
+	if (remainder.includes("{") || remainder.includes("}")) {
+		throw new Error("container_delivery.repository_template contains malformed braces");
+	}
+	const unknown = Array.from(fields).filter((field) => !["registry", "task", "model_name"].includes(field));
+	if (unknown.length > 0) {
+		throw new Error(`container_delivery.repository_template has unsupported field: ${unknown[0]}`);
+	}
+	for (const required of ["registry", "model_name"]) {
+		if (!fields.has(required)) {
+			throw new Error(`container_delivery.repository_template is missing field: ${required}`);
+		}
+	}
+	if (!template.startsWith("{registry}/")) {
+		throw new Error("container_delivery.repository_template must start with {registry}/");
+	}
+	if (/\s/.test(template) || template.includes("@")) {
+		throw new Error("container_delivery.repository_template must not contain whitespace or a digest");
+	}
+	return template;
+}
+
 export function validateSitePolicy(value: unknown): SitePolicy {
 	const root = expectRecord(value, "site policy");
-	rejectUnknown(root, ["schema", "site_id", "policy_version", "storage", "datasets", "execution", "network"], "site policy");
+	rejectUnknown(
+		root,
+		["schema", "site_id", "policy_version", "storage", "datasets", "execution", "network", "container_delivery"],
+		"site policy",
+	);
 	if (root.schema !== SITE_POLICY_SCHEMA) throw new Error(`schema must be ${SITE_POLICY_SCHEMA}`);
 	const siteId = expectString(root.site_id, "site_id");
 	if (!/^[a-z0-9][a-z0-9._-]*$/.test(siteId)) throw new Error("site_id has an invalid format");
@@ -187,6 +219,16 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 		policy.execution.vc_default_partition = defaultPartition;
 	}
 	if (network !== undefined) policy.network = network;
+	if (root.container_delivery !== undefined) {
+		const delivery = expectRecord(root.container_delivery, "container_delivery");
+		rejectUnknown(delivery, ["repository_template"], "container_delivery");
+		if (!policy.network?.container_registry) {
+			throw new Error("container_delivery.repository_template requires network.container_registry");
+		}
+		policy.container_delivery = {
+			repository_template: expectRepositoryTemplate(delivery.repository_template),
+		};
+	}
 	return policy;
 }
 

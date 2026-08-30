@@ -13,6 +13,14 @@ import json
 import sys
 from pathlib import Path
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "site" / "loader.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.site.container_delivery import resolve_container_image, resolve_container_repository
+from sure.site.loader import load_site_policy
+
 TASK_TYPES = {
     "asr",
     "s2tt",
@@ -113,6 +121,60 @@ def main() -> int:
     if deployment_type == "api" and package_profile != "none":
         print("LOAD_MODEL_INPUT gate: API deployments must use package_profile=none.", file=sys.stderr)
         return 1
+
+    if package_profile == "docker-registry":
+        delivery = data.get("container_delivery")
+        if not isinstance(delivery, dict):
+            print(
+                "LOAD_MODEL_INPUT gate: docker-registry requires resolved container_delivery.",
+                file=sys.stderr,
+            )
+            return 1
+        missing_delivery = [
+            key
+            for key in ("repository", "image_version", "target_image", "image_version_resolution")
+            if not delivery.get(key)
+        ]
+        if missing_delivery:
+            print(
+                "LOAD_MODEL_INPUT gate: container_delivery is missing: "
+                + ", ".join(missing_delivery),
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            site = load_site_policy(repository_root=infer_repo_root(Path(args.run_dir)), required=True) or {}
+            policy = site.get("policy")
+            if not isinstance(policy, dict):
+                raise ValueError("site policy did not resolve to an object")
+            expected_repository = resolve_container_repository(
+                policy,
+                task_type=str(data.get("task_type")),
+                model_name=str(data.get("model_name")),
+            )
+            expected_image = resolve_container_image(
+                policy,
+                task_type=str(data.get("task_type")),
+                model_name=str(data.get("model_name")),
+                version=str(delivery.get("image_version")),
+            )
+        except ValueError as exc:
+            print(f"LOAD_MODEL_INPUT gate: cannot resolve container delivery: {exc}", file=sys.stderr)
+            return 1
+        if delivery.get("repository") != expected_repository or delivery.get("target_image") != expected_image:
+            print(
+                "LOAD_MODEL_INPUT gate: container_delivery disagrees with the active site policy; "
+                f"expected target_image={expected_image}.",
+                file=sys.stderr,
+            )
+            return 1
+        if delivery.get("site_policy_sha256") and delivery.get("site_policy_sha256") != site.get("sha256"):
+            print(
+                "LOAD_MODEL_INPUT gate: site policy changed after container delivery was resolved; "
+                "rerun materialize_onboard_inputs.py.",
+                file=sys.stderr,
+            )
+            return 1
 
     model_name = str(data.get("model_name"))
     if "/" in model_name or "\\" in model_name:

@@ -514,7 +514,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_onboard parameters: ${missing.join(", ")}. Usage: /sure_onboard model=<handoff_name> OR /sure_onboard model_input_path=sure/handoffs/<handoff_name>/model_input.yaml OR /sure_onboard model_id=<owner/model> model_name=<owner__model> repo=<url|path> task_type=<${TASK_TYPES.join("|")}> deployment_type=<local|api> [preferred_backend=uv|pip|conda|pixi|docker|api] [python_version=...] [weights_source=...] [package=docker-registry] [force_repair=true] [existing_model_dir=...] [max_retries=3]`,
+			`Missing required /sure_onboard parameters: ${missing.join(", ")}. Usage: /sure_onboard model=<handoff_name> OR /sure_onboard model_input_path=sure/handoffs/<handoff_name>/model_input.yaml OR /sure_onboard model_id=<owner/model> model_name=<owner__model> repo=<url|path> task_type=<${TASK_TYPES.join("|")}> deployment_type=<local|api> [preferred_backend=uv|pip|conda|pixi|docker|api] [python_version=...] [weights_source=...] [package=docker-registry] [image_version=...] [force_repair=true] [existing_model_dir=...] [max_retries=3]`,
 			"Missing required parameters.",
 		);
 	}

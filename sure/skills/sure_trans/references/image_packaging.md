@@ -16,7 +16,7 @@
 
 ## 2. 镜像命名规则
 
-部署 registry 取自站点策略 `network.container_registry`（`config/site.bundled.yaml` 或 `config/site.local.yaml`，用 `npm run sure:site-info` 查看），下文写作 `<container_registry>`。本站已把它配成 insecure registry，HTTP 可达，凭据在 `~/.docker/config.json`。
+远端仓库由站点策略中的 `network.container_registry` 和 `container_delivery.repository_template` 共同解析（`config/site.bundled.yaml` 或 `config/site.local.yaml`，用 `npm run sure:site-info` 查看）。Registry 的协议、证书和凭据由部署环境的 Docker 配置负责。
 
 本地工作 tag（短名，仅本机调试用）：
 
@@ -25,22 +25,20 @@ sure-trans/<model_name>:source-<dockerfile_sha256前16位>   # run_docker_build.
 sure-trans/<model_name>:adapter
 ```
 
-远端交付 tag（registry 服务端强制命名规范，不符合会被直接拒绝，exit 4）：
+远端交付 tag：
 
 ```text
-<container_registry>/hpc/ai_asr-<name>:<version>
+<resolved_repository>:<version>
 ```
 
 规则：
 
-- 命名空间固定为 `hpc`，镜像名必须以 `ai_asr-` 开头，tag 是版本号。
-  规范原文见内部 wiki（registry 拒绝信息中的链接）。实测：不带 `ai_asr-`
-  前缀的名字 push 时服务端返回"没有权限, 镜像名称不符合规范"。
-- source 镜像与 adapter 镜像各占一个仓库名：
+- 不要在 skill 或 agent 计划里拼接 namespace。`materialize_trans_inputs.py` 会在首个单元解析并记录准确地址。
+- source 镜像与 adapter 镜像各占一个仓库名，分别记录为：
 
   ```text
-  <container_registry>/hpc/ai_asr-<model_name>-source:<version>
-  <container_registry>/hpc/ai_asr-<model_name>:<version>
+  trans_input_resolved.json.container_delivery.source_image
+  trans_input_resolved.json.container_delivery.target_image
   ```
 
 - 未显式传 `image_version` 时，`materialize_trans_inputs.py` 使用 Docker 登录凭据查询 source 与 adapter 两个 Registry V2 tag 列表，只识别 `major.minor.patch` 三段数字版本，取最高版本并递增 patch；两边都没有版本时从 `0.1.0` 开始。查询证据写入 `trans_input_resolved.json.image_version_resolution`，认证信息不落盘。
@@ -90,13 +88,12 @@ trans 与 onboard 现在使用相同的 runtime 边界：adapter 镜像打包锁
    "$HARNESS_PYTHON_BIN" scripts/run_docker_build.py --run-dir <run_dir> --produces <run_dir>/artifacts/source_image_result.json
    ```
 
-2. source 镜像需要上集群做 GPU 验证时，先推远端（gate 脚本自动执行，名称强制
-   `hpc/ai_asr-<model_name>-source:<version>`，证据写入
+2. source 镜像需要上集群做 GPU 验证时，先推到首单元解析的 source 地址（gate 脚本自动执行，证据写入
    `source_image_result.json` 的 `registry_ref`/`registry_push`）。手动等价命令：
 
    ```bash
-   docker tag <source_image_id> <container_registry>/hpc/ai_asr-<model_name>-source:<version>
-   docker push <container_registry>/hpc/ai_asr-<model_name>-source:<version>
+   docker tag <source_image_id> <source_image>
+   docker push <source_image>
    ```
 
 3. 构建 adapter 镜像（`adapter/Dockerfile.sure` 以 digest 固定的 source 镜像为基底，并复制锁定的 Harness Runtime）：
@@ -106,7 +103,7 @@ trans 与 onboard 现在使用相同的 runtime 边界：adapter 镜像打包锁
    ```
 
 4. 在 adapter 镜像内完成 import/load/infer/contract/mcp/equivalence 验证。GPU 模式下
-   gate 脚本会先把 adapter 镜像推为 `hpc/ai_asr-<model_name>:<version>` 再上集群验证，
+   gate 脚本会先把 adapter 镜像推到 `container_delivery.target_image` 再上集群验证，
    证据写入 `adapter_image_result.json` 的 `registry_ref`/`registry_push`。
 
 5. push adapter 镜像，解析 `sha256:...`，按 `repository@sha256:...` 精确 pull，并在 digest-pinned 镜像里复跑 MCP smoke。这是 `package_container` 单元的硬要求。
@@ -121,7 +118,7 @@ trans 与 onboard 现在使用相同的 runtime 边界：adapter 镜像打包锁
 
   ```bash
   env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy \
-  docker push <container_registry>/hpc/ai_asr-<model_name>:<version>
+  docker push <target_image>
   ```
 
 - 退出码看似成功但没有正常 layer push / digest 输出 → 视为失败，记录原始输出。
