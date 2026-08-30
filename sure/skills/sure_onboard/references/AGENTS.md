@@ -1,8 +1,8 @@
 # SURE-EVAL 模型接入 Harness 规范 (第一阶段)
 
 **版本**: v1.0  
-**目标**: 将语音模型仓库接入为**本地验证、容器交付的可复现推理单元**
-**范围**: 环境适配、最小推理验证、镜像发布与不可变运行时绑定
+**目标**: 将模型仓库接入为**本地验证、可复现交付的推理单元**
+**范围**: 环境适配、最小推理验证、容器或受控本地 Python 运行时绑定
 
 ---
 
@@ -14,14 +14,14 @@
 
 ### 1.0 Harness 分支边界覆盖规则
 
-本 `sure_onboard` harness 版本以 **registry-backed container-ready** 为本地模型默认成功条件：
+本 `sure_onboard` harness 版本以 **registry-backed container-ready** 为本地模型默认成功条件，同时提供显式、站点受控的 Python 交付路径：
 
-- `package=docker-registry`：本地模型默认且唯一可成功交付的路径，要求 Docker build、容器验证、push、digest 解析与 pull verify。
+- `package=docker-registry`：本地模型默认成功路径，要求 Docker build、容器验证、push、digest 解析与 pull verify。
 - `package=docker-local`：仅诊断，不能产生 Eval-ready 成功产物。
-- `package=none`：用于 API 或显式本地诊断；本地模型不得产出 success verdict。
+- `package=none`：用于 API，或在站点允许 Python、backend=`uv` 且哈希锁定的 Model Runtime 已物化和封存时用于本地模型；不能用于 VC。
 - VC/HPC submit/validate 不属于核心 `/sure_onboard` 成功条件；如需支持，应作为独立 deployment plugin 或独立 slash command。
 
-当本文档后续历史段落与以上边界冲突时，以本节和 `SKILL.md` 状态机为准。本地适配环境只用于验证和制作镜像，不能成为 `/sure_eval` 的 host fallback。
+当本文档后续历史段落与以上边界冲突时，以本节和 `SKILL.md` 状态机为准。本地适配环境不能被隐式当作 `/sure_eval` 的 host fallback；Python 路径只能解析封存的 Model Runtime。
 
 本文档定义第一阶段模型接入的标准 workflow，确保：
 
@@ -595,13 +595,13 @@ sure/models/{model}/checkpoints/                # 显式本地权重（如有）
 
 ---
 
-## 8. 必选 Docker 镜像制作与可选集群提交
+## 8. Docker 镜像制作与可选集群提交
 
-本节定义本地模型 onboarding 的必选 Docker 交付步骤。Docker registry readiness 属于 `/sure_onboard` 成功条件；VC/HPC submit 仍然是外部部署能力。
+本节定义默认 `package=docker-registry` 和诊断型 `package=docker-local` 的 Docker 交付步骤。显式 `package=none` 按 `SKILL.md` 与 `playbooks/env_uv.md` 的 Model Runtime 契约执行，不进入本节。VC/HPC submit 仍然是外部部署能力。
 
 ### 8.1 适用范围
 
-**本地模型需要制作独立 Docker 镜像**:
+**以下 profile 需要制作独立 Docker 镜像**:
 - `/sure_onboard package=docker-registry`（默认成功路径）
 - `/sure_onboard package=docker-local`（仅诊断）
 - 需要本地 Python/系统依赖、模型权重、GPU/CPU runtime 的模型
@@ -609,8 +609,9 @@ sure/models/{model}/checkpoints/                # 显式本地权重（如有）
 
 **可以跳过**:
 - 纯 API 模型，且运行时只需要远程 endpoint/token
+- 站点允许 Python 且满足封存条件的显式 `package=none` 本地模型
 
-本地模型无法完成 Docker registry 交付时只能记录为 partial/blocked，不能写入 Eval-ready 成功标记。
+选择 `package=docker-registry` 后无法完成 registry 交付时只能记录为 partial/blocked，不能写入 Eval-ready 成功标记；不能静默改成 Python profile。
 
 ### 8.2 镜像命名规则
 

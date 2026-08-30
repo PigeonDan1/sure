@@ -210,7 +210,7 @@ export const MAIN_FLOW_UNITS: Unit[] = [
 		label: "Execution surface",
 		kind: "gate",
 		produces: "execution_surface.json",
-		schemaRef: "execution_surface.schema.json",
+		schemaRef: "execution_surface_v2.schema.json",
 		requiredFields: ["source_provenance", "deployment_binding"],
 		forbiddenFields: ["report_persisted", "execution_path_actual"],
 		gateCheck: checkExecutionSurface,

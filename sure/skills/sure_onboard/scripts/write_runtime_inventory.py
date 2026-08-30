@@ -26,6 +26,9 @@ from deployment_contract import (
     validate_runtime_roles,
 )
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+from sure.runtime.model.bootstrap import manifest_sha256
+
 
 SCHEMA = "sure.onboard.runtime_inventory.v2"
 CORE_FILES = ("model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml", "Dockerfile")
@@ -58,19 +61,13 @@ def load_config(model_dir: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def core_identity(model_dir: Path) -> tuple[dict[str, str], str]:
+def core_identity(model_dir: Path, extra_files: tuple[str, ...] = ()) -> tuple[dict[str, str], str]:
     hashes: dict[str, str] = {}
     for name in CORE_FILES:
         path = model_dir / name
         if path.is_file():
             hashes[name] = sha256_file(path)
-    for name in (
-        "artifacts/weights_manifest.json",
-        "artifacts/docker_build_result.json",
-        "artifacts/docker_validation.json",
-        "artifacts/docker_registry_result.json",
-        "artifacts/package_gate.json",
-    ):
+    for name in ("artifacts/weights_manifest.json", *extra_files):
         path = model_dir / name
         if path.is_file():
             hashes[name] = sha256_file(path)
@@ -82,6 +79,24 @@ def normalize_command(value: object) -> list[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
+def model_runtime_command(config: dict[str, Any], python_executable: str) -> tuple[list[str], list[str]]:
+    server = config.get("server") if isinstance(config.get("server"), dict) else {}
+    command = normalize_command(server.get("command")) or [python_executable, "server.py"]
+    first = command[0]
+    if first in {"python", "python3"} or first.endswith("/python"):
+        command[0] = python_executable
+    else:
+        raise ValueError("package=none server.command must start with a Python executable")
+    tools = [
+        str(tool["name"])
+        for tool in config.get("tools", [])
+        if isinstance(tool, dict) and isinstance(tool.get("name"), str) and tool["name"]
+    ]
+    if not tools:
+        raise ValueError("package=none config.yaml must declare at least one tool name")
+    return command, tools
+
+
 def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
     resolved = read_json(run_dir / "artifacts" / "model_input_resolved.json")
     package = load_artifact(run_dir, model_dir, "package_gate.json")
@@ -91,10 +106,14 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
     deployment_type = str(resolved.get("deployment_type") or "local")
     profile = str(package.get("package_profile") or resolved.get("package_profile") or "none")
     readiness = package.get("readiness") if isinstance(package.get("readiness"), dict) else {}
-    hashes, bundle_identity = core_identity(model_dir)
-
     local_python = relative_existing(build_env.get("python_executable"), model_dir)
     lockfile = relative_existing(build_env.get("lockfile_path"), model_dir)
+    identity_files = tuple(
+        name
+        for name in (lockfile, "artifacts/model_runtime_manifest.json" if profile == "none" else None)
+        if name
+    )
+    hashes, bundle_identity = core_identity(model_dir, identity_files)
     local_runtime = {
         "purpose": "onboard_validation_evidence_only",
         "eligible_for_eval": False,
@@ -168,6 +187,47 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
         }
         status = "ready"
         eval_runtime = "container_only"
+    elif profile == "none" and readiness.get("bundle_ready") is True:
+        manifest = load_artifact(run_dir, model_dir, "model_runtime_manifest.json")
+        command, tool_names = model_runtime_command(config, str(manifest.get("python_executable") or ""))
+        lockfile = relative_existing(build_env.get("lockfile_path"), model_dir)
+        if not lockfile or sha256_file(model_dir / lockfile) != manifest.get("lock_sha256"):
+            raise ValueError("sealed Model Runtime lock does not match the promoted model lockfile")
+        runtime_checks = build_env.get("runtime_checks") if isinstance(build_env.get("runtime_checks"), dict) else {}
+        model_runtime = {
+            "required": True,
+            "schema": manifest.get("schema"),
+            "runtime_id": manifest.get("runtime_id"),
+            "runtime_type": "model_python",
+            "backend": manifest.get("backend"),
+            "python_executable": manifest.get("python_executable"),
+            "python_version": manifest.get("python_version"),
+            "python_abi": manifest.get("python_abi"),
+            "python_platform": manifest.get("python_platform"),
+            "manifest_path": "artifacts/model_runtime_manifest.json",
+            "manifest_sha256": manifest_sha256(manifest),
+            "lockfile_path": lockfile,
+            "lock_sha256": manifest.get("lock_sha256"),
+            "working_dir": ".",
+            "server_command": command,
+            "tool_names": tool_names,
+            "required_imports": [
+                str(item)
+                for item in runtime_checks.get("required_imports", [])
+                if isinstance(item, str) and item
+            ],
+            "gpu_required": bool((config.get("resources") or {}).get("gpu", True))
+            if isinstance(config.get("resources"), dict)
+            else True,
+        }
+        harness_runtime = {
+            "required": True,
+            "runtime_type": "harness_python",
+            "binding_source": "active_eval_site",
+        }
+        container_runtime = {"required": False}
+        status = "ready"
+        eval_runtime = "python"
     else:
         status = "local_only" if readiness.get("local_ready") is True else "partial"
         container_runtime = {"required": profile != "none"}
@@ -200,10 +260,16 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
         "readiness": readiness,
         "evidence": {
             "package_gate": "artifacts/package_gate.json",
-            "docker_build": "artifacts/docker_build_result.json" if deployment_type == "local" else None,
-            "docker_validation": "artifacts/docker_validation.json" if deployment_type == "local" else None,
-            "docker_registry": "artifacts/docker_registry_result.json" if deployment_type == "local" else None,
+            "docker_build": "artifacts/docker_build_result.json" if profile in {"docker-local", "docker-registry"} else None,
+            "docker_validation": "artifacts/docker_validation.json" if profile in {"docker-local", "docker-registry"} else None,
+            "docker_registry": "artifacts/docker_registry_result.json" if profile == "docker-registry" else None,
             "core_sha256": hashes,
+            "model_core_sha256": {
+                name: digest
+                for name, digest in hashes.items()
+                if name in CORE_FILES or name == "artifacts/weights_manifest.json"
+            },
+            "model_runtime_manifest": "artifacts/model_runtime_manifest.json" if profile == "none" else None,
         },
         "policy": {
             "eval_runtime": eval_runtime,

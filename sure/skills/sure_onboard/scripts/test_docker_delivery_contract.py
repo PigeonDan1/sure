@@ -239,6 +239,17 @@ class DockerDeliveryContractTests(unittest.TestCase):
         output = self.run_artifacts / "deployment_ready.json"
         deployment = finalize(self.run_dir, output)
         self.assertEqual(deployment["status"], "ready")
+        self.assertEqual(deployment["schema"], "sure.onboard.deployment_ready.v1")
+        self.assertEqual(
+            deployment["execution_policy"],
+            {
+                "container_only": True,
+                "nfs_models_read_only": True,
+                "host_python_fallback": False,
+                "approved_image_override": False,
+            },
+        )
+        self.assertNotIn("model_runtime", deployment)
         self.assertEqual(deployment["harness_runtime"]["runtime_id"], "sure-harness-test")
         self.assertEqual(read_json(self.model_artifacts / "artifact_manifest.json")["model_dir"], ".")
         proc = self.run_script("check_finalized_bundle.py", output)

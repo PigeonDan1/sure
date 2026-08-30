@@ -1,7 +1,7 @@
 {
 	"name": "sure_eval",
 	"command": "/sure_eval",
-	"description": "Orchestrate a SURE-EVAL evaluation run for an already-onboarded audio model: classify the task, route to deterministic scripts, materialize and gate the execution surface, run locally or via vc according to policy, assess results, and write the run report.",
+	"description": "Orchestrate a SURE-EVAL run for an already-onboarded model: verify its sealed runtime binding, route deterministic evaluation scripts, execute locally or via VC according to policy, and write the run report.",
 	"prompt": "SKILL.md",
 	"hooks": {
 		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],

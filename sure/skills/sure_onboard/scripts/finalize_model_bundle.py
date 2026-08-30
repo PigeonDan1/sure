@@ -20,6 +20,7 @@ TERMINAL_ARTIFACTS = (
     "package_gate.json",
     "runtime_inventory.json",
     "verdict.json",
+    "model_runtime_manifest.json",
     "docker_build_result.json",
     "docker_validation.json",
     "docker_registry_result.json",
@@ -44,8 +45,10 @@ def json_bytes(value: dict[str, Any]) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
 
 
-def copy_terminal_artifacts(run_dir: Path, model_dir: Path) -> None:
+def copy_terminal_artifacts(run_dir: Path, model_dir: Path, profile: str) -> None:
     for name in TERMINAL_ARTIFACTS:
+        if profile == "none" and name.startswith("docker_"):
+            continue
         source = run_dir / "artifacts" / name
         if source.is_file():
             destination = model_dir / "artifacts" / name
@@ -68,7 +71,14 @@ def update_manifest(model_dir: Path, resolved: dict[str, Any]) -> dict[str, Any]
     path = model_dir / "artifacts" / "artifact_manifest.json"
     manifest = read_json(path)
     required = manifest.setdefault("artifacts", {}).setdefault("required", {})
-    for name in (*TERMINAL_ARTIFACTS, "artifact_manifest.json", "deployment_ready.json"):
+    profile = str(resolved.get("package_profile") or "none")
+    finalized = [
+        name
+        for name in TERMINAL_ARTIFACTS
+        if (profile != "none" or not name.startswith("docker_"))
+        and (model_dir / "artifacts" / name).is_file()
+    ]
+    for name in (*finalized, "artifact_manifest.json", "deployment_ready.json"):
         key = name.replace(".", "_").replace("-", "_")
         required[key] = {"path": f"artifacts/{name}", "description": f"Finalized onboard artifact: {name}."}
     manifest.update(
@@ -90,20 +100,22 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict[str, A
     verdict = read_json(model_dir / "artifacts" / "verdict.json")
     profile = str(package.get("package_profile") or "none")
     deployment_type = str(resolved.get("deployment_type") or "local")
+    python_delivery = deployment_type == "local" and profile == "none"
     success = str(verdict.get("status")) in {"passed", "success", "PASS", "PASSED", "pass"}
     if deployment_type == "local" and profile == "docker-registry" and success and inventory.get("status") == "ready":
         status = "ready"
-        container_only = True
+    elif python_delivery and success and inventory.get("status") == "ready":
+        status = "ready"
     elif deployment_type == "api" and success and inventory.get("status") == "api_ready":
         status = "api_ready"
-        container_only = False
     else:
         status = "local_only"
-        container_only = False
 
     required_names = ["runtime_inventory.json", "package_gate.json", "verdict.json", "artifact_manifest.json"]
-    if status == "ready":
+    if status == "ready" and profile == "docker-registry":
         required_names.extend(["docker_build_result.json", "docker_validation.json", "docker_registry_result.json"])
+    if status == "ready" and python_delivery:
+        required_names.append("model_runtime_manifest.json")
     hashes = {
         f"artifacts/{name}": sha256_file(model_dir / "artifacts" / name)
         for name in required_names
@@ -113,10 +125,34 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict[str, A
     ).hexdigest()
     container = inventory.get("container_runtime") if isinstance(inventory.get("container_runtime"), dict) else {}
     harness_runtime = inventory.get("harness_runtime") if isinstance(inventory.get("harness_runtime"), dict) else {}
-    if status == "ready":
+    model_runtime = inventory.get("model_runtime") if isinstance(inventory.get("model_runtime"), dict) else {}
+    if status == "ready" and profile == "docker-registry":
         harness_runtime = normalize_harness_runtime(harness_runtime, allow_derive=False)
-    return {
-        "schema": "sure.onboard.deployment_ready.v1",
+    execution_policy = (
+        {
+            "container_only": False,
+            "eval_runtime": "python",
+            "isolation": "trusted_host",
+            "model_integrity": "verify_before_after",
+            "nfs_models_read_only": False,
+            "model_bundle_mutation_allowed": False,
+            "host_python_fallback": False,
+            "approved_image_override": False,
+        }
+        if python_delivery
+        else {
+            "container_only": status != "api_ready" and profile == "docker-registry",
+            "nfs_models_read_only": True,
+            "host_python_fallback": False,
+            "approved_image_override": False,
+        }
+    )
+    deployment = {
+        "schema": (
+            "sure.onboard.deployment_ready.v2"
+            if python_delivery
+            else "sure.onboard.deployment_ready.v1"
+        ),
         "generated_at": now_iso(),
         "status": status,
         "model_name": str(resolved.get("model_name") or model_dir.name),
@@ -146,18 +182,16 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict[str, A
         "artifact_manifest": "artifacts/artifact_manifest.json",
         "required_artifact_sha256": hashes,
         "bundle_identity_sha256": bundle_identity,
-        "execution_policy": {
-            "container_only": container_only,
-            "nfs_models_read_only": True,
-            "host_python_fallback": False,
-            "approved_image_override": False,
-        },
+        "execution_policy": execution_policy,
     }
+    if python_delivery:
+        deployment["model_runtime"] = model_runtime if status == "ready" else {}
+    return deployment
 
 
 def finalize(run_dir: Path, produces: Path) -> dict[str, Any]:
     model_dir, resolved = resolve_model_dir(run_dir)
-    copy_terminal_artifacts(run_dir, model_dir)
+    copy_terminal_artifacts(run_dir, model_dir, str(resolved.get("package_profile") or "none"))
     package = update_package_gate(run_dir, model_dir)
     update_manifest(model_dir, resolved)
     deployment = build_deployment_ready(run_dir, model_dir, resolved, package)

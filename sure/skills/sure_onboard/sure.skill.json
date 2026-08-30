@@ -1,7 +1,7 @@
 {
 	"name": "sure_onboard",
 	"command": "/sure_onboard",
-	"description": "Onboard or repair an audio model, validate it locally and in Docker, publish a digest-pinned image, and seal a container-only Eval deployment bundle.",
+	"description": "Onboard or repair a model, validate its inference contract, and seal either a digest-pinned container or a site-approved local Python Eval binding.",
 	"prompt": "SKILL.md",
 	"hooks": {
 		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
@@ -44,19 +44,19 @@
 			"type": "package_gate",
 			"path": "artifacts/package_gate.json",
 			"required": false,
-			"description": "Docker registry package readiness gate result."
+			"description": "Selected package profile readiness gate result."
 		},
 		{
 			"type": "runtime_inventory",
 			"path": "artifacts/runtime_inventory.json",
 			"required": true,
-			"description": "Container-only Eval runtime binding."
+			"description": "Sealed container or local Python Eval runtime binding."
 		},
 		{
 			"type": "deployment_ready",
 			"path": "artifacts/deployment_ready.json",
 			"required": true,
-			"description": "Terminal portable bundle and immutable image readiness marker."
+			"description": "Terminal portable bundle and approved runtime readiness marker."
 		}
 	],
 	"ui": {

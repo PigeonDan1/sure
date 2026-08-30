@@ -42,6 +42,19 @@
 			},
 			"additionalProperties": true
 		},
+		"model_runtime": {
+			"type": "object",
+			"required": ["schema", "runtime_id", "backend", "python_executable", "manifest_sha256", "lock_sha256"],
+			"properties": {
+				"schema": { "const": "sure.model.runtime.manifest.v1" },
+				"runtime_id": { "type": "string", "pattern": "^sure-model-python-v1-[0-9a-f]{24}$" },
+				"backend": { "const": "uv" },
+				"python_executable": { "const": "bin/python" },
+				"manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+				"lock_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+			},
+			"additionalProperties": false
+		},
 		"repairs": {
 			"type": "array",
 			"items": {

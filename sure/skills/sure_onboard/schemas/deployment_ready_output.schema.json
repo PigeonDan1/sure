@@ -1,0 +1,27 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "deployment_ready_output.schema.json",
+	"title": "SURE finalized deployment output envelope",
+	"type": "object",
+	"required": ["schema", "generated_at", "status", "model_name", "package_profile", "execution_policy", "required_artifact_sha256", "bundle_identity_sha256"],
+	"properties": {
+		"schema": { "enum": ["sure.onboard.deployment_ready.v1", "sure.onboard.deployment_ready.v2"] },
+		"generated_at": { "type": "string" },
+		"status": { "enum": ["ready", "local_only", "api_ready", "blocked"] },
+		"model_name": { "type": "string" },
+		"package_profile": { "enum": ["none", "docker-local", "docker-registry"] },
+		"target_image": { "type": ["string", "null"] },
+		"target_image_digest": { "type": ["string", "null"] },
+		"target_image_ref": { "type": ["string", "null"] },
+		"harness_runtime": { "type": "object" },
+		"model_runtime": { "type": "object" },
+		"runtime_inventory": { "type": "string" },
+		"package_gate": { "type": "string" },
+		"verdict": { "type": "string" },
+		"artifact_manifest": { "type": "string" },
+		"required_artifact_sha256": { "type": "object" },
+		"bundle_identity_sha256": { "type": "string" },
+		"execution_policy": { "type": "object" }
+	},
+	"additionalProperties": false
+}

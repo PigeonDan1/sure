@@ -15,8 +15,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
 from model_child_env import model_child_env
+from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
+from sure.site.loader import SitePolicyError, load_site_policy
 
 
 LOCAL_RUNTIME_BACKENDS = {"uv", "pip", "conda", "pixi"}
@@ -88,6 +92,48 @@ def string_list(value: object) -> list[str]:
 
 def resolved_model_input(run_dir: Path) -> dict[str, Any] | None:
     return load_json(run_dir / "artifacts" / "model_input_resolved.json")
+
+
+def verify_sealed_model_runtime(
+    data: dict[str, Any],
+    *,
+    run_dir: Path,
+    repo_root: Path,
+) -> tuple[Path, dict[str, Any]]:
+    resolved = resolved_model_input(run_dir) or {}
+    if resolved.get("deployment_type") != "local" or resolved.get("package_profile") != "none":
+        raise ValueError("sealed Model Runtime verification only applies to local package=none")
+    if data.get("backend") != "uv":
+        raise ValueError("local package=none initially requires backend=uv")
+    binding = data.get("model_runtime")
+    if not isinstance(binding, dict):
+        raise ValueError("local package=none requires build_env_result.model_runtime")
+    manifest = load_json(run_dir / "artifacts" / "model_runtime_manifest.json")
+    if not manifest:
+        raise ValueError("local package=none requires model_runtime_manifest.json")
+    if binding.get("runtime_id") != manifest.get("runtime_id"):
+        raise ValueError("build_env_result Model Runtime ID disagrees with its manifest")
+    if binding.get("manifest_sha256") != manifest_sha256(manifest):
+        raise ValueError("build_env_result Model Runtime manifest hash mismatch")
+    try:
+        policy = load_site_policy(repository_root=repo_root, required=True)
+        assert policy is not None
+        if "local" not in policy["policy"]["execution"]["surfaces"]:
+            raise ValueError("local Python runtimes require local in execution.surfaces")
+        if "python" not in policy["policy"]["execution"]["local_runtimes"]:
+            raise ValueError("local Python runtimes are disabled by execution.local_runtimes")
+        contract = verify_runtime(
+            Path(policy["policy"]["storage"]["runtime_root"]) / "models",
+            manifest,
+        )
+    except (ModelRuntimeError, SitePolicyError) as exc:
+        raise ValueError(str(exc)) from exc
+    python = Path(contract["python_executable_resolved"])
+    declared = Path(str(data.get("python_executable") or "")).expanduser()
+    declared_entrypoint = declared.parent.resolve() / declared.name
+    if declared_entrypoint != python:
+        raise ValueError("build_env_result.python_executable is not the sealed site Model Python")
+    return python, contract
 
 
 def resolve_python_executable(
@@ -294,14 +340,22 @@ def main() -> int:
             return 1
 
     if backend in LOCAL_RUNTIME_BACKENDS:
-        python_executable, python_error = resolve_python_executable(
-            data,
-            backend=backend,
-            run_dir=run_dir,
-            artifact_path=path,
-            model_dir=model_dir,
-            repo_root=repo_root,
-        )
+        resolved = resolved_model_input(run_dir) or {}
+        if resolved.get("deployment_type") == "local" and resolved.get("package_profile") == "none":
+            try:
+                python_executable, _ = verify_sealed_model_runtime(data, run_dir=run_dir, repo_root=repo_root)
+                python_error = None
+            except ValueError as exc:
+                python_executable, python_error = None, f"BUILD_ENV gate: {exc}"
+        else:
+            python_executable, python_error = resolve_python_executable(
+                data,
+                backend=backend,
+                run_dir=run_dir,
+                artifact_path=path,
+                model_dir=model_dir,
+                repo_root=repo_root,
+            )
         if python_error:
             print(python_error, file=sys.stderr)
             return 1

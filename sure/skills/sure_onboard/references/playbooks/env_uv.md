@@ -50,12 +50,25 @@ uv pip install -e .
 ## Lock/Sync 约定
 
 ```bash
-# 导出精确依赖
-uv pip freeze > requirements.lock
+# 从项目依赖生成带哈希的可复现锁文件
+uv pip compile \
+  --python .venv/bin/python \
+  --generate-hashes \
+  requirements.txt \
+  -o requirements.lock
 
-# 从 lock 恢复
-uv pip install -r requirements.lock
+# 严格按 lock 恢复，删除未声明包并校验每个分发包哈希
+uv pip sync \
+  --python .venv/bin/python \
+  --require-hashes \
+  --strict \
+  requirements.lock
 ```
+
+若项目以 `pyproject.toml` 声明依赖，将 `requirements.txt` 换成
+`pyproject.toml`。`uv pip freeze` 只记录已安装版本，不记录分发包哈希，不能作为
+`package=none` 的可提升锁文件。完成模型本地验证后，由 Harness Python 运行
+`scripts/materialize_model_runtime.py`；不要把 `.venv` 本身当作 Eval runtime。
 
 ## 常见失败和修复
 

@@ -4,7 +4,7 @@ import type { GateResult } from "./checkpoints.ts";
 // SURE-EVAL model-tool agent state machine, ported from the upstream
 // SURE-EVAL model_tool_agent AGENTS.md (now bundled in references/).
 //
-// Onboards or repairs an audio model into a reproducible local inference unit
+// Onboards or repairs a model into a reproducible local inference unit
 // (wrapper set + spec + verdict) under sure/models/<model_name>/. Linear units
 // are LLM self-driven (advance when produces is compliant); gate units run
 // validateProduces + a Python semantic gate script and block on failure.
@@ -158,6 +158,7 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		schemaRef: "build_env_result.schema.json",
 		requiredFields: ["env_ready"],
 		gateScript: "check_env.py",
+		helperScripts: ["materialize_model_runtime.py"],
 	},
 	{
 		id: "fetch_weights",
@@ -277,7 +278,7 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		label: "Finalize model bundle",
 		kind: "gate",
 		produces: "deployment_ready.json",
-		schemaRef: "deployment_ready.schema.json",
+		schemaRef: "deployment_ready_output.schema.json",
 		requiredFields: ["schema", "status", "model_name", "package_profile", "execution_policy"],
 		gateScript: "check_finalized_bundle.py",
 		helperScripts: ["finalize_model_bundle.py"],

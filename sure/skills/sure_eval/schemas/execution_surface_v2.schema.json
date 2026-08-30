@@ -1,0 +1,69 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "execution_surface_v2.schema.json",
+	"title": "SURE-EVAL execution surface v2",
+	"description": "Execution surface for versioned container or trusted-host Python deployment bindings.",
+	"type": "object",
+	"required": ["source_provenance", "deployment_binding"],
+	"properties": {
+		"run_id": { "type": "string" },
+		"timestamp": { "type": "string" },
+		"execution_surface_type": { "type": "string" },
+		"materialized": { "type": "boolean" },
+		"entrypoint": { "type": "string" },
+		"entrypoint_path": { "type": "string" },
+		"entrypoint_path_actual": { "type": "string" },
+		"execution": { "type": "object", "additionalProperties": true },
+		"deployment_binding": {
+			"type": "object",
+			"required": ["schema", "runtime_kind", "execution_mode", "model_mount_read_only", "result_mount_writable"],
+			"properties": {
+				"schema": { "const": "sure.eval.deployment_binding.v2" },
+				"runtime_kind": { "enum": ["container", "python"] },
+				"target_image_ref": { "type": ["string", "null"], "pattern": "@sha256:[0-9a-f]{64}$" },
+				"bundle_identity_sha256": { "type": ["string", "null"] },
+				"execution_mode": { "enum": ["container_only", "python"] },
+				"model_mount_read_only": { "type": "boolean" },
+				"model_integrity": { "enum": ["image_digest", "verify_before_after"] },
+				"result_mount_writable": { "const": true }
+			},
+			"additionalProperties": false
+		},
+		"inference_runtime": { "type": "object", "additionalProperties": true },
+		"evaluation_runtime": { "type": "object", "additionalProperties": true },
+		"vc_runtime": { "type": "object", "additionalProperties": true },
+		"generation_method": { "type": "string" },
+		"source_provenance": {
+			"type": "object",
+			"required": ["template_file"],
+			"properties": {
+				"template_file": { "type": "string" },
+				"template_sha256": { "type": "string" },
+				"source_template_file": { "type": "string" },
+				"source_template_sha256": { "type": "string" },
+				"mirror_template_file": { "type": "string" },
+				"mirror_template_sha256": { "type": "string" },
+				"files_read_during_generation": { "type": "array", "items": { "type": "string" } },
+				"isolation_compliance": {
+					"type": "object",
+					"properties": {
+						"eval_runs_referenced": { "type": "boolean" },
+						"prior_run_scripts_copied": { "type": "boolean" },
+						"template_parameters_deviated": { "type": "array", "items": { "type": "string" } },
+						"deviation_approved_by_user": { "type": "boolean" }
+					},
+					"additionalProperties": true
+				},
+				"materialized_at": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"resolved_inputs": { "type": "object", "additionalProperties": true },
+		"expected_outputs": { "type": "object", "additionalProperties": true },
+		"commands": { "type": "array", "items": { "type": "string" } },
+		"env": { "type": "object", "additionalProperties": { "type": "string" } },
+		"reason": { "type": "string" },
+		"notes": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}

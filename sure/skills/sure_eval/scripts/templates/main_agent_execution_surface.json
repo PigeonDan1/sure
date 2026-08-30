@@ -15,11 +15,13 @@
     "reason": ""
   },
   "deployment_binding": {
-    "schema": "sure.eval.deployment_binding.v1",
+    "schema": "sure.eval.deployment_binding.v2",
+    "runtime_kind": "container",
     "target_image_ref": "",
     "bundle_identity_sha256": null,
     "execution_mode": "container_only",
     "model_mount_read_only": true,
+    "model_integrity": "image_digest",
     "result_mount_writable": true
   },
   "inference_runtime": {

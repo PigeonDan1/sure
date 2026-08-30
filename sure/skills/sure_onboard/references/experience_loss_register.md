@@ -3,8 +3,9 @@
 This register tracks experience assets from the original
 `docs/agents/model_tool_agent` that must stay active in the harness port.
 It focuses on task, fixture, metric, environment, and failure-handling
-knowledge. Docker/registry delivery is required for local-model success; only
-VC submission remains outside this skill.
+knowledge. Docker/registry delivery remains the default for local-model success;
+an explicit site-approved sealed Python profile is also valid. VC submission
+remains outside this skill.
 
 ## P0 Restores
 
@@ -30,5 +31,5 @@ VC submission remains outside this skill.
 
 | Source experience | Harness decision |
 | --- | --- |
-| `deployment_type == local` must finish Docker and registry pull verification before final passed/tool_ready. | Restored as the default `package=docker-registry` gate. VC/HPC remains an external deployment skill. |
+| `deployment_type == local` must finish the selected delivery gate before final passed/tool_ready. | `package=docker-registry` remains the default and requires registry pull verification. Explicit `package=none` instead requires a sealed, site-approved uv Model Runtime. VC/HPC remains an external deployment skill. |
 | Company-specific VC command examples. | Keep as external deployment notes; do not add VC submission to `/sure_onboard`. |

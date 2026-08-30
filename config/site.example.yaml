@@ -19,3 +19,6 @@ datasets:
 execution:
   surfaces:
     - local
+  local_runtimes:
+    - python
+    - container

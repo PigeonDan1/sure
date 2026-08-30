@@ -49,6 +49,25 @@ class VcDefaultPartitionTest(unittest.TestCase):
         self.assertIn("execution.vc_default_partition", str(raised.exception))
 
 
+class LocalRuntimeTest(unittest.TestCase):
+    def test_omitted_local_runtimes_remain_container_only(self) -> None:
+        policy = validate_site_policy(_policy(execution={"surfaces": ["local"]}))
+        self.assertEqual(policy["execution"]["local_runtimes"], ["container"])
+
+    def test_python_runtime_requires_explicit_site_permission(self) -> None:
+        policy = validate_site_policy(
+            _policy(execution={"surfaces": ["local"], "local_runtimes": ["python", "container"]})
+        )
+        self.assertEqual(policy["execution"]["local_runtimes"], ["python", "container"])
+
+    def test_rejects_an_unsupported_local_runtime(self) -> None:
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(
+                _policy(execution={"surfaces": ["local"], "local_runtimes": ["virtualenv"]})
+            )
+        self.assertIn("execution.local_runtimes", str(raised.exception))
+
+
 class ContainerRegistryTest(unittest.TestCase):
     def test_container_registry_is_returned(self) -> None:
         policy = validate_site_policy(_policy(network={"container_registry": "registry.example/hpc"}))

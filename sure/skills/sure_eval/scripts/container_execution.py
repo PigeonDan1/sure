@@ -9,6 +9,7 @@ from typing import Any
 
 from harness_runtime import harness_runtime_from_eval_input
 from evaluation_runtime import evaluation_runtime_from_eval_input
+from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -29,7 +30,10 @@ def deployment_binding(eval_input: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(binding, dict):
         runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
         binding = runtime.get("deployment_binding")
-    if not isinstance(binding, dict) or binding.get("schema") != "sure.eval.deployment_binding.v1":
+    if not isinstance(binding, dict) or binding.get("schema") not in {
+        DEPLOYMENT_BINDING_V1,
+        DEPLOYMENT_BINDING_V2,
+    }:
         raise ValueError("eval input does not contain an approved deployment binding")
     policy = binding.get("policy") if isinstance(binding.get("policy"), dict) else {}
     if policy.get("execution_mode") != "container_only" or policy.get("host_python_fallback") is not False:

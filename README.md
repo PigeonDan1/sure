@@ -22,9 +22,9 @@ A model score is useful only when people can establish exactly how it was produc
 SURE gives you both automation and experimental credibility:
 
 - **Deploy and evaluate with integrated commands.** Start a complete discovery, adaptation, deployment, or evaluation stage with one slash command instead of manually assembling scripts and environments.
-- **Reproduce the whole system, not just the score.** Every result is tied to the inference implementation, model and Harness Runtime, immutable image digest, parameters, dataset version, evaluation engine commit, exact pipeline, and reports.
+- **Reproduce the whole system, not just the score.** Every result is tied to the inference implementation, model and Harness Runtime, immutable deployment identity, parameters, dataset version, evaluation engine commit, exact pipeline, and reports.
 - **Make results credible and comparable.** Two results can be compared against the concrete framework, configuration, inputs, normalization, and metric route that produced them, rather than against an unexplained number.
-- **Keep automation accountable.** Agents handle research and adaptation, while deterministic state machines, schemas, smoke tests, and container checks reject incomplete or inconsistent work.
+- **Keep automation accountable.** Agents handle research and adaptation, while deterministic state machines, schemas, smoke tests, and runtime-specific checks reject incomplete or inconsistent work.
 
 The central promise is simple: SURE reduces deployment and evaluation work without trading away reproducibility. Convenience comes with a complete evidence chain.
 
@@ -39,11 +39,11 @@ Model repository       Runnable deployment       Predictions + metrics       New
 | Workflow | What the agent does | Reproducible product |
 | --- | --- | --- |
 | Discover | Researches a Hugging Face, ModelScope, or GitHub model and resolves its capabilities, runtime, fixtures, and I/O contract | Canonical `model_input.yaml` plus source evidence |
-| Onboard | Adapts and validates the model, generates a runnable inference package when needed, and seals local models in a digest-pinned OCI image | Portable model bundle plus `deployment_ready.json` |
+| Onboard | Adapts and validates the model, generates a runnable inference package when needed, and seals local models as a digest-pinned OCI image or content-addressed Python runtime | Portable model bundle plus `deployment_ready.json` |
 | Evaluate | Runs approved inference, resolves a deterministic evaluation route, and computes metrics | Predictions, protocol, reports, metrics, and sample-level evidence |
 | Re-evaluate | Reuses approved predictions with an explicit pipeline | A new evaluation batch without repeating inference |
 
-For common PyTorch and Transformers models, the onboarding agent can synthesize missing load and inference adapters from upstream documentation and source evidence. Every generated path must still pass local, container, interface, and artifact-contract gates before it can be marked ready.
+For common PyTorch and Transformers models, the onboarding agent can synthesize missing load and inference adapters from upstream documentation and source evidence. Every generated path must still pass environment, selected-runtime, interface, and artifact-contract gates before it can be marked ready.
 
 Promotion is intentionally human-reviewed. SURE stages model bundles and evaluation results, but it never silently copies them into configured approved storage. This keeps convenience from weakening the experiment's trust boundary.
 
@@ -64,9 +64,9 @@ The following path was designed for a Bash-compatible Linux environment.
 - Git
 - Python 3.11 and [uv](https://docs.astral.sh/uv/)
 - Credentials for at least one supported coding-agent provider
-- Docker and access to an OCI registry when onboarding or evaluating a local model
+- Docker and access to an OCI registry when using the `docker-registry` profile or VC execution
 
-The registry must support authenticated push and digest-pinned pull from the machine that runs SURE. API-only model onboarding does not require a local model image.
+The registry must support authenticated push and digest-pinned pull from the machine that runs SURE. API-only onboarding and local `package=none` Python execution do not require a model image.
 
 ### 2. Clone and install
 
@@ -111,6 +111,9 @@ datasets:
 execution:
   surfaces:
     - local
+  local_runtimes:
+    - python
+    - container
 EOF
 
 npm run sure:site-info
@@ -167,7 +170,7 @@ Consume the handoff by its normalized directory name:
 /sure_onboard model=Qwen__Qwen3-ASR-1.7B
 ```
 
-For a local model, SURE researches the upstream implementation, materializes an isolated model runtime, generates or repairs the adapter, validates import/load/inference and the tool contract, builds an OCI image, pushes it, and verifies the immutable digest. A successful bundle ends with:
+For a local model, SURE researches the upstream implementation, materializes an isolated build environment, generates or repairs the adapter, and validates import, load, inference, and the tool contract. The selected package profile then seals either a digest-pinned OCI image or a content-addressed Model Python runtime. A successful bundle ends with:
 
 ```text
 sure/models/Qwen__Qwen3-ASR-1.7B/artifacts/deployment_ready.json
@@ -175,7 +178,13 @@ sure/models/Qwen__Qwen3-ASR-1.7B/artifacts/deployment_ready.json
 
 `deployment_ready.json` is a readiness marker, not an approval. Review the complete model directory, then copy that directory into one of the configured `approved_models_roots`. `/sure_eval` only accepts the exact directory name below an approved root.
 
-Local models require the default `docker-registry` package profile and a usable registry; a local-only Docker tag is not Eval-ready. See [`/sure_onboard`](./sure/skills/sure_onboard/SKILL.md) for API models, explicit handoff paths, device selection, and repair flows.
+Omitting `package` keeps the default `docker-registry` profile. For a self-hosted local evaluation that does not need Docker, select the Python profile explicitly:
+
+```text
+/sure_onboard model=Qwen__Qwen3-ASR-1.7B package=none
+```
+
+The Python profile requires the `uv` backend, a hash-locked requirements file, and `python` in the site's `execution.local_runtimes`. SURE seals a portable runtime identity into the promoted model bundle and resolves the matching runtime below `storage.runtime_root` during `/sure_eval`. It never accepts an arbitrary host Python or model-local `.venv`, and Python deployments cannot be submitted to VC. See [`/sure_onboard`](./sure/skills/sure_onboard/SKILL.md) for API models, explicit handoff paths, device selection, and repair flows.
 
 ### Evaluate an approved model with `/sure_eval`
 

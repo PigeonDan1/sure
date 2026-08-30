@@ -226,6 +226,7 @@ class DeploymentBindingTests(unittest.TestCase):
 
     def test_loads_exact_digest_binding(self) -> None:
         binding = load_deployment_binding(self.model, "demo")
+        self.assertEqual(binding["schema"], "sure.eval.deployment_binding.v2")
         self.assertEqual(binding["target_image_ref"], self.image_ref)
         self.assertTrue(binding["container"]["model_mount"]["read_only"])
 

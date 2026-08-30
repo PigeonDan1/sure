@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from container_execution import build_local_container_command, effective_container_exit_code
+from python_execution import build_local_python_command, verify_model_integrity
 
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -254,21 +255,36 @@ def main() -> int:
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / "smoke_test.log"
     device_request = _device_request(surface, eval_input)
-    command, _ = build_local_container_command(
-        surface=surface,
-        eval_input=eval_input,
-        control_run_dir=run_dir.resolve(),
-        entrypoint=entrypoint_path.resolve(),
-        repo_root=Path(__file__).resolve().parents[4],
-        device_request=device_request,
-        extra_env={
-            **_local_device_env(device_request),
-            "SMOKE_ONLY": "1",
-            "SMOKE_TEST_SAMPLES": str(smoke_samples),
-            "SURE_EVAL_EXECUTION_PATH": "local_docker_smoke",
-            "SURE_EVAL_EXECUTION_REQUESTED": _execution_requested(surface),
-        },
-    )
+    binding = (eval_input.get("model") or {}).get("deployment_binding") or (
+        eval_input.get("runtime") or {}
+    ).get("deployment_binding") or {}
+    runtime_kind = str(binding.get("runtime_kind") or "container")
+    extra_env = {
+        **_local_device_env(device_request),
+        "SMOKE_ONLY": "1",
+        "SMOKE_TEST_SAMPLES": str(smoke_samples),
+        "SURE_EVAL_EXECUTION_PATH": f"local_{runtime_kind}_smoke",
+        "SURE_EVAL_EXECUTION_REQUESTED": _execution_requested(surface),
+    }
+    if runtime_kind == "python":
+        command, process_env, _ = build_local_python_command(
+            surface=surface,
+            eval_input=eval_input,
+            entrypoint=entrypoint_path.resolve(),
+            repo_root=Path(__file__).resolve().parents[4],
+            extra_env=extra_env,
+        )
+    else:
+        command, _ = build_local_container_command(
+            surface=surface,
+            eval_input=eval_input,
+            control_run_dir=run_dir.resolve(),
+            entrypoint=entrypoint_path.resolve(),
+            repo_root=Path(__file__).resolve().parents[4],
+            device_request=device_request,
+            extra_env=extra_env,
+        )
+        process_env = os.environ.copy()
 
     exit_code = 1
     try:
@@ -276,7 +292,7 @@ def main() -> int:
             completed = subprocess.run(
                 command,
                 cwd=str(Path(__file__).resolve().parents[4]),
-                env=os.environ.copy(),
+                env=process_env,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -298,7 +314,16 @@ def main() -> int:
         return 1
 
     log_text = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
-    exit_code = effective_container_exit_code(exit_code, log_text)
+    if runtime_kind == "container":
+        exit_code = effective_container_exit_code(exit_code, log_text)
+    else:
+        try:
+            verify_model_integrity(binding)
+        except ValueError as exc:
+            exit_code = exit_code or 70
+            log_text += f"\nMODEL_INTEGRITY_VIOLATION: {exc}\n"
+            with log_path.open("a", encoding="utf-8") as log:
+                log.write(f"\nMODEL_INTEGRITY_VIOLATION: {exc}\n")
     canonical_dataset = _canonical_dataset(eval_input, dataset)
     pred_path = eval_run_dir / "predictions" / f"{canonical_dataset}.txt"
     total, valid = _count_valid_predictions(pred_path)

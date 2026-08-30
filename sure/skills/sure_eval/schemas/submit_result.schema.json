@@ -8,8 +8,9 @@
 	"properties": {
 		"execution_path": {
 			"type": "string",
-			"enum": ["vc_submit", "local_bash", "local_docker"]
+			"enum": ["vc_submit", "local_bash", "local_docker", "local_python"]
 		},
+		"runtime_kind": { "type": "string", "enum": ["container", "python"] },
 		"vc_available": {
 			"type": "boolean",
 			"description": "True when `which vc && vc info` both pass (set by scripts/vc_check.py)."

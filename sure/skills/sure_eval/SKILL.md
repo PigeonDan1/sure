@@ -1,11 +1,11 @@
 ---
 name: sure-eval
-description: Run reproducible inference from an approved NFS model's immutable container binding, then execute the selected evaluation pipeline and stage complete results for review.
+description: Run reproducible inference from an approved model's sealed container or local Python binding, then execute the selected evaluation pipeline and stage complete results for review.
 ---
 
 # /sure_eval
 
-Orchestrate inference plus deterministic evaluation for an audio model that has been human-approved into a configured `approved_models_roots` directory. Approved storage is read-only; new evaluation products are staged under repository-local `sure/results` for later human promotion.
+Orchestrate inference plus deterministic evaluation for a model that has been human-approved into a configured `approved_models_roots` directory. Container bindings mount approved storage read-only. A site-approved Python binding runs on a trusted host and verifies model-core hashes before and after execution. New evaluation products are staged under repository-local `sure/results` for later human promotion.
 
 A private distribution may carry an upstream main-flow mirror under `references/main_flow_agent/` for audit and parity review only. The public distribution omits that mirror. It is never a runtime template or execution source; adapt harness execution only under this skill package.
 
@@ -24,8 +24,8 @@ Control principle: **agent decides scope, scripts enforce format and execution.*
 | `device` | — | `auto \| cpu \| cuda \| cuda:<index>`. Default `auto`; resolved by `scripts/resolve_eval_input.py` and passed through inference/evaluation templates when materialized. For `execution=local`, `cuda:<index>` selects the local host GPU by setting `CUDA_VISIBLE_DEVICES=<index>`. For `execution=vc`, the allocated container GPU is addressed as `cuda:0`; choose hardware with `vc_partition`/`vc_gpu`, not a host CUDA ordinal. |
 | `target` | — | Target metric or paper to compare against. |
 | `max_samples` | — | Sample cap for bounded validation runs. Omitted or `0` means full dataset. |
-| `execution` | — | `auto \| local \| vc`. Default `auto`; `local` is an explicit user choice, `vc` requires a real vc submission, `auto` prefers vc when available. |
-| `execution_path` | — | Legacy alias: `auto \| vc_submit \| local_docker`. `local_bash` is normalized to `local_docker`; host inference is forbidden. |
+| `execution` | — | `auto \| local \| vc`. Default `auto`; containers prefer VC when available, while approved Python runtimes are local-only. `vc` requires an approved container and a real submission. |
+| `execution_path` | — | Legacy alias: `auto \| vc_submit \| local_docker \| local_python`. `local_bash` is normalized to the approved local runtime; arbitrary host inference is forbidden. |
 | `vc_partition` / `vc_cpu` / `vc_mem` / `vc_gpu` | — | Optional VC resource overrides. The image cannot be overridden and always comes from the approved deployment binding. |
 | `metrics` | — | Comma-separated reported metrics, e.g. `metrics=cer`. Selects the current default route per metric; use an exact `pipeline_id` via `/sure_reval` for route variants. |
 | `vc_job_name` | — | Optional vc job name recorded with the submit result. |
@@ -102,16 +102,16 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 Each unit must satisfy: **Inputs** (previous unit's produces + evidence sources to read) → **Output** (`produces` JSON, schema in `schemas/`) → **Allowed** (value domain) → **Must Not Do** (forbidden fields that belong to later units — anti step-merge) → **Failure** classification.
 
 - **task_classification**: Inputs = `eval_input_resolved.json` + exact NFS model. Output = `task_classification.json` {task_type, reason, need_tool_workflow, confidence, input_signals}. Allowed: task_type ∈ {onboarding_then_evaluate,evaluate_existing_model,repair_broken_model,audit_results}. Must Not Do: do not select datasets or set `execution_path`/`report_persisted` (later units).
-- **tool_readiness_routing**: Inputs = exact approved NFS model with `artifacts/deployment_ready.json`, `runtime_inventory.json`, `package_gate.json`, and their declared hashes. Local readiness requires `docker-registry`, `container_only`, a digest-pinned image, disabled image/host overrides, and a read-only NFS model policy. Missing or inconsistent fields route back to `/sure_onboard` and human promotion.
+- **tool_readiness_routing**: Inputs = exact approved NFS model with `artifacts/deployment_ready.json`, `runtime_inventory.json`, `package_gate.json`, and their declared hashes. Readiness requires either a `docker-registry`/digest-pinned/container-only binding, or a `package=none`/uv/content-addressed Python binding permitted by the active site. Python additionally requires model-core hashes and the matching site runtime. Missing or inconsistent fields route back to `/sure_onboard` and human promotion.
 - **plan**: Inputs = task classification + tool readiness + `eval_input_resolved.json`. Output follows `main_agent_plan.schema.json` and describes execution order only.
 - **dataset_scope**: Inputs = `eval_input_resolved.json` + explicit human constraints. Output = {selection_basis, selected_datasets, skipped_datasets}. User-provided datasets are validated/canonicalized here; this unit should not silently invent a different dataset scope.
 - **execution_surface** / **execute_wait**: produce the declared JSON; see `schemas/`. Do not emit later-unit fields.
 - **script_routing**: Output steps[] each {name, script}. name ∈ the whitelist (see `schemas/script_routing.schema.json`); `script` must resolve under `scripts/`.
-- **execution_surface**: Output {entrypoint_path or entrypoint, source_provenance.template_file, deployment_binding}. The script comes only from `scripts/templates/`. Copy the approved binding summary from `eval_input_resolved.json`: schema, image ref, bundle identity, `container_only`, read-only model mount, and writable result mount. Do not declare a host model interpreter or a mutable image.
-- **execution_readiness**: `check_execution_surface_compliance.py` compares the surface binding with the approved input, rejects `local_bash`, `.venv`, `/usr/bin/python3`, image changes, writable NFS models, and tool mismatches. It also preserves template isolation and validates the standalone evaluation route plan.
-- **smoke_test**: bounded smoke on a tiny slice using local Docker and the approved digest-pinned image; `smoke_passed` true.
-- **submit_vc_run**: `execution=vc` uses the same approved image through `vc_submit`; `execution=local` uses `local_docker`; `auto` prefers VC when available. VC precheck verifies the immutable image, partition, mounts, and resources. It does not infer or rewrite a model `.venv`.
-- **execute_wait**: For VC, run `scripts/wait_vc_execution.py --run-dir <sure_run_dir> --wait` once. The waiter matches the current submission token, prefers the atomic terminal sentinel, and uses `vc info`/`vc describe` only to classify missing-container and timeout cases. Do not hand-author polling or a terminal result. Local Docker already writes its own result, which this gate validates.
+- **execution_surface**: Output {entrypoint_path or entrypoint, source_provenance.template_file, deployment_binding}. The script comes only from `scripts/templates/`. Copy the approved binding summary from `eval_input_resolved.json` exactly, including its schema version, runtime kind, bundle identity, execution mode, model integrity policy, and writable result policy. Current resolved bindings use `sure.eval.deployment_binding.v2`; historical container-only v1 surfaces remain accepted. Container surfaces also bind the immutable image. Do not invent or override a model interpreter.
+- **execution_readiness**: `check_execution_surface_compliance.py` compares the surface binding with the approved input, rejects `local_bash`, unapproved `.venv`/host interpreters, image changes, model-policy mismatches, and tool mismatches. It live-probes the exact approved container or site Model Python and validates the standalone evaluation route plan.
+- **smoke_test**: bounded smoke on a tiny slice using the approved local container or Python runtime; `smoke_passed` true.
+- **submit_vc_run**: Containers use `vc_submit` or `local_docker` according to the resolved policy. Python uses `local_python` and is never submitted to VC. Neither route may infer or rewrite a model `.venv`.
+- **execute_wait**: For VC, run `scripts/wait_vc_execution.py --run-dir <sure_run_dir> --wait` once. The waiter matches the current submission token, prefers the atomic terminal sentinel, and uses `vc info`/`vc describe` only to classify missing-container and timeout cases. Do not hand-author polling or a terminal result. Local Docker and Python runners already write their own result, which this gate validates.
 - **assessment**: {anomaly_detected, user_confirmed}. Anomaly (e.g. WER/CER > 50%, Accuracy < 20%) requires user confirmation.
 - **run_report**: {report_persisted, execution_path_actual}. Record `execution_path_requested`, `execution_path_actual`, `device_request`, `device_actual`, `max_samples`, total dataset samples, and evaluated samples. Non-vc paths are valid for explicit `execution=local`; auto local fallback requires a reason and, if vc was available, explicit fallback approval.
 
@@ -135,9 +135,9 @@ When materializing the execution surface (run_evaluation.sh):
 [SYSTEM_CONSTRAINT: EXECUTION_POLICY]
 The user controls where formal model inference runs:
 1. EXECUTION_REQUEST:
-   - `execution=local`: run the materialized surface in local Docker. Host model inference is never valid.
-   - `execution=vc`: submit through vc. If `which vc && vc info` fails, the run must fail instead of falling back.
-   - `execution=auto` or omitted: prefer vc when available; otherwise local fallback is allowed and must record the reason.
+   - `execution=local`: run the materialized surface through its approved `local_docker` or `local_python` binding.
+   - `execution=vc`: submit the approved container through VC. Python bindings reject this request.
+   - `execution=auto` or omitted: containers prefer VC when available; Python bindings select their site-approved local-only route. Any container fallback records its reason.
 2. DEVICE_REQUEST:
    - `device=cpu` hides `CUDA_VISIBLE_DEVICES`.
    - `device=cuda:<index>` records the user request, sets `CUDA_VISIBLE_DEVICES=<index>` for local execution, and records process-visible `device_actual=cuda:0`.
@@ -194,7 +194,8 @@ in `scripts/templates/`. Run them as:
 ```
 
 For `execution=local`, call `scripts/run_local_execution.py --run-dir <sure_run_dir>`
-from the submit unit. It runs `run_evaluation.sh` inside the approved image and writes
+from the submit unit. It runs `run_evaluation.sh` through the approved container or
+site Model Python and writes
 both `submit_result.json` and `execution_result.json`. For `execution=vc`, use
 `scripts/run_vc_execution.py --run-dir <sure_run_dir>` from the submit unit. It
 writes `submit_result.json`, includes the exact `vc submit` command and a
@@ -206,11 +207,14 @@ authoritative exit code. When vc resources
 are selected at submit time, the effective digest-pinned image, partition, CPU,
 GPU, memory, entrypoint, and log snapshot is recorded in both `submit_result.vc_submission`
 and `execution_surface.vc_runtime.resolved_submission`.
-Both local Docker and VC inject the Model Python and server command declared by
+All execution routes inject the Model Python and server command declared by
 `runtime_inventory.json`, plus the independently resolved, versioned common
-`HARNESS_PYTHON_BIN`. The two executables are validated separately and must not
-silently collapse to the same interpreter. Host model-interpreter overrides and
-`.venv` rewrites are rejected.
+`HARNESS_PYTHON_BIN`. Container routes resolve both roles inside the image. Python
+routes resolve the portable Model Runtime ID against the active site's
+`storage.runtime_root`, pass a sanitized environment, redirect caches into the run
+directory, and verify model-core hashes before and after execution. The two
+executables are validated separately and must not silently collapse to the same
+interpreter. Host model-interpreter overrides and `.venv` rewrites are rejected.
 The standalone evaluator uses a third role, `SURE_EVALUATION_PYTHON`. Its root
 dependencies are resolved from the versioned contract under
 `sure/runtime/evaluation/`, cached by engine commit and lock hash under
@@ -257,9 +261,10 @@ contract according to the selected route's required roles. Repeated `--metric`
 values produce one dataset-metric result each, and `--merge-payload` merges
 segmented TTS/VC evaluation payloads without rerunning metrics.
 
-`run_smoke.py` launches the approved local container with a bounded sample.
-`generate_predictions_via_server.py --device cpu` hides `CUDA_VISIBLE_DEVICES`
-inside that container; it never starts a host model runtime.
+`run_smoke.py` launches the approved local container or site Model Python with a
+bounded sample. `generate_predictions_via_server.py --device cpu` hides
+`CUDA_VISIBLE_DEVICES` in the selected runtime; it never falls back to an
+unapproved host interpreter.
 
 ## Gate Checks (enforced by hooks)
 
