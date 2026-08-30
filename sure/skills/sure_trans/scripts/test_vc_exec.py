@@ -51,6 +51,8 @@ def setUpModule() -> None:
         f"  vc_default_partition: {TEST_PARTITION}",
         "network:",
         f"  container_registry: {TEST_REGISTRY}",
+        "container_delivery:",
+        '  repository_template: "{registry}/hpc/ai_{task}-{model_name}"',
         "",
     ])
     path = Path(_SITE_POLICY_DIR.name) / "site.yaml"
@@ -549,7 +551,7 @@ class EnsureRegistryImageTest(unittest.TestCase):
             self.assertIn(rejection, message)
             self.assertIn("image_version", message)
 
-    def test_push_failure_mentions_naming_spec(self) -> None:
+    def test_push_failure_mentions_site_target(self) -> None:
         ref = registry_image("demo", "0.1.0")
 
         def fake_run(args: list[str], *, timeout: float | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -563,7 +565,7 @@ class EnsureRegistryImageTest(unittest.TestCase):
                 with self.assertRaises(ValueError) as raised:
                     ensure_registry_image("local-image", ref, log)
             message = str(raised.exception)
-            self.assertIn("hpc/ai_asr-*", message)
+            self.assertIn("site-resolved target", message)
             self.assertIn("image_version", message)
 
 
@@ -1446,6 +1448,9 @@ class SitePolicySourcedDefaultsTest(unittest.TestCase):
             "datasets": {"allowed_source_roots": [f"{root}/datasets"]},
             "execution": {"surfaces": ["vc"], "vc_partitions": ["gpu-a"], "vc_default_partition": "gpu-a"},
             "network": {"container_registry": "registry.example"},
+            "container_delivery": {
+                "repository_template": "{registry}/hpc/ai_{task}-{model_name}"
+            },
         }
         path = Path(self._tmp.name) / "site.yaml"
         path.write_text(yaml.safe_dump(policy), encoding="utf-8")

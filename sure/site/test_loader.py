@@ -79,6 +79,43 @@ class ContainerRegistryTest(unittest.TestCase):
         self.assertIn("network.container_registry", str(raised.exception))
 
 
+class ContainerDeliveryTest(unittest.TestCase):
+    def test_repository_template_is_returned(self) -> None:
+        policy = validate_site_policy(
+            _policy(
+                network={"container_registry": "registry.example"},
+                container_delivery={
+                    "repository_template": "{registry}/my-org/sure-{task}-{model_name}"
+                },
+            )
+        )
+        self.assertEqual(
+            policy["container_delivery"]["repository_template"],
+            "{registry}/my-org/sure-{task}-{model_name}",
+        )
+
+    def test_repository_template_requires_a_registry(self) -> None:
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(
+                _policy(
+                    container_delivery={
+                        "repository_template": "{registry}/my-org/sure-{model_name}"
+                    }
+                )
+            )
+        self.assertIn("network.container_registry", str(raised.exception))
+
+    def test_repository_template_rejects_unknown_fields(self) -> None:
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(
+                _policy(
+                    network={"container_registry": "registry.example"},
+                    container_delivery={"repository_template": "{registry}/{owner}/{model_name}"},
+                )
+            )
+        self.assertIn("unsupported field: owner", str(raised.exception))
+
+
 class AbsolutePathTest(unittest.TestCase):
     def test_rejects_a_path_that_does_not_start_with_a_slash(self) -> None:
         storage = {

@@ -97,6 +97,8 @@ def main() -> int:
     gpu_required = resolved.get("gpu_required") is True or requested == "cuda"
     bf16_required = resolved.get("bf16_required") is True
     version = str(resolved.get("image_version") or "0.1.0")
+    task_type = str(resolved.get("task_type") or "asr")
+    delivery = resolved.get("container_delivery")
 
     vc_payload: dict = {}
     log_path = artifacts / "execution_compat.log"
@@ -111,7 +113,11 @@ def main() -> int:
             f"$ {' '.join(command[:-1])} <probe>\n{stdout}\n{stderr}", encoding="utf-8"
         )
     else:
-        registry_ref = registry_image(model_name, version, "source")
+        registry_ref = (
+            str(delivery.get("source_image"))
+            if isinstance(delivery, dict) and delivery.get("source_image")
+            else registry_image(model_name, version, "source", task_type=task_type)
+        )
         push_log = run_dir / "artifacts" / "vc_logs" / "source_push.log"
         push_digest = ensure_registry_image(
             image,

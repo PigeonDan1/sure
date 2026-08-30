@@ -1,8 +1,8 @@
 {
   "schema": "sure.public_export_manifest.v1",
-  "source_commit": "4e058840e661c6347094e0eb5af89152999d021f",
+  "source_commit": "0aa3eb06198f5f958bb3cf7cae90b5c976ba2ed0",
   "source_dirty": false,
-  "tree_sha256": "a3139d951ddfd247b0eb6d8379bc17b8461d09b9ede38cf00b300135d03d1937",
+  "tree_sha256": "0c2b4ec53a76ed9540ffff9b0a3c766a1a1d64376f5fbdf6518e13423da2954f",
   "files": [
     {
       "path": ".github/workflows/public-ci.yml",
@@ -47,7 +47,7 @@
     {
       "path": "README.md",
       "type": "file",
-      "sha256": "cb870658d2c82af2b3db0c72e8dfb3373f853567bbc179be1b6dcdf867ade9fc"
+      "sha256": "74dccbff690567d5ea4546cfc686064b802efed8121092a75cf350fa60f1d606"
     },
     {
       "path": "SECURITY.md",
@@ -62,7 +62,7 @@
     {
       "path": "config/site.example.yaml",
       "type": "file",
-      "sha256": "9e1faa1ad515aae62fcca437ce1d02665ec323783cb69769478b1f365e9c0454"
+      "sha256": "45be1c88774aa78ae024097aaf83525a3ee8f4d8079eec207d5b0dc464c252de"
     },
     {
       "path": "docs/evaluation_engine.md",
@@ -72,7 +72,7 @@
     {
       "path": "docs/site-configuration.md",
       "type": "file",
-      "sha256": "1663adb9a8d8ddcc7694bdab2c34befab3a877585269f87090497a22ef8aecb1"
+      "sha256": "4fecca684046d29d59f75905ca718e5dd19d00cdb775b5543c121a9761db1d60"
     },
     {
       "path": "fixtures/README.md",
@@ -4642,7 +4642,7 @@
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-state-machine.test.ts",
       "type": "file",
-      "sha256": "8eb0adde38e5116a5130f3a177e806a3ecb5fdf6214a3307f61f0633067827bc"
+      "sha256": "c1d24d746ab6ce3b44783822e75f8c5abd0dbdaab6ec812607ebab1f99f551d3"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-terminal.test.ts",
@@ -4737,7 +4737,7 @@
     {
       "path": "packages/coding-agent/test/sure/site-loader.test.ts",
       "type": "file",
-      "sha256": "05e338ac533ebb9c482f81c0600bc68514432a4afe77d7c3c9e7e5c099d21ea5"
+      "sha256": "8f8b2fc9b14b5b5c90a4113e349fbf11acbc0f9740304dce108030a13797e2e1"
     },
     {
       "path": "packages/coding-agent/test/syntax-highlight.test.ts",
@@ -5620,29 +5620,49 @@
       "sha256": "9cb9e29ed67d56e29198909704c539c814a94f53832efa48c320b603fee5c9e5"
     },
     {
+      "path": "sure/site/container_delivery.py",
+      "type": "file",
+      "sha256": "0b2c1160005b4374920a4700b346614e1cfb5672ec366cebc911f09706b0e59e"
+    },
+    {
+      "path": "sure/site/container_registry.py",
+      "type": "file",
+      "sha256": "5f2c8b48f8e7c2ec2e15136e66bad4d327a00ac62e2bf0b5b5bb5b489dce4e5a"
+    },
+    {
       "path": "sure/site/loader.py",
       "type": "file",
-      "sha256": "e27ef27cb7b3e5ec6c2f6261a9d9cedb65e4080df81e9867aec2214d8be529dc"
+      "sha256": "9d1b2f443f4537bad8121aa421c93a0a161305559d2b2ed271970f0c30f2e3ab"
     },
     {
       "path": "sure/site/loader.ts",
       "type": "file",
-      "sha256": "5fd432eb4ff6ed1081927d16b9d3a20a75a814f1944c48b28d3845db9a5b017b"
+      "sha256": "c7deb28d84ce4ec563d7b48c5a5e7c1b656e23defc58f1158afddf8f8acd8fd1"
     },
     {
       "path": "sure/site/policy.schema.json",
       "type": "file",
-      "sha256": "10baa836e26a8f5386ec7c3d0387892744072f28d4b731c1b1de8d0d98d2900c"
+      "sha256": "c78d8f654417fce227583186a6a2927540f8ded9297c1b8043a6cb6fbbbc9e68"
     },
     {
       "path": "sure/site/public.example.yaml",
       "type": "file",
-      "sha256": "9e1faa1ad515aae62fcca437ce1d02665ec323783cb69769478b1f365e9c0454"
+      "sha256": "45be1c88774aa78ae024097aaf83525a3ee8f4d8079eec207d5b0dc464c252de"
+    },
+    {
+      "path": "sure/site/test_container_delivery.py",
+      "type": "file",
+      "sha256": "0d74bb5e02c39945f11d0e69f450d0c75853f5e16f2eb6a2167a5abb907b34a8"
+    },
+    {
+      "path": "sure/site/test_container_registry.py",
+      "type": "file",
+      "sha256": "d66ec756a67cb5948170e3f43f85878c3adeead396c8410682b6910fefedcefd"
     },
     {
       "path": "sure/site/test_loader.py",
       "type": "file",
-      "sha256": "b22af9b94f1b8c966aa9a1c025ad0cfe9210dcedd69225ff6fea37f35b597e6f"
+      "sha256": "2701795620069d797f639e534880e81a41886c8f7945355a9de173234988bc1f"
     },
     {
       "path": "sure/skills/README.md",
@@ -7027,7 +7047,7 @@
     {
       "path": "sure/skills/sure_onboard/SKILL.md",
       "type": "file",
-      "sha256": "e4287fc4eea9c01d86be6c9ca78cd60f5031ced165605c0819e251291e42103d"
+      "sha256": "d24bd8e03346bb5c97c678cda65028106513b3b5e53ae6cd3a5f34e58f01d2f2"
     },
     {
       "path": "sure/skills/sure_onboard/examples/minimal-input.json",
@@ -7042,7 +7062,7 @@
     {
       "path": "sure/skills/sure_onboard/hooks/index.ts",
       "type": "file",
-      "sha256": "7da8b702513f644fd8b8d345179988c0fff9b4fb4b2f5df3e17d53743457708b"
+      "sha256": "a94b1e745a2ad01140cee6e0077d8305cf9c6efeab3fdbdb71bf833efe5482e8"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/state-machine.ts",
@@ -7417,7 +7437,7 @@
     {
       "path": "sure/skills/sure_onboard/schemas/model_input_resolved.schema.json",
       "type": "file",
-      "sha256": "f5c4b97f2fc72464039e38a6ef9945340101e2a5b21264f822b1c4339222c0a3"
+      "sha256": "5ab895a7ad90d9e3f5ce4bc9553036e17d42847fdd0c290b6f8a139e4b7b3227"
     },
     {
       "path": "sure/skills/sure_onboard/schemas/package_gate.schema.json",
@@ -7467,7 +7487,7 @@
     {
       "path": "sure/skills/sure_onboard/scripts/check_build_plan.py",
       "type": "file",
-      "sha256": "009ae25b42f2cdb0772f2f705f40688e306d27a3cb7cbdb8524357aa44662ee6"
+      "sha256": "5dff955f7f72961037866db9d57e9b862293d6d6c8475fd36532fed65295b494"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_container_package.py",
@@ -7502,7 +7522,7 @@
     {
       "path": "sure/skills/sure_onboard/scripts/check_model_input.py",
       "type": "file",
-      "sha256": "3d206bfaef3ff124f9576f23b88f543710833ae1ca7f1ad76d731454b30037aa"
+      "sha256": "250c1921f5f689b1b50c707826b569012f7624c6e15fb258acbecbcb8edd05cc"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_package_gate.py",
@@ -7552,7 +7572,7 @@
     {
       "path": "sure/skills/sure_onboard/scripts/materialize_onboard_inputs.py",
       "type": "file",
-      "sha256": "7e2e6891ce365a9bb132d10b531ef71ec760a5afde97a817f157364567e347f9"
+      "sha256": "163f3ec151e93c3bbecb1339fa5aecca7e209c918b087f4d7d0fa2cdcf30d4ae"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/prepare_fixture.py",
@@ -7670,6 +7690,11 @@
       "sha256": "87fd7aa1fce1fa5013d3f38e43c382e1c2a706bd87603e669bd7662be2be7942"
     },
     {
+      "path": "sure/skills/sure_onboard/scripts/test_container_delivery_resolution.py",
+      "type": "file",
+      "sha256": "90362f215a07d1ba00665e91765a6bf27e39d0c78a291a4561de24f74d61bb0f"
+    },
+    {
       "path": "sure/skills/sure_onboard/scripts/test_docker_delivery_contract.py",
       "type": "file",
       "sha256": "0371ccc67bd985ea5d2f020962789bcc426fb27927de2bd60e906ee7696b1e8f"
@@ -7752,7 +7777,7 @@
     {
       "path": "sure/skills/sure_trans/SKILL.md",
       "type": "file",
-      "sha256": "8c3f08558ce47a460388853592b75e8ae59a4b1b37258e9bdd131e055025645a"
+      "sha256": "6c3147ff59485e2410ec68fca0e39ce2ad1719d16215f304c91bda58802de2b4"
     },
     {
       "path": "sure/skills/sure_trans/examples/minimal-input.json",
@@ -7782,7 +7807,7 @@
     {
       "path": "sure/skills/sure_trans/references/image_packaging.md",
       "type": "file",
-      "sha256": "c1aa167964b29b0e7be202d9e840451c1360184fc032c7fb0fc421293e1438d3"
+      "sha256": "33ccdfe513dac9fe7865974a5d130716988ebe7d877d28101689aa7c6a6bac8a"
     },
     {
       "path": "sure/skills/sure_trans/schemas/adapter_image_result.schema.json",
@@ -7907,7 +7932,7 @@
     {
       "path": "sure/skills/sure_trans/scripts/materialize_trans_inputs.py",
       "type": "file",
-      "sha256": "eefbe9f6a2e4878b8acb5e08619eab15d7cb4e592c1d3830417dfd786b46a6fb"
+      "sha256": "8ff3f355bcb0e715a1e8e042deabe878e5d0ca163d3fb35264dafd7ac0d628d4"
     },
     {
       "path": "sure/skills/sure_trans/scripts/mcp_smoke.py",
@@ -7927,12 +7952,12 @@
     {
       "path": "sure/skills/sure_trans/scripts/run_execution_compat.py",
       "type": "file",
-      "sha256": "b468e3e37a62ae07de05119f394382da94cef1e81f2fedc69cdfa9b09d75d7dc"
+      "sha256": "b50bae20180d0b3690c566a52daae384f29075e92043c2a4b5a4b1e54b78dc52"
     },
     {
       "path": "sure/skills/sure_trans/scripts/run_trans_validate.py",
       "type": "file",
-      "sha256": "15a08777bf3f9267e45fde03a44006e1a6333a44142a84b1278c983fdd03da8c"
+      "sha256": "6c071eb2b7a2ac62e4a97e6d213343e03b178676fbc56064a6f07ea1ff0368a9"
     },
     {
       "path": "sure/skills/sure_trans/scripts/scaffold_adapter.py",
@@ -7982,22 +8007,22 @@
     {
       "path": "sure/skills/sure_trans/scripts/test_registry_version.py",
       "type": "file",
-      "sha256": "4cb6d292df2c58ec4ce090f9f4dcb45591a3126f0e541297f38187f3ce161ee9"
+      "sha256": "dce442893f8c36bffa897553854769c5362a247da7b7d95b36f00ef4159450de"
     },
     {
       "path": "sure/skills/sure_trans/scripts/test_trans_scripts.py",
       "type": "file",
-      "sha256": "bee104128ea77cd583bb94c0ee8031440901306d643822664511f1deda9d6591"
+      "sha256": "88831d65e6b775f6000bf429f02871f4ea31dba2bf0ecc0ae71f8761f468b41a"
     },
     {
       "path": "sure/skills/sure_trans/scripts/test_vc_exec.py",
       "type": "file",
-      "sha256": "bdeb0d9dab5233dd2c17b1c7a2a1ac3f2a355d39069aa28d7cbb009b79e9fa49"
+      "sha256": "84addfbbfd758dfc840e8d75bbfd614137ac99f7382dfd79f6a529da5d75e55c"
     },
     {
       "path": "sure/skills/sure_trans/scripts/vc_exec.py",
       "type": "file",
-      "sha256": "9d4deca2571d7dac23e04c845947faa27e9018741cb1683d00bbbdac00525582"
+      "sha256": "17cb35dbae11f3bb5424d96145244781466f0c0c802970b260805ded8bd518d2"
     },
     {
       "path": "sure/skills/sure_trans/scripts/write_runtime_inventory.py",

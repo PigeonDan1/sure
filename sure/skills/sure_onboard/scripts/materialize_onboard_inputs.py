@@ -20,6 +20,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "site" / "loader.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.site.container_delivery import resolve_container_image, resolve_container_repository
+from sure.site.container_registry import resolve_image_version
+from sure.site.loader import load_site_policy
+
 try:
     import yaml
 except Exception as exc:  # noqa: BLE001
@@ -285,6 +294,7 @@ def make_model_input_resolved(
     cuda_repair_attempts_before_cpu: int,
     raw_args: str,
     existing_model_dir: str | None,
+    image_version: str | None,
 ) -> dict[str, Any]:
     model_id = normalize_required_string(model_input.get("model_id"), "model_id")
     model_name = str(model_input.get("model_name") or slugify_model_name(model_id)).strip()
@@ -315,7 +325,7 @@ def make_model_input_resolved(
     handoff_dir = handoff_dir_for(model_input_path)
     cuda_first = deployment_type == "local" and device in {"auto", "cuda"}
 
-    return {
+    payload = {
         "timestamp": now_iso(),
         "model_input_path": str(model_input_path),
         "model_id": model_id,
@@ -349,6 +359,29 @@ def make_model_input_resolved(
         },
         "normalized_model_input": model_input,
     }
+    if package_profile == "docker-registry":
+        site = load_site_policy(repository_root=repo_root, required=True) or {}
+        policy = site.get("policy")
+        if not isinstance(policy, dict):
+            raise ValueError("site policy did not resolve to an object")
+        repository = resolve_container_repository(
+            policy, task_type=task_type, model_name=model_name
+        )
+        version, version_resolution = resolve_image_version([repository], image_version)
+        payload["container_delivery"] = {
+            "repository": repository,
+            "image_version": version,
+            "target_image": resolve_container_image(
+                policy,
+                task_type=task_type,
+                model_name=model_name,
+                version=version,
+            ),
+            "image_version_resolution": version_resolution,
+            "site_policy_path": site.get("path"),
+            "site_policy_sha256": site.get("sha256"),
+        }
+    return payload
 
 
 def make_context_selection(resolved: dict[str, Any], model_input: dict[str, Any]) -> dict[str, Any]:
@@ -424,6 +457,7 @@ def main() -> int:
     parser.add_argument("--cpu-fallback-after-cuda-failures", type=int, default=3)
     parser.add_argument("--cuda-repair-attempts-before-cpu", type=int, default=3)
     parser.add_argument("--existing-model-dir")
+    parser.add_argument("--image-version")
     parser.add_argument("--raw-args", default="")
     args = parser.parse_args()
 
@@ -450,6 +484,7 @@ def main() -> int:
             cuda_repair_attempts_before_cpu=args.cuda_repair_attempts_before_cpu,
             raw_args=args.raw_args,
             existing_model_dir=args.existing_model_dir,
+            image_version=args.image_version,
         )
         context_selection = make_context_selection(resolved, model_input)
     except Exception as exc:  # noqa: BLE001

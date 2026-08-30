@@ -111,3 +111,34 @@ describe("validateSitePolicy network.container_registry", () => {
 		);
 	});
 });
+
+describe("validateSitePolicy container_delivery", () => {
+	it("returns an explicit repository template", () => {
+		const result = validateSitePolicy(
+			policy({
+				network: { container_registry: "registry.example" },
+				container_delivery: { repository_template: "{registry}/my-org/sure-{task}-{model_name}" },
+			}),
+		);
+		expect(result.container_delivery?.repository_template).toBe("{registry}/my-org/sure-{task}-{model_name}");
+	});
+
+	it("requires a configured registry", () => {
+		expect(() =>
+			validateSitePolicy(
+				policy({ container_delivery: { repository_template: "{registry}/my-org/sure-{model_name}" } }),
+			),
+		).toThrow(/network\.container_registry/);
+	});
+
+	it("rejects unsupported template fields", () => {
+		expect(() =>
+			validateSitePolicy(
+				policy({
+					network: { container_registry: "registry.example" },
+					container_delivery: { repository_template: "{registry}/{owner}/{model_name}" },
+				}),
+			),
+		).toThrow(/unsupported field: owner/);
+	});
+});

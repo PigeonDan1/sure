@@ -22,3 +22,9 @@ execution:
   local_runtimes:
     - python
     - container
+
+network:
+  container_registry: registry.example.com
+
+container_delivery:
+  repository_template: "{registry}/my-org/sure-{task}-{model_name}"

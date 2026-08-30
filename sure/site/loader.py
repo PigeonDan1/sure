@@ -11,6 +11,11 @@ from urllib.parse import urlparse
 
 import yaml
 
+if __package__:
+    from .container_delivery import ContainerDeliveryError, validate_repository_template
+else:
+    from container_delivery import ContainerDeliveryError, validate_repository_template
+
 SITE_POLICY_ENV = "SURE_SITE_POLICY"
 SITE_POLICY_SCHEMA = "sure.site.policy.v1"
 MISSING_POLICY_MESSAGE = (
@@ -68,7 +73,11 @@ def _unique_strings(value: Any, location: str, *, absolute: bool) -> list[str]:
 
 def validate_site_policy(value: Any) -> dict[str, Any]:
     root = _mapping(value, "site policy")
-    _reject_unknown(root, {"schema", "site_id", "policy_version", "storage", "datasets", "execution", "network"}, "site policy")
+    _reject_unknown(
+        root,
+        {"schema", "site_id", "policy_version", "storage", "datasets", "execution", "network", "container_delivery"},
+        "site policy",
+    )
     if root.get("schema") != SITE_POLICY_SCHEMA:
         raise SitePolicyError(f"schema must be {SITE_POLICY_SCHEMA}")
     site_id = _string(root.get("site_id"), "site_id")
@@ -148,6 +157,18 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
                 raise SitePolicyError("network.gateway_portal must be a valid HTTP(S) URL")
             network["gateway_portal"] = portal
         policy["network"] = network
+    if "container_delivery" in root:
+        delivery_source = _mapping(root["container_delivery"], "container_delivery")
+        _reject_unknown(delivery_source, {"repository_template"}, "container_delivery")
+        if not policy.get("network", {}).get("container_registry"):
+            raise SitePolicyError(
+                "container_delivery.repository_template requires network.container_registry"
+            )
+        try:
+            repository_template = validate_repository_template(delivery_source.get("repository_template"))
+        except ContainerDeliveryError as error:
+            raise SitePolicyError(f"container_delivery.{error}") from error
+        policy["container_delivery"] = {"repository_template": repository_template}
     return policy
 
 

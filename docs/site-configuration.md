@@ -51,6 +51,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `execution.vc_partitions` | when needed | Declared VC partitions for adapters and deployment documentation |
 | `execution.vc_partition_priority` | optional | Numeric priority map used by automatic VC selection |
 | `network` | optional | Non-secret site endpoints used by private adapters and documentation |
+| `container_delivery.repository_template` | for `docker-registry` | Repository template using `{registry}`, optional `{task}`, and `{model_name}` |
 
 Unknown fields, duplicate list values, unsupported surfaces, and relative paths are rejected. Policy files may contain credential environment-variable names, but never credential values.
 
@@ -99,9 +100,17 @@ execution:
   local_runtimes:
     - python
     - container
+
+network:
+  container_registry: registry.example.com
+
+container_delivery:
+  repository_template: "{registry}/my-org/sure-{task}-{model_name}"
 ```
 
 For shared storage, replace these placeholders with roots visible to every host and container that executes a workflow. The projection root is the only writable dataset workspace; source roots are mounted read-only. For a local-only fixture, create temporary model, result, dataset, projection, and runtime roots and point the local policy at them.
+
+`container_delivery.repository_template` is site data, not an agent decision. Registry-backed workflows resolve it before downloading model weights or building an image. The template must start with `{registry}/`, must include `{model_name}`, and may include `{task}`. Credentials remain in the Docker credential store and must not appear in this policy.
 
 ## Diagnostics
 

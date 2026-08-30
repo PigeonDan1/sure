@@ -38,6 +38,19 @@
 			},
 			"additionalProperties": true
 		},
+		"container_delivery": {
+			"type": "object",
+			"required": ["repository", "image_version", "target_image", "image_version_resolution"],
+			"properties": {
+				"repository": { "type": "string" },
+				"image_version": { "type": "string" },
+				"target_image": { "type": "string" },
+				"image_version_resolution": { "type": "object" },
+				"site_policy_path": { "type": ["string", "null"] },
+				"site_policy_sha256": { "type": ["string", "null"] }
+			},
+			"additionalProperties": false
+		},
 		"path_policy": {
 			"type": "object",
 			"properties": {

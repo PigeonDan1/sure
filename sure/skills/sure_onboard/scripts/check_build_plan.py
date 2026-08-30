@@ -127,6 +127,27 @@ def main() -> int:
         if package_profile == "docker-registry" and delivery.get("registry_required") is not True:
             print("BUILD_PLAN gate: docker-registry requires container_delivery.registry_required=true.", file=sys.stderr)
             return 1
+        if package_profile == "docker-registry":
+            resolved_delivery = (
+                resolved.get("container_delivery")
+                if isinstance(resolved.get("container_delivery"), dict)
+                else {}
+            )
+            expected_target = resolved_delivery.get("target_image")
+            if not expected_target:
+                print(
+                    "BUILD_PLAN gate: model_input_resolved.json has no site-resolved target image; "
+                    "rerun materialize_onboard_inputs.py.",
+                    file=sys.stderr,
+                )
+                return 1
+            if delivery.get("target_image") != expected_target:
+                print(
+                    "BUILD_PLAN gate: container_delivery.target_image must exactly match the "
+                    f"site-resolved target {expected_target}.",
+                    file=sys.stderr,
+                )
+                return 1
         if delivery.get("model_mount_read_only") is not True or delivery.get("result_mount_separate") is not True:
             print(
                 "BUILD_PLAN gate: container delivery must use a read-only model mount and a separate result mount.",

@@ -287,9 +287,20 @@ def ensure_validation_image(
 ) -> tuple[str, str, str | None]:
     version = str(resolved.get("image_version") or "0.1.0")
     model_name = str(resolved.get("model_name") or "")
+    task_type = str(resolved.get("task_type") or "asr")
+    delivery = resolved.get("container_delivery")
     if kind == "original_inference":
-        return registry_image(model_name, version, "source"), "source_push.log", None
-    registry_ref = registry_image(model_name, version)
+        registry_ref = (
+            str(delivery.get("source_image"))
+            if isinstance(delivery, dict) and delivery.get("source_image")
+            else registry_image(model_name, version, "source", task_type=task_type)
+        )
+        return registry_ref, "source_push.log", None
+    registry_ref = (
+        str(delivery.get("target_image"))
+        if isinstance(delivery, dict) and delivery.get("target_image")
+        else registry_image(model_name, version, task_type=task_type)
+    )
     push_digest: str | None = None
     if kind == "import":
         adapter = read_object(artifacts / "adapter_image_result.json")
