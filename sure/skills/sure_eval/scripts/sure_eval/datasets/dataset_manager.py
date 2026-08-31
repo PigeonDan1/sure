@@ -181,8 +181,9 @@ class DatasetManager:
     Handles SURE Benchmark datasets and standard HuggingFace/ModelScope datasets.
     """
     
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(self, config: Config | None = None, dataset_source_key: str = "default") -> None:
         self.config = config or Config.from_env()
+        self.dataset_source_key = dataset_source_key
         self.data_dir = Path(self.config.data.datasets)
         self.sure_dir = self.data_dir / "sure_benchmark"
         self.jsonl_dir = self.sure_dir / "jsonl"
@@ -333,7 +334,7 @@ class DatasetManager:
         """
         if is_source_entry(dataset_name):
             return self._convert_source_root_to_jsonl(
-                resolve_aispeech_source_entry(dataset_name)
+                resolve_aispeech_source_entry(dataset_name, dataset_source_key=self.dataset_source_key)
             )
 
         if dataset_name in self.oref_local_datasets:
@@ -1243,7 +1244,7 @@ class DatasetManager:
             'aishell1-test_ASR' -> 'aishell1'
         """
         if is_source_entry(name):
-            return resolve_aispeech_source_entry(name).dataset_id
+            return resolve_aispeech_source_entry(name, dataset_source_key=self.dataset_source_key).dataset_id
 
         existing_jsonl = self._existing_jsonl_for_dataset(name)
         if existing_jsonl:

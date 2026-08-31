@@ -23,6 +23,71 @@ import sys
 from pathlib import Path
 
 
+def evaluation_binding_mismatch(claimed: object, resolved: object) -> list[str]:
+    """Fields where the submitted binding and an independently resolved one differ.
+
+    Empty when there is nothing to compare: a host that cannot resolve the
+    binding here records that and lets the run continue, because a gate that
+    blocks on its own inability to answer is how runs deadlock.
+    """
+    if not isinstance(claimed, dict) or not isinstance(resolved, dict):
+        return []
+    return [
+        f"{field} submitted={claimed.get(field)!r} resolved={resolved.get(field)!r}"
+        for field in ("runtime_id", "lock_sha256", "engine_commit")
+        if claimed.get(field) != resolved.get(field)
+    ]
+
+
+def claimed_evaluation_binding(data: dict) -> object:
+    """Where the submission records it.
+
+    The vc route puts it at the top level; the local docker and python routes
+    keep the whole launch binding under deployment_binding. Looking in only one
+    place made the comparison a no-op on two of the three routes.
+    """
+    claimed = data.get("evaluation_runtime")
+    if claimed is None and isinstance(data.get("deployment_binding"), dict):
+        claimed = data["deployment_binding"].get("evaluation_runtime")
+    return claimed
+
+
+def resolved_evaluation_binding(run_dir: Path) -> dict | None:
+    """Resolve the run's Evaluation Runtime from this process, or None if it cannot.
+
+    The hook spawns this script with the coding agent's own process
+    environment, so what it resolves here does not inherit an `export` from the
+    agent's shell.
+    """
+    eval_input_path = run_dir / "artifacts" / "eval_input_resolved.json"
+    if not eval_input_path.is_file():
+        return None
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        from evaluation_runtime import EvaluationRuntimeError, _expected_binding
+        from resolve_evaluation_engine import resolve_engine_root
+    except ImportError:
+        return None
+    try:
+        eval_input = json.loads(eval_input_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    evaluation = eval_input.get("evaluation") if isinstance(eval_input.get("evaluation"), dict) else {}
+    if evaluation.get("backend") not in (None, "external"):
+        return None
+    engine = evaluation.get("engine") if isinstance(evaluation.get("engine"), dict) else {}
+    resolved = resolve_engine_root(str(engine.get("engine_root") or "") or None)
+    if resolved is None:
+        return None
+    try:
+        # _expected_binding, not ensure_evaluation_runtime: the latter falls back
+        # to the attested environment, which is where a forged claim comes from.
+        # A check that can answer from its own subject is not a check.
+        return _expected_binding(resolved[1])
+    except EvaluationRuntimeError:
+        return None
+
+
 def vc_is_available() -> bool:
     """Return True only when `which vc` AND `vc info` both succeed.
 
@@ -98,6 +163,20 @@ def main() -> int:
             path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         except OSError:
             pass
+
+    # The submission records the Evaluation Runtime it carried; resolve one here
+    # and say so when the two disagree. Same reasoning as vc_available above:
+    # what the submission claims about itself is not evidence on its own.
+    mismatch = evaluation_binding_mismatch(
+        claimed_evaluation_binding(data), resolved_evaluation_binding(run_dir)
+    )
+    if mismatch:
+        print(
+            "SUBMIT_EXECUTION gate: the submitted Evaluation Runtime is not the one "
+            "this host resolves: " + "; ".join(mismatch),
+            file=sys.stderr,
+        )
+        return 1
 
     execution_path = data.get("execution_path", "")
     requested = _execution_requested(data, run_dir)

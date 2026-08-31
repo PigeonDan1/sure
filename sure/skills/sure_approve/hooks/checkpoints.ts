@@ -8,6 +8,9 @@ export interface CheckpointData {
 	currentUnit: string;
 	completedUnits: string[];
 	retries: Record<string, number>;
+	/** Every gate block this run has taken. retries is per-unit and advance()
+	 *  clears it, so it cannot answer "how blocked was this run". */
+	blocks?: number;
 	failedArtifactDigests: Record<string, string>;
 }
 
@@ -48,6 +51,7 @@ export function readCheckpoint(ctx: SureHookContext, fallbackMode: ApproveMode):
 			data: {
 				mode,
 				currentUnit: typeof data.currentUnit === "string" ? data.currentUnit : initial.data.currentUnit,
+				blocks: typeof data.blocks === "number" ? data.blocks : undefined,
 				completedUnits: Array.isArray(data.completedUnits)
 					? data.completedUnits.filter((value): value is string => typeof value === "string")
 					: [],
@@ -99,6 +103,7 @@ export function bumpRetry(checkpoint: RunCheckpoint, artifactDigest: string): Ru
 		data: {
 			...checkpoint.data,
 			retries,
+			blocks: (checkpoint.data.blocks ?? 0) + 1,
 			failedArtifactDigests: { ...checkpoint.data.failedArtifactDigests, [unit]: artifactDigest },
 		},
 	};

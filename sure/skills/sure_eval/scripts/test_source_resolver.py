@@ -70,6 +70,11 @@ class SourceResolverTests(unittest.TestCase):
         self._env.stop()
         self._tmp.cleanup()
 
+    def test_override_with_backslashes_is_a_path_not_a_key(self) -> None:
+        # a Windows path carries no "/"; only a value in the key grammar is looked up as a key
+        with mock.patch.dict(os.environ, {source_resolver.SOURCE_ROOT_ENV: r"C:\data\src"}):
+            self.assertEqual(source_resolver.accepted_source_root(), r"C:\data\src")
+
     def test_single_version_resolves_to_two_segment_id(self) -> None:
         dataset_root = make_source_tree(self.root, "aispeech_phy_aishell-1-test", ["v1.0.2"])
         ref = source_resolver.resolve_aispeech_source_entry(str(dataset_root))
@@ -158,6 +163,34 @@ class SourceResolverTests(unittest.TestCase):
 
     def test_is_source_entry_accepts_at_suffix(self) -> None:
         self.assertTrue(source_resolver.is_source_entry("/a/ds_pool/x@v1.0.2"))
+
+
+class RejectedRootMessageTests(unittest.TestCase):
+    """A rejected path has to say which configured key would have taken it."""
+
+    def test_path_under_another_configured_key_names_that_key(self) -> None:
+        roots = {"default": "/stor/external_ds/aispeech", "aiplatform": "/stor/ds/aispeech"}
+        with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
+                with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
+                    source_resolver.resolve_aispeech_source_entry(
+                        "/stor/ds/aispeech/g001/store002/ds_pool/demo_ds"
+                    )
+        message = str(ctx.exception)
+        self.assertIn("aiplatform", message)
+        self.assertIn("dataset_source_key", message)
+
+    def test_path_under_no_configured_key_lists_them(self) -> None:
+        roots = {"default": "/stor/external_ds/aispeech", "aiplatform": "/stor/ds/aispeech"}
+        with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
+                with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
+                    source_resolver.resolve_aispeech_source_entry("/elsewhere/ds_pool/demo_ds")
+        message = str(ctx.exception)
+        self.assertIn("default", message)
+        self.assertIn("aiplatform", message)
 
 
 if __name__ == "__main__":

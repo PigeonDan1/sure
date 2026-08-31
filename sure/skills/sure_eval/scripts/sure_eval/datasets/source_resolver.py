@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,12 +24,13 @@ for _parent in Path(__file__).resolve().parents:
 from sure.site.loader import load_site_policy
 
 _configured_policy = load_site_policy()
-DEFAULT_SOURCE_ROOT = (
-    str(_configured_policy["policy"]["datasets"]["allowed_source_roots"][0])
+DEFAULT_SOURCE_ROOTS = (
+    _configured_policy["policy"]["datasets"]["allowed_source_roots"]
     if _configured_policy
-    else ""
+    else {}
 )
 SOURCE_ROOT_ENV = "SURE_DATASET_SOURCE_ROOT"
+_SOURCE_KEY_RE = re.compile(r"[a-z0-9][a-z0-9._-]*")  # the allowed_source_roots key grammar (sure.site.loader)
 
 
 class SourceResolutionError(ValueError):
@@ -46,14 +48,37 @@ class DatasetSourceRef:
     raw_dir: str
 
 
-def accepted_source_root() -> str:
+def _configured_source_roots() -> dict[str, str]:
+    source_roots = DEFAULT_SOURCE_ROOTS
+    if not source_roots:
+        resolved = load_site_policy(required=True)
+        source_roots = resolved["policy"]["datasets"]["allowed_source_roots"]
+    return dict(source_roots)
+
+
+def get_allowed_source_root(key: str) -> str:
+    """Look up a dataset source root by key from the configured allowed_source_roots."""
+    source_roots = _configured_source_roots()
+    if key not in source_roots:
+        available = ", ".join(sorted(source_roots.keys())) if source_roots else "none"
+        raise SourceResolutionError(
+            f"dataset_source_key '{key}' not found in allowed_source_roots. Available keys: {available}"
+        )
+    return source_roots[key]
+
+
+def accepted_source_root(key: str | None = None) -> str:
     override = os.environ.get(SOURCE_ROOT_ENV, "").strip()
     if override:
+        # A key fits sure.site.loader's key grammar; anything else (a posix path, a Windows path
+        # with no "/" in it) is the pre-map raw-path override.
+        if _SOURCE_KEY_RE.fullmatch(override):
+            return get_allowed_source_root(override)
         return override
-    if DEFAULT_SOURCE_ROOT:
-        return DEFAULT_SOURCE_ROOT
-    resolved = load_site_policy(required=True)
-    return str(resolved["policy"]["datasets"]["allowed_source_roots"][0])
+    if key:
+        return get_allowed_source_root(key)
+    # Default to "default" key if not specified
+    return get_allowed_source_root("default")
 
 
 def split_source_entry(entry: str) -> tuple[str, str | None]:
@@ -84,7 +109,25 @@ def _is_under(path: Path, root: Path) -> bool:
         return False
 
 
-def resolve_aispeech_source_entry(entry: str, explicit_version: str | None = None) -> DatasetSourceRef:
+def _rejected_root_hint(path: Path) -> str:
+    """What the caller should have passed, so a rejection is not a guessing game.
+
+    The site configures several roots under distinct keys. Saying only "must live
+    under <default>" left every caller with a path under another configured key to
+    find that key by trial: twenty runs died on this one message in two days.
+    """
+    try:
+        source_roots = _configured_source_roots()
+    except Exception:  # a rejection message must not fail on top of the rejection
+        return ""
+    for key, candidate in sorted(source_roots.items()):
+        if _is_under(path, Path(candidate)):
+            return f"This path is under allowed_source_roots key '{key}'; pass dataset_source_key={key}. "
+    listed = ", ".join(f"{key}={value}" for key, value in sorted(source_roots.items()))
+    return f"Configured allowed_source_roots: {listed}. " if listed else ""
+
+
+def resolve_aispeech_source_entry(entry: str, explicit_version: str | None = None, dataset_source_key: str | None = None) -> DatasetSourceRef:
     raw_root, embedded_version = split_source_entry(entry)
     if embedded_version and explicit_version and embedded_version != explicit_version:
         raise SourceResolutionError(
@@ -92,11 +135,12 @@ def resolve_aispeech_source_entry(entry: str, explicit_version: str | None = Non
             f"caller says {explicit_version}"
         )
     explicit_version = explicit_version or embedded_version
-    root = Path(accepted_source_root())
+    root = Path(accepted_source_root(dataset_source_key))
     path = Path(raw_root)
     if not _is_under(path, root):
         raise SourceResolutionError(
             f"dataset source root must live under {root}, got: {path}. "
+            f"{_rejected_root_hint(path)}"
             f"Expected form: {root}/.../ds_pool/<source_dataset_name>"
         )
     if path.parent.name != "ds_pool":

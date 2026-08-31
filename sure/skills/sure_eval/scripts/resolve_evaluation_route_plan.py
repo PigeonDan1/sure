@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import subprocess
 from datetime import datetime, timezone
@@ -65,6 +66,82 @@ def _selected_metrics(requested: list[str], capabilities: dict[str, Any]) -> lis
     return _dedupe([str(item) for item in capabilities.get("default_metrics") or []])
 
 
+
+# SKILL.md is explicit that a run never builds a node environment: no `uv venv`,
+# no `uv sync`, no searching storage for a wheel. The engine's plan hands back
+# exactly that command for a missing node, and this artifact used to carry it
+# through to the run, which followed it for twenty minutes and then hit its own
+# timeout. What belongs here is who prepares the environment and with which
+# supported command -- the same one the node itself names when it fails.
+FORBIDDEN_SETUP_FRAGMENTS = ("uv venv", "uv sync", "pip install")
+
+
+def _node_environment_blockers(plan: dict[str, Any]) -> list[dict[str, str]]:
+    """The node environments a maintainer has to prepare before this route can run."""
+    blockers: list[dict[str, str]] = []
+    for route in plan.get("selected_routes") or []:
+        if not isinstance(route, dict):
+            continue
+        for check in route.get("env_checks") or []:
+            if not isinstance(check, dict) or not check.get("blocking"):
+                continue
+            node_id = str(check.get("node_id") or "").strip()
+            if not node_id:
+                continue
+            blockers.append(
+                {
+                    "node_id": node_id,
+                    "group": str(check.get("group") or ""),
+                    "prepare_command": f"sure-eval env setup --node {node_id}",
+                }
+            )
+    return blockers
+
+
+def _maintainer_setup_commands(plan: dict[str, Any]) -> list[str]:
+    """Commands for whoever prepares the checkout, never steps inside a run."""
+    blockers = _node_environment_blockers(plan)
+    steps = (
+        [blocker["prepare_command"] for blocker in blockers]
+        if blockers
+        else [str(item).strip() for item in plan.get("next_steps") or []]
+    )
+    # The filter applies to both sources rather than only the fallback, so it is
+    # a rule about what may leave this function, not a branch that can go stale.
+    return [step for step in steps if step and not any(bad in step for bad in FORBIDDEN_SETUP_FRAGMENTS)]
+
+
+def _scrubbed_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """The engine's plan with its repair commands replaced by the supported one.
+
+    Each dataset entry carries selected_routes and the whole plan, so filtering
+    only the top-level setup_commands left the forbidden command in the artifact
+    the run actually reads.
+    """
+    scrubbed = copy.deepcopy(plan)
+    for route in scrubbed.get("selected_routes") or []:
+        if not isinstance(route, dict):
+            continue
+        for check in route.get("env_checks") or []:
+            if not isinstance(check, dict) or not isinstance(check.get("setup"), dict):
+                continue
+            node_id = str(check.get("node_id") or "").strip()
+            check["setup"]["command"] = f"sure-eval env setup --node {node_id}" if node_id else ""
+    scrubbed["next_steps"] = _maintainer_setup_commands(plan)
+    return scrubbed
+
+
+def _dedupe_blockers(blockers: list[dict[str, str]]) -> list[dict[str, str]]:
+    seen: set[str] = set()
+    unique: list[dict[str, str]] = []
+    for blocker in blockers:
+        if blocker["node_id"] in seen:
+            continue
+        seen.add(blocker["node_id"])
+        unique.append(blocker)
+    return unique
+
+
 def build_route_plan(
     input_path: Path,
     *,
@@ -96,6 +173,7 @@ def build_route_plan(
     dataset_plans: list[dict[str, Any]] = []
     blocking_issues: list[str] = []
     setup_commands: list[str] = []
+    node_blockers: list[dict[str, str]] = []
     for dataset in datasets:
         if not isinstance(dataset, dict):
             blocking_issues.append("dataset entry is not an object")
@@ -147,7 +225,9 @@ def build_route_plan(
             for issue in plan.get("blocking_issues") or []
         ]
         blocking_issues.extend(prefixed)
-        setup_commands.extend(str(item) for item in plan.get("next_steps") or [] if str(item).strip())
+        scrubbed_plan = _scrubbed_plan(plan)
+        setup_commands.extend(_maintainer_setup_commands(plan))
+        node_blockers.extend(_node_environment_blockers(plan))
         dataset_plans.append(
             {
                 "dataset": dataset_name,
@@ -162,8 +242,8 @@ def build_route_plan(
                 "catalog_entries": capabilities.get("catalog_entries") or [],
                 "status": plan.get("status"),
                 "can_run_now": bool(plan.get("can_run_now")),
-                "selected_routes": plan.get("selected_routes") or [],
-                "plan": plan,
+                "selected_routes": scrubbed_plan.get("selected_routes") or [],
+                "plan": scrubbed_plan,
             }
         )
 
@@ -181,6 +261,7 @@ def build_route_plan(
         "can_run_now": not blocking_issues,
         "blocking_issues": blocking_issues,
         "setup_commands": _dedupe(setup_commands),
+        "node_environment_blockers": _dedupe_blockers(node_blockers),
     }
     if output_path is not None:
         _write_json(output_path, payload)

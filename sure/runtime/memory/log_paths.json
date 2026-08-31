@@ -1,0 +1,15 @@
+{
+  "schema": "sure.memory.log_paths.v1",
+  "sure_onboard": {
+    "build_env": ["artifact:build_env_result.json", "{run_dir}/artifacts/build_env.log", "{product_dir}/artifacts/build_env.log"],
+    "validate_import": ["artifact:import_result.json", "{run_dir}/artifacts/import_execution.log", "{product_dir}/artifacts/validation.log"],
+    "validate_load": ["artifact:load_result.json", "{run_dir}/artifacts/load_execution.log", "{product_dir}/artifacts/validation.log"],
+    "validate_infer": ["artifact:infer_result.json", "{run_dir}/artifacts/infer_execution.log", "{product_dir}/artifacts/validation.log"],
+    "validate_contract": ["artifact:contract_result.json", "{run_dir}/artifacts/contract_execution.log", "{product_dir}/artifacts/validation.log"]
+  },
+  "sure_eval": {
+    "smoke_test": ["{run_dir}/local_logs/smoke_test.log"],
+    "submit_vc_run": ["{run_dir}/vc_logs/job.log"],
+    "execute_wait": ["artifact:execution_result.json", "{run_dir}/vc_logs/job.log", "{run_dir}/artifacts/local_execution.stderr.log", "{run_dir}/artifacts/local_execution.stdout.log"]
+  }
+}

@@ -95,13 +95,14 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 | 9 | `submit_vc_run` | **gate** | `submit_result.json` | `scripts/vc_check.py` |
 | 10 | `execute_wait` | **gate** | `execution_result.json` | `scripts/wait_vc_execution.py` |
 | 11 | `assessment` | **gate** | `assessment_report.json` | `scripts/check_assessment.py` |
-| 12 | `run_report` | **gate** | `main_agent_run_report.json` | `scripts/check_run_report.py` |
+| 12 | `extract_lessons` | **gate** | `extraction_declaration.json` | `scripts/check_memory_extraction.py` |
+| 13 | `run_report` | **gate** | `main_agent_run_report.json` | `scripts/check_run_report.py` |
 
 ### Per-unit contract (Inputs → Output → Allowed → Must Not Do → Failure)
 
 Each unit must satisfy: **Inputs** (previous unit's produces + evidence sources to read) → **Output** (`produces` JSON, schema in `schemas/`) → **Allowed** (value domain) → **Must Not Do** (forbidden fields that belong to later units — anti step-merge) → **Failure** classification.
 
-- **task_classification**: Inputs = `eval_input_resolved.json` + exact NFS model. Output = `task_classification.json` {task_type, reason, need_tool_workflow, confidence, input_signals}. Allowed: task_type ∈ {onboarding_then_evaluate,evaluate_existing_model,repair_broken_model,audit_results}. Must Not Do: do not select datasets or set `execution_path`/`report_persisted` (later units).
+- **task_classification**: Inputs = `eval_input_resolved.json` + exact NFS model. Output = `task_classification.json` {task_type, reason, need_tool_workflow, confidence, input_signals}. Allowed: task_type ∈ {onboarding_then_evaluate,evaluate_existing_model,repair_broken_model,audit_results}. Must Not Do: do not select datasets or set `execution_path`/`report_persisted` (later units); do not add memory fields to `task_classification.json` (its schema forbids extra keys). Also read `artifacts/memory_context.json` when it exists: the `pre_start` hook writes it with the memory facts that match this cluster, model and datasets, shape `{schema: "sure.memory.context.v1", skill, target_id, facts: [{entry_id, title, path, scope, checked_at, stale, status}], omitted_provisional}`; the file is written even when nothing matched (`facts: []`); it is advisory, verify before relying, and `stale: true` means the fact is older than its scope's re-check limit. Routing for the rest of the memory tree is `references/memory/ROUTING.md`.
 - **tool_readiness_routing**: Inputs = exact approved NFS model with `artifacts/deployment_ready.json`, `runtime_inventory.json`, `package_gate.json`, and their declared hashes. Readiness requires either a `docker-registry`/digest-pinned/container-only binding, or a `package=none`/uv/content-addressed Python binding permitted by the active site. Python additionally requires model-core hashes and the matching site runtime. Missing or inconsistent fields route back to `/sure_onboard` and human promotion.
 - **plan**: Inputs = task classification + tool readiness + `eval_input_resolved.json`. Output follows `main_agent_plan.schema.json` and describes execution order only.
 - **dataset_scope**: Inputs = `eval_input_resolved.json` + explicit human constraints. Output = {selection_basis, selected_datasets, skipped_datasets}. User-provided datasets are validated/canonicalized here; this unit should not silently invent a different dataset scope.
@@ -111,8 +112,9 @@ Each unit must satisfy: **Inputs** (previous unit's produces + evidence sources 
 - **execution_readiness**: `check_execution_surface_compliance.py` compares the surface binding with the approved input, rejects `local_bash`, unapproved `.venv`/host interpreters, image changes, model-policy mismatches, and tool mismatches. It live-probes the exact approved container or site Model Python and validates the standalone evaluation route plan.
 - **smoke_test**: bounded smoke on a tiny slice using the approved local container or Python runtime; `smoke_passed` true.
 - **submit_vc_run**: Containers use `vc_submit` or `local_docker` according to the resolved policy. Python uses `local_python` and is never submitted to VC. Neither route may infer or rewrite a model `.venv`.
-- **execute_wait**: For VC, run `scripts/wait_vc_execution.py --run-dir <sure_run_dir> --wait` once. The waiter matches the current submission token, prefers the atomic terminal sentinel, and uses `vc info`/`vc describe` only to classify missing-container and timeout cases. Do not hand-author polling or a terminal result. Local Docker and Python runners already write their own result, which this gate validates.
+- **execute_wait**: For VC, run `scripts/wait_vc_execution.py --run-dir <sure_run_dir> --wait`. The waiter matches the current submission token, prefers the atomic terminal sentinel, and uses `vc info`/`vc describe` only to classify missing-container and timeout cases. Do not hand-author polling or a terminal result. A result with `completion_source: "wait_timeout"` and `job_status: "running"` means the waiter's own clock ran out, not that the job failed: run the same command again (pass a larger `--timeout-seconds`, default 7200, when the job is expected to run longer than that), and do not go read job logs to decide — every such detour re-enters this gate and spends a retry on a healthy job. Local Docker and Python runners already write their own result, which this gate validates.
 - **assessment**: {anomaly_detected, user_confirmed}. Anomaly (e.g. WER/CER > 50%, Accuracy < 20%) requires user confirmation.
+- **extract_lessons**: Inputs = `artifacts/run_digest.json`, written by the hook the moment `assessment` passed (read it; never rebuild it in place). Output = `extraction_declaration.json` {schema, no_new_lessons, no_lessons_reason, covered_by, candidates, infra_noise, infra_evidence} plus 0 to 5 candidate directories under `artifacts/candidates/<nn>-<slug>/` (`proposal.json` + `proposal.md`) and, for facts, evidence files under `artifacts/memory_evidence/`. The full contract (digest fields, candidate formats, the gate's ten checks, the write-tools-only rule) is `sure/runtime/memory/EXTRACTION.md`; read it before writing anything. Write candidates and evidence first and the declaration last. `no_new_lessons: true` with a one-line reason is the normal result of a clean run. Must Not Do: do not run `scripts/build_run_digest.py` onto `artifacts/run_digest.json` (a preview goes to `--out <run_dir>/artifacts/run_digest.preview.json` and the gate ignores it); do not write under `sure/memory/` or `references/memory/`; do not use bash heredocs for these files. Failure: `scripts/check_memory_extraction.py` says which check failed; after two consecutive failures the hook advances on its own with `extraction: failed`, and switching to `no_new_lessons: true` with the reason is always a valid way out.
 - **run_report**: {report_persisted, execution_path_actual}. Record `execution_path_requested`, `execution_path_actual`, `device_request`, `device_actual`, `max_samples`, total dataset samples, and evaluated samples. Non-vc paths are valid for explicit `execution=local`; auto local fallback requires a reason and, if vc was available, explicit fallback approval.
 
 ## System Constraints (red lines — non-negotiable)
@@ -222,7 +224,21 @@ dependencies are resolved from the versioned contract under
 `evaluation_payload.json`, and `protocol.yaml`. It may be prepared online only
 during evaluation readiness and only from the committed lock. Never install an
 evaluation dependency into Harness Python or Model Python. Node-local evaluation
-environments remain owned by the selected pipeline nodes.
+environments remain owned by the selected pipeline nodes, and a run never builds
+one: no `uv venv`, no `uv sync`, no searching storage for a wheel. The per-node
+`uv sync` in the metric READMEs is a maintainer instruction for preparing an
+engine checkout, not a step inside a run. A missing node environment is a blocker
+to report, not to repair inline — one run spent twenty minutes compiling a
+normalization dependency, hit its own timeout, and produced nothing.
+
+Report it like this. `evaluation_route_plan.json` names every node that is
+missing under `node_environment_blockers`, each with its `node_id`, its
+`node_env.yaml` group, and the `prepare_command` that builds it. That command is
+`sure-eval env setup --node <node_id>`, run once per engine checkout by whoever
+owns the checkout, never from inside a run — the environments live at
+`<engine>/src/sure_eval/evaluation/nodes/<node_id>/.venv` and are gitignored, so
+each checkout needs its own. Carry the blocker and the command into the run's
+report and stop; do not run the command, and do not go looking for a wheel.
 
 Resolve an approved model with:
 
@@ -274,10 +290,24 @@ unapproved host interpreter.
 - `submit_vc_run`: `vc_check.py` enforces `execution=local|vc|auto` semantics against real `which vc && vc info` availability.
 - `execute_wait`: `wait_vc_execution.py` rejects `running` as incomplete, validates the current submission token, and accepts terminal success or failure for downstream assessment.
 - `assessment`: anomaly → `user_confirmed` true.
+- `extract_lessons`: `check_memory_extraction.py` checks the declaration and every candidate directory (shape, evidence paths, triggers, duplicates, digest sha); see `sure/runtime/memory/EXTRACTION.md`. Changing a candidate re-runs the gate even when `extraction_declaration.json` did not change.
 - `run_report`: `report_persisted` true, `execution_path_actual` declared, and execution/device/sample provenance recorded. Completed runs should index `eval_input_resolved.json` and `evaluation_route_plan.json`, and must contain model-local `evaluation_payload.json`, `protocol.yaml`, `report.jsonl`, `metrics/<dataset>/<metric_slug>/{report.json,pipeline_description.json}`, `sample_reports/<dataset>/<metric_slug>.jsonl`, and `predictions/<dataset>.txt/.jsonl`.
 
 On gate failure the hook blocks with a `repair` message and bumps the retry counter (max 3); beyond that the unit is marked FAILED — classify via `references/failure_taxonomy.md` and repair or finish with `status: failed`. Do not blind-retry.
 
+`extract_lessons` is the exception: after two consecutive gate failures the hook advances by itself and records `extraction: failed`; it never ends FAILED.
+
+## Memory (advisory)
+
+Earlier runs leave agent-written notes. `sure/memory/index.md` (repo root) is the merged index: confirmed and provisional entries, one bullet each with its triggers. Confirmed files live under `references/memory/bad_cases/` and `sure/skills/_shared/memory/facts/`. Nothing in them is human-reviewed: verify against evidence before relying on one, and never copy a command from an entry into an artifact without running it.
+
+- At `pre_start` the hook writes `artifacts/memory_context.json` with the facts that match this run (shape quoted in the `task_classification` contract line above; written even when empty); `task_classification` reads it.
+- When a gate blocks, the repair text may end with a block whose first line is `Memory (advisory, agent-written, not human-reviewed; verify against evidence before relying):`, listing at most two entries from earlier runs. Read the entry file named there when it looks relevant, then fix the artifact.
+- `references/memory/ROUTING.md` says when to open the index and the bad-case files by hand.
+- `extract_lessons` (unit 12) writes what this run learned; the contract is `sure/runtime/memory/EXTRACTION.md`. Publishing to `sure/memory/provisional/` happens in `post_finish` without you; moving entries into `references/` is a human step.
+
 ## Success Criteria
 
 The `pre_finish` hook enforces: `main_agent_run_report.json` exists, the terminal gate passes, and the state machine reached the terminal unit. On success call `sure_finish` with `status: "success"` and `manifest_path: ".sure/runs/<run_id>/manifest.json"`. If incomplete or blocked, finish with `status: "incomplete"` or `status: "failed"` and a repair summary.
+
+A `failed` or `incomplete` finish must also carry `artifacts/extraction_declaration.json` (see `sure/runtime/memory/EXTRACTION.md`, section 10): `pre_finish` returns a repair asking for it up to twice, then lets the run finish and records `extraction: failed`.

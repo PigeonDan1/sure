@@ -374,6 +374,13 @@ For providers with partial OpenAI compatibility, use the `compat` field.
 - Provider-level `compat` applies defaults to all models under that provider.
 - Model-level `compat` overrides provider-level values for that model.
 
+You do not always have to work these out yourself. `/sure_init` closes with one real request
+through a gateway, and when it comes back refusing something it names — the `developer` role,
+the `store` parameter, `max_completion_tokens`, an assistant message without
+`reasoning_content` — it records that setting at the provider and asks again, reporting each
+one it settled. A failure that names nothing is left alone, so a dead key or a gateway having
+a bad day never writes a guessed setting.
+
 ```json
 {
   "providers": {

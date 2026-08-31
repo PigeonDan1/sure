@@ -1,0 +1,50 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "index.schema.json",
+	"title": "SURE memory merged index",
+	"description": "sure/memory/index.json (memory design spec 6.4): confirmed + legacy entries from references/ plus provisional entries from sure/memory/provisional/, rebuilt by index.py. match.ts reads only this file and treats an unknown schema value as a corrupt index. sources_sha256 is the sha256 over every source file's relative path + content sha, sorted by path; index.py --check rebuilds only when it changes. Documentation only.",
+	"type": "object",
+	"required": ["schema", "built_at", "sources_sha256", "entries", "omitted_provisional"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.memory.index.v1"] },
+		"built_at": { "type": "string" },
+		"sources_sha256": { "type": "string" },
+		"omitted_provisional": { "type": "integer", "description": "provisional rows left out of index.md by the line / byte budget" },
+		"hash_mismatch": { "type": "array", "items": { "type": "string" }, "description": "entry ids left out of the index because entry.md no longer matches meta.entry_sha256; reported by index.py --check on stderr and by cli rebuild-index. Absent in index.json files written before this key existed." },
+		"entries": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["entry_id", "type", "status", "target_skill", "applies_to", "component", "cause", "trigger", "hook_trigger", "scope", "title", "path", "legacy", "op", "target_entry", "similar_entry", "useful_activated", "useful_unattributed", "injections", "disputed", "created", "checked_at", "stale", "superseded_by"],
+				"properties": {
+					"entry_id": { "type": "string" },
+					"type": { "type": "string", "enum": ["bad_case", "fact"] },
+					"status": { "type": "string", "enum": ["provisional", "confirmed", "disputed", "superseded", "rejected"] },
+					"target_skill": { "type": "string" },
+					"applies_to": { "type": "array", "items": { "type": "string" } },
+					"component": { "type": ["string", "null"], "description": "unit id, '_' , or null for a headerless legacy entry" },
+					"cause": { "type": ["string", "null"] },
+					"trigger": { "type": "array", "items": { "type": "string" }, "description": "empty for headerless legacy entries (they never match in hooks)" },
+					"hook_trigger": { "type": "array", "items": { "type": "string" }, "description": "subset of trigger used by hook injection: meta.hook_trigger when present (bad_case: triggers seen in the run digest at publish), else trigger" },
+					"scope": { "type": ["string", "null"] },
+					"title": { "type": "string", "description": "H1 of the entry file; the only text hooks inject" },
+					"path": { "type": "string", "description": "repo-relative path of the entry file" },
+					"legacy": { "type": "boolean" },
+					"op": { "type": "string", "enum": ["add", "modify", "supersede"] },
+					"target_entry": { "type": ["string", "null"] },
+					"similar_entry": { "type": ["string", "null"] },
+					"useful_activated": { "type": "integer" },
+					"useful_unattributed": { "type": "integer" },
+					"injections": { "type": "integer" },
+					"disputed": { "type": "integer" },
+					"created": { "type": ["object", "string"] },
+					"checked_at": { "type": ["string", "null"] },
+					"stale": { "type": "boolean" },
+					"superseded_by": { "type": ["string", "null"] }
+				},
+				"additionalProperties": true
+			}
+		}
+	},
+	"additionalProperties": true
+}

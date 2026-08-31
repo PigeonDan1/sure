@@ -6,5 +6,5 @@
 			"@earendil-works/pi-coding-agent/hooks": ["./packages/coding-agent/src/core/sure/hook-types.ts"]
 		}
 	},
-	"include": ["sure/skills/*/hooks/**/*.ts"]
+	"include": ["sure/skills/*/hooks/**/*.ts", "sure/runtime/memory/**/*.ts"]
 }

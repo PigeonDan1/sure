@@ -1,0 +1,9 @@
+{
+  "schema": "sure.memory.units.v1",
+  "skills": {
+    "sure_onboard": ["load_model_input","context_selection","discover","classify","plan","build_plan","validate_spec","prepare_fixture","build_env","fetch_weights","validate_env_compat","generate_wrapper","validate_import","validate_load","validate_infer","validate_contract","package_container","save_artifacts","package_gate","write_runtime_inventory","verdict","extract_lessons","finalize_model_bundle"],
+    "sure_eval": ["task_classification","tool_readiness_routing","plan","dataset_scope","script_routing","execution_surface","execution_readiness","smoke_test","submit_vc_run","execute_wait","assessment","extract_lessons","run_report"],
+    "sure_feed": ["scan_modelscope","match_task","collect_metadata","convert_to_oref","synthesize_model_input","rank_and_select","emit_handoff_manifest"],
+    "sure_reval": []
+  }
+}

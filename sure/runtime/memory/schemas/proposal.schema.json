@@ -1,0 +1,65 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "proposal.schema.json",
+	"title": "SURE memory candidate proposal",
+	"description": "artifacts/candidates/<nn>-<slug>/proposal.json (memory design spec 5.3). Documentation and test fixture only: proposals.py validates by hand and applies the ten gate rules; nothing loads this file at run time. cell.component must be a unit id of target_skill from units.json ('_' for facts and for skills without a state machine).",
+	"type": "object",
+	"required": ["schema", "type", "op", "target_skill", "target_entry", "applies_to", "cell", "trigger", "causal", "evidence", "claims", "source", "similar", "scope", "checked_at"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.memory.proposal.v2"] },
+		"type": { "type": "string", "enum": ["bad_case", "fact"] },
+		"op": { "type": "string", "enum": ["add", "modify", "supersede"] },
+		"target_skill": { "type": "string", "enum": ["sure_onboard", "sure_eval", "sure_feed", "sure_reval", "_shared"] },
+		"target_entry": { "type": ["string", "null"], "description": "entry id <target_skill>/<slug> for modify / supersede; null for add" },
+		"applies_to": { "type": "array", "items": { "type": "string" }, "description": "skills that may consume the entry; a bad_case must use exactly [target_skill]" },
+		"cell": {
+			"type": "object",
+			"required": ["component", "cause"],
+			"properties": {
+				"component": { "type": "string", "description": "unit id of target_skill, or '_'" },
+				"cause": { "type": "string", "enum": ["python_dependency_missing", "system_dependency_missing", "cuda_version_mismatch", "wrong_python_version", "missing_weights", "wrong_entrypoint", "config_not_set", "runtime_backend_incompatible", "infra", "job_submission", "resource_limit", "data_layout", "result_layout", "metric_bypass", "n.a."] }
+			},
+			"additionalProperties": false
+		},
+		"trigger": { "type": "array", "items": { "type": "string" }, "description": "literal substrings, at most config max_triggers_per_candidate; no '|', no ';', no 're:' prefix; see gate rule 4" },
+		"causal": { "type": "boolean", "description": "true when the entry claims a cause; then at least one evidence entry must be path:line" },
+		"evidence": { "type": "array", "items": { "type": "string" }, "description": "path or path:line relative to the run directory (.sure/runs/<run_id>/) or the target directory; no absolute paths, no '..'" },
+		"claims": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["kind", "unit", "attempt", "status"],
+				"properties": {
+					"kind": { "type": "string", "enum": ["unit_result", "gate_repair"] },
+					"unit": { "type": "string" },
+					"attempt": { "type": "integer" },
+					"status": { "type": "string" }
+				},
+				"additionalProperties": false
+			}
+		},
+		"source": {
+			"type": "object",
+			"required": ["run_id", "skill", "target", "digest_sha256"],
+			"properties": {
+				"run_id": { "type": "string" },
+				"skill": { "type": "string", "enum": ["sure_onboard", "sure_eval", "sure_feed", "sure_reval"] },
+				"target": { "type": "string" },
+				"digest_sha256": { "type": "string", "description": "sha256 of artifacts/run_digest.json as built by the hook; gate rule 9 compares it with the checkpoint and the file on disk" }
+			},
+			"additionalProperties": false
+		},
+		"similar": {
+			"type": ["object", "null"],
+			"required": ["entry", "difference"],
+			"properties": {
+				"entry": { "type": "string", "description": "entry id in the index" },
+				"difference": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"scope": { "type": ["string", "null"], "description": "facts only: cluster | model_family:<name> | dataset:<name>; null for bad_case" },
+		"checked_at": { "type": ["string", "null"], "description": "facts only: YYYY-MM-DD; null for bad_case" }
+	},
+	"additionalProperties": false
+}

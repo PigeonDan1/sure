@@ -173,6 +173,19 @@ class WaitVcExecutionTests(unittest.TestCase):
         self.assertTrue(result["timed_out"])
         self.assertIn("still running", "; ".join(waiter._validation_errors(result, self.submit)))
 
+    def test_timeout_says_the_job_is_alive_and_the_wait_should_be_repeated(self) -> None:
+        def run_vc(command: list[str]) -> subprocess.CompletedProcess[str]:
+            output = "StartTime: 2026-08-30 00:00:01\nEndTime:\n" if command[1] == "info" else "Running"
+            return subprocess.CompletedProcess(command, 0, output, "")
+
+        result = self.wait(run_vc=run_vc)
+
+        # A timeout is the waiter giving up, not the job failing. Anything that
+        # reads this as a failure goes off diagnosing a healthy run.
+        self.assertIn("wait_timeout", result["next_action"])
+        errors = "; ".join(waiter._validation_errors(result, self.submit))
+        self.assertIn("not a failure", errors)
+
     def test_stale_submission_token_is_rejected(self) -> None:
         self.write_sentinel(exit_code=0, token="b" * 32)
 

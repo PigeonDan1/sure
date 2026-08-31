@@ -38,7 +38,8 @@
 		"timed_out": { "type": "boolean" },
 		"poll_count": { "type": "integer", "minimum": 0 },
 		"vc_info_excerpt": { "type": "string" },
-		"vc_describe_excerpt": { "type": "string" }
+		"vc_describe_excerpt": { "type": "string" },
+		"next_action": { "type": "string" }
 	},
 	"additionalProperties": false
 }

@@ -23,6 +23,9 @@ interface RecordedRequest {
 }
 let requests: RecordedRequest[] = [];
 
+/** How the fake gateway behaves this test. Reset in beforeEach. */
+let gateway: { reasoning: boolean; refuseDeveloperRole: boolean };
+
 function isStreamed(request: RecordedRequest): boolean {
 	return request.method === "POST" && request.path === "/v1/chat/completions" && request.body?.stream === true;
 }
@@ -47,6 +50,7 @@ beforeEach(async () => {
 	mkdirSync(tempDir, { recursive: true });
 	modelsPath = join(tempDir, "models.json");
 	requests = [];
+	gateway = { reasoning: false, refuseDeveloperRole: false };
 	server = createServer((req, res) => {
 		const chunks: Buffer[] = [];
 		req.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -72,6 +76,20 @@ beforeEach(async () => {
 			if (req.method === "POST" && req.url === "/v1/chat/completions") {
 				// The closing round trip goes through pi-ai itself, which always streams.
 				if (parsed?.stream === true) {
+					const roles = ((parsed.messages ?? []) as Array<{ role?: string }>).map((message) => message.role);
+					if (gateway.refuseDeveloperRole && roles.includes("developer")) {
+						res.statusCode = 400;
+						res.setHeader("content-type", "application/json");
+						res.end(
+							JSON.stringify({
+								error: {
+									message:
+										"messages[0].role: unknown variant `developer`, expected one of `system`, `user`, `assistant`, `tool`",
+								},
+							}),
+						);
+						return;
+					}
 					res.setHeader("content-type", "text/event-stream");
 					for (const event of STREAMED_OK) {
 						res.write(`data: ${event}\n\n`);
@@ -79,14 +97,19 @@ beforeEach(async () => {
 					res.end("data: [DONE]\n\n");
 					return;
 				}
-				// The capability probe. Answering chat/completions with no reasoning tokens makes
-				// /sure_init record openai-completions and no usable effort level.
+				// The capability probe. Reasoning tokens are what tells it a level was honoured, so
+				// a gateway that reports none is recorded as openai-completions with no usable effort.
+				const thought = gateway.reasoning && parsed?.reasoning_effort !== "none";
 				res.setHeader("content-type", "application/json");
 				res.end(
 					JSON.stringify({
 						id: "chatcmpl-e2e",
 						choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
-						usage: { prompt_tokens: 1, completion_tokens: 1, completion_tokens_details: { reasoning_tokens: 0 } },
+						usage: {
+							prompt_tokens: 1,
+							completion_tokens: 1,
+							completion_tokens_details: { reasoning_tokens: thought ? 5 : 0 },
+						},
 					}),
 				);
 				return;
@@ -159,6 +182,32 @@ describe("init gateway E2E over real HTTP", () => {
 		expect(probeIndex).toBeGreaterThanOrEqual(0);
 		expect(roundTripIndex).toBeGreaterThan(probeIndex);
 		expect(JSON.stringify(requests[roundTripIndex].body?.messages)).toContain("say ok");
+	});
+
+	it("settles a refused developer role against a live gateway and gets through", async () => {
+		// Everything above stubs the round trip; this one lets it go out for real, so it is the
+		// only test that can show the recorded setting reaching the wire.
+		gateway = { reasoning: true, refuseDeveloperRole: true };
+		const { ctx, settingsManager } = makeContext(false);
+		const result = await runSureInit({
+			ctx,
+			args: `--option custom --name e2egw --base-url ${baseUrl} --api-key sk-e2e --model alpha`,
+			settingsManager,
+			modelsJsonPath: modelsPath,
+		});
+		expect(result.success).toBe(true);
+		expect(JSON.parse(readFileSync(modelsPath, "utf-8")).providers.e2egw.compat).toMatchObject({
+			supportsDeveloperRole: false,
+		});
+		const streamed = requests.filter(isStreamed);
+		expect(streamed).toHaveLength(2);
+		const roles = streamed.map((request) =>
+			((request.body?.messages ?? []) as Array<{ role: string }>).map((m) => m.role),
+		);
+		expect(roles[0]).toContain("developer");
+		expect(roles[1]).toContain("system");
+		expect(roles[1]).not.toContain("developer");
+		expect(settingsManager.getDefaultModel()).toBe("alpha");
 	});
 
 	it("surfaces the HTTP status when the key is wrong", async () => {

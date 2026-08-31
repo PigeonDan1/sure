@@ -303,6 +303,32 @@ fi
 DATASET_ARRAY=("${EXPANDED_DATASET_ARRAY[@]}")
 echo "Concrete datasets: ${DATASET_ARRAY[*]}"
 
+# [2.6/5] Evaluation readiness gate
+# The locked Evaluation Runtime used to be exercised for the first time in
+# [5/5], with every prediction already generated. Two runs lost 4h51m and
+# 1h21m of GPU to a runtime that was never going to load. Ask before the pass.
+case "$TOOL_NAME" in
+  synthesize_speech|convert_voice)
+    : # Audio tasks hand off at [4/5] and never reach the evaluation engine.
+    ;;
+  *)
+    if [[ "$SKIP_VALIDATE_AND_EVAL" != "1" && "$EVALUATION_BACKEND" == "external" ]]; then
+      EVAL_ENGINE_ROOT="${SURE_EVALUATION_HOME:-$HARNESS_REPO_ROOT/sure/external/sure-evaluation}"
+      echo "[2.6/5] evaluation readiness ($EVAL_ENGINE_ROOT)"
+      READINESS_EXIT=0
+      "$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/evaluation_runtime.py" \
+        --engine-root "$EVAL_ENGINE_ROOT" \
+        --output "$RUN_DIR/evaluation_readiness.json" >/dev/null || READINESS_EXIT=$?
+      if [[ "$READINESS_EXIT" != "0" ]]; then
+        echo "ERROR: the evaluation runtime is not usable; [5/5] would fail after the full prediction pass." >&2
+        echo "Run directory: $RUN_DIR" >&2
+        exit "$READINESS_EXIT"
+      fi
+      echo "Evaluation runtime ready: $RUN_DIR/evaluation_readiness.json"
+    fi
+    ;;
+esac
+
 if [[ "$REPAIR_INVALID_ONLY" == "1" ]]; then
   # -------------------------------------------------------------------------
   # [2R/5] Repair invalid prediction rows only
@@ -452,6 +478,7 @@ else
   fi
 
   echo "Smoke test passed (${SMOKE_NONEMPTY}/${SMOKE_LINES} valid). Proceeding to full run..."
+
   if [[ "${SMOKE_ONLY:-0}" == "1" ]]; then
     echo "Smoke-only mode requested; stopping after smoke gate."
     exit 0
@@ -516,7 +543,12 @@ for dataset in "${DATASET_ARRAY[@]}"; do
   PRED_FILE="$RUN_DIR/predictions/${dataset}.txt"
   NUM_LINES=0
   if [[ -f "$PRED_FILE" ]]; then
-    NUM_LINES=$(wc -l < "$PRED_FILE" || echo 0)
+    # Not "wc -l": the snapshot writer materializes a row for every sample the
+    # moment it first runs, so the line count is the dataset size from the first
+    # second onward and says nothing about how much was generated. A row counts
+    # once it has a prediction in the second field, the same test the smoke gate
+    # uses.
+    NUM_LINES=$(awk -F'\t' '$2!="" {n++} END {print n+0}' "$PRED_FILE" || echo 0)
   fi
   if [[ "$FIRST" == "1" ]]; then
     FIRST=0

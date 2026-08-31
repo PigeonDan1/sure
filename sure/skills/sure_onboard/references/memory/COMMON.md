@@ -34,23 +34,29 @@ Use routing before reading optional memory:
 
 1. Read `task_playbooks/ROUTING.md` and select task playbooks.
 2. Read `playbooks/env_ROUTING.md` and select environment playbooks.
-3. Read `memory/ROUTING.md` only when a failure, ambiguity, or known difficult
-   case appears.
+3. Read `<run_dir>/artifacts/memory_context.json` once if it exists (hook-written
+   memory facts for this run).
+4. Read `memory/ROUTING.md` only when a failure, ambiguity, or known difficult
+   case appears; it points at `sure/memory/index.md`, the merged memory index.
 
 Do not load all task playbooks, all environment playbooks, or all bad cases by
 default.
 
 ## Artifact Recording
 
-When context selection affects a decision, record it in the run artifacts:
+Record the memory files you actually read in `context_selection.json` under
+`selected_references.memory`; the schema has no other memory field:
 
 ```json
 {
-  "context_selection": {
-    "task_playbooks_read": [],
-    "environment_playbooks_read": [],
-    "memory_files_read": [],
-    "reason": "short evidence-based reason"
-  }
+  "task_type": "asr",
+  "selected_references": {
+    "default": ["references/AGENTS.md", "references/memory/COMMON.md", "references/task_playbooks/ROUTING.md", "references/playbooks/env_ROUTING.md"],
+    "task_playbooks": ["references/task_playbooks/ASR.md"],
+    "environment_playbooks": ["references/playbooks/env_uv.md"],
+    "contracts": ["references/contracts/spec_validation.md"],
+    "memory": ["references/memory/COMMON.md", "sure/memory/index.md"]
+  },
+  "rationale": "short evidence-based reason"
 }
 ```

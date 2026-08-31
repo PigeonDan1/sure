@@ -1077,6 +1077,75 @@ describe("runSureInit", () => {
 			expect(result.message).toContain("xhigh");
 		});
 
+		it("settles what the relay refused and gets the round trip through", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const verify = vi
+				.fn()
+				.mockResolvedValueOnce({
+					ok: false,
+					detail: "400 messages[0].role: unknown variant `developer`, expected one of `system`, `user`",
+				})
+				.mockResolvedValueOnce({ ok: true });
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify,
+			});
+			expect(result.success).toBe(true);
+			expect(verify).toHaveBeenCalledTimes(2);
+			// Recorded at the provider so every model on this relay picks it up, and so the next
+			// session does not rediscover it. The user is told, because models.json is theirs.
+			const parsed = JSON.parse(readFileSync(modelsPath, "utf-8"));
+			expect(parsed.providers.apifusion.compat).toMatchObject({ supportsDeveloperRole: false });
+			expect(result.message).toContain("developer");
+		});
+
+		it("writes no setting for a failure that names none", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const verify = vi.fn(async () => ({ ok: false, detail: "HTTP 502" }));
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify,
+			});
+			expect(result.success).toBe(false);
+			// A gateway having a bad day says nothing about how it wants to be talked to. Turning
+			// a capability off here would write a wrong setting nobody goes looking for again.
+			expect(verify).toHaveBeenCalledTimes(1);
+			expect(JSON.parse(readFileSync(modelsPath, "utf-8")).providers.apifusion.compat).toBeUndefined();
+		});
+
+		it("stops instead of retrying a setting it already tried", async () => {
+			const modelsPath = join(tempDir, "models.json");
+			writeGatewayFile(modelsPath);
+			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const verify = vi.fn(async () => ({
+				ok: false,
+				detail: "400 messages[0].role: unknown variant `developer`",
+			}));
+			const result = await runSureInit({
+				ctx,
+				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol",
+				settingsManager,
+				modelsJsonPath: modelsPath,
+				probe: solProbe(),
+				verify,
+			});
+			expect(result.success).toBe(false);
+			expect(verify).toHaveBeenCalledTimes(2);
+			expect(result.message).toContain("默认模型没有切换");
+		});
+
 		it("fails init when the real round trip does not come back", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);

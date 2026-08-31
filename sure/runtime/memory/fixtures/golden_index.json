@@ -1,0 +1,385 @@
+{
+  "schema": "sure.memory.index.v1",
+  "built_at": "2026-08-18T00:00:00Z",
+  "sources_sha256": "6de290ebe9da898236ad3bb57f5d52ea9b5684d5349ee315e3d28a9fab04f54c",
+  "entries": [
+    {
+      "entry_id": "_shared/qwen-audio-needs-cu121",
+      "type": "fact",
+      "status": "confirmed",
+      "target_skill": "_shared",
+      "applies_to": [
+        "_shared"
+      ],
+      "component": "_",
+      "cause": "n.a.",
+      "trigger": [
+        "torch was compiled with cuda 12.1"
+      ],
+      "hook_trigger": [
+        "torch was compiled with cuda 12.1"
+      ],
+      "scope": "model_family:qwen-audio",
+      "title": "qwen-audio wheels need a cu121 torch build",
+      "path": "sure/skills/_shared/memory/facts/qwen-audio-needs-cu121.md",
+      "legacy": false,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": null,
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 0,
+      "disputed": 0,
+      "created": {
+        "run_id": "run-20260811-cccc",
+        "date": "2026-08-11"
+      },
+      "checked_at": "2099-01-01",
+      "stale": false,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "_shared/vc-partition-names",
+      "type": "fact",
+      "status": "confirmed",
+      "target_skill": "_shared",
+      "applies_to": [
+        "_shared"
+      ],
+      "component": "_",
+      "cause": "n.a.",
+      "trigger": [],
+      "hook_trigger": [],
+      "scope": "cluster",
+      "title": "The 3090 partition is named site-gpu",
+      "path": "sure/skills/_shared/memory/facts/vc-partition-names.md",
+      "legacy": false,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": null,
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 0,
+      "disputed": 0,
+      "created": {
+        "run_id": "run-20260810-bbbb",
+        "date": "2026-08-10"
+      },
+      "checked_at": "2020-01-01",
+      "stale": true,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "sure_onboard/legacy_headerless",
+      "type": "bad_case",
+      "status": "confirmed",
+      "target_skill": "sure_onboard",
+      "applies_to": [
+        "sure_onboard"
+      ],
+      "component": "_",
+      "cause": "n.a.",
+      "trigger": [],
+      "hook_trigger": [],
+      "scope": null,
+      "title": "Legacy Headerless Case",
+      "path": "sure/skills/sure_onboard/references/memory/bad_cases/legacy_headerless.md",
+      "legacy": true,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": null,
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 0,
+      "disputed": 0,
+      "created": "legacy",
+      "checked_at": null,
+      "stale": false,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "sure_onboard/no-kernel-image",
+      "type": "bad_case",
+      "status": "confirmed",
+      "target_skill": "sure_onboard",
+      "applies_to": [
+        "sure_onboard"
+      ],
+      "component": "build_env",
+      "cause": "cuda_version_mismatch",
+      "trigger": [
+        "no kernel image is available",
+        "CUDA error: no kernel image"
+      ],
+      "hook_trigger": [
+        "no kernel image is available",
+        "CUDA error: no kernel image"
+      ],
+      "scope": null,
+      "title": "CUDA arch mismatch: no kernel image",
+      "path": "sure/skills/sure_onboard/references/memory/bad_cases/no-kernel-image.md",
+      "legacy": true,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": null,
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 0,
+      "disputed": 0,
+      "created": "legacy",
+      "checked_at": null,
+      "stale": false,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "sure_onboard/partition-not-found",
+      "type": "bad_case",
+      "status": "confirmed",
+      "target_skill": "sure_onboard",
+      "applies_to": [
+        "sure_onboard"
+      ],
+      "component": "validate_env_compat",
+      "cause": "infra",
+      "trigger": [
+        "partition not found"
+      ],
+      "hook_trigger": [
+        "partition not found"
+      ],
+      "scope": null,
+      "title": "vc submit rejects the queue alias",
+      "path": "sure/skills/sure_onboard/references/memory/bad_cases/partition-not-found.md",
+      "legacy": false,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": null,
+      "useful_activated": 3,
+      "useful_unattributed": 0,
+      "injections": 5,
+      "disputed": 0,
+      "created": {
+        "run_id": "run-x",
+        "date": "2026-08-13"
+      },
+      "checked_at": null,
+      "stale": false,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "sure_onboard/pip-index-timeout-v2",
+      "type": "bad_case",
+      "status": "provisional",
+      "target_skill": "sure_onboard",
+      "applies_to": [
+        "sure_onboard"
+      ],
+      "component": "build_env",
+      "cause": "python_dependency_missing",
+      "trigger": [
+        "ReadTimeoutError: HTTPSConnectionPool"
+      ],
+      "hook_trigger": [
+        "ReadTimeoutError: HTTPSConnectionPool"
+      ],
+      "scope": null,
+      "title": "Read timed out on the pip index (mirror fix)",
+      "path": "sure/memory/provisional/sure_onboard/pip-index-timeout-v2/entry.md",
+      "legacy": false,
+      "op": "modify",
+      "target_entry": "sure_onboard/pip-index-timeout",
+      "similar_entry": null,
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 0,
+      "disputed": 0,
+      "created": {
+        "run_id": "run-20260819-eeee",
+        "date": "2026-08-19"
+      },
+      "checked_at": null,
+      "stale": false,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "sure_onboard/pip-index-timeout",
+      "type": "bad_case",
+      "status": "provisional",
+      "target_skill": "sure_onboard",
+      "applies_to": [
+        "sure_onboard"
+      ],
+      "component": "build_env",
+      "cause": "python_dependency_missing",
+      "trigger": [
+        "ReadTimeoutError: HTTPSConnectionPool"
+      ],
+      "hook_trigger": [
+        "ReadTimeoutError: HTTPSConnectionPool"
+      ],
+      "scope": null,
+      "title": "Read timed out on the pip index",
+      "path": "sure/memory/provisional/sure_onboard/pip-index-timeout/entry.md",
+      "legacy": false,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": null,
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 0,
+      "disputed": 0,
+      "created": {
+        "run_id": "run-20260818-dddd",
+        "date": "2026-08-18"
+      },
+      "checked_at": null,
+      "stale": false,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "sure_onboard/pip-index-timeout-old",
+      "type": "bad_case",
+      "status": "provisional",
+      "target_skill": "sure_onboard",
+      "applies_to": [
+        "sure_onboard"
+      ],
+      "component": "build_env",
+      "cause": "python_dependency_missing",
+      "trigger": [
+        "ReadTimeoutError: HTTPSConnectionPool"
+      ],
+      "hook_trigger": [
+        "ReadTimeoutError: HTTPSConnectionPool"
+      ],
+      "scope": null,
+      "title": "First sighting of the pip index timeout",
+      "path": "sure/memory/provisional/sure_onboard/pip-index-timeout-old/entry.md",
+      "legacy": false,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": null,
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 0,
+      "disputed": 0,
+      "created": {
+        "run_id": "run-20260817-cccc",
+        "date": "2026-08-17"
+      },
+      "checked_at": null,
+      "stale": false,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "sure_eval/job-log-missing",
+      "type": "bad_case",
+      "status": "disputed",
+      "target_skill": "sure_eval",
+      "applies_to": [
+        "sure_eval"
+      ],
+      "component": "execute_wait",
+      "cause": "infra",
+      "trigger": [
+        "job.log: No such file"
+      ],
+      "hook_trigger": [
+        "job.log: No such file"
+      ],
+      "scope": null,
+      "title": "vc job log never appeared",
+      "path": "sure/skills/sure_eval/references/memory/bad_cases/job-log-missing.md",
+      "legacy": false,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": null,
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 2,
+      "disputed": 1,
+      "created": {
+        "run_id": "run-x",
+        "date": "2026-08-13"
+      },
+      "checked_at": null,
+      "stale": false,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "sure_eval/smoke-oom",
+      "type": "bad_case",
+      "status": "disputed",
+      "target_skill": "sure_eval",
+      "applies_to": [
+        "sure_eval"
+      ],
+      "component": "smoke_test",
+      "cause": "resource_limit",
+      "trigger": [
+        "CUDA out of memory",
+        "evidence-only: dmesg oom-killer"
+      ],
+      "hook_trigger": [
+        "CUDA out of memory"
+      ],
+      "scope": null,
+      "title": "Smoke test dies with CUDA out of memory",
+      "path": "sure/memory/provisional/sure_eval/smoke-oom/entry.md",
+      "legacy": false,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": "sure_eval/job-log-missing",
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 0,
+      "disputed": 1,
+      "created": {
+        "run_id": "run-20260812-ffff",
+        "date": "2026-08-12"
+      },
+      "checked_at": null,
+      "stale": false,
+      "superseded_by": null
+    },
+    {
+      "entry_id": "sure_onboard/old-partition-name",
+      "type": "bad_case",
+      "status": "superseded",
+      "target_skill": "sure_onboard",
+      "applies_to": [
+        "sure_onboard"
+      ],
+      "component": "_",
+      "cause": "infra",
+      "trigger": [
+        "partition not found: 3090-data"
+      ],
+      "hook_trigger": [
+        "partition not found: 3090-data"
+      ],
+      "scope": null,
+      "title": "Old partition alias case",
+      "path": "sure/skills/sure_onboard/references/memory/bad_cases/old-partition-name.md",
+      "legacy": false,
+      "op": "add",
+      "target_entry": null,
+      "similar_entry": null,
+      "useful_activated": 0,
+      "useful_unattributed": 0,
+      "injections": 0,
+      "disputed": 0,
+      "created": {
+        "run_id": "run-20260701-zzzz",
+        "date": "2026-07-01"
+      },
+      "checked_at": null,
+      "stale": false,
+      "superseded_by": "sure_onboard/partition-not-found"
+    }
+  ],
+  "omitted_provisional": 0,
+  "hash_mismatch": [
+    "sure_onboard/sha-mismatch"
+  ]
+}

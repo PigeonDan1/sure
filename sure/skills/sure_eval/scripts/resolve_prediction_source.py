@@ -177,6 +177,7 @@ def build_payload(
         raise FileNotFoundError(f"approved model has no result directory: {model_results_dir}")
     candidates: list[tuple[Path, list[dict[str, Any]], dict[str, set[str]]]] = []
     discovered: list[dict[str, Any]] = []
+    incomplete: list[dict[str, Any]] = []
     for candidate in sorted(path for path in model_results_dir.iterdir() if path.is_dir()):
         if candidate.is_symlink():
             raise ValueError(f"approved result candidates must be real NFS directories, not symlink aliases: {candidate}")
@@ -186,7 +187,21 @@ def build_payload(
         candidate_protocol = candidate / "protocol.yaml"
         candidate_report = candidate / "report.jsonl"
         candidate_predictions = candidate / "predictions"
-        if not candidate_protocol.is_file() or not candidate_report.is_file() or not candidate_predictions.is_dir():
+        missing = [
+            name
+            for name, present in (
+                ("protocol.yaml", candidate_protocol.is_file()),
+                ("report.jsonl", candidate_report.is_file()),
+                ("predictions/", candidate_predictions.is_dir()),
+            )
+            if not present
+        ]
+        if missing:
+            # Skipping these silently is what made a crashed run unexplainable:
+            # [5/5] is what writes protocol.yaml and report.jsonl, so a run that
+            # died there leaves predictions and nothing else, and the error read
+            # as if the directory had not been looked at.
+            incomplete.append({"path": str(candidate), "missing": missing})
             continue
         for label, artifact in (
             ("protocol", candidate_protocol),
@@ -223,10 +238,18 @@ def build_payload(
         if candidate_datasets == requested:
             candidates.append((resolved_candidate, candidate_rows, candidate_stems))
     if not candidates:
-        raise FileNotFoundError(
+        detail = (
             "no approved NFS result exactly matches model, protocol, and dataset set; "
             f"model={model!r}, protocol={protocol_id!r}, datasets={requested}, discovered={discovered}"
         )
+        if incomplete:
+            detail += (
+                f", incomplete={incomplete}. /sure_reval recomputes pipelines from a complete approved "
+                "result; a directory missing protocol.yaml or report.jsonl never finished evaluating and "
+                "cannot be revalidated. Re-run the evaluation for it instead: generation resumes from the "
+                "predictions already there."
+            )
+        raise FileNotFoundError(detail)
     if len(candidates) != 1:
         raise ValueError(
             "approved NFS result identity is ambiguous for model, protocol, and dataset set: "

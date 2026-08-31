@@ -22,7 +22,7 @@ export interface SitePolicy {
 		runtime_root: string;
 	};
 	datasets: {
-		allowed_source_roots: string[];
+		allowed_source_roots: Record<string, string>;
 		projection_root?: string;
 	};
 	execution: {
@@ -95,6 +95,35 @@ function expectUniqueStrings(value: unknown, location: string, absolute: boolean
 	);
 	if (new Set(items).size !== items.length) throw new Error(`${location} must not contain duplicates`);
 	return items;
+}
+
+function expectSourceRoots(value: unknown, location: string): Record<string, string> {
+	// Support legacy single-path array format: [/path] → { "default": "/path" }
+	if (Array.isArray(value)) {
+		if (value.length === 0) throw new Error(`${location} must contain at least one entry`);
+		if (value.length !== 1) throw new Error(`${location} must contain exactly one path in policy v1 (or use key-value format)`);
+		const path = expectAbsolutePath(value[0], `${location}[0]`);
+		return { default: path };
+	}
+	if (typeof value !== "object" || value === null) {
+		throw new Error(`${location} must be a mapping`);
+	}
+	const record = value as Record<string, unknown>;
+	const result: Record<string, string> = {};
+	const paths = new Set<string>();
+	for (const [key, val] of Object.entries(record)) {
+		if (!/^[a-z0-9][a-z0-9._-]*$/.test(key)) {
+			throw new Error(`${location} key "${key}" must match pattern [a-z0-9][a-z0-9._-]*`);
+		}
+		const path = expectAbsolutePath(val, `${location}.${key}`);
+		if (paths.has(path)) throw new Error(`${location} must not contain duplicate paths`);
+		paths.add(path);
+		result[key] = path;
+	}
+	if (Object.keys(result).length === 0) {
+		throw new Error(`${location} must contain at least one entry`);
+	}
+	return result;
 }
 
 function expectRepositoryTemplate(value: unknown): string {
@@ -186,7 +215,7 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 			runtime_root: expectAbsolutePath(storage.runtime_root, "storage.runtime_root"),
 		},
 		datasets: {
-			allowed_source_roots: expectUniqueStrings(datasets.allowed_source_roots, "datasets.allowed_source_roots", true),
+			allowed_source_roots: expectSourceRoots(datasets.allowed_source_roots, "datasets.allowed_source_roots"),
 		},
 		execution: {
 			surfaces: surfaces as ExecutionSurface[],

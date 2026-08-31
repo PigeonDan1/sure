@@ -45,6 +45,16 @@
 		"harness_runtime": { "type": "object", "additionalProperties": true },
 		"harness_runtime_mounted_from_repo": { "type": "boolean" },
 		"model_runtime": { "type": "object", "additionalProperties": true },
+		"evaluation_runtime": {
+			"type": ["object", "null"],
+			"description": "The Evaluation Runtime binding the host injected into this submission, or null when the run has none. The SUBMIT_EXECUTION gate resolves one independently and reports a disagreement.",
+			"additionalProperties": true
+		},
+		"surface_env_refused": {
+			"type": "array",
+			"description": "Variables the execution surface asked for that the run does not decide: PATH, the loader and interpreter variables, GIT_*, and the SURE_EVALUATION_*/SURE_HARNESS_* bindings.",
+			"items": { "type": "string" }
+		},
 		"vc_submission": {
 			"type": "object",
 			"description": "Effective VC submission snapshot mirrored into execution_surface.vc_runtime.resolved_submission.",

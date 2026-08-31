@@ -1,0 +1,46 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "run_digest.schema.json",
+	"title": "SURE memory run digest",
+	"description": "artifacts/run_digest.json built by scripts/build_run_digest.py when the state machine enters extract_lessons (memory design spec 4.3). When the digest cannot be built the file is {schema, error} and the extraction gate only accepts no_new_lessons: true. Documentation only; digest.py owns the content and trims it to config digest_max_bytes.",
+	"type": "object",
+	"required": ["schema"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.memory.run_digest.v1"] },
+		"error": { "type": "string", "description": "present only when the digest could not be built" },
+		"run": {
+			"type": "object",
+			"required": ["run_id", "skill"],
+			"properties": {
+				"run_id": { "type": "string" },
+				"skill": { "type": "string" },
+				"args": { "type": "string", "description": "skill args with output_dir removed" },
+				"target": { "type": "object", "properties": { "kind": { "type": "string", "enum": ["model", "eval"] }, "id": { "type": "string" } } },
+				"status_so_far": { "type": "string" },
+				"cutoff": { "type": "integer", "description": "events.jsonl line count when the digest was built" },
+				"memory_usage": { "type": "array", "items": { "type": "object", "properties": { "entry_id": { "type": "string" }, "unit": { "type": "string" }, "attempt": { "type": "integer" }, "outcome": { "type": "string", "enum": ["useful", "disputed", "open"] } } } }
+			}
+		},
+		"units": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["id", "outcome"],
+				"properties": {
+					"id": { "type": "string" },
+					"outcome": { "type": "string", "enum": ["passed", "failed", "skipped", "current"] },
+					"attempts": { "type": "integer" },
+					"repairs": { "type": "array", "items": { "type": "object", "properties": { "attempt": { "type": "integer" }, "text": { "type": "string", "description": "raw gate repair, Memory block stripped, head 200 + tail 400 chars" } } } },
+					"fix_window": { "type": "array", "items": { "type": "object", "properties": { "tool": { "type": "string" }, "command": { "type": "string" } } } },
+					"last_commands": { "type": "array", "items": { "type": "object", "properties": { "tool": { "type": "string" }, "command": { "type": "string" } } }, "description": "same {tool, command} rows as fix_window; only for units that ended failed" },
+					"log_tail": { "type": ["object", "null"], "properties": { "path": { "type": "string", "description": "log_paths.json template with {run_dir} / {product_dir} placeholders, or 'artifact:<produces file name>'" }, "lines": { "type": "array", "items": { "type": "string" } } } }
+				}
+			}
+		},
+		"tool_errors": { "type": "integer" },
+		"prior_runs": { "type": "array", "items": { "type": "object", "properties": { "run_id": { "type": "string" }, "status": { "type": "string" }, "failed_unit": { "type": ["string", "null"] }, "finished_at": { "type": ["string", "null"] }, "last_repair": { "type": ["string", "null"] }, "candidates": { "type": "array", "items": { "type": "string" } } } } },
+		"memory_index_snapshot": { "type": "array", "items": { "type": "object" } },
+		"units_registry": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } }
+	},
+	"additionalProperties": true
+}

@@ -381,6 +381,14 @@ export async function processResponsesStream<TApi extends Api>(
 		}
 		// Map status to stop reason
 		output.stopReason = mapStopReason(response?.status);
+		if (output.stopReason === "error") {
+			// The status is the only record of why, and the caller throws right
+			// after this, so keep it rather than let the throw invent a reason.
+			const error = response?.error;
+			output.errorMessage = error
+				? `${error.code || "unknown"}: ${error.message || "no message"}`
+				: `Response ${response?.status}`;
+		}
 		if (output.content.some((b) => b.type === "toolCall") && output.stopReason === "stop") {
 			output.stopReason = "toolUse";
 		}
@@ -512,7 +520,7 @@ export async function processResponsesStream<TApi extends Api>(
 		} else if (event.type === "response.completed" || event.type === "response.incomplete") {
 			finalizeResponse(event.response);
 		} else if (event.type === "error") {
-			throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
+			throw new Error(`Error Code ${event.code || "unknown"}: ${event.message || "no message"}`);
 		} else if (event.type === "response.failed") {
 			sawTerminalResponseEvent = true;
 			const error = event.response?.error;

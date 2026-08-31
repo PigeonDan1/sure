@@ -11,8 +11,13 @@ memory/
 ├── COMMON.md              # default shared memory
 ├── ROUTING.md             # when to read optional memory
 └── bad_cases/
-    └── README.md          # index of failure-specific memories
+    ├── README.md          # route table of exported bad cases (cli export keeps it in sync)
+    └── <slug>.md          # one confirmed bad case per file, five-line provenance header on top
 ```
+
+Entries that are not yet confirmed live outside git under `sure/memory/`
+(`provisional/`, `outbox/`); `sure/memory/index.md` is the merged index over
+both layers and is what `ROUTING.md` points at first.
 
 ## Default Context
 
@@ -26,5 +31,5 @@ Do not read bad-case memory by default.
 
 ## Audit
 
-When optional memory is read, record why in `build_plan.json`,
-`failure_classification.json`, or `tool_agent_run_report.json`.
+Record the memory files actually read in `context_selection.json` under
+`selected_references.memory` (see `ROUTING.md`).

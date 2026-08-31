@@ -174,12 +174,20 @@ sure/skills/<skill-name>/
   examples/         # usage examples
 ```
 
+Shared memory code lives outside the skill packages, next to the harness runtime:
+
+```text
+sure/runtime/memory/      # digest, gates, publish, index, cli (python, stdlib only) + match.ts / hooks.ts
+sure/memory/              # instance data, git-ignored, group-writable in a shared checkout
+```
+
 ### Targeted Checks
 
 ```bash
 npm run check:sure-hooks
 python3 -m py_compile sure/skills/sure_eval/scripts/*.py
 cd sure/skills/sure_onboard/scripts && python3 -m unittest test_runtime_inventory.py
+python3 -m unittest discover -s sure/runtime/memory -p "test_*.py"
 ```
 
 - `test_runtime_inventory.py` imports its siblings without touching `sys.path`, so it only runs from inside that directory.
@@ -187,7 +195,7 @@ cd sure/skills/sure_onboard/scripts && python3 -m unittest test_runtime_inventor
 - Run `npm run sure:doctor` after changes that affect setup, skill discovery, or external engine detection.
 - `npm run check` covers repo checks only and never runs tests; it is non-mutating, so use `npm run format` when Biome should rewrite files.
 
-SURE test files live in `packages/coding-agent/test/suite/` (`sure-extension`, `sure-feed`, `sure-onboard-state-machine`, `sure-onboard-terminal`, `sure-eval-state-machine`, `sure-eval-runbackend`, `sure-eval-red-lines`, `sure-reval-terminal`, `sure-run-output-dir`, `sure-runtime-binding`, `sure-skill-output-dir`) plus the init suites under `packages/coding-agent/test/sure/`. Run them from `packages/coding-agent` per the vitest rule in Commands.
+SURE test files live in `packages/coding-agent/test/suite/` (`sure-extension`, `sure-feed`, `sure-onboard-state-machine`, `sure-onboard-terminal`, `sure-eval-state-machine`, `sure-eval-runbackend`, `sure-eval-red-lines`, `sure-reval-terminal`, `sure-run-output-dir`, `sure-runtime-binding`, `sure-skill-output-dir`, `sure-memory-match`, `sure-memory-hooks`) plus the init suites under `packages/coding-agent/test/sure/`. Run them from `packages/coding-agent` per the vitest rule in Commands.
 
 ### Credential-Free Launchers
 
@@ -232,6 +240,7 @@ Generated paths kept out of Git include:
 /sure/skills/sure_eval/results/
 /sure/.runtime/
 /sure/handoffs/
+/sure/memory/
 /sure/models/*
 ```
 

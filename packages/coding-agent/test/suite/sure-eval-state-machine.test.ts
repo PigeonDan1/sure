@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CheckpointData } from "../../../../sure/skills/sure_eval/hooks/checkpoints.ts";
-import { countersFor, postToolResult, preFinish } from "../../../../sure/skills/sure_eval/hooks/index.ts";
-import { findUnit, LAST_UNIT } from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
+import type { CheckpointData, RunCheckpoint } from "../../../../sure/skills/sure_eval/hooks/checkpoints.ts";
+import { advance, bumpRetry } from "../../../../sure/skills/sure_eval/hooks/checkpoints.ts";
+import { countersFor, postToolResult, preFinish, preToolCall } from "../../../../sure/skills/sure_eval/hooks/index.ts";
+import { findUnit, LAST_UNIT, type Unit } from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
 import type { SureHookContext } from "../../src/core/sure/types.ts";
 
 // sure_eval skill package root (repo-relative from the test file).
@@ -422,6 +423,7 @@ describe("sure_eval gate-with-script units have no in-process gateCheck (python 
 		["submit_vc_run", "vc_check.py"],
 		["execute_wait", "wait_vc_execution.py"],
 		["assessment", "check_assessment.py"],
+		["extract_lessons", "check_memory_extraction.py"],
 		["run_report", "check_run_report.py"],
 	])("%s delegates semantics to its python gateScript (no in-process gateCheck)", (unitId, script) => {
 		const unit = findUnit(unitId)!;
@@ -435,8 +437,16 @@ describe("sure_eval gate-with-script units have no in-process gateCheck (python 
 	it("execution_readiness keeps its in-process gateCheck (disjoint from python)", () => {
 		expect(findUnit("execution_readiness")!.gateCheck).toBeDefined();
 	});
-	it("script_routing/smoke_test/submit_vc_run/execute_wait/assessment/run_report drop in-process gateCheck", () => {
-		for (const id of ["script_routing", "smoke_test", "submit_vc_run", "execute_wait", "assessment", "run_report"]) {
+	it("gate-with-script units drop the in-process gateCheck (incl. extract_lessons)", () => {
+		for (const id of [
+			"script_routing",
+			"smoke_test",
+			"submit_vc_run",
+			"execute_wait",
+			"assessment",
+			"extract_lessons",
+			"run_report",
+		]) {
 			expect(findUnit(id)!.gateCheck).toBeUndefined();
 		}
 	});
@@ -492,6 +502,7 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 				"submit_vc_run",
 				"execute_wait",
 				"assessment",
+				"extract_lessons",
 			],
 			retries: {},
 		});
@@ -523,6 +534,7 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 				"submit_vc_run",
 				"execute_wait",
 				"assessment",
+				"extract_lessons",
 			],
 			retries: {},
 		});
@@ -561,6 +573,7 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 				"submit_vc_run",
 				"execute_wait",
 				"assessment",
+				"extract_lessons",
 				"run_report",
 			],
 			retries: {},
@@ -580,8 +593,8 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 		const result = preFinish(ctx);
 		const patch = statePatch(result);
 		expect(result.ok).toBe(true);
-		expect(patch.counters?.completed_units).toBe(12);
-		expect(patch.counters?.total_units).toBe(12);
+		expect(patch.counters?.completed_units).toBe(13);
+		expect(patch.counters?.total_units).toBe(13);
 	});
 });
 
@@ -593,5 +606,103 @@ describe("sure_eval countersFor", () => {
 			retries: { discover: 4, classify: 2 },
 		};
 		expect(countersFor(data, 0).gate_blocks).toBe(6);
+	});
+
+	it("keeps counting blocks after the blocked unit passes", () => {
+		const unit = findUnit("task_classification");
+		expect(unit).toBeDefined();
+		let data: CheckpointData = {
+			currentUnit: "task_classification",
+			completedUnits: [],
+			retries: {},
+		};
+		data = bumpRetry(unit as Unit, data).data;
+		data = bumpRetry(unit as Unit, data).data;
+		expect(countersFor(data, 0).gate_blocks).toBe(2);
+
+		// advance() clears the unit's retry entry, which is right for the retry
+		// budget and wrong for a run-long tally: a run that was blocked twice and
+		// then finished used to report zero blocks.
+		data = (advance(unit as Unit, data) as RunCheckpoint).data;
+		expect(countersFor(data, 0).gate_blocks).toBe(2);
+	});
+});
+
+// Spec §4.1: extract_lessons declares helperScripts (build_run_digest.py, for the
+// --out preview only) and eval's preToolCall must honour them the way
+// sure_onboard already does: allowed only while that unit is current, never
+// from another unit. Gate scripts of completed units stay allowed as before.
+describe("sure_eval preToolCall honours helperScripts", () => {
+	const UP_TO_ASSESSMENT = [
+		"task_classification",
+		"tool_readiness_routing",
+		"plan",
+		"dataset_scope",
+		"script_routing",
+		"execution_surface",
+		"execution_readiness",
+		"smoke_test",
+		"submit_vc_run",
+		"execute_wait",
+		"assessment",
+	];
+
+	function toolCtx(name: string, currentUnit: string, completedUnits: string[], command: string): SureHookContext {
+		const { ctx, runDir } = freshCtx(name);
+		seedCheckpoint(runDir, { currentUnit, completedUnits, retries: {} });
+		ctx.point = "pre_tool_call";
+		ctx.event = { toolName: "bash", input: { command } };
+		return ctx;
+	}
+
+	it("extract_lessons declares build_run_digest.py as its only helper script", () => {
+		const unit = findUnit("extract_lessons");
+		expect(unit).toBeDefined();
+		expect(unit?.helperScripts).toEqual(["build_run_digest.py"]);
+		expect(unit?.gateScript).toBe("check_memory_extraction.py");
+	});
+
+	it("allows the digest preview helper while extract_lessons is current", () => {
+		const ctx = toolCtx(
+			"helper-allowed",
+			"extract_lessons",
+			UP_TO_ASSESSMENT,
+			"python3 scripts/build_run_digest.py --run-dir .sure/runs/x --repo-root . --out artifacts/run_digest.preview.json",
+		);
+		expect(preToolCall(ctx).ok).toBe(true);
+	});
+
+	it("still allows the unit's own gate script", () => {
+		const ctx = toolCtx(
+			"gate-allowed",
+			"extract_lessons",
+			UP_TO_ASSESSMENT,
+			"python3 scripts/check_memory_extraction.py --run-dir .sure/runs/x --produces artifacts/extraction_declaration.json",
+		);
+		expect(preToolCall(ctx).ok).toBe(true);
+	});
+
+	it("rejects the helper from an earlier unit", () => {
+		const ctx = toolCtx(
+			"helper-too-early",
+			"assessment",
+			UP_TO_ASSESSMENT.slice(0, -1),
+			"python3 scripts/build_run_digest.py --run-dir .sure/runs/x --repo-root .",
+		);
+		const result = preToolCall(ctx);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain('is not permitted from unit "assessment"');
+	});
+
+	it("rejects the helper from a later unit even though extract_lessons is completed", () => {
+		const ctx = toolCtx(
+			"helper-too-late",
+			"run_report",
+			[...UP_TO_ASSESSMENT, "extract_lessons"],
+			"python3 scripts/build_run_digest.py --run-dir .sure/runs/x --repo-root .",
+		);
+		const result = preToolCall(ctx);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain('is not permitted from unit "run_report"');
 	});
 });

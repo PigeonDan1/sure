@@ -28,6 +28,7 @@ import type { GoogleThinkingLevel } from "./google-shared.ts";
 import {
 	convertMessages,
 	convertTools,
+	describeStopReason,
 	isThinkingPart,
 	mapStopReason,
 	mapToolChoice,
@@ -209,6 +210,9 @@ export const stream: StreamFunction<"google-generative-ai", GoogleOptions> = (
 
 				if (candidate?.finishReason) {
 					output.stopReason = mapStopReason(candidate.finishReason);
+					if (output.stopReason === "error") {
+						output.errorMessage = describeStopReason(candidate.finishReason, candidate.finishMessage);
+					}
 					if (output.content.some((b) => b.type === "toolCall")) {
 						output.stopReason = "toolUse";
 					}
@@ -259,7 +263,7 @@ export const stream: StreamFunction<"google-generative-ai", GoogleOptions> = (
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unknown error occurred");
+				throw new Error(output.errorMessage || "An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });

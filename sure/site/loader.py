@@ -71,6 +71,32 @@ def _unique_strings(value: Any, location: str, *, absolute: bool) -> list[str]:
     return items
 
 
+def _source_roots(value: Any, location: str) -> dict[str, str]:
+    # Support legacy single-path array format: [/path] → { "default": "/path" }
+    if isinstance(value, list):
+        if not value:
+            raise SitePolicyError(f"{location} must contain at least one entry")
+        if len(value) != 1:
+            raise SitePolicyError(f"{location} must contain exactly one path in policy v1 (or use key-value format)")
+        path = _absolute_path(value[0], f"{location}[0]")
+        return {"default": path}
+    if not isinstance(value, dict):
+        raise SitePolicyError(f"{location} must be a mapping")
+    result: dict[str, str] = {}
+    paths: set[str] = set()
+    for key, val in value.items():
+        if not isinstance(key, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", key):
+            raise SitePolicyError(f"{location} key \"{key}\" must match pattern [a-z0-9][a-z0-9._-]*")
+        path = _absolute_path(val, f"{location}.{key}")
+        if path in paths:
+            raise SitePolicyError(f"{location} must not contain duplicate paths")
+        paths.add(path)
+        result[key] = path
+    if not result:
+        raise SitePolicyError(f"{location} must contain at least one entry")
+    return result
+
+
 def validate_site_policy(value: Any) -> dict[str, Any]:
     root = _mapping(value, "site policy")
     _reject_unknown(
@@ -118,7 +144,7 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
             "runtime_root": _absolute_path(storage.get("runtime_root"), "storage.runtime_root"),
         },
         "datasets": {
-            "allowed_source_roots": _unique_strings(datasets.get("allowed_source_roots"), "datasets.allowed_source_roots", absolute=True),
+            "allowed_source_roots": _source_roots(datasets.get("allowed_source_roots"), "datasets.allowed_source_roots"),
         },
         "execution": {"surfaces": surfaces, "local_runtimes": local_runtimes},
     }

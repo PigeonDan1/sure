@@ -132,6 +132,25 @@ export function buildInvocationPrompt(skillPackage: SureSkillPackage, run: SureR
 	].join("\n");
 }
 
+export function buildResumePrompt(
+	skillPackage: SureSkillPackage,
+	run: SureRunRecord,
+	state: SureDisplayState | undefined,
+): string {
+	const checkpoint = state?.checkpoint;
+	return [
+		buildInvocationPrompt(skillPackage, run),
+		"",
+		`<sure_resume run_id="${run.runId}">`,
+		"This run already produced work in its run directory. Pick it back up rather than starting over.",
+		`Checkpoint: ${checkpoint?.label ?? checkpoint?.id ?? "(unnamed)"}`,
+		`Where it stopped: ${state?.message ?? "(not recorded)"}`,
+		`Resume from: ${checkpoint?.resume_hint ?? "(no hint recorded; read the run directory to see what is already done)"}`,
+		"Read the existing artifacts before writing anything, and do not redo units that are already complete.",
+		"</sure_resume>",
+	].join("\n");
+}
+
 function toolText(text: string): SureToolContent[] {
 	return [{ type: "text", text }];
 }
@@ -535,6 +554,102 @@ async function startRun(
 	}
 }
 
+/** A run the agent may pick back up: same project, not stopped on purpose, checkpoint says so. */
+function isResumable(record: SureRunRecord, state: SureDisplayState | undefined, cwd: string): boolean {
+	if (record.cwd !== cwd) {
+		return false;
+	}
+	// "cancelled" is a deliberate interrupt, and the other terminal statuses mean
+	// the skill itself decided the run was over.
+	if (record.status !== "running" && record.status !== "failed") {
+		return false;
+	}
+	return state?.checkpoint?.resumable === true;
+}
+
+async function resumeRun(
+	pi: ExtensionAPI,
+	ctx: ExtensionCommandContext,
+	setActiveRun: (run: ActiveRun | undefined) => void,
+	runId: string | undefined,
+): Promise<void> {
+	if (!ctx.isIdle()) {
+		ctx.ui.notify("Cannot resume a Sure run while the agent is busy.", "warning");
+		return;
+	}
+	if (!ctx.isProjectTrusted()) {
+		ctx.ui.notify("Cannot resume a Sure run until this project is trusted.", "error");
+		return;
+	}
+
+	const runManager = new SureRunManager(ctx.cwd);
+	const candidates = runId ? [runId] : runManager.listRunIds().reverse();
+	let resumed: { record: SureRunRecord; state: SureDisplayState | undefined } | undefined;
+	for (const candidate of candidates) {
+		const record = runManager.readRun(candidate);
+		if (!record) {
+			continue;
+		}
+		const state = runManager.readState(record);
+		if (isResumable(record, state, ctx.cwd)) {
+			resumed = { record, state };
+			break;
+		}
+	}
+	if (!resumed) {
+		ctx.ui.notify(
+			runId
+				? `Sure run ${runId} cannot be resumed: no resumable checkpoint for this project.`
+				: "No resumable Sure run in this project.",
+			"warning",
+		);
+		return;
+	}
+
+	const discovered = discoverSureSkillPackages(ctx.cwd);
+	for (const diagnostic of discovered.diagnostics) {
+		pi.appendEntry("sure.diagnostic", diagnostic);
+	}
+	const skillPackage = discovered.packages.find((pkg) => pkg.manifest.command === resumed.record.command);
+	if (!skillPackage) {
+		ctx.ui.notify(`No Sure skill package found for /${resumed.record.command}.`, "error");
+		return;
+	}
+
+	const active: ActiveRun = {
+		record: resumed.record,
+		skillPackage,
+		hooks: new SureHookRunner(skillPackage),
+		previousActiveTools: pi.getActiveTools(),
+	};
+	setActiveRun(active);
+	// pre_start is deliberately not re-run: it resolves inputs and resets the
+	// checkpoint to the first unit, which is the progress a resume is protecting.
+	active.record = runManager.updateRun(active.record, { status: "running", finishedAt: undefined }, "resumed");
+	pi.setActiveTools(activeToolNames(active));
+	setRunStatusText(ctx, active.record, resumed.state);
+	pi.appendEntry("sure.run", active.record);
+	try {
+		await pi.sendUserMessage(buildResumePrompt(skillPackage, active.record, resumed.state));
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		active.record = runManager.updateRun(
+			active.record,
+			{
+				status: "failed",
+				finishedAt: new Date().toISOString(),
+				lastRepair: `Sure run failed to resume: ${message}`,
+			},
+			"agent_error",
+			{ message },
+		);
+		ctx.ui.setStatus(STATUS_KEY, undefined);
+		pi.appendEntry("sure.run", active.record);
+		clearActiveRun(pi, active, setActiveRun);
+		throw error;
+	}
+}
+
 function clearActiveRun(
 	pi: ExtensionAPI,
 	active: ActiveRun | undefined,
@@ -833,6 +948,20 @@ export function createSureExtension(): ExtensionFactory {
 			},
 		});
 
+		pi.registerCommand("sure_resume", {
+			description: "Resume a Sure run whose turn ended without sure_finish",
+			handler: async (args, ctx) => {
+				if (activeRun) {
+					ctx.ui.notify(
+						`Sure run ${activeRun.record.runId} is still active. Finish or abort it before resuming another run.`,
+						"warning",
+					);
+					return;
+				}
+				await resumeRun(pi, ctx, setActiveRun, args.trim() || undefined);
+			},
+		});
+
 		for (const command of SURE_COMMANDS) {
 			pi.registerCommand(command, {
 				description: `Run Sure skill /${command}`,
@@ -870,7 +999,7 @@ export function createSureExtension(): ExtensionFactory {
 				return undefined;
 			}
 			const runManager = new SureRunManager(active.record.cwd);
-			active.record = runManager.updateRun(active.record, {}, "tool_call", {
+			active.record = runManager.updateRun(active.record, { staleSince: undefined }, "tool_call", {
 				toolName: event.toolName,
 				toolCallId: event.toolCallId,
 				input: event.input,
@@ -940,16 +1069,50 @@ export function createSureExtension(): ExtensionFactory {
 			if (active.record.status !== "running") {
 				return;
 			}
+			if (event.willRetry) {
+				// The session restarts this same turn, so the run is not abandoned yet.
+				return;
+			}
 			const runManager = new SureRunManager(active.record.cwd);
+			const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+			// A provider that gave up leaves its reason only on the assistant message.
+			// Recording the reminder over it makes the run read as agent negligence.
+			const providerError =
+				lastAssistant !== undefined && "stopReason" in lastAssistant && lastAssistant.stopReason === "error"
+					? lastAssistant.errorMessage
+					: undefined;
+			// Without the state snapshot the event cannot tell "every unit done, only
+			// sure_finish missing" from "stalled on the third unit" after the fact.
+			const stalledState = runManager.readState(active.record);
 			active.record = runManager.updateRun(
 				active.record,
 				{
-					lastRepair: `The Sure run is still active. Call ${FINISH_TOOL_NAME} after producing the required manifest.`,
+					lastRepair:
+						providerError ??
+						`The Sure run is still active. Call ${FINISH_TOOL_NAME} after producing the required manifest.`,
+					// "running" on its own is a lie once the agent has stopped. Stamp the
+					// first stall so a reader can age the record without a live session.
+					staleSince: active.record.staleSince ?? new Date().toISOString(),
 				},
 				"finish_missing",
+				{
+					reason: providerError ? "provider_ended_turn" : "agent_turn_ended_without_finish",
+					nudges: active.finishNudges ?? 0,
+					phase: stalledState?.phase,
+					counters: stalledState?.counters,
+					checkpoint: stalledState?.checkpoint,
+				},
 			);
-			ctx.ui.notify(`Sure run ${active.record.runId} is still waiting for ${FINISH_TOOL_NAME}.`, "warning");
-			const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+			const headless = ctx.mode === "print" || ctx.mode === "json";
+			// Headless gets a continuation prompt below. An interactive operator gets
+			// only this line, and until it named the command there was nothing to act
+			// on: one run sat at "running" for 58 hours with every unit already done.
+			ctx.ui.notify(
+				headless
+					? `Sure run ${active.record.runId} is still waiting for ${FINISH_TOOL_NAME}.`
+					: `Sure run ${active.record.runId} is still waiting for ${FINISH_TOOL_NAME}. Run /sure_resume to continue it.`,
+				"warning",
+			);
 			const aborted =
 				lastAssistant !== undefined && "stopReason" in lastAssistant && lastAssistant.stopReason === "aborted";
 			if (aborted) {
@@ -957,7 +1120,6 @@ export function createSureExtension(): ExtensionFactory {
 				return;
 			}
 			active.finishMissing = true;
-			const headless = ctx.mode === "print" || ctx.mode === "json";
 			if (headless && (active.finishNudges ?? 0) < MAX_FINISH_NUDGES) {
 				active.finishNudges = (active.finishNudges ?? 0) + 1;
 				await pi.sendUserMessage(buildFinishNudge(active.record), { deliverAs: "followUp" });

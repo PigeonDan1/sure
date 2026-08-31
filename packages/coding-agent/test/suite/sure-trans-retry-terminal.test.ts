@@ -1,8 +1,15 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CheckpointData } from "../../../../sure/skills/sure_trans/hooks/checkpoints.ts";
-import { postToolResult } from "../../../../sure/skills/sure_trans/hooks/index.ts";
+import {
+	advance,
+	bumpRetry,
+	type CheckpointData,
+	type RunCheckpoint,
+	type Unit,
+} from "../../../../sure/skills/sure_trans/hooks/checkpoints.ts";
+import { countersFor, postToolResult } from "../../../../sure/skills/sure_trans/hooks/index.ts";
+import { findUnit } from "../../../../sure/skills/sure_trans/hooks/state-machine.ts";
 import type { SureHookContext } from "../../src/core/sure/types.ts";
 
 const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_trans");
@@ -78,5 +85,27 @@ describe("a gate that has run out of retries", () => {
 		const result = postToolResult(ctx);
 
 		expect(result.repair ?? "").not.toContain("no retries left");
+	});
+});
+
+describe("sure_trans countersFor", () => {
+	it("keeps counting blocks after the blocked unit passes", () => {
+		const unit = findUnit("validate_contract");
+		expect(unit).toBeDefined();
+		let data: CheckpointData = {
+			currentUnit: "validate_contract",
+			completedUnits: [],
+			retries: {},
+			failedArtifactDigests: {},
+		};
+		data = bumpRetry(unit as Unit, data).data;
+		data = bumpRetry(unit as Unit, data).data;
+		expect(countersFor(data, 0).gate_blocks).toBe(2);
+
+		// advance() clears the unit's retry entry, which is right for the retry
+		// budget and wrong for a run-long tally: a run that was blocked twice and
+		// then finished used to report zero blocks.
+		data = (advance(unit as Unit, data) as RunCheckpoint).data;
+		expect(countersFor(data, 0).gate_blocks).toBe(2);
 	});
 });

@@ -40,6 +40,9 @@ id_rsa.pub
 /sure/skills/sure_eval/results/
 /sure/.runtime/
 /sure/handoffs/
+# instance memory data (provisional entries, usage, digests);
+# confirmed entries live under sure/skills/*/references/memory/
+/sure/memory/
 
 # Models and large artifacts
 /sure/models/*
@@ -63,3 +66,6 @@ id_rsa.pub
 /.public-export/
 /.public-export-second/
 packages/coding-agent/test/suite/tmp-*/
+openspec/
+.claude/
+.idea/

@@ -217,6 +217,13 @@ function readRunState(tempDir: string, runId: string): unknown {
 	return JSON.parse(readFileSync(join(tempDir, ".sure", "runs", runId, "state.json"), "utf-8"));
 }
 
+function readRunEvents(tempDir: string, runId: string): Array<{ type: string; data?: unknown }> {
+	return readFileSync(join(tempDir, ".sure", "runs", runId, "events.jsonl"), "utf-8")
+		.split(/\r?\n/)
+		.filter((line) => line.trim().length > 0)
+		.map((line) => JSON.parse(line));
+}
+
 describe("Sure extension", () => {
 	const cleanups: Array<() => void> = [];
 
@@ -772,6 +779,114 @@ describe("Sure extension", () => {
 		expect(run.lastRepair).toContain("sure_finish");
 	});
 
+	it("records the provider error that ended the turn instead of the finish reminder", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			fauxAssistantMessage("", {
+				stopReason: "error",
+				errorMessage: "Azure OpenAI API error: unsupported tool schema",
+			}),
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.lastRepair).toContain("unsupported tool schema");
+	});
+
+	it("leaves the run record alone when the failed turn will be retried", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "503 service unavailable" }),
+			fauxAssistantMessage("back after the retry"),
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const events = readRunEvents(harness.tempDir, runId);
+
+		expect(events.filter((event) => event.type === "finish_missing").length).toBe(1);
+	});
+
+	it("points an interactive operator at /sure_resume when a turn ends without sure_finish", async () => {
+		const notifications: Array<{ message: string; type: string | undefined }> = [];
+		const harness = await createSureHarness({
+			uiContext: createNotifyCapturingUiContext((message, type) => notifications.push({ message, type })),
+		});
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([fauxAssistantMessage("stopping short of the manifest")]);
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const warning = notifications.find((entry) => entry.message.includes("sure_finish"));
+		expect(warning?.type).toBe("warning");
+		expect(warning?.message).toContain("/sure_resume");
+	});
+
+	it("stamps a still-running record with the moment the agent stopped", async () => {
+		const harness = await createSureHarness({ mode: "print" });
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			fauxAssistantMessage("pausing before the manifest"),
+			fauxAssistantMessage("turn 2"),
+			fauxAssistantMessage("turn 3"),
+			fauxAssistantMessage("turn 4"),
+			fauxAssistantMessage("turn 5"),
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("running");
+		expect(typeof run.staleSince).toBe("string");
+	});
+
+	it("records where the run stalled on the finish_missing event", async () => {
+		const harness = await createSureHarness({ mode: "print" });
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			fauxAssistantMessage(
+				fauxToolCall("sure_update_state", {
+					phase: { id: "run_report", label: "Run report", status: "running" },
+					counters: { completed_units: 12, total_units: 12 },
+				}),
+			),
+			fauxAssistantMessage("turn 2"),
+			fauxAssistantMessage("turn 3"),
+			fauxAssistantMessage("turn 4"),
+			fauxAssistantMessage("turn 5"),
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const stalled = readRunEvents(harness.tempDir, runId).find((event) => event.type === "finish_missing");
+		expect(stalled?.data).toMatchObject({
+			reason: "agent_turn_ended_without_finish",
+			phase: { id: "run_report" },
+			counters: { completed_units: 12, total_units: 12 },
+		});
+	});
+
 	it("keeps cancelled status when the run was interrupted rather than left unfinished", async () => {
 		const harness = await createSureHarness({ mode: "print" });
 		cleanups.push(harness.cleanup);
@@ -787,6 +902,57 @@ describe("Sure extension", () => {
 		const runId = getOnlyRunId(harness.tempDir);
 		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
 		expect(run.status).toBe("cancelled");
+	});
+
+	it("resumes an abandoned run in place instead of starting a new one", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([fauxAssistantMessage("stopping short of the manifest")]);
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const runDir = join(harness.tempDir, ".sure", "runs", runId);
+		writeJson(join(runDir, "state.json"), {
+			checkpoint: { id: "main_flow", resumable: true, resume_hint: "Start at unit two." },
+		});
+		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
+
+		harness.setResponses([fauxAssistantMessage("back at it")]);
+		await harness.session.prompt("/sure_resume");
+		await harness.session.agent.waitForIdle();
+
+		const run = JSON.parse(readFileSync(join(runDir, "run.json"), "utf-8"));
+		expect(run.status).toBe("running");
+		expect(readdirSync(join(harness.tempDir, ".sure", "runs")).length).toBe(1);
+		expect(getUserTexts(harness).some((text) => text.includes("Start at unit two."))).toBe(true);
+	});
+
+	it("refuses to resume a run whose checkpoint is not resumable", async () => {
+		const notifications: Array<{ message: string; type: string | undefined }> = [];
+		const harness = await createSureHarness({
+			uiContext: createNotifyCapturingUiContext((message, type) => notifications.push({ message, type })),
+		});
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([fauxAssistantMessage("stopping short of the manifest")]);
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const runDir = join(harness.tempDir, ".sure", "runs", runId);
+		writeJson(join(runDir, "state.json"), { checkpoint: { id: "main_flow", resumable: false } });
+		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
+
+		await harness.session.prompt("/sure_resume");
+		await harness.session.agent.waitForIdle();
+
+		const run = JSON.parse(readFileSync(join(runDir, "run.json"), "utf-8"));
+		expect(run.status).toBe("failed");
+		expect(notifications.some((entry) => entry.message.includes("No resumable Sure run"))).toBe(true);
 	});
 
 	it("accepts required artifacts recorded with concrete run-relative paths", async () => {

@@ -25,7 +25,21 @@
 		},
 		"can_run_now": { "type": "boolean" },
 		"blocking_issues": { "type": "array", "items": { "type": "string" } },
-		"setup_commands": { "type": "array", "items": { "type": "string" } }
+		"setup_commands": { "type": "array", "items": { "type": "string" } },
+		"node_environment_blockers": {
+			"type": "array",
+			"description": "Node-local environments a maintainer has to prepare before this route can run. A run reports these and stops; it never builds one.",
+			"items": {
+				"type": "object",
+				"required": ["node_id", "prepare_command"],
+				"properties": {
+					"node_id": { "type": "string" },
+					"group": { "type": "string" },
+					"prepare_command": { "type": "string" }
+				},
+				"additionalProperties": true
+			}
+		}
 	},
 	"additionalProperties": false
 }

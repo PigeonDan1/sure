@@ -34,6 +34,7 @@ def make_manager(tmp: Path) -> DatasetManager:
     manager._oref_config = {"datasets": {}, "fallbacks": {}}
     manager.oref_local_datasets = {}
     manager.dataset_fallbacks = {}
+    manager.dataset_source_key = "default"  # __init__'s default; normalize/convert read it since 19b17fc
     return manager
 
 

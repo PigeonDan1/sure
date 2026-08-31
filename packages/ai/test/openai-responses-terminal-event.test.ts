@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts";
 import { processResponsesStream } from "../src/api/openai-responses-shared.ts";
 import type { AssistantMessage, AssistantMessageEvent, Context, Model } from "../src/types.ts";
+import { PROVIDER_MIDSTREAM_ERROR } from "../src/utils/diagnostics.ts";
 import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
 
 vi.mock("openai", () => {
@@ -153,6 +154,29 @@ async function* createFailedEvents(): AsyncIterable<ResponseStreamEvent> {
 	} as ResponseStreamEvent;
 }
 
+// A gateway can close a stream with `response.completed` while the response it
+// carries reports a non-completed status. That status is the only record of why.
+async function* createCancelledCompletionEvents(): AsyncIterable<ResponseStreamEvent> {
+	yield {
+		type: "response.completed",
+		sequence_number: 0,
+		response: {
+			id: "resp_cancelled",
+			status: "cancelled",
+		},
+	} as ResponseStreamEvent;
+}
+
+async function* createErrorEvents(): AsyncIterable<ResponseStreamEvent> {
+	yield {
+		type: "error",
+		sequence_number: 0,
+		code: null,
+		message: "The model produced invalid content.",
+		param: null,
+	} as ResponseStreamEvent;
+}
+
 describe("OpenAI Responses terminal event handling", () => {
 	it("rejects streams that end before a terminal response event", async () => {
 		const model = createModel();
@@ -183,6 +207,9 @@ describe("OpenAI Responses terminal event handling", () => {
 		expect(lastEvent?.type).toBe("error");
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toBe("OpenAI Responses stream ended before a terminal response event");
+		// The request was accepted and the response had started, which is what
+		// makes this worth retrying regardless of how the failure is worded.
+		expect(result.diagnostics?.map((diagnostic) => diagnostic.type)).toContain(PROVIDER_MIDSTREAM_ERROR);
 	});
 
 	it("finalizes completed terminal events as stop", async () => {
@@ -221,6 +248,16 @@ describe("OpenAI Responses terminal event handling", () => {
 		});
 	});
 
+	it("names a missing error code instead of reporting it as null", async () => {
+		const model = createModel();
+		const output = createOutput(model);
+		const stream = new AssistantMessageEventStream();
+
+		await expect(processResponsesStream(createErrorEvents(), output, stream, model)).rejects.toThrow(
+			"Error Code unknown: The model produced invalid content.",
+		);
+	});
+
 	it("rejects failed terminal events with the provider error", async () => {
 		const model = createModel();
 		const output = createOutput(model);
@@ -229,5 +266,16 @@ describe("OpenAI Responses terminal event handling", () => {
 		await expect(processResponsesStream(createFailedEvents(), output, stream, model)).rejects.toThrow(
 			"server_error: boom",
 		);
+	});
+
+	it("names the response status behind a completed event that stopped in error", async () => {
+		const model = createModel();
+		const output = createOutput(model);
+		const stream = new AssistantMessageEventStream();
+
+		await processResponsesStream(createCancelledCompletionEvents(), output, stream, model);
+
+		expect(output.stopReason).toBe("error");
+		expect(output.errorMessage).toContain("cancelled");
 	});
 });
