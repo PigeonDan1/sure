@@ -20,6 +20,7 @@ export const SURE_COMMANDS = [
 	"research_discussion",
 	"sure_eval",
 	"sure_reval",
+	"sure_approve",
 	"sure_onboard",
 	"sure_trans",
 	"sure_feed",

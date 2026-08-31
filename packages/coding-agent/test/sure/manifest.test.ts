@@ -8,9 +8,11 @@ describe("discoverSureSkillPackages", () => {
 	it("discovers the bundled SURE skills without diagnostics", () => {
 		const result = discoverSureSkillPackages(repoRoot);
 		const commands = result.packages.map((pkg) => pkg.manifest.command);
+		expect(commands).toContain("sure_approve");
 		expect(commands).toContain("sure_reval");
 		expect(commands).toContain("sure_trans");
 		expect(result.diagnostics.filter((d) => d.message.includes("sure_reval"))).toEqual([]);
+		expect(result.diagnostics.filter((d) => d.message.includes("sure_approve"))).toEqual([]);
 		expect(result.diagnostics.filter((d) => d.message.includes("sure_trans"))).toEqual([]);
 	});
 });
