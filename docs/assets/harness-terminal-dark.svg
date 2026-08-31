@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 402" role="img" aria-label="SURE harness terminal session"><title>SURE harness: one /sure_feed → /sure_onboard → /sure_approve → /sure_eval session in the interactive terminal</title><style>.t{font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:12.5px;white-space:pre}
+.line{opacity:0}
+.fade{animation:fade 33.88s linear infinite}
+@keyframes fade{0%,97.344%{opacity:1}99.070%,100%{opacity:0}}
+.a0{animation:ka0 33.88s linear infinite}
+@keyframes ka0{0%,1.771%{opacity:0}1.800%,100%{opacity:1}}
+.c1{animation:kc1 33.88s linear infinite;transform:translateX(0)}
+@keyframes kc1{0%,1.712%{opacity:0;transform:translateX(0)}1.771%{opacity:1;transform:translateX(0);animation-timing-function:steps(10)}2.774%{opacity:1;transform:translateX(76.0px)}3.512%,100%{opacity:0;transform:translateX(76.0px)}}
+.a2{animation:ka2 33.88s linear infinite}
+@keyframes ka2{0%,4.398%{opacity:0;transform:translateY(3px)}5.047%,100%{opacity:1;transform:translateY(0)}}
+.a3{animation:ka3 33.88s linear infinite}
+@keyframes ka3{0%,5.874%{opacity:0}5.903%,100%{opacity:1}}
+.c4{animation:kc4 33.88s linear infinite;transform:translateX(0)}
+@keyframes kc4{0%,5.815%{opacity:0;transform:translateX(0)}5.874%{opacity:1;transform:translateX(0);animation-timing-function:steps(56)}11.494%{opacity:1;transform:translateX(425.6px)}12.231%,100%{opacity:0;transform:translateX(425.6px)}}
+.a5{animation:ka5 33.88s linear infinite}
+@keyframes ka5{0%,13.117%{opacity:0;transform:translateY(3px)}13.766%{opacity:1;transform:translateY(0)}18.135%{opacity:1}18.489%,100%{opacity:0}}
+.a6{animation:ka6 33.88s linear infinite}
+@keyframes ka6{0%,18.135%{opacity:0;transform:translateY(3px)}18.784%,100%{opacity:1;transform:translateY(0)}}
+.a7{animation:ka7 33.88s linear infinite}
+@keyframes ka7{0%,19.610%{opacity:0;transform:translateY(3px)}20.260%,100%{opacity:1;transform:translateY(0)}}
+.a8{animation:ka8 33.88s linear infinite}
+@keyframes ka8{0%,21.086%{opacity:0}21.116%,100%{opacity:1}}
+.c9{animation:kc9 33.88s linear infinite;transform:translateX(0)}
+@keyframes kc9{0%,21.027%{opacity:0;transform:translateX(0)}21.086%{opacity:1;transform:translateX(0);animation-timing-function:steps(68)}27.910%{opacity:1;transform:translateX(516.8px)}28.648%,100%{opacity:0;transform:translateX(516.8px)}}
+.a10{animation:ka10 33.88s linear infinite}
+@keyframes ka10{0%,29.534%{opacity:0;transform:translateY(3px)}30.183%{opacity:1;transform:translateY(0)}35.142%{opacity:1}35.496%,100%{opacity:0}}
+.a11{animation:ka11 33.88s linear infinite}
+@keyframes ka11{0%,35.142%{opacity:0;transform:translateY(3px)}35.791%,100%{opacity:1;transform:translateY(0)}}
+.a12{animation:ka12 33.88s linear infinite}
+@keyframes ka12{0%,36.617%{opacity:0}36.647%,100%{opacity:1}}
+.c13{animation:kc13 33.88s linear infinite;transform:translateX(0)}
+@keyframes kc13{0%,36.558%{opacity:0;transform:translateX(0)}36.617%{opacity:1;transform:translateX(0);animation-timing-function:steps(60)}42.639%{opacity:1;transform:translateX(456.0px)}43.377%,100%{opacity:0;transform:translateX(456.0px)}}
+.a14{animation:ka14 33.88s linear infinite}
+@keyframes ka14{0%,44.262%{opacity:0;transform:translateY(3px)}44.911%{opacity:1;transform:translateY(0)}49.575%{opacity:1}49.929%,100%{opacity:0}}
+.a15{animation:ka15 33.88s linear infinite}
+@keyframes ka15{0%,49.575%{opacity:0;transform:translateY(3px)}50.224%,100%{opacity:1;transform:translateY(0)}}
+.a16{animation:ka16 33.88s linear infinite}
+@keyframes ka16{0%,51.051%{opacity:0}51.080%,100%{opacity:1}}
+.c17{animation:kc17 33.88s linear infinite;transform:translateX(0)}
+@keyframes kc17{0%,50.992%{opacity:0;transform:translateX(0)}51.051%{opacity:1;transform:translateX(0);animation-timing-function:steps(78)}58.878%{opacity:1;transform:translateX(592.8px)}59.616%,100%{opacity:0;transform:translateX(592.8px)}}
+.a18{animation:ka18 33.88s linear infinite}
+@keyframes ka18{0%,60.502%{opacity:0;transform:translateY(3px)}61.151%,100%{opacity:1;transform:translateY(0)}}
+.a19{animation:ka19 33.88s linear infinite}
+@keyframes ka19{0%,61.978%{opacity:0}62.007%,100%{opacity:1}}
+.c20{animation:kc20 33.88s linear infinite;transform:translateX(0)}
+@keyframes kc20{0%,61.919%{opacity:0;transform:translateX(0)}61.978%{opacity:1;transform:translateX(0);animation-timing-function:steps(98)}71.812%{opacity:1;transform:translateX(744.8px)}72.550%,100%{opacity:0;transform:translateX(744.8px)}}
+.a21{animation:ka21 33.88s linear infinite}
+@keyframes ka21{0%,73.436%{opacity:0;transform:translateY(3px)}74.085%,100%{opacity:1;transform:translateY(0)}}
+.a22{animation:ka22 33.88s linear infinite}
+@keyframes ka22{0%,74.911%{opacity:0;transform:translateY(3px)}75.561%{opacity:1;transform:translateY(0)}81.110%{opacity:1}81.464%,100%{opacity:0}}
+.a23{animation:ka23 33.88s linear infinite}
+@keyframes ka23{0%,81.110%{opacity:0;transform:translateY(3px)}81.759%,100%{opacity:1;transform:translateY(0)}}
+.a24{animation:ka24 33.88s linear infinite}
+@keyframes ka24{0%,82.586%{opacity:0}82.615%,100%{opacity:1}}
+.b25{animation:blink 1.06s linear infinite}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){
+*{animation:none!important}
+.line{opacity:1!important;transform:none!important}
+.st,.cover{opacity:0!important}
+}</style><rect x="1" y="1" width="858" height="400" rx="12" fill="#141716" stroke="#343b39" stroke-width="1.5"/><path d="M 1 40 H 859" stroke="#343b39" stroke-width="1"/><circle cx="26" cy="20" r="5.2" fill="#e8615a"/><circle cx="44" cy="20" r="5.2" fill="#f5bd4f"/><circle cx="62" cy="20" r="5.2" fill="#61c454"/><text class="t" x="384.4" y="24.5" textLength="91.2" fill="#7d7b73">sure-harness</text><g class="fade"><g class="line a0"><text class="t " x="26.0" y="69.5" textLength="15.2" fill="#8abeb7">› </text><text class="t " x="41.2" y="69.5" textLength="76.0" font-weight="600" fill="#8abeb7">/sure_init</text></g><g class="cover c1"><rect x="41.2" y="57.0" width="80.0" height="18.8" fill="#141716"/><rect x="41.2" y="58.0" width="7.6" height="16.3" fill="#8abeb7"/></g><g class="line a2"><text class="t " x="26.0" y="91.5" textLength="15.2" fill="#7fd1a7">✓ </text><text class="t " x="41.2" y="91.5" textLength="524.4" fill="#7fd1a7">provider linked · auth ok · skills discovered · backend checks passed</text></g><g class="line a3"><text class="t " x="26.0" y="113.5" textLength="15.2" fill="#8abeb7">› </text><text class="t " x="41.2" y="113.5" textLength="76.0" font-weight="600" fill="#8abeb7">/sure_feed</text><text class="t " x="117.2" y="113.5" textLength="349.6" fill="#b5b3a7"> https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf</text></g><g class="cover c4"><rect x="41.2" y="101.0" width="429.6" height="18.8" fill="#141716"/><rect x="41.2" y="102.0" width="7.6" height="16.3" fill="#8abeb7"/></g><g class="line st a5"><text class="t " x="26.0" y="135.5" textLength="471.2" fill="#6d6b64">⠋ researching model card · resolving runtime and I/O contract…</text></g><g class="line a6"><text class="t " x="41.2" y="135.5" textLength="357.2" fill="#b5b3a7">task=ASR · runtime=transformers · io=audio→text</text></g><g class="line a7"><text class="t " x="26.0" y="157.5" textLength="15.2" fill="#7fd1a7">✓ </text><text class="t " x="41.2" y="157.5" textLength="266.0" fill="#7fd1a7">model_input.yaml · feed_report.json</text></g><g class="line a8"><text class="t " x="26.0" y="179.5" textLength="15.2" fill="#8abeb7">› </text><text class="t " x="41.2" y="179.5" textLength="98.8" font-weight="600" fill="#8abeb7">/sure_onboard</text><text class="t " x="140.0" y="179.5" textLength="418.0" fill="#b5b3a7"> model=Qwen__Qwen3-ASR-0.6B-hf device=auto package=none</text></g><g class="cover c9"><rect x="41.2" y="167.0" width="520.8" height="18.8" fill="#141716"/><rect x="41.2" y="168.0" width="7.6" height="16.3" fill="#8abeb7"/></g><g class="line st a10"><text class="t " x="26.0" y="201.5" textLength="532.0" fill="#6d6b64">⠋ wrapper synthesis · environment plan · fixture smoke · package gate…</text></g><g class="line a11"><text class="t " x="26.0" y="201.5" textLength="15.2" fill="#7fd1a7">✓ </text><text class="t " x="41.2" y="201.5" textLength="402.8" fill="#7fd1a7">verdict.json · image digest pinned · deployment ready</text></g><g class="line a12"><text class="t " x="26.0" y="223.5" textLength="15.2" fill="#8abeb7">› </text><text class="t " x="41.2" y="223.5" textLength="98.8" font-weight="600" fill="#8abeb7">/sure_approve</text><text class="t " x="140.0" y="223.5" textLength="357.2" fill="#b5b3a7"> model_dir=sure/results/Qwen__Qwen3-ASR-0.6B-hf</text></g><g class="cover c13"><rect x="41.2" y="211.0" width="460.0" height="18.8" fill="#141716"/><rect x="41.2" y="212.0" width="7.6" height="16.3" fill="#8abeb7"/></g><g class="line st a14"><text class="t " x="26.0" y="245.5" textLength="509.2" fill="#6d6b64">⠋ audit: producer contract · selected runtime · isolated candidate…</text></g><g class="line a15"><text class="t " x="26.0" y="245.5" textLength="15.2" fill="#7fd1a7">✓ </text><text class="t " x="41.2" y="245.5" textLength="288.8" fill="#7fd1a7">review_packet.json · awaiting_approval</text></g><g class="line a16"><text class="t " x="26.0" y="267.5" textLength="15.2" fill="#8abeb7">› </text><text class="t " x="41.2" y="267.5" textLength="98.8" font-weight="600" fill="#8abeb7">/sure_approve</text><text class="t " x="140.0" y="267.5" textLength="494.0" fill="#b5b3a7"> mode=approve review_manifest=review_packet.json decision=approve</text></g><g class="cover c17"><rect x="41.2" y="255.0" width="596.8" height="18.8" fill="#141716"/><rect x="41.2" y="256.0" width="7.6" height="16.3" fill="#8abeb7"/></g><g class="line a18"><text class="t " x="26.0" y="289.5" textLength="15.2" fill="#7fd1a7">✓ </text><text class="t " x="41.2" y="289.5" textLength="448.4" fill="#7fd1a7">decision bound · published atomically · approval_ready.json</text></g><g class="line a19"><text class="t " x="26.0" y="311.5" textLength="15.2" fill="#8abeb7">› </text><text class="t " x="41.2" y="311.5" textLength="76.0" font-weight="600" fill="#8abeb7">/sure_eval</text><text class="t " x="117.2" y="311.5" textLength="668.8" fill="#b5b3a7"> model=Qwen__Qwen3-ASR-0.6B-hf datasets=aishell1 metrics=cer execution=local device=auto</text></g><g class="cover c20"><rect x="41.2" y="299.0" width="748.8" height="18.8" fill="#141716"/><rect x="41.2" y="300.0" width="7.6" height="16.3" fill="#8abeb7"/></g><g class="line a21"><text class="t " x="41.2" y="333.5" textLength="577.6" fill="#b5b3a7">route asr.zh.cer.aispeech_norm_zh_v1.wenet_cer_v1 · protocol standard_system</text></g><g class="line st a22"><text class="t " x="26.0" y="355.5" textLength="456.0" fill="#6d6b64">⠋ inference 1/1 · deterministic evaluation pipeline running…</text></g><g class="line a23"><text class="t " x="26.0" y="355.5" textLength="15.2" fill="#7fd1a7">✓ </text><text class="t " x="41.2" y="355.5" textLength="744.8" fill="#7fd1a7">run_report · main_agent_run_report.json · report_persisted=true · execution_path_actual=local_bash</text></g><g class="line a24"><text class="t " x="26.0" y="377.5" textLength="15.2" fill="#8abeb7">› </text><g class="b25"><rect x="41.2" y="366.0" width="7.6" height="16.3" fill="#8abeb7"/></g></g></g></svg>
