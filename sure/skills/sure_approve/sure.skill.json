@@ -1,0 +1,24 @@
+{
+	"name": "sure_approve",
+	"command": "/sure_approve",
+	"description": "Audit and explicitly approve a completed onboard or trans bundle for atomic publication to SURE Eval.",
+	"prompt": "SKILL.md",
+	"hooks": {
+		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
+		"pre_tool_call": [{ "module": "hooks/index.ts", "handler": "preToolCall" }],
+		"post_tool_result": [{ "module": "hooks/index.ts", "handler": "postToolResult" }],
+		"pre_finish": [{ "module": "hooks/index.ts", "handler": "preFinish" }],
+		"post_finish": [{ "module": "hooks/index.ts", "handler": "postFinish" }],
+		"on_error": [{ "module": "hooks/index.ts", "handler": "onError" }]
+	},
+	"artifacts": [
+		{ "type": "review_packet", "path": "artifacts/review_packet.json", "required": false, "description": "Human review packet bound to the immutable audit candidate." },
+		{ "type": "approval_decision", "path": "artifacts/approval_decision.json", "required": false, "description": "Explicit human approval or rejection bound to the review packet." },
+		{ "type": "approval_ready", "path": "artifacts/approval_ready.json", "required": false, "description": "Verified atomic publication marker consumable by the current Eval deployment binding." }
+	],
+	"ui": {
+		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
+		"artifactTypes": ["review_packet", "approval_decision", "approval_ready"],
+		"defaultExpandedSections": ["diagnostics", "artifacts"]
+	}
+}

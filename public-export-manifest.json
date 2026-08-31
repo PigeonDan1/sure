@@ -1,8 +1,8 @@
 {
   "schema": "sure.public_export_manifest.v1",
-  "source_commit": "0aa3eb06198f5f958bb3cf7cae90b5c976ba2ed0",
+  "source_commit": "66b7108d6bc2cc92b9e4387590fea70a2abdb554",
   "source_dirty": false,
-  "tree_sha256": "0c2b4ec53a76ed9540ffff9b0a3c766a1a1d64376f5fbdf6518e13423da2954f",
+  "tree_sha256": "f16199f91e6af9f3be7fd64ef9ed384dc8a3bfcc918605394f8cb12afbebe327",
   "files": [
     {
       "path": ".github/workflows/public-ci.yml",
@@ -3177,7 +3177,7 @@
     {
       "path": "packages/coding-agent/src/core/sure/manifest.ts",
       "type": "file",
-      "sha256": "71c9cda6ffdb968946d00238a7f8ac4e4c51f7c2ac2fdbfdcc30582053ae79dc"
+      "sha256": "8a8f669d01da67cfde7dc9cd19dd225659f46178c5384ac6931fe416ae927843"
     },
     {
       "path": "packages/coding-agent/src/core/sure/module-loader.ts",
@@ -4615,6 +4615,11 @@
       "sha256": "9f96cb87acefc57c5dfab1cfc40d7be967e32e7d398a246d8868f5ab300634d5"
     },
     {
+      "path": "packages/coding-agent/test/suite/sure-approve-state-machine.test.ts",
+      "type": "file",
+      "sha256": "72c62a23b6b474efaa846f2a7d1172bfae22a610be90419b23f777e9d6ca2037"
+    },
+    {
       "path": "packages/coding-agent/test/suite/sure-eval-red-lines.test.ts",
       "type": "file",
       "sha256": "f9b7c9a97089246a741e3887b9a31fb3ef6d6048f56ef3c045111038d6ea2459"
@@ -4732,7 +4737,7 @@
     {
       "path": "packages/coding-agent/test/sure/manifest.test.ts",
       "type": "file",
-      "sha256": "879bc3bceb8ad39b6f2096032c5eb0cd69b2947bb85d48dc2ca35844c6717c58"
+      "sha256": "0245f0abe9c606bda6b00b701f8f57d6fef955548accbebe1e42f70660f7ee3b"
     },
     {
       "path": "packages/coding-agent/test/sure/site-loader.test.ts",
@@ -5462,7 +5467,7 @@
     {
       "path": "scripts/sure-doctor.mjs",
       "type": "file",
-      "sha256": "bad19a2eb2e326535a5e878cad7cae696225e96617aab54a9c0d75950b524acc"
+      "sha256": "44edbc6d20b8543a757c18e1aee6dfa236790a1d400e3e62f861b2bb571a9639"
     },
     {
       "path": "scripts/sure-site-check.ts",
@@ -5668,6 +5673,161 @@
       "path": "sure/skills/README.md",
       "type": "file",
       "sha256": "085267283f655bbd7585945307bb7571fea669ae0f4bfe5439bdfc6e1a9aeab2"
+    },
+    {
+      "path": "sure/skills/sure_approve/SKILL.md",
+      "type": "file",
+      "sha256": "e66a787ac4159b588e7b0c4caf8863a8764ab83ffd844e80f13a5bb3ec393c21"
+    },
+    {
+      "path": "sure/skills/sure_approve/examples/minimal-input.json",
+      "type": "file",
+      "sha256": "ce78a1167a250feba0e35944e863fd862eac06360d126dab071a920914182316"
+    },
+    {
+      "path": "sure/skills/sure_approve/hooks/checkpoints.ts",
+      "type": "file",
+      "sha256": "63f0d95e1e59fc5380c29ce050721d8a202e5b4ff3af589800a4dbba44ec2b0a"
+    },
+    {
+      "path": "sure/skills/sure_approve/hooks/index.ts",
+      "type": "file",
+      "sha256": "ba2f75b6c9812c42279cae933b73ed3c304e23e7bf5ed9a7e9c065363f425ed3"
+    },
+    {
+      "path": "sure/skills/sure_approve/hooks/state-machine.ts",
+      "type": "file",
+      "sha256": "caafd40ae2b77e1ce5701be11ac00d43bc47e14e1c5f8d990f81a94e80529756"
+    },
+    {
+      "path": "sure/skills/sure_approve/hooks/validate.ts",
+      "type": "file",
+      "sha256": "b5bfeb3dc4e99c0038eaaf6ac51163bf6928b8fe625ea6dba4c9831beb57658c"
+    },
+    {
+      "path": "sure/skills/sure_approve/references/producer-contracts.md",
+      "type": "file",
+      "sha256": "19603664587cf75c16d80829e611ed75a2345a139f5cf542187d970686eaeee9"
+    },
+    {
+      "path": "sure/skills/sure_approve/references/repair-policy.md",
+      "type": "file",
+      "sha256": "528af94e61992b24b991a6fe34504bc0e41d05ec54e6b165121baf24672a5844"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/approval_decision.schema.json",
+      "type": "file",
+      "sha256": "2dad415497fd7698d3ff49af93474528c9fb2989f2dee670219629a16b1fd0ec"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/approval_manifest.schema.json",
+      "type": "file",
+      "sha256": "697470764e6604cb08c3dfe38ff87bc0d0ef86521f01bb3ff1b7fb6349b8c963"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/approval_ready.schema.json",
+      "type": "file",
+      "sha256": "da77a98deed04316786bd57b82f3bfca525532e96454f495ec62efd769362cd1"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/approve_input_resolved.schema.json",
+      "type": "file",
+      "sha256": "0397accd7c906235d88a1d81168e4fc3154b3867c7f290a83a84f0695cc955e4"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/integrity_report.schema.json",
+      "type": "file",
+      "sha256": "01ff5dabc0001d88c69e365a5bde13c3c72b85d10d2e223e3bc4fea6645f4d75"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/producer_contract_report.schema.json",
+      "type": "file",
+      "sha256": "17e6c4dafb93d877eaa6b71a4f219aee4eacb04ebc8a34d6f1021fe57aa9e5a4"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/publication_result.schema.json",
+      "type": "file",
+      "sha256": "0495cb190102751f105e5097b5116498a667e26d39bab7aacb562104d4f4b399"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/repair_plan.schema.json",
+      "type": "file",
+      "sha256": "aa581133110b8f4fe5ee93532b649be570299e9aa4315fa4f05b794d1cf97b39"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/repair_report.schema.json",
+      "type": "file",
+      "sha256": "d0c359c013ac0220d17e5e4c5caf1436a7875a9cbcd205cb8bd68525b438f4c6"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/review_packet.schema.json",
+      "type": "file",
+      "sha256": "a9f6df0aed54597f198a8ea100cb2ac2b1b1f72e96429c184d60d0ca1035107b"
+    },
+    {
+      "path": "sure/skills/sure_approve/schemas/runtime_verification.schema.json",
+      "type": "file",
+      "sha256": "9a695c3ab9e7ced83d4e1fdfdfbf70077eff7b969d6f1eb7dc345795ec951ce4"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/apply_safe_repairs.py",
+      "type": "file",
+      "sha256": "340d140efaf8b0bbf54ca72edcf96f349a396c8e1d02dbc1d6c15ea7d2e99e07"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/approval_core.py",
+      "type": "file",
+      "sha256": "df722bbff92109d7b2c487a672a3d619b3fcf25453084c6f936531e6eed0eb79"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/audit_bundle.py",
+      "type": "file",
+      "sha256": "8583cdb949eabe99aa7bb618146c1b60bfdbdb9805195c9930aab4082a71fe21"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/build_approval_manifest.py",
+      "type": "file",
+      "sha256": "480dd4cfc89260c2a70c07ad338d3a2ee69cf664315662f5a9acc0a61193a4ab"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/plan_repairs.py",
+      "type": "file",
+      "sha256": "ae38ff02760cf363a0d96c3c96dc8eb079aa33c4e585f294edb3141aac288c70"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/publish_approved_bundle.py",
+      "type": "file",
+      "sha256": "9cfe7aa64d4097956fc5d48cfa588333d788c335b15396761504b6c15072c5f2"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/resolve_approve_input.py",
+      "type": "file",
+      "sha256": "0003a767b76446da37506473e66e9d1d1747bb31ca096a26306d726c507b3102"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/test_approval_flow.py",
+      "type": "file",
+      "sha256": "1483cb7cae04382e044acbe8a458dd30a821e62b06189dd629a653be0446a75d"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/verify_candidate_runtime.py",
+      "type": "file",
+      "sha256": "98f2158649171616d2cbc3814a18d7fb16b3c23078738e187cf37295444a163f"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/verify_human_decision.py",
+      "type": "file",
+      "sha256": "808e9912153f1ee53907ae32a6d0a46a7c2b92803e7a4c5862d6e67ad8a836b1"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/verify_published_bundle.py",
+      "type": "file",
+      "sha256": "b349de68d140cc1d42d456e553947900cd38340c215ddbba790689c348c68bfb"
+    },
+    {
+      "path": "sure/skills/sure_approve/sure.skill.json",
+      "type": "file",
+      "sha256": "a558f70b865bd65f2a83ad609adccad6359d7860fcb556c2bbb168c71c291051"
     },
     {
       "path": "sure/skills/sure_eval/SKILL.md",
