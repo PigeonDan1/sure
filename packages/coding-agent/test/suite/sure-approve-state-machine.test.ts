@@ -4,7 +4,7 @@ import {
 	initialCheckpoint,
 	retryExhausted,
 } from "../../../../sure/skills/sure_approve/hooks/checkpoints.ts";
-import { modeFromArgs } from "../../../../sure/skills/sure_approve/hooks/index.ts";
+import { modeFromArgs, preStart } from "../../../../sure/skills/sure_approve/hooks/index.ts";
 import {
 	APPROVE_UNITS,
 	AUDIT_UNITS,
@@ -13,6 +13,7 @@ import {
 	unitsForMode,
 } from "../../../../sure/skills/sure_approve/hooks/state-machine.ts";
 import { validateProduces } from "../../../../sure/skills/sure_approve/hooks/validate.ts";
+import type { SureHookContext } from "../../src/core/sure/types.ts";
 
 describe("sure_approve state machine", () => {
 	it("keeps audit and human approval in separate runs", () => {
@@ -26,6 +27,14 @@ describe("sure_approve state machine", () => {
 	it("infers approval mode from the prior review and explicit decision", () => {
 		expect(modeFromArgs("review_manifest=/tmp/review.json decision=approve")).toBe("approve");
 		expect(modeFromArgs("model_dir=/tmp/model")).toBe("audit");
+	});
+
+	it("rejects command-level approval root overrides", () => {
+		const result = preStart({
+			args: "model_dir=/tmp/model approve_dir=/tmp/custom",
+		} as SureHookContext);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("storage.approved_models_roots[0]");
 	});
 
 	it("orders publication only after an explicit decision", () => {

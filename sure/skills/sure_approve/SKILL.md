@@ -12,7 +12,6 @@ Audit a completed `/sure_onboard` or `/sure_trans` bundle without mutating it, b
 | Parameter | Required | Meaning |
 | --- | --- | --- |
 | `model_dir` | audit mode | Explicit readable producer bundle. Absolute paths and paths relative to the invocation directory are accepted. |
-| `approve_dir` | no | Publication root. Defaults to the active site's approved model root. |
 | `mode` | no | `audit` (default) or `approve`. |
 | `repair` | no | `safe` (default) or `none`. Safe repair never changes executable behavior. |
 | `review_manifest` | approve mode | `review_packet.json` emitted by a completed audit. |
@@ -38,7 +37,7 @@ Read the review packet, make the decision yourself, then start a separate approv
 
 Approval verifies that the packet and candidate are unchanged. A positive decision publishes through a hidden same-filesystem sibling and atomic rename. A rejection records the decision and does not publish.
 
-Use `approve_dir=/custom/root` only for a deliberate non-default publication. Such a result records `eval_visible=false`; current `/sure_eval` discovery sees only the active site's configured approved model root.
+The publication root is always `storage.approved_models_roots[0]` from the active site policy. `/sure_eval` discovers approved model names below that same root, so the deployment configures it once and no command-level publication-root override exists.
 
 ## Boundaries
 
@@ -49,6 +48,7 @@ Use `approve_dir=/custom/root` only for a deliberate non-default publication. Su
 - Require passing original, adapter, MCP, and equivalence evidence for `/sure_trans`.
 - Restrict safe repair to derived paths, publication permissions, and excluded caches. Never repair wrappers, configs, weights, payloads, locks, runtimes, images, provenance, or failed validation.
 - Reject source/destination overlap, escaping links, special files, and destination collisions.
+- Reject review packets whose destination does not match the active site's configured approved model root.
 - Never create the human decision. Require the user-supplied `decision` parameter.
 
 Read [producer-contracts.md](references/producer-contracts.md) when classifying the producer or diagnosing a failed audit. Read [repair-policy.md](references/repair-policy.md) before accepting or describing a repair.

@@ -152,14 +152,8 @@ def resolve_input(args: argparse.Namespace) -> dict[str, Any]:
     configured = load_active_policy()
     policy = configured["policy"]
     configured_root = Path(policy["storage"]["approved_models_roots"][0]).resolve()
-    approve_supplied = args.approve_dir or str(configured_root)
-    _, approve_root = _relative_supplied(approve_supplied, invocation_cwd)
-    for raw_forbidden in policy["storage"]["forbidden_output_roots"]:
-        forbidden = Path(str(raw_forbidden)).resolve()
-        if approve_root != configured_root and is_inside(approve_root, forbidden):
-            raise ApprovalError(f"approval root is under a forbidden output root: {approve_root}")
     model_name = _resolved_model_name(source)
-    destination = approve_root / model_name
+    destination = configured_root / model_name
     if paths_overlap(source, destination):
         raise ApprovalError(f"source and destination overlap: {source} <-> {destination}")
     review_manifest = None
@@ -173,11 +167,10 @@ def resolve_input(args: argparse.Namespace) -> dict[str, Any]:
         "repair": args.repair,
         "source": {"supplied": supplied, "canonical": str(source)},
         "approval": {
-            "supplied_root": approve_supplied,
-            "root": str(approve_root),
+            "root": str(configured_root),
             "destination": str(destination),
             "configured_root": str(configured_root),
-            "eval_visible": approve_root == configured_root,
+            "eval_visible": True,
             "replace": args.replace,
         },
         "review_manifest": review_manifest,
@@ -748,7 +741,15 @@ def publish(run_dir: Path, replace: bool) -> dict[str, Any]:
     approval = packet.get("approval") if isinstance(packet.get("approval"), dict) else {}
     root = Path(str(approval.get("root") or "")).resolve()
     destination = Path(str(approval.get("destination") or "")).resolve()
-    if destination.parent != root or destination.name != packet.get("model_name"):
+    configured_root = Path(policy["policy"]["storage"]["approved_models_roots"][0]).resolve()
+    declared_configured_root = Path(str(approval.get("configured_root") or "")).resolve()
+    if (
+        root != configured_root
+        or declared_configured_root != configured_root
+        or destination.parent != configured_root
+        or destination.name != packet.get("model_name")
+        or approval.get("eval_visible") is not True
+    ):
         raise ApprovalError("review packet contains an invalid publication destination")
     if paths_overlap(candidate, destination):
         raise ApprovalError("candidate and destination overlap")
@@ -836,6 +837,9 @@ def verify_publication(run_dir: Path) -> dict[str, Any]:
         policy = load_active_policy()
         if policy["sha256"] != packet.get("site_policy_sha256"):
             raise ApprovalError("active site policy changed before publication verification")
+        configured_root = Path(policy["policy"]["storage"]["approved_models_roots"][0]).resolve()
+        if destination.parent != configured_root or publication.get("eval_visible") is not True:
+            raise ApprovalError("published bundle is outside the active site's approved model root")
         binding = load_deployment_binding(destination, str(packet["model_name"]))
     except DeploymentBindingError as exc:
         raise ApprovalError(f"published bundle is not consumable by sure_eval: {exc}") from exc
@@ -888,7 +892,6 @@ def _write_result(path: Path, producer: Any, nonzero_statuses: frozenset[str] = 
 def main_resolve() -> int:
     parser = _common_parser()
     parser.add_argument("--model-dir", required=False)
-    parser.add_argument("--approve-dir")
     parser.add_argument("--mode", choices=("audit", "approve"), default="audit")
     parser.add_argument("--repair", choices=("safe", "none"), default="safe")
     parser.add_argument("--review-manifest")

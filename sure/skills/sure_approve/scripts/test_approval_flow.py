@@ -176,13 +176,12 @@ class ApprovalFlowTests(unittest.TestCase):
         }
         write_json(artifacts / "deployment_ready.json", deployment)
 
-    def audit(self, run_dir: Path, approve_dir: Path | None = None) -> dict:
+    def audit(self, run_dir: Path) -> dict:
         run_artifacts = run_dir / "artifacts"
         run_artifacts.mkdir(parents=True)
         args = argparse.Namespace(
             invocation_cwd=str(self.root),
             model_dir=str(self.source),
-            approve_dir=str(approve_dir) if approve_dir else None,
             mode="audit",
             repair="safe",
             review_manifest=None,
@@ -235,26 +234,47 @@ class ApprovalFlowTests(unittest.TestCase):
         write_json(self.source / "artifacts" / "model_input_resolved.json", {"model_name": "demo-model"})
         run = self.root / "runs" / "incomplete"
         (run / "artifacts").mkdir(parents=True)
-        args = argparse.Namespace(invocation_cwd=str(self.root), model_dir=str(self.source), approve_dir=None, mode="audit", repair="safe", review_manifest=None, decision=None, replace=False)
+        args = argparse.Namespace(invocation_cwd=str(self.root), model_dir=str(self.source), mode="audit", repair="safe", review_manifest=None, decision=None, replace=False)
         write_json(run / "artifacts" / "approve_input_resolved.json", approval_core.resolve_input(args))
         report = approval_core.classify_producer(run)
         self.assertEqual(report["status"], "failed")
         self.assertIn("TERMINAL_EVIDENCE_MISSING", {item["code"] for item in report["findings"]})
 
-    def test_forbidden_custom_approval_root_is_rejected(self) -> None:
+    def test_approval_root_comes_from_active_site_policy(self) -> None:
         self.build_python_bundle()
         args = argparse.Namespace(
             invocation_cwd=str(self.root),
             model_dir=str(self.source),
-            approve_dir=str(self.root / "forbidden" / "models"),
             mode="audit",
             repair="safe",
             review_manifest=None,
             decision=None,
             replace=False,
         )
-        with self.assertRaisesRegex(approval_core.ApprovalError, "forbidden output root"):
-            approval_core.resolve_input(args)
+        resolved = approval_core.resolve_input(args)
+        self.assertEqual(resolved["approval"]["root"], str(self.approved))
+        self.assertEqual(resolved["approval"]["configured_root"], str(self.approved))
+        self.assertEqual(resolved["approval"]["destination"], str(self.approved / "demo-model"))
+        self.assertTrue(resolved["approval"]["eval_visible"])
+
+    def test_publication_rejects_review_packet_with_nonconfigured_root(self) -> None:
+        self.build_python_bundle()
+        audit_run = self.root / "runs" / "legacy-root-audit"
+        review = self.audit(audit_run)
+        custom_root = self.root / "custom-approved"
+        review["approval"]["root"] = str(custom_root)
+        review["approval"]["destination"] = str(custom_root / "demo-model")
+        review["packet_digest"] = approval_core._packet_digest(review)
+        review_path = audit_run / "artifacts" / "review_packet.json"
+        write_json(review_path, review)
+
+        approve_run = self.root / "runs" / "legacy-root-approve"
+        approve_artifacts = approve_run / "artifacts"
+        approve_artifacts.mkdir(parents=True)
+        decision = approval_core.verify_decision(review_path, "approve", "validated in test")
+        write_json(approve_artifacts / "approval_decision.json", decision)
+        with self.assertRaisesRegex(approval_core.ApprovalError, "invalid publication destination"):
+            approval_core.publish(approve_run, replace=False)
 
     def test_repair_none_does_not_silently_change_the_candidate(self) -> None:
         self.build_python_bundle()
@@ -266,7 +286,6 @@ class ApprovalFlowTests(unittest.TestCase):
         args = argparse.Namespace(
             invocation_cwd=str(self.root),
             model_dir=str(self.source),
-            approve_dir=None,
             mode="audit",
             repair="none",
             review_manifest=None,
@@ -347,7 +366,7 @@ class ApprovalFlowTests(unittest.TestCase):
         (self.source / "checkpoints" / "external.bin").symlink_to(outside)
         run = self.root / "runs" / "link"
         (run / "artifacts").mkdir(parents=True)
-        args = argparse.Namespace(invocation_cwd=str(self.root), model_dir=str(self.source), approve_dir=None, mode="audit", repair="safe", review_manifest=None, decision=None, replace=False)
+        args = argparse.Namespace(invocation_cwd=str(self.root), model_dir=str(self.source), mode="audit", repair="safe", review_manifest=None, decision=None, replace=False)
         write_json(run / "artifacts" / "approve_input_resolved.json", approval_core.resolve_input(args))
         write_json(run / "artifacts" / "producer_contract_report.json", approval_core.classify_producer(run))
         integrity = approval_core.audit_integrity(run)

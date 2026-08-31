@@ -40,7 +40,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `schema` | yes | Must be `sure.site.policy.v1` |
 | `site_id` | yes | Stable lowercase deployment identifier |
 | `policy_version` | yes | Must be `1` |
-| `storage.approved_models_roots` | yes | Read-only roots containing human-approved model packages |
+| `storage.approved_models_roots` | yes | Protected model root written only by `/sure_approve` and read by `/sure_eval` |
 | `storage.approved_results_roots` | yes | Read-only roots containing human-approved evaluation results |
 | `storage.forbidden_output_roots` | yes | Roots where automated `output_dir` writes are forbidden |
 | `storage.runtime_root` | yes | Site-owned cache root for content-addressed Model Python runtimes and adapters |
@@ -51,11 +51,14 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `execution.vc_partitions` | when needed | Declared VC partitions for adapters and deployment documentation |
 | `execution.vc_partition_priority` | optional | Numeric priority map used by automatic VC selection |
 | `network` | optional | Non-secret site endpoints used by private adapters and documentation |
+| `network.container_registry` | for `docker-registry` | Registry host or host/path prefix, without a URL scheme |
 | `container_delivery.repository_template` | for `docker-registry` | Repository template using `{registry}`, optional `{task}`, and `{model_name}` |
 
 Unknown fields, duplicate list values, unsupported surfaces, and relative paths are rejected. Policy files may contain credential environment-variable names, but never credential values.
 
 Policy v1 accepts exactly one path in each root list. The list shape leaves room for a future multi-root contract, but the current workflow preserves its historical single-root selection semantics.
+
+`storage.approved_models_roots[0]` is the single approval-root setting. `/sure_approve` publishes a verified model package only to `<approved_models_roots[0]>/<model>`, and `/sure_eval model=<model>` resolves that exact child directory from the same root. Neither command accepts a per-run approval-root override, so a deployment configures this location once rather than keeping publication and discovery settings in sync manually.
 
 `execution.surfaces` constrains automatic and explicit execution selection. `execution.vc_partitions` documents site choices but does not replace the existing live `vc info -u` authorization check; changing partition authorization semantics is outside this separation phase.
 
@@ -64,7 +67,7 @@ Policy v1 accepts exactly one path in each root list. The list shape leaves room
 ## Path Semantics
 
 - Every configured root is absolute.
-- Approved model and result roots must be protected by a configured forbidden output root.
+- Approved model and result roots must be protected by a configured forbidden output root. Ordinary `output_dir` writes remain forbidden there; model publication enters the approved model root only through `/sure_approve`.
 - The declared runtime root must stay outside forbidden output roots.
 - A configured dataset projection root must stay outside forbidden output roots and must not overlap an allowed source root.
 - Path authorization resolves existing symlinks before comparison, so alternate names cannot bypass a protected root.
@@ -110,7 +113,9 @@ container_delivery:
 
 For shared storage, replace these placeholders with roots visible to every host and container that executes a workflow. The projection root is the only writable dataset workspace; source roots are mounted read-only. For a local-only fixture, create temporary model, result, dataset, projection, and runtime roots and point the local policy at them.
 
-`container_delivery.repository_template` is site data, not an agent decision. Registry-backed workflows resolve it before downloading model weights or building an image. The template must start with `{registry}/`, must include `{model_name}`, and may include `{task}`. Credentials remain in the Docker credential store and must not appear in this policy.
+`container_delivery.repository_template` is site data, not an agent decision. Registry-backed workflows resolve it before downloading model weights or building an image. The template must start with `{registry}/`, must include `{model_name}`, and may include `{task}`. `/sure_onboard` uses the resolved repository as its delivery target; `/sure_trans` uses the same target and appends `-source` for its source-image repository.
+
+When `image_version` is omitted, the workflow queries the relevant Registry V2 tag lists, considers only `major.minor.patch` tags, and selects the next patch after the highest existing version; an empty repository starts at `0.1.0`. A query failure blocks instead of guessing a tag. The resolved repositories, version, observed tags, and site-policy identity are recorded in `model_input_resolved.json` or `trans_input_resolved.json`; credentials remain in the Docker credential store and never enter either artifact or the policy.
 
 ## Diagnostics
 
@@ -126,5 +131,7 @@ Common repairs:
 - `unknown field`: remove the field or update the policy to the current schema.
 - `must be protected by a forbidden output root`: add the approved root's parent to `forbidden_output_roots`.
 - `site policy is not configured`: copy the example to `config/site.local.yaml`, edit it, and rerun `sure:site-check`.
+- `site policy is missing network.container_registry` or `container_delivery.repository_template`: configure both fields before selecting `docker-registry` delivery.
+- `registry tag query failed`: verify registry reachability, Docker login state, and the resolved repository; do not bypass automatic versioning with a guessed tag.
 
 Custom execution surfaces and site integrations belong in a private adapter that depends on public interfaces. Public core code must never import a private adapter. In this phase all site differences are expressed as `sure.site.policy.v1` data, so no adapter code ships; a provider interface will be introduced as a separately reviewed design change when a behavior cannot be expressed as policy data.

@@ -9,6 +9,7 @@
 | Source image | 由交付物还原出的原版运行镜像:优先 `docker load` build context 内的镜像 tar,失败则回退 `docker build` 原 Dockerfile。 |
 | Adapter image | 在 source image 之上叠加 `/opt/sure_trans/`(`model.py` + `server.py` + `config.yaml` + `model.spec.yaml` + `__init__.py` + `validate.py`)生成的新镜像,实现 `ModelWrapper` 与 MCP 协议,并携带模型本地验证入口 `validate.py`。 |
 | Digest 固定 | 所有交接引用使用 `image@sha256:...`,禁止可变 tag;registry push 后必须按 digest 精确 pull 并复验。 |
+| 站点解析交付 | source/adapter 仓库由活动站点策略统一解析,agent 不拼接 namespace;解析结果和策略身份写入 `trans_input_resolved.json`。 |
 | Container-only | Eval 运行时完全在容器内:`host_python_fallback=false`、`image_override_allowed=false`,模型 payload 以只读方式挂载。 |
 | IO contract | `input_type=audio_path` 到 `output_type=json`,`primary_field=text`,`required_fields=["text"]`、`nonempty_fields=["text"]`、`json_serializable=true`,由 `validate.py --stage contract` 对 `sample_output.json` 校验。 |
 | 模型 bundle | 最终交接目录 `sure/models/<model_name>/`:wrapper 五件套 + `Dockerfile.sure` + 模型 payload + `fixture/<task>/` + `artifacts/` terminal sidecar。`/sure_eval` 只挂载该目录,外部绝对路径不是可执行交接。 |
@@ -28,10 +29,12 @@
 | `image_tar` | 否 | 显式指定镜像 tar,必须位于 `build_context` 内。 |
 | `model_name` | 是 | 必须使用 `<组织>__<模型名称>` 格式；后续 bundle、镜像和 registry 命名均使用此值。 |
 | `fixture` | 否 | 冒烟输入绝对路径,否则自动选择 build context 下无歧义的 `examples/smoke.*`。 |
-| `device` | 否 | `auto`(默认)/`cuda`/`cpu`。核心转换目前只用本地 Docker 验证。 |
+| `device` | 否 | `auto`(默认)/`cuda`/`cpu`。`cpu` 只用本地 Docker;`cuda` 和 `auto` 先通过 VC 做 GPU 验证,符合条件的 `auto` 才可回退本地 CPU。 |
+| `vc_partition` | 否 | GPU 验证分区;默认取活动站点策略的 `execution.vc_default_partition`。 |
+| `vc_memory_gb` / `vc_gpus` | 否 | GPU 验证资源覆盖;默认 32 GiB、1 GPU。 |
 | `model_mount_target` | 否 | 默认 `/models/<model_name>`。 |
 | `model_stage_policy` | 否 | `auto`(默认)/`copy`/`hardlink`。 |
-| `image_version` | 否 | 显式 registry tag 覆盖项。省略时查询 source/adapter 仓库已有的三段数字版本，选择最高版本的下一个 patch；空仓库从 `0.1.0` 开始。 |
+| `image_version` | 否 | 显式 registry tag 覆盖项。省略时查询站点解析出的 source/adapter 仓库，选择已有三段数字版本的下一个 patch；空仓库从 `0.1.0` 开始。 |
 | `max_retries` | 否 | 默认 3。 |
 
 启动示例:
@@ -44,7 +47,7 @@
 
 框架检测只把 PyTorch 作为硬门槛。`model_framework=transformers` 是推荐路径；若申报其他模型框架，或静态分析发现 PyTorch 实现未使用 Transformers，流程继续运行，并在 `framework_detection.json` 和最终 `verdict.json.framework` 中记录申报值、检测分类、架构线索与澄清。后续原始推理、adapter 推理和等价性 gate 仍必须全部通过。
 
-自动版本解析结果记录在 `trans_input_resolved.json.image_version_resolution`。查询复用 Docker 登录凭据但不把凭据写入 artifact；registry 查询失败会阻断，不会猜测可能重复的版本。并发运行仍可能同时选中同一版本，最终由 registry 的不可覆盖策略阻止冲突，失败的一方重新解析版本后再提交。
+source/adapter 仓库分别由 `network.container_registry` 和 `container_delivery.repository_template` 解析;source 仓库在目标仓库名后追加 `-source`。自动版本解析结果记录在 `trans_input_resolved.json.image_version_resolution`。查询复用 Docker 登录凭据但不把凭据写入 artifact；registry 查询失败会阻断，不会猜测可能重复的版本。并发运行仍可能同时选中同一版本，最终由 registry 的不可覆盖策略阻止冲突，失败的一方重新解析版本后再提交。
 
 source 镜像构建会自动追加一层：若基础镜像没有 `git`，按镜像内可用的 apt/apk/dnf/yum/microdnf 安装 `git` 和 `ca-certificates`；原始 Dockerfile 不会被改写，最终 `USER` 会恢复。这样 adapter 镜像继承该工具，避免 `/sure_eval` 运行时缺少 `git`。
 
@@ -138,7 +141,8 @@ sure/models/<model_name>/
 | `uv` | Harness Runtime 引导必需,可用 `SURE_UV_BIN` 指定。 |
 | Python 3.11 | 引导复制 host CPython 3.11 的 stdlib 与共享库。conda 版 `INSTSONAME=libpython3.11.a` 但只带 `.so`,会报 "standard library or shared library is missing",需用 python-build-standalone 等正牌 CPython。 |
 | Docker | source 与 adapter 镜像的 load、build、运行、push/pull 全部依赖本地 Docker daemon。部分站点的 `docker` 是包装脚本,容器内进程失败时仍可能返回 0,gate 不能只信退出码。 |
-| GPU | 视模型规格而定,7B BF16 模型约需 14 GiB 空闲显存。 |
+| VC | `device=cuda` 和 `auto` 必须能调用 `vc`;分区和默认资源来自站点策略与命令参数。 |
+| GPU | 视模型规格而定,7B BF16 模型约需 14 GiB 空闲显存;GPU smoke 在 VC 作业内执行,不占用登录节点本地 GPU。 |
 | PyPI 网络 | 首次运行从 PyPI 物化 Harness Runtime 依赖,可通过 `UV_DEFAULT_INDEX` 指定镜像源。 |
 
 确认是 `CUDA out of memory` 时,验证 gate 会在当前 VC partition 自动重新提交最多 8 次,让调度器重新分配 GPU;每次尝试保留独立日志。VC 接口不能指定物理卡,因此不保证 8 次对应 8 张不同 GPU。8 次都失败后才报告显存修复建议。
