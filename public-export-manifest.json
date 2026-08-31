@@ -1,8 +1,8 @@
 {
   "schema": "sure.public_export_manifest.v1",
-  "source_commit": "66b7108d6bc2cc92b9e4387590fea70a2abdb554",
+  "source_commit": "0798d32a17247c827d47d28b254995bfa8012590",
   "source_dirty": false,
-  "tree_sha256": "f16199f91e6af9f3be7fd64ef9ed384dc8a3bfcc918605394f8cb12afbebe327",
+  "tree_sha256": "e1eea13c813e7f86980e532341bcdfc7d8de11db60b1159038a81a96448d3a18",
   "files": [
     {
       "path": ".github/workflows/public-ci.yml",
@@ -47,7 +47,7 @@
     {
       "path": "README.md",
       "type": "file",
-      "sha256": "74dccbff690567d5ea4546cfc686064b802efed8121092a75cf350fa60f1d606"
+      "sha256": "7785c5a9889fdb4e46410ecca1608c7d6058de3e7674bf0a8c6003fc8ddd799e"
     },
     {
       "path": "SECURITY.md",
@@ -72,7 +72,7 @@
     {
       "path": "docs/site-configuration.md",
       "type": "file",
-      "sha256": "4fecca684046d29d59f75905ca718e5dd19d00cdb775b5543c121a9761db1d60"
+      "sha256": "80f42e4838f705f9261ff68f79bbb7462da5c18310a02fbf18e5ee0eae8a236f"
     },
     {
       "path": "fixtures/README.md",
@@ -4617,7 +4617,7 @@
     {
       "path": "packages/coding-agent/test/suite/sure-approve-state-machine.test.ts",
       "type": "file",
-      "sha256": "72c62a23b6b474efaa846f2a7d1172bfae22a610be90419b23f777e9d6ca2037"
+      "sha256": "b5351c8a49ffdd377c40b183616511b6aab9cc376e6cfd0fdec6eb10ec116bae"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-eval-red-lines.test.ts",
@@ -5677,7 +5677,7 @@
     {
       "path": "sure/skills/sure_approve/SKILL.md",
       "type": "file",
-      "sha256": "e66a787ac4159b588e7b0c4caf8863a8764ab83ffd844e80f13a5bb3ec393c21"
+      "sha256": "9e840d8eaa4de854b18c3d37830651c221096675bfe4e9eb9150dd1b82d5712c"
     },
     {
       "path": "sure/skills/sure_approve/examples/minimal-input.json",
@@ -5692,7 +5692,7 @@
     {
       "path": "sure/skills/sure_approve/hooks/index.ts",
       "type": "file",
-      "sha256": "ba2f75b6c9812c42279cae933b73ed3c304e23e7bf5ed9a7e9c065363f425ed3"
+      "sha256": "4614267148593c708714eaaed39834ee48ec62ae18c02755d5dfa86754ea8ba4"
     },
     {
       "path": "sure/skills/sure_approve/hooks/state-machine.ts",
@@ -5777,7 +5777,7 @@
     {
       "path": "sure/skills/sure_approve/scripts/approval_core.py",
       "type": "file",
-      "sha256": "df722bbff92109d7b2c487a672a3d619b3fcf25453084c6f936531e6eed0eb79"
+      "sha256": "752785732f05ad3022ba6e9b4fb74f1bdd5d92f85986739538b5fbb797cd13dd"
     },
     {
       "path": "sure/skills/sure_approve/scripts/audit_bundle.py",
@@ -5807,7 +5807,7 @@
     {
       "path": "sure/skills/sure_approve/scripts/test_approval_flow.py",
       "type": "file",
-      "sha256": "1483cb7cae04382e044acbe8a458dd30a821e62b06189dd629a653be0446a75d"
+      "sha256": "27c9113b9b5c644e99a015420ba6b8ed8d865f035cb52a7522df70b0281ce22b"
     },
     {
       "path": "sure/skills/sure_approve/scripts/verify_candidate_runtime.py",
@@ -7932,7 +7932,7 @@
     {
       "path": "sure/skills/sure_trans/README.md",
       "type": "file",
-      "sha256": "68dd37fbf67811ce2a11abbfc1102e1d4ef59c743b8bfa0dac33fe05faa2e369"
+      "sha256": "bcdd10fc3f525c2314c927dd4c69fef979276816a71e56a04dd1cd02be227905"
     },
     {
       "path": "sure/skills/sure_trans/SKILL.md",

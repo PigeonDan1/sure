@@ -9,7 +9,7 @@
 
 *One discover, onboard, evaluate session, replayed as a self-contained SVG animation. Regenerate with `node scripts/generate-readme-terminal.mjs`.*
 
-SURE is an agent-based, system-level reproducible evaluation harness built on [Pi](https://github.com/badlogic/pi-mono), with an interactive terminal UI. It turns model discovery, local deployment, environment adaptation, inference, evaluation, and re-evaluation into integrated workflows instead of leaving users to connect them by hand.
+SURE is an agent-based, system-level reproducible evaluation harness built on [Pi](https://github.com/badlogic/pi-mono), with an interactive terminal UI. It turns model discovery, local deployment, environment adaptation, approval, inference, evaluation, and re-evaluation into integrated workflows instead of leaving users to connect them by hand.
 
 SURE works with coding agents including OpenAI Codex, Kimi Code, GitHub Copilot, Anthropic Claude, OpenAI, and custom OpenAI-compatible gateways such as DeepSeek.
 
@@ -31,21 +31,23 @@ The central promise is simple: SURE reduces deployment and evaluation work witho
 ## From Model to Result
 
 ```text
-Model repository       Runnable deployment       Predictions + metrics       New evaluation route
-       |                        |                         |                            |
-  /sure_feed  ---------->  /sure_onboard  ---------->  /sure_eval  ---------->  /sure_reval
+Model source          Runnable bundle          Approved model        Predictions + metrics       New evaluation route
+     |                      |                        |                         |                            |
+ /sure_feed  ->  /sure_onboard or /sure_trans  ->  /sure_approve  ->  /sure_eval  ->  /sure_reval
 ```
 
 | Workflow | What the agent does | Reproducible product |
 | --- | --- | --- |
 | Discover | Researches a Hugging Face, ModelScope, or GitHub model and resolves its capabilities, runtime, fixtures, and I/O contract | Canonical `model_input.yaml` plus source evidence |
 | Onboard | Adapts and validates the model, generates a runnable inference package when needed, and seals local models as a digest-pinned OCI image or content-addressed Python runtime | Portable model bundle plus `deployment_ready.json` |
+| Transform | Converts an existing Dockerfile, model, and inference entrypoint into the standard runtime contract | Adapter wrapper, digest-pinned image, and `deployment_ready.json` |
+| Approve | Audits a completed bundle, binds an explicit human decision, and publishes it atomically | Review packet, approval decision, and `approval_ready.json` |
 | Evaluate | Runs approved inference, resolves a deterministic evaluation route, and computes metrics | Predictions, protocol, reports, metrics, and sample-level evidence |
 | Re-evaluate | Reuses approved predictions with an explicit pipeline | A new evaluation batch without repeating inference |
 
 For common PyTorch and Transformers models, the onboarding agent can synthesize missing load and inference adapters from upstream documentation and source evidence. Every generated path must still pass environment, selected-runtime, interface, and artifact-contract gates before it can be marked ready.
 
-Promotion is intentionally human-reviewed. SURE stages model bundles and evaluation results, but it never silently copies them into configured approved storage. This keeps convenience from weakening the experiment's trust boundary.
+Model publication is intentionally human-reviewed. `/sure_approve` separates an immutable audit from the explicit approval decision; only that workflow can publish a model into configured approved storage. Evaluation-result promotion remains a separate human-reviewed operation. This keeps convenience from weakening the experiment's trust boundary.
 
 ## Choose How to Run SURE
 
@@ -129,6 +131,8 @@ npm run sure:doctor
 
 `sure:site-info` should report `configured: true` and `source: local`; `sure:site-check` must pass. Before provider and dataset setup, `sure:doctor` may warn about missing Pi authentication or evaluation data.
 
+Configure `storage.approved_models_roots[0]` once. `/sure_approve` publishes verified model packages only to this root, and `/sure_eval model=<name>` resolves the exact child directory from the same root. There is no command-level approval-root override.
+
 Before using the default `docker-registry` profile, replace the registry and repository namespace placeholders. `container_delivery.repository_template` is site configuration; SURE resolves it before building an image and does not invent a registry destination. API-only onboarding and local `package=none` Python execution do not use these fields.
 
 For shared storage or additional execution surfaces, start from [`config/site.example.yaml`](./config/site.example.yaml) and read the [site configuration guide](./docs/site-configuration.md). Keep `config/site.local.yaml` local, or set `SURE_SITE_POLICY` to an absolute policy path outside the repository.
@@ -184,7 +188,7 @@ For a local model, SURE researches the upstream implementation, materializes an 
 sure/models/Qwen__Qwen3-ASR-1.7B/artifacts/deployment_ready.json
 ```
 
-`deployment_ready.json` is a readiness marker, not an approval. Review the complete model directory, then copy that directory into one of the configured `approved_models_roots`. `/sure_eval` only accepts the exact directory name below an approved root.
+`deployment_ready.json` is a readiness marker, not an approval. Do not copy the model directory into approved storage manually; use `/sure_approve` after reviewing the complete bundle. `/sure_eval` only accepts the exact directory name below the configured approved root.
 
 Omitting `package` keeps the default `docker-registry` profile. For a self-hosted local evaluation that does not need Docker, select the Python profile explicitly:
 
@@ -192,7 +196,23 @@ Omitting `package` keeps the default `docker-registry` profile. For a self-hoste
 /sure_onboard model=Qwen__Qwen3-ASR-1.7B package=none
 ```
 
-The Python profile requires the `uv` backend, a hash-locked requirements file, and `python` in the site's `execution.local_runtimes`. SURE seals a portable runtime identity into the promoted model bundle and resolves the matching runtime below `storage.runtime_root` during `/sure_eval`. It never accepts an arbitrary host Python or model-local `.venv`, and Python deployments cannot be submitted to VC. See [`/sure_onboard`](./sure/skills/sure_onboard/SKILL.md) for API models, explicit handoff paths, device selection, and repair flows.
+The Python profile requires the `uv` backend, a hash-locked requirements file, and `python` in the site's `execution.local_runtimes`. SURE seals a portable runtime identity into the approved model bundle and resolves the matching runtime below `storage.runtime_root` during `/sure_eval`. It never accepts an arbitrary host Python or model-local `.venv`, and Python deployments cannot be submitted to VC. See [`/sure_onboard`](./sure/skills/sure_onboard/SKILL.md) for API models, explicit handoff paths, device selection, and repair flows.
+
+### Review and publish a model with `/sure_approve`
+
+Audit a completed `/sure_onboard` or `/sure_trans` bundle first:
+
+```text
+/sure_approve model_dir=sure/models/Qwen__Qwen3-ASR-1.7B
+```
+
+The audit keeps the producer bundle read-only, creates an isolated candidate, verifies its terminal evidence and runtime, and emits a `review_packet.json` in `awaiting_approval`. Read that packet, decide explicitly, then start a separate approval run:
+
+```text
+/sure_approve mode=approve review_manifest=/absolute/path/to/review_packet.json decision=approve
+```
+
+SURE never infers the human decision. A successful approval atomically publishes to `storage.approved_models_roots[0]`, verifies the published deployment binding, and emits `approval_ready.json`. See [`/sure_approve`](./sure/skills/sure_approve/SKILL.md) for rejection, bounded repair, replacement, and artifact details.
 
 ### Evaluate an approved model with `/sure_eval`
 
