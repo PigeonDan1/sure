@@ -4,6 +4,13 @@ SURE Harness is an agent-based, system-level harness for reproducible model onbo
 
 SURE turns model deployment, environment adaptation, inference-code generation, and dataset evaluation into one auditable workflow. The resulting runtime identity, dependency locks, parameters, model binding, predictions, metric route, and reports remain available as structured evidence, so an experiment is easier to reproduce, compare, and trust than an undocumented sequence of shell commands.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/harness-terminal-dark.svg">
+  <img src="docs/assets/harness-terminal.svg" alt="One SURE session in the interactive terminal: /sure_init, /sure_feed, /sure_onboard, /sure_approve, then /sure_eval ending in a persisted run report" width="100%">
+</picture>
+
+*One discover, onboard, approve, evaluate session, replayed as a self-contained SVG animation. Regenerate with `node scripts/generate-readme-terminal.mjs`.*
+
 ## Distribution
 
 This repository supports two distributions from one codebase:
