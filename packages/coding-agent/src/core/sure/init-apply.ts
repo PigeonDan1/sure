@@ -1,4 +1,4 @@
-import type { Api, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { Api, Context, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { streamSimple } from "@earendil-works/pi-ai/compat";
 import type { CapabilityProbeError, ProbeApi, ProbeStep } from "./init-capability-probe.ts";
 import { probeModelCapability } from "./init-capability-probe.ts";
@@ -201,8 +201,113 @@ export interface VerifyRoundTripInput {
 	streamFn?: typeof streamSimple;
 }
 
+/**
+ * One compat setting to back off from, chosen by what upstream complained about.
+ *
+ * Keyed on the symptom, never on a provider name or a host. A table of vendors only ever
+ * fits the vendors someone thought to add, and it puts whoever runs a private relay in the
+ * position of having to patch the repository to use it. An error message that names the
+ * thing the relay refused is enough to configure it, whoever it belongs to.
+ */
+export interface CompatRetreat {
+	field: "supportsDeveloperRole" | "supportsStore" | "maxTokensField" | "requiresReasoningContentOnAssistantMessages";
+	value: boolean | "max_tokens";
+	/** One line for the /sure_init summary: models.json is never rewritten silently. */
+	why: string;
+}
+
+interface CompatSymptom extends CompatRetreat {
+	shows(errorText: string): boolean;
+}
+
+/** Words upstream uses when it is rejecting a parameter rather than reporting a problem. */
+const REFUSED = /\b(unknown|unrecognized|unsupported|not supported|invalid|unexpected|extra)\b/i;
+
+/**
+ * Every entry needs two independent signals before it fires. A single keyword is not
+ * evidence: "internal error in the developer console" must not turn the developer role off,
+ * because a wrong setting written here outlives the session and nobody goes looking for it.
+ */
+const COMPAT_SYMPTOMS: readonly CompatSymptom[] = [
+	{
+		field: "supportsDeveloperRole",
+		value: false,
+		why: "上游不认 developer 角色,系统提示改用 system",
+		// Measured 2026-08-31 against a relay that answers a bare user message and then returns
+		// 400 "messages[0].role: unknown variant `developer`, expected one of `system`, ...".
+		shows: (text) => /developer/i.test(text) && /\b(role|variant)\b/i.test(text),
+	},
+	{
+		field: "maxTokensField",
+		value: "max_tokens",
+		why: "上游不认 max_completion_tokens,改用 max_tokens",
+		// The parameter name is specific enough on its own: it appears in an error only when
+		// upstream is refusing it.
+		shows: (text) => /max_completion_tokens/i.test(text),
+	},
+	{
+		field: "supportsStore",
+		value: false,
+		why: "上游不认 store 参数",
+		shows: (text) => /\bstore\b/i.test(text) && REFUSED.test(text),
+	},
+	{
+		field: "requiresReasoningContentOnAssistantMessages",
+		value: true,
+		why: "上游要求 assistant 消息带 reasoning_content",
+		// Only when upstream says one is missing. "unexpected field reasoning_content" is the
+		// opposite complaint and must not add the field.
+		shows: (text) => /reasoning_content/i.test(text) && /\b(missing|required?|must)\b/i.test(text),
+	},
+];
+
+/**
+ * The first setting whose symptom this failure shows, skipping ones already tried. Returns
+ * nothing for a dead key, a missing channel, or a gateway simply having a bad day: those
+ * say nothing about how the relay wants to be talked to.
+ */
+export function compatRetreatFor(errorText: string, tried: ReadonlySet<string>): CompatRetreat | undefined {
+	const found = COMPAT_SYMPTOMS.find((symptom) => !tried.has(symptom.field) && symptom.shows(errorText));
+	return found ? { field: found.field, value: found.value, why: found.why } : undefined;
+}
+
 /** Deadline for the closing round trip. A relay that never answers must not hang /sure_init. */
 const VERIFY_TIMEOUT_MS = 60_000;
+
+/**
+ * What the round trip sends: a second turn, not an opening line. The two things a bare
+ * user message never exercises are the two a relay is most likely to refuse — a system
+ * prompt, which a reasoning model sends as the `developer` role, and an assistant message
+ * handed back, which some relays only accept carrying reasoning_content. Both refusals
+ * used to land on the user's first real turn instead of here.
+ */
+function verifyContext(model: Model<Api>): Context {
+	const timestamp = Date.now();
+	return {
+		systemPrompt: "You are a helpful assistant. Answer in one word.",
+		messages: [
+			{ role: "user", content: "say ok", timestamp },
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "ok" }],
+				api: model.api,
+				provider: model.provider,
+				model: model.id,
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp,
+			},
+			{ role: "user", content: "say ok again", timestamp },
+		],
+	};
+}
 
 /**
  * Send one real request down pi-ai's own path. The capability probe builds its requests
@@ -220,9 +325,7 @@ export async function verifyModelRoundTrip(input: VerifyRoundTripInput): Promise
 	}
 	const stream = (input.streamFn ?? streamSimple)(
 		model,
-		{
-			messages: [{ role: "user", content: "say ok" }],
-		} as never,
+		verifyContext(model) as never,
 		{
 			apiKey: auth.apiKey,
 			headers: auth.headers,

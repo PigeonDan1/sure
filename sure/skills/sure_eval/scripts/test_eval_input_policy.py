@@ -231,5 +231,34 @@ class MainErrorHandlingTests(unittest.TestCase):
         self.assertIn("multiple versions", stderr.getvalue())
 
 
+class DatasetProjectionRootTests(unittest.TestCase):
+    """An unusable projection root has to name its source and an override."""
+
+    def _policy(self, projection_root: str) -> dict:
+        return {
+            "policy": {
+                "storage": {"forbidden_output_roots": []},
+                "datasets": {"allowed_source_roots": {}, "projection_root": projection_root},
+            }
+        }
+
+    def test_uncreatable_policy_root_names_the_policy_and_the_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            blocker = Path(temporary) / "a-file"
+            blocker.write_text("not a directory\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("SURE_EVAL_DATASETS_ROOT", None)
+                with self.assertRaises(resolve_eval_input.EvalInputError) as ctx:
+                    resolve_eval_input._resolve_dataset_projection(
+                        explicit_root=None,
+                        configured_root=None,
+                        harness_root=Path(temporary) / "harness",
+                        site_policy=self._policy(str(blocker / "projections")),
+                    )
+        message = str(ctx.exception)
+        self.assertIn("site_policy", message)
+        self.assertIn("SURE_EVAL_DATASETS_ROOT", message)
+
+
 if __name__ == "__main__":
     unittest.main()

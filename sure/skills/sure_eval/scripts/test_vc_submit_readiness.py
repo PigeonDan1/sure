@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 os.environ.setdefault("SURE_VC_IMAGE_REGISTRY_PREFIX", "registry.example.com/sure/sure_")
 
+import vc_check  # noqa: E402
 from sure_eval.agent import vc_precheck  # noqa: E402
 
 
@@ -355,6 +356,48 @@ class MergeVolumeMountTests(unittest.TestCase):
             ["/srv/workspace/user/data", "", None],
         )
         self.assertEqual(merged, "/srv/workspace:/srv/workspace")
+
+
+
+class EvaluationBindingComparisonTests(unittest.TestCase):
+    """The submitted binding is checked against one this process resolved itself.
+
+    The gate runs from the hook, with the coding agent's own process
+    environment; an `export` in a Bash-tool subshell does not reach it. That is
+    the one place in this flow where poisoning the environment does not follow
+    the check around.
+    """
+
+    def test_matching_bindings_report_nothing(self) -> None:
+        binding = {"runtime_id": "r1", "lock_sha256": "a" * 64, "engine_commit": "c" * 40}
+        self.assertEqual(vc_check.evaluation_binding_mismatch(binding, dict(binding)), [])
+
+    def test_a_different_runtime_id_is_named_with_both_values(self) -> None:
+        claimed = {"runtime_id": "forged", "lock_sha256": "a" * 64, "engine_commit": "c" * 40}
+        resolved = {"runtime_id": "real", "lock_sha256": "a" * 64, "engine_commit": "c" * 40}
+        reported = vc_check.evaluation_binding_mismatch(claimed, resolved)
+        self.assertEqual(len(reported), 1)
+        self.assertIn("runtime_id", reported[0])
+        self.assertIn("forged", reported[0])
+        self.assertIn("real", reported[0])
+
+    def test_nothing_to_compare_against_is_not_a_disagreement(self) -> None:
+        # A host that cannot resolve the binding must not deadlock the run.
+        binding = {"runtime_id": "r1", "lock_sha256": "a" * 64, "engine_commit": "c" * 40}
+        self.assertEqual(vc_check.evaluation_binding_mismatch(binding, None), [])
+        self.assertEqual(vc_check.evaluation_binding_mismatch(None, binding), [])
+
+    def test_the_local_routes_record_it_inside_the_launch_binding(self) -> None:
+        # local_docker and local_python store the whole launch binding under
+        # deployment_binding, so reading only the top level compared nothing on
+        # two of the three routes.
+        binding = {"runtime_id": "r1"}
+        self.assertEqual(
+            vc_check.claimed_evaluation_binding({"deployment_binding": {"evaluation_runtime": binding}}),
+            binding,
+        )
+        self.assertEqual(vc_check.claimed_evaluation_binding({"evaluation_runtime": binding}), binding)
+        self.assertIsNone(vc_check.claimed_evaluation_binding({"deployment_binding": {}}))
 
 
 if __name__ == "__main__":

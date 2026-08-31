@@ -29,6 +29,7 @@ export interface NormalizedProviderError {
 type SdkErrorShape = Error & {
 	statusCode?: unknown;
 	status?: unknown;
+	code?: unknown;
 	body?: unknown;
 	error?: unknown;
 	$metadata?: { httpStatusCode?: unknown };
@@ -56,13 +57,17 @@ export function normalizeProviderError(error: unknown): NormalizedProviderError 
 /**
  * Probe the HTTP status, first numeric hit wins, in SDK-field order:
  * `statusCode` (Mistral) → `status` (`openai`, `@google/genai`) →
- * `$metadata.httpStatusCode` (Bedrock) → `$response.statusCode` (Bedrock).
+ * `$metadata.httpStatusCode` (Bedrock) → `$response.statusCode` (Bedrock) →
+ * `code` (`openai`, where a gateway may have stringified the status).
  */
 function extractStatus(error: SdkErrorShape): number | undefined {
 	if (typeof error.statusCode === "number") return error.statusCode;
 	if (typeof error.status === "number") return error.status;
 	if (typeof error.$metadata?.httpStatusCode === "number") return error.$metadata.httpStatusCode;
 	if (typeof error.$response?.statusCode === "number") return error.$response.statusCode;
+	// `code` also carries non-status values such as `content_filter`, so only a
+	// bare three-digit string counts.
+	if (typeof error.code === "string" && /^\d{3}$/.test(error.code)) return Number(error.code);
 	return undefined;
 }
 
@@ -96,18 +101,24 @@ function isNonEmptyObject(value: unknown): boolean {
 
 /**
  * Compose a display string from a normalized error. When the message already
- * carries the body (Anthropic / `@google/genai` happy path) or no body/status
- * was extracted, the message is returned unchanged. Otherwise the status and
- * body are surfaced, with an optional provider prefix.
+ * carries the body (Anthropic / `@google/genai` happy path) or no body was
+ * extracted, the message is returned unchanged. Otherwise the body is surfaced,
+ * with the status and an optional provider prefix when those are available.
  *
- * - no prefix: `"<status>: <body>"`
- * - prefix:    `"<prefix> (<status>): <body>"`
+ * A mid-stream failure has no status, because the response returned 200 before
+ * the provider gave up, so the body is the only place the failure is named.
+ *
+ * - no prefix: `"<status>: <body>"`, or `"<body>"` without a status
+ * - prefix:    `"<prefix> (<status>): <body>"`, or `"<prefix>: <body>"` without a status
  */
 export function formatProviderError(norm: NormalizedProviderError, prefix?: string): string {
-	if (norm.messageCarriesBody || norm.status === undefined || norm.body === undefined) {
+	if (norm.messageCarriesBody || norm.body === undefined) {
 		return prefix !== undefined && norm.status !== undefined
 			? `${prefix} (${norm.status}): ${norm.message}`
 			: norm.message;
+	}
+	if (norm.status === undefined) {
+		return prefix !== undefined ? `${prefix}: ${norm.body}` : norm.body;
 	}
 	return prefix !== undefined ? `${prefix} (${norm.status}): ${norm.body}` : `${norm.status}: ${norm.body}`;
 }

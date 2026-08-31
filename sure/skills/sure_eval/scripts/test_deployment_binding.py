@@ -18,6 +18,7 @@ from run_vc_execution import (
     _build_vc_volume_mounts,
     _job_name,
     _normalize_job_name,
+    _surface_env_for_container,
     _write_entrypoint,
 )
 
@@ -65,9 +66,21 @@ class DeploymentBindingTests(unittest.TestCase):
             "harness_runtime_mounted_from_repo",
             "model_runtime",
             "vc_submission",
+            # Both are written by run_vc_execution and the schema is closed, so
+            # an undeclared key makes the SUBMIT_EXECUTION gate refuse the
+            # artifact after `vc submit` has already run.
+            "evaluation_runtime",
+            "surface_env_refused",
         }
 
         self.assertTrue(expected.issubset(properties))
+
+    def test_route_plan_schema_declares_the_node_environment_blockers(self) -> None:
+        schema_path = Path(__file__).resolve().parents[1] / "schemas" / "evaluation_route_plan.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+        self.assertFalse(schema["additionalProperties"])
+        self.assertIn("node_environment_blockers", schema["properties"])
 
     def test_vc_submission_separates_platform_tag_from_digest_identity(self) -> None:
         approved = {
@@ -435,6 +448,132 @@ class DeploymentBindingTests(unittest.TestCase):
         self.assertIn(f"SURE_EVALUATION_PYTHON={evaluation['python_executable']}", command)
         self.assertIn("SURE_EVALUATION_RUNTIME_ID=sure-evaluation-test", command)
         self.assertEqual(provenance["evaluation_runtime"], evaluation)
+
+    def test_local_command_refuses_surface_declared_path_and_provenance(self) -> None:
+        # The agent writes execution_surface.json, so its env is a request, not
+        # a fact. Run 20260828-142343 declared a PATH here whose first entry
+        # held a fake git, and the container's provenance check answered from
+        # it; another run declared GIT_CONFIG_* to make git accept a checkout it
+        # would otherwise refuse. The mode of the run stays the agent's to pick.
+        binding = load_deployment_binding(self.model, "demo")
+        evaluation = {
+            "runtime_id": "sure-evaluation-test",
+            "python_executable": str(self.repo / "sure" / ".runtime" / "evaluation" / "bin" / "python"),
+            "runtime_root": str(self.repo / "sure" / ".runtime" / "evaluation"),
+            "manifest_path": str(self.repo / "sure" / ".runtime" / "evaluation" / "runtime-manifest.json"),
+            "lock_sha256": "e" * 64,
+            "engine_root": str(self.repo / "sure" / "external" / "sure-evaluation"),
+        }
+        surface = {
+            "env": {
+                "PATH": "/tmp/agent/bin:/usr/bin",
+                "LD_PRELOAD": "/tmp/agent/hook.so",
+                "GIT_CONFIG_KEY_0": "safe.directory",
+                "SURE_EVALUATION_RUNTIME_ID": "forged-runtime",
+                "SURE_HARNESS_RUNTIME_ROOT": "/tmp/agent/harness",
+                "EVALUATION_BACKEND": "external",
+                "REPAIR_INVALID_ONLY": "1",
+                # Not refused, but not the run's to choose either: the templates
+                # reach every gate script through "$REPO_ROOT/scripts/".
+                "REPO_ROOT": "/tmp/agent/skill",
+            }
+        }
+        with patch("container_execution.evaluation_runtime_from_eval_input", return_value=evaluation):
+            command, provenance = build_local_container_command(
+                surface=surface,
+                eval_input={
+                    "model": {"deployment_binding": binding},
+                    "runtime": {
+                        "run_dir": str(self.output),
+                        "harness_runtime": self._runtime_binding(),
+                    },
+                    "datasets": [],
+                },
+                control_run_dir=self.control,
+                entrypoint=self.entrypoint,
+                repo_root=self.repo,
+                device_request="cpu",
+            )
+        joined = " ".join(command)
+        self.assertNotIn("/tmp/agent", joined)
+        self.assertNotIn("forged-runtime", joined)
+        self.assertNotIn("safe.directory", joined)
+        # The run's own mode is still the agent's to declare.
+        self.assertIn("EVALUATION_BACKEND=external", command)
+        self.assertIn("REPAIR_INVALID_ONLY=1", command)
+        # The host's own value survives, and every refusal leaves a trace.
+        self.assertIn("SURE_EVALUATION_RUNTIME_ID=sure-evaluation-test", command)
+        self.assertIn(f"REPO_ROOT={self.repo / 'sure' / 'skills' / 'sure_eval'}", command)
+        self.assertEqual(
+            sorted(provenance["surface_env_refused"]),
+            [
+                "GIT_CONFIG_KEY_0",
+                "LD_PRELOAD",
+                "PATH",
+                "SURE_EVALUATION_RUNTIME_ID",
+                "SURE_HARNESS_RUNTIME_ROOT",
+            ],
+        )
+
+    def test_vc_entrypoint_refuses_the_same_keys_as_the_local_container(self) -> None:
+        # The vc route had its own copy of the filter, so a key blocked on one
+        # route reached the container on the other.
+        values = _surface_env_for_container(
+            {
+                "env": {
+                    "PATH": "/tmp/agent/bin",
+                    "SURE_EVALUATION_LOCK_SHA256": "f" * 64,
+                    "TOOL_NAME": "transcribe_audio",
+                }
+            },
+            "/workspace",
+        )
+        self.assertEqual(values, {"TOOL_NAME": "transcribe_audio"})
+
+    def test_vc_entrypoint_lets_the_harness_have_the_last_word(self) -> None:
+        # The surface exports were written after the harness block, so a key
+        # the harness had already decided was simply re-exported by whatever
+        # the surface said. SURE_EVAL_NODE_LOCAL_PYTHON carries a skip for
+        # exactly this, which is one key patched and the rest left open.
+        path = self.control / "vc_entrypoint.sh"
+        _write_entrypoint(
+            path=path,
+            volume_mount=f"{self.root}:{self.root}",
+            container_image=self.image_ref,
+            container_repo_root=str(self.repo),
+            vc_partition="demo",
+            vc_memory="16G",
+            vc_gpus=1,
+            vc_cpus=4,
+            model_python_bin="/opt/model/bin/python",
+            model_pythonpath=[],
+            run_evaluation_path=str(self.entrypoint),
+            log_path=self.output / "vc.log",
+            execution_requested="vc",
+            device_request="cuda:0",
+            device_actual="cuda:0",
+            harness_python_bin=str(self.harness_python),
+            harness_library_paths=[],
+            harness_python_home="",
+            entrypoint_env={
+                "SURE_EVAL_EXECUTION_PATH": "local_bash",
+                "MODEL_PYTHON": "/tmp/agent/python",
+                "RUN_DIR": "/sure-output",
+            },
+            submission_token="d" * 32,
+            terminal_status_path=self.control / "vc_terminal_status.json",
+        )
+        text = path.read_text(encoding="utf-8")
+
+        for key, harness_value in (
+            ("SURE_EVAL_EXECUTION_PATH", "vc_submit"),
+            ("MODEL_PYTHON", "/opt/model/bin/python"),
+        ):
+            exports = [line for line in text.splitlines() if line.startswith(f"export {key}=")]
+            self.assertTrue(exports, key)
+            self.assertIn(harness_value, exports[-1])
+        # A key only the surface knows about still arrives.
+        self.assertIn("export RUN_DIR=", text)
 
     def test_vc_entrypoint_never_rewrites_model_runtime(self) -> None:
         path = self.control / "vc_entrypoint.sh"

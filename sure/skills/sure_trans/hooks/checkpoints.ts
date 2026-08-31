@@ -34,6 +34,9 @@ export interface CheckpointData {
 	currentUnit: string;
 	completedUnits: string[];
 	retries: Record<string, number>;
+	/** Every gate block this run has taken. retries is per-unit and advance()
+	 *  clears it, so it cannot answer "how blocked was this run". */
+	blocks?: number;
 	failedArtifactDigests: Record<string, string>;
 }
 
@@ -96,6 +99,7 @@ export function readCheckpoint(ctx: SureHookContext): RunCheckpoint {
 		const checkpoint = isRecord(root.checkpoint) ? root.checkpoint : {};
 		const data = isRecord(checkpoint.data) ? checkpoint.data : {};
 		const currentUnit = typeof data.currentUnit === "string" ? data.currentUnit : FIRST_UNIT.id;
+		const blocks = typeof data.blocks === "number" ? data.blocks : undefined;
 		const completedUnits = Array.isArray(data.completedUnits)
 			? data.completedUnits.filter((entry): entry is string => typeof entry === "string")
 			: [];
@@ -118,7 +122,7 @@ export function readCheckpoint(ctx: SureHookContext): RunCheckpoint {
 			label: "SURE model transformation state machine",
 			resumable: true,
 			resume_hint: `Resume at unit "${currentUnit}".`,
-			data: { currentUnit, completedUnits, retries, failedArtifactDigests },
+			data: { currentUnit, completedUnits, retries, blocks, failedArtifactDigests },
 		};
 	} catch {
 		return {
@@ -149,7 +153,7 @@ export function advance(unit: Unit, completed: CheckpointData): RunCheckpoint | 
 			label: "SURE model transformation state machine",
 			resumable: false,
 			resume_hint: "State machine reached the terminal unit.",
-			data: { currentUnit: LAST_UNIT.id, completedUnits, retries, failedArtifactDigests },
+			data: { currentUnit: LAST_UNIT.id, completedUnits, retries, blocks: completed.blocks, failedArtifactDigests },
 		};
 	}
 	return {
@@ -157,7 +161,7 @@ export function advance(unit: Unit, completed: CheckpointData): RunCheckpoint | 
 		label: "SURE model transformation state machine",
 		resumable: true,
 		resume_hint: `Advanced to unit "${next.id}".`,
-		data: { currentUnit: next.id, completedUnits, retries, failedArtifactDigests },
+		data: { currentUnit: next.id, completedUnits, retries, blocks: completed.blocks, failedArtifactDigests },
 	};
 }
 
@@ -174,7 +178,13 @@ export function bumpRetry(unit: Unit, current: CheckpointData, artifactDigest?: 
 		label: "SURE model transformation state machine",
 		resumable: true,
 		resume_hint: `Retry unit "${unit.id}" (attempt ${retries[unit.id]}).`,
-		data: { currentUnit: unit.id, completedUnits: current.completedUnits, retries, failedArtifactDigests },
+		data: {
+			currentUnit: unit.id,
+			completedUnits: current.completedUnits,
+			retries,
+			blocks: (current.blocks ?? 0) + 1,
+			failedArtifactDigests,
+		},
 	};
 }
 

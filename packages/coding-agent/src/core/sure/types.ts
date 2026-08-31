@@ -82,6 +82,8 @@ export interface SureRunRecord {
 	summary?: string;
 	errorSummary?: string;
 	lastRepair?: string;
+	/** When the agent turn ended with the run still open; cleared when work resumes. */
+	staleSince?: string;
 	artifacts?: unknown;
 }
 

@@ -258,6 +258,12 @@ export const stream: StreamFunction<"bedrock-converse-stream", BedrockOptions> =
 					handleContentBlockStop(item.contentBlockStop, blocks, output, stream);
 				} else if (item.messageStop) {
 					output.stopReason = mapStopReason(item.messageStop.stopReason);
+					if (output.stopReason === "error") {
+						// Every stop reason we do not map lands here — guardrail
+						// interventions and content filters among them — so keep
+						// the one Bedrock sent for the throw below.
+						output.errorMessage = `Generation stopped: ${item.messageStop.stopReason}`;
+					}
 				} else if (item.metadata) {
 					handleMetadata(item.metadata, model, output);
 				} else if (item.internalServerException) {
@@ -278,7 +284,7 @@ export const stream: StreamFunction<"bedrock-converse-stream", BedrockOptions> =
 			}
 
 			if (output.stopReason === "error" || output.stopReason === "aborted") {
-				throw new Error("An unknown error occurred");
+				throw new Error(output.errorMessage || "An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });

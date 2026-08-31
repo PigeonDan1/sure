@@ -18,6 +18,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 import yaml
@@ -1216,6 +1217,7 @@ def main() -> int:
         "error": None,
     }
     status_payload, current_dataset_status = _upsert_dataset_status(status_path, default_status_payload, dataset_status)
+    generation_started = monotonic()
     argument_keys_seen: set[str] = set()
     dynamic_argument_fields: set[str] = set()
     raw_response_types: set[str] = set()
@@ -1328,6 +1330,22 @@ def main() -> int:
                         encoding="utf-8",
                     )
                     if len(prediction_map) % PREDICTION_SNAPSHOT_INTERVAL == 0:
+                        # The only line this script logged used to be its last one,
+                        # so a five-hour generation pass looked identical to a hung
+                        # one. Counting lines in the prediction file does not help:
+                        # the snapshot materializes every row up front.
+                        generated = len(prediction_map)
+                        elapsed = max(monotonic() - generation_started, 1e-9)
+                        remaining = max(len(samples) - generated, 0)
+                        logger.info(
+                            "Generating predictions",
+                            dataset=canonical_dataset,
+                            generated=generated,
+                            expected=len(samples),
+                            elapsed_seconds=round(elapsed, 1),
+                            seconds_per_sample=round(elapsed / generated, 3),
+                            eta_seconds=round(remaining * elapsed / generated, 1),
+                        )
                         _write_prediction_snapshots(
                             samples=samples,
                             prediction_path=prediction_path,

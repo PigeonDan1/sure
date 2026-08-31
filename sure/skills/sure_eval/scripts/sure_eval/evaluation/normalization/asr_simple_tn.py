@@ -39,7 +39,7 @@ def get_n2w_map(map_file, language=None):
         print("error: no such map file: ", map_file, file=sys.stderr)
         return
     n2w_map = []
-    with open(map_file, 'r') as fm:
+    with open(map_file, 'r', encoding='utf-8') as fm:
         for line in fm:
             line = re.sub(r'\s+', ' ', line.strip()) # 忽略多余的空格和tab
             line = line.split('#', 1)[0] # 删除#开头的注释
@@ -50,13 +50,28 @@ def get_n2w_map(map_file, language=None):
                 line2 = line.split() # 其次以空格或tab分割
                 if (len(line2) != 2):
                     print("error map file format, map_file = ", map_file, " len = ", len(line2), " line = ", line, file=sys.stderr)
-                    exit()
+                    sys.exit(1)
             if language in ["ja", "ar", "zh", "zh_cn", "zh_CN"]:
                 n2w_map.append({line2[0].strip() : line2[1].strip()}) # 不要引入额外的空格
             else:
                 n2w_map.append({line2[0].strip() : " " + line2[1].strip() + " "})
     #print(n2w_map, file=sys.stderr)
     return n2w_map
+
+def load_and_sort_map(map_file, language=None):
+    """读一个 .map 文件，返回按 key 长度降序排好的 (key, value) 列表。
+
+    降序是必须的：短 key 是长 key 的前缀时，先替换短的会把长的吃掉。
+    """
+    n2w_map = get_n2w_map(map_file, language)
+    if not n2w_map:
+        return []
+    pairs = []
+    for item in n2w_map:
+        for k, v in item.items():
+            pairs.append((k, v))
+    pairs.sort(key=lambda x: len(x[0]), reverse=True)
+    return pairs
 
 def tn_replace(text, key, value):
     pattern = None
@@ -93,22 +108,6 @@ def preprocess_zh_text(text):
     # 只匹配2位中文数字，避免匹配更长或更短的
     text = re.sub(r'([一二三四五六七八九零])([一二三四五六七八九零])', normalize_chinese_digits, text)
     
-    # 1. 阿拉伯数字转中文数字（处理时间、年龄等场景）
-    def arabic_to_chinese_num(match):
-        num_str = match.group(0)
-        try:
-            num = int(num_str)
-            # 对于小于100的数字，转换为中文数字
-            if num < 100:
-                return num2words_std(num, lang='zh_CN')
-            else:
-                return num_str  # 大数字保持阿拉伯数字
-        except:
-            return num_str
-    
-    # 匹配独立的数字（避免匹配日期中的数字）
-    text = re.sub(r'(?<!\d)(\d{1,2})(?!\d)', arabic_to_chinese_num, text)
-    
     # 2. Decomposed Units (NFKC artifacts): ℃ -> °C, ㎡ -> m2
     text = re.sub(r'°\s*C', '摄氏度', text)
     text = re.sub(r'(\d+(?:\.\d+)?)\s*m2(?![a-zA-Z0-9])', r'\1平方米', text)
@@ -141,7 +140,25 @@ def preprocess_zh_text(text):
         return val + unit_map.get(unit, unit)
         
     text = re.sub(r'(\d+(?:\.\d+)?)\s*(kg|km|cm|mm|ml|l|m)(?![a-zA-Z])', replace_unit, text)
-    
+
+    # 8. 阿拉伯数字转中文数字（处理时间、年龄等场景）
+    # 必须放在最后：上面每条规则都按阿拉伯数字匹配，数字先变成中文它们就一条都匹配不上。
+    def arabic_to_chinese_num(match):
+        num_str = match.group(0)
+        try:
+            num = int(num_str)
+            # 对于小于100的数字，转换为中文数字
+            if num < 100:
+                return num2words_std(num, lang='zh_CN')
+            else:
+                return num_str  # 大数字保持阿拉伯数字
+        except:
+            return num_str
+
+    # 匹配独立的数字（避免匹配日期中的数字）
+    # 小数点也要排除：12.5 的两半分别转成中文，中间的点会被后面当标点删掉，读成"十二五"
+    text = re.sub(r'(?<![\d.])(\d{1,2})(?![\d.])', arabic_to_chinese_num, text)
+
     return text
 
 def preprocess_en_text(text):
@@ -253,7 +270,7 @@ def asr_num2words(
         map_files = glob.glob(os.path.join(map_dir, "*.map"))
         for mf in map_files:
             if os.path.basename(mf) != "digit.map":
-                pairs.extend(load_and_sort_map(mf))
+                pairs.extend(load_and_sort_map(mf, language))
         pairs.sort(key=lambda x: len(x[0]), reverse=True)
     text2 = text
     for key, value in pairs:

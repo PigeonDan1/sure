@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	listGatewayProviders,
+	mergeProviderCompat,
 	readGatewayModels,
 	upsertProviderModel,
 	writeGatewayProvider,
@@ -168,6 +169,63 @@ describe("writeGatewayProvider", () => {
 				modelsPath,
 			),
 		).toThrow();
+	});
+});
+
+describe("mergeProviderCompat", () => {
+	it("records the setting at the provider, leaving the models and other fields alone", () => {
+		writeModelsFile({
+			note: "keep",
+			providers: {
+				apifusion: {
+					baseUrl: "https://gw.example.com/v1",
+					apiKey: "sk-1",
+					models: [{ id: "gpt-5.6-sol", api: "openai-completions" }],
+				},
+			},
+		});
+		mergeProviderCompat("apifusion", { supportsDeveloperRole: false }, modelsPath);
+		const parsed = JSON.parse(readFileSync(modelsPath, "utf-8"));
+		// Provider level, not model level: what a relay refuses, it refuses for every model on it.
+		expect(parsed.providers.apifusion.compat).toEqual({ supportsDeveloperRole: false });
+		expect(parsed.providers.apifusion.apiKey).toBe("sk-1");
+		expect(parsed.providers.apifusion.models).toEqual([{ id: "gpt-5.6-sol", api: "openai-completions" }]);
+		expect(parsed.note).toBe("keep");
+	});
+
+	it("keeps settings already recorded", () => {
+		writeModelsFile({
+			providers: {
+				apifusion: {
+					baseUrl: "https://gw.example.com/v1",
+					compat: { supportsDeveloperRole: false, thinkingFormat: "deepseek" },
+					models: [],
+				},
+			},
+		});
+		mergeProviderCompat("apifusion", { supportsStore: false }, modelsPath);
+		const parsed = JSON.parse(readFileSync(modelsPath, "utf-8"));
+		// Each round trip settles one thing. Replacing the object would undo the previous one
+		// and the negotiation would never converge.
+		expect(parsed.providers.apifusion.compat).toEqual({
+			supportsDeveloperRole: false,
+			thinkingFormat: "deepseek",
+			supportsStore: false,
+		});
+	});
+
+	it("survives a later model refresh", () => {
+		writeModelsFile({
+			providers: { apifusion: { baseUrl: "https://gw.example.com/v1", models: [] } },
+		});
+		mergeProviderCompat("apifusion", { supportsDeveloperRole: false }, modelsPath);
+		upsertProviderModel("apifusion", "https://gw.example.com/v1", { id: "gpt-5.6-sol" }, modelsPath);
+		writeGatewayProvider(
+			{ name: "apifusion", baseUrl: "https://gw.example.com/v1", models: [{ id: "gpt-5.6-sol" }] },
+			modelsPath,
+		);
+		const parsed = JSON.parse(readFileSync(modelsPath, "utf-8"));
+		expect(parsed.providers.apifusion.compat).toEqual({ supportsDeveloperRole: false });
 	});
 });
 

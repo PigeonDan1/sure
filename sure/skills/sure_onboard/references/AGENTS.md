@@ -97,7 +97,7 @@ tool agent 只读取当前模型真正需要的记忆，避免默认注入所有
 
 - 正常路径不读取 bad case
 - 出现具体失败或高风险信号时，先读 `memory/ROUTING.md`
-- 只有命中 bad-case trigger 时才读 `memory/bad_cases/README.md` 和对应案例文件
+- 只有命中 bad-case trigger 时才读 `sure/memory/index.md`（合并索引，含老条目、已确认条目和暂定条目）和对应案例文件；`memory/bad_cases/README.md` 只列已导出的条目
 
 **记录要求**:
 
@@ -319,7 +319,7 @@ references/templates/
 | Docker 环境策略 | `playbooks/env_docker.md`，仅 docker 路由命中时读取 |
 | API 模型策略 | `playbooks/model_api.md`，仅 API 路由命中时读取 |
 | Optional memory 路由 | `memory/ROUTING.md` |
-| Bad case 索引 | `memory/bad_cases/README.md`，仅失败 trigger 命中时读取 |
+| Bad case 索引 | `sure/memory/index.md`（合并索引）优先，`memory/bad_cases/README.md` 只列已导出条目；仅失败 trigger 命中时读取 |
 | 失败分类体系 | `playbooks/failure_taxonomy.md`，仅进入 DIAGNOSE 或失败分类时读取 |
 | Model Spec 规范 | `specs/model_spec_template.md` |
 | 验证契约 | `contracts/minimal_validation.md` |

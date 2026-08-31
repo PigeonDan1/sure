@@ -61,6 +61,24 @@ class RevalPredictionSourceTests(unittest.TestCase):
         self.assertFalse(payload["inference_allowed"])
         self.assertFalse((self.model / "artifacts" / "deployment_ready.json").exists())
 
+    def test_result_dir_that_never_finished_evaluating_is_named_in_the_error(self) -> None:
+        # What a run that died in [5/5] leaves behind: predictions, no protocol
+        # and no report. It used to be skipped silently, so the error read as if
+        # the directory were not there at all.
+        crashed = self.results / "demo" / "crashed-run"
+        (crashed / "predictions").mkdir(parents=True)
+        (crashed / "predictions" / "aishell1__v1.0.2.txt").write_text("sample-1\tp\n", encoding="utf-8")
+        args = self.args()
+        args.datasets = ["other_ds__v1.0.0"]
+
+        with self.assertRaises(FileNotFoundError) as ctx:
+            build_payload(args, approved_models_root=self.models, approved_results_root=self.results)
+
+        message = str(ctx.exception)
+        self.assertIn("crashed-run", message)
+        self.assertIn("protocol.yaml", message)
+        self.assertIn("Re-run the evaluation", message)
+
     def test_identity_rejects_non_successful_verdict(self) -> None:
         write_json(self.model / "artifacts" / "verdict.json", {"status": "partial"})
 

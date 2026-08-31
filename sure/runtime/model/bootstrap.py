@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
@@ -204,6 +203,8 @@ def materialize_runtime(
     uv_bin: str | None = None,
 ) -> dict[str, Any]:
     """Build one immutable uv environment and return its verified contract."""
+
+    import fcntl
     source_python = source_python.expanduser().resolve()
     lock_path = lock_path.expanduser().resolve()
     if not source_python.is_file() or not os.access(source_python, os.X_OK):

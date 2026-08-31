@@ -33,7 +33,7 @@ try {
 	}
 	if (
 		projectionRoot &&
-		datasets.allowed_source_roots.some(
+		Object.values(datasets.allowed_source_roots).some(
 			(source) => isWithin(projectionRoot, source) || isWithin(source, projectionRoot),
 		)
 	) {

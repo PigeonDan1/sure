@@ -28,7 +28,7 @@ def _policy(**overrides: object) -> dict[str, object]:
             "forbidden_output_roots": [_ROOT],
             "runtime_root": f"{_ROOT}/runtime",
         },
-        "datasets": {"allowed_source_roots": [f"{_ROOT}/datasets"]},
+        "datasets": {"allowed_source_roots": {"default": f"{_ROOT}/datasets"}},
         "execution": {"surfaces": ["local", "vc"]},
     }
     base.update(overrides)

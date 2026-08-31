@@ -1,4 +1,5 @@
 import type { AssistantMessage } from "../types.ts";
+import { PROVIDER_MIDSTREAM_ERROR } from "./diagnostics.ts";
 
 function buildProviderErrorPattern(patterns: readonly string[]): RegExp {
 	return new RegExp(patterns.join("|"), "i");
@@ -23,6 +24,15 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
 	"billing",
 ]);
 
+/**
+ * True when the provider text names an account limit rather than a transient
+ * throttle. A 429 that says this will say it again on the next attempt, so
+ * callers must not spend their retry budget on it.
+ */
+export function isTerminalRateLimitError(errorText: string): boolean {
+	return NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorText);
+}
+
 const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	// Generic provider load, HTTP status, and server-side transient failures.
 	"overloaded",
@@ -36,6 +46,11 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"service.?unavailable",
 	"server.?error",
 	"internal.?error",
+
+	// Azure OpenAI reports a failed generation as an SSE error event once the
+	// response has already returned 200, so the SDK error carries no HTTP status
+	// and none of the status patterns above can match the text.
+	"produced invalid content",
 
 	// Wrapper/provider text for transient upstream failures, including OpenRouter
 	// "Provider returned error" responses (#2264).
@@ -91,6 +106,11 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 export function isRetryableAssistantError(message: AssistantMessage): boolean {
 	if (message.stopReason !== "error" || !message.errorMessage) return false;
 	const errorMessage = message.errorMessage;
-	if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage)) return false;
+	if (isTerminalRateLimitError(errorMessage)) return false;
+	// A provider that accepted the request and then gave up part-way through is
+	// worth another attempt whatever it called the failure. Gateways word these
+	// differently from each other and from release to release, so matching the
+	// text alone drops every failure whose wording is not already in the list.
+	if (message.diagnostics?.some((diagnostic) => diagnostic.type === PROVIDER_MIDSTREAM_ERROR)) return true;
 	return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
 }

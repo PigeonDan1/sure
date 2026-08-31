@@ -694,6 +694,8 @@ export interface AgentStartEvent {
 export interface AgentEndEvent {
 	type: "agent_end";
 	messages: AgentMessage[];
+	/** True when the session is about to restart this turn after a provider error. */
+	willRetry: boolean;
 }
 
 /** Fired at the start of each turn */

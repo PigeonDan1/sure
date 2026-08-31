@@ -34,7 +34,9 @@ class WriteHarnessConfigBootstrapTests(unittest.TestCase):
                     "forbidden_output_roots": [str(self.root / "forbidden")],
                 },
                 "datasets": {
-                    "allowed_source_roots": [str(self.root / "sources")],
+                    # key -> path, the shape sure.site.loader emits (a legacy one-item list is
+                    # normalised to {"default": path} before any caller sees it)
+                    "allowed_source_roots": {"default": str(self.root / "sources")},
                 },
             }
         }

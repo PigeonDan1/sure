@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+	advance,
 	bumpRetry,
 	initialCheckpoint,
 	retryExhausted,
 } from "../../../../sure/skills/sure_approve/hooks/checkpoints.ts";
-import { modeFromArgs, preStart } from "../../../../sure/skills/sure_approve/hooks/index.ts";
+import { gateBlocks, modeFromArgs, preStart } from "../../../../sure/skills/sure_approve/hooks/index.ts";
 import {
 	APPROVE_UNITS,
 	AUDIT_UNITS,
@@ -101,5 +102,18 @@ describe("sure_approve state machine", () => {
 		const third = bumpRetry(second, "digest-3");
 		expect(retryExhausted(second)).toBe(false);
 		expect(retryExhausted(third)).toBe(true);
+	});
+
+	it("keeps counting blocks after the blocked unit passes", () => {
+		const initial = initialCheckpoint("audit");
+		expect(gateBlocks(initial.data)).toBe(0);
+
+		const blocked = bumpRetry(bumpRetry(initial, "digest-1"), "digest-2");
+		expect(gateBlocks(blocked.data)).toBe(2);
+
+		// advance() clears the unit's retry entry, which is right for the retry
+		// budget and wrong for a run-long tally: the counters used to report zero
+		// blocks for every gate that blocked and then passed.
+		expect(gateBlocks(advance(blocked).data)).toBe(2);
 	});
 });

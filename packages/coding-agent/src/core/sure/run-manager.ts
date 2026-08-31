@@ -85,6 +85,17 @@ export class SureRunManager {
 		return record;
 	}
 
+	/** Run ids oldest first; the timestamp prefix makes the plain sort chronological. */
+	listRunIds(): string[] {
+		if (!existsSync(this.runsRoot)) {
+			return [];
+		}
+		return readdirSync(this.runsRoot, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+			.sort();
+	}
+
 	readRun(runId: string): SureRunRecord | undefined {
 		const runPath = join(this.runsRoot, runId, "run.json");
 		if (!existsSync(runPath)) {
@@ -164,6 +175,7 @@ export class SureRunManager {
 			started_at: record.startedAt,
 			updated_at: record.updatedAt,
 			finished_at: record.finishedAt,
+			stale_since: record.staleSince,
 			error: record.lastRepair ?? record.errorSummary,
 			products: listProducts(outputDir),
 		});

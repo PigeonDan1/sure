@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	applyProbedModel,
+	compatRetreatFor,
 	defaultThinkingLevel,
 	probeFailureMessage,
 	probeWholeGateway,
@@ -352,6 +353,50 @@ function fakeStream(events: Array<{ type: string }>, result: { stopReason: strin
 	});
 }
 
+describe("compatRetreatFor", () => {
+	it("stops sending the developer role when upstream refuses that variant", () => {
+		// Measured against a company relay on 2026-08-31, which answers a bare user message.
+		const retreat = compatRetreatFor(
+			"400 messages[0].role: unknown variant `developer`, expected one of `system`, `user`, `assistant`, `tool`",
+			new Set(),
+		);
+		expect(retreat).toMatchObject({ field: "supportsDeveloperRole", value: false });
+	});
+
+	it("switches the token field when upstream does not know max_completion_tokens", () => {
+		const retreat = compatRetreatFor("400 unknown field `max_completion_tokens`", new Set());
+		expect(retreat).toMatchObject({ field: "maxTokensField", value: "max_tokens" });
+	});
+
+	it("stops sending store when upstream calls it an unknown parameter", () => {
+		const retreat = compatRetreatFor('400 unrecognized request argument supplied: "store"', new Set());
+		expect(retreat).toMatchObject({ field: "supportsStore", value: false });
+	});
+
+	it("adds reasoning_content when upstream says an assistant message must carry it", () => {
+		const retreat = compatRetreatFor("400 the last assistant message is missing reasoning_content", new Set());
+		expect(retreat).toMatchObject({ field: "requiresReasoningContentOnAssistantMessages", value: true });
+	});
+
+	it("proposes nothing for a failure that names no setting", () => {
+		// A dead key, a missing channel or a gateway having a bad day must not be answered by
+		// turning a capability off: that would write a wrong setting the user never sees again.
+		expect(compatRetreatFor("503 model_not_found", new Set())).toBeUndefined();
+		expect(compatRetreatFor("401 Invalid token", new Set())).toBeUndefined();
+		expect(compatRetreatFor("HTTP 502", new Set())).toBeUndefined();
+	});
+
+	it("proposes nothing when upstream merely mentions a word in passing", () => {
+		expect(compatRetreatFor("500 internal error in the developer console", new Set())).toBeUndefined();
+		expect(compatRetreatFor("400 unexpected field reasoning_content", new Set())).toBeUndefined();
+	});
+
+	it("never proposes a setting that has already been tried", () => {
+		const text = "400 messages[0].role: unknown variant `developer`";
+		expect(compatRetreatFor(text, new Set(["supportsDeveloperRole"]))).toBeUndefined();
+	});
+});
+
 describe("verifyModelRoundTrip", () => {
 	const registry = {
 		find: vi.fn(() => ({ id: "gpt-5.6-sol", provider: "apifusion", api: "openai-responses" })),
@@ -368,13 +413,46 @@ describe("verifyModelRoundTrip", () => {
 			streamFn: streamFn as never,
 		});
 		expect(outcome.ok).toBe(true);
-		// The whole point of this check is that it goes out over pi-ai's own path: one user
-		// message, the probed level, and a deadline so a silent gateway cannot hang init.
+		// The whole point of this check is that it goes out over pi-ai's own path: the probed
+		// level, and a deadline so a silent gateway cannot hang init. What the context has to
+		// contain is pinned by the two tests below.
 		expect(streamFn).toHaveBeenCalledWith(
 			expect.anything(),
-			expect.objectContaining({ messages: [{ role: "user", content: "say ok" }] }),
+			expect.objectContaining({ messages: expect.any(Array) }),
 			expect.objectContaining({ maxTokens: 32, reasoning: "high", signal: expect.any(AbortSignal) }),
 		);
+	});
+
+	it("carries a system prompt so a relay that refuses the developer role is caught here", async () => {
+		const streamFn = fakeStream([{ type: "start" }], { stopReason: "stop" });
+		await verifyModelRoundTrip({
+			registry: registry as never,
+			provider: "apifusion",
+			modelId: "gpt-5.6-sol",
+			thinkingLevel: "high",
+			streamFn: streamFn as never,
+		});
+		// A real turn always has one, and on a reasoning model pi-ai sends it as the `developer`
+		// role. A round trip without a system prompt never emits that role, so a relay that only
+		// accepts `system` passes here and refuses the first real request instead.
+		const context = (streamFn.mock.calls[0] as unknown[])[1] as { systemPrompt?: string };
+		expect(context.systemPrompt).toBeTruthy();
+	});
+
+	it("replays an assistant turn so a relay that refuses the replay is caught here", async () => {
+		const streamFn = fakeStream([{ type: "start" }], { stopReason: "stop" });
+		await verifyModelRoundTrip({
+			registry: registry as never,
+			provider: "apifusion",
+			modelId: "gpt-5.6-sol",
+			thinkingLevel: "high",
+			streamFn: streamFn as never,
+		});
+		// A relay can take a first turn and refuse the second: some require reasoning_content
+		// on the assistant messages they are handed back. One user message exercises neither
+		// that nor anything else a session does past its opening line.
+		const context = (streamFn.mock.calls[0] as unknown[])[1] as { messages: Array<{ role: string }> };
+		expect(context.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
 	});
 
 	it("omits reasoning for off", async () => {

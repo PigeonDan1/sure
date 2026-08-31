@@ -13,7 +13,7 @@ storage:
 
 datasets:
   allowed_source_roots:
-    - /srv/sure/datasets
+    default: /srv/sure/datasets
   projection_root: /var/lib/sure/dataset-projections
 
 execution:

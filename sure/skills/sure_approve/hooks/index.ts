@@ -5,7 +5,14 @@ import { join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { harnessRuntimeEnv, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
 import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
-import { advance, bumpRetry, initialCheckpoint, readCheckpoint, retryExhausted } from "./checkpoints.ts";
+import {
+	advance,
+	bumpRetry,
+	type CheckpointData,
+	initialCheckpoint,
+	readCheckpoint,
+	retryExhausted,
+} from "./checkpoints.ts";
 import { type ApproveMode, findUnit, unitsForMode } from "./state-machine.ts";
 import { readArtifact, validateProduces } from "./validate.ts";
 
@@ -92,6 +99,14 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	};
 }
 
+// Blocks taken over the whole run. retries is per-unit and advance() clears
+// it, so reporting the current unit's attempts told the operator zero for
+// every gate that blocked and then passed. Checkpoints written before the
+// blocks key fall back to the retry ledger.
+export function gateBlocks(data: CheckpointData): number {
+	return data.blocks ?? Object.values(data.retries ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
+}
+
 function toolCommand(ctx: SureHookContext): string | undefined {
 	const event = typeof ctx.event === "object" && ctx.event !== null ? (ctx.event as Record<string, unknown>) : {};
 	const call =
@@ -139,7 +154,7 @@ function failOrRetry(
 				counters: {
 					completed_units: checkpoint.data.completedUnits.length,
 					total_units: unitsForMode(checkpoint.data.mode).length,
-					gate_blocks: attempts,
+					gate_blocks: gateBlocks(checkpoint.data),
 				},
 				checkpoint,
 				diagnostics: [{ severity: "warning", message: repair, repair }],
@@ -164,7 +179,7 @@ function failOrRetry(
 			counters: {
 				completed_units: next.data.completedUnits.length,
 				total_units: unitsForMode(next.data.mode).length,
-				gate_blocks: attempts,
+				gate_blocks: gateBlocks(next.data),
 			},
 			checkpoint: next,
 			diagnostics: [{ severity: "error", message: repair, repair }],
@@ -242,7 +257,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 			counters: {
 				completed_units: next.data.completedUnits.length,
 				total_units: explicitRejection ? 1 : unitsForMode(mode).length,
-				gate_blocks: 0,
+				gate_blocks: gateBlocks(next.data),
 			},
 			checkpoint: next,
 		},

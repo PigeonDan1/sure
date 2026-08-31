@@ -2,7 +2,13 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CheckpointData } from "../../../../sure/skills/sure_onboard/hooks/checkpoints.ts";
+import {
+	advance,
+	bumpRetry,
+	type CheckpointData,
+	type RunCheckpoint,
+	type Unit,
+} from "../../../../sure/skills/sure_onboard/hooks/checkpoints.ts";
 import {
 	countersFor,
 	postToolResult,
@@ -452,6 +458,7 @@ describe("sure_onboard aligned state machine", () => {
 			"package_gate",
 			"write_runtime_inventory",
 			"verdict",
+			"extract_lessons",
 			"finalize_model_bundle",
 		]);
 	});
@@ -1272,6 +1279,19 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				sample_output_path: "artifacts/sample_output.json",
 			},
 		});
+		advance("extract_lessons");
+		// Memory extraction unit (spec §4.4). This replay hit no gate, so the
+		// honest declaration is "no new lessons"; the gate accepts that shape
+		// without candidates and without a hook-built digest.
+		writeArtifact(runDir, "extraction_declaration.json", {
+			schema: "sure.memory.extraction.v2",
+			no_new_lessons: true,
+			no_lessons_reason: "replay fixture: every gate passed on the first attempt, nothing to extract",
+			covered_by: [],
+			candidates: [],
+			infra_noise: false,
+			infra_evidence: [],
+		});
 		advance("finalize_model_bundle");
 		const finalize = spawnSync(
 			"python3",
@@ -1440,6 +1460,25 @@ describe("sure_onboard countersFor", () => {
 			retries: { discover: 4, classify: 2 },
 		};
 		expect(countersFor(data, 0).gate_blocks).toBe(6);
+	});
+
+	it("keeps counting blocks after the blocked unit passes", () => {
+		const unit = findUnit("classify");
+		expect(unit).toBeDefined();
+		let data: CheckpointData = {
+			currentUnit: "classify",
+			completedUnits: [],
+			retries: {},
+		};
+		data = bumpRetry(unit as Unit, data).data;
+		data = bumpRetry(unit as Unit, data).data;
+		expect(countersFor(data, 0).gate_blocks).toBe(2);
+
+		// advance() clears the unit's retry entry, which is right for the retry
+		// budget and wrong for a run-long tally: a run that was blocked twice and
+		// then finished used to report zero blocks.
+		data = (advance(unit as Unit, data) as RunCheckpoint).data;
+		expect(countersFor(data, 0).gate_blocks).toBe(2);
 	});
 });
 

@@ -486,6 +486,27 @@ def _execution_result(run_dir: Path, report_path: Path) -> dict[str, Any]:
     return {}
 
 
+def _validate_completed_execution(run_dir: Path, report_path: Path) -> list[str]:
+    """The mirror of the failed-report check: a success must not contradict the run.
+
+    Only the failure direction was ever checked, so a report claiming success was
+    accepted next to an execution_result.json recording a non-zero exit. One run
+    is on record as "status": "success" with "ERROR: Evaluation exited with code 1"
+    at the end of its job log.
+    """
+    execution_result = _execution_result(run_dir, report_path)
+    if not execution_result:
+        return []
+    errors: list[str] = []
+    job_status = str(execution_result.get("job_status") or execution_result.get("status") or "").lower()
+    if job_status in FAILURE_STATUSES:
+        errors.append(f'successful run report conflicts with execution_result.json job_status "{job_status}"')
+    exit_code = execution_result.get("exit_code")
+    if isinstance(exit_code, (int, float)) and not isinstance(exit_code, bool) and int(exit_code) != 0:
+        errors.append(f"successful run report conflicts with execution_result.json exit_code {int(exit_code)}")
+    return errors
+
+
 def _validate_failed_execution_report(run_dir: Path, report_path: Path, data: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     execution_result = _execution_result(run_dir, report_path)
@@ -663,6 +684,13 @@ def main() -> int:
             print("RUN_REPORT_UNIT failed-run artifact gate failed:\n  - " + "\n  - ".join(artifact_errors), file=sys.stderr)
             return 1
     elif status in SUCCESS_STATUSES or data.get("report_persisted"):
+        execution_errors = _validate_completed_execution(Path(args.run_dir), path)
+        if execution_errors:
+            print(
+                "RUN_REPORT_UNIT completed-run execution gate failed:\n  - " + "\n  - ".join(execution_errors),
+                file=sys.stderr,
+            )
+            return 1
         artifact_root = _find_artifact_root(Path(args.run_dir), path, data)
         if artifact_root is None:
             print(

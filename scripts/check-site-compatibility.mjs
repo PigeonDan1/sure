@@ -191,7 +191,9 @@ try {
 		"-c",
 		"import sys; sys.path.insert(0, 'sure/skills/sure_eval/scripts'); from sure_eval.datasets.source_resolver import accepted_source_root; print(accepted_source_root())",
 	]);
-	const expectedDatasetRoot = expectedPolicy.datasets.allowed_source_roots[0];
+	// Get the single configured root from the key-value map
+	const sourceRoots = expectedPolicy.datasets.allowed_source_roots;
+	const expectedDatasetRoot = Array.isArray(sourceRoots) ? sourceRoots[0] : Object.values(sourceRoots)[0];
 	const datasetMatches = datasetProbe.status === 0 && datasetProbe.stdout.trim() === expectedDatasetRoot;
 	record("dataset-root", "path", datasetMatches, datasetMatches ? expectedDatasetRoot : datasetProbe.stderr.trim() || datasetProbe.stdout.trim());
 

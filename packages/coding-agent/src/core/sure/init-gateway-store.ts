@@ -177,6 +177,30 @@ export function writeGatewayProvider(input: GatewayWriteInput, modelsJsonPath: s
 }
 
 /**
+ * Merge compat settings into a provider entry, keeping the ones already recorded.
+ *
+ * Provider level rather than model level: what a relay refuses about the shape of a
+ * request, it refuses for every model on it. Merging rather than replacing is what lets the
+ * round trip settle one refusal at a time without undoing the last one.
+ */
+export function mergeProviderCompat(
+	providerName: string,
+	compat: Record<string, unknown>,
+	modelsJsonPath: string = getModelsPath(),
+): void {
+	const file = readEditableModelsFile(modelsJsonPath);
+	const providers = file.providers ?? {};
+	const existing = providers[providerName] ?? {};
+	const priorCompat =
+		typeof existing.compat === "object" && existing.compat !== null && !Array.isArray(existing.compat)
+			? (existing.compat as Record<string, unknown>)
+			: {};
+	providers[providerName] = { ...existing, compat: { ...priorCompat, ...compat } };
+	file.providers = providers;
+	writeModelsFile(file, modelsJsonPath);
+}
+
+/**
  * Add or refresh one model's annotation without touching the provider's other models.
  * Missing context window and output cap get NEW_MODEL_DEFAULTS; values already on disk win.
  */

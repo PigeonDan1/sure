@@ -15,6 +15,44 @@ from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 DOCKER_EXIT_RE = re.compile(r"(?m)^\s*Error: exit status ([1-9][0-9]*)\s*$")
 
+# The model agent writes execution_surface.json, so its env is a request, not a
+# fact. It may choose the run's mode -- which datasets, which device, whether to
+# resume, whether to repair -- but it may not choose which binaries the run
+# resolves, nor what the run's provenance says about itself. Run
+# 20260828-142343 declared a PATH whose first entry held a fake `git`, and the
+# in-container provenance check answered from it for three resubmissions;
+# another run declared GIT_CONFIG_* to make git accept a checkout it would
+# otherwise refuse. These are families rather than a closed allowlist because
+# the surface legitimately carries about forty different keys, and a key
+# dropped silently is worse than a key refused loudly.
+SURFACE_ENV_REFUSED = {
+    "LD_AUDIT",
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "PATH",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "PYTHONSTARTUP",
+}
+SURFACE_ENV_REFUSED_PREFIXES = ("GIT_", "SURE_EVALUATION_", "SURE_HARNESS_")
+
+
+def surface_env_refuses(key: str) -> bool:
+    """Whether the run may not decide this variable for itself."""
+    return key in SURFACE_ENV_REFUSED or key.startswith(SURFACE_ENV_REFUSED_PREFIXES)
+
+
+def refused_surface_env(surface: dict[str, Any]) -> list[str]:
+    """The keys the surface asked for and did not get, so the refusal leaves a trace."""
+    raw = surface.get("env")
+    if not isinstance(raw, dict):
+        return []
+    return sorted(
+        key
+        for key, value in raw.items()
+        if isinstance(key, str) and ENV_NAME_RE.fullmatch(key) and value is not None and surface_env_refuses(key)
+    )
+
 
 def effective_container_exit_code(returncode: int, *output: str) -> int:
     """Recover the inner status from the site Docker wrapper when needed."""
@@ -51,7 +89,10 @@ def surface_env(surface: dict[str, Any]) -> dict[str, str]:
     return {
         key: str(value)
         for key, value in raw.items()
-        if isinstance(key, str) and ENV_NAME_RE.fullmatch(key) and value is not None
+        if isinstance(key, str)
+        and ENV_NAME_RE.fullmatch(key)
+        and value is not None
+        and not surface_env_refuses(key)
     }
 
 
@@ -232,6 +273,11 @@ def build_local_container_command(
             "RUN_DIR": output_target,
             "SURE_EVAL_APPROVED_RESULT_DIR": output_target,
             "MODEL_PYTHON": str(container.get("python_executable") or "python"),
+            # The templates reach every gate script through "$REPO_ROOT/scripts/",
+            # so a surface-declared REPO_ROOT chooses which scripts the run
+            # executes. This route passed it straight through; the repository is
+            # mounted at its own path, so the harness names it here.
+            "REPO_ROOT": str(repo_root.resolve() / "sure" / "skills" / "sure_eval"),
             "PYTHON_BIN": str(container.get("python_executable") or "python"),
             "HARNESS_PYTHON_BIN": harness_python,
             "SURE_EVAL_NODE_LOCAL_PYTHON": harness_python,
@@ -289,6 +335,7 @@ def build_local_container_command(
         ),
         "harness_runtime": harness_runtime,
         "evaluation_runtime": evaluation_runtime,
+        "surface_env_refused": refused_surface_env(surface),
         "evaluation_node_runtime": {
             "runtime_type": "evaluation_node_python",
             "python_executable": harness_python,

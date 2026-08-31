@@ -334,3 +334,34 @@ assert data["vc_runtime"]["resolved_submission"] == submission, data
 		expect(result.stderr).toBe("");
 	});
 });
+
+describe("sure_eval [2.6/5] evaluation readiness gate", () => {
+	const TEMPLATES = ["run_single_model.sh", "run_single_model_single_dataset.sh"];
+
+	for (const template of TEMPLATES) {
+		// Repair mode is not a shortcut past evaluation: both arms fall out of the
+		// branch into [4/5] and [5/5], and [5/5] resolves the same binding. A gate
+		// that only guards the normal arm lets a repair run pay for every
+		// prediction before the runtime it needs is found missing.
+		// REPO_ROOT is the skill package directory -- the gate reaches its own
+		// script through $REPO_ROOT/scripts/. So the fallback engine root named
+		// sure/skills/sure_eval/sure/external/sure-evaluation, which exists
+		// nowhere, and the gate went red on every host run that did not set
+		// SURE_EVALUATION_HOME. [5/5] resolves the engine from the repository
+		// root; the gate has to check the checkout [5/5] will use.
+		it(`checks the engine root [5/5] will use in ${template}`, () => {
+			const text = readFileSync(join(TEMPLATES_DIR, template), "utf-8");
+			expect(text).not.toContain("$REPO_ROOT/sure/external/sure-evaluation");
+			expect(text).toContain("SURE_EVALUATION_HOME:-$HARNESS_REPO_ROOT/sure/external/sure-evaluation");
+		});
+
+		it(`runs before the repair branch in ${template}`, () => {
+			const text = readFileSync(join(TEMPLATES_DIR, template), "utf-8");
+			const gate = text.indexOf("[2.6/5] Evaluation readiness gate");
+			const repairBranch = text.indexOf('if [[ "$REPAIR_INVALID_ONLY" == "1" ]]');
+			expect(gate).toBeGreaterThan(-1);
+			expect(repairBranch).toBeGreaterThan(-1);
+			expect(gate).toBeLessThan(repairBranch);
+		});
+	}
+});

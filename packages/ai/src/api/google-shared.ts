@@ -336,6 +336,15 @@ export function mapStopReason(reason: FinishReason): StopReason {
 }
 
 /**
+ * Name the Gemini finish reason behind a `StopReason` of "error". Fourteen
+ * distinct reasons collapse onto it — safety blocks, recitation, malformed
+ * function calls — so without this the failure reaches the caller unnamed.
+ */
+export function describeStopReason(reason: FinishReason, finishMessage?: string): string {
+	return finishMessage ? `Generation stopped: ${reason} (${finishMessage})` : `Generation stopped: ${reason}`;
+}
+
+/**
  * Map string finish reason to our StopReason (for raw API responses).
  */
 export function mapStopReasonString(reason: string): StopReason {

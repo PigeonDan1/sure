@@ -64,6 +64,28 @@ describe("normalizeProviderError", () => {
 		expect(norm.messageCarriesBody).toBe(false);
 	});
 
+	it("reads a status that the SDK stored as a numeric string", () => {
+		const error = Object.assign(new Error("upstream exploded"), {
+			code: "503",
+			error: { message: "upstream exploded" },
+		});
+
+		const norm = normalizeProviderError(error);
+
+		expect(norm.status).toBe(503);
+	});
+
+	it("ignores a non-numeric error code", () => {
+		const error = Object.assign(new Error("blocked"), {
+			code: "content_filter",
+			error: { message: "blocked" },
+		});
+
+		const norm = normalizeProviderError(error);
+
+		expect(norm.status).toBeUndefined();
+	});
+
 	it("JSON-stringifies a non-Error thrown value", () => {
 		const norm = normalizeProviderError({ reason: "boom" });
 
@@ -144,6 +166,20 @@ describe("formatProviderError", () => {
 		const norm = normalizeProviderError(Object.assign(new Error(body), { status: 403 }));
 
 		expect(formatProviderError(norm, "OpenAI API error")).toBe(`OpenAI API error (403): ${body}`);
+	});
+
+	it("surfaces the body when the error carries no status", () => {
+		// A mid-stream SSE failure: the response already returned 200, so the SDK
+		// error has no status, but the parsed body still names the failure.
+		const norm = normalizeProviderError(
+			Object.assign(new Error("The model produced invalid content."), {
+				error: { type: "model_error", code: null, message: "The model produced invalid content." },
+			}),
+		);
+
+		expect(formatProviderError(norm, "Azure OpenAI API error")).toBe(
+			'Azure OpenAI API error: {"type":"model_error","code":null,"message":"The model produced invalid content."}',
+		);
 	});
 
 	it("returns the bare message for a non-Error value", () => {

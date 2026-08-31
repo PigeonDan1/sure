@@ -1,0 +1,25 @@
+{
+  "schema": "sure.memory.match_vectors.v1",
+  "note": "Shared by proposals.trigger_hits (python) and match.ts triggerHits (TS). Predicate: trigger.strip().lower() in text.lower(). No whitespace folding, no normalisation, no regex.",
+  "vectors": [
+    {"name": "exact-substring", "trigger": "no kernel image is available", "text": "RuntimeError: CUDA error: no kernel image is available for execution on the device", "hit": true},
+    {"name": "trigger-upper-text-lower", "trigger": "No Kernel Image Is Available", "text": "cuda error: no kernel image is available", "hit": true},
+    {"name": "trigger-lower-text-upper", "trigger": "no kernel image is available", "text": "CUDA ERROR: NO KERNEL IMAGE IS AVAILABLE", "hit": true},
+    {"name": "surrounding-whitespace-stripped", "trigger": "  partition not found  ", "text": "vc submit: partition not found: 3090-data", "hit": true},
+    {"name": "inner-double-space-not-folded", "trigger": "partition  not found", "text": "vc submit: partition not found: 3090-data", "hit": false},
+    {"name": "newline-in-text-not-folded", "trigger": "partition not found", "text": "vc submit: partition not\nfound: 3090-data", "hit": false},
+    {"name": "tab-vs-space-not-folded", "trigger": "partition not found", "text": "partition\tnot found", "hit": false},
+    {"name": "substring-inside-longer-word", "trigger": "kernel image", "text": "nokernel imagex", "hit": true},
+    {"name": "empty-trigger-never-hits", "trigger": "", "text": "anything at all", "hit": false},
+    {"name": "whitespace-only-trigger-never-hits", "trigger": "   ", "text": "   ", "hit": false},
+    {"name": "empty-text-never-hits", "trigger": "no kernel image", "text": "", "hit": false},
+    {"name": "plain-miss", "trigger": "no kernel image is available", "text": "partition not found: 3090-data", "hit": false},
+    {"name": "punctuation-literal", "trigger": "tp_plan='auto'", "text": "init torch distributed in your script to use `tp_plan='auto'`", "hit": true},
+    {"name": "regex-not-interpreted", "trigger": "kernel.*image", "text": "no kernel image is available", "hit": false},
+    {"name": "dot-is-literal", "trigger": "kernel.image", "text": "no kernel image is available", "hit": false},
+    {"name": "unicode-cjk-substring", "trigger": "无法初始化 NVML", "text": "UserWarning: 无法初始化 NVML 驱动", "hit": true},
+    {"name": "unicode-case-fold-latin", "trigger": "ÜBERLAUF", "text": "stack überlauf detected", "hit": true},
+    {"name": "line-separator-not-folded", "trigger": "a b", "text": "a\u2028b", "hit": false},
+    {"name": "hex-hash-literal", "trigger": "deadbeefcafe", "text": "commit DEADBEEFCAFE1234", "hit": true}
+  ]
+}

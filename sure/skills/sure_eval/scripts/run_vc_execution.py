@@ -27,7 +27,9 @@ import yaml
 from container_execution import (
     dataset_projection_root_from_eval_input,
     deployment_binding,
+    refused_surface_env,
     resolve_container_harness_runtime,
+    surface_env,
 )
 from evaluation_runtime import evaluation_runtime_from_eval_input
 from harness_runtime import harness_runtime_from_eval_input
@@ -302,14 +304,11 @@ def _model_dir(surface: dict[str, Any], eval_input: dict[str, Any]) -> Path | No
 
 
 def _surface_env_for_container(surface: dict[str, Any], volume_mount: str) -> dict[str, str]:
-    raw_env = surface.get("env")
-    if not isinstance(raw_env, dict):
-        return {}
+    # The vc route used to carry its own copy of this filter, so a key refused
+    # on the local-docker route still reached the container here. One policy,
+    # two routes; this function only translates the paths.
     values: dict[str, str] = {}
-    for key, value in raw_env.items():
-        if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or value is None:
-            continue
-        text = str(value)
+    for key, text in surface_env(surface).items():
         if text.startswith("/"):
             text = _translate_to_container_path(Path(text), volume_mount)
         values[key] = text
@@ -433,6 +432,17 @@ def _write_entrypoint(
         "trap _sure_eval_handle_int INT",
         "trap _sure_eval_handle_term TERM",
         "trap _sure_eval_write_terminal EXIT",
+    ]
+    # The surface's variables go first so that everything the harness decides
+    # below overwrites them, not the other way round. They used to be appended
+    # last, which made the surface the final word on every key it happened to
+    # name -- SURE_EVAL_EXECUTION_PATH among them. The one skip below is what
+    # was left of patching that per key.
+    for key in sorted(entrypoint_env):
+        if key == "SURE_EVAL_NODE_LOCAL_PYTHON":
+            continue
+        lines.append(f"export {key}={q(entrypoint_env[key])}")
+    lines += [
         f"export PYTHON_BIN={q(model_python_bin)}",
         f"export MODEL_PYTHON={q(model_python_bin)}",
         "export SURE_EVAL_EXECUTION_PATH=vc_submit",
@@ -460,10 +470,6 @@ def _write_entrypoint(
         lines.append(f"export LD_LIBRARY_PATH={q(':'.join(harness_library_paths))}:${{LD_LIBRARY_PATH:-}}")
     if harness_python_home:
         lines.append(f"export PYTHONHOME={q(harness_python_home)}")
-    for key in sorted(entrypoint_env):
-        if key == "SURE_EVAL_NODE_LOCAL_PYTHON":
-            continue
-        lines.append(f"export {key}={q(entrypoint_env[key])}")
     lines.extend(
         [
             f"mkdir -p {q(str(Path(log_path_container).parent))}",
@@ -571,6 +577,12 @@ def main() -> int:
     harness_library_paths: list[str] = []
     harness_python_home = ""
     entrypoint_env = _surface_env_for_container(surface, volume_mount)
+    refused = refused_surface_env(surface)
+    if refused:
+        print(
+            "execution surface asked for variables the run does not decide: " + ", ".join(refused),
+            file=sys.stderr,
+        )
     source_provenance = surface.get("source_provenance") if isinstance(surface.get("source_provenance"), dict) else {}
     for key in (
         "MODEL_PYTHON",
@@ -584,12 +596,16 @@ def main() -> int:
         "SURE_EVAL_CONTAINER_IMAGE",
     ):
         entrypoint_env.pop(key, None)
-    entrypoint_env.setdefault(
-        "REPO_ROOT",
-        _translate_to_container_path(repo_root / "sure" / "skills" / "sure_eval", volume_mount),
-    )
     entrypoint_env.update(
         {
+            # setdefault let the surface keep its own REPO_ROOT, and 91 of 106
+            # recorded surfaces declare one. The templates reach every gate
+            # script through "$REPO_ROOT/scripts/", so choosing it chooses which
+            # scripts the run executes. The harness decides it, like the paths
+            # below.
+            "REPO_ROOT": _translate_to_container_path(
+                repo_root / "sure" / "skills" / "sure_eval", volume_mount
+            ),
             "MODEL_DIR": model_target,
             "SURE_EVAL_APPROVED_MODEL_DIR": model_target,
             "RUN_DIR": result_target,
@@ -799,6 +815,8 @@ def main() -> int:
             "python_executable": model_python_bin,
             "image_ref": image,
         },
+        "evaluation_runtime": evaluation_runtime,
+        "surface_env_refused": refused_surface_env(surface),
         "vc_submission": submission,
     }
     _write_surface_resolved_submission(surface_path, surface, submission)

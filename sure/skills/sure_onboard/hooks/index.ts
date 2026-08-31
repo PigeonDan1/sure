@@ -1,17 +1,37 @@
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
-import { resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import { type HarnessRuntimeContract, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import {
+	gateUnavailable,
+	injectOnBlock,
+	isExtractionGateExhausted,
+	type MemoryCheckpoint,
+	type MemoryDiagnostic,
+	type MemoryHookEnv,
+	memoryConfigOrUndefined,
+	onEnterExtractLessons,
+	onErrorDigest,
+	postFinishMemory,
+	preFinishExtraction,
+	preStartMemory,
+	runMemoryGate,
+	safeGateDigest,
+	settleOnPass,
+	settleOnTerminalFailure,
+	stripOutputDir,
+} from "../../../runtime/memory/hooks.ts";
 import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
 import { requireSitePolicy } from "../../../site/loader.ts";
 import {
 	advance,
+	artifactParseError,
 	artifactPath,
 	bumpRetry,
 	type CheckpointData,
 	failure,
 	type GateResult,
+	type RunCheckpoint,
 	readArtifact,
 	readCheckpoint,
 	retryExhausted,
@@ -35,7 +55,11 @@ function phaseFor(unit: Unit, status: "running" | "blocked" | "success") {
 }
 
 export function countersFor(completed: CheckpointData, gateBlocks?: number) {
-	const ledgerBlocks = Object.values(completed.retries ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
+	// completed.blocks survives advance(); the retry ledger does not, so summing
+	// it reported zero for every run that was blocked and then recovered. Older
+	// checkpoints carry no blocks key, so fall back to the ledger for those.
+	const ledgerBlocks =
+		completed.blocks ?? Object.values(completed.retries ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
 	return {
 		completed_units: completed.completedUnits.length,
 		total_units: TOTAL_UNITS,
@@ -68,7 +92,36 @@ interface ResolvedOnboardArgs {
 	error?: string;
 }
 
-type OnboardDiagnostic = { severity: "warning" | "info"; message: string; repair: string };
+type OnboardDiagnostic = { severity: "error" | "warning" | "info"; message: string; repair: string };
+
+// --- memory system wiring (shared logic lives in sure/runtime/memory/hooks.ts) --------------
+
+function memoryEnv(ctx: SureHookContext, py?: HarnessRuntimeContract): MemoryHookEnv {
+	return { ctx, skill: "sure_onboard", py };
+}
+
+function memoryOf(data: CheckpointData): MemoryCheckpoint {
+	return data.memory ?? {};
+}
+
+function withMemory(checkpoint: RunCheckpoint, memory: MemoryCheckpoint): RunCheckpoint {
+	return { ...checkpoint, data: { ...checkpoint.data, memory } };
+}
+
+// A finish accepted while the state machine still sits on an unfinished unit is that unit's
+// terminal failure: entries pending on it become disputed rows (spec 8.1).
+function settleStuckUnit(
+	env: MemoryHookEnv,
+	data: CheckpointData,
+	memory: MemoryCheckpoint,
+): { memory: MemoryCheckpoint; diagnostics: MemoryDiagnostic[] } {
+	const unitId = data.currentUnit;
+	const pending = memory.pendingDisputed?.[unitId] ?? [];
+	if (pending.length === 0 || data.completedUnits.includes(unitId)) {
+		return { memory, diagnostics: [] };
+	}
+	return settleOnTerminalFailure(env, { unitId, memory });
+}
 
 function modelDirFor(ctx: SureHookContext, args: Record<string, string>): string | undefined {
 	const modelName = typeof args.model_name === "string" ? args.model_name : undefined;
@@ -601,6 +654,16 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 				"Continue with discover/classify using the normalized MODEL_INPUT values unless an explicit argument overrides them.",
 		});
 	}
+	// Memory pre_start: index --check, fact matching into artifacts/memory_context.json,
+	// pre_start usage row. Failures only add diagnostics. The match text must never carry
+	// output_dir (harness-owned path): stripOutputDir from hooks.ts uses the same token rules
+	// as the harness's splitOutputDir (`output_dir=v`, `--output_dir v`, `output_dir v`).
+	const memoryStart = preStartMemory(memoryEnv(ctx, runtime.contract), {
+		targetId: args.model_id,
+		strippedArgs: stripOutputDir(ctx.args),
+	});
+	diagnostics.push(...memoryStart.diagnostics);
+
 	return {
 		ok: true,
 		state_patch: {
@@ -794,6 +857,22 @@ function runGateScript(ctx: SureHookContext, unit: Unit): GateResult | undefined
 	if (!unit.gateScript) {
 		return undefined;
 	}
+	if (unit.gateScript === "check_memory_extraction.py") {
+		// The memory gate is stdlib-only python and runs with the memory interpreter
+		// (HARNESS_PYTHON_BIN, else the harness runtime); same --run-dir/--produces contract,
+		// stderr first. Every other gate keeps going through runBackend.
+		const r = runMemoryGate(memoryEnv(ctx), artifactPath(ctx, unit.produces));
+		if (!r.ok && r.ranFailed) {
+			// The gate never judged the declaration (missing wrapper, no interpreter, crash). Its
+			// text is a traceback, not a repair, and blocking on it stalls the unit for good:
+			// failOrRetry's unchanged-artifact guard consumes no retry when the agent has nothing
+			// it can change, so the extraction cap is never reached and the unit never advances.
+			// Let it pass and mark the extraction failed, so post_finish publishes nothing that
+			// was never gated. Same call preFinishExtraction makes for the finish path.
+			return { ok: true, ranFailed: true, diagnostics: [gateUnavailable(r.repair)] };
+		}
+		return r;
+	}
 	if (unit.id === "validate_infer") {
 		const fixtureReady = validateInferFixturePrerequisite(ctx);
 		if (fixtureReady && !fixtureReady.ok) {
@@ -853,7 +932,20 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 	const producesResult = validateProduces(ctx, currentUnit, artifact);
 	if (!producesResult.ok) {
 		if (producesResult.missing) {
-			return { ok: true };
+			// "missing" also covers "present but not JSON": readArtifact returns undefined for both.
+			// Only the first is a unit still in progress; the second has to be repaired, or the gate
+			// never runs and nothing ever consumes a retry.
+			const parseError = artifactParseError(ctx, currentUnit.produces);
+			if (!parseError) {
+				return { ok: true };
+			}
+			return failOrRetry(
+				ctx,
+				currentUnit,
+				checkpoint,
+				`${currentUnit.produces} is present but is not valid JSON: ${parseError}. Rewrite it as a single JSON object; unit "${currentUnit.id}" cannot advance until it parses.`,
+				"produces is not valid JSON",
+			);
 		}
 		return failOrRetry(
 			ctx,
@@ -864,6 +956,9 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 		);
 	}
 
+	// Set when the unit ran a gate script: only the memory gate ever comes back ok with
+	// ranFailed, and that has to reach the advance patch below.
+	let gateRun: GateResult | undefined;
 	if (currentUnit.kind === "gate") {
 		// In-process gateCheck is the optional fast structural pre-filter (kept only
 		// when it checks something the python script does not). If present, run first.
@@ -882,21 +977,37 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 		// The python gateScript is the authoritative semantic checker; it runs
 		// independently of the in-process check (a gate may have a script, an
 		// in-process check, or both — disjoint concerns).
-		const scriptResult = runGateScript(ctx, currentUnit);
-		if (scriptResult && !scriptResult.ok) {
+		gateRun = runGateScript(ctx, currentUnit);
+		if (gateRun && !gateRun.ok) {
 			return failOrRetry(
 				ctx,
 				currentUnit,
 				checkpoint,
-				scriptResult.repair ?? `Gate script "${currentUnit.id}" failed.`,
-				scriptResult.reason ?? "gate script failed",
+				gateRun.repair ?? `Gate script "${currentUnit.id}" failed.`,
+				gateRun.reason ?? "gate script failed",
 			);
 		}
 	}
 
-	const next = advance(currentUnit, checkpoint.data);
+	const env = memoryEnv(ctx);
+	// The unit passed: settle what was injected into it (spec 8.1), then move on.
+	const settled = settleOnPass(env, { unitId: currentUnit.id, memory: memoryOf(checkpoint.data) });
+	const next = advance(currentUnit, { ...checkpoint.data, memory: settled.memory });
 	if (!next) {
 		return { ok: true };
+	}
+	const diagnostics: MemoryDiagnostic[] = [...settled.diagnostics];
+	if (next.data.currentUnit === "extract_lessons") {
+		// Entering extract_lessons: build the digest the agent will read and pin its sha,
+		// cutoff and the unit that just passed into the checkpoint (spec 4.2).
+		const entered = onEnterExtractLessons(env, currentUnit.id, memoryOf(next.data));
+		next.data.memory = entered.memory;
+		diagnostics.push(...entered.diagnostics);
+	}
+	if (gateRun?.ranFailed) {
+		// Nothing was gated, so nothing may be published for this run (spec 4.5).
+		next.data.memory = { ...memoryOf(next.data), extractionStatus: "failed" };
+		diagnostics.push(...(gateRun.diagnostics ?? []));
 	}
 	return {
 		ok: true,
@@ -905,6 +1016,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 			message: `Advanced to unit "${next.data.currentUnit}".`,
 			counters: countersFor(next.data, 0),
 			checkpoint: next,
+			...(diagnostics.length > 0 ? { diagnostics } : {}),
 		},
 	};
 }
@@ -919,8 +1031,12 @@ function unchangedFailedArtifact(
 	if (!previousDigest || !existsSync(path)) {
 		return undefined;
 	}
-	const digest = createHash("sha256").update(readFileSync(path)).digest("hex");
-	if (digest !== previousDigest) {
+	// produces plus gateInputs (candidates/, memory_evidence/ for extract_lessons); identical to
+	// the old sha256 of produces for every unit without gateInputs. safeGateDigest, not
+	// gateDigest: the gateInputs trees are agent-writable, and a throw here reaches the agent as
+	// an unactionable repair with no state_patch, so no retry is ever consumed again.
+	const digest = safeGateDigest(ctx, unit);
+	if (digest === undefined || digest !== previousDigest) {
 		return undefined;
 	}
 	const attempts = checkpoint.data.retries[unit.id] ?? 0;
@@ -949,10 +1065,12 @@ function failOrRetry(
 	repair: string,
 	reason: string,
 ): SureHookResult {
-	const artifactDigest = createHash("sha256")
-		.update(readFileSync(artifactPath(ctx, unit.produces)))
-		.digest("hex");
-	if (checkpoint.data.failedArtifactDigests?.[unit.id] === artifactDigest) {
+	// produces plus gateInputs: editing a candidate must re-run the extraction gate and cost a
+	// retry, exactly like editing the declaration itself (spec 4.1). undefined means the digest
+	// could not be taken at all; two missing digests are not evidence of unchanged content, so
+	// that case falls through and consumes the retry.
+	const artifactDigest = safeGateDigest(ctx, unit);
+	if (artifactDigest !== undefined && checkpoint.data.failedArtifactDigests?.[unit.id] === artifactDigest) {
 		const attempts = checkpoint.data.retries[unit.id] ?? 0;
 		return {
 			ok: true,
@@ -965,30 +1083,101 @@ function failOrRetry(
 			},
 		};
 	}
-	const next = bumpRetry(unit, checkpoint.data, artifactDigest);
-	const attempts = next.data.retries[unit.id] ?? 1;
+	const env = memoryEnv(ctx);
+	const attempts = (checkpoint.data.retries[unit.id] ?? 0) + 1;
+	// Inject before recording the retry so the usage row and this patch agree on the attempt
+	// number. diagnostics keep the gate's raw repair; only the top-level repair (what the agent
+	// reads) carries the Memory block. digest.py relies on that split.
+	// productDir / producesPath let hooks.ts find the unit's log tail for the match text:
+	// log_paths.json templates use {product_dir}, and the produces JSON's own `log_path`
+	// (read via producesPath, or via the table's `artifact:<produces>` entry) comes first.
+	const injected = injectOnBlock(env, {
+		unitId: unit.id,
+		attempt: attempts,
+		rawRepair: repair,
+		productDir: modelDirFromResolvedArtifact(ctx),
+		producesPath: artifactPath(ctx, unit.produces),
+		memory: memoryOf(checkpoint.data),
+	});
+	const next = bumpRetry(unit, { ...checkpoint.data, memory: injected.memory }, artifactDigest);
+	const diagnostics: MemoryDiagnostic[] = [{ severity: "error", message: reason, repair }, ...injected.diagnostics];
 	// Honor the user's max_retries parameter (default 3). Read from ctx.args so a
 	// run started with /sure_onboard ... max_retries=5 actually gets 5 attempts.
 	const args = parseArgs(ctx.args);
 	const maxRetries = args.max_retries ? Number.parseInt(args.max_retries, 10) : undefined;
 	const effectiveMax = Number.isFinite(maxRetries) && (maxRetries ?? 0) > 0 ? maxRetries : undefined;
-	if (retryExhausted(unit, next.data, effectiveMax)) {
-		return failure(
-			`${repair} Blocked because: ${reason}. After ${attempts} consecutive blocked attempts, /sure_onboard still cannot produce a valid artifact for unit "${unit.id}". If the blocking reason above points at the model_input_path or repo link rather than the artifact you wrote, ask the user to confirm access permissions and whether the referenced documentation covers install, load, inference, and artifacts.`,
-			`Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`,
-			countersFor(next.data, attempts),
-			next,
-		);
+	if (unit.id === "extract_lessons") {
+		// The extraction gate never fails the run (spec 4.5): at the cap the unit is closed as
+		// "extraction failed" and the state machine moves on. max_retries= may only raise the cap.
+		// memoryConfigOrUndefined never throws (Task 12): a hand-edited config.json that no
+		// longer parses must not take the skill down. Without a config there is no extraction
+		// cap to read, so this unit falls back to the state machine's own cap; without that
+		// fallback the extraction unit would block for ever (retryExhausted below is in the
+		// else-if arm and is never reached for extract_lessons).
+		const memoryConfig = memoryConfigOrUndefined();
+		const extractionExhausted = memoryConfig
+			? isExtractionGateExhausted(unit.id, attempts, effectiveMax, memoryConfig)
+			: retryExhausted(unit, next.data, effectiveMax);
+		if (extractionExhausted) {
+			const closed = settleOnTerminalFailure(env, { unitId: unit.id, memory: memoryOf(next.data) });
+			const advanced = advance(unit, { ...next.data, memory: { ...closed.memory, extractionStatus: "failed" } });
+			if (!advanced) {
+				return { ok: true };
+			}
+			// This is not the unit's terminal failure (it advances), so the phase is the next unit's
+			// running phase and the message must NOT start with `Gate "<id>" exhausted`, the prefix
+			// digest.py reads (together with phase id "gate") as "unit failed for good".
+			return {
+				ok: true,
+				state_patch: {
+					phase: phaseFor(findUnit(advanced.data.currentUnit) ?? LAST_UNIT, "running"),
+					message: `Extraction gate "${unit.id}" exhausted ${attempts} blocked attempts; extraction marked failed, advanced to unit "${advanced.data.currentUnit}".`,
+					counters: countersFor(advanced.data, attempts),
+					checkpoint: advanced,
+					diagnostics: [
+						{ severity: "warning", message: `extraction: failed (${reason})`, repair },
+						...injected.diagnostics,
+						...closed.diagnostics,
+					],
+				},
+			};
+		}
+	} else if (retryExhausted(unit, next.data, effectiveMax)) {
+		// Terminal failure of this unit: entries pending on it become disputed (spec 8.1).
+		// Hand-built copy of failure()'s patch (phase id "gate", same message, diagnostics[0]
+		// carries the message) so diagnostics keep the raw gate repair while the top-level repair
+		// carries the Memory block. The message MUST keep the prefix `Gate "<id>" exhausted`:
+		// digest.py matches /^Gate "<unit>" exhausted/ on a phase-"gate" patch to record the unit's
+		// terminal failure (plan 1.13); the existing state-machine test also asserts this wording.
+		const closed = settleOnTerminalFailure(env, { unitId: unit.id, memory: memoryOf(next.data) });
+		const message = `Gate "${unit.id}" exhausted ${attempts} blocked attempts: ${reason}`;
+		// "" or "\n\n<Memory block>": injectOnBlock returns rawRepair + "\n\n" + block, so slicing the
+		// raw repair off the front leaves the block alone. The exhausted repair keeps its own closing
+		// sentences, and the block goes LAST (plan 1.13): digest.py's strip_memory_block cuts from the
+		// header line to the next blank line or the end of the text, so anything appended after the
+		// block would be stripped together with it out of run.json.lastRepair.
+		const memoryBlock = injected.repair.slice(repair.length);
+		return {
+			ok: false,
+			repair: `${repair} Blocked because: ${reason}. After ${attempts} consecutive blocked attempts, /sure_onboard still cannot produce a valid artifact for unit "${unit.id}". If the blocking reason above points at the model_input_path or repo link rather than the artifact you wrote, ask the user to confirm access permissions and whether the referenced documentation covers install, load, inference, and artifacts.${memoryBlock}`,
+			state_patch: {
+				phase: { id: "gate", label: "SURE onboard gate blocked", status: "blocked" },
+				message,
+				counters: countersFor(next.data, attempts),
+				checkpoint: withMemory(next, closed.memory),
+				diagnostics: [{ severity: "error", message, repair }, ...injected.diagnostics, ...closed.diagnostics],
+			},
+		};
 	}
 	return {
 		ok: false,
-		repair,
+		repair: injected.repair,
 		state_patch: {
 			phase: phaseFor(unit, "blocked"),
 			message: `Gate "${unit.id}" blocked (attempt ${attempts}): ${reason}`,
 			counters: countersFor(next.data, attempts),
 			checkpoint: next,
-			diagnostics: [{ severity: "error", message: reason, repair }],
+			diagnostics,
 		},
 	};
 }
@@ -1022,6 +1211,41 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 				countersFor(checkpoint.data, 1),
 			);
 		}
+		const env = memoryEnv(ctx);
+		let memory = memoryOf(checkpoint.data);
+		const diagnostics: MemoryDiagnostic[] = [];
+		// A failed / incomplete run that never reached extract_lessons must still leave an
+		// extraction declaration behind (spec 4.5): two repairs, the third finish is let through
+		// with extraction marked failed. Runs that passed (or exhausted) the unit are exempt.
+		if (!checkpoint.data.completedUnits.includes("extract_lessons")) {
+			const extraction = preFinishExtraction(env, { finishStatus: String(finishStatus), memory });
+			if (!extraction.ok) {
+				// Hand-built copy of failure()'s patch, which hard-codes a single-element diagnostics
+				// array: the repair tells the agent to read artifacts/run_digest.json first, and when
+				// the digest build failed the only thing that says that file holds nothing but an
+				// error - and that no_new_lessons=true citing it is acceptable - is
+				// extraction.diagnostics. Dropping it leaves the agent reading an error stub blind.
+				const repair =
+					extraction.repair ?? "Produce artifacts/extraction_declaration.json per EXTRACTION.md before finishing.";
+				const message = "Non-success Onboard finish requires an extraction declaration.";
+				return {
+					ok: false,
+					repair,
+					state_patch: {
+						phase: { id: "gate", label: "SURE onboard gate blocked", status: "blocked" },
+						message,
+						counters: countersFor(checkpoint.data, 1),
+						checkpoint: withMemory(checkpoint, extraction.memory),
+						diagnostics: [{ severity: "error", message, repair }, ...extraction.diagnostics],
+					},
+				};
+			}
+			memory = extraction.memory;
+			diagnostics.push(...extraction.diagnostics);
+		}
+		const stuck = settleStuckUnit(env, checkpoint.data, memory);
+		memory = stuck.memory;
+		diagnostics.push(...stuck.diagnostics);
 		return {
 			ok: true,
 			state_patch: {
@@ -1033,17 +1257,23 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 				},
 				message: "Local model and container evidence retained; no Eval-ready deployment was claimed.",
 				counters: countersFor(checkpoint.data, 1),
+				checkpoint: withMemory(checkpoint, memory),
+				// "incomplete", not "blocked": the harness normalizer accepts draft / ready / failed /
+				// incomplete for an artifact ("blocked" is a phase status, not an artifact one) and
+				// rejects a state_patch WHOLE when one field is wrong. This patch carries the
+				// checkpoint, so an unacceptable status here threw away completedUnits, the retry
+				// counters and the memory sub-object - including extractionStatus="failed", which is
+				// the only thing that stops post_finish publishing candidates no gate accepted.
 				artifacts: [
 					{
 						type: "deployment_ready",
 						name: "Blocked deployment marker",
 						path: `.sure/runs/${ctx.run.runId}/artifacts/${LAST_UNIT.produces}`,
-						// The marker itself says blocked; the display only knows the four
-						// statuses in ARTIFACT_STATUSES, and an unknown one drops the patch.
 						status: "incomplete",
 						summary: "Container validation evidence is present, but registry delivery is incomplete.",
 					},
 				],
+				...(diagnostics.length > 0 ? { diagnostics } : {}),
 			},
 		};
 	}
@@ -1082,6 +1312,7 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 					completedUnits,
 					retries: checkpoint.data.retries,
 					failedArtifactDigests: checkpoint.data.failedArtifactDigests,
+					memory: checkpoint.data.memory,
 				},
 				0,
 			),
@@ -1136,21 +1367,31 @@ export function incompleteDeploymentError(
 }
 
 export function postFinish(ctx: SureHookContext): SureHookResult {
+	// publish -> promote -> index rebuild, in a separate spawn with config.publish_timeout_ms;
+	// skipped when extraction was marked failed. Never fails the finish.
+	const checkpoint = readCheckpoint(ctx);
+	const memory = postFinishMemory(memoryEnv(ctx), memoryOf(checkpoint.data));
 	return {
 		ok: true,
 		state_patch: {
 			phase: { id: "finish", label: "SURE model-tool finished", status: ctx.run.status, progress: 1 },
 			message: ctx.run.summary ?? "SURE model-tool run finished.",
+			...(memory.diagnostics.length > 0 ? { diagnostics: memory.diagnostics } : {}),
 		},
 	};
 }
 
 export function onError(ctx: SureHookContext): SureHookResult {
+	// Leave a digest behind for prior_runs of the next run on the same target (spec 4.5);
+	// nothing is published from here. The checkpoint's memory goes in so a digest the
+	// extraction gate already validated is kept as it is instead of rebuilt underneath it.
+	const memory = onErrorDigest(memoryEnv(ctx), memoryOf(readCheckpoint(ctx).data));
 	return {
 		ok: true,
 		state_patch: {
 			phase: { id: "error", label: "SURE model-tool interrupted", status: "failed" },
 			message: ctx.run.errorSummary ?? ctx.run.lastRepair ?? "SURE model-tool stopped before completion.",
+			...(memory.diagnostics.length > 0 ? { diagnostics: memory.diagnostics } : {}),
 		},
 	};
 }

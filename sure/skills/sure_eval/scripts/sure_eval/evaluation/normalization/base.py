@@ -4,7 +4,7 @@ import unicodedata
 import re
 from .logger import logger
 from .utils import replace_invisible_chars, simple_pattern_difference
-from .asr_simple_tn import asr_num2words, get_n2w_map
+from .asr_simple_tn import asr_num2words, get_n2w_map, load_and_sort_map
 
 # 原则上，将字符分成以下几类：
 # (1) 字母表字符：alphabet_pattern 该语种字符集
@@ -190,17 +190,7 @@ class TextNormalization_Base:
             else:
                 other_map_files.append(mf)
 
-        # 2. 读取映射并排序
-        def load_and_sort_map(map_file, language):
-            n2w_map = get_n2w_map(map_file, language)
-            if not n2w_map:
-                return []
-            pairs = []
-            for item in n2w_map:
-                for k, v in item.items():
-                    pairs.append((k, v))
-            pairs.sort(key=lambda x: len(x[0]), reverse=True)
-            return pairs
+        # 2. 读取映射并排序：load_and_sort_map 在 asr_simple_tn 里，那边的兜底分支也要用
 
         # 3. 先用 other 类映射替换 text
         self.other_map_sorted = []
@@ -242,8 +232,8 @@ class TextNormalization_Base:
         """
         一次性初始化所有正则表达式
         """
-        global RE_LINE_CONTAINS_INVALID_CHAR, RE_LINE_NO_LETTER, RE_LINE_NO_LOCAL_LETTER, RE_LINE_FOUR_CONSECUTIVE_LETTERS
-        global RE_CHAR_NOT_ASCII_LANG_MARK, RE_CHAR_DIACRITIC, RE_CHAR_NOT_WORD, RE_BRACKETS_CONTENT
+        # 每个语种一套：这些正则由 alphabet_pattern 等语种字段拼出来，
+        # 放在模块全局会让后 config 的语种覆盖先 config 的那个。
 
         # alphabet_pattern 应当排除 marks_pattern
         if True: # 此处可以添加暂不支持转义字符的语种
@@ -258,45 +248,45 @@ class TextNormalization_Base:
 
         # 1. 行包含非法字符
         pattern_a = r'[^' + self.ascii_pattern + self.alphabet_pattern + self.marks_pattern + self.diacritic_pattern + ']'
-        #logger.info("RE_LINE_CONTAINS_INVALID_CHAR = " + pattern_a)
-        RE_LINE_CONTAINS_INVALID_CHAR = re.compile(pattern_a)
+        #logger.info("self.RE_LINE_CONTAINS_INVALID_CHAR = " + pattern_a)
+        self.RE_LINE_CONTAINS_INVALID_CHAR = re.compile(pattern_a)
 
         # 2. 行不包含字母：不含任何字母表字符、英文字符
         pattern_b = r'^[^' + self.english_letter_pattern + self.alphabet_pattern + ']*$'
-        #logger.info("RE_LINE_NO_LETTER = " + pattern_b)
-        RE_LINE_NO_LETTER = re.compile(pattern_b)
+        #logger.info("self.RE_LINE_NO_LETTER = " + pattern_b)
+        self.RE_LINE_NO_LETTER = re.compile(pattern_b)
 
         # 3. 行不包含字母表字母
         pattern_c = r'^[^' + self.alphabet_pattern + ']*$'
-        #logger.info("RE_LINE_NO_LOCAL_LETTER = " + pattern_c)
-        RE_LINE_NO_LOCAL_LETTER = re.compile(pattern_c)
+        #logger.info("self.RE_LINE_NO_LOCAL_LETTER = " + pattern_c)
+        self.RE_LINE_NO_LOCAL_LETTER = re.compile(pattern_c)
 
         # 4. 行包含4个连续相同字母
         pattern_d = r'([' + self.alphabet_pattern + '])\\1\\1\\1'
-        #logger.info("RE_LINE_FOUR_CONSECUTIVE_LETTERS = " + pattern_d)
-        RE_LINE_FOUR_CONSECUTIVE_LETTERS = re.compile(pattern_d)
+        #logger.info("self.RE_LINE_FOUR_CONSECUTIVE_LETTERS = " + pattern_d)
+        self.RE_LINE_FOUR_CONSECUTIVE_LETTERS = re.compile(pattern_d)
 
         # 5. 字符非ascii/语言/标点
         pattern_chars_a = r'[^' + self.ascii_pattern + self.alphabet_pattern + self.marks_pattern + ']'
-        #logger.info("RE_CHAR_NOT_ASCII_LANG_MARK = " + pattern_chars_a)
-        RE_CHAR_NOT_ASCII_LANG_MARK = re.compile(pattern_chars_a)
+        #logger.info("self.RE_CHAR_NOT_ASCII_LANG_MARK = " + pattern_chars_a)
+        self.RE_CHAR_NOT_ASCII_LANG_MARK = re.compile(pattern_chars_a)
 
         # 6. 字符非英文单词/语言字母
         pattern_chars_b = r'[^' + self.english_word_pattern + self.alphabet_pattern + ']'
-        #logger.info("RE_CHAR_NOT_WORD = " + pattern_chars_b)
-        RE_CHAR_NOT_WORD = re.compile(pattern_chars_b)
+        #logger.info("self.RE_CHAR_NOT_WORD = " + pattern_chars_b)
+        self.RE_CHAR_NOT_WORD = re.compile(pattern_chars_b)
 
         # 7. 辅助字符
         if self.diacritic_pattern:
             d_pattern = r'[' + self.diacritic_pattern + ']'
             if self.debug > 0: 
                 logger.info("RE_CHAR_DIACRITIC = " + d_pattern)
-            RE_CHAR_DIACRITIC = re.compile(d_pattern)
+            self.RE_CHAR_DIACRITIC = re.compile(d_pattern)
 
         # 8. 括号及内容
         pattern_brackets = r'\([^()]*\)'
-        #logger.info("RE_BRACKETS_CONTENT = " + pattern_brackets)
-        RE_BRACKETS_CONTENT = re.compile(pattern_brackets)
+        #logger.info("self.RE_BRACKETS_CONTENT = " + pattern_brackets)
+        self.RE_BRACKETS_CONTENT = re.compile(pattern_brackets)
 
 
     # 整行删除：若匹配pattern
@@ -450,7 +440,7 @@ class TextNormalization_Base:
         # 删除辅助字符
         if not text: return text
         if self.remove_diacritic and self.diacritic_pattern:
-            text = self.fun_remove_chars_pattern(text, RE_CHAR_DIACRITIC, "")
+            text = self.fun_remove_chars_pattern(text, self.RE_CHAR_DIACRITIC, "")
         
         # 替换特殊的0-9专用字符到正常的0-9
         if not text: return text
@@ -458,12 +448,12 @@ class TextNormalization_Base:
         
         # 可选：非法字符的行，整行删除
         if not text: return text
-        text = self.fun_remove_lines_pattern(text, RE_LINE_CONTAINS_INVALID_CHAR)
+        text = self.fun_remove_lines_pattern(text, self.RE_LINE_CONTAINS_INVALID_CHAR)
         
         # 替换（非ascii/字母表/标点）字符为空格
         if not text: return text
         if self.remove_not_ascii_lang_mark:
-            text = self.fun_remove_chars_pattern(text, RE_CHAR_NOT_ASCII_LANG_MARK, " " * self.spaced_writing)
+            text = self.fun_remove_chars_pattern(text, self.RE_CHAR_NOT_ASCII_LANG_MARK, " " * self.spaced_writing)
         
         # 简单正则化（如有更复杂需求可扩展），这一步必须将数字正规化，否则后续会被清除掉。
         if self.debug > 0:
@@ -484,17 +474,17 @@ class TextNormalization_Base:
 
         # 可选：删除整行（全部是标点符号等）
         if not text: return text
-        text = self.fun_remove_lines_pattern(text, RE_LINE_NO_LETTER)
+        text = self.fun_remove_lines_pattern(text, self.RE_LINE_NO_LETTER)
 
         # 可选：删除括号及内容
         if not text: return text
         if self.remove_brackets:
-            text = self.fun_remove_chars_pattern(text, RE_BRACKETS_CONTENT, " " * self.spaced_writing)
+            text = self.fun_remove_chars_pattern(text, self.RE_BRACKETS_CONTENT, " " * self.spaced_writing)
         
         # 删除非单词的字符
         if not text: return text
         if self.remove_not_word:
-            text = self.fun_remove_chars_pattern(text, RE_CHAR_NOT_WORD, " " * self.spaced_writing)
+            text = self.fun_remove_chars_pattern(text, self.RE_CHAR_NOT_WORD, " " * self.spaced_writing)
         
         # 可选：删除英文字母
         if not text: return text
@@ -511,7 +501,7 @@ class TextNormalization_Base:
 
         # 删除整行：包含超过连续4个字符以上的单词
         if not text: return text
-        text = self.fun_remove_lines_pattern(text, RE_LINE_FOUR_CONSECUTIVE_LETTERS)
+        text = self.fun_remove_lines_pattern(text, self.RE_LINE_FOUR_CONSECUTIVE_LETTERS)
 
         # 可选：大小写转换
         if not text: return text

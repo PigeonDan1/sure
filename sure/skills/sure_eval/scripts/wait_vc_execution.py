@@ -145,6 +145,15 @@ def _execution_payload(
         "vc_info_excerpt": _excerpt(info) if info is not None else "",
         "vc_describe_excerpt": _excerpt(describe) if describe is not None else "",
     }
+    if completion_source == "wait_timeout":
+        # Spelled out because the alternative reading — "the run failed" — sends
+        # the caller off reading logs, and every one of those diagnostic detours
+        # re-enters the gate and burns a retry on a job that is simply still busy.
+        payload["next_action"] = (
+            "wait_timeout: the waiter stopped, not the job. Run "
+            "scripts/wait_vc_execution.py --run-dir <run_dir> --wait again; raise "
+            "--timeout-seconds if this job is expected to take longer."
+        )
     if exit_code is not None:
         payload["exit_code"] = exit_code
     if duration is not None:
@@ -259,7 +268,11 @@ def _validation_errors(result: dict[str, Any], submit: dict[str, Any]) -> list[s
     errors: list[str] = []
     status = str(result.get("job_status") or "")
     if status == "running":
-        errors.append("VC execution is still running; rerun wait_vc_execution.py --wait")
+        errors.append(
+            "VC execution is still running; this is not a failure. Rerun "
+            "wait_vc_execution.py --wait (optionally with a larger --timeout-seconds). "
+            "Do not read job logs to decide: every such detour re-enters this gate."
+        )
     elif status not in TERMINAL_JOB_STATUSES:
         errors.append(f"execution_result.json has invalid job_status: {status!r}")
     if result.get("execution_path") != submit.get("execution_path"):

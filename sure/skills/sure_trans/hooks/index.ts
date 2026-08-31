@@ -39,7 +39,11 @@ function phaseFor(unit: Unit, status: "running" | "blocked" | "success") {
 }
 
 export function countersFor(completed: CheckpointData, gateBlocks?: number) {
-	const ledgerBlocks = Object.values(completed.retries ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
+	// completed.blocks survives advance(); the retry ledger does not, so summing
+	// it reported zero for every run that was blocked and then recovered. Older
+	// checkpoints carry no blocks key, so fall back to the ledger for those.
+	const ledgerBlocks =
+		completed.blocks ?? Object.values(completed.retries ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
 	return {
 		completed_units: completed.completedUnits.length,
 		total_units: TOTAL_UNITS,

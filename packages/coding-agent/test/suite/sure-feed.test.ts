@@ -3,7 +3,13 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { writeSkillRuntimeBinding } from "../../../../sure/runtime/usage.ts";
-import { advance, type CheckpointData } from "../../../../sure/skills/sure_feed/hooks/checkpoints.ts";
+import {
+	advance,
+	bumpRetry,
+	type CheckpointData,
+	type RunCheckpoint,
+	type Unit,
+} from "../../../../sure/skills/sure_feed/hooks/checkpoints.ts";
 import { countersFor, postToolResult, preFinish, preToolCall } from "../../../../sure/skills/sure_feed/hooks/index.ts";
 import {
 	FIRST_UNIT,
@@ -980,5 +986,25 @@ describe("sure_feed countersFor", () => {
 			failedArtifactDigests: {},
 		};
 		expect(countersFor(data, 0).gate_blocks).toBe(6);
+	});
+
+	it("keeps counting blocks after the blocked unit passes", () => {
+		const unit = findUnit("match_task");
+		expect(unit).toBeDefined();
+		let data: CheckpointData = {
+			currentUnit: "match_task",
+			completedUnits: [],
+			retries: {},
+			failedArtifactDigests: {},
+		};
+		data = bumpRetry(unit as Unit, data).data;
+		data = bumpRetry(unit as Unit, data).data;
+		expect(countersFor(data, 0).gate_blocks).toBe(2);
+
+		// advance() clears the unit's retry entry, which is right for the retry
+		// budget and wrong for a run-long tally: a run that was blocked twice and
+		// then finished used to report zero blocks.
+		data = (advance(unit as Unit, data) as RunCheckpoint).data;
+		expect(countersFor(data, 0).gate_blocks).toBe(2);
 	});
 });

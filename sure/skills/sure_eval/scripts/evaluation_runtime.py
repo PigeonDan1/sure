@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from harness_runtime import HarnessRuntimeBindingError, load_harness_runtime
+
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SPEC_ROOT = REPO_ROOT / "sure" / "runtime" / "evaluation"
@@ -26,6 +28,18 @@ CACHE_ROOT = REPO_ROOT / "sure" / ".runtime" / "evaluation"
 
 class EvaluationRuntimeError(RuntimeError):
     pass
+
+
+class EvaluationIdentityUnavailable(EvaluationRuntimeError):
+    """The identity cannot be established here at all, whatever its value is.
+
+    This is the one boundary the host's injected binding exists to cross: no
+    git to ask, or no engine checkout to ask about. Deliberately narrower than
+    its parent -- "the engine moved" and "the harness binding does not hold
+    up" are answers, not the absence of one, and must never fall through to
+    the environment. Everything that catches EvaluationRuntimeError still
+    catches this.
+    """
 
 
 def _sha256(path: Path) -> str:
@@ -113,10 +127,45 @@ def _engine_commit(engine_root: Path) -> str:
         # An empty commit means "git looked and found nothing pinned here"; a git
         # that will not run at all is a broken environment and has to say so,
         # otherwise the caller reports it as a commit mismatch against "".
-        raise EvaluationRuntimeError(
+        raise EvaluationIdentityUnavailable(
             f"cannot read the evaluation engine commit: git is unavailable ({exc})"
         ) from exc
     return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def _engine_has_repository(engine_root: Path) -> bool:
+    """Whether there is a repository here at all to ask about the commit."""
+    try:
+        completed = subprocess.run(
+            ["git", "-c", f"safe.directory={engine_root}", "rev-parse", "--git-dir"],
+            cwd=engine_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=evaluation_child_environment(),
+        )
+    except OSError:
+        return False
+    return completed.returncode == 0
+
+
+def _approved_harness_runtime() -> dict[str, Any]:
+    """The Harness Runtime this process is running under.
+
+    This check used to be a second, weaker copy: it read the same environment
+    but only asked whether the manifest in that directory called itself by the
+    exported runtime_id. harness_runtime.load_harness_runtime already asks the
+    rest -- that the manifest carries the expected schema, that its lock sha
+    agrees with the exported one, and that the interpreter is executable and
+    does not escape the runtime root. Nothing here can stop a determined agent
+    on the same uid, but one policy in one place costs more to forge than two.
+    """
+    if not os.environ.get("SURE_HARNESS_RUNTIME_ROOT", "").strip():
+        raise EvaluationRuntimeError("approved Harness Runtime binding is required")
+    try:
+        return load_harness_runtime()
+    except HarnessRuntimeBindingError as exc:
+        raise EvaluationRuntimeError(f"approved Harness Runtime binding is required: {exc}") from exc
 
 
 def _expected_binding(engine_root: Path) -> dict[str, Any]:
@@ -125,8 +174,21 @@ def _expected_binding(engine_root: Path) -> dict[str, Any]:
     lock_path = SPEC_ROOT / str(spec.get("lock_file") or "requirements.lock.txt")
     pyproject = engine_root / "pyproject.toml"
     if not lock_path.is_file() or not pyproject.is_file():
-        raise EvaluationRuntimeError("evaluation runtime lock or engine pyproject.toml is missing")
+        raise EvaluationIdentityUnavailable("evaluation runtime lock or engine pyproject.toml is missing")
     commit = _engine_commit(engine_root)
+    if not commit:
+        # No repository here is the same "cannot ask" as a missing git: the
+        # container gets the engine without the .git it would need. A
+        # repository that is present and still will not say is a different
+        # thing -- an answer we did not get -- and must not reach the injected
+        # identity, or whoever can make git fail chooses the provenance.
+        if _engine_has_repository(engine_root):
+            raise EvaluationRuntimeError(
+                f"the evaluation engine repository would not report its commit: {engine_root}"
+            )
+        raise EvaluationIdentityUnavailable(
+            f"the evaluation engine checkout is not a repository: {engine_root}"
+        )
     if commit != spec.get("engine_commit"):
         raise EvaluationRuntimeError(
             f"evaluation engine commit differs from the locked runtime: expected={spec.get('engine_commit')} actual={commit}"
@@ -135,14 +197,7 @@ def _expected_binding(engine_root: Path) -> dict[str, Any]:
     if pyproject_sha != spec.get("engine_pyproject_sha256"):
         raise EvaluationRuntimeError("evaluation engine pyproject.toml differs from the locked runtime")
 
-    harness_root_raw = os.environ.get("SURE_HARNESS_RUNTIME_ROOT", "").strip()
-    harness_id = os.environ.get("SURE_HARNESS_RUNTIME_ID", "").strip()
-    if not harness_root_raw or not harness_id:
-        raise EvaluationRuntimeError("approved Harness Runtime binding is required")
-    harness_root = Path(harness_root_raw).expanduser().resolve()
-    harness_manifest = _load_json(harness_root / "runtime-manifest.json")
-    if harness_manifest.get("runtime_id") != harness_id:
-        raise EvaluationRuntimeError("Harness Runtime environment and manifest identities differ")
+    harness = _approved_harness_runtime()
 
     lock_sha = _sha256(lock_path)
     runtime_version = str(spec.get("runtime_version") or "root-v1")
@@ -171,8 +226,8 @@ def _expected_binding(engine_root: Path) -> dict[str, Any]:
         "engine_root": str(engine_root),
         "engine_commit": commit,
         "engine_pyproject_sha256": pyproject_sha,
-        "harness_runtime_id": harness_id,
-        "harness_runtime_root": str(harness_root),
+        "harness_runtime_id": str(harness["runtime_id"]),
+        "harness_runtime_root": str(harness["runtime_root"]),
         "required_imports": list(spec.get("required_imports") or []),
     }
 
@@ -313,8 +368,61 @@ def _materialize(binding: dict[str, Any]) -> None:
             raise
 
 
+def _attested_binding() -> dict[str, Any] | None:
+    """The binding the host resolved before it launched this process, if any.
+
+    run_vc_execution.py and container_execution.py resolve the runtime against the
+    engine checkout and inject its identity. Resolving it again on the far side of
+    the boundary needs git and the engine's .git directory, and the evaluation
+    image carries neither: every container run died in [5/5] on "No such file or
+    directory: 'git'" after the whole prediction pass had already been paid for.
+    The injected identity is the evidence that survives the boundary.
+    """
+    runtime_id = os.environ.get("SURE_EVALUATION_RUNTIME_ID", "").strip()
+    lock_sha = os.environ.get("SURE_EVALUATION_LOCK_SHA256", "").strip()
+    manifest_path = os.environ.get("SURE_EVALUATION_RUNTIME_MANIFEST", "").strip()
+    if not (runtime_id and lock_sha and manifest_path):
+        return None
+    manifest = _load_json(Path(manifest_path))
+    mismatched = [
+        f"{field} environment={expected!r} manifest={manifest.get(field)!r}"
+        for field, expected in (("runtime_id", runtime_id), ("lock_sha256", lock_sha))
+        if manifest.get(field) != expected
+    ]
+    if mismatched:
+        # Naming only the runtime_id printed two identical ids whenever the lock
+        # was the half that drifted, which is the more likely half to drift.
+        raise EvaluationRuntimeError(
+            "attested Evaluation Runtime does not match its manifest: " + "; ".join(mismatched)
+        )
+    binding = dict(manifest)
+    # The manifest records host paths; a container reaches the same files through
+    # its own mounts, which the host translated into these two variables.
+    python_executable = os.environ.get("SURE_EVALUATION_PYTHON", "").strip()
+    if python_executable:
+        binding["python_executable"] = python_executable
+    engine_home = os.environ.get("SURE_EVALUATION_HOME", "").strip()
+    if engine_home:
+        binding["engine_root"] = engine_home
+    binding["verification"] = f"attested by the host as {runtime_id}"
+    return binding
+
+
 def ensure_evaluation_runtime(engine_root: Path, *, prepare: bool) -> dict[str, Any]:
-    binding = _expected_binding(engine_root)
+    try:
+        binding = _expected_binding(engine_root)
+    except EvaluationIdentityUnavailable:
+        # Only where the identity cannot be computed at all does the injected
+        # one stand in: the evaluation image carries neither git nor the
+        # engine's .git. The host runs this function too, from a shell the
+        # model agent controls, so preferring the environment meant an
+        # `export SURE_EVALUATION_RUNTIME_ID=...` before the submit script
+        # became the run's recorded provenance. Compute it wherever it can be
+        # computed.
+        attested = _attested_binding()
+        if attested is not None:
+            return attested
+        raise
     ok, evidence = _verify(binding)
     if not ok and prepare:
         _materialize(binding)
@@ -334,16 +442,55 @@ def evaluation_runtime_from_eval_input(
     engine = evaluation.get("engine") if isinstance(evaluation.get("engine"), dict) else {}
     engine_root = str(engine.get("engine_root") or "").strip()
     if not engine_root:
-        return None
+        if not isinstance(eval_input.get("evaluation"), dict):
+            return None
+        # Returning None here submitted the job anyway and left the container to
+        # discover the missing engine in [5/5], after the whole prediction pass.
+        raise EvaluationRuntimeError(
+            "external evaluation was requested but no evaluation engine was resolved; "
+            "point --evaluation-engine-root or SURE_EVALUATION_HOME at a sure-evaluation "
+            "checkout, or select a non-external evaluation backend"
+        )
     return ensure_evaluation_runtime(Path(engine_root), prepare=prepare)
+
+
+def _write_readiness(output: str | None, record: dict[str, Any]) -> None:
+    if not output:
+        return
+    path = Path(output)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine-root", required=True)
     parser.add_argument("--prepare", action="store_true")
+    parser.add_argument("--output", help="Write the readiness record here, on the failing path too")
     args = parser.parse_args()
-    binding = ensure_evaluation_runtime(Path(args.engine_root), prepare=args.prepare)
+    try:
+        binding = ensure_evaluation_runtime(Path(args.engine_root), prepare=args.prepare)
+    except EvaluationRuntimeError as exc:
+        # [2.6/5] used to redirect this program's stdout into the artifact, so
+        # a refusal left a zero-byte file and the reason survived only as a
+        # traceback on stderr. Only the judged outcome is recorded this way: a
+        # crash is still a crash, and still wants its traceback.
+        _write_readiness(
+            args.output,
+            {
+                "schema": "sure.evaluation.runtime.readiness.v1",
+                "ok": False,
+                "status": "blocked",
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+                "engine_root": str(args.engine_root),
+                "prepare": bool(args.prepare),
+                "error": {"code": "EVALUATION_RUNTIME_NOT_READY", "message": str(exc)},
+            },
+        )
+        # /sure_reval reads stderr for its error text, so the plain reason stays there.
+        print(str(exc), file=sys.stderr)
+        return 1
+    _write_readiness(args.output, binding)
     print(json.dumps(binding, indent=2, ensure_ascii=False))
     return 0
 

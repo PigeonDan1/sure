@@ -29,6 +29,7 @@
 			"packages/*/test/**/*.ts",
 			"packages/coding-agent/examples/**/*.ts",
 			"sure/skills/*/hooks/**/*.ts",
+			"sure/runtime/memory/**/*.ts",
 			"!**/node_modules/**/*",
 			"!**/test-sessions.ts",
 			"!**/models.generated.ts",

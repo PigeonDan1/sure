@@ -267,6 +267,22 @@ def _select_harness_config(config_path: str | None, harness_root: Path) -> tuple
     return path.resolve(), label
 
 
+def _projection_root_hint(source: str) -> str:
+    """Where the unusable root came from and how to get past it.
+
+    The bundled policy once shipped the example value /var/lib/sure/..., which no
+    ordinary user can create, and the message named neither the policy nor an
+    override: every run on that checkout died in pre_start with a bare Errno 13.
+    """
+    if source == "site_policy":
+        return (
+            "datasets.projection_root in the active site policy points somewhere this user "
+            "cannot write. Fix the policy, or override it with --datasets-root or "
+            "SURE_EVAL_DATASETS_ROOT."
+        )
+    return "Override it with --datasets-root or SURE_EVAL_DATASETS_ROOT."
+
+
 def _resolve_dataset_projection(
     *,
     explicit_root: str | None,
@@ -298,7 +314,7 @@ def _resolve_dataset_projection(
             raise EvalInputError(
                 f"dataset projection root is under a forbidden output root: {projection_root}"
             )
-    for raw_source in policy["datasets"]["allowed_source_roots"]:
+    for raw_source in policy["datasets"]["allowed_source_roots"].values():  # key -> path since 19b17fc
         source_root = Path(str(raw_source)).resolve()
         if _is_within(projection_root, source_root) or _is_within(source_root, projection_root):
             raise EvalInputError(
@@ -317,9 +333,15 @@ def _resolve_dataset_projection(
     try:
         jsonl_root.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise EvalInputError(f"cannot create dataset projection root {projection_root}: {exc}") from exc
+        raise EvalInputError(
+            f"cannot create dataset projection root {projection_root} (from {source}): {exc}. "
+            f"{_projection_root_hint(source)}"
+        ) from exc
     if not os.access(projection_root, os.W_OK) or not os.access(jsonl_root, os.W_OK):
-        raise EvalInputError(f"dataset projection root is not writable: {projection_root}")
+        raise EvalInputError(
+            f"dataset projection root is not writable: {projection_root} (from {source}). "
+            f"{_projection_root_hint(source)}"
+        )
     return {
         "host_root": str(projection_root),
         "jsonl_root": str(jsonl_root),
@@ -634,6 +656,7 @@ def _dataset_details(
     requested_metrics: list[str],
     engine_root: Path | None,
     model_task: str = "",
+    dataset_source_key: str = "default",
 ) -> list[dict[str, Any]]:
     expanded = manager.expand_dataset_names(names)
     details: list[dict[str, Any]] = []
@@ -652,7 +675,7 @@ def _dataset_details(
         dataset_task = _normalize_task(info.get("task") or first_sample.get("task") or "")
         language = str(info.get("language") or first_sample.get("language") or "").lower()
         if is_source_entry(requested_name) and not jsonl_path.exists():
-            ref = resolve_aispeech_source_entry(requested_name)
+            ref = resolve_aispeech_source_entry(requested_name, dataset_source_key=dataset_source_key)
             source_root = source_root or ref.source_root
             source_name = source_name or ref.source_dataset_name
             version_id = version_id or ref.version_id
@@ -806,7 +829,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         site_policy=active_site_policy,
     )
     cfg = Config.from_yaml(config_path)
-    manager = DatasetManager(cfg)
+    manager = DatasetManager(cfg, dataset_source_key=args.dataset_source_key)
     requested_datasets = _split_values(args.datasets)
     requested_metrics = _split_values(args.metrics)
     engine = resolve_engine_root(args.evaluation_engine_root)
@@ -817,6 +840,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         requested_metrics,
         engine_root,
         model_task=str(model.get("declared_task") or ""),
+        dataset_source_key=args.dataset_source_key,
     )
     if args.strict_main_flow:
         _check_task_compatibility(model, datasets)
@@ -977,6 +1001,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--datasets-root")
     parser.add_argument("--output")
     parser.add_argument("--output-dir", default="")
+    parser.add_argument("--dataset-source-key", default="default")
     return parser
 
 

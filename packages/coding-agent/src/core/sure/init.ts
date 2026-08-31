@@ -7,10 +7,15 @@ import { getModelsPath } from "../../config.ts";
 import type { ExtensionCommandContext } from "../extensions/types.ts";
 import type { ModelRegistry } from "../model-registry.ts";
 import { SettingsManager } from "../settings-manager.ts";
-import { applyProbedModel, probeWholeGateway, verifyModelRoundTrip } from "./init-apply.ts";
+import { applyProbedModel, compatRetreatFor, probeWholeGateway, verifyModelRoundTrip } from "./init-apply.ts";
 import type { probeModelCapability } from "./init-capability-probe.ts";
 import type { GatewayProviderSummary } from "./init-gateway-store.ts";
-import { listGatewayProviders, readGatewayModels, writeGatewayProvider } from "./init-gateway-store.ts";
+import {
+	listGatewayProviders,
+	mergeProviderCompat,
+	readGatewayModels,
+	writeGatewayProvider,
+} from "./init-gateway-store.ts";
 import type { InitMenuEntry } from "./init-menu.ts";
 import { buildInitMenu, findMenuEntry, isReservedProviderName, menuEntryLabel } from "./init-menu.ts";
 import type { ListedModel, ModelListing } from "./init-model-listing.ts";
@@ -672,30 +677,48 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 	// real request, which used to leave a persisted default nobody could use.
 	if (probedApi) {
 		const verify = options.verify ?? verifyModelRoundTrip;
+		const tried = new Set<string>();
+		const settled: string[] = [];
 		let verified: { ok: boolean; detail?: string };
-		try {
-			verified = await verify({
-				registry: ctx.modelRegistry,
-				provider: providerKey,
-				modelId,
-				thinkingLevel,
-			});
-		} catch (error) {
-			return {
-				success: false,
-				message: `${providerKey}/${modelId} 真发一句话时出错:${error instanceof Error ? error.message : String(error)}`,
-			};
+		for (;;) {
+			try {
+				verified = await verify({
+					registry: ctx.modelRegistry,
+					provider: providerKey,
+					modelId,
+					thinkingLevel,
+				});
+			} catch (error) {
+				return {
+					success: false,
+					message: `${providerKey}/${modelId} 真发一句话时出错:${error instanceof Error ? error.message : String(error)}`,
+				};
+			}
+			if (verified.ok) break;
+			// A relay that names what it refused is saying how it wants to be talked to. Record
+			// that against the provider and ask again. A failure that names nothing — a dead key,
+			// a missing channel, a bad day — ends it, because guessing there writes a wrong
+			// setting nobody goes looking for again. Each setting is tried once, so this stops.
+			const retreat = compatRetreatFor(verified.detail ?? "", tried);
+			if (!retreat) break;
+			tried.add(retreat.field);
+			mergeProviderCompat(providerKey, { [retreat.field]: retreat.value }, modelsJsonPath);
+			ctx.modelRegistry.refresh();
+			settled.push(retreat.why);
 		}
+		const settledNotes = settled.map((why) => `兼容位已记进 models.json:${why}`);
 		if (!verified.ok) {
 			return {
 				success: false,
 				message: [
 					`${providerKey}/${modelId} 的探测结果:`,
 					...probeNotes,
+					...settledNotes,
 					`模型标注已写进 models.json,但真发一句话没通过:${verified.detail}。默认模型没有切换。`,
 				].join("\n"),
 			};
 		}
+		probeNotes = [...probeNotes, ...settledNotes];
 	}
 
 	const probeAllLines: string[] = [];

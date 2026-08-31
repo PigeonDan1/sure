@@ -14,7 +14,7 @@ function policy(overrides: Record<string, unknown> = {}): Record<string, unknown
 			forbidden_output_roots: [ROOT],
 			runtime_root: `${ROOT}/runtime`,
 		},
-		datasets: { allowed_source_roots: [`${ROOT}/datasets`] },
+		datasets: { allowed_source_roots: { default: `${ROOT}/datasets` } },
 		execution: { surfaces: ["local", "vc"] },
 		...overrides,
 	};

@@ -130,6 +130,9 @@ METRICS="${METRICS:-}"
 EVALUATION_BACKEND="${EVALUATION_BACKEND:-external}"
 STRICT_MAIN_FLOW="${STRICT_MAIN_FLOW:-1}"
 AUDIO_EVAL_TASKS="${AUDIO_EVAL_TASKS:-TTS VC}"
+EVALUATION_TIMEOUT="${EVALUATION_TIMEOUT:-7200}"
+REPAIR_INVALID_ONLY="${REPAIR_INVALID_ONLY:-0}"
+REPAIR_VALIDATION_PAYLOAD="${REPAIR_VALIDATION_PAYLOAD:-$RUN_DIR/validation_payload.json}"
 EXECUTION_PATH="${SURE_EVAL_EXECUTION_PATH:-${EXECUTION_PATH:-unknown}}"
 
 DEVICE_REQUEST="$DEVICE"
@@ -207,6 +210,7 @@ echo "DEVICE_REQUEST: ${DEVICE_REQUEST:-auto/from-runtime}"
 echo "DEVICE_ACTUAL: ${DEVICE_ACTUAL:-auto/from-runtime}"
 echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES-<unset>}"
 echo "MAX_SAMPLES: $MAX_SAMPLES"
+echo "EVALUATION_TIMEOUT: $EVALUATION_TIMEOUT"
 echo "========================================"
 
 echo "[1/5] prepare dataset"
@@ -232,6 +236,130 @@ fi
 DATASET="${EXPANDED_DATASETS[0]}"
 echo "Concrete dataset: $DATASET"
 
+# [2.6/5] Evaluation readiness gate
+# The locked Evaluation Runtime used to be exercised for the first time in [5/5],
+# with every prediction already generated. Two runs lost 4h51m and 1h21m of GPU
+# to a runtime that was never going to load. Ask before the full pass.
+case "$TOOL_NAME" in
+  synthesize_speech|convert_voice)
+    : # Audio tasks hand off at [4/5] and never reach the evaluation engine.
+    ;;
+  *)
+    if [[ "$SKIP_VALIDATE_AND_EVAL" != "1" && "$EVALUATION_BACKEND" == "external" ]]; then
+      EVAL_ENGINE_ROOT="${SURE_EVALUATION_HOME:-$HARNESS_REPO_ROOT/sure/external/sure-evaluation}"
+      echo "[2.6/5] evaluation readiness ($EVAL_ENGINE_ROOT)"
+      READINESS_EXIT=0
+      "$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/evaluation_runtime.py" \
+        --engine-root "$EVAL_ENGINE_ROOT" \
+        --output "$RUN_DIR/evaluation_readiness.json" >/dev/null || READINESS_EXIT=$?
+      if [[ "$READINESS_EXIT" != "0" ]]; then
+        echo "ERROR: the evaluation runtime is not usable; [5/5] would fail after the full prediction pass." >&2
+        echo "Run directory: $RUN_DIR" >&2
+        exit "$READINESS_EXIT"
+      fi
+      echo "Evaluation runtime ready: $RUN_DIR/evaluation_readiness.json"
+    fi
+    ;;
+esac
+
+# Repair mode stands in for materialize/smoke/generate: the predictions are
+# already there and only the rows [4/5] called invalid get regenerated.
+# run_single_model.sh has had this since it was written and this template did
+# not, so a single-dataset run with a handful of bad rows had to regenerate
+# the whole set. The plan below is that template's code, unchanged.
+if [[ "$REPAIR_INVALID_ONLY" == "1" ]]; then
+echo "[2R/5] plan targeted invalid-row prediction repair"
+REPAIR_DATASETS_FILE="$RUN_DIR/prediction_repair_datasets.txt"
+REPAIR_PLAN_FILE="$RUN_DIR/prediction_repair_plan.json"
+REPAIR_PLAN_EXIT=0
+"$HARNESS_PYTHON_BIN" - "$REPAIR_VALIDATION_PAYLOAD" "$RUN_DIR" "$REPAIR_DATASETS_FILE" "$REPAIR_PLAN_FILE" <<'PY' || REPAIR_PLAN_EXIT=$?
+import json
+import sys
+from pathlib import Path
+
+validation_path = Path(sys.argv[1])
+run_dir = Path(sys.argv[2])
+datasets_file = Path(sys.argv[3])
+plan_file = Path(sys.argv[4])
+
+if not validation_path.exists():
+    raise FileNotFoundError(f"Validation payload not found: {validation_path}")
+
+payload = json.loads(validation_path.read_text(encoding="utf-8"))
+repair_plan = []
+for result in payload.get("results") or []:
+    dataset = result.get("dataset")
+    invalid_keys = sorted(
+        set(result.get("empty_prediction_keys") or [])
+        | set(result.get("contract_violation_keys") or [])
+    )
+    if dataset and invalid_keys:
+        repair_plan.append({"dataset": dataset, "keys": invalid_keys})
+
+pred_dir = run_dir / "predictions"
+for item in repair_plan:
+    dataset = item["dataset"]
+    invalid = set(item["keys"])
+    txt_path = pred_dir / f"{dataset}.txt"
+    jsonl_path = pred_dir / f"{dataset}.jsonl"
+
+    if txt_path.exists():
+        kept = []
+        for raw in txt_path.read_text(encoding="utf-8").splitlines():
+            key = raw.split("\t", 1)[0].split(None, 1)[0] if raw.strip() else ""
+            if key not in invalid:
+                kept.append(raw)
+        txt_path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+
+    if jsonl_path.exists():
+        kept_rows = []
+        for raw in jsonl_path.read_text(encoding="utf-8").splitlines():
+            if not raw.strip():
+                continue
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError:
+                kept_rows.append(raw)
+                continue
+            if str(row.get("key", "")) not in invalid:
+                kept_rows.append(raw)
+        jsonl_path.write_text("\n".join(kept_rows) + ("\n" if kept_rows else ""), encoding="utf-8")
+
+datasets_file.write_text("\n".join(item["dataset"] for item in repair_plan) + ("\n" if repair_plan else ""), encoding="utf-8")
+plan_file.write_text(json.dumps({"repair_plan": repair_plan}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+print(json.dumps({"repair_plan": repair_plan}, indent=2, ensure_ascii=False))
+PY
+# This template runs without set -e, so the plan's exit code has to be read.
+if [[ "$REPAIR_PLAN_EXIT" != "0" ]]; then
+  echo "ERROR: invalid-row repair planning failed (exit $REPAIR_PLAN_EXIT); payload: $REPAIR_VALIDATION_PAYLOAD" >&2
+  exit "$REPAIR_PLAN_EXIT"
+fi
+
+if [[ ! -s "$REPAIR_DATASETS_FILE" ]]; then
+  echo "No invalid prediction rows found in $REPAIR_VALIDATION_PAYLOAD; continuing to validation."
+else
+  echo "[3R/5] regenerate repaired rows with resume"
+  REPAIR_GEN_ARGS=(
+    --model-dir "$MODEL_DIR"
+    --dataset "$DATASET"
+    --run-dir "$RUN_DIR"
+    --tool-name "$TOOL_NAME"
+    --resume
+  )
+  if [[ -n "$LANGUAGE" ]]; then
+    REPAIR_GEN_ARGS+=(--language "$LANGUAGE")
+  fi
+  if [[ -n "$DEVICE" ]]; then
+    REPAIR_GEN_ARGS+=(--device "$DEVICE")
+  fi
+  REPAIR_GEN_EXIT=0
+  "$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/generate_predictions_via_server.py" "${REPAIR_GEN_ARGS[@]}" || REPAIR_GEN_EXIT=$?
+  if [[ "$REPAIR_GEN_EXIT" != "0" ]]; then
+    echo "ERROR: repaired-row generation failed (exit $REPAIR_GEN_EXIT)" >&2
+    exit "$REPAIR_GEN_EXIT"
+  fi
+fi
+else
 echo "[2/5] materialize prediction template"
 "$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/materialize_predictions_template.py" \
   --dataset "$DATASET" \
@@ -282,6 +410,7 @@ if [[ "$SMOKE_OK" != "1" ]]; then
 fi
 
 echo "Smoke test passed (${SMOKE_NONEMPTY}/${SMOKE_LINES} valid). Proceeding to full run..."
+
 if [[ "${SMOKE_ONLY:-0}" == "1" ]]; then
   echo "Smoke-only mode requested; stopping after smoke gate."
   exit 0
@@ -307,6 +436,7 @@ if [[ "${NO_RESUME:-0}" != "1" ]]; then
   GEN_ARGS+=(--resume)
 fi
 "$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/generate_predictions_via_server.py" "${GEN_ARGS[@]}"
+fi
 
 if [[ "$SKIP_VALIDATE_AND_EVAL" == "1" ]]; then
   echo "Skipping validation and evaluation by request"
@@ -442,6 +572,7 @@ EVAL_ARGS=(
   --run-dir "$RUN_DIR"
   --validation-payload "$RUN_DIR/validation_payload.json"
   --evaluation-backend "$EVALUATION_BACKEND"
+  --evaluation-timeout "$EVALUATION_TIMEOUT"
   --output "$RUN_DIR/evaluation_payload.json"
 )
 if [[ "$STRICT_MAIN_FLOW" == "1" ]]; then
@@ -465,6 +596,7 @@ if [[ "$EVAL_EXIT" != "0" ]]; then
   exit "$EVAL_EXIT"
 fi
 
+echo "[6/5] generate report snapshot"
 "$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/generate_report_snapshot.py" \
   --run-dir "$RUN_DIR" \
   --output "$RUN_DIR/report_snapshot.md" || echo "WARNING: Report snapshot generation failed (non-fatal)"
@@ -472,6 +604,17 @@ fi
 if [[ -f "$RUN_DIR/report_snapshot.md" ]]; then
   mkdir -p "$RESULTS_DIR"
   cp "$RUN_DIR/report_snapshot.md" "$RESULTS_DIR/report_snapshot.md"
+fi
+
+# run_single_model.sh publishes the bundle here and this template did not, so a
+# single-dataset run left its products only in the run directory.
+FINALIZE_EXIT=0
+"$HARNESS_PYTHON_BIN" "$REPO_ROOT/scripts/finalize_result_bundle.py" \
+  --run-dir "$RUN_DIR" \
+  --published-run-dir "${SURE_EVAL_PUBLISHED_RUN_DIR:-$RUN_DIR}" || FINALIZE_EXIT=$?
+if [[ "$FINALIZE_EXIT" != "0" ]]; then
+  echo "ERROR: result bundle finalization failed (exit $FINALIZE_EXIT)" >&2
+  exit "$FINALIZE_EXIT"
 fi
 
 echo "Run completed (with possible warnings): $RUN_DIR"
