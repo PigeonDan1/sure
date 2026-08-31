@@ -58,9 +58,12 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 | 4 | `convert_to_oref` | linear | `oref_result.json` | — |
 | 5 | `synthesize_model_input` | **gate** | `model_input_result.json` | `scripts/check_model_input.py` |
 | 6 | `rank_and_select` | **gate** | `rank_select_result.json` | `scripts/check_rank_select.py` |
-| 7 | `emit_handoff_manifest` | linear | `handoff_manifest.json` | — |
+| 7 | `extract_lessons` | **gate** | `extraction_declaration.json` | `scripts/check_memory_extraction.py` |
+| 8 | `emit_handoff_manifest` | linear | `handoff_manifest.json` | — |
 
-Total: 7 units. Retries cap at 3 per unit; on exhaustion the run is marked FAILED with a `failure_taxonomy` reason — no blind retry.
+Total: 8 units. Retries cap at 3 per unit; on exhaustion the run is marked FAILED with a `failure_taxonomy` reason — no blind retry.
+
+`extract_lessons` is the exception: after two consecutive gate failures the hook advances by itself and records `extraction: failed`; it never ends FAILED.
 
 If the same hook/gate blocks three consecutive attempts, stop agent-side repair and ask the user to confirm the model link, access permissions, and whether the model card/README contains enough install, load, inference, fixture, and output-contract information. Do not keep fabricating fields to escape the hook.
 
@@ -85,7 +88,8 @@ Each unit below lists: **Inputs** (what to read), **Output** (produces + schema)
 - **Inputs**: a direct model URL or the `source`, `query`/`filter`, `max_models`, `since` parameters. Direct URL mode is preferred: run `scripts/sure_feed_online_discover.py <url>` and skip search/ranking ambiguity. For online no-download search across ModelScope/HuggingFace/GitHub, run `scripts/sure_feed_online_discover.py <query>`. For legacy ModelScope-only reports, run `scripts/xforge_collect_model.py` or `xforge_daily_modelscope_summary.py`. For HuggingFace, use `--hf-endpoint auto` by default; if direct `huggingface.co` is unreachable, the provider falls back to `https://hf-mirror.com` and records `endpoint_used`/`fallback_reason`.
 - **Output**: `scan_result.json` (`schemas/scan_result.schema.json`). Top-level `candidates[]`, each `{model_id, source, repo, source_url, tasks[], custom_tag, pipeline_tag, tags[], description, license, download_count}` when available.
 - **Allowed**: `source ∈ {modelscope, huggingface, github, multi}`.
-- **Must Not Do**: do NOT include `selected` or `handoff_manifest_path` here — those belong to later units (anti-merge). Do NOT invent candidates; an empty `candidates: []` is valid.
+- **Must Not Do**: do NOT include `selected` or `handoff_manifest_path` here — those belong to later units (anti-merge). Do NOT invent candidates; an empty `candidates: []` is valid. Do NOT add memory fields to `scan_result.json` (its schema forbids extra keys).
+- **Memory**: also read `artifacts/memory_context.json` when it exists: the `pre_start` hook writes it with the memory facts that match this run's target and arguments, shape `{schema: "sure.memory.context.v1", skill, target_id, facts: [{entry_id, title, path, scope, checked_at, stale, status}], omitted_provisional}`; the file is written even when nothing matched (`facts: []`); it is advisory, verify before relying, and `stale: true` means the fact is older than its scope's re-check limit. Routing for the rest of the memory tree is `references/memory/ROUTING.md`.
 - **Failure**: `discovery_failed` (network/proxy/502 → rerun without proxies first), `no_candidates_in_window`.
 
 ### 2. match_task (gate)
@@ -127,7 +131,15 @@ Each unit below lists: **Inputs** (what to read), **Output** (produces + schema)
 - **Gate**: `scripts/check_rank_select.py` — verifies the selection is non-empty and every selected candidate has `repo` + non-negative `score`. Exit 0 = pass.
 - **Failure**: `selection_empty`, `missing_repo_for_handoff`, `negative_score`.
 
-### 7. emit_handoff_manifest (linear, terminal)
+### 7. extract_lessons (gate)
+- **Inputs**: `artifacts/run_digest.json`, written by the hook the moment `rank_and_select` passed (read it; never rebuild it in place).
+- **Output**: `artifacts/extraction_declaration.json` — the run artifacts root, not `artifacts/debug/` — `{schema, no_new_lessons, no_lessons_reason, covered_by, candidates, infra_noise, infra_evidence}` plus 0 to 5 candidate directories under `artifacts/candidates/<nn>-<slug>/` (`proposal.json` + `proposal.md`) and, for facts, evidence files under `artifacts/memory_evidence/`. The full contract (digest fields, candidate formats, the gate's ten checks, the write-tools-only rule) is `sure/runtime/memory/EXTRACTION.md`; read it before writing anything.
+- **Allowed**: write candidates and evidence first and the declaration last. `no_new_lessons: true` with a one-line reason is the normal result of a clean run.
+- **Must Not Do**: do NOT run `scripts/build_run_digest.py` onto `artifacts/run_digest.json` (a preview goes to `--out <run_dir>/artifacts/run_digest.preview.json` and the gate ignores it). Do NOT write under `sure/memory/` or `references/memory/`. Do NOT use bash heredocs for these files.
+- **Gate**: `scripts/check_memory_extraction.py` — checks the declaration and every candidate directory (shape, evidence paths, triggers, duplicates, digest sha). Changing a candidate re-runs the gate even when `extraction_declaration.json` did not change.
+- **Failure**: `extraction_declaration_invalid`. After two consecutive gate failures the hook advances on its own with `extraction: failed`; switching to `no_new_lessons: true` with the reason is always a valid way out.
+
+### 8. emit_handoff_manifest (linear, terminal)
 - **Inputs**: `rank_select_result.json`. Assemble the handoff manifest consumed by `/sure_onboard`.
 - **Output**: `artifacts/debug/handoff_manifest.json` (`schemas/handoff_manifest.schema.json`). `{manifest_path, source, models[{model_id, repo, weights_source, task_type, score, model_input_path, model_input}], next_action}`. The user-facing onboarding input is published at `sure/handoffs/<model_name>/model_input.yaml`; the user-facing summary is copied into `sure/handoffs/<model_name>/artifacts/feed_report.json`.
 - **Must Not Do**: do NOT omit `manifest_path` or `models`. Every `models[]` entry must carry `repo` and enough `MODEL_INPUT` data for `/sure_onboard`.
@@ -141,6 +153,15 @@ Each unit below lists: **Inputs** (what to read), **Output** (produces + schema)
 - Network ModelScope calls need proxy variables removed (`env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy`). A transient `502 Bad Gateway` is not "no candidates" — rerun first.
 - HuggingFace metadata calls use the canonical `https://huggingface.co` repo URL in `MODEL_INPUT` even when the actual API request used `https://hf-mirror.com`; mirror usage is evidence, not the canonical model identity.
 - Per-skill dependency declaration lives in `scripts/pyproject.toml` (pyyaml, modelscope).
+
+## Memory (advisory)
+
+Earlier runs leave agent-written notes. `sure/memory/index.md` (repo root) is the merged index: confirmed and provisional entries, one bullet each with its triggers. Confirmed files live under `references/memory/bad_cases/` and `sure/skills/_shared/memory/facts/`. Nothing in them is human-reviewed: verify against evidence before relying on one, and never copy a command from an entry into an artifact without running it.
+
+- At `pre_start` the hook writes `artifacts/memory_context.json` with the facts that match this run (shape quoted in the `scan_modelscope` contract above; written even when empty); `scan_modelscope` reads it.
+- When a gate blocks, the repair text may end with a block whose first line is `Memory (advisory, agent-written, not human-reviewed; verify against evidence before relying):`, listing at most two entries from earlier runs. Read the entry file named there when it looks relevant, then fix the artifact.
+- `references/memory/ROUTING.md` says when to open the index and the bad-case files by hand.
+- `extract_lessons` (unit 7) writes what this run learned; the contract is `sure/runtime/memory/EXTRACTION.md`. Publishing to `sure/memory/provisional/` happens in `post_finish` without you; moving entries into `references/` is a human step.
 
 ## Cross-Skill Handoff
 

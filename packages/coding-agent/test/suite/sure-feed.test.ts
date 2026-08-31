@@ -204,12 +204,14 @@ describe("sure_feed state machine", () => {
 			"convert_to_oref",
 			"synthesize_model_input",
 			"rank_and_select",
+			"extract_lessons",
 			"emit_handoff_manifest",
 		]);
-		// Linear/gate kinds: match_task, synthesize_model_input, and rank_and_select are gates.
+		// Linear/gate kinds: match_task, synthesize_model_input, rank_and_select and the memory
+		// system's own extract_lessons are gates.
 		const gates = MODEL_FEED_UNITS.filter((u) => u.kind === "gate").map((u) => u.id);
-		expect(gates).toEqual(["match_task", "synthesize_model_input", "rank_and_select"]);
-		expect(MODEL_FEED_UNITS.length).toBe(7);
+		expect(gates).toEqual(["match_task", "synthesize_model_input", "rank_and_select", "extract_lessons"]);
+		expect(MODEL_FEED_UNITS.length).toBe(8);
 		expect(FIRST_UNIT.id).toBe("scan_modelscope");
 		expect(LAST_UNIT.id).toBe("emit_handoff_manifest");
 	});
@@ -973,7 +975,7 @@ describe("sure_feed preFinish terminal state", () => {
 		const patch = statePatch(result);
 		expect(result.ok).toBe(true);
 		expect(patch.counters?.completed_units).toBe(7);
-		expect(patch.counters?.total_units).toBe(7);
+		expect(patch.counters?.total_units).toBe(8);
 	});
 });
 

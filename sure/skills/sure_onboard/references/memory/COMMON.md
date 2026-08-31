@@ -18,9 +18,7 @@ routed files.
 - Validate `model.spec.yaml` before building the runtime.
 - Keep weights and provider caches model-local by default.
 - Validate the four minimum checks: import, load, infer, output contract.
-- Do not treat sandbox-only CUDA visibility failures as final GPU evidence; if
-  sandbox and host GPU evidence conflict, route to
-  `memory/bad_cases/sandbox_cuda_visibility.md`.
+- Do not treat sandbox-only CUDA visibility failures as final GPU evidence.
 - Save structured artifacts: `backend_choice.json`, `build.log`,
   `validation.log`, `sample_output.json`, `verdict.json`, and
   `artifact_manifest.json`.

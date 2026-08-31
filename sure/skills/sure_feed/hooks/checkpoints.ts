@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { harnessRuntimeEnv, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import { type MemoryCheckpoint, type MemoryDiagnostic, readMemory } from "../../../runtime/memory/hooks.ts";
 import { FIRST_UNIT, LAST_UNIT, nextUnit } from "./state-machine.ts";
 
 // Checkpoint persisted in state.json -> checkpoint.data. Drives the mixed
@@ -21,6 +22,10 @@ export interface GateResult {
 	reason?: string;
 	/** When true, the artifact simply is not produced yet — stay on unit. */
 	missing?: boolean;
+	/** The memory gate could not run at all (broken bundle, no interpreter, crash): ok stays true. */
+	ranFailed?: boolean;
+	/** Advisory memory diagnostics the caller folds into its state_patch. */
+	diagnostics?: MemoryDiagnostic[];
 }
 
 export interface CheckpointData {
@@ -31,6 +36,8 @@ export interface CheckpointData {
 	 *  clears it, so it cannot answer "how blocked was this run". */
 	blocks?: number;
 	failedArtifactDigests: Record<string, string>;
+	/** Memory-system state (digest, injections, extraction status); see runtime/memory/hooks.ts. */
+	memory?: MemoryCheckpoint;
 }
 
 export interface RunCheckpoint {
@@ -61,6 +68,8 @@ export interface Unit {
 	gateScriptArgs?: (ctx: SureHookContext) => string[];
 	/** Backend scripts this unit may invoke from scripts/. */
 	ownedScripts?: string[];
+	/** Files or dirs under artifacts/ hashed together with produces (gate re-runs when any of them change). */
+	gateInputs?: string[];
 }
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -110,12 +119,14 @@ export function readCheckpoint(ctx: SureHookContext): RunCheckpoint {
 				failedArtifactDigests[key] = value;
 			}
 		}
+		// Older checkpoints have no memory key; keep them byte-for-byte (no empty object added).
+		const memory = isRecord(data.memory) ? readMemory(data) : undefined;
 		return {
 			id: "main_flow",
 			label: "SURE model-feed state machine",
 			resumable: true,
 			resume_hint: `Resume at unit "${currentUnit}".`,
-			data: { currentUnit, completedUnits, retries, blocks, failedArtifactDigests },
+			data: { currentUnit, completedUnits, retries, blocks, failedArtifactDigests, memory },
 		};
 	} catch {
 		return {
@@ -146,7 +157,14 @@ export function advance(unit: Unit, completed: CheckpointData): RunCheckpoint | 
 			label: "SURE model-feed state machine",
 			resumable: false,
 			resume_hint: "State machine reached the terminal unit.",
-			data: { currentUnit: LAST_UNIT.id, completedUnits, retries, blocks: completed.blocks, failedArtifactDigests },
+			data: {
+				currentUnit: LAST_UNIT.id,
+				completedUnits,
+				retries,
+				blocks: completed.blocks,
+				failedArtifactDigests,
+				memory: completed.memory,
+			},
 		};
 	}
 	return {
@@ -154,7 +172,14 @@ export function advance(unit: Unit, completed: CheckpointData): RunCheckpoint | 
 		label: "SURE model-feed state machine",
 		resumable: true,
 		resume_hint: `Advanced to unit "${next.id}".`,
-		data: { currentUnit: next.id, completedUnits, retries, blocks: completed.blocks, failedArtifactDigests },
+		data: {
+			currentUnit: next.id,
+			completedUnits,
+			retries,
+			blocks: completed.blocks,
+			failedArtifactDigests,
+			memory: completed.memory,
+		},
 	};
 }
 
@@ -177,6 +202,7 @@ export function bumpRetry(unit: Unit, current: CheckpointData, artifactDigest?: 
 			retries,
 			blocks: (current.blocks ?? 0) + 1,
 			failedArtifactDigests,
+			memory: current.memory,
 		},
 	};
 }
@@ -206,6 +232,35 @@ export function readArtifact(ctx: SureHookContext, produces: string): unknown | 
 		return readJson(path);
 	} catch {
 		return undefined;
+	}
+}
+
+/**
+ * The JSON syntax error of a produces file that exists but does not parse, or undefined when it
+ * is absent or parses.
+ *
+ * readArtifact() cannot tell the two apart — it returns undefined for both — and validateProduces
+ * then reports missing:true, so postToolResult answers ok:true with no repair, no diagnostic and
+ * no retry consumed: the gate never runs, its cap is never reached, and on a success finish the
+ * agent is only told the state machine has not reached the terminal unit, never that its file is
+ * broken. extract_lessons is the one gated unit whose produces the agent writes by hand.
+ */
+export function artifactParseError(ctx: SureHookContext, produces: string): string | undefined {
+	const path = artifactPath(ctx, produces);
+	if (!existsSync(path)) {
+		return undefined;
+	}
+	try {
+		readJson(path);
+		return undefined;
+	} catch (error) {
+		if (!(error instanceof SyntaxError)) {
+			// An fs error message carries the absolute host path of the file; report only the fact.
+			return `${produces} exists but could not be read`;
+		}
+		// A JSON syntax error names the position and quotes the agent's own text, never a path.
+		const message = error.message;
+		return message.length > 200 ? `${message.slice(0, 200)}...` : message;
 	}
 }
 

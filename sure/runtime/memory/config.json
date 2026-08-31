@@ -27,7 +27,7 @@
     "is not permitted from unit",
     "Only the current unit's owned scripts may run here"
   ],
-  "target_skills": ["sure_onboard", "sure_eval", "sure_feed", "sure_reval", "_shared"],
+  "target_skills": ["sure_onboard", "sure_eval", "sure_trans", "sure_feed", "sure_reval", "_shared"],
   "cause_enum": [
     "python_dependency_missing", "system_dependency_missing", "cuda_version_mismatch", "wrong_python_version",
     "missing_weights", "wrong_entrypoint", "config_not_set", "runtime_backend_incompatible",
@@ -46,7 +46,7 @@
     "repair_head_chars": 200, "repair_tail_chars": 400,
     "fix_window_commands": 10, "command_chars": 300, "last_commands": 10,
     "log_tail_lines": 30, "log_line_chars": 300, "log_seek_bytes": 65536,
-    "prior_runs": 5, "prior_run_repair_chars": 300
+    "prior_runs": 5, "prior_run_repair_chars": 300, "prior_run_seek_max_bytes": 8388608
   },
   "digest_trim_order": ["index_snapshot_min", "registry_current_only", "prior_runs_2", "log_tail_10", "repairs_300", "fix_window_5"],
   "index_md_max_lines": 200,

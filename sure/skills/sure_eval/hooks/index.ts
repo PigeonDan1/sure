@@ -137,17 +137,17 @@ function withMemory(checkpoint: RunCheckpoint, memory: MemoryCheckpoint): RunChe
 }
 
 // A finish accepted while the state machine still sits on an unfinished unit is
-// that unit's terminal failure: entries pending on it become disputed rows
-// (spec 8.1). Same helper as sure_onboard; a no-op when nothing is pending or
-// the unit already completed.
+// that unit's terminal failure: entries pending on it become disputed rows, the
+// rest of what was injected into it becomes abandoned rows (spec 8.1). Same
+// helper as sure_onboard; settleOnTerminalFailure returns early on its own when
+// the unit has neither list, so only the completed check is needed here.
 function settleStuckUnit(
 	env: MemoryHookEnv,
 	data: CheckpointData,
 	memory: MemoryCheckpoint,
 ): { memory: MemoryCheckpoint; diagnostics: MemoryDiagnostic[] } {
 	const unitId = data.currentUnit;
-	const pending = memory.pendingDisputed?.[unitId] ?? [];
-	if (pending.length === 0 || data.completedUnits.includes(unitId)) {
+	if (data.completedUnits.includes(unitId)) {
 		return { memory, diagnostics: [] };
 	}
 	return settleOnTerminalFailure(env, { unitId, memory });
@@ -923,13 +923,21 @@ export function onError(ctx: SureHookContext): SureHookResult {
 	// Leave a digest behind so the next run on the same target sees where this
 	// one stopped (prior_runs); nothing is published from here. The checkpoint's memory
 	// goes in so a digest the extraction gate already validated is kept as it is.
-	const digest = onErrorDigest(memoryEnv(ctx), memoryOf(readCheckpoint(ctx).data));
+	const env = memoryEnv(ctx);
+	const checkpoint = readCheckpoint(ctx);
+	const memory = memoryOf(checkpoint.data);
+	// No pre_finish ever runs on this path, so this is the last chance to close the unit the run
+	// died on. The patch below carries no checkpoint, so its lists are never cleared on disk:
+	// idempotency rests entirely on the settle rows already in usage/<run_id>.jsonl.
+	const stuck = settleStuckUnit(env, checkpoint.data, memory);
+	const digest = onErrorDigest(env, memory);
+	const diagnostics = [...stuck.diagnostics, ...digest.diagnostics];
 	return {
 		ok: true,
 		state_patch: {
 			phase: { id: "error", label: "SURE-EVAL interrupted", status: "failed" },
 			message: ctx.run.errorSummary ?? ctx.run.lastRepair ?? "SURE-EVAL main-flow stopped before completion.",
-			...(digest.diagnostics.length > 0 ? { diagnostics: digest.diagnostics } : {}),
+			...(diagnostics.length > 0 ? { diagnostics } : {}),
 		},
 	};
 }

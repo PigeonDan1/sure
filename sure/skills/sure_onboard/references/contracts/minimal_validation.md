@@ -146,9 +146,7 @@ A smoke script must also assert an explicit pass signal, for example:
   sub-stages.
 
 Only after this semantic pass check may a local, Docker, or package script record
-`*_validate_status=passed`. If a script only checks file existence, route the
-failure through `references/memory/bad_cases/docker_smoke_false_pass.md` or the
-equivalent smoke false-pass memory.
+`*_validate_status=passed`.
 
 ## 验证顺序
 

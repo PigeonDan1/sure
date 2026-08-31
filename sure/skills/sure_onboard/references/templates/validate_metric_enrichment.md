@@ -71,5 +71,3 @@ Read these memories when the trigger matches:
 - VC ad hoc similarity or missing provider report: `references/memory/bad_cases/vc_metric_bypass.md`
 - Speech-understanding report missing pipeline trace:
   `references/memory/bad_cases/speech_understanding_metric_bypass.md`
-- Docker/smoke script checks only file existence:
-  `references/memory/bad_cases/docker_smoke_false_pass.md`

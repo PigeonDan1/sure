@@ -936,14 +936,14 @@ def _count_rows(rows: list[dict], seed: dict[str, dict] | None = None) -> dict[s
     out: dict[str, dict] = seed or {}
     for r in rows:
         for entry_id in _row_entry_ids(r):
-            c = out.setdefault(entry_id, {"inject": 0, "pre_start": 0, "useful_activated": 0, "useful_unattributed": 0, "disputed": 0, "settles": 0, "last_hit": None})
+            c = out.setdefault(entry_id, {"inject": 0, "pre_start": 0, "useful_activated": 0, "useful_unattributed": 0, "disputed": 0, "abandoned": 0, "settles": 0, "last_hit": None})
             if r["kind"] == "inject":
                 c["inject"] += 1
             elif r["kind"] == "pre_start":
                 c["pre_start"] += 1
             elif r["kind"] == "settle":
                 c["settles"] += 1
-                if r.get("outcome") in ("useful_activated", "useful_unattributed", "disputed"):
+                if r.get("outcome") in ("useful_activated", "useful_unattributed", "disputed", "abandoned"):
                     c[r["outcome"]] += 1
             at = r.get("at")
             if isinstance(at, str) and (c["last_hit"] is None or at > c["last_hit"]):
@@ -976,16 +976,16 @@ def cmd_stats(ctx: Ctx, args: argparse.Namespace) -> int:
     # A window cannot include the archive: folded counts are totals, with no per-row dates left to filter on.
     counts = _count_rows(rows, None if since is not None else {
         entry_id: {"inject": c.injections, "pre_start": 0, "useful_activated": c.useful_activated,
-                   "useful_unattributed": c.useful_unattributed, "disputed": c.disputed,
+                   "useful_unattributed": c.useful_unattributed, "disputed": c.disputed, "abandoned": 0,
                    "settles": c.useful_activated + c.useful_unattributed + c.disputed, "last_hit": c.last_hit}
         for entry_id, c in usage.load_archive(ctx.memory_root).entries.items()})
     table: list[list[str]] = []
     for entry_id, view in views.items():
-        c = counts.get(entry_id, {"inject": 0, "pre_start": 0, "useful_activated": 0, "useful_unattributed": 0, "disputed": 0, "settles": 0, "last_hit": None})
+        c = counts.get(entry_id, {"inject": 0, "pre_start": 0, "useful_activated": 0, "useful_unattributed": 0, "disputed": 0, "abandoned": 0, "settles": 0, "last_hit": None})
         note = NOTE_LEGACY_NO_TRIGGER if view["legacy"] and not view["trigger"] else ""
         table.append([entry_id, view["status"], str(c["inject"]), str(c["pre_start"]), str(c["useful_activated"]),
-                      str(c["useful_unattributed"]), str(c["disputed"]), c["last_hit"] or "-", note])
-    _print_table(["entry_id", "status", "inject", "pre_start", "useful_act", "useful_unattr", "disputed", "last_hit", "note"], table)
+                      str(c["useful_unattributed"]), str(c["disputed"]), str(c["abandoned"]), c["last_hit"] or "-", note])
+    _print_table(["entry_id", "status", "inject", "pre_start", "useful_act", "useful_unattr", "disputed", "abandoned", "last_hit", "note"], table)
 
     print("== retry trend (attempts per run, + = an entry was injected at that unit) ==")
     injected_units = {(r.get("run_id"), r.get("unit")) for r in rows if r.get("kind") == "inject"}

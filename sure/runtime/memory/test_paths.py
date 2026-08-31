@@ -286,14 +286,19 @@ class ConfigFilesTests(unittest.TestCase):
         units = paths.load_units()
         self.assertEqual(units["schema"], "sure.memory.units.v1")
         skills = units["skills"]
-        self.assertEqual(set(skills), {"sure_onboard", "sure_eval", "sure_feed", "sure_reval"})
-        ob, ev = skills["sure_onboard"], skills["sure_eval"]
+        self.assertEqual(set(skills), {"sure_onboard", "sure_eval", "sure_feed", "sure_reval", "sure_trans"})
+        ob, ev, tr, fd = skills["sure_onboard"], skills["sure_eval"], skills["sure_trans"], skills["sure_feed"]
         self.assertEqual(ob[ob.index("verdict") + 1], "extract_lessons")
         self.assertEqual(ob[-1], "finalize_model_bundle")
         self.assertEqual(ev[ev.index("assessment") + 1], "extract_lessons")
         self.assertEqual(ev[-1], "run_report")
+        self.assertEqual(tr[0], "load_trans_input")
+        self.assertEqual(tr[tr.index("verdict") + 1], "extract_lessons")
+        self.assertEqual(tr[-1], "finalize_model_bundle")
+        self.assertEqual(fd[fd.index("rank_and_select") + 1], "extract_lessons")
+        self.assertEqual(fd[-1], "emit_handoff_manifest")
         self.assertEqual(skills["sure_reval"], [])
-        self.assertEqual(len(skills["sure_feed"]), 7)
+        self.assertEqual(len(skills["sure_feed"]), 8)
 
     def test_log_paths_only_use_known_placeholders(self) -> None:
         log_paths = paths.load_log_paths()

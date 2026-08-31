@@ -902,6 +902,22 @@ describe.skipIf(!PYTHON_BIN)("sure_eval preFinish memory wiring", () => {
 		expect(settle[0].outcome).toBe("disputed");
 		expect(statePatch(result).checkpoint?.data.memory?.pendingDisputed?.smoke_test).toBeUndefined();
 	});
+
+	it("settles a stuck unit's injected-but-never-re-hit entries as abandoned at an accepted finish", () => {
+		// The unit was blocked once and then given up on, so nothing is pending: the entry is
+		// neither useful nor wrong, but it still has to leave a row behind.
+		const fx = fixture("finish-settle-abandoned");
+		writeIndex(fx, [indexEntry({ component: "smoke_test" })]);
+		writeInjectRow(fx, "smoke_test");
+		seedFailedFinish(fx, { memory: { injected: { smoke_test: [ENTRY_ID] } } });
+		writeDeclaration(fx);
+		const result = preFinish(finishCtx(fx, "failed"));
+		expect(result.ok, result.repair).toBe(true);
+		const settle = readUsage(fx).filter((row) => row.kind === "settle");
+		expect(settle).toHaveLength(1);
+		expect(settle[0]).toMatchObject({ unit: "smoke_test", entry_id: ENTRY_ID, outcome: "abandoned" });
+		expect(statePatch(result).checkpoint?.data.memory?.injected?.smoke_test).toBeUndefined();
+	});
 });
 
 describe.skipIf(!PYTHON_BIN)("sure_eval postFinish / onError memory wiring", () => {
@@ -956,6 +972,33 @@ describe.skipIf(!PYTHON_BIN)("sure_eval postFinish / onError memory wiring", () 
 		expect(digest.schema).toBe("sure.memory.run_digest.v1");
 		expect(digest.run.cutoff).toBe(2);
 		expect(existsSync(join(fx.memoryRoot, "decisions.jsonl"))).toBe(false);
+	});
+
+	it("on_error settles the unit the run died on and still writes the digest", () => {
+		// The turn ended without sure_finish (or the provider failed): no pre_finish hook ever
+		// runs, so this is the only place left that can close the unit's memory bookkeeping.
+		const fx = fixture("on-error-settle");
+		appendEvents(fx, BASE_EVENTS.slice(0, 2));
+		writeIndex(fx, [indexEntry({ component: "smoke_test" })]);
+		writeInjectRow(fx, "smoke_test");
+		seedCheckpoint(fx, {
+			currentUnit: "smoke_test",
+			completedUnits: UNITS_BEFORE_SMOKE,
+			retries: { smoke_test: 1 },
+			memory: { injected: { smoke_test: [ENTRY_ID] } },
+		});
+		const errorCtx = { ...fx.ctx, point: "on_error", event: { reason: "session_shutdown" } } as SureHookContext;
+		const result = onError(errorCtx);
+		expect(result.ok).toBe(true);
+		const settle = readUsage(fx).filter((row) => row.kind === "settle");
+		expect(settle).toHaveLength(1);
+		expect(settle[0]).toMatchObject({ unit: "smoke_test", entry_id: ENTRY_ID, outcome: "abandoned" });
+		expect(existsSync(join(fx.runDir, "artifacts", "run_digest.json"))).toBe(true);
+		expect(existsSync(join(fx.memoryRoot, "decisions.jsonl"))).toBe(false);
+		// onError writes no checkpoint, so the injected list is still there; the settle row on
+		// disk is what stops a second call writing a second row.
+		onError(errorCtx);
+		expect(readUsage(fx).filter((row) => row.kind === "settle")).toHaveLength(1);
 	});
 
 	it("on_error keeps a digest the checkpoint's digestSha256 is bound to", () => {

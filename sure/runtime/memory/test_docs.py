@@ -1,6 +1,7 @@
 # sure/runtime/memory/test_docs.py
 from __future__ import annotations
 
+import itertools
 import json
 import re
 import sys
@@ -16,11 +17,17 @@ SKILLS = REPO_ROOT / "sure" / "skills"
 EXTRACTION_MD = paths.LIB_DIR / "EXTRACTION.md"
 ONBOARD_SKILL = SKILLS / "sure_onboard" / "SKILL.md"
 EVAL_SKILL = SKILLS / "sure_eval" / "SKILL.md"
+TRANS_SKILL = SKILLS / "sure_trans" / "SKILL.md"
 ONBOARD_ROUTING = SKILLS / "sure_onboard" / "references" / "memory" / "ROUTING.md"
 ONBOARD_COMMON = SKILLS / "sure_onboard" / "references" / "memory" / "COMMON.md"
 ONBOARD_BAD_CASES_README = SKILLS / "sure_onboard" / "references" / "memory" / "bad_cases" / "README.md"
 EVAL_ROUTING = SKILLS / "sure_eval" / "references" / "memory" / "ROUTING.md"
 EVAL_BAD_CASES_README = SKILLS / "sure_eval" / "references" / "memory" / "bad_cases" / "README.md"
+TRANS_ROUTING = SKILLS / "sure_trans" / "references" / "memory" / "ROUTING.md"
+TRANS_BAD_CASES_README = SKILLS / "sure_trans" / "references" / "memory" / "bad_cases" / "README.md"
+FEED_SKILL = SKILLS / "sure_feed" / "SKILL.md"
+FEED_ROUTING = SKILLS / "sure_feed" / "references" / "memory" / "ROUTING.md"
+FEED_BAD_CASES_README = SKILLS / "sure_feed" / "references" / "memory" / "bad_cases" / "README.md"
 SHARED_FACTS_README = SKILLS / "_shared" / "memory" / "facts" / "README.md"
 CONTEXT_SELECTION_SCHEMA = SKILLS / "sure_onboard" / "schemas" / "context_selection.schema.json"
 
@@ -44,7 +51,7 @@ def section(text: str, heading_prefix: str) -> str:
 
 def unit_table(skill_md: str) -> list[tuple[int, str, str, str, str]]:
     """Rows of the '## State Machine' table as (number, unit id, kind, produces, gate script)."""
-    body = skill_md[skill_md.index("## State Machine") : skill_md.index("### Per-unit contract")]
+    body = section(skill_md, "## State Machine")
     rows: list[tuple[int, str, str, str, str]] = []
     for line in body.splitlines():
         m = UNIT_ROW.match(line)
@@ -54,10 +61,17 @@ def unit_table(skill_md: str) -> list[tuple[int, str, str, str, str]]:
 
 
 def contract_line(skill_md: str, unit: str) -> str:
-    """The '- **<unit>**: ...' bullet of the per-unit contract."""
+    """The per-unit contract: onboard and eval write it as one '- **<unit>**: ...' bullet,
+    sure_feed as a '### <n>. <unit> (<kind>)' block of Inputs/Output/... bullets. Same content,
+    so the block is flattened to one string and every assertion below reads either shape."""
     for line in skill_md.splitlines():
         if line.startswith(f"- **{unit}**:"):
             return line
+    lines = skill_md.splitlines()
+    for i, line in enumerate(lines):
+        if re.match(rf"^### \d+\. {re.escape(unit)} \(", line):
+            body = itertools.takewhile(lambda text: not text.startswith("### "), lines[i + 1 :])
+            return " ".join(body)
     raise AssertionError(f"no per-unit contract line for {unit}")
 
 
@@ -150,6 +164,8 @@ class SkillDocTests(unittest.TestCase):
         cls.units = paths.load_units()["skills"]
         cls.onboard = read(ONBOARD_SKILL)
         cls.eval = read(EVAL_SKILL)
+        cls.trans = read(TRANS_SKILL)
+        cls.feed = read(FEED_SKILL)
 
     def test_onboard_unit_table_matches_units_json(self) -> None:
         rows = unit_table(self.onboard)
@@ -161,15 +177,25 @@ class SkillDocTests(unittest.TestCase):
         self.assertEqual([r[0] for r in rows], list(range(1, len(self.units["sure_eval"]) + 1)))
         self.assertEqual([r[1] for r in rows], self.units["sure_eval"])
 
+    def test_trans_unit_table_matches_units_json(self) -> None:
+        rows = unit_table(self.trans)
+        self.assertEqual([r[0] for r in rows], list(range(1, len(self.units["sure_trans"]) + 1)))
+        self.assertEqual([r[1] for r in rows], self.units["sure_trans"])
+
+    def test_feed_unit_table_matches_units_json(self) -> None:
+        rows = unit_table(self.feed)
+        self.assertEqual([r[0] for r in rows], list(range(1, len(self.units["sure_feed"]) + 1)))
+        self.assertEqual([r[1] for r in rows], self.units["sure_feed"])
+
     def test_extract_lessons_rows(self) -> None:
-        for text in (self.onboard, self.eval):
+        for text in (self.onboard, self.eval, self.trans, self.feed):
             row = next(r for r in unit_table(text) if r[1] == "extract_lessons")
             self.assertEqual(row[2], "**gate**")
             self.assertEqual(row[3], "`extraction_declaration.json`")
             self.assertEqual(row[4], "`scripts/check_memory_extraction.py`")
 
-    def test_both_skills_point_to_the_contract_and_the_context_file(self) -> None:
-        for text in (self.onboard, self.eval):
+    def test_extraction_skills_point_to_the_contract_and_the_context_file(self) -> None:
+        for text in (self.onboard, self.eval, self.trans, self.feed):
             for token in (
                 "sure/runtime/memory/EXTRACTION.md", "artifacts/memory_context.json", "sure/memory/index.md",
                 "references/memory/ROUTING.md",
@@ -182,7 +208,7 @@ class SkillDocTests(unittest.TestCase):
 
     def test_inject_header_in_skill_docs_matches_config(self) -> None:
         header = paths.load_config()["inject_header"]
-        for text in (self.onboard, self.eval):
+        for text in (self.onboard, self.eval, self.trans, self.feed):
             self.assertIn(header, text)
 
     def test_onboard_context_selection_line(self) -> None:
@@ -198,7 +224,9 @@ class SkillDocTests(unittest.TestCase):
     def test_memory_context_shape_is_quoted(self) -> None:
         # The shape Task 12's preStartMemory writes (skeleton 1.13). The agent reads the file by this
         # description alone, so both contract lines quote every key and say the file exists when empty.
-        for text, unit in ((self.onboard, "context_selection"), (self.eval, "task_classification")):
+        for text, unit in (
+            (self.onboard, "context_selection"), (self.eval, "task_classification"), (self.feed, "scan_modelscope"),
+        ):
             line = contract_line(text, unit)
             for token in (
                 "sure.memory.context.v1", "skill", "target_id", "facts", "entry_id", "title", "path",
@@ -250,19 +278,37 @@ class RoutingDocTests(unittest.TestCase):
         ):
             self.assertIn(token, text, token)
 
-    def test_eval_bad_cases_readme_shares_the_route_table_header(self) -> None:
-        eval_text = read(EVAL_BAD_CASES_README)
-        eval_lines = eval_text.splitlines()
+    def test_trans_routing_exists_and_routes_through_the_index(self) -> None:
+        text = read(TRANS_ROUTING)
+        for token in (
+            "sure/memory/index.md", "artifacts/memory_context.json", "references/image_packaging.md",
+            "memory/bad_cases/README.md", "Failure Rules",
+        ):
+            self.assertIn(token, text)
+
+    def test_feed_routing_exists_and_routes_through_the_index(self) -> None:
+        text = read(FEED_ROUTING)
+        for token in (
+            "sure/memory/index.md", "artifacts/memory_context.json", "references/agents.md",
+            "memory/bad_cases/README.md", "scan_result.json",
+        ):
+            self.assertIn(token, text, token)
+
+    def test_bad_cases_readmes_share_the_route_table_header(self) -> None:
         onboard_lines = read(ONBOARD_BAD_CASES_README).splitlines()
-        e = eval_lines[eval_lines.index("## Route Table") :]
         o = onboard_lines[onboard_lines.index("## Route Table") :]
-        self.assertEqual(e[:4], o[:4])  # heading, blank line, header row, separator row
-        # Rows added later by `cli export` must point at files that exist next to the README.
-        for row in (line for line in e[4:] if line.startswith("|")):
-            name = re.search(r"\| `([^`]+\.md)` \|", row)
-            self.assertIsNotNone(name, row)
-            self.assertTrue((EVAL_BAD_CASES_README.parent / name.group(1)).exists(), row)
-        self.assertIn("cli.py export", eval_text)
+        for readme in (EVAL_BAD_CASES_README, TRANS_BAD_CASES_README, FEED_BAD_CASES_README):
+            with self.subTest(skill=readme.parents[3].name):
+                text = read(readme)
+                lines = text.splitlines()
+                rows = lines[lines.index("## Route Table") :]
+                self.assertEqual(rows[:4], o[:4])  # heading, blank line, header row, separator row
+                # Rows added later by `cli export` must point at files that exist next to the README.
+                for row in (line for line in rows[4:] if line.startswith("|")):
+                    name = re.search(r"\| `([^`]+\.md)` \|", row)
+                    self.assertIsNotNone(name, row)
+                    self.assertTrue((readme.parent / name.group(1)).exists(), row)
+                self.assertIn("cli.py export", text)
 
     def test_shared_facts_readme(self) -> None:
         text = read(SHARED_FACTS_README)

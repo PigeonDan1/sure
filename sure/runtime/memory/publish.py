@@ -191,9 +191,11 @@ def hook_trigger(entry_type: str, triggers: list[str], texts: list[str]) -> list
     """§1.7 hook_trigger: the subset of `trigger` the hooks (match.ts) may fire on.
     bad_case: only the triggers proposals.trigger_hits finds in `texts` — the caller passes
     proposals.trigger_texts, the SAME texts gate rule 4 checked (unclipped repairs re-read from
-    events.jsonl when available, digest texts otherwise). Reading the clipped digest here instead
-    let a trigger that lived only in the clipped-away middle pass the gate and then publish an
-    entry that could never fire. Triggers the agent only saw in evidence files stay in `trigger`
+    events.jsonl when available, digest texts otherwise, plus the gate repair of every prior run in
+    the digest). Reading the clipped digest here instead let a trigger that lived only in the
+    clipped-away middle pass the gate and then publish an entry that could never fire, and dropping
+    the prior runs would do the same to a lesson about a unit that runs after extract_lessons.
+    Triggers the agent only saw in evidence files stay in `trigger`
     for index.md / prompt routing but never drive injection. fact: every trigger.
     No observable texts -> [] for a bad_case (the gate never passes such a candidate anyway)."""
     if entry_type != "bad_case":
@@ -503,6 +505,13 @@ def _validate_proposal(ctx: _RunContext, proposal: dict) -> tuple[str, str, str,
     known_units = ctx.units.get("skills", {}).get(target_skill, [])
     if component != "_" and component not in known_units:
         raise PublishError(f"cell.component {component!r} is not a unit of {target_skill} (units.json)")
+    # Gate rule 1's cell binding, re-checked for the same reason: match.ts selects a bad_case on
+    # component === unit, so an entry whose component no claim names is offered at a unit it was
+    # not learned on.
+    if (entry_type == "bad_case" and component != "_" and target_skill == ctx.skill
+            and _digest_unit(ctx.digest, component) is not None
+            and component not in proposals.claim_units(proposal)):
+        raise PublishError(f"cell.component {component!r} is not named by any claim of this candidate")
     fields = [("cell.component", component), ("cell.cause", cause)]
     fields += [(f"trigger[{i}]", t) for i, t in enumerate(_triggers(proposal))]
     for name, value in fields:
@@ -840,12 +849,15 @@ def main(argv: list[str]) -> int:
     # state it is also nearly free: a run adds one usage file and one digest, and a pass drops
     # what is over the retention count. Errors here stay out of report.errors -- housekeeping
     # that could not finish is not a failed publish -- and carry no host path, because the
-    # hooks read this summary.
+    # hooks read this summary. The usage pass is told where .sure/runs is, so it can leave the
+    # file of a run that is still in flight alone; this run's own directory sits in there too.
     pruned: dict[str, Any] = {"usage": 0, "digests": 0, "errors": []}
     memory_root = paths.memory_root(repo_root)
     try:
         dropped = usage.prune_usage(
-            memory_root, retain=int(config.get("usage_retain_runs", usage.DEFAULT_USAGE_RETAIN_RUNS))
+            memory_root,
+            retain=int(config.get("usage_retain_runs", usage.DEFAULT_USAGE_RETAIN_RUNS)),
+            runs_root=run_dir.parent,
         )
         pruned["usage"] = len(dropped.pruned)
         pruned["errors"].extend(dropped.errors)

@@ -338,12 +338,6 @@ Kimi-Audio 已验证根因是 generated text stream 的首 token 为 id `0`，�
 边界过滤这个首位 stream-boundary token，再写入 `prediction`、`hyp_*.txt` 和 metric
 report。不要只在 wrapper 字符串清洗或 metric 计算时临时去掉 `!`，否则会掩盖根因。
 
-遇到该问题时读取：
-
-```text
-references/memory/bad_cases/kimi_audio_leading_bang_token.md
-```
-
 ## 6. Evaluation
 
 正式评估应优先复用 task routes；`SUREEvaluator` 和分类兼容入口可以保留，但新报告中

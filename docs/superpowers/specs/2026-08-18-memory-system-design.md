@@ -347,8 +347,8 @@ usage 注入行:`{kind: "inject", run_id, skill, unit, attempt, events_cutoff, e
 | 该 unit 通过了(advance),且注入行到通过之间 events 里有一条 tool_call 的 input 含该条目文件路径(read 的 path 或 bash 命令原文,子串即可) | `useful_activated +1`(计入转正) |
 | 该 unit 通过了,但没读过该条目 | `useful_unattributed +1`(只进 stats) |
 | 又打回(真消耗重试)且新的原始 repair + 日志尾命中该条目触发词 | 先记 pending;同 run 同 unit 之后任一次通过则 pending 作废并按上一行结算;unit 终局仍失败(重试耗尽,或 run 以 failed 收尾时该 unit 仍卡着)才落 `disputed +1` |
-| 又打回但不命中它的触发词 | 不记 |
-| 没有下一次(agent 收尾了) | 不记(pending 也作废) |
+| 又打回但不命中它的触发词 | unit 终局失败时落 `abandoned`(中性行,不进任何计数器) |
+| 没有下一次(agent 收尾了) | 落 `abandoned`(pending 作废;这一行只为了别让条目停在「注入过、从没结算」) |
 
 结算行由 TS 追加进 `usage/<run_id>.jsonl`(`{kind: "settle", entry_id, unit, outcome, at}`),TS 不碰 meta;meta 计数一律由 python 从 usage 重放算出。可选加强(第二步):proposal.json 加 `beacon: [string]`(≤3 条,门要求逐字出现在 Known Mitigation / Verification 段),命令出现在注入后的 fix_window 里也算激活。
 

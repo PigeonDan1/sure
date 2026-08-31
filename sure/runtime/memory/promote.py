@@ -28,7 +28,7 @@ Facts never move (spec 8.2 "fact 不按命中升降"); superseded / rejected are
 Counts in every meta are refreshed on every pass regardless of status. Nothing here
 touches meta.trigger / meta.hook_trigger (publish computes them once).
 
-An entry that only exists under sure/skills/**/references (the 17 old bad cases, anything
+An entry that only exists under sure/skills/**/references (the old bad cases, anything
 hand-committed) never went through publish, so nothing has written its meta. Spec 6.3 says
 those carry meta too, because that is where their counts live, so every pass first creates
 the missing stubs and then counts them like any other entry.
@@ -256,7 +256,7 @@ def legacy_meta(entry_id: str, *, entry_type: str | None = None, status: str = "
 
 def _create_missing_meta(repo_root: Path, memory_root: Path) -> int:
     """Give every references-only entry a meta stub so the replayed counts have somewhere to land.
-    Without it the 17 old bad cases (and anything hand-committed) stay at zero in index.json for
+    Without it the old bad cases (and anything hand-committed) stay at zero in index.json for
     ever and rule 3 of spec 8.2 can never demote them. The status is read off the file header once,
     at creation; from then on meta is the authority, so editing the header back to "confirmed" does
     not undo a demotion. Returns how many were created. Callers hold the memory lock."""

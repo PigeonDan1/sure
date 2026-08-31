@@ -931,6 +931,25 @@ class Rule1Tests(GateTestCase):
         self.assertFalse([f for f in failures if f.message.startswith("candidate 04-x") and "component" in f.message])
         self.assertFailure(failures, 1, "candidate 05-x: cell must be an object with component and cause")
 
+    def test_cell_component_must_be_named_by_a_claim(self) -> None:
+        # match.ts filters bad_cases on component === unit with no fallback, so a component the
+        # candidate's own claims never mention is published onto a cell it can never fire from.
+        p1 = bad_case_proposal()
+        p1["cell"]["component"] = "fetch_weights"  # a unit this run walked, but no claim says so
+        p2 = bad_case_proposal(claims=[])          # component build_env, nothing anchoring it
+        p3 = bad_case_proposal(target_skill="sure_eval", applies_to=["sure_eval"])
+        p3["cell"]["component"] = "task_classification"  # another skill's unit: not this run's to bind
+        p4 = bad_case_proposal(claims=[])
+        p4["cell"]["component"] = "validate_import"  # an onboard unit this run never reached
+        for cid, p in (("01-x", p1), ("02-x", p2), ("03-x", p3), ("04-x", p4)):
+            self.fx.add_candidate(cid, p, bad_case_md())
+        self.fx.write_declaration()
+        failures = self.fx.run()
+        self.assertFailure(failures, 1, "candidate 01-x: cell.component 'fetch_weights' is not named by any claim")
+        self.assertFailure(failures, 1, "candidate 02-x: cell.component 'build_env' is not named by any claim")
+        for cid in ("03-x", "04-x"):
+            self.assertFalse([f for f in failures if f.message.startswith(f"candidate {cid}") and "named by any claim" in f.message])
+
     def test_cell_cause_enum_and_fact_rules(self) -> None:
         p1 = bad_case_proposal()
         p1["cell"]["cause"] = "environment"
@@ -1234,6 +1253,113 @@ class Rule4FullRepairTests(GateTestCase):
         self.assertIsNone(proposals.repair_texts_from_events(self.fx.run_dir, d, self.fx.config))
 
 
+# --- rule 4 against a prior run's gate repair (the late-unit path) -------------------------
+
+PRIOR_RUN_ID = "run-20260817-def456"
+PRIOR_GATE_REPAIR = (
+    "RUN_REPORT_UNIT completed-run execution gate failed:\n"
+    '  - successful run report conflicts with execution_result.json job_status "FAILED"'
+)
+PRIOR_AGENT_SUMMARY = "stopped early, the queue was busy and the weights never landed"
+LATE_TRIGGER = "successful run report conflicts with execution_result.json job_status"
+
+
+def prior_run_rows(gate_repair: str = PRIOR_GATE_REPAIR) -> list[dict]:
+    """Two prior runs as digest.py writes them: one gate repair, one agent-written errorSummary."""
+    return [
+        {"run_id": PRIOR_RUN_ID, "status": "success", "failed_unit": None, "finished_at": None,
+         "last_repair": gate_repair, "last_repair_source": "gate", "candidates": []},
+        {"run_id": "run-20260816-aaa111", "status": "failed", "failed_unit": "build_env", "finished_at": None,
+         "last_repair": PRIOR_AGENT_SUMMARY, "last_repair_source": "agent", "candidates": []},
+    ]
+
+
+def eval_digest_with_prior_gate_repair() -> dict:
+    """A sure_eval run sitting in extract_lessons. run_report comes after extract_lessons, so it is
+    not in units[] and never can be; the previous run of the same target was blocked there."""
+    eval_units = paths.load_units()["skills"]["sure_eval"]
+    walked = eval_units[: eval_units.index("extract_lessons")]
+    return {
+        "schema": proposals.DIGEST_SCHEMA,
+        "run": {"run_id": RUN_ID, "skill": "sure_eval", "args": "model=qwen2-audio-7b",
+                "target": {"kind": "eval", "id": TARGET_ID}, "status_so_far": "running",
+                "cutoff": 0, "memory_usage": []},
+        "units": [{"id": u, "outcome": "passed", "attempts": 1, "repairs": [], "fix_window": [],
+                   "last_commands": [], "log_tail": None} for u in walked]
+        + [{"id": "extract_lessons", "outcome": "current", "attempts": 0, "repairs": [], "fix_window": [],
+            "last_commands": [], "log_tail": None}],
+        "tool_errors": 0,
+        "prior_runs": prior_run_rows(),
+        "memory_index_snapshot": [],
+        "units_registry": {"sure_eval": eval_units},
+    }
+
+
+class PriorRunTriggerTests(GateTestCase):
+    """prior_runs[].last_repair counts as observation only when a gate wrote it. Source "agent" is
+    the previous agent's own errorSummary, which is not something a gate ever said."""
+
+    def onboard_digest(self, gate_repair: str = PRIOR_GATE_REPAIR) -> dict:
+        d = make_digest()
+        d["prior_runs"] = prior_run_rows(gate_repair)
+        return d
+
+    def test_a_prior_gate_repair_is_observed_when_events_are_readable(self) -> None:
+        events = [{"type": "created", "data": {"skillName": "sure_onboard"}},
+                  {"type": "tool_result_repair", "data": {"state_patch": {"diagnostics": [{"repair": REPAIR_TEXT}]}}}]
+        self.fx.write_events(events)
+        d = self.onboard_digest()
+        d["run"]["cutoff"] = len(events)
+        self.assertEqual(proposals.trigger_texts(self.fx.run_dir, d, self.fx.config),
+                         [REPAIR_TEXT, *LOG_LINES, PRIOR_GATE_REPAIR])
+
+    def test_a_prior_gate_repair_is_observed_when_events_are_not_readable(self) -> None:
+        d = self.onboard_digest()  # the fixture writes no events.jsonl
+        self.assertIsNone(proposals.repair_texts_from_events(self.fx.run_dir, d, self.fx.config))
+        self.assertEqual(proposals.trigger_texts(self.fx.run_dir, d, self.fx.config),
+                         [REPAIR_TEXT, *LOG_LINES, PRIOR_GATE_REPAIR])
+
+    def test_a_trigger_only_in_an_agent_written_prior_summary_is_rejected(self) -> None:
+        self.fx.write_digest(self.onboard_digest())
+        self.fx.add_candidate("01-x", bad_case_proposal(trigger=[PRIOR_AGENT_SUMMARY]), bad_case_md())
+        self.fx.write_declaration()
+        failures = self.fx.run()
+        self.assertFailure(failures, 4, "candidate 01-x: no reusable trigger")
+        self.assertFailure(failures, 4, 'prior run\'s gate repair (prior_runs[].last_repair, source "gate")')
+
+    def test_a_trigger_carrying_a_prior_run_id_is_run_specific(self) -> None:
+        # it would pass hook_trigger (same texts) and then never match again: match.ts sees the
+        # future run's texts, which carry no old run id
+        self.fx.write_digest(self.onboard_digest(f"{PRIOR_RUN_ID}: {PRIOR_GATE_REPAIR}"))
+        self.fx.add_candidate("01-x", bad_case_proposal(trigger=[f"{PRIOR_RUN_ID}: RUN_REPORT_UNIT"]), bad_case_md())
+        self.fx.write_declaration()
+        failures = self.fx.run()
+        self.assertFailure(failures, 4, "candidate 01-x: no reusable trigger")
+        self.assertFailure(failures, 4, "run-specific")
+
+    def test_a_late_unit_bad_case_passes_rule_4_on_a_prior_gate_repair(self) -> None:
+        self.fx.write_digest(eval_digest_with_prior_gate_repair())
+        self.fx.add_candidate("01-x", bad_case_proposal(
+            target_skill="sure_eval", applies_to=["sure_eval"],
+            cell={"component": "run_report", "cause": "result_layout"}, claims=[], trigger=[LATE_TRIGGER],
+        ), bad_case_md())
+        self.fx.write_declaration()
+        self.assertNoRule(self.fx.run(), 4)
+
+    def test_a_late_unit_bad_case_passes_the_whole_gate(self) -> None:
+        # the cell binding added for claims only fires on a component this run walked, and run_report
+        # is never one of them, so claims: [] is the only honest shape here
+        self.fx.write_digest(eval_digest_with_prior_gate_repair())
+        sha = paths.sha256_file(self.fx.artifacts / "run_digest.json")
+        self.fx.add_candidate("01-x", bad_case_proposal(
+            target_skill="sure_eval", applies_to=["sure_eval"],
+            cell={"component": "run_report", "cause": "result_layout"}, claims=[], trigger=[LATE_TRIGGER],
+            source={"run_id": RUN_ID, "skill": "sure_eval", "target": TARGET_ID, "digest_sha256": sha},
+        ), bad_case_md())
+        self.fx.write_declaration()
+        self.assertClean(self.fx.run(sha=sha))
+
+
 # --- rule 5: infra isolation --------------------------------------------------------------
 
 class Rule5Tests(GateTestCase):
@@ -1311,6 +1437,13 @@ class FormatRepairTests(unittest.TestCase):
         self.assertIn("no_new_lessons: true", text)
         without_rule4 = proposals.format_repair([proposals.GateFailure(1, "x")])
         self.assertNotIn("would appear verbatim", without_rule4)
+
+    def test_trigger_hint_names_the_prior_run_route_and_its_exclusion(self) -> None:
+        # The hint is the only copy of rule 4 an agent blocked on a late unit reads; if it still
+        # says "this run" only, that agent concludes the prior_runs route does not exist.
+        text = proposals.format_repair([proposals.GateFailure(4, "candidate 01-x: no reusable trigger")])
+        self.assertIn("or in a prior run's gate repair", text)
+        self.assertIn("a prior run's id", text)
 
 
 # --- schema files (documentation + fixture) ------------------------------------------------
@@ -2179,11 +2312,14 @@ class PartBMainTests(PartBCase):
 class PartBWrapperAndSchemaCopyTests(unittest.TestCase):
     ONBOARD = B_REPO_ROOT / "sure" / "skills" / "sure_onboard"
     EVAL = B_REPO_ROOT / "sure" / "skills" / "sure_eval"
+    TRANS = B_REPO_ROOT / "sure" / "skills" / "sure_trans"
+    FEED = B_REPO_ROOT / "sure" / "skills" / "sure_feed"
 
-    def test_both_wrappers_exist_and_are_identical(self) -> None:
+    def test_every_wrapper_exists_and_is_identical(self) -> None:
         a = (self.ONBOARD / "scripts" / "check_memory_extraction.py").read_bytes()
-        b = (self.EVAL / "scripts" / "check_memory_extraction.py").read_bytes()
-        self.assertEqual(a, b)
+        for skill_dir in (self.EVAL, self.TRANS, self.FEED):
+            with self.subTest(skill=skill_dir.name):
+                self.assertEqual((skill_dir / "scripts" / "check_memory_extraction.py").read_bytes(), a)
         self.assertIn(b"from memory import proposals", a)
 
     def test_wrapper_runs_the_gate_end_to_end(self) -> None:
@@ -2203,7 +2339,7 @@ class PartBWrapperAndSchemaCopyTests(unittest.TestCase):
 
     def test_schema_copies_are_byte_identical_to_the_shared_library(self) -> None:
         source = (paths.LIB_DIR / "schemas" / "extraction_declaration.schema.json").read_bytes()
-        for skill_dir in (self.ONBOARD, self.EVAL):
+        for skill_dir in (self.ONBOARD, self.EVAL, self.TRANS, self.FEED):
             with self.subTest(skill=skill_dir.name):
                 self.assertEqual((skill_dir / "schemas" / "extraction_declaration.schema.json").read_bytes(), source)
         schema = json.loads(source)

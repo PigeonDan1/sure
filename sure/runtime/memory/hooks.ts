@@ -88,7 +88,7 @@ export interface MemoryCheckpoint {
 /** What every memory hook function needs from the calling skill hook. */
 export interface MemoryHookEnv {
 	ctx: SureHookContext;
-	skill: "sure_onboard" | "sure_eval";
+	skill: "sure_onboard" | "sure_eval" | "sure_trans" | "sure_feed";
 	/** harness python contract when preStart already resolved it; undefined otherwise. */
 	py: HarnessRuntimeContract | undefined;
 }
@@ -1045,7 +1045,13 @@ function appendSettle(
 	config: MemoryConfig,
 	unitId: string,
 	entryId: string,
-	outcome: "useful_activated" | "useful_unattributed" | "disputed",
+	// "abandoned" is deliberately not in usage.py OUTCOMES: _fold skips the row whole, so it moves
+	// no counter and cannot promote or demote anything. Known ceiling: the archive seed in
+	// cli.py rebuilds `settles` from the three counted outcomes, so an entry whose only settles are
+	// abandoned reads as cold again once prune_usage folds its runs away (500 runs by default).
+	// The upgrade is an `abandoned` field on usage.Counts, which drags meta.schema.json, the golden
+	// index fixture and a row of test expectations with it; not worth it for that one statistic.
+	outcome: "useful_activated" | "useful_unattributed" | "disputed" | "abandoned",
 ): MemoryDiagnostic | undefined {
 	const runId = runIdOf(env.ctx);
 	const row = {
@@ -1222,7 +1228,12 @@ export function settleOnPass(
 	}
 	const memoryRoot = memoryRootFor(env.ctx.packageDir);
 	const rows = readUsageRows(memoryRoot, runIdOf(env.ctx));
-	const settled = settledIds(rows, args.unitId);
+	// An abandoned row is not a settlement the unit earned, so it must not suppress this one:
+	// on_error abandons the stuck unit and /sure_resume then reuses the same run id and usage file.
+	const settled = settledIds(
+		rows.filter((row) => row.outcome !== "abandoned"),
+		args.unitId,
+	);
 	const cutoffs = injectCutoffs(rows, args.unitId);
 	const loaded = readMemoryIndex(memoryRoot);
 	const diagnostics: MemoryDiagnostic[] = [];
@@ -1259,17 +1270,21 @@ export function settleOnPass(
 
 /**
  * The unit ended in failure (retries exhausted, or the run finishes while it is
- * still blocked): pending disputes settle as disputed; entries that were
- * injected but not hit again settle nothing (8.1). The unit's lists are cleared
- * afterwards, same idempotency rules as settleOnPass.
+ * still blocked): pending disputes settle as disputed, and everything else that
+ * was injected into the unit settles as abandoned - shown and neither followed
+ * nor contradicted, which is not the entry's fault but must still leave a row,
+ * or a run that gives up after the first block leaves the entry injected and
+ * never settled. The unit's lists are cleared afterwards, same idempotency
+ * rules as settleOnPass.
  */
 export function settleOnTerminalFailure(
 	env: MemoryHookEnv,
 	args: { unitId: string; memory: MemoryCheckpoint },
 ): { memory: MemoryCheckpoint; diagnostics: MemoryDiagnostic[] } {
 	const memory = forgetUnit(args.memory, args.unitId);
-	const ids = args.memory.pendingDisputed?.[args.unitId] ?? [];
-	if (ids.length === 0) {
+	const disputed = args.memory.pendingDisputed?.[args.unitId] ?? [];
+	const abandoned = (args.memory.injected?.[args.unitId] ?? []).filter((id) => !disputed.includes(id));
+	if (disputed.length === 0 && abandoned.length === 0) {
 		return { memory, diagnostics: [] };
 	}
 	const { config, error: configError } = tryConfig();
@@ -1279,13 +1294,18 @@ export function settleOnTerminalFailure(
 	const memoryRoot = memoryRootFor(env.ctx.packageDir);
 	const settled = settledIds(readUsageRows(memoryRoot, runIdOf(env.ctx)), args.unitId);
 	const diagnostics: MemoryDiagnostic[] = [];
-	for (const id of ids) {
-		if (settled.has(id)) {
-			continue;
-		}
-		const failure = appendSettle(env, memoryRoot, config, args.unitId, id, "disputed");
-		if (failure) {
-			diagnostics.push(failure);
+	for (const [outcome, ids] of [
+		["disputed", disputed],
+		["abandoned", abandoned],
+	] as const) {
+		for (const id of ids) {
+			if (settled.has(id)) {
+				continue;
+			}
+			const failure = appendSettle(env, memoryRoot, config, args.unitId, id, outcome);
+			if (failure) {
+				diagnostics.push(failure);
+			}
 		}
 	}
 	return { memory, diagnostics };

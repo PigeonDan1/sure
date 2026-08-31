@@ -77,6 +77,21 @@ class ReplayCountsTests(UsageReplayBase):
         self.assertEqual((counts[Y].useful_activated, counts[Y].useful_unattributed, counts[Y].disputed), (0, 1, 0))
         self.assertEqual(counts[X].injections, 2)
 
+    def test_an_abandoned_settle_changes_no_counter(self) -> None:
+        # "abandoned" is deliberately absent from OUTCOMES: _fold skips the row whole, so giving up
+        # on a unit can neither block auto-promotion nor demote a confirmed entry.
+        write_usage(self.root, "run-a", [
+            inject("run-a", "build_env", "2026-08-18T10:00:00Z", X),
+            settle("run-a", "build_env", X, "abandoned", "2026-08-18T10:05:00Z"),
+        ])
+        counts = usage.replay_usage(self.root)
+        self.assertEqual(counts[X].injections, 1)
+        self.assertEqual(counts[X].useful_activated, 0)
+        self.assertEqual(counts[X].useful_unattributed, 0)
+        self.assertEqual(counts[X].disputed, 0)
+        self.assertEqual(counts[X].disputed_since_last_useful, 0)
+        self.assertEqual(counts[X].useful_runs, [])
+
     def test_useful_runs_are_distinct_run_ids_of_activated_settles(self) -> None:
         write_usage(self.root, "run-a", [
             inject("run-a", "build_env", "2026-08-18T10:00:00Z", X),
@@ -419,6 +434,74 @@ class PruneUsageTests(UsageReplayBase):
 
     def files(self) -> list[str]:
         return sorted(p.name for p in (self.root / "usage").glob("*.jsonl"))
+
+    def runs_root(self) -> Path:
+        return Path(self.tmp.name) / ".sure" / "runs"
+
+    def write_run(self, run_id: str, status: str) -> None:
+        """The .sure/runs/<run_id>/run.json the harness keeps; only "status" matters here."""
+        paths.atomic_write_json(self.runs_root() / run_id / "run.json", {"status": status})
+
+    def test_a_run_still_running_is_not_pruned_however_old_its_rows_are(self) -> None:
+        # Its file is the only place the inject row's events_cutoff lives, and settleOnPass in
+        # hooks.ts needs that to record anything useful the entry did. Delete it and the archive
+        # keeps the injection and can never gain the benefit.
+        self.seed(12)
+        before = usage.replay_usage(self.root)
+        self.write_run("run-00", "running")
+        report = usage.prune_usage(self.root, retain=4, runs_root=self.runs_root())
+        # Its own file is spared and nothing else is: the oldest file in the window is also the
+        # one every other candidate is judged against, so sparing it any harder than this would
+        # stop the whole store from folding.
+        self.assertEqual(report.pruned, [f"run-{i:02d}" for i in range(1, 8)])
+        self.assertIn("run-00.jsonl", self.files())
+        self.assertEqual(usage.replay_usage(self.root), before)
+
+    def test_an_old_live_run_does_not_stop_the_rest_of_the_store_from_shrinking(self) -> None:
+        # A killed run stays at "running" for ever (extension.ts only stamps staleSince), so once
+        # such a file has drifted past the retained window it is in the candidate window to stay.
+        # If it held the boundary as well, one tombstone would fold nothing ever again and every
+        # post_finish would read the whole growing store for nothing, which is the cost retention
+        # exists to remove.
+        self.seed(20)
+        self.write_run("run-00", "running")
+        first = usage.prune_usage(self.root, retain=4, runs_root=self.runs_root())
+        self.assertEqual(len(first.pruned), 15)
+        self.seed(6, start=20)
+        before = usage.replay_usage(self.root)
+        second = usage.prune_usage(self.root, retain=4, runs_root=self.runs_root())
+        self.assertEqual(len(second.pruned), 6)
+        self.assertEqual(self.files(), ["run-00.jsonl", *(f"run-{i}.jsonl" for i in range(22, 26))])
+        self.assertEqual(usage.replay_usage(self.root), before)
+
+    def test_a_run_that_reached_a_terminal_status_is_still_pruned(self) -> None:
+        self.seed(12)
+        self.write_run("run-00", "success")
+        report = usage.prune_usage(self.root, retain=4, runs_root=self.runs_root())
+        self.assertIn("run-00", report.pruned)
+        self.assertEqual(len(report.pruned), 8)
+        self.assertNotIn("run-00.jsonl", self.files())
+
+    def test_a_run_with_no_run_directory_is_still_pruned(self) -> None:
+        # Unknown means not in flight. .sure/runs gets cleared by hand and a run started from
+        # another cwd records itself elsewhere, so reading "no record" as alive would stop the
+        # store shrinking for ever -- exactly the cost retention exists to remove.
+        self.seed(12)
+        report = usage.prune_usage(self.root, retain=4, runs_root=self.runs_root())
+        self.assertEqual(len(report.pruned), 8)
+        self.assertEqual(len(self.files()), 4)
+
+    def test_a_live_run_joins_the_retained_window_without_blocking_older_ones(self) -> None:
+        # The live file is retained, not merely skipped, so _prefix_cut judges the rest against
+        # it as well and everything older than it still folds.
+        self.seed(12)
+        before = usage.replay_usage(self.root)
+        self.write_run("run-07", "running")  # the newest file in the candidate window
+        report = usage.prune_usage(self.root, retain=4, runs_root=self.runs_root())
+        self.assertEqual(report.pruned, [f"run-{i:02d}" for i in range(7)])
+        self.assertEqual(self.files(), ["run-07.jsonl", "run-08.jsonl", "run-09.jsonl", "run-10.jsonl", "run-11.jsonl"])
+        self.assertEqual(report.kept, 5)
+        self.assertEqual(usage.replay_usage(self.root), before)
 
     def test_store_is_bounded_and_every_replayed_count_is_unchanged(self) -> None:
         self.seed(12)

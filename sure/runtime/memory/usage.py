@@ -435,7 +435,33 @@ def _archive_payload(entries: dict[str, Counts], pending: dict[str, dict], folde
     }
 
 
-def prune_usage(memory_root: Path, *, retain: int) -> PruneReport:
+# run.json statuses after which no usage row can arrive any more (types.ts SureRunStatus).
+_TERMINAL_RUN_STATUSES = frozenset({"success", "failed", "incomplete", "cancelled"})
+
+
+def _in_flight(runs_root: Path | None, run_id: str) -> bool:
+    """True while .sure/runs/<run_id>/run.json says the run has not reached a terminal status.
+
+    Not knowing counts as not in flight: no runs_root, no run directory, an unreadable run.json.
+    .sure/runs is cleared by hand and a run started from another cwd records itself elsewhere, so
+    reading "no record" as alive would stop the store shrinking for ever, which is the cost
+    retention exists to remove. A killed run stays at "running" and keeps its file, and that is
+    the safe direction to be wrong in.
+
+    Two known ceilings. sure/memory is one store per checkout while .sure/runs follows
+    record.cwd, so a run in flight from another cwd is invisible here. And a failed run counts as
+    terminal but can be resumed under the same run id, which brings the old problem back for as
+    long as it then runs."""
+    if runs_root is None:
+        return False
+    try:
+        record = paths.load_json(Path(runs_root) / run_id / "run.json")
+    except (OSError, ValueError):
+        return False
+    return isinstance(record, dict) and record.get("status") not in _TERMINAL_RUN_STATUSES
+
+
+def prune_usage(memory_root: Path, *, retain: int, runs_root: Path | None = None) -> PruneReport:
     """Fold everything past the newest `retain` run files into usage/_archive.json and delete it.
 
     A pass only starts once the store has drifted a tenth of `retain` past the line, so the
@@ -454,9 +480,12 @@ def prune_usage(memory_root: Path, *, retain: int) -> PruneReport:
     that finds one stops instead of folding a second batch into it. The other is a row
     appended to a candidate file after this pass read it -- match.ts appends without the
     memory lock -- which the delete below guards by unlinking only a file whose size still
-    matches what was folded. What is left of that window is the gap between that stat and
-    the unlink, and to lose a row there a writer would have to append AND leave the file at
-    exactly its old size. Appending only makes a file longer, so no writer here fits.
+    matches what was folded. That stat and that unlink are two steps, so a writer landing
+    between them loses its row: the stat saw the old size and the unlink takes the file as it
+    is now. Only the run that owns a file appends to it, which is why `runs_root` matters --
+    given it, the delete skips a run that is still in flight and no writer is left to race.
+    Without it the window is exactly as wide as it was before, and the size check is all
+    that guards it.
 
     Crash safety follows publish.py's _reclaim_orphans: the durable record is written
     first, the cleanup second, and the reader is told to ignore what the record already
@@ -536,14 +565,21 @@ def prune_usage(memory_root: Path, *, retain: int) -> PruneReport:
 
         for info in candidates:
             try:
-                # Delete the file only while it is still the one that was folded. match.ts appends
-                # usage rows with appendFileSync and takes no lock, so a run that is still writing
-                # can extend a file between the read above and here; the archive covers the bytes
-                # the marker names and nothing past them, so unlink would destroy rows that exist
-                # in no archive. A file that grew is left where it is instead: replay skips its
-                # folded prefix and counts the tail, and a later pass folds the tail and deletes
-                # it. Not an error -- nothing failed and nothing was lost.
-                if info.path.stat().st_size != info.size:
+                # Delete the file only while it is still the one that was folded, and never while
+                # its run is in flight. hooks.ts settleOnPass reads the inject row's events_cutoff
+                # out of that file (injectCutoffs) and records nothing at all without it, while
+                # settleOnTerminalFailure needs no cutoff and lands its dispute either way, so a
+                # live file that goes takes only the benefit with it. The run is left out of the
+                # delete and not out of the fold on purpose: an unfoldable file at the old end of
+                # the window would raise the boundary every other candidate has to clear, and one
+                # run stuck at "running" would stop the whole store from ever shrinking again.
+                # match.ts appends usage rows with appendFileSync and takes no lock, so a run that
+                # is still writing can extend a file between the read above and here; the archive
+                # covers the bytes the marker names and nothing past them, so unlink would destroy
+                # rows that exist in no archive. Either file is left where it is instead: replay
+                # skips its folded prefix and counts the tail, and a later pass folds the tail and
+                # deletes it. Not an error -- nothing failed and nothing was lost.
+                if _in_flight(runs_root, info.path.stem) or info.path.stat().st_size != info.size:
                     continue
                 info.path.unlink()
             except OSError as exc:

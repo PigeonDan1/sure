@@ -20,18 +20,29 @@ import {
 	LAST_UNIT as EVAL_LAST_UNIT,
 	findUnit as findEvalUnit,
 } from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
+import * as feedCheckpoints from "../../../../sure/skills/sure_feed/hooks/checkpoints.ts";
+import {
+	LAST_UNIT as FEED_LAST_UNIT,
+	findUnit as findFeedUnit,
+} from "../../../../sure/skills/sure_feed/hooks/state-machine.ts";
 import * as onboardCheckpoints from "../../../../sure/skills/sure_onboard/hooks/checkpoints.ts";
 import {
 	findUnit as findOnboardUnit,
 	LAST_UNIT as ONBOARD_LAST_UNIT,
 } from "../../../../sure/skills/sure_onboard/hooks/state-machine.ts";
+import * as transCheckpoints from "../../../../sure/skills/sure_trans/hooks/checkpoints.ts";
+import {
+	findUnit as findTransUnit,
+	LAST_UNIT as TRANS_LAST_UNIT,
+} from "../../../../sure/skills/sure_trans/hooks/state-machine.ts";
 import type { SureHookContext } from "../../src/core/sure/types.ts";
 
 // Checkpoint memory sub-object + hooks.ts skeleton (readMemory, runIdOf, gateDigest,
 // isExtractionGateExhausted). The fixtures below are private to this file; the other
 // memory suites (hooks-flow, onboard, eval) carry their own copies.
 
-type Skill = "sure_onboard" | "sure_eval";
+type Skill = "sure_onboard" | "sure_eval" | "sure_trans" | "sure_feed";
+const SKILLS: Skill[] = ["sure_onboard", "sure_eval", "sure_trans", "sure_feed"];
 
 const SKILLS_ROOT = resolve(__dirname, "../../../../sure/skills");
 
@@ -82,20 +93,45 @@ const SAMPLE_MEMORY: MemoryCheckpoint = {
 const CHECKPOINT_MODULES = {
 	sure_onboard: onboardCheckpoints,
 	sure_eval: evalCheckpoints,
+	sure_trans: transCheckpoints,
+	sure_feed: feedCheckpoints,
+} as const;
+const UNIT_FINDERS = {
+	sure_onboard: findOnboardUnit,
+	sure_eval: findEvalUnit,
+	sure_trans: findTransUnit,
+	sure_feed: findFeedUnit,
+} as const;
+const GATE_UNIT_IDS = {
+	sure_onboard: "build_env",
+	sure_eval: "smoke_test",
+	sure_trans: "validate_contract",
+	sure_feed: "match_task",
+} as const;
+const LAST_UNITS = {
+	sure_onboard: ONBOARD_LAST_UNIT,
+	sure_eval: EVAL_LAST_UNIT,
+	sure_trans: TRANS_LAST_UNIT,
+	sure_feed: FEED_LAST_UNIT,
 } as const;
 
 function unitFor(skill: Skill, id: string) {
-	const unit = skill === "sure_onboard" ? findOnboardUnit(id) : findEvalUnit(id);
+	const unit = UNIT_FINDERS[skill](id);
 	if (!unit) {
 		throw new Error(`fixture: unit ${id} not found in ${skill}`);
 	}
 	return unit;
 }
 
-describe.each<Skill>(["sure_onboard", "sure_eval"])("%s checkpoints carry the memory sub-object", (skill) => {
+/** sure_trans and sure_feed declare failedArtifactDigests as required; onboard and eval leave it optional. */
+function withDigests<T extends { failedArtifactDigests?: Record<string, string> }>(data: T) {
+	return { ...data, failedArtifactDigests: data.failedArtifactDigests ?? {} };
+}
+
+describe.each<Skill>(SKILLS)("%s checkpoints carry the memory sub-object", (skill) => {
 	const mod = CHECKPOINT_MODULES[skill];
-	const gateUnitId = skill === "sure_onboard" ? "build_env" : "smoke_test";
-	const lastUnit = skill === "sure_onboard" ? ONBOARD_LAST_UNIT : EVAL_LAST_UNIT;
+	const gateUnitId = GATE_UNIT_IDS[skill];
+	const lastUnit = LAST_UNITS[skill];
 
 	it("readCheckpoint reads every memory key back by type", () => {
 		const runDir = freshRunDir(`${skill}-read-memory`);
@@ -147,7 +183,13 @@ describe.each<Skill>(["sure_onboard", "sure_eval"])("%s checkpoints carry the me
 
 	it("advance carries memory unchanged to the next unit and to the terminal checkpoint", () => {
 		const unit = unitFor(skill, gateUnitId);
-		const current = { currentUnit: unit.id, completedUnits: [], retries: { [unit.id]: 1 }, memory: SAMPLE_MEMORY };
+		const current = {
+			currentUnit: unit.id,
+			completedUnits: [],
+			retries: { [unit.id]: 1 },
+			failedArtifactDigests: {},
+			memory: SAMPLE_MEMORY,
+		};
 		const next = mod.advance(unit, current);
 		expect(next?.data.currentUnit).not.toBe(unit.id);
 		expect(next?.data.memory).toBe(SAMPLE_MEMORY);
@@ -157,6 +199,7 @@ describe.each<Skill>(["sure_onboard", "sure_eval"])("%s checkpoints carry the me
 			currentUnit: lastUnit.id,
 			completedUnits: [],
 			retries: {},
+			failedArtifactDigests: {},
 			memory: SAMPLE_MEMORY,
 		});
 		expect(terminal?.data.currentUnit).toBe(lastUnit.id);
@@ -168,7 +211,7 @@ describe.each<Skill>(["sure_onboard", "sure_eval"])("%s checkpoints carry the me
 		const unit = unitFor(skill, gateUnitId);
 		const bumped = mod.bumpRetry(
 			unit,
-			{ currentUnit: unit.id, completedUnits: [], retries: {}, memory: SAMPLE_MEMORY },
+			{ currentUnit: unit.id, completedUnits: [], retries: {}, failedArtifactDigests: {}, memory: SAMPLE_MEMORY },
 			"deadbeef",
 		);
 		expect(bumped.data.retries[unit.id]).toBe(1);
@@ -182,10 +225,10 @@ describe.each<Skill>(["sure_onboard", "sure_eval"])("%s checkpoints carry the me
 		seedState(runDir, { currentUnit: unit.id, completedUnits: [], retries: {}, memory: SAMPLE_MEMORY });
 		const ctx = makeCtx(skill, runDir);
 		const first = mod.readCheckpoint(ctx);
-		const bumped = mod.bumpRetry(unit, first.data, "deadbeef");
+		const bumped = mod.bumpRetry(unit, withDigests(first.data), "deadbeef");
 		seedState(runDir, bumped.data);
 		const second = mod.readCheckpoint(ctx);
-		const advanced = mod.advance(unit, second.data);
+		const advanced = mod.advance(unit, withDigests(second.data));
 		seedState(runDir, advanced?.data);
 		const third = mod.readCheckpoint(ctx);
 		expect(third.data.completedUnits).toContain(unit.id);

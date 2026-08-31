@@ -680,7 +680,7 @@ describe("hooks.ts injectOnBlock", () => {
 		expect(r.diagnostics[0].message).toContain("index");
 	});
 
-	it("clears the unit's pending disputes when the index is gone, so nothing stale settles", () => {
+	it("clears the unit's pending disputes when the index is gone, so the entries settle as abandoned, not disputed", () => {
 		// pendingDisputed[unit] means "the LAST block's failure text still named these". A block
 		// that could not read the index named nothing; carrying the previous block's list forward
 		// would let settleOnTerminalFailure write disputed rows for entries this failure never
@@ -699,7 +699,9 @@ describe("hooks.ts injectOnBlock", () => {
 
 		const settled = settleOnTerminalFailure(f.env, { unitId: "build_env", memory: r.memory });
 		expect(settled.memory.pendingDisputed).toEqual({ validate_import: ["_shared/other"] });
-		expect(usageRows(f.memoryRoot).filter((row) => row.kind === "settle")).toEqual([]);
+		const rows = usageRows(f.memoryRoot).filter((row) => row.kind === "settle");
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ unit: "build_env", entry_id: ENTRY_ID, outcome: "abandoned" });
 	});
 });
 
@@ -808,6 +810,61 @@ describe("hooks.ts settlement", () => {
 		const again = settleOnTerminalFailure(f.env, { unitId: "build_env", memory: blocked.memory });
 		expect(again.memory).toEqual({});
 		expect(usageRows(f.memoryRoot)).toHaveLength(2);
+	});
+
+	it("settles entries the failure never named again as abandoned", () => {
+		// One block, so pendingDisputed is empty: without an abandoned row the entry stays
+		// "injected, never settled" forever and the cold ratio counts it as unused.
+		const f = fixture("settle-abandoned");
+		const memory = injected(f);
+		const r = settleOnTerminalFailure(f.env, { unitId: "build_env", memory });
+		expect(r.diagnostics).toEqual([]);
+		expect(r.memory).toEqual({});
+		const rows = usageRows(f.memoryRoot);
+		expect(rows).toHaveLength(2);
+		expect(rows[1]).toMatchObject({
+			kind: "settle",
+			unit: "build_env",
+			entry_id: ENTRY_ID,
+			outcome: "abandoned",
+		});
+		// Re-entry with the un-persisted memory: settledIds does not look at the outcome.
+		settleOnTerminalFailure(f.env, { unitId: "build_env", memory });
+		expect(usageRows(f.memoryRoot)).toHaveLength(2);
+	});
+
+	it("splits a terminal failure into disputed for what it still names and abandoned for the rest", () => {
+		const f = fixture("settle-split");
+		seedEvents(f.runDir);
+		const memory: MemoryCheckpoint = {
+			injected: { build_env: [ENTRY_ID, "_shared/other"] },
+			pendingDisputed: { build_env: [ENTRY_ID] },
+		};
+		const r = settleOnTerminalFailure(f.env, { unitId: "build_env", memory });
+		expect(r.memory).toEqual({});
+		const rows = usageRows(f.memoryRoot).filter((row) => row.kind === "settle");
+		expect(rows.map((row) => [row.entry_id, row.outcome])).toEqual([
+			[ENTRY_ID, "disputed"],
+			["_shared/other", "abandoned"],
+		]);
+	});
+
+	it("still settles useful_activated after an abandoned row, so a resumed run keeps its credit", () => {
+		// on_error abandons the stuck unit, then /sure_resume reuses the same run id and the
+		// same usage file: the abandoned row must not swallow the credit the retry earned.
+		const f = fixture("settle-abandoned-then-pass");
+		const memory = injected(f);
+		settleOnTerminalFailure(f.env, { unitId: "build_env", memory });
+		appendEvents(f.runDir, [
+			readTool(join(f.root, ENTRY_PATH)),
+			ev("tool_result", { toolName: "read", toolCallId: "r1", isError: false }),
+		]);
+		settleOnPass(f.env, { unitId: "build_env", memory });
+		const rows = usageRows(f.memoryRoot).filter((row) => row.kind === "settle");
+		expect(rows.map((row) => [row.entry_id, row.outcome])).toEqual([
+			[ENTRY_ID, "abandoned"],
+			[ENTRY_ID, "useful_activated"],
+		]);
 	});
 });
 
