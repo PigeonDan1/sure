@@ -205,8 +205,11 @@ describe("parseInitArgs", () => {
 
 describe("runSureInit", () => {
 	let tempDir: string;
+	let previousKimiApiKey: string | undefined;
 
 	beforeEach(() => {
+		previousKimiApiKey = process.env.KIMI_API_KEY;
+		delete process.env.KIMI_API_KEY;
 		tempDir = join(tmpdir(), `pi-sure-init-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 	});
@@ -214,6 +217,11 @@ describe("runSureInit", () => {
 	afterEach(() => {
 		if (existsSync(tempDir)) {
 			rmSync(tempDir, { recursive: true, force: true });
+		}
+		if (previousKimiApiKey === undefined) {
+			delete process.env.KIMI_API_KEY;
+		} else {
+			process.env.KIMI_API_KEY = previousKimiApiKey;
 		}
 		vi.unstubAllGlobals();
 	});
