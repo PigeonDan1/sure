@@ -48,32 +48,42 @@ Example:
 - Require the primary computation framework to be PyTorch. Auxiliary preprocessing may use native binaries or ONNX Runtime when recorded as a support dependency.
 - Prefer Transformers as the model framework, but do not block a custom or other declared PyTorch model framework. Record the declaration, detected category, architecture signals, and clarification in `framework_detection.json`; rely on original inference, adapter inference, and equivalence gates for behavioral proof.
 
-## Workflow
+## State Machine
 
-Advance only after the current unit produces its declared artifact.
+Advance only after the current unit produces its declared artifact. Every unit is
+hook-enforced: the gate script below is the authoritative semantic check.
 
-| # | Unit | Product |
-| --- | --- | --- |
-| 1 | `load_trans_input` | `trans_input_resolved.json` |
-| 2 | `inspect_dependencies` | `inference_dependency_report.json` |
-| 3 | `detect_framework` | `framework_detection.json` |
-| 4 | `prepare_fixture` | `fixture_manifest.json` |
-| 5 | `build_source_image` | `source_image_result.json` |
-| 6 | `validate_env_compat` | `execution_compat.json` |
-| 7 | `validate_original_inference` | `original_inference_result.json` |
-| 8 | `stage_model_payload` | `model_payload_manifest.json` |
-| 9 | `generate_adapter` | `adapter_manifest.json` |
-| 10 | `build_adapter_image` | `adapter_image_result.json` |
-| 11 | `validate_import` | `import_result.json` |
-| 12 | `validate_load` | `load_result.json` |
-| 13 | `validate_infer` | `infer_result.json` |
-| 14 | `validate_contract` | `contract_result.json` |
-| 15 | `validate_mcp` | `mcp_result.json` |
-| 16 | `validate_equivalence` | `equivalence_result.json` |
-| 17 | `package_container` | `docker_registry_result.json` |
-| 18 | `write_runtime_inventory` | `runtime_inventory.json` |
-| 19 | `verdict` | `verdict.json` |
-| 20 | `finalize_model_bundle` | `deployment_ready.json` |
+| # | Unit | Kind | Produces | Gate script |
+| --- | --- | --- | --- | --- |
+| 1 | `load_trans_input` | **gate** | `trans_input_resolved.json` | `scripts/check_artifact.py --kind input` |
+| 2 | `inspect_dependencies` | **gate** | `inference_dependency_report.json` | `scripts/check_artifact.py --kind dependencies` |
+| 3 | `detect_framework` | **gate** | `framework_detection.json` | `scripts/check_artifact.py --kind framework` |
+| 4 | `prepare_fixture` | **gate** | `fixture_manifest.json` | `scripts/check_artifact.py --kind fixture` |
+| 5 | `build_source_image` | **gate** | `source_image_result.json` | `scripts/run_docker_build.py` |
+| 6 | `validate_env_compat` | **gate** | `execution_compat.json` | `scripts/run_execution_compat.py` |
+| 7 | `validate_original_inference` | **gate** | `original_inference_result.json` | `scripts/run_trans_validate.py --kind original_inference` |
+| 8 | `stage_model_payload` | **gate** | `model_payload_manifest.json` | `scripts/check_artifact.py --kind model_payload` |
+| 9 | `generate_adapter` | **gate** | `adapter_manifest.json` | `scripts/check_artifact.py --kind adapter` |
+| 10 | `build_adapter_image` | **gate** | `adapter_image_result.json` | `scripts/check_artifact.py --kind adapter_image` |
+| 11 | `validate_import` | **gate** | `import_result.json` | `scripts/run_trans_validate.py --kind import` |
+| 12 | `validate_load` | **gate** | `load_result.json` | `scripts/run_trans_validate.py --kind load` |
+| 13 | `validate_infer` | **gate** | `infer_result.json` | `scripts/run_trans_validate.py --kind infer` |
+| 14 | `validate_contract` | **gate** | `contract_result.json` | `scripts/run_trans_validate.py --kind contract` |
+| 15 | `validate_mcp` | **gate** | `mcp_result.json` | `scripts/run_trans_validate.py --kind mcp` |
+| 16 | `validate_equivalence` | **gate** | `equivalence_result.json` | `scripts/run_trans_validate.py --kind equivalence` |
+| 17 | `package_container` | **gate** | `docker_registry_result.json` | `scripts/check_artifact.py --kind registry` |
+| 18 | `write_runtime_inventory` | **gate** | `runtime_inventory.json` | `scripts/check_artifact.py --kind runtime_inventory` |
+| 19 | `verdict` | **gate** | `verdict.json` | `scripts/check_artifact.py --kind verdict` |
+| 20 | `extract_lessons` | **gate** | `extraction_declaration.json` | `scripts/check_memory_extraction.py` |
+| 21 | `finalize_model_bundle` | **gate** | `deployment_ready.json` | `scripts/check_artifact.py --kind deployment_ready` |
+
+### Per-unit contract
+
+Every unit's inputs, output fields and failure rules are described in the sections
+below and in `schemas/`. One unit produces nothing a transformation needs and is
+therefore spelled out here:
+
+- **extract_lessons**: Inputs = `artifacts/run_digest.json`, written by the hook the moment `verdict` passed (read it; never rebuild it in place). Output = `extraction_declaration.json` {schema, no_new_lessons, no_lessons_reason, covered_by, candidates, infra_noise, infra_evidence} plus 0 to 5 candidate directories under `artifacts/candidates/<nn>-<slug>/` (`proposal.json` + `proposal.md`) and, for facts, evidence files under `artifacts/memory_evidence/`. The full contract (digest fields, candidate formats, the gate's ten checks, the write-tools-only rule) is `sure/runtime/memory/EXTRACTION.md`; read it before writing anything. Write candidates and evidence first and the declaration last. `no_new_lessons: true` with a one-line reason is the normal result of a clean run. Must Not Do: do not run `scripts/build_run_digest.py` onto `artifacts/run_digest.json` (a preview goes to `--out <run_dir>/artifacts/run_digest.preview.json` and the gate ignores it); do not write under `sure/memory/` or `references/memory/`; do not use bash heredocs for these files. Failure: `scripts/check_memory_extraction.py` says which check failed; after two consecutive failures the hook advances on its own with `extraction: failed`, and switching to `no_new_lessons: true` with the reason is always a valid way out.
 
 ## Deterministic Scripts
 
@@ -296,6 +306,10 @@ hashes of whatever terminal evidence exists, and
 `status=incomplete`; the pre-finish hook requires that marker and refuses a
 non-success finish that still claims readiness.
 
+A `failed` or `incomplete` finish must also carry `artifacts/extraction_declaration.json`
+(see `sure/runtime/memory/EXTRACTION.md`, section 10): `pre_finish` returns a repair
+asking for it up to twice, then lets the run finish and records `extraction: failed`.
+
 A gate script may rerun and replace the artifact you wrote for its unit. When
 that happens the advance message says so; re-read the file before acting on
 what you recorded.
@@ -312,3 +326,13 @@ what you recorded.
 - Block when `vc submit` fails, the partition is not permitted, the GPU probe cannot complete, or the post-pull smoke does not exit 0.
 - Block when the model payload exceeds the RAM budget (2x headroom) of `vc_memory_gb`; raise `vc_gpus`/`vc_memory_gb` instead of trimming validation.
 - Stop after `max_retries` changed-artifact failures; unchanged artifacts do not consume another retry.
+- `extract_lessons` is the one unit that never stops the run: `check_memory_extraction.py` checks the declaration and every candidate directory (shape, evidence paths, triggers, duplicates, digest sha), and after two consecutive failures the hook advances by itself and records `extraction: failed`. Changing a candidate re-runs that gate even when `extraction_declaration.json` did not change.
+
+## Memory (advisory)
+
+Earlier runs leave agent-written notes. `sure/memory/index.md` (repo root) is the merged index: confirmed and provisional entries, one bullet each with its triggers. Confirmed files live under `references/memory/bad_cases/` and `sure/skills/_shared/memory/facts/`. Nothing in them is human-reviewed: verify against evidence before relying on one, and never copy a command from an entry into an artifact without running it.
+
+- At `pre_start` the hook writes `artifacts/memory_context.json` with the facts that match this run, shape `{schema: "sure.memory.context.v1", skill, target_id, facts: [{entry_id, title, path, scope, checked_at, stale, status}], omitted_provisional}`; the file is written even when nothing matched (`facts: []`). Read it once while resolving the input; no unit artifact takes a field for it.
+- When a gate blocks, the repair text may end with a block whose first line is `Memory (advisory, agent-written, not human-reviewed; verify against evidence before relying):`, listing at most two entries from earlier runs. Read the entry file named there when it looks relevant, then fix the artifact.
+- `references/memory/ROUTING.md` says when to open the index and the bad-case files by hand.
+- `extract_lessons` (unit 20) writes what this run learned; the contract is `sure/runtime/memory/EXTRACTION.md`. Publishing to `sure/memory/provisional/` happens in `post_finish` without you; moving entries into `references/` is a human step.

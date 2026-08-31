@@ -134,6 +134,12 @@ class PromoteBase(unittest.TestCase):
         self.usage_row(run_id, {"kind": "settle", "run_id": run_id, "skill": "sure_onboard", "unit": unit,
                                 "entry_id": entry_id, "outcome": "disputed", "at": at})
 
+    def abandoned(self, entry_id: str, run_id: str, at: str, unit: str = "build_env") -> None:
+        self.usage_row(run_id, {"kind": "inject", "run_id": run_id, "skill": "sure_onboard", "unit": unit, "attempt": 1,
+                                "events_cutoff": 10, "entries": [{"entry_id": entry_id, "shared": False}], "at": at})
+        self.usage_row(run_id, {"kind": "settle", "run_id": run_id, "skill": "sure_onboard", "unit": unit,
+                                "entry_id": entry_id, "outcome": "abandoned", "at": at})
+
     def meta(self, entry_id: str = X) -> dict:
         return json.loads(promote.meta_path(self.root, entry_id).read_text(encoding="utf-8"))
 
@@ -176,6 +182,16 @@ class PromotionTests(PromoteBase):
         self.assertEqual(decisions[0]["entry_id"], X)
         self.assertEqual(decisions[0]["by"], "auto")
         self.assertEqual(decisions[0]["useful_runs"], ["run-a", "run-b"])
+
+    def test_an_abandoned_settle_does_not_block_auto_promotion(self) -> None:
+        # A run that gave up on an unrelated unit must not cost a good entry its promotion.
+        self.write_provisional()
+        self.useful(X, "run-a", "2026-08-18T10:00:00Z")
+        self.useful(X, "run-b", "2026-08-19T10:00:00Z")
+        self.abandoned(X, "run-c", "2026-08-20T10:00:00Z")
+        self.assertEqual([r["action"] for r in promote.promote_all(self.repo, config=CONFIG)], ["promote"])
+        self.assertEqual(self.meta()["status"], "confirmed")
+        self.assertEqual(self.meta()["confirmed"]["by"], "auto")
 
     def test_two_activated_from_the_same_run_is_not_enough(self) -> None:
         self.write_provisional()
@@ -264,6 +280,18 @@ class DemotionTests(PromoteBase):
         self.assertFalse(promote.outbox_entry(self.root, X).parent.exists())
         self.assertEqual(self.decisions()[0]["previous_confirmed"], {"by": "auto", "date": "2026-08-18"})
         self.assertEqual(self.decisions()[0]["to_status"], "provisional")
+
+    def test_two_abandons_do_not_demote_a_confirmed_entry(self) -> None:
+        # The pair of test_two_disputes_in_a_row_demote_a_confirmed_entry: two runs that gave up
+        # look nothing like two runs that hit the same wall again.
+        self.write_provisional(status="confirmed")
+        paths.atomic_write_text(promote.outbox_entry(self.root, X), entry_text("confirmed"))
+        self.abandoned(X, "run-b", "2026-08-19T10:00:00Z")
+        self.abandoned(X, "run-c", "2026-08-20T10:00:00Z")
+        self.assertEqual(promote.promote_all(self.repo, config=CONFIG), [])
+        self.assertEqual(self.meta()["status"], "confirmed")
+        self.assertEqual(self.meta()["disputed"], 0)
+        self.assertEqual([r["action"] for r in self.decisions()], [])
 
     def test_a_useful_hit_between_disputes_blocks_demotion(self) -> None:
         self.write_provisional(status="confirmed")

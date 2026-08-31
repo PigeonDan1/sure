@@ -87,7 +87,7 @@ export interface MemoryIndexEntry {
 	useful_unattributed: number;
 	injections: number;
 	disputed: number;
-	/** "legacy" for the 17 old entries, otherwise the Added date (YYYY-MM-DD). */
+	/** "legacy" for the old entries, otherwise the Added date (YYYY-MM-DD). */
 	created: string | null;
 	checked_at: string | null;
 	stale: boolean;

@@ -1121,6 +1121,17 @@ class StatsTests(CliTestBase):
         self.assertEqual((row[2], row[4]), ("3", "1"))
         self.assertIn("cold ratio: 5/7", out)  # COLD_ID has a settle now, so it is not cold
 
+    def test_an_abandoned_settle_counts_as_settled_for_cold_ratio(self) -> None:
+        paths.append_jsonl(self.memory / "usage" / f"{RUN2}.jsonl",
+                           {"kind": "settle", "run_id": RUN2, "skill": "sure_eval", "unit": "smoke_test",
+                            "entry_id": COLD_ID, "outcome": "abandoned", "at": "2026-08-12T12:40:00Z"}, 4096)
+        code, out, err = self.run_cli("stats")
+        self.assertEqual(code, 0, err)
+        self.assertIn("cold ratio: 5/7", out)  # injected and given up on is still not cold
+        # the new column goes after disputed so every other position index stays put
+        self.assertEqual(self.row_of(out, "entry_id").split()[6:8], ["disputed", "abandoned"])
+        self.assertEqual(self.row_of(out, COLD_ID).split()[6:8], ["0", "1"])
+
     def test_stats_since_excludes_the_usage_archive(self) -> None:
         # deliberate: the archive keeps totals, not per-row dates, so no window can say what falls inside it
         self.write_cold_archive()

@@ -290,6 +290,15 @@ class BuildIndexTests(IndexFixtureCase):
         self.assertNotIn("sure_onboard/no-publish-row", ids)          # no publish row in decisions.jsonl
         self.assertNotIn("sure_onboard/rejected-one", ids)            # meta says rejected
 
+    def test_an_orphan_meta_does_not_resurrect_a_deleted_entry(self) -> None:
+        # Deleting a references entry leaves its meta behind (the instance tree is not in the same
+        # repo); meta is a source of the hash and an overlay, never a source of rows.
+        (self.repo / "sure/skills/sure_eval/references/memory/bad_cases/job-log-missing.md").unlink()
+        self.assertTrue((self.root / "meta" / "sure_eval" / "job-log-missing.json").is_file())
+        idx = self.build()
+        self.assertNotIn("sure_eval/job-log-missing", entry_map(idx))
+        self.assertIn("sure_onboard/no-kernel-image", entry_map(idx))
+
     def test_a_sha_mismatch_is_counted_and_reported_not_silently_dropped(self) -> None:
         idx = self.build()
         self.assertNotIn("sure_onboard/sha-mismatch", entry_map(idx))
@@ -644,14 +653,14 @@ class ReadmeReconcileTests(IndexFixtureCase):
         self.assertNotIn("on the eval queue", self.readme().read_text(encoding="utf-8"))
 
     def test_real_onboard_readme_is_unchanged(self) -> None:
-        # The 17 legacy rows in the real README stay byte for byte, whether the files have headers yet or not.
+        # The 5 legacy rows in the real README stay byte for byte, whether the files have headers yet or not.
         real_dir = REPO_ROOT / "sure" / "skills" / "sure_onboard" / "references" / "memory" / "bad_cases"
         repo = Path(self.tmp.name) / "real"
         target = repo / "sure" / "skills" / "sure_onboard" / "references" / "memory" / "bad_cases"
         shutil.copytree(real_dir, target)
         idx = index.build_index(repo, config=CONFIG, units=UNITS)
         onboard = [e for e in idx["entries"] if e["target_skill"] == "sure_onboard"]
-        self.assertEqual(len(onboard), 17)
+        self.assertEqual(len(onboard), 5)
         self.assertTrue(all(e["legacy"] for e in onboard))
         self.assertTrue(all(e["status"] == "confirmed" for e in onboard))
         before = (target / "README.md").read_bytes()

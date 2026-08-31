@@ -20,6 +20,10 @@ import type { Unit } from "./checkpoints.ts";
 //     present for handoff).
 //     No in-process gateCheck is kept — the python scripts are the sole authority,
 //     so there is no duplicated === true vs truthy logic.
+//   - extract_lessons is the memory system's own unit (spec 4.1): its gate is the
+//     shared check_memory_extraction.py, and it is the only unit that declares
+//     gateInputs, because the agent's candidate and evidence trees are part of what
+//     the gate reads.
 //
 // Source of truth: xforge_sure_bridge/AGENTS.md (+ the renamed sure_feed pkg).
 
@@ -86,6 +90,26 @@ export const MODEL_FEED_UNITS: Unit[] = [
 		schemaRef: "rank_select_result.schema.json",
 		requiredFields: ["selected"],
 		gateScript: "check_rank_select.py",
+	},
+	{
+		id: "extract_lessons",
+		label: "Extract lessons",
+		kind: "gate",
+		produces: "extraction_declaration.json",
+		schemaRef: "extraction_declaration.schema.json",
+		requiredFields: [
+			"schema",
+			"no_new_lessons",
+			"no_lessons_reason",
+			"covered_by",
+			"candidates",
+			"infra_noise",
+			"infra_evidence",
+		],
+		allowedValues: { schema: ["sure.memory.extraction.v2"] },
+		gateScript: "check_memory_extraction.py",
+		gateInputs: ["candidates", "memory_evidence"],
+		ownedScripts: ["build_run_digest.py"],
 	},
 	{
 		id: "emit_handoff_manifest",

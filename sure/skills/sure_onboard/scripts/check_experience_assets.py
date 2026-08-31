@@ -37,7 +37,6 @@ CHECKS: dict[str, list[str]] = {
         "sa_asr__cpwer",
         "prompt_norm",
         "classify",
-        "kimi_audio_leading_bang_token.md",
         "sacrebleu",
     ],
     "task_playbooks/TTS.md": [
@@ -66,7 +65,6 @@ CHECKS: dict[str, list[str]] = {
     "contracts/minimal_validation.md": [
         "sample_output.json",
         "explicit pass signal",
-        "docker_smoke_false_pass.md",
     ],
     "templates/validate_metric_enrichment.md": [
         "metric_reports",

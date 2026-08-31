@@ -284,6 +284,32 @@ export const TRANS_UNITS: Unit[] = [
 		...checked("verdict"),
 		ownedScripts: ["write_verdict.py"],
 	},
+	// Memory extraction (spec §4.1). Sits after the business conclusion and
+	// before the closing unit, so every run that reaches sure_finish passes
+	// through it. The gate reads candidates/ and memory_evidence/ next to the
+	// declaration, hence gateInputs (the hooks hash them together with produces
+	// so an edited candidate re-runs the gate). build_run_digest.py is only a
+	// --out preview helper: the gate trusts the digest the hook built on entry.
+	{
+		id: "extract_lessons",
+		label: "Extract lessons",
+		kind: "gate",
+		produces: "extraction_declaration.json",
+		schemaRef: "extraction_declaration.schema.json",
+		requiredFields: [
+			"schema",
+			"no_new_lessons",
+			"no_lessons_reason",
+			"covered_by",
+			"candidates",
+			"infra_noise",
+			"infra_evidence",
+		],
+		allowedValues: { schema: ["sure.memory.extraction.v2"] },
+		gateScript: "check_memory_extraction.py",
+		gateInputs: ["candidates", "memory_evidence"],
+		ownedScripts: ["build_run_digest.py"],
+	},
 	{
 		id: "finalize_model_bundle",
 		label: "Seal Eval-ready model bundle",

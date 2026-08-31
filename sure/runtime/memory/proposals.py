@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from itertools import combinations
 from pathlib import Path, PurePath
-from typing import Callable
+from typing import Callable, Iterable
 
 try:
     from . import digest as run_digest, paths
@@ -121,7 +121,7 @@ class GateContext:
     checkpoint_digest_sha: str | None  # checkpoint.memory.digestSha256 (rule 9, part B)
     declaration: dict
     digest: dict | None
-    trigger_texts: list[str]         # this run's gate repair texts (unclipped when events.jsonl still has them) + log tails, for rule 4
+    trigger_texts: list[str]         # this run's gate repair texts (unclipped when events.jsonl still has them) + log tails + prior runs' gate repairs, for rule 4
     candidates: list[Candidate]
     load_failures: list[GateFailure]
 
@@ -136,6 +136,13 @@ class GateContext:
         target = run.get("target") if isinstance(run, dict) else None
         value = target.get("id") if isinstance(target, dict) else None
         return value if isinstance(value, str) else ""
+
+    @property
+    def run_skill(self) -> str | None:
+        """The skill the digest says this run is; None when there is no usable digest."""
+        run = self.digest.get("run") if isinstance(self.digest, dict) else None
+        value = run.get("skill") if isinstance(run, dict) else None
+        return value if isinstance(value, str) and value else None
 
     @property
     def digest_error(self) -> str | None:
@@ -624,15 +631,18 @@ def trigger_problem(trigger: str, config: dict) -> str | None:
     return None
 
 
-def is_generic_trigger(trigger: str, *, run_id: str, target_id: str) -> bool:
-    """A trigger that could appear again in another run: no run id, no target id, no
-    .sure/runs/ path, not a bare number or hash once punctuation is removed, no ISO date."""
+def is_generic_trigger(trigger: str, *, run_id: str, target_id: str, exclude: Iterable[str] = ()) -> bool:
+    """A trigger that could appear again in another run: no run id, no target id, none of the
+    `exclude` strings (the callers pass the prior run ids a trigger may have been copied out of),
+    no .sure/runs/ path, not a bare number or hash once punctuation is removed, no ISO date."""
     t = trigger.strip().lower()
     if not t or ".sure/runs/" in t:
         return False
     if run_id and run_id.lower() in t:
         return False
     if target_id and target_id.lower() in t:
+        return False
+    if any(other and other.lower() in t for other in exclude):
         return False
     if _ISO_TS_RE.search(t):
         return False
@@ -665,6 +675,31 @@ def _digest_unit_texts(digest: dict | None, *, repairs: bool, log_tail: bool) ->
 def digest_texts(digest: dict | None) -> list[str]:
     """Every gate repair text and log tail line in the digest, in document order."""
     return _digest_unit_texts(digest, repairs=True, log_tail=True)
+
+
+def _prior_run_rows(digest: dict | None) -> list[dict]:
+    rows = digest.get("prior_runs") if isinstance(digest, dict) else None
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def prior_run_ids(digest: dict | None) -> list[str]:
+    """The run ids of the digest's prior_runs, for is_generic_trigger's exclude list."""
+    return [row["run_id"] for row in _prior_run_rows(digest) if isinstance(row.get("run_id"), str)]
+
+
+def prior_run_texts(digest: dict | None) -> list[str]:
+    """The last_repair of each prior run a GATE wrote (last_repair_source "gate"), in digest order.
+
+    A unit that runs after extract_lessons -- sure_eval's run_report, sure_onboard's
+    finalize_model_bundle -- can only be blocked after this run's digest already exists, so its gate
+    text never reaches units[] and no second extraction window opens. The next run of the same skill
+    on the same target carries it in prior_runs[].last_repair, and that is the only place it is.
+
+    Source "agent" is skipped: that text is run.json errorSummary, the previous agent's own sentence
+    from sure_finish, and rule 4 asks for something a gate said, not something an agent wrote."""
+    return [row["last_repair"] for row in _prior_run_rows(digest)
+            if row.get("last_repair_source") == "gate"
+            and isinstance(row.get("last_repair"), str) and row["last_repair"].strip()]
 
 
 def repair_texts_from_events(run_dir: Path, digest: dict | None, config: dict) -> list[str] | None:
@@ -711,15 +746,18 @@ def repair_texts_from_events(run_dir: Path, digest: dict | None, config: dict) -
 
 def trigger_texts(run_dir: Path, digest: dict | None, config: dict) -> list[str]:
     """The texts a trigger counts as observed in: this run's gate repair texts, unclipped when
-    events.jsonl can still supply them, plus the digest's log tail lines (already whole lines)."""
+    events.jsonl can still supply them, plus the digest's log tail lines (already whole lines) and
+    the gate repair of every prior run in the digest (the only channel a unit that runs after
+    extract_lessons has; see prior_run_texts)."""
+    prior = prior_run_texts(digest)
     full = repair_texts_from_events(run_dir, digest, config)
     if full is None or (not full and _digest_unit_texts(digest, repairs=True, log_tail=False)):
         # events.jsonl is unusable, or it disagrees with the digest about whether this run produced
         # a repair at all -- which is what a digest built by another checkout's digest.py looks like
         # when the event shape has moved on. Believe the digest then: replacing its repairs with an
         # empty list would fail triggers the check accepted before this ever read events.
-        return digest_texts(digest)
-    return full + _digest_unit_texts(digest, repairs=False, log_tail=True)
+        return digest_texts(digest) + prior
+    return full + _digest_unit_texts(digest, repairs=False, log_tail=True) + prior
 
 
 # --- small value checks used by rule 1 ---------------------------------------------------
@@ -844,6 +882,19 @@ def _proposal_shape(cand: Candidate, ctx: GateContext) -> list[GateFailure]:
                 fail(f"cell.component {component!r} must be a {target_skill} unit id from units.json")
             elif not unit_ids and component != FACT_COMPONENT:
                 fail(f"cell.component {component!r} must be '_' ({target_skill} has no state machine)")
+            elif (target_skill == ctx.run_skill and component != FACT_COMPONENT
+                  and component in (_digest_units(ctx.digest) or {}) and component not in claim_units(p)):
+                # match.ts filters bad_cases on component === unit with no fallback, so a component
+                # no claim names files the entry on a cell it was never learned on: it is offered
+                # where the lesson does not apply and missing where it does. Only units this run
+                # walked are bound: rule 3 forbids claiming a unit the digest does not list, and a
+                # bad_case filed against another skill has nothing in this digest to claim either.
+                # Ceiling: a claim on any listed unit is copyable straight out of the digest, so
+                # this catches a cell that disagrees with the candidate's own claims, not one that
+                # is wrong about both. Binding a trigger to the unit that emitted it needs the
+                # per-unit attribution rule 4 does not have.
+                fail(f"cell.component {component!r} is not named by any claim; a bad_case is filed on a unit its "
+                     f"own claims describe (claims name {sorted(claim_units(p))})")
         if cause not in cfg["cause_enum"]:
             fail(f"cell.cause {cause!r} must be one of {cfg['cause_enum']}")
         elif etype == "fact" and cause != FACT_CAUSE:
@@ -1016,7 +1067,11 @@ def _no_trigger_failure(cid: str, etype: str) -> list[GateFailure]:
 def _bad_case_trigger_failures(ctx: GateContext, cid: str, triggers: list[str]) -> list[GateFailure]:
     if not any(t.strip() for t in triggers):
         return _no_trigger_failure(cid, "bad_case")
-    generic = [t for t in triggers if is_generic_trigger(t, run_id=ctx.run_id, target_id=ctx.target_id)]
+    # A prior run's id is excluded like this run's: a trigger copied out of prior_runs[].last_repair
+    # with the old id still in it passes hook_trigger (same texts) and then never matches again,
+    # because match.ts weighs it against a future run's texts, where that id does not appear.
+    generic = [t for t in triggers if is_generic_trigger(t, run_id=ctx.run_id, target_id=ctx.target_id,
+                                                         exclude=prior_run_ids(ctx.digest))]
     observed = [t for t in triggers if observed_in(t, ctx.trigger_texts)]
     # One trigger has to satisfy both: reusable text AND seen in this run. Judging the two
     # separately would accept "generic but never seen" next to "seen but carries the run id".
@@ -1024,10 +1079,11 @@ def _bad_case_trigger_failures(ctx: GateContext, cid: str, triggers: list[str]) 
     if reusable:
         return []
     if not generic:
-        why = ("every trigger contains run-specific text (the run id, the target id, a .sure/runs/ path, "
-               "a bare number or hash, or a timestamp)")
+        why = ("every trigger contains run-specific text (the run id, a prior run's id, the target id, a "
+               ".sure/runs/ path, a bare number or hash, or a timestamp)")
     elif not observed:
-        why = "no trigger appears verbatim (case-insensitive) in this run's gate repair texts or log tails"
+        why = ("no trigger appears verbatim (case-insensitive) in this run's gate repair texts or log tails, "
+               "or a prior run's gate repair (prior_runs[].last_repair, source \"gate\")")
         if ctx.digest_error is not None:
             why += f" ({ctx.digest_error})"
     else:
@@ -1236,7 +1292,8 @@ def format_repair(failures: list[GateFailure]) -> str:
     if any(f.rule == 4 for f in failures):
         lines.append(
             "At least one trigger must be a string that would appear verbatim if the same failure happened again: "
-            "found in this run's gate repair text or log tail, without the run id, target id, timestamps or bare numbers."
+            "found in this run's gate repair text or log tail, or in a prior run's gate repair, without the run id, "
+            "a prior run's id, target id, timestamps or bare numbers."
         )
     lines.append(
         "Rule numbers follow sure/runtime/memory/EXTRACTION.md. A candidate that cannot pass may be removed; "
@@ -1375,6 +1432,13 @@ def _cell_of(proposal: dict) -> tuple[str | None, str | None]:
         return None, None
     component, cause = cell.get("component"), cell.get("cause")
     return (component if isinstance(component, str) else None, cause if isinstance(cause, str) else None)
+
+
+def claim_units(proposal: dict) -> set[str]:
+    """The units claims[] names. Rule 3 checks every one of them against the digest, so unlike
+    cell.component these are not free text. publish.py re-checks the cell binding with this too."""
+    claims = proposal.get("claims")
+    return {c["unit"] for c in claims if isinstance(c, dict) and isinstance(c.get("unit"), str)} if isinstance(claims, list) else set()
 
 
 # --- rule 2: evidence ---------------------------------------------------------------

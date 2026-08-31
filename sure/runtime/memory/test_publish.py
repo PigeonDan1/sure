@@ -132,7 +132,7 @@ class PublishFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name) / "repo"
-        for skill in ("sure_onboard", "sure_eval", "sure_feed", "sure_reval"):
+        for skill in ("sure_onboard", "sure_eval", "sure_trans", "sure_feed", "sure_reval"):
             (self.repo / "sure" / "skills" / skill / "references" / "memory" / "bad_cases").mkdir(parents=True)
         (self.repo / "sure" / "skills" / "_shared" / "memory" / "facts").mkdir(parents=True)
         self.model_dir = self.repo / "sure" / "models" / MODEL_NAME
@@ -334,6 +334,22 @@ class PublishAddTests(PublishFixture):
         entry_id = self.publish().published[0]
         self.assertEqual(self.meta(entry_id)["hook_trigger"], [buried])
 
+    def test_hook_trigger_keeps_a_trigger_only_a_prior_gate_repair_matched(self) -> None:
+        # rule 4 now accepts a trigger seen only in a prior run's gate repair (the one path a unit
+        # that runs after extract_lessons has); hook_trigger reads the same texts or the entry is
+        # published and can never fire.
+        triggers = ["no kernel image is available", "run report conflicts with execution_result.json"]
+        digest = copy.deepcopy(DIGEST)
+        digest["prior_runs"] = [{
+            "run_id": "run-20260817-def456", "status": "success", "failed_unit": None, "finished_at": None,
+            "last_repair": 'successful run report conflicts with execution_result.json job_status "FAILED"',
+            "last_repair_source": "gate", "candidates": [],
+        }]
+        self.build_run([candidate(trigger=triggers)])
+        write_json(self.art / "run_digest.json", digest)
+        entry_id = self.publish().published[0]
+        self.assertEqual(self.meta(entry_id)["hook_trigger"], triggers)
+
     def test_hook_trigger_for_fact_is_every_trigger_even_when_unobserved(self) -> None:
         fact = fact_candidate()
         fact["proposal"]["trigger"] = ["openbench kills them at 350 seconds"]
@@ -390,9 +406,30 @@ class PublishAddTests(PublishFixture):
             with self.subTest(component=component):
                 self.tearDown()
                 self.setUp()
-                self.build_run([candidate(component=component)])
+                # the default claims already name build_env; validate_import needs its own, and the
+                # digest gives it attempts 1 / passed
+                over = {} if component == "build_env" else {
+                    "claims": [{"kind": "unit_result", "unit": "validate_import", "attempt": 1, "status": "passed"}]}
+                self.build_run([candidate(component=component, **over)])
                 entry_id = self.publish().published[0]
                 self.assertIs(self.meta(entry_id)["fix_exercised"], expected)
+
+    def test_publish_refuses_a_component_no_claim_names(self) -> None:
+        # The gate checks this too, but candidate files sit on disk between the gate and
+        # post_finish; validate_import is a unit of this digest, so the binding applies.
+        self.build_run([candidate(component="validate_import")])
+        report = self.publish()
+        self.assertEqual(report.published, [])
+        self.assertEqual(len(report.errors), 1)
+        self.assertIn("is not named by any claim", report.errors[0])
+
+    def test_publish_keeps_a_candidate_on_a_unit_outside_this_digest(self) -> None:
+        # The other side of the same boundary: fetch_weights is a sure_onboard unit but not one
+        # this run walked, so rule 3 leaves its claims empty and the binding must not ask for one.
+        self.build_run([candidate(component="fetch_weights", claims=[])])
+        report = self.publish()
+        self.assertEqual(report.errors, [])
+        self.assertEqual(len(report.published), 1)
 
     def test_decisions_gets_one_publish_row(self) -> None:
         self.build_run()
@@ -835,6 +872,20 @@ class MainTests(PublishFixture):
         self.assertEqual(len(list((self.root / "digests").glob("*.json"))), 2)
         self.assertTrue((self.root / "digests" / f"{RUN_ID}.json").is_file())
 
+    def test_main_passes_the_runs_root_so_a_run_still_in_flight_is_kept(self) -> None:
+        # The wiring, not just usage.prune_usage's new parameter: .sure/runs sits beside this
+        # run's own directory and main is the only caller that knows where that is.
+        self.build_run()
+        self.seed_usage_runs(ENTRY_ID, count=10)
+        write_json(self.run_dir.parent / "run-05" / "run.json", {"status": "running"})
+        config = dict(self.config)
+        config["usage_retain_runs"] = 4
+        with mock.patch.object(publish.paths, "load_config", return_value=config):
+            code, summary, err = self.run_main("--no-promote")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(summary["pruned"]["usage"], 5)  # six with nothing in flight
+        self.assertTrue((self.root / "usage" / "run-05.jsonl").is_file())
+
     def test_a_prune_failure_is_reported_without_failing_the_run_or_leaking_a_path(self) -> None:
         # Retention is housekeeping. A store it could not trim is worth saying, but the run's
         # candidates published fine and post_finish must not read that as a publish failure.
@@ -849,7 +900,7 @@ class MainTests(PublishFixture):
         self.assertNotIn(secret, err)
 
     def test_wrapper_scripts_forward_to_publish_main(self) -> None:
-        for skill in ("sure_onboard", "sure_eval"):
+        for skill in ("sure_onboard", "sure_eval", "sure_trans", "sure_feed"):
             with self.subTest(skill=skill):
                 wrapper = REPO_ROOT / "sure" / "skills" / skill / "scripts" / "publish_memory.py"
                 proc = subprocess.run([sys.executable, str(wrapper), "--help"], capture_output=True, text=True, check=False)
@@ -925,6 +976,16 @@ class PromotionSurvivesRetentionTests(PublishFixture):
         self.assertEqual(meta["useful_activated"], 2)
         self.assertEqual(meta["useful_runs"], ["run-00", "run-01"])
         self.assertTrue((self.root / "outbox" / "sure_onboard" / SLUG / "entry.md").is_file())
+
+    def test_a_run_in_flight_keeps_the_inject_row_its_settle_will_need(self) -> None:
+        # hooks.ts settleOnPass reads events_cutoff off that inject row and writes nothing at all
+        # without it, while settleOnTerminalFailure needs no cutoff and still writes disputed.
+        # Pruning a live run therefore drops only the benefit, so the row has to stay.
+        self.earn_a_promotion()
+        write_json(self.run_dir.parent / "run-00" / "run.json", {"status": "running"})
+        report = usage.prune_usage(self.root, retain=4, runs_root=self.run_dir.parent)
+        self.assertNotIn("run-00", report.pruned)
+        self.assertTrue(any(row.get("kind") == "inject" for row in usage.load_run_usage(self.root, "run-00")))
 
     def test_a_useful_row_landing_between_the_fold_and_the_delete_still_promotes(self) -> None:
         # The one window in which a prune could still cost a promotion: match.ts appends usage

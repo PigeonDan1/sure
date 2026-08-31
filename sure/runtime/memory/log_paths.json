@@ -7,6 +7,18 @@
     "validate_infer": ["artifact:infer_result.json", "{run_dir}/artifacts/infer_execution.log", "{product_dir}/artifacts/validation.log"],
     "validate_contract": ["artifact:contract_result.json", "{run_dir}/artifacts/contract_execution.log", "{product_dir}/artifacts/validation.log"]
   },
+  "sure_trans": {
+    "build_source_image": ["{run_dir}/artifacts/source_image_build.log", "{run_dir}/artifacts/source_image_load.log"],
+    "validate_env_compat": ["artifact:execution_compat.json", "{run_dir}/artifacts/execution_compat.log", "{run_dir}/artifacts/vc_logs/compat/stdout.log", "{run_dir}/artifacts/vc_logs/source_push.log"],
+    "validate_original_inference": ["artifact:original_inference_result.json", "{run_dir}/artifacts/original_inference_execution.log", "{run_dir}/artifacts/vc_logs/original_inference/stdout.log"],
+    "validate_import": ["artifact:import_result.json", "{run_dir}/artifacts/import_execution.log", "{run_dir}/artifacts/vc_logs/import/stdout.log", "{run_dir}/artifacts/vc_logs/adapter_push.log"],
+    "validate_load": ["artifact:load_result.json", "{run_dir}/artifacts/load_execution.log", "{run_dir}/artifacts/vc_logs/load/stdout.log"],
+    "validate_infer": ["artifact:infer_result.json", "{run_dir}/artifacts/infer_execution.log", "{run_dir}/artifacts/vc_logs/infer/stdout.log"],
+    "validate_contract": ["artifact:contract_result.json", "{run_dir}/artifacts/contract_execution.log", "{run_dir}/artifacts/vc_logs/contract/stdout.log"],
+    "validate_mcp": ["artifact:mcp_result.json", "{run_dir}/artifacts/mcp_execution.log", "{run_dir}/artifacts/vc_logs/mcp/stdout.log"],
+    "validate_equivalence": ["artifact:equivalence_result.json", "{run_dir}/artifacts/equivalence_execution.log", "{run_dir}/artifacts/vc_logs/equivalence/stdout.log"],
+    "package_container": ["{run_dir}/artifacts/vc_logs/post_pull_smoke/stdout.log"]
+  },
   "sure_eval": {
     "smoke_test": ["{run_dir}/local_logs/smoke_test.log"],
     "submit_vc_run": ["{run_dir}/vc_logs/job.log"],

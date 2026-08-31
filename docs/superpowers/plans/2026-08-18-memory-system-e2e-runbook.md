@@ -159,17 +159,17 @@ python3 -s sure/runtime/memory/cli.py stats
 
 过:`inject` 列至少一处非零,`cold ratio` 不是 100%,三条对照检查都跟预期对得上(该有的文件/行都在)。
 
-### B4b. preFinish 结算卡住 unit 的 pendingDisputed(`settleStuckUnit`)
+### B4b. preFinish 结算卡住的 unit(`settleStuckUnit`)
 
-eval 侧有单测证过这条路径(`sure-memory-eval-hooks.test.ts:883`,`it("settles a stuck unit's pending disputed entries only when the finish is accepted", ...)`),onboard 至今没有任何单测或 e2e 步骤证过,这一步专门补上。
+两侧都有单测证过这条路径(`sure-memory-eval-hooks.test.ts` 的 `it("settles a stuck unit's ...")` 两条,onboard 的 `it("pre_finish settles the stuck unit's injected entries as abandoned", ...)`),这一步在真 run 上再走一遍。
 
 跑一次新的 `/sure_onboard`(记这次的 run_id 为 D,与前面用过的 run 都不同)。按 B3 的手法让某个 unit 的门必挂、命中一条 bad_case,agent 收到带 Memory 段的 repair。这次**不要**把产物修好过门——直接让这次 run 以 `status=failed` 调 `sure_finish` 收尾,让这个 unit 保持"卡住"(未完成、也没耗尽重试次数)的状态直接进收尾。
 
 检查:
 
-1. `cat sure/memory/usage/<run D 的 run_id>.jsonl`——出现一行 `"kind":"settle"`,`entry_id` 是被打回命中的那条,`outcome == "disputed"`——即使这次 run 从没让这个 unit 的重试次数耗尽过。
+1. `cat sure/memory/usage/<run D 的 run_id>.jsonl`——出现一行 `"kind":"settle"`,`entry_id` 是被注入的那条,`outcome == "abandoned"`(只打回过一次、收尾时失败文本没再点名它)——即使这次 run 从没让这个 unit 的重试次数耗尽过。只有失败文本再次命中它的触发词时才是 `disputed`。
 
-过:这一行存在且 `outcome == "disputed"`。备注:如果这一步复用了 B3/B4 用过的那条 bad_case,这次的 disputed 会让它的 `disputed_since_last_useful` 计数往上走;按设计不该反悔已经 `confirmed` 的条目,但如果事后发现它被打回了 `provisional`,记下来即可——那是 python 存储复审 Critical 1 的范围,不是这一步要修的东西,不用现场处理。想避免这个副作用,这一步换一条跟 B3/B4 不同的 bad_case 来做也可以。
+过:这一行存在且 `outcome == "abandoned"`。`abandoned` 不进任何计数器,所以这一步复用 B3/B4 用过的 bad_case 也不会动它的升降级状态。
 
 ### B4c. `config.json` 读不出时不会把 run 卡死
 

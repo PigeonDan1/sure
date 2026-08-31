@@ -14,7 +14,7 @@
 			"properties": {
 				"run_id": { "type": "string" },
 				"skill": { "type": "string" },
-				"args": { "type": "string", "description": "skill args with output_dir removed" },
+				"args": { "type": "string", "description": "skill args with output_dir removed and every absolute path / URL value masked" },
 				"target": { "type": "object", "properties": { "kind": { "type": "string", "enum": ["model", "eval"] }, "id": { "type": "string" } } },
 				"status_so_far": { "type": "string" },
 				"cutoff": { "type": "integer", "description": "events.jsonl line count when the digest was built" },
@@ -38,7 +38,7 @@
 			}
 		},
 		"tool_errors": { "type": "integer" },
-		"prior_runs": { "type": "array", "items": { "type": "object", "properties": { "run_id": { "type": "string" }, "status": { "type": "string" }, "failed_unit": { "type": ["string", "null"] }, "finished_at": { "type": ["string", "null"] }, "last_repair": { "type": ["string", "null"] }, "candidates": { "type": "array", "items": { "type": "string" } } } } },
+		"prior_runs": { "type": "array", "items": { "type": "object", "properties": { "run_id": { "type": "string" }, "status": { "type": "string" }, "failed_unit": { "type": ["string", "null"] }, "finished_at": { "type": ["string", "null"] }, "last_repair": { "type": ["string", "null"] }, "last_repair_source": { "type": ["string", "null"], "enum": ["gate", "agent", null], "description": "who wrote last_repair: a gate (run.json lastRepair or events.jsonl) or the agent (run.json errorSummary)" }, "candidates": { "type": "array", "items": { "type": "string" } } } } },
 		"memory_index_snapshot": { "type": "array", "items": { "type": "object" } },
 		"units_registry": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } }
 	},

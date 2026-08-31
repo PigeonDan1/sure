@@ -65,10 +65,10 @@ allows no other memory field. Example:
     "memory": [
       "references/memory/COMMON.md",
       "sure/memory/index.md",
-      "references/memory/bad_cases/cuda_runtime_mismatch.md"
+      "references/memory/bad_cases/wrong_entrypoint.md"
     ]
   },
   "skipped_references": ["references/task_playbooks/TTS.md"],
-  "rationale": "ASR model on uv; the CUDA build error matched the cuda_runtime_mismatch entry"
+  "rationale": "ASR model on uv; the launcher error matched the wrong_entrypoint entry"
 }
 ```

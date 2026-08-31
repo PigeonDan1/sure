@@ -980,6 +980,27 @@ describe("sure_onboard memory wiring: finish and error hooks", () => {
 		expect(statePatch(result).checkpoint?.data.memory?.extractionStatus).toBeUndefined();
 	});
 
+	it("pre_finish settles the stuck unit's injected entries as abandoned", () => {
+		// onboard's settleStuckUnit had no unit test at all. The unit was blocked once and then
+		// abandoned at the finish, so nothing is pending: the entry settles neutrally.
+		const fixture = fakeRepo("prefinish-settle-abandoned");
+		seedContextSelectionBlock(fixture);
+		const blocked = postToolResult(fixture.ctx);
+		expect(blocked.ok).toBe(false);
+		expect(persist(fixture.runDir, blocked)?.memory?.injected?.context_selection).toEqual([ENTRY_ID]);
+		seedNonSuccessTerminal(fixture.runDir);
+		fixture.ctx.point = "pre_finish";
+		fixture.ctx.event = { finish: { status: "failed" } } as never;
+		persist(fixture.runDir, preFinish(fixture.ctx));
+		persist(fixture.runDir, preFinish(fixture.ctx));
+		const third = preFinish(fixture.ctx);
+		expect(third.ok, third.repair).toBe(true);
+		const settle = readUsage(fixture.memoryRoot, "prefinish-settle-abandoned").filter((row) => row.kind === "settle");
+		expect(settle).toHaveLength(1);
+		expect(settle[0]).toMatchObject({ unit: "context_selection", entry_id: ENTRY_ID, outcome: "abandoned" });
+		expect(statePatch(third).checkpoint?.data.memory?.injected?.context_selection).toBeUndefined();
+	});
+
 	it("post_finish spawns scripts/publish_memory.py with --run-dir and --repo-root", () => {
 		const fixture = fakeRepo("postfinish-publish");
 		seedEvents(fixture.runDir, 3);
@@ -1096,6 +1117,19 @@ describe("sure_onboard memory wiring: finish and error hooks", () => {
 		expect(digest.schema).toBe("sure.memory.run_digest.v1");
 		expect(digest.run.cutoff).toBe(4);
 		expect(existsSync(join(fixture.runDir, "publish_called.json"))).toBe(false);
+	});
+
+	it("on_error settles the unit the run died on and still writes the digest", () => {
+		const fixture = fakeRepo("onerror-settle-abandoned");
+		seedContextSelectionBlock(fixture);
+		persist(fixture.runDir, postToolResult(fixture.ctx));
+		fixture.ctx.point = "on_error";
+		fixture.ctx.event = { reason: "session_shutdown" } as never;
+		expect(onError(fixture.ctx).ok).toBe(true);
+		const settle = readUsage(fixture.memoryRoot, "onerror-settle-abandoned").filter((row) => row.kind === "settle");
+		expect(settle).toHaveLength(1);
+		expect(settle[0]).toMatchObject({ unit: "context_selection", entry_id: ENTRY_ID, outcome: "abandoned" });
+		expect(existsSync(join(fixture.runDir, "artifacts", "run_digest.json"))).toBe(true);
 	});
 
 	it("on_error leaves the digest the checkpoint's digestSha256 is bound to alone", () => {

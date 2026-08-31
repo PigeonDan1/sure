@@ -10,8 +10,9 @@ a missing file shrinks the digest, an exception turns it into
 Rules that are easy to get wrong (all from the spec / skeleton §1.13):
 - run_id is the run directory name, never a field read from a file;
 - no absolute path and no output_dir string may end up in the digest: log_tail.path
-  keeps the log_paths.json template text, run.args is stripped of output_dir,
-  target.id is a model id, and resolved-input files are never copied wholesale;
+  keeps the log_paths.json template text, run.args is stripped of output_dir and then has
+  its path and URL values masked, target.id is a model id, and resolved-input files are
+  never copied wholesale;
 - units are inferred from events <= cutoff only; --mark-passed marks the unit whose
   advance has not been written to events yet (the hook counts cutoff before the
   post_tool_result_state line lands);
@@ -46,6 +47,8 @@ _EXHAUSTED_RE = re.compile(r'^Gate "([^"]+)" exhausted')
 _LINE_SPLIT_RE = re.compile(r"\r\n|\r|\n")
 _CANDIDATE_PREFIX_RE = re.compile(r"^\d+-")
 _OMITTED_RE = re.compile(r"\n\.\.\.\[(\d+) chars omitted\]\.\.\.\n")
+_URL_VALUE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+_ABSOLUTE_VALUE_RE = re.compile(r"^(?:/|~/|[A-Za-z]:[\\/])")
 
 
 # --- small text helpers ---------------------------------------------------------
@@ -95,6 +98,34 @@ def parse_args(args: str) -> dict[str, str]:
             out[key] = "true"
             i += 1
     return out
+
+
+def mask_arg_values(args: str) -> str:
+    """Every absolute or `~/` path in an argument value replaced by `<path>` and every URL by `<url>`.
+    run.args is copied into the digest verbatim, from there into the next run's prior_runs, and
+    from there it can be lifted into a candidate entry that is published for good, so the site
+    paths a caller types (`/sure_trans dockerfile= model= inference_entrypoint=`, `/sure_eval
+    datasets=`) and an internal mirror in `hf_endpoint=` must not survive the copy. A value is
+    split on `,` first: /sure_eval takes several datasets in one token. Relative values, enum
+    values and numbers are left alone - those are the ones that identify what the run did."""
+    masked: list[str] = []
+    for token in (args or "").strip().split():
+        eq = token.find("=")
+        prefix, value = (token[:eq + 1], token[eq + 1:]) if eq >= 0 else ("", token)
+        masked.append(prefix + ",".join(_mask_arg_value(part) for part in value.split(",")))
+    return " ".join(masked)
+
+
+def _mask_arg_value(value: str) -> str:
+    # Quotes and a second `=` inside the value (`env=PYTHONPATH=/srv/lib`) both hide the path from
+    # an anchored match, so strip the quotes and retry on whatever follows the next `=`.
+    bare = value.strip("\"'")
+    if _URL_VALUE_RE.match(bare):
+        return "<url>"
+    if _ABSOLUTE_VALUE_RE.match(bare):
+        return "<path>"
+    eq = bare.find("=")
+    return bare[:eq + 1] + _mask_arg_value(bare[eq + 1:]) if eq >= 0 else value
 
 
 def output_dir_forms(record: dict, args: str) -> list[str]:
@@ -250,29 +281,44 @@ def _string_at(obj: Any, *keys: str) -> str:
 
 def resolve_target(run_dir: Path, skill: str | None, args: str) -> dict:
     """{"kind": "model"|"eval", "id": str}. Read the resolved-input artifact first, then fall back to
-    `model=` / `model_id=` in args. Only the id is copied: eval_input_resolved.json also carries the
-    output_dir path inside runtime.run_dir, which must never enter the digest."""
+    the identity argument of the invocation. Only the id is copied: eval_input_resolved.json also
+    carries the output_dir path inside runtime.run_dir, which must never enter the digest. sure_trans
+    falls back to `model_name=` and not to the shared `model=` / `model_id=`: its `model=` is the
+    host path to the weights, so the shared fallback would make a site path the target id."""
     art = Path(run_dir) / "artifacts"
     kind = "eval" if skill == "sure_eval" else "model"
     target_id = ""
+    fallback_keys = ("model", "model_id")
     if skill == "sure_onboard":
         target_id = _string_at(_load_json_quiet(art / "model_input_resolved.json"), "model_id")
     elif skill == "sure_eval":
         target_id = _string_at(_load_json_quiet(art / "eval_input_resolved.json"), "user_input", "model")
+    elif skill == "sure_trans":
+        target_id = _string_at(_load_json_quiet(art / "trans_input_resolved.json"), "model_name")
+        fallback_keys = ("model_name",)
+    elif skill == "sure_feed":
+        target_id = _string_at(_load_json_quiet(art / "feed_report.json"), "selected", "model_id")
     if not target_id:
         parsed = parse_args(args)
-        target_id = parsed.get("model") or parsed.get("model_id") or ""
+        target_id = next((parsed[key] for key in fallback_keys if parsed.get(key)), "")
     return {"kind": kind, "id": target_id}
 
 
 def _product_dir(run_dir: Path, skill: str | None) -> Path | None:
-    """{product_dir} placeholder: onboard model_dir, eval runtime.run_dir. Used only to open logs;
-    the resolved value is never written into the digest."""
+    """{product_dir} placeholder: onboard model_dir, eval runtime.run_dir, feed the published
+    handoff directory. Used only to open logs; the resolved value is never written into the digest.
+    The feed branch resolves nothing today: no sure_feed unit writes a .log, so log_paths.json has
+    no sure_feed table and the caller gives up before it reads the product dir. It is here so a
+    later feed log entry works; sure_trans deliberately has none, because everything it writes
+    stays under the run's artifacts/ and the copy into model_dir happens in its last unit, long
+    after the last injection could read it."""
     art = Path(run_dir) / "artifacts"
     if skill == "sure_onboard":
         raw = _string_at(_load_json_quiet(art / "model_input_resolved.json"), "model_dir")
     elif skill == "sure_eval":
         raw = _string_at(_load_json_quiet(art / "eval_input_resolved.json"), "runtime", "run_dir")
+    elif skill == "sure_feed":
+        raw = _string_at(_load_json_quiet(art / "feed_report.json"), "handoff", "handoff_dir")
     else:
         raw = ""
     return Path(raw).expanduser() if raw else None
@@ -664,21 +710,36 @@ def _declared_candidates(other_run_dir: Path) -> list[str]:
     return [_CANDIDATE_PREFIX_RE.sub("", c) for c in ids]
 
 
-def _last_repair_from_events(other_run_dir: Path, header: str, seek_bytes: int) -> str | None:
+def _last_repair_from_events(other_run_dir: Path, header: str, seek_bytes: int, max_bytes: int) -> str | None:
     """Last tool_result_repair / finish_repair text of a finished prior run (run.json clears lastRepair
-    on finish). Only the tail of events.jsonl is read."""
-    last: str | None = None
-    for line in _read_tail_text(other_run_dir / "events.jsonl", seek_bytes).splitlines():
-        try:
-            event = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(event, dict) or event.get("type") not in ("tool_result_repair", "finish_repair"):
-            continue
-        text = _repair_of(event)
-        if text is not None:
-            last = text
-    return strip_memory_block(last, header) if last else None
+    on finish). The tail is read in windows that double until a repair turns up, the whole file has
+    been read, or max_bytes is reached; None when the cap runs out without a hit. One window is not
+    enough: every state_patch event carries the whole state, so a unit blocked late in the run is
+    pushed far past the last seek_bytes by the turns that follow it, and this is the only place that
+    text still exists."""
+    path = other_run_dir / "events.jsonl"
+    try:
+        cap = min(max_bytes, path.stat().st_size)
+    except OSError:
+        return None
+    window = max(seek_bytes, 1)
+    while True:
+        last: str | None = None
+        for line in _read_tail_text(path, window).splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(event, dict) or event.get("type") not in ("tool_result_repair", "finish_repair"):
+                continue
+            text = _repair_of(event)
+            if text is not None:
+                last = text
+        if last:
+            return strip_memory_block(last, header)
+        if window >= cap:
+            return None
+        window = min(window * 2, cap)
 
 
 def _prior_run_summary(other: Path, record: dict, header: str, limits: dict) -> dict:
@@ -686,11 +747,16 @@ def _prior_run_summary(other: Path, record: dict, header: str, limits: dict) -> 
     failed_unit = None
     if status != "success":
         failed_unit = _string_at(_load_json_quiet(other / "state.json"), "checkpoint", "data", "currentUnit") or None
-    last_repair = record.get("lastRepair") or record.get("errorSummary")
-    if not isinstance(last_repair, str) or not last_repair.strip():
-        last_repair = _last_repair_from_events(other, header, limits["log_seek_bytes"])
+    # Who wrote the text matters downstream: rule 4 counts a gate's words as observation and the
+    # agent's own errorSummary (extension.ts sure_finish argument) as prose.
+    raw, source = record.get("lastRepair"), "gate"
+    if not isinstance(raw, str) or not raw.strip():
+        raw, source = record.get("errorSummary"), "agent"
+    if isinstance(raw, str) and raw.strip():
+        last_repair = strip_memory_block(raw, header)
     else:
-        last_repair = strip_memory_block(last_repair, header)
+        last_repair = _last_repair_from_events(other, header, limits["log_seek_bytes"], limits["prior_run_seek_max_bytes"])
+        source = "gate"
     if last_repair:  # each prior run has its own output_dir; the caller's forms do not cover it
         last_repair = mask_output_dir(last_repair, output_dir_forms(record, record.get("args") if isinstance(record.get("args"), str) else ""))
     finished_at = record.get("finishedAt") or record.get("updatedAt")
@@ -700,6 +766,7 @@ def _prior_run_summary(other: Path, record: dict, header: str, limits: dict) -> 
         "failed_unit": failed_unit,
         "finished_at": finished_at if isinstance(finished_at, str) else None,
         "last_repair": last_repair[: limits["prior_run_repair_chars"]] if last_repair else None,
+        "last_repair_source": source if last_repair else None,
         "candidates": _declared_candidates(other),
     }
 
@@ -768,7 +835,7 @@ def _build(run_dir: Path, repo_root: Path, *, cutoff: int | None, mark_passed: s
         "run": {
             "run_id": run_id,
             "skill": skill,
-            "args": strip_output_dir(raw_args),
+            "args": mask_arg_values(strip_output_dir(raw_args)),
             "target": target,
             "status_so_far": status,
             "cutoff": effective_cutoff,

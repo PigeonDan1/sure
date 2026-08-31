@@ -213,6 +213,13 @@ class DigestTestBase(unittest.TestCase):
         run.artifact("model_input_resolved.json", {"model_id": "openai/whisper-large-v3", "model_name": "openai__whisper-large-v3", "model_dir": str(self.repo_root / "sure" / "models" / "openai__whisper-large-v3")})
         return run
 
+    def trans_run(self, run_id: str = "20260818-120000-tttt0001",
+                  args: str = "dockerfile=/srv/build/Dockerfile model=/srv/weights/whisper model_name=openai__whisper-large-v3 task_type=asr") -> FakeRun:
+        run = FakeRun(self.runs_root, run_id, "sure_trans", args)
+        run.artifact("trans_input_resolved.json", {"schema": "sure.trans.input.v2", "model_name": "openai__whisper-large-v3",
+                                                   "model_dir": str(self.repo_root / "sure" / "models" / "openai__whisper-large-v3")})
+        return run
+
 
 class StripOutputDirTests(unittest.TestCase):
     def test_removes_key_value_form(self) -> None:
@@ -231,6 +238,30 @@ class StripOutputDirTests(unittest.TestCase):
         self.assertEqual(digest.strip_output_dir("  a=1   b=2  "), "a=1 b=2")
         self.assertEqual(digest.strip_output_dir(""), "")
         self.assertEqual(digest.strip_output_dir("output_dir=/x"), "")
+
+
+class MaskArgValuesTests(unittest.TestCase):
+    def test_absolute_values_are_masked_one_by_one(self) -> None:
+        self.assertEqual(digest.mask_arg_values("model=demo datasets=/data/libri,/data/aishell"),
+                         "model=demo datasets=<path>,<path>")
+        self.assertEqual(digest.mask_arg_values("dockerfile=/srv/build/Dockerfile model=/srv/weights/whisper"),
+                         "dockerfile=<path> model=<path>")
+        self.assertEqual(digest.mask_arg_values("--model_input_path /srv/inputs/x.yaml"), "--model_input_path <path>")
+
+    def test_url_values_are_masked(self) -> None:
+        self.assertEqual(digest.mask_arg_values("hf_endpoint=https://mirror.internal.example/hf"), "hf_endpoint=<url>")
+        self.assertEqual(digest.mask_arg_values("url=https://modelscope.cn/models/iic/SenseVoiceSmall"), "url=<url>")
+
+    def test_quoted_nested_and_home_relative_values_are_masked(self) -> None:
+        self.assertEqual(digest.mask_arg_values('model="/srv/weights/whisper"'), "model=<path>")
+        self.assertEqual(digest.mask_arg_values("env=PYTHONPATH=/srv/site/lib"), "env=PYTHONPATH=<path>")
+        self.assertEqual(digest.mask_arg_values("model=~/weights/whisper"), "model=<path>")
+        self.assertEqual(digest.mask_arg_values("proxy='https://mirror.internal.example'"), "proxy=<url>")
+
+    def test_relative_enum_and_number_values_are_left_alone(self) -> None:
+        args = "model_name=openai__whisper task_type=asr max_retries=3 model_input_path=sure/handoffs/x.yaml --strict"
+        self.assertEqual(digest.mask_arg_values(args), args)
+        self.assertEqual(digest.mask_arg_values(""), "")
 
 
 class StripMemoryBlockTests(unittest.TestCase):
@@ -301,6 +332,36 @@ class ResolveTargetTests(DigestTestBase):
         run2 = FakeRun(self.runs_root, "20260818-120000-aaaa0002", "sure_onboard", "--model_id arg/onboard")
         self.assertEqual(digest.resolve_target(run2.dir, "sure_onboard", run2.args)["id"], "arg/onboard")
         self.assertEqual(digest.resolve_target(run2.dir, "sure_onboard", "")["id"], "")
+
+    def test_trans_reads_model_name_and_never_falls_back_to_the_model_path(self) -> None:
+        run = self.trans_run()
+        self.assertEqual(digest.resolve_target(run.dir, "sure_trans", run.args),
+                         {"kind": "model", "id": "openai__whisper-large-v3"})
+        # /sure_trans model= is the host path to the weights: without the artifact the id comes
+        # from model_name, and with neither it stays empty rather than becoming that path.
+        (run.dir / "artifacts" / "trans_input_resolved.json").unlink()
+        self.assertEqual(digest.resolve_target(run.dir, "sure_trans", run.args)["id"], "openai__whisper-large-v3")
+        self.assertEqual(digest.resolve_target(run.dir, "sure_trans", "model=/srv/weights/whisper")["id"], "")
+
+    def test_feed_reads_the_selected_model_id_from_feed_report(self) -> None:
+        run = FakeRun(self.runs_root, "20260818-120000-ffff0001", "sure_feed", "url=https://modelscope.cn/models/iic/SenseVoiceSmall")
+        self.assertEqual(digest.resolve_target(run.dir, "sure_feed", run.args), {"kind": "model", "id": ""})
+        run.artifact("feed_report.json", {"status": "no_selection", "selected": None})
+        self.assertEqual(digest.resolve_target(run.dir, "sure_feed", run.args)["id"], "")
+        run.artifact("feed_report.json", {"status": "ready_for_onboard", "selected": {"model_id": "iic/SenseVoiceSmall"}})
+        self.assertEqual(digest.resolve_target(run.dir, "sure_feed", run.args)["id"], "iic/SenseVoiceSmall")
+
+
+class ProductDirTests(DigestTestBase):
+    def test_feed_product_dir_is_the_handoff_dir_and_trans_has_none(self) -> None:
+        run = FakeRun(self.runs_root, "20260818-120000-ffff0002", "sure_feed", "query=sensevoice")
+        handoff = self.repo_root / "sure" / "handoffs" / "sense-voice-small"
+        run.artifact("feed_report.json", {"selected": {"model_id": "iic/SenseVoiceSmall"}, "handoff": {"handoff_dir": str(handoff)}})
+        self.assertEqual(digest._product_dir(run.dir, "sure_feed"), handoff)
+        run.artifact("feed_report.json", {"selected": None, "handoff": None})
+        self.assertIsNone(digest._product_dir(run.dir, "sure_feed"))
+        # sure_trans copies its logs into model_dir only in its last unit, so it registers none.
+        self.assertIsNone(digest._product_dir(self.trans_run(run_id="20260818-120000-tttt0002").dir, "sure_trans"))
 
 
 class BuildDigestTests(DigestTestBase):
@@ -620,6 +681,42 @@ class BuildDigestTests(DigestTestBase):
         run.artifact("build_env_result.json", {"status": "failed"})
         self.assertEqual(self.build(run, log_paths=log_paths)["units"][-1]["log_tail"], {"path": "{run_dir}/artifacts/build_env.log", "lines": ["table log"]})
 
+    def test_trans_validate_log_tail_from_the_registered_template(self) -> None:
+        run = self.trans_run()
+        run.pass_through("validate_import")
+        run.file("artifacts/import_execution.log", b"ImportError: No module named 'sure_adapter'\n")
+        run.block("validate_import", "import_result.json: status must be passed", exhausted=True)
+        self.assertEqual(self.unit(self.build(run), "validate_import")["log_tail"],
+                         {"path": "{run_dir}/artifacts/import_execution.log", "lines": ["ImportError: No module named 'sure_adapter'"]})
+
+    def test_trans_validate_log_tail_from_the_artifact_log_path(self) -> None:
+        run = self.trans_run(run_id="20260818-120000-tttt0003")
+        run.pass_through("validate_infer")
+        run.artifact("infer_result.json", {"status": "failed", "log_path": "infer_elsewhere.log"})
+        run.file("artifacts/infer_elsewhere.log", b"inference crashed\n")
+        run.block("validate_infer", "infer_result.json: status must be passed", exhausted=True)
+        self.assertEqual(self.unit(self.build(run), "validate_infer")["log_tail"],
+                         {"path": "artifact:infer_result.json", "lines": ["inference crashed"]})
+
+    def test_trans_image_units_never_read_a_log_path_from_the_artifact(self) -> None:
+        # run_docker_build.py writes source_image_log_path and the registry gate nests its smoke
+        # log under post_pull_smoke, so neither unit can use the `artifact:` form.
+        run = self.trans_run(run_id="20260818-120000-tttt0004")
+        run.pass_through("build_source_image")
+        run.artifact("source_image_result.json", {"status": "failed", "source_image_log_path": "/nowhere/ignored.log"})
+        run.file("artifacts/source_image_build.log", b"docker build exited 1\n")
+        run.block("build_source_image", "source_image_result.json: status must be passed", exhausted=True)
+        self.assertEqual(self.unit(self.build(run), "build_source_image")["log_tail"],
+                         {"path": "{run_dir}/artifacts/source_image_build.log", "lines": ["docker build exited 1"]})
+
+    def test_trans_digest_keeps_host_paths_out_of_args_and_target(self) -> None:
+        run = self.trans_run(run_id="20260818-120000-tttt0005")
+        run.pass_through("build_source_image")
+        run.block("build_source_image", "source_image_result.json: status must be passed", exhausted=True)
+        d = self.build(run)
+        self.assertEqual(d["run"]["args"], "dockerfile=<path> model=<path> model_name=openai__whisper-large-v3 task_type=asr")
+        self.assertEqual(d["run"]["target"], {"kind": "model", "id": "openai__whisper-large-v3"})
+
     def test_log_tail_absent_for_passed_units_and_when_no_log_exists(self) -> None:
         run = self.onboard_run()
         run.pass_through("build_env")
@@ -744,6 +841,74 @@ class BuildDigestTests(DigestTestBase):
         prior.save()
         d = self.build(self.onboard_run())
         self.assertEqual(len(d["prior_runs"][0]["last_repair"]), CONFIG["digest_limits"]["prior_run_repair_chars"])
+
+    def test_prior_run_last_repair_source_says_who_wrote_the_text(self) -> None:
+        gate_json = self.onboard_run(run_id="20260817-100003-gatejson")
+        gate_json.pass_through("build_env")
+        gate_json.block("build_env", "gate wrote this into run.json")
+        gate_json.save()
+        gate_events = self.onboard_run(run_id="20260817-100002-gateevts")
+        gate_events.pass_through("build_env")
+        gate_events.block("build_env", "gate wrote this into events.jsonl")
+        gate_events.finish("failed", error_summary=None)  # the finish clears lastRepair
+        gate_events.save()
+        agent = self.onboard_run(run_id="20260817-100001-agentsum")
+        agent.finish("failed", error_summary="the queue looked busy so I stopped here")
+        agent.save()
+        quiet = self.onboard_run(run_id="20260817-100000-quiet000")
+        quiet.finish("success")
+        quiet.save()
+        rows = {p["run_id"]: (p["last_repair"], p["last_repair_source"]) for p in self.build(self.onboard_run())["prior_runs"]}
+        self.assertEqual(rows["20260817-100003-gatejson"], ("gate wrote this into run.json", "gate"))
+        self.assertEqual(rows["20260817-100002-gateevts"], ("gate wrote this into events.jsonl", "gate"))
+        self.assertEqual(rows["20260817-100001-agentsum"], ("the queue looked busy so I stopped here", "agent"))
+        self.assertEqual(rows["20260817-100000-quiet000"], (None, None))
+
+    def test_prior_run_repair_beyond_the_first_seek_window_is_found(self) -> None:
+        # every state_patch event carries the whole state, so a handful of agent turns after the
+        # block push the repair well past the last log_seek_bytes of events.jsonl
+        prior = self.onboard_run(run_id="20260817-100000-prior000")
+        prior.pass_through("build_env")
+        prior.block("build_env", "cu118 wheel is not on the index")
+        prior.finish("failed", error_summary=None)
+        prior.save()
+        seek = CONFIG["digest_limits"]["log_seek_bytes"]
+        events_path = prior.dir / "events.jsonl"
+        padding = json.dumps({"type": "tool_call", "data": {"toolName": "bash", "input": {"command": "x" * 2000}}}) + "\n"
+        with events_path.open("a", encoding="utf-8") as handle:
+            handle.write(padding * (2 * seek // len(padding) + 2))
+        self.assertGreater(events_path.stat().st_size, 2 * seek)
+        row = self.build(self.onboard_run())["prior_runs"][0]
+        self.assertEqual((row["last_repair"], row["last_repair_source"]), ("cu118 wheel is not on the index", "gate"))
+
+    def test_prior_run_repair_search_stops_at_the_seek_cap(self) -> None:
+        self.assertEqual(CONFIG["digest_limits"]["prior_run_seek_max_bytes"], 8 * 1024 * 1024)
+        prior = self.onboard_run(run_id="20260817-100000-prior000")
+        prior.pass_through("build_env")
+        prior.block("build_env", "cu118 wheel is not on the index")
+        prior.finish("failed", error_summary=None)
+        prior.save()
+        padding = json.dumps({"type": "tool_call", "data": {"toolName": "bash", "input": {"command": "x" * 2000}}}) + "\n"
+        with (prior.dir / "events.jsonl").open("a", encoding="utf-8") as handle:
+            handle.write(padding * 8)
+        self.assertIsNone(digest._last_repair_from_events(prior.dir, HEADER, 512, 4096))
+        self.assertEqual(digest._last_repair_from_events(prior.dir, HEADER, 512, 1 << 20), "cu118 wheel is not on the index")
+
+    def test_a_prior_run_report_block_survives_a_success_finish(self) -> None:
+        # run_report runs after extract_lessons, so its block never reaches that run's own digest;
+        # extension.ts then clears lastRepair on the success finish and events.jsonl is all that is left
+        repair = ('RUN_REPORT_UNIT completed-run execution gate failed:\n'
+                  '  - successful run report conflicts with execution_result.json job_status "FAILED"')
+        prior = FakeRun(self.runs_root, "20260817-100000-prior000", "sure_eval", "model=demo-model")
+        prior.pass_through("run_report")
+        prior.block("run_report", repair)
+        prior.finish("success")
+        prior.save()
+        self.assertNotIn("lastRepair", json.loads((prior.dir / "run.json").read_text(encoding="utf-8")))
+        current = FakeRun(self.runs_root, "20260818-120000-eeee0015", "sure_eval", "model=demo-model")
+        row = self.build(current)["prior_runs"][0]
+        self.assertIn("successful run report conflicts with execution_result.json job_status", row["last_repair"])
+        self.assertEqual(row["last_repair_source"], "gate")
 
     def test_prior_runs_empty_when_target_unknown(self) -> None:
         prior = FakeRun(self.runs_root, "20260817-100000-prior000", "sure_eval", "")
@@ -1129,7 +1294,7 @@ class WrapperTests(DigestTestBase):
     def test_skill_wrappers_call_the_shared_module(self) -> None:
         run = self.onboard_run()
         run.save()
-        for skill in ("sure_onboard", "sure_eval"):
+        for skill in ("sure_onboard", "sure_eval", "sure_trans", "sure_feed"):
             wrapper = REPO_ROOT / "sure" / "skills" / skill / "scripts" / "build_run_digest.py"
             with self.subTest(skill=skill):
                 self.assertTrue(wrapper.exists(), wrapper)

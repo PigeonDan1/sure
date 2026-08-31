@@ -67,14 +67,21 @@ describe("gateAlreadyRejected", () => {
 	const rejected = { failedArtifactDigests: { validate_contract: digestOf(artifact) } };
 
 	it("holds the gate back when the artifact is what it already rejected", () => {
-		expect(gateAlreadyRejected(rejected, "validate_contract", artifact)).toBe(true);
+		expect(gateAlreadyRejected(rejected, "validate_contract", digestOf(artifact))).toBe(true);
 	});
 
 	it("lets the gate run once the artifact changes", () => {
-		expect(gateAlreadyRejected(rejected, "validate_contract", { ...artifact, vc_job_id: "job-2" })).toBe(false);
+		expect(gateAlreadyRejected(rejected, "validate_contract", digestOf({ ...artifact, vc_job_id: "job-2" }))).toBe(
+			false,
+		);
 	});
 
 	it("lets the gate run when the unit has never been rejected", () => {
-		expect(gateAlreadyRejected({ failedArtifactDigests: {} }, "validate_contract", artifact)).toBe(false);
+		expect(gateAlreadyRejected({ failedArtifactDigests: {} }, "validate_contract", digestOf(artifact))).toBe(false);
+	});
+
+	it("lets the gate run when no digest could be taken at all", () => {
+		// Two absent digests are not evidence that the artifact is unchanged.
+		expect(gateAlreadyRejected(rejected, "validate_contract", undefined)).toBe(false);
 	});
 });
