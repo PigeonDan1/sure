@@ -39,14 +39,14 @@ class RegistryLookupTests(unittest.TestCase):
         declares must win over a directory that merely happens to be called that."""
         with tempfile.TemporaryDirectory() as raw_root:
             root = Path(raw_root)
-            _plant(root, "spare", "aispeech14.1")
-            _plant(root, "aispeech14.1", "aispeech14.1-v2")
+            _plant(root, "spare", "canonical-model")
+            _plant(root, "canonical-model", "canonical-model-v2")
             registry = ModelRegistry(root)
 
-            found = registry.get_model("aispeech14.1")
+            found = registry.get_model("canonical-model")
             self.assertIsNotNone(found)
             self.assertEqual(found.path.name, "spare")
-            self.assertIsNotNone(registry.get_model("aispeech14.1-v2"))
+            self.assertIsNotNone(registry.get_model("canonical-model-v2"))
 
     def test_unknown_name_still_returns_none(self) -> None:
         with tempfile.TemporaryDirectory() as raw_root:

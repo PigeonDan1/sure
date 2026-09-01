@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the aispeech source-root resolver.
+"""Tests for the site dataset source-root resolver.
 
 Run directly:
     cd sure/skills/sure_eval/scripts && python test_source_resolver.py
@@ -76,10 +76,10 @@ class SourceResolverTests(unittest.TestCase):
             self.assertEqual(source_resolver.accepted_source_root(), r"C:\data\src")
 
     def test_single_version_resolves_to_two_segment_id(self) -> None:
-        dataset_root = make_source_tree(self.root, "aispeech_phy_aishell-1-test", ["v1.0.2"])
-        ref = source_resolver.resolve_aispeech_source_entry(str(dataset_root))
-        self.assertEqual(ref.dataset_id, "aispeech_phy_aishell-1-test__v1.0.2")
-        self.assertEqual(ref.source_dataset_name, "aispeech_phy_aishell-1-test")
+        dataset_root = make_source_tree(self.root, "demo_speech_zh_test", ["v1.0.2"])
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        self.assertEqual(ref.dataset_id, "demo_speech_zh_test__v1.0.2")
+        self.assertEqual(ref.source_dataset_name, "demo_speech_zh_test")
         self.assertEqual(ref.version_id, "v1.0.2")
         self.assertTrue(ref.sample_jsonl.endswith("sample.jsonl"))
         self.assertTrue(ref.ds_jsonl.endswith("ds.jsonl"))
@@ -88,37 +88,37 @@ class SourceResolverTests(unittest.TestCase):
     def test_multiple_versions_without_explicit_version_fails(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1", "v1.0.2"])
         with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
-            source_resolver.resolve_aispeech_source_entry(str(dataset_root))
+            source_resolver.resolve_site_source_entry(str(dataset_root))
         self.assertIn("v1.0.1", str(ctx.exception))
         self.assertIn("v1.0.2", str(ctx.exception))
 
     def test_explicit_version_selects_among_multiple(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1", "v1.0.2"])
-        ref = source_resolver.resolve_aispeech_source_entry(str(dataset_root), "v1.0.1")
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root), "v1.0.1")
         self.assertEqual(ref.dataset_id, "demo_ds__v1.0.1")
 
     def test_zero_versions_fails(self) -> None:
         dataset_root = self.root / "g001" / "store002" / "ds_pool" / "empty_ds"
         (dataset_root / "raws" / "sample").mkdir(parents=True)
         with self.assertRaises(source_resolver.SourceResolutionError):
-            source_resolver.resolve_aispeech_source_entry(str(dataset_root))
+            source_resolver.resolve_site_source_entry(str(dataset_root))
 
     def test_path_outside_accepted_root_fails(self) -> None:
         with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
-            source_resolver.resolve_aispeech_source_entry("/srv/outside/ds_pool/x")
+            source_resolver.resolve_site_source_entry("/srv/outside/ds_pool/x")
         self.assertIn(str(self.root), str(ctx.exception))
 
     def test_path_not_at_ds_pool_level_fails(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1"])
         for bad in (dataset_root / "sample_files", dataset_root.parent):
             with self.assertRaises(source_resolver.SourceResolutionError):
-                source_resolver.resolve_aispeech_source_entry(str(bad))
+                source_resolver.resolve_site_source_entry(str(bad))
 
     def test_missing_sample_jsonl_fails(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1"])
         (dataset_root / "sample_files" / "v1.0.1" / "sample.jsonl").unlink()
         with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
-            source_resolver.resolve_aispeech_source_entry(str(dataset_root))
+            source_resolver.resolve_site_source_entry(str(dataset_root))
         self.assertIn("sample.jsonl", str(ctx.exception))
 
     def test_missing_raws_sample_fails(self) -> None:
@@ -127,7 +127,7 @@ class SourceResolverTests(unittest.TestCase):
 
         shutil.rmtree(dataset_root / "raws")
         with self.assertRaises(source_resolver.SourceResolutionError):
-            source_resolver.resolve_aispeech_source_entry(str(dataset_root))
+            source_resolver.resolve_site_source_entry(str(dataset_root))
 
     def test_is_source_entry(self) -> None:
         self.assertTrue(source_resolver.is_source_entry("/srv/sure/datasets/a/ds_pool/x"))
@@ -138,25 +138,25 @@ class SourceResolverTests(unittest.TestCase):
 
     def test_read_source_language(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1"])
-        ref = source_resolver.resolve_aispeech_source_entry(str(dataset_root))
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
         self.assertEqual(source_resolver.read_source_language(ref), "zh")
 
     def test_at_suffix_selects_among_multiple_versions(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1", "v1.0.2"])
-        ref = source_resolver.resolve_aispeech_source_entry(f"{dataset_root}@v1.0.1")
+        ref = source_resolver.resolve_site_source_entry(f"{dataset_root}@v1.0.1")
         self.assertEqual(ref.dataset_id, "demo_ds__v1.0.1")
         self.assertEqual(ref.source_root, str(dataset_root))
 
     def test_at_suffix_unknown_version_lists_available(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1"])
         with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
-            source_resolver.resolve_aispeech_source_entry(f"{dataset_root}@v9.9.9")
+            source_resolver.resolve_site_source_entry(f"{dataset_root}@v9.9.9")
         self.assertIn("v1.0.1", str(ctx.exception))
 
     def test_at_suffix_conflicting_with_param_fails(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1", "v1.0.2"])
         with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
-            source_resolver.resolve_aispeech_source_entry(f"{dataset_root}@v1.0.1", "v1.0.2")
+            source_resolver.resolve_site_source_entry(f"{dataset_root}@v1.0.1", "v1.0.2")
         message = str(ctx.exception)
         self.assertIn("v1.0.1", message)
         self.assertIn("v1.0.2", message)
@@ -169,28 +169,28 @@ class RejectedRootMessageTests(unittest.TestCase):
     """A rejected path has to say which configured key would have taken it."""
 
     def test_path_under_another_configured_key_names_that_key(self) -> None:
-        roots = {"default": "/stor/external_ds/aispeech", "aiplatform": "/stor/ds/aispeech"}
+        roots = {"default": "/srv/datasets/public", "secondary": "/srv/datasets/platform"}
         with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
             with mock.patch.dict(os.environ, {}, clear=False):
                 os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
                 with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
-                    source_resolver.resolve_aispeech_source_entry(
-                        "/stor/ds/aispeech/g001/store002/ds_pool/demo_ds"
+                    source_resolver.resolve_site_source_entry(
+                        "/srv/datasets/platform/g001/store002/ds_pool/demo_ds"
                     )
         message = str(ctx.exception)
-        self.assertIn("aiplatform", message)
+        self.assertIn("secondary", message)
         self.assertIn("dataset_source_key", message)
 
     def test_path_under_no_configured_key_lists_them(self) -> None:
-        roots = {"default": "/stor/external_ds/aispeech", "aiplatform": "/stor/ds/aispeech"}
+        roots = {"default": "/srv/datasets/public", "secondary": "/srv/datasets/platform"}
         with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
             with mock.patch.dict(os.environ, {}, clear=False):
                 os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
                 with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
-                    source_resolver.resolve_aispeech_source_entry("/elsewhere/ds_pool/demo_ds")
+                    source_resolver.resolve_site_source_entry("/elsewhere/ds_pool/demo_ds")
         message = str(ctx.exception)
         self.assertIn("default", message)
-        self.assertIn("aiplatform", message)
+        self.assertIn("secondary", message)
 
 
 if __name__ == "__main__":

@@ -88,7 +88,7 @@ class SourceConversionTests(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_converts_to_two_segment_jsonl_with_source_metadata(self) -> None:
-        ref = source_resolver.resolve_aispeech_source_entry(str(self.dataset_root))
+        ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
         jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
         self.assertEqual(jsonl_path.name, "demo_ds__v1.0.2.jsonl")
         row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
@@ -101,18 +101,18 @@ class SourceConversionTests(unittest.TestCase):
         self.assertTrue(expected_audio.is_file())
         self.assertFalse((self.manager.sure_dir / "demo_ds" / "raws").exists())
         meta = row["metadata"]
-        self.assertEqual(meta["source"], "aispeech_ds_pool")
+        self.assertEqual(meta["source"], "site_dataset_pool")
         self.assertEqual(meta["source_dataset_root"], str(self.dataset_root))
         self.assertEqual(meta["source_dataset_name"], "demo_ds")
         self.assertEqual(meta["version_id"], "v1.0.2")
         self.assertEqual(meta["sample_id"], "utt1")
 
     def test_writes_package_side_artifacts(self) -> None:
-        ref = source_resolver.resolve_aispeech_source_entry(str(self.dataset_root))
+        ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
         self.manager._convert_source_root_to_jsonl(ref)
         package_dir = self.manager.sure_dir / "demo_ds"
         source_payload = json.loads((package_dir / "oref" / "source.json").read_text(encoding="utf-8"))
-        self.assertEqual(source_payload["source"], "aispeech_ds_pool")
+        self.assertEqual(source_payload["source"], "site_dataset_pool")
         self.assertEqual(source_payload["source_dataset_name"], "demo_ds")
         self.assertEqual(source_payload["version_id"], "v1.0.2")
         report = json.loads(
@@ -132,7 +132,7 @@ class SourceConversionTests(unittest.TestCase):
         )
 
     def test_conversion_is_idempotent(self) -> None:
-        ref = source_resolver.resolve_aispeech_source_entry(str(self.dataset_root))
+        ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
         first = self.manager._convert_source_root_to_jsonl(ref)
         before = first.read_text(encoding="utf-8")
         second = self.manager._convert_source_root_to_jsonl(ref)
@@ -140,7 +140,7 @@ class SourceConversionTests(unittest.TestCase):
         self.assertEqual(before, second.read_text(encoding="utf-8"))
 
     def test_missing_source_after_resolve_raises_friendly_error(self) -> None:
-        ref = source_resolver.resolve_aispeech_source_entry(str(self.dataset_root))
+        ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
         Path(ref.sample_jsonl).unlink()
         with self.assertRaises(FileNotFoundError) as ctx:
             self.manager._convert_source_root_to_jsonl(ref)

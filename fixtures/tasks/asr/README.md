@@ -23,21 +23,21 @@ Chinese and English source:
 src/sure_eval/models/asr_qwen3/fixture/asr/
 ```
 
-Arabic source:
+Arabic source and redistribution terms:
 
 ```text
-Dataset: aispeech_phy_gigaspeechbench_low_resource_languages_syr_test
-Subset: raws/sample, Syrian Arabic (SYR)
-Fixture records: SYR#0d54cea98e7d__seg_000018 through _000020
-License: not declared in the source metadata; internal-use fixture pending owner confirmation
+Dataset: google/fleurs
+Revision: 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+Configuration/split: ar_eg/test
+Sentence IDs: 1993, 1730, 1995
+License: CC-BY-4.0
+Provenance: qwen3_asr_smoke/asr-ar/provenance.json
 ```
 
 ## Other Existing Sources
 
 | Source | Language | Files | Notes |
 |--------|----------|-------|-------|
-| `src/sure_eval/models/GilgameshWind__X-ASR-zh-en/fixture/asr/asr_zh/` | zh | `sample_*.wav`, `gt.jsonl` | Same structure as Qwen3 ASR Chinese fixture. |
-| `src/sure_eval/models/GilgameshWind__X-ASR-zh-en/fixture/asr/asr_en/` | en | `sample_*.wav`, `gt.jsonl` | Same structure as Qwen3 ASR English fixture. |
 | `src/sure_eval/models/asr_parakeet/fixture/asr/asr_en/` | en | `sample_*.wav`, `gt.jsonl` | English ASR fixture. |
 
 ## Expected Model-Local Layout

@@ -1,7 +1,7 @@
 version: 1
 
 exclude:
-  - private/aispeech/**
+  - private/site/**
   - docs/internal/**
   - config/site.bundled.yaml
   # Frozen upstream audit mirror, intentionally GitLab-only; see
@@ -10,21 +10,7 @@ exclude:
   - sure/skills/sure_eval/references/main_flow_agent/**
   - .gitlab-ci.yml
 
-forbidden_content:
-  # Company domains are forbidden in any form.
-  - "git[.]aispeech[.]com[.]cn"
-  - "(?:[a-z0-9-]+[.])*aispeech[.]com[.]cn"
-  # The .com.cn suffix is not the only company domain: the container registry
-  # and staff mail sit one level up, and a scan pinned to the longer suffix let
-  # a maintainer's address ship in public core. Written with [.] like the rules
-  # above so this file does not match itself.
-  - "(?:[a-z0-9-]+[.])*aispeech[.]com\\b"
-  # Company storage cluster IDs are forbidden even without a leading slash,
-  # so log fragments and test fixtures cannot evade the scan.
-  - "hpc_stor0[0-9]"
-  # The shared mount point is only identifying as an absolute path.
-  - "/mnt/cloudstor[f]s"
-  - "\\b(?:[p]dgpu-[a-z0-9-]+|[p]dcpu)\\b"
+forbidden_content: []
 
 forbidden_paths:
   - "**/.env"

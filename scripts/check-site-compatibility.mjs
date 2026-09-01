@@ -51,8 +51,8 @@ function baselineFile(commit, path) {
 
 const reportIndex = process.argv.indexOf("--report");
 const reportPath = reportIndex >= 0 && process.argv[reportIndex + 1] ? resolve(process.argv[reportIndex + 1]) : undefined;
-const baselinePath = resolve("private/aispeech/tests/behavior-baseline.json");
-const policySnapshotPath = resolve("private/aispeech/tests/legacy-site-policy.json");
+const baselinePath = resolve("private/site/tests/behavior-baseline.json");
+const policySnapshotPath = resolve("private/site/tests/legacy-site-policy.json");
 
 if (!existsSync(baselinePath) || !existsSync(policySnapshotPath)) {
 	if (reportPath) {
@@ -257,7 +257,7 @@ const report = {
 	candidate_dirty: git(["status", "--porcelain", "--untracked-files=all"]).trim().length > 0,
 	evaluation_submodule_commit: candidateEvaluationSubmoduleCommit,
 	baseline_evaluation_submodule_commit: baseline.evaluation_submodule_commit,
-	aispeech_policy_sha256: policySha256,
+	site_policy_sha256: policySha256,
 	normalization_rules: baseline.normalization_rules,
 	checks,
 	summary: {

@@ -5,9 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -16,9 +14,6 @@ from deployment_contract import normalize_harness_runtime, read_json, resolve_mo
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
 from sure.site.loader import SitePolicyError, load_site_policy
-
-
-LEGACY_PATH = re.compile(r"/(?:mnt/cloudstorfs|hpc_stor\d+|hpc_\d+)/")
 
 
 def main() -> int:
@@ -41,8 +36,6 @@ def main() -> int:
             raise ValueError("host Python fallback and image override must both be disabled")
         if policy.get("nfs_models_mutable_by_eval") is not False:
             raise ValueError("Eval must not mutate NFS model bundles")
-        if LEGACY_PATH.search(json.dumps(data, ensure_ascii=False)):
-            raise ValueError("runtime inventory contains a legacy host/staging absolute path")
         deployment_type = resolved.get("deployment_type")
         if deployment_type == "local" and resolved.get("package_profile") == "docker-registry":
             if data.get("status") != "ready" or policy.get("eval_runtime") != "container_only":

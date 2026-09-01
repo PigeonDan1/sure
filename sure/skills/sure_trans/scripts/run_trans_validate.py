@@ -377,8 +377,8 @@ def run_vc_validation(
         raise ValueError(
             f"model payload is {payload_bytes / GIB:.1f} GiB; with {RAM_SAFETY_FACTOR}x loading "
             f"headroom the job needs about {required_gb} GiB RAM but vc_memory_gb={memory_gb} "
-            f"(the partition caps 32 GiB per GPU). Set vc_gpus=2 vc_memory_gb=64 in the slash "
-            f"command or trans_input_resolved.json, then rerun the gate."
+            f"is configured. Set vc_memory_gb to at least {required_gb} and adjust vc_gpus if "
+            f"required by scheduler policy, then rerun the gate."
         )
     log_dir = run_dir / "artifacts" / "vc_logs" / kind
     attempts: list[dict[str, object]] = []

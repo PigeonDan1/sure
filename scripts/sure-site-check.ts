@@ -42,6 +42,9 @@ try {
 	if (execution.surfaces.includes("vc") && !execution.vc_partitions?.length) {
 		failures.push("execution.vc_partitions is required when the vc surface is enabled");
 	}
+	if (execution.surfaces.includes("vc") && !execution.vc_project) {
+		failures.push("execution.vc_project is required when the vc surface is enabled");
+	}
 	if (!execution.surfaces.includes("vc") && execution.vc_partitions !== undefined) {
 		failures.push("execution.vc_partitions requires the vc surface");
 	}

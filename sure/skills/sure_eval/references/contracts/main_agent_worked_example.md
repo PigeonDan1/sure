@@ -97,13 +97,13 @@ evidence:
   "selected_datasets": ["/srv/sure/datasets/group/store/ds_pool/example-asr-test"],
   "resolved_datasets": [
     {
-      "dataset_id": "aispeech_phy_aishell-1-test__v1.0.2",
+      "dataset_id": "demo_speech_zh_test__v1.0.2",
       "source_root": "/srv/sure/datasets/group/store/ds_pool/example-asr-test",
-      "source_dataset_name": "aispeech_phy_aishell-1-test",
+      "source_dataset_name": "demo_speech_zh_test",
       "version_id": "v1.0.2",
       "task": "ASR",
       "language": "zh",
-      "jsonl_path": "data/datasets/sure_benchmark/jsonl/aispeech_phy_aishell-1-test__v1.0.2.jsonl"
+      "jsonl_path": "data/datasets/sure_benchmark/jsonl/demo_speech_zh_test__v1.0.2.jsonl"
     }
   ],
   "skipped_datasets": [
@@ -136,7 +136,7 @@ evidence:
       "name": "materialize_templates",
       "script": "scripts/materialize_predictions_template.py",
       "inputs": {
-        "datasets": ["aispeech_phy_aishell-1-test__v1.0.2"]
+        "datasets": ["demo_speech_zh_test__v1.0.2"]
       }
     },
     {

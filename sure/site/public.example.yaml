@@ -27,4 +27,4 @@ network:
   container_registry: registry.example.com
 
 container_delivery:
-  repository_template: "{registry}/my-org/sure-{task}-{model_name}"
+  repository_template: "{registry}/example-org/sure-{task}-{model_name}"

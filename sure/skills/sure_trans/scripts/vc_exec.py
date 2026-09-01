@@ -2,7 +2,7 @@
 """Shared Volcano (vc) execution helpers for SURE-TRANS GPU validation.
 
 The GPU-touching trans gates (run_execution_compat.py, run_trans_validate.py)
-route container work through ``vc submit`` on the site's dedicated GPU
+route container work through ``vc submit`` on a policy-configured GPU
 partition instead of ``docker run --gpus all`` on the login node.
 
 Mechanics:
@@ -41,7 +41,6 @@ for _parent in Path(__file__).resolve().parents:
 from sure.site.container_delivery import resolve_container_image, resolve_container_repository
 from sure.site.loader import load_site_policy
 
-DEFAULT_PROJECT = "hpc"
 DEFAULT_GPUS = 1
 DEFAULT_MEMORY_GB = 32
 DEFAULT_CPUS = 8
@@ -51,9 +50,8 @@ DEFAULT_POLL_INTERVAL_SECONDS = 15.0
 DONE_MARKER = "SURE_TRANS_JOB_DONE"
 
 def default_partition() -> str:
-    """Return the site's default VC partition for trans GPU validation."""
-    resolved = load_site_policy(required=True) or {}
-    value = resolved.get("policy", {}).get("execution", {}).get("vc_default_partition")
+    """Return the configured default VC partition for trans GPU validation."""
+    value = _site_policy().get("execution", {}).get("vc_default_partition")
     if not value:
         raise ValueError(
             "site policy is missing execution.vc_default_partition; set it in "
@@ -62,10 +60,31 @@ def default_partition() -> str:
     return str(value)
 
 
+def default_project() -> str:
+    """Return the configured VC submission project."""
+    value = _site_policy().get("execution", {}).get("vc_project")
+    if not value:
+        raise ValueError(
+            "site policy is missing execution.vc_project; set it in "
+            "config/site.bundled.yaml or config/site.local.yaml"
+        )
+    return str(value)
+
+
+def configured_partitions() -> set[str]:
+    """Return the policy allowlist used for pre-submit partition validation."""
+    value = _site_policy().get("execution", {}).get("vc_partitions")
+    if not isinstance(value, list) or not value:
+        raise ValueError(
+            "site policy is missing execution.vc_partitions; set it in "
+            "config/site.bundled.yaml or config/site.local.yaml"
+        )
+    return {str(partition) for partition in value}
+
+
 def registry_host() -> str:
-    """Return the site's container registry host for trans image delivery."""
-    resolved = load_site_policy(required=True) or {}
-    value = resolved.get("policy", {}).get("network", {}).get("container_registry")
+    """Return the configured container registry host for trans image delivery."""
+    value = _site_policy().get("network", {}).get("container_registry")
     if not value:
         raise ValueError(
             "site policy is missing network.container_registry; set it in "
@@ -102,9 +121,8 @@ def agent_bin_dir() -> Path:
 def agent_bin_cleared_env() -> dict[str, str]:
     """The environment with the agent's own bin dir taken off PATH.
 
-    That leading bin dir shadows any system binary of the same name. A docker
-    left there answered every push with "denied" while the system one pushed
-    fine, so drop the directory rather than trust whatever now sits in it.
+    That leading bin dir shadows any system binary of the same name. Drop the
+    directory so deployment tools resolve from the host's configured PATH.
     """
     env = os.environ.copy()
     path = env.get("PATH")
@@ -124,43 +142,7 @@ def proxy_cleared_env() -> dict[str, str]:
 
 
 def vc_available() -> bool:
-    if not shutil.which("vc"):
-        return False
-    try:
-        result = run_command(["vc", "info"], timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return result.returncode == 0
-
-
-def user_partitions() -> set[str]:
-    if not shutil.which("vc"):
-        return set()
-    try:
-        result = run_command(["vc", "info", "-u"], timeout=60)
-    except (OSError, subprocess.SubprocessError):
-        return set()
-    # Only the [Partition] block lists partitions. Scanning the whole output
-    # collected the separator rule and answers from other blocks ("NO" from
-    # the overcommit block), which made the caller's precheck accept them.
-    partitions: set[str] = set()
-    in_block = False
-    for line in result.stdout.splitlines():
-        name = line.strip()
-        if name == "[Partition]":
-            in_block = True
-            continue
-        if not in_block:
-            continue
-        if name.startswith("["):
-            break
-        if name.strip("-") and re.fullmatch(r"[A-Za-z0-9._-]+", name):
-            partitions.add(name)
-    return partitions
-
-
-def partition_allowed(partition: str) -> bool:
-    return partition in user_partitions()
+    return shutil.which("vc") is not None
 
 
 def safe_image_component(value: str) -> str:
@@ -286,10 +268,10 @@ def recorded_push_digest(artifact: dict, registry_ref: str) -> str:
 def registry_tag_digest(image_ref: str, log_path: Path) -> str:
     """Manifest digest the registry currently serves for this reference.
 
-    ``vc submit`` takes ``repo:tag`` only and answers 镜像不存在 to any
-    ``repo@sha256:...`` reference, so a job cannot carry the pin in the
-    reference it runs. Pull the tag and read the digest back instead, which
-    makes the pin something the submission proves rather than states.
+    This VC backend accepts ``repo:tag`` but not ``repo@sha256:...`` for job
+    submission, so a job cannot carry the pin in the reference it runs. Pull
+    the tag and read the digest back instead, which makes the pin something
+    the submission proves rather than states.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     command = ["docker", "pull", image_ref]
@@ -351,8 +333,8 @@ def ensure_registry_image(
                 )
                 raise ValueError(
                     f"{' '.join(command)} failed ({reason}); see {log_path}. "
-                    "The registry may reject an unapproved repository or a reused tag; "
-                    f"verify the site-resolved target and bump image_version when content changed.\n{output}"
+                    "Check repository permissions, registry immutability policy, and the tag choice; "
+                    f"verify the policy-resolved target and bump image_version when content changed.\n{output}"
                 )
     return digest
 
@@ -604,19 +586,19 @@ def diagnose_oom(exit_code: int | None, evidence: str) -> str | None:
     text = (evidence or "").lower()
     if exit_code == 137 or "oomkilled" in text:
         return (
-            "job was OOM-killed (exit 137): RAM request too small. Raise vc_memory_gb "
-            "(the partition caps 32 GiB per GPU; request more GPUs to raise it, e.g. "
-            "vc_gpus=2 vc_memory_gb=64), then rerun the gate."
+            "job was OOM-killed (exit 137): requested RAM was insufficient. Increase "
+            "vc_memory_gb within the configured project and partition limits, or reduce "
+            "the workload, then rerun the gate."
         )
     if GPU_OOM_MARKER in text:
         return (
-            "GPU VRAM exhausted (RTX 4090 has 24 GiB): reduce batch/beam size, enable bf16, "
+            "GPU VRAM exhausted: reduce batch/beam size, enable bf16 where supported, "
             "or shard the model, then rerun the gate."
         )
     if any(marker in text for marker in RAM_OOM_MARKERS) or "killed" in text:
         return (
-            "job RAM exhausted: raise vc_memory_gb (the partition caps 32 GiB per GPU; "
-            "request more GPUs to raise it, e.g. vc_gpus=2 vc_memory_gb=64), then rerun the gate."
+            "job RAM exhausted: increase vc_memory_gb within the configured project and "
+            "partition limits, or reduce the workload, then rerun the gate."
         )
     return None
 
@@ -713,7 +695,7 @@ def run_vc_job(
     mounts: list[str] | None = None,
     env: dict[str, str] | None = None,
     partition: str | None = None,
-    project: str = DEFAULT_PROJECT,
+    project: str | None = None,
     gpus: int = DEFAULT_GPUS,
     memory_gb: int = DEFAULT_MEMORY_GB,
     cpus: int = DEFAULT_CPUS,
@@ -724,15 +706,14 @@ def run_vc_job(
     workdir: str = "",
 ) -> VcJobResult:
     partition = partition or default_partition()
+    project = project or default_project()
     if not vc_available():
-        raise ValueError(
-            "vc is required for GPU validation: `which vc && vc info` did not pass on this host"
-        )
-    allowed = user_partitions()
+        raise ValueError("vc is required for GPU validation but is not available on PATH")
+    allowed = configured_partitions()
     if partition not in allowed:
         raise ValueError(
-            f"vc partition {partition!r} is not available to this user "
-            f"(visible partitions: {sorted(allowed)}); ask the cluster admin for access"
+            f"vc partition {partition!r} is not listed in execution.vc_partitions "
+            f"(configured partitions: {sorted(allowed)})"
         )
     log_dir = log_dir.resolve()
     mount_list = list(mounts or [])
@@ -809,7 +790,7 @@ def main() -> int:
     parser.add_argument("--mount", action="append", default=[])
     parser.add_argument("--env", action="append", default=[])
     parser.add_argument("--partition", default=None, help="defaults to the site policy partition")
-    parser.add_argument("--project", default=DEFAULT_PROJECT)
+    parser.add_argument("--project", default=None, help="override the site policy VC project")
     parser.add_argument("--gpus", type=int, default=DEFAULT_GPUS)
     parser.add_argument("--memory-gb", type=int, default=DEFAULT_MEMORY_GB)
     parser.add_argument("--cpus", type=int, default=DEFAULT_CPUS)

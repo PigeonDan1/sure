@@ -26,6 +26,7 @@ import write_runtime_inventory  # noqa: E402
 _SITE_POLICY_DIR: tempfile.TemporaryDirectory | None = None
 _SITE_POLICY_PREVIOUS: str | None = None
 TEST_PARTITION = "gpu-test"
+TEST_PROJECT = "example-project"
 TEST_REGISTRY = "registry.example"
 
 
@@ -46,12 +47,13 @@ def setUpModule() -> None:
         f"  allowed_source_roots: [{root}/datasets]",
         "execution:",
         "  surfaces: [vc]",
+        f"  vc_project: {TEST_PROJECT}",
         f"  vc_partitions: [{TEST_PARTITION}]",
         f"  vc_default_partition: {TEST_PARTITION}",
         "network:",
         f"  container_registry: {TEST_REGISTRY}",
         "container_delivery:",
-        '  repository_template: "{registry}/hpc/ai_{task}-{model_name}"',
+        '  repository_template: "{registry}/example-org/sure-{task}-{model_name}"',
         "",
     ])
     path = Path(_SITE_POLICY_DIR.name) / "site.yaml"
@@ -762,7 +764,7 @@ class TransScriptsTest(unittest.TestCase):
             self.assertNotIn("vc submit", output)
 
     def test_registry_gate_takes_a_tag_submit_that_proves_the_digest(self) -> None:
-        """VC answers 镜像不存在 to any repo@sha256:... reference.
+        """This VC backend accepts tags but not digest references for jobs.
 
         Requiring the smoke to *run* on a digest-pinned reference therefore made
         the unit unsatisfiable on GPU. The pin is proven by the digest the tag
