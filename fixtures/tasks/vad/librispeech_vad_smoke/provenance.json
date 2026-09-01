@@ -1,0 +1,33 @@
+{
+  "schema": "sure.fixture_provenance.v1",
+  "dataset": {
+    "repository": "OpenSLR/LibriSpeech",
+    "revision": "OpenSLR-12",
+    "configuration": "test-other",
+    "split": "test",
+    "metadata_sha256": "4b4b66f7706fc243b6c867d402fb7a54ae3b1d9c9f4daefe1e479e0ae7b0ed20",
+    "license": "CC-BY-4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "source_url": "https://www.openslr.org/12",
+    "citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf"
+  },
+  "selection": {
+    "source_fixture": "fixtures/tasks/asr/qwen3_asr_smoke/asr_en/sample_1_367-130732-0006.wav",
+    "source_utterance_id": "367-130732-0006",
+    "source_sha256": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+    "derivation": "prepend and append 0.5 seconds of 16 kHz mono PCM16 digital silence",
+    "duration_seconds": 3.35,
+    "annotation_method": "ffmpeg silencedetect noise=-40dB:d=0.2 on the derived WAV; intervals are the complement of detected silence",
+    "speech_segments_seconds": [
+      {"start": 0.551687, "end": 0.780875},
+      {"start": 1.033062, "end": 2.553813}
+    ]
+  },
+  "files": [
+    {
+      "path": "librispeech_vad_001.wav",
+      "source_path": "test-other/367/130732/367-130732-0006.flac",
+      "sha256": "e498871278442686bf26495da6b680ec02050b428a4caf45f7e6368161466ff0"
+    }
+  ]
+}

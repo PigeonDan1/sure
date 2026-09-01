@@ -92,13 +92,21 @@ def load_samples(source_dir: Path) -> list[dict[str, Any]]:
         key = row.get("key") or row.get("id") or audio_path.stem
         annotation_fields = [
             field
-            for field in ("ground_truth", "target_text", "text", "segments", "label", "intent")
+            for field in (
+                "ground_truth",
+                "target_text",
+                "text",
+                "segments",
+                "speech_segments",
+                "label",
+                "intent",
+            )
             if field in row
         ]
         if not annotation_fields:
             raise ValueError(
                 f"{gt}:{line_no} must contain at least one annotation field "
-                "(ground_truth, target_text, text, segments, label, or intent)"
+                "(ground_truth, target_text, text, segments, speech_segments, label, or intent)"
             )
         sample = {
             "key": str(key),
@@ -108,6 +116,8 @@ def load_samples(source_dir: Path) -> list[dict[str, Any]]:
         }
         if isinstance(row.get("duration_sec"), (int, float)):
             sample["duration_sec"] = row["duration_sec"]
+        if isinstance(row.get("duration"), (int, float)):
+            sample["duration"] = row["duration"]
         if isinstance(row.get("sample_rate"), (int, float)):
             sample["sample_rate"] = row["sample_rate"]
         samples.append(sample)

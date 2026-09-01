@@ -1,6 +1,6 @@
 # /sure_trans 技能介绍
 
-`/sure_trans` 把一个已有交付环境的模型(Dockerfile + 模型权重 + 推理入口)转换成 SURE Eval 可直接消费的、digest 固定的容器化模型包,产出与 `/sure_onboard` 相同的 Eval-ready 契约。
+`/sure_trans` 把一个已有交付环境的模型(Dockerfile + 模型权重 + 推理入口)转换成 digest 固定的容器化模型包,产出与 `/sure_onboard` 相同的交接契约。VAD 当前只接通 Feed、Onboard 和 Trans；`/sure_eval` 尚未保留结构化 VAD 预测，因此 VAD bundle 不能声称端到端 Eval-ready。
 
 ## 核心概念
 
@@ -11,7 +11,7 @@
 | Digest 固定 | 所有交接引用使用 `image@sha256:...`,禁止可变 tag;registry push 后必须按 digest 精确 pull 并复验。 |
 | 站点解析交付 | source/adapter 仓库由活动站点策略统一解析,agent 不拼接 namespace;解析结果和策略身份写入 `trans_input_resolved.json`。 |
 | Container-only | Eval 运行时完全在容器内:`host_python_fallback=false`、`image_override_allowed=false`,模型 payload 以只读方式挂载。 |
-| IO contract | `input_type=audio_path` 到 `output_type=json`,`primary_field=text`,`required_fields=["text"]`、`nonempty_fields=["text"]`、`json_serializable=true`,由 `validate.py --stage contract` 对 `sample_output.json` 校验。 |
+| IO contract | 音频输入统一为 `audio_path`;ASR 主输出是非空 `text`,VAD 主输出是非空秒级 `speech_segments`,由 `validate.py --stage contract` 对 `sample_output.json` 校验。 |
 | 模型 bundle | 最终交接目录 `sure/models/<model_name>/`:wrapper 五件套 + `Dockerfile.sure` + 模型 payload + `fixture/<task>/` + `artifacts/` terminal sidecar。`/sure_eval` 只挂载该目录,外部绝对路径不是可执行交接。 |
 
 ## 参数
@@ -23,7 +23,7 @@
 | `inference_entrypoint` | 是 | 既有推理入口绝对路径,别名 `inference_code`。 |
 | `framework` | 是 | 计算框架，必须为 `pytorch`；接受 `torch` 别名。 |
 | `model_framework` | 是 | 模型实现框架，推荐 `transformers`，也可填写 `wenet`、`funasr`、`custom` 等安全标识符。非 Transformers 不会单独阻断。 |
-| `task_type` | 否 | 默认从证据推断,歧义时强制显式给出,例如 `asr`。 |
+| `task_type` | 否 | `asr/s2tt/tts/vad/vc`;默认从证据推断,歧义时强制显式给出。独立活动检测器使用 `vad`,仅把 VAD 当前端且最终输出文字的系统仍是 `asr`。 |
 | `source_image_policy` | 否 | `auto`(默认)/`load`/`build`。`auto` 先找 build context 下的镜像 tar,失败回退 build。 |
 | `build_context` | 否 | 默认取 Dockerfile 父目录。 |
 | `image_tar` | 否 | 显式指定镜像 tar,必须位于 `build_context` 内。 |
@@ -93,7 +93,7 @@ adapter 镜像同时复制当前锁定的 Harness Runtime。默认从 `SURE_HARN
 
 ## 最终 bundle 布局(与 /sure_onboard 对齐)
 
-`finalize_model_bundle` 通过后,`sure/models/<model_name>/` 与 `/sure_onboard` 的产物布局一致,`/sure_eval` 直接消费同一组 terminal sidecar:
+`finalize_model_bundle` 通过后,`sure/models/<model_name>/` 与 `/sure_onboard` 的产物布局一致。已接通任务由 `/sure_eval` 消费同一组 terminal sidecar；VAD 仍受上述评测桥限制:
 
 ```text
 sure/models/<model_name>/
@@ -119,7 +119,7 @@ sure/models/<model_name>/
 - `deployment_ready.json` 使用 `sure.onboard.deployment_ready.v1`,与 run 目录逐字节一致;ready bundle 必须声明 `integrity_profile=manifest-complete-v1`,`required_artifact_sha256` 覆盖 wrapper、Dockerfile、fixture、sample output、全部模型 payload 与 required sidecar,`bundle_identity_sha256` 为哈希表的摘要,四个 portable sidecar 不允许残留宿主机共享存储的绝对路径。
 - `check_artifact.py --kind deployment_ready` 与 `/sure_onboard` 的 `check_finalized_bundle.py` 执行同一组校验:bundle 与 run 双写一致、哈希复验、bundle identity 重算、portable manifest、Dockerfile 哈希、执行策略与 digest 固定引用。
 
-模型 payload(权重等文件)落在 bundle 根目录,与 `model.py`、`model.spec.yaml` 同级;`fixture/<task>/` 下是冒烟音频与 `gt.jsonl`,每行 `{audio, task_type, text}`。
+模型 payload(权重等文件)落在 bundle 根目录,与 `model.py`、`model.spec.yaml` 同级;`fixture/<task>/` 下是冒烟音频与 `gt.jsonl`。ASR 行包含文本,VAD 行包含 `key`、秒级 `duration` 与 `speech_segments`。
 
 ### Gate 校验点
 

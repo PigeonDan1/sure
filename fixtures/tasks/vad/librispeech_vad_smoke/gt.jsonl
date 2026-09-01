@@ -1,0 +1,1 @@
+{"id":1,"key":"librispeech-vad-001","task":"VAD","dataset":"librispeech_test-other_vad_derived","audio":"librispeech_vad_001.wav","duration":3.35,"speech_segments":[{"start":0.551687,"end":0.780875},{"start":1.033062,"end":2.553813}],"source_utterance_id":"367-130732-0006"}

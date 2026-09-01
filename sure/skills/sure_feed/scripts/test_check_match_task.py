@@ -80,6 +80,30 @@ class TaskTypeDomain(unittest.TestCase):
             r = run_gate(p, run_dir)
             self.assertEqual(r.returncode, 0, msg=r.stderr)
 
+    def test_vad_task_type_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            run_dir = Path(d)
+            p = run_dir / "match_task_result.json"
+            p.write_text(
+                json.dumps(
+                    {
+                        "candidates": [
+                            {
+                                "model_id": "example/StreamingVAD",
+                                "match": {
+                                    "matched": True,
+                                    "match_source": "model_card",
+                                    "task_type": "vad",
+                                },
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            r = run_gate(p, run_dir)
+            self.assertEqual(r.returncode, 0, msg=r.stderr)
+
     def test_missing_task_type_still_passes(self) -> None:
         """task_type is optional at this unit; absence is not itself an error."""
         with tempfile.TemporaryDirectory() as d:

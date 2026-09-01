@@ -54,6 +54,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `network` | optional | Non-secret site endpoints used by private adapters and documentation |
 | `network.container_registry` | for `docker-registry` | Registry host or host/path prefix, without a URL scheme |
 | `container_delivery.repository_template` | for `docker-registry` | Repository template using `{registry}`, optional `{task}`, and `{model_name}` |
+| `container_delivery.task_namespaces` | optional | Map logical task IDs to site registry namespaces without changing model or evaluation task identity |
 
 Unknown fields, duplicate list values, unsupported surfaces, and relative paths are rejected. Policy files may contain credential environment-variable names, but never credential values.
 
@@ -110,6 +111,7 @@ network:
 
 container_delivery:
   repository_template: "{registry}/my-org/sure-{task}-{model_name}"
+  task_namespaces: {}
 ```
 
 For shared storage, replace these placeholders with roots visible to every host and container that executes a workflow. The projection root is the only writable dataset workspace; source roots are mounted read-only. For a local-only fixture, create temporary model, result, dataset, projection, and runtime roots and point the local policy at them.
@@ -128,6 +130,8 @@ execution:
 ```
 
 `container_delivery.repository_template` is site data, not an agent decision. Registry-backed workflows resolve it before downloading model weights or building an image. The template must start with `{registry}/`, must include `{model_name}`, and may include `{task}`. `/sure_onboard` uses the resolved repository as its delivery target; `/sure_trans` uses the same target and appends `-source` for its source-image repository.
+
+When a registry groups several logical speech tasks under one repository namespace, configure `container_delivery.task_namespaces` instead of changing the model task. For example, `sd: asr`, `sa_asr: asr`, and `vad: asr` keep their distinct SURE contracts while expanding `{task}` as `asr` in the repository name. Unmapped tasks use their own task ID.
 
 When `image_version` is omitted, the workflow queries the relevant Registry V2 tag lists, considers only `major.minor.patch` tags, and selects the next patch after the highest existing version; an empty repository starts at `0.1.0`. A query failure blocks instead of guessing a tag. The resolved repositories, version, observed tags, and site-policy identity are recorded in `model_input_resolved.json` or `trans_input_resolved.json`; credentials remain in the Docker credential store and never enter either artifact or the policy.
 

@@ -237,10 +237,9 @@ def stage_fixture(run_dir: Path, model_dir: Path, resolved: dict) -> None:
         "gt_jsonl": str(gt_jsonl),
         "samples": [
             {
-                "key": staged.stem,
+                **samples_value[0],
                 "audio": staged.name,
                 "audio_path": str(destination),
-                "annotation_fields": list(fixture_manifest["samples"][0].get("annotation_fields") or []),
             }
         ],
         "staged_path": str(destination),

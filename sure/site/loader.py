@@ -193,7 +193,7 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
         policy["network"] = network
     if "container_delivery" in root:
         delivery_source = _mapping(root["container_delivery"], "container_delivery")
-        _reject_unknown(delivery_source, {"repository_template"}, "container_delivery")
+        _reject_unknown(delivery_source, {"repository_template", "task_namespaces"}, "container_delivery")
         if not policy.get("network", {}).get("container_registry"):
             raise SitePolicyError(
                 "container_delivery.repository_template requires network.container_registry"
@@ -202,7 +202,21 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
             repository_template = validate_repository_template(delivery_source.get("repository_template"))
         except ContainerDeliveryError as error:
             raise SitePolicyError(f"container_delivery.{error}") from error
-        policy["container_delivery"] = {"repository_template": repository_template}
+        task_namespaces_source = delivery_source.get("task_namespaces", {})
+        task_namespaces = _mapping(task_namespaces_source, "container_delivery.task_namespaces")
+        parsed_task_namespaces: dict[str, str] = {}
+        for task, namespace in task_namespaces.items():
+            if not isinstance(task, str) or re.fullmatch(r"[a-z0-9][a-z0-9_-]*", task) is None:
+                raise SitePolicyError(
+                    f"container_delivery.task_namespaces key {task!r} must match [a-z0-9][a-z0-9_-]*"
+                )
+            parsed_task_namespaces[task] = _string(
+                namespace, f"container_delivery.task_namespaces.{task}"
+            )
+        policy["container_delivery"] = {
+            "repository_template": repository_template,
+            "task_namespaces": parsed_task_namespaces,
+        }
     return policy
 
 

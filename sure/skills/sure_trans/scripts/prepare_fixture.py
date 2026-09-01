@@ -4,12 +4,21 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import shutil
 from pathlib import Path
 
 
 AUDIO_SUFFIXES = {".wav", ".flac", ".mp3", ".ogg", ".m4a"}
-ANNOTATION_FIELDS = ("ground_truth", "target_text", "text", "segments", "label", "intent")
+ANNOTATION_FIELDS = (
+    "ground_truth",
+    "target_text",
+    "text",
+    "segments",
+    "speech_segments",
+    "label",
+    "intent",
+)
 
 
 def read_object(path: Path) -> dict:
@@ -56,6 +65,45 @@ def has_annotation_value(value: object) -> bool:
     if isinstance(value, list):
         return bool(value)
     return value is not None
+
+
+def vad_reference(expected: dict, source: Path) -> tuple[str, float, list[dict]]:
+    key = expected.get("key")
+    if not isinstance(key, str) or not key.strip():
+        raise ValueError(f"VAD fixture annotation requires a non-empty key: {source}")
+    duration = expected.get("duration", expected.get("duration_sec"))
+    if (
+        isinstance(duration, bool)
+        or not isinstance(duration, (int, float))
+        or not math.isfinite(float(duration))
+        or float(duration) <= 0
+    ):
+        raise ValueError(f"VAD fixture annotation requires a positive finite duration: {source}")
+    segments = expected.get("speech_segments")
+    if not isinstance(segments, list) or not segments:
+        raise ValueError(
+            f"VAD fixture annotation requires non-empty speech_segments, not speaker segments: {source}"
+        )
+    previous_end = 0.0
+    for index, segment in enumerate(segments):
+        if not isinstance(segment, dict):
+            raise ValueError(f"VAD speech_segments[{index}] must be an object: {source}")
+        start = segment.get("start")
+        end = segment.get("end")
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in (start, end)):
+            raise ValueError(f"VAD speech_segments[{index}] start/end must be numeric seconds: {source}")
+        start_value = float(start)
+        end_value = float(end)
+        if not all(math.isfinite(value) for value in (start_value, end_value)):
+            raise ValueError(f"VAD speech_segments[{index}] start/end must be finite: {source}")
+        if start_value < 0 or start_value >= end_value or end_value > float(duration):
+            raise ValueError(
+                f"VAD speech_segments[{index}] must satisfy 0 <= start < end <= duration: {source}"
+            )
+        if index > 0 and start_value < previous_end:
+            raise ValueError(f"VAD speech_segments must be sorted and non-overlapping: {source}")
+        previous_end = end_value
+    return key.strip(), float(duration), segments
 
 
 def clear_directory(path: Path, controlled_root: Path) -> None:
@@ -114,11 +162,17 @@ def main() -> int:
         if not isinstance(prompt_text, str) or not prompt_text.strip():
             raise ValueError(f"TTS fixture annotation requires non-empty prompt_text: {expected_source}")
         gt_extras["prompt_text"] = prompt_text.strip()
+    vad_key = None
+    vad_duration = None
+    if task == "vad":
+        vad_key, vad_duration, _ = vad_reference(expected, expected_source)
     expected_destination = staged_dir / expected_source.name
     shutil.copy2(expected_source, expected_destination)
     gt_jsonl = staged_dir / "gt.jsonl"
     audio_field = "reference_audio" if task in {"tts", "vc"} else "audio"
     gt_row = {audio_field: source.name, "task_type": task, **annotations, **gt_extras}
+    if task == "vad":
+        gt_row.update({"key": vad_key, "duration": vad_duration})
     gt_jsonl.write_text(json.dumps(gt_row, ensure_ascii=False) + "\n", encoding="utf-8")
     payload = {
         "schema": "sure.trans.fixture_manifest.v1",
@@ -132,10 +186,11 @@ def main() -> int:
         "gt_jsonl": str(gt_jsonl),
         "samples": [
             {
-                "key": source.stem,
+                "key": vad_key or source.stem,
                 "audio": source.name,
                 "audio_path": str(destination),
                 "annotation_fields": annotation_fields,
+                **({"duration": vad_duration} if vad_duration is not None else {}),
             }
         ],
         "source_path": str(source),

@@ -27,6 +27,7 @@ TASK_TYPES = {
     "sd",
     "ser",
     "tts",
+    "vad",
     "vc",
     "kws",
     "slu",

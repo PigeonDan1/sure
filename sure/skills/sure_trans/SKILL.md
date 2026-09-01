@@ -20,7 +20,7 @@ Convert an existing model delivery into the same Eval-ready contract produced by
 | `source_image_policy` | no | `auto` (default), `load`, or `build`. `auto` tries a tar below `build_context`, then falls back to Dockerfile build. |
 | `image_tar` | no | Explicit image archive absolute path. It must be inside `build_context`. |
 | `model_name` | yes | Must use `<organization>__<model-name>`; all bundle and image names use this value. |
-| `task_type` | no | Infer from evidence; require an explicit value when ambiguous. |
+| `task_type` | no | `asr \| s2tt \| tts \| vad \| vc`. Infer from evidence; require an explicit value when ambiguous. Standalone activity detectors use `vad`; an ASR chain with a VAD frontend remains `asr`. |
 | `fixture` | no | Absolute smoke input path. A same-stem `.expected.json` with a non-empty reference annotation is required; otherwise select an unambiguous `examples/smoke.*` file from the build context. |
 | `device` | no | `auto` (default), `cuda`, or `cpu`. `cpu` validates with local Docker only; `cuda` and GPU-capable `auto` submit VC jobs to the dedicated partition `<vc_default_partition>`. |
 | `model_mount_target` | no | Default to `/models/<model_name>`. |
@@ -45,6 +45,7 @@ Example:
 - Do not modify the supplied Dockerfile, model, or inference source in place.
 - Keep model data outside the image, materialize it into `sure/models/<model_name>/`, and mount that approved bundle read-only.
 - Treat MCP as the model invocation protocol. CPU validation runs in local Docker; GPU-touching validation submits VC jobs to `<vc_default_partition>`.
+- Standalone VAD coverage ends at Feed, Onboard, and Trans in this release. The `/sure_eval` VAD bridge is not enabled; do not present a VAD bundle as Eval-ready or modify the evaluation engine to bypass that boundary.
 - Require the primary computation framework to be PyTorch. Auxiliary preprocessing may use native binaries or ONNX Runtime when recorded as a support dependency.
 - Prefer Transformers as the model framework, but do not block a custom or other declared PyTorch model framework. Record the declaration, detected category, architecture signals, and clarification in `framework_detection.json`; rely on original inference, adapter inference, and equivalence gates for behavioral proof.
 
@@ -186,9 +187,14 @@ class ModelWrapper:
 
 Keep `server.py` protocol-only. Use stdin/stdout JSON-RPC, write logs to stderr, and expose the task tool declared in `config.yaml`. For ASR, expose `transcribe_audio` with `audio_path` and return a JSON-serializable object containing non-empty `text`.
 
+For VAD, expose `vad_predict` with `audio_path` and return a JSON-serializable
+object containing non-empty `speech_segments`. Each segment uses finite seconds
+and satisfies `0 <= start < end`; segments are sorted and non-overlapping.
+`frame_scores` is optional and must not be synthesized from hard segments.
+
 The adapter image always bakes `/opt/sure_trans/mcp_smoke.py` (copied by `scaffold_adapter.py`). All MCP protocol verification runs that deterministic driver: it spawns `server.py`, drives `initialize` / `tools/list` / `tools/call` / `shutdown` over stdin with bounded deadlines, and writes `mcp_smoke.json` evidence. Never write ad-hoc MCP test scripts, and never start the server bare without driving requests — a bare server waits on stdin forever. The MCP stdout channel must stay a pure JSON-RPC stream: the generated `server.py` redirects model-library stdout to stderr during `tools/call`, and `mcp_smoke.py` skips stray non-JSON stdout lines while reading responses (recording them as `stdout_junk_*` evidence) — model loading progress prints must never corrupt the protocol.
 
-Equivalence is decided by the gate, not by the command. Write `equivalence_result.json` with `baseline_output` and `adapter_output` as the **paths** of the two recorded output files (the original inference output and the adapter's `sample_output.json`), never the transcript text itself. The gate opens both, reads the adapter `io_contract` primary field out of each (falling back to the whole file when it is not JSON), compares them under `comparison_policy` (`normalized_whitespace` by default, or `exact`), and records what it read as `comparison_evidence`. An exit code alone never proves equivalence: a `/bin/true` command once carried this gate to passed while neither file was opened.
+Equivalence is decided by the gate, not by the command. Write `equivalence_result.json` with `baseline_output` and `adapter_output` as the **paths** of the two recorded output files (the original inference output and the adapter's `sample_output.json`), never the transcript text itself. The gate opens both, reads the adapter `io_contract` primary field out of each (falling back to the whole file when it is not JSON), compares them under `comparison_policy` (`normalized_whitespace` by default, or `exact`), and records what it read as `comparison_evidence`. For VAD, comparison covers both `speech_segments` and `frame_scores` when scores are present; losing optional AUC evidence is not equivalent. An exit code alone never proves equivalence: a `/bin/true` command once carried this gate to passed while neither file was opened.
 
 ## Image Packaging
 
@@ -283,7 +289,7 @@ This seals the already-staged model payload, adapter, and small evidence under `
 
 The generated `validate.py` keeps the same CLI contract as `/sure_onboard`: `--stage import|load|infer|contract|all`, writing `<stage>_result.json` and, during infer, `sample_output.json` into `SURE_VALIDATE_ARTIFACTS_DIR`, then validating that sample against the filled `io_contract` in the contract stage — from the same directory. For `tts` and `vc`, the generated audio that `sample_output.audio_path` points at must be written below `$SURE_VALIDATE_ARTIFACTS_DIR/outputs`, because finalization only promotes generated audio from there into the bundle. The adapter image embeds the locked Harness Runtime; `runtime_inventory.harness_runtime.required=true`, so `/sure_eval` uses the image binding and does not mount the repository Harness Runtime into the model container.
 
-After completion, run evaluation locally or through VC without changing the model protocol:
+After completion, supported non-VAD task types can run evaluation locally or through VC without changing the model protocol. Standalone VAD must stop after the sealed Trans bundle until the `/sure_eval` structured-prediction bridge is implemented:
 
 ```text
 /sure_eval model=<model_name> execution=local

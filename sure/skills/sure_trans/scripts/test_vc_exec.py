@@ -1406,6 +1406,76 @@ class TransValidateVcTest(unittest.TestCase):
             self.assertEqual(payload["status"], "passed")
             self.assertEqual(payload["protocol"]["status"], "passed")
 
+    def test_cpu_mcp_gate_requires_the_same_protocol_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cpu"},
+            )
+            mcp_result = artifacts / "mcp_result.json"
+            pending = {
+                "status": "pending",
+                "tool_name": "vad_predict",
+                "run_command": [sys.executable, "-c", "pass"],
+            }
+            write_artifact(mcp_result, pending)
+            with mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "run_trans_validate.py",
+                    "--run-dir",
+                    str(run_dir),
+                    "--produces",
+                    str(mcp_result),
+                    "--kind",
+                    "mcp",
+                ],
+            ):
+                with self.assertRaises(ValueError) as raised:
+                    run_trans_validate.main()
+            self.assertIn("mcp_smoke.py", str(raised.exception))
+
+            evidence_dir = artifacts / "adapter_validation"
+            evidence_dir.mkdir()
+            write_artifact(
+                evidence_dir / "mcp_smoke.json",
+                {
+                    "schema": "sure.trans.mcp_smoke.v1",
+                    "status": "passed",
+                    "tool": "vad_predict",
+                    "initialize": {"ok": True},
+                    "tools_list": {"ok": True, "tools": ["vad_predict"]},
+                    "tools_call": {
+                        "ok": True,
+                        "output_nonempty": True,
+                        "primary_field": "speech_segments",
+                    },
+                    "shutdown": {"ok": True},
+                    "error": None,
+                },
+            )
+            write_artifact(mcp_result, pending)
+            with mock.patch.object(
+                sys,
+                "argv",
+                [
+                    "run_trans_validate.py",
+                    "--run-dir",
+                    str(run_dir),
+                    "--produces",
+                    str(mcp_result),
+                    "--kind",
+                    "mcp",
+                ],
+            ):
+                run_trans_validate.main()
+            payload = json.loads(mcp_result.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "passed")
+            self.assertEqual(payload["protocol"]["tool"], "vad_predict")
+
     def test_payload_budget_blocks_before_submit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)

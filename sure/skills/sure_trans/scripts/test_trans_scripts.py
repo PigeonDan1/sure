@@ -13,11 +13,14 @@ from unittest import mock
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPTS_DIR.parents[3]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import run_docker_build  # noqa: E402
 import run_trans_validate  # noqa: E402
 import mcp_smoke  # noqa: E402
+import check_artifact  # noqa: E402
+import materialize_trans_inputs  # noqa: E402
 import prepare_fixture  # noqa: E402
 import scaffold_adapter  # noqa: E402
 import stage_model_payload  # noqa: E402
@@ -275,7 +278,15 @@ class TransScriptsTest(unittest.TestCase):
             mcp_smoke.tool_arguments("convert_voice", audio),
             {"source_audio_path": str(audio), "reference_audio_path": str(audio)},
         )
+        self.assertEqual(
+            mcp_smoke.tool_arguments("vad_predict", audio),
+            {"audio_path": str(audio)},
+        )
         self.assertEqual(mcp_smoke.primary_output_field("transcribe_audio"), "text")
+        self.assertEqual(mcp_smoke.primary_output_field("diarize"), "segments")
+        self.assertEqual(mcp_smoke.primary_output_field("sa_asr"), "segments")
+        self.assertEqual(mcp_smoke.primary_output_field("sa-asr"), "segments")
+        self.assertEqual(mcp_smoke.primary_output_field("vad_predict"), "speech_segments")
         self.assertEqual(mcp_smoke.primary_output_field("synthesize_speech"), "audio_path")
         self.assertEqual(mcp_smoke.primary_output_field("convert_voice"), "audio_path")
 
@@ -292,6 +303,167 @@ class TransScriptsTest(unittest.TestCase):
             self.assertTrue(mcp_smoke.output_is_nonempty("audio_path", str(filled)))
             self.assertFalse(mcp_smoke.output_is_nonempty("audio_path", str(empty)))
             self.assertFalse(mcp_smoke.output_is_nonempty("audio_path", str(root / "absent.wav")))
+
+            self.assertTrue(mcp_smoke.output_is_nonempty("segments", [{"start": 0.0, "end": 1.0}]))
+            self.assertFalse(mcp_smoke.output_is_nonempty("segments", []))
+            self.assertTrue(mcp_smoke.output_is_nonempty("speech_segments", [{"start": 0.0, "end": 1.0}]))
+            self.assertFalse(mcp_smoke.output_is_nonempty("speech_segments", []))
+
+    def test_vad_task_uses_structured_timing_contract(self) -> None:
+        tool_name, input_schema = scaffold_adapter.tool_contract("vad")
+        contract = scaffold_adapter.io_contract_for("vad")
+        self.assertEqual(tool_name, "vad_predict")
+        self.assertEqual(input_schema["required"], ["audio_path"])
+        self.assertEqual(contract["primary_field"], "speech_segments")
+        self.assertEqual(contract["required_fields"], ["speech_segments"])
+        self.assertNotIn("text", contract["required_fields"])
+
+    def test_standalone_vad_entrypoints_infer_as_vad(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            model = root / "StreamingVAD"
+            model.mkdir()
+            for filename, source in (
+                ("firered_vad.py", "import torch\ndef vad_predict(audio_path): return []\n"),
+                ("segmenter_vad.py", "import torch\ndef detect_speech(audio_path): return []\n"),
+            ):
+                entrypoint = root / filename
+                entrypoint.write_text(source, encoding="utf-8")
+                self.assertEqual(
+                    materialize_trans_inputs.resolve_task_type(None, entrypoint, model),
+                    "vad",
+                )
+
+            asr_entrypoint = root / "asr_with_vad_frontend.py"
+            asr_entrypoint.write_text(
+                "def get_speech_timestamps(audio): return []\n"
+                "def vad_predict(audio): return get_speech_timestamps(audio)\n"
+                "def transcribe(audio): return {'text': 'ok'}\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                materialize_trans_inputs.resolve_task_type(None, asr_entrypoint, model),
+                "asr",
+            )
+            self.assertEqual(
+                materialize_trans_inputs.resolve_task_type("vad", asr_entrypoint, model),
+                "vad",
+            )
+
+    def test_vad_reference_requires_seconds_timebase_speech_segments(self) -> None:
+        key, duration, segments = prepare_fixture.vad_reference(
+            {
+                "key": "fixture-key",
+                "duration": 3.35,
+                "speech_segments": [{"start": 0.5, "end": 2.85}],
+            },
+            Path("fixture.expected.json"),
+        )
+        self.assertEqual(key, "fixture-key")
+        self.assertEqual(duration, 3.35)
+        self.assertEqual(segments, [{"start": 0.5, "end": 2.85}])
+        check_artifact.validate_vad_row(
+            {"key": "fixture", "duration": duration, "speech_segments": segments}
+        )
+        with self.assertRaises(ValueError):
+            prepare_fixture.vad_reference(
+                {"key": "fixture-key", "duration": 3.35, "segments": [{"start": 0.5, "end": 2.85}]},
+                Path("fixture.expected.json"),
+            )
+
+    def test_prepare_fixture_stages_the_public_vad_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary) / "run"
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir(parents=True)
+            source = (
+                REPO_ROOT
+                / "fixtures"
+                / "tasks"
+                / "vad"
+                / "librispeech_vad_smoke"
+                / "librispeech_vad_001.wav"
+            )
+            (artifacts / "trans_input_resolved.json").write_text(
+                json.dumps(
+                    {
+                        "model_name": "example__vad",
+                        "task_type": "vad",
+                        "build_context": str(source.parent),
+                        "fixture_path": str(source),
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "prepare_fixture.py"), "--run-dir", str(run_dir)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            manifest_path = artifacts / "fixture_manifest.json"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "check_artifact.py"),
+                    "--run-dir",
+                    str(run_dir),
+                    "--produces",
+                    str(manifest_path),
+                    "--kind",
+                    "fixture",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            gt = json.loads(Path(manifest["gt_jsonl"]).read_text(encoding="utf-8"))
+            self.assertEqual(gt["key"], "librispeech-vad-001")
+            self.assertEqual(gt["duration"], 3.35)
+            self.assertEqual(
+                gt["speech_segments"],
+                [
+                    {"start": 0.551687, "end": 0.780875},
+                    {"start": 1.033062, "end": 2.553813},
+                ],
+            )
+            self.assertEqual(manifest["samples"][0]["key"], "librispeech-vad-001")
+
+            model_dir = Path(temporary) / "bundle"
+            model_dir.mkdir()
+            finalize_trans_bundle.stage_fixture(
+                run_dir,
+                model_dir,
+                {"model_name": "example__vad", "task_type": "vad"},
+            )
+            finalized = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(finalized["samples"][0]["key"], "librispeech-vad-001")
+            self.assertEqual(finalized["samples"][0]["duration"], 3.35)
+
+    def test_vad_validator_enforces_fixture_bounds_and_frame_scores(self) -> None:
+        source = (SCRIPTS_DIR / "templates" / "validate.py").read_text(encoding="utf-8")
+        contract = scaffold_adapter.io_contract_for("vad")
+        source = source.replace("__TASK_TYPE__", "VAD")
+        source = source.replace("__IO_CONTRACT_JSON__", json.dumps(contract))
+        namespace = {
+            "__name__": "generated_vad_validator",
+            "__file__": str(SCRIPTS_DIR / "templates" / "validate.py"),
+        }
+        exec(compile(source, "generated_vad_validator.py", "exec"), namespace)
+        valid = {
+            "speech_segments": [{"start": 0.5, "end": 2.85}],
+            "frame_scores": [{"start": 0.0, "end": 0.01, "score": 0.0}],
+        }
+        self.assertEqual(namespace["validate_contract"](valid, contract, 3.35), [])
+        invalid = {
+            "speech_segments": [{"start": 0.5, "end": 4.0}],
+            "frame_scores": "not-a-list",
+        }
+        violations = namespace["validate_contract"](invalid, contract, 3.35)
+        self.assertTrue(any("duration" in violation for violation in violations))
+        self.assertIn("frame_scores must be a list", violations)
 
     def test_bundle_writes_reject_symlinked_destination_parents(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -831,7 +1003,14 @@ class TransScriptsTest(unittest.TestCase):
             self.assertIn("CUDA out of memory", payload["error"])
             self.assertIn("GPU VRAM exhausted", payload["error"])
 
-    def _equivalence_run_dir(self, root: Path, baseline: object, adapter: object) -> tuple[Path, Path]:
+    def _equivalence_run_dir(
+        self,
+        root: Path,
+        baseline: object,
+        adapter: object,
+        *,
+        primary_field: str = "text",
+    ) -> tuple[Path, Path]:
         """Seed a run whose equivalence command succeeds but proves nothing.
 
         The command exits 0 either way, so only a real comparison of the two
@@ -848,6 +1027,10 @@ class TransScriptsTest(unittest.TestCase):
         adapter_path = artifacts / "sample_output.json"
         baseline_path.write_text(json.dumps(baseline) + "\n", encoding="utf-8")
         adapter_path.write_text(json.dumps(adapter) + "\n", encoding="utf-8")
+        (artifacts / "adapter_manifest.json").write_text(
+            json.dumps({"io_contract": {"primary_field": primary_field}}) + "\n",
+            encoding="utf-8",
+        )
         result = artifacts / "equivalence_result.json"
         result.write_text(
             json.dumps({
@@ -888,6 +1071,34 @@ class TransScriptsTest(unittest.TestCase):
             payload = json.loads(result.read_text(encoding="utf-8"))
             self.assertFalse(payload["equivalent"])
             self.assertEqual(payload["status"], "failed")
+
+    def test_equivalence_compares_vad_segment_arrays(self) -> None:
+        segments = [{"start": 0.5, "end": 2.85}]
+        frame_scores = [{"start": 0.0, "end": 0.01, "score": 0.5}]
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir, result = self._equivalence_run_dir(
+                Path(temporary),
+                {"speech_segments": segments, "frame_scores": frame_scores},
+                {"speech_segments": segments, "frame_scores": frame_scores},
+                primary_field="speech_segments",
+            )
+            process = self._run_equivalence(run_dir, result)
+            self.assertEqual(process.returncode, 0, process.stderr)
+            payload = json.loads(result.read_text(encoding="utf-8"))
+            self.assertTrue(payload["equivalent"])
+            self.assertEqual(
+                payload["comparison_evidence"]["baseline_value"],
+                {"speech_segments": segments, "frame_scores": frame_scores},
+            )
+
+            run_dir, result = self._equivalence_run_dir(
+                Path(temporary) / "missing-scores",
+                {"speech_segments": segments, "frame_scores": frame_scores},
+                {"speech_segments": segments},
+                primary_field="speech_segments",
+            )
+            process = self._run_equivalence(run_dir, result)
+            self.assertNotEqual(process.returncode, 0)
 
     def test_equivalence_rejects_an_output_field_that_is_not_a_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

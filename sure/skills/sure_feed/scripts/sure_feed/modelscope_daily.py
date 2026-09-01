@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 
-SUPPORTED_TASKS = ("asr", "s2tt", "slu", "gr", "ser")
+SUPPORTED_TASKS = ("asr", "s2tt", "slu", "gr", "ser", "vad")
 
 TASK_KEYWORDS = {
     "asr": (
@@ -32,12 +32,32 @@ TASK_KEYWORDS = {
         "speech emotion recognition",
         "speech-emotion-recognition",
     ),
+    "vad": (
+        "vad",
+        "voice activity detection",
+        "voice-activity-detection",
+        "speech activity detection",
+        "speech-activity-detection",
+        "silero vad",
+        "silero-vad",
+    ),
 }
 
 SHORT_TASK_ABBREVIATION_GATES = {
     "gr": {
         "semantic": ("gender", "gender recognition", "gender-recognition"),
         "domain": ("audio", "speech", "voice", "speaker", "acoustic", "utterance"),
+    },
+    "vad": {
+        "semantic": (
+            "voice activity detection",
+            "voice-activity-detection",
+            "speech activity detection",
+            "speech-activity-detection",
+            "silero vad",
+            "silero-vad",
+        ),
+        "domain": ("audio", "speech", "voice", "activity", "detection"),
     },
 }
 
@@ -100,6 +120,18 @@ MODELSCOPE_TASK_FILTERS = {
             "api_params": {"search": "speaker-emotion-recognition", "sort": "last_modified"},
             "ui_params": {"Tags": "speaker-emotion-recognition", "dataType": "audio"},
             "fallback_searches": ("ser", "speech emotion", "speaker emotion"),
+        },
+    },
+    "vad": {
+        "model": {
+            "api_params": {"search": "voice-activity-detection", "sort": "last_modified"},
+            "ui_params": {"tabKey": "task", "tasks": "voice-activity-detection", "type": "audio"},
+            "fallback_searches": ("vad", "voice activity detection", "speech activity detection"),
+        },
+        "dataset": {
+            "api_params": {"search": "voice-activity-detection", "sort": "last_modified"},
+            "ui_params": {"Tags": "voice-activity-detection", "dataType": "audio"},
+            "fallback_searches": ("vad", "voice activity detection", "speech activity detection"),
         },
     },
 }
@@ -187,6 +219,13 @@ def task_match_score(candidate: dict[str, Any], task: str) -> int:
     task = task.lower()
     keywords = TASK_KEYWORDS.get(task, (task,))
     searchable = _candidate_searchable_text(candidate)
+    if task == "vad":
+        searchable = re.sub(
+            r"(?:\bno|\bwithout(?:\s+a)?|\bdisabled?)\s*[-_]?\s*"
+            r"(?:vad|voice[- ]activity[- ]detection|speech[- ]activity[- ]detection)\b",
+            "",
+            searchable,
+        )
 
     abbreviation_gate = SHORT_TASK_ABBREVIATION_GATES.get(task)
     if abbreviation_gate:
@@ -200,6 +239,13 @@ def task_match_score(candidate: dict[str, Any], task: str) -> int:
             for keyword in abbreviation_gate["domain"]
         )
         score = 0
+        if task == "vad":
+            identities = [
+                re.sub(r"[^a-z0-9]+", "", str(candidate.get(key) or "").lower())
+                for key in ("resource_id", "name")
+            ]
+            if any(identity.endswith("vad") and not identity.endswith("novad") for identity in identities):
+                score += 8
         if semantic_hit:
             score += 8
         if abbreviation_hit and domain_hit:
@@ -277,6 +323,7 @@ def rank_candidates(candidates: list[dict[str, Any]], task: str, report_date: st
         ranked,
         key=lambda item: (
             item["ranking"]["updated_on_report_date"],
+            item["ranking"]["task_match_score"],
             item["ranking"]["download_count"],
             item["ranking"]["recency_timestamp"],
         ),

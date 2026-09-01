@@ -142,10 +142,14 @@ describe("validateSitePolicy container_delivery", () => {
 		const result = validateSitePolicy(
 			policy({
 				network: { container_registry: "registry.example" },
-				container_delivery: { repository_template: "{registry}/my-org/sure-{task}-{model_name}" },
+				container_delivery: {
+					repository_template: "{registry}/my-org/sure-{task}-{model_name}",
+					task_namespaces: { sd: "asr", vad: "asr" },
+				},
 			}),
 		);
 		expect(result.container_delivery?.repository_template).toBe("{registry}/my-org/sure-{task}-{model_name}");
+		expect(result.container_delivery?.task_namespaces).toEqual({ sd: "asr", vad: "asr" });
 	});
 
 	it("requires a configured registry", () => {

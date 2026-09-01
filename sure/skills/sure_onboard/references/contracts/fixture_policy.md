@@ -123,6 +123,7 @@ Task-level fixture indexes:
 - TTS: `fixtures/tasks/tts/README.md`
 - VC: `fixtures/tasks/vc/README.md`
 - KWS: `fixtures/tasks/kws/README.md`
+- VAD: `fixtures/tasks/vad/README.md`
 
 ### ASR (Automatic Speech Recognition)
 

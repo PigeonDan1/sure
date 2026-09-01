@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -14,7 +15,15 @@ from vc_exec import default_partition
 
 
 LEGACY_PATH = re.compile(r"/(?:mnt/cloudstorfs|hpc_stor\d+|hpc_\d+)/")
-ANNOTATION_FIELDS = ("ground_truth", "target_text", "text", "segments", "label", "intent")
+ANNOTATION_FIELDS = (
+    "ground_truth",
+    "target_text",
+    "text",
+    "segments",
+    "speech_segments",
+    "label",
+    "intent",
+)
 TRANS_RESERVED_ROOTS = {
     "model.py",
     "server.py",
@@ -65,6 +74,50 @@ def has_annotation_value(value: object) -> bool:
     return value is not None
 
 
+def validate_vad_row(row: dict) -> None:
+    require(isinstance(row.get("key"), str) and bool(row["key"].strip()), "VAD fixture requires a non-empty key")
+    duration = row.get("duration")
+    require(
+        not isinstance(duration, bool)
+        and isinstance(duration, (int, float))
+        and math.isfinite(float(duration))
+        and float(duration) > 0,
+        "VAD fixture requires a positive finite duration in seconds",
+    )
+    segments = row.get("speech_segments")
+    require(
+        isinstance(segments, list) and bool(segments),
+        "VAD fixture requires non-empty speech_segments, not speaker diarization segments",
+    )
+    previous_end = 0.0
+    for index, segment in enumerate(segments):
+        require(isinstance(segment, dict), f"VAD speech_segments[{index}] must be an object")
+        start = segment.get("start")
+        end = segment.get("end")
+        require(
+            not isinstance(start, bool)
+            and not isinstance(end, bool)
+            and isinstance(start, (int, float))
+            and isinstance(end, (int, float)),
+            f"VAD speech_segments[{index}] start/end must be numeric seconds",
+        )
+        start_value = float(start)
+        end_value = float(end)
+        require(
+            math.isfinite(start_value) and math.isfinite(end_value),
+            f"VAD speech_segments[{index}] start/end must be finite",
+        )
+        require(
+            0 <= start_value < end_value <= float(duration),
+            f"VAD speech_segments[{index}] must satisfy 0 <= start < end <= duration",
+        )
+        require(
+            index == 0 or start_value >= previous_end,
+            "VAD speech_segments must be sorted and non-overlapping",
+        )
+        previous_end = end_value
+
+
 def validate_fixture_manifest(value: dict) -> None:
     require(value.get("status") == "ready", "fixture manifest is not ready")
     for key in ("model_dir", "staged_dir", "gt_jsonl", "samples", "annotation_source"):
@@ -111,6 +164,10 @@ def validate_fixture_manifest(value: dict) -> None:
             isinstance(row.get("prompt_text"), str) and bool(row["prompt_text"].strip()),
             "TTS fixture gt_jsonl requires non-empty prompt_text",
         )
+    if task == "vad":
+        validate_vad_row(row)
+        require(sample.get("key") == row.get("key"), "VAD fixture sample key must mirror gt_jsonl")
+        require(sample.get("duration") == row.get("duration"), "VAD fixture sample duration must mirror gt_jsonl")
 
     annotation_source = value.get("annotation_source")
     require(isinstance(annotation_source, dict), "fixture annotation_source must be an object")
@@ -127,6 +184,9 @@ def validate_fixture_manifest(value: dict) -> None:
         require(row.get(field) == expected.get(field), f"fixture gt_jsonl {field} disagrees with reference sidecar")
     if task == "tts":
         require(row.get("prompt_text") == expected.get("prompt_text"), "fixture prompt_text disagrees with reference sidecar")
+    if task == "vad":
+        require(row.get("key") == expected.get("key"), "VAD fixture key disagrees with reference sidecar")
+        require(row.get("duration") == expected.get("duration"), "VAD fixture duration disagrees with reference sidecar")
 
 
 def infer_repo_root(run_dir: Path) -> Path:

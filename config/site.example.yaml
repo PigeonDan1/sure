@@ -28,3 +28,4 @@ network:
 
 container_delivery:
   repository_template: "{registry}/my-org/sure-{task}-{model_name}"
+  task_namespaces: {}

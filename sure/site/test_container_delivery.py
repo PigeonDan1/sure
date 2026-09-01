@@ -42,6 +42,22 @@ class ContainerDeliveryResolutionTest(unittest.TestCase):
             "registry.example/my-org/sure-asr-demo-source:0.1.0",
         )
 
+    def test_maps_a_task_to_the_site_registry_namespace(self) -> None:
+        policy = _policy()
+        policy["container_delivery"]["task_namespaces"] = {
+            "sd": "asr",
+            "sa_asr": "asr",
+            "vad": "asr",
+        }
+        self.assertEqual(
+            resolve_container_repository(
+                policy,
+                task_type="sd",
+                model_name="pyannote__speaker-diarization-3.1",
+            ),
+            "registry.example/my-org/sure-asr-pyannote__speaker-diarization-3.1",
+        )
+
     def test_registry_delivery_requires_an_explicit_template(self) -> None:
         with self.assertRaisesRegex(ContainerDeliveryError, "repository_template"):
             resolve_container_repository(

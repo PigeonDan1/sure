@@ -10,6 +10,7 @@
 | ASR / Streaming ASR | [ASR.md](ASR.md) | 离线 ASR、流式 ASR、X-ASR、sherpa-onnx |
 | Speech Understanding | [SPEECH_UNDERSTANDING.md](SPEECH_UNDERSTANDING.md) | ASR、S2TT、SER、SLU、GR 多任务语音理解模型 |
 | TTS | [TTS.md](TTS.md) | F5-TTS、IndexTTS-2、带音色参考的语音合成 |
+| VAD | [VAD.md](VAD.md) | 独立语音活动检测模型 |
 | VC | [VC.md](VC.md) | Seed-VC、音频到音频的 voice conversion |
 | KWS | [KWS.md](KWS.md) | keyword spotting、WekWS、唤醒词模型 |
 

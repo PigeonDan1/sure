@@ -65,9 +65,15 @@ def resolve_container_repository(
     if not registry or "://" in registry or any(character.isspace() for character in registry):
         raise ContainerDeliveryError("network.container_registry must be a registry host or host/path prefix")
     template = validate_repository_template(delivery["repository_template"])
+    task_namespaces = delivery.get("task_namespaces", {})
+    if not isinstance(task_namespaces, Mapping):
+        raise ContainerDeliveryError("task_namespaces must be a mapping")
+    task_namespace = task_namespaces.get(task_type, task_type)
+    if not isinstance(task_namespace, str) or not task_namespace:
+        raise ContainerDeliveryError(f"task_namespaces.{task_type} must be a non-empty string")
     repository = template.format(
         registry=registry,
-        task=safe_image_component(task_type, location="task_type"),
+        task=safe_image_component(task_namespace, location=f"task_namespaces.{task_type}"),
         model_name=safe_image_component(model_name, location="model_name"),
     )
     if stage is not None:

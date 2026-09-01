@@ -205,8 +205,8 @@ def validate_mcp_evidence(evidence_path: Path, tool_name: str) -> str | None:
 EQUIVALENCE_POLICIES = ("exact", "normalized_whitespace")
 
 
-def output_text(path: Path, primary_field: str) -> str:
-    """Pull the comparable text out of a recorded inference output."""
+def output_value(path: Path, primary_field: str) -> object:
+    """Pull the comparable primary value out of a recorded inference output."""
     raw = path.read_text(encoding="utf-8")
     try:
         value = json.loads(raw)
@@ -215,14 +215,22 @@ def output_text(path: Path, primary_field: str) -> str:
     if isinstance(value, str):
         return value
     if isinstance(value, dict):
-        field = value.get(primary_field)
-        if isinstance(field, str):
-            return field
-        raise ValueError(
-            f"{path} carries no string {primary_field!r} field to compare; write the adapter "
-            f"io_contract primary field into both recorded outputs"
-        )
-    raise ValueError(f"{path} is neither a string nor an object holding {primary_field!r}")
+        if primary_field not in value:
+            raise ValueError(
+                f"{path} carries no {primary_field!r} field to compare; write the adapter "
+                f"io_contract primary field into both recorded outputs"
+            )
+        field: object = value[primary_field]
+        if primary_field == "speech_segments":
+            field = {"speech_segments": field}
+            if "frame_scores" in value:
+                field["frame_scores"] = value["frame_scores"]
+        try:
+            json.dumps(field)
+        except TypeError as error:
+            raise ValueError(f"{path} {primary_field!r} field is not JSON-serializable") from error
+        return field
+    raise ValueError(f"{path} is neither a scalar string nor an object holding {primary_field!r}")
 
 
 def adapter_primary_field(run_dir: Path) -> str:
@@ -249,7 +257,7 @@ def compare_equivalence_outputs(run_dir: Path, data: dict) -> tuple[dict | None,
             f"comparison_policy must be one of {list(EQUIVALENCE_POLICIES)}; got {policy!r}"
         )
     primary_field = adapter_primary_field(run_dir)
-    texts: dict[str, str] = {}
+    values: dict[str, object] = {}
     for key in ("baseline_output", "adapter_output"):
         raw = str(data.get(key) or "")
         path = Path(raw)
@@ -259,25 +267,29 @@ def compare_equivalence_outputs(run_dir: Path, data: dict) -> tuple[dict | None,
                 f"got {raw!r}. Point it at the JSON or text file the run wrote."
             )
         try:
-            texts[key] = output_text(path, primary_field)
+            values[key] = output_value(path, primary_field)
         except ValueError as error:
             return None, str(error)
 
-    def normalized(text: str) -> str:
-        return text if policy == "exact" else " ".join(text.split())
+    def normalized(value: object) -> object:
+        if isinstance(value, str) and policy == "normalized_whitespace":
+            return " ".join(value.split())
+        return value
 
-    baseline, adapter = texts["baseline_output"], texts["adapter_output"]
+    baseline, adapter = values["baseline_output"], values["adapter_output"]
     match = normalized(baseline) == normalized(adapter)
     evidence = {
         "policy": policy,
         "primary_field": primary_field,
-        "baseline_text": baseline,
-        "adapter_text": adapter,
+        "baseline_value": baseline,
+        "adapter_value": adapter,
         "match": match,
     }
+    if isinstance(baseline, str) and isinstance(adapter, str):
+        evidence.update({"baseline_text": baseline, "adapter_text": adapter})
     if not match:
         return evidence, (
-            f"baseline and adapter outputs differ under {policy}: {baseline!r} vs {adapter!r}"
+            f"baseline and adapter primary values differ under {policy}: {baseline!r} vs {adapter!r}"
         )
     return evidence, None
 
@@ -501,8 +513,12 @@ def main() -> int:
             "container command hit its hard timeout (exit 124); reduce the workload or "
             "raise the command timeout, then rerun the gate."
         )
-    if args.kind == "mcp" and selected_device == "cuda":
-        evidence_path = run_dir / "artifacts" / "vc_logs" / "mcp" / "mcp_smoke.json"
+    if args.kind == "mcp":
+        evidence_path = (
+            run_dir / "artifacts" / "vc_logs" / "mcp" / "mcp_smoke.json"
+            if selected_device == "cuda"
+            else run_dir / "artifacts" / "adapter_validation" / "mcp_smoke.json"
+        )
         mcp_error = validate_mcp_evidence(evidence_path, str(data.get("tool_name") or ""))
         if mcp_error:
             passed = False

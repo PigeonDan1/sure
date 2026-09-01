@@ -36,7 +36,7 @@
 		},
 		"model_name": { "type": "string" },
 		"model_dir": { "type": "string" },
-		"task_type": { "enum": ["asr", "s2tt", "tts", "vc"] },
+		"task_type": { "enum": ["asr", "s2tt", "tts", "vad", "vc"] },
 		"fixture_path": { "type": ["string", "null"] },
 		"device": { "enum": ["auto", "cuda", "cpu"] },
 		"execution_surface": { "enum": ["local_docker", "vc"] },

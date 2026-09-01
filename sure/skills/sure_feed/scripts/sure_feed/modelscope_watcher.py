@@ -71,13 +71,14 @@ def _normalize_candidate(raw: dict[str, Any], resource_type: str, task: str) -> 
     if not resource_id:
         raise ValueError(f"cannot determine resource id for {resource_type}: {raw}")
     name = raw.get("display_name") or raw.get("name") or raw.get("Name") or str(resource_id).split("/")[-1]
-    candidate_task = raw.get("task") or raw.get("pipeline_tag") or raw.get("tasks") or ""
+    candidate_task = raw.get("task") or raw.get("pipeline_tag") or raw.get("tasks") or task
+    normalized_task = task if isinstance(candidate_task, list) else str(candidate_task)
     return {
         "resource_type": resource_type,
         "provider": "modelscope",
         "resource_id": str(resource_id),
         "name": str(name),
-        "task": candidate_task if isinstance(candidate_task, list) else str(candidate_task),
+        "task": normalized_task,
         "language": raw.get("language") or raw.get("lang"),
         "license": raw.get("license"),
         "description": raw.get("description") or raw.get("summary"),

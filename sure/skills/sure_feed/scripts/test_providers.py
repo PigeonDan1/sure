@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -9,6 +10,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import sure_feed.providers.huggingface as hf_module  # noqa: E402
 from sure_feed.fixture_registry import select_fixture_for_task  # noqa: E402
+from sure_feed.bridge import _default_server_py, _default_tool_name, _io_contract_for_task  # noqa: E402
+from sure_feed.modelscope_daily import (  # noqa: E402
+    SUPPORTED_TASKS,
+    modelscope_task_filter,
+    rank_candidates,
+    task_match_score,
+)
+from sure_feed.modelscope_watcher import _model_manifest, _normalize_candidate  # noqa: E402
 from sure_feed.providers.base import ProviderNetworkError, ProviderRequest, infer_task, synthesize_model_input, to_yaml  # noqa: E402
 from sure_feed.providers.huggingface import HuggingFaceProvider  # noqa: E402
 from sure_feed_online_discover import parse_model_url  # noqa: E402
@@ -248,6 +257,189 @@ pip install sherpa-onnx
         self.assertIn("fixtures/tasks/asr/qwen3_asr_smoke/asr_en/", fixture["audio"])
         self.assertEqual(io_contract["primary_field"], "text")
         self.assertIn("fixture", {item.get("model_input_field") for item in evidence})
+
+    def test_standalone_vad_models_are_not_classified_as_asr_or_sd(self) -> None:
+        for model_id in ("example/StreamingVAD", "example/SegmenterVAD"):
+            matched, task_type, score, evidence, match_source = infer_task(
+                {
+                    "source": "github",
+                    "model_id": model_id,
+                    "repo": f"https://github.com/{model_id}",
+                    "description": "Standalone voice activity detection with speech segment timestamps.",
+                },
+                "auto",
+            )
+            self.assertTrue(matched)
+            self.assertEqual(task_type, "vad")
+            self.assertGreaterEqual(score, 0.9)
+            self.assertIn(match_source, {"model_id", "repo", "model_card"})
+            self.assertTrue(evidence)
+
+        matched, task_type, _score, _evidence, match_source = infer_task(
+            {
+                "source": "github",
+                "model_id": "example/StreamingVAD",
+                "repo": "https://github.com/example/StreamingVAD",
+            },
+            "auto",
+        )
+        self.assertTrue(matched)
+        self.assertEqual(task_type, "vad")
+        self.assertEqual(match_source, "model_id")
+
+    def test_modelscope_daily_supports_vad_without_short_name_false_positives(self) -> None:
+        self.assertIn("vad", SUPPORTED_TASKS)
+        self.assertEqual(
+            modelscope_task_filter("vad", "model")["api_params"]["search"],
+            "voice-activity-detection",
+        )
+        self.assertGreater(task_match_score({"name": "StreamingVAD", "description": "audio VAD"}, "vad"), 0)
+        self.assertEqual(task_match_score({"name": "invader", "description": "language model"}, "vad"), 0)
+
+        ranked = rank_candidates(
+            [
+                {
+                    "name": "StreamingVAD",
+                    "description": "Standalone voice activity detection",
+                    "downloads": 1,
+                },
+                {
+                    "name": "ASR frontend",
+                    "description": "audio VAD frontend for transcription",
+                    "downloads": 1000,
+                },
+            ],
+            "vad",
+            "2026-09-01",
+        )
+        self.assertEqual(ranked[0]["name"], "StreamingVAD")
+
+        normalized = _normalize_candidate({"modelId": "example/StreamingVAD"}, "model", "vad")
+        self.assertEqual(normalized["task"], "vad")
+        self.assertEqual(_model_manifest(normalized)["task_type"], "vad")
+
+    def test_asr_with_a_vad_frontend_remains_asr(self) -> None:
+        matched, task_type, _score, _evidence, match_source = infer_task(
+            {
+                "source": "huggingface",
+                "model_id": "example/asr-with-vad-frontend",
+                "repo": "https://huggingface.co/example/asr-with-vad-frontend",
+                "pipeline_tag": "automatic-speech-recognition",
+                "description": "Transcribes speech after a voice activity detection frontend.",
+            },
+            "auto",
+        )
+        self.assertTrue(matched)
+        self.assertEqual(task_type, "asr")
+        self.assertEqual(match_source, "pipeline_tag")
+
+        matched, task_type, _score, _evidence, match_source = infer_task(
+            {
+                "source": "huggingface",
+                "model_id": "example/asr-with-vad-frontend",
+                "pipeline_tag": "automatic-speech-recognition",
+                "tags": ["vad"],
+            },
+            "vad",
+        )
+        self.assertFalse(matched)
+        self.assertEqual(task_type, "vad")
+        self.assertEqual(match_source, "pipeline_tag_conflict")
+
+        matched, task_type, _score, _evidence, match_source = infer_task(
+            {
+                "source": "github",
+                "model_id": "example/frontend",
+                "tasks": ["automatic-speech-recognition", "vad"],
+            },
+            "auto",
+        )
+        self.assertTrue(matched)
+        self.assertEqual(task_type, "asr")
+        self.assertEqual(match_source, "tasks")
+
+    def test_no_vad_variant_name_is_not_a_standalone_vad_signal(self) -> None:
+        matched, task_type, _score, _evidence, _match_source = infer_task(
+            {
+                "source": "github",
+                "model_id": "example/StreamingASR-NoVAD",
+                "repo": "https://github.com/example/StreamingASR-NoVAD",
+                "description": "Automatic speech recognition without a VAD frontend.",
+            },
+            "auto",
+        )
+        self.assertTrue(matched)
+        self.assertEqual(task_type, "asr")
+        self.assertEqual(
+            task_match_score(
+                {"name": "StreamingASR-NoVAD", "description": "automatic speech recognition"},
+                "vad",
+            ),
+            0,
+        )
+        matched, task_type, _score, _evidence, _match_source = infer_task(
+            {
+                "source": "github",
+                "model_id": "example/streaming-asr",
+                "tags": ["no-vad"],
+                "description": "Speech transcription without VAD.",
+            },
+            "auto",
+        )
+        self.assertTrue(matched)
+        self.assertEqual(task_type, "asr")
+
+    def test_fixture_registry_selects_vad_seconds_timebase_contract(self) -> None:
+        fixture, io_contract, issues, evidence = select_fixture_for_task(
+            "vad",
+            {"model_id": "example/StreamingVAD", "description": "voice activity detection"},
+        )
+        self.assertEqual(issues, [])
+        self.assertIsNotNone(fixture)
+        assert fixture is not None
+        self.assertEqual(fixture["fixture_index"], "fixtures/tasks/vad/README.md")
+        self.assertEqual(fixture["gt"], "fixtures/tasks/vad/librispeech_vad_smoke/gt.jsonl")
+        self.assertEqual(fixture["samples"][0]["duration"], 3.35)
+        self.assertEqual(
+            fixture["samples"][0]["speech_segments"],
+            [
+                {"start": 0.551687, "end": 0.780875},
+                {"start": 1.033062, "end": 2.553813},
+            ],
+        )
+        self.assertEqual(io_contract["primary_field"], "speech_segments")
+        self.assertIn("fixture", {item.get("model_input_field") for item in evidence})
+        self.assertEqual(_default_tool_name("vad"), "vad_predict")
+        self.assertEqual(_io_contract_for_task("vad")["primary_field"], "speech_segments")
+
+    def test_generated_vad_server_returns_the_complete_structured_result(self) -> None:
+        namespace = {"__name__": "generated_vad_server"}
+        exec(compile(_default_server_py("vad"), "generated_vad_server.py", "exec"), namespace)
+        server = namespace["MCPServer"]()
+
+        class Result:
+            def to_dict(self) -> dict:
+                return {
+                    "speech_segments": [{"start": 0.1, "end": 0.2}],
+                    "frame_scores": [{"start": 0.1, "end": 0.2, "score": 0.75}],
+                }
+
+        class Model:
+            def predict(self, _arguments: dict) -> Result:
+                return Result()
+
+        server._model = Model()
+        response = server._handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "vad_predict", "arguments": {"audio_path": "sample.wav"}},
+            }
+        )
+        content = json.loads(response["result"]["content"][0]["text"])
+        self.assertEqual(content["speech_segments"], [{"start": 0.1, "end": 0.2}])
+        self.assertEqual(content["frame_scores"][0]["score"], 0.75)
 
     def test_fixture_registry_routes_speech_understanding_to_atomic_fixtures(self) -> None:
         fixture, io_contract, issues, _evidence = select_fixture_for_task(

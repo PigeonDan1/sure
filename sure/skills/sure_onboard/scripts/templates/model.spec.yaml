@@ -3,7 +3,7 @@
 
 model_id: ""
 model_name: ""
-task_type: ""         # asr / sd / sa_asr / ser / s2tt / slu / omni / api
+task_type: ""         # asr / sd / sa_asr / ser / s2tt / slu / vad / omni / api
 deployment_type: ""   # local / api
 
 repo:
@@ -31,7 +31,7 @@ entrypoints:
 io_contract:
   input_type: ""          # audio_path / text / json
   output_type: ""         # text / json
-  primary_field: ""       # e.g. "text" for ASR, "label" for SER
+  primary_field: ""       # e.g. "text" for ASR, "label" for SER, "speech_segments" for VAD
   required_fields: []     # e.g. ["text", "confidence"] - 必须存在的字段
   nonempty_fields: []     # e.g. ["text"] - 必须非空的字段
   json_serializable: true # 输出是否必须可 JSON 序列化

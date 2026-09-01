@@ -44,6 +44,7 @@ TASK_TYPES = {
     "sd",
     "ser",
     "tts",
+    "vad",
     "vc",
     "kws",
     "slu",
@@ -61,6 +62,7 @@ ALL_TASK_PLAYBOOKS = [
     "references/task_playbooks/ASR.md",
     "references/task_playbooks/SPEECH_UNDERSTANDING.md",
     "references/task_playbooks/TTS.md",
+    "references/task_playbooks/VAD.md",
     "references/task_playbooks/VC.md",
     "references/task_playbooks/KWS.md",
 ]
@@ -249,6 +251,8 @@ def task_playbooks_for(task_type: str) -> list[str]:
         return ["references/task_playbooks/SPEECH_UNDERSTANDING.md"]
     if task == "tts":
         return ["references/task_playbooks/TTS.md"]
+    if task == "vad":
+        return ["references/task_playbooks/VAD.md"]
     if task == "vc":
         return ["references/task_playbooks/VC.md"]
     if task == "kws":

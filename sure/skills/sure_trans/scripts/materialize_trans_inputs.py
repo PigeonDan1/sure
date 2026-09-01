@@ -38,11 +38,19 @@ MODEL_FRAMEWORK_ALIASES = {
 }
 MODEL_FRAMEWORK = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 
-TASK_TYPES = {"asr", "s2tt", "tts", "vc"}
+TASK_TYPES = {"asr", "s2tt", "tts", "vad", "vc"}
 TASK_MARKERS = {
     "asr": ("asr", "transcribe", "speech recognition", "speech_recognition"),
     "s2tt": ("s2tt", "speech translation", "translate_audio", "speech_to_text_translation"),
     "tts": ("tts", "text to speech", "text-to-speech", "synthesize_speech"),
+    "vad": (
+        "vad",
+        "voice activity detection",
+        "speech activity detection",
+        "vad_predict",
+        "detect_speech",
+        "get_speech_timestamps",
+    ),
     "vc": ("voice conversion", "voice_conversion", "convert_voice", "reference_audio_path"),
 }
 
@@ -89,11 +97,26 @@ def resolve_task_type(explicit: str | None, inference_entrypoint: Path, model_pa
         task_type: sum(corpus.count(marker) for marker in markers)
         for task_type, markers in TASK_MARKERS.items()
     }
+    if scores["asr"] > 0 and scores["vad"] > 0:
+        terminal_asr_markers = (
+            "def transcribe",
+            ".transcribe(",
+            "transcribe_audio",
+        )
+        if any(marker in source for marker in terminal_asr_markers):
+            return "asr"
+        identity = re.sub(r"[^a-z0-9]+", "", f"{inference_entrypoint.stem} {model_path.name}".lower())
+        if identity.endswith("vad") and not identity.endswith("novad"):
+            return "vad"
+        raise ValueError(
+            "task_type is ambiguous between ASR output and a VAD frontend; pass "
+            "task_type=asr or task_type=vad explicitly"
+        )
     highest = max(scores.values())
     winners = [task_type for task_type, score in scores.items() if score == highest and score > 0]
     if len(winners) != 1:
         raise ValueError(
-            "task_type could not be inferred unambiguously; pass task_type=asr|s2tt|tts|vc"
+            "task_type could not be inferred unambiguously; pass task_type=asr|s2tt|tts|vad|vc"
         )
     return winners[0]
 

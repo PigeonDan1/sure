@@ -40,6 +40,7 @@ export interface SitePolicy {
 	};
 	container_delivery?: {
 		repository_template: string;
+		task_namespaces: Record<string, string>;
 	};
 }
 
@@ -257,12 +258,21 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	if (network !== undefined) policy.network = network;
 	if (root.container_delivery !== undefined) {
 		const delivery = expectRecord(root.container_delivery, "container_delivery");
-		rejectUnknown(delivery, ["repository_template"], "container_delivery");
+		rejectUnknown(delivery, ["repository_template", "task_namespaces"], "container_delivery");
 		if (!policy.network?.container_registry) {
 			throw new Error("container_delivery.repository_template requires network.container_registry");
 		}
+		const taskNamespacesSource = expectRecord(delivery.task_namespaces ?? {}, "container_delivery.task_namespaces");
+		const taskNamespaces: Record<string, string> = {};
+		for (const [task, namespace] of Object.entries(taskNamespacesSource)) {
+			if (!/^[a-z0-9][a-z0-9_-]*$/.test(task)) {
+				throw new Error(`container_delivery.task_namespaces key ${JSON.stringify(task)} must match [a-z0-9][a-z0-9_-]*`);
+			}
+			taskNamespaces[task] = expectString(namespace, `container_delivery.task_namespaces.${task}`);
+		}
 		policy.container_delivery = {
 			repository_template: expectRepositoryTemplate(delivery.repository_template),
+			task_namespaces: taskNamespaces,
 		};
 	}
 	return policy;

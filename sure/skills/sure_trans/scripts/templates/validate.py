@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -195,7 +196,70 @@ def is_nonempty(value: Any) -> bool:
     return True
 
 
-def validate_contract(sample: dict[str, Any], contract: dict[str, Any]) -> list[str]:
+def vad_fixture_duration() -> float:
+    raw_payload = os.environ.get("SURE_VALIDATE_INPUT_JSON")
+    if raw_payload:
+        payload = json.loads(raw_payload)
+        value = payload.get("duration") if isinstance(payload, dict) else None
+    else:
+        value = None
+        for gt_path in sorted((MODEL_DIR / "fixture").glob("**/gt.jsonl")):
+            for line in gt_path.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    row = json.loads(line)
+                    value = row.get("duration") if isinstance(row, dict) else None
+                    break
+            if value is not None:
+                break
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("VAD fixture requires a numeric duration for contract validation")
+    duration = float(value)
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("VAD fixture duration must be positive and finite")
+    return duration
+
+
+def validate_vad_intervals(
+    value: Any,
+    *,
+    field: str,
+    duration: float,
+    required_fields: tuple[str, ...],
+) -> list[str]:
+    if not isinstance(value, list):
+        return [f"{field} must be a list"]
+    violations: list[str] = []
+    previous_end = 0.0
+    allowed_fields = set(required_fields)
+    for index, interval in enumerate(value):
+        if not isinstance(interval, dict):
+            violations.append(f"{field}[{index}] must be an object")
+            continue
+        unknown = sorted(set(interval) - allowed_fields)
+        if unknown:
+            violations.append(f"{field}[{index}] has unsupported fields: {', '.join(unknown)}")
+        values = [interval.get(name) for name in required_fields]
+        if any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in values):
+            violations.append(f"{field}[{index}] {', '.join(required_fields)} must be numeric")
+            continue
+        numeric = [float(item) for item in values]
+        if not all(math.isfinite(item) for item in numeric):
+            violations.append(f"{field}[{index}] values must be finite")
+            continue
+        start_value, end_value = numeric[:2]
+        if start_value < 0 or start_value >= end_value or end_value > duration:
+            violations.append(f"{field}[{index}] must satisfy 0 <= start < end <= duration")
+        elif index > 0 and start_value < previous_end:
+            violations.append(f"{field} must be sorted and non-overlapping")
+        previous_end = end_value
+    return violations
+
+
+def validate_contract(
+    sample: dict[str, Any],
+    contract: dict[str, Any],
+    vad_duration: float | None = None,
+) -> list[str]:
     violations: list[str] = []
     for field in string_list(contract.get("required_fields")):
         if field not in sample:
@@ -211,6 +275,31 @@ def validate_contract(sample: dict[str, Any], contract: dict[str, Any]) -> list[
             json.dumps(sample)
         except TypeError as exc:
             violations.append(f"sample output is not JSON serializable: {exc}")
+    if TASK_TYPE.lower().replace("-", "_") == "vad":
+        segments = sample.get("speech_segments")
+        if not isinstance(segments, list) or not segments:
+            violations.append("VAD output requires non-empty speech_segments")
+        elif vad_duration is None:
+            violations.append("VAD contract validation requires fixture duration")
+        else:
+            violations.extend(
+                validate_vad_intervals(
+                    segments,
+                    field="speech_segments",
+                    duration=vad_duration,
+                    required_fields=("start", "end"),
+                )
+            )
+        frame_scores = sample.get("frame_scores")
+        if frame_scores is not None and vad_duration is not None:
+            violations.extend(
+                validate_vad_intervals(
+                    frame_scores,
+                    field="frame_scores",
+                    duration=vad_duration,
+                    required_fields=("start", "end", "score"),
+                )
+            )
     return violations
 
 
@@ -281,7 +370,8 @@ def stage_contract() -> bool:
         if not isinstance(sample, dict):
             raise ValueError("sample_output.json must be an object")
         contract = load_io_contract()
-        violations = validate_contract(sample, contract)
+        duration = vad_fixture_duration() if TASK_TYPE.lower().replace("-", "_") == "vad" else None
+        violations = validate_contract(sample, contract, duration)
         if violations:
             raise AssertionError("; ".join(violations))
     except Exception as exc:  # noqa: BLE001

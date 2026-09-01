@@ -10,7 +10,7 @@
 |------|------|------|------|
 | `model_id` | string | ✅ | 模型唯一标识，如 `nvidia/parakeet-tdt-0.6b-v2` |
 | `model_name` | string | ✅ | 模型显示名称 |
-| `task_type` | string | ✅ | 任务类型：asr/sd/sa_asr/ser/s2tt/slu/omni/api |
+| `task_type` | string | ✅ | 任务类型：asr/sd/sa_asr/ser/s2tt/slu/vad/omni/api |
 | `deployment_type` | string | ✅ | 部署类型：local/api |
 
 ### 仓库信息

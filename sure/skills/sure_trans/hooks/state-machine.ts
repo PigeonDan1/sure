@@ -55,7 +55,7 @@ export const TRANS_UNITS: Unit[] = [
 		],
 		allowedValues: {
 			framework: FRAMEWORKS,
-			task_type: ["asr", "s2tt", "tts", "vc"],
+			task_type: ["asr", "s2tt", "tts", "vad", "vc"],
 			device: ["auto", "cuda", "cpu"],
 			source_image_policy: ["auto", "build", "load"],
 		},

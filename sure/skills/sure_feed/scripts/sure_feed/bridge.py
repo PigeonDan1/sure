@@ -173,6 +173,7 @@ def _sure_task_name(task_type: str) -> str:
         "gr": "GR",
         "ser": "SER",
         "tts": "TTS",
+        "vad": "VAD",
     }
     return mapping.get(task_type.lower(), task_type.upper())
 
@@ -185,6 +186,7 @@ def _default_tool_name(task_type: str) -> str:
         "gr": "gender_recognize",
         "ser": "emotion_recognize",
         "tts": "tts_synthesize",
+        "vad": "vad_predict",
     }
     return mapping.get(task_type.lower(), f"{task_type.lower()}_predict")
 
@@ -198,6 +200,15 @@ def _io_contract_for_task(task_type: str) -> dict[str, Any]:
             "primary_field": "audio_path",
             "required_fields": ["audio_path"],
             "nonempty_fields": ["audio_path"],
+        }
+    if task_type.lower() == "vad":
+        return {
+            "input_field": "audio_path",
+            "input_type": "audio_path",
+            "output_type": "json",
+            "primary_field": "speech_segments",
+            "required_fields": ["speech_segments"],
+            "nonempty_fields": ["speech_segments"],
         }
     return {
         "input_field": "audio_path",
@@ -436,6 +447,8 @@ from typing import Any
 class PredictionResult:
     text: str = ""
     audio_path: str = ""
+    speech_segments: list[dict[str, float]] | None = None
+    frame_scores: list[dict[str, float]] | None = None
     language: str = "auto"
     raw: dict[str, Any] | None = None
 
@@ -531,10 +544,12 @@ class MCPServer:
             arguments = params.get("arguments", {{}})
             try:
                 result = self._load_model().predict(arguments).to_dict()
+                primary = result.get("{content_field}", "")
+                content = primary if isinstance(primary, str) else json.dumps(result, ensure_ascii=False)
                 return {{
                     "jsonrpc": "2.0",
                     "id": request_id,
-                    "result": {{"content": [{{"type": "text", "text": result.get("{content_field}", "")}}], "raw": result}},
+                    "result": {{"content": [{{"type": "text", "text": content}}], "raw": result}},
                 }}
             except Exception as exc:
                 return {{

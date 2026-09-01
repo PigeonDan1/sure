@@ -87,7 +87,12 @@
 			"additionalProperties": false,
 			"required": ["repository_template"],
 			"properties": {
-				"repository_template": { "type": "string", "minLength": 1 }
+				"repository_template": { "type": "string", "minLength": 1 },
+				"task_namespaces": {
+					"type": "object",
+					"propertyNames": { "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+					"additionalProperties": { "type": "string", "minLength": 1 }
+				}
 			}
 		}
 	},

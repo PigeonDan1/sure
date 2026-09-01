@@ -46,6 +46,12 @@ CHECKS: dict[str, list[str]] = {
         "tts_metric_report.json",
         "tts_metric_bypass.md",
     ],
+    "task_playbooks/VAD.md": [
+        "speech_segments",
+        "vad_predict",
+        "vad.any.f1.vad_contract_v1.vad_timebase_strict_v1.vad_detection_duration_v1",
+        "fixtures/tasks/vad/README.md",
+    ],
     "task_playbooks/VC.md": [
         "converted_audio",
         "source_audio",

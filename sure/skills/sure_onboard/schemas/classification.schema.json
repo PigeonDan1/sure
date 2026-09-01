@@ -8,7 +8,7 @@
 	"properties": {
 		"task_type": {
 			"type": "string",
-			"enum": ["asr", "s2tt", "sd", "ser", "tts", "vc", "kws", "slu", "gr", "speech_understanding", "sa-asr", "sa_asr"]
+			"enum": ["asr", "s2tt", "sd", "ser", "tts", "vad", "vc", "kws", "slu", "gr", "speech_understanding", "sa-asr", "sa_asr"]
 		},
 		"deployment_type": { "type": "string", "enum": ["local", "api"] },
 		"sub_task": { "type": "string" },

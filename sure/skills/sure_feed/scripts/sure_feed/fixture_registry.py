@@ -101,6 +101,9 @@ def _compact_sample(row: dict[str, Any], sample_dir: Path, repo_root: Path) -> d
         "annotation_format",
         "metric_format",
         "segments",
+        "duration",
+        "speech_segments",
+        "frame_scores",
         "rttm",
         "stm",
         "uem",
@@ -165,6 +168,8 @@ def io_contract_for_task(task: str) -> dict[str, Any]:
         primary = "label"
     elif normalized == "slu":
         primary = "answer"
+    elif normalized == "vad":
+        primary = "speech_segments"
     elif normalized in {"sd", "sa_asr"}:
         primary = "segments"
     else:

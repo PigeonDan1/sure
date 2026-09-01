@@ -31,6 +31,7 @@ all model directories.
 | TTS | `tts/README.md` | `tts/indextts2_zh_smoke/` copied from `src/sure_eval/models/IndexTeam__IndexTTS-2/fixture/zh/` |
 | VC | `vc/README.md` | `vc/seed_vc_zh_smoke/` copied from `src/sure_eval/models/Plachtaa__seed-vc/fixture/zh/` |
 | KWS | `kws/README.md` | `kws/wenwen_smoke/` copied from `src/sure_eval/models/daydream_factory__keyword-spot-fsmn-ctc-wenwen/fixture/kws/` |
+| VAD | `vad/README.md` | `vad/librispeech_vad_smoke/` derived from a CC-BY-4.0 LibriSpeech test-other utterance with deterministic leading/trailing silence. |
 
 ## Selection Rules
 

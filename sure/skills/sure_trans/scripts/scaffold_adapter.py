@@ -289,6 +289,12 @@ def tool_contract(task_type: str) -> tuple[str, dict]:
         }
     if task_type == "s2tt":
         return "translate_audio", {"type": "object", "properties": {"audio_path": {"type": "string"}}, "required": ["audio_path"]}
+    if task_type == "vad":
+        return "vad_predict", {
+            "type": "object",
+            "properties": {"audio_path": {"type": "string"}},
+            "required": ["audio_path"],
+        }
     return "transcribe_audio", {"type": "object", "properties": {"audio_path": {"type": "string"}}, "required": ["audio_path"]}
 
 
@@ -313,6 +319,20 @@ def io_contract_for(task_type: str) -> dict:
             "primary_field": "audio_path",
             "required_fields": ["audio_path"],
             "nonempty_fields": ["audio_path"],
+            "json_serializable": True,
+        }
+    if task_type == "vad":
+        return {
+            "input_type": "audio_path",
+            "output_type": "json",
+            "input": {"audio_path": "string"},
+            "output": {
+                "speech_segments": "array<{start:number,end:number}>",
+                "frame_scores": "optional array<{start:number,end:number,score:number}>",
+            },
+            "primary_field": "speech_segments",
+            "required_fields": ["speech_segments"],
+            "nonempty_fields": ["speech_segments"],
             "json_serializable": True,
         }
     return {

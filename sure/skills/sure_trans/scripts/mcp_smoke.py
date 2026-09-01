@@ -39,22 +39,32 @@ def tool_arguments(tool: str, audio: Path) -> dict[str, str]:
 
 
 def primary_output_field(tool: str) -> str:
-    return "audio_path" if tool in {"synthesize_speech", "convert_voice"} else "text"
+    if tool in {"synthesize_speech", "convert_voice"}:
+        return "audio_path"
+    if tool in {"diarize", "sa_asr", "sa-asr"}:
+        return "segments"
+    if tool == "vad_predict":
+        return "speech_segments"
+    return "text"
 
 
-def output_is_nonempty(primary_field: str, value: str) -> bool:
+def output_is_nonempty(primary_field: str, value: object) -> bool:
     """Whether the tool really produced its primary output.
 
     A path-valued field only proves an output exists if the file is there and
     holds bytes; the server runs as this script's child, so the path it
     returns is one this process can stat.
     """
-    if not value:
-        return False
     if primary_field.endswith("_path"):
+        if not isinstance(value, str) or not value:
+            return False
         candidate = Path(value)
         return candidate.is_file() and candidate.stat().st_size > 0
-    return True
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict)):
+        return bool(value)
+    return value is not None
 
 
 def _read_line(fd: int, buffer: bytearray, deadline: float) -> str | None:
@@ -204,16 +214,23 @@ def main() -> int:
             except (IndexError, KeyError, TypeError, json.JSONDecodeError):
                 text = ""
         primary_field = primary_output_field(args.tool)
-        primary_value = ""
+        primary_value: object = None
         if isinstance(text, dict):
-            primary_value = str(text.get(primary_field) or "")
+            primary_value = text.get(primary_field)
         output_nonempty = output_is_nonempty(primary_field, primary_value)
+        primary_preview = (
+            primary_value[:500]
+            if isinstance(primary_value, str)
+            else json.dumps(primary_value, ensure_ascii=False)[:500]
+            if primary_value is not None
+            else ""
+        )
         steps["tools_call"] = {
             "ok": ok and output_nonempty,
             "primary_field": primary_field,
             "output_nonempty": output_nonempty,
             "text_nonempty": output_nonempty if primary_field == "text" else False,
-            primary_field: primary_value[:500],
+            primary_field: primary_preview,
         }
         if not steps["tools_call"]["ok"]:
             raise RuntimeError(f"tools/call step failed: {json.dumps(payload, ensure_ascii=False)[:500]}")

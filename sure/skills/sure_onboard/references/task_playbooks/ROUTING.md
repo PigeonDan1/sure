@@ -13,7 +13,7 @@ Route from the normalized task fields in `MODEL_INPUT` and `model.spec.yaml`:
 - model README or upstream claim, only when the structured fields are missing
 
 Use uppercase task names in routing decisions: `ASR`, `SPEECH_UNDERSTANDING`,
-`TTS`, `VC`, `KWS`.
+`TTS`, `VAD`, `VC`, `KWS`.
 
 ## Default Rule
 
@@ -34,6 +34,7 @@ fallback to reading all task playbooks.
 | `ASR`, `asr`, automatic speech recognition, speech-to-text only | `task_playbooks/ASR.md` | `TTS.md`, `VC.md`, `KWS.md`, `SPEECH_UNDERSTANDING.md` |
 | `S2TT`, `SER`, `SLU`, `GR`, or multi-task speech understanding | `task_playbooks/SPEECH_UNDERSTANDING.md` | `TTS.md`, `VC.md`, `KWS.md` unless the model also supports those tasks |
 | `TTS`, text-to-speech, speech synthesis | `task_playbooks/TTS.md` | `ASR.md`, `VC.md`, `KWS.md` |
+| `VAD`, voice/speech activity detection | `task_playbooks/VAD.md` | `ASR.md`, `SPEECH_UNDERSTANDING.md` unless the system also transcribes or attributes speakers |
 | `VC`, voice conversion, timbre conversion, speech conversion | `task_playbooks/VC.md` | `ASR.md`, `TTS.md`, `KWS.md` |
 | `KWS`, keyword spotting, wake word detection | `task_playbooks/KWS.md` | `ASR.md`, `TTS.md`, `VC.md` |
 

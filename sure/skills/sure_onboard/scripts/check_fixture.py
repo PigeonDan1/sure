@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,41 @@ def annotation_is_nonempty(value: Any) -> bool:
     if isinstance(value, (list, dict)):
         return bool(value)
     return value is not None
+
+
+def validate_vad_reference(row: dict[str, Any], location: str) -> str | None:
+    key = row.get("key")
+    if not isinstance(key, str) or not key.strip():
+        return f"{location} task vad requires a non-empty key"
+    duration = row.get("duration")
+    if (
+        isinstance(duration, bool)
+        or not isinstance(duration, (int, float))
+        or not math.isfinite(float(duration))
+        or float(duration) <= 0
+    ):
+        return f"{location} task vad requires a positive finite duration in seconds"
+    segments = row.get("speech_segments")
+    if not isinstance(segments, list) or not segments:
+        return f"{location} task vad requires non-empty speech_segments, not speaker diarization segments"
+    previous_end = 0.0
+    for index, segment in enumerate(segments):
+        if not isinstance(segment, dict):
+            return f"{location} speech_segments[{index}] must be an object"
+        start = segment.get("start")
+        end = segment.get("end")
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in (start, end)):
+            return f"{location} speech_segments[{index}] start/end must be numeric seconds"
+        start_value = float(start)
+        end_value = float(end)
+        if not all(math.isfinite(value) for value in (start_value, end_value)):
+            return f"{location} speech_segments[{index}] start/end must be finite"
+        if start_value < 0 or start_value >= end_value or end_value > float(duration):
+            return f"{location} speech_segments[{index}] must satisfy 0 <= start < end <= duration"
+        if index > 0 and start_value < previous_end:
+            return f"{location} speech_segments must be sorted and non-overlapping"
+        previous_end = end_value
+    return None
 
 
 def main() -> int:
@@ -111,16 +147,28 @@ def main() -> int:
             return fail(f"{gt_jsonl}:{line_no} referenced audio does not exist: {audio}")
         annotation_fields = [
             field
-            for field in ("ground_truth", "target_text", "text", "segments", "label", "intent")
+            for field in (
+                "ground_truth",
+                "target_text",
+                "text",
+                "segments",
+                "speech_segments",
+                "label",
+                "intent",
+            )
             if field in row and annotation_is_nonempty(row[field])
         ]
         if not annotation_fields:
             return fail(
                 f"{gt_jsonl}:{line_no} must contain at least one annotation field "
-                "(ground_truth, target_text, text, segments, label, or intent)"
+                "(ground_truth, target_text, text, segments, speech_segments, label, or intent)"
             )
         if task == "sa_asr" and "segments" not in row:
             return fail(f"{gt_jsonl}:{line_no} task sa_asr requires speaker-attributed segments")
+        if task == "vad":
+            vad_error = validate_vad_reference(row, f"{gt_jsonl}:{line_no}")
+            if vad_error:
+                return fail(vad_error)
         parsed_rows.append(row)
 
     if len(parsed_rows) != len(samples):
