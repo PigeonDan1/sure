@@ -22,6 +22,8 @@ import json
 import sys
 from pathlib import Path
 
+from deployment_contract import require_timestamp_after
+
 FOUR_TESTS = ["import_test", "load_test", "infer_test", "contract_test"]
 PACKAGE_PROFILES = {"none", "docker-local", "docker-registry"}
 SUCCESS_STATUSES = {"passed", "success", "PASS", "PASSED", "pass"}
@@ -217,17 +219,33 @@ def main() -> int:
         )
         return 1
 
+    if is_harness_verdict(data):
+        if not package_gate:
+            print(
+                "VERDICT gate: harness verdict requires artifacts/package_gate.json from the preceding unit.",
+                file=sys.stderr,
+            )
+            return 1
+        if (data.get("generated_at") or data.get("timestamp")) and (
+            package_gate.get("generated_at") or package_gate.get("timestamp")
+        ):
+            runtime_path = run_dir / "artifacts" / "runtime_inventory.json"
+            try:
+                runtime_inventory = read_json(runtime_path)
+                require_timestamp_after(
+                    "verdict.json",
+                    data,
+                    ("package_gate.json", package_gate),
+                    ("runtime_inventory.json", runtime_inventory),
+                )
+            except (OSError, ValueError) as exc:
+                print(f"VERDICT gate: {exc}", file=sys.stderr)
+                return 1
+
     if status in SUCCESS_STATUSES:
         profile = package_profile(data, package_gate)
         if profile not in PACKAGE_PROFILES:
             print(f"VERDICT gate: unsupported package profile {profile!r}.", file=sys.stderr)
-            return 1
-        if is_harness_verdict(data) and not package_gate:
-            print(
-                "VERDICT gate: harness success verdict requires artifacts/package_gate.json "
-                "from the preceding PACKAGE_GATE unit.",
-                file=sys.stderr,
-            )
             return 1
         resolved_path = run_dir / "artifacts" / "model_input_resolved.json"
         try:
@@ -315,7 +333,10 @@ def main() -> int:
             model_dir_raw = str(path.parent.parent)
         bases = [run_dir, run_dir / "artifacts", repo_root]
         if model_dir_raw:
-            model_dir = Path(str(model_dir_raw)).expanduser()
+            if str(model_dir_raw) == "." and isinstance(resolved.get("model_dir"), str):
+                model_dir = Path(str(resolved["model_dir"])).expanduser()
+            else:
+                model_dir = Path(str(model_dir_raw)).expanduser()
             if not model_dir.is_absolute():
                 model_dir = repo_root / model_dir
             bases.extend([model_dir, model_dir / "artifacts"])

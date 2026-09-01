@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -133,6 +134,7 @@ class RuntimeInventoryTests(unittest.TestCase):
             self.run_artifacts / "package_gate.json",
             {
                 "schema": "sure.onboard.package_gate.v2",
+                "generated_at": "2026-01-01T00:00:00+00:00",
                 "status": "passed",
                 "package_profile": "docker-registry",
                 "readiness": {
@@ -144,6 +146,8 @@ class RuntimeInventoryTests(unittest.TestCase):
                 },
             },
         )
+        for source in self.run_artifacts.glob("*.json"):
+            shutil.copy2(source, self.artifacts / source.name)
 
     def test_v2_inventory_binds_digest_and_disables_host_python(self) -> None:
         output = self.run_artifacts / "runtime_inventory.json"
@@ -163,7 +167,7 @@ class RuntimeInventoryTests(unittest.TestCase):
         self.assertEqual(output.read_bytes(), (self.artifacts / "runtime_inventory.json").read_bytes())
 
     def test_inventory_persists_derived_runtime_root(self) -> None:
-        validation_path = self.run_artifacts / "docker_validation.json"
+        validation_path = self.artifacts / "docker_validation.json"
         validation = json.loads(validation_path.read_text())
         validation["harness_runtime"].pop("runtime_root")
         write_json(validation_path, validation)
@@ -179,7 +183,7 @@ class RuntimeInventoryTests(unittest.TestCase):
         )
 
     def test_missing_package_gate_blocks_inventory(self) -> None:
-        (self.run_artifacts / "package_gate.json").unlink()
+        (self.artifacts / "package_gate.json").unlink()
         with self.assertRaises(ValueError):
             write_inventory(self.model_dir, self.run_artifacts / "runtime_inventory.json", self.run_dir)
 

@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from deployment_contract import (
     load_artifact,
+    require_timestamp_after,
     resolve_model_dir,
     sha256_file,
     validate_container_documents,
@@ -212,6 +213,16 @@ def main() -> int:
     if not manifest_ok:
         print(f"PACKAGE_GATE failed: {manifest_message}", file=sys.stderr)
         return 1
+    if data.get("generated_at") or data.get("timestamp"):
+        try:
+            require_timestamp_after(
+                "package_gate.json",
+                data,
+                ("artifact_manifest.json", manifest_data),
+            )
+        except ValueError as exc:
+            print(f"PACKAGE_GATE failed: {exc}", file=sys.stderr)
+            return 1
 
     validation_ok, validation_message = validation_results_pass(run_dir, model_dir)
     if not validation_ok:

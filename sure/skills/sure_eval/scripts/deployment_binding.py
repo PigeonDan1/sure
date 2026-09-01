@@ -224,6 +224,7 @@ def _load_python_binding(
             "verified_sha256": verified_hashes,
             "model_core_sha256": model_hashes,
             "bundle_identity_sha256": bundle_identity,
+            "integrity_profile": marker.get("integrity_profile") or "legacy-partial-v2",
         },
     }
 
@@ -249,6 +250,205 @@ def _normalize_harness_runtime(binding: dict[str, Any]) -> dict[str, Any]:
 
 
 TERMINAL_VERDICT_STATUSES = {"success", "passed", "pass"}
+CORE_BUNDLE_FILES = {
+    "model.spec.yaml",
+    "model.py",
+    "server.py",
+    "__init__.py",
+    "validate.py",
+    "config.yaml",
+}
+TRANS_RESERVED_ROOTS = {*CORE_BUNDLE_FILES, "Dockerfile", "Dockerfile.sure", "artifacts", "fixture"}
+COMMON_MANDATORY_SIDECARS = {
+    "artifacts/artifact_manifest.json",
+    "artifacts/fixture_manifest.json",
+    "artifacts/package_gate.json",
+    "artifacts/runtime_inventory.json",
+    "artifacts/sample_output.json",
+    "artifacts/verdict.json",
+}
+
+
+def _portable_relative(raw: object, label: str) -> Path:
+    value = str(raw or "")
+    path = Path(value)
+    _require(
+        bool(value) and bool(path.parts) and not path.is_absolute() and ".." not in path.parts,
+        f"{label} must be portable",
+    )
+    return path
+
+
+def _bundle_files(root: Path, model_dir: Path, label: str) -> set[str]:
+    _require(root.is_dir() and _is_relative_to(root.resolve(), model_dir.resolve()), f"{label} root is missing")
+    files: set[str] = set()
+    for path in root.rglob("*"):
+        _require(not path.is_symlink(), f"{label} must not contain symlinks: {path}")
+        if path.is_file():
+            files.add(path.relative_to(model_dir).as_posix())
+    return files
+
+
+def _mandatory_integrity_paths(
+    model_dir: Path,
+    package: dict[str, Any],
+    declared_hashes: dict[str, Any],
+    profile: str,
+) -> set[str]:
+    required = {*CORE_BUNDLE_FILES, *COMMON_MANDATORY_SIDECARS}
+    for relative in COMMON_MANDATORY_SIDECARS:
+        _require((model_dir / relative).is_file(), f"mandatory deployment sidecar is missing: {relative}")
+    if profile == "docker-registry":
+        required.add("artifacts/docker_registry_result.json")
+        _require(
+            (model_dir / "artifacts/docker_registry_result.json").is_file(),
+            "mandatory deployment sidecar is missing: artifacts/docker_registry_result.json",
+        )
+        docker = package.get("docker") if isinstance(package.get("docker"), dict) else {}
+        dockerfile = _portable_relative(docker.get("dockerfile_path") or "Dockerfile", "package Dockerfile path")
+        _require((model_dir / dockerfile).is_file(), "package Dockerfile is missing from the model bundle")
+        required.add(dockerfile.as_posix())
+        for field in ("build_result_path", "validation_result_path", "registry_result_path"):
+            evidence_path = _portable_relative(docker.get(field), f"package docker {field}")
+            _require((model_dir / evidence_path).is_file(), f"package delivery evidence is missing: {evidence_path}")
+            required.add(evidence_path.as_posix())
+    elif profile == "none":
+        runtime_manifest = "artifacts/model_runtime_manifest.json"
+        _require((model_dir / runtime_manifest).is_file(), f"mandatory deployment sidecar is missing: {runtime_manifest}")
+        required.add(runtime_manifest)
+    else:
+        raise DeploymentBindingError(f"unsupported complete-integrity package profile: {profile}")
+
+    fixture_root = model_dir / "fixture"
+    fixture_files = _bundle_files(fixture_root, model_dir, "fixture")
+    _require(any(path.endswith("/gt.jsonl") for path in fixture_files), "model bundle has no fixture gt.jsonl")
+    required.update(fixture_files)
+
+    sample = _read_json(model_dir, "artifacts/sample_output.json")
+    generated_audio = sample.get("audio_path")
+    if generated_audio is not None:
+        audio_path = _portable_relative(generated_audio, "generated sample audio_path")
+        _require(
+            audio_path.parts[:2] == ("artifacts", "outputs"),
+            "generated sample audio must be stored below artifacts/outputs",
+        )
+        audio_target = (model_dir / audio_path).resolve()
+        _require(
+            audio_target.is_file() and _is_relative_to(audio_target, model_dir.resolve()),
+            "generated sample audio file is missing from the model bundle",
+        )
+        required.add(audio_path.as_posix())
+
+    payload_manifest_path = model_dir / "artifacts" / "model_payload_manifest.json"
+    if payload_manifest_path.is_file():
+        required.add("artifacts/model_payload_manifest.json")
+        payload = _read_json(model_dir, "artifacts/model_payload_manifest.json")
+        entries = payload.get("files")
+        _require(isinstance(entries, dict) and entries, "model payload manifest must list every payload file")
+        payload_paths: set[str] = set()
+        payload_hashes: dict[str, str] = {}
+        total_bytes = 0
+        for raw_path, entry in entries.items():
+            relative = _portable_relative(raw_path, "model payload path")
+            _require(relative.parts[0] not in TRANS_RESERVED_ROOTS, f"model payload conflicts with reserved path: {raw_path}")
+            declared_target = model_dir / relative
+            target = declared_target.resolve()
+            _require(
+                target.is_file() and not declared_target.is_symlink() and _is_relative_to(target, model_dir.resolve()),
+                f"model payload file is missing or unsafe: {raw_path}",
+            )
+            _require(isinstance(entry, dict), f"model payload entry is invalid: {raw_path}")
+            expected = str(entry.get("sha256") or "")
+            _require(declared_hashes.get(relative.as_posix()) == expected, f"deployment hash disagrees with payload manifest: {raw_path}")
+            size = target.stat().st_size
+            _require(entry.get("size_bytes") == size, f"model payload size changed: {raw_path}")
+            payload_paths.add(relative.as_posix())
+            payload_hashes[relative.as_posix()] = expected
+            total_bytes += size
+        actual_payload: set[str] = set()
+        for path in model_dir.rglob("*"):
+            relative = path.relative_to(model_dir)
+            if relative.parts[0] in TRANS_RESERVED_ROOTS:
+                continue
+            _require(not path.is_symlink(), f"model payload must not contain symlinks: {relative}")
+            if path.is_file():
+                actual_payload.add(relative.as_posix())
+        _require(actual_payload == payload_paths, "model payload manifest does not exactly cover staged payload files")
+        _require(payload.get("file_count") == len(payload_paths), "model payload file_count is inconsistent")
+        _require(payload.get("total_bytes") == total_bytes, "model payload total_bytes is inconsistent")
+        payload_identity = hashlib.sha256(
+            json.dumps(payload_hashes, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        _require(payload.get("payload_identity_sha256") == payload_identity, "model payload identity is inconsistent")
+        required.update(payload_paths)
+
+    weights_manifest_path = model_dir / "artifacts" / "weights_manifest.json"
+    if weights_manifest_path.is_file():
+        required.add("artifacts/weights_manifest.json")
+        weights = _read_json(model_dir, "artifacts/weights_manifest.json")
+        local_dir_name = str(weights.get("local_dir_name") or "")
+        if not local_dir_name:
+            for key in ("checkpoint_root", "resolved_local_model_path"):
+                candidate_value = str(weights.get(key) or "")
+                if not candidate_value:
+                    continue
+                candidate = Path(candidate_value).expanduser().resolve()
+                if _is_relative_to(candidate, model_dir.resolve()):
+                    local_dir_name = candidate.relative_to(model_dir.resolve()).as_posix()
+                    break
+        _require(
+            bool(local_dir_name) or weights.get("required") is not True,
+            "required weights manifest has no model-local weight root",
+        )
+        if local_dir_name:
+            weights_root = (model_dir / _portable_relative(local_dir_name, "weights local_dir_name")).resolve()
+            if weights_root.is_file():
+                _require(not (model_dir / local_dir_name).is_symlink(), "weights file must not be a symlink")
+                weight_files = {weights_root.relative_to(model_dir.resolve()).as_posix()}
+            else:
+                weight_files = _bundle_files(weights_root, model_dir, "weights")
+            _require(weight_files or weights.get("required") is not True, "required weights root is empty")
+            required.update(weight_files)
+    return required
+
+
+def _validate_complete_manifest(
+    model_dir: Path,
+    marker: dict[str, Any],
+    package: dict[str, Any],
+    profile: str,
+) -> dict[str, Any]:
+    manifest = _read_json(model_dir, "artifacts/artifact_manifest.json")
+    _require(manifest.get("status") == "finalized", "artifact_manifest status must be finalized")
+    _require(manifest.get("model_dir") == ".", "artifact_manifest model_dir must be portable (.)")
+    declared_hashes = marker.get("required_artifact_sha256")
+    _require(isinstance(declared_hashes, dict) and declared_hashes, "deployment_ready artifact hashes are missing")
+    manifest_artifacts = manifest.get("artifacts")
+    required_entries = manifest_artifacts.get("required") if isinstance(manifest_artifacts, dict) else None
+    _require(isinstance(required_entries, dict) and required_entries, "artifact_manifest required entries are missing")
+    manifest_paths: set[str] = set()
+    has_deployment_self_entry = False
+    for entry in required_entries.values():
+        _require(isinstance(entry, dict), "artifact_manifest required entry is invalid")
+        relative = _portable_relative(entry.get("path"), "artifact_manifest required path")
+        if relative.as_posix() == "artifacts/deployment_ready.json":
+            has_deployment_self_entry = True
+        else:
+            manifest_paths.add(relative.as_posix())
+    mandatory_paths = _mandatory_integrity_paths(model_dir, package, declared_hashes, profile)
+    _require(
+        has_deployment_self_entry,
+        "artifact_manifest must declare artifacts/deployment_ready.json as its terminal self-entry",
+    )
+    _require(
+        mandatory_paths.issubset(manifest_paths),
+        "artifact_manifest omits mandatory core, delivery, fixture, sample, weight, or payload files",
+    )
+    _require(
+        set(declared_hashes) == manifest_paths,
+        "deployment_ready hashes must cover exactly every finalized artifact_manifest required file except deployment_ready.json",
+    )
+    return manifest
 
 
 def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
@@ -276,8 +476,18 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
 
     if marker.get("package_profile") == "none":
         _require(marker.get("schema") == DEPLOYMENT_READY_V2, "unsupported Python deployment_ready schema")
+        declared_profile = marker.get("integrity_profile")
+        if declared_profile is not None:
+            _require(
+                declared_profile == "manifest-complete-v1",
+                f"unsupported ready deployment integrity profile: {declared_profile!r}",
+            )
+            _validate_complete_manifest(model_dir, marker, package, "none")
         return _load_python_binding(model_dir, model_name, marker, inventory, package)
 
+    manifest = _read_json(model_dir, "artifacts/artifact_manifest.json")
+    _require(manifest.get("status") == "finalized", "artifact_manifest status must be finalized")
+    _require(manifest.get("model_dir") == ".", "artifact_manifest model_dir must be portable (.)")
     _require(marker.get("schema") == DEPLOYMENT_READY_V1, "unsupported deployment_ready schema")
     _require(marker.get("status") == "ready", "deployment_ready status must be ready")
     _require(marker.get("model_name") == model_name, "deployment_ready model_name does not match requested model")
@@ -381,6 +591,48 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
 
     declared_hashes = marker.get("required_artifact_sha256")
     _require(isinstance(declared_hashes, dict) and declared_hashes, "deployment_ready artifact hashes are missing")
+    manifest_artifacts = manifest.get("artifacts")
+    required_entries = manifest_artifacts.get("required") if isinstance(manifest_artifacts, dict) else None
+    _require(isinstance(required_entries, dict) and required_entries, "artifact_manifest required entries are missing")
+    manifest_paths: set[str] = set()
+    has_deployment_self_entry = False
+    for entry in required_entries.values():
+        _require(isinstance(entry, dict), "artifact_manifest required entry is invalid")
+        raw_path = str(entry.get("path") or "")
+        path = Path(raw_path)
+        _require(raw_path and not path.is_absolute() and ".." not in path.parts, "artifact_manifest contains a non-portable path")
+        if path.as_posix() == "artifacts/deployment_ready.json":
+            has_deployment_self_entry = True
+        else:
+            manifest_paths.add(path.as_posix())
+    declared_paths = {str(path) for path in declared_hashes}
+    declared_profile = marker.get("integrity_profile")
+    if declared_profile is None:
+        integrity_profile = "legacy-partial-v1"
+    else:
+        _require(
+            declared_profile == "manifest-complete-v1",
+            f"unsupported ready deployment integrity profile: {declared_profile!r}",
+        )
+        integrity_profile = str(declared_profile)
+        mandatory_paths = _mandatory_integrity_paths(
+            model_dir,
+            package,
+            declared_hashes,
+            "docker-registry",
+        )
+        _require(
+            has_deployment_self_entry,
+            "artifact_manifest must declare artifacts/deployment_ready.json as its terminal self-entry",
+        )
+        _require(
+            mandatory_paths.issubset(manifest_paths),
+            "artifact_manifest omits mandatory core, Dockerfile, fixture, sample, weight, or payload files",
+        )
+        _require(
+            declared_paths == manifest_paths,
+            "deployment_ready hashes must cover exactly every finalized artifact_manifest required file except deployment_ready.json",
+        )
     verified_hashes: dict[str, str] = {}
     for relative, expected in declared_hashes.items():
         _require(isinstance(relative, str) and isinstance(expected, str), "deployment artifact hash entry is invalid")
@@ -426,5 +678,6 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
             "verified_sha256": verified_hashes,
             "bundle_identity_sha256": bundle_identity,
             "harness_runtime_source": "approved_image" if normalized_harness else "legacy_external_common_runtime",
+            "integrity_profile": integrity_profile,
         },
     }

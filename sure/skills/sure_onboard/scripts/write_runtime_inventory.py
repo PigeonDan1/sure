@@ -18,10 +18,11 @@ except ImportError:  # pragma: no cover - harness dependency
 
 from deployment_contract import (
     immutable_image_ref,
-    load_artifact,
+    load_model_artifact,
     read_json,
     resolve_model_dir,
     sha256_file,
+    timestamp_after,
     validate_container_documents,
     validate_runtime_roles,
 )
@@ -34,13 +35,15 @@ SCHEMA = "sure.onboard.runtime_inventory.v2"
 CORE_FILES = ("model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml", "Dockerfile")
 
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def write_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def inventory_timestamp(package: dict[str, Any]) -> str:
+    if package.get("generated_at") or package.get("timestamp"):
+        return timestamp_after(("package_gate.json", package))
+    return datetime.now(timezone.utc).isoformat()
 
 
 def relative_existing(raw: object, model_dir: Path) -> str | None:
@@ -99,9 +102,9 @@ def model_runtime_command(config: dict[str, Any], python_executable: str) -> tup
 
 def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
     resolved = read_json(run_dir / "artifacts" / "model_input_resolved.json")
-    package = load_artifact(run_dir, model_dir, "package_gate.json")
-    build_env = load_artifact(run_dir, model_dir, "build_env_result.json")
-    weights = load_artifact(run_dir, model_dir, "weights_manifest.json")
+    package = load_model_artifact(model_dir, "package_gate.json")
+    build_env = load_model_artifact(model_dir, "build_env_result.json")
+    weights = load_model_artifact(model_dir, "weights_manifest.json")
     config = load_config(model_dir)
     deployment_type = str(resolved.get("deployment_type") or "local")
     profile = str(package.get("package_profile") or resolved.get("package_profile") or "none")
@@ -130,9 +133,9 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
         harness_runtime: dict[str, Any] = {"required": False, "runtime_type": "harness_python"}
         eval_runtime = "api_only" if status == "api_ready" else "unavailable"
     elif profile == "docker-registry" and readiness.get("bundle_ready") is True:
-        build = load_artifact(run_dir, model_dir, "docker_build_result.json")
-        validation = load_artifact(run_dir, model_dir, "docker_validation.json")
-        registry = load_artifact(run_dir, model_dir, "docker_registry_result.json")
+        build = load_model_artifact(model_dir, "docker_build_result.json")
+        validation = load_model_artifact(model_dir, "docker_validation.json")
+        registry = load_model_artifact(model_dir, "docker_registry_result.json")
         image, digest, image_ref = validate_container_documents(build, validation, registry)
         runtime = validation.get("runtime") if isinstance(validation.get("runtime"), dict) else {}
         validated_model_runtime, validated_harness_runtime = validate_runtime_roles(validation)
@@ -188,7 +191,7 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
         status = "ready"
         eval_runtime = "container_only"
     elif profile == "none" and readiness.get("bundle_ready") is True:
-        manifest = load_artifact(run_dir, model_dir, "model_runtime_manifest.json")
+        manifest = load_model_artifact(model_dir, "model_runtime_manifest.json")
         command, tool_names = model_runtime_command(config, str(manifest.get("python_executable") or ""))
         lockfile = relative_existing(build_env.get("lockfile_path"), model_dir)
         if not lockfile or sha256_file(model_dir / lockfile) != manifest.get("lock_sha256"):
@@ -238,7 +241,7 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
     model_cfg = config.get("model") if isinstance(config.get("model"), dict) else {}
     return {
         "schema": SCHEMA,
-        "generated_at": now_iso(),
+        "generated_at": inventory_timestamp(package),
         "status": status,
         "model": {
             "name": str(resolved.get("model_name") or model_dir.name),
