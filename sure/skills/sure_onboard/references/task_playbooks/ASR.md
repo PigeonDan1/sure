@@ -2,7 +2,7 @@
 
 本文是 `docs/agents/model_tool_agent/AGENTS.md` 的 ASR 任务补充。新 agent 接入 ASR
 模型时必须先读总规范，再读本文。本文覆盖普通离线 ASR 和流式 ASR，例如
-`GilgameshWind__X-ASR-zh-en`。
+`example-org__streaming-asr-onnx`。
 
 ## 1. 任务边界
 
@@ -59,7 +59,7 @@ sure/models/{model}/
 `weights_manifest.json`。SURE model tool-agent 负责 wrapper、环境、Docker 和验证。
 
 如果只需要仓库中的部分权重文件，必须在 `weights_manifest.json` 和任务文档中写清楚。
-X-ASR 的经验是：SURE smoke 只需要 `deployment/models/chunk-*ms-model/` 中的
+某些流式 ONNX ASR 模型的 SURE smoke 只需要 `deployment/models/chunk-*ms-model/` 中的
 ONNX 文件和 `tokens.txt`，不需要下载 demo 视频或桌面 app 包。
 
 ## 3. Fixture
@@ -151,17 +151,17 @@ GPU 是首选。只有在用户明确接受 CPU smoke，或硬件客观不满足
 - `predict()` 不修改原始 fixture。
 - 音频重采样应显式记录，优先复用 `librosa`、`soundfile`、`torchaudio` 或上游 API。
 
-## 6. 流式 ASR / X-ASR 要点
+## 6. 流式 ASR 要点
 
 流式 ASR 不能只按离线模型处理。必须额外验证：
 
 - chunk 配置是否来自模型权重目录，例如 `chunk-960ms-model`。
 - 每个 chunk 的 `accept_waveform()` / `decode_stream()` / `input_finished()` 调用顺序。
-- 结尾是否需要 tail silence padding。X-ASR 经验：短音频如果没有约 1s tail
+- 结尾是否需要 tail silence padding。部分模型的短音频如果没有约 1s tail
   padding，会丢尾词。
 - provider 必须真实为 CUDA；日志中出现 `Fallback to cpu` 必须失败。
 
-X-ASR/sherpa-onnx 经验：
+sherpa-onnx 运行经验：
 
 - PyPI `sherpa-onnx==1.13.2` 在当前 host 上只有 `CPUExecutionProvider`。
 - 本地 uv 请求 CUDA 会打印 `Please compile with -DSHERPA_ONNX_ENABLE_GPU=ON` 并
@@ -174,8 +174,8 @@ X-ASR/sherpa-onnx 经验：
 /opt/conda/lib/python3.11/site-packages/nvidia/cudnn/lib:/usr/local/cuda/lib64:/usr/local/cuda/targets/x86_64-linux/lib
 ```
 
-- 不要把 Docker 中编译的 sherpa-onnx 扩展复制回 host `.venv`；X-ASR 试过后因
-  host glibc 低于 Docker 构建环境而失败。
+- 不要把 Docker 中编译的 sherpa-onnx 扩展复制回 host `.venv`；host glibc 低于
+  Docker 构建环境时，复制的扩展会加载失败。
 
 ## 7. local_uv_validate.sh
 
@@ -212,7 +212,7 @@ Docker 验证必须证明：
 
 ```text
 registry.example.com/sure/sure_asr_<name>:v1.0
-registry.example.com/sure/sure_x_asr_zh_en:v1.0
+registry.example.com/sure/sure_streaming_asr_zh_en:v1.0
 ```
 
 推送后必须用 `docker pull` 验证 registry 可拉取，并记录 digest。

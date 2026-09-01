@@ -426,10 +426,10 @@ describe("sure_feed gate scripts (real python3 spawnSync)", () => {
 	it("check_model_input accepts policy-resolved entrypoints only with runtime_strategy", () => {
 		const runDir = freshRunDir("model-input-runtime-strategy");
 		const envelope = modelInputEnvelope(
-			"GilgameshWind/X-ASR-zh-en",
+			"example-org/streaming-asr-onnx",
 			"huggingface",
 			"huggingface",
-			"https://huggingface.co/GilgameshWind/X-ASR-zh-en",
+			"https://huggingface.co/example-org/streaming-asr-onnx",
 		);
 		const modelInput = envelope.model_input as Record<string, unknown>;
 		modelInput.entrypoints = {

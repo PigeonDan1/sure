@@ -28,6 +28,7 @@ export interface SitePolicy {
 	execution: {
 		surfaces: ExecutionSurface[];
 		local_runtimes: LocalRuntime[];
+		vc_project?: string;
 		vc_partitions?: string[];
 		vc_partition_priority?: Record<string, number>;
 		vc_default_partition?: string;
@@ -170,7 +171,7 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	const execution = expectRecord(root.execution, "execution");
 	rejectUnknown(
 		execution,
-		["surfaces", "local_runtimes", "vc_partitions", "vc_partition_priority", "vc_default_partition"],
+		["surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_partition_priority", "vc_default_partition"],
 		"execution",
 	);
 	const surfaces = expectUniqueStrings(execution.surfaces, "execution.surfaces", false);
@@ -224,6 +225,12 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	};
 	if (datasets.projection_root !== undefined) {
 		policy.datasets.projection_root = expectAbsolutePath(datasets.projection_root, "datasets.projection_root");
+	}
+	if (execution.vc_project !== undefined) {
+		policy.execution.vc_project = expectString(execution.vc_project, "execution.vc_project");
+	}
+	if (surfaces.includes("vc") && policy.execution.vc_project === undefined) {
+		throw new Error("execution.vc_project is required when the vc surface is enabled");
 	}
 	if (execution.vc_partitions !== undefined) {
 		policy.execution.vc_partitions = expectUniqueStrings(execution.vc_partitions, "execution.vc_partitions", false);

@@ -618,7 +618,7 @@ sure/models/{model}/checkpoints/                # 显式本地权重（如有）
 团队级公共镜像和个人镜像统一使用：
 
 ```text
-registry.example.com/sjtu/<image_name>:<image_label>
+registry.example.com/example-org/<image_name>:<image_label>
 ```
 
 SURE-EVAL 模型镜像必须使用：

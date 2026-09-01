@@ -127,7 +127,7 @@ def _rejected_root_hint(path: Path) -> str:
     return f"Configured allowed_source_roots: {listed}. " if listed else ""
 
 
-def resolve_aispeech_source_entry(entry: str, explicit_version: str | None = None, dataset_source_key: str | None = None) -> DatasetSourceRef:
+def resolve_site_source_entry(entry: str, explicit_version: str | None = None, dataset_source_key: str | None = None) -> DatasetSourceRef:
     raw_root, embedded_version = split_source_entry(entry)
     if embedded_version and explicit_version and embedded_version != explicit_version:
         raise SourceResolutionError(

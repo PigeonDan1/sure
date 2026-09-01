@@ -51,7 +51,7 @@ sure-trans/<model_name>:adapter
 source 镜像只固化可复现运行环境：
 
 - Python 版本、torch/CUDA（或 CPU）runtime、模型依赖包
-- 交付 runtime（如 `longwavsplit`）与必要系统包（如 `ffmpeg`、`libsndfile1`）
+- 交付 runtime（如 `audio-segmentation-runtime`）与必要系统包（如 `ffmpeg`、`libsndfile1`）
 - `git` 与 `ca-certificates`：source 构建阶段在缺少 `git` 时自动安装，adapter 通过基础层继承。
 
 adapter 镜像 = source 镜像 + adapter 层，不额外安装包。

@@ -69,4 +69,4 @@ Then inspect the changed `sample_output.json` and confirm every ASR metric has
 - `src/sure_eval/models_reonboard/runs/asr_qwen3`
 - `src/sure_eval/models_reonboard/runs/asr_sensevoice_small`
 - `src/sure_eval/models_reonboard/runs/whisper_large_v3_turbo`
-- `src/sure_eval/models_reonboard/runs/GilgameshWind__X-ASR-zh-en`
+- `src/sure_eval/models_reonboard/runs/example-org__streaming-asr-onnx`

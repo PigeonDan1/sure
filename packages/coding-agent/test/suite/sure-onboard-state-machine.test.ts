@@ -377,6 +377,7 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 				`  allowed_source_roots: [${join(cwd, "datasets")}]`,
 				"execution:",
 				"  surfaces: [vc]",
+				"  vc_project: example-project",
 				"  local_runtimes: [python]",
 			].join("\n")}\n`,
 			"utf-8",

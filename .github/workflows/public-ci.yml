@@ -105,7 +105,7 @@ jobs:
           npm run public:export -- --output "$PUBLIC_TREE"
           npm run public:export -- --output "$PUBLIC_TREE_SECOND"
           test ! -e "$PUBLIC_TREE/config/site.bundled.yaml"
-          test ! -e "$PUBLIC_TREE/private/aispeech"
+          test ! -e "$PUBLIC_TREE/private/site"
           test ! -e "$PUBLIC_TREE/.gitlab-ci.yml"
           test -f "$PUBLIC_TREE/public-export-manifest.json"
           diff -ru "$PUBLIC_TREE" "$PUBLIC_TREE_SECOND"

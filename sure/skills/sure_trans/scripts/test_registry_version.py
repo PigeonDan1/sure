@@ -43,6 +43,7 @@ class TransRegistryVersionTest(unittest.TestCase):
                 "datasets": {"allowed_source_roots": ["/srv/datasets"]},
                 "execution": {
                     "surfaces": ["vc"],
+                    "vc_project": "example-project",
                     "vc_partitions": ["gpu-test"],
                     "vc_default_partition": "gpu-test",
                 },

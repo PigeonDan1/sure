@@ -48,6 +48,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `datasets.projection_root` | optional | Writable root for generated dataset JSONL indexes and metadata; raw data remains in the allowed source root |
 | `execution.surfaces` | yes | Enabled execution surfaces: `local`, `vc`, or both |
 | `execution.local_runtimes` | optional | Permitted local runtimes: `python`, `container`, or both; omission remains container-only |
+| `execution.vc_project` | for `vc` | Submission project passed to the VC backend |
 | `execution.vc_partitions` | when needed | Declared VC partitions for adapters and deployment documentation |
 | `execution.vc_partition_priority` | optional | Numeric priority map used by automatic VC selection |
 | `network` | optional | Non-secret site endpoints used by private adapters and documentation |
@@ -60,7 +61,7 @@ Policy v1 accepts exactly one path in each storage root list. The `datasets.allo
 
 `storage.approved_models_roots[0]` is the single approval-root setting. `/sure_approve` publishes a verified model package only to `<approved_models_roots[0]>/<model>`, and `/sure_eval model=<model>` resolves that exact child directory from the same root. Neither command accepts a per-run approval-root override, so a deployment configures this location once rather than keeping publication and discovery settings in sync manually.
 
-`execution.surfaces` constrains automatic and explicit execution selection. `execution.vc_partitions` documents site choices but does not replace the existing live `vc info -u` authorization check; changing partition authorization semantics is outside this separation phase.
+`execution.surfaces` constrains automatic and explicit execution selection. When `vc` is enabled, `execution.vc_project` is required and `execution.vc_partitions` is the configured preflight allowlist. A requested partition outside that list is rejected before submission. The backend remains authoritative for project validity, user authorization, capacity, and other admission policy through the result of `vc submit`; the preflight does not infer those decisions from `vc info -u`.
 
 `execution.local_runtimes` is a permission boundary, not a package-manager choice. Enabling `python` permits an explicitly sealed Model Python runtime; it does not make host execution the default and does not permit Python execution on VC.
 
@@ -108,12 +109,25 @@ network:
   container_registry: registry.example.com
 
 container_delivery:
-  repository_template: "{registry}/my-org/sure-{task}-{model_name}"
+  repository_template: "{registry}/example-org/sure-{task}-{model_name}"
 ```
 
 For shared storage, replace these placeholders with roots visible to every host and container that executes a workflow. The projection root is the only writable dataset workspace; source roots are mounted read-only. For a local-only fixture, create temporary model, result, dataset, projection, and runtime roots and point the local policy at them.
 
 `container_delivery.repository_template` is site data, not an agent decision. Registry-backed workflows resolve it before downloading model weights or building an image. The template must start with `{registry}/`, must include `{model_name}`, and may include `{task}`. `/sure_onboard` uses the resolved repository as its delivery target; `/sure_trans` uses the same target and appends `-source` for its source-image repository.
+
+A VC-enabled deployment adds its backend project and partition allowlist:
+
+```yaml
+execution:
+  surfaces:
+    - local
+    - vc
+  vc_project: example-project
+  vc_partitions:
+    - gpu-example
+  vc_default_partition: gpu-example
+```
 
 When `image_version` is omitted, the workflow queries the relevant Registry V2 tag lists, considers only `major.minor.patch` tags, and selects the next patch after the highest existing version; an empty repository starts at `0.1.0`. A query failure blocks instead of guessing a tag. The resolved repositories, version, observed tags, and site-policy identity are recorded in `model_input_resolved.json` or `trans_input_resolved.json`; credentials remain in the Docker credential store and never enter either artifact or the policy.
 
@@ -132,6 +146,7 @@ Common repairs:
 - `must be protected by a forbidden output root`: add the approved root's parent to `forbidden_output_roots`.
 - `site policy is not configured`: copy the example to `config/site.local.yaml`, edit it, and rerun `sure:site-check`.
 - `site policy is missing network.container_registry` or `container_delivery.repository_template`: configure both fields before selecting `docker-registry` delivery.
+- `execution.vc_project is required when the vc surface is enabled`: configure the backend submission project before enabling VC.
 - `registry tag query failed`: verify registry reachability, Docker login state, and the resolved repository; do not bypass automatic versioning with a guessed tag.
 
 Custom execution surfaces and site integrations belong in a private adapter that depends on public interfaces. Public core code must never import a private adapter. In this phase all site differences are expressed as `sure.site.policy.v1` data, so no adapter code ships; a provider interface will be introduced as a separately reviewed design change when a behavior cannot be expressed as policy data.

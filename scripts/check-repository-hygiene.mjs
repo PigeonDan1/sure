@@ -22,7 +22,7 @@ const ignoreCases = [
 	["sure/models/model.safetensors", true],
 	["fixtures/audio/sample.wav", false],
 	["config/site.bundled.yaml", false],
-	["private/aispeech/README.md", false],
+	["private/site/README.md", false],
 	["sure/runtime/evaluation/runtime.json", false],
 	[".public-export/public-export-manifest.json", true],
 ];

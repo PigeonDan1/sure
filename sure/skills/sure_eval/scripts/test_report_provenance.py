@@ -28,7 +28,7 @@ def write_jsonl(path: Path) -> Path:
         "language": "zh",
         "dataset": "demo_ds__v1.0.2",
         "metadata": {
-            "source": "aispeech_ds_pool",
+            "source": "site_dataset_pool",
             "source_dataset_root": "/srv/sure/datasets/group/store/ds_pool/demo_ds",
             "source_dataset_name": "demo_ds",
             "version_id": "v1.0.2",

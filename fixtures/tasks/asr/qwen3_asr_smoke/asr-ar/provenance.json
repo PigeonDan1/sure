@@ -1,0 +1,38 @@
+{
+  "schema": "sure.fixture_provenance.v1",
+  "dataset": {
+    "repository": "google/fleurs",
+    "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+    "configuration": "ar_eg",
+    "split": "test",
+    "metadata_sha256": "af9b9aa3f99c39f90e7f8417f10f2f45a7f783441c6a27abfc2c1bededed4af1",
+    "license": "CC-BY-4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "source_url": "https://huggingface.co/datasets/google/fleurs/tree/70bb2e84b976b7e960aa89f1c648e09c59f894dd/data/ar_eg",
+    "citation_url": "https://arxiv.org/abs/2205.12446"
+  },
+  "selection": {
+    "rule": "first audio row in test.tsv for each selected sentence id",
+    "sentence_ids": [1993, 1730, 1995]
+  },
+  "files": [
+    {
+      "path": "sample_1_fleurs_ar_eg_1993.wav",
+      "source_path": "test/10019390257075855641.wav",
+      "sentence_id": 1993,
+      "sha256": "40d979a6239fc08951f387c671fb5fc46fffdc5df823ed1dbdb809bc75e26620"
+    },
+    {
+      "path": "sample_2_fleurs_ar_eg_1730.wav",
+      "source_path": "test/10035416633083120372.wav",
+      "sentence_id": 1730,
+      "sha256": "318e95704f15e5050d5f3703172415c5e9d7f83495c3589590e8c4ca8b2628f6"
+    },
+    {
+      "path": "sample_3_fleurs_ar_eg_1995.wav",
+      "source_path": "test/10080665469720750912.wav",
+      "sentence_id": 1995,
+      "sha256": "cca59df14be2fc8fd0f064dd7ad524878db5e976b03634db7833f0268e18a058"
+    }
+  ]
+}

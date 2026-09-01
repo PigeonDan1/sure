@@ -257,7 +257,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 				`SURE model transformation skill loaded with Harness Runtime ${runtime.contract.runtime_id}.` +
 				(device === "cpu"
 					? ""
-					: ` GPU validation submits VC jobs to ${vcPartition ?? requireSitePolicy().policy.execution.vc_default_partition ?? "the site VC partition"}.`),
+					: ` GPU validation submits VC jobs to ${vcPartition ?? requireSitePolicy().policy.execution.vc_default_partition ?? "the configured VC partition"}.`),
 			counters: countersFor(checkpoint.data, 0),
 			diagnostics,
 			artifacts: [

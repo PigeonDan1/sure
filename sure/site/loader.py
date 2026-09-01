@@ -119,7 +119,7 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
     execution = _mapping(root.get("execution"), "execution")
     _reject_unknown(
         execution,
-        {"surfaces", "local_runtimes", "vc_partitions", "vc_partition_priority", "vc_default_partition"},
+        {"surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_partition_priority", "vc_default_partition"},
         "execution",
     )
     surfaces = _unique_strings(execution.get("surfaces"), "execution.surfaces", absolute=False)
@@ -151,6 +151,14 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
     if "projection_root" in datasets:
         policy["datasets"]["projection_root"] = _absolute_path(
             datasets["projection_root"], "datasets.projection_root"
+        )
+    if "vc_project" in execution:
+        policy["execution"]["vc_project"] = _string(
+            execution["vc_project"], "execution.vc_project"
+        )
+    if "vc" in surfaces and "vc_project" not in policy["execution"]:
+        raise SitePolicyError(
+            "execution.vc_project is required when the vc surface is enabled"
         )
     if "vc_partitions" in execution:
         policy["execution"]["vc_partitions"] = _unique_strings(execution["vc_partitions"], "execution.vc_partitions", absolute=False)

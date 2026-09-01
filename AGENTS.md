@@ -159,7 +159,7 @@ Attribution:
 
 ## SURE Harness
 
-This fork adds the SURE evaluation control plane (`/sure_feed`, `/sure_onboard`, `/sure_eval`, `/sure_reval`). The common user entry point is `README.md`; bundled company distributions also carry `private/aispeech/docs/handbook.md`. This section is the maintainer side.
+This fork adds the SURE evaluation control plane (`/sure_feed`, `/sure_onboard`, `/sure_eval`, `/sure_reval`). The common user entry point is `README.md`; bundled company distributions also carry `private/site/docs/handbook.md`. This section is the maintainer side.
 
 ### Skill Package Layout
 
@@ -250,11 +250,11 @@ Never commit API keys, provider tokens, auth files, model weights, checkpoints, 
 
 ### Public Export
 
-`npm run public:export` produces the public tree by deleting the paths listed in `public-export.yaml`; it never rewrites public file content. New private content must live under `private/`. `sure/skills/sure_eval/references/main_flow_agent/` is the single grandfathered export exception (a frozen upstream audit mirror; see `sure/skills/sure_eval/SKILL.md`). The exclusion list is closed: `check:site-boundary` fails if `public-export.yaml` gains an entry outside the approved exception set.
+`npm run public:export` requires a clean worktree and projects only files tracked by the current Git index. `public-export.yaml` defines the public exclusions and generic deny rules; the optional `private/site/public-export.overlay.yaml` may only add private deny rules and is itself excluded. The v2 manifest identifies the projected tree without exposing the source commit. Use `--private-attestation-output` with an absolute path outside the repository when a private source-commit mapping is required. New private content must live under `private/`. `sure/skills/sure_eval/references/main_flow_agent/` is the single grandfathered export exception (a frozen upstream audit mirror; see `sure/skills/sure_eval/SKILL.md`). The exclusion list is closed: `check:site-boundary` fails if `public-export.yaml` gains an entry outside the approved exception set.
 
 ### Handbook Copies
 
-When the private company distribution is present, `private/aispeech/docs/handbook.md` is the single source and `private/aispeech/scripts/build-handbook.py` produces the markdown/HTML/PDF copies. It refuses to build from a dirty source unless `--dev` is passed, and dev builds are stamped `dev-*` so they cannot be mistaken for a release copy. See the maintenance note at the end of the private handbook.
+When the private company distribution is present, `private/site/docs/handbook.md` is the single source and `private/site/scripts/build-handbook.py` produces the markdown/HTML/PDF copies. It refuses to build from a dirty source unless `--dev` is passed, and dev builds are stamped `dev-*` so they cannot be mistaken for a release copy. See the maintenance note at the end of the private handbook.
 
 ## User Override
 

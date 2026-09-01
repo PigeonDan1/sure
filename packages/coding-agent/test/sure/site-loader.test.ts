@@ -15,7 +15,7 @@ function policy(overrides: Record<string, unknown> = {}): Record<string, unknown
 			runtime_root: `${ROOT}/runtime`,
 		},
 		datasets: { allowed_source_roots: { default: `${ROOT}/datasets` } },
-		execution: { surfaces: ["local", "vc"] },
+		execution: { surfaces: ["local", "vc"], vc_project: "example-project" },
 		...overrides,
 	};
 }
@@ -23,7 +23,14 @@ function policy(overrides: Record<string, unknown> = {}): Record<string, unknown
 describe("validateSitePolicy execution.vc_default_partition", () => {
 	it("returns the configured default partition", () => {
 		const result = validateSitePolicy(
-			policy({ execution: { surfaces: ["vc"], vc_partitions: ["gpu-a"], vc_default_partition: "gpu-a" } }),
+			policy({
+				execution: {
+					surfaces: ["vc"],
+					vc_project: "example-project",
+					vc_partitions: ["gpu-a"],
+					vc_default_partition: "gpu-a",
+				},
+			}),
 		);
 		expect(result.execution.vc_default_partition).toBe("gpu-a");
 	});
@@ -31,9 +38,27 @@ describe("validateSitePolicy execution.vc_default_partition", () => {
 	it("rejects a default partition that is not an allowed partition", () => {
 		expect(() =>
 			validateSitePolicy(
-				policy({ execution: { surfaces: ["vc"], vc_partitions: ["gpu-a"], vc_default_partition: "gpu-b" } }),
+				policy({
+					execution: {
+						surfaces: ["vc"],
+						vc_project: "example-project",
+						vc_partitions: ["gpu-a"],
+						vc_default_partition: "gpu-b",
+					},
+				}),
 			),
 		).toThrow(/execution\.vc_default_partition/);
+	});
+});
+
+describe("validateSitePolicy execution.vc_project", () => {
+	it("returns the configured project", () => {
+		const result = validateSitePolicy(policy({ execution: { surfaces: ["vc"], vc_project: "example-project" } }));
+		expect(result.execution.vc_project).toBe("example-project");
+	});
+
+	it("requires a project whenever VC is enabled", () => {
+		expect(() => validateSitePolicy(policy({ execution: { surfaces: ["vc"] } }))).toThrow(/execution\.vc_project/);
 	});
 });
 
@@ -101,8 +126,8 @@ describe("validateSitePolicy absolute paths", () => {
 
 describe("validateSitePolicy network.container_registry", () => {
 	it("returns the configured container registry", () => {
-		const result = validateSitePolicy(policy({ network: { container_registry: "registry.example/hpc" } }));
-		expect(result.network?.container_registry).toBe("registry.example/hpc");
+		const result = validateSitePolicy(policy({ network: { container_registry: "registry.example/example-org" } }));
+		expect(result.network?.container_registry).toBe("registry.example/example-org");
 	});
 
 	it("rejects a non-string container registry", () => {
@@ -117,16 +142,16 @@ describe("validateSitePolicy container_delivery", () => {
 		const result = validateSitePolicy(
 			policy({
 				network: { container_registry: "registry.example" },
-				container_delivery: { repository_template: "{registry}/my-org/sure-{task}-{model_name}" },
+				container_delivery: { repository_template: "{registry}/example-org/sure-{task}-{model_name}" },
 			}),
 		);
-		expect(result.container_delivery?.repository_template).toBe("{registry}/my-org/sure-{task}-{model_name}");
+		expect(result.container_delivery?.repository_template).toBe("{registry}/example-org/sure-{task}-{model_name}");
 	});
 
 	it("requires a configured registry", () => {
 		expect(() =>
 			validateSitePolicy(
-				policy({ container_delivery: { repository_template: "{registry}/my-org/sure-{model_name}" } }),
+				policy({ container_delivery: { repository_template: "{registry}/example-org/sure-{model_name}" } }),
 			),
 		).toThrow(/network\.container_registry/);
 	});

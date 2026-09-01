@@ -18,14 +18,15 @@ const failures = [];
 // grandfathered export exclusion (see public-export.yaml); every other
 // private asset must live under private/ and new exclusions must be rejected.
 const allowedExclusions = new Set([
-	"private/aispeech/**",
+	"private/site/**",
 	"docs/internal/**",
 	"config/site.bundled.yaml",
 	"sure/skills/sure_eval/references/main_flow_agent/**",
 	".gitlab-ci.yml",
 ]);
 if (existsSync("public-export.yaml")) {
-	const exportConfiguration = parse(readFileSync("public-export.yaml", "utf8"));
+	const exportText = readFileSync("public-export.yaml", "utf8");
+	const exportConfiguration = parse(exportText);
 	for (const entry of exportConfiguration?.exclude ?? []) {
 		if (!allowedExclusions.has(entry)) {
 			failures.push(`public-export.yaml exclude entry is not on the approved exception list: ${entry}`);
@@ -37,11 +38,11 @@ for (const document of [
 	"README.md",
 	"docs/site-configuration.md",
 	"docs/evaluation_engine.md",
-	"private/aispeech/README.md",
-	"private/aispeech/docs/handbook.md",
-	"private/aispeech/docs/noninteractive_usage.md",
-	"private/aispeech/docs/company_model_onboarding.md",
-	"private/aispeech/docs/repository-governance.md",
+	"private/site/README.md",
+	"private/site/docs/handbook.md",
+	"private/site/docs/noninteractive_usage.md",
+	"private/site/docs/company_model_onboarding.md",
+	"private/site/docs/repository-governance.md",
 ]) {
 	if (!existsSync(document)) continue;
 	const text = readFileSync(document, "utf8");
@@ -58,7 +59,7 @@ if (ripgrep.error || ripgrep.status !== 0) {
 } else {
 	const publicImports = run("rg", [
 	"-n",
-	"private/aispeech",
+	"private/site",
 	"packages",
 	"sure",
 	"scripts",
@@ -70,11 +71,15 @@ if (ripgrep.error || ripgrep.status !== 0) {
 	"!scripts/check-repository-hygiene.mjs",
 	"--glob",
 	"!scripts/check-site-compatibility.mjs",
+	"--glob",
+	"!scripts/export-public.mjs",
+	"--glob",
+	"!scripts/export-public.test.mjs",
 		]);
 		if (publicImports.error) {
 			failures.push(`ripgrep scan failed: ${publicImports.error.message}`);
 		} else if (publicImports.status === 0) {
-			failures.push(`public core references private/aispeech:\n${publicImports.stdout.trim()}`);
+			failures.push(`public core references private/site:\n${publicImports.stdout.trim()}`);
 		} else if (publicImports.status !== 1) {
 			failures.push((publicImports.stderr ?? "").trim() || `ripgrep exited with status ${publicImports.status}`);
 		}
@@ -122,6 +127,8 @@ if (typescriptValue !== null && typescriptValue !== undefined && python.status =
 
 const temporaryRoot = mkdtempSync(resolve(tmpdir(), "sure-public-export-"));
 const exportRoot = resolve(temporaryRoot, "tree");
+const repositoryStatus = run("git", ["status", "--porcelain=v1", "--untracked-files=all"]);
+const repositoryDirty = repositoryStatus.status !== 0 || repositoryStatus.stdout.trim().length > 0;
 try {
 	const policyRoot = resolve(temporaryRoot, "policy-precedence");
 	mkdirSync(resolve(policyRoot, "config"), { recursive: true });
@@ -162,6 +169,10 @@ try {
 		const exported = run("node", [exportedScript, "--output", exportRoot]);
 		if (exported.error) {
 			failures.push(`public export failed to start: ${exported.error.message}`);
+		} else if (repositoryDirty) {
+			if (exported.status === 0 || !exported.stderr.includes("requires a clean working tree")) {
+				failures.push("public export did not fail closed for a dirty working tree");
+			}
 		} else {
 			if (exported.status !== 0) failures.push((exported.stderr ?? "").trim() || (exported.stdout ?? "").trim());
 			if (exported.status === 0) {
@@ -179,7 +190,17 @@ try {
 					failures.push("public export selected an implicit site policy");
 				}
 				const manifest = JSON.parse(readFileSync(resolve(exportRoot, "public-export-manifest.json"), "utf8"));
-				if (manifest.schema !== "sure.public_export_manifest.v1") failures.push("public export manifest schema mismatch");
+				if (manifest.schema !== "sure.public_export_manifest.v2") failures.push("public export manifest schema mismatch");
+				if (manifest.projection_id !== `sha256:${manifest.tree_sha256}`) {
+					failures.push("public export projection identity does not match its tree digest");
+				}
+				if ("source_commit" in manifest || "source_dirty" in manifest) {
+					failures.push("public export manifest exposes private source state");
+				}
+				if (!manifest.files.every((entry) => typeof entry.mode === "string")) {
+					failures.push("public export manifest omits Git modes");
+				}
+				if (existsSync(resolve(exportRoot, "private"))) failures.push("public export contains the private overlay");
 				const resolver = "sure/skills/sure_eval/scripts/resolve_model_dir.py";
 				const publicHelp = run("python3", [resolver, "--help"], { cwd: exportRoot });
 				if (publicHelp.status !== 0) failures.push("public resource CLI help failed without a site policy");

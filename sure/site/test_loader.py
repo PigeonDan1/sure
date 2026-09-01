@@ -29,7 +29,7 @@ def _policy(**overrides: object) -> dict[str, object]:
             "runtime_root": f"{_ROOT}/runtime",
         },
         "datasets": {"allowed_source_roots": {"default": f"{_ROOT}/datasets"}},
-        "execution": {"surfaces": ["local", "vc"]},
+        "execution": {"surfaces": ["local", "vc"], "vc_project": "example-project"},
     }
     base.update(overrides)
     return base
@@ -38,15 +38,29 @@ def _policy(**overrides: object) -> dict[str, object]:
 class VcDefaultPartitionTest(unittest.TestCase):
     def test_default_partition_is_returned(self) -> None:
         policy = validate_site_policy(
-            _policy(execution={"surfaces": ["vc"], "vc_partitions": ["gpu-a"], "vc_default_partition": "gpu-a"})
+            _policy(execution={"surfaces": ["vc"], "vc_project": "example-project", "vc_partitions": ["gpu-a"], "vc_default_partition": "gpu-a"})
         )
         self.assertEqual(policy["execution"]["vc_default_partition"], "gpu-a")
+
     def test_default_partition_must_be_an_allowed_partition(self) -> None:
         with self.assertRaises(SitePolicyError) as raised:
             validate_site_policy(
-                _policy(execution={"surfaces": ["vc"], "vc_partitions": ["gpu-a"], "vc_default_partition": "gpu-b"})
+                _policy(execution={"surfaces": ["vc"], "vc_project": "example-project", "vc_partitions": ["gpu-a"], "vc_default_partition": "gpu-b"})
             )
         self.assertIn("execution.vc_default_partition", str(raised.exception))
+
+
+class VcProjectTest(unittest.TestCase):
+    def test_project_is_returned(self) -> None:
+        policy = validate_site_policy(
+            _policy(execution={"surfaces": ["vc"], "vc_project": "example-project"})
+        )
+        self.assertEqual(policy["execution"]["vc_project"], "example-project")
+
+    def test_project_is_required_for_vc(self) -> None:
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(_policy(execution={"surfaces": ["vc"]}))
+        self.assertIn("execution.vc_project", str(raised.exception))
 
 
 class LocalRuntimeTest(unittest.TestCase):
@@ -70,8 +84,8 @@ class LocalRuntimeTest(unittest.TestCase):
 
 class ContainerRegistryTest(unittest.TestCase):
     def test_container_registry_is_returned(self) -> None:
-        policy = validate_site_policy(_policy(network={"container_registry": "registry.example/hpc"}))
-        self.assertEqual(policy["network"]["container_registry"], "registry.example/hpc")
+        policy = validate_site_policy(_policy(network={"container_registry": "registry.example/example-org"}))
+        self.assertEqual(policy["network"]["container_registry"], "registry.example/example-org")
 
     def test_container_registry_rejects_a_non_string(self) -> None:
         with self.assertRaises(SitePolicyError) as raised:
@@ -85,13 +99,13 @@ class ContainerDeliveryTest(unittest.TestCase):
             _policy(
                 network={"container_registry": "registry.example"},
                 container_delivery={
-                    "repository_template": "{registry}/my-org/sure-{task}-{model_name}"
+                    "repository_template": "{registry}/example-org/sure-{task}-{model_name}"
                 },
             )
         )
         self.assertEqual(
             policy["container_delivery"]["repository_template"],
-            "{registry}/my-org/sure-{task}-{model_name}",
+            "{registry}/example-org/sure-{task}-{model_name}",
         )
 
     def test_repository_template_requires_a_registry(self) -> None:
@@ -99,7 +113,7 @@ class ContainerDeliveryTest(unittest.TestCase):
             validate_site_policy(
                 _policy(
                     container_delivery={
-                        "repository_template": "{registry}/my-org/sure-{model_name}"
+                        "repository_template": "{registry}/example-org/sure-{model_name}"
                     }
                 )
             )

@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -21,9 +20,6 @@ from deployment_contract import (
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
 from sure.site.loader import SitePolicyError, load_site_policy
-
-
-LEGACY_PATH = re.compile(r"/(?:mnt/cloudstorfs|hpc_stor\d+|hpc_\d+)/")
 
 
 def main() -> int:
@@ -114,12 +110,6 @@ def main() -> int:
             if runtime.get("manifest_sha256") != manifest_sha256(manifest):
                 raise ValueError("deployment Model Runtime manifest hash mismatch")
             verify_runtime(Path(configured["policy"]["storage"]["runtime_root"]) / "models", manifest)
-        portable = [
-            read_json(model_dir / "artifacts" / name)
-            for name in ("runtime_inventory.json", "package_gate.json", "artifact_manifest.json", "deployment_ready.json")
-        ]
-        if LEGACY_PATH.search(json.dumps(portable, ensure_ascii=False)):
-            raise ValueError("finalized deployment sidecars contain legacy host absolute paths")
     except (OSError, ValueError, ModelRuntimeError, SitePolicyError) as exc:
         print(f"FINALIZE_MODEL_BUNDLE failed: {exc}", file=sys.stderr)
         return 1

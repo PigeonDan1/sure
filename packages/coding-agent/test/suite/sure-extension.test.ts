@@ -353,7 +353,7 @@ describe("Sure extension", () => {
 		const datasetsRoot = join(harness.tempDir, "data", "datasets");
 		const jsonlDir = join(datasetsRoot, "sure_benchmark", "jsonl");
 		mkdirSync(jsonlDir, { recursive: true });
-		const datasetId = "aispeech_phy_librispeech-test-clean__v1.0.1";
+		const datasetId = "demo_speech_en_test__v1.0.1";
 		writeFileSync(
 			join(jsonlDir, `${datasetId}.jsonl`),
 			`${JSON.stringify({
@@ -364,9 +364,9 @@ describe("Sure extension", () => {
 				language: "en",
 				dataset: datasetId,
 				metadata: {
-					source: "aispeech_ds_pool",
+					source: "site_dataset_pool",
 					source_dataset_root: "/srv/sure/datasets/group/store/ds_pool/example-librispeech-test-clean",
-					source_dataset_name: "aispeech_phy_librispeech-test-clean",
+					source_dataset_name: "demo_speech_en_test",
 					version_id: "v1.0.1",
 				},
 			})}\n`,
