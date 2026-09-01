@@ -66,11 +66,58 @@ class EvaluationRuntimeTests(unittest.TestCase):
             }
         )
         self.assertIn("unset PYTHONHOME PYTHONEXECUTABLE", text)
-        self.assertIn("/site-packages", text)
-        self.assertIn("/sure-evaluation'/src", text)
+        self.assertIn('"$_sure_eval_root/site-packages', text)
         self.assertIn("--library-path", text)
         self.assertNotIn("export LD_LIBRARY_PATH='/repo", text)
         self.assertIn("_sure_eval_parent_ld", text)
+
+    def test_group_permissions_leave_another_owners_files_alone(self) -> None:
+        # The runtime cache is shared, and its log directory keeps every
+        # bootstrap log anyone has written. Only an owner may change a file's
+        # ACL, so re-ACLing the whole directory means the first person to
+        # materialize a runtime is the last: everyone after them dies on
+        # "Operation not permitted" with the packages already installed.
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            (root / "bootstrap-old.log").write_text("", encoding="utf-8")
+            touched: list[Path] = []
+
+            def record(setfacl: str, entries: str, paths: list[Path]) -> None:
+                touched.extend(paths)
+
+            with mock.patch("evaluation_runtime.shutil.which", return_value="/usr/bin/setfacl"), \
+                mock.patch("evaluation_runtime._apply_acl", record), \
+                mock.patch("evaluation_runtime.os.getuid", return_value=999999):
+                _make_group_writable(root)
+
+            self.assertEqual(touched, [])
+
+    def test_the_wrapper_is_identical_wherever_the_runtime_is_reached_from(self) -> None:
+        # One cache entry is reached through several names: the same storage
+        # carries two mount paths, and the Harness Runtime sits in the repo on
+        # the host but in /opt inside the evaluation image. _verify compares
+        # this text byte for byte, so any of those names baked into it turns a
+        # perfectly good runtime into "wrapper differs from the contract".
+        loader = "/lib64/ld-linux-x86-64.so.2"
+        host = _wrapper(
+            {
+                "runtime_root": "/storage/one/checkout/sure/.runtime/evaluation/demo",
+                "harness_runtime_root": "/storage/one/checkout/sure/.runtime/harness/demo",
+                "engine_root": "/storage/one/checkout/sure/external/sure-evaluation",
+                "dynamic_loader": loader,
+            }
+        )
+        container = _wrapper(
+            {
+                "runtime_root": "/storage/two/checkout/sure/.runtime/evaluation/demo",
+                "harness_runtime_root": "/opt/sure-harness/demo",
+                "engine_root": "/storage/two/checkout/sure/external/sure-evaluation",
+                "dynamic_loader": loader,
+            }
+        )
+        self.assertEqual(host, container)
+        for name in ("/storage/one", "/storage/two", "/opt/sure-harness"):
+            self.assertNotIn(name, host)
 
     def test_child_environment_removes_only_harness_library_path(self) -> None:
         harness_root = "/repo/sure/.runtime/harness/demo"

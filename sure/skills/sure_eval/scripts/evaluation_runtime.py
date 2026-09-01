@@ -59,6 +59,13 @@ def _make_group_writable(root: Path, *, recursive: bool = True) -> None:
     """Preserve executable bits and grant the runtime's owning group inherited write access."""
     paths = [root, *root.rglob("*")] if recursive else [root]
     paths = [path for path in paths if not path.is_symlink()]
+    # Only an owner may change a file's ACL or mode. The cache is shared and its
+    # log directory keeps every bootstrap log anyone has written, so reaching for
+    # someone else's file fails with "Operation not permitted" and takes the whole
+    # materialization down with it, packages already installed. Whoever wrote that
+    # file made it group-collaborative on the way past; there is nothing to add.
+    uid = os.getuid()
+    paths = [path for path in paths if path.stat().st_uid == uid]
     directories = [path for path in paths if path.is_dir()]
     executables = [
         path
@@ -257,12 +264,18 @@ def _verify(binding: dict[str, Any]) -> tuple[bool, str]:
     if python.read_text(encoding="utf-8") != _wrapper(binding):
         return False, "runtime wrapper differs from the materialization contract"
     code = "\n".join(f"import {name}" for name in binding["required_imports"])
+    # The wrapper no longer names the engine, so the caller supplies it, the way
+    # evaluate_predictions._external_env already does for the real evaluation
+    # calls. Without this the engine's own package would not import here.
+    env = evaluation_child_environment()
+    env["PYTHONPATH"] = str(Path(str(binding["engine_root"])) / "src")
     completed = subprocess.run(
         [str(python), "-s", "-c", code],
         capture_output=True,
         text=True,
         check=False,
         timeout=60,
+        env=env,
     )
     if completed.returncode != 0:
         return False, (completed.stderr or completed.stdout or "import verification failed").strip()
@@ -270,18 +283,28 @@ def _verify(binding: dict[str, Any]) -> tuple[bool, str]:
 
 
 def _wrapper(binding: dict[str, Any]) -> str:
-    runtime_root = str(binding["runtime_root"])
-    harness_root = str(binding["harness_runtime_root"])
-    engine_root = str(binding["engine_root"])
+    """The launcher text, free of any path that depends on where it is read from.
+
+    _verify compares this byte for byte, and one cache entry is reached under
+    several names: the same storage carries more than one mount path, and the
+    Harness Runtime lives in the repository on the host but under /opt inside
+    the evaluation image. Baking either in made a sound runtime report
+    "wrapper differs from the materialization contract" and killed the run at
+    [2.6/5]. The runtime locates itself the way the Harness Runtime launcher
+    does; the harness root arrives in the environment every caller already
+    sets. Only the loader stays literal: it is a fixed system path the spec
+    pins and _expected_binding checks for.
+    """
     dynamic_loader = str(binding["dynamic_loader"])
-    harness_lib = f"{harness_root}/base/lib"
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 unset PYTHONHOME PYTHONEXECUTABLE
+_sure_eval_root="$(cd "$(dirname "${{BASH_SOURCE[0]}}")/.." && pwd)"
+_sure_eval_harness="${{SURE_HARNESS_RUNTIME_ROOT:?the approved Harness Runtime root is required}}"
 _sure_eval_ld=()
 IFS=: read -r -a _sure_eval_parent_ld <<< "${{LD_LIBRARY_PATH:-}}"
 for _sure_eval_entry in "${{_sure_eval_parent_ld[@]}}"; do
-  if [[ -n "$_sure_eval_entry" && "$_sure_eval_entry" != {harness_lib!r} ]]; then
+  if [[ -n "$_sure_eval_entry" && "$_sure_eval_entry" != "$_sure_eval_harness/base/lib" ]]; then
     _sure_eval_ld+=("$_sure_eval_entry")
   fi
 done
@@ -291,8 +314,8 @@ else
   unset LD_LIBRARY_PATH
 fi
 export PYTHONNOUSERSITE=1
-export PYTHONPATH={runtime_root!r}/site-packages:{engine_root!r}/src
-exec {dynamic_loader!r} --library-path {harness_root!r}/base/lib {harness_root!r}/base/bin/python3.11 "$@"
+export PYTHONPATH="$_sure_eval_root/site-packages${{PYTHONPATH:+:$PYTHONPATH}}"
+exec {dynamic_loader!r} --library-path "$_sure_eval_harness/base/lib" "$_sure_eval_harness/base/bin/python3.11" "$@"
 """
 
 

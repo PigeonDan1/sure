@@ -1,7 +1,7 @@
 {
   "schema": "sure.evaluation.runtime.spec.v1",
   "runtime_version": "root-v1",
-  "materialization_version": 3,
+  "materialization_version": 4,
   "python": "3.11",
   "dynamic_loader": "/lib64/ld-linux-x86-64.so.2",
   "engine_commit": "cb9267e9f887b1619f8449e49da828c77960a52e",
