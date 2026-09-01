@@ -8,6 +8,7 @@ import sys
 import tempfile
 import types
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -820,8 +821,11 @@ class ModifyOfAnExportedTargetTests(CliTestBase):
         self.assertEqual(self.run_cli("confirm", MODIFY_ID)[0], 0)
         self.assertEqual(self.run_cli("export", KERNEL_ID)[0], 0)
         self.assertIn(self.MARKER, self.tracked.read_text(encoding="utf-8"))
-        self.dispute("run-x", "2026-09-01T10:00:00Z")
-        self.dispute("run-y", "2026-09-02T10:00:00Z")
+        # _demote_streak only counts disputes dated after the human confirm (utc_today), so the
+        # dates must be computed from today: fixed ones passed until the calendar caught up.
+        today = date.fromisoformat(paths.utc_today())
+        self.dispute("run-x", f"{today + timedelta(days=1)}T10:00:00Z")
+        self.dispute("run-y", f"{today + timedelta(days=2)}T10:00:00Z")
         self.assertEqual([r["action"] for r in promote.promote_all(self.root, config=self.config)], ["demote"])
         self.assertEqual(self.meta_of(KERNEL_ID)["status"], "provisional")
         # cmd_confirm re-stages from the provisional copy: a copy left un-merged reverts the entry

@@ -527,9 +527,14 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
             _validate_complete_manifest(model_dir, marker, package, "none")
         return _load_python_binding(model_dir, model_name, marker, inventory, package)
 
-    manifest = _read_json(model_dir, "artifacts/artifact_manifest.json")
-    _require(manifest.get("status") == "finalized", "artifact_manifest status must be finalized")
-    _require(manifest.get("model_dir") == ".", "artifact_manifest model_dir must be portable (.)")
+    declared_profile = marker.get("integrity_profile")
+    if declared_profile is not None:
+        # Only a declared profile promised a finalized, portable manifest. Bundles sealed before
+        # INTEGRITY_PROFILE_REQUIRED_FROM wrote that file by hand and were always bound on the
+        # hashes the marker declares; the legacy profile keeps binding them that way.
+        manifest = _read_json(model_dir, "artifacts/artifact_manifest.json")
+        _require(manifest.get("status") == "finalized", "artifact_manifest status must be finalized")
+        _require(manifest.get("model_dir") == ".", "artifact_manifest model_dir must be portable (.)")
     _require(marker.get("schema") == DEPLOYMENT_READY_V1, "unsupported deployment_ready schema")
     _require(marker.get("status") == "ready", "deployment_ready status must be ready")
     _require(marker.get("model_name") == model_name, "deployment_ready model_name does not match requested model")
@@ -633,22 +638,6 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
 
     declared_hashes = marker.get("required_artifact_sha256")
     _require(isinstance(declared_hashes, dict) and declared_hashes, "deployment_ready artifact hashes are missing")
-    manifest_artifacts = manifest.get("artifacts")
-    required_entries = manifest_artifacts.get("required") if isinstance(manifest_artifacts, dict) else None
-    _require(isinstance(required_entries, dict) and required_entries, "artifact_manifest required entries are missing")
-    manifest_paths: set[str] = set()
-    has_deployment_self_entry = False
-    for entry in required_entries.values():
-        _require(isinstance(entry, dict), "artifact_manifest required entry is invalid")
-        raw_path = str(entry.get("path") or "")
-        path = Path(raw_path)
-        _require(raw_path and not path.is_absolute() and ".." not in path.parts, "artifact_manifest contains a non-portable path")
-        if path.as_posix() == "artifacts/deployment_ready.json":
-            has_deployment_self_entry = True
-        else:
-            manifest_paths.add(path.as_posix())
-    declared_paths = {str(path) for path in declared_hashes}
-    declared_profile = marker.get("integrity_profile")
     if declared_profile is None:
         integrity_profile = "legacy-partial-v1"
     else:
@@ -657,6 +646,21 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
             f"unsupported ready deployment integrity profile: {declared_profile!r}",
         )
         integrity_profile = str(declared_profile)
+        manifest_artifacts = manifest.get("artifacts")
+        required_entries = manifest_artifacts.get("required") if isinstance(manifest_artifacts, dict) else None
+        _require(isinstance(required_entries, dict) and required_entries, "artifact_manifest required entries are missing")
+        manifest_paths: set[str] = set()
+        has_deployment_self_entry = False
+        for entry in required_entries.values():
+            _require(isinstance(entry, dict), "artifact_manifest required entry is invalid")
+            raw_path = str(entry.get("path") or "")
+            path = Path(raw_path)
+            _require(raw_path and not path.is_absolute() and ".." not in path.parts, "artifact_manifest contains a non-portable path")
+            if path.as_posix() == "artifacts/deployment_ready.json":
+                has_deployment_self_entry = True
+            else:
+                manifest_paths.add(path.as_posix())
+        declared_paths = {str(path) for path in declared_hashes}
         mandatory_paths = _mandatory_integrity_paths(
             model_dir,
             package,
