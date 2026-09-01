@@ -152,3 +152,33 @@ test("private overlay blocks restricted public content", () => {
 		rmSync(temporaryRoot, { recursive: true, force: true });
 	}
 });
+
+test("a repository that excludes private paths must carry deny rules", () => {
+	// The overlay is the only place the private deny rules live, and it sits
+	// inside the excluded tree. A missing or renamed overlay must stop the
+	// export, not quietly turn the content scan off.
+	const temporaryRoot = mkdtempSync(resolve(tmpdir(), "sure-public-export-unarmed-test-"));
+	const sourceRoot = resolve(temporaryRoot, "source");
+	mkdirSync(sourceRoot);
+	try {
+		repository(sourceRoot, {
+			"public-export.yaml": [
+				"version: 1",
+				"exclude:",
+				"  - private/site/**",
+				"forbidden_content: []",
+				"forbidden_paths: []",
+				"",
+			].join("\n"),
+			"private/site/secret.txt": "restricted-site-value\n",
+			"visible.txt": "public\n",
+		});
+		const output = resolve(temporaryRoot, "tree");
+		const exported = run("node", [exporter, "--output", output], sourceRoot);
+		assert.notEqual(exported.status, 0);
+		assert.match(exported.stderr, /no forbidden_content rules/);
+		assert.equal(existsSync(output), false);
+	} finally {
+		rmSync(temporaryRoot, { recursive: true, force: true });
+	}
+});

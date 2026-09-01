@@ -130,6 +130,13 @@ const forbiddenContent = [...base.forbiddenContent, ...overlay.forbiddenContent]
 	pattern,
 	new RegExp(pattern, "i"),
 ]);
+// The deny rules that matter live in the overlay, inside the excluded tree,
+// so a repository that has something to exclude is exactly the one that
+// cannot run without them. A projection that already contains no private
+// paths (the public copy itself) has nothing to arm and is left alone.
+if (forbiddenContent.length === 0 && indexed.some((entry) => excluded.some((expression) => expression.test(entry.path)))) {
+	fail(`public export excludes private paths but has no forbidden_content rules; add ${overlayPath}`);
+}
 
 const manifestFiles = [];
 const exportEntries = [];
