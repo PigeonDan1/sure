@@ -1,0 +1,1664 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SURE Harness 六个 Skill 的能力、设计思想与实现环节可视化导览。">
+  <meta property="og:title" content="SURE Harness · Skill Atlas">
+  <meta property="og:description" content="从模型发现、适配、转换、审批到评测与复评的可复现 Agent 工作流。">
+  <meta property="og:type" content="website">
+  <title>SURE Harness · Skill Atlas</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #161817;
+      --muted: #616763;
+      --paper: #f5f6f2;
+      --white: #ffffff;
+      --line: #d8ddd8;
+      --line-strong: #aeb7b0;
+      --feed: #087f8c;
+      --onboard: #dc4f3f;
+      --trans: #d58a00;
+      --approve: #7657a8;
+      --eval: #368251;
+      --reval: #376aa5;
+      --active-color: var(--feed);
+      --shadow: 0 12px 35px rgba(22, 24, 23, 0.09);
+      --max: 1220px;
+      --nav-height: 64px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      background: var(--paper);
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      letter-spacing: 0;
+    }
+
+    button,
+    a { -webkit-tap-highlight-color: transparent; }
+
+    button { font: inherit; }
+
+    a { color: inherit; }
+
+    .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      letter-spacing: 0;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: var(--nav-height);
+      border-bottom: 1px solid rgba(22, 24, 23, 0.16);
+      background: rgba(245, 246, 242, 0.94);
+      backdrop-filter: blur(16px);
+    }
+
+    .topbar-inner {
+      width: min(var(--max), calc(100% - 40px));
+      height: 100%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 22px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      text-decoration: none;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      color: var(--white);
+      background: var(--ink);
+      border: 1px solid var(--ink);
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .brand-sub {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .main-nav {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      margin-left: auto;
+    }
+
+    .main-nav a {
+      position: relative;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .main-nav a:hover,
+    .main-nav a.active { color: var(--ink); }
+
+    .main-nav a.active::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -21px;
+      height: 3px;
+      background: var(--active-color);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .icon-button {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      color: var(--ink);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .icon-button:hover {
+      background: var(--white);
+      border-color: var(--line);
+    }
+
+    .icon-button svg { width: 18px; height: 18px; }
+
+    .read-progress {
+      position: absolute;
+      left: 0;
+      bottom: -1px;
+      width: 0;
+      height: 2px;
+      background: var(--active-color);
+      transition: width 120ms linear, background-color 240ms ease;
+    }
+
+    .hero {
+      min-height: calc(88svh - var(--nav-height));
+      padding: 72px 0 54px;
+      background: var(--white);
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+    }
+
+    .hero-inner,
+    .section-inner {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    .hero-copy {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+      gap: 60px;
+      align-items: end;
+      margin-bottom: 58px;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 26px;
+      height: 3px;
+      background: var(--active-color);
+    }
+
+    h1,
+    h2,
+    h3,
+    p { margin-top: 0; }
+
+    h1 {
+      max-width: 820px;
+      margin-bottom: 18px;
+      font-size: 72px;
+      line-height: 0.98;
+      letter-spacing: 0;
+      font-weight: 790;
+    }
+
+    .hero-lead {
+      max-width: 720px;
+      margin: 0;
+      color: #3d423f;
+      font-size: 21px;
+      line-height: 1.55;
+    }
+
+    .hero-note {
+      padding-left: 24px;
+      border-left: 1px solid var(--line-strong);
+    }
+
+    .hero-note strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 17px;
+    }
+
+    .hero-note p {
+      margin-bottom: 18px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .snapshot {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .system-map {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.2fr 1.2fr 0.86fr 1.05fr 0.9fr;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .map-column {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .map-label {
+      height: 24px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 760;
+      text-transform: uppercase;
+    }
+
+    .map-node {
+      position: relative;
+      min-height: 112px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 16px;
+      color: var(--ink);
+      background: var(--white);
+      border: 1px solid var(--line-strong);
+      border-top: 5px solid var(--node-color);
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: left;
+      transition: transform 180ms ease, box-shadow 180ms ease;
+    }
+
+    .map-node:hover,
+    .map-node:focus-visible {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow);
+      outline: none;
+    }
+
+    .map-node::after {
+      content: "›";
+      position: absolute;
+      right: -14px;
+      top: 39px;
+      z-index: 2;
+      color: var(--line-strong);
+      font-size: 30px;
+      font-weight: 400;
+      line-height: 1;
+    }
+
+    .map-column:last-child .map-node::after { display: none; }
+
+    .map-node .command {
+      display: block;
+      margin-bottom: 18px;
+      font-size: 17px;
+      font-weight: 780;
+    }
+
+    .map-node .result {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .node-feed { --node-color: var(--feed); }
+    .node-onboard { --node-color: var(--onboard); }
+    .node-trans { --node-color: var(--trans); }
+    .node-approve { --node-color: var(--approve); }
+    .node-eval { --node-color: var(--eval); }
+    .node-reval { --node-color: var(--reval); }
+
+    .memory-rail {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 24px auto 0;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .memory-line {
+      height: 1px;
+      background: var(--line-strong);
+    }
+
+    .memory-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-weight: 680;
+    }
+
+    .memory-pill svg { width: 15px; height: 15px; color: var(--approve); }
+
+    .metrics-band {
+      background: var(--ink);
+      color: var(--white);
+    }
+
+    .metrics-grid {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+    }
+
+    .metric {
+      min-height: 124px;
+      padding: 28px 24px;
+      border-right: 1px solid rgba(255,255,255,0.18);
+    }
+
+    .metric:first-child { border-left: 1px solid rgba(255,255,255,0.18); }
+
+    .metric-value {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 30px;
+      font-weight: 790;
+      line-height: 1.1;
+    }
+
+    .metric-label {
+      color: #bfc7c1;
+      font-size: 12px;
+    }
+
+    .section {
+      padding: 92px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section.white { background: var(--white); }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.72fr) minmax(320px, 1.28fr);
+      gap: 60px;
+      align-items: start;
+      margin-bottom: 54px;
+    }
+
+    .section-index {
+      display: block;
+      margin-bottom: 12px;
+      color: var(--active-color);
+      font-size: 12px;
+      font-weight: 780;
+    }
+
+    .section h2 {
+      margin-bottom: 0;
+      font-size: 42px;
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    .section-intro {
+      max-width: 680px;
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .skill-console {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      min-height: 650px;
+      background: var(--white);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .skill-tabs {
+      padding: 14px;
+      background: #ecefea;
+      border-right: 1px solid var(--line);
+    }
+
+    .skill-tab {
+      position: relative;
+      width: 100%;
+      min-height: 72px;
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      color: var(--muted);
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid #d9ddd8;
+      border-radius: 0;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .skill-tab:hover { color: var(--ink); background: rgba(255,255,255,0.6); }
+
+    .skill-tab.active {
+      color: var(--ink);
+      background: var(--white);
+      box-shadow: inset 4px 0 0 var(--tab-color);
+    }
+
+    .skill-tab svg { width: 20px; height: 20px; color: var(--tab-color); }
+
+    .skill-tab .tab-name {
+      display: block;
+      font-size: 14px;
+      font-weight: 750;
+    }
+
+    .skill-tab .tab-role {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .skill-detail {
+      min-width: 0;
+      padding: 38px 42px 32px;
+    }
+
+    .skill-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding-bottom: 26px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .skill-kicker {
+      margin-bottom: 8px;
+      color: var(--active-color);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .skill-command {
+      margin: 0 0 8px;
+      font-size: 34px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .skill-outcome {
+      max-width: 660px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .unit-count {
+      flex: 0 0 auto;
+      min-width: 86px;
+      padding: 12px;
+      text-align: center;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+    }
+
+    .unit-count strong {
+      display: block;
+      font-size: 25px;
+      line-height: 1;
+    }
+
+    .unit-count span { color: var(--muted); font-size: 10px; }
+
+    .skill-columns {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+      gap: 42px;
+      padding: 30px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .detail-block h3,
+    .stage-section h3 {
+      margin-bottom: 14px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .capability-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .capability-list li {
+      position: relative;
+      margin-bottom: 9px;
+      padding-left: 18px;
+      color: #363b38;
+      font-size: 14px;
+    }
+
+    .capability-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 10px;
+      width: 7px;
+      height: 7px;
+      background: var(--active-color);
+    }
+
+    .principle-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .principle {
+      padding: 0 0 12px 14px;
+      border-left: 3px solid var(--active-color);
+    }
+
+    .principle strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 13px;
+    }
+
+    .principle span { color: var(--muted); font-size: 13px; }
+
+    .io-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .io-label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .artifact-tag {
+      display: inline-block;
+      max-width: 100%;
+      margin: 0 5px 5px 0;
+      padding: 3px 6px;
+      color: #343936;
+      background: #edf0ec;
+      border: 1px solid var(--line);
+      border-radius: 2px;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .stage-section { padding-top: 26px; }
+
+    .stage-flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .phase {
+      min-width: 0;
+      padding: 16px;
+      border-right: 1px solid var(--line);
+      background: #fafbf8;
+    }
+
+    .phase:last-child { border-right: 0; }
+
+    .phase-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      color: var(--active-color);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .phase-number {
+      width: 19px;
+      height: 19px;
+      display: grid;
+      place-items: center;
+      color: var(--white);
+      background: var(--active-color);
+      border-radius: 50%;
+      font-size: 9px;
+    }
+
+    .step-list {
+      display: grid;
+      gap: 7px;
+    }
+
+    .step {
+      color: #424844;
+      font-size: 11px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .skill-foot {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 20px;
+      padding-top: 18px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .skill-foot span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .skill-foot svg { width: 14px; height: 14px; color: var(--active-color); }
+
+    .principles-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-top: 1px solid var(--line-strong);
+      border-left: 1px solid var(--line-strong);
+    }
+
+    .architecture-item {
+      min-height: 260px;
+      padding: 28px;
+      background: var(--white);
+      border-right: 1px solid var(--line-strong);
+      border-bottom: 1px solid var(--line-strong);
+    }
+
+    .architecture-icon {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 44px;
+      color: var(--white);
+      background: var(--item-color);
+      border-radius: 5px;
+    }
+
+    .architecture-icon svg { width: 21px; height: 21px; }
+
+    .architecture-item h3 {
+      margin-bottom: 10px;
+      font-size: 18px;
+    }
+
+    .architecture-item p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .runtime-layout {
+      display: grid;
+      grid-template-columns: 0.72fr repeat(3, 1fr);
+      border: 1px solid var(--line-strong);
+      background: var(--white);
+    }
+
+    .runtime-labels,
+    .runtime-column {
+      display: grid;
+      grid-template-rows: 68px repeat(4, minmax(72px, auto));
+      min-width: 0;
+    }
+
+    .runtime-column { border-left: 1px solid var(--line-strong); }
+
+    .runtime-cell {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .runtime-cell:last-child { border-bottom: 0; }
+
+    .runtime-head {
+      color: var(--white);
+      background: var(--runtime-color);
+      font-weight: 800;
+    }
+
+    .runtime-labels .runtime-head { color: var(--ink); background: #ecefea; }
+
+    .runtime-labels .runtime-cell {
+      color: var(--muted);
+      background: #fafbf8;
+      font-size: 11px;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .runtime-column .runtime-cell:not(.runtime-head) { align-items: flex-start; }
+
+    .runtime-column strong { display: block; margin-bottom: 3px; font-size: 12px; }
+
+    .runtime-column span { color: var(--muted); font-size: 12px; }
+
+    .evidence-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+      gap: 54px;
+      align-items: center;
+    }
+
+    .evidence-stack { border-top: 1px solid var(--line-strong); }
+
+    .evidence-row {
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr);
+      gap: 18px;
+      padding: 22px 0;
+      border-bottom: 1px solid var(--line-strong);
+    }
+
+    .evidence-no {
+      color: var(--active-color);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .evidence-row h3 { margin-bottom: 5px; font-size: 17px; }
+    .evidence-row p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .terminal-frame {
+      margin: 0;
+      background: #111512;
+      border: 1px solid #2f3531;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 13px;
+      border-bottom: 1px solid #303632;
+      color: #9da7a0;
+      font-size: 10px;
+    }
+
+    .terminal-dot { width: 8px; height: 8px; border-radius: 50%; background: #59615c; }
+    .terminal-title { margin-left: 6px; }
+
+    .terminal-frame img {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      object-fit: contain;
+    }
+
+    .memory-loop {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      align-items: stretch;
+      margin-top: 60px;
+    }
+
+    .memory-step {
+      position: relative;
+      min-height: 142px;
+      padding: 20px;
+      background: var(--white);
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+    }
+
+    .memory-step::after {
+      content: "→";
+      position: absolute;
+      right: -12px;
+      top: 52px;
+      z-index: 2;
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      background: var(--paper);
+      font-size: 15px;
+    }
+
+    .memory-step:last-child::after { content: "↺"; color: var(--approve); }
+
+    .memory-step strong { display: block; margin-bottom: 8px; font-size: 14px; }
+    .memory-step p { margin: 0; color: var(--muted); font-size: 12px; }
+
+    .closing {
+      padding: 80px 0;
+      color: var(--white);
+      background: var(--ink);
+    }
+
+    .closing-inner {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      gap: 64px;
+      align-items: end;
+    }
+
+    .closing h2 {
+      max-width: 800px;
+      margin-bottom: 16px;
+      font-size: 44px;
+      line-height: 1.13;
+      letter-spacing: 0;
+    }
+
+    .closing p { margin: 0; color: #bfc7c1; font-size: 16px; }
+
+    .closing-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .command-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 9px 13px;
+      color: var(--white);
+      border: 1px solid #5d665f;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .command-link:hover { border-color: var(--white); }
+    .command-link svg { width: 16px; height: 16px; }
+
+    footer {
+      padding: 20px 0;
+      color: var(--muted);
+      background: #0d0f0e;
+      border-top: 1px solid #2f3431;
+      font-size: 11px;
+    }
+
+    .footer-inner {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .reveal {
+      opacity: 1;
+      transform: none;
+    }
+
+    .reveal.visible { opacity: 1; transform: none; }
+
+    @media (max-width: 1040px) {
+      h1 { font-size: 58px; }
+      .main-nav { display: none; }
+      .system-map { grid-template-columns: repeat(3, 1fr); }
+      .map-column:nth-child(3) { grid-column: 1 / 2; }
+      .map-column:nth-child(4) { grid-column: 2 / 3; }
+      .map-column:nth-child(5) { grid-column: 3 / 4; }
+      .map-node::after { display: none; }
+      .skill-console { grid-template-columns: 210px minmax(0, 1fr); }
+      .skill-detail { padding: 32px; }
+      .skill-columns { gap: 28px; }
+      .stage-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .phase:nth-child(2) { border-right: 0; }
+      .phase:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .principles-grid { grid-template-columns: repeat(2, 1fr); }
+      .memory-loop { grid-template-columns: repeat(3, 1fr); }
+      .memory-step::after { display: none; }
+    }
+
+    @media (max-width: 760px) {
+      :root { --nav-height: 56px; }
+      .topbar-inner,
+      .hero-inner,
+      .section-inner,
+      .metrics-grid,
+      .memory-rail,
+      .closing-inner,
+      .footer-inner { width: min(100% - 24px, var(--max)); }
+      .brand-sub { display: none; }
+      .toolbar .icon-button:nth-child(2) { display: none; }
+      .hero { min-height: auto; padding: 48px 0 38px; }
+      .hero-copy { grid-template-columns: 1fr; gap: 28px; margin-bottom: 38px; }
+      h1 { font-size: 43px; line-height: 1.02; }
+      .hero-lead { font-size: 17px; }
+      .hero-note { padding-left: 16px; }
+      .system-map { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .map-column:nth-child(n) { grid-column: auto; }
+      .map-column:last-child { grid-column: 1 / -1; }
+      .map-node { min-height: 105px; padding: 13px; }
+      .map-node .command { font-size: 14px; }
+      .memory-rail { grid-template-columns: 1fr; text-align: center; }
+      .memory-line { display: none; }
+      .metrics-grid { grid-template-columns: 1fr 1fr; }
+      .metric { min-height: 98px; padding: 20px 15px; border-bottom: 1px solid rgba(255,255,255,0.18); }
+      .metric-value { font-size: 24px; }
+      .section { padding: 64px 0; }
+      .section-head { grid-template-columns: 1fr; gap: 18px; margin-bottom: 32px; }
+      .section h2 { font-size: 33px; }
+      .section-intro { font-size: 16px; }
+      .skill-console { display: block; min-height: 0; }
+      .skill-tabs {
+        display: flex;
+        gap: 0;
+        padding: 0;
+        overflow-x: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        scrollbar-width: none;
+      }
+      .skill-tabs::-webkit-scrollbar { display: none; }
+      .skill-tab {
+        flex: 0 0 118px;
+        min-height: 64px;
+        grid-template-columns: 24px minmax(0, 1fr);
+        padding: 8px;
+        border-right: 1px solid var(--line);
+        border-bottom: 0;
+      }
+      .skill-tab.active { box-shadow: inset 0 -4px 0 var(--tab-color); }
+      .skill-tab .tab-role { display: none; }
+      .skill-detail { padding: 26px 18px 22px; }
+      .skill-title-row { display: block; }
+      .skill-command { font-size: 28px; overflow-wrap: anywhere; }
+      .unit-count { display: inline-block; min-width: 78px; margin-top: 18px; }
+      .skill-columns { grid-template-columns: 1fr; gap: 24px; }
+      .io-row { grid-template-columns: 1fr; }
+      .stage-flow { grid-template-columns: 1fr; }
+      .phase { border-right: 0; border-bottom: 1px solid var(--line); }
+      .phase:last-child { border-bottom: 0; }
+      .principles-grid { grid-template-columns: 1fr; }
+      .architecture-item { min-height: 220px; }
+      .architecture-icon { margin-bottom: 28px; }
+      .runtime-layout { grid-template-columns: 105px repeat(3, minmax(170px, 1fr)); overflow-x: auto; }
+      .evidence-layout { grid-template-columns: 1fr; gap: 36px; }
+      .memory-loop { grid-template-columns: 1fr; }
+      .closing-inner { grid-template-columns: 1fr; gap: 30px; }
+      .closing h2 { font-size: 34px; }
+      .closing-links { justify-content: flex-start; }
+      .footer-inner { display: block; }
+      .footer-inner span { display: block; margin-bottom: 4px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+      .reveal { opacity: 1; transform: none; }
+    }
+
+    @media print {
+      .topbar, .toolbar, .memory-rail { display: none !important; }
+      body { background: white; font-size: 11px; }
+      .hero, .section, .closing { padding: 28px 0; break-inside: avoid; }
+      .hero { min-height: 0; }
+      .skill-console { box-shadow: none; }
+      .skill-tabs { display: none; }
+      .skill-console { display: block; }
+      .reveal { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#overview" aria-label="SURE Harness Skill Atlas">
+        <span class="brand-mark">S</span>
+        <span>SURE Harness</span>
+        <span class="brand-sub mono">SKILL ATLAS</span>
+      </a>
+      <nav class="main-nav" aria-label="页面章节">
+        <a href="#overview" class="active">全景</a>
+        <a href="#skills">Skills</a>
+        <a href="#architecture">设计</a>
+        <a href="#runtime">Runtime</a>
+        <a href="#evidence">证据链</a>
+      </nav>
+      <div class="toolbar">
+        <a class="icon-button" href="https://github.com/PigeonDan1/sure" target="_blank" rel="noreferrer" title="打开 GitHub 仓库" aria-label="打开 GitHub 仓库"><i data-lucide="github"></i></a>
+        <button class="icon-button" id="printPage" type="button" title="打印或导出 PDF" aria-label="打印或导出 PDF"><i data-lucide="printer"></i></button>
+        <button class="icon-button" id="toggleFullscreen" type="button" title="全屏演示" aria-label="全屏演示"><i data-lucide="maximize"></i></button>
+      </div>
+    </div>
+    <div class="read-progress" id="readProgress"></div>
+  </header>
+
+  <main>
+    <section class="hero" id="overview">
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <div>
+            <p class="eyebrow">Agentic model operations · reproducible by design</p>
+            <h1>SURE Harness</h1>
+            <p class="hero-lead">把模型发现、环境适配、容器转换、人工审批、推理评测与无推理复评，组织成一套可检查、可恢复、可复现的 Agent 工作流。</p>
+          </div>
+          <aside class="hero-note">
+            <strong>核心不是“让 Agent 跑命令”</strong>
+            <p>而是让 Agent 做判断，让状态机约束顺序，让确定性脚本验证事实，最后把每次决策固化成可审计工件。</p>
+            <div class="snapshot mono">
+              <span>branch: harness-tui-agent</span>
+              <span>snapshot: 5980a7a</span>
+            </div>
+          </aside>
+        </div>
+
+        <div class="system-map reveal" aria-label="SURE 六个 skill 的端到端流程">
+          <div class="map-column">
+            <p class="map-label">01 · 发现入口</p>
+            <button class="map-node node-feed" type="button" data-open-skill="feed">
+              <span class="command mono">/sure_feed</span>
+              <span class="result">模型线索 → 可执行 MODEL_INPUT</span>
+            </button>
+          </div>
+          <div class="map-column">
+            <p class="map-label">02 · 构建入口</p>
+            <button class="map-node node-onboard" type="button" data-open-skill="onboard">
+              <span class="command mono">/sure_onboard</span>
+              <span class="result">原始模型 → 标准运行包</span>
+            </button>
+            <button class="map-node node-trans" type="button" data-open-skill="trans">
+              <span class="command mono">/sure_trans</span>
+              <span class="result">已有交付 → SURE Adapter</span>
+            </button>
+          </div>
+          <div class="map-column">
+            <p class="map-label">03 · 信任边界</p>
+            <button class="map-node node-approve" type="button" data-open-skill="approve">
+              <span class="command mono">/sure_approve</span>
+              <span class="result">候选包 → 人工批准发布</span>
+            </button>
+          </div>
+          <div class="map-column">
+            <p class="map-label">04 · 运行与评测</p>
+            <button class="map-node node-eval" type="button" data-open-skill="eval">
+              <span class="command mono">/sure_eval</span>
+              <span class="result">批准模型 → 预测、指标、报告</span>
+            </button>
+          </div>
+          <div class="map-column">
+            <p class="map-label">05 · 复用与演进</p>
+            <button class="map-node node-reval" type="button" data-open-skill="reval">
+              <span class="command mono">/sure_reval</span>
+              <span class="result">既有预测 → 新评测批次</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="memory-rail reveal">
+        <span class="memory-line"></span>
+        <span class="memory-pill"><i data-lucide="brain-circuit"></i> Memory loop · 失败经验从运行中提取，经人工确认后回到后续上下文</span>
+        <span class="memory-line"></span>
+      </div>
+    </section>
+
+    <section class="metrics-band" aria-label="SURE 关键数字">
+      <div class="metrics-grid">
+        <div class="metric"><span class="metric-value">6</span><span class="metric-label">个职责单一、可组合的 Skill</span></div>
+        <div class="metric"><span class="metric-value">3</span><span class="metric-label">类彼此隔离的 Runtime 身份</span></div>
+        <div class="metric"><span class="metric-value">83</span><span class="metric-label">个显式状态机环节与后端阶段</span></div>
+        <div class="metric"><span class="metric-value">1</span><span class="metric-label">条端到端、可审计的证据链</span></div>
+      </div>
+    </section>
+
+    <section class="section" id="skills">
+      <div class="section-inner">
+        <div class="section-head reveal">
+          <div>
+            <span class="section-index mono">01 / SIX SKILLS</span>
+            <h2>每个 Skill 只负责一个清晰阶段</h2>
+          </div>
+          <p class="section-intro">六个 Skill 不是六个大 Prompt，而是六套有输入合同、状态机、Gate 脚本和终态工件的受控执行单元。它们通过文件工件交接，而不是共享模糊的对话状态。</p>
+        </div>
+
+        <div class="skill-console reveal">
+          <div class="skill-tabs" role="tablist" aria-label="选择 Skill">
+            <button class="skill-tab active" style="--tab-color: var(--feed)" type="button" role="tab" aria-selected="true" data-skill="feed"><i data-lucide="scan-search"></i><span><span class="tab-name mono">sure_feed</span><span class="tab-role">发现与交接</span></span></button>
+            <button class="skill-tab" style="--tab-color: var(--onboard)" type="button" role="tab" aria-selected="false" data-skill="onboard"><i data-lucide="package-open"></i><span><span class="tab-name mono">sure_onboard</span><span class="tab-role">适配与封装</span></span></button>
+            <button class="skill-tab" style="--tab-color: var(--trans)" type="button" role="tab" aria-selected="false" data-skill="trans"><i data-lucide="replace"></i><span><span class="tab-name mono">sure_trans</span><span class="tab-role">既有交付转换</span></span></button>
+            <button class="skill-tab" style="--tab-color: var(--approve)" type="button" role="tab" aria-selected="false" data-skill="approve"><i data-lucide="badge-check"></i><span><span class="tab-name mono">sure_approve</span><span class="tab-role">审计与发布</span></span></button>
+            <button class="skill-tab" style="--tab-color: var(--eval)" type="button" role="tab" aria-selected="false" data-skill="eval"><i data-lucide="activity"></i><span><span class="tab-name mono">sure_eval</span><span class="tab-role">推理与评测</span></span></button>
+            <button class="skill-tab" style="--tab-color: var(--reval)" type="button" role="tab" aria-selected="false" data-skill="reval"><i data-lucide="refresh-cw"></i><span><span class="tab-name mono">sure_reval</span><span class="tab-role">无推理复评</span></span></button>
+          </div>
+
+          <article class="skill-detail" id="skillDetail" role="tabpanel" aria-live="polite">
+            <div class="skill-title-row">
+              <div>
+                <div class="skill-kicker mono" id="skillKicker"></div>
+                <h3 class="skill-command mono" id="skillCommand"></h3>
+                <p class="skill-outcome" id="skillOutcome"></p>
+              </div>
+              <div class="unit-count"><strong id="skillUnitCount"></strong><span id="skillUnitLabel"></span></div>
+            </div>
+            <div class="skill-columns">
+              <div class="detail-block">
+                <h3>能力边界</h3>
+                <ul class="capability-list" id="skillCapabilities"></ul>
+              </div>
+              <div class="detail-block">
+                <h3>设计思想</h3>
+                <div class="principle-list" id="skillPrinciples"></div>
+              </div>
+            </div>
+            <div class="io-row">
+              <div><span class="io-label">主要输入</span><div id="skillInputs"></div></div>
+              <div><span class="io-label">终态产物</span><div id="skillOutputs"></div></div>
+            </div>
+            <div class="stage-section">
+              <h3>实现环节</h3>
+              <div class="stage-flow" id="skillStages"></div>
+            </div>
+            <div class="skill-foot">
+              <span><i data-lucide="cpu"></i><b id="skillRuntime"></b></span>
+              <span><i data-lucide="shield-check"></i><b id="skillGuard"></b></span>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section white" id="architecture">
+      <div class="section-inner">
+        <div class="section-head reveal">
+          <div>
+            <span class="section-index mono">02 / DESIGN</span>
+            <h2>Agent 的自由，被证据约束</h2>
+          </div>
+          <p class="section-intro">SURE 把“探索性判断”和“确定性验证”拆开。Agent 可以研究、规划与修复，但不能跳过状态、伪造通过或直接写入受保护发布区。</p>
+        </div>
+
+        <div class="principles-grid reveal">
+          <article class="architecture-item" style="--item-color: var(--feed)">
+            <div class="architecture-icon"><i data-lucide="sparkles"></i></div>
+            <h3>Agent 决定范围</h3>
+            <p>选择模型、证据、适配策略、数据集与评测路由。开放问题交给 Agent，避免把研究过程硬编码成脆弱脚本。</p>
+          </article>
+          <article class="architecture-item" style="--item-color: var(--onboard)">
+            <div class="architecture-icon"><i data-lucide="workflow"></i></div>
+            <h3>状态机决定顺序</h3>
+            <p>一次只推进一个 Unit。每步都有唯一 produces 工件、重试计数与恢复点，失败后可以从 checkpoint 继续。</p>
+          </article>
+          <article class="architecture-item" style="--item-color: var(--eval)">
+            <div class="architecture-icon"><i data-lucide="square-check-big"></i></div>
+            <h3>脚本决定事实</h3>
+            <p>Schema 检查形状，Gate 脚本验证语义，真实命令验证运行。Agent 写出的 passed 字段本身不能证明通过。</p>
+          </article>
+          <article class="architecture-item" style="--item-color: var(--approve)">
+            <div class="architecture-icon"><i data-lucide="fingerprint"></i></div>
+            <h3>工件保存身份</h3>
+            <p>Runtime、锁文件、镜像 digest、预测 hash、pipeline 与报告被固化。系统复现的是整条实验身份，而不只是一个分数。</p>
+          </article>
+        </div>
+
+        <div class="memory-loop reveal" aria-label="SURE Memory 回流机制">
+          <article class="memory-step"><strong>1 · Run digest</strong><p>Hook 从本次运行生成稳定摘要，作为经验提取的证据边界。</p></article>
+          <article class="memory-step"><strong>2 · Extract lessons</strong><p>Agent 声明没有新经验，或写出带触发条件与证据的候选经验。</p></article>
+          <article class="memory-step"><strong>3 · Provisional</strong><p>运行结束后自动发布到 provisional 区，不直接进入可信知识。</p></article>
+          <article class="memory-step"><strong>4 · Human promote</strong><p>人工审阅后才进入 references 与共享 facts，保留信任边界。</p></article>
+          <article class="memory-step"><strong>5 · Context match</strong><p>后续运行只加载与当前目标匹配的少量事实，并要求再次验证。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="runtime">
+      <div class="section-inner">
+        <div class="section-head reveal">
+          <div>
+            <span class="section-index mono">03 / RUNTIME</span>
+            <h2>三种 Python，三种责任</h2>
+          </div>
+          <p class="section-intro">Harness 控制逻辑、模型推理依赖和评测引擎依赖被明确分离。环境不再是“当前 shell 能跑就算通过”，而是有名字、有锁、有来源的执行身份。</p>
+        </div>
+
+        <div class="runtime-layout reveal" role="table" aria-label="三类 Runtime 的责任对比">
+          <div class="runtime-labels" role="rowgroup">
+            <div class="runtime-cell runtime-head">责任维度</div>
+            <div class="runtime-cell">负责什么</div>
+            <div class="runtime-cell">由谁使用</div>
+            <div class="runtime-cell">身份依据</div>
+            <div class="runtime-cell">禁止事项</div>
+          </div>
+          <div class="runtime-column" style="--runtime-color: var(--feed)" role="rowgroup">
+            <div class="runtime-cell runtime-head">Harness Runtime</div>
+            <div class="runtime-cell"><div><strong>控制面</strong><span>Hook、Gate、输入解析、工件验证与流程编排。</span></div></div>
+            <div class="runtime-cell"><div><strong>全部 Skill</strong><span>每次 pre_start 绑定统一 runtime ID 与 lock。</span></div></div>
+            <div class="runtime-cell"><div><strong>仓库锁定</strong><span>manifest、Python executable、lock SHA256。</span></div></div>
+            <div class="runtime-cell"><div><strong>不加载模型</strong><span>不能拿控制 Python 证明模型依赖可用。</span></div></div>
+          </div>
+          <div class="runtime-column" style="--runtime-color: var(--onboard)" role="rowgroup">
+            <div class="runtime-cell runtime-head">Model Runtime</div>
+            <div class="runtime-cell"><div><strong>推理面</strong><span>模型 import、持久 load、真实 infer 与 MCP server。</span></div></div>
+            <div class="runtime-cell"><div><strong>Onboard / Trans / Eval</strong><span>容器是默认交付；站点可批准密封 uv Python。</span></div></div>
+            <div class="runtime-cell"><div><strong>模型绑定</strong><span>镜像 digest 或内容寻址 Python manifest。</span></div></div>
+            <div class="runtime-cell"><div><strong>无隐式回退</strong><span>本地 .venv、base Python、相似镜像均不算批准身份。</span></div></div>
+          </div>
+          <div class="runtime-column" style="--runtime-color: var(--eval)" role="rowgroup">
+            <div class="runtime-cell runtime-head">Evaluation Runtime</div>
+            <div class="runtime-cell"><div><strong>评测面</strong><span>路由解析、归一化、指标节点与报告生成。</span></div></div>
+            <div class="runtime-cell"><div><strong>Eval / Reval</strong><span>独立准备，记录 evaluator commit 与 source hash。</span></div></div>
+            <div class="runtime-cell"><div><strong>引擎锁定</strong><span>evaluation runtime ID、lock、engine commit。</span></div></div>
+            <div class="runtime-cell"><div><strong>不污染模型</strong><span>评测依赖不能注入 Harness 或 Model Runtime。</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section white" id="evidence">
+      <div class="section-inner">
+        <div class="section-head reveal">
+          <div>
+            <span class="section-index mono">04 / EVIDENCE</span>
+            <h2>从一句命令，到一条证据链</h2>
+          </div>
+          <p class="section-intro">TUI 是入口，真正的产品是结构化工件：每个阶段都留下可复查的输入、输出、执行身份和失败上下文。</p>
+        </div>
+
+        <div class="evidence-layout">
+          <div class="evidence-stack reveal">
+            <article class="evidence-row"><span class="evidence-no mono">L1</span><div><h3>Intent · 人的目标</h3><p>Slash command 描述目标与边界，例如模型、数据集、协议和执行方式。</p></div></article>
+            <article class="evidence-row"><span class="evidence-no mono">L2</span><div><h3>Plan · Agent 的判断</h3><p>研究证据、选择后端、制定执行计划；每个判断写入独立工件。</p></div></article>
+            <article class="evidence-row"><span class="evidence-no mono">L3</span><div><h3>Proof · 确定性 Gate</h3><p>Schema、哈希、真实运行、MCP、等价性和边界策略逐层验证。</p></div></article>
+            <article class="evidence-row"><span class="evidence-no mono">L4</span><div><h3>Record · 可复现结果</h3><p>Runtime identity、预测、pipeline、指标、报告与审批决定持久保存。</p></div></article>
+          </div>
+          <figure class="terminal-frame reveal">
+            <figcaption class="terminal-bar"><span class="terminal-dot"></span><span class="terminal-dot"></span><span class="terminal-dot"></span><span class="terminal-title mono">sure-harness · audited session</span></figcaption>
+            <img src="assets/harness-terminal.svg" alt="SURE Harness 从初始化、模型发现、Onboard、审批到评测的终端执行过程" loading="lazy">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="closing">
+      <div class="closing-inner">
+        <div>
+          <p class="eyebrow">The system-level idea</p>
+          <h2>把 Agent 的能力放进工程边界里，而不是把工程边界交给 Agent。</h2>
+          <p>SURE Harness 允许开放式研究发生，同时要求每一个可运行结论都经过确定性验证、显式审批与可追溯记录。</p>
+        </div>
+        <div class="closing-links">
+          <a class="command-link" href="https://github.com/PigeonDan1/sure" target="_blank" rel="noreferrer"><i data-lucide="github"></i> GitHub Repository</a>
+          <a class="command-link" href="https://github.com/PigeonDan1/sure/blob/harness-tui-agent/README.md" target="_blank" rel="noreferrer"><i data-lucide="book-open"></i> README</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <span>SURE Harness · Skill Atlas</span>
+      <span class="mono">source snapshot 5980a7a · 2026-09-01</span>
+    </div>
+  </footer>
+
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script>
+    const skillData = {
+      feed: {
+        color: "#087f8c",
+        kicker: "DISCOVERY & HANDOFF",
+        command: "/sure_feed",
+        outcome: "从 HuggingFace、ModelScope 或 GitHub 的模型线索出发，形成可直接交给 Onboard 的标准 MODEL_INPUT 与研究证据。",
+        units: "8",
+        unitLabel: "STATE UNITS",
+        capabilities: [
+          "在线发现或解析直接模型 URL，并保留来源证据",
+          "将宽泛 provider 标签收敛到 SURE 任务族",
+          "收集依赖、权重、入口、Fixture 与 I/O 合同",
+          "排序选型并发布稳定的 handoff 目录"
+        ],
+        principles: [
+          ["Research first", "脚本提取信息，Agent 继续阅读 README、model card 和源码；不能用 Schema 代替研究。"],
+          ["不运行模型", "只绑定 Harness Runtime；Model 与 Evaluation Runtime 明确标记为不需要。"],
+          ["拒绝合成证据", "没有候选就输出空集合，不能为了通过 Gate 发明模型或字段。"]
+        ],
+        inputs: ["model URL / query", "provider metadata", "task fixture registry"],
+        outputs: ["model_input.yaml", "feed_report.json", "handoff_manifest.json"],
+        stages: [
+          ["发现", ["scan providers", "collect candidates"]],
+          ["理解", ["match task", "collect metadata"]],
+          ["标准化", ["optional oref", "synthesize MODEL_INPUT"]],
+          ["交接", ["rank & select", "extract lessons", "emit handoff"]]
+        ],
+        runtime: "Harness Runtime only",
+        guard: "强 + 弱证据匹配；禁止虚构候选"
+      },
+      onboard: {
+        color: "#dc4f3f",
+        kicker: "MODEL ADAPTATION",
+        command: "/sure_onboard",
+        outcome: "把原始模型仓库适配为 SURE 的统一 ModelWrapper / MCP 合同，并密封为可供审批的容器或站点 Python 候选包。",
+        units: "23",
+        unitLabel: "STATE UNITS",
+        capabilities: [
+          "研究仓库并选择 uv、容器或 API 等后端策略",
+          "构建环境、准备真实 Fixture、解析并固定模型权重",
+          "生成 Wrapper，分别验证 import / load / infer / contract",
+          "形成 package gate、runtime inventory、verdict 与 deployment marker"
+        ],
+        principles: [
+          ["一次一件事", "每个 Unit 只产生一个工件，防止研究、构建、验证和发布被 Agent 合并成一次自报成功。"],
+          ["运行身份先于成功", "当前 shell 可运行不等于 Eval 可运行；必须密封容器 digest 或站点批准的 uv Runtime。"],
+          ["默认容器，策略可选", "Docker registry 是默认交付；自托管站点可显式允许内容寻址的本地 Python。"]
+        ],
+        inputs: ["MODEL_INPUT", "source repository", "task fixture", "site policy"],
+        outputs: ["model wrapper", "runtime_inventory.json", "verdict.json", "deployment_ready.json"],
+        stages: [
+          ["研究规划", ["load input", "select context", "discover", "classify", "plan"]],
+          ["运行准备", ["build plan", "fixture", "environment", "weights"]],
+          ["行为证明", ["wrapper", "import", "load", "infer", "contract"]],
+          ["密封交付", ["package", "artifact gate", "runtime identity", "verdict", "memory", "finalize"]]
+        ],
+        runtime: "Harness + Model Runtime",
+        guard: "真实命令验证；不接受裸 passed 字段"
+      },
+      trans: {
+        color: "#d58a00",
+        kicker: "EXISTING DELIVERY TRANSFORM",
+        command: "/sure_trans",
+        outcome: "保留已有 Dockerfile、模型与推理入口，在旁路生成 SURE Adapter，并用原始输出与 MCP 输出的等价性证明转换没有改变行为。",
+        units: "21",
+        unitLabel: "STATE UNITS",
+        capabilities: [
+          "分析静态与动态推理依赖，识别实际计算与模型框架",
+          "物化源镜像并在容器或 VC 上验证 CUDA / BF16 兼容性",
+          "生成标准 Adapter、MCP server 和不可变目标镜像",
+          "对比原始推理与 Adapter 推理的实际输出"
+        ],
+        principles: [
+          ["不改原件", "输入 Dockerfile、模型和推理源码保持原样；转换发生在隔离的候选目录与 Adapter 层。"],
+          ["静态分析不是证明", "框架探测只提供线索，最终由真实原始推理、Adapter 推理和等价性 Gate 证明。"],
+          ["迁移以行为为准", "exit 0 不代表等价；Gate 会打开两份输出并按 I/O contract 进行比较。"]
+        ],
+        inputs: ["Dockerfile", "model path", "inference entrypoint", "framework declaration"],
+        outputs: ["SURE adapter", "digest-pinned image", "equivalence_result.json", "deployment_ready.json"],
+        stages: [
+          ["理解原系统", ["resolve input", "dependencies", "framework", "fixture"]],
+          ["建立基线", ["source image", "compat probe", "original inference"]],
+          ["生成 Adapter", ["stage payload", "scaffold", "adapter image"]],
+          ["证明与封装", ["import/load/infer", "MCP", "equivalence", "registry", "memory", "seal"]]
+        ],
+        runtime: "Harness + container Model Runtime",
+        guard: "原始 / Adapter 输出由 Gate 自行比较"
+      },
+      approve: {
+        color: "#7657a8",
+        kicker: "TRUST & PUBLICATION",
+        command: "/sure_approve",
+        outcome: "把“Agent 做出的候选包”和“组织愿意信任的已批准模型”分开：先审计、再绑定人工决定、最后原子发布。",
+        units: "11",
+        unitLabel: "STATE UNITS",
+        capabilities: [
+          "识别候选来自 Onboard 还是 Trans，并验证对应生产合同",
+          "审计哈希、路径、Runtime 与必需工件的一致性",
+          "仅在隔离副本中执行有限安全修复，并重新密封身份",
+          "生成 review packet，验证人工决定并原子发布到批准根目录"
+        ],
+        principles: [
+          ["生产与信任分离", "完成 Onboard / Trans 不自动获得批准；生产者不能向受保护根目录发布。"],
+          ["人做最终决定", "Skill 绝不替用户生成 approve；决定必须与未变化的 review packet 和候选 identity 绑定。"],
+          ["发布必须原子", "通过同文件系统隐藏 sibling、fsync 与 rename，让 Eval 只看见完整包或完全看不见。"]
+        ],
+        inputs: ["candidate model_dir", "review manifest", "explicit human decision"],
+        outputs: ["review_packet.json", "approval_decision.json", "approval_ready.json"],
+        stages: [
+          ["识别", ["resolve input", "classify producer"]],
+          ["审计", ["integrity audit", "repair plan", "isolated candidate"]],
+          ["复核", ["seal identity", "runtime verify", "review packet"]],
+          ["发布", ["verify decision", "atomic publish", "verify publication"]]
+        ],
+        runtime: "Harness Runtime + candidate probe",
+        guard: "显式人工决定；禁止原地修改候选"
+      },
+      eval: {
+        color: "#368251",
+        kicker: "INFERENCE & EVALUATION",
+        command: "/sure_eval",
+        outcome: "只消费已批准模型，使用密封的 Model Runtime 生成预测，再由锁定的 Evaluation Runtime 执行确定性指标路由并形成完整报告。",
+        units: "13",
+        unitLabel: "STATE UNITS",
+        capabilities: [
+          "验证批准模型、Runtime binding、工具名与只读挂载策略",
+          "按数据集元数据和协议选择确定性的评测脚本与 pipeline",
+          "在本地容器、站点 Python 或 VC 上运行有界 smoke 与正式推理",
+          "持久化预测、协议、指标、sample report 与主运行报告"
+        ],
+        principles: [
+          ["范围开放，执行确定", "Agent 选择数据集与评测目标；推理入口、执行表面和 metric route 由脚本物化和验证。"],
+          ["只认批准身份", "禁止修改批准模型、覆盖镜像或回退到 host Python；VC 只接受容器绑定。"],
+          ["先 Smoke 后规模化", "使用小样本证明执行面，再提交正式运行并等待真实终态。"]
+        ],
+        inputs: ["approved model", "versioned datasets", "protocol", "site execution policy"],
+        outputs: ["predictions", "protocol.yaml", "evaluation_payload.json", "main_agent_run_report.json"],
+        stages: [
+          ["范围", ["task", "tool readiness", "plan", "dataset scope"]],
+          ["执行面", ["script route", "surface", "live readiness"]],
+          ["运行", ["bounded smoke", "submit local / VC", "wait"]],
+          ["结果", ["assessment", "extract lessons", "run report"]]
+        ],
+        runtime: "Harness + Model + Evaluation Runtime",
+        guard: "批准绑定不可覆盖；评测路由可追溯"
+      },
+      reval: {
+        color: "#376aa5",
+        kicker: "EVALUATION-ONLY REPLAY",
+        command: "/sure_reval",
+        outcome: "复用已批准结果中的预测，在不执行模型推理的前提下运行新的精确评测路线，并以不可变批次追加到本地结果镜像。",
+        units: "7",
+        unitLabel: "BACKEND PHASES",
+        capabilities: [
+          "解析精确模型、协议、版本化数据集集合与预测来源",
+          "绑定预测 hash、行数、模型 fingerprint 与原报告 identity",
+          "在 scratch 中使用当前 Evaluation Runtime 执行指定 pipeline_id",
+          "以幂等 record_id 和原子 commit 追加完整评测批次"
+        ],
+        principles: [
+          ["Inference zero", "不加载模型、不调用 MCP、不重新生成预测；Runtime binding 明确 Model Runtime 不需要。"],
+          ["来源必须精确", "拒绝别名、数据集子集或超集、协议漂移、symlink escape 与预测 hash 变化。"],
+          ["追加而非覆盖", "每次复评是不可变 evaluation batch；同一 identity 重跑是幂等 no-op，内容冲突则硬失败。"]
+        ],
+        inputs: ["approved model name", "exact dataset set", "pipeline_id", "approved predictions"],
+        outputs: ["prediction_source_resolved.json", "evaluation batch", "reval_run_report.json"],
+        stages: [
+          ["解析", ["approved model", "approved result"]],
+          ["绑定", ["source identity", "prediction hashes"]],
+          ["评测", ["resolve pipeline", "run in scratch"]],
+          ["提交", ["atomic append", "terminal verification"]]
+        ],
+        runtime: "Harness + Evaluation Runtime; no Model Runtime",
+        guard: "只读批准来源；禁止任何推理"
+      }
+    };
+
+    const tabs = Array.from(document.querySelectorAll(".skill-tab"));
+    const detail = document.getElementById("skillDetail");
+
+    function createTag(value) {
+      const tag = document.createElement("span");
+      tag.className = "artifact-tag mono";
+      tag.textContent = value;
+      return tag;
+    }
+
+    function renderSkill(key) {
+      const skill = skillData[key];
+      if (!skill) return;
+      document.documentElement.style.setProperty("--active-color", skill.color);
+      tabs.forEach((tab) => {
+        const active = tab.dataset.skill === key;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", String(active));
+      });
+
+      detail.style.opacity = "0";
+      window.setTimeout(() => {
+        document.getElementById("skillKicker").textContent = skill.kicker;
+        document.getElementById("skillCommand").textContent = skill.command;
+        document.getElementById("skillOutcome").textContent = skill.outcome;
+        document.getElementById("skillUnitCount").textContent = skill.units;
+        document.getElementById("skillUnitLabel").textContent = skill.unitLabel;
+
+        const capabilityRoot = document.getElementById("skillCapabilities");
+        capabilityRoot.replaceChildren(...skill.capabilities.map((text) => {
+          const item = document.createElement("li");
+          item.textContent = text;
+          return item;
+        }));
+
+        const principleRoot = document.getElementById("skillPrinciples");
+        principleRoot.replaceChildren(...skill.principles.map(([title, text]) => {
+          const item = document.createElement("div");
+          item.className = "principle";
+          const heading = document.createElement("strong");
+          heading.textContent = title;
+          const copy = document.createElement("span");
+          copy.textContent = text;
+          item.append(heading, copy);
+          return item;
+        }));
+
+        const inputRoot = document.getElementById("skillInputs");
+        inputRoot.replaceChildren(...skill.inputs.map(createTag));
+        const outputRoot = document.getElementById("skillOutputs");
+        outputRoot.replaceChildren(...skill.outputs.map(createTag));
+
+        const stageRoot = document.getElementById("skillStages");
+        stageRoot.replaceChildren(...skill.stages.map(([name, steps], index) => {
+          const phase = document.createElement("div");
+          phase.className = "phase";
+          const heading = document.createElement("div");
+          heading.className = "phase-name";
+          const number = document.createElement("span");
+          number.className = "phase-number";
+          number.textContent = String(index + 1);
+          const title = document.createElement("span");
+          title.textContent = name;
+          heading.append(number, title);
+          const list = document.createElement("div");
+          list.className = "step-list";
+          steps.forEach((text) => {
+            const step = document.createElement("span");
+            step.className = "step mono";
+            step.textContent = "→ " + text;
+            list.append(step);
+          });
+          phase.append(heading, list);
+          return phase;
+        }));
+
+        document.getElementById("skillRuntime").textContent = skill.runtime;
+        document.getElementById("skillGuard").textContent = skill.guard;
+        detail.style.opacity = "1";
+        if (window.lucide) window.lucide.createIcons();
+      }, 110);
+    }
+
+    tabs.forEach((tab) => tab.addEventListener("click", () => renderSkill(tab.dataset.skill)));
+    document.querySelectorAll("[data-open-skill]").forEach((node) => {
+      node.addEventListener("click", () => {
+        renderSkill(node.dataset.openSkill);
+        document.getElementById("skills").scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+
+    document.getElementById("printPage").addEventListener("click", () => window.print());
+    document.getElementById("toggleFullscreen").addEventListener("click", async () => {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      else await document.exitFullscreen();
+    });
+
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) entry.target.classList.add("visible");
+      });
+    }, { threshold: 0.12 });
+    document.querySelectorAll(".reveal").forEach((node) => revealObserver.observe(node));
+
+    const sectionLinks = Array.from(document.querySelectorAll(".main-nav a"));
+    const sectionObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        sectionLinks.forEach((link) => link.classList.toggle("active", link.getAttribute("href") === "#" + entry.target.id));
+      });
+    }, { rootMargin: "-30% 0px -60% 0px" });
+    document.querySelectorAll("main section[id]").forEach((section) => sectionObserver.observe(section));
+
+    const progress = document.getElementById("readProgress");
+    function updateProgress() {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const value = max > 0 ? Math.min(100, (window.scrollY / max) * 100) : 0;
+      progress.style.width = value + "%";
+    }
+    window.addEventListener("scroll", updateProgress, { passive: true });
+
+    renderSkill("feed");
+    updateProgress();
+    if (window.lucide) window.lucide.createIcons();
+  </script>
+</body>
+</html>
