@@ -8,9 +8,7 @@ runtime:
   type: container
   model_mount_target: __MODEL_MOUNT_TARGET__
 entrypoints:
-  server: ["python", "/opt/sure_trans/server.py"]
+  server: ["__PYTHON_EXECUTABLE__", "/opt/sure_trans/server.py"]
 io_contract:
-  input:
-    audio_path: string
-  output:
-    text: string
+  input: __IO_CONTRACT_INPUT__
+  output: __IO_CONTRACT_OUTPUT__

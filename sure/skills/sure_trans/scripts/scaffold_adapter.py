@@ -7,7 +7,7 @@ import os
 import re
 import shutil
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 def read_object(path: Path) -> dict:
@@ -57,6 +57,34 @@ def inspect_image(reference: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def source_image_reference(source_image: dict) -> tuple[str, str]:
+    """Select a buildable source image and verify the gate's image identity."""
+    local_reference = str(source_image.get("image") or "")
+    image_id = str(source_image.get("image_id") or "")
+    if not local_reference or not re.fullmatch(r"sha256:[0-9a-f]{64}", image_id):
+        raise ValueError("source image artifact must declare a named image and sha256 image_id")
+    local = inspect_image(local_reference)
+    if local and local.get("Id") != image_id:
+        raise ValueError(
+            f"source image tag {local_reference} moved: expected {image_id}, got {local.get('Id')}"
+        )
+    registry_ref = str(source_image.get("registry_ref") or "")
+    pushed = source_image.get("registry_push") if isinstance(source_image.get("registry_push"), dict) else {}
+    pushed_digest = str(pushed.get("digest") or "")
+    if registry_ref and re.fullmatch(r".+:[A-Za-z0-9][A-Za-z0-9._-]{0,127}", registry_ref) and re.fullmatch(
+        r"sha256:[0-9a-f]{64}", pushed_digest
+    ):
+        repository = registry_ref.rsplit(":", 1)[0]
+        immutable = f"{repository}@{pushed_digest}"
+        return immutable, local_reference if local else immutable
+    if not local:
+        raise ValueError(
+            f"cannot inspect source image {local_reference} to prove image_id {image_id}; "
+            "load or push the source image before scaffolding the adapter"
+        )
+    return local_reference, local_reference
+
+
 def image_carries_runtime(data: dict, harness: dict[str, str]) -> bool:
     """Check the labels build_image.py stamps onto a Harness Runtime image."""
     config = data.get("Config") if isinstance(data.get("Config"), dict) else {}
@@ -67,6 +95,39 @@ def image_carries_runtime(data: dict, harness: dict[str, str]) -> bool:
         labels.get("org.sure.harness.runtime_id") == harness["runtime_id"]
         and labels.get("org.sure.harness.lock_sha256") == harness["lock_sha256"]
     )
+
+
+def container_python_executable(reference: str) -> str:
+    """Resolve the Python that the source image actually executes from PATH."""
+    if not reference:
+        raise ValueError("source image has no usable image reference")
+    try:
+        probe = subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--entrypoint",
+                "python",
+                reference,
+                "-c",
+                "import sys; print(sys.executable)",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError(f"cannot probe Python in source image {reference}: {error}") from error
+    lines = [line.strip() for line in probe.stdout.splitlines() if line.strip()]
+    executable = lines[-1] if probe.returncode == 0 and lines else ""
+    if not executable or not PurePosixPath(executable).is_absolute():
+        detail = probe.stderr.strip() or probe.stdout.strip() or f"exit {probe.returncode}"
+        raise ValueError(
+            f"source image {reference} did not report an absolute Python executable: {detail}"
+        )
+    return executable
 
 
 def harness_runtime_build_context(harness: dict[str, str] | None) -> str:
@@ -131,6 +192,8 @@ def main() -> int:
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
     source_image = read_object(artifacts / "source_image_result.json")
+    source_reference, probe_reference = source_image_reference(source_image)
+    python_executable = container_python_executable(probe_reference)
     harness = harness_image_binding(artifacts)
     harness_context = harness_runtime_build_context(harness)
     adapter_dir = run_dir / "adapter"
@@ -143,21 +206,15 @@ def main() -> int:
     shutil.copyfile(Path(__file__).resolve().parent / "mcp_smoke.py", adapter_dir / "mcp_smoke.py")
     task_type = str(resolved.get("task_type") or "asr").lower()
     tool_name, input_schema = tool_contract(task_type)
-    io_contract = {
-        "input_type": "audio_path",
-        "output_type": "json",
-        "primary_field": "text",
-        "required_fields": ["text"],
-        "nonempty_fields": ["text"],
-        "json_serializable": True,
-    }
+    io_contract = io_contract_for(task_type)
     replacements = {
         "__MODEL_NAME__": str(resolved["model_name"]),
         "__TASK_TYPE__": str(resolved.get("task_type") or "ASR").upper(),
         "__FRAMEWORK__": str(resolved["framework"]),
         "__MODEL_FRAMEWORK__": str(resolved["model_framework"]),
         "__MODEL_MOUNT_TARGET__": str(resolved["model_mount_target"]),
-        "__SOURCE_IMAGE__": str(source_image["image"] or source_image["image_id"]),
+        "__SOURCE_IMAGE__": source_reference,
+        "__PYTHON_EXECUTABLE__": python_executable,
         "__HARNESS_RUNTIME_COPY__": (
             f"COPY --from=sure_harness_runtime / /opt/sure-harness/{harness['runtime_id']}/"
             if harness
@@ -166,6 +223,8 @@ def main() -> int:
         "__TOOL_NAME__": tool_name,
         "__INPUT_SCHEMA__": json.dumps(input_schema, ensure_ascii=False, separators=(",", ":")),
         "__IO_CONTRACT_JSON__": json.dumps(io_contract, ensure_ascii=False, separators=(",", ":")),
+        "__IO_CONTRACT_INPUT__": json.dumps(io_contract.get("input", {}), ensure_ascii=False, separators=(",", ":")),
+        "__IO_CONTRACT_OUTPUT__": json.dumps(io_contract.get("output", {}), ensure_ascii=False, separators=(",", ":")),
     }
     render(templates / "server.py", adapter_dir / "server.py", replacements)
     render(templates / "config.yaml", adapter_dir / "config.yaml", replacements)
@@ -185,8 +244,14 @@ def main() -> int:
         "dockerfile": str(adapter_dir / "Dockerfile.sure"),
         "mcp_smoke_py": str(adapter_dir / "mcp_smoke.py"),
         "source_inference_entrypoint": resolved["inference_entrypoint"],
+        "source_image_reference": source_reference,
+        "source_image_probe_reference": probe_reference,
+        "source_image_id": source_image["image_id"],
         "model_mount_target": resolved["model_mount_target"],
         "io_contract": io_contract,
+        "container_python_executable": python_executable,
+        "server_command": [python_executable, "/opt/sure_trans/server.py"],
+        "working_dir": "/opt/sure_trans",
         "harness_runtime_embedded": harness is not None,
         "harness_runtime": harness,
         "harness_runtime_build_context": harness_context,
@@ -213,6 +278,41 @@ def tool_contract(task_type: str) -> tuple[str, dict]:
     if task_type == "s2tt":
         return "translate_audio", {"type": "object", "properties": {"audio_path": {"type": "string"}}, "required": ["audio_path"]}
     return "transcribe_audio", {"type": "object", "properties": {"audio_path": {"type": "string"}}, "required": ["audio_path"]}
+
+
+def io_contract_for(task_type: str) -> dict:
+    if task_type == "tts":
+        return {
+            "input_type": "text_and_audio_path",
+            "output_type": "audio",
+            "input": {"text": "string", "prompt_audio_path": "string"},
+            "output": {"audio_path": "string"},
+            "primary_field": "audio_path",
+            "required_fields": ["audio_path"],
+            "nonempty_fields": ["audio_path"],
+            "json_serializable": True,
+        }
+    if task_type == "vc":
+        return {
+            "input_type": "audio_paths",
+            "output_type": "audio",
+            "input": {"source_audio_path": "string", "reference_audio_path": "string"},
+            "output": {"audio_path": "string"},
+            "primary_field": "audio_path",
+            "required_fields": ["audio_path"],
+            "nonempty_fields": ["audio_path"],
+            "json_serializable": True,
+        }
+    return {
+        "input_type": "audio_path",
+        "output_type": "json",
+        "input": {"audio_path": "string"},
+        "output": {"text": "string"},
+        "primary_field": "text",
+        "required_fields": ["text"],
+        "nonempty_fields": ["text"],
+        "json_serializable": True,
+    }
 
 
 if __name__ == "__main__":

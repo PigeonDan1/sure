@@ -4,9 +4,10 @@
 	"title": "SURE trans finalized deployment binding",
 	"description": "Same terminal marker consumed by /sure_eval as /sure_onboard. A trans bundle is always local + docker-registry. A run that stopped early seals status=blocked with execution_policy.container_only=false; scripts/check_artifact.py enforces the ready-side policy constants.",
 	"type": "object",
-	"required": ["schema", "generated_at", "status", "model_name", "package_profile", "execution_policy", "required_artifact_sha256", "bundle_identity_sha256"],
+	"required": ["schema", "integrity_profile", "generated_at", "status", "model_name", "package_profile", "execution_policy", "required_artifact_sha256", "bundle_identity_sha256"],
 	"properties": {
 		"schema": { "const": "sure.onboard.deployment_ready.v1" },
+		"integrity_profile": { "enum": ["manifest-complete-v1", "partial-run-v1"] },
 		"generated_at": { "type": "string" },
 		"status": { "enum": ["ready", "blocked"] },
 		"blocked_reason": { "type": "string" },

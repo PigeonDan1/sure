@@ -21,7 +21,7 @@ Convert an existing model delivery into the same Eval-ready contract produced by
 | `image_tar` | no | Explicit image archive absolute path. It must be inside `build_context`. |
 | `model_name` | yes | Must use `<organization>__<model-name>`; all bundle and image names use this value. |
 | `task_type` | no | Infer from evidence; require an explicit value when ambiguous. |
-| `fixture` | no | Absolute smoke input path. Otherwise select an unambiguous `examples/smoke.*` file from the build context. |
+| `fixture` | no | Absolute smoke input path. A same-stem `.expected.json` with a non-empty reference annotation is required; otherwise select an unambiguous `examples/smoke.*` file from the build context. |
 | `device` | no | `auto` (default), `cuda`, or `cpu`. `cpu` validates with local Docker only; `cuda` and GPU-capable `auto` submit VC jobs to the configured partition `<vc_default_partition>`. |
 | `model_mount_target` | no | Default to `/models/<model_name>`. |
 | `model_stage_policy` | no | `auto` (default), `copy`, or `hardlink`; materialize the model payload into the final bundle. |
@@ -118,6 +118,8 @@ Inspect the static dependency closure:
 ```
 
 `detect_framework.py` blocks only when static evidence cannot establish PyTorch as the primary computation framework. A non-Transformers PyTorch model remains `status=ready`; the script writes `architecture_clarification` and any detected architecture signals, and the final verdict carries the same review information.
+
+`prepare_fixture.py` copies both the selected audio and its same-stem `.expected.json`, writes `gt.jsonl` before the fixture gate runs, and records SHA256 for all three. Model predictions and equivalence baselines are never accepted as ground truth.
 
 Materialize the source image with the resolved policy:
 
@@ -279,7 +281,7 @@ Write a successful `verdict.json`, then run:
 "$HARNESS_PYTHON_BIN" scripts/finalize_trans_bundle.py --run-dir <run_dir>
 ```
 
-This seals the already-staged model payload, adapter, and small evidence under `sure/models/<model_name>/`. The sealed bundle matches the `/sure_onboard` product layout: wrapper set plus `Dockerfile.sure` at the bundle root, `fixture/<task>/` with `gt.jsonl`, and `artifacts/` carrying `package_gate.json` (`sure.onboard.package_gate.v2`), `artifact_manifest.json` (`sure.onboard.artifact_manifest.v1`), `runtime_inventory.json`, `verdict.json`, `docker_registry_result.json`, and `deployment_ready.json` (`sure.onboard.deployment_ready.v1`, written identically to the run directory). The terminal gate re-verifies hashes, bundle identity, portable paths, the Dockerfile hash, and the digest-pinned execution policy.
+This seals the already-staged model payload, adapter, and small evidence under `sure/models/<model_name>/`. The sealed bundle matches the `/sure_onboard` product layout: wrapper set plus `Dockerfile.sure` at the bundle root, `fixture/<task>/` with `gt.jsonl`, and `artifacts/` carrying `package_gate.json` (`sure.onboard.package_gate.v2`), `artifact_manifest.json` (`sure.onboard.artifact_manifest.v1`), `runtime_inventory.json`, `verdict.json`, `docker_registry_result.json`, and `deployment_ready.json` (`sure.onboard.deployment_ready.v1`, written identically to the run directory). Ready bundles declare `integrity_profile=manifest-complete-v1`; the deployment hashes cover every required wrapper, fixture, evidence file, generated sample output, and staged payload file. The terminal gate re-verifies the payload manifest, terminal timeline, hashes, bundle identity, portable paths, Dockerfile hash, and digest-pinned execution policy.
 
 The generated `validate.py` keeps the same CLI contract as `/sure_onboard`: `--stage import|load|infer|contract|all`, writing `<stage>_result.json` and, during infer, `sample_output.json` into `SURE_VALIDATE_ARTIFACTS_DIR`, then validating that sample against the filled `io_contract` in the contract stage — from the same directory. The adapter image embeds the locked Harness Runtime; `runtime_inventory.harness_runtime.required=true`, so `/sure_eval` uses the image binding and does not mount the repository Harness Runtime into the model container.
 
@@ -323,7 +325,7 @@ what you recorded.
 - Block when the primary computation framework is not PyTorch.
 - Block when the adapter reloads a large model for every sample without explicit acceptance.
 - Block when MCP output differs from original inference on the fixture: the equivalence gate compares the two recorded output files itself and fails on a mismatch even when the command exited 0.
-- Block when the MCP gate has no `mcp_smoke.json` protocol evidence (initialize/tools/list/tools/call all passed with non-empty text); placeholder `run_command` values such as `/bin/true` or `print(...)` are rejected.
+- Block when the MCP gate has no `mcp_smoke.json` protocol evidence (initialize/tools/list/tools/call all passed with a non-empty task primary output); placeholder `run_command` values such as `/bin/true` or `print(...)` are rejected.
 - Block when registry push, digest resolution, exact pull, or post-pull MCP validation fails.
 - Block when `vc submit` fails, the partition is outside the configured allowlist, the GPU probe cannot complete, or the post-pull smoke does not exit 0.
 - Block when the model payload exceeds the RAM budget (2x headroom) of `vc_memory_gb`; raise `vc_gpus`/`vc_memory_gb` instead of trimming validation.

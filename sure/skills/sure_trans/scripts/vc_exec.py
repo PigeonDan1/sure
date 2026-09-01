@@ -101,6 +101,35 @@ RAM_OOM_MARKERS = ("oomkilled", "std::bad_alloc", "cannot allocate memory", "out
 GPU_OOM_MARKER = "cuda out of memory"
 
 
+def push_digest(output: str, registry_ref: str) -> str:
+    """Return the digest for the requested tag from Docker push output."""
+    tag = registry_ref.rsplit(":", 1)[-1]
+    fallback: list[str] = []
+    for line in output.splitlines():
+        match = _DIGEST_RE.search(line)
+        if match:
+            fallback.append(match.group(1))
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        auxiliary = event.get("aux")
+        if (
+            isinstance(auxiliary, dict)
+            and auxiliary.get("Tag") == tag
+            and re.fullmatch(r"sha256:[0-9a-f]{64}", str(auxiliary.get("Digest") or ""))
+        ):
+            return str(auxiliary["Digest"])
+        status = str(event.get("status") or "")
+        if status.startswith(f"{tag}: "):
+            tagged = _DIGEST_RE.search(status)
+            if tagged:
+                return tagged.group(1)
+    return fallback[-1] if fallback else ""
+
+
 def run_command(
     args: list[str],
     *,
@@ -220,7 +249,11 @@ def cancel_vc_job(job_id: str) -> str:
     writes its output into a log directory the next attempt is already using.
     """
     try:
-        result = run_command(["vc", "delete", "--job", job_id], timeout=60)
+        result = run_command(
+            ["vc", "delete", "--job", job_id],
+            timeout=60,
+            env=proxy_cleared_env(),
+        )
     except (OSError, subprocess.SubprocessError) as error:
         return f"job {job_id} could not be cancelled: {error!r}"
     body = f"{result.stdout}{result.stderr}".strip()
@@ -307,6 +340,7 @@ def ensure_registry_image(
     # A rerun of the same gate re-pushes a tag the registry already holds and is
     # refused with no digest; seeding from the earlier push keeps that result.
     digest = known_digest
+    push_reported_digest = False
     # Line buffered: a push can take the better part of an hour, and a block
     # buffered handle shows a reader nothing until the function returns.
     with log_path.open("a", encoding="utf-8", buffering=1) as handle:
@@ -322,9 +356,10 @@ def ensure_registry_image(
             handle.write(f"exit_code={result.returncode}\n")
             output = f"{result.stdout}\n{result.stderr}".strip()
             if command[1] == "push":
-                match = _DIGEST_RE.search(output)
-                if match:
-                    digest = match.group(1)
+                parsed_digest = push_digest(output, registry_ref)
+                if parsed_digest:
+                    digest = parsed_digest
+                    push_reported_digest = True
             if result.returncode != 0 or (command[1] == "push" and not digest):
                 reason = (
                     f"exit code {result.returncode}"
@@ -336,6 +371,8 @@ def ensure_registry_image(
                     "Check repository permissions, registry immutability policy, and the tag choice; "
                     f"verify the policy-resolved target and bump image_version when content changed.\n{output}"
                 )
+    if known_digest and not push_reported_digest:
+        digest = registry_tag_digest(registry_ref, log_path)
     return digest
 
 
@@ -674,7 +711,7 @@ def collect_diagnostics(job_id: str, log_dir: Path) -> str:
     timeouts = [60, 120]
     for command, timeout in zip(commands, timeouts):
         try:
-            result = run_command(command, timeout=timeout)
+            result = run_command(command, timeout=timeout, env=proxy_cleared_env())
             body = f"{result.stdout}{result.stderr}"
         except (OSError, subprocess.SubprocessError) as error:
             body = f"diagnostics unavailable: {error!r}"
@@ -738,7 +775,7 @@ def run_vc_job(
         "--cmd", inner_script_command(log_dir),
     ]
     started = time.monotonic()
-    submitted = run_command(submit_command, timeout=300)
+    submitted = run_command(submit_command, timeout=300, env=proxy_cleared_env())
     if submitted.returncode != 0:
         raise ValueError(
             f"vc submit failed ({submitted.returncode}): "

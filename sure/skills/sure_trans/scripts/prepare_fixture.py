@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 AUDIO_SUFFIXES = {".wav", ".flac", ".mp3", ".ogg", ".m4a"}
+ANNOTATION_FIELDS = ("ground_truth", "target_text", "text", "segments", "label", "intent")
 
 
 def read_object(path: Path) -> dict:
@@ -49,6 +50,31 @@ def choose_fixture(resolved: dict) -> Path:
     raise ValueError("fixture could not be selected unambiguously; pass fixture=/absolute/audio/path")
 
 
+def has_annotation_value(value: object) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return bool(value)
+    return value is not None
+
+
+def clear_directory(path: Path, controlled_root: Path) -> None:
+    if controlled_root.is_symlink() or path.is_symlink():
+        raise ValueError(f"fixture staging directory must not be a symlink: {path}")
+    resolved = path.resolve()
+    root = controlled_root.resolve()
+    if not resolved.is_relative_to(root) or resolved == root:
+        raise ValueError(f"fixture staging directory must stay below {root}: {path}")
+    path.mkdir(parents=True, exist_ok=True)
+    for child in path.iterdir():
+        if child.is_symlink() or child.is_file():
+            child.unlink()
+        elif child.is_dir():
+            shutil.rmtree(child)
+        else:
+            raise ValueError(f"fixture staging contains unsupported entry: {child}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
@@ -57,21 +83,70 @@ def main() -> int:
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
     source = choose_fixture(resolved).resolve()
-    staged_dir = run_dir / "fixture"
-    staged_dir.mkdir(parents=True, exist_ok=True)
+    task = str(resolved["task_type"]).replace("-", "_").lower()
+    staged_dir = run_dir / "fixture" / task
+    clear_directory(staged_dir, run_dir / "fixture")
     destination = staged_dir / source.name
     shutil.copy2(source, destination)
+    expected_source = source.with_suffix(".expected.json")
+    if not expected_source.is_file():
+        raise ValueError(
+            f"fixture reference annotation is missing: {expected_source}; "
+            "provide a same-stem .expected.json instead of deriving ground truth from model output"
+        )
+    expected = read_object(expected_source)
+    annotations = {
+        field: expected[field]
+        for field in ANNOTATION_FIELDS
+        if field in expected and has_annotation_value(expected[field])
+    }
+    if not annotations:
+        raise ValueError(
+            f"fixture reference annotation has no non-empty supported field: {expected_source}"
+        )
+    if task == "tts":
+        prompt_text = expected.get("prompt_text")
+        if not isinstance(prompt_text, str) or not prompt_text.strip():
+            raise ValueError(f"TTS fixture annotation requires non-empty prompt_text: {expected_source}")
+        annotations["prompt_text"] = prompt_text.strip()
+    expected_destination = staged_dir / expected_source.name
+    shutil.copy2(expected_source, expected_destination)
+    gt_jsonl = staged_dir / "gt.jsonl"
+    audio_field = "reference_audio" if task in {"tts", "vc"} else "audio"
+    gt_row = {audio_field: source.name, "task_type": task, **annotations}
+    gt_jsonl.write_text(json.dumps(gt_row, ensure_ascii=False) + "\n", encoding="utf-8")
     payload = {
         "schema": "sure.trans.fixture_manifest.v1",
         "status": "ready",
+        "model_id": resolved["model_name"],
         "model_name": resolved["model_name"],
-        "task_type": resolved["task_type"],
+        "model_dir": str(run_dir),
+        "task_type": task,
+        "source_dir": str(source.parent),
+        "staged_dir": str(staged_dir),
+        "gt_jsonl": str(gt_jsonl),
+        "samples": [
+            {
+                "key": source.stem,
+                "audio": source.name,
+                "audio_path": str(destination),
+                "annotation_fields": list(annotations),
+            }
+        ],
         "source_path": str(source),
         "staged_path": str(destination),
         "sha256": sha256(destination),
+        "gt_sha256": sha256(gt_jsonl),
+        "expected_sha256": sha256(expected_destination),
         "size_bytes": destination.stat().st_size,
         "sample_count": 1,
         "link_policy": "copy",
+        "annotation_source": {
+            "type": "fixture_expected_sidecar",
+            "source_path": str(expected_source),
+            "staged_path": str(expected_destination),
+            "fallback": False,
+        },
     }
     output = artifacts / "fixture_manifest.json"
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

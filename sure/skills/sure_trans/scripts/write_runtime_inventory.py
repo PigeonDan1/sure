@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 def read_object(path: Path) -> dict:
@@ -46,8 +46,8 @@ def identity_evidence(build_context: str) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--python-executable", default="python")
-    parser.add_argument("--working-dir", default="/opt/sure_trans")
+    parser.add_argument("--python-executable")
+    parser.add_argument("--working-dir")
     parser.add_argument("--tool-name")
     parser.add_argument("--gpu-required", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
@@ -86,6 +86,36 @@ def main() -> int:
             "adapter manifest was scaffolded against a different Harness Runtime than the active "
             "one; rerun scaffold_adapter.py and rebuild the adapter image"
         )
+    manifest_python = str(adapter_manifest.get("container_python_executable") or "")
+    python_executable = str(args.python_executable or manifest_python)
+    if not PurePosixPath(python_executable).is_absolute():
+        raise ValueError(
+            "container Python executable must be absolute; rerun scaffold_adapter.py so it can "
+            "probe the source image"
+        )
+    if not manifest_python or python_executable != manifest_python:
+        raise ValueError(
+            "--python-executable must match the source-image Python recorded by scaffold_adapter.py"
+        )
+    manifest_working_dir = str(adapter_manifest.get("working_dir") or "")
+    working_dir = str(args.working_dir or manifest_working_dir)
+    if not PurePosixPath(working_dir).is_absolute():
+        raise ValueError("container working directory must be absolute")
+    if working_dir != manifest_working_dir:
+        raise ValueError("--working-dir must match the adapter working directory")
+    declared_server_command = adapter_manifest.get("server_command")
+    if (
+        not isinstance(declared_server_command, list)
+        or len(declared_server_command) < 2
+        or not all(isinstance(item, str) and item for item in declared_server_command)
+        or declared_server_command[0] != python_executable
+    ):
+        raise ValueError(
+            "adapter manifest must declare a server_command that starts with its probed Python"
+        )
+    server_command = declared_server_command
+    if not PurePosixPath(server_command[1]).is_absolute():
+        raise ValueError("adapter server path must be absolute")
     build_context = str(adapter_manifest.get("harness_runtime_build_context") or "directory")
     image_backed = build_context.startswith("docker-image://")
     harness_runtime = {
@@ -120,16 +150,16 @@ def main() -> int:
             "purpose": "sure_trans validation workspace only; not an Eval execution surface.",
             "eligible_for_eval": False,
         },
-        "model_runtime": {"required": True, "runtime_type": "container", "python_executable": args.python_executable, "checks": {name: True for name in validation_files}},
+        "model_runtime": {"required": True, "runtime_type": "container", "python_executable": python_executable, "checks": {name: True for name in validation_files}},
         "harness_runtime": harness_runtime,
         "container_runtime": {
             "required": True,
             "target_image": registry["target_image"],
             "target_image_digest": registry["target_image_digest"],
             "target_image_ref": registry["target_image_ref"],
-            "python_executable": args.python_executable,
-            "working_dir": args.working_dir,
-            "server_command": [args.python_executable, "/opt/sure_trans/server.py"],
+            "python_executable": python_executable,
+            "working_dir": working_dir,
+            "server_command": server_command,
             "tool_names": [tool_name],
             "gpu_required": args.gpu_required,
             "mount_policy": {
