@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -44,6 +45,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_DIR.parent
 CANONICAL_TEMPLATE_ROOT = SCRIPT_DIR / "templates"
 ALLOWED_TEMPLATE_ROOTS = (CANONICAL_TEMPLATE_ROOT,)
+
+# This node could not start a container, so nothing was learned about the
+# approved image. Kept apart from the failure classes that describe the image
+# itself, which is what the probe is actually there to judge.
+HOST_CANNOT_PROBE = "PROBE_HOST_CANNOT_RUN_CONTAINERS"
 
 
 def _path_is_under(path: Path, root: Path) -> bool:
@@ -319,6 +325,26 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
         return {"passed": False, "evidence": "; ".join(issues)}
     live_probe = _live_runtime_probe(approved, approved_harness)
     if not live_probe["passed"]:
+        # The probe is a rehearsal. On the vc path the evaluation runs inside
+        # the VC container and the submitting node only stages the job, so a
+        # node that cannot start a container is being asked a question it has
+        # no way to answer, about work it was never going to do. Refusing the
+        # run there stops the job over the node's own equipment. The VC job
+        # has its own readiness gate for the real environment. Every other
+        # failure, including a container that came up and answered wrong,
+        # still blocks; so does this one on the local_docker path, where the
+        # probe's docker is the execution environment and nothing else would
+        # catch it.
+        if live_probe.get("failure_class") == HOST_CANNOT_PROBE and path_planned == "vc_submit":
+            return {
+                "passed": True,
+                "live_runtime_probe": live_probe,
+                "warnings": [live_probe["evidence"]],
+                "evidence": (
+                    f"approved {runtime_kind} deployment verified by binding; "
+                    "the exact-image probe was not rehearsed on this node"
+                ),
+            }
         return {
             "passed": False,
             "failure_class": live_probe["failure_class"],
@@ -392,6 +418,7 @@ def _live_runtime_probe(
     except ValueError as exc:
         return {
             "passed": False,
+            "probe_ran": False,
             "failure_class": "HARNESS_RUNTIME_NOT_READY",
             "exit_code": None,
             "evidence": str(exc),
@@ -424,9 +451,13 @@ def _live_runtime_probe(
     except (OSError, subprocess.SubprocessError) as exc:
         return {
             "passed": False,
-            "failure_class": "CONTAINER_RUNTIME_UNAVAILABLE",
+            "probe_ran": False,
+            "failure_class": HOST_CANNOT_PROBE,
             "exit_code": None,
-            "evidence": f"runtime probe could not start: {exc}",
+            "evidence": (
+                f"{HOST_CANNOT_PROBE}: runtime probe could not start: {exc} "
+                f"(docker on PATH: {shutil.which('docker') or 'not found'})"
+            ),
         }
     categories = {
         40: "HARNESS_MODEL_RUNTIME_ALIAS",
@@ -434,10 +465,21 @@ def _live_runtime_probe(
         42: "MODEL_RUNTIME_NEEDS_REPAIR",
         43: "EVALUATION_NODE_RUNTIME_NOT_READY",
     }
-    failure_class = categories.get(completed.returncode, "CONTAINER_RUNTIME_UNAVAILABLE")
+    # 40 to 43 come from the probe script, which only runs once the container
+    # is up, so reaching one of them proves the image answered. Docker's own
+    # 125, 126 and 127 mean it never got the chance: no daemon, an image that
+    # will not pull, no bash to run. That is a fact about this node, not about
+    # the image, and the two must not share a failure class.
+    if completed.returncode in categories:
+        probe_ran, failure_class = True, categories[completed.returncode]
+    elif completed.returncode in {125, 126, 127}:
+        probe_ran, failure_class = False, HOST_CANNOT_PROBE
+    else:
+        probe_ran, failure_class = True, "CONTAINER_RUNTIME_UNAVAILABLE"
     detail = (completed.stderr or completed.stdout or "").strip()
     return {
         "passed": completed.returncode == 0,
+        "probe_ran": probe_ran,
         "failure_class": None if completed.returncode == 0 else failure_class,
         "exit_code": completed.returncode,
         "image_ref": binding.get("target_image_ref"),
@@ -590,16 +632,25 @@ def main() -> int:
 
     all_passed = all(c["passed"] for c in checks.values())
     blocking_issues: list[str] = []
+    warnings: list[str] = []
     for name, result in checks.items():
         if not result["passed"]:
             blocking_issues.append(f"{name}: {result.get('evidence', 'failed')}")
+        for warning in result.get("warnings") or []:
+            warnings.append(f"{name}: {warning}")
 
     report = {
         "run_id": run_dir.name,
         "compliance_passed": all_passed,
         "checks": checks,
         "blocking_issues": blocking_issues,
+        "warnings": warnings,
     }
+
+    # A check that passed without being able to run leaves a hole in the
+    # report, and a hole nobody is told about is the same as no check at all.
+    for warning in warnings:
+        print(f"check_execution_surface_compliance warning: {warning}", file=sys.stderr)
 
     if all_passed:
         print(

@@ -204,6 +204,71 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("approved common Harness Runtime", result["evidence"])
 
+    def test_a_node_that_cannot_run_containers_does_not_block_a_vc_run(self) -> None:
+        # The probe is a rehearsal. On the vc path the evaluation runs inside
+        # the VC container and the submitting node only stages the job, so a
+        # node with no container runtime is refusing work it was never going
+        # to do. The VC job has its own readiness gate for the real thing.
+        with patch.object(checks, "_live_runtime_probe", return_value=_host_cannot_probe()):
+            result = checks.check_inference_runtime(
+                self.write_surface(execution={"requested": "vc", "path_planned": "vc_submit"})
+            )
+
+        self.assertTrue(result["passed"], result.get("evidence"))
+        self.assertIn("PROBE_HOST_CANNOT_RUN_CONTAINERS", " ".join(result["warnings"]))
+
+    def test_a_node_that_cannot_run_containers_still_blocks_a_local_docker_run(self) -> None:
+        # Here the probe's docker is the execution environment. Waving this
+        # through only moves the same failure a few minutes later, with no
+        # gate left to catch it.
+        with patch.object(checks, "_live_runtime_probe", return_value=_host_cannot_probe()):
+            result = checks.check_inference_runtime(self.write_surface())
+
+        self.assertFalse(result["passed"])
+
+    def test_a_container_that_answers_wrong_still_blocks_a_vc_run(self) -> None:
+        # The container came up and reported a broken Harness Runtime. That is
+        # the subject failing, not the node, and the vc path must not use the
+        # rehearsal exemption to skip past it.
+        broken = {
+            "passed": False,
+            "probe_ran": True,
+            "failure_class": "HARNESS_RUNTIME_NOT_READY",
+            "exit_code": 41,
+            "evidence": "HARNESS_RUNTIME_NOT_READY: ModuleNotFoundError: structlog",
+        }
+        with patch.object(checks, "_live_runtime_probe", return_value=broken):
+            result = checks.check_inference_runtime(
+                self.write_surface(execution={"requested": "vc", "path_planned": "vc_submit"})
+            )
+
+        self.assertFalse(result["passed"])
+
+
+def _host_cannot_probe() -> dict:
+    return {
+        "passed": False,
+        "probe_ran": False,
+        "failure_class": "PROBE_HOST_CANNOT_RUN_CONTAINERS",
+        "exit_code": None,
+        "evidence": "PROBE_HOST_CANNOT_RUN_CONTAINERS: docker is not on PATH",
+    }
+
+
+def _probe_fixture() -> tuple[dict, dict]:
+    harness = {
+        "runtime_id": "sure-harness-test",
+        "lock_sha256": "c" * 64,
+        "python_executable": "/opt/sure-harness/bin/python",
+        "manifest_path": "/opt/sure-harness/runtime-manifest.json",
+        "runtime_root": "/opt/sure-harness",
+    }
+    binding = {
+        "target_image_ref": IMAGE_REF,
+        "container": {"python_executable": "python", "harness_runtime": harness},
+    }
+    return binding, harness
+
 
 class LiveRuntimeProbeTests(unittest.TestCase):
     def test_exact_image_probe_executes_node_override(self) -> None:
@@ -234,6 +299,48 @@ class LiveRuntimeProbeTests(unittest.TestCase):
         self.assertEqual(result["node_local_python"], harness["python_executable"])
         self.assertIn("SURE_EVAL_NODE_LOCAL_PYTHON", commands[0][-1])
         self.assertIn("subprocess.run", commands[0][-1])
+
+    def test_a_missing_container_runtime_is_a_limit_of_this_node(self) -> None:
+        # Nothing was learned about the image here: the node cannot start a
+        # container at all. Reporting that as an image problem sends whoever
+        # reads the report looking in the wrong place.
+        def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+            raise FileNotFoundError(2, "No such file or directory", "docker")
+
+        binding, harness = _probe_fixture()
+
+        result = LIVE_RUNTIME_PROBE(binding, harness, run=run)
+
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["probe_ran"])
+        self.assertEqual(result["failure_class"], "PROBE_HOST_CANNOT_RUN_CONTAINERS")
+
+    def test_docker_refusing_to_start_the_container_is_a_limit_of_this_node(self) -> None:
+        # 125 is docker's own code for "I could not run this": no daemon, an
+        # image that will not pull, a flag it does not know. The image never
+        # got the chance to answer.
+        def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(returncode=125, stdout="", stderr="Cannot connect to the Docker daemon")
+
+        binding, harness = _probe_fixture()
+
+        result = LIVE_RUNTIME_PROBE(binding, harness, run=run)
+
+        self.assertFalse(result["probe_ran"])
+        self.assertEqual(result["failure_class"], "PROBE_HOST_CANNOT_RUN_CONTAINERS")
+
+    def test_a_contract_failure_inside_the_container_is_not_a_limit_of_this_node(self) -> None:
+        # 41 can only come from the probe script, which only runs once the
+        # container is up. The image answered, and the answer was no.
+        def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(returncode=41, stdout="", stderr="ModuleNotFoundError: structlog")
+
+        binding, harness = _probe_fixture()
+
+        result = LIVE_RUNTIME_PROBE(binding, harness, run=run)
+
+        self.assertTrue(result["probe_ran"])
+        self.assertEqual(result["failure_class"], "HARNESS_RUNTIME_NOT_READY")
 
 
 if __name__ == "__main__":
