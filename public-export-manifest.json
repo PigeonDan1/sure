@@ -1,7 +1,7 @@
 {
   "schema": "sure.public_export_manifest.v2",
-  "projection_id": "sha256:3d611fb50a670c10b459db0d4075fb664c2be3c1fdef53fed41c8072f4b942de",
-  "tree_sha256": "3d611fb50a670c10b459db0d4075fb664c2be3c1fdef53fed41c8072f4b942de",
+  "projection_id": "sha256:45baf21b44dd266269f1abf09658bc7f9e2fe90a92857d6257ee5af7d406f048",
+  "tree_sha256": "45baf21b44dd266269f1abf09658bc7f9e2fe90a92857d6257ee5af7d406f048",
   "files": [
     {
       "path": ".gitattributes",
@@ -13,7 +13,7 @@
       "path": ".github/workflows/public-ci.yml",
       "type": "file",
       "mode": "100644",
-      "sha256": "4c588c748d8300731ef11dd1249df642ce698bdef9aee16f6cdbea86a9215215"
+      "sha256": "0e7036a591458f4722dd51014bbce13ce69a0bdd72c39b28815278a8bdf53292"
     },
     {
       "path": ".gitignore",
@@ -5734,6 +5734,12 @@
       "sha256": "13e052f4f667426d627a90cf1f9d0169a57d926bbee8dc291478a7cf833489d6"
     },
     {
+      "path": "packages/coding-agent/test/sure-harness-runtime.setup.ts",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "02812a6adb6ed869bcbff0a789213c57b589dd7152e32095c9d02e23e2a26321"
+    },
+    {
       "path": "packages/coding-agent/test/sure/init-apply.test.ts",
       "type": "file",
       "mode": "100644",
@@ -5911,7 +5917,7 @@
       "path": "packages/coding-agent/vitest.config.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "5023d933f47ee3a8904281b45725e16a6ac5b64bd373115493fcdfede01a0aec"
+      "sha256": "d883e73f17e99a4b07e3def5f795afe2316b17dc51ece6c2681c02cca2732f96"
     },
     {
       "path": "packages/orchestrator/CHANGELOG.md",

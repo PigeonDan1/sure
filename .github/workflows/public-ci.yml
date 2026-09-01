@@ -49,6 +49,9 @@ jobs:
           "$RUNNER_TEMP/sure-harness-venv/bin/pip" install --require-hashes -r sure/runtime/harness/requirements.lock.txt
           echo "$RUNNER_TEMP/sure-harness-venv/bin" >> "$GITHUB_PATH"
 
+      - name: Materialize the Harness Runtime
+        run: python sure/runtime/harness/bootstrap.py --json > /dev/null
+
       - name: Configure the public CI fixture
         run: |
           cp config/site.example.yaml config/site.local.yaml
