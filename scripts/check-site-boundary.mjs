@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -14,9 +15,9 @@ function run(command, args, options = {}) {
 
 const failures = [];
 
-// The public export exception list is closed: main_flow_agent is the single
-// grandfathered export exclusion (see public-export.yaml); every other
-// private asset must live under private/ and new exclusions must be rejected.
+// The public export lists are closed: main_flow_agent is the single
+// grandfathered export exclusion, and content exceptions are limited to the
+// evaluation files whose technical identifiers must remain byte-for-byte stable.
 const allowedExclusions = new Set([
 	"private/site/**",
 	"docs/internal/**",
@@ -24,12 +25,110 @@ const allowedExclusions = new Set([
 	"sure/skills/sure_eval/references/main_flow_agent/**",
 	".gitlab-ci.yml",
 ]);
+const allowedForbiddenContentExceptionPaths = new Set([
+	"sure/skills/sure_eval/references/contracts/main_agent_worked_example.md",
+	"sure/skills/sure_eval/scripts/dataset_alias.py",
+	"sure/skills/sure_eval/scripts/resolve_eval_input.py",
+	"sure/skills/sure_eval/scripts/sure_eval/agent/vc_submitter.py",
+	"sure/skills/sure_eval/scripts/sure_eval/datasets/dataset_manager.py",
+	"sure/skills/sure_eval/scripts/sure_eval/datasets/source_resolver.py",
+	"sure/skills/sure_eval/scripts/test_dataset_alias.py",
+	"sure/skills/sure_eval/scripts/test_model_registry.py",
+	"sure/skills/sure_eval/scripts/test_report_provenance.py",
+	"sure/skills/sure_eval/scripts/test_smoke_dataset_version_guard.py",
+	"sure/skills/sure_eval/scripts/test_source_conversion.py",
+	"sure/skills/sure_eval/scripts/test_source_naming_flow.py",
+	"sure/skills/sure_eval/scripts/test_source_resolver.py",
+	"sure/skills/sure_eval/scripts/test_vc_submit_readiness.py",
+]);
+const allowedForbiddenContentExceptionPairs = new Set([
+	JSON.stringify(["9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132", "sure/skills/sure_eval/references/contracts/main_agent_worked_example.md"]),
+	JSON.stringify(["9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132", "sure/skills/sure_eval/scripts/dataset_alias.py"]),
+	JSON.stringify(["9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132", "sure/skills/sure_eval/scripts/resolve_eval_input.py"]),
+	JSON.stringify([
+		"9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132",
+		"sure/skills/sure_eval/scripts/sure_eval/datasets/dataset_manager.py",
+	]),
+	JSON.stringify([
+		"9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132",
+		"sure/skills/sure_eval/scripts/sure_eval/datasets/source_resolver.py",
+	]),
+	JSON.stringify(["9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132", "sure/skills/sure_eval/scripts/test_dataset_alias.py"]),
+	JSON.stringify(["9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132", "sure/skills/sure_eval/scripts/test_model_registry.py"]),
+	JSON.stringify(["9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132", "sure/skills/sure_eval/scripts/test_report_provenance.py"]),
+	JSON.stringify([
+		"9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132",
+		"sure/skills/sure_eval/scripts/test_smoke_dataset_version_guard.py",
+	]),
+	JSON.stringify(["9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132", "sure/skills/sure_eval/scripts/test_source_conversion.py"]),
+	JSON.stringify(["9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132", "sure/skills/sure_eval/scripts/test_source_naming_flow.py"]),
+	JSON.stringify(["9d55a85b9be66a014b0e18503055e5cb3257e4ffc8f1af82108a8eaf19d4a132", "sure/skills/sure_eval/scripts/test_source_resolver.py"]),
+	JSON.stringify(["9fd5dc77aafff3dbff36b4c77269a9aeb5a5dab7bfbd2056c287d28551c32e19", "sure/skills/sure_eval/scripts/test_model_registry.py"]),
+	JSON.stringify(["14fca113a01f0b6f17c95360eec4f57463491c799de80c861e66260ea0f833b3", "sure/skills/sure_eval/scripts/sure_eval/agent/vc_submitter.py"]),
+]);
 if (existsSync("public-export.yaml")) {
 	const exportText = readFileSync("public-export.yaml", "utf8");
 	const exportConfiguration = parse(exportText);
 	for (const entry of exportConfiguration?.exclude ?? []) {
 		if (!allowedExclusions.has(entry)) {
 			failures.push(`public-export.yaml exclude entry is not on the approved exception list: ${entry}`);
+		}
+	}
+	const configuredPaths = exportConfiguration?.forbidden_content_exception_paths;
+	if (!Array.isArray(configuredPaths) || configuredPaths.some((entry) => typeof entry !== "string")) {
+		failures.push("public-export.yaml forbidden_content_exception_paths must be a string list");
+	} else {
+		const seen = new Set();
+		for (const entry of configuredPaths) {
+			if (seen.has(entry)) failures.push(`public-export.yaml contains duplicate content-exception path: ${entry}`);
+			seen.add(entry);
+			if (!allowedForbiddenContentExceptionPaths.has(entry)) {
+				failures.push(`public-export.yaml content-exception path is not on the approved closed list: ${entry}`);
+			}
+		}
+		for (const entry of allowedForbiddenContentExceptionPaths) {
+			if (!seen.has(entry)) failures.push(`public-export.yaml is missing approved content-exception path: ${entry}`);
+		}
+	}
+}
+
+const privateOverlayPath = "private/site/public-export.overlay.yaml";
+if (existsSync(privateOverlayPath)) {
+	const overlayConfiguration = parse(readFileSync(privateOverlayPath, "utf8"));
+	const overlayPatterns = new Set(overlayConfiguration?.forbidden_content ?? []);
+	const exceptions = overlayConfiguration?.forbidden_content_exceptions ?? [];
+	if (!Array.isArray(exceptions)) {
+		failures.push(`${privateOverlayPath} forbidden_content_exceptions must be a list`);
+	} else {
+		const pairs = new Set();
+		for (const [index, exception] of exceptions.entries()) {
+			if (typeof exception !== "object" || exception === null || Array.isArray(exception)) {
+				failures.push(`${privateOverlayPath} forbidden_content_exceptions[${index}] must be an object`);
+				continue;
+			}
+			if (typeof exception.pattern !== "string" || !overlayPatterns.has(exception.pattern)) {
+				failures.push(`${privateOverlayPath} exception pattern must be declared by forbidden_content`);
+			}
+			if (!Array.isArray(exception.paths) || exception.paths.length === 0) {
+				failures.push(`${privateOverlayPath} exception paths must be a non-empty list`);
+				continue;
+			}
+			for (const path of exception.paths) {
+				if (typeof path !== "string" || !allowedForbiddenContentExceptionPaths.has(path)) {
+					failures.push(`${privateOverlayPath} exception path is not on the approved closed list: ${path}`);
+					continue;
+				}
+				const patternSha256 = createHash("sha256").update(exception.pattern).digest("hex");
+				const pair = JSON.stringify([patternSha256, path]);
+				if (pairs.has(pair)) failures.push(`${privateOverlayPath} contains duplicate pattern/path exception: ${path}`);
+				if (!allowedForbiddenContentExceptionPairs.has(pair)) {
+					failures.push(`${privateOverlayPath} pattern/path exception is not on the approved closed list: ${path}`);
+				}
+				pairs.add(pair);
+			}
+		}
+		for (const pair of allowedForbiddenContentExceptionPairs) {
+			if (!pairs.has(pair)) failures.push(`${privateOverlayPath} is missing an approved pattern/path exception: ${pair}`);
 		}
 	}
 }

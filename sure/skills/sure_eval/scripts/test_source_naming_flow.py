@@ -52,19 +52,19 @@ class SourceNamingFlowTests(unittest.TestCase):
     def test_get_info_surfaces_source_fields(self) -> None:
         self.manager.download_and_convert(str(self.dataset_root))
         info = self.manager.get_info("demo_ds__v1.0.2") or {}
-        self.assertEqual(info["source"], "site_dataset_pool")
+        self.assertEqual(info["source"], "aispeech_ds_pool")
         self.assertEqual(info["source_dataset_name"], "demo_ds")
         self.assertEqual(info["version_id"], "v1.0.2")
         self.assertEqual(info["source_root"], str(self.dataset_root))
 
-    def test_get_info_normalizes_the_legacy_source_marker(self) -> None:
+    def test_get_info_normalizes_the_anonymized_source_marker(self) -> None:
         jsonl_path = self.manager.download_and_convert(str(self.dataset_root))
         rows = jsonl_path.read_text(encoding="utf-8").replace(
-            '"site_dataset_pool"', '"aispeech_ds_pool"'
+            '"aispeech_ds_pool"', '"site_dataset_pool"'
         )
         jsonl_path.write_text(rows, encoding="utf-8", newline="\n")
         info = self.manager.get_info("demo_ds__v1.0.2") or {}
-        self.assertEqual(info["source"], "site_dataset_pool")
+        self.assertEqual(info["source"], "aispeech_ds_pool")
 
     def test_prepare_dataset_emits_plan_fields(self) -> None:
         summary = prepare_sure_dataset.prepare_dataset(

@@ -30,7 +30,7 @@ from sure_eval.datasets.source_resolver import (
     accepted_source_root,
     is_source_entry,
     read_source_language,
-    resolve_site_source_entry,
+    resolve_aispeech_source_entry,
 )
 
 from evaluation_capabilities import default_metrics_for_task_language, supported_metrics_for_task_language
@@ -222,7 +222,7 @@ def _check_task_compatibility(model: dict[str, Any], datasets: list[dict[str, An
 
 
 def _check_dataset_input_policy(datasets: list[dict[str, Any]]) -> None:
-    """Strict main flow only accepts site dataset source roots (or their outputs)."""
+    """Strict main flow only accepts aispeech source roots (or their outputs)."""
     offenders = []
     for item in datasets:
         requested = str(item.get("requested_name") or item.get("name") or "")
@@ -233,7 +233,7 @@ def _check_dataset_input_policy(datasets: list[dict[str, Any]]) -> None:
         return
     root = accepted_source_root()
     raise EvalInputError(
-        "Strict main flow accepts only site dataset source-root inputs. "
+        "Strict main flow accepts only aispeech source-root dataset inputs. "
         f"Rejected: {', '.join(offenders)}. Pass a source root such as "
         f"{root}/g001/store002/ds_pool/<source_dataset_name>, or re-prepare the "
         "dataset from its source root so its JSONL carries source metadata. "
@@ -675,7 +675,7 @@ def _dataset_details(
         dataset_task = _normalize_task(info.get("task") or first_sample.get("task") or "")
         language = str(info.get("language") or first_sample.get("language") or "").lower()
         if is_source_entry(requested_name) and not jsonl_path.exists():
-            ref = resolve_site_source_entry(requested_name, dataset_source_key=dataset_source_key)
+            ref = resolve_aispeech_source_entry(requested_name, dataset_source_key=dataset_source_key)
             source_root = source_root or ref.source_root
             source_name = source_name or ref.source_dataset_name
             version_id = version_id or ref.version_id

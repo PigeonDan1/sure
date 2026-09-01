@@ -24,23 +24,23 @@ from sure_eval.core.logging import get_logger
 from .source_resolver import (
     DatasetSourceRef,
     is_source_entry,
-    resolve_site_source_entry,
+    resolve_aispeech_source_entry,
 )
 
 logger = get_logger(__name__)
 
 
-# ``source`` marker written into every artifact produced from a dataset-pool
-# source root. Records written before the marker was renamed carry the legacy
-# spelling, so reads normalize it back to the current value.
-SITE_DATASET_POOL_SOURCE = "site_dataset_pool"
-LEGACY_SITE_DATASET_POOL_SOURCE = "aispeech_ds_pool"
+# Canonical ``source`` marker for dataset-pool artifacts. Public projections
+# briefly wrote the anonymized marker, so reads normalize that legacy value
+# back to the evaluation protocol's stable technical identity.
+AISPEECH_DATASET_POOL_SOURCE = "aispeech_ds_pool"
+LEGACY_SITE_DATASET_POOL_SOURCE = "site_dataset_pool"
 
 
 def _normalized_source(source: Any) -> Any:
-    """Report the current marker for records written before the rename."""
+    """Normalize the temporary anonymized marker to the canonical identity."""
     if source == LEGACY_SITE_DATASET_POOL_SOURCE:
-        return SITE_DATASET_POOL_SOURCE
+        return AISPEECH_DATASET_POOL_SOURCE
     return source
 
 
@@ -270,7 +270,7 @@ class DatasetManager:
 
         Source-root pipelines produce ids of the same
         ``<source_dataset_name>__<version_id>`` shape, e.g.
-        ``demo_speech_zh_test__v1.0.2``; the same rule resolves them
+        ``aispeech_phy_aishell-1-test__v1.0.2``; the same rule resolves them
         regardless of how many ``__``-separated segments the id has.
 
         The exact-match-else-unique-projection rule is shared with
@@ -348,7 +348,7 @@ class DatasetManager:
         """
         if is_source_entry(dataset_name):
             return self._convert_source_root_to_jsonl(
-                resolve_site_source_entry(dataset_name, dataset_source_key=self.dataset_source_key)
+                resolve_aispeech_source_entry(dataset_name, dataset_source_key=self.dataset_source_key)
             )
 
         if dataset_name in self.oref_local_datasets:
@@ -968,7 +968,7 @@ class DatasetManager:
         return jsonl_path
 
     def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef) -> Path:
-        """Project a site dataset-pool source root into SURE-EVAL JSONL."""
+        """Project an aispeech ds_pool source root into SURE-EVAL JSONL."""
         jsonl_path = self.jsonl_dir / f"{ref.dataset_id}.jsonl"
         if jsonl_path.exists():
             logger.info(
@@ -1001,7 +1001,7 @@ class DatasetManager:
             language=language,
             dataset_label=ref.dataset_id,
             metadata_base={
-                "source": SITE_DATASET_POOL_SOURCE,
+                "source": AISPEECH_DATASET_POOL_SOURCE,
                 "source_dataset_root": ref.source_root,
                 "source_dataset_name": ref.source_dataset_name,
                 "version_id": ref.version_id,
@@ -1025,7 +1025,7 @@ class DatasetManager:
         shutil.copy2(jsonl_path, sure_jsonl)
 
         source_payload = {
-            "source": SITE_DATASET_POOL_SOURCE,
+            "source": AISPEECH_DATASET_POOL_SOURCE,
             "source_dataset_name": ref.source_dataset_name,
             "version_id": ref.version_id,
             "dataset_root": ref.source_root,
@@ -1043,7 +1043,7 @@ class DatasetManager:
 
         mapping = {
             "projector": "asr_transcription_v1",
-            "source_format": f"{SITE_DATASET_POOL_SOURCE}_sample_jsonl",
+            "source_format": f"{AISPEECH_DATASET_POOL_SOURCE}_sample_jsonl",
             "target_format": "sure_eval_jsonl_v1",
             "fields": {
                 "key": "sample_id",
@@ -1075,7 +1075,7 @@ class DatasetManager:
         )
 
         conversion_report = {
-            "source": SITE_DATASET_POOL_SOURCE,
+            "source": AISPEECH_DATASET_POOL_SOURCE,
             "dataset": ref.dataset_id,
             "source_dataset_name": ref.source_dataset_name,
             "source_dataset_root": ref.source_root,
@@ -1106,7 +1106,7 @@ class DatasetManager:
         manifest = {
             "dataset": ref.source_dataset_name,
             "default_projection": "asr_transcription_v1",
-            "source": SITE_DATASET_POOL_SOURCE,
+            "source": AISPEECH_DATASET_POOL_SOURCE,
             "source_dataset_root": ref.source_root,
             "version_id": ref.version_id,
             "projections": {
@@ -1125,7 +1125,7 @@ class DatasetManager:
         )
 
         logger.info(
-            "Converted site dataset source root",
+            "Converted aispeech source root",
             dataset=ref.dataset_id,
             source=ref.source_root,
             samples=len(rows),
@@ -1258,7 +1258,7 @@ class DatasetManager:
             'aishell1-test_ASR' -> 'aishell1'
         """
         if is_source_entry(name):
-            return resolve_site_source_entry(name, dataset_source_key=self.dataset_source_key).dataset_id
+            return resolve_aispeech_source_entry(name, dataset_source_key=self.dataset_source_key).dataset_id
 
         existing_jsonl = self._existing_jsonl_for_dataset(name)
         if existing_jsonl:

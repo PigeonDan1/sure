@@ -12,6 +12,22 @@ exclude:
 
 forbidden_content: []
 
+forbidden_content_exception_paths:
+  - sure/skills/sure_eval/references/contracts/main_agent_worked_example.md
+  - sure/skills/sure_eval/scripts/dataset_alias.py
+  - sure/skills/sure_eval/scripts/resolve_eval_input.py
+  - sure/skills/sure_eval/scripts/sure_eval/agent/vc_submitter.py
+  - sure/skills/sure_eval/scripts/sure_eval/datasets/dataset_manager.py
+  - sure/skills/sure_eval/scripts/sure_eval/datasets/source_resolver.py
+  - sure/skills/sure_eval/scripts/test_dataset_alias.py
+  - sure/skills/sure_eval/scripts/test_model_registry.py
+  - sure/skills/sure_eval/scripts/test_report_provenance.py
+  - sure/skills/sure_eval/scripts/test_smoke_dataset_version_guard.py
+  - sure/skills/sure_eval/scripts/test_source_conversion.py
+  - sure/skills/sure_eval/scripts/test_source_naming_flow.py
+  - sure/skills/sure_eval/scripts/test_source_resolver.py
+  - sure/skills/sure_eval/scripts/test_vc_submit_readiness.py
+
 forbidden_paths:
   - "**/.env"
   - "**/auth.json"

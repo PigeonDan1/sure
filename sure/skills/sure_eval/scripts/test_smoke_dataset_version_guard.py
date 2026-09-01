@@ -28,7 +28,7 @@ class FindDroppedVersionTest(unittest.TestCase):
 
     def test_unrelated_candidate_is_clean(self) -> None:
         self.assertIsNone(
-            run_smoke._find_dropped_version(["demo_speech_zh_test__v1.0.2"], [f"{AISHELL}@v1.0.2"])
+            run_smoke._find_dropped_version(["aispeech_phy_aishell-1-test__v1.0.2"], [f"{AISHELL}@v1.0.2"])
         )
 
     def test_trailing_slash_candidate_still_detected(self) -> None:
@@ -43,14 +43,14 @@ class FindDroppedVersionTest(unittest.TestCase):
         eval_input = {
             "datasets": [
                 {
-                    "name": "demo_speech_zh_test__v1.0.2",
+                    "name": "aispeech_phy_aishell-1-test__v1.0.2",
                     "source_root": f"{AISHELL}@v1.0.2",
                 }
             ]
         }
         self.assertEqual(
             run_smoke._canonical_dataset(eval_input, f"{AISHELL}@v1.0.2"),
-            "demo_speech_zh_test__v1.0.2",
+            "aispeech_phy_aishell-1-test__v1.0.2",
         )
 
 

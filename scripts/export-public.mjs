@@ -50,17 +50,46 @@ function stringList(value, name, required = false) {
 	return value;
 }
 
+function contentExceptionList(value, name) {
+	if (value === undefined) return [];
+	if (!Array.isArray(value)) fail(`${name} must be a list`);
+	return value.map((item, index) => {
+		const itemName = `${name}[${index}]`;
+		if (typeof item !== "object" || item === null || Array.isArray(item)) {
+			fail(`${itemName} must be an object`);
+		}
+		for (const key of Object.keys(item)) {
+			if (!new Set(["pattern", "paths"]).has(key)) fail(`${itemName} contains unknown field ${key}`);
+		}
+		if (typeof item.pattern !== "string" || !item.pattern) fail(`${itemName} pattern must be a non-empty string`);
+		const paths = stringList(item.paths, `${itemName} paths`, true);
+		if (paths.length === 0) fail(`${itemName} paths must not be empty`);
+		return { pattern: item.pattern, paths };
+	});
+}
+
 function configuration(content, name, overlay = false) {
 	const value = parse(content.toString("utf8"));
 	if (typeof value !== "object" || value === null || Array.isArray(value)) fail(`${name} must be a YAML object`);
 	if (value.version !== 1) fail(`${name} version must be 1`);
-	const allowed = new Set(["version", "forbidden_content", "forbidden_paths", ...(overlay ? [] : ["exclude"])]);
+	const allowed = new Set([
+		"version",
+		"forbidden_content",
+		"forbidden_paths",
+		...(overlay ? ["forbidden_content_exceptions"] : ["exclude", "forbidden_content_exception_paths"]),
+	]);
 	for (const key of Object.keys(value)) {
 		if (!allowed.has(key)) fail(`${name} contains unknown field ${key}`);
 	}
 	return {
 		exclude: overlay ? [] : stringList(value.exclude, `${name} exclude`, true),
 		forbiddenContent: stringList(value.forbidden_content, `${name} forbidden_content`, !overlay),
+		forbiddenContentExceptionPaths: overlay
+			? []
+			: stringList(value.forbidden_content_exception_paths, `${name} forbidden_content_exception_paths`),
+		forbiddenContentExceptions: overlay
+			? contentExceptionList(value.forbidden_content_exceptions, `${name} forbidden_content_exceptions`)
+			: [],
 		forbiddenPaths: stringList(value.forbidden_paths, `${name} forbidden_paths`, !overlay),
 	};
 }
@@ -123,13 +152,91 @@ const overlayPath = "private/site/public-export.overlay.yaml";
 const overlayEntry = indexedByPath.get(overlayPath);
 const overlay = overlayEntry
 	? configuration(blob(overlayEntry), overlayPath, true)
-	: { exclude: [], forbiddenContent: [], forbiddenPaths: [] };
+	: {
+			exclude: [],
+			forbiddenContent: [],
+			forbiddenContentExceptionPaths: [],
+			forbiddenContentExceptions: [],
+			forbiddenPaths: [],
+		};
 const excluded = [...base.exclude, ...overlay.exclude].map(globExpression);
 const forbiddenPaths = [...base.forbiddenPaths, ...overlay.forbiddenPaths].map(globExpression);
-const forbiddenContent = [...base.forbiddenContent, ...overlay.forbiddenContent].map((pattern) => [
-	pattern,
-	new RegExp(pattern, "i"),
-]);
+
+function compileForbiddenContent(patterns, origin) {
+	return patterns.map((pattern) => {
+		try {
+			return { pattern, expression: new RegExp(pattern, "i"), origin };
+		} catch (error) {
+			fail(`${origin} forbidden_content contains invalid regular expression ${pattern}: ${error.message}`);
+		}
+	});
+}
+
+const forbiddenContent = [
+	...compileForbiddenContent(base.forbiddenContent, "base"),
+	...compileForbiddenContent(overlay.forbiddenContent, "overlay"),
+];
+const allowedExceptionPaths = new Set();
+for (const path of base.forbiddenContentExceptionPaths) {
+	if (
+		!path ||
+		isAbsolute(path) ||
+		path.includes("\\") ||
+		path.includes("*") ||
+		path.includes("?") ||
+		path.split("/").some((part) => !part || part === "." || part === "..")
+	) {
+		fail(`public-export.yaml forbidden_content_exception_paths must contain exact repository paths: ${path}`);
+	}
+	if (allowedExceptionPaths.has(path)) {
+		fail(`public-export.yaml forbidden_content_exception_paths contains duplicate path: ${path}`);
+	}
+	const entry = indexedByPath.get(path);
+	if (!entry) fail(`public-export.yaml forbidden_content_exception_paths is not tracked: ${path}`);
+	if (!["100644", "100755"].includes(entry.mode)) {
+		fail(`public-export.yaml forbidden_content_exception_paths must name a regular file: ${path}`);
+	}
+	if (excluded.some((expression) => expression.test(path))) {
+		fail(`public-export.yaml forbidden_content_exception_paths must not name an excluded file: ${path}`);
+	}
+	if (forbiddenPaths.some((expression) => expression.test(path))) {
+		fail(`public-export.yaml forbidden_content_exception_paths must not name a forbidden path: ${path}`);
+	}
+	if (blob(entry).includes(0)) {
+		fail(`public-export.yaml forbidden_content_exception_paths must name a text file: ${path}`);
+	}
+	allowedExceptionPaths.add(path);
+}
+
+const overlayPatterns = new Set(overlay.forbiddenContent);
+const contentExceptionPairs = new Map();
+for (const exception of overlay.forbiddenContentExceptions) {
+	if (!overlayPatterns.has(exception.pattern)) {
+		fail(`private content exception pattern is not declared by overlay forbidden_content: ${exception.pattern}`);
+	}
+	const entryPaths = new Set();
+	for (const path of exception.paths) {
+		if (entryPaths.has(path)) fail(`private content exception contains duplicate path: ${path}`);
+		entryPaths.add(path);
+		if (!allowedExceptionPaths.has(path)) {
+			fail(`private content exception path is not in the public closed set: ${path}`);
+		}
+		const key = JSON.stringify([exception.pattern, path]);
+		if (contentExceptionPairs.has(key)) {
+			fail(`duplicate private content exception for ${path}: ${exception.pattern}`);
+		}
+		contentExceptionPairs.set(key, { pattern: exception.pattern, path, used: false });
+	}
+}
+
+function useContentException(path, rule) {
+	if (rule.origin !== "overlay") return false;
+	const pair = contentExceptionPairs.get(JSON.stringify([rule.pattern, path]));
+	if (!pair) return false;
+	pair.used = true;
+	return true;
+}
+
 // The deny rules that matter live in the overlay, inside the excluded tree,
 // so a repository that has something to exclude is exactly the one that
 // cannot run without them. A projection that already contains no private
@@ -165,8 +272,10 @@ for (const entry of indexed) {
 			failures.push(`${entry.path}: public symlink must stay inside the repository`);
 			continue;
 		}
-		for (const [pattern, expression] of forbiddenContent) {
-			if (expression.test(link)) failures.push(`${entry.path}: symlink contains forbidden public content ${pattern}`);
+		for (const rule of forbiddenContent) {
+			if (rule.expression.test(link)) {
+				failures.push(`${entry.path}: symlink contains forbidden public content ${rule.pattern}`);
+			}
 		}
 		manifestFiles.push({
 			path: entry.path,
@@ -179,8 +288,10 @@ for (const entry of indexed) {
 	}
 	if (!content.includes(0)) {
 		const text = content.toString("utf8");
-		for (const [pattern, expression] of forbiddenContent) {
-			if (expression.test(text)) failures.push(`${entry.path}: contains forbidden public content ${pattern}`);
+		for (const rule of forbiddenContent) {
+			if (!rule.expression.test(text)) continue;
+			if (useContentException(entry.path, rule)) continue;
+			failures.push(`${entry.path}: contains forbidden public content ${rule.pattern}`);
 		}
 	}
 	manifestFiles.push({
@@ -190,6 +301,10 @@ for (const entry of indexed) {
 		sha256: createHash("sha256").update(content).digest("hex"),
 	});
 	exportEntries.push({ ...entry, content });
+}
+
+for (const pair of contentExceptionPairs.values()) {
+	if (!pair.used) failures.push(`${pair.path}: private content exception did not match ${pair.pattern}`);
 }
 
 if (failures.length > 0) {

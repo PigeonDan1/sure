@@ -58,10 +58,10 @@ class ResolveDatasetAliasTests(unittest.TestCase):
 
     def test_two_segment_source_id_resolves_from_short_name(self) -> None:
         result = dataset_alias.resolve_dataset_alias(
-            "demo_speech_zh_test",
-            ["demo_speech_zh_test__v1.0.2", "other_ds__v1.0.1"],
+            "aispeech_phy_aishell-1-test",
+            ["aispeech_phy_aishell-1-test__v1.0.2", "other_ds__v1.0.1"],
         )
-        self.assertEqual(result, "demo_speech_zh_test__v1.0.2")
+        self.assertEqual(result, "aispeech_phy_aishell-1-test__v1.0.2")
 
     def test_two_segment_id_ambiguous_versions_fail_closed(self) -> None:
         result = dataset_alias.resolve_dataset_alias(
