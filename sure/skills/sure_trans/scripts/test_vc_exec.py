@@ -87,6 +87,7 @@ from vc_exec import (
     registry_image,
     run_vc_job,
     safe_image_component,
+    user_partitions,
     vc_available,
 )
 
@@ -272,7 +273,7 @@ class MountHostPathTest(unittest.TestCase):
 class AgentBinShadowingTest(unittest.TestCase):
     """The coding agent puts its own bin dir first on PATH so its bundled fd and
     rg win. Anything else dropped in there shadows the system binary of the same
-    name, so deployment tools must resolve from the configured host PATH."""
+    name, which is how a stray docker took over every push in this pipeline."""
 
     def _layout(self, root: Path) -> tuple[Path, Path]:
         agent_bin = root / "agent" / "bin"
@@ -383,12 +384,12 @@ class DiagnoseOomTest(unittest.TestCase):
         hint = diagnose_oom(137, "Killed\n")
         self.assertIsNotNone(hint)
         self.assertIn("vc_memory_gb", hint)
-        self.assertIn("configured project and partition limits", hint)
+        self.assertIn("vc_gpus=2 vc_memory_gb=64", hint)
 
     def test_cuda_oom_maps_to_gpu_repair(self) -> None:
         hint = diagnose_oom(1, "RuntimeError: CUDA out of memory. Tried to allocate 64.00 MiB")
         self.assertIsNotNone(hint)
-        self.assertIn("GPU VRAM exhausted", hint)
+        self.assertIn("24 GiB", hint)
         self.assertNotIn("vc_gpus=2", hint)
 
     def test_alloc_failure_maps_to_ram_repair(self) -> None:
@@ -403,36 +404,51 @@ class DiagnoseOomTest(unittest.TestCase):
 class AvailabilityTest(unittest.TestCase):
     def test_vc_available(self) -> None:
         with mock.patch.object(vc_exec.shutil, "which", return_value="/usr/bin/vc"), mock.patch.object(
-            vc_exec, "run_command"
-        ) as run:
+            vc_exec, "run_command", return_value=completed(["vc", "info"])
+        ):
             self.assertTrue(vc_available())
-            run.assert_not_called()
         with mock.patch.object(vc_exec.shutil, "which", return_value=None):
             self.assertFalse(vc_available())
-
-    def test_configured_partitions_reads_validated_site_policy(self) -> None:
-        self.assertEqual(vc_exec.configured_partitions(), {TEST_PARTITION})
-
-    def test_configured_partitions_requires_site_partitions(self) -> None:
-        with mock.patch.object(
-            vc_exec,
-            "load_site_policy",
-            return_value={"policy": {"execution": {}}},
+        with mock.patch.object(vc_exec.shutil, "which", return_value="/usr/bin/vc"), mock.patch.object(
+            vc_exec, "run_command", return_value=completed(["vc", "info"], returncode=1)
         ):
-            with self.assertRaises(ValueError):
-                vc_exec.configured_partitions()
+            self.assertFalse(vc_available())
+
+    def test_user_partitions_reads_only_the_partition_block(self) -> None:
+        stdout = (
+            "User: example" + chr(10)
+            + "[Partition]" + chr(10)
+            + "------------------------------" + chr(10)
+            + "gpu-test" + chr(10)
+            + "gpu-2" + chr(10)
+            + "[是否允许资源配比超配]" + chr(10)
+            + "NO" + chr(10)
+            + "[Quota]" + chr(10)
+            + "GPU: 32" + chr(10)
+        )
+        with mock.patch.object(vc_exec.shutil, "which", return_value="/usr/bin/vc"), mock.patch.object(
+            vc_exec, "run_command", return_value=completed(["vc", "info", "-u"], stdout=stdout)
+        ):
+            self.assertEqual(user_partitions(), {"gpu-test", "gpu-2"})
+
+    def test_user_partitions_is_empty_without_a_partition_block(self) -> None:
+        with mock.patch.object(vc_exec.shutil, "which", return_value="/usr/bin/vc"), mock.patch.object(
+            vc_exec, "run_command", return_value=completed(["vc", "info", "-u"], stdout="User: example" + chr(10))
+        ):
+            self.assertEqual(user_partitions(), set())
+
 
 class EnsureRegistryImageTest(unittest.TestCase):
     def test_push_digest_selects_the_requested_tag(self) -> None:
         old = "sha256:" + "a" * 64
         expected = "sha256:" + "b" * 64
-        output = "\n".join(
+        output = chr(10).join(
             [
                 json.dumps({"status": f"0.1.1: digest: {old} size: 1"}),
                 json.dumps({"status": f"0.1.2: digest: {expected} size: 1"}),
             ]
         )
-        self.assertEqual(push_digest(output, "registry.example/example-org/demo:0.1.2"), expected)
+        self.assertEqual(push_digest(output, registry_image("demo", "0.1.2")), expected)
 
     def test_push_records_commands_and_parses_digest(self) -> None:
         digest = "sha256:" + "c" * 64
@@ -506,7 +522,7 @@ class EnsureRegistryImageTest(unittest.TestCase):
     def test_a_rerun_keeps_the_digest_the_first_push_earned(self) -> None:
         ref = registry_image("demo", "0.1.0")
         digest = "sha256:" + "c" * 64
-        rejection = "tag already exists; use a new tag"
+        rejection = "镜像已存在，请更新tag"
 
         def fake_run(args, *, timeout=None, env=None):
             if args[:2] == ["docker", "tag"]:
@@ -526,11 +542,12 @@ class EnsureRegistryImageTest(unittest.TestCase):
         ref = registry_image("demo", "0.1.0")
         stale = "sha256:" + "a" * 64
         current = "sha256:" + "b" * 64
+        rejection = "镜像已存在，请更新tag"
 
         def fake_run(args, *, timeout=None, env=None):
             if args[:2] == ["docker", "tag"]:
                 return completed(args)
-            return completed(args, stdout="tag already exists; use a new tag\n")
+            return completed(args, stdout=rejection + chr(10))
 
         with tempfile.TemporaryDirectory() as temporary:
             log = Path(temporary) / "push.log"
@@ -555,7 +572,7 @@ class EnsureRegistryImageTest(unittest.TestCase):
 
     def test_push_without_digest_is_a_failure(self) -> None:
         ref = registry_image("demo", "0.1.0")
-        rejection = "tag already exists; use a new tag"
+        rejection = "镜像已存在，请更新tag"
 
         def fake_run(args, *, timeout=None, env=None):
             if args[:2] == ["docker", "tag"]:
@@ -571,7 +588,7 @@ class EnsureRegistryImageTest(unittest.TestCase):
             self.assertIn(rejection, message)
             self.assertIn("image_version", message)
 
-    def test_push_failure_mentions_policy_target(self) -> None:
+    def test_push_failure_mentions_site_target(self) -> None:
         ref = registry_image("demo", "0.1.0")
 
         def fake_run(args: list[str], *, timeout: float | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -585,7 +602,7 @@ class EnsureRegistryImageTest(unittest.TestCase):
                 with self.assertRaises(ValueError) as raised:
                     ensure_registry_image("local-image", ref, log)
             message = str(raised.exception)
-            self.assertIn("policy-resolved target", message)
+            self.assertIn("site-resolved target", message)
             self.assertIn("image_version", message)
 
 
@@ -721,7 +738,9 @@ class RunVcJobTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             log_dir = Path(temporary) / "logs"
             patch, recorded = self._submit_side_effect()
-            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True):
+            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True), mock.patch.object(
+                vc_exec, "user_partitions", return_value={"gpu-test"}
+            ):
                 result = run_vc_job(image="registry/demo:0.1.0", command="python -c 'print(1)'", log_dir=log_dir)
             self.assertEqual(result.exit_code, 0)
             self.assertEqual(result.job_id, "job-abc-123")
@@ -745,13 +764,17 @@ class RunVcJobTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             log_dir = Path(temporary) / "logs"
             patch, _ = self._submit_side_effect()
-            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True):
+            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True), mock.patch.object(
+                vc_exec, "user_partitions", return_value={"gpu-test"}
+            ):
                 run_vc_job(image="registry/demo:0.1.0", command="true", log_dir=log_dir, command_timeout_seconds=60)
             inner = (log_dir / "inner.sh").read_text(encoding="utf-8")
             self.assertIn("timeout --kill-after=15 60 true", inner)
 
             patch, _ = self._submit_side_effect()
-            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True):
+            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True), mock.patch.object(
+                vc_exec, "user_partitions", return_value={"gpu-test"}
+            ):
                 run_vc_job(image="registry/demo:0.1.0", command="true", log_dir=log_dir, command_timeout_seconds=0)
             inner = (log_dir / "inner.sh").read_text(encoding="utf-8")
             self.assertNotIn("timeout ", inner)
@@ -763,7 +786,9 @@ class RunVcJobTest(unittest.TestCase):
             host_source = Path(temporary) / "host"
             host_source.write_text("x", encoding="utf-8")
             ro_mount = f"{host_source}:/cont:ro"
-            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True):
+            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True), mock.patch.object(
+                vc_exec, "user_partitions", return_value={"gpu-test"}
+            ):
                 run_vc_job(
                     image="registry/demo:0.1.0",
                     command="true",
@@ -790,7 +815,7 @@ class RunVcJobTest(unittest.TestCase):
 
             with mock.patch.object(vc_exec, "run_command", side_effect=fake_run), mock.patch.object(
                 vc_exec, "vc_available", return_value=True
-            ):
+            ), mock.patch.object(vc_exec, "user_partitions", return_value={"gpu-test"}):
                 result = run_vc_job(
                     image="registry/demo:0.1.0",
                     command="sleep 1000",
@@ -808,31 +833,35 @@ class RunVcJobTest(unittest.TestCase):
             def fake_run(args: list[str], *, timeout: float | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
                 if args[:2] == ["vc", "info"]:
                     return completed(args, stdout="cluster ok\n")
-                return completed(args, returncode=1, stderr="submission denied by backend policy\n")
+                return completed(args, returncode=1, stderr="quota exceeded\n")
 
             with mock.patch.object(vc_exec, "run_command", side_effect=fake_run), mock.patch.object(
                 vc_exec, "vc_available", return_value=True
-            ):
+            ), mock.patch.object(vc_exec, "user_partitions", return_value={"gpu-test"}):
                 with self.assertRaises(ValueError) as raised:
                     run_vc_job(image="registry/demo:0.1.0", command="true", log_dir=log_dir)
             self.assertIn("vc submit failed", str(raised.exception))
 
-    def test_partition_outside_policy_allowlist_raises(self) -> None:
+    def test_unavailable_partition_raises(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            with mock.patch.object(vc_exec, "vc_available", return_value=True):
+            with mock.patch.object(vc_exec, "vc_available", return_value=True), mock.patch.object(
+                vc_exec, "user_partitions", return_value={"other-queue"}
+            ):
                 with self.assertRaises(ValueError) as raised:
                     run_vc_job(
                         image="registry/demo:0.1.0",
                         command="true",
                         log_dir=Path(temporary) / "logs",
-                        partition="other-queue",
+                        partition="gpu-test",
                     )
-            self.assertIn("execution.vc_partitions", str(raised.exception))
+            self.assertIn("gpu-test", str(raised.exception))
 
     def test_explicit_project_overrides_the_site_policy(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             patch, recorded = self._submit_side_effect()
-            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True):
+            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True), mock.patch.object(
+                vc_exec, "user_partitions", return_value={"gpu-test"}
+            ):
                 run_vc_job(
                     image="registry/demo:0.1.0",
                     command="true",
@@ -842,21 +871,6 @@ class RunVcJobTest(unittest.TestCase):
             submit = recorded[0]
             project_index = submit.index("--project")
             self.assertEqual(submit[project_index + 1], "override-project")
-
-    def test_submit_is_authoritative_after_policy_preflight(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            log_dir = Path(temporary) / "logs"
-            patch, recorded = self._submit_side_effect()
-            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True):
-                result = run_vc_job(
-                    image="registry/demo:0.1.0",
-                    command="true",
-                    log_dir=log_dir,
-                    partition="gpu-test",
-                )
-            self.assertEqual(result.exit_code, 0)
-            self.assertEqual(recorded[0][:2], ["vc", "submit"])
-            self.assertEqual(recorded[0][recorded[0].index("-p") + 1], "gpu-test")
 
     def test_missing_vc_binary_raises(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1143,10 +1157,10 @@ class TransValidateVcTest(unittest.TestCase):
                     run_trans_validate.main()
             message = str(raised.exception)
             self.assertIn("OOM", message)
-            self.assertIn("configured project and partition limits", message)
+            self.assertIn("vc_gpus=2 vc_memory_gb=64", message)
             payload = json.loads(load_result.read_text(encoding="utf-8"))
             self.assertEqual(payload["status"], "failed")
-            self.assertIn("configured project and partition limits", payload["error"])
+            self.assertIn("vc_gpus=2 vc_memory_gb=64", payload["error"])
 
     def test_gpu_oom_retries_with_fresh_vc_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1416,8 +1430,8 @@ class TransValidateVcTest(unittest.TestCase):
                     run_trans_validate.main()
             message = str(raised.exception)
             self.assertIn("40.0 GiB", message)
-            self.assertIn("vc_memory_gb", message)
-            self.assertIn("required by scheduler policy", message)
+            self.assertIn("vc_gpus=2 vc_memory_gb=64", message)
+            self.assertIn("32 GiB per GPU", message)
 
     def test_import_kind_skips_payload_budget(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1438,6 +1452,8 @@ class VcExecCliTest(unittest.TestCase):
             produces = root / "smoke.json"
             patch, _ = RunVcJobTest()._submit_side_effect()
             with patch, mock.patch.object(vc_exec, "vc_available", return_value=True), mock.patch.object(
+                vc_exec, "user_partitions", return_value={"gpu-test"}
+            ), mock.patch.object(
                 sys, "argv",
                 ["vc_exec.py", "--image", "registry/demo:0.1.0", "--command", "true", "--log-dir", str(log_dir), "--produces", str(produces)],
             ):
@@ -1454,11 +1470,11 @@ class VcExecCliTest(unittest.TestCase):
             def fake_run(args: list[str], *, timeout: float | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
                 if args[:2] == ["vc", "info"]:
                     return completed(args, stdout="cluster ok\n")
-                return completed(args, returncode=1, stderr="submission denied by backend policy\n")
+                return completed(args, returncode=1, stderr="quota exceeded\n")
 
             with mock.patch.object(vc_exec, "run_command", side_effect=fake_run), mock.patch.object(
                 vc_exec, "vc_available", return_value=True
-            ), mock.patch.object(
+            ), mock.patch.object(vc_exec, "user_partitions", return_value={"gpu-test"}), mock.patch.object(
                 sys, "argv",
                 ["vc_exec.py", "--image", "registry/demo:0.1.0", "--command", "true", "--log-dir", str(root / "logs"), "--produces", str(root / "smoke.json")],
             ):
@@ -1509,11 +1525,17 @@ class SitePolicySourcedDefaultsTest(unittest.TestCase):
     def test_default_project_comes_from_the_site_policy(self) -> None:
         self.assertEqual(vc_exec.default_project(), "example-project")
 
+    def test_default_project_fails_closed_without_the_policy_field(self) -> None:
+        with mock.patch.object(
+            vc_exec,
+            "load_site_policy",
+            return_value={"policy": {"execution": {}}},
+        ):
+            with self.assertRaisesRegex(ValueError, "execution.vc_project"):
+                vc_exec.default_project()
+
     def test_registry_image_uses_the_site_container_registry(self) -> None:
-        self.assertEqual(
-            vc_exec.registry_image("demo", "0.1.0"),
-            "registry.example/example-org/sure-asr-demo:0.1.0",
-        )
+        self.assertEqual(vc_exec.registry_image("demo", "0.1.0"), "registry.example/example-org/sure-asr-demo:0.1.0")
 
 
 if __name__ == "__main__":

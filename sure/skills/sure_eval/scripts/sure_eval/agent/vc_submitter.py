@@ -91,7 +91,10 @@ def _infer_repo_root() -> Path:
 
 
 def _infer_default_volume_mount(repo_root: Path) -> str:
-    """Use an identity mount for the current checkout by default."""
+    """Infer a single vc volume covering repo code and shared model symlinks."""
+    for parent in (repo_root, *repo_root.parents):
+        if parent.name == "sjtu_home":
+            return f"{parent}:{parent}"
     return f"{repo_root}:{repo_root}"
 
 

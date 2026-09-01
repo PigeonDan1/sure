@@ -17,9 +17,9 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import run_docker_build  # noqa: E402
 import run_trans_validate  # noqa: E402
-import scaffold_adapter  # noqa: E402
-import prepare_fixture  # noqa: E402
 import mcp_smoke  # noqa: E402
+import prepare_fixture  # noqa: E402
+import scaffold_adapter  # noqa: E402
 import stage_model_payload  # noqa: E402
 import write_runtime_inventory  # noqa: E402
 import finalize_trans_bundle  # noqa: E402
@@ -118,6 +118,46 @@ class TransScriptsTest(unittest.TestCase):
         environment["PATH"] = f"{binaries}{os.pathsep}{environment['PATH']}"
         return environment
 
+    def _payload_run_dir(self, root: Path) -> Path:
+        """A run whose resolved input stages two weight files into the bundle."""
+        run_dir = root / "run"
+        artifacts = run_dir / "artifacts"
+        artifacts.mkdir(parents=True)
+        source = root / "delivery" / "model" / "demo"
+        (source / "nested").mkdir(parents=True)
+        (source / "weights.bin").write_bytes(b"weights")
+        (source / "nested" / "extra.bin").write_bytes(b"extra")
+        models_root = root / "sure" / "models"
+        models_root.mkdir(parents=True)
+        (artifacts / "trans_input_resolved.json").write_text(
+            json.dumps({
+                "model_name": "demo",
+                "task_type": "asr",
+                "model_path": str(source),
+                "model_dir": str(models_root / "demo"),
+                "model_mount_target": "/models/demo",
+                "model_stage_policy": "copy",
+                "path_policy": {"allowed_model_root": str(models_root)},
+            }) + "\n",
+            encoding="utf-8",
+        )
+        subprocess.run(
+            [sys.executable, str(SCRIPTS_DIR / "stage_model_payload.py"), "--run-dir", str(run_dir)],
+            check=True, capture_output=True, text=True,
+        )
+        return run_dir
+
+    def _check_model_payload(self, run_dir: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [
+                sys.executable, str(SCRIPTS_DIR / "check_artifact.py"),
+                "--run-dir", str(run_dir),
+                "--produces", str(run_dir / "artifacts" / "model_payload_manifest.json"),
+                "--kind", "model_payload",
+            ],
+            capture_output=True, text=True,
+        )
+
     def test_fixture_cleanup_rejects_a_symlinked_staging_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -135,6 +175,73 @@ class TransScriptsTest(unittest.TestCase):
                 finalize_trans_bundle.clear_directory(controlled / "asr", controlled)
 
             self.assertEqual(sentinel.read_bytes(), b"keep")
+
+    def test_tts_fixture_declares_only_annotation_fields_the_gate_recomputes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = root / "run"
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir(parents=True)
+            fixture = root / "prompt.wav"
+            fixture.write_bytes(b"RIFF-prompt")
+            (root / "prompt.expected.json").write_text(
+                json.dumps({"text": "spoken target", "prompt_text": "prompt transcript"}) + "\n",
+                encoding="utf-8",
+            )
+            (artifacts / "trans_input_resolved.json").write_text(
+                json.dumps({
+                    "model_name": "demo",
+                    "task_type": "tts",
+                    "fixture_path": str(fixture),
+                    "path_policy": {"allowed_model_root": str(root / "models")},
+                }) + "\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "prepare_fixture.py"), "--run-dir", str(run_dir)],
+                check=True, capture_output=True, text=True,
+            )
+            manifest = json.loads(
+                (artifacts / "fixture_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["samples"][0]["annotation_fields"], ["text"])
+            gt = json.loads((run_dir / "fixture" / "tts" / "gt.jsonl").read_text(encoding="utf-8"))
+            self.assertEqual(gt["reference_audio"], "prompt.wav")
+            self.assertEqual(gt["prompt_text"], "prompt transcript")
+            accepted = subprocess.run(
+                [
+                    sys.executable, str(SCRIPTS_DIR / "check_artifact.py"),
+                    "--run-dir", str(run_dir),
+                    "--produces", str(artifacts / "fixture_manifest.json"),
+                    "--kind", "fixture",
+                ],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+    def test_ground_truth_requires_a_reference_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = root / "run"
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir(parents=True)
+            fixture = root / "smoke.wav"
+            fixture.write_bytes(b"RIFF-smoke")
+            fixture_manifest = artifacts / "fixture_manifest.json"
+            fixture_manifest.write_text(
+                json.dumps({
+                    "status": "ready",
+                    "model_dir": str(root),
+                    "staged_dir": str(root),
+                    "staged_path": str(fixture),
+                    "gt_jsonl": str(root / "gt.jsonl"),
+                    "samples": [{"audio": fixture.name, "audio_path": str(fixture), "annotation_fields": ["text"]}],
+                    "sample_count": 1,
+                }) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError):
+                finalize_trans_bundle.stage_fixture(run_dir, root / "model", {"task_type": "asr"})
 
     def test_generated_audio_is_promoted_only_from_the_validation_outputs_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -172,6 +279,20 @@ class TransScriptsTest(unittest.TestCase):
         self.assertEqual(mcp_smoke.primary_output_field("synthesize_speech"), "audio_path")
         self.assertEqual(mcp_smoke.primary_output_field("convert_voice"), "audio_path")
 
+    def test_generated_audio_output_must_name_a_real_non_empty_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            empty = root / "empty.wav"
+            empty.write_bytes(b"")
+            filled = root / "speech.wav"
+            filled.write_bytes(b"RIFF-output")
+
+            self.assertTrue(mcp_smoke.output_is_nonempty("text", "transcribed text"))
+            self.assertFalse(mcp_smoke.output_is_nonempty("text", ""))
+            self.assertTrue(mcp_smoke.output_is_nonempty("audio_path", str(filled)))
+            self.assertFalse(mcp_smoke.output_is_nonempty("audio_path", str(empty)))
+            self.assertFalse(mcp_smoke.output_is_nonempty("audio_path", str(root / "absent.wav")))
+
     def test_bundle_writes_reject_symlinked_destination_parents(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -190,6 +311,29 @@ class TransScriptsTest(unittest.TestCase):
                 finalize_trans_bundle.ensure_safe_bundle_parent(bundle, destination)
 
             self.assertEqual(sentinel.read_bytes(), b"keep")
+
+    def test_model_payload_manifest_hashes_every_staged_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = self._payload_run_dir(Path(temporary))
+            payload = json.loads(
+                (run_dir / "artifacts" / "model_payload_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                set(payload["files"]), {"weights.bin", "nested/extra.bin"}
+            )
+            self.assertEqual(payload["files"]["weights.bin"]["size_bytes"], len(b"weights"))
+            self.assertEqual(len(payload["payload_identity_sha256"]), 64)
+            passed = self._check_model_payload(run_dir)
+            self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+
+    def test_model_payload_check_rejects_an_unregistered_bundle_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = self._payload_run_dir(root)
+            (root / "sure" / "models" / "demo" / "smuggled.bin").write_bytes(b"smuggled")
+            rejected = self._check_model_payload(run_dir)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("exactly cover staged payload files", rejected.stdout + rejected.stderr)
 
     @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
     def test_output_cleanup_refuses_a_mount_outside_the_run_directory(self) -> None:
@@ -880,7 +1024,7 @@ class TransScriptsTest(unittest.TestCase):
             self.assertNotIn("vc submit", output)
 
     def test_registry_gate_takes_a_tag_submit_that_proves_the_digest(self) -> None:
-        """This VC backend accepts tags but not digest references for jobs.
+        """VC answers 镜像不存在 to any repo@sha256:... reference.
 
         Requiring the smoke to *run* on a digest-pinned reference therefore made
         the unit unsatisfiable on GPU. The pin is proven by the digest the tag
@@ -1281,6 +1425,26 @@ class TransScriptsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "absolute Python executable"):
                 scaffold_adapter.container_python_executable("demo-source:0.1.0")
 
+    def test_source_image_python_probe_falls_back_to_python3(self) -> None:
+        missing = mock.Mock(returncode=127, stdout="", stderr="executable file not found in $PATH")
+        found = mock.Mock(returncode=0, stdout="/usr/bin/python3\n", stderr="")
+        with mock.patch.object(
+            scaffold_adapter.subprocess, "run", side_effect=[missing, found]
+        ) as run:
+            self.assertEqual(
+                scaffold_adapter.container_python_executable("demo-source:0.1.0"),
+                "/usr/bin/python3",
+            )
+        entrypoints = [call.args[0][call.args[0].index("--entrypoint") + 1] for call in run.call_args_list]
+        self.assertEqual(entrypoints, ["python", "python3"])
+
+    def test_source_image_python_probe_names_docker_when_it_is_missing(self) -> None:
+        with mock.patch.object(
+            scaffold_adapter.subprocess, "run", side_effect=FileNotFoundError("docker")
+        ):
+            with self.assertRaisesRegex(ValueError, "docker"):
+                scaffold_adapter.container_python_executable("demo-source:0.1.0")
+
     def test_final_bundle_matches_eval_deployment_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1444,6 +1608,8 @@ class TransScriptsTest(unittest.TestCase):
             deployment = json.loads(
                 (model_dir / "artifacts" / "deployment_ready.json").read_text(encoding="utf-8")
             )
+            self.assertEqual(deployment["integrity_profile"], "manifest-complete-v1")
+            self.assertEqual(deployment["weights_integrity"], "bundled")
             self.assertIn("artifacts/sample_output.json", deployment["required_artifact_sha256"])
             self.assertIn("model.py", deployment["required_artifact_sha256"])
             self.assertIn("weights.bin", deployment["required_artifact_sha256"])
@@ -1489,30 +1655,6 @@ class TransScriptsTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(fixture_check.returncode, 0, fixture_check.stdout + fixture_check.stderr)
-
-    def test_ground_truth_requires_a_reference_sidecar(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            run_dir = root / "run"
-            artifacts = run_dir / "artifacts"
-            artifacts.mkdir(parents=True)
-            fixture = root / "smoke.wav"
-            fixture.write_bytes(b"RIFF-smoke")
-            fixture_manifest = artifacts / "fixture_manifest.json"
-            fixture_manifest.write_text(
-                json.dumps({
-                    "status": "ready",
-                    "model_dir": str(root),
-                    "staged_dir": str(root),
-                    "staged_path": str(fixture),
-                    "gt_jsonl": str(root / "gt.jsonl"),
-                    "samples": [{"audio": fixture.name, "audio_path": str(fixture), "annotation_fields": ["text"]}],
-                    "sample_count": 1,
-                }) + "\n",
-                encoding="utf-8",
-            )
-            with self.assertRaises(ValueError):
-                finalize_trans_bundle.stage_fixture(run_dir, root / "model", {"task_type": "asr"})
 
 
     def test_blocked_finalize_writes_an_honest_terminal_marker(self) -> None:

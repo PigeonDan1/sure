@@ -149,7 +149,7 @@ class ApprovalFlowTests(unittest.TestCase):
         }
         deployment = {
             "schema": "sure.onboard.deployment_ready.v2",
-            "generated_at": approval_core.now_iso(),
+            "generated_at": "2026-08-01T00:00:00+00:00",  # a legacy-shaped marker, sealed before integrity_profile became mandatory
             "status": "ready",
             "model_name": "demo-model",
             "package_profile": "none",

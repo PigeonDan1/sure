@@ -102,6 +102,15 @@ def copy_selected_delivery_artifacts(run_dir: Path, model_dir: Path, resolved: d
 
 
 def resolve_weights_root(model_dir: Path, weights_manifest: dict[str, Any]) -> Path | None:
+    """Locate the model-local weights root, or None when the weights live outside.
+
+    check_weights.py allows weights to stay outside the bundle as long as the
+    manifest sets fallback_to_host_global with a reason, and sure_feed writes a
+    default local_dir_name for every model, so a missing model-local root is a
+    normal shape rather than an error. Such weights are not hashed into the
+    bundle identity; see weights_integrity.
+    """
+    external = bool(weights_manifest.get("fallback_to_host_global"))
     candidates = (
         ("local_dir_name", weights_manifest.get("local_dir_name")),
         ("checkpoint_root", weights_manifest.get("checkpoint_root")),
@@ -116,16 +125,24 @@ def resolve_weights_root(model_dir: Path, weights_manifest: dict[str, Any]) -> P
         candidate = value if value.is_absolute() else model_dir / value
         resolved = candidate.resolve()
         if resolved == model_dir.resolve() or not resolved.is_relative_to(model_dir.resolve()):
+            if external:
+                return None
             raise ValueError(f"weights {field} must resolve below the model bundle: {raw}")
         if not resolved.exists():
+            if external:
+                return None
             raise ValueError(f"weights {field} does not exist: {raw}")
         return resolved
-    if weights_manifest.get("required") is True:
+    if weights_manifest.get("required") is True and not external:
         raise ValueError(
             "required weights have no model-local root; declare local_dir_name, "
             "checkpoint_root, or resolved_local_model_path"
         )
     return None
+
+
+def weights_integrity(model_dir: Path, weights_manifest: dict[str, Any]) -> str:
+    return "bundled" if resolve_weights_root(model_dir, weights_manifest) is not None else "external"
 
 
 def update_manifest(model_dir: Path, resolved: dict[str, Any]) -> dict[str, Any]:
@@ -327,6 +344,9 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict[str, A
         "bundle_identity_sha256": bundle_identity,
         "execution_policy": execution_policy,
     }
+    weights_manifest_path = model_dir / "artifacts" / "weights_manifest.json"
+    if weights_manifest_path.is_file():
+        deployment["weights_integrity"] = weights_integrity(model_dir, read_json(weights_manifest_path))
     if python_delivery:
         deployment["model_runtime"] = model_runtime if status == "ready" else {}
     return deployment

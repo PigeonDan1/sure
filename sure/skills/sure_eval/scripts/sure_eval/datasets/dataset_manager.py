@@ -30,6 +30,20 @@ from .source_resolver import (
 logger = get_logger(__name__)
 
 
+# ``source`` marker written into every artifact produced from a dataset-pool
+# source root. Records written before the marker was renamed carry the legacy
+# spelling, so reads normalize it back to the current value.
+SITE_DATASET_POOL_SOURCE = "site_dataset_pool"
+LEGACY_SITE_DATASET_POOL_SOURCE = "aispeech_ds_pool"
+
+
+def _normalized_source(source: Any) -> Any:
+    """Report the current marker for records written before the rename."""
+    if source == LEGACY_SITE_DATASET_POOL_SOURCE:
+        return SITE_DATASET_POOL_SOURCE
+    return source
+
+
 # Mapping from CSV filename to metadata
 # This bridges the gap between actual filenames and config names
 CSV_DATASETS = {
@@ -987,7 +1001,7 @@ class DatasetManager:
             language=language,
             dataset_label=ref.dataset_id,
             metadata_base={
-                "source": "site_dataset_pool",
+                "source": SITE_DATASET_POOL_SOURCE,
                 "source_dataset_root": ref.source_root,
                 "source_dataset_name": ref.source_dataset_name,
                 "version_id": ref.version_id,
@@ -1011,7 +1025,7 @@ class DatasetManager:
         shutil.copy2(jsonl_path, sure_jsonl)
 
         source_payload = {
-            "source": "site_dataset_pool",
+            "source": SITE_DATASET_POOL_SOURCE,
             "source_dataset_name": ref.source_dataset_name,
             "version_id": ref.version_id,
             "dataset_root": ref.source_root,
@@ -1029,7 +1043,7 @@ class DatasetManager:
 
         mapping = {
             "projector": "asr_transcription_v1",
-            "source_format": "site_dataset_pool_sample_jsonl",
+            "source_format": f"{SITE_DATASET_POOL_SOURCE}_sample_jsonl",
             "target_format": "sure_eval_jsonl_v1",
             "fields": {
                 "key": "sample_id",
@@ -1061,7 +1075,7 @@ class DatasetManager:
         )
 
         conversion_report = {
-            "source": "site_dataset_pool",
+            "source": SITE_DATASET_POOL_SOURCE,
             "dataset": ref.dataset_id,
             "source_dataset_name": ref.source_dataset_name,
             "source_dataset_root": ref.source_root,
@@ -1092,7 +1106,7 @@ class DatasetManager:
         manifest = {
             "dataset": ref.source_dataset_name,
             "default_projection": "asr_transcription_v1",
-            "source": "site_dataset_pool",
+            "source": SITE_DATASET_POOL_SOURCE,
             "source_dataset_root": ref.source_root,
             "version_id": ref.version_id,
             "projections": {
@@ -1474,7 +1488,9 @@ class DatasetManager:
                 "config_name": existing_jsonl.stem,
                 "task": first_sample.get("task"),
                 "language": first_sample.get("language"),
-                "source": sample_meta.get("source") or first_sample.get("source") or "local_jsonl",
+                "source": _normalized_source(
+                    sample_meta.get("source") or first_sample.get("source") or "local_jsonl"
+                ),
                 "jsonl_path": str(existing_jsonl),
                 "num_samples": self._count_jsonl_rows(existing_jsonl),
                 "is_available": True,

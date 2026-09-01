@@ -195,7 +195,7 @@ wav = model.generate(
         )
 
     def test_runtime_strategy_handles_sherpa_onnx_without_standard_import_load_split(self) -> None:
-        readme = """# Streaming ASR ONNX
+        readme = """# X-ASR
 
 This model provides streaming and offline CPU ASR checkpoints for sherpa-onnx.
 
@@ -207,18 +207,18 @@ pip install sherpa-onnx
         model_input, weak_fields, evidence = synthesize_model_input(
             {
                 "source": "huggingface",
-                "model_id": "example-org/streaming-asr-onnx",
-                "repo": "https://huggingface.co/example-org/streaming-asr-onnx",
+                "model_id": "GilgameshWind/X-ASR-zh-en",
+                "repo": "https://huggingface.co/GilgameshWind/X-ASR-zh-en",
                 "commit": "abc123",
                 "weights_source": "huggingface",
                 "pipeline_tag": "automatic-speech-recognition",
                 "tags": [
                     "sherpa-onnx",
                     "onnx",
-                    "zipformer-transducer",
+                    "x-asr-zipformer-transducer",
                     "automatic-speech-recognition",
                 ],
-                "model_card_url": "https://huggingface.co/example-org/streaming-asr-onnx/blob/main/README.md",
+                "model_card_url": "https://huggingface.co/GilgameshWind/X-ASR-zh-en/blob/main/README.md",
                 "model_card_text": readme,
             },
             "asr",

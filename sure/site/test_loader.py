@@ -99,13 +99,13 @@ class ContainerDeliveryTest(unittest.TestCase):
             _policy(
                 network={"container_registry": "registry.example"},
                 container_delivery={
-                    "repository_template": "{registry}/example-org/sure-{task}-{model_name}"
+                    "repository_template": "{registry}/my-org/sure-{task}-{model_name}"
                 },
             )
         )
         self.assertEqual(
             policy["container_delivery"]["repository_template"],
-            "{registry}/example-org/sure-{task}-{model_name}",
+            "{registry}/my-org/sure-{task}-{model_name}",
         )
 
     def test_repository_template_requires_a_registry(self) -> None:
@@ -113,7 +113,7 @@ class ContainerDeliveryTest(unittest.TestCase):
             validate_site_policy(
                 _policy(
                     container_delivery={
-                        "repository_template": "{registry}/example-org/sure-{model_name}"
+                        "repository_template": "{registry}/my-org/sure-{model_name}"
                     }
                 )
             )

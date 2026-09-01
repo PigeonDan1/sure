@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -22,6 +24,9 @@ from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, ver
 from sure.site.loader import SitePolicyError, load_site_policy
 
 
+LEGACY_PATH = re.compile(r"/(?:mnt/cloudstorfs|hpc_stor\d+|hpc_\d+)/")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
@@ -36,14 +41,11 @@ def main() -> int:
         if not model_copy.is_file() or model_copy.read_bytes() != path.read_bytes():
             raise ValueError("runtime_inventory.json must be copied identically into the model bundle")
         package = read_json(model_dir / "artifacts" / "package_gate.json")
-        if (data.get("generated_at") or data.get("timestamp")) and (
-            package.get("generated_at") or package.get("timestamp")
-        ):
-            require_timestamp_after(
-                "runtime_inventory.json",
-                data,
-                ("package_gate.json", package),
-            )
+        require_timestamp_after(
+            "runtime_inventory.json",
+            data,
+            ("package_gate.json", package),
+        )
         if data.get("schema") != "sure.onboard.runtime_inventory.v2":
             raise ValueError("runtime inventory schema must be sure.onboard.runtime_inventory.v2")
         policy = data.get("policy") if isinstance(data.get("policy"), dict) else {}
@@ -51,6 +53,8 @@ def main() -> int:
             raise ValueError("host Python fallback and image override must both be disabled")
         if policy.get("nfs_models_mutable_by_eval") is not False:
             raise ValueError("Eval must not mutate NFS model bundles")
+        if LEGACY_PATH.search(json.dumps(data, ensure_ascii=False)):
+            raise ValueError("runtime inventory contains a legacy host/staging absolute path")
         deployment_type = resolved.get("deployment_type")
         if deployment_type == "local" and resolved.get("package_profile") == "docker-registry":
             if data.get("status") != "ready" or policy.get("eval_runtime") != "container_only":

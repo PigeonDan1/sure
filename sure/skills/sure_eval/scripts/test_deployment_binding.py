@@ -11,7 +11,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 from container_execution import build_local_container_command
-from deployment_binding import DeploymentBindingError, _portable_relative, load_deployment_binding
+from deployment_binding import (
+    COMMON_MANDATORY_SIDECARS,
+    CORE_BUNDLE_FILES,
+    DeploymentBindingError,
+    _mandatory_integrity_paths,
+    _portable_relative,
+    _require_declared_integrity_profile,
+    _validate_complete_manifest,
+    load_deployment_binding,
+)
 from check_run_report import _submitted_image_error
 from run_vc_execution import (
     _approved_memory_gb,
@@ -238,6 +247,7 @@ class DeploymentBindingTests(unittest.TestCase):
             self.artifacts / "deployment_ready.json",
             {
                 "schema": "sure.onboard.deployment_ready.v1",
+                "generated_at": "2026-08-01T00:00:00+00:00",
                 "status": "ready",
                 "model_name": "demo",
                 "package_profile": "docker-registry",
@@ -318,6 +328,38 @@ class DeploymentBindingTests(unittest.TestCase):
         write_json(self.artifacts / "deployment_ready.json", marker)
 
         with self.assertRaisesRegex(DeploymentBindingError, "mandatory deployment sidecar|mandatory core"):
+            load_deployment_binding(self.model, "demo")
+
+    def _rewrite_marker(self, **fields: object) -> None:
+        marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
+        marker.update(fields)
+        write_json(self.artifacts / "deployment_ready.json", marker)
+
+    def test_marker_sealed_at_the_cutoff_must_declare_an_integrity_profile(self) -> None:
+        self._rewrite_marker(generated_at="2026-09-01T00:00:00+00:00")
+
+        with self.assertRaisesRegex(DeploymentBindingError, "integrity_profile"):
+            load_deployment_binding(self.model, "demo")
+
+    def test_marker_with_an_unreadable_timestamp_may_not_fall_back_to_the_legacy_profile(self) -> None:
+        self._rewrite_marker(generated_at="", timestamp="not-a-timestamp")
+
+        with self.assertRaisesRegex(DeploymentBindingError, "timestamp"):
+            load_deployment_binding(self.model, "demo")
+
+    def test_marker_sealed_before_the_cutoff_keeps_the_legacy_profile(self) -> None:
+        self._rewrite_marker(generated_at="2026-08-31T23:59:59+00:00")
+
+        binding = load_deployment_binding(self.model, "demo")
+
+        self.assertEqual(binding["evidence"]["integrity_profile"], "legacy-partial-v1")
+
+    def test_marker_without_any_timestamp_may_not_fall_back_to_the_legacy_profile(self) -> None:
+        marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
+        marker.pop("generated_at", None)
+        write_json(self.artifacts / "deployment_ready.json", marker)
+
+        with self.assertRaisesRegex(DeploymentBindingError, "integrity_profile"):
             load_deployment_binding(self.model, "demo")
 
     def test_local_command_uses_digest_and_read_only_model(self) -> None:
@@ -707,6 +749,93 @@ class DeploymentBindingTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertEqual(_approved_memory_gb(self.model), 29)
+
+
+class MandatoryIntegrityPathTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.model = Path(tmp.name) / "model"
+        artifacts = self.model / "artifacts"
+        for name in (
+            "artifact_manifest.json",
+            "fixture_manifest.json",
+            "package_gate.json",
+            "runtime_inventory.json",
+            "sample_output.json",
+            "verdict.json",
+            "model_runtime_manifest.json",
+        ):
+            write_json(artifacts / name, {})
+        write_json(artifacts / "weights_manifest.json", {"required": True, "local_dir_name": "checkpoints"})
+        gt = self.model / "fixture" / "asr" / "gt.jsonl"
+        gt.parent.mkdir(parents=True, exist_ok=True)
+        gt.write_text("{}\n", encoding="utf-8")
+
+    def test_external_weights_are_not_required_inside_the_bundle(self) -> None:
+        required = _mandatory_integrity_paths(self.model, {}, {}, "none", "external")
+
+        self.assertNotIn("checkpoints", {Path(path).parts[0] for path in required})
+        self.assertIn("artifacts/weights_manifest.json", required)
+        self.assertIn("fixture/asr/gt.jsonl", required)
+
+    def test_bundled_weights_must_be_present_inside_the_bundle(self) -> None:
+        with self.assertRaisesRegex(DeploymentBindingError, "weights root is missing"):
+            _mandatory_integrity_paths(self.model, {}, {}, "none", "bundled")
+
+    def test_absent_weights_integrity_means_bundled(self) -> None:
+        with self.assertRaisesRegex(DeploymentBindingError, "weights root is missing"):
+            _mandatory_integrity_paths(self.model, {}, {}, "none", None)
+
+    def test_unknown_weights_integrity_is_rejected(self) -> None:
+        with self.assertRaisesRegex(DeploymentBindingError, "weights_integrity"):
+            _mandatory_integrity_paths(self.model, {}, {}, "none", "extern")
+
+    def _seal_complete_manifest(self, **marker_fields: object) -> dict:
+        paths = sorted(
+            {
+                *CORE_BUNDLE_FILES,
+                *COMMON_MANDATORY_SIDECARS,
+                "artifacts/model_runtime_manifest.json",
+                "artifacts/weights_manifest.json",
+                "fixture/asr/gt.jsonl",
+            }
+        )
+        write_json(
+            self.model / "artifacts" / "artifact_manifest.json",
+            {
+                "schema": "sure.onboard.artifact_manifest.v1",
+                "status": "finalized",
+                "model_dir": ".",
+                "artifacts": {
+                    "required": {
+                        path: {"path": path}
+                        for path in [*paths, "artifacts/deployment_ready.json"]
+                    }
+                },
+            },
+        )
+        return {"required_artifact_sha256": {path: "a" * 64 for path in paths}, **marker_fields}
+
+    def test_external_weights_declared_on_the_marker_reach_the_mandatory_paths(self) -> None:
+        marker = self._seal_complete_manifest(weights_integrity="external")
+
+        manifest = _validate_complete_manifest(self.model, marker, {}, "none")
+
+        self.assertEqual(manifest["status"], "finalized")
+
+    def test_a_marker_without_weights_integrity_still_demands_bundled_weights(self) -> None:
+        marker = self._seal_complete_manifest()
+
+        with self.assertRaisesRegex(DeploymentBindingError, "weights root is missing"):
+            _validate_complete_manifest(self.model, marker, {}, "none")
+
+
+class IntegrityProfileCutoffTests(unittest.TestCase):
+    def test_a_marker_sealed_before_the_cutoff_may_omit_the_integrity_profile(self) -> None:
+        # The accepting branch of the cutoff: the bundle fixture cannot reach it
+        # through load_deployment_binding on a machine without POSIX mount paths.
+        _require_declared_integrity_profile({"generated_at": "2026-08-31T23:59:59Z"})
 
 
 if __name__ == "__main__":

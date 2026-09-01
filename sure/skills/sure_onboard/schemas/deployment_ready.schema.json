@@ -7,6 +7,7 @@
 	"properties": {
 		"schema": { "const": "sure.onboard.deployment_ready.v1" },
 		"integrity_profile": { "enum": ["manifest-complete-v1", "partial-run-v1"] },
+		"weights_integrity": { "enum": ["bundled", "external"] },
 		"generated_at": { "type": "string" },
 		"status": { "enum": ["ready", "local_only", "api_ready", "blocked"] },
 		"model_name": { "type": "string" },

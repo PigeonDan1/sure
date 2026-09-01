@@ -13,6 +13,7 @@ import yaml
 from vc_exec import default_partition
 
 
+LEGACY_PATH = re.compile(r"/(?:mnt/cloudstorfs|hpc_stor\d+|hpc_\d+)/")
 ANNOTATION_FIELDS = ("ground_truth", "target_text", "text", "segments", "label", "intent")
 TRANS_RESERVED_ROOTS = {
     "model.py",
@@ -47,13 +48,13 @@ def read_object(path: Path) -> dict:
     return value
 
 
-def require_container_harness_paths(harness: dict) -> None:
-    root = PurePosixPath(str(harness.get("runtime_root") or ""))
-    manifest = PurePosixPath(str(harness.get("manifest_path") or ""))
-    python = PurePosixPath(str(harness.get("python_executable") or ""))
-    require(root.is_absolute(), "container Harness Runtime runtime_root must be absolute")
-    require(manifest.is_absolute() and manifest.parent == root, "container Harness Runtime manifest_path must be directly under runtime_root")
-    require(python.is_absolute() and python.is_relative_to(root), "container Harness Runtime python_executable must stay under runtime_root")
+def artifact_time(value: dict, label: str) -> datetime:
+    raw = value.get("generated_at") or value.get("timestamp")
+    require(isinstance(raw, str) and bool(raw.strip()), f"{label} must record generated_at or timestamp")
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError(f"{label} timestamp is invalid: {raw}") from error
 
 
 def has_annotation_value(value: object) -> bool:
@@ -62,15 +63,6 @@ def has_annotation_value(value: object) -> bool:
     if isinstance(value, list):
         return bool(value)
     return value is not None
-
-
-def artifact_time(value: dict, label: str) -> datetime:
-    raw = value.get("generated_at") or value.get("timestamp")
-    require(isinstance(raw, str) and bool(raw.strip()), f"{label} must record generated_at or timestamp")
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise ValueError(f"{label} timestamp is invalid: {raw}") from error
 
 
 def validate_fixture_manifest(value: dict) -> None:
@@ -277,11 +269,12 @@ def main() -> int:
             expected_partition = default_partition()
             require(
                 smoke.get("vc_partition") == expected_partition,
-                f"post-pull MCP smoke must run on the configured partition {expected_partition}",
+                f"post-pull MCP smoke must run on the site's dedicated partition {expected_partition}",
             )
-            # This VC backend accepts repo:tag but not repo@sha256:... for job
-            # submission, so the job cannot carry the pin in the reference it
-            # runs. The submission proves the pin instead: vc_exec.py resolves
+            # vc submit takes repo:tag only and answers 镜像不存在 to any
+            # repo@sha256:... reference, so the job cannot carry the pin in the
+            # reference it runs. Requiring that made this unit unsatisfiable on
+            # GPU. The submission proves the pin instead: vc_exec.py resolves
             # what the tag serves and refuses to submit on a mismatch.
             require(
                 str(smoke.get("resolved_digest", "")) == str(value.get("target_image_digest", "")),
@@ -496,7 +489,10 @@ def main() -> int:
             all(harness.get(key) for key in ("runtime_id", "lock_sha256", "python_executable", "manifest_path", "runtime_root")),
             "required Harness Runtime binding is missing identity or path fields",
         )
-        require_container_harness_paths(harness)
+        require(
+            not LEGACY_PATH.search(json.dumps(harness, ensure_ascii=False)),
+            "host Harness Runtime paths cannot be declared as the container runtime",
+        )
         mount_policy = container.get("mount_policy") or {}
         require((mount_policy.get("model_bundle") or {}).get("read_only") is True, "model bundle mount must be read-only")
         require((mount_policy.get("result_workspace") or {}).get("read_only") is False, "result workspace mount must be writable")
@@ -607,7 +603,18 @@ def main() -> int:
                 declared_binding.get("schema") == "sure.harness.runtime.binding.v1" and declared_binding.get("runtime_id"),
                 "ready deployment must expose the common Harness Runtime binding",
             )
-            require_container_harness_paths(declared_binding)
+            require(
+                not LEGACY_PATH.search(json.dumps(declared_binding, ensure_ascii=False)),
+                "deployment Harness Runtime binding must reference an in-image runtime, not host paths",
+            )
+        portable = [
+            read_object(model_dir / "artifacts" / name)
+            for name in ("runtime_inventory.json", "package_gate.json", "artifact_manifest.json", "deployment_ready.json")
+        ]
+        require(
+            not LEGACY_PATH.search(json.dumps(portable, ensure_ascii=False)),
+            "finalized deployment sidecars contain legacy host absolute paths",
+        )
     print(f"{kind} OK: {path}")
     return 0
 

@@ -104,16 +104,21 @@ def main() -> int:
         raise ValueError(
             f"fixture reference annotation has no non-empty supported field: {expected_source}"
         )
+    # prompt_text is a TTS input, not a label: the fixture gate recomputes
+    # annotation_fields from ANNOTATION_FIELDS and compares it with what the
+    # sample declares, so listing prompt_text there fails every TTS fixture.
+    annotation_fields = list(annotations)
+    gt_extras: dict[str, object] = {}
     if task == "tts":
         prompt_text = expected.get("prompt_text")
         if not isinstance(prompt_text, str) or not prompt_text.strip():
             raise ValueError(f"TTS fixture annotation requires non-empty prompt_text: {expected_source}")
-        annotations["prompt_text"] = prompt_text.strip()
+        gt_extras["prompt_text"] = prompt_text.strip()
     expected_destination = staged_dir / expected_source.name
     shutil.copy2(expected_source, expected_destination)
     gt_jsonl = staged_dir / "gt.jsonl"
     audio_field = "reference_audio" if task in {"tts", "vc"} else "audio"
-    gt_row = {audio_field: source.name, "task_type": task, **annotations}
+    gt_row = {audio_field: source.name, "task_type": task, **annotations, **gt_extras}
     gt_jsonl.write_text(json.dumps(gt_row, ensure_ascii=False) + "\n", encoding="utf-8")
     payload = {
         "schema": "sure.trans.fixture_manifest.v1",
@@ -130,7 +135,7 @@ def main() -> int:
                 "key": source.stem,
                 "audio": source.name,
                 "audio_path": str(destination),
-                "annotation_fields": list(annotations),
+                "annotation_fields": annotation_fields,
             }
         ],
         "source_path": str(source),
