@@ -226,21 +226,18 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
-        if (data.get("generated_at") or data.get("timestamp")) and (
-            package_gate.get("generated_at") or package_gate.get("timestamp")
-        ):
-            runtime_path = run_dir / "artifacts" / "runtime_inventory.json"
-            try:
-                runtime_inventory = read_json(runtime_path)
-                require_timestamp_after(
-                    "verdict.json",
-                    data,
-                    ("package_gate.json", package_gate),
-                    ("runtime_inventory.json", runtime_inventory),
-                )
-            except (OSError, ValueError) as exc:
-                print(f"VERDICT gate: {exc}", file=sys.stderr)
-                return 1
+        runtime_path = run_dir / "artifacts" / "runtime_inventory.json"
+        try:
+            runtime_inventory = read_json(runtime_path)
+            require_timestamp_after(
+                "verdict.json",
+                data,
+                ("package_gate.json", package_gate),
+                ("runtime_inventory.json", runtime_inventory),
+            )
+        except (OSError, ValueError) as exc:
+            print(f"VERDICT gate: {exc}", file=sys.stderr)
+            return 1
 
     if status in SUCCESS_STATUSES:
         profile = package_profile(data, package_gate)

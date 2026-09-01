@@ -38,6 +38,8 @@ Provenance: qwen3_asr_smoke/asr-ar/provenance.json
 
 | Source | Language | Files | Notes |
 |--------|----------|-------|-------|
+| `src/sure_eval/models/GilgameshWind__X-ASR-zh-en/fixture/asr/asr_zh/` | zh | `sample_*.wav`, `gt.jsonl` | Same structure as Qwen3 ASR Chinese fixture. |
+| `src/sure_eval/models/GilgameshWind__X-ASR-zh-en/fixture/asr/asr_en/` | en | `sample_*.wav`, `gt.jsonl` | Same structure as Qwen3 ASR English fixture. |
 | `src/sure_eval/models/asr_parakeet/fixture/asr/asr_en/` | en | `sample_*.wav`, `gt.jsonl` | English ASR fixture. |
 
 ## Expected Model-Local Layout

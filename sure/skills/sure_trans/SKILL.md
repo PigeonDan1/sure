@@ -22,11 +22,11 @@ Convert an existing model delivery into the same Eval-ready contract produced by
 | `model_name` | yes | Must use `<organization>__<model-name>`; all bundle and image names use this value. |
 | `task_type` | no | Infer from evidence; require an explicit value when ambiguous. |
 | `fixture` | no | Absolute smoke input path. A same-stem `.expected.json` with a non-empty reference annotation is required; otherwise select an unambiguous `examples/smoke.*` file from the build context. |
-| `device` | no | `auto` (default), `cuda`, or `cpu`. `cpu` validates with local Docker only; `cuda` and GPU-capable `auto` submit VC jobs to the configured partition `<vc_default_partition>`. |
+| `device` | no | `auto` (default), `cuda`, or `cpu`. `cpu` validates with local Docker only; `cuda` and GPU-capable `auto` submit VC jobs to the dedicated partition `<vc_default_partition>`. |
 | `model_mount_target` | no | Default to `/models/<model_name>`. |
 | `model_stage_policy` | no | `auto` (default), `copy`, or `hardlink`; materialize the model payload into the final bundle. |
 | `vc_partition` | no | VC partition for GPU validation; default and site requirement `<vc_default_partition>`. |
-| `vc_memory_gb` | no | VC memory request in GiB; default 32. The backend validates it against project and partition policy. |
+| `vc_memory_gb` | no | VC memory request in GiB; default 32. `<vc_default_partition>` caps each GPU at 32 GiB, so do not exceed it there. |
 | `vc_gpus` | no | VC GPU count; default 1. |
 | `image_version` | no | Explicit tag override for the site-resolved target repository. When omitted, query both resolved source and adapter repositories, find the highest `major.minor.patch` tag, and select the next unused patch version; an empty repository starts at `0.1.0`. |
 | `max_retries` | no | Default 3. |
@@ -140,8 +140,8 @@ Static analysis is evidence, not proof. Build the source image, create `executio
 Execution surfaces split by device:
 
 - `device=cpu`: the probe runs in local Docker without `--gpus`; `execution_surface=local_docker`.
-- `device=cuda` or GPU-capable `auto`: the gate pushes the source image to `trans_input_resolved.json.container_delivery.source_image` and submits the probe through `vc submit` on `<vc_default_partition>` under `execution.vc_project`; `execution_surface=vc` with `vc_partition`, `vc_job_id`, `vc_memory_gb`, `vc_gpus`, and `vc_submit_command` recorded.
-- `auto` with a model that does not require CUDA falls back to a local CPU probe only after the VC CUDA probe fails or times out; the fallback evidence is recorded in `fallback` and `execution_surface` stays `vc`. When `vc` is unavailable, the partition is outside `execution.vc_partitions`, or the backend rejects submission, the gate blocks with a clear repair instead of silently falling back.
+- `device=cuda` or GPU-capable `auto`: the gate pushes the source image to `trans_input_resolved.json.container_delivery.source_image` and submits the probe through `vc submit` on `<vc_default_partition>`; `execution_surface=vc` with `vc_partition`, `vc_job_id`, `vc_memory_gb`, `vc_gpus`, and `vc_submit_command` recorded.
+- `auto` with a model that does not require CUDA falls back to a local CPU probe only after the VC CUDA probe fails or times out; the fallback evidence is recorded in `fallback` and `execution_surface` stays `vc`. When `vc` is unavailable or the partition is not permitted, the gate blocks with a clear repair instead of silently falling back.
 
 For original and adapter smoke units, write the stage artifact with a real `run_command`. The original inference and adapter inference artifacts also need `input`, the staged fixture the command consumes (`staged_path` from `fixture_manifest.json`), and the MCP artifact needs `tool_name`, the tool the adapter exposes. The gate executes the command through `run_trans_validate.py`, captures stdout/stderr and exit status, and only then writes the matching pass field. A manually written `status=passed` is not sufficient. A required field the artifact omits blocks the unit and spends a retry before the command ever runs, so write them all in one go.
 
@@ -206,7 +206,7 @@ Automatic selection is advisory until the immutable push succeeds: another run c
 
 ## VC Execution
 
-`<vc_default_partition>`, `execution.vc_project`, and the source/target image repositories are policy values, not constants. Repositories are resolved from `network.container_registry` plus `container_delivery.repository_template` in `config/site.bundled.yaml` (or `config/site.local.yaml`) and persisted in `trans_input_resolved.json`. Read policy with `npm run sure:site-info`; never hardcode a deployment value in this skill.
+`<vc_default_partition>`, `execution.vc_project`, and the source/target image repositories are site policy values, not constants. Repositories are resolved from `network.container_registry` plus `container_delivery.repository_template` in `config/site.bundled.yaml` (or `config/site.local.yaml`) and persisted in `trans_input_resolved.json`. Read policy with `npm run sure:site-info`; never hardcode a site value in this skill.
 
 GPU-touching work never runs `docker run --gpus all` on the login node. Gates submit to `<vc_default_partition>` through `scripts/vc_exec.py`; the same CLI drives the unit 17 post-pull MCP smoke:
 
@@ -223,24 +223,22 @@ GPU-touching work never runs `docker run --gpus all` on the login node. Gates su
   --produces <run_dir>/artifacts/vc_logs/post_pull_smoke.json
 ```
 
-- This VC backend accepts `repo:tag` but not `repo@sha256:...` for job submission. Submit the tag and pass `--expect-digest`; `vc_exec.py` pulls the tag, reads back the manifest digest the registry serves for it, and refuses to submit when it is not the pinned one. It records `image_ref` and `resolved_digest`, which is what the registry gate checks against `target_image_digest`. Copy both into `docker_registry_result.json` under `post_pull_smoke`. Never hand a digest-pinned reference to `vc submit`, and never write `resolved_digest` by hand.
+- `vc submit` takes `repo:tag` only: it answers `镜像不存在` to every `repo@sha256:...` reference, however well that digest pulls with docker. Submit the tag and pass `--expect-digest`; `vc_exec.py` pulls the tag, reads back the manifest digest the registry serves for it, and refuses to submit when it is not the pinned one. It records `image_ref` and `resolved_digest`, which is what the registry gate checks against `target_image_digest`. Copy both into `docker_registry_result.json` under `post_pull_smoke`. Never hand a digest-pinned reference to `vc submit`, and never write `resolved_digest` by hand.
 - Defaults: 1 GPU, 32 GiB, 8 CPUs, 1800 s poll timeout. `vc_memory_gb` and `vc_gpus` from the slash command override the memory/GPU defaults; the partition defaults to `<vc_default_partition>`.
 - Every submitted job wraps its container command in `timeout --kill-after=15 <seconds>` (default 1200 s, `--command-timeout-seconds` on the CLI). A hung command is killed and still writes `exit_code` (124), so the submit host never waits for a file that will never appear; exit 124 surfaces a targeted repair.
 - Never submit a raw `vc submit` and then hand-roll `sleep`/`while` polling loops in bash. Re-running a job always goes through `scripts/vc_exec.py`, which polls the `exit_code` file internally and records `vc info --job` / `vc logs` diagnostics.
-- Mount preparation is deterministic: the gate creates missing bind-mount host sources as the submitting user before `vc submit` (a backend-created source may use a service identity that the job cannot write); a missing `:ro` source blocks, and an existing unwritable directory blocks with a repair telling the agent to recreate the empty scratch dir or point the mount at a user-owned path. Job-side `Permission denied` on an output mount surfaces the same repair.
-- `vc submit` receives the required project from `execution.vc_project`. The standalone CLI may override it explicitly with `--project`; omitted values always resolve from policy.
-- `execution.vc_partitions` is the deterministic pre-submit allowlist. Backend authorization, project validity, capacity, and admission policy remain authoritative in the `vc submit` result; do not infer them from `vc info -u`.
+- Mount preparation is deterministic: the gate creates missing bind-mount host sources as the submitting user before `vc submit` (the vc platform would otherwise create them as `nobody`, which the job uid cannot write); a missing `:ro` source blocks, and an existing unwritable directory blocks with a repair telling the agent to recreate the empty scratch dir or point the mount at a user-owned path. Job-side `Permission denied` on an output mount surfaces the same repair.
+- `vc submit` requires the quota project; the gates pass the `execution.vc_project` value from site policy automatically (override with `--project` on the CLI).
 - Job evidence lands under `artifacts/vc_logs/<stage>/`: `inner.sh`, `stdout.log`, `stderr.log`, `exit_code`, `vc_job.log`. Push logs live at `artifacts/vc_logs/source_push.log` and `adapter_push.log`.
 - The submit host polls the `exit_code` file written by the in-job wrapper; `vc info --job` and `vc logs` output is diagnostic evidence only.
 - Never submit real VC jobs outside this skill's gates or a `/sure_trans` run the user started.
 
 Memory sizing is enforced deterministically:
 
-- Before submitting a model-loading validation (original inference, load,
-  infer, contract, MCP, equivalence), the gate compares the payload size with
-  2x loading headroom against `vc_memory_gb` and reports the minimum required
-  request. Adjust `vc_gpus` only when the backend's scheduling policy requires
-  it for that memory request.
+- `<vc_default_partition>` caps 32 GiB RAM per GPU. Before submitting a model-loading
+  validation (original inference, load, infer, contract, MCP, equivalence), the
+  gate compares the payload size with 2x loading headroom against
+  `vc_memory_gb` and blocks with the exact fix (`vc_gpus=2 vc_memory_gb=64`).
 - When a job fails with exit 137 / `OOMKilled` / `std::bad_alloc` / `Killed`,
   the gate repairs with the RAM sizing fix. A `CUDA out of memory` failure is
   confirmed from a non-zero exit code plus the OOM evidence, in the job log or
@@ -281,9 +279,9 @@ Write a successful `verdict.json`, then run:
 "$HARNESS_PYTHON_BIN" scripts/finalize_trans_bundle.py --run-dir <run_dir>
 ```
 
-This seals the already-staged model payload, adapter, and small evidence under `sure/models/<model_name>/`. The sealed bundle matches the `/sure_onboard` product layout: wrapper set plus `Dockerfile.sure` at the bundle root, `fixture/<task>/` with `gt.jsonl`, and `artifacts/` carrying `package_gate.json` (`sure.onboard.package_gate.v2`), `artifact_manifest.json` (`sure.onboard.artifact_manifest.v1`), `runtime_inventory.json`, `verdict.json`, `docker_registry_result.json`, and `deployment_ready.json` (`sure.onboard.deployment_ready.v1`, written identically to the run directory). Ready bundles declare `integrity_profile=manifest-complete-v1`; the deployment hashes cover every required wrapper, fixture, evidence file, generated sample output, and staged payload file. The terminal gate re-verifies the payload manifest, terminal timeline, hashes, bundle identity, portable paths, Dockerfile hash, and digest-pinned execution policy.
+This seals the already-staged model payload, adapter, and small evidence under `sure/models/<model_name>/`. The sealed bundle matches the `/sure_onboard` product layout: wrapper set plus `Dockerfile.sure` at the bundle root, `fixture/<task>/` with `gt.jsonl`, and `artifacts/` carrying `package_gate.json` (`sure.onboard.package_gate.v2`), `artifact_manifest.json` (`sure.onboard.artifact_manifest.v1`), `runtime_inventory.json`, `verdict.json`, `docker_registry_result.json`, and `deployment_ready.json` (`sure.onboard.deployment_ready.v1`, written identically to the run directory). Ready bundles declare `integrity_profile=manifest-complete-v1` and `weights_integrity=bundled`; the deployment hashes cover every required wrapper, fixture, evidence file, generated sample output, and staged payload file. The terminal gate re-verifies the payload manifest, terminal timeline, hashes, bundle identity, portable paths, Dockerfile hash, and digest-pinned execution policy.
 
-The generated `validate.py` keeps the same CLI contract as `/sure_onboard`: `--stage import|load|infer|contract|all`, writing `<stage>_result.json` and, during infer, `sample_output.json` into `SURE_VALIDATE_ARTIFACTS_DIR`, then validating that sample against the filled `io_contract` in the contract stage — from the same directory. The adapter image embeds the locked Harness Runtime; `runtime_inventory.harness_runtime.required=true`, so `/sure_eval` uses the image binding and does not mount the repository Harness Runtime into the model container.
+The generated `validate.py` keeps the same CLI contract as `/sure_onboard`: `--stage import|load|infer|contract|all`, writing `<stage>_result.json` and, during infer, `sample_output.json` into `SURE_VALIDATE_ARTIFACTS_DIR`, then validating that sample against the filled `io_contract` in the contract stage — from the same directory. For `tts` and `vc`, the generated audio that `sample_output.audio_path` points at must be written below `$SURE_VALIDATE_ARTIFACTS_DIR/outputs`, because finalization only promotes generated audio from there into the bundle. The adapter image embeds the locked Harness Runtime; `runtime_inventory.harness_runtime.required=true`, so `/sure_eval` uses the image binding and does not mount the repository Harness Runtime into the model container.
 
 After completion, run evaluation locally or through VC without changing the model protocol:
 
@@ -325,9 +323,9 @@ what you recorded.
 - Block when the primary computation framework is not PyTorch.
 - Block when the adapter reloads a large model for every sample without explicit acceptance.
 - Block when MCP output differs from original inference on the fixture: the equivalence gate compares the two recorded output files itself and fails on a mismatch even when the command exited 0.
-- Block when the MCP gate has no `mcp_smoke.json` protocol evidence (initialize/tools/list/tools/call all passed with a non-empty task primary output); placeholder `run_command` values such as `/bin/true` or `print(...)` are rejected.
+- Block when the MCP gate has no `mcp_smoke.json` protocol evidence (initialize/tools/list/tools/call all passed with a non-empty task primary output; a `*_path` output must name a file the smoke can stat); placeholder `run_command` values such as `/bin/true` or `print(...)` are rejected.
 - Block when registry push, digest resolution, exact pull, or post-pull MCP validation fails.
-- Block when `vc submit` fails, the partition is outside the configured allowlist, the GPU probe cannot complete, or the post-pull smoke does not exit 0.
+- Block when `vc submit` fails, the partition is not permitted, the GPU probe cannot complete, or the post-pull smoke does not exit 0.
 - Block when the model payload exceeds the RAM budget (2x headroom) of `vc_memory_gb`; raise `vc_gpus`/`vc_memory_gb` instead of trimming validation.
 - Stop after `max_retries` changed-artifact failures; unchanged artifacts do not consume another retry.
 - `extract_lessons` is the one unit that never stops the run: `check_memory_extraction.py` checks the declaration and every candidate directory (shape, evidence paths, triggers, duplicates, digest sha), and after two consecutive failures the hook advances by itself and records `extraction: failed`. Changing a candidate re-runs that gate even when `extraction_declaration.json` did not change.

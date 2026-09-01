@@ -29,6 +29,12 @@ STAGE_RESULTS = {
     "infer_result.json": "infer_passed",
     "contract_result.json": "contract_passed",
 }
+LOCAL_EVIDENCE_CHECKS = (
+    "build_env_result.json",
+    "env_compat_result.json",
+    *STAGE_RESULTS,
+    "sample_output.json",
+)
 CORE_FILES = ("model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml")
 GENERATED_TERMINAL_PATHS = {
     "artifacts/package_gate.json",
@@ -69,20 +75,38 @@ def model_manifest(model_dir: Path) -> dict[str, Any]:
     return manifest
 
 
-def validate_local_evidence(run_dir: Path, model_dir: Path) -> None:
+def validate_local_evidence(run_dir: Path, model_dir: Path) -> dict[str, bool]:
+    """Check every staged local evidence file and report what was actually seen.
+
+    The caller derives readiness from the returned map, so a check that never
+    ran is missing from it rather than silently counting as a pass.
+    """
+    observed: dict[str, bool] = {}
     build_env = load_model_artifact(model_dir, "build_env_result.json")
     if build_env.get("env_ready") is not True:
         raise ValueError("build_env_result.json must prove env_ready=true")
+    observed["build_env_result.json"] = True
     env_compat = load_model_artifact(model_dir, "env_compat_result.json")
     if env_compat.get("compat_ok") is not True:
         raise ValueError("env_compat_result.json must prove compat_ok=true")
+    observed["env_compat_result.json"] = True
     for filename, pass_key in STAGE_RESULTS.items():
         result = load_model_artifact(model_dir, filename)
         if result.get(pass_key) is not True:
             raise ValueError(f"{filename} must prove {pass_key}=true")
+        observed[filename] = True
     sample = load_model_artifact(model_dir, "sample_output.json")
     if not sample:
         raise ValueError("sample_output.json must contain a non-empty JSON object")
+    observed["sample_output.json"] = True
+    return observed
+
+
+def local_readiness(observed: dict[str, bool]) -> bool:
+    missing = [name for name in LOCAL_EVIDENCE_CHECKS if name not in observed]
+    if missing:
+        raise ValueError("local evidence was not fully checked: " + ", ".join(missing))
+    return all(observed[name] for name in LOCAL_EVIDENCE_CHECKS)
 
 
 def validate_local_container(build: dict[str, Any], validation: dict[str, Any]) -> tuple[str, str, str]:
@@ -112,7 +136,7 @@ def build_package_gate(run_dir: Path, model_dir: Path) -> dict[str, Any]:
     missing_core = [name for name in CORE_FILES if not (model_dir / name).is_file()]
     if missing_core:
         raise ValueError("model bundle is missing core files: " + ", ".join(missing_core))
-    validate_local_evidence(run_dir, model_dir)
+    local_ready = local_readiness(validate_local_evidence(run_dir, model_dir))
 
     deployment_type = str(resolved.get("deployment_type") or "local")
     profile = str(resolved.get("package_profile") or "none")
@@ -171,12 +195,15 @@ def build_package_gate(run_dir: Path, model_dir: Path) -> dict[str, Any]:
             if runtime_manifest.get(key) is not None
         }
 
-    bundle_ready = deployment_type == "api" or (
-        deployment_type == "local"
-        and (profile == "none" or (profile == "docker-registry" and registry_ready))
+    bundle_ready = local_ready and (
+        deployment_type == "api"
+        or (
+            deployment_type == "local"
+            and (profile == "none" or (profile == "docker-registry" and registry_ready))
+        )
     )
     readiness = {
-        "local_ready": True,
+        "local_ready": local_ready,
         "container_ready": container_ready,
         "docker_ready": docker_ready,
         "registry_ready": registry_ready,
@@ -186,12 +213,12 @@ def build_package_gate(run_dir: Path, model_dir: Path) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema": "sure.onboard.package_gate.v2",
         "generated_at": timestamp_after(("artifact_manifest.json", manifest)),
-        "status": "passed",
+        "status": "passed" if local_ready else "failed",
         "package_profile": profile,
         "model_dir": ".",
         "artifact_manifest_path": "artifacts/artifact_manifest.json",
         "readiness": readiness,
-        "local": {"validation_passed": True, "artifacts_complete": True},
+        "local": {"validation_passed": local_ready, "artifacts_complete": True},
         "bundle": {},
         "notes": "Generated from validated onboard artifacts by write_package_gate.py.",
     }

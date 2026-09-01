@@ -97,27 +97,39 @@ def image_carries_runtime(data: dict, harness: dict[str, str]) -> bool:
     )
 
 
+def probe_source_python(reference: str, executable: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--entrypoint",
+            executable,
+            reference,
+            "-c",
+            "import sys; print(sys.executable)",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
 def container_python_executable(reference: str) -> str:
     """Resolve the Python that the source image actually executes from PATH."""
     if not reference:
         raise ValueError("source image has no usable image reference")
     try:
-        probe = subprocess.run(
-            [
-                "docker",
-                "run",
-                "--rm",
-                "--entrypoint",
-                "python",
-                reference,
-                "-c",
-                "import sys; print(sys.executable)",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        probe = probe_source_python(reference, "python")
+        # An image that ships only python3 has no python on PATH; docker
+        # reports that as exit 127 before the interpreter ever runs.
+        if probe.returncode == 127 or "executable file not found" in probe.stderr.lower():
+            probe = probe_source_python(reference, "python3")
+    except FileNotFoundError as error:
+        raise ValueError(
+            f"docker is required to probe the source image Python but is not available: {error}"
+        ) from error
     except (OSError, subprocess.SubprocessError) as error:
         raise ValueError(f"cannot probe Python in source image {reference}: {error}") from error
     lines = [line.strip() for line in probe.stdout.splitlines() if line.strip()]

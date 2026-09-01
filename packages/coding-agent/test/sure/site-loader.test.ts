@@ -142,16 +142,16 @@ describe("validateSitePolicy container_delivery", () => {
 		const result = validateSitePolicy(
 			policy({
 				network: { container_registry: "registry.example" },
-				container_delivery: { repository_template: "{registry}/example-org/sure-{task}-{model_name}" },
+				container_delivery: { repository_template: "{registry}/my-org/sure-{task}-{model_name}" },
 			}),
 		);
-		expect(result.container_delivery?.repository_template).toBe("{registry}/example-org/sure-{task}-{model_name}");
+		expect(result.container_delivery?.repository_template).toBe("{registry}/my-org/sure-{task}-{model_name}");
 	});
 
 	it("requires a configured registry", () => {
 		expect(() =>
 			validateSitePolicy(
-				policy({ container_delivery: { repository_template: "{registry}/example-org/sure-{model_name}" } }),
+				policy({ container_delivery: { repository_template: "{registry}/my-org/sure-{model_name}" } }),
 			),
 		).toThrow(/network\.container_registry/);
 	});

@@ -172,6 +172,9 @@ function seedLocalReadyArtifacts(runDir: string): string {
 
 	const manifest = {
 		model_dir: modelDir,
+		// The gates order package_gate.json, runtime_inventory.json and verdict.json
+		// after this manifest, so every fixture stamp below counts up from here.
+		generated_at: "2026-01-01T00:00:01+00:00",
 		artifacts: {
 			required: {
 				spec: { path: "model.spec.yaml" },
@@ -1178,6 +1181,7 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 
 		const manifest = {
 			model_dir: modelDir,
+			generated_at: "2026-01-01T00:00:01+00:00",
 			instance_id: "rednote-hilab__dots.tts-base-replay",
 			model_id: resolved.model_id,
 			model_name: resolved.model_name,
@@ -1215,6 +1219,9 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 
 		writeArtifact(runDir, "package_gate.json", {
 			schema: "sure.onboard.package_gate.v2",
+			// Later than the manifest above; write_runtime_inventory.py then stamps the
+			// inventory after this gate, so this one has to stay in the past.
+			generated_at: "2026-01-01T00:00:02+00:00",
 			status: "passed",
 			package_profile: "none",
 			model_dir: modelDir,
@@ -1256,10 +1263,14 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			{ cwd, encoding: "utf-8", env: { ...process.env, SURE_SITE_POLICY: sitePolicy } },
 		);
 		expect(inventory.status, inventory.stderr || inventory.stdout).toBe(0);
+		const inventoryDoc = JSON.parse(readFileSync(join(runDir, "artifacts", "runtime_inventory.json"), "utf-8"));
 		advance("verdict");
 
 		writeArtifact(runDir, "verdict.json", {
 			status: "passed",
+			// The inventory was stamped by the writer script just now, so the verdict has
+			// to be dated from it rather than from a fixed fixture stamp in the past.
+			timestamp: new Date(Date.parse(inventoryDoc.generated_at) + 1_000).toISOString(),
 			model_id: resolved.model_id,
 			model_name: resolved.model_name,
 			package: { profile: "none" },
@@ -2628,6 +2639,7 @@ describe("sure_onboard new alignment gates", () => {
 		});
 		writeArtifact(runDir, "package_gate.json", {
 			schema: "sure.onboard.package_gate.v2",
+			generated_at: "2026-01-01T00:00:02+00:00",
 			status: "passed",
 			package_profile: "none",
 			model_dir: modelDir,
@@ -2829,6 +2841,26 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 		expect(existsSync(join(targetDir, ".venv"))).toBe(false);
 		expect(existsSync(join(targetDir, "artifacts", "package_gate.json"))).toBe(true);
 
+		// The adoption stamps its manifest and its verdict from the wall clock but leaves
+		// the package gate unstamped, and it writes no runtime inventory at all. Pin the
+		// first two documents into the past and stage the inventory the verdict gate reads,
+		// so the gates below judge the adoption itself and not the missing stamps.
+		const adoptedArtifacts = join(targetDir, "artifacts");
+		const adoptedManifestPath = join(adoptedArtifacts, "artifact_manifest.json");
+		const adoptedGatePath = join(adoptedArtifacts, "package_gate.json");
+		writeJson(adoptedManifestPath, {
+			...JSON.parse(readFileSync(adoptedManifestPath, "utf-8")),
+			timestamp: "2026-01-01T00:00:01+00:00",
+		});
+		writeJson(adoptedGatePath, {
+			...JSON.parse(readFileSync(adoptedGatePath, "utf-8")),
+			generated_at: "2026-01-01T00:00:02+00:00",
+		});
+		writeJson(join(adoptedArtifacts, "runtime_inventory.json"), {
+			schema: "sure.onboard.runtime_inventory.v2",
+			generated_at: "2026-01-01T00:00:03+00:00",
+		});
+
 		for (const [script, artifact] of [
 			["check_artifact_manifest.py", "artifact_manifest.json"],
 			["check_verdict.py", "verdict.json"],
@@ -3025,6 +3057,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 		});
 		writeArtifact(runDir, "package_gate.json", {
 			schema: "sure.onboard.package_gate.v2",
+			generated_at: "2026-01-01T00:00:02+00:00",
 			status: "passed",
 			package_profile: "docker-local",
 			model_dir: modelDir,
@@ -3038,8 +3071,14 @@ describe("sure_onboard verdict structure compatibility", () => {
 				vc_ready: null,
 			},
 		});
+		// The verdict gate reads the inventory the preceding unit leaves in the run.
+		writeArtifact(runDir, "runtime_inventory.json", {
+			schema: "sure.onboard.runtime_inventory.v2",
+			generated_at: "2026-01-01T00:00:03+00:00",
+		});
 		writeArtifact(runDir, "verdict.json", {
 			status: "passed",
+			timestamp: "2026-01-01T00:00:04+00:00",
 			package: { profile: "docker-local" },
 			readiness: {
 				local_ready: true,
@@ -3092,6 +3131,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 		}
 		writeJson(join(artifactsDir, "package_gate.json"), {
 			schema: "sure.onboard.package_gate.v2",
+			generated_at: "2026-01-01T00:00:02+00:00",
 			status: "passed",
 			package_profile: "none",
 			model_dir: "sure/models/verdict-model",
@@ -3104,9 +3144,14 @@ describe("sure_onboard verdict structure compatibility", () => {
 				bundle_ready: true,
 			},
 		});
+		writeJson(join(artifactsDir, "runtime_inventory.json"), {
+			schema: "sure.onboard.runtime_inventory.v2",
+			generated_at: "2026-01-01T00:00:03+00:00",
+		});
 		const produces = join(artifactsDir, "verdict.json");
 		writeJson(produces, {
 			status: "passed",
+			timestamp: "2026-01-01T00:00:04+00:00",
 			package: { profile: "none" },
 			readiness: { local_ready: true, docker_ready: false, registry_ready: false },
 			build: { success: true },
@@ -3163,6 +3208,7 @@ describe("sure_onboard verdict structure compatibility", () => {
 		});
 		writeArtifact(runDir, "package_gate.json", {
 			schema: "sure.onboard.package_gate.v2",
+			generated_at: "2026-01-01T00:00:02+00:00",
 			status: "passed",
 			package_profile: "none",
 			model_dir: modelDir,
@@ -3176,8 +3222,14 @@ describe("sure_onboard verdict structure compatibility", () => {
 				vc_ready: null,
 			},
 		});
+		// The verdict gate reads the inventory the preceding unit leaves in the run.
+		writeArtifact(runDir, "runtime_inventory.json", {
+			schema: "sure.onboard.runtime_inventory.v2",
+			generated_at: "2026-01-01T00:00:03+00:00",
+		});
 		writeArtifact(runDir, "verdict.json", {
 			status: "passed",
+			timestamp: "2026-01-01T00:00:04+00:00",
 			package: { profile: "none" },
 			readiness: {
 				local_ready: true,

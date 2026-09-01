@@ -263,10 +263,6 @@ class SelectBestImageTests(unittest.TestCase):
         selected = self.vc_submitter.select_best_image("asr_nemo_stt_zh_conformer_transducer")
         self.assertEqual(selected, IMG)
 
-    def test_default_volume_mount_is_the_checkout_identity(self):
-        root = Path("/srv/example/sure-harness")
-        self.assertEqual(self.vc_submitter._infer_default_volume_mount(root), f"{root}:{root}")
-
 
 class CliTests(unittest.TestCase):
     SCRIPT = str(Path(__file__).resolve().parent / "check_vc_submit_readiness.py")

@@ -226,7 +226,6 @@ def stage_fixture(run_dir: Path, model_dir: Path, resolved: dict) -> None:
     annotation_source = dict(fixture_manifest["annotation_source"])
     annotation_source["staged_path"] = str(expected_destination)
     annotation_source["bundled_path"] = str(expected_destination)
-    gt_jsonl = fixture_dir / "gt.jsonl"
     finalized_manifest = {
         **fixture_manifest,
         "model_id": resolved["model_name"],
@@ -404,7 +403,7 @@ def write_package_gate(run_dir: Path, model_dir: Path, registry: dict) -> dict:
     return package
 
 
-def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict, *, status: str) -> dict:
+def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict) -> dict:
     required = {
         name.replace(".", "_").replace("-", "_"): {
             "path": name,
@@ -465,8 +464,8 @@ def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict, *, s
         "model_dir": ".",
         "model_id": resolved["model_name"],
         "model_name": resolved["model_name"],
-        "phase": "deployment_ready" if status == "finalized" else "local_onboard",
-        "status": status,
+        "phase": "deployment_ready",
+        "status": "finalized",
         "generated_at": now_iso(),
         "timestamp": now_iso(),
         "artifacts": {"required": required, "conditional": {}, "optional": {}},
@@ -477,31 +476,6 @@ def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict, *, s
     write_identical(path, content)
     write_identical(run_dir / "artifacts" / "artifact_manifest.json", content)
     return manifest
-
-
-def regenerate_terminal_evidence(run_dir: Path) -> None:
-    scripts = Path(__file__).resolve().parent
-    prior_inventory = read_object(run_dir / "artifacts" / "runtime_inventory.json")
-    container = prior_inventory.get("container_runtime") if isinstance(prior_inventory.get("container_runtime"), dict) else {}
-    inventory_command = [
-        sys.executable,
-        str(scripts / "write_runtime_inventory.py"),
-        "--run-dir",
-        str(run_dir),
-        "--gpu-required" if container.get("gpu_required") is True else "--no-gpu-required",
-    ]
-    commands = [
-        [sys.executable, str(scripts / "check_artifact.py"), "--run-dir", str(run_dir), "--produces", str(run_dir / "artifacts" / "model_payload_manifest.json"), "--kind", "model_payload"],
-        inventory_command,
-        [sys.executable, str(scripts / "check_artifact.py"), "--run-dir", str(run_dir), "--produces", str(run_dir / "artifacts" / "runtime_inventory.json"), "--kind", "runtime_inventory"],
-        [sys.executable, str(scripts / "write_verdict.py"), "--run-dir", str(run_dir)],
-        [sys.executable, str(scripts / "check_artifact.py"), "--run-dir", str(run_dir), "--produces", str(run_dir / "artifacts" / "verdict.json"), "--kind", "verdict"],
-    ]
-    for command in commands:
-        completed = subprocess.run(command, check=False, capture_output=True, text=True)
-        if completed.returncode != 0:
-            detail = completed.stderr.strip() or completed.stdout.strip()
-            raise ValueError(f"terminal evidence regeneration failed: {detail}")
 
 
 def finalized_hashes(model_dir: Path) -> dict[str, str]:
@@ -526,6 +500,38 @@ def finalized_hashes(model_dir: Path) -> dict[str, str]:
     return hashes
 
 
+def regenerate_terminal_evidence(run_dir: Path) -> None:
+    """Rewrite the inventory and verdict so the terminal timeline is ordered.
+
+    The bundle they describe is only complete once the wrapper, fixture and
+    payload are staged, so evidence written before that has an earlier
+    timestamp than the manifest it is supposed to follow. Rerun the writers
+    and their gates on the sealed bundle instead of trusting the run copies.
+    """
+    scripts = Path(__file__).resolve().parent
+    prior_inventory = read_object(run_dir / "artifacts" / "runtime_inventory.json")
+    container = prior_inventory.get("container_runtime") if isinstance(prior_inventory.get("container_runtime"), dict) else {}
+    inventory_command = [
+        sys.executable,
+        str(scripts / "write_runtime_inventory.py"),
+        "--run-dir",
+        str(run_dir),
+        "--gpu-required" if container.get("gpu_required") is True else "--no-gpu-required",
+    ]
+    commands = [
+        [sys.executable, str(scripts / "check_artifact.py"), "--run-dir", str(run_dir), "--produces", str(run_dir / "artifacts" / "model_payload_manifest.json"), "--kind", "model_payload"],
+        inventory_command,
+        [sys.executable, str(scripts / "check_artifact.py"), "--run-dir", str(run_dir), "--produces", str(run_dir / "artifacts" / "runtime_inventory.json"), "--kind", "runtime_inventory"],
+        [sys.executable, str(scripts / "write_verdict.py"), "--run-dir", str(run_dir)],
+        [sys.executable, str(scripts / "check_artifact.py"), "--run-dir", str(run_dir), "--produces", str(run_dir / "artifacts" / "verdict.json"), "--kind", "verdict"],
+    ]
+    for command in commands:
+        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise ValueError(f"terminal evidence regeneration failed: {detail}")
+
+
 def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict, registry: dict, package: dict) -> dict:
     inventory = read_object(model_dir / "artifacts" / "runtime_inventory.json")
     verdict = read_object(model_dir / "artifacts" / "verdict.json")
@@ -543,6 +549,9 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict, regis
     deployment = {
         "schema": "sure.onboard.deployment_ready.v1",
         "integrity_profile": "manifest-complete-v1",
+        # A trans payload is always copied into the bundle, so every weight
+        # file is covered by required_artifact_sha256.
+        "weights_integrity": "bundled",
         "generated_at": now_iso(),
         "status": "ready",
         "model_name": str(resolved["model_name"]),
@@ -644,7 +653,7 @@ def main() -> int:
     stage_fixture(run_dir, model_dir, resolved)
     promote_sample_output(run_dir)
     stage_artifacts(run_dir, model_dir)
-    write_artifact_manifest(run_dir, model_dir, resolved, status="finalized")
+    write_artifact_manifest(run_dir, model_dir, resolved)
     package = write_package_gate(run_dir, model_dir, registry)
     regenerate_terminal_evidence(run_dir)
     stage_artifacts(run_dir, model_dir)

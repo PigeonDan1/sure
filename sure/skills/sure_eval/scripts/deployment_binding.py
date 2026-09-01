@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -250,6 +251,10 @@ def _normalize_harness_runtime(binding: dict[str, Any]) -> dict[str, Any]:
 
 
 TERMINAL_VERDICT_STATUSES = {"success", "passed", "pass"}
+# Bundles sealed from this instant on must say which integrity profile they carry;
+# omitting the field used to silently select the weaker legacy check.
+INTEGRITY_PROFILE_REQUIRED_FROM = datetime(2026, 9, 1, tzinfo=timezone.utc)
+WEIGHTS_INTEGRITY_MODES = {"bundled", "external"}
 CORE_BUNDLE_FILES = {
     "model.spec.yaml",
     "model.py",
@@ -294,7 +299,13 @@ def _mandatory_integrity_paths(
     package: dict[str, Any],
     declared_hashes: dict[str, Any],
     profile: str,
+    weights_integrity: object,
 ) -> set[str]:
+    weights_integrity = str(weights_integrity or "bundled")
+    _require(
+        weights_integrity in WEIGHTS_INTEGRITY_MODES,
+        f"unsupported deployment weights_integrity: {weights_integrity!r}",
+    )
     required = {*CORE_BUNDLE_FILES, *COMMON_MANDATORY_SIDECARS}
     for relative in COMMON_MANDATORY_SIDECARS:
         _require((model_dir / relative).is_file(), f"mandatory deployment sidecar is missing: {relative}")
@@ -385,30 +396,33 @@ def _mandatory_integrity_paths(
     weights_manifest_path = model_dir / "artifacts" / "weights_manifest.json"
     if weights_manifest_path.is_file():
         required.add("artifacts/weights_manifest.json")
-        weights = _read_json(model_dir, "artifacts/weights_manifest.json")
-        local_dir_name = str(weights.get("local_dir_name") or "")
-        if not local_dir_name:
-            for key in ("checkpoint_root", "resolved_local_model_path"):
-                candidate_value = str(weights.get(key) or "")
-                if not candidate_value:
-                    continue
-                candidate = Path(candidate_value).expanduser().resolve()
-                if _is_relative_to(candidate, model_dir.resolve()):
-                    local_dir_name = candidate.relative_to(model_dir.resolve()).as_posix()
-                    break
-        _require(
-            bool(local_dir_name) or weights.get("required") is not True,
-            "required weights manifest has no model-local weight root",
-        )
-        if local_dir_name:
-            weights_root = (model_dir / _portable_relative(local_dir_name, "weights local_dir_name")).resolve()
-            if weights_root.is_file():
-                _require(not (model_dir / local_dir_name).is_symlink(), "weights file must not be a symlink")
-                weight_files = {weights_root.relative_to(model_dir.resolve()).as_posix()}
-            else:
-                weight_files = _bundle_files(weights_root, model_dir, "weights")
-            _require(weight_files or weights.get("required") is not True, "required weights root is empty")
-            required.update(weight_files)
+        # Weights declared external are held outside the bundle on purpose, so the
+        # bundle carries the manifest that describes them but not the payload.
+        if weights_integrity == "bundled":
+            weights = _read_json(model_dir, "artifacts/weights_manifest.json")
+            local_dir_name = str(weights.get("local_dir_name") or "")
+            if not local_dir_name:
+                for key in ("checkpoint_root", "resolved_local_model_path"):
+                    candidate_value = str(weights.get(key) or "")
+                    if not candidate_value:
+                        continue
+                    candidate = Path(candidate_value).expanduser().resolve()
+                    if _is_relative_to(candidate, model_dir.resolve()):
+                        local_dir_name = candidate.relative_to(model_dir.resolve()).as_posix()
+                        break
+            _require(
+                bool(local_dir_name) or weights.get("required") is not True,
+                "required weights manifest has no model-local weight root",
+            )
+            if local_dir_name:
+                weights_root = (model_dir / _portable_relative(local_dir_name, "weights local_dir_name")).resolve()
+                if weights_root.is_file():
+                    _require(not (model_dir / local_dir_name).is_symlink(), "weights file must not be a symlink")
+                    weight_files = {weights_root.relative_to(model_dir.resolve()).as_posix()}
+                else:
+                    weight_files = _bundle_files(weights_root, model_dir, "weights")
+                _require(weight_files or weights.get("required") is not True, "required weights root is empty")
+                required.update(weight_files)
     return required
 
 
@@ -435,7 +449,9 @@ def _validate_complete_manifest(
             has_deployment_self_entry = True
         else:
             manifest_paths.add(relative.as_posix())
-    mandatory_paths = _mandatory_integrity_paths(model_dir, package, declared_hashes, profile)
+    mandatory_paths = _mandatory_integrity_paths(
+        model_dir, package, declared_hashes, profile, marker.get("weights_integrity")
+    )
     _require(
         has_deployment_self_entry,
         "artifact_manifest must declare artifacts/deployment_ready.json as its terminal self-entry",
@@ -449,6 +465,31 @@ def _validate_complete_manifest(
         "deployment_ready hashes must cover exactly every finalized artifact_manifest required file except deployment_ready.json",
     )
     return manifest
+
+
+def _require_declared_integrity_profile(marker: dict[str, Any]) -> None:
+    """Deny the legacy fallback to bundles young enough to have declared a profile."""
+    if marker.get("integrity_profile") is not None:
+        return
+    raw = marker.get("generated_at") or marker.get("timestamp")
+    # Both deployment_ready schemas make generated_at mandatory, so a marker with
+    # no readable seal date at all is not an old bundle, it is a marker that
+    # dropped the one field the cutoff is read from.
+    _require(
+        raw is not None,
+        "deployment_ready without a seal timestamp must declare integrity_profile",
+    )
+    try:
+        sealed_at = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError as error:
+        raise DeploymentBindingError(f"deployment_ready timestamp is unreadable: {raw!r} ({error})") from error
+    if sealed_at.tzinfo is None:
+        sealed_at = sealed_at.replace(tzinfo=timezone.utc)
+    _require(
+        sealed_at < INTEGRITY_PROFILE_REQUIRED_FROM,
+        "deployment_ready sealed on or after "
+        f"{INTEGRITY_PROFILE_REQUIRED_FROM.isoformat()} must declare integrity_profile",
+    )
 
 
 def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
@@ -473,6 +514,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     marker = _read_json(model_dir, "artifacts/deployment_ready.json")
     inventory = _read_json(model_dir, "artifacts/runtime_inventory.json")
     package = _read_json(model_dir, "artifacts/package_gate.json")
+    _require_declared_integrity_profile(marker)
 
     if marker.get("package_profile") == "none":
         _require(marker.get("schema") == DEPLOYMENT_READY_V2, "unsupported Python deployment_ready schema")
@@ -620,6 +662,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
             package,
             declared_hashes,
             "docker-registry",
+            marker.get("weights_integrity"),
         )
         _require(
             has_deployment_self_entry,

@@ -9,11 +9,18 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
+import write_package_gate as write_package_gate_module
 from deployment_contract import document_timestamp, resolve_model_dir
-from finalize_model_bundle import ensure_safe_bundle_targets, finalize
-from write_package_gate import write_package_gate
+from finalize_model_bundle import (
+    ensure_safe_bundle_targets,
+    finalize,
+    resolve_weights_root,
+    weights_integrity,
+)
+from write_package_gate import build_package_gate, write_package_gate
 from write_runtime_inventory import write_inventory
 from write_verdict import write_verdict
 
@@ -204,22 +211,6 @@ class DockerDeliveryContractTests(unittest.TestCase):
         env["SURE_HARNESS_LOCK_SHA256"] = "c" * 64
         return env
 
-    def test_finalizer_rejects_a_symlinked_model_artifacts_directory(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            model_dir = root / "sure" / "models" / "demo"
-            outside = root / "outside"
-            model_dir.mkdir(parents=True)
-            outside.mkdir()
-            sentinel = outside / "keep.json"
-            sentinel.write_text("keep\n", encoding="utf-8")
-            (model_dir / "artifacts").symlink_to(outside, target_is_directory=True)
-
-            with self.assertRaises(ValueError):
-                ensure_safe_bundle_targets(model_dir, {"model_dir": str(model_dir)})
-
-            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep\n")
-
     def test_shared_model_resolver_accepts_trans_input(self) -> None:
         (self.run_artifacts / "model_input_resolved.json").unlink()
         write_json(self.run_artifacts / "trans_input_resolved.json", self.resolved)
@@ -366,30 +357,95 @@ class DockerDeliveryContractTests(unittest.TestCase):
 
         self.validation["harness_runtime"]["runtime_root"] = "/opt/sure-harness/other"
         write_json(self.run_artifacts / "docker_validation.json", self.validation)
+        write_json(self.model_artifacts / "docker_validation.json", self.validation)
         with self.assertRaisesRegex(ValueError, "manifest_path"):
             finalize(self.run_dir, output)
 
-    def test_package_writer_uses_staged_model_evidence_instead_of_mutated_run_copy(self) -> None:
+    def test_package_gate_rejects_evidence_without_a_timestamp(self) -> None:
+        produces = self.run_artifacts / "package_gate.json"
+        write_json(
+            produces,
+            {
+                "schema": "sure.onboard.package_gate.v2",
+                "status": "passed",
+                "package_profile": "docker-registry",
+                "model_dir": ".",
+                "artifact_manifest_path": "artifacts/artifact_manifest.json",
+                "readiness": {
+                    "local_ready": True,
+                    "container_ready": True,
+                    "docker_ready": True,
+                    "registry_ready": True,
+                    "bundle_ready": True,
+                },
+            },
+        )
+
+        proc = self.run_script("check_package_gate.py", produces)
+
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("package_gate.json must declare generated_at or timestamp", proc.stderr)
+
+    def test_runtime_inventory_gate_rejects_evidence_without_a_timestamp(self) -> None:
+        write_json(
+            self.model_artifacts / "package_gate.json",
+            {"status": "passed", "generated_at": "2026-01-01T00:00:01+00:00"},
+        )
+        produces = self.run_artifacts / "runtime_inventory.json"
+        write_json(produces, {"schema": "sure.onboard.runtime_inventory.v2", "status": "ready"})
+        shutil.copy2(produces, self.model_artifacts / "runtime_inventory.json")
+
+        proc = self.run_script("check_runtime_inventory.py", produces)
+
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("runtime_inventory.json must declare generated_at or timestamp", proc.stderr)
+
+    def test_verdict_gate_rejects_evidence_without_a_timestamp(self) -> None:
         write_json(
             self.run_artifacts / "package_gate.json",
             {
                 "schema": "sure.onboard.package_gate.v2",
                 "status": "passed",
-                "generated_at": "2099-01-01T00:00:00+00:00",
+                "generated_at": "2026-01-01T00:00:01+00:00",
+                "package_profile": "docker-registry",
+                "readiness": {"local_ready": True, "bundle_ready": True},
             },
         )
         write_json(
-            self.run_artifacts / "infer_result.json",
-            {"infer_passed": False, "duration_ms": 1.0, "error": "real failure"},
+            self.run_artifacts / "runtime_inventory.json",
+            {"schema": "sure.onboard.runtime_inventory.v2", "generated_at": "2026-01-01T00:00:02+00:00"},
         )
-        package = write_package_gate(
-            self.run_dir,
-            self.run_artifacts / "package_gate.json",
-            self.model_dir,
+        produces = self.run_artifacts / "verdict.json"
+        write_json(
+            produces,
+            {
+                "status": "passed",
+                "phase": "verdict",
+                "instance_id": "demo__asr-onboard",
+                "package": {"profile": "docker-registry"},
+            },
         )
 
-        self.assertEqual(package["status"], "passed")
-        self.assertTrue(read_json(self.model_artifacts / "infer_result.json")["infer_passed"])
+        proc = self.run_script("check_verdict.py", produces)
+
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("verdict.json must declare generated_at or timestamp", proc.stderr)
+
+    def test_finalizer_rejects_a_symlinked_model_artifacts_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            model_dir = root / "sure" / "models" / "demo"
+            outside = root / "outside"
+            model_dir.mkdir(parents=True)
+            outside.mkdir()
+            sentinel = outside / "keep.json"
+            sentinel.write_text("keep\n", encoding="utf-8")
+            (model_dir / "artifacts").symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaises(ValueError):
+                ensure_safe_bundle_targets(model_dir, {"model_dir": str(model_dir)})
+
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep\n")
 
     def test_finalized_gate_rejects_deployment_not_later_than_verdict(self) -> None:
         output = self.run_artifacts / "deployment_ready.json"
@@ -420,6 +476,26 @@ class DockerDeliveryContractTests(unittest.TestCase):
         deployment = finalize(self.run_dir, self.run_artifacts / "deployment_ready.json")
 
         self.assertIn("checkpoints/demo/weights.bin", deployment["required_artifact_sha256"])
+        self.assertEqual(deployment["weights_integrity"], "bundled")
+
+    def test_required_weights_declared_external_stay_out_of_the_bundle_identity(self) -> None:
+        weights = {
+            "required": True,
+            "weights_ready": True,
+            "status": "fetched",
+            "local_dir_name": "checkpoints",
+            "fallback_to_host_global": True,
+            "fallback_reason": "weights live in the shared ModelScope cache",
+        }
+        write_json(self.run_artifacts / "weights_manifest.json", weights)
+        write_json(self.model_artifacts / "weights_manifest.json", weights)
+
+        deployment = finalize(self.run_dir, self.run_artifacts / "deployment_ready.json")
+
+        self.assertEqual(deployment["weights_integrity"], "external")
+        self.assertFalse(
+            [path for path in deployment["required_artifact_sha256"] if path.startswith("checkpoints/")]
+        )
 
     def test_required_weights_without_model_local_root_block_finalize(self) -> None:
         weights = {"required": True, "weights_ready": True, "status": "fetched"}
@@ -428,6 +504,61 @@ class DockerDeliveryContractTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "required weights have no model-local root"):
             finalize(self.run_dir, self.run_artifacts / "deployment_ready.json")
+
+    def test_model_local_weights_root_is_bundled(self) -> None:
+        checkpoint_root = self.model_dir / "checkpoints" / "demo"
+        checkpoint_root.mkdir(parents=True)
+        (checkpoint_root / "weights.bin").write_bytes(b"weights")
+        weights = {"required": True, "checkpoint_root": str(checkpoint_root)}
+
+        self.assertEqual(resolve_weights_root(self.model_dir, weights), checkpoint_root.resolve())
+        self.assertEqual(weights_integrity(self.model_dir, weights), "bundled")
+
+    def test_weights_outside_the_bundle_are_external_when_the_manifest_says_so(self) -> None:
+        weights = {
+            "required": True,
+            "local_dir_name": "checkpoints",
+            "fallback_to_host_global": True,
+            "fallback_reason": "weights live in the shared ModelScope cache",
+        }
+
+        self.assertIsNone(resolve_weights_root(self.model_dir, weights))
+        self.assertEqual(weights_integrity(self.model_dir, weights), "external")
+
+    def test_required_weights_without_a_root_or_a_fallback_are_rejected(self) -> None:
+        weights = {"required": True, "weights_ready": True, "status": "fetched"}
+
+        with self.assertRaisesRegex(ValueError, "required weights have no model-local root"):
+            resolve_weights_root(self.model_dir, weights)
+
+    def test_package_writer_uses_staged_model_evidence_instead_of_mutated_run_copy(self) -> None:
+        write_json(
+            self.run_artifacts / "package_gate.json",
+            {
+                "schema": "sure.onboard.package_gate.v2",
+                "status": "passed",
+                "generated_at": "2099-01-01T00:00:00+00:00",
+            },
+        )
+        write_json(
+            self.run_artifacts / "infer_result.json",
+            {"infer_passed": False, "duration_ms": 1.0, "error": "real failure"},
+        )
+        package = write_package_gate(
+            self.run_dir,
+            self.run_artifacts / "package_gate.json",
+            self.model_dir,
+        )
+
+        self.assertEqual(package["status"], "passed")
+        self.assertTrue(read_json(self.model_artifacts / "infer_result.json")["infer_passed"])
+
+    def test_package_writer_refuses_a_short_circuited_evidence_check(self) -> None:
+        with unittest.mock.patch.object(
+            write_package_gate_module, "validate_local_evidence", return_value={}
+        ):
+            with self.assertRaisesRegex(ValueError, "local evidence was not fully checked"):
+                build_package_gate(self.run_dir, self.model_dir)
 
     def test_container_gate_rejects_harness_model_alias(self) -> None:
         self.validation["harness_runtime"]["python_executable"] = "python"

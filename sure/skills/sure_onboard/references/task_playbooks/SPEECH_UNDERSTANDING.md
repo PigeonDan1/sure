@@ -456,7 +456,8 @@ KIMI_AUDIO_VALIDATE_TASKS=SLU sure/models/asr_kimi_audio/docker_validate_multita
 ## 9. VC / 集群运行
 
 完整五任务建议通过 VC 独占资源跑。先从 `vc info -u` 选择当前站点允许的
-partition，并通过环境变量显式传入：
+partition，并通过环境变量显式传入。`-pj` 的取值来自 site policy 的
+`execution.vc_project`，不要写死：
 
 ```bash
 env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy \
@@ -465,7 +466,7 @@ vc submit \
   -i registry.example.com/sure/sure_asr_kimi_audio:v1.0 \
   -j kimi-audio-five-task \
   -n 1 -c 8 -m 32G -g 1 \
-  -pj sjtu \
+  -pj <vc_project> \
   -d <legacy-sure-eval-root>/sure/models/asr_kimi_audio \
   -e PYTHONPATH=<legacy-sure-eval-root>/src \
      KIMI_AUDIO_VALIDATE_TASKS=ASR,S2TT,SER,SLU,GR \

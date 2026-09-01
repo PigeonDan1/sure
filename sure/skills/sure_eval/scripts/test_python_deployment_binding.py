@@ -115,6 +115,7 @@ class PythonDeploymentBindingTests(unittest.TestCase):
         }
         marker = {
             "schema": "sure.onboard.deployment_ready.v2",
+            "generated_at": "2026-08-01T00:00:00+00:00",
             "status": "ready",
             "model_name": "demo",
             "package_profile": "none",

@@ -1,0 +1,13 @@
+[project]
+name = "sure-trans-backend"
+version = "0.1.0"
+description = "Model transformation backend bundled inside the sure_trans skill package."
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[tool.uv]
+# The gate scripts are otherwise standard library only. check_artifact.py
+# parses the generated adapter config.yaml, which is the single reason pyyaml
+# is here; torch and the model dependencies belong to the model-local env.

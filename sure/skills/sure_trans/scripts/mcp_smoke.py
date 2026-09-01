@@ -42,6 +42,21 @@ def primary_output_field(tool: str) -> str:
     return "audio_path" if tool in {"synthesize_speech", "convert_voice"} else "text"
 
 
+def output_is_nonempty(primary_field: str, value: str) -> bool:
+    """Whether the tool really produced its primary output.
+
+    A path-valued field only proves an output exists if the file is there and
+    holds bytes; the server runs as this script's child, so the path it
+    returns is one this process can stat.
+    """
+    if not value:
+        return False
+    if primary_field.endswith("_path"):
+        candidate = Path(value)
+        return candidate.is_file() and candidate.stat().st_size > 0
+    return True
+
+
 def _read_line(fd: int, buffer: bytearray, deadline: float) -> str | None:
     """Read one line from fd before deadline; None on timeout or EOF."""
     while True:
@@ -192,11 +207,12 @@ def main() -> int:
         primary_value = ""
         if isinstance(text, dict):
             primary_value = str(text.get(primary_field) or "")
+        output_nonempty = output_is_nonempty(primary_field, primary_value)
         steps["tools_call"] = {
-            "ok": ok and bool(primary_value),
+            "ok": ok and output_nonempty,
             "primary_field": primary_field,
-            "output_nonempty": bool(primary_value),
-            "text_nonempty": bool(primary_value) if primary_field == "text" else False,
+            "output_nonempty": output_nonempty,
+            "text_nonempty": output_nonempty if primary_field == "text" else False,
             primary_field: primary_value[:500],
         }
         if not steps["tools_call"]["ok"]:

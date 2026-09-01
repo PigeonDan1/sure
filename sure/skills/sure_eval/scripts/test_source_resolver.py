@@ -169,7 +169,7 @@ class RejectedRootMessageTests(unittest.TestCase):
     """A rejected path has to say which configured key would have taken it."""
 
     def test_path_under_another_configured_key_names_that_key(self) -> None:
-        roots = {"default": "/srv/datasets/public", "secondary": "/srv/datasets/platform"}
+        roots = {"default": "/srv/datasets/public", "aiplatform": "/srv/datasets/platform"}
         with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
             with mock.patch.dict(os.environ, {}, clear=False):
                 os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
@@ -178,11 +178,11 @@ class RejectedRootMessageTests(unittest.TestCase):
                         "/srv/datasets/platform/g001/store002/ds_pool/demo_ds"
                     )
         message = str(ctx.exception)
-        self.assertIn("secondary", message)
+        self.assertIn("aiplatform", message)
         self.assertIn("dataset_source_key", message)
 
     def test_path_under_no_configured_key_lists_them(self) -> None:
-        roots = {"default": "/srv/datasets/public", "secondary": "/srv/datasets/platform"}
+        roots = {"default": "/srv/datasets/public", "aiplatform": "/srv/datasets/platform"}
         with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
             with mock.patch.dict(os.environ, {}, clear=False):
                 os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
@@ -190,7 +190,7 @@ class RejectedRootMessageTests(unittest.TestCase):
                     source_resolver.resolve_site_source_entry("/elsewhere/ds_pool/demo_ds")
         message = str(ctx.exception)
         self.assertIn("default", message)
-        self.assertIn("secondary", message)
+        self.assertIn("aiplatform", message)
 
 
 if __name__ == "__main__":
