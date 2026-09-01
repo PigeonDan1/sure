@@ -1,7 +1,7 @@
 {
   "schema": "sure.public_export_manifest.v2",
-  "projection_id": "sha256:6722b1c279ec4086dbd9ece6b062ae97781940c4414a345b5cb2ec1b87bfbe3b",
-  "tree_sha256": "6722b1c279ec4086dbd9ece6b062ae97781940c4414a345b5cb2ec1b87bfbe3b",
+  "projection_id": "sha256:3d611fb50a670c10b459db0d4075fb664c2be3c1fdef53fed41c8072f4b942de",
+  "tree_sha256": "3d611fb50a670c10b459db0d4075fb664c2be3c1fdef53fed41c8072f4b942de",
   "files": [
     {
       "path": ".gitattributes",
@@ -5665,7 +5665,7 @@
       "path": "packages/coding-agent/test/suite/sure-onboard-state-machine.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "f9d729fc0b44c084811057f44f10c1f8b137a0ceee15360c31caf44cfd66f698"
+      "sha256": "817d8ea07417e780bd33138680c48177a97888efb271496cd7b6efc57fc9f8a6"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-terminal.test.ts",
@@ -9517,7 +9517,7 @@
       "path": "sure/skills/sure_onboard/scripts/adopt_reference_model.py",
       "type": "file",
       "mode": "100755",
-      "sha256": "27e131aa21a5f4c5c2ae51f69c39bb0158e0e874598455d41525120c0082aa94"
+      "sha256": "f98bda2f930b417709de1a1cab5f900dce3f344878ed83b238c1c38a44f12db2"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/build_run_digest.py",
@@ -9794,6 +9794,12 @@
       "type": "file",
       "mode": "100644",
       "sha256": "87fd7aa1fce1fa5013d3f38e43c382e1c2a706bd87603e669bd7662be2be7942"
+    },
+    {
+      "path": "sure/skills/sure_onboard/scripts/test_adopt_reference_model.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "6ab9207a1298b7ff8c100f5edc864168dfe4b3d954bbdceeca4a4db63fb3172c"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/test_container_delivery_resolution.py",
