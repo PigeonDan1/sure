@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from deployment_contract import timestamp_after
+
 SKIP_TOP_LEVEL = {"artifacts", "__pycache__", "eval_runs", "eval_runs_old", ".venv"}
 ASSET_LINK_DIRS = {"checkpoints", ".runtime"}
 RUNTIME_LINK_ALLOW_NAMES = {"modelscope_cache", "huggingface", "hf-home", "hf-cache", "nemo-cache"}
@@ -433,10 +435,13 @@ def write_artifact_manifest(target_dir: Path, model_id: str, model_name: str) ->
 
 
 def write_package_gate(target_dir: Path, manifest_path: Path) -> None:
+    # check_package_gate.py requires the gate to be stamped strictly after the manifest it cites.
+    manifest = read_json(manifest_path)
     write_json(
         target_dir / "artifacts" / "package_gate.json",
         {
             "schema": "sure.onboard.package_gate.v2",
+            "generated_at": timestamp_after(("artifact_manifest.json", manifest)),
             "status": "passed",
             "package_profile": "none",
             "model_dir": str(target_dir),
@@ -468,11 +473,13 @@ def write_package_gate(target_dir: Path, manifest_path: Path) -> None:
 
 
 def write_verdict(target_dir: Path, model_id: str, model_name: str, verdict: dict[str, Any]) -> None:
+    # check_verdict.py requires the verdict to be stamped strictly after the package gate.
+    package_gate = read_json(target_dir / "artifacts" / "package_gate.json")
     write_json(
         target_dir / "artifacts" / "verdict.json",
         {
             "instance_id": f"{model_name}-adopted",
-            "timestamp": now_iso(),
+            "timestamp": timestamp_after(("package_gate.json", package_gate)),
             "model_id": model_id,
             "model_name": model_name,
             "status": "partial",

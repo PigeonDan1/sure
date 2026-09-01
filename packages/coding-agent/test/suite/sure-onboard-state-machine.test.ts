@@ -2841,24 +2841,14 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 		expect(existsSync(join(targetDir, ".venv"))).toBe(false);
 		expect(existsSync(join(targetDir, "artifacts", "package_gate.json"))).toBe(true);
 
-		// The adoption stamps its manifest and its verdict from the wall clock but leaves
-		// the package gate unstamped, and it writes no runtime inventory at all. Pin the
-		// first two documents into the past and stage the inventory the verdict gate reads,
-		// so the gates below judge the adoption itself and not the missing stamps.
+		// The adoption writes no runtime inventory at all. Stage the one the verdict gate reads,
+		// dated with the adopted package gate, so the gates below judge the stamps the adoption
+		// itself wrote for its manifest, gate, and verdict.
 		const adoptedArtifacts = join(targetDir, "artifacts");
-		const adoptedManifestPath = join(adoptedArtifacts, "artifact_manifest.json");
-		const adoptedGatePath = join(adoptedArtifacts, "package_gate.json");
-		writeJson(adoptedManifestPath, {
-			...JSON.parse(readFileSync(adoptedManifestPath, "utf-8")),
-			timestamp: "2026-01-01T00:00:01+00:00",
-		});
-		writeJson(adoptedGatePath, {
-			...JSON.parse(readFileSync(adoptedGatePath, "utf-8")),
-			generated_at: "2026-01-01T00:00:02+00:00",
-		});
+		const adoptedGate = JSON.parse(readFileSync(join(adoptedArtifacts, "package_gate.json"), "utf-8"));
 		writeJson(join(adoptedArtifacts, "runtime_inventory.json"), {
 			schema: "sure.onboard.runtime_inventory.v2",
-			generated_at: "2026-01-01T00:00:03+00:00",
+			generated_at: adoptedGate.generated_at,
 		});
 
 		for (const [script, artifact] of [
