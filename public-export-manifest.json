@@ -1,7 +1,7 @@
 {
   "schema": "sure.public_export_manifest.v2",
-  "projection_id": "sha256:8d00f9bb53c3685664b31943a5672052752dbd6a862ee04e63d7a05d10288070",
-  "tree_sha256": "8d00f9bb53c3685664b31943a5672052752dbd6a862ee04e63d7a05d10288070",
+  "projection_id": "sha256:e1fbf8edbe5540613b826923019e9fde6a3faad96cb554314f43858e65c4c834",
+  "tree_sha256": "e1fbf8edbe5540613b826923019e9fde6a3faad96cb554314f43858e65c4c834",
   "files": [
     {
       "path": ".gitattributes",
@@ -43,7 +43,7 @@
       "path": "AGENTS.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "f7e16c657a77779d3f57e81503f39dd35d984df24d0c64e726ee8383bdf0c328"
+      "sha256": "7dd4f0a6bc157837ced06b58b3735d870cd1b9b15d9f0f4052163035cb9261c1"
     },
     {
       "path": "biome.json",
@@ -6505,7 +6505,7 @@
       "path": "public-export.yaml",
       "type": "file",
       "mode": "100644",
-      "sha256": "47d18b3e71b2b54da4bfe0c4816c8685fc05b01f3b054904b45cb9c6a1cdce03"
+      "sha256": "da84bbf160e099f5ff97fc09f88d7d1b04c448d0b1c8ec1aae0601285aa4fbfd"
     },
     {
       "path": "README.md",
@@ -6571,7 +6571,7 @@
       "path": "scripts/check-site-boundary.mjs",
       "type": "file",
       "mode": "100644",
-      "sha256": "5802a1191df6279aaeec3fa01fdf3a8b9e4f45355840788ab1598c52bd0cada9"
+      "sha256": "e413d07391afdede3b23510711a7c3521b8ca092822ea14278c2a474df276f33"
     },
     {
       "path": "scripts/check-site-compatibility.mjs",
@@ -6607,13 +6607,13 @@
       "path": "scripts/export-public.mjs",
       "type": "file",
       "mode": "100644",
-      "sha256": "191a3d1ba4977977c31c9def409f7e67b31d452b878ebc8ac69d30155b5d1c91"
+      "sha256": "13ceee44656e6d5d46535ce4d9d6926be8081c0c1b5aa45be562b7fde47358a8"
     },
     {
       "path": "scripts/export-public.test.mjs",
       "type": "file",
       "mode": "100644",
-      "sha256": "61f805ba911df6641a648d3156aa0617e1b84d137157a2e80bec3d821b851ca1"
+      "sha256": "3ffa5181ae287d25c9f2d628392ff072c3d2187b52f7c75cba5c1f21fb1077dd"
     },
     {
       "path": "scripts/generate-coding-agent-install-lock.mjs",
@@ -7465,7 +7465,7 @@
       "path": "sure/skills/sure_eval/references/contracts/main_agent_worked_example.md",
       "type": "file",
       "mode": "100755",
-      "sha256": "ccabcde051e0964c255743583428b7d8476f28b33238da26bb2d25cf3e3402f1"
+      "sha256": "d7fd3aa9a0c5e43c04d40c6a5010456531c25f686c87c25d0a8851adfca9ea0e"
     },
     {
       "path": "sure/skills/sure_eval/references/contracts/main_flow_architecture.md",
@@ -7723,7 +7723,7 @@
       "path": "sure/skills/sure_eval/scripts/dataset_alias.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "8fae32db962f1089af513d0f71f0d3dca619b944aaf5e70db9cb27411b7753f0"
+      "sha256": "47eef66571f5e628f300eea85d6d477c65d6c08b3b2ff465872187c849526e4a"
     },
     {
       "path": "sure/skills/sure_eval/scripts/deployment_binding.py",
@@ -7855,7 +7855,7 @@
       "path": "sure/skills/sure_eval/scripts/resolve_eval_input.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "58eb15576c5f73f7645e4a5a2571cf2bb5c26b8c7408c841c5cf247315b951be"
+      "sha256": "e2ca3959b73787800f4e83690a0806fd52968b70b977a560747dd0f6fcede3fd"
     },
     {
       "path": "sure/skills/sure_eval/scripts/resolve_evaluation_engine.py",
@@ -8005,13 +8005,13 @@
       "path": "sure/skills/sure_eval/scripts/sure_eval/datasets/dataset_manager.py",
       "type": "file",
       "mode": "100755",
-      "sha256": "11dde0cabc16a976fe96e1a0a95ecba6bcdf8db39416b44350aa53039b293ed6"
+      "sha256": "4231ead21ed3bfc1509db2893b283962579dfe4eb2026be9453ccf2cbb4ce5b9"
     },
     {
       "path": "sure/skills/sure_eval/scripts/sure_eval/datasets/source_resolver.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "6d51bfdd4859a2c01478db77ca4a458767b88bd2b9d98a5090e7d97f4311a391"
+      "sha256": "c38b306cd2930a2e46117c2e9fd8a8be5caea216c2b462dcbe64ad823b5cc558"
     },
     {
       "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/__init__.py",
@@ -8593,7 +8593,7 @@
       "path": "sure/skills/sure_eval/scripts/test_dataset_alias.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "e675b2af3f372caba606d11103a9ab22070491263c06009762601e2a3ff981a0"
+      "sha256": "875ca89f56397e05941e401ec911666ff375b659a8637051a42ad14d2e7fa2b9"
     },
     {
       "path": "sure/skills/sure_eval/scripts/test_deployment_binding.py",
@@ -8665,7 +8665,7 @@
       "path": "sure/skills/sure_eval/scripts/test_model_registry.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "1df7b666b08bb21333b2f9023376838920fbd14710fde1c592f2fc30258d68cc"
+      "sha256": "6644c717c175df502988f0d3de6b5dca551731c23161799448b63fb887ec89fb"
     },
     {
       "path": "sure/skills/sure_eval/scripts/test_payload_artifact_paths.py",
@@ -8707,7 +8707,7 @@
       "path": "sure/skills/sure_eval/scripts/test_report_provenance.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "79782dc277dd9e4fc95da42b990c57608e20855d5fb5ef5c9be873824094cba1"
+      "sha256": "1bec8ade5c8e5822393998205a9e01a54e41a7b5060e336337b59385323115de"
     },
     {
       "path": "sure/skills/sure_eval/scripts/test_resolve_partition_check.py",
@@ -8731,25 +8731,25 @@
       "path": "sure/skills/sure_eval/scripts/test_smoke_dataset_version_guard.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "70c2fadb198500c3290414083838843d33203fcce649053c979c1b4d663b1df3"
+      "sha256": "7a87fb5f98eb6d6ad65bb9d30cb2afcbbf4d651f29b661405d7722cb40465cc3"
     },
     {
       "path": "sure/skills/sure_eval/scripts/test_source_conversion.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "0f8289110125993a256f98835b40a584e5c5625a2cee16c47a044b6f2fbecd2e"
+      "sha256": "108edc4410b1634362a6b940bc3dd4527ebb936116baa118fab2bd670d8a881d"
     },
     {
       "path": "sure/skills/sure_eval/scripts/test_source_naming_flow.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "b664e8d099be23ccdbe8355b7c49ed51b8943abbc8d009e721fc874b9020eeb4"
+      "sha256": "49c5853a29f56333af14e5468eeb611ccde706399b8ecef7416ab3af31548720"
     },
     {
       "path": "sure/skills/sure_eval/scripts/test_source_resolver.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "82d67ed6fba83b1e3b01958537d8f23e16369c70d40d839dc5e171ab6fc7a6d6"
+      "sha256": "148d7b8193e4c1ea6d9d59bdd54eb75044a320a914cc08e0a7f1ab56365ea8dd"
     },
     {
       "path": "sure/skills/sure_eval/scripts/test_text_normalization.py",
