@@ -116,7 +116,7 @@ sure/models/<model_name>/
 - `package_gate.json` 使用 `sure.onboard.package_gate.v2`,`model_dir="."`、`artifact_manifest_path="artifacts/artifact_manifest.json"`,`readiness.{local_ready,docker_ready,registry_ready,bundle_ready}=true`,`docker.dockerfile_sha256` 对应 bundle 根目录的 `Dockerfile.sure`。
 - `artifact_manifest.json` 使用 `sure.onboard.artifact_manifest.v1`,`phase=deployment_ready`、`status=finalized`,required 含全部 terminal sidecar。
 - `runtime_inventory.json` 使用 `sure.onboard.runtime_inventory.v2`,`policy.eval_runtime=container_only`、`host_python_fallback=false`、`image_override_allowed=false`、`nfs_models_mutable_by_eval=false`。adapter 镜像内置锁定版 Harness Runtime,`harness_runtime.required=true`,`/sure_eval` 使用镜像内的 Harness Python。
-- `deployment_ready.json` 使用 `sure.onboard.deployment_ready.v1`,与 run 目录逐字节一致;`required_artifact_sha256` 覆盖 terminal sidecar 的 sha256,`bundle_identity_sha256` 为哈希表的摘要,四个 portable sidecar 不允许残留宿主机共享存储的绝对路径。
+- `deployment_ready.json` 使用 `sure.onboard.deployment_ready.v1`,与 run 目录逐字节一致;ready bundle 必须声明 `integrity_profile=manifest-complete-v1`,`required_artifact_sha256` 覆盖 wrapper、Dockerfile、fixture、sample output、全部模型 payload 与 required sidecar,`bundle_identity_sha256` 为哈希表的摘要,四个 portable sidecar 不允许残留宿主机共享存储的绝对路径。
 - `check_artifact.py --kind deployment_ready` 与 `/sure_onboard` 的 `check_finalized_bundle.py` 执行同一组校验:bundle 与 run 双写一致、哈希复验、bundle identity 重算、portable manifest、Dockerfile 哈希、执行策略与 digest 固定引用。
 
 模型 payload(权重等文件)落在 bundle 根目录,与 `model.py`、`model.spec.yaml` 同级;`fixture/<task>/` 下是冒烟音频与 `gt.jsonl`,每行 `{audio, task_type, text}`。

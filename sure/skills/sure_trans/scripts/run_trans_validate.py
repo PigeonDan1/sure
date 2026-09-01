@@ -194,8 +194,8 @@ def validate_mcp_evidence(evidence_path: Path, tool_name: str) -> str | None:
         if not isinstance(entry, dict) or entry.get("ok") is not True:
             return f"mcp_smoke evidence must prove {step} passed"
     call = protocol.get("tools_call") or {}
-    if call.get("text_nonempty") is not True:
-        return "mcp_smoke evidence must return non-empty text from tools/call"
+    if call.get("output_nonempty") is not True and call.get("text_nonempty") is not True:
+        return "mcp_smoke evidence must return a non-empty primary output from tools/call"
     smoke_tool = str(protocol.get("tool") or "")
     if tool_name and smoke_tool and smoke_tool != tool_name:
         return f"mcp_smoke tool {smoke_tool!r} does not match declared tool {tool_name!r}"

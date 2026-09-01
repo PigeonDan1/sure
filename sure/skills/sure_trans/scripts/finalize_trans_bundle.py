@@ -17,8 +17,12 @@ import argparse
 import hashlib
 import json
 import shutil
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+from check_artifact import validate_fixture_manifest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -44,9 +48,11 @@ REQUIRED_ARTIFACTS = [
     "docker_registry_result.json",
     "runtime_inventory.json",
     "verdict.json",
+    "sample_output.json",
 ]
 
 WRAPPER_FILES = ("model.py", "server.py", "__init__.py", "validate.py", "config.yaml", "model.spec.yaml", "Dockerfile.sure")
+CORE_MANIFEST_FILES = WRAPPER_FILES
 
 TERMINAL_FILES = (
     "package_gate.json",
@@ -89,7 +95,10 @@ def write_identical(path: Path, content: bytes) -> None:
 def resolve_model_dir(resolved: dict) -> Path:
     path_policy = resolved.get("path_policy") if isinstance(resolved.get("path_policy"), dict) else {}
     allowed_root = Path(str(path_policy.get("allowed_model_root") or MODELS_ROOT)).expanduser().resolve()
-    model_dir = Path(str(resolved.get("model_dir") or "")).expanduser()
+    declared_model_dir = Path(str(resolved.get("model_dir") or "")).expanduser()
+    if declared_model_dir.is_symlink():
+        raise ValueError("model_dir must be a real harness-owned directory, not a symlink")
+    model_dir = declared_model_dir
     try:
         model_dir = model_dir.resolve()
     except OSError:
@@ -102,32 +111,224 @@ def resolve_model_dir(resolved: dict) -> Path:
     return model_dir
 
 
+def ensure_safe_bundle_parent(model_dir: Path, destination: Path) -> None:
+    model_dir = model_dir.resolve()
+    try:
+        relative_parent = destination.parent.relative_to(model_dir)
+    except ValueError as error:
+        raise ValueError(f"bundle destination escapes model_dir: {destination}") from error
+    current = model_dir
+    for part in relative_parent.parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(f"bundle destination parent must not be a symlink: {current}")
+        current.mkdir(exist_ok=True)
+        if not current.is_dir():
+            raise ValueError(f"bundle destination parent is not a directory: {current}")
+    if destination.is_symlink():
+        raise ValueError(f"bundle destination must not be a symlink: {destination}")
+
+
 def stage_wrapper(adapter_dir: Path, model_dir: Path) -> None:
     for name in WRAPPER_FILES:
         source = adapter_dir / name
-        if not source.is_file():
+        if source.is_symlink() or not source.is_file():
             raise ValueError(f"adapter file missing: {source}")
-        shutil.copy2(source, model_dir / name)
+        destination = model_dir / name
+        ensure_safe_bundle_parent(model_dir, destination)
+        shutil.copy2(source, destination)
+
+
+def clear_directory(path: Path, controlled_root: Path) -> None:
+    if controlled_root.is_symlink() or path.is_symlink():
+        raise ValueError(f"bundle fixture directory must not be a symlink: {path}")
+    resolved = path.resolve()
+    root = controlled_root.resolve()
+    if not resolved.is_relative_to(root) or resolved == root:
+        raise ValueError(f"bundle fixture directory must stay below {root}: {path}")
+    if not path.exists():
+        path.mkdir(parents=True)
+        return
+    for child in path.iterdir():
+        if child.is_symlink() or child.is_file():
+            child.unlink()
+        elif child.is_dir():
+            shutil.rmtree(child)
+        else:
+            raise ValueError(f"bundle fixture contains unsupported entry: {child}")
 
 
 def stage_fixture(run_dir: Path, model_dir: Path, resolved: dict) -> None:
     fixture_manifest = read_object(run_dir / "artifacts" / "fixture_manifest.json")
-    staged = Path(str(fixture_manifest.get("staged_path") or "")).expanduser()
-    if not staged.is_file():
-        raise ValueError(f"staged fixture is missing: {staged}")
+    annotation_source_value = fixture_manifest.get("annotation_source")
+    if not isinstance(annotation_source_value, dict):
+        raise ValueError("fixture manifest is missing annotation_source")
+    samples_value = fixture_manifest.get("samples")
+    if not isinstance(samples_value, list) or not samples_value or not isinstance(samples_value[0], dict):
+        raise ValueError("fixture manifest must declare at least one sample")
     task = str(resolved.get("task_type") or "asr").lower()
+    declared_staged_dir = Path(str(fixture_manifest["staged_dir"])).resolve()
+    staged_name = Path(str(fixture_manifest["staged_path"])).name
+    expected_name = Path(str(annotation_source_value.get("staged_path") or "")).name
+    if not expected_name:
+        raise ValueError("fixture annotation_source is missing staged_path")
+    source_candidates = (run_dir / "fixture" / task, declared_staged_dir)
+    staged_dir = next(
+        (
+            candidate.resolve()
+            for candidate in source_candidates
+            if (candidate / staged_name).is_file()
+            and (candidate / expected_name).is_file()
+            and (candidate / "gt.jsonl").is_file()
+        ),
+        None,
+    )
+    if staged_dir is None:
+        raise ValueError("prepared fixture source is missing from the run and declared staging directory")
+    staged = staged_dir / staged_name
+    source_manifest = {
+        **fixture_manifest,
+        "model_dir": str(run_dir if staged_dir.is_relative_to(run_dir) else model_dir),
+        "staged_dir": str(staged_dir),
+        "staged_path": str(staged),
+        "gt_jsonl": str(staged_dir / "gt.jsonl"),
+        "samples": [
+            {
+                **samples_value[0],
+                "audio": staged.name,
+                "audio_path": str(staged),
+            }
+        ],
+        "annotation_source": {
+            **annotation_source_value,
+            "staged_path": str(staged_dir / expected_name),
+        },
+    }
+    # The prepare-fixture gate is the only place allowed to establish ground
+    # truth. Revalidate its complete manifest before copying anything into the
+    # sealed bundle; finalization must never infer labels from model output.
+    validate_fixture_manifest(source_manifest)
     fixture_dir = model_dir / "fixture" / task
-    fixture_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(staged, fixture_dir / staged.name)
-    original = read_object(run_dir / "artifacts" / "original_inference_result.json")
-    text = ""
-    for key in ("output", "text", "transcript"):
-        raw = original.get(key)
-        if isinstance(raw, str) and raw.strip():
-            text = raw.strip()
-            break
-    gt = {"audio": staged.name, "task_type": task, "text": text}
-    (fixture_dir / "gt.jsonl").write_text(json.dumps(gt, ensure_ascii=False) + "\n", encoding="utf-8")
+    clear_directory(fixture_dir, model_dir / "fixture")
+    destination = fixture_dir / staged.name
+    for source in sorted(staged_dir.iterdir()):
+        if source.is_symlink() or not source.is_file():
+            raise ValueError(f"fixture staged directory may contain regular files only: {source}")
+        fixture_destination = fixture_dir / source.name
+        ensure_safe_bundle_parent(model_dir, fixture_destination)
+        shutil.copy2(source, fixture_destination)
+    expected_destination = fixture_dir / expected_name
+    if not expected_destination.is_file():
+        raise ValueError(f"fixture annotation sidecar was not staged: {expected_destination}")
+    gt_jsonl = fixture_dir / "gt.jsonl"
+    if not gt_jsonl.is_file():
+        raise ValueError(f"prepared fixture ground truth is missing: {gt_jsonl}")
+    annotation_source = dict(fixture_manifest["annotation_source"])
+    annotation_source["staged_path"] = str(expected_destination)
+    annotation_source["bundled_path"] = str(expected_destination)
+    gt_jsonl = fixture_dir / "gt.jsonl"
+    finalized_manifest = {
+        **fixture_manifest,
+        "model_id": resolved["model_name"],
+        "model_name": resolved["model_name"],
+        "model_dir": str(model_dir),
+        "task_type": task,
+        "source_dir": str(fixture_manifest.get("source_dir") or ""),
+        "staged_dir": str(fixture_dir),
+        "gt_jsonl": str(gt_jsonl),
+        "samples": [
+            {
+                "key": staged.stem,
+                "audio": staged.name,
+                "audio_path": str(destination),
+                "annotation_fields": list(fixture_manifest["samples"][0].get("annotation_fields") or []),
+            }
+        ],
+        "staged_path": str(destination),
+        "sample_count": 1,
+        "annotation_source": annotation_source,
+        "sha256": sha256(destination),
+        "gt_sha256": sha256(gt_jsonl),
+        "expected_sha256": sha256(expected_destination),
+    }
+    write_identical(
+        run_dir / "artifacts" / "fixture_manifest.json",
+        json_bytes(finalized_manifest),
+    )
+    validate_fixture_manifest(finalized_manifest)
+
+
+def sample_value_is_nonempty(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, tuple, dict, set)):
+        return bool(value)
+    return True
+
+
+def promote_generated_audio(artifacts: Path, raw_path: str) -> str:
+    declared = Path(raw_path)
+    candidates: list[Path] = []
+    if declared.is_absolute():
+        if declared.parts[:2] == ("/", "validation"):
+            candidates.append(artifacts / "adapter_validation" / Path(*declared.parts[2:]))
+        candidates.append(declared)
+    else:
+        candidates.extend([artifacts / "adapter_validation" / declared, artifacts / declared])
+    source_candidate = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if source_candidate is None or source_candidate.is_symlink():
+        raise ValueError(
+            "audio sample_output.json must reference a real generated file; write it below "
+            "SURE_VALIDATE_ARTIFACTS_DIR/outputs"
+        )
+    source = source_candidate.resolve()
+    if (artifacts / "adapter_validation" / "outputs").is_symlink() or (artifacts / "outputs").is_symlink():
+        raise ValueError("generated audio output roots must not be symlinks")
+    validation_outputs = (artifacts / "adapter_validation" / "outputs").resolve()
+    artifact_outputs = (artifacts / "outputs").resolve()
+    if not source.is_relative_to(validation_outputs) and not source.is_relative_to(artifact_outputs):
+        raise ValueError("generated audio must stay below artifacts/adapter_validation/outputs")
+    relative = source.relative_to(validation_outputs if source.is_relative_to(validation_outputs) else artifact_outputs)
+    destination = artifact_outputs / relative
+    ensure_safe_bundle_parent(artifacts, destination)
+    if source != destination:
+        shutil.copy2(source, destination)
+    return (Path("artifacts") / "outputs" / relative).as_posix()
+
+
+def promote_sample_output(run_dir: Path) -> None:
+    artifacts = run_dir / "artifacts"
+    candidates = [
+        artifacts / "adapter_validation" / "sample_output.json",
+        artifacts / "sample_output.json",
+    ]
+    source = next((path for path in candidates if path.is_file() and not path.is_symlink()), None)
+    if source is None:
+        raise ValueError(
+            "sample_output.json is missing; the infer stage must write "
+            "artifacts/adapter_validation/sample_output.json"
+        )
+    sample = read_object(source)
+    adapter = read_object(artifacts / "adapter_manifest.json")
+    contract = adapter.get("io_contract") if isinstance(adapter.get("io_contract"), dict) else {}
+    required = contract.get("required_fields") if isinstance(contract.get("required_fields"), list) else []
+    nonempty = contract.get("nonempty_fields") if isinstance(contract.get("nonempty_fields"), list) else []
+    primary = contract.get("primary_field")
+    fields = [field for field in (*required, *nonempty, primary) if isinstance(field, str) and field]
+    for field in dict.fromkeys(fields):
+        if field not in sample:
+            raise ValueError(f"sample_output.json is missing io_contract field: {field}")
+        if field in nonempty or field == primary:
+            if not sample_value_is_nonempty(sample[field]):
+                raise ValueError(f"sample_output.json io_contract field is empty: {field}")
+    if contract.get("output_type") == "audio":
+        audio_path = sample.get("audio_path")
+        if not isinstance(audio_path, str) or not audio_path.strip():
+            raise ValueError("audio sample_output.json must contain a non-empty audio_path")
+        sample["audio_path"] = promote_generated_audio(artifacts, audio_path)
+    write_identical(artifacts / "sample_output.json", json_bytes(sample))
 
 
 def stage_artifacts(run_dir: Path, model_dir: Path) -> dict[str, str]:
@@ -136,13 +337,33 @@ def stage_artifacts(run_dir: Path, model_dir: Path) -> dict[str, str]:
     hashes: dict[str, str] = {}
     for name in REQUIRED_ARTIFACTS:
         source = artifacts / name
-        if not source.is_file():
+        if source.is_symlink() or not source.is_file():
             raise ValueError(f"required artifact missing: {source}")
-        shutil.copy2(source, model_artifacts / name)
-    for name in ("validation.log", "sample_output.json"):
+        destination = model_artifacts / name
+        ensure_safe_bundle_parent(model_dir, destination)
+        shutil.copy2(source, destination)
+    for name in ("validation.log",):
         source = artifacts / name
+        if source.is_symlink():
+            raise ValueError(f"optional validation artifact must not be a symlink: {source}")
         if source.is_file():
-            shutil.copy2(source, model_artifacts / name)
+            destination = model_artifacts / name
+            ensure_safe_bundle_parent(model_dir, destination)
+            shutil.copy2(source, destination)
+    outputs = artifacts / "outputs"
+    if outputs.is_symlink():
+        raise ValueError(f"generated outputs directory must not be a symlink: {outputs}")
+    if outputs.is_dir():
+        unsafe = next((path for path in outputs.rglob("*") if path.is_symlink()), None)
+        if unsafe is not None:
+            raise ValueError(f"generated outputs must not contain symlinks: {unsafe}")
+        destination = model_artifacts / "outputs"
+        if destination.is_symlink():
+            raise ValueError(f"model artifact outputs directory must not be a symlink: {destination}")
+        if destination.exists():
+            shutil.rmtree(destination)
+        ensure_safe_bundle_parent(model_dir, destination)
+        shutil.copytree(outputs, destination)
     return hashes
 
 
@@ -177,41 +398,132 @@ def write_package_gate(run_dir: Path, model_dir: Path, registry: dict) -> dict:
     }
     content = json_bytes(package)
     write_identical(run_dir / "artifacts" / "package_gate.json", content)
-    write_identical(model_dir / "artifacts" / "package_gate.json", content)
+    model_output = model_dir / "artifacts" / "package_gate.json"
+    ensure_safe_bundle_parent(model_dir, model_output)
+    write_identical(model_output, content)
     return package
 
 
-def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict) -> dict:
+def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict, *, status: str) -> dict:
     required = {
+        name.replace(".", "_").replace("-", "_"): {
+            "path": name,
+            "description": f"Required model bundle file: {name}.",
+        }
+        for name in CORE_MANIFEST_FILES
+    }
+    required.update({
         name.replace(".", "_").replace("-", "_"): {
             "path": f"artifacts/{name}",
             "description": f"Finalized trans artifact: {name}.",
         }
-        for name in TERMINAL_FILES
-    }
-    optional = {
-        name.replace(".", "_").replace("-", "_"): {
-            "path": f"artifacts/{name}",
-            "description": f"Transformation evidence: {name}.",
+        for name in (*REQUIRED_ARTIFACTS, *TERMINAL_FILES)
+    })
+    fixture_root = model_dir / "fixture"
+    if fixture_root.is_dir():
+        for path in sorted(item for item in fixture_root.rglob("*") if item.is_file()):
+            relative = path.relative_to(model_dir).as_posix()
+            key = f"file:{relative}"
+            if key in required:
+                raise ValueError(f"duplicate finalized artifact manifest key: {key}")
+            required[key] = {
+                "path": relative,
+                "description": f"Finalized smoke fixture file: {relative}.",
+            }
+    payload = read_object(model_dir / "artifacts" / "model_payload_manifest.json")
+    payload_files = payload.get("files")
+    if not isinstance(payload_files, dict) or not payload_files:
+        raise ValueError("model payload manifest must list files before finalization")
+    for raw_path in sorted(payload_files):
+        relative = Path(str(raw_path))
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"model payload path is not portable: {raw_path}")
+        target = (model_dir / relative).resolve()
+        if not target.is_file() or not target.is_relative_to(model_dir.resolve()):
+            raise ValueError(f"model payload file is missing during finalization: {raw_path}")
+        path_value = relative.as_posix()
+        key = f"file:{path_value}"
+        if key in required:
+            raise ValueError(f"model payload conflicts with another required bundle file: {path_value}")
+        required[key] = {
+            "path": path_value,
+            "description": f"Staged model payload file: {path_value}.",
         }
-        for name in REQUIRED_ARTIFACTS
-        if name not in TERMINAL_FILES
-    }
+    outputs_root = model_dir / "artifacts" / "outputs"
+    if outputs_root.is_dir():
+        for path in sorted(item for item in outputs_root.rglob("*") if item.is_file()):
+            relative = path.relative_to(model_dir).as_posix()
+            key = f"file:{relative}"
+            if key in required:
+                raise ValueError(f"generated output conflicts with another required bundle file: {relative}")
+            required[key] = {
+                "path": relative,
+                "description": f"Generated smoke output file: {relative}.",
+            }
     manifest = {
         "schema": "sure.onboard.artifact_manifest.v1",
         "model_dir": ".",
         "model_id": resolved["model_name"],
         "model_name": resolved["model_name"],
-        "phase": "deployment_ready",
-        "status": "finalized",
+        "phase": "deployment_ready" if status == "finalized" else "local_onboard",
+        "status": status,
         "generated_at": now_iso(),
         "timestamp": now_iso(),
-        "artifacts": {"required": required, "conditional": {}, "optional": optional},
+        "artifacts": {"required": required, "conditional": {}, "optional": {}},
     }
     content = json_bytes(manifest)
     path = model_dir / "artifacts" / "artifact_manifest.json"
+    ensure_safe_bundle_parent(model_dir, path)
     write_identical(path, content)
+    write_identical(run_dir / "artifacts" / "artifact_manifest.json", content)
     return manifest
+
+
+def regenerate_terminal_evidence(run_dir: Path) -> None:
+    scripts = Path(__file__).resolve().parent
+    prior_inventory = read_object(run_dir / "artifacts" / "runtime_inventory.json")
+    container = prior_inventory.get("container_runtime") if isinstance(prior_inventory.get("container_runtime"), dict) else {}
+    inventory_command = [
+        sys.executable,
+        str(scripts / "write_runtime_inventory.py"),
+        "--run-dir",
+        str(run_dir),
+        "--gpu-required" if container.get("gpu_required") is True else "--no-gpu-required",
+    ]
+    commands = [
+        [sys.executable, str(scripts / "check_artifact.py"), "--run-dir", str(run_dir), "--produces", str(run_dir / "artifacts" / "model_payload_manifest.json"), "--kind", "model_payload"],
+        inventory_command,
+        [sys.executable, str(scripts / "check_artifact.py"), "--run-dir", str(run_dir), "--produces", str(run_dir / "artifacts" / "runtime_inventory.json"), "--kind", "runtime_inventory"],
+        [sys.executable, str(scripts / "write_verdict.py"), "--run-dir", str(run_dir)],
+        [sys.executable, str(scripts / "check_artifact.py"), "--run-dir", str(run_dir), "--produces", str(run_dir / "artifacts" / "verdict.json"), "--kind", "verdict"],
+    ]
+    for command in commands:
+        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise ValueError(f"terminal evidence regeneration failed: {detail}")
+
+
+def finalized_hashes(model_dir: Path) -> dict[str, str]:
+    manifest = read_object(model_dir / "artifacts" / "artifact_manifest.json")
+    required = manifest.get("artifacts", {}).get("required") if isinstance(manifest.get("artifacts"), dict) else {}
+    if not isinstance(required, dict) or not required:
+        raise ValueError("finalized artifact manifest has no required entries")
+    hashes: dict[str, str] = {}
+    for entry in required.values():
+        if not isinstance(entry, dict):
+            raise ValueError("finalized artifact manifest entry is invalid")
+        raw_path = str(entry.get("path") or "")
+        relative = Path(raw_path)
+        if not raw_path or relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"finalized artifact path is not portable: {raw_path}")
+        if relative.as_posix() == "artifacts/deployment_ready.json":
+            continue
+        path = (model_dir / relative).resolve()
+        if not path.is_file() or not path.is_relative_to(model_dir.resolve()):
+            raise ValueError(f"finalized required artifact is missing: {raw_path}")
+        hashes[relative.as_posix()] = sha256(path)
+    return hashes
 
 
 def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict, registry: dict, package: dict) -> dict:
@@ -224,16 +536,13 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict, regis
     if registry.get("status") != "passed" or registry.get("pull_verified") is not True:
         raise ValueError("docker-registry bundle requires passed registry push and digest pull verification")
 
-    required_names = [name for name in TERMINAL_FILES if name != "deployment_ready.json"]
-    hashes = {
-        f"artifacts/{name}": sha256(model_dir / "artifacts" / name)
-        for name in required_names
-    }
+    hashes = finalized_hashes(model_dir)
     bundle_identity = hashlib.sha256(
         json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     deployment = {
         "schema": "sure.onboard.deployment_ready.v1",
+        "integrity_profile": "manifest-complete-v1",
         "generated_at": now_iso(),
         "status": "ready",
         "model_name": str(resolved["model_name"]),
@@ -290,6 +599,7 @@ def build_blocked_marker(run_dir: Path, resolved: dict, reason: str) -> dict:
     }
     return {
         "schema": "sure.onboard.deployment_ready.v1",
+        "integrity_profile": "partial-run-v1",
         "generated_at": now_iso(),
         "status": "blocked",
         "blocked_reason": reason,
@@ -328,16 +638,21 @@ def main() -> int:
     registry = read_object(artifacts / "docker_registry_result.json")
     model_dir = resolve_model_dir(resolved)
     model_artifacts = model_dir / "artifacts"
-    model_artifacts.mkdir(parents=True, exist_ok=True)
+    ensure_safe_bundle_parent(model_dir, model_artifacts / ".artifact-placeholder")
 
     stage_wrapper(run_dir / "adapter", model_dir)
     stage_fixture(run_dir, model_dir, resolved)
+    promote_sample_output(run_dir)
     stage_artifacts(run_dir, model_dir)
+    write_artifact_manifest(run_dir, model_dir, resolved, status="finalized")
     package = write_package_gate(run_dir, model_dir, registry)
-    write_artifact_manifest(run_dir, model_dir, resolved)
+    regenerate_terminal_evidence(run_dir)
+    stage_artifacts(run_dir, model_dir)
     deployment = build_deployment_ready(run_dir, model_dir, resolved, registry, package)
     content = json_bytes(deployment)
-    write_identical(model_artifacts / "deployment_ready.json", content)
+    model_deployment = model_artifacts / "deployment_ready.json"
+    ensure_safe_bundle_parent(model_dir, model_deployment)
+    write_identical(model_deployment, content)
     write_identical(artifacts / "deployment_ready.json", content)
     print(artifacts / "deployment_ready.json")
     return 0

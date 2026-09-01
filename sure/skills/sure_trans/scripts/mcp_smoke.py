@@ -24,6 +24,24 @@ SCHEMA = "sure.trans.mcp_smoke.v1"
 STDERR_TAIL_LINES = 200
 
 
+def tool_arguments(tool: str, audio: Path) -> dict[str, str]:
+    if tool == "synthesize_speech":
+        return {
+            "text": "SURE smoke test",
+            "prompt_audio_path": str(audio),
+        }
+    if tool == "convert_voice":
+        return {
+            "source_audio_path": str(audio),
+            "reference_audio_path": str(audio),
+        }
+    return {"audio_path": str(audio)}
+
+
+def primary_output_field(tool: str) -> str:
+    return "audio_path" if tool in {"synthesize_speech", "convert_voice"} else "text"
+
+
 def _read_line(fd: int, buffer: bytearray, deadline: float) -> str | None:
     """Read one line from fd before deadline; None on timeout or EOF."""
     while True:
@@ -103,7 +121,7 @@ def main() -> int:
     steps: dict = {
         "initialize": {"ok": False},
         "tools_list": {"ok": False},
-        "tools_call": {"ok": False, "text_nonempty": False},
+        "tools_call": {"ok": False, "output_nonempty": False, "text_nonempty": False},
         "shutdown": {"ok": False},
     }
     server_stderr: deque[str] = deque()
@@ -158,7 +176,7 @@ def main() -> int:
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": args.tool, "arguments": {"audio_path": str(audio)}},
+                "params": {"name": args.tool, "arguments": tool_arguments(args.tool, audio)},
             },
             deadline,
         ):
@@ -170,13 +188,16 @@ def main() -> int:
                 text = json.loads(str(content[0].get("text") or ""))
             except (IndexError, KeyError, TypeError, json.JSONDecodeError):
                 text = ""
-        text_value = ""
+        primary_field = primary_output_field(args.tool)
+        primary_value = ""
         if isinstance(text, dict):
-            text_value = str(text.get("text") or "")
+            primary_value = str(text.get(primary_field) or "")
         steps["tools_call"] = {
-            "ok": ok and bool(text_value),
-            "text_nonempty": bool(text_value),
-            "text": text_value[:500],
+            "ok": ok and bool(primary_value),
+            "primary_field": primary_field,
+            "output_nonempty": bool(primary_value),
+            "text_nonempty": bool(primary_value) if primary_field == "text" else False,
+            primary_field: primary_value[:500],
         }
         if not steps["tools_call"]["ok"]:
             raise RuntimeError(f"tools/call step failed: {json.dumps(payload, ensure_ascii=False)[:500]}")

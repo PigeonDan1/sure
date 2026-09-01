@@ -18,7 +18,11 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import run_docker_build  # noqa: E402
 import run_trans_validate  # noqa: E402
 import scaffold_adapter  # noqa: E402
+import prepare_fixture  # noqa: E402
+import mcp_smoke  # noqa: E402
+import stage_model_payload  # noqa: E402
 import write_runtime_inventory  # noqa: E402
+import finalize_trans_bundle  # noqa: E402
 
 
 # The partition name and registry host are site data; tests pin their own site
@@ -97,6 +101,96 @@ class DockerBinaryResolutionTest(unittest.TestCase):
 
 
 class TransScriptsTest(unittest.TestCase):
+    def _python_probe_environment(self, root: Path) -> dict[str, str]:
+        binaries = root / "python-probe-bin"
+        binaries.mkdir()
+        docker = binaries / "docker"
+        docker.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = \"run\" ]; then printf '%s\\n' /opt/venv/bin/python; exit 0; fi\n"
+            "if [ \"$1\" = \"image\" ] && [ \"$2\" = \"inspect\" ]; then printf '%s\\n' '{\"Id\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}'; exit 0; fi\n"
+            "if [ \"$1\" = \"image\" ]; then exit 0; fi\n"
+            "exit 1\n",
+            encoding="utf-8",
+        )
+        docker.chmod(0o755)
+        environment = os.environ.copy()
+        environment["PATH"] = f"{binaries}{os.pathsep}{environment['PATH']}"
+        return environment
+
+    def test_fixture_cleanup_rejects_a_symlinked_staging_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            controlled = root / "fixture"
+            outside = root / "outside"
+            controlled.mkdir()
+            outside.mkdir()
+            sentinel = outside / "keep.wav"
+            sentinel.write_bytes(b"keep")
+            (controlled / "asr").symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaises(ValueError):
+                prepare_fixture.clear_directory(controlled / "asr", controlled)
+            with self.assertRaises(ValueError):
+                finalize_trans_bundle.clear_directory(controlled / "asr", controlled)
+
+            self.assertEqual(sentinel.read_bytes(), b"keep")
+
+    def test_generated_audio_is_promoted_only_from_the_validation_outputs_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            artifacts = Path(temporary) / "artifacts"
+            source = artifacts / "adapter_validation" / "outputs" / "speech.wav"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"RIFF-output")
+
+            relative = finalize_trans_bundle.promote_generated_audio(
+                artifacts, "/validation/outputs/speech.wav"
+            )
+
+            self.assertEqual(relative, "artifacts/outputs/speech.wav")
+            self.assertEqual((artifacts / "outputs" / "speech.wav").read_bytes(), b"RIFF-output")
+            outside = Path(temporary) / "outside.wav"
+            outside.write_bytes(b"not-allowed")
+            with self.assertRaises(ValueError):
+                finalize_trans_bundle.promote_generated_audio(artifacts, str(outside))
+
+    def test_mcp_smoke_uses_task_specific_arguments_and_primary_outputs(self) -> None:
+        audio = Path("/fixture/reference.wav")
+        self.assertEqual(
+            mcp_smoke.tool_arguments("transcribe_audio", audio),
+            {"audio_path": str(audio)},
+        )
+        self.assertEqual(
+            mcp_smoke.tool_arguments("synthesize_speech", audio),
+            {"text": "SURE smoke test", "prompt_audio_path": str(audio)},
+        )
+        self.assertEqual(
+            mcp_smoke.tool_arguments("convert_voice", audio),
+            {"source_audio_path": str(audio), "reference_audio_path": str(audio)},
+        )
+        self.assertEqual(mcp_smoke.primary_output_field("transcribe_audio"), "text")
+        self.assertEqual(mcp_smoke.primary_output_field("synthesize_speech"), "audio_path")
+        self.assertEqual(mcp_smoke.primary_output_field("convert_voice"), "audio_path")
+
+    def test_bundle_writes_reject_symlinked_destination_parents(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bundle = root / "bundle"
+            outside = root / "outside"
+            bundle.mkdir()
+            outside.mkdir()
+            sentinel = outside / "keep.bin"
+            sentinel.write_bytes(b"keep")
+            (bundle / "payload").symlink_to(outside, target_is_directory=True)
+            destination = bundle / "payload" / "weights.bin"
+
+            with self.assertRaises(ValueError):
+                stage_model_payload.ensure_safe_parent(bundle, destination)
+            with self.assertRaises(ValueError):
+                finalize_trans_bundle.ensure_safe_bundle_parent(bundle, destination)
+
+            self.assertEqual(sentinel.read_bytes(), b"keep")
+
     @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
     def test_output_cleanup_refuses_a_mount_outside_the_run_directory(self) -> None:
         """The gate must not delete a host path the agent chose for it.
@@ -421,6 +515,9 @@ class TransScriptsTest(unittest.TestCase):
             examples = delivery / "examples"
             examples.mkdir()
             (examples / "smoke.wav").write_bytes(b"RIFF-smoke")
+            (examples / "smoke.expected.json").write_text(
+                json.dumps({"text": "fixture annotation"}) + "\n", encoding="utf-8"
+            )
             (delivery / "Dockerfile").write_text(
                 "FROM python:3.12\nCOPY requirements.txt /opt/requirements.txt\nCOPY code/ /opt/code/\nCOPY runtime/ /opt/runtime/\n",
                 encoding="utf-8",
@@ -493,6 +590,25 @@ class TransScriptsTest(unittest.TestCase):
             self.assertFalse(framework["clarification_required"])
             self.assertEqual(fixture["sample_count"], 1)
             self.assertTrue(Path(fixture["staged_path"]).is_file())
+            self.assertEqual(Path(fixture["model_dir"]), run_dir)
+            self.assertEqual(Path(fixture["staged_dir"]), run_dir / "fixture" / "asr")
+            self.assertEqual(Path(fixture["gt_jsonl"]), run_dir / "fixture" / "asr" / "gt.jsonl")
+            self.assertEqual(fixture["samples"][0]["audio"], "smoke.wav")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "check_artifact.py"),
+                    "--run-dir",
+                    str(run_dir),
+                    "--produces",
+                    str(run_dir / "artifacts" / "fixture_manifest.json"),
+                    "--kind",
+                    "fixture",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
     def test_validation_runner_executes_command(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1118,7 +1234,8 @@ class TransScriptsTest(unittest.TestCase):
 
     def test_scaffold_prefers_the_source_image_tag_over_the_image_id(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            run_dir = Path(temporary) / "run"
+            root = Path(temporary)
+            run_dir = root / "run"
             artifacts = run_dir / "artifacts"
             artifacts.mkdir(parents=True)
             (artifacts / "trans_input_resolved.json").write_text(
@@ -1138,13 +1255,31 @@ class TransScriptsTest(unittest.TestCase):
             )
             subprocess.run(
                 [sys.executable, str(SCRIPTS_DIR / "scaffold_adapter.py"), "--run-dir", str(run_dir)],
-                check=True, capture_output=True, text=True,
+                check=True,
+                capture_output=True,
+                text=True,
+                env=self._python_probe_environment(root),
             )
             dockerfile = (run_dir / "adapter" / "Dockerfile.sure").read_text(encoding="utf-8")
+            config = (run_dir / "adapter" / "config.yaml").read_text(encoding="utf-8")
             model_spec = (run_dir / "adapter" / "model.spec.yaml").read_text(encoding="utf-8")
+            manifest = json.loads((artifacts / "adapter_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(dockerfile.splitlines()[0], "FROM demo-source:0.1.0")
+            self.assertIn('ENTRYPOINT ["/opt/venv/bin/python", "/opt/sure_trans/server.py"]', dockerfile)
+            self.assertIn('command: ["/opt/venv/bin/python", "/opt/sure_trans/server.py"]', config)
             self.assertIn("framework: pytorch", model_spec)
             self.assertIn("model_framework: transformers", model_spec)
+            self.assertEqual(manifest["container_python_executable"], "/opt/venv/bin/python")
+            self.assertEqual(
+                manifest["server_command"],
+                ["/opt/venv/bin/python", "/opt/sure_trans/server.py"],
+            )
+
+    def test_source_image_python_probe_rejects_a_relative_executable(self) -> None:
+        completed = mock.Mock(returncode=0, stdout="python\n", stderr="")
+        with mock.patch.object(scaffold_adapter.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(ValueError, "absolute Python executable"):
+                scaffold_adapter.container_python_executable("demo-source:0.1.0")
 
     def test_final_bundle_matches_eval_deployment_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1161,6 +1296,10 @@ class TransScriptsTest(unittest.TestCase):
             examples = delivery / "examples"
             examples.mkdir()
             (examples / "smoke.wav").write_bytes(b"RIFF-smoke")
+            (examples / "smoke.expected.json").write_text(
+                json.dumps({"text": "human fixture annotation"}) + "\n",
+                encoding="utf-8",
+            )
             subprocess.run([
                 sys.executable, str(SCRIPTS_DIR / "materialize_trans_inputs.py"), "--dockerfile", str(delivery / "Dockerfile"),
                 "--model", str(model), "--inference-entrypoint", str(code / "infer.py"), "--framework", "pytorch",
@@ -1195,7 +1334,7 @@ class TransScriptsTest(unittest.TestCase):
                 "contract_result.json": {"status": "passed", "run_command": ["true"], "contract_passed": True, "executed": True},
                 "mcp_result.json": {"status": "passed", "tool_name": "transcribe_audio", "run_command": ["true"], "mcp_passed": True, "executed": True},
                 "equivalence_result.json": {"status": "passed", "baseline_output": "baseline.json", "adapter_output": "adapter.json", "run_command": ["true"], "equivalent": True, "executed": True},
-                "adapter_image_result.json": {"status": "passed", "source_image": "demo-source", "target_image": "demo-adapter", "image_id": "sha256:" + "d" * 64, "server_command": ["python", "server.py"], "working_dir": "/opt/sure_trans"},
+                "adapter_image_result.json": {"status": "passed", "source_image": "demo-source", "target_image": "demo-adapter", "image_id": "sha256:" + "d" * 64, "server_command": ["/opt/venv/bin/python", "/opt/sure_trans/server.py"], "working_dir": "/opt/sure_trans"},
                 "docker_registry_result.json": {"schema": "sure.trans.docker_registry_result.v1", "status": "passed", "target_image": image, "target_image_digest": digest, "target_image_ref": image_ref, "pull_verified": True},
                 "framework_detection.json": {"schema": "sure.trans.framework_detection.v2", "declared_framework": "pytorch", "declared_model_framework": "custom", "detected_framework": "pytorch", "detected_model_framework": "custom", "framework_requirement_met": True, "model_framework_matches": True, "transformers_preferred": True, "clarification_required": True, "architecture_signals": [], "architecture_clarification": "Custom PyTorch implementation; no specific architecture family proven.", "status": "ready", "evidence": ["torch import"]},
                 "inference_dependency_report.json": {"entrypoint": str(code / "infer.py"), "build_context": str(delivery), "docker_copy_sources": ["code/"], "python_imports": ["torch"], "support_paths": [str(code)], "unresolved": [], "external_paths": [], "status": "ready"},
@@ -1203,11 +1342,37 @@ class TransScriptsTest(unittest.TestCase):
             for name, value in values.items():
                 (artifacts / name).write_text(json.dumps(value) + "\n", encoding="utf-8")
             (artifacts / "source_image_build.log").write_text("fake docker build\n", encoding="utf-8")
-            subprocess.run([sys.executable, str(SCRIPTS_DIR / "scaffold_adapter.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "scaffold_adapter.py"), "--run-dir", str(run_dir)],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=self._python_probe_environment(root),
+            )
             (run_dir / "adapter" / "model.py").write_text(
                 "class ModelWrapper:\n    def __init__(self, config=None): self.model = object()\n    def load(self): return None\n    def predict(self, input_data): return {'text': 'ok'}\n    def healthcheck(self): return {'status': 'ready', 'model_loaded': True}\n",
                 encoding="utf-8",
             )
+            adapter_validation = artifacts / "adapter_validation"
+            adapter_validation.mkdir()
+            (adapter_validation / "sample_output.json").write_text(
+                json.dumps({"text": "ok"}) + "\n",
+                encoding="utf-8",
+            )
+            relative_python = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "write_runtime_inventory.py"),
+                    "--run-dir",
+                    str(run_dir),
+                    "--python-executable",
+                    "python",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(relative_python.returncode, 0)
+            self.assertIn("must be absolute", relative_python.stdout + relative_python.stderr)
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "write_runtime_inventory.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
             inventory = json.loads((artifacts / "runtime_inventory.json").read_text(encoding="utf-8"))
             self.assertTrue(inventory["harness_runtime"]["required"])
@@ -1215,12 +1380,34 @@ class TransScriptsTest(unittest.TestCase):
                 inventory["harness_runtime"]["python_executable"],
                 "/opt/sure-harness/sure-harness-test/bin/python",
             )
+            self.assertEqual(inventory["model_runtime"]["python_executable"], "/opt/venv/bin/python")
+            self.assertEqual(inventory["container_runtime"]["python_executable"], "/opt/venv/bin/python")
+            self.assertEqual(
+                inventory["container_runtime"]["server_command"],
+                ["/opt/venv/bin/python", "/opt/sure_trans/server.py"],
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "check_artifact.py"),
+                    "--run-dir",
+                    str(run_dir),
+                    "--produces",
+                    str(artifacts / "runtime_inventory.json"),
+                    "--kind",
+                    "runtime_inventory",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "write_verdict.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
             verdict = json.loads((artifacts / "verdict.json").read_text(encoding="utf-8"))
             self.assertEqual(verdict["schema"], "sure.trans.verdict.v2")
             self.assertEqual(verdict["framework"]["computation"]["detected"], "pytorch")
             self.assertEqual(verdict["framework"]["model"]["declared"], "custom")
             self.assertTrue(verdict["framework"]["architecture_clarification"])
+            subprocess.run([sys.executable, str(SCRIPTS_DIR / "finalize_trans_bundle.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
             subprocess.run([sys.executable, str(SCRIPTS_DIR / "finalize_trans_bundle.py"), "--run-dir", str(run_dir)], check=True, capture_output=True, text=True)
             model_dir = root / "sure" / "models" / "demo"
             check = subprocess.run(
@@ -1231,6 +1418,101 @@ class TransScriptsTest(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(check.stdout.strip(), image_ref)
+            fixture_manifest = json.loads(
+                (model_dir / "artifacts" / "fixture_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(Path(fixture_manifest["model_dir"]), model_dir)
+            self.assertEqual(Path(fixture_manifest["staged_dir"]), model_dir / "fixture" / "asr")
+            self.assertEqual(Path(fixture_manifest["gt_jsonl"]), model_dir / "fixture" / "asr" / "gt.jsonl")
+            self.assertEqual(fixture_manifest["samples"][0]["annotation_fields"], ["text"])
+            gt = json.loads((model_dir / "fixture" / "asr" / "gt.jsonl").read_text(encoding="utf-8"))
+            self.assertEqual(gt["text"], "human fixture annotation")
+            self.assertEqual(fixture_manifest["annotation_source"]["type"], "fixture_expected_sidecar")
+            self.assertFalse(fixture_manifest["annotation_source"]["fallback"])
+            self.assertTrue((model_dir / "fixture" / "asr" / "smoke.expected.json").is_file())
+            self.assertEqual(
+                json.loads((model_dir / "artifacts" / "sample_output.json").read_text(encoding="utf-8")),
+                {"text": "ok"},
+            )
+            manifest = json.loads(
+                (model_dir / "artifacts" / "artifact_manifest.json").read_text(encoding="utf-8")
+            )
+            required_paths = {entry["path"] for entry in manifest["artifacts"]["required"].values()}
+            self.assertIn("artifacts/sample_output.json", required_paths)
+            self.assertIn("artifacts/fixture_manifest.json", required_paths)
+            self.assertIn("model.py", required_paths)
+            deployment = json.loads(
+                (model_dir / "artifacts" / "deployment_ready.json").read_text(encoding="utf-8")
+            )
+            self.assertIn("artifacts/sample_output.json", deployment["required_artifact_sha256"])
+            self.assertIn("model.py", deployment["required_artifact_sha256"])
+            self.assertIn("weights.bin", deployment["required_artifact_sha256"])
+            self.assertIn("fixture/asr/smoke.wav", deployment["required_artifact_sha256"])
+            self.assertIn("fixture/asr/gt.jsonl", deployment["required_artifact_sha256"])
+            package = json.loads((model_dir / "artifacts" / "package_gate.json").read_text(encoding="utf-8"))
+            inventory = json.loads((model_dir / "artifacts" / "runtime_inventory.json").read_text(encoding="utf-8"))
+            final_verdict = json.loads((model_dir / "artifacts" / "verdict.json").read_text(encoding="utf-8"))
+            finalized_manifest = json.loads(
+                (model_dir / "artifacts" / "artifact_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertLess(finalized_manifest["generated_at"], package["generated_at"])
+            self.assertLess(package["generated_at"], inventory["generated_at"])
+            self.assertLess(inventory["generated_at"], final_verdict["generated_at"])
+            self.assertLess(final_verdict["generated_at"], deployment["generated_at"])
+            finalized_check = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR.parents[1] / "sure_onboard" / "scripts" / "check_finalized_bundle.py"),
+                    "--run-dir",
+                    str(run_dir),
+                    "--produces",
+                    str(artifacts / "deployment_ready.json"),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(
+                finalized_check.returncode,
+                0,
+                finalized_check.stdout + finalized_check.stderr,
+            )
+            fixture_check = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR.parents[1] / "sure_onboard" / "scripts" / "check_fixture.py"),
+                    "--run-dir",
+                    str(run_dir),
+                    "--produces",
+                    str(model_dir / "artifacts" / "fixture_manifest.json"),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(fixture_check.returncode, 0, fixture_check.stdout + fixture_check.stderr)
+
+    def test_ground_truth_requires_a_reference_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = root / "run"
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir(parents=True)
+            fixture = root / "smoke.wav"
+            fixture.write_bytes(b"RIFF-smoke")
+            fixture_manifest = artifacts / "fixture_manifest.json"
+            fixture_manifest.write_text(
+                json.dumps({
+                    "status": "ready",
+                    "model_dir": str(root),
+                    "staged_dir": str(root),
+                    "staged_path": str(fixture),
+                    "gt_jsonl": str(root / "gt.jsonl"),
+                    "samples": [{"audio": fixture.name, "audio_path": str(fixture), "annotation_fields": ["text"]}],
+                    "sample_count": 1,
+                }) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(ValueError):
+                finalize_trans_bundle.stage_fixture(run_dir, root / "model", {"task_type": "asr"})
 
 
     def test_blocked_finalize_writes_an_honest_terminal_marker(self) -> None:
@@ -1329,15 +1611,23 @@ class TransScriptsTest(unittest.TestCase):
             adapter.mkdir(parents=True)
             artifacts.mkdir()
             for name in ("model.py", "__init__.py", "server.py", "config.yaml", "model.spec.yaml", "validate.py", "mcp_smoke.py"):
+                content = "ok\n"
+                if name == "config.yaml":
+                    content = "server:\n  command: [\"/opt/venv/bin/python\", \"/opt/sure_trans/server.py\"]\n"
                 (adapter / name).write_text(
-                    "class ModelWrapper:\n    pass\n" if name == "model.py" else "ok\n",
+                    "class ModelWrapper:\n    pass\n" if name == "model.py" else content,
                     encoding="utf-8",
                 )
             dockerfile = adapter / "Dockerfile.sure"
             dockerfile.write_text(
                 "FROM demo-source\n"
                 "COPY --from=sure_harness_runtime / /opt/sure-harness/sure-harness-test/\n"
-                "COPY model.py server.py config.yaml model.spec.yaml __init__.py mcp_smoke.py /opt/sure_trans/\n",
+                "COPY model.py server.py config.yaml model.spec.yaml __init__.py mcp_smoke.py /opt/sure_trans/\n"
+                "ENTRYPOINT [\"/opt/venv/bin/python\", \"/opt/sure_trans/server.py\"]\n",
+                encoding="utf-8",
+            )
+            (artifacts / "source_image_result.json").write_text(
+                json.dumps({"image": "demo-source", "image_id": "sha256:" + "b" * 64}) + "\n",
                 encoding="utf-8",
             )
             manifest = {
@@ -1358,6 +1648,11 @@ class TransScriptsTest(unittest.TestCase):
                     "manifest_path": "/opt/sure-harness/sure-harness-test/runtime-manifest.json",
                     "runtime_root": "/opt/sure-harness/sure-harness-test",
                 },
+                "container_python_executable": "/opt/venv/bin/python",
+                "server_command": ["/opt/venv/bin/python", "/opt/sure_trans/server.py"],
+                "working_dir": "/opt/sure_trans",
+                "source_image_reference": "demo-source",
+                "source_image_id": "sha256:" + "b" * 64,
             }
             produces = artifacts / "adapter_manifest.json"
             produces.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
@@ -1371,7 +1666,8 @@ class TransScriptsTest(unittest.TestCase):
             dockerfile.write_text(
                 "FROM demo-source\n"
                 "COPY --from=sure_harness_runtime / /opt/sure-harness/sure-harness-test/\n"
-                "COPY model.py server.py config.yaml model.spec.yaml __init__.py validate.py mcp_smoke.py /opt/sure_trans/\n",
+                "COPY model.py server.py config.yaml model.spec.yaml __init__.py validate.py mcp_smoke.py /opt/sure_trans/\n"
+                "ENTRYPOINT [\"/opt/venv/bin/python\", \"/opt/sure_trans/server.py\"]\n",
                 encoding="utf-8",
             )
             subprocess.run([

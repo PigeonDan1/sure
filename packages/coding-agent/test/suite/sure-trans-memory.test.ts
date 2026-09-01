@@ -294,6 +294,7 @@ function seedNonSuccessFinish(fixture: Fixture): void {
 	});
 	writeArtifact(fixture.runDir, "deployment_ready.json", {
 		schema: "sure.onboard.deployment_ready.v1",
+		integrity_profile: "partial-run-v1",
 		generated_at: "2026-08-31T00:00:00Z",
 		status: "blocked",
 		blocked_reason: "source image never built",

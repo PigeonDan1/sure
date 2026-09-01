@@ -83,6 +83,7 @@ from vc_exec import (
     ensure_registry_image,
     normalize_job_name,
     parse_job_id,
+    push_digest,
     registry_image,
     run_vc_job,
     safe_image_component,
@@ -409,7 +410,30 @@ class AvailabilityTest(unittest.TestCase):
         with mock.patch.object(vc_exec.shutil, "which", return_value=None):
             self.assertFalse(vc_available())
 
+    def test_configured_partitions_reads_validated_site_policy(self) -> None:
+        self.assertEqual(vc_exec.configured_partitions(), {TEST_PARTITION})
+
+    def test_configured_partitions_requires_site_partitions(self) -> None:
+        with mock.patch.object(
+            vc_exec,
+            "load_site_policy",
+            return_value={"policy": {"execution": {}}},
+        ):
+            with self.assertRaises(ValueError):
+                vc_exec.configured_partitions()
+
 class EnsureRegistryImageTest(unittest.TestCase):
+    def test_push_digest_selects_the_requested_tag(self) -> None:
+        old = "sha256:" + "a" * 64
+        expected = "sha256:" + "b" * 64
+        output = "\n".join(
+            [
+                json.dumps({"status": f"0.1.1: digest: {old} size: 1"}),
+                json.dumps({"status": f"0.1.2: digest: {expected} size: 1"}),
+            ]
+        )
+        self.assertEqual(push_digest(output, "registry.example/example-org/demo:0.1.2"), expected)
+
     def test_push_records_commands_and_parses_digest(self) -> None:
         digest = "sha256:" + "c" * 64
         ref = registry_image("demo", "0.1.0")
@@ -482,7 +506,7 @@ class EnsureRegistryImageTest(unittest.TestCase):
     def test_a_rerun_keeps_the_digest_the_first_push_earned(self) -> None:
         ref = registry_image("demo", "0.1.0")
         digest = "sha256:" + "c" * 64
-        rejection = "镜像已存在，请更新tag"
+        rejection = "tag already exists; use a new tag"
 
         def fake_run(args, *, timeout=None, env=None):
             if args[:2] == ["docker", "tag"]:
@@ -491,10 +515,32 @@ class EnsureRegistryImageTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             log = Path(temporary) / "push.log"
-            with mock.patch.object(vc_exec, "run_command", side_effect=fake_run):
+            with mock.patch.object(vc_exec, "run_command", side_effect=fake_run), mock.patch.object(
+                vc_exec, "registry_tag_digest", return_value=digest
+            ):
                 self.assertEqual(
                     ensure_registry_image("local-image", ref, log, known_digest=digest), digest
                 )
+
+    def test_a_rerun_refreshes_a_stale_recorded_digest(self) -> None:
+        ref = registry_image("demo", "0.1.0")
+        stale = "sha256:" + "a" * 64
+        current = "sha256:" + "b" * 64
+
+        def fake_run(args, *, timeout=None, env=None):
+            if args[:2] == ["docker", "tag"]:
+                return completed(args)
+            return completed(args, stdout="tag already exists; use a new tag\n")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "push.log"
+            with mock.patch.object(vc_exec, "run_command", side_effect=fake_run), mock.patch.object(
+                vc_exec, "registry_tag_digest", return_value=current
+            ) as resolver:
+                self.assertEqual(
+                    ensure_registry_image("local-image", ref, log, known_digest=stale), current
+                )
+            resolver.assert_called_once_with(ref, log)
 
     def test_a_recorded_digest_is_only_reused_for_the_same_reference(self) -> None:
         ref = registry_image("demo", "0.1.0")
@@ -509,7 +555,7 @@ class EnsureRegistryImageTest(unittest.TestCase):
 
     def test_push_without_digest_is_a_failure(self) -> None:
         ref = registry_image("demo", "0.1.0")
-        rejection = "镜像已存在，请更新tag"
+        rejection = "tag already exists; use a new tag"
 
         def fake_run(args, *, timeout=None, env=None):
             if args[:2] == ["docker", "tag"]:
@@ -796,6 +842,21 @@ class RunVcJobTest(unittest.TestCase):
             submit = recorded[0]
             project_index = submit.index("--project")
             self.assertEqual(submit[project_index + 1], "override-project")
+
+    def test_submit_is_authoritative_after_policy_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            log_dir = Path(temporary) / "logs"
+            patch, recorded = self._submit_side_effect()
+            with patch, mock.patch.object(vc_exec, "vc_available", return_value=True):
+                result = run_vc_job(
+                    image="registry/demo:0.1.0",
+                    command="true",
+                    log_dir=log_dir,
+                    partition="gpu-test",
+                )
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(recorded[0][:2], ["vc", "submit"])
+            self.assertEqual(recorded[0][recorded[0].index("-p") + 1], "gpu-test")
 
     def test_missing_vc_binary_raises(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
