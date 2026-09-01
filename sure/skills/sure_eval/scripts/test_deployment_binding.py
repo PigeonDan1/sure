@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from container_execution import build_local_container_command
-from deployment_binding import DeploymentBindingError, load_deployment_binding
+from deployment_binding import DeploymentBindingError, _portable_relative, load_deployment_binding
 from check_run_report import _submitted_image_error
 from run_vc_execution import (
     _approved_memory_gb,
@@ -33,6 +33,10 @@ def sha256(path: Path) -> str:
 
 
 class DeploymentBindingTests(unittest.TestCase):
+    def test_portable_path_rejects_the_bundle_root(self) -> None:
+        with self.assertRaises(DeploymentBindingError):
+            _portable_relative(".", "test path")
+
     def test_vc_job_name_is_bounded_and_stable(self) -> None:
         raw = "openai__" + "whisper-large-v3-turbo-" * 4
         first = _normalize_job_name(raw)
@@ -209,6 +213,20 @@ class DeploymentBindingTests(unittest.TestCase):
                 },
             },
         )
+        write_json(
+            self.artifacts / "artifact_manifest.json",
+            {
+                "schema": "sure.onboard.artifact_manifest.v1",
+                "status": "finalized",
+                "model_dir": ".",
+                "artifacts": {
+                    "required": {
+                        "runtime_inventory": {"path": "artifacts/runtime_inventory.json"},
+                        "package_gate": {"path": "artifacts/package_gate.json"},
+                    }
+                },
+            },
+        )
         hashes = {
             "artifacts/runtime_inventory.json": sha256(self.artifacts / "runtime_inventory.json"),
             "artifacts/package_gate.json": sha256(self.artifacts / "package_gate.json"),
@@ -292,6 +310,14 @@ class DeploymentBindingTests(unittest.TestCase):
         marker["bundle_identity_sha256"] = "b" * 64
         write_json(self.artifacts / "deployment_ready.json", marker)
         with self.assertRaisesRegex(DeploymentBindingError, "bundle identity"):
+            load_deployment_binding(self.model, "demo")
+
+    def test_complete_integrity_profile_rejects_a_self_consistent_but_incomplete_manifest(self) -> None:
+        marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
+        marker["integrity_profile"] = "manifest-complete-v1"
+        write_json(self.artifacts / "deployment_ready.json", marker)
+
+        with self.assertRaisesRegex(DeploymentBindingError, "mandatory deployment sidecar|mandatory core"):
             load_deployment_binding(self.model, "demo")
 
     def test_local_command_uses_digest_and_read_only_model(self) -> None:

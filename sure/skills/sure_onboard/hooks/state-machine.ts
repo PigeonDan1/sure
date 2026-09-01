@@ -255,6 +255,7 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 			package_profile: PACKAGE_PROFILES,
 		},
 		gateScript: "check_package_gate.py",
+		helperScripts: ["write_package_gate.py"],
 	},
 	{
 		id: "write_runtime_inventory",
@@ -274,6 +275,7 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		schemaRef: "verdict.schema.json",
 		requiredFields: ["status"],
 		gateScript: "check_verdict.py",
+		helperScripts: ["write_verdict.py"],
 	},
 	// Memory extraction (spec §4.1). Sits after the business conclusion and
 	// before the closing unit, so every run that reaches sure_finish passes

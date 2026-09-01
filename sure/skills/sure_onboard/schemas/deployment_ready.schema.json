@@ -6,6 +6,7 @@
 	"required": ["schema", "generated_at", "status", "model_name", "package_profile", "execution_policy", "required_artifact_sha256", "bundle_identity_sha256"],
 	"properties": {
 		"schema": { "const": "sure.onboard.deployment_ready.v1" },
+		"integrity_profile": { "enum": ["manifest-complete-v1", "partial-run-v1"] },
 		"generated_at": { "type": "string" },
 		"status": { "enum": ["ready", "local_only", "api_ready", "blocked"] },
 		"model_name": { "type": "string" },

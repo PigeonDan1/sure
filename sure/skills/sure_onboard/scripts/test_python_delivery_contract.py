@@ -13,10 +13,14 @@ from unittest.mock import patch
 import stage_model_artifacts
 from finalize_model_bundle import finalize
 from materialize_model_runtime import materialize
+from write_package_gate import write_package_gate
 from write_runtime_inventory import write_inventory
+from write_verdict import write_verdict
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "sure_eval" / "scripts"))
+from deployment_binding import load_deployment_binding  # noqa: E402
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -113,6 +117,13 @@ class PythonDeliveryContractTests(unittest.TestCase):
         with patch.dict(os.environ, {"SURE_SITE_POLICY": str(self.site_policy)}):
             materialize(self.run_dir, draft, self.run_artifacts / "build_env_result.json")
 
+        fixture_dir = self.model_dir / "fixture" / "asr" / "smoke"
+        fixture_dir.mkdir(parents=True)
+        (fixture_dir / "sample.wav").write_bytes(b"RIFF-test")
+        (fixture_dir / "gt.jsonl").write_text(
+            json.dumps({"audio": "sample.wav", "text": "ground truth"}) + "\n",
+            encoding="utf-8",
+        )
         passing_artifacts = {
             "context_selection.json": {"task_type": "asr", "selected_references": []},
             "repo_summary.json": {"repo_url": "https://example.com/demo.git"},
@@ -120,7 +131,14 @@ class PythonDeliveryContractTests(unittest.TestCase):
             "backend_choice.json": {"backend": "uv"},
             "build_plan.json": {"model_id": "demo/model", "model_dir": str(self.model_dir), "backend": "uv", "steps": [], "package_profile": "none"},
             "spec_validation.json": {"checks": {}, "status": "passed"},
-            "fixture_manifest.json": {"model_dir": str(self.model_dir), "task_type": "asr", "staged_dir": str(self.root), "gt_jsonl": str(self.root / "gt.jsonl"), "samples": [], "sample_count": 0},
+            "fixture_manifest.json": {
+                "model_dir": str(self.model_dir),
+                "task_type": "asr",
+                "staged_dir": str(fixture_dir),
+                "gt_jsonl": str(fixture_dir / "gt.jsonl"),
+                "samples": [{"audio": "sample.wav"}],
+                "sample_count": 1,
+            },
             "weights_manifest.json": {"weights_ready": True},
             "env_compat_result.json": {"compat_ok": True},
             "import_result.json": {"import_passed": True},
@@ -137,23 +155,12 @@ class PythonDeliveryContractTests(unittest.TestCase):
             ["--run-dir", str(self.run_dir), "--produces", str(self.run_artifacts / "artifact_manifest.json")]
         )
         self.assertEqual(stage_result, 0)
-        package = {
-            "schema": "sure.onboard.package_gate.v2",
-            "status": "passed",
-            "package_profile": "none",
-            "model_name": "demo",
-            "model_dir": str(self.model_dir),
-            "artifact_manifest_path": str(self.run_artifacts / "artifact_manifest.json"),
-            "readiness": {
-                "local_ready": True,
-                "container_ready": False,
-                "docker_ready": False,
-                "registry_ready": False,
-                "bundle_ready": True,
-            },
-            "local": {"validation_passed": True, "artifacts_complete": True},
-        }
-        write_json(self.run_artifacts / "package_gate.json", package)
+        with patch.dict(os.environ, {"SURE_SITE_POLICY": str(self.site_policy)}):
+            package = write_package_gate(
+                self.run_dir,
+                self.run_artifacts / "package_gate.json",
+                self.model_dir,
+            )
         package_check = self.run_gate("check_package_gate.py", self.run_artifacts / "package_gate.json")
         self.assertEqual(package_check.returncode, 0, package_check.stderr)
 
@@ -169,17 +176,11 @@ class PythonDeliveryContractTests(unittest.TestCase):
         inventory_check = self.run_gate("check_runtime_inventory.py", self.run_artifacts / "runtime_inventory.json")
         self.assertEqual(inventory_check.returncode, 0, inventory_check.stderr)
 
-        verdict = {
-            "status": "passed",
-            "package_profile": "none",
-            "build": {"success": True},
-            "validation": {
-                name: {"passed": True}
-                for name in ("import_test", "load_test", "infer_test", "contract_test")
-            },
-            "readiness": package["readiness"],
-        }
-        write_json(self.run_artifacts / "verdict.json", verdict)
+        verdict = write_verdict(
+            self.run_dir,
+            self.run_artifacts / "verdict.json",
+            self.model_dir,
+        )
         verdict_check = self.run_gate("check_verdict.py", self.run_artifacts / "verdict.json")
         self.assertEqual(verdict_check.returncode, 0, verdict_check.stderr)
 
@@ -191,6 +192,10 @@ class PythonDeliveryContractTests(unittest.TestCase):
         self.assertEqual(deployment["execution_policy"]["isolation"], "trusted_host")
         final_check = self.run_gate("check_finalized_bundle.py", self.run_artifacts / "deployment_ready.json")
         self.assertEqual(final_check.returncode, 0, final_check.stderr)
+        with patch.dict(os.environ, {"SURE_SITE_POLICY": str(self.site_policy)}):
+            binding = load_deployment_binding(self.model_dir, "demo")
+        self.assertEqual(binding["schema"], "sure.eval.deployment_binding.v2")
+        self.assertEqual(binding["evidence"]["integrity_profile"], "manifest-complete-v1")
         self.assertFalse(any(self.model_artifacts.glob("docker_*.json")))
 
 

@@ -31,6 +31,14 @@ def fail(message: str) -> int:
     return 1
 
 
+def annotation_is_nonempty(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict)):
+        return bool(value)
+    return value is not None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
@@ -104,7 +112,7 @@ def main() -> int:
         annotation_fields = [
             field
             for field in ("ground_truth", "target_text", "text", "segments", "label", "intent")
-            if field in row
+            if field in row and annotation_is_nonempty(row[field])
         ]
         if not annotation_fields:
             return fail(

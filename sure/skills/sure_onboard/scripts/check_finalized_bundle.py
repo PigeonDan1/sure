@@ -12,6 +12,7 @@ from pathlib import Path
 from deployment_contract import (
     normalize_harness_runtime,
     read_json,
+    require_timestamp_after,
     resolve_model_dir,
     sha256_file,
     validate_image_and_digest,
@@ -43,6 +44,8 @@ def main() -> int:
         )
         if data.get("schema") != expected_schema:
             raise ValueError("invalid deployment-ready schema")
+        if data.get("status") in {"ready", "api_ready"} and data.get("integrity_profile") != "manifest-complete-v1":
+            raise ValueError("ready deployment must use the manifest-complete-v1 integrity profile")
         policy = data.get("execution_policy") if isinstance(data.get("execution_policy"), dict) else {}
         if policy.get("host_python_fallback") is not False:
             raise ValueError("final execution policy must disable host fallback")
@@ -50,12 +53,18 @@ def main() -> int:
             raise ValueError("Python execution policy must disable model bundle mutation")
         if not python_delivery and policy.get("nfs_models_read_only") is not True:
             raise ValueError("legacy deployment policy must keep NFS models read-only")
-        for raw, expected in data.get("required_artifact_sha256", {}).items():
-            relative = str(raw).removeprefix("artifacts/")
-            artifact = model_dir / "artifacts" / relative
+        hashes = data.get("required_artifact_sha256", {})
+        if not isinstance(hashes, dict) or not hashes:
+            raise ValueError("required_artifact_sha256 must list finalized artifacts")
+        for raw, expected in hashes.items():
+            relative = Path(str(raw))
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError(f"invalid finalized artifact path: {raw}")
+            artifact = (model_dir / relative).resolve()
+            if not artifact.is_relative_to(model_dir.resolve()):
+                raise ValueError(f"finalized artifact escapes model bundle: {raw}")
             if not artifact.is_file() or sha256_file(artifact) != expected:
                 raise ValueError(f"finalized artifact hash mismatch: {raw}")
-        hashes = data.get("required_artifact_sha256", {})
         bundle_hash = hashlib.sha256(
             json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
@@ -64,6 +73,50 @@ def main() -> int:
         manifest = read_json(model_dir / "artifacts" / "artifact_manifest.json")
         if manifest.get("status") != "finalized" or manifest.get("model_dir") != ".":
             raise ValueError("artifact_manifest.json was not refreshed into portable finalized form")
+        package = read_json(model_dir / "artifacts" / "package_gate.json")
+        inventory = read_json(model_dir / "artifacts" / "runtime_inventory.json")
+        verdict = read_json(model_dir / "artifacts" / "verdict.json")
+        require_timestamp_after(
+            "package_gate.json",
+            package,
+            ("artifact_manifest.json", manifest),
+        )
+        require_timestamp_after(
+            "runtime_inventory.json",
+            inventory,
+            ("package_gate.json", package),
+        )
+        require_timestamp_after(
+            "verdict.json",
+            verdict,
+            ("package_gate.json", package),
+            ("runtime_inventory.json", inventory),
+        )
+        require_timestamp_after(
+            "deployment_ready.json",
+            data,
+            ("artifact_manifest.json", manifest),
+            ("package_gate.json", package),
+            ("runtime_inventory.json", inventory),
+            ("verdict.json", verdict),
+        )
+        manifest_artifacts = manifest.get("artifacts") if isinstance(manifest.get("artifacts"), dict) else {}
+        required_entries = manifest_artifacts.get("required") if isinstance(manifest_artifacts.get("required"), dict) else {}
+        if not any(
+            isinstance(entry, dict) and entry.get("path") == "artifacts/deployment_ready.json"
+            for entry in required_entries.values()
+        ):
+            raise ValueError("artifact_manifest must declare deployment_ready.json as its terminal self-entry")
+        declared_paths = {
+            str(entry.get("path"))
+            for entry in required_entries.values()
+            if isinstance(entry, dict) and entry.get("path") != "artifacts/deployment_ready.json"
+        }
+        if declared_paths != set(hashes):
+            raise ValueError(
+                "deployment_ready hashes must cover exactly every finalized artifact_manifest required file "
+                "except deployment_ready.json"
+            )
         if resolved.get("deployment_type") == "local" and resolved.get("package_profile") == "docker-registry":
             if (
                 data.get("status") != "ready"
@@ -76,7 +129,6 @@ def main() -> int:
             )
             if data.get("target_image_ref") != image_ref:
                 raise ValueError("deployment target_image_ref is not digest pinned")
-            inventory = read_json(model_dir / "artifacts" / "runtime_inventory.json")
             declared = data.get("harness_runtime") if isinstance(data.get("harness_runtime"), dict) else {}
             source = inventory.get("harness_runtime") if isinstance(inventory.get("harness_runtime"), dict) else {}
             declared = normalize_harness_runtime(declared, allow_derive=False)

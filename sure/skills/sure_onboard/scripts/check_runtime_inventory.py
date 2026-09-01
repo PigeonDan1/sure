@@ -9,7 +9,13 @@ import os
 import sys
 from pathlib import Path
 
-from deployment_contract import normalize_harness_runtime, read_json, resolve_model_dir, validate_image_and_digest
+from deployment_contract import (
+    normalize_harness_runtime,
+    read_json,
+    require_timestamp_after,
+    resolve_model_dir,
+    validate_image_and_digest,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
@@ -29,6 +35,15 @@ def main() -> int:
         model_copy = model_dir / "artifacts" / "runtime_inventory.json"
         if not model_copy.is_file() or model_copy.read_bytes() != path.read_bytes():
             raise ValueError("runtime_inventory.json must be copied identically into the model bundle")
+        package = read_json(model_dir / "artifacts" / "package_gate.json")
+        if (data.get("generated_at") or data.get("timestamp")) and (
+            package.get("generated_at") or package.get("timestamp")
+        ):
+            require_timestamp_after(
+                "runtime_inventory.json",
+                data,
+                ("package_gate.json", package),
+            )
         if data.get("schema") != "sure.onboard.runtime_inventory.v2":
             raise ValueError("runtime inventory schema must be sure.onboard.runtime_inventory.v2")
         policy = data.get("policy") if isinstance(data.get("policy"), dict) else {}

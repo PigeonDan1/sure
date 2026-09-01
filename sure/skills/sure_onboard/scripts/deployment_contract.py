@@ -5,12 +5,53 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 IMAGE_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z0-9.-]+(?::[0-9]+)?/.+:[A-Za-z0-9_.-]+$")
+
+
+def document_timestamp(document: dict[str, Any], name: str) -> datetime:
+    raw = document.get("generated_at") or document.get("timestamp")
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError(f"{name} must declare generated_at or timestamp")
+    normalized = raw.strip().replace("Z", "+00:00")
+    try:
+        value = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"{name} has an invalid timestamp: {raw!r}") from exc
+    if value.tzinfo is None:
+        raise ValueError(f"{name} timestamp must include a timezone: {raw!r}")
+    return value.astimezone(timezone.utc)
+
+
+def timestamp_after(*dependencies: tuple[str, dict[str, Any]]) -> str:
+    latest = max(document_timestamp(document, name) for name, document in dependencies)
+    candidate = datetime.now(timezone.utc)
+    if candidate <= latest:
+        candidate = latest + timedelta(microseconds=1)
+    return candidate.isoformat()
+
+
+def require_timestamp_after(
+    later_name: str,
+    later: dict[str, Any],
+    *dependencies: tuple[str, dict[str, Any]],
+) -> None:
+    later_time = document_timestamp(later, later_name)
+    latest_name, latest_document = max(
+        dependencies,
+        key=lambda item: document_timestamp(item[1], item[0]),
+    )
+    latest_time = document_timestamp(latest_document, latest_name)
+    if later_time <= latest_time:
+        raise ValueError(
+            f"{later_name} timestamp must be later than {latest_name}: "
+            f"{later_time.isoformat()} <= {latest_time.isoformat()}"
+        )
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -60,11 +101,28 @@ def load_artifact(run_dir: Path, model_dir: Path, name: str, *, required: bool =
     return {}
 
 
+def load_model_artifact(model_dir: Path, name: str) -> dict[str, Any]:
+    path = model_dir / "artifacts" / name
+    if not path.is_file() or path.is_symlink():
+        raise ValueError(f"missing or unsafe model artifact: {name}")
+    return read_json(path)
+
+
 def resolve_model_dir(run_dir: Path) -> tuple[Path, dict[str, Any]]:
-    resolved = read_json(run_dir / "artifacts" / "model_input_resolved.json")
+    artifacts = run_dir / "artifacts"
+    candidates = (
+        artifacts / "model_input_resolved.json",
+        artifacts / "trans_input_resolved.json",
+    )
+    source = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if source is None:
+        raise ValueError(
+            "missing model_input_resolved.json or trans_input_resolved.json"
+        )
+    resolved = read_json(source)
     raw = resolved.get("model_dir")
     if not isinstance(raw, str) or not raw:
-        raise ValueError("model_input_resolved.json must declare model_dir")
+        raise ValueError(f"{source.name} must declare model_dir")
     model_dir = Path(raw).expanduser()
     if not model_dir.is_absolute():
         model_dir = Path.cwd() / model_dir
