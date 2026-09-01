@@ -354,6 +354,25 @@ class DeploymentBindingTests(unittest.TestCase):
 
         self.assertEqual(binding["evidence"]["integrity_profile"], "legacy-partial-v1")
 
+    def test_a_legacy_marker_does_not_need_a_finalized_portable_manifest(self) -> None:
+        # Bundles sealed before the cutoff wrote artifact_manifest.json by hand: status is whatever
+        # the author typed and model_dir an absolute path. Eval bound them on the marker hashes alone
+        # and the legacy profile keeps that promise; only a declared profile buys the manifest check.
+        write_json(self.artifacts / "artifact_manifest.json", {"status": "passed", "model_dir": "/nfs/models/demo"})
+
+        binding = load_deployment_binding(self.model, "demo")
+
+        self.assertEqual(binding["evidence"]["integrity_profile"], "legacy-partial-v1")
+
+    def test_a_declared_profile_still_demands_a_finalized_portable_manifest(self) -> None:
+        self._rewrite_marker(integrity_profile="manifest-complete-v1")
+        manifest = json.loads((self.artifacts / "artifact_manifest.json").read_text())
+        manifest["status"] = "passed"
+        write_json(self.artifacts / "artifact_manifest.json", manifest)
+
+        with self.assertRaisesRegex(DeploymentBindingError, "must be finalized"):
+            load_deployment_binding(self.model, "demo")
+
     def test_marker_without_any_timestamp_may_not_fall_back_to_the_legacy_profile(self) -> None:
         marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
         marker.pop("generated_at", None)

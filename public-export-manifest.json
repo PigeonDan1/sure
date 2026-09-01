@@ -1,7 +1,7 @@
 {
   "schema": "sure.public_export_manifest.v2",
-  "projection_id": "sha256:e630d5768345f3eda3d95e9a89ff66c4627ae56c4864ce518e9ab61b9923be22",
-  "tree_sha256": "e630d5768345f3eda3d95e9a89ff66c4627ae56c4864ce518e9ab61b9923be22",
+  "projection_id": "sha256:6722b1c279ec4086dbd9ece6b062ae97781940c4414a345b5cb2ec1b87bfbe3b",
+  "tree_sha256": "6722b1c279ec4086dbd9ece6b062ae97781940c4414a345b5cb2ec1b87bfbe3b",
   "files": [
     {
       "path": ".gitattributes",
@@ -6961,7 +6961,7 @@
       "path": "sure/runtime/memory/test_cli.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "1220bff32fbe53dd7fd28a26df4b35f9f38a66c66a0110eade8cad7adc2611d4"
+      "sha256": "78db170a0f334a36228b098614dbb0a360242209d0d2ae89d2c5c85a4f919421"
     },
     {
       "path": "sure/runtime/memory/test_digest.py",
@@ -7693,7 +7693,7 @@
       "path": "sure/skills/sure_eval/scripts/deployment_binding.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "af339e408706c0b5e7396c85ca189599bc9b6ff92f9cf2737e60c15c8259a126"
+      "sha256": "322618efcf803886486b87e65054abd80f093669b30a18eee33914aef60a9fcc"
     },
     {
       "path": "sure/skills/sure_eval/scripts/download_sure_data.py",
@@ -8563,7 +8563,7 @@
       "path": "sure/skills/sure_eval/scripts/test_deployment_binding.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "e13f60e25905e85bf54be8c386712eb9d192dc8c3e481d116b34d7bd2ea504d1"
+      "sha256": "040f75e1eeb8639e9bcd29e268f3e9c4c117b51a51ec2af111d6de0868191be3"
     },
     {
       "path": "sure/skills/sure_eval/scripts/test_eval_input_policy.py",
