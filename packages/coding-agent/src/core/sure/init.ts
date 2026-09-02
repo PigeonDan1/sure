@@ -210,7 +210,11 @@ async function ensureAuth(
 	ctx: ExtensionCommandContext,
 	args: SureInitArgs,
 ): Promise<{ ok: boolean; message?: string }> {
-	if (modelRegistry.hasConfiguredAuth({ provider: option.provider, id: option.defaultModel } as any)) {
+	const hasConfiguredAuth = modelRegistry.hasConfiguredAuth({
+		provider: option.provider,
+		id: option.defaultModel,
+	} as any);
+	if (!args.apiKey?.trim() && hasConfiguredAuth) {
 		return { ok: true };
 	}
 
@@ -218,7 +222,7 @@ async function ensureAuth(
 		return runOAuthLogin(option, modelRegistry, ctx);
 	}
 
-	let apiKey = args.apiKey;
+	let apiKey = args.apiKey?.trim();
 	if (!apiKey) {
 		if (!ctx.hasUI) {
 			return {
