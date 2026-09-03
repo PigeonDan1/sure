@@ -90,7 +90,7 @@ if (failures.length === 0) {
 		"sure/skills/sure_feed/sure.skill.json",
 		"sure/skills/sure_onboard/sure.skill.json",
 		"sure/skills/sure_infer/sure.skill.json",
-		"sure/skills/sure_reval/sure.skill.json",
+		"sure/skills/sure_eval/sure.skill.json",
 	];
 	const manifestDifferences = manifestPaths.flatMap((path) => {
 		if (!existsSync(path)) return [`${path} is missing`];

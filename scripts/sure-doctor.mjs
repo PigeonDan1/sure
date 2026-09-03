@@ -80,7 +80,7 @@ const requiredPaths = [
 	"sure/skills/sure_onboard/sure.skill.json",
 	"sure/skills/sure_trans/sure.skill.json",
 	"sure/skills/sure_infer/sure.skill.json",
-	"sure/skills/sure_reval/sure.skill.json",
+	"sure/skills/sure_eval/sure.skill.json",
 	"fixtures",
 ];
 

@@ -42,11 +42,11 @@ export SURE_EVALUATION_HOME=/path/to/sure-evaluation
 pip install -e sure/external/sure-evaluation
 ```
 
-正常跑 `/sure_eval`、`/sure_reval` 不用装:评测用的那套 Python 环境,harness 会按 `sure/runtime/evaluation/` 的契约自己装好,同时把引擎 commit 钉死。可选依赖组和 node-local 环境见引擎自己的文档。
+正常跑 `/sure_eval` 不用装:评测用的那套 Python 环境,harness 会按 `sure/runtime/evaluation/` 的契约自己装好,同时把引擎 commit 钉死。可选依赖组和 node-local 环境见引擎自己的文档。
 
 ### bump 引擎基线(维护者操作)
 
-在改 `/sure_eval`、`/sure_reval`、route 选择、normalization 假设或 pipeline 兼容性文档前,先同步并验证 submodule:
+在改 `/sure_eval`、route 选择、normalization 假设或 pipeline 兼容性文档前,先同步并验证 submodule:
 
 ```bash
 git submodule sync --recursive
@@ -61,7 +61,7 @@ git -C sure/external/sure-evaluation rev-parse HEAD          # 填进 runtime.js
 sha256sum sure/external/sure-evaluation/pyproject.toml       # 填进 engine_pyproject_sha256
 ```
 
-两个值写进 `sure/runtime/evaluation/runtime.json`。gitlink 和 runtime.json 里记的值对不上时,`/sure_eval`、`/sure_reval` 一解析 route plan 就当场报 `evaluation engine commit differs from the locked runtime`,而 `npm run sure:doctor` 在 submodule 正常的情况下查不出这一项。
+两个值写进 `sure/runtime/evaluation/runtime.json`。gitlink 和 runtime.json 里记的值对不上时,`/sure_eval` 一解析 route plan 就当场报 `evaluation engine commit differs from the locked runtime`,而 `npm run sure:doctor` 在 submodule 正常的情况下查不出这一项。
 
 三样一起提交:
 
@@ -107,7 +107,7 @@ export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
 
 ## Route 选择
 
-`metrics` 只有 `/sure_eval` 认:传一个 reported metric,就按它当前的默认链路跑。`/sure_reval` 反过来只认 `pipeline_id`,选的是精确链路;`metrics` 在 reval 是禁用参数,传了在 preStart 第一关就被拒。完整参数契约见对应的 [`/sure_eval`](../sure/skills/sure_infer/SKILL.md) 和 [`/sure_reval`](../sure/skills/sure_reval/SKILL.md) 文档。
+`/sure_eval` 指定链路只有两种方式,二选一:`metrics` 传一个 reported metric,按它当前的默认链路跑;`pipeline_id` 选精确链路。两个都传或都不传,在 preStart 第一关就被拒。`/sure_infer` 不跑任何 metric,它的 `metrics` 只是记进 resolved input 供后面的 `/sure_eval` 参考。完整参数契约见 [`/sure_eval`](../sure/skills/sure_eval/SKILL.md) 文档。
 
 同一 dataset 和 metric 想比多条链路,就用逗号一次传多条:
 
@@ -129,17 +129,16 @@ pipeline_id=<id1>,<id2>
 
 ## 输出证据
 
-一次 eval 或 reval 跑完,实际走了哪条链路,看下面这几个产物。注意 eval 和 reval 的 route plan 是两个 schema、两个落点:
+一次 `/sure_eval` 跑完,实际走了哪条链路,看下面这几个产物:
 
 | 产物 | 关键字段 |
 | --- | --- |
-| `/sure_eval`:`.sure/runs/<run_id>/artifacts/evaluation_route_plan.json`(schema `sure.harness.evaluation_route_plan.v1`) | `engine.engine_root` / `engine.commit`;`datasets[]` 的 `requested_metrics` / `selected_metrics` / `route_choices` / `selected_routes` |
-| `/sure_reval`:先写在 `.sure/runs/<run_id>/scratch/evaluation_route_plan.json`,整棵 scratch 拷进批次包后,持久副本在 `sure/results/<镜像路径>/evaluation_runs/<批id>/evaluation_route_plan.json`(schema `sure.reval.route_plan.v1`) | `engine`;`selected_routes[]` 的 dataset / metric / pipeline_id / route_id / nodes |
+| `evaluation_route_plan.json`:先写在 `.sure/runs/<run_id>/scratch/`,整棵 scratch 拷进批次包后,持久副本在被评测的 inference bundle 目录下 `evaluation_runs/<批id>/`(schema `sure.reval.route_plan.v1`) | `engine`;`selected_routes[]` 的 dataset / metric / pipeline_id / route_id / nodes |
 | `evaluation_payload.json` | `results[].pipeline_id`、`results[].nodes`、metric 产物目录 |
 | `metrics/<dataset>/<metric_slug>[__<pipeline_id>]/pipeline_description.json` | 精确 route 元数据 |
 | 同目录 `report.json` | score 和 pipeline trace |
 
-`/sure_reval` 还要检查 `reval_run_report.json`:
+`/sure_eval` 还要检查 `eval_run_report.json`:
 
 ```text
 evaluation_only=true

@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { MAIN_FLOW_UNITS as EVAL_UNITS } from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
 import { MODEL_FEED_UNITS } from "../../../../sure/skills/sure_feed/hooks/state-machine.ts";
 import { MAIN_FLOW_UNITS } from "../../../../sure/skills/sure_infer/hooks/state-machine.ts";
 import { MODEL_TOOL_UNITS } from "../../../../sure/skills/sure_onboard/hooks/state-machine.ts";
@@ -26,7 +27,7 @@ function readJson(path: string): any {
 const unitsRegistry = readJson(join(MEMORY_LIB, "units.json"));
 const memoryConfig = readJson(join(MEMORY_LIB, "config.json"));
 
-// Spec §4.1 / plan §1.10: the same object in sure_onboard and sure_infer. sure_trans's Unit type
+// Spec §4.1 / plan §1.10: the same object in sure_onboard, sure_infer and sure_eval. sure_trans's Unit type
 // has no helperScripts, so it carries the digest builder in ownedScripts instead; everything the
 // gate itself reads has to stay identical, which is what TRANS_EXTRACT_LESSONS_UNIT below pins.
 const EXTRACT_LESSONS_UNIT = {
@@ -58,6 +59,7 @@ type UnitLike = { id: string; schemaRef?: string; gateScript?: string; helperScr
 const MACHINES: Array<{ skill: string; units: UnitLike[] }> = [
 	{ skill: "sure_onboard", units: MODEL_TOOL_UNITS },
 	{ skill: "sure_infer", units: MAIN_FLOW_UNITS },
+	{ skill: "sure_eval", units: EVAL_UNITS },
 	{ skill: "sure_feed", units: MODEL_FEED_UNITS },
 	{ skill: "sure_trans", units: TRANS_UNITS },
 ];
@@ -66,7 +68,7 @@ describe("sure/runtime/memory/units.json mirrors the state machines", () => {
 	it("has the five skill keys and the v1 schema tag", () => {
 		expect(unitsRegistry.schema).toBe("sure.memory.units.v1");
 		const skills = Object.keys(unitsRegistry.skills).sort();
-		expect(skills).toEqual(["sure_feed", "sure_infer", "sure_onboard", "sure_reval", "sure_trans"]);
+		expect(skills).toEqual(["sure_eval", "sure_feed", "sure_infer", "sure_onboard", "sure_trans"]);
 	});
 
 	it("lists sure_onboard units in MODEL_TOOL_UNITS order", () => {
@@ -81,9 +83,12 @@ describe("sure/runtime/memory/units.json mirrors the state machines", () => {
 		expect(unitsRegistry.skills.sure_trans).toEqual(TRANS_UNITS.map((unit) => unit.id));
 	});
 
-	it("lists sure_feed units in MODEL_FEED_UNITS order and nothing for sure_reval", () => {
+	it("lists sure_feed units in MODEL_FEED_UNITS order", () => {
 		expect(unitsRegistry.skills.sure_feed).toEqual(MODEL_FEED_UNITS.map((unit) => unit.id));
-		expect(unitsRegistry.skills.sure_reval).toEqual([]);
+	});
+
+	it("lists sure_eval units in its MAIN_FLOW_UNITS order", () => {
+		expect(unitsRegistry.skills.sure_eval).toEqual(EVAL_UNITS.map((unit) => unit.id));
 	});
 });
 
@@ -112,10 +117,12 @@ describe("extract_lessons unit (spec §4.1)", () => {
 		expect(ids[20]).toBe("finalize_model_bundle");
 	});
 
-	it("is defined identically in sure_onboard and sure_infer", () => {
+	it("is defined identically in sure_onboard, sure_infer and sure_eval", () => {
 		const onboard = MODEL_TOOL_UNITS.find((unit) => unit.id === "extract_lessons");
-		const evaluation = MAIN_FLOW_UNITS.find((unit) => unit.id === "extract_lessons");
+		const inference = MAIN_FLOW_UNITS.find((unit) => unit.id === "extract_lessons");
+		const evaluation = EVAL_UNITS.find((unit) => unit.id === "extract_lessons");
 		expect(onboard).toEqual(EXTRACT_LESSONS_UNIT);
+		expect(inference).toEqual(EXTRACT_LESSONS_UNIT);
 		expect(evaluation).toEqual(EXTRACT_LESSONS_UNIT);
 	});
 
@@ -161,11 +168,31 @@ describe("extraction_declaration.schema.json copies", () => {
 		expect([...schema.required].sort()).toEqual([...EXTRACT_LESSONS_UNIT.requiredFields].sort());
 	});
 
-	it.each(["sure_onboard", "sure_infer", "sure_trans"])("%s keeps a byte-identical copy under schemas/", (skill) => {
-		const copyPath = join(SKILLS_DIR, skill, "schemas", "extraction_declaration.schema.json");
-		expect(existsSync(copyPath), copyPath).toBe(true);
-		const same = readFileSync(copyPath).equals(readFileSync(sharedPath));
-		expect(same, `${copyPath} differs from ${sharedPath}`).toBe(true);
+	it.each(["sure_onboard", "sure_infer", "sure_eval", "sure_trans"])(
+		"%s keeps a byte-identical copy under schemas/",
+		(skill) => {
+			const copyPath = join(SKILLS_DIR, skill, "schemas", "extraction_declaration.schema.json");
+			expect(existsSync(copyPath), copyPath).toBe(true);
+			const same = readFileSync(copyPath).equals(readFileSync(sharedPath));
+			expect(same, `${copyPath} differs from ${sharedPath}`).toBe(true);
+		},
+	);
+});
+
+describe("sure_eval schema copies", () => {
+	// sure_eval shares these four units with sure_infer, so its schema copies
+	// must not drift from the inference package's.
+	it.each([
+		"dataset_decision.schema.json",
+		"assessment_report.schema.json",
+		"run_report.schema.json",
+		"extraction_declaration.schema.json",
+	])("%s is byte-identical to the sure_infer copy", (schema) => {
+		const evalPath = join(SKILLS_DIR, "sure_eval", "schemas", schema);
+		const inferPath = join(SKILLS_DIR, "sure_infer", "schemas", schema);
+		expect(existsSync(evalPath), evalPath).toBe(true);
+		const same = readFileSync(evalPath).equals(readFileSync(inferPath));
+		expect(same, `${evalPath} differs from ${inferPath}`).toBe(true);
 	});
 });
 

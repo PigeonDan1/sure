@@ -3,8 +3,8 @@
   "skills": {
     "sure_onboard": ["load_model_input","context_selection","discover","classify","plan","build_plan","validate_spec","prepare_fixture","build_env","fetch_weights","validate_env_compat","generate_wrapper","validate_import","validate_load","validate_infer","validate_contract","package_container","save_artifacts","package_gate","write_runtime_inventory","verdict","extract_lessons","finalize_model_bundle"],
     "sure_infer": ["dataset_scope","execute_inference","extract_lessons","run_report"],
+    "sure_eval": ["dataset_scope","execute_evaluation","assessment","extract_lessons","run_report"],
     "sure_trans": ["load_trans_input","inspect_dependencies","detect_framework","prepare_fixture","build_source_image","validate_env_compat","validate_original_inference","stage_model_payload","generate_adapter","build_adapter_image","validate_import","validate_load","validate_infer","validate_contract","validate_mcp","validate_equivalence","package_container","write_runtime_inventory","verdict","extract_lessons","finalize_model_bundle"],
-    "sure_feed": ["scan_modelscope","match_task","collect_metadata","convert_to_oref","synthesize_model_input","rank_and_select","extract_lessons","emit_handoff_manifest"],
-    "sure_reval": []
+    "sure_feed": ["scan_modelscope","match_task","collect_metadata","convert_to_oref","synthesize_model_input","rank_and_select","extract_lessons","emit_handoff_manifest"]
   }
 }

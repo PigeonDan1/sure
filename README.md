@@ -6,10 +6,10 @@ SURE turns model deployment, environment adaptation, inference-code generation, 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/harness-terminal-dark.svg">
-  <img src="docs/assets/harness-terminal.svg" alt="One SURE session in the interactive terminal: /sure_init, /sure_feed, /sure_onboard, /sure_approve, then /sure_eval ending in a persisted run report" width="100%">
+  <img src="docs/assets/harness-terminal.svg" alt="One SURE session in the interactive terminal: /sure_init, /sure_feed, /sure_onboard, /sure_approve, /sure_infer, then /sure_eval ending in a persisted run report" width="100%">
 </picture>
 
-*One discover, onboard, approve, evaluate session, replayed as a self-contained SVG animation. Regenerate with `node scripts/generate-readme-terminal.mjs`.*
+*One discover, onboard, approve, infer, evaluate session, replayed as a self-contained SVG animation. Regenerate with `node scripts/generate-readme-terminal.mjs`.*
 
 ## Distribution
 
@@ -25,7 +25,7 @@ Provider credentials and site policy are separate:
 - `/sure_init` configures model providers and authentication.
 - The site policy configures approved storage roots, forbidden output roots, dataset roots, a declared site runtime cache root, execution surfaces, and optional container delivery naming.
 
-The locked Harness and Evaluation runtimes remain repository-local. A sealed local Model Python runtime is content-addressed below `storage.runtime_root`; its portable identity is stored with the model bundle and resolved against the active site at evaluation time.
+The locked Harness and Evaluation runtimes remain repository-local. A sealed local Model Python runtime is content-addressed below `storage.runtime_root`; its portable identity is stored with the model bundle and resolved against the active site at inference time.
 
 ## Quick Start
 
@@ -49,7 +49,7 @@ PI_OFFLINE=1 ./pi-test.sh
 
 ### Public/self-hosted site policy
 
-The public distribution contains no private storage paths, internal gateways, cluster defaults, or credentials. Configure the deployment before running `/sure_eval` or `/sure_reval`:
+The public distribution contains no private storage paths, internal gateways, cluster defaults, or credentials. Configure the deployment before running `/sure_infer` or `/sure_eval`:
 
 ```bash
 git clone --recurse-submodules --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
@@ -78,16 +78,17 @@ execution:
     - python
 ```
 
-Then select the Python profile during onboarding and local execution during evaluation:
+Then select the Python profile during onboarding and local execution during inference:
 
 ```text
 /sure_onboard model=<model> package=none
 /sure_approve model_dir=/path/to/sure/models/<model>
 /sure_approve mode=approve review_manifest=/path/to/review_packet.json decision=approve
-/sure_eval model=<approved-model> execution=local
+/sure_infer model=<approved-model> datasets=<source-path> execution=local
+/sure_eval model=<approved-model> datasets=<dataset> metrics=<metric>
 ```
 
-The two approval calls are intentionally separate: the first creates an immutable candidate and review packet; the second requires an explicit human decision and publishes the verified package. This path currently requires the `uv` backend and a hash-locked requirements file. SURE materializes a content-addressed Model Runtime below the configured `storage.runtime_root`, seals its portable manifest into the approved model bundle, and verifies the runtime plus model-core hashes before evaluation. A model-local `.venv` or arbitrary host Python is never accepted as an Eval runtime. Omitting `package` keeps the Docker registry default.
+The two approval calls are intentionally separate: the first creates an immutable candidate and review packet; the second requires an explicit human decision and publishes the verified package. This path currently requires the `uv` backend and a hash-locked requirements file. SURE materializes a content-addressed Model Runtime below the configured `storage.runtime_root`, seals its portable manifest into the approved model bundle, and verifies the runtime plus model-core hashes before inference. A model-local `.venv` or arbitrary host Python is never accepted as an Eval runtime. Omitting `package` keeps the Docker registry default.
 
 ## Site Configuration
 
@@ -100,7 +101,7 @@ Configuration sources use this fixed order:
 
 An explicit invalid `SURE_SITE_POLICY` never falls back to another source. The complete schema, field semantics, symlink rules, examples, and diagnostics are documented in [docs/site-configuration.md](./docs/site-configuration.md).
 
-Configure `storage.approved_models_roots[0]` once. `/sure_approve` publishes approved packages only to that root, and `/sure_eval model=<name>` resolves the exact child directory from the same root. There is no command-level approval-root override.
+Configure `storage.approved_models_roots[0]` once. `/sure_approve` publishes approved packages only to that root, and `/sure_infer model=<name>` resolves the exact child directory from the same root. There is no command-level approval-root override.
 
 For `docker-registry` delivery, the active site policy supplies the registry and repository template. SURE resolves the image destination and version before planning, rather than allowing an agent to invent a namespace; registry credentials remain in the deployment's Docker credential store.
 
@@ -128,8 +129,8 @@ npm run check
 | `/sure_onboard` | Build and validate a runnable model package | wrapper, model package, and `deployment_ready.json` |
 | `/sure_trans` | Transform an existing Dockerfile, model, and inference entrypoint into the standard Eval runtime contract | adapter wrapper, digest-pinned image, and `deployment_ready.json` |
 | `/sure_approve` | Audit a completed model package, bind an explicit human decision, and publish it atomically | review packet, approval decision, and `approval_ready.json` |
-| `/sure_eval` | Run inference and deterministic evaluation for an approved model | predictions, protocol, reports, and metric artifacts |
-| `/sure_reval` | Reuse approved predictions with an explicit evaluation route | an appended evaluation batch in the local result mirror |
+| `/sure_infer` | Run an approved model over the selected datasets | an inference bundle: predictions, `protocol.yaml`, generation status, and reference projections |
+| `/sure_eval` | Score an inference bundle with the evaluation engine, without running the model | an appended `evaluation_runs/<batch>/` with metric artifacts and `eval_run_report.json` |
 
 When a run's turn ends without `sure_finish`, because the model service failed or the session went away, `/sure_resume` picks that run back up from its checkpoint in the same run directory instead of starting over. It takes the most recent resumable run in the project, or `/sure_resume <run-id>` for a specific one.
 

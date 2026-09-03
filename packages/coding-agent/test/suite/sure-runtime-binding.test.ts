@@ -72,7 +72,7 @@ describe("SURE skill runtime responsibility binding", () => {
 		expect(payload.runtimes.harness.binding.runtime_id).toBe("harness-test");
 	});
 
-	it("validates Reval with Harness and Evaluation runtimes cross-bound", () => {
+	it("validates Eval with Harness and Evaluation runtimes cross-bound", () => {
 		const evaluationRoot = join(root, "evaluation");
 		const evaluationPython = join(evaluationRoot, "bin", "python");
 		const evaluationManifest = join(evaluationRoot, "runtime-manifest.json");
@@ -85,7 +85,7 @@ describe("SURE skill runtime responsibility binding", () => {
 		);
 		const path = writeSkillRuntimeBinding({
 			runDir: root,
-			skill: "sure_reval",
+			skill: "sure_eval",
 			harnessRuntime: harness,
 			harnessRole: "orchestration",
 			modelRuntimeReason: "approved predictions are reused",
@@ -102,7 +102,7 @@ describe("SURE skill runtime responsibility binding", () => {
 				},
 			},
 		});
-		expect(validateSkillRuntimeBinding(path, "sure_reval", true)).toBeUndefined();
+		expect(validateSkillRuntimeBinding(path, "sure_eval", true)).toBeUndefined();
 	});
 
 	it("rejects a changed materialized Harness Runtime identity", () => {

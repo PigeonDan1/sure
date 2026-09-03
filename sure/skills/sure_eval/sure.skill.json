@@ -1,0 +1,57 @@
+{
+	"name": "sure_eval",
+	"command": "/sure_eval",
+	"description": "Score an existing SURE prediction bundle (a local /sure_infer run or an approved result) with the pinned sure-evaluation engine, by metric or exact pipeline_id, without running model inference.",
+	"prompt": "SKILL.md",
+	"hooks": {
+		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
+		"pre_tool_call": [{ "module": "hooks/index.ts", "handler": "preToolCall" }],
+		"post_tool_result": [{ "module": "hooks/index.ts", "handler": "postToolResult" }],
+		"pre_finish": [{ "module": "hooks/index.ts", "handler": "preFinish" }],
+		"post_finish": [{ "module": "hooks/index.ts", "handler": "postFinish" }],
+		"on_error": [{ "module": "hooks/index.ts", "handler": "onError" }]
+	},
+	"artifacts": [
+		{
+			"type": "runtime_binding",
+			"path": "artifacts/runtime_binding.json",
+			"required": true,
+			"description": "Formal three-runtime responsibility declaration: sure_eval binds Harness and Evaluation runtimes and proves that Model Runtime is not used."
+		},
+		{
+			"type": "prediction_source_resolved",
+			"path": "artifacts/prediction_source_resolved.json",
+			"required": true,
+			"description": "Exact model/result identity of the prediction source (local /sure_infer run or approved result), canonical dataset set, and prediction fingerprints."
+		},
+		{
+			"type": "dataset_decision",
+			"path": "artifacts/dataset_decision.json",
+			"required": true,
+			"description": "Which datasets of the source bundle are scored and why."
+		},
+		{
+			"type": "eval_run_report",
+			"path": "artifacts/eval_run_report.json",
+			"required": true,
+			"description": "Evaluation-only report proving source identity, route execution, complete artifact persistence, and the atomic result-bundle append."
+		},
+		{
+			"type": "assessment_report",
+			"path": "artifacts/assessment_report.json",
+			"required": true,
+			"description": "Anomaly assessment of the scores and the user's confirmation."
+		},
+		{
+			"type": "run_report",
+			"path": "artifacts/main_agent_run_report.json",
+			"required": true,
+			"description": "Closing run report (profile eval)."
+		}
+	],
+	"ui": {
+		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
+		"artifactTypes": ["runtime_binding", "prediction_source_resolved", "dataset_decision", "eval_run_report", "assessment_report", "run_report"],
+		"defaultExpandedSections": ["diagnostics", "artifacts"]
+	}
+}

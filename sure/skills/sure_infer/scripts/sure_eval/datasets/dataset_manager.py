@@ -231,7 +231,7 @@ class DatasetManager:
         regardless of how many ``__``-separated segments the id has.
 
         The exact-match-else-unique-projection rule is shared with
-        /sure_reval's prediction-source resolver (resolve_dataset_alias in
+        /sure_eval's prediction-source resolver (resolve_dataset_alias in
         sure/skills/sure_infer/scripts/dataset_alias.py) so both skills agree
         on what a short dataset name means.
         """

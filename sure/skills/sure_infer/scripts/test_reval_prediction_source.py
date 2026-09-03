@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -142,6 +144,87 @@ class RevalPredictionSourceTests(unittest.TestCase):
 
         self.assertFalse(identity["ok"])
         self.assertEqual(identity["identity_error"], "approved model config.yaml is missing")
+
+
+class LocalInferSourceTests(unittest.TestCase):
+    """A /sure_infer bundle (no report.jsonl) resolves as the local_infer_run source."""
+
+    DATASET = "aishell1__unversioned"
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.models = root / "models"
+        model = self.models / "demo"
+        model.mkdir(parents=True)
+        (model / "config.yaml").write_text("task: ASR\n", encoding="utf-8")
+        write_json(model / "artifacts" / "verdict.json", {"status": "success"})
+
+        self.bundle = root / "out" / "run_a"
+        predictions = self.bundle / "predictions"
+        predictions.mkdir(parents=True)
+        (predictions / f"{self.DATASET}.txt").write_text("sample-1\tone\nsample-2\ttwo\n", encoding="utf-8")
+        write_json(predictions / f"{self.DATASET}.jsonl", {"key": "sample-1", "prediction": {"text": "one"}})
+        (self.bundle / "protocol.yaml").write_text("protocol_id: standard_system\n", encoding="utf-8")
+        self.status_path = self.bundle / "prediction_generation_status.json"
+        write_json(
+            self.status_path,
+            {
+                "schema": "sure.eval.prediction_generation_status.v2",
+                "model_name": "demo",
+                "protocol_id": "standard_system",
+                "datasets": [
+                    {"dataset": self.DATASET, "status": "completed", "num_expected_samples": 2, "num_generated_samples": 2}
+                ],
+            },
+        )
+        write_json(
+            self.bundle / "references" / "sure_benchmark" / "jsonl" / f"{self.DATASET}.jsonl",
+            {"key": "sample-1", "task": "ASR", "language": "zh"},
+        )
+
+    def args(self) -> argparse.Namespace:
+        return argparse.Namespace(
+            model="demo",
+            datasets=[self.DATASET],
+            protocol_id="standard_system",
+            source_run=str(self.bundle),
+        )
+
+    def test_local_bundle_resolves_without_report_or_results_root(self) -> None:
+        payload = build_payload(self.args(), approved_models_root=self.models, approved_results_root=None)
+
+        self.assertEqual(payload["schema"], "sure.reval.approved_prediction_source.v2")
+        self.assertEqual(payload["source_kind"], "local_infer_run")
+        self.assertIsNone(payload["source_report"])
+        self.assertEqual(payload["datasets"], [self.DATASET])
+        self.assertEqual(payload["source_results_dir"], str(self.bundle.resolve()))
+        self.assertIsNone(payload["source_result_relative_path"])
+        self.assertFalse(payload["inference_allowed"])
+        txt = self.bundle / "predictions" / f"{self.DATASET}.txt"
+        triples = [[self.DATASET, hashlib.sha256(txt.read_bytes()).hexdigest(), 2]]
+        expected = hashlib.sha256(json.dumps(triples, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        self.assertEqual(payload["source_report_sha256"], expected)
+        self.assertEqual(len(payload["source_report_sha256"]), 64)
+        self.assertEqual(payload["predictions"][0]["txt_samples"], 2)
+        self.assertEqual(payload["predictions"][0]["jsonl"], str((self.bundle / "predictions" / f"{self.DATASET}.jsonl").resolve()))
+
+    def test_dataset_that_is_not_completed_is_rejected(self) -> None:
+        status = json.loads(self.status_path.read_text(encoding="utf-8"))
+        status["datasets"][0]["status"] = "running"
+        write_json(self.status_path, status)
+
+        with self.assertRaisesRegex(ValueError, "not completed"):
+            build_payload(self.args(), approved_models_root=self.models, approved_results_root=None)
+
+    def test_missing_references_is_input_evidence_missing(self) -> None:
+        shutil.rmtree(self.bundle / "references")
+
+        with self.assertRaises(FileNotFoundError) as ctx:
+            build_payload(self.args(), approved_models_root=self.models, approved_results_root=None)
+
+        self.assertIn("INPUT_EVIDENCE_MISSING", str(ctx.exception))
 
 
 if __name__ == "__main__":

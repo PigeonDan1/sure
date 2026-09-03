@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression tests for complete /sure_reval result-bundle persistence."""
+"""Regression tests for complete /sure_eval result-bundle persistence."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run_reval import _approved_reference_datasets_root, append_staging_bundle
+from run_eval import _approved_reference_datasets_root, append_staging_bundle
 
 
 def _write(path: Path, value: str) -> None:
@@ -19,6 +19,75 @@ def _write(path: Path, value: str) -> None:
 
 def _json(path: Path, value: object) -> None:
     _write(path, json.dumps(value, ensure_ascii=False) + "\n")
+
+
+def _scratch_fixture(root: Path, name: str, source: Path) -> tuple[Path, dict[str, str], list[dict[str, object]]]:
+    """One finished scratch evaluation of dataset__v1 with pipeline new_pipeline, ready to append."""
+    scratch = root / name / "scratch"
+    metric_dir = scratch / "metrics" / "dataset__v1" / "wer__new_pipeline"
+    sample_report = scratch / "sample_reports" / "dataset__v1" / "wer__new_pipeline.jsonl"
+    _json(metric_dir / "report.json", {"pipeline_id": "new_pipeline", "score": 0.1})
+    _json(metric_dir / "pipeline_description.json", {"pipeline_id": "new_pipeline", "nodes": []})
+    _write(sample_report, '{"sample_id":"sample","score":0.1}\n')
+    _json(scratch / "evaluation_payload.json", {"artifact": str(metric_dir / "report.json")})
+    _json(scratch / "validation_payload.json", {"is_valid": True})
+    _json(scratch / "prediction_source_resolved.json", {"source_kind": "approved_nfs_results"})
+    _json(scratch / "prediction_reuse_manifest.json", {"enabled": True})
+    _json(scratch / "source_inference_provenance.json", {"inference_executed": False})
+    _json(scratch / "evaluation_route_plan.json", {"pipeline_id": "new_pipeline"})
+    _json(scratch / "model_eval_manifest.json", {"evaluation_only": True})
+    _json(scratch / "main_agent_run_report.json", {"evaluation_only": True})
+    _write(scratch / "protocol.yaml", "protocol_id: standard_system\n")
+    _write(scratch / "predictions" / "dataset__v1.txt", "sample\tprediction\n")
+    _write(scratch / "report_snapshot.md", "# scratch snapshot\n")
+    _write(scratch / "evaluation_runs" / "external" / "raw.txt", "raw evaluator evidence\n")
+    _json(scratch / "evaluation_runs" / "external" / "artifact_manifest.json", {"external": True})
+    row: dict[str, object] = {
+        "schema": "sure.eval.report.dataset_metric.v1",
+        "run": {"run_id": "sure_eval_record", "protocol_id": "standard_system"},
+        "model": {"model_name": "model", "fingerprint": "f" * 64},
+        "dataset": {"name": "dataset__v1", "task": "ASR", "language": "en"},
+        "prediction": {"file": str(source / "predictions" / "dataset__v1.txt")},
+        "metric": {"name": "wer", "score": 0.1},
+        "pipeline": {
+            "pipeline_id": "new_pipeline",
+            "nodes": [],
+            "report_path": str(metric_dir / "report.json"),
+            "description_path": str(metric_dir / "pipeline_description.json"),
+        },
+        "artifacts": {
+            "metric_artifact_dir": str(metric_dir),
+            "report": str(metric_dir / "report.json"),
+            "pipeline_description": str(metric_dir / "pipeline_description.json"),
+            "sample_report": str(sample_report),
+        },
+        "status": "success",
+        "reval": {
+            "schema": "sure.reval.report_append.v2",
+            "record_id": "a" * 64,
+            "identity": {"pipeline_id": "new_pipeline"},
+            "source_report_sha256": "placeholder",
+            "inference_executed": False,
+        },
+    }
+    _write(scratch / "report.jsonl", json.dumps(row) + "\n")
+    artifacts = {
+        "prediction_source_resolved": str(scratch / "prediction_source_resolved.json"),
+        "prediction_reuse_manifest": str(scratch / "prediction_reuse_manifest.json"),
+        "source_inference_provenance": str(scratch / "source_inference_provenance.json"),
+        "evaluation_route_plan": str(scratch / "evaluation_route_plan.json"),
+        "validation_payload": str(scratch / "validation_payload.json"),
+        "evaluation_payload": str(scratch / "evaluation_payload.json"),
+        "protocol": str(scratch / "protocol.yaml"),
+        "report_jsonl": str(scratch / "report.jsonl"),
+        "report_snapshot": str(scratch / "report_snapshot.md"),
+        "predictions_dir": str(scratch / "predictions"),
+        "metrics_dir": str(scratch / "metrics"),
+        "sample_reports_dir": str(scratch / "sample_reports"),
+        "model_eval_manifest": str(scratch / "model_eval_manifest.json"),
+        "main_agent_run_report": str(scratch / "main_agent_run_report.json"),
+    }
+    return scratch, artifacts, [row]
 
 
 class RevalBundleAppendTest(unittest.TestCase):
@@ -76,71 +145,7 @@ class RevalBundleAppendTest(unittest.TestCase):
         self.temporary.cleanup()
 
     def _scratch(self, name: str) -> tuple[Path, dict[str, str], list[dict[str, object]]]:
-        scratch = self.root / name / "scratch"
-        metric_dir = scratch / "metrics" / "dataset__v1" / "wer__new_pipeline"
-        sample_report = scratch / "sample_reports" / "dataset__v1" / "wer__new_pipeline.jsonl"
-        _json(metric_dir / "report.json", {"pipeline_id": "new_pipeline", "score": 0.1})
-        _json(metric_dir / "pipeline_description.json", {"pipeline_id": "new_pipeline", "nodes": []})
-        _write(sample_report, '{"sample_id":"sample","score":0.1}\n')
-        _json(scratch / "evaluation_payload.json", {"artifact": str(metric_dir / "report.json")})
-        _json(scratch / "validation_payload.json", {"is_valid": True})
-        _json(scratch / "prediction_source_resolved.json", {"source_kind": "approved_nfs_results"})
-        _json(scratch / "prediction_reuse_manifest.json", {"enabled": True})
-        _json(scratch / "source_inference_provenance.json", {"inference_executed": False})
-        _json(scratch / "evaluation_route_plan.json", {"pipeline_id": "new_pipeline"})
-        _json(scratch / "model_eval_manifest.json", {"evaluation_only": True})
-        _json(scratch / "main_agent_run_report.json", {"evaluation_only": True})
-        _write(scratch / "protocol.yaml", "protocol_id: standard_system\n")
-        _write(scratch / "predictions" / "dataset__v1.txt", "sample\tprediction\n")
-        _write(scratch / "report_snapshot.md", "# scratch snapshot\n")
-        _write(scratch / "evaluation_runs" / "external" / "raw.txt", "raw evaluator evidence\n")
-        _json(scratch / "evaluation_runs" / "external" / "artifact_manifest.json", {"external": True})
-        row: dict[str, object] = {
-            "schema": "sure.eval.report.dataset_metric.v1",
-            "run": {"run_id": "sure_reval_record", "protocol_id": "standard_system"},
-            "model": {"model_name": "model", "fingerprint": "f" * 64},
-            "dataset": {"name": "dataset__v1", "task": "ASR", "language": "en"},
-            "prediction": {"file": str(self.source / "predictions" / "dataset__v1.txt")},
-            "metric": {"name": "wer", "score": 0.1},
-            "pipeline": {
-                "pipeline_id": "new_pipeline",
-                "nodes": [],
-                "report_path": str(metric_dir / "report.json"),
-                "description_path": str(metric_dir / "pipeline_description.json"),
-            },
-            "artifacts": {
-                "metric_artifact_dir": str(metric_dir),
-                "report": str(metric_dir / "report.json"),
-                "pipeline_description": str(metric_dir / "pipeline_description.json"),
-                "sample_report": str(sample_report),
-            },
-            "status": "success",
-            "reval": {
-                "schema": "sure.reval.report_append.v2",
-                "record_id": "a" * 64,
-                "identity": {"pipeline_id": "new_pipeline"},
-                "source_report_sha256": "placeholder",
-                "inference_executed": False,
-            },
-        }
-        _write(scratch / "report.jsonl", json.dumps(row) + "\n")
-        artifacts = {
-            "prediction_source_resolved": str(scratch / "prediction_source_resolved.json"),
-            "prediction_reuse_manifest": str(scratch / "prediction_reuse_manifest.json"),
-            "source_inference_provenance": str(scratch / "source_inference_provenance.json"),
-            "evaluation_route_plan": str(scratch / "evaluation_route_plan.json"),
-            "validation_payload": str(scratch / "validation_payload.json"),
-            "evaluation_payload": str(scratch / "evaluation_payload.json"),
-            "protocol": str(scratch / "protocol.yaml"),
-            "report_jsonl": str(scratch / "report.jsonl"),
-            "report_snapshot": str(scratch / "report_snapshot.md"),
-            "predictions_dir": str(scratch / "predictions"),
-            "metrics_dir": str(scratch / "metrics"),
-            "sample_reports_dir": str(scratch / "sample_reports"),
-            "model_eval_manifest": str(scratch / "model_eval_manifest.json"),
-            "main_agent_run_report": str(scratch / "main_agent_run_report.json"),
-        }
-        return scratch, artifacts, [row]
+        return _scratch_fixture(self.root, name, self.source)
 
     def _append(self, scratch_name: str) -> dict[str, object]:
         scratch, artifacts, rows = self._scratch(scratch_name)
@@ -202,6 +207,80 @@ class RevalBundleAppendTest(unittest.TestCase):
         _write(Path(str(first["batch_dir"])) / "metrics" / "dataset__v1" / "wer__new_pipeline" / "report.json", "{}\n")
         with self.assertRaisesRegex(ValueError, "hash or size changed"):
             self._append("run_two")
+
+
+class InPlaceAppendTests(unittest.TestCase):
+    """A /sure_infer bundle is scored where it lies: source dir == staging dir, no report.jsonl yet."""
+
+    SOURCE_HASH = "b" * 64
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.bundle = self.root / "sure" / "results" / "model" / "standard_system" / "run_a"
+        _write(self.bundle / "protocol.yaml", "schema: sure.eval.protocol.v1\nprotocol_id: standard_system\n")
+        _write(self.bundle / "predictions" / "dataset__v1.txt", "sample\tprediction\n")
+        _json(
+            self.bundle / "prediction_generation_status.json",
+            {"datasets": [{"dataset": "dataset__v1", "status": "completed"}]},
+        )
+
+    def _append(self, scratch_name: str) -> dict[str, object]:
+        scratch, artifacts, rows = _scratch_fixture(self.root, scratch_name, self.bundle)
+        reval = rows[0]["reval"]
+        assert isinstance(reval, dict)
+        reval["source_report_sha256"] = self.SOURCE_HASH
+        return append_staging_bundle(
+            source_result_dir=self.bundle,
+            staging_result_dir=self.bundle,
+            scratch_root=scratch,
+            scratch_artifacts=artifacts,
+            rows=rows,
+        )
+
+    def test_in_place_append_creates_the_report_without_a_base_mirror(self) -> None:
+        self.assertFalse((self.bundle / "report.jsonl").exists())
+
+        first = self._append("run_one")
+
+        self.assertFalse(first["base_materialized"])
+        self.assertTrue(first["batch_materialized"])
+        self.assertFalse(first["idempotent"])
+        self.assertTrue(str(first["batch_id"]).startswith("sure_eval_"))
+        self.assertEqual(first["staging_result_dir"], str(self.bundle.resolve()))
+        self.assertEqual(first["approved_base_result_dir"], str(self.bundle.resolve()))
+        self.assertIsNone(first["approved_base_report"])
+        self.assertIsNone(first["approved_base_sha256"])
+        self.assertEqual(first["appended_record_ids"], ["a" * 64])
+        report = self.bundle / "report.jsonl"
+        self.assertTrue(report.is_file())
+        rows = [json.loads(line) for line in report.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([row["reval"]["record_id"] for row in rows], ["a" * 64])
+        self.assertEqual(rows[0]["reval"]["source_report_sha256"], self.SOURCE_HASH)
+        self.assertEqual(
+            rows[0]["pipeline"]["report_path"],
+            f"evaluation_runs/{first['batch_id']}/metrics/dataset__v1/wer__new_pipeline/report.json",
+        )
+        self.assertTrue((self.bundle / rows[0]["pipeline"]["report_path"]).is_file())
+        self.assertTrue((self.bundle / "report_snapshot.md").is_file())
+        manifest = json.loads((Path(str(first["batch_dir"])) / "artifact_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["source_report_sha256"], self.SOURCE_HASH)
+        # The bundle's own inference files are untouched.
+        self.assertEqual((self.bundle / "predictions" / "dataset__v1.txt").read_text(encoding="utf-8"), "sample\tprediction\n")
+
+    def test_second_in_place_append_is_a_noop(self) -> None:
+        first = self._append("run_one")
+
+        second = self._append("run_two")
+
+        self.assertFalse(second["base_materialized"])
+        self.assertFalse(second["batch_materialized"])
+        self.assertEqual(second["appended_record_ids"], [])
+        self.assertTrue(second["idempotent"])
+        self.assertEqual(second["batch_id"], first["batch_id"])
+        self.assertEqual(second["staging_report_sha256"], first["staging_report_sha256"])
+        self.assertEqual(second["staging_snapshot_sha256"], first["staging_snapshot_sha256"])
 
 
 if __name__ == "__main__":

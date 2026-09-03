@@ -289,66 +289,39 @@ describe("Sure extension", () => {
 		expect(existsSync(join(harness.tempDir, "sure", "models", "rednote-hilab__dots.tts-base"))).toBe(false);
 	});
 
-	it("starts the real /sure_reval repository skill and resolves an existing prediction source", async () => {
-		const harness = await createSureHarness();
+	it("discovers the real /sure_eval repository skill and its pre-start refuses a run without pipeline_id or metrics", async () => {
+		// The parameter checks in sure_eval's preStart run before any site policy or
+		// python spawn, so this is the one end-to-end path that behaves the same on
+		// every host: the skill is found, the hook rejects, the run is recorded as
+		// failed and no invocation prompt reaches the agent.
+		const notifications: Array<{ message: string; type: string | undefined }> = [];
+		const harness = await createSureHarness({
+			uiContext: createNotifyCapturingUiContext((message, type) => notifications.push({ message, type })),
+		});
 		cleanups.push(harness.cleanup);
+		linkRepositorySkill(harness.tempDir, "sure_infer");
 		linkRepositorySkill(harness.tempDir, "sure_eval");
-		linkRepositorySkill(harness.tempDir, "sure_reval");
-		const sourceDir = join(harness.tempDir, "source-result");
-		mkdirSync(join(sourceDir, "predictions"), { recursive: true });
-		writeFileSync(join(sourceDir, "predictions", "demo_dataset.txt"), "utt1\thello world\n", "utf-8");
-		harness.setResponses([fauxAssistantMessage("working")]);
+		harness.setResponses([fauxAssistantMessage("should not run")]);
 
-		await harness.session.prompt(
-			`/sure_reval source=${sourceDir} model=demo_model datasets=demo_dataset max_samples=1`,
-		);
+		await harness.session.prompt("/sure_eval model=demo_model datasets=demo_dataset__v1");
 		await harness.session.agent.waitForIdle();
-		await waitForCondition(() => getUserTexts(harness).length > 0);
 
 		const runId = getOnlyRunId(harness.tempDir);
-		expect(getUserTexts(harness)[0]).toContain("<sure_invocation");
-		expect(getUserTexts(harness)[0]).toContain('skill="sure_reval" command="/sure_reval"');
-		expect(getUserTexts(harness)[0]).toContain("# /sure_reval");
-		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
-		expect(
-			existsSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "prediction_source_resolved.json")),
-		).toBe(true);
-		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			phase: { id: "prediction_source", status: "running" },
-		});
-	});
-
-	it("resolves /sure_reval relative source paths against the project cwd", async () => {
-		const harness = await createSureHarness();
-		cleanups.push(harness.cleanup);
-		linkRepositorySkill(harness.tempDir, "sure_eval");
-		linkRepositorySkill(harness.tempDir, "sure_reval");
-		const sourceDir = join(harness.tempDir, "relative-source-result");
-		mkdirSync(join(sourceDir, "predictions"), { recursive: true });
-		writeFileSync(join(sourceDir, "predictions", "demo_dataset.txt"), "utt1\thello world\n", "utf-8");
-		harness.setResponses([fauxAssistantMessage("working")]);
-
-		await harness.session.prompt(`/sure_reval source=relative-source-result model=demo_model datasets=demo_dataset`);
-		await harness.session.agent.waitForIdle();
-		await waitForCondition(() => getUserTexts(harness).length > 0);
-
-		const runId = getOnlyRunId(harness.tempDir);
-		const resolved = JSON.parse(
-			readFileSync(
-				join(harness.tempDir, ".sure", "runs", runId, "artifacts", "prediction_source_resolved.json"),
-				"utf-8",
-			),
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.command).toBe("sure_eval");
+		expect(run.status).toBe("failed");
+		expect(run.lastRepair).toContain("exactly one of pipeline_id");
+		expect(notifications.some((entry) => entry.type === "error" && entry.message.includes("exactly one of"))).toBe(
+			true,
 		);
-		expect(resolved.source).toBe(sourceDir);
-		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			phase: { id: "prediction_source", status: "running" },
-		});
+		expect(getUserTexts(harness)).toHaveLength(0);
+		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
 	});
 
-	it("passes output_dir from /sure_eval arguments into resolved input", async () => {
+	it("passes output_dir from /sure_infer arguments into resolved input", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
-		linkRepositorySkill(harness.tempDir, "sure_eval");
+		linkRepositorySkill(harness.tempDir, "sure_infer");
 		writeEvalModel(harness.tempDir);
 		const datasetsRoot = join(harness.tempDir, "data", "datasets");
 		const jsonlDir = join(datasetsRoot, "sure_benchmark", "jsonl");
@@ -377,7 +350,7 @@ describe("Sure extension", () => {
 		process.env.SURE_EVAL_DATASETS_ROOT = datasetsRoot;
 		try {
 			await harness.session.prompt(
-				`/sure_eval model=demo-asr datasets=${datasetId} max_samples=1 metrics=wer output_dir=${outputDir}`,
+				`/sure_infer model=demo-asr datasets=${datasetId} max_samples=1 metrics=wer output_dir=${outputDir}`,
 			);
 			await harness.session.agent.waitForIdle();
 			await waitForCondition(() => getUserTexts(harness).length > 0);
@@ -1372,7 +1345,7 @@ describe("Sure extension", () => {
 	it("initializes SURE via /sure_init with headless args", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
-		for (const command of ["sure_feed", "sure_onboard", "sure_trans", "sure_eval", "sure_reval"]) {
+		for (const command of ["sure_feed", "sure_onboard", "sure_trans", "sure_infer", "sure_eval"]) {
 			setupSkillPackage(harness.tempDir, { dirName: command, name: command, command });
 		}
 
@@ -1392,8 +1365,8 @@ describe("Sure extension", () => {
 		expect(manifest.availableSkills).toContain("/sure_feed");
 		expect(manifest.availableSkills).toContain("/sure_onboard");
 		expect(manifest.availableSkills).toContain("/sure_trans");
+		expect(manifest.availableSkills).toContain("/sure_infer");
 		expect(manifest.availableSkills).toContain("/sure_eval");
-		expect(manifest.availableSkills).toContain("/sure_reval");
 
 		expect(inMemorySettings.getGlobalSettings().defaultProvider).toBe("kimi-coding");
 		expect(inMemorySettings.getGlobalSettings().defaultModel).toBe("kimi-for-coding");

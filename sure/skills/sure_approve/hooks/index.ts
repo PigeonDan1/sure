@@ -66,7 +66,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	const mode = modeFromArgs(ctx.args);
 	if (args.approve_dir || args["approve-dir"])
 		return failure(
-			"approve_dir is not supported. Configure storage.approved_models_roots[0] once in the active site policy; /sure_approve and /sure_eval use that root.",
+			"approve_dir is not supported. Configure storage.approved_models_roots[0] once in the active site policy; /sure_approve and /sure_infer use that root.",
 		);
 	if (args.mode && args.mode !== "audit" && args.mode !== "approve") return failure("mode must be audit or approve.");
 	if (mode === "audit" && !args.model_dir)

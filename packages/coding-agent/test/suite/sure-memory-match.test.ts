@@ -67,7 +67,7 @@ function fact(overrides: Partial<MemoryIndexEntry> & { entry_id: string; scope: 
 		type: "fact",
 		status: "provisional",
 		target_skill: "_shared",
-		applies_to: ["sure_onboard", "sure_eval", "sure_feed", "sure_reval", "_shared"],
+		applies_to: ["sure_onboard", "sure_infer", "sure_eval", "sure_feed", "_shared"],
 		component: "_",
 		cause: "n.a.",
 		path: `sure/memory/provisional/_shared/${slug}/entry.md`,

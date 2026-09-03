@@ -1,11 +1,11 @@
 ---
 name: sure-approve
-description: Audit and explicitly approve a completed sure_onboard or sure_trans model bundle before publishing it for sure_eval.
+description: Audit and explicitly approve a completed sure_onboard or sure_trans model bundle before publishing it for sure_infer.
 ---
 
 # /sure_approve
 
-Audit a completed `/sure_onboard` or `/sure_trans` bundle without mutating it, bind a human decision to the audited candidate, then publish it atomically for `/sure_eval`.
+Audit a completed `/sure_onboard` or `/sure_trans` bundle without mutating it, bind a human decision to the audited candidate, then publish it atomically for `/sure_infer`.
 
 ## Parameters
 
@@ -37,7 +37,7 @@ Read the review packet, make the decision yourself, then start a separate approv
 
 Approval verifies that the packet and candidate are unchanged. A positive decision publishes through a hidden same-filesystem sibling and atomic rename. A rejection records the decision and does not publish.
 
-The publication root is always `storage.approved_models_roots[0]` from the active site policy. `/sure_eval` discovers approved model names below that same root, so the deployment configures it once and no command-level publication-root override exists.
+The publication root is always `storage.approved_models_roots[0]` from the active site policy. `/sure_infer` discovers approved model names below that same root, so the deployment configures it once and no command-level publication-root override exists.
 
 ## Boundaries
 

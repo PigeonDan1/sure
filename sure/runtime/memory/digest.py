@@ -282,7 +282,8 @@ def _string_at(obj: Any, *keys: str) -> str:
 def resolve_target(run_dir: Path, skill: str | None, args: str) -> dict:
     """{"kind": "model"|"eval", "id": str}. Read the resolved-input artifact first, then fall back to
     the identity argument of the invocation. Only the id is copied: eval_input_resolved.json also
-    carries the output_dir path inside runtime.run_dir, which must never enter the digest. sure_trans
+    carries the output_dir path inside runtime.run_dir, and prediction_source_resolved.json the
+    source result paths, which must never enter the digest. sure_trans
     falls back to `model_name=` and not to the shared `model=` / `model_id=`: its `model=` is the
     host path to the weights, so the shared fallback would make a site path the target id."""
     art = Path(run_dir) / "artifacts"
@@ -291,8 +292,10 @@ def resolve_target(run_dir: Path, skill: str | None, args: str) -> dict:
     fallback_keys = ("model", "model_id")
     if skill == "sure_onboard":
         target_id = _string_at(_load_json_quiet(art / "model_input_resolved.json"), "model_id")
-    elif skill in ("sure_infer", "sure_eval"):
+    elif skill == "sure_infer":
         target_id = _string_at(_load_json_quiet(art / "eval_input_resolved.json"), "user_input", "model")
+    elif skill == "sure_eval":
+        target_id = _string_at(_load_json_quiet(art / "prediction_source_resolved.json"), "model_name")
     elif skill == "sure_trans":
         target_id = _string_at(_load_json_quiet(art / "trans_input_resolved.json"), "model_name")
         fallback_keys = ("model_name",)
@@ -305,8 +308,8 @@ def resolve_target(run_dir: Path, skill: str | None, args: str) -> dict:
 
 
 def _product_dir(run_dir: Path, skill: str | None) -> Path | None:
-    """{product_dir} placeholder: onboard model_dir, eval runtime.run_dir, feed the published
-    handoff directory. Used only to open logs; the resolved value is never written into the digest.
+    """{product_dir} placeholder: onboard model_dir, infer runtime.run_dir, eval the source results
+    directory the batch is appended into, feed the published handoff directory. Used only to open logs; the resolved value is never written into the digest.
     The feed branch resolves nothing today: no sure_feed unit writes a .log, so log_paths.json has
     no sure_feed table and the caller gives up before it reads the product dir. It is here so a
     later feed log entry works; sure_trans deliberately has none, because everything it writes
@@ -315,8 +318,10 @@ def _product_dir(run_dir: Path, skill: str | None) -> Path | None:
     art = Path(run_dir) / "artifacts"
     if skill == "sure_onboard":
         raw = _string_at(_load_json_quiet(art / "model_input_resolved.json"), "model_dir")
-    elif skill in ("sure_infer", "sure_eval"):
+    elif skill == "sure_infer":
         raw = _string_at(_load_json_quiet(art / "eval_input_resolved.json"), "runtime", "run_dir")
+    elif skill == "sure_eval":
+        raw = _string_at(_load_json_quiet(art / "prediction_source_resolved.json"), "source_results_dir")
     elif skill == "sure_feed":
         raw = _string_at(_load_json_quiet(art / "feed_report.json"), "handoff", "handoff_dir")
     else:

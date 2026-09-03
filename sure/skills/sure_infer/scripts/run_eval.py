@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run /sure_reval: reuse existing predictions and recompute metrics."""
+"""Run /sure_eval: reuse existing predictions and recompute metrics."""
 
 from __future__ import annotations
 
@@ -226,7 +226,7 @@ def _verify_approved_base(source_result_dir: Path, staging_result_dir: Path) -> 
 def _batch_id(rows: list[dict[str, Any]]) -> str:
     identity = {"record_ids": sorted(str(row["reval"]["record_id"]) for row in rows)}
     digest = hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
-    return f"sure_reval_{digest[:24]}"
+    return f"sure_eval_{digest[:24]}"
 
 
 def _localize_batch_paths(value: Any, *, scratch_root: Path, batch_relative: Path) -> Any:
@@ -372,7 +372,7 @@ def _reval_report_rows(
             "engine_tree_sha256": engine.get("tree_sha256"),
         }
         record_id = hashlib.sha256(_canonical_json(identity).encode("utf-8")).hexdigest()
-        run["run_id"] = f"sure_reval_{record_id[:16]}"
+        run["run_id"] = f"sure_eval_{record_id[:16]}"
         source_prediction = source_predictions[dataset_id]
         report_prediction = row.get("prediction") if isinstance(row.get("prediction"), dict) else {}
         report_prediction["file"] = source_prediction["txt"]
@@ -413,15 +413,24 @@ def append_staging_bundle(
 ) -> dict[str, Any]:
     source_result_dir = source_result_dir.resolve()
     scratch_root = scratch_root.resolve()
+    # A local /sure_infer bundle is scored where it lies: no approved base to
+    # mirror or verify, and the batch binds the prediction-derived hash the rows
+    # already carry instead of a report.jsonl that does not exist yet.
+    in_place = source_result_dir == staging_result_dir.resolve()
     source_report = source_result_dir / "report.jsonl"
-    source_bytes = source_report.read_bytes()
-    source_report_sha256 = hashlib.sha256(source_bytes).hexdigest()
+    if in_place:
+        row_hashes = {str(row["reval"]["source_report_sha256"]) for row in rows}
+        if len(row_hashes) != 1:
+            raise ValueError(f"in-place append rows disagree on source_report_sha256: {sorted(row_hashes)}")
+        source_report_sha256 = row_hashes.pop()
+    else:
+        source_report_sha256 = hashlib.sha256(source_report.read_bytes()).hexdigest()
     staging_result_dir.parent.mkdir(parents=True, exist_ok=True)
     directory_fd = os.open(staging_result_dir.parent, os.O_RDONLY)
     try:
         fcntl.flock(directory_fd, fcntl.LOCK_EX)
         base_materialized = False
-        if not staging_result_dir.exists():
+        if not in_place and not staging_result_dir.exists():
             temporary_base = Path(
                 tempfile.mkdtemp(prefix=f".{staging_result_dir.name}.base.", dir=staging_result_dir.parent)
             )
@@ -437,9 +446,12 @@ def append_staging_bundle(
                     shutil.rmtree(temporary_base)
         if not staging_result_dir.is_dir():
             raise ValueError(f"local staging result must be a directory: {staging_result_dir}")
-        _verify_approved_base(source_result_dir, staging_result_dir)
+        if not in_place:
+            _verify_approved_base(source_result_dir, staging_result_dir)
 
         staging_report = staging_result_dir / "report.jsonl"
+        if in_place and not staging_report.exists():
+            staging_report.touch()
         current = staging_report.read_bytes()
         requested_record_ids = [str(row["reval"]["record_id"]) for row in rows]
         if len(requested_record_ids) != len(set(requested_record_ids)):
@@ -557,8 +569,8 @@ def append_staging_bundle(
             "staging_report": str(staging_report),
             "staging_snapshot": str(staging_snapshot),
             "approved_base_result_dir": str(source_result_dir),
-            "approved_base_report": str(source_report),
-            "approved_base_sha256": source_report_sha256,
+            "approved_base_report": None if in_place else str(source_report),
+            "approved_base_sha256": None if in_place else source_report_sha256,
             "batch_id": batch_id,
             "batch_dir": str(batch_dir),
             "artifact_manifest": str(artifact_manifest_path),
@@ -592,10 +604,22 @@ def _approved_reference_datasets_root(
     source: dict[str, Any],
     *,
     approved_models_root: Path = APPROVED_MODELS_ROOT,
-    approved_results_root: Path = APPROVED_RESULTS_ROOT,
+    approved_results_root: Path | None = APPROVED_RESULTS_ROOT,
 ) -> Path:
     model_dir = Path(str(source.get("model_dir") or "")).expanduser().resolve()
     results_dir = Path(str(source.get("source_results_dir") or "")).expanduser().resolve()
+    if source.get("source_kind") == "local_infer_run":
+        # The bundle under sure/results or a user output_dir is not below the NFS
+        # trust roots; its own reference projection is the only allowed root.
+        candidate = results_dir / "references"
+        if (candidate / "sure_benchmark" / "jsonl").is_dir():
+            return candidate.resolve()
+        raise FileNotFoundError(
+            "INPUT_EVIDENCE_MISSING: local inference bundle does not contain "
+            "references/sure_benchmark/jsonl; evaluation cannot read an external dataset root"
+        )
+    if approved_results_root is None:
+        raise ValueError("an approved NFS source requires storage.approved_results_roots in the active site policy")
     approved_roots = (approved_models_root.expanduser().resolve(), approved_results_root.expanduser().resolve())
     for source_dir in (results_dir, model_dir):
         if not any(source_dir.is_relative_to(root) for root in approved_roots):
@@ -615,7 +639,7 @@ def _harness_config(
     *,
     source: dict[str, Any],
     approved_models_root: Path,
-    approved_results_root: Path,
+    approved_results_root: Path | None,
 ) -> Path:
     if explicit:
         path = _user_path(explicit)
@@ -740,7 +764,65 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
     return {"num_results": len(rows), "comparisons": comparisons}
 
 
-def run_reval(
+def _pipeline_ids_for_metrics(metrics: list[str], *, engine_root: Path, imported: list[dict[str, Any]]) -> list[str]:
+    """Resolve --metric to the exact default pipeline ids evaluate_predictions.py would run for it."""
+    from evaluate_predictions import _describe_external_pipeline, _effective_audio_task, _metric_task_hint, _summarize_bridge_error
+    from evaluation_runtime import EvaluationRuntimeError
+
+    timeout = int(os.environ.get("SURE_EVALUATION_TIMEOUT", "600"))
+    task_hint = _metric_task_hint(list(metrics))
+    pipeline_ids: list[str] = []
+    for item in imported:
+        dataset = str(item.get("dataset") or "")
+        task = _effective_audio_task(str(item.get("task") or ""), task_hint)
+        language = str(item.get("language") or "auto").lower()
+        resolved: list[str] = []
+        failures: list[str] = []
+        for metric in metrics:
+            try:
+                pipeline = _describe_external_pipeline(
+                    engine_root=engine_root, task=task, language=language, metric=metric, timeout=timeout
+                )
+            except (OSError, EvaluationRuntimeError):
+                raise
+            except Exception as exc:  # the engine says this metric has no route here; same rule as evaluate_predictions
+                failures.append(f"{metric}: {_summarize_bridge_error(exc)}")
+                continue
+            pipeline_id = str(pipeline.get("pipeline_id") or "")
+            if not pipeline_id:
+                raise ValueError(f"metric {metric!r} resolved to a pipeline without pipeline_id for {dataset} ({task}/{language})")
+            resolved.append(pipeline_id)
+            if pipeline_id not in pipeline_ids:
+                pipeline_ids.append(pipeline_id)
+        if not resolved:
+            raise ValueError(f"no requested metric resolves to a pipeline for {dataset} ({task}/{language}): {failures}")
+    return pipeline_ids
+
+
+def _ensure_ffmpeg(run_dir: Path, env: dict[str, str]) -> None:
+    """Expose imageio-ffmpeg's binary as `ffmpeg` on the evaluation PATH when the host has none."""
+    if shutil.which("ffmpeg", path=env.get("PATH")):
+        return
+    try:
+        import imageio_ffmpeg
+
+        source = Path(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:
+        return
+    # Beside scratch/, not inside it: scratch is persisted whole into the batch and must not hold symlinks.
+    bin_dir = run_dir / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    target = bin_dir / "ffmpeg"
+    if not target.exists():
+        try:
+            target.symlink_to(source)
+        except OSError:
+            shutil.copy2(source, target)
+            target.chmod(0o755)
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+
+
+def run_eval(
     args: argparse.Namespace,
     *,
     approved_models_root: Path | None = APPROVED_MODELS_ROOT,
@@ -749,25 +831,32 @@ def run_reval(
     harness_config: Path | None = None,
     evaluation_engine_root: Path | None = None,
 ) -> dict[str, Any]:
+    pipeline_ids = _split_values(args.pipeline_id)
+    metrics = _split_values(getattr(args, "metric", None))
+    if bool(pipeline_ids) == bool(metrics):
+        raise ValueError("/sure_eval requires exactly one of --pipeline-id or --metric")
     if approved_models_root is None or approved_results_root is None:
         resolved_policy = load_site_policy(required=True)
         storage = resolved_policy["policy"]["storage"]
         approved_models_root = approved_models_root or Path(storage["approved_models_roots"][0])
-        if approved_results_root is None and not storage["approved_results_roots"]:
-            raise ValueError("/sure_reval requires storage.approved_results_roots in the active site policy")
-        approved_results_root = approved_results_root or Path(storage["approved_results_roots"][0])
+        # A local-source site may have no approved results root; the resolver
+        # raises only when the request actually falls through to the NFS path.
+        if approved_results_root is None and storage["approved_results_roots"]:
+            approved_results_root = Path(storage["approved_results_roots"][0])
     source_payload = resolve_prediction_source(
         argparse.Namespace(
             model=args.model,
             datasets=args.datasets,
             protocol_id=args.protocol_id,
+            source_run=getattr(args, "source_run", None),
             output=None,
         ),
         approved_models_root=approved_models_root,
         approved_results_root=approved_results_root,
     )
+    local_source = source_payload.get("source_kind") == "local_infer_run"
     model_name = str(args.model)
-    run_id = args.run_id or f"sure_reval_{_safe(model_name)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    run_id = args.run_id or f"sure_eval_{_safe(model_name)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     invocation_run_dir = Path(args.invocation_run_dir).expanduser().resolve()
     expected_invocation_root = (HARNESS_ROOT / ".sure" / "runs").resolve()
     try:
@@ -817,9 +906,10 @@ def run_reval(
     ]
     _run(validate_cmd)
 
-    pipeline_ids = _split_values(args.pipeline_id)
-    if not pipeline_ids:
-        raise ValueError("/sure_reval requires at least one exact --pipeline-id")
+    if metrics:
+        pipeline_ids = _pipeline_ids_for_metrics(
+            metrics, engine_root=engine_root, imported=reuse_manifest.get("imported") or []
+        )
     eval_cmd = [
         sys.executable,
         str(SCRIPT_DIR / "evaluate_predictions.py"),
@@ -858,11 +948,12 @@ def run_reval(
         {
             "SURE_EVAL_EXECUTION_PATH": "reused_predictions",
             "SURE_EVAL_EXECUTION_REQUESTED": "local",
-            "SURE_EVAL_EXECUTION_SURFACE_TYPE": "sure_reval",
+            "SURE_EVAL_EXECUTION_SURFACE_TYPE": "sure_eval",
             "SURE_EVAL_EXECUTION_GENERATION_METHOD": "reuse_existing_predictions",
             "SURE_EVAL_PREDICTION_GENERATED_BY": "scripts/import_prediction_source.py",
         }
     )
+    _ensure_ffmpeg(invocation_run_dir, eval_env)
     _run(eval_cmd, env=eval_env)
 
     _run(
@@ -971,10 +1062,13 @@ def run_reval(
         source=source_payload,
         engine=engine,
     )
-    staging_result_dir = _staging_result_dir(
-        local_results_root,
-        str(source_payload["source_result_relative_path"]),
-    )
+    if local_source:
+        staging_result_dir = Path(str(source_payload["source_results_dir"])).resolve()
+    else:
+        staging_result_dir = _staging_result_dir(
+            local_results_root,
+            str(source_payload["source_result_relative_path"]),
+        )
     scratch_artifacts = manifest["artifacts"] | {
         "model_eval_manifest": str(run_dir / "model_eval_manifest.json"),
         "main_agent_run_report": str(run_dir / "main_agent_run_report.json"),
@@ -987,13 +1081,13 @@ def run_reval(
         rows=appended_rows,
     )
 
-    reval_report = {
-        "schema": "sure.reval.run_report.v1",
+    eval_report = {
+        "schema": "sure.eval.run_report.v1",
         "run_id": run_id,
         "run_dir": str(run_dir),
         "model_name": model_name,
         "datasets": datasets,
-        "metrics": [],
+        "metrics": metrics,
         "pipeline_ids": pipeline_ids,
         "evaluation_only": True,
         "old_evaluation_reused": False,
@@ -1007,33 +1101,39 @@ def run_reval(
         },
         "staging_append": append_result,
     }
-    _write_json(run_dir / "reval_run_report.json", reval_report)
-    _write_json(invocation_run_dir / "artifacts" / "reval_run_report.json", reval_report)
-    print(json.dumps(reval_report, indent=2, ensure_ascii=False))
-    return reval_report
+    _write_json(run_dir / "eval_run_report.json", eval_report)
+    _write_json(invocation_run_dir / "artifacts" / "eval_run_report.json", eval_report)
+    print(json.dumps(eval_report, indent=2, ensure_ascii=False))
+    return eval_report
 
 
 def _write_incomplete_report(args: argparse.Namespace, error: Exception) -> Path:
     invocation_run_dir = Path(args.invocation_run_dir).expanduser().resolve()
-    source = resolve_prediction_source(
-        argparse.Namespace(
-            model=args.model,
-            datasets=args.datasets,
-            protocol_id=args.protocol_id,
-            output=None,
+    try:
+        source = resolve_prediction_source(
+            argparse.Namespace(
+                model=args.model,
+                datasets=args.datasets,
+                protocol_id=args.protocol_id,
+                source_run=getattr(args, "source_run", None),
+                output=None,
+            )
         )
-    )
+    except (FileNotFoundError, ValueError):
+        # The local resolver itself raises INPUT_EVIDENCE_MISSING for a bundle
+        # without references; the incomplete report still has to be written.
+        source = {}
     source_path = invocation_run_dir / "artifacts" / "prediction_source_resolved.json"
-    if not source_path.is_file():
+    if source and not source_path.is_file():
         _write_json(source_path, source)
     report = {
-        "schema": "sure.reval.run_report.v1",
+        "schema": "sure.eval.run_report.v1",
         "run_id": args.run_id or invocation_run_dir.name,
         "status": "incomplete",
         "error_code": "INPUT_EVIDENCE_MISSING",
         "error": str(error),
         "model_name": str(args.model),
-        "datasets": [str(item) for item in source.get("datasets") or []],
+        "datasets": [str(item) for item in source.get("datasets") or _split_values(args.datasets)],
         "pipeline_ids": _split_values(args.pipeline_id),
         "evaluation_only": True,
         "inference_executed": False,
@@ -1047,7 +1147,7 @@ def _write_incomplete_report(args: argparse.Namespace, error: Exception) -> Path
         },
         "artifacts": {"prediction_source_resolved": str(source_path)},
     }
-    report_path = invocation_run_dir / "artifacts" / "reval_run_report.json"
+    report_path = invocation_run_dir / "artifacts" / "eval_run_report.json"
     _write_json(report_path, report)
     return report_path
 
@@ -1056,14 +1156,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Reuse existing predictions and rerun SURE evaluation routes")
     parser.add_argument("--model", required=True)
     parser.add_argument("--datasets", nargs="+", required=True)
-    parser.add_argument("--pipeline-id", action="append", required=True)
+    parser.add_argument("--pipeline-id", action="append", help="Exact pipeline id to run; repeatable. Exclusive with --metric.")
+    parser.add_argument("--metric", action="append", help="Metric resolved to its engine default pipeline; repeatable. Exclusive with --pipeline-id.")
+    parser.add_argument(
+        "--source-run",
+        help="Local inference run: an absolute bundle directory, or a run id below sure/results/<model>/<protocol>/",
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--protocol-id", choices=("standard_system", "strict_core"), default="standard_system")
     parser.add_argument("--invocation-run-dir", required=True)
     parser.add_argument("--run-id")
     args = parser.parse_args()
     try:
-        run_reval(args)
+        run_eval(args)
     except FileNotFoundError as exc:
         if "INPUT_EVIDENCE_MISSING" not in str(exc):
             raise

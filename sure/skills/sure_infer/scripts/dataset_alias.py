@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared dataset-alias resolution for /sure_infer and /sure_reval.
+"""Shared dataset-alias resolution for /sure_infer and /sure_eval.
 
 Both skills need to accept a short dataset alias such as ``aishell1`` and
 resolve it to the fully qualified, versioned dataset id that /sure_infer
@@ -10,7 +10,7 @@ regardless of how many ``__``-separated segments the id has.
 
 /sure_infer already implements this rule for its own dataset directory in
 ``sure_eval.datasets.dataset_manager.DatasetManager._existing_jsonl_for_dataset``.
-/sure_reval needs the identical rule applied to a different directory (its
+/sure_eval needs the identical rule applied to a different directory (its
 own already-generated predictions, not the source dataset JSONL files), so
 the rule is extracted here as a single, filesystem-agnostic implementation
 that both call sites use. This is the one implementation of the rule; do not

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve an exact, approved NFS prediction set for /sure_reval."""
+"""Resolve the prediction set /sure_eval scores: a local /sure_infer bundle or an approved NFS result."""
 
 from __future__ import annotations
 
@@ -30,8 +30,12 @@ APPROVED_RESULTS_ROOT = (
     if _configured_policy and _configured_policy["policy"]["storage"]["approved_results_roots"]
     else None
 )
+LOCAL_RESULTS_ROOT = Path(__file__).resolve().parents[4] / "sure" / "results"
+LOCAL_BUNDLE_FILES = ("protocol.yaml", "prediction_generation_status.json", "predictions")
 ALLOWED_PROTOCOLS = frozenset({"standard_system", "strict_core"})
 DATASET_ID_RE = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)__(?P<version>v[0-9][A-Za-z0-9.-]*)$")
+# A local bundle may carry <name>__unversioned; only the approved NFS path insists on a v-prefixed version.
+LOCAL_DATASET_ID_RE = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)__(?P<version>[A-Za-z0-9][A-Za-z0-9.-]*)$")
 LEGACY_VERSION_RE = re.compile(
     r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*?)(?:__|_)(?P<version>v[0-9][A-Za-z0-9.-]*)(?:__[A-Za-z0-9_-]+)?$"
 )
@@ -143,7 +147,181 @@ def _model_fingerprint(model_dir: Path, verdict_path: str) -> str:
     return digest.hexdigest()
 
 
+def _local_dataset_id(value: str) -> str:
+    value = value.strip()
+    if LOCAL_DATASET_ID_RE.fullmatch(value):
+        return value
+    raise ValueError(f"requested dataset identity {value!r} is not <dataset_name>__<version_id>")
+
+
+def _is_local_bundle(path: Path) -> bool:
+    return path.is_dir() and all((path / name).exists() for name in LOCAL_BUNDLE_FILES)
+
+
+def _read_status(source_dir: Path) -> dict[str, Any]:
+    status = json.loads((source_dir / "prediction_generation_status.json").read_text(encoding="utf-8"))
+    if not isinstance(status, dict) or not isinstance(status.get("datasets"), list):
+        raise ValueError(f"prediction_generation_status.json has no datasets list: {source_dir}")
+    return status
+
+
+def _dataset_statuses(status: dict[str, Any]) -> dict[str, str]:
+    return {
+        str(row["dataset"]): str(row.get("status") or "")
+        for row in status["datasets"]
+        if isinstance(row, dict) and row.get("dataset")
+    }
+
+
+def _local_source_dir(args: argparse.Namespace) -> Path | None:
+    """The /sure_infer bundle to score in place, or None when the request means an approved NFS result."""
+    model = str(args.model)
+    protocol_id = str(getattr(args, "protocol_id", None) or "standard_system")
+    source_run = getattr(args, "source_run", None)
+    if source_run:
+        explicit = Path(str(source_run)).expanduser()
+        if not explicit.is_absolute():
+            explicit = LOCAL_RESULTS_ROOT / model / protocol_id / explicit
+        explicit = explicit.resolve()
+        if not explicit.is_dir():
+            raise FileNotFoundError(f"source run directory does not exist: {explicit}")
+        return explicit
+    parent = LOCAL_RESULTS_ROOT / model / protocol_id
+    if not parent.is_dir():
+        return None
+    requested = sorted(_split_values(args.datasets))
+    matches = [
+        candidate
+        for candidate in sorted(path for path in parent.iterdir() if _is_local_bundle(path))
+        if sorted(name for name, state in _dataset_statuses(_read_status(candidate)).items() if state == "completed")
+        == requested
+    ]
+    if len(matches) > 1:
+        raise ValueError(
+            f"several local inference runs below {parent} completed {requested}; "
+            "pass source=<run_id> to pick one: " + ", ".join(path.name for path in matches)
+        )
+    return matches[0].resolve() if matches else None
+
+
+def _local_infer_payload(
+    args: argparse.Namespace,
+    *,
+    approved_models_root: Path | None = APPROVED_MODELS_ROOT,
+    source_dir: Path | None = None,
+) -> dict[str, Any]:
+    source_dir = source_dir or _local_source_dir(args)
+    if source_dir is None:
+        raise FileNotFoundError("no local inference bundle matches the request")
+    model = str(args.model)
+    protocol_id = str(getattr(args, "protocol_id", None) or "standard_system")
+    if protocol_id not in ALLOWED_PROTOCOLS:
+        raise ValueError(f"unsupported protocol {protocol_id!r}; expected {sorted(ALLOWED_PROTOCOLS)}")
+    requested_datasets = _split_values(args.datasets)
+    if not requested_datasets:
+        raise ValueError("--datasets requires the complete dataset__version set of the inference run")
+    requested = sorted(_local_dataset_id(item) for item in requested_datasets)
+    if len(requested) != len(set(requested)):
+        raise ValueError("requested datasets contain duplicate canonical identities")
+
+    missing = [name for name in LOCAL_BUNDLE_FILES if not (source_dir / name).exists()]
+    if missing:
+        raise FileNotFoundError(f"local inference bundle {source_dir} is missing {missing}")
+    if not (source_dir / "references" / "sure_benchmark" / "jsonl").is_dir():
+        raise FileNotFoundError(
+            f"INPUT_EVIDENCE_MISSING: local inference bundle {source_dir} does not contain "
+            "references/sure_benchmark/jsonl; /sure_eval cannot read an external dataset root"
+        )
+    status = _read_status(source_dir)
+    status_model = status.get("model_name")
+    if status_model and str(status_model) != model:
+        raise ValueError(f"local inference bundle was generated for model {status_model!r}, not {model!r}: {source_dir}")
+    protocol_payload = yaml.safe_load((source_dir / "protocol.yaml").read_text(encoding="utf-8")) or {}
+    bundle_protocol = protocol_payload.get("protocol_id") if isinstance(protocol_payload, dict) else None
+    if bundle_protocol != protocol_id:
+        raise ValueError(f"local inference bundle protocol {bundle_protocol!r} does not match {protocol_id!r}: {source_dir}")
+    statuses = _dataset_statuses(status)
+    incomplete = {name: state for name, state in statuses.items() if state != "completed"}
+    if incomplete:
+        raise ValueError(f"local inference bundle has datasets that are not completed: {incomplete} in {source_dir}")
+    completed = sorted(statuses)
+    if completed != requested:
+        raise ValueError(
+            f"local inference bundle datasets {completed} do not exactly match the requested {requested}: {source_dir}"
+        )
+
+    model_resolution = resolve_approved_model_identity(model, approved_root=approved_models_root)
+    if not model_resolution["ok"]:
+        detail = model_resolution.get("identity_error") or "approved model identity is incomplete"
+        raise ValueError(f"model {model!r} is not approved with a successful verdict in NFS: {detail}")
+    model_dir = Path(str(model_resolution["model_dir"]))
+
+    predictions_dir = (source_dir / "predictions").resolve()
+    predictions: list[dict[str, Any]] = []
+    for dataset_id in requested:
+        txt = predictions_dir / f"{dataset_id}.txt"
+        if not txt.is_file():
+            raise ValueError(f"local inference bundle has no prediction file for {dataset_id!r}: {txt}")
+        jsonl = predictions_dir / f"{dataset_id}.jsonl"
+        predictions.append(
+            {
+                "dataset": dataset_id,
+                "prediction_stem": dataset_id,
+                "txt": str(txt),
+                "txt_sha256": _sha256(txt),
+                "txt_samples": _count_nonempty_lines(txt),
+                "jsonl": str(jsonl) if jsonl.is_file() else None,
+                "jsonl_sha256": _sha256(jsonl) if jsonl.is_file() else None,
+                "jsonl_samples": _count_nonempty_lines(jsonl) if jsonl.is_file() else 0,
+            }
+        )
+    # No report.jsonl to hash: the base identity is the prediction set itself.
+    triples = sorted([item["dataset"], item["txt_sha256"], item["txt_samples"]] for item in predictions)
+    source_report_sha256 = hashlib.sha256(
+        json.dumps(triples, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    results_root = LOCAL_RESULTS_ROOT.resolve()
+
+    return {
+        "schema": "sure.reval.approved_prediction_source.v2",
+        "generated_at": _utc_now(),
+        "source_kind": "local_infer_run",
+        "model_name": model,
+        "model_dir": str(model_dir),
+        "model_fingerprint": _model_fingerprint(model_dir, str(model_resolution["verdict_path"])),
+        "verdict_path": model_resolution["verdict_path"],
+        "protocol_id": protocol_id,
+        "datasets": requested,
+        "dataset_set_digest": hashlib.sha256("\n".join(requested).encode("utf-8")).hexdigest(),
+        "source_results_dir": str(source_dir),
+        "source_result_relative_path": (
+            str(source_dir.relative_to(results_root)) if _is_relative_to(source_dir, results_root) else None
+        ),
+        "source_predictions_dir": str(predictions_dir),
+        "source_protocol": str((source_dir / "protocol.yaml").resolve()),
+        "source_report": None,
+        "source_report_sha256": source_report_sha256,
+        "predictions": predictions,
+        "old_evaluation_reused": False,
+        "inference_allowed": False,
+    }
+
+
 def build_payload(
+    args: argparse.Namespace,
+    *,
+    approved_models_root: Path | None = APPROVED_MODELS_ROOT,
+    approved_results_root: Path | None = APPROVED_RESULTS_ROOT,
+) -> dict[str, Any]:
+    source_dir = _local_source_dir(args)
+    if source_dir is not None:
+        return _local_infer_payload(args, approved_models_root=approved_models_root, source_dir=source_dir)
+    return _approved_results_payload(
+        args, approved_models_root=approved_models_root, approved_results_root=approved_results_root
+    )
+
+
+def _approved_results_payload(
     args: argparse.Namespace,
     *,
     approved_models_root: Path | None = APPROVED_MODELS_ROOT,
@@ -247,7 +425,7 @@ def build_payload(
         )
         if incomplete:
             detail += (
-                f", incomplete={incomplete}. /sure_reval recomputes pipelines from a complete approved "
+                f", incomplete={incomplete}. /sure_eval recomputes pipelines from a complete approved "
                 "result; a directory missing protocol.yaml or report.jsonl never finished evaluating and "
                 "cannot be revalidated. Re-run the evaluation for it instead: generation resumes from the "
                 "predictions already there."
@@ -316,10 +494,16 @@ def build_payload(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Resolve an exact approved NFS prediction source")
+    parser = argparse.ArgumentParser(
+        description="Resolve the prediction source for /sure_eval: a local /sure_infer bundle or an exact approved NFS result"
+    )
     parser.add_argument("--model", required=True)
     parser.add_argument("--datasets", nargs="+", required=True)
     parser.add_argument("--protocol-id", choices=sorted(ALLOWED_PROTOCOLS), default="standard_system")
+    parser.add_argument(
+        "--source-run",
+        help="Local inference run: an absolute bundle directory, or a run id below sure/results/<model>/<protocol>/",
+    )
     parser.add_argument("--output")
     args = parser.parse_args()
     try:

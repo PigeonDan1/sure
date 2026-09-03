@@ -510,7 +510,7 @@ def main() -> int:
                 "error": {"code": "EVALUATION_RUNTIME_NOT_READY", "message": str(exc)},
             },
         )
-        # /sure_reval reads stderr for its error text, so the plain reason stays there.
+        # /sure_eval reads stderr for its error text, so the plain reason stays there.
         print(str(exc), file=sys.stderr)
         return 1
     _write_readiness(args.output, binding)
