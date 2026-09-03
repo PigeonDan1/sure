@@ -653,16 +653,15 @@ class ReadmeReconcileTests(IndexFixtureCase):
         self.assertNotIn("on the eval queue", self.readme().read_text(encoding="utf-8"))
 
     def test_real_onboard_readme_is_unchanged(self) -> None:
-        # The 5 legacy rows in the real README stay byte for byte, whether the files have headers yet or not.
+        # A fresh clone ships no confirmed bad cases: the real README carries an empty route
+        # table, and reconciling it against the (empty) index must leave it byte for byte.
         real_dir = REPO_ROOT / "sure" / "skills" / "sure_onboard" / "references" / "memory" / "bad_cases"
         repo = Path(self.tmp.name) / "real"
         target = repo / "sure" / "skills" / "sure_onboard" / "references" / "memory" / "bad_cases"
         shutil.copytree(real_dir, target)
         idx = index.build_index(repo, config=CONFIG, units=UNITS)
         onboard = [e for e in idx["entries"] if e["target_skill"] == "sure_onboard"]
-        self.assertEqual(len(onboard), 5)
-        self.assertTrue(all(e["legacy"] for e in onboard))
-        self.assertTrue(all(e["status"] == "confirmed" for e in onboard))
+        self.assertEqual(onboard, [])
         before = (target / "README.md").read_bytes()
         self.assertFalse(index.reconcile_readme(target / "README.md", index.records_from_index(idx)))
         self.assertEqual((target / "README.md").read_bytes(), before)

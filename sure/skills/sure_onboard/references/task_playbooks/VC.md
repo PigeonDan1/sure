@@ -147,8 +147,8 @@ semantic、speaker、DNSMOS/WV-MOS/UTMOS 等 provider 资源；provider 缺失�
 blocker，不能误判为 VC 模型失败。
 
 正式 VC metric report 至少记录 `ok`、`errors`、runner、cache_dir、输入音频角色、
-`vc_cer`、`sim/*`、`dnsmos`、`wv-mos`、`utmos` 中实际启用的指标。出现 metric bypass
-时读取 `references/memory/bad_cases/vc_metric_bypass.md`。
+`vc_cer`、`sim/*`、`dnsmos`、`wv-mos`、`utmos` 中实际启用的指标。只查转换音频契约、
+或手写相似度/MOS 字段而没有 provider report，都算 metric bypass，不接受。
 
 ## 3. 下载与网络
 

@@ -128,8 +128,8 @@ contract 为最小门槛，但不能把“输出音频存在、可解码、不�
   reference audio、metric backend、results 和 provider failures/blockers。
 - 如果只是修正 TTS metric 口径，不允许重新跑 TTS 推理；必须复用已有生成音频和
   `sample_output.json` 中的 prompt / target text，再用 TTS evaluation 工具重算。
-- 出现 TTS metric bypass 时读取
-  `references/memory/bad_cases/tts_metric_bypass.md`。
+- 只查输出音频契约、或手写 MOS/SIM 字段而不走 TTS evaluation 工具，
+  都算 metric bypass，不接受。
 
 推荐新入口：
 

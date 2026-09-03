@@ -118,8 +118,8 @@ edit-distance 实现。
   例如 `sure_eval.evaluation.tasks.asr.metrics.CERMetric`。
 - 如果只是修正 metric 口径，不允许重新跑模型推理；必须复用已有
   `sample_output.json` 中的 prediction/reference。
-- 出现手写 edit distance、临时 CER/WER 或 metric-only 重新推理时，读取
-  `references/memory/bad_cases/asr_metric_bypass.md`。
+- 手写 edit distance、临时 CER/WER、为了 metric 重新推理，都算 metric bypass，
+  不接受。
 
 ## 4. Backend 选择
 
