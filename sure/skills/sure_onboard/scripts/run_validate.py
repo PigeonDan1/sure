@@ -148,6 +148,49 @@ def read_json(path: Path) -> dict:
     return data
 
 
+def _check_command_against_wrapper_manifest(
+    command: list[str] | str,
+    cwd: Path,
+    run_dir: Path,
+    allowed_keys: tuple[str, ...] = ("validate_py", "server_py"),
+) -> str | None:
+    """Every .py the command runs must be the wrapper generate_wrapper recorded.
+
+    Returns an error message, or None when the command names only manifest files.
+    The artifact is agent-written, so without this an agent can point the gate
+    at a stub that prints success instead of the wrapper it generated.
+    """
+    manifest_path = run_dir / "artifacts" / "wrapper_manifest.json"
+    if not manifest_path.exists():
+        return f"wrapper_manifest.json is required before validation; {manifest_path} not found"
+    try:
+        manifest = read_json(manifest_path)
+    except ValueError as exc:
+        return f"wrapper_manifest.json is required before validation; {exc}"
+    if not manifest.get("validate_py"):
+        return f"wrapper_manifest.json is required before validation; {manifest_path} has no validate_py"
+
+    repo_root = repo_root_for(run_dir)
+    wrapper_dir = resolve_path(normalize_repo_relative_text(str(manifest.get("wrapper_path") or ""), repo_root), run_dir) or run_dir
+    if wrapper_dir.is_file():
+        wrapper_dir = wrapper_dir.parent
+    expected = [
+        resolve_path(normalize_repo_relative_text(str(manifest[key]), repo_root), wrapper_dir).resolve()
+        for key in allowed_keys
+        if manifest.get(key)
+    ]
+
+    tokens = shlex.split(command) if isinstance(command, str) else command
+    for token in tokens:
+        if not token.endswith(".py"):
+            continue
+        declared = resolve_path(token, cwd).resolve()
+        if declared not in expected:
+            rendered = " or ".join(str(path) for path in expected)
+            return f"validation command must run the generated wrapper {rendered}, got {declared}"
+    return None
+
+
 def validation_device_for(run_dir: Path) -> str | None:
     env_compat_path = run_dir / "artifacts" / "env_compat_result.json"
     if env_compat_path.exists():
@@ -316,6 +359,10 @@ def run_validation_command(
     repo_root = repo_root_for(run_dir)
     command = maybe_use_model_local_python(command, shell=shell, cwd=cwd)
     command = normalize_repo_relative_command(command, repo_root)
+    allowed_keys = ("validate_py", "server_py") if data.get("run_command") else ("validate_py",)
+    problem = _check_command_against_wrapper_manifest(command, cwd, run_dir, allowed_keys)
+    if problem:
+        raise ValueError(problem)
 
     log_path = log_path_for(data, kind, run_dir, cwd)
     log_path.parent.mkdir(parents=True, exist_ok=True)
