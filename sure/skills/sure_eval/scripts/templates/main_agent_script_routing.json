@@ -93,21 +93,6 @@
         "metrics/<dataset>/<metric_slug>/pipeline_description.json exists",
         "results written to run-local results_dir"
       ]
-    },
-    {
-      "name": "refresh_report",
-      "script": "scripts/refresh_report_snapshot.py",
-      "inputs": {
-        "markdown": "reports/model_report.md",
-        "json": "reports/report_summary.json"
-      },
-      "outputs": {
-        "markdown_report": "reports/model_report.md",
-        "summary": "reports/report_summary.json"
-      },
-      "completion_criteria": [
-        "report markdown exists"
-      ]
     }
   ],
   "routing_reason": "",

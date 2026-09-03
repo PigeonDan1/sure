@@ -4,7 +4,7 @@
 Verifies that script_routing.json declares only whitelisted step names whose
 scripts resolve under scripts/ and exist on disk. The step NAMES are the short
 contract names (prepare_dataset / materialize_templates / wait_for_predictions
-/ validate_predictions / evaluate_predictions / refresh_report) — the
+/ validate_predictions / evaluate_predictions) — the
 authoritative names used by the contract
 (references/contracts/main_agent_script_routing_unit.md) and the produces
 exemplar (scripts/templates/main_agent_script_routing.json). Each step's
@@ -34,7 +34,6 @@ STEP_WHITELIST = [
     "wait_for_predictions",
     "validate_predictions",
     "evaluate_predictions",
-    "refresh_report",
 ]
 
 # Map each contract step name to the deterministic script file it routes to.
@@ -46,7 +45,6 @@ STEP_TO_SCRIPT = {
     "wait_for_predictions": "scripts/generate_predictions_via_server.py",
     "validate_predictions": "scripts/validate_prediction_files.py",
     "evaluate_predictions": "scripts/evaluate_predictions.py",
-    "refresh_report": "scripts/refresh_report_snapshot.py",
 }
 
 

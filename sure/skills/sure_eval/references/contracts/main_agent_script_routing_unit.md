@@ -63,7 +63,6 @@ The following step names constitute the exclusive whitelist for SCRIPT_ROUTING_U
 - `wait_for_predictions`
 - `validate_predictions`
 - `evaluate_predictions`
-- `refresh_report`
 
 ## Script Path Constraints
 
@@ -105,26 +104,6 @@ Before emitting `script_routing.json`, the Agent **must** perform a compliance s
 ### Self-Check Output Template
 
 - [script_routing_compliance_check.json](../templates/script_routing_compliance_check.json)
-
-### Code-Level Validation (Interception Layer)
-
-After the self-check passes, `script_routing.json` must also pass mandatory code-level validation:
-
-```bash
-python -m sure_eval.agent.validators <path-to-script_routing.json>
-```
-Run from the repository root. Replace <path-to-script_routing.json> with the actual path.
-Example:
-  python -m sure_eval.agent.validators \
-    sure/models/asr_qwen3/eval_runs/main_agent_asr_qwen3_001/script_routing.json
-
-
-The validator (`src/sure_eval/agent/validators.py`) performs:
-- JSON Schema validation (step type whitelist, required fields)
-- Script path prefix validation (`scripts/` + forbidden prefix checks)
-- Script file disk existence validation
-
-A `script_routing.json` that fails this validation must not proceed to EXECUTION_SURFACE_UNIT or any subsequent stage.
 
 ## Wait Contract
 

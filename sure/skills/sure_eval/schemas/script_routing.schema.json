@@ -19,8 +19,7 @@
 							"materialize_templates",
 							"wait_for_predictions",
 							"validate_predictions",
-							"evaluate_predictions",
-							"refresh_report"
+							"evaluate_predictions"
 						]
 					},
 					"script": {
