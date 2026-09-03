@@ -65,10 +65,12 @@ python3 -s -m unittest discover -s sure/runtime/memory -p "test_*.py"
 十七条老 bad_case 的头信息现在是 staged 状态,由仓库所有者本人 commit(seams 复审 Critical 1:没有头信息的话,这套系统永远注入不了任何东西,而且不会有任何提示)。commit 完成后先确认头信息真的进了那次 commit:
 
 ```bash
-git show HEAD:sure/skills/sure_onboard/references/memory/bad_cases/cuda_runtime_mismatch.md | head -1
+git show HEAD:sure/skills/sure_onboard/references/memory/bad_cases/asr_metric_bypass.md | head -3
 ```
 
-过:输出恰好是 `Trigger: no kernel image is available; undefined symbol; libcudnn`。不过:输出是别的(比如没有 `Trigger:` 开头),说明这次 commit 提交的是没有头信息的老版本,后面 B1-B14 里所有"bad_case 应该被命中注入"的检查全部作废——先联系仓库所有者确认 commit 内容,不要往下做。
+(头信息现在是正文里的 `## Trigger` 一节,不再是文件首行的 `Trigger:`;`cuda_runtime_mismatch.md` 已随旧 bad_case 清理删除,拿 `asr_metric_bypass.md` 当样本。)
+
+过:输出第一行是 `# ASR Metric Bypass`、第三行是 `## Trigger`。不过:输出里没有 `## Trigger`,说明这次 commit 提交的是没有头信息的老版本,后面 B1-B14 里所有"bad_case 应该被命中注入"的检查全部作废——先联系仓库所有者确认 commit 内容,不要往下做。
 
 ### B1. 真实 onboard 一次
 
@@ -93,17 +95,17 @@ git show HEAD:sure/skills/sure_onboard/references/memory/bad_cases/cuda_runtime_
 
 过:八项全满足。不过:记录具体哪一项缺、diagnostics 原文、run 的最终 status。
 
-### B2. 真实 eval 一次(同一模型,小 max_samples)
+### B2. 真实 infer 一次(同一模型,小 max_samples)
 
 ```
-/sure_eval model=<test_model> ... max_samples=<小数字>
+/sure_infer model=<test_model> datasets=<...> execution=local max_samples=<小数字>
 ```
 
-(数据集与执行方式参数按手册 §5 填;`max_samples` 挑一个能几分钟内跑完的小值。)
+(数据集参数按手册 §5 填;`max_samples` 挑一个能几分钟内跑完的小值。2026-09-03 拆分后推理是 `/sure_infer`,评测是 `/sure_eval`;这一步跑推理就够,两边的 digest / decisions / index 是同一份记忆库,规则一样。)
 
-检查:同 B1 的 1、2、4、5、6(eval 侧的 digest / decisions / index 是同一份记忆库,规则一样)。另外:
+检查:同 B1 的 1、2、4、5、6,但判据里的单元名换掉——infer 的 digest 在 `execute_inference` 通过时建,所以 B1 第 1 项看 `.units[]` 里 `id == "execute_inference"` 的 `.outcome == "passed"`,第 8 项的 `digestPassed == "execute_inference"`(`/sure_eval` 对应的是 `assessment`)。另外:
 
-7. `cat .sure/runs/<run_id>/artifacts/memory_context.json`——pre_start 阶段写的,文件存在;`.schema == "sure.memory.context.v1"`;`.skill == "sure_eval"`;`.target_id` 是这次跑的模型 id;`.facts` 是数组(可能为空,但键必须在)。**这一项是专门补的**:TS 复审量过全部套件后发现,`preStart` 真的写了 `memory_context.json`、`target_id` 填对了这件事在 eval 这一侧从来没有测试证明过——之前的说法(Task 17)以为 eval 这条已经被单测盖住了,是错的,onboard 和 eval 都只能靠这份 e2e 清单证。
+7. `cat .sure/runs/<run_id>/artifacts/memory_context.json`——pre_start 阶段写的,文件存在;`.schema == "sure.memory.context.v1"`;`.skill == "sure_infer"`;`.target_id` 是这次跑的模型 id;`.facts` 是数组(可能为空,但键必须在)。**这一项是专门补的**:TS 复审量过全部套件后发现,`preStart` 真的写了 `memory_context.json`、`target_id` 填对了这件事在 eval 这一侧从来没有测试证明过——之前的说法(Task 17)以为 eval 这条已经被单测盖住了,是错的,onboard 和 eval 都只能靠这份 e2e 清单证。
 
 过:六项(B1 的 1/2/4/5/6 加上这里的 7)全满足。不过:记录具体哪一项缺、diagnostics 原文、run 的最终 status。
 
@@ -252,7 +254,7 @@ python3 -s sure/runtime/memory/index.py --repo-root . --check
 
 ### B7a. 抽取声明本身不是合法 JSON
 
-B7 试的是"候选内容过不了门",这一步试另一种坏法:`extraction_declaration.json` 这个文件本身就不是合法 JSON。目前没有任何 fixture 或测试写过这种输入,而且这条路径按现状设计就是"卡住不报错"(不是这一步要修的 bug,只是要把这个已知空白点记下来)。
+B7 试的是"候选内容过不了门",这一步试另一种坏法:`extraction_declaration.json` 这个文件本身就不是合法 JSON。2026-08-30 起这条路径不再"卡住不报错":`validateProduces`(`hooks/validate.ts`)当场打回,repair 是 `extraction_declaration.json must be a JSON object. Expected shape: …`,和其他门禁失败一样消耗一次重试。
 
 在 `extract_lessons` 单元,把声明文件写成不合法 JSON(单行,不用重定向):
 
@@ -262,11 +264,11 @@ python3 -s -c "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('{not js
 
 检查:
 
-1. 门不会报"JSON 解析失败"这类具体错误,而是像文件根本不存在一样悄悄放过——不消耗重试、不留诊断,单元也不会自动前进。记录你实际看到的现象是不是如此。
-2. 如果这次改用非 success 收尾(`sure_finish status=failed`),`pre_finish` 会拒绝,提示"还没到达 extract_lessons 终态,从 extract_lessons 继续",但同样不会点名是 JSON 解析错误——记录 repair 原文。
+1. 调 `sure_update_state` 后立刻被打回,repair 原文含 `must be a JSON object`;`state.json` 里 `extract_lessons` 的重试计数加一;单元不前进。
+2. 如果这次改用非 success 收尾(`sure_finish status=failed`),`pre_finish` 会先要一份合法的声明(最多两次),repair 同样点名 JSON 形状;第三次放行并记 `extraction: failed`——记录 repair 原文和最终 `extractionStatus`。
 3. 把文件内容换回合法 JSON,确认这次真的能过门、正常前进,排除是环境问题而不是这条路径本身的问题。
 
-过:1、2 按实际现象如实记录(这条路径设计上就是"卡住不报错",观察到这个现象就算过,不是要求它报出错误);3 必须成立。
+过:1、2 的 repair 都点名了 JSON 形状且重试计数如实增加;3 必须成立。
 
 ### B8. 非 success 收尾三次逻辑
 
