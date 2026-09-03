@@ -4,10 +4,6 @@ exclude:
   - private/site/**
   - docs/internal/**
   - config/site.bundled.yaml
-  # Frozen upstream audit mirror, intentionally GitLab-only; see
-  # sure/skills/sure_eval/SKILL.md. This is the single grandfathered
-  # export exception: all other private content must live under private/.
-  - sure/skills/sure_eval/references/main_flow_agent/**
   - .gitlab-ci.yml
 
 forbidden_content: []

@@ -16,7 +16,7 @@
 			"type": "eval_input_resolved",
 			"path": "artifacts/eval_input_resolved.json",
 			"required": false,
-			"description": "Resolved /sure_eval product input mapped to the main-flow MAIN_FLOW_INPUT contract."
+			"description": "Resolved /sure_eval product input: the approved model binding, canonical datasets and runtime plan every later unit reads."
 		},
 		{
 			"type": "evaluation_route_plan",

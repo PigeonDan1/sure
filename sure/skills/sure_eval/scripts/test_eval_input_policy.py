@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests: strict main flow accepts only source-root dataset inputs.
+"""Tests: /sure_eval input resolution policy.
 
 Run directly:
     cd sure/skills/sure_eval/scripts && python test_eval_input_policy.py
@@ -22,26 +22,18 @@ from sure_eval.datasets import source_resolver  # noqa: E402
 from test_source_conversion import make_manager, make_source_tree  # noqa: E402
 
 
-class DatasetInputPolicyTests(unittest.TestCase):
-    def test_source_entry_passes(self) -> None:
-        resolve_eval_input._check_dataset_input_policy(
-            [{"name": "demo_ds__v1.0.2", "requested_name": "/srv/sure/datasets/group/store/ds_pool/demo_ds"}]
-        )
+class MainFlowRemovalTests(unittest.TestCase):
+    def test_the_resolver_no_longer_exposes_the_dataset_input_policy_check(self) -> None:
+        self.assertFalse(hasattr(resolve_eval_input, "_check_dataset_input_policy"))
+        self.assertFalse(hasattr(resolve_eval_input, "MAIN_FLOW_SCRIPTS"))
 
-    def test_new_pipeline_jsonl_passes(self) -> None:
-        resolve_eval_input._check_dataset_input_policy(
-            [{"name": "demo_ds__v1.0.2", "requested_name": "demo_ds__v1.0.2", "source_root": "/srv/sure/datasets/x/ds_pool/demo_ds"}]
-        )
-
-    def test_legacy_name_is_rejected_with_migration_hint(self) -> None:
-        with self.assertRaises(resolve_eval_input.EvalInputError) as ctx:
-            resolve_eval_input._check_dataset_input_policy(
-                [{"name": "aishell1__v1.0.2__asr", "requested_name": "aishell1"}]
-            )
-        message = str(ctx.exception)
-        self.assertIn("aishell1", message)
-        self.assertIn("ds_pool", message)
-        self.assertIn("sure_reval", message)
+    def test_the_parser_no_longer_accepts_strict_main_flow(self) -> None:
+        parser = resolve_eval_input._build_parser()
+        for flag in ("--strict-main-flow", "--no-strict-main-flow"):
+            with self.subTest(flag=flag):
+                args, rest = parser.parse_known_args(["--model", "demo", "--datasets", "/x", flag])
+                self.assertEqual(rest, [flag])
+                self.assertFalse(hasattr(args, "strict_main_flow"))
 
 
 class RunIdPolicyTests(unittest.TestCase):

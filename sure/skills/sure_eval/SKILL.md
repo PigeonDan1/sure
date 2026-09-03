@@ -7,8 +7,6 @@ description: Run reproducible inference from an approved model's sealed containe
 
 Orchestrate inference plus deterministic evaluation for a model that has been human-approved into a configured `approved_models_roots` directory. Container bindings mount approved storage read-only. A site-approved Python binding runs on a trusted host and verifies model-core hashes before and after execution. New evaluation products are staged under repository-local `sure/results` for later human promotion.
 
-A private distribution may carry an upstream main-flow mirror under `references/main_flow_agent/` for audit and parity review only. The public distribution omits that mirror. It is never a runtime template or execution source; adapt harness execution only under this skill package.
-
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
 
 Control principle: **agent decides scope, scripts enforce format and execution.** You (the agent) choose which datasets, what target, how to route; the deterministic scripts under `scripts/` and the hook gates enforce that every artifact is in the right place, the right format, and the right value domain — and that execution-surface isolation plus the user-selected execution policy hold.
@@ -41,16 +39,14 @@ At `pre_start`, the hook resolves the product input into
 `<run_dir>/artifacts/eval_input_resolved.json` by running
 `scripts/resolve_eval_input.py`. This artifact is the bridge from the
 user-friendly `/sure_eval model=... datasets=... device=...` surface to the
-upstream `MAIN_FLOW_INPUT` shape documented in
-`references/contracts/main_agent_spec.md`:
+plan every later unit reads:
 
-- `target.model_name/model_dir/tool_workflow_ready/integration_state` and the
-  immutable deployment binding come only from the approved NFS model directory.
-- `constraints.allowed_datasets` is the canonical expanded dataset list.
-- `constraints.allowed_tasks` is inferred from dataset JSONL metadata.
-- `runtime_context.output_dir`, `device_request`, `device_resolved`, execution
-  request/plan, `max_samples` sample scope, and
-  `available_scripts` are recorded before the state machine starts.
+- `model`, including the immutable deployment binding, comes only from the
+  approved model directory.
+- `datasets` is the canonical expanded dataset list; the evaluation task and
+  language are inferred from dataset metadata.
+- `runtime` records `run_dir`, the resolved device, the execution plan and the
+  `max_samples` sample scope before the state machine starts.
 
 Immediately after input resolution, `pre_start` runs
 `scripts/preflight_evaluation_support.py`, which writes
@@ -122,7 +118,6 @@ When materializing the execution surface (run_evaluation.sh):
 1. ALLOWED_TEMPLATE_ROOTS: "scripts/templates/"
    - The generated script MUST be derived ONLY from a template under this approved root.
    - Use `scripts/templates/` for harness-adapted executable templates.
-   - Any distribution-provided audit mirror under `references/main_flow_agent/templates/` MUST NOT be used as a runtime template root.
    - You MUST NOT use any template outside this root.
 2. TEMPLATE_DECLARATION:
    - execution_surface.json -> source_provenance.template_file MUST contain the
@@ -246,10 +241,9 @@ approved model read-only. Configure the projection with `datasets_root`,
 `SURE_EVAL_DATASETS_ROOT`, or site policy `datasets.projection_root`. The
 repository-local `data/datasets` path is only the development fallback.
 
-`evaluate_predictions.py` accepts `--evaluation-backend auto|external|legacy`
-and `--strict-main-flow`. Harness main-flow templates default to
-`EVALUATION_BACKEND=external` and `STRICT_MAIN_FLOW=1`; this prevents the
-default path from falling back to the vendored legacy evaluator. Use `auto` or
+`evaluate_predictions.py` accepts `--evaluation-backend auto|external|legacy`.
+Harness main-flow templates default to `EVALUATION_BACKEND=external`; this
+prevents the default path from falling back to the vendored legacy evaluator. Use `auto` or
 `legacy` only for explicit local compatibility work, not for aligned main-flow
 validation. Metric support is discovered from the current standalone
 `sure-evaluation` engine at runtime; the harness must not maintain a separate

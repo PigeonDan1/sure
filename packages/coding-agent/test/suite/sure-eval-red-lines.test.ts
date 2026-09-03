@@ -50,8 +50,7 @@ function writeEvalInput(runDir: string): void {
 			device: { request: "cpu", resolved: "cpu" },
 			execution: { requested: "local", planned: "local", path_planned: "local_docker" },
 		},
-		evaluation: { backend: "external", strict_main_flow: true },
-		main_flow_input: {},
+		evaluation: { backend: "external" },
 	});
 }
 

@@ -14,14 +14,12 @@ function run(command, args, options = {}) {
 
 const failures = [];
 
-// The public export exception list is closed: main_flow_agent is the single
-// grandfathered export exclusion (see public-export.yaml); every other
+// The public export exception list is closed (see public-export.yaml): every
 // private asset must live under private/ and new exclusions must be rejected.
 const allowedExclusions = new Set([
 	"private/site/**",
 	"docs/internal/**",
 	"config/site.bundled.yaml",
-	"sure/skills/sure_eval/references/main_flow_agent/**",
 	".gitlab-ci.yml",
 ]);
 if (existsSync("public-export.yaml")) {

@@ -512,9 +512,6 @@ if [[ "$AUDIO_EVAL_MODE" == "merge" ]]; then
     --evaluation-backend "$EVALUATION_BACKEND"
     --output "$RUN_DIR/evaluation_payload.json"
   )
-  if [[ "$STRICT_MAIN_FLOW" == "1" ]]; then
-    MERGE_ARGS+=(--strict-main-flow)
-  fi
   for payload_path in "${SEGMENT_PAYLOAD_ARRAY[@]}"; do
     MERGE_ARGS+=(--merge-payload "$payload_path")
   done
@@ -604,9 +601,6 @@ EVAL_ARGS=(
   --record
   --output "${SEGMENT_DIR:-$RUN_DIR}/evaluation_payload.json"
 )
-if [[ "$STRICT_MAIN_FLOW" == "1" ]]; then
-  EVAL_ARGS+=(--strict-main-flow)
-fi
 for metric in "${METRIC_ARRAY[@]}"; do
   EVAL_ARGS+=(--metric "$metric")
 done

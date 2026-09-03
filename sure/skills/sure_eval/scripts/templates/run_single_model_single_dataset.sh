@@ -575,9 +575,6 @@ EVAL_ARGS=(
   --evaluation-timeout "$EVALUATION_TIMEOUT"
   --output "$RUN_DIR/evaluation_payload.json"
 )
-if [[ "$STRICT_MAIN_FLOW" == "1" ]]; then
-  EVAL_ARGS+=(--strict-main-flow)
-fi
 if [[ -n "$METRICS" ]]; then
   read -r -a METRIC_ARRAY <<< "$METRICS"
   for metric in "${METRIC_ARRAY[@]}"; do

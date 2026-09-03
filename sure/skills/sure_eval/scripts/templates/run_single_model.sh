@@ -760,9 +760,6 @@ if [[ -n "$METRICS" ]]; then
     EVAL_ARGS+=(--metric "$metric")
   done
 fi
-if [[ "$STRICT_MAIN_FLOW" == "1" ]]; then
-  EVAL_ARGS+=(--strict-main-flow)
-fi
 if [[ -n "$DEVICE" ]]; then
   EVAL_ARGS+=(--device "$DEVICE")
 fi

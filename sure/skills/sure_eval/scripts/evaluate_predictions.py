@@ -2324,11 +2324,6 @@ def main() -> int:
         default=os.environ.get("SURE_EVALUATION_BACKEND", "auto"),
         help="Evaluation backend. auto prefers external sure-evaluation when available.",
     )
-    parser.add_argument(
-        "--strict-main-flow",
-        action="store_true",
-        help="Require canonical external sure-evaluation routing and reject legacy fallback.",
-    )
     parser.add_argument("--evaluation-engine-root", type=str, help="Explicit standalone sure-evaluation repository root")
     parser.add_argument("--external-runs-dir", type=str, help="Directory for external sure-evaluation per-dataset run outputs")
     parser.add_argument(
@@ -2356,8 +2351,6 @@ def main() -> int:
         help="When writing --results-dir, never copy protocol/report/snapshot from the source prediction run.",
     )
     args = parser.parse_args()
-    if args.strict_main_flow and args.evaluation_backend != "external":
-        raise ValueError("--strict-main-flow requires --evaluation-backend external")
 
     cfg = Config.from_yaml(args.config) if args.config else Config.from_env()
     dataset_manager = DatasetManager(cfg)
@@ -2515,8 +2508,6 @@ def main() -> int:
 
         for metric_override, pipeline_id_override in applicable_requests:
             if args.evaluation_backend == "legacy" or resolved_engine is None:
-                if args.strict_main_flow:
-                    raise RuntimeError("strict main-flow evaluation cannot use the legacy evaluator")
                 result = evaluate_prediction_file(
                     dataset_manager,
                     sota_manager,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve the user-facing /sure_eval input into a main-flow input contract."""
+"""Resolve the user-facing /sure_eval input into eval_input_resolved.json, the plan every later unit reads."""
 
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ from sure_eval.datasets import DatasetManager
 from sure_eval.datasets.dataset_manager import CSV_DATASETS
 from sure_eval.datasets.source_resolver import (
     SourceResolutionError,
-    accepted_source_root,
     is_source_entry,
     read_source_language,
     resolve_site_source_entry,
@@ -39,16 +38,6 @@ from resolve_evaluation_engine import resolve_engine_root
 from resolve_model_dir import APPROVED_MODELS_ROOT, resolve_approved_model
 from sure.site.loader import load_site_policy
 
-
-MAIN_FLOW_SCRIPTS = [
-    "scripts/prepare_sure_dataset.py",
-    "scripts/materialize_predictions_template.py",
-    "scripts/generate_predictions_via_server.py",
-    "scripts/validate_prediction_files.py",
-    "scripts/evaluate_predictions.py",
-    "scripts/refresh_report_snapshot.py",
-    "scripts/run_local_execution.py",
-]
 
 TEXT_DEFAULT_METRICS = {
     "S2TT": "bleu",
@@ -214,27 +203,6 @@ def _check_task_compatibility(model: dict[str, Any], datasets: list[dict[str, An
         f"Task mismatch: model '{model.get('name')}' declares task {_task_label(model_task)}, "
         f"but {'; '.join(mismatched)}. Choose datasets that match the model task, {suggestion}. "
         f"(Model task comes from the model's config.yaml; dataset task from dataset metadata.)"
-    )
-
-
-def _check_dataset_input_policy(datasets: list[dict[str, Any]]) -> None:
-    """Strict main flow only accepts site dataset source roots (or their outputs)."""
-    offenders = []
-    for item in datasets:
-        requested = str(item.get("requested_name") or item.get("name") or "")
-        if is_source_entry(requested) or item.get("source_root"):
-            continue
-        offenders.append(requested or str(item.get("name")))
-    if not offenders:
-        return
-    root = accepted_source_root()
-    raise EvalInputError(
-        "Strict main flow accepts only site dataset source-root inputs. "
-        f"Rejected: {', '.join(offenders)}. Pass a source root such as "
-        f"{root}/g001/store002/ds_pool/<source_dataset_name>, or re-prepare the "
-        "dataset from its source root so its JSONL carries source metadata. "
-        "Legacy dataset names remain usable for /sure_reval on historical runs, "
-        "or pass --no-strict-main-flow explicitly."
     )
 
 
@@ -701,7 +669,6 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             f"model {args.model!r} is not an approved runtime-ready NFS model under "
             f"{model.get('approved_models_root')}"
         )
-    model_dir = Path(str(model["model_dir"]))
     deployment_binding = model.get("deployment_binding") or {}
     runtime_kind = str(deployment_binding.get("runtime_kind") or "container")
     image_harness = ((deployment_binding.get("container") or {})).get("harness_runtime")
@@ -735,9 +702,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         model_task=str(model.get("declared_task") or ""),
         dataset_source_key=args.dataset_source_key,
     )
-    if args.strict_main_flow:
-        _check_task_compatibility(model, datasets)
-        _check_dataset_input_policy(datasets)
+    _check_task_compatibility(model, datasets)
     tasks = _dedupe([str(item.get("task") or "UNKNOWN") for item in datasets])
     languages = _dedupe([str(item.get("language") or "") for item in datasets if item.get("language")])
     metric_list = _dedupe([metric for item in datasets for metric in item.get("default_metrics", [])])
@@ -749,43 +714,6 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         allowed_local_runtimes,
     )
     device = _resolve_device(args.device)
-
-    main_flow_input = {
-        "user_goal": args.user_goal,
-        "target": {
-            "model_name": args.model,
-            "model_dir": str(model_dir),
-            "tool_workflow_ready": bool(model.get("workflow_ready")),
-            "integration_state": model.get("integration_state"),
-        },
-        "constraints": {
-            "allow_tool_workflow": args.allow_tool_workflow,
-            "allowed_tasks": tasks,
-            "allowed_datasets": [item["name"] for item in datasets],
-            "blocked_datasets": [],
-            "dry_run": args.dry_run,
-        },
-        "evidence": {
-            "readme_path": model["evidence"]["readme_path"],
-            "config_path": model["evidence"]["config_path"],
-            "artifacts_dir": model["evidence"]["artifacts_dir"],
-            "model_spec_path": model["evidence"]["model_spec_path"],
-            "prior_results": [],
-        },
-        "runtime_context": {
-            "available_scripts": MAIN_FLOW_SCRIPTS,
-            "output_dir": str(output_dir),
-            "device_request": device["request"],
-            "device_resolved": device["resolved"],
-            "execution": execution,
-            "execution_path": execution["path_planned"],
-            "model_runtime": runtime_kind,
-            "max_samples": args.max_samples,
-            "deployment_binding": model["deployment_binding"],
-            "harness_runtime": harness_runtime,
-            "dataset_projection": dataset_projection,
-        },
-    }
 
     return {
         "schema": "sure.eval.input_resolved.v1",
@@ -827,7 +755,6 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         },
         "evaluation": {
             "backend": args.evaluation_backend,
-            "strict_main_flow": args.strict_main_flow,
             "config_path": str(config_path),
             "engine": (
                 {"source": engine[0], "engine_root": str(engine[1])}
@@ -835,7 +762,6 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
                 else None
             ),
         },
-        "main_flow_input": main_flow_input,
         "expected_outputs": {
             "protocol": str(output_dir / "protocol.yaml"),
             "report_jsonl": str(output_dir / "report.jsonl"),
@@ -848,7 +774,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Resolve /sure_eval input into a main-flow contract")
+    parser = argparse.ArgumentParser(description="Resolve /sure_eval input into eval_input_resolved.json")
     parser.add_argument("--model", required=True)
     parser.add_argument("--datasets", nargs="+", required=True)
     parser.add_argument("--protocol", choices=("standard_system", "strict_core"), default="standard_system")
@@ -863,12 +789,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--evaluation-backend", default="external", choices=("auto", "external", "legacy"))
     parser.add_argument("--evaluation-engine-root")
-    parser.add_argument("--strict-main-flow", action="store_true", default=True)
-    parser.add_argument("--no-strict-main-flow", dest="strict_main_flow", action="store_false")
     parser.add_argument("--user-goal", default="evaluate_existing_model")
-    parser.add_argument("--allow-tool-workflow", action="store_true", default=True)
-    parser.add_argument("--no-allow-tool-workflow", dest="allow_tool_workflow", action="store_false")
-    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--run-id")
     parser.add_argument("--config")
     parser.add_argument("--datasets-root")

@@ -839,7 +839,6 @@ def run_reval(
         str(config_path),
         "--evaluation-backend",
         "external",
-        "--strict-main-flow",
         "--output",
         str(run_dir / "evaluation_payload.json"),
         "--external-runs-dir",

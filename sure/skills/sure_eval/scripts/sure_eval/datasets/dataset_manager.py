@@ -204,56 +204,13 @@ class DatasetManager:
         
         # Ensure directories exist
         self.jsonl_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Load OREF dataset configuration from YAML
-        self._oref_config = self._load_oref_config()
-        self.oref_local_datasets = self._oref_config.get("datasets", {})
-        self.dataset_fallbacks = self._oref_config.get("fallbacks", {})
-
-    def _task_slug(self, task: str | None) -> str:
-        return str(task or "unknown").strip().lower().replace("-", "_")
-
-    def _oref_projection_name(self, dataset_name: str, meta: dict[str, Any]) -> str:
-        config_name = str(meta.get("config_name") or dataset_name)
-        version_id = str(meta.get("version_id") or "unversioned")
-        task_slug = self._task_slug(meta.get("task"))
-        return f"{config_name}__{version_id}__{task_slug}"
-
-    def _resolve_config_path(self, value: str | Path) -> Path:
-        path = Path(value).expanduser()
-        if path.is_absolute():
-            return path
-        return self.data_dir / path
-
-    def _oref_dataset_dir(self, dataset_name: str, meta: dict[str, Any]) -> Path:
-        config_name = str(meta.get("config_name") or dataset_name)
-        return self.sure_dir / config_name
-
-    def _oref_platform_meta_for_projection(self, projection_name: str) -> tuple[str, dict[str, Any]] | None:
-        for dataset_name, meta in self.oref_local_datasets.items():
-            if meta.get("source") != "oref_platform":
-                continue
-            if self._oref_projection_name(dataset_name, meta) == projection_name:
-                return dataset_name, meta
-        return None
 
     def _count_jsonl_rows(self, path: Path) -> int | None:
         if not path.exists():
             return None
         with path.open("r", encoding="utf-8") as handle:
             return sum(1 for line in handle if line.strip())
-    
-    def _load_oref_config(self) -> dict[str, Any]:
-        """Load OREF dataset configuration from YAML file."""
-        oref_yaml = Path(__file__).parent.parent.parent.parent / "config" / "oref_datasets.yaml"
-        if oref_yaml.exists():
-            import yaml
-            with open(oref_yaml, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-                if isinstance(data, dict):
-                    return data
-        return {"datasets": {}, "fallbacks": {}}
-    
+
     def get_jsonl_path(self, dataset_name: str) -> Path:
         """Get the JSONL file path for a dataset."""
         canonical_name = self._canonical_name(dataset_name)
@@ -284,58 +241,10 @@ class DatasetManager:
         resolved = resolve_dataset_alias(dataset_name, candidates)
         return self.jsonl_dir / f"{resolved}.jsonl" if resolved else None
 
-    def _oref_source_sample_jsonl_path(self, dataset_name: str, meta: dict[str, Any]) -> Path:
-        if meta.get("sample_jsonl"):
-            return self._resolve_config_path(meta["sample_jsonl"])
-        if meta.get("jsonl_path"):
-            return self._resolve_config_path(meta["jsonl_path"])
-        dataset_root = self._resolve_config_path(meta["dataset_root"])
-        version_id = str(meta.get("version_id") or "v1.0.1")
-        return dataset_root / "sample_files" / version_id / "sample.jsonl"
-
-    def _oref_source_ds_jsonl_path(self, dataset_name: str, meta: dict[str, Any]) -> Path:
-        if meta.get("ds_jsonl"):
-            return self._resolve_config_path(meta["ds_jsonl"])
-        dataset_root = self._resolve_config_path(meta["dataset_root"])
-        version_id = str(meta.get("version_id") or "v1.0.1")
-        return dataset_root / "sample_files" / version_id / "ds.jsonl"
-
-    def _oref_source_raw_dir(self, meta: dict[str, Any]) -> Path:
-        if meta.get("raw_dir"):
-            return self._resolve_config_path(meta["raw_dir"])
-        if meta.get("audio_dir"):
-            return self._resolve_config_path(meta["audio_dir"])
-        dataset_root = self._resolve_config_path(meta["dataset_root"])
-        return dataset_root / "raws" / "sample"
-    
     def is_available(self, dataset_name: str) -> bool:
         """Check if dataset JSONL is available."""
-        if self.get_jsonl_path(dataset_name).exists():
-            return True
-        # Check OREF local datasets
-        canonical = self._canonical_name(dataset_name)
-        if canonical in self.oref_local_datasets:
-            meta = self.oref_local_datasets[canonical]
-            if meta.get("source") == "oref_platform":
-                projection = self._oref_projection_name(canonical, meta)
-                if (self.jsonl_dir / f"{projection}.jsonl").exists():
-                    return True
-                return self._oref_source_sample_jsonl_path(canonical, meta).exists()
-            oref_jsonl = self._resolve_config_path(meta["jsonl_path"])
-            return oref_jsonl.exists()
-        # Check fallback to OREF equivalent
-        fallback = self.dataset_fallbacks.get(canonical)
-        if fallback and fallback in self.oref_local_datasets:
-            meta = self.oref_local_datasets[fallback]
-            if meta.get("source") == "oref_platform":
-                projection = self._oref_projection_name(fallback, meta)
-                if (self.jsonl_dir / f"{projection}.jsonl").exists():
-                    return True
-                return self._oref_source_sample_jsonl_path(fallback, meta).exists()
-            oref_jsonl = self._resolve_config_path(meta["jsonl_path"])
-            return oref_jsonl.exists()
-        return False
-    
+        return self.get_jsonl_path(dataset_name).exists()
+
     def download_and_convert(self, dataset_name: str) -> Path:
         """
         Download SURE Benchmark dataset and convert to JSONL.
@@ -350,12 +259,6 @@ class DatasetManager:
             return self._convert_source_root_to_jsonl(
                 resolve_site_source_entry(dataset_name, dataset_source_key=self.dataset_source_key)
             )
-
-        if dataset_name in self.oref_local_datasets:
-            meta = self.oref_local_datasets[dataset_name]
-            if meta.get("source") == "oref_platform":
-                return self._convert_oref_platform_to_jsonl(dataset_name)
-            return self._convert_oref_jsonl_to_jsonl(dataset_name)
 
         canonical = self._canonical_name(dataset_name)
         existing_jsonl = self.get_jsonl_path(canonical)
@@ -372,32 +275,6 @@ class DatasetManager:
             )
             return existing_jsonl
 
-        projection_meta = self._oref_platform_meta_for_projection(canonical)
-        if projection_meta:
-            oref_dataset_name, _meta = projection_meta
-            return self._convert_oref_platform_to_jsonl(oref_dataset_name)
-        
-        # Check OREF local datasets first
-        if canonical in self.oref_local_datasets:
-            meta = self.oref_local_datasets[canonical]
-            if meta.get("source") == "oref_platform":
-                return self._convert_oref_platform_to_jsonl(canonical)
-            return self._convert_oref_jsonl_to_jsonl(canonical)
-        
-        # Fallback: SURE Benchmark -> OREF local equivalent
-        fallback = self.dataset_fallbacks.get(canonical)
-        if fallback and fallback in self.oref_local_datasets:
-            oref_meta = self.oref_local_datasets[fallback]
-            if oref_meta.get("source") == "oref_platform":
-                oref_jsonl = self._oref_source_sample_jsonl_path(fallback, oref_meta)
-            else:
-                oref_jsonl = self._resolve_config_path(oref_meta["jsonl_path"])
-            if oref_jsonl.exists():
-                logger.info("Using OREF fallback", requested=canonical, fallback=fallback)
-                if oref_meta.get("source") == "oref_platform":
-                    return self._convert_oref_platform_to_jsonl(fallback, output_name=canonical)
-                return self._convert_oref_jsonl_to_jsonl(fallback, output_name=canonical)
-        
         csv_name = self._config_to_csv_name(dataset_name)
         
         if csv_name not in CSV_DATASETS:
@@ -579,84 +456,6 @@ class DatasetManager:
             if csv_path.startswith(old_prefix):
                 return new_prefix + csv_path[len(old_prefix):]
         return csv_path
-    
-    def _convert_oref_jsonl_to_jsonl(self, dataset_name: str, output_name: str | None = None) -> Path:
-        """Convert OREF local sample.jsonl to SURE-EVAL standard JSONL format."""
-        meta = self.oref_local_datasets[dataset_name]
-        oref_jsonl_path = self._resolve_config_path(meta["jsonl_path"])
-        audio_dir = self._resolve_config_path(meta["audio_dir"])
-        
-        if not oref_jsonl_path.exists():
-            raise FileNotFoundError(f"OREF sample.jsonl not found: {oref_jsonl_path}")
-        if not audio_dir.exists():
-            raise FileNotFoundError(f"OREF audio directory not found: {audio_dir}")
-        
-        canonical_name = output_name or meta["config_name"]
-        jsonl_path = self.jsonl_dir / f"{canonical_name}.jsonl"
-        
-        if jsonl_path.exists():
-            logger.debug(f"JSONL already exists: {jsonl_path}")
-            return jsonl_path
-        
-        task = meta["task"]
-        language = meta["language"]
-        samples = []
-        
-        with open(oref_jsonl_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                try:
-                    record = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                
-                # Extract transcription text
-                annotation = record.get("annotation", [])
-                if not annotation:
-                    continue
-                
-                transcription = annotation[0].get("transcription", {})
-                text_list = transcription.get("text", [])
-                if not text_list:
-                    continue
-                text = text_list[0].strip()
-                
-                # Extract audio path and map to local path
-                attr = record.get("attribute", {})
-                orig_path = attr.get("path", "")
-                if not orig_path:
-                    continue
-                
-                filename = Path(orig_path).name
-                local_path = str((audio_dir / filename).resolve())
-                
-                # Use sample_id or filename stem as key
-                sample_id = record.get("sample_id", "")
-                key = sample_id if sample_id else Path(filename).stem
-                
-                sample = {
-                    "key": key,
-                    "path": local_path,
-                    "target": text,
-                    "task": task,
-                    "language": language,
-                    "dataset": canonical_name,
-                    "sample_rate": attr.get("sample_rate", 16000),
-                    "duration_ms": attr.get("duration", 0),
-                }
-                samples.append(sample)
-        
-        # Write JSONL
-        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(jsonl_path, 'w', encoding='utf-8') as f:
-            for sample in samples:
-                f.write(json.dumps(sample, ensure_ascii=False) + '\n')
-        
-        logger.info(f"Converted OREF {dataset_name}: {len(samples)} samples -> {jsonl_path}")
-        return jsonl_path
 
     def _load_single_json_object(self, path: Path) -> dict[str, Any]:
         if not path.exists():
@@ -771,7 +570,7 @@ class DatasetManager:
                 })
         return rows, skipped, source_records
 
-    def _copy_oref_source_files(
+    def _copy_source_files(
         self,
         *,
         package_dir: Path,
@@ -779,193 +578,16 @@ class DatasetManager:
         sample_jsonl_path: Path,
         source_payload: dict[str, Any],
     ) -> None:
-        oref_dir = package_dir / "oref"
-        oref_dir.mkdir(parents=True, exist_ok=True)
+        source_dir = package_dir / "source"
+        source_dir.mkdir(parents=True, exist_ok=True)
         if ds_jsonl_path.exists():
-            shutil.copy2(ds_jsonl_path, oref_dir / "ds.jsonl")
+            shutil.copy2(ds_jsonl_path, source_dir / "ds.jsonl")
         if sample_jsonl_path.exists():
-            shutil.copy2(sample_jsonl_path, oref_dir / "sample.jsonl")
-        (oref_dir / "source.json").write_text(
+            shutil.copy2(sample_jsonl_path, source_dir / "sample.jsonl")
+        (source_dir / "source.json").write_text(
             json.dumps(source_payload, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-
-    def _convert_oref_platform_to_jsonl(self, dataset_name: str, output_name: str | None = None) -> Path:
-        """Project an OREF platform dataset version into SURE-EVAL JSONL."""
-        meta = self.oref_local_datasets[dataset_name]
-        task = str(meta.get("task") or "ASR").upper()
-        if task != "ASR":
-            raise NotImplementedError(f"OREF platform projection currently supports ASR only, got: {task}")
-
-        projection_name = self._oref_projection_name(output_name or dataset_name, {**meta, "config_name": output_name or meta.get("config_name") or dataset_name})
-        jsonl_path = self.jsonl_dir / f"{projection_name}.jsonl"
-        if jsonl_path.exists():
-            logger.info("Using existing OREF platform projection", dataset=projection_name, jsonl=str(jsonl_path))
-            return jsonl_path
-
-        sample_jsonl_path = self._oref_source_sample_jsonl_path(dataset_name, meta)
-        ds_jsonl_path = self._oref_source_ds_jsonl_path(dataset_name, meta)
-        raw_dir = self._oref_source_raw_dir(meta)
-        if not sample_jsonl_path.exists():
-            raise FileNotFoundError(f"OREF platform sample.jsonl not found: {sample_jsonl_path}")
-        if not raw_dir.exists():
-            raise FileNotFoundError(f"OREF platform raw_dir not found: {raw_dir}")
-
-        ds_meta = self._load_single_json_object(ds_jsonl_path)
-        language = str(
-            meta.get("language")
-            or (((ds_meta.get("audio") or {}).get("speech") or {}).get("language"))
-            or "auto"
-        )
-        dataset_root = self._resolve_config_path(meta["dataset_root"]) if meta.get("dataset_root") else sample_jsonl_path.parents[2]
-        version_id = str(meta.get("version_id") or sample_jsonl_path.parent.name)
-        oref_dataset_name = str(meta.get("platform_dataset_name") or dataset_root.name)
-        package_dir = self._oref_dataset_dir(output_name or dataset_name, {**meta, "config_name": output_name or meta.get("config_name") or dataset_name})
-        projection_dir = package_dir / "projections" / "asr_transcription_v1"
-        projection_dir.mkdir(parents=True, exist_ok=True)
-
-        require_audio_exists = bool((meta.get("validation") or {}).get("require_audio_exists", True))
-        check_size = bool((meta.get("validation") or {}).get("check_size", True))
-
-        rows, skipped, source_records = self._project_sample_rows(
-            sample_jsonl_path=sample_jsonl_path,
-            raw_dir=raw_dir,
-            task=task,
-            language=language,
-            dataset_label=projection_name,
-            metadata_base={
-                "source": "oref_platform",
-                "oref_dataset": oref_dataset_name,
-                "version_id": version_id,
-            },
-            require_audio_exists=require_audio_exists,
-            check_size=check_size,
-        )
-
-        if skipped:
-            reasons = ", ".join(f"line {item['line']}: {item['reason']}" for item in skipped[:5])
-            raise ValueError(
-                f"OREF platform conversion skipped {len(skipped)} of {source_records} records for {dataset_name}; "
-                f"first issues: {reasons}"
-            )
-        if not rows:
-            raise ValueError(f"OREF platform conversion produced no samples for {dataset_name}")
-
-        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-        with jsonl_path.open("w", encoding="utf-8") as handle:
-            for row in rows:
-                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-        sure_jsonl = projection_dir / "sure.jsonl"
-        shutil.copy2(jsonl_path, sure_jsonl)
-
-        source_payload = {
-            "source": "oref_platform",
-            "oref_dataset": oref_dataset_name,
-            "version_id": version_id,
-            "dataset_root": str(dataset_root),
-            "raw_dir": str(raw_dir),
-            "ds_jsonl": str(ds_jsonl_path),
-            "sample_jsonl": str(sample_jsonl_path),
-            "created_at": _utc_now(),
-        }
-        self._copy_oref_source_files(
-            package_dir=package_dir,
-            ds_jsonl_path=ds_jsonl_path,
-            sample_jsonl_path=sample_jsonl_path,
-            source_payload=source_payload,
-        )
-
-        mapping = {
-            "projector": "asr_transcription_v1",
-            "source_format": "oref_platform_sample_jsonl",
-            "target_format": "sure_eval_jsonl_v1",
-            "fields": {
-                "key": "sample_id",
-                "path": "attribute.path",
-                "target": "annotation[0].transcription.text[0]",
-                "task": f"constant:{task}",
-                "language": "config.language | ds.audio.speech.language",
-                "sample_rate": "attribute.sample_rate",
-                "duration_ms": "attribute.duration",
-            },
-        }
-        try:
-            import yaml
-            mapping_text = yaml.safe_dump(mapping, allow_unicode=True, sort_keys=False)
-        except Exception:
-            mapping_text = json.dumps(mapping, indent=2, ensure_ascii=False) + "\n"
-        (projection_dir / "mapping.yaml").write_text(mapping_text, encoding="utf-8")
-
-        io_contract = {
-            "task": task,
-            "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
-            "output": {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"},
-            "reference": {"primary_field": "target", "type": "text"},
-        }
-        (projection_dir / "io_contract.json").write_text(
-            json.dumps(io_contract, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-
-        conversion_report = {
-            "source": "oref_platform",
-            "dataset": projection_name,
-            "config_name": meta.get("config_name") or dataset_name,
-            "oref_dataset": oref_dataset_name,
-            "version_id": version_id,
-            "source_sample_jsonl": str(sample_jsonl_path),
-            "source_ds_jsonl": str(ds_jsonl_path),
-            "output_jsonl": str(jsonl_path),
-            "package_sure_jsonl": str(sure_jsonl),
-            "task": task,
-            "language": language,
-            "num_input_records": source_records,
-            "num_output_records": len(rows),
-            "num_skipped": len(skipped),
-            "field_mapping": mapping["fields"],
-            "lossiness": "none",
-            "validation": {
-                "require_audio_exists": require_audio_exists,
-                "check_size": check_size,
-                "check_md5": False,
-            },
-            "created_at": _utc_now(),
-        }
-        (projection_dir / "conversion_report.json").write_text(
-            json.dumps(conversion_report, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-
-        manifest = {
-            "dataset": meta.get("config_name") or dataset_name,
-            "default_projection": "asr_transcription_v1",
-            "source": "oref_platform",
-            "oref_dataset": oref_dataset_name,
-            "version_id": version_id,
-            "projections": {
-                "asr_transcription_v1": {
-                    "dataset": projection_name,
-                    "sure_jsonl": str(sure_jsonl.relative_to(package_dir)),
-                    "mapping": "projections/asr_transcription_v1/mapping.yaml",
-                    "io_contract": "projections/asr_transcription_v1/io_contract.json",
-                    "conversion_report": "projections/asr_transcription_v1/conversion_report.json",
-                }
-            },
-        }
-        (package_dir / "dataset_manifest.json").write_text(
-            json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-
-        logger.info(
-            "Converted OREF platform dataset",
-            dataset=dataset_name,
-            projection=projection_name,
-            samples=len(rows),
-            jsonl=str(jsonl_path),
-        )
-        return jsonl_path
 
     def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef) -> Path:
         """Project a site dataset-pool source root into SURE-EVAL JSONL."""
@@ -1034,7 +656,7 @@ class DatasetManager:
             "sample_jsonl": ref.sample_jsonl,
             "created_at": _utc_now(),
         }
-        self._copy_oref_source_files(
+        self._copy_source_files(
             package_dir=package_dir,
             ds_jsonl_path=ds_jsonl_path,
             sample_jsonl_path=sample_jsonl_path,
@@ -1264,14 +886,6 @@ class DatasetManager:
         if existing_jsonl:
             return existing_jsonl.stem
 
-        fallback = self.dataset_fallbacks.get(name)
-        if fallback and fallback in self.oref_local_datasets:
-            meta = self.oref_local_datasets[fallback]
-            if meta.get("source") == "oref_platform":
-                projection_name = self._oref_projection_name(fallback, meta)
-                if (self.jsonl_dir / f"{projection_name}.jsonl").exists():
-                    return projection_name
-
         # First check if it's already a config name
         if name in self.config.datasets.definitions:
             return name
@@ -1282,29 +896,12 @@ class DatasetManager:
             if config_name:
                 return config_name
             return name
-        
-        # Check OREF local datasets
-        if name in self.oref_local_datasets:
-            meta = self.oref_local_datasets[name]
-            if meta.get("source") == "oref_platform":
-                return self._oref_projection_name(name, meta)
-            return meta.get("config_name", name)
-        
+
         # Check reverse mapping (config -> CSV)
         for csv_name, meta in CSV_DATASETS.items():
             if meta.get("config_name") == name:
                 return name
-        
-        # Check reverse mapping (config -> OREF)
-        for oref_name, meta in self.oref_local_datasets.items():
-            if meta.get("config_name") == name:
-                if meta.get("source") == "oref_platform":
-                    return self._oref_projection_name(oref_name, meta)
-                return name
 
-        if self._oref_platform_meta_for_projection(name):
-            return name
-        
         # Try lowercase normalization as fallback
         lower_name = name.lower()
         if lower_name in self.config.datasets.definitions:
@@ -1373,90 +970,9 @@ class DatasetManager:
         
         return sorted(available)
     
-    def to_inference_input(
-        self,
-        dataset_name: str,
-        output_path: Path | str | None = None,
-        max_samples: int | None = None,
-    ) -> Path:
-        """Convert dataset JSONL to inference-input JSONL for `sure-eval predict`.
-
-        Args:
-            dataset_name: Canonical dataset name (e.g. 'librispeech_test_clean')
-            output_path: Optional output path; defaults to ``{dataset}.inference_input.jsonl``
-                alongside the source JSONL.
-            max_samples: Optional limit on number of samples.
-
-        Returns:
-            Path to the generated inference-input JSONL.
-        """
-        canonical = self._canonical_name(dataset_name)
-        jsonl_path = self.get_jsonl_path(canonical)
-
-        if not jsonl_path.exists():
-            if canonical in self.oref_local_datasets:
-                meta = self.oref_local_datasets[canonical]
-                if meta.get("source") == "oref_platform":
-                    jsonl_path = self._convert_oref_platform_to_jsonl(canonical)
-                else:
-                    jsonl_path = self._convert_oref_jsonl_to_jsonl(canonical)
-            else:
-                raise FileNotFoundError(f"Dataset JSONL not found: {jsonl_path}")
-
-        if output_path is None:
-            output_path = jsonl_path.with_suffix(".inference_input.jsonl")
-        else:
-            output_path = Path(output_path)
-
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        count = 0
-        with open(jsonl_path, "r", encoding="utf-8") as fin, \
-             open(output_path, "w", encoding="utf-8") as fout:
-            for line in fin:
-                if max_samples is not None and count >= max_samples:
-                    break
-                sample = json.loads(line.strip())
-                record = {
-                    "instance_id": sample.get("key", f"sample_{count}"),
-                    "task": sample.get("task", "ASR").lower(),
-                    "input": {
-                        "audio_path": sample.get("path", ""),
-                        "sample_rate": sample.get("sample_rate", 16000),
-                    },
-                    "request": {},
-                }
-                fout.write(json.dumps(record, ensure_ascii=False) + "\n")
-                count += 1
-
-        logger.info(
-            "Generated inference input",
-            dataset=canonical,
-            samples=count,
-            output=str(output_path),
-        )
-        return output_path
-
     def get_info(self, dataset_name: str) -> dict[str, Any] | None:
         """Get dataset information."""
         canonical_name = self._canonical_name(dataset_name)
-        projection_meta = self._oref_platform_meta_for_projection(canonical_name)
-        if projection_meta:
-            _oref_name, meta = projection_meta
-            jsonl_path = self.jsonl_dir / f"{canonical_name}.jsonl"
-            num_samples = self._count_jsonl_rows(jsonl_path)
-            return {
-                "name": canonical_name,
-                "display_name": canonical_name,
-                "config_name": canonical_name,
-                "task": meta["task"],
-                "language": meta["language"],
-                "source": "oref_platform",
-                "jsonl_path": str(jsonl_path),
-                "num_samples": num_samples,
-                "is_available": self.is_available(canonical_name),
-            }
-
         csv_name = self._config_to_csv_name(canonical_name)
         
         if csv_name in CSV_DATASETS:
@@ -1503,19 +1019,6 @@ class DatasetManager:
                 info["source_root"] = sample_meta["source_dataset_root"]
             return info
 
-        # Check OREF local datasets
-        if canonical_name in self.oref_local_datasets:
-            meta = self.oref_local_datasets[canonical_name]
-            return {
-                "name": canonical_name,
-                "display_name": canonical_name,
-                "config_name": canonical_name,
-                "task": meta["task"],
-                "language": meta["language"],
-                "source": "oref_local",
-                "is_available": self.is_available(canonical_name),
-            }
-        
         # Check config
         dataset_def = self.config.get_dataset(canonical_name)
         if dataset_def:
