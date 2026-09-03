@@ -39,7 +39,7 @@
 		},
 		"inference_environment": {
 			"type": "object",
-			"required": ["execution_path", "vc", "container", "harness_runtime", "server", "env", "mount_policy"],
+			"required": ["execution_path", "container", "harness_runtime", "server", "env", "mount_policy"],
 			"additionalProperties": true
 		},
 		"inference_constraints": { "type": "object", "additionalProperties": true },

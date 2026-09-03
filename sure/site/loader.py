@@ -139,7 +139,11 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
         "policy_version": 1,
         "storage": {
             "approved_models_roots": _unique_strings(storage.get("approved_models_roots"), "storage.approved_models_roots", absolute=True),
-            "approved_results_roots": _unique_strings(storage.get("approved_results_roots"), "storage.approved_results_roots", absolute=True),
+            "approved_results_roots": (
+                _unique_strings(storage["approved_results_roots"], "storage.approved_results_roots", absolute=True)
+                if "approved_results_roots" in storage
+                else []
+            ),
             "forbidden_output_roots": _unique_strings(storage.get("forbidden_output_roots"), "storage.forbidden_output_roots", absolute=True),
             "runtime_root": _absolute_path(storage.get("runtime_root"), "storage.runtime_root"),
         },

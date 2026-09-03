@@ -2,18 +2,19 @@
 """
 Check execution surface compliance.
 
-The execution surface MUST be generated from an approved harness template.
-The bundled main-flow reference mirror is audit-only and is not a runtime
-template source. No prior-run script/prediction/report leakage is accepted.
+The execution surface is written by scripts/run_infer.py and must point at the
+bundled scripts/infer_entrypoint.py: the same file, the same digest, no
+prior-run leakage, and a deployment binding that matches the approved input.
+The agent never writes this artifact by hand.
 
-This script MUST be called by the EXECUTION_READINESS unit before any run
-is approved for execution. The Sure hook invokes it as:
+The EXECUTION_READINESS unit runs this script through the Sure hook:
 
     python3 scripts/check_execution_surface_compliance.py \
-        --run-dir <runDir> --produces <abs path to execution_surface.json>
+        --run-dir <runDir> --produces <abs path under <runDir>/artifacts/>
 
-The --produces path points at the execution_surface.json artifact under
-<runDir>/artifacts/. run_evaluation.sh is read from <runDir>/artifacts/.
+When --produces is not execution_surface.json itself, the surface is read from
+the same artifacts directory. run_infer.py also calls the check functions
+directly before it launches anything.
 """
 
 from __future__ import annotations
@@ -29,7 +30,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from resolve_evaluation_route_plan import build_route_plan
 from harness_runtime import HarnessRuntimeBindingError, harness_runtime_from_eval_input
 from container_execution import resolve_container_harness_runtime
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
@@ -43,8 +43,7 @@ def _sha256_file(path: Path) -> str:
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_ROOT = SCRIPT_DIR.parent
-CANONICAL_TEMPLATE_ROOT = SCRIPT_DIR / "templates"
-ALLOWED_TEMPLATE_ROOTS = (CANONICAL_TEMPLATE_ROOT,)
+INFER_ENTRYPOINT = SCRIPT_DIR / "infer_entrypoint.py"
 
 # This node could not start a container, so nothing was learned about the
 # approved image. Kept apart from the failure classes that describe the image
@@ -52,177 +51,104 @@ ALLOWED_TEMPLATE_ROOTS = (CANONICAL_TEMPLATE_ROOT,)
 HOST_CANNOT_PROBE = "PROBE_HOST_CANNOT_RUN_CONTAINERS"
 
 
-def _path_is_under(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-    except ValueError:
-        return False
-    return True
+def expected_binding_summary(approved: dict[str, Any]) -> dict[str, Any]:
+    """The deployment_binding block an execution surface must carry for ``approved``.
 
-
-def _maybe_check_declared_hash(path: Path, declared: str | None, label: str) -> list[str]:
-    if not declared:
-        return []
-    if not path.exists():
-        return [f"{label} hash declared but file does not exist: {path}"]
-    actual = _sha256_file(path)
-    if actual != declared:
-        return [f"{label} hash mismatch for {path}: declared={declared} actual={actual}"]
-    return []
-
-
-def check_template_source(
-    surface_path: Path,
-    expected_template: Path | None,
-) -> dict[str, Any]:
-    """Check that execution_surface.json declares an approved template source."""
-    if not surface_path.exists():
+    run_infer.py writes it, check_inference_runtime and check_execution_result.py
+    compare against it; one definition so the three cannot drift.
+    """
+    evidence = approved.get("evidence") if isinstance(approved.get("evidence"), dict) else {}
+    policy = approved.get("policy") if isinstance(approved.get("policy"), dict) else {}
+    if approved.get("schema") == DEPLOYMENT_BINDING_V1:
         return {
-            "passed": False,
-            "template_declared": "",
-            "template_exists": False,
-            "under_approved_template_root": False,
-            "matches_expected": False,
-            "evidence": f"{surface_path.name} not found",
+            "schema": DEPLOYMENT_BINDING_V1,
+            "target_image_ref": approved.get("target_image_ref"),
+            "bundle_identity_sha256": evidence.get("bundle_identity_sha256"),
+            "execution_mode": "container_only",
+            "model_mount_read_only": True,
+            "result_mount_writable": True,
         }
-
-    try:
-        data = json.loads(surface_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        return {
-            "passed": False,
-            "template_declared": "",
-            "template_exists": False,
-            "under_approved_template_root": False,
-            "matches_expected": False,
-            "evidence": f"invalid JSON: {e}",
-        }
-
-    prov = data.get("source_provenance", {})
-    template_file = prov.get("template_file", "")
-
-    if not template_file:
-        return {
-            "passed": False,
-            "template_declared": "",
-            "template_exists": False,
-            "under_approved_template_root": False,
-            "matches_expected": False,
-            "evidence": "source_provenance.template_file is empty",
-        }
-
-    template_path = Path(template_file)
-    if not template_path.is_absolute():
-        template_path = (SKILL_ROOT / template_path).resolve()
-    exists = template_path.exists()
-    under_approved_root = any(_path_is_under(template_path, root) for root in ALLOWED_TEMPLATE_ROOTS)
-    matches_expected = False
-    if expected_template is not None:
-        matches_expected = template_path.resolve() == expected_template.resolve()
-
-    hash_errors: list[str] = []
-    hash_errors.extend(_maybe_check_declared_hash(template_path, prov.get("template_sha256"), "template"))
-    for source_key, hash_key, label in (
-        ("source_template_file", "source_template_sha256", "source_template"),
-        ("mirror_template_file", "mirror_template_sha256", "mirror_template"),
-    ):
-        source_value = prov.get(source_key)
-        if source_value:
-            source_path = Path(source_value)
-            if not source_path.is_absolute():
-                source_path = (SKILL_ROOT / source_path).resolve()
-            if not any(_path_is_under(source_path, root) for root in ALLOWED_TEMPLATE_ROOTS):
-                hash_errors.append(f"{label} path is not under an approved template root: {source_value}")
-            hash_errors.extend(_maybe_check_declared_hash(source_path, prov.get(hash_key), label))
-
-    passed = under_approved_root and exists and not hash_errors
-    if expected_template is not None:
-        passed = passed and matches_expected
-
-    evidence_parts = []
-    if not under_approved_root:
-        allowed = ", ".join(str(root) for root in ALLOWED_TEMPLATE_ROOTS)
-        evidence_parts.append(f"template '{template_file}' is not under an approved template root: {allowed}")
-    if not exists:
-        evidence_parts.append(f"template '{template_file}' does not exist")
-    if expected_template is not None and not matches_expected:
-        evidence_parts.append(
-            f"expected template '{expected_template}', got '{template_file}'"
-        )
-    evidence_parts.extend(hash_errors)
-
-    return {
-        "passed": passed,
-        "template_declared": str(template_path),
-        "template_exists": exists,
-        "under_approved_template_root": under_approved_root,
-        "canonical_template_root": str(CANONICAL_TEMPLATE_ROOT),
-        "matches_expected": matches_expected,
-        "evidence": "ok" if passed else "; ".join(evidence_parts),
+    runtime_kind = str(approved.get("runtime_kind") or "container")
+    summary: dict[str, Any] = {
+        "schema": DEPLOYMENT_BINDING_V2,
+        "runtime_kind": runtime_kind,
+        "bundle_identity_sha256": evidence.get("bundle_identity_sha256"),
+        "execution_mode": policy.get("execution_mode"),
+        "model_mount_read_only": runtime_kind == "container",
+        "model_integrity": policy.get("model_integrity", "image_digest"),
+        "result_mount_writable": True,
     }
+    if runtime_kind == "container":
+        summary["target_image_ref"] = approved.get("target_image_ref")
+    return summary
 
 
-def check_source_provenance(surface_path: Path) -> dict[str, Any]:
-    """Check execution_surface.json has source_provenance with template_file."""
+def binding_mismatches(declared: Any, expected: dict[str, Any]) -> list[str]:
+    """Every expected field the declared binding does not carry verbatim."""
+    if not isinstance(declared, dict):
+        return ["execution surface must declare deployment_binding"]
+    return [
+        f"deployment_binding.{key} must equal approved value {value!r}"
+        for key, value in expected.items()
+        if declared.get(key) != value
+    ]
+
+
+def _load_surface(surface_path: Path) -> tuple[dict[str, Any] | None, str]:
     if not surface_path.exists():
-        return {
-            "passed": False,
-            "evidence": f"{surface_path.name} not found",
-        }
-
+        return None, f"{surface_path.name} not found"
     try:
         data = json.loads(surface_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        return {
-            "passed": False,
-            "evidence": f"invalid JSON: {e}",
-        }
-
-    prov = data.get("source_provenance")
-    if not prov:
-        return {
-            "passed": False,
-            "evidence": "source_provenance field missing",
-        }
-
-    template_file = prov.get("template_file", "")
-    if not template_file:
-        return {
-            "passed": False,
-            "evidence": "source_provenance.template_file is empty",
-        }
-
-    return {
-        "passed": True,
-        "template_file": template_file,
-        "evidence": "source_provenance present",
-    }
+    except json.JSONDecodeError as exc:
+        return None, f"invalid JSON: {exc}"
+    if not isinstance(data, dict):
+        return None, f"{surface_path.name} must be a JSON object"
+    return data, ""
 
 
-def check_no_prior_run_leakage(surface_path: Path) -> dict[str, Any]:
-    if not surface_path.exists():
-        return {"passed": False, "evidence": f"{surface_path.name} not found"}
-
-    try:
-        data = json.loads(surface_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        return {"passed": False, "evidence": f"invalid JSON: {e}"}
-
+def check_entrypoint_provenance(surface_path: Path, expected_entrypoint: Path = INFER_ENTRYPOINT) -> dict[str, Any]:
+    """The surface must run the bundled entrypoint, byte for byte, and nothing else."""
+    data, error = _load_surface(surface_path)
+    if data is None:
+        return {"passed": False, "evidence": error}
     prov = data.get("source_provenance")
     if not isinstance(prov, dict):
-        return {"passed": False, "evidence": "source_provenance missing"}
+        return {"passed": False, "evidence": "source_provenance field missing"}
+    template_file = str(prov.get("template_file") or "")
+    if not template_file:
+        return {"passed": False, "evidence": "source_provenance.template_file is empty"}
+    expected = expected_entrypoint.resolve()
+    if not expected.is_file():
+        return {"passed": False, "evidence": f"bundled entrypoint is missing: {expected}"}
+
+    issues: list[str] = []
+    declared_template = Path(template_file)
+    if not declared_template.is_absolute():
+        declared_template = SKILL_ROOT / declared_template
+    if declared_template.resolve() != expected:
+        issues.append(f"source_provenance.template_file must be the bundled entrypoint {expected}, got {template_file}")
+    declared_sha = prov.get("template_sha256")
+    actual_sha = _sha256_file(expected)
+    if not declared_sha:
+        issues.append("source_provenance.template_sha256 is missing")
+    elif declared_sha != actual_sha:
+        issues.append(f"source_provenance.template_sha256 is stale: declared={declared_sha} actual={actual_sha}")
+    entrypoint = data.get("entrypoint_path") or data.get("entrypoint")
+    if not isinstance(entrypoint, str) or not entrypoint:
+        issues.append("execution surface must declare entrypoint_path")
+    elif Path(entrypoint).resolve() != expected:
+        issues.append(f"entrypoint_path must be the bundled entrypoint {expected}, got {entrypoint}")
     isolation = prov.get("isolation_compliance")
     if not isinstance(isolation, dict):
-        return {"passed": False, "evidence": "source_provenance.isolation_compliance must be an object"}
-
-    leaked = []
-    if isolation.get("eval_runs_referenced") is True:
-        leaked.append("eval_runs_referenced=true")
-    if isolation.get("prior_run_scripts_copied") is True:
-        leaked.append("prior_run_scripts_copied=true")
-    if leaked:
-        return {"passed": False, "evidence": "; ".join(leaked)}
-    return {"passed": True, "evidence": "no prior-run leakage declared"}
+        issues.append("source_provenance.isolation_compliance must be an object")
+    else:
+        if isolation.get("eval_runs_referenced") is True:
+            issues.append("eval_runs_referenced=true")
+        if isolation.get("prior_run_scripts_copied") is True:
+            issues.append("prior_run_scripts_copied=true")
+    if issues:
+        return {"passed": False, "entrypoint": str(expected), "evidence": "; ".join(issues)}
+    return {"passed": True, "entrypoint": str(expected), "entrypoint_sha256": actual_sha, "evidence": "ok"}
 
 
 def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
@@ -258,38 +184,13 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
         issues.append(str(exc))
         approved_harness = {}
 
-    binding_schema = approved.get("schema")
     runtime_kind = str(approved.get("runtime_kind") or "container")
-    expected_fields = (
-        {
-            "schema": DEPLOYMENT_BINDING_V1,
-            "target_image_ref": approved.get("target_image_ref"),
-            "bundle_identity_sha256": (approved.get("evidence") or {}).get("bundle_identity_sha256"),
-            "execution_mode": "container_only",
-            "model_mount_read_only": True,
-            "result_mount_writable": True,
-        }
-        if binding_schema == DEPLOYMENT_BINDING_V1
-        else {
-            "schema": DEPLOYMENT_BINDING_V2,
-            "runtime_kind": runtime_kind,
-            "bundle_identity_sha256": (approved.get("evidence") or {}).get("bundle_identity_sha256"),
-            "execution_mode": (approved.get("policy") or {}).get("execution_mode"),
-            "model_mount_read_only": runtime_kind == "container",
-            "model_integrity": (approved.get("policy") or {}).get("model_integrity", "image_digest"),
-            "result_mount_writable": True,
-        }
-    )
-    if binding_schema == DEPLOYMENT_BINDING_V2 and runtime_kind == "container":
-        expected_fields["target_image_ref"] = approved.get("target_image_ref")
-    for key, expected in expected_fields.items():
-        if declared_binding.get(key) != expected:
-            issues.append(f"deployment_binding.{key} must equal approved value {expected!r}")
+    issues.extend(binding_mismatches(declared_binding, expected_binding_summary(approved)))
     path_planned = str(execution.get("path_planned") or "")
     approved_python = approved.get("python") if isinstance(approved.get("python"), dict) else {}
-    allowed_paths = {"local_python"} if runtime_kind == "python" else {"local_docker", "vc_submit"}
-    if path_planned not in allowed_paths:
-        issues.append(f"formal {runtime_kind} inference path must be one of {sorted(allowed_paths)}")
+    allowed_path = "local_python" if runtime_kind == "python" else "local_docker"
+    if path_planned != allowed_path:
+        issues.append(f"formal {runtime_kind} inference path must be {allowed_path}")
     if isinstance(env.get("SURE_EVAL_CONTAINER_IMAGE"), str) and env["SURE_EVAL_CONTAINER_IMAGE"] != approved.get("target_image_ref"):
         issues.append("execution surface image differs from the approved digest-pinned image")
     for key in ("MODEL_PYTHON", "PYTHON_BIN"):
@@ -325,26 +226,9 @@ def check_inference_runtime(surface_path: Path) -> dict[str, Any]:
         return {"passed": False, "evidence": "; ".join(issues)}
     live_probe = _live_runtime_probe(approved, approved_harness)
     if not live_probe["passed"]:
-        # The probe is a rehearsal. On the vc path the evaluation runs inside
-        # the VC container and the submitting node only stages the job, so a
-        # node that cannot start a container is being asked a question it has
-        # no way to answer, about work it was never going to do. Refusing the
-        # run there stops the job over the node's own equipment. The VC job
-        # has its own readiness gate for the real environment. Every other
-        # failure, including a container that came up and answered wrong,
-        # still blocks; so does this one on the local_docker path, where the
-        # probe's docker is the execution environment and nothing else would
-        # catch it.
-        if live_probe.get("failure_class") == HOST_CANNOT_PROBE and path_planned == "vc_submit":
-            return {
-                "passed": True,
-                "live_runtime_probe": live_probe,
-                "warnings": [live_probe["evidence"]],
-                "evidence": (
-                    f"approved {runtime_kind} deployment verified by binding; "
-                    "the exact-image probe was not rehearsed on this node"
-                ),
-            }
+        # The probe's docker (or Model Python) is the execution environment
+        # itself, so a node that cannot run it blocks here rather than a few
+        # minutes later with no gate left to catch it.
         return {
             "passed": False,
             "failure_class": live_probe["failure_class"],
@@ -495,83 +379,6 @@ def _live_runtime_probe(
     }
 
 
-REQUIRED_EVALUATE_ARGS = [
-    "--results-dir",
-    "--protocol-id",
-    "--model-dir",
-    "--evaluation-backend",
-]
-
-
-def check_evaluate_predictions_args(shell_path: Path) -> dict[str, Any]:
-    """Ensure run_evaluation.sh preserves required evaluate_predictions.py args."""
-    if not shell_path.exists():
-        return {
-            "passed": True,
-            "evidence": "run_evaluation.sh not found, nothing to check",
-        }
-
-    content = shell_path.read_text(encoding="utf-8")
-
-    # Only check if this script actually calls evaluate_predictions.py
-    if "evaluate_predictions.py" not in content:
-        return {
-            "passed": True,
-            "evidence": "no evaluate_predictions.py call found",
-        }
-
-    # Main-flow templates usually declare EVAL_ARGS/MERGE_ARGS arrays and then
-    # expand them at the evaluate_predictions.py call site. Check the whole
-    # script so array-declared arguments are accepted.
-    missing = [arg for arg in REQUIRED_EVALUATE_ARGS if arg not in content]
-    if missing:
-        return {
-            "passed": False,
-            "evidence": f"missing required args in evaluate_predictions.py call: {missing}",
-        }
-
-    return {
-        "passed": True,
-        "evidence": "all required evaluate_predictions.py args present",
-    }
-
-
-def check_evaluation_route_plan(artifacts_dir: Path) -> dict[str, Any]:
-    """Resolve sure-evaluation route/env readiness for selected datasets."""
-
-    input_path = artifacts_dir / "eval_input_resolved.json"
-    output_path = artifacts_dir / "evaluation_route_plan.json"
-    if not input_path.exists():
-        return {
-            "passed": False,
-            "plan_path": str(output_path),
-            "can_run_now": False,
-            "blocking_issues": [f"missing eval_input_resolved.json: {input_path}"],
-            "evidence": "eval_input_resolved.json is required before execution readiness",
-        }
-    try:
-        payload = build_route_plan(input_path, output_path=output_path)
-    except Exception as exc:
-        return {
-            "passed": False,
-            "plan_path": str(output_path),
-            "can_run_now": False,
-            "blocking_issues": [str(exc)],
-            "evidence": f"failed to resolve evaluation route plan: {exc}",
-        }
-    blocking_issues = [str(item) for item in payload.get("blocking_issues") or []]
-    passed = bool(payload.get("can_run_now")) and not blocking_issues
-    return {
-        "passed": passed,
-        "plan_path": str(output_path),
-        "can_run_now": bool(payload.get("can_run_now")),
-        "engine": payload.get("engine"),
-        "blocking_issues": blocking_issues,
-        "setup_commands": payload.get("setup_commands") or [],
-        "evidence": "ok" if passed else "; ".join(blocking_issues),
-    }
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Check execution surface compliance before run approval"
@@ -586,18 +393,10 @@ def main() -> int:
             "back-compat with direct CLI use."
         ),
     )
-    parser.add_argument(
-        "--expected-template",
-        help=(
-            "Expected template path under the bundled scripts/templates/ "
-            "directory (e.g., templates/run_single_model_single_dataset.sh)"
-        ),
-    )
     parser.add_argument("--output", help="JSON output path")
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir).resolve()
-    expected_template = Path(args.expected_template).resolve() if args.expected_template else None
 
     # The hook materializes the execution_surface under <run-dir>/artifacts/.
     # Prefer the --produces path; fall back to the run-dir root for direct use.
@@ -617,17 +416,9 @@ def main() -> int:
         if fallback.exists():
             surface_path = fallback
 
-    # run_evaluation.sh lives alongside the surface artifact (same dir).
-    shell_path = surface_path.parent / "run_evaluation.sh"
-    artifacts_dir = surface_path.parent
-
     checks = {
-        "template_source": check_template_source(surface_path, expected_template),
-        "source_provenance": check_source_provenance(surface_path),
-        "prior_run_leakage": check_no_prior_run_leakage(surface_path),
-        "evaluate_predictions_args": check_evaluate_predictions_args(shell_path),
+        "entrypoint_provenance": check_entrypoint_provenance(surface_path),
         "inference_runtime": check_inference_runtime(surface_path),
-        "evaluation_route_plan": check_evaluation_route_plan(artifacts_dir),
     }
 
     all_passed = all(c["passed"] for c in checks.values())
@@ -653,10 +444,7 @@ def main() -> int:
         print(f"check_execution_surface_compliance warning: {warning}", file=sys.stderr)
 
     if all_passed:
-        print(
-            "check_execution_surface_compliance OK: template under "
-            f"{CANONICAL_TEMPLATE_ROOT}"
-        )
+        print(f"check_execution_surface_compliance OK: entrypoint {INFER_ENTRYPOINT}")
     else:
         print(
             "EXECUTION_SURFACE_ISOLATION red line: " + "; ".join(blocking_issues),

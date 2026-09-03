@@ -7,6 +7,7 @@ Run directly:
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -108,7 +109,7 @@ class SourceResolverTests(unittest.TestCase):
             source_resolver.resolve_site_source_entry("/srv/outside/ds_pool/x")
         self.assertIn(str(self.root), str(ctx.exception))
 
-    def test_path_not_at_ds_pool_level_fails(self) -> None:
+    def test_directory_without_a_sample_layout_fails(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1"])
         for bad in (dataset_root / "sample_files", dataset_root.parent):
             with self.assertRaises(source_resolver.SourceResolutionError):
@@ -121,13 +122,47 @@ class SourceResolverTests(unittest.TestCase):
             source_resolver.resolve_site_source_entry(str(dataset_root))
         self.assertIn("sample.jsonl", str(ctx.exception))
 
-    def test_missing_raws_sample_fails(self) -> None:
-        dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1"])
-        import shutil
+    def test_source_root_outside_ds_pool_resolves(self) -> None:
+        dataset_root = self.root / "anywhere" / "demo_ds"
+        version_dir = dataset_root / "sample_files" / "v1.0.1"
+        version_dir.mkdir(parents=True)
+        (version_dir / "sample.jsonl").write_text('{"sample_id": "s1"}\n', encoding="utf-8")
+        (dataset_root / "raws" / "sample").mkdir(parents=True)
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        self.assertEqual(ref.dataset_id, "demo_ds__v1.0.1")
 
-        shutil.rmtree(dataset_root / "raws")
-        with self.assertRaises(source_resolver.SourceResolutionError):
-            source_resolver.resolve_site_source_entry(str(dataset_root))
+    def test_flat_sample_jsonl_resolves_as_unversioned(self) -> None:
+        dataset_root = self.root / "flat_ds"
+        dataset_root.mkdir()
+        (dataset_root / "sample.jsonl").write_text('{"sample_id": "s1"}\n', encoding="utf-8")
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        self.assertEqual(ref.dataset_id, "flat_ds__unversioned")
+        self.assertEqual(ref.version_id, "unversioned")
+        self.assertEqual(ref.raw_dir, str(dataset_root))
+        self.assertEqual(ref.sample_jsonl, str(dataset_root / "sample.jsonl"))
+        self.assertEqual(ref.ds_jsonl, str(dataset_root / "ds.jsonl"))
+        self.assertFalse(Path(ref.ds_jsonl).exists())
+
+    def test_flat_source_takes_its_version_from_the_at_suffix(self) -> None:
+        dataset_root = self.root / "flat_ds"
+        dataset_root.mkdir()
+        (dataset_root / "sample.jsonl").write_text('{"sample_id": "s1"}\n', encoding="utf-8")
+        ref = source_resolver.resolve_site_source_entry(f"{dataset_root}@v3")
+        self.assertEqual(ref.dataset_id, "flat_ds__v3")
+        self.assertEqual(ref.source_root, str(dataset_root))
+
+    def test_missing_ds_jsonl_resolves_with_no_language(self) -> None:
+        dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1"])
+        (dataset_root / "sample_files" / "v1.0.1" / "ds.jsonl").unlink()
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        self.assertEqual(ref.dataset_id, "demo_ds__v1.0.1")
+        self.assertEqual(source_resolver.read_source_language(ref), "")
+
+    def test_raws_without_a_sample_subdir_is_used_as_the_raw_dir(self) -> None:
+        dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1"])
+        shutil.rmtree(dataset_root / "raws" / "sample")
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        self.assertEqual(ref.raw_dir, str(dataset_root / "raws"))
 
     def test_is_source_entry(self) -> None:
         self.assertTrue(source_resolver.is_source_entry("/srv/sure/datasets/a/ds_pool/x"))

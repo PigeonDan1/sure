@@ -31,8 +31,8 @@ APPROVED_MODELS_ROOT = (
 )
 APPROVED_RESULTS_ROOT = (
     Path(_configured_policy["policy"]["storage"]["approved_results_roots"][0]).resolve()
-    if _configured_policy
-    else Path("<site-policy-required>")
+    if _configured_policy and _configured_policy["policy"]["storage"]["approved_results_roots"]
+    else None
 )
 LOCAL_RESULTS_ROOT = (HARNESS_ROOT / "sure" / "results").resolve()
 EVALUATION_ENGINE_ROOT = (HARNESS_ROOT / "sure" / "external" / "sure-evaluation").resolve()
@@ -186,6 +186,8 @@ def validate(path: Path) -> list[str]:
     try:
         resolved_policy = load_site_policy(required=True)
         approved_models_root = Path(resolved_policy["policy"]["storage"]["approved_models_roots"][0]).resolve()
+        if not resolved_policy["policy"]["storage"]["approved_results_roots"]:
+            return ["storage.approved_results_roots is not configured in the active site policy"]
         approved_results_root = Path(resolved_policy["policy"]["storage"]["approved_results_roots"][0]).resolve()
     except ValueError as error:
         return [str(error)]

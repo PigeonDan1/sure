@@ -753,6 +753,8 @@ def run_reval(
         resolved_policy = load_site_policy(required=True)
         storage = resolved_policy["policy"]["storage"]
         approved_models_root = approved_models_root or Path(storage["approved_models_roots"][0])
+        if approved_results_root is None and not storage["approved_results_roots"]:
+            raise ValueError("/sure_reval requires storage.approved_results_roots in the active site policy")
         approved_results_root = approved_results_root or Path(storage["approved_results_roots"][0])
     source_payload = resolve_prediction_source(
         argparse.Namespace(
@@ -837,7 +839,6 @@ def run_reval(
         str(config_path),
         "--evaluation-backend",
         "external",
-        "--strict-main-flow",
         "--output",
         str(run_dir / "evaluation_payload.json"),
         "--external-runs-dir",

@@ -82,6 +82,36 @@ describe("validateSitePolicy execution.local_runtimes", () => {
 	});
 });
 
+describe("validateSitePolicy storage.approved_results_roots", () => {
+	it("normalizes an omitted key to an empty list", () => {
+		const result = validateSitePolicy(
+			policy({
+				storage: {
+					approved_models_roots: [`${ROOT}/models`],
+					forbidden_output_roots: [ROOT],
+					runtime_root: `${ROOT}/runtime`,
+				},
+			}),
+		);
+		expect(result.storage.approved_results_roots).toEqual([]);
+	});
+
+	it("still rejects an explicit empty list", () => {
+		expect(() =>
+			validateSitePolicy(
+				policy({
+					storage: {
+						approved_models_roots: [`${ROOT}/models`],
+						approved_results_roots: [],
+						forbidden_output_roots: [ROOT],
+						runtime_root: `${ROOT}/runtime`,
+					},
+				}),
+			),
+		).toThrow(/storage\.approved_results_roots must be a non-empty list/);
+	});
+});
+
 describe("validateSitePolicy absolute paths", () => {
 	it("rejects a path that does not start with a slash", () => {
 		expect(() =>

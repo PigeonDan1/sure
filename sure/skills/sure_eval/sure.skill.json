@@ -16,13 +16,7 @@
 			"type": "eval_input_resolved",
 			"path": "artifacts/eval_input_resolved.json",
 			"required": false,
-			"description": "Resolved /sure_eval product input mapped to the main-flow MAIN_FLOW_INPUT contract."
-		},
-		{
-			"type": "evaluation_route_plan",
-			"path": "artifacts/evaluation_route_plan.json",
-			"required": false,
-			"description": "Resolved sure-evaluation capabilities, selected routes, and node-environment readiness plan."
+			"description": "Resolved /sure_eval product input: the approved model binding, canonical datasets and runtime plan every later unit reads."
 		},
 		{
 			"type": "run_report",
@@ -80,7 +74,7 @@
 	],
 	"ui": {
 		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
-		"artifactTypes": ["eval_input_resolved", "evaluation_route_plan", "run_report", "execution_surface", "model_eval_manifest", "evaluation_payload", "report_jsonl", "protocol", "report_snapshot", "prediction_manifests", "sample_reports"],
+		"artifactTypes": ["eval_input_resolved", "run_report", "execution_surface", "model_eval_manifest", "evaluation_payload", "report_jsonl", "protocol", "report_snapshot", "prediction_manifests", "sample_reports"],
 		"defaultExpandedSections": ["diagnostics", "artifacts"]
 	}
 }

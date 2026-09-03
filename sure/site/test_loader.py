@@ -130,6 +130,28 @@ class ContainerDeliveryTest(unittest.TestCase):
         self.assertIn("unsupported field: owner", str(raised.exception))
 
 
+class ApprovedResultsRootsTest(unittest.TestCase):
+    def test_omitted_results_roots_normalize_to_an_empty_list(self) -> None:
+        storage = {
+            "approved_models_roots": [f"{_ROOT}/models"],
+            "forbidden_output_roots": [_ROOT],
+            "runtime_root": f"{_ROOT}/runtime",
+        }
+        policy = validate_site_policy(_policy(storage=storage))
+        self.assertEqual(policy["storage"]["approved_results_roots"], [])
+
+    def test_explicit_empty_results_roots_are_rejected(self) -> None:
+        storage = {
+            "approved_models_roots": [f"{_ROOT}/models"],
+            "approved_results_roots": [],
+            "forbidden_output_roots": [_ROOT],
+            "runtime_root": f"{_ROOT}/runtime",
+        }
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(_policy(storage=storage))
+        self.assertIn("storage.approved_results_roots must be a non-empty list", str(raised.exception))
+
+
 class AbsolutePathTest(unittest.TestCase):
     def test_rejects_a_path_that_does_not_start_with_a_slash(self) -> None:
         storage = {

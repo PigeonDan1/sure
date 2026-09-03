@@ -2,9 +2,9 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "eval_input_resolved.schema.json",
 	"title": "SURE-EVAL resolved input",
-	"description": "Pre-state-machine artifact that maps /sure_eval model+datasets+device input to the main-flow MAIN_FLOW_INPUT contract.",
+	"description": "Pre-state-machine artifact that resolves /sure_eval model+datasets+device input into the run's approved plan.",
 	"type": "object",
-	"required": ["schema", "generated_at", "user_input", "model", "datasets", "task_summary", "runtime", "evaluation", "main_flow_input"],
+	"required": ["schema", "generated_at", "user_input", "model", "datasets", "task_summary", "runtime", "evaluation"],
 	"properties": {
 		"schema": { "type": "string", "enum": ["sure.eval.input_resolved.v1"] },
 		"generated_at": { "type": "string" },
@@ -38,7 +38,6 @@
 		"task_summary": { "type": "object", "additionalProperties": true },
 		"runtime": { "type": "object", "additionalProperties": true },
 		"evaluation": { "type": "object", "additionalProperties": true },
-		"main_flow_input": { "type": "object", "additionalProperties": true },
 		"expected_outputs": { "type": "object", "additionalProperties": true }
 	},
 	"additionalProperties": false

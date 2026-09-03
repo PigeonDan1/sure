@@ -29,25 +29,16 @@ describe("sure_eval runBackend — gate script invocation path (B1 regression)",
 	it("injects --run-dir when the caller passes only --produces (gate scripts declare --run-dir required)", () => {
 		const runDir = resolve(__dirname, "tmp-b1");
 		mkdirSync(join(runDir, "artifacts"), { recursive: true });
-		// A compliant submit_result that does not depend on this host having vc.
+		// A compliant assessment_report (check_assessment.py passes on these two keys).
 		writeFileSync(
-			join(runDir, "artifacts", "submit_result.json"),
-			JSON.stringify(
-				{
-					execution_path: "local_bash",
-					execution_requested: "auto",
-					fallback_approved: true,
-					local_fallback_reason: "test fixture intentionally avoids vc dependency",
-				},
-				null,
-				2,
-			),
+			join(runDir, "artifacts", "assessment_report.json"),
+			JSON.stringify({ anomaly_detected: false, user_confirmed: true }, null, 2),
 			"utf-8",
 		);
-		const produces = join(runDir, "artifacts", "submit_result.json");
+		const produces = join(runDir, "artifacts", "assessment_report.json");
 
 		// Exactly how runGateScript calls runBackend: ["--produces", <abs>], no --run-dir.
-		const r = runBackend(makeCtx(runDir), "vc_check.py", ["--produces", produces]);
+		const r = runBackend(makeCtx(runDir), "check_assessment.py", ["--produces", produces]);
 
 		expect(r.status).toBe(0); // 0 = script ran and passed. Non-null argparse error = the B1 bug.
 		expect(r.ok).toBe(true);
@@ -58,21 +49,12 @@ describe("sure_eval runBackend — gate script invocation path (B1 regression)",
 		const runDir = resolve(__dirname, "tmp-b1-rel");
 		mkdirSync(join(runDir, "artifacts"), { recursive: true });
 		writeFileSync(
-			join(runDir, "artifacts", "submit_result.json"),
-			JSON.stringify(
-				{
-					execution_path: "local_bash",
-					execution_requested: "auto",
-					fallback_approved: true,
-					local_fallback_reason: "test fixture intentionally avoids vc dependency",
-				},
-				null,
-				2,
-			),
+			join(runDir, "artifacts", "assessment_report.json"),
+			JSON.stringify({ anomaly_detected: false, user_confirmed: true }, null, 2),
 			"utf-8",
 		);
 		// Relative produces path — runBackend must resolve it under artifacts/.
-		const r = runBackend(makeCtx(runDir), "vc_check.py", ["--produces", "submit_result.json"]);
+		const r = runBackend(makeCtx(runDir), "check_assessment.py", ["--produces", "assessment_report.json"]);
 		expect(r.status).toBe(0);
 		expect(r.ok).toBe(true);
 	});
@@ -120,21 +102,6 @@ describe("sure_eval check_script_routing whitelist naming (regression)", () => {
 		expect(r.ok).toBe(false);
 		expect(r.stderr).toContain("prepare_sure_dataset");
 		expect(r.stderr).toContain("prepare_dataset"); // the correct short name is named
-	});
-
-	it("rejects submit_vc_run as a script_routing step (it is a separate gate unit)", () => {
-		const runDir = resolve(__dirname, "tmp-sr-vc");
-		mkdirSync(join(runDir, "artifacts"), { recursive: true });
-		writeFileSync(
-			join(runDir, "artifacts", "script_routing.json"),
-			JSON.stringify({
-				steps: [{ name: "submit_vc_run", script: "scripts/vc_check.py" }],
-			}),
-			"utf-8",
-		);
-		const r = runGate(runDir, join(runDir, "artifacts", "script_routing.json"));
-		expect(r.ok).toBe(false);
-		expect(r.stderr).toContain("submit_vc_run");
 	});
 
 	it("rejects a whitelisted name whose script path does not exist on disk", () => {

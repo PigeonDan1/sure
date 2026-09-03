@@ -141,47 +141,51 @@ def resolve_site_source_entry(entry: str, explicit_version: str | None = None, d
         raise SourceResolutionError(
             f"dataset source root must live under {root}, got: {path}. "
             f"{_rejected_root_hint(path)}"
-            f"Expected form: {root}/.../ds_pool/<source_dataset_name>"
-        )
-    if path.parent.name != "ds_pool":
-        raise SourceResolutionError(
-            f"dataset source root must point at ds_pool/<source_dataset_name>, got: {path}"
+            f"Expected form: {root}/.../<source_dataset_name>"
         )
     if not path.is_dir():
         raise SourceResolutionError(f"dataset source root does not exist: {path}")
 
+    # Two layouts: the versioned pool layout (sample_files/<version>/sample.jsonl,
+    # raws/sample/) and a flat directory that carries sample.jsonl and the audio
+    # itself. ds.jsonl and raws/ are optional in both.
     sample_files = path / "sample_files"
-    versions = (
-        sorted(item.name for item in sample_files.iterdir() if item.is_dir())
-        if sample_files.is_dir()
-        else []
-    )
-    if not versions:
-        raise SourceResolutionError(f"no versions found under {sample_files}")
-    if explicit_version:
-        if explicit_version not in versions:
+    if sample_files.is_dir():
+        versions = sorted(item.name for item in sample_files.iterdir() if item.is_dir())
+        if not versions:
+            raise SourceResolutionError(f"no versions found under {sample_files}")
+        if explicit_version:
+            if explicit_version not in versions:
+                raise SourceResolutionError(
+                    f"version {explicit_version} not found under {sample_files}; "
+                    f"available: {', '.join(versions)}"
+                )
+            version_id = explicit_version
+        elif len(versions) == 1:
+            version_id = versions[0]
+        else:
             raise SourceResolutionError(
-                f"version {explicit_version} not found under {sample_files}; "
-                f"available: {', '.join(versions)}"
+                f"multiple versions under {sample_files} and no explicit version given: "
+                f"{', '.join(versions)}"
             )
-        version_id = explicit_version
-    elif len(versions) == 1:
-        version_id = versions[0]
+        version_dir = sample_files / version_id
+    elif (path / "sample.jsonl").is_file():
+        version_id = explicit_version or "unversioned"
+        version_dir = path
     else:
         raise SourceResolutionError(
-            f"multiple versions under {sample_files} and no explicit version given: "
-            f"{', '.join(versions)}"
+            f"no dataset layout under {path}: expected sample_files/<version>/sample.jsonl "
+            "or sample.jsonl in the directory itself"
         )
 
-    sample_jsonl = sample_files / version_id / "sample.jsonl"
-    ds_jsonl = sample_files / version_id / "ds.jsonl"
-    raw_dir = path / "raws" / "sample"
+    sample_jsonl = version_dir / "sample.jsonl"
+    ds_jsonl = version_dir / "ds.jsonl"
+    raw_dir = next(
+        (candidate for candidate in (path / "raws" / "sample", path / "raws") if candidate.is_dir()),
+        path,
+    )
     if not sample_jsonl.is_file():
         raise SourceResolutionError(f"sample.jsonl not found: {sample_jsonl}")
-    if not ds_jsonl.is_file():
-        raise SourceResolutionError(f"ds.jsonl not found: {ds_jsonl}")
-    if not raw_dir.is_dir():
-        raise SourceResolutionError(f"raws/sample not found: {raw_dir}")
 
     source_dataset_name = path.name
     return DatasetSourceRef(

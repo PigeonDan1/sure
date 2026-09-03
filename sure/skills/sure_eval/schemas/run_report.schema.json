@@ -71,7 +71,6 @@
 			"description": "Alias for the completed evaluation artifact root."
 		},
 		"model_eval_manifest": { "type": "string" },
-		"vc_job_id": { "type": "string" },
 		"next_action": { "type": "string" },
 		"report_persisted": {
 			"type": "boolean",
@@ -79,32 +78,23 @@
 		},
 		"execution_path_actual": {
 			"type": "string",
-			"description": "Actual execution path used: vc_submit | local_bash | local_docker | local_python."
+			"description": "Actual execution path used: local_bash | local_docker | local_python."
 		},
 		"execution_path_requested": {
 			"type": "string",
-			"description": "User-facing execution request: auto | local | vc, or legacy path alias."
+			"description": "User-facing execution request: auto | local, or legacy path alias."
 		},
 		"execution": { "type": "object", "additionalProperties": true },
 		"execution_path_declared": {
 			"type": "string",
 			"description": "Execution path declared in the harness."
 		},
-		"vc_available": { "type": "boolean" },
 		"device_request": { "type": "string" },
 		"device_actual": { "type": "string" },
 		"cuda_visible_devices": { "type": "string" },
 		"max_samples": { "type": "number" },
 		"dataset_total_samples": { "type": "number" },
 		"evaluated_samples": { "type": "number" },
-		"local_fallback_reason": {
-			"type": "string",
-			"description": "Required when execution_path_actual is not vc_submit."
-		},
-		"fallback_approved": {
-			"type": "boolean",
-			"description": "Whether a local fallback was explicitly approved."
-		},
 		"evaluation_only": {
 			"type": "boolean",
 			"description": "True when RUN_REPORT_UNIT summarizes an evaluation-only surface such as TTS/VC audio metric evaluation."

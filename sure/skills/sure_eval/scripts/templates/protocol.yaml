@@ -33,16 +33,6 @@ protocol_selection:
 {unmapped_protocol_params_yaml}
 inference_environment:
   execution_path: {execution_path}
-  vc:
-    job_id: {vc_job_id}
-    partition: {vc_partition}
-    gpu_count: {vc_gpu_count}
-    memory: {vc_memory}
-    cpu_count: {vc_cpu_count}
-    node_count: {vc_node_count}
-    require_vc_submit: {require_vc_submit}
-    allow_partition_fallback: {allow_partition_fallback}
-    preflight_required: {preflight_required}
   container:
     image: {docker_image}
     image_digest: {docker_image_digest}

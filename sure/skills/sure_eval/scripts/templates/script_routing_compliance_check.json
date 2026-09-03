@@ -64,7 +64,7 @@
             "allowed_step_types": {
               "type": "array",
               "items": { "type": "string" },
-              "description": "Must exactly match: [prepare_dataset, materialize_templates, validate_execution_shell, wait_for_predictions, validate_predictions, evaluate_predictions, refresh_report]"
+              "description": "Must exactly match: [prepare_dataset, materialize_templates, validate_execution_shell, wait_for_predictions, validate_predictions, evaluate_predictions]"
             },
             "checked_steps": {
               "type": "array",

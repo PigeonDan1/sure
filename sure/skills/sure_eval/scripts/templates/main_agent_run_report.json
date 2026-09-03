@@ -20,7 +20,6 @@
     "model_eval_manifest": ""
   },
   "model_eval_manifest": "",
-  "vc_job_id": "",
   "report_persisted": false,
   "execution_path_requested": "auto",
   "execution_path_declared": "",
@@ -30,9 +29,6 @@
     "actual": "",
     "path_actual": ""
   },
-  "vc_available": false,
-  "fallback_approved": false,
-  "local_fallback_reason": "",
   "evaluation_only": false,
   "device_request": "auto",
   "device_actual": "",

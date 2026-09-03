@@ -13,7 +13,7 @@
 		"runtime_kind": { "type": "string", "enum": ["container", "python"] },
 		"vc_available": {
 			"type": "boolean",
-			"description": "True when `which vc && vc info` both pass (set by scripts/vc_check.py)."
+			"description": "Legacy flag kept for the transitional submit_result.json; always false now that VC submission is gone."
 		},
 		"vc_job_id": { "type": "string" },
 		"vc_info": { "type": "string" },

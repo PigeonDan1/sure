@@ -27,7 +27,7 @@ from sure.site.loader import load_site_policy
 _configured_policy = load_site_policy()
 APPROVED_RESULTS_ROOT = (
     Path(_configured_policy["policy"]["storage"]["approved_results_roots"][0])
-    if _configured_policy
+    if _configured_policy and _configured_policy["policy"]["storage"]["approved_results_roots"]
     else None
 )
 ALLOWED_PROTOCOLS = frozenset({"standard_system", "strict_core"})
@@ -168,7 +168,10 @@ def build_payload(
 
     if approved_results_root is None:
         resolved_policy = load_site_policy(required=True)
-        approved_results_root = Path(resolved_policy["policy"]["storage"]["approved_results_roots"][0])
+        results_roots = resolved_policy["policy"]["storage"]["approved_results_roots"]
+        if not results_roots:
+            raise ValueError("this source requires storage.approved_results_roots in the active site policy")
+        approved_results_root = Path(results_roots[0])
     results_root = approved_results_root.expanduser().resolve()
     model_results_dir = (results_root / model).resolve(strict=False)
     if not _is_relative_to(model_results_dir, results_root):

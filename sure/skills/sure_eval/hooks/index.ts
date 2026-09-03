@@ -177,7 +177,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> datasets=<dataset__version[,dataset__version...]> [dataset_source_key=<key>] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local|vc] [device=auto|cpu|cuda[:index]] [max_samples=...]`,
+			`Missing required /sure_eval parameters: ${missing.join(", ")}. Usage: /sure_eval model=<name> datasets=<dataset__version[,dataset__version...]> [dataset_source_key=<key>] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local] [device=auto|cpu|cuda[:index]] [max_samples=...]`,
 			"Missing required parameters.",
 		);
 	}
@@ -245,18 +245,6 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (typeof args.execution_path === "string") {
 		resolveArgs.push("--execution-path", args.execution_path);
-	}
-	for (const [argKey, cliKey] of [
-		["vc_partition", "--vc-partition"],
-		["vc_cpu", "--vc-cpu"],
-		["vc_mem", "--vc-mem"],
-		["vc_gpu", "--vc-gpu"],
-		["vc_image", "--vc-image"],
-		["vc_job_name", "--vc-job-name"],
-	] as const) {
-		if (typeof args[argKey] === "string") {
-			resolveArgs.push(cliKey, args[argKey]);
-		}
 	}
 	if (typeof args.run_id === "string") {
 		resolveArgs.push("--run-id", args.run_id);
@@ -370,8 +358,7 @@ const UNIT_AGNOSTIC_SCRIPTS = new Set([
 	"scripts/resolve_evaluation_engine.py",
 	"scripts/resolve_evaluation_route_plan.py",
 	"scripts/preflight_evaluation_support.py",
-	"scripts/run_local_execution.py",
-	"scripts/run_vc_execution.py",
+	"scripts/run_infer.py",
 ]);
 
 export function preToolCall(ctx: SureHookContext): SureHookResult {

@@ -26,7 +26,6 @@ Allowed Step Types（白名单，只允许这些值）：
 - wait_for_predictions
 - validate_predictions
 - evaluate_predictions
-- refresh_report
 
 ### 步骤 3：综合判定
 
@@ -62,7 +61,7 @@ Allowed Step Types（白名单，只允许这些值）：
     },
     "step_type_constraints": {
       "all_names_in_whitelist": true|false,
-      "allowed_step_types": ["prepare_dataset", "materialize_templates", "validate_execution_shell", "wait_for_predictions", "validate_predictions", "evaluate_predictions", "refresh_report"],
+      "allowed_step_types": ["prepare_dataset", "materialize_templates", "validate_execution_shell", "wait_for_predictions", "validate_predictions", "evaluate_predictions"],
       "checked_steps": [
         {"step_index": 0, "step_name": "...", "in_whitelist": true|false}
       ],
@@ -85,7 +84,7 @@ Allowed Step Types（白名单，只允许这些值）：
 </SCRIPT_CONSTRAINTS>
 
 <STEP_TYPE_WHITELIST>
-prepare_dataset, materialize_templates, validate_execution_shell, wait_for_predictions, validate_predictions, evaluate_predictions, refresh_report
+prepare_dataset, materialize_templates, validate_execution_shell, wait_for_predictions, validate_predictions, evaluate_predictions
 </STEP_TYPE_WHITELIST>
 
 <FORBIDDEN_PATHS>

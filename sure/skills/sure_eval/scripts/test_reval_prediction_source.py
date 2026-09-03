@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from resolve_model_dir import resolve_approved_model_identity
 from resolve_prediction_source import build_payload
@@ -78,6 +80,27 @@ class RevalPredictionSourceTests(unittest.TestCase):
         self.assertIn("crashed-run", message)
         self.assertIn("protocol.yaml", message)
         self.assertIn("Re-run the evaluation", message)
+
+    def test_site_policy_without_results_roots_is_a_clear_error(self) -> None:
+        site_policy = Path(self.temp.name) / "site.yaml"
+        site_policy.write_text(
+            "schema: sure.site.policy.v1\n"
+            "site_id: test-site\n"
+            "policy_version: 1\n"
+            "storage:\n"
+            "  approved_models_roots: [/srv/models]\n"
+            "  forbidden_output_roots: [/srv]\n"
+            "  runtime_root: /srv/runtime\n"
+            "datasets:\n"
+            "  allowed_source_roots: {default: /srv/datasets}\n"
+            "execution:\n"
+            "  surfaces: [local]\n",
+            encoding="utf-8",
+        )
+
+        with mock.patch.dict(os.environ, {"SURE_SITE_POLICY": str(site_policy)}):
+            with self.assertRaisesRegex(ValueError, "requires storage.approved_results_roots"):
+                build_payload(self.args(), approved_models_root=self.models, approved_results_root=None)
 
     def test_identity_rejects_non_successful_verdict(self) -> None:
         write_json(self.model / "artifacts" / "verdict.json", {"status": "partial"})

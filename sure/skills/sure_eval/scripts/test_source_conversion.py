@@ -31,9 +31,6 @@ def make_manager(tmp: Path) -> DatasetManager:
     manager.sure_dir = manager.data_dir / "sure_benchmark"
     manager.jsonl_dir = manager.sure_dir / "jsonl"
     manager.jsonl_dir.mkdir(parents=True, exist_ok=True)
-    manager._oref_config = {"datasets": {}, "fallbacks": {}}
-    manager.oref_local_datasets = {}
-    manager.dataset_fallbacks = {}
     manager.dataset_source_key = "default"  # __init__'s default; normalize/convert read it since 19b17fc
     return manager
 
@@ -67,6 +64,34 @@ def make_source_tree(root: Path, name: str, version: str) -> Path:
     )
     (version_dir / "ds.jsonl").write_text(
         '{"audio": {"speech": {"language": "zh"}}}\n', encoding="utf-8"
+    )
+    return dataset_root
+
+
+def make_flat_source_tree(root: Path, name: str) -> Path:
+    """A source directory with sample.jsonl and the audio side by side: no ds.jsonl, no raws/."""
+    dataset_root = root / name
+    dataset_root.mkdir(parents=True)
+    audio = dataset_root / "utt1.wav"
+    audio.write_bytes(b"RIFFxxxx")
+    (dataset_root / "sample.jsonl").write_text(
+        json.dumps(
+            {
+                "sample_id": "utt1",
+                "attribute": {
+                    "path": "utt1.wav",
+                    "size": audio.stat().st_size,
+                    "sample_rate": 16000,
+                    "duration": 1000,
+                    "raw_data_format": "wav",
+                    "channels": 1,
+                },
+                "annotation": [{"transcription": {"text": ["你好"]}}],
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
     )
     return dataset_root
 
@@ -111,7 +136,7 @@ class SourceConversionTests(unittest.TestCase):
         ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
         self.manager._convert_source_root_to_jsonl(ref)
         package_dir = self.manager.sure_dir / "demo_ds"
-        source_payload = json.loads((package_dir / "oref" / "source.json").read_text(encoding="utf-8"))
+        source_payload = json.loads((package_dir / "source" / "source.json").read_text(encoding="utf-8"))
         self.assertEqual(source_payload["source"], "site_dataset_pool")
         self.assertEqual(source_payload["source_dataset_name"], "demo_ds")
         self.assertEqual(source_payload["version_id"], "v1.0.2")
@@ -146,22 +171,20 @@ class SourceConversionTests(unittest.TestCase):
             self.manager._convert_source_root_to_jsonl(ref)
         self.assertIn("sample.jsonl", str(ctx.exception))
 
-    def test_legacy_oref_platform_conversion_unchanged(self) -> None:
-        # The extracted row-projection helper must keep the legacy path working.
-        self.manager.oref_local_datasets = {
-            "demo_legacy": {
-                "source": "oref_platform",
-                "config_name": "demo_legacy",
-                "version_id": "v1.0.2",
-                "task": "ASR",
-                "dataset_root": str(self.dataset_root),
-            }
-        }
-        jsonl_path = self.manager._convert_oref_platform_to_jsonl("demo_legacy")
-        self.assertEqual(jsonl_path.name, "demo_legacy__v1.0.2__asr.jsonl")
+    def test_flat_source_converts_with_unversioned_id_and_absolute_audio(self) -> None:
+        flat_root = make_flat_source_tree(self.source_root, "flat_ds")
+        ref = source_resolver.resolve_site_source_entry(str(flat_root))
+        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        self.assertEqual(jsonl_path.name, "flat_ds__unversioned.jsonl")
         row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
-        self.assertEqual(row["metadata"]["source"], "oref_platform")
-        self.assertEqual(row["metadata"]["version_id"], "v1.0.2")
+        self.assertEqual(row["dataset"], "flat_ds__unversioned")
+        self.assertEqual(row["task"], "ASR")
+        self.assertEqual(row["target"], "你好")
+        self.assertEqual(row["language"], "auto")
+        self.assertEqual(row["path"], str(flat_root / "utt1.wav"))
+        self.assertTrue(Path(row["path"]).is_absolute())
+        self.assertEqual(row["metadata"]["version_id"], "unversioned")
+        self.assertEqual(row["metadata"]["source_dataset_root"], str(flat_root))
 
 
 if __name__ == "__main__":

@@ -394,8 +394,8 @@ def _materialize(binding: dict[str, Any]) -> None:
 def _attested_binding() -> dict[str, Any] | None:
     """The binding the host resolved before it launched this process, if any.
 
-    run_vc_execution.py and container_execution.py resolve the runtime against the
-    engine checkout and inject its identity. Resolving it again on the far side of
+    container_execution.py resolves the runtime against the engine checkout and
+    injects its identity. Resolving it again on the far side of
     the boundary needs git and the engine's .git directory, and the evaluation
     image carries neither: every container run died in [5/5] on "No such file or
     directory: 'git'" after the whole prediction pass had already been paid for.

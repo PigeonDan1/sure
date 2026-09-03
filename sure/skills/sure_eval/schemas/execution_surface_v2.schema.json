@@ -31,7 +31,6 @@
 		},
 		"inference_runtime": { "type": "object", "additionalProperties": true },
 		"evaluation_runtime": { "type": "object", "additionalProperties": true },
-		"vc_runtime": { "type": "object", "additionalProperties": true },
 		"generation_method": { "type": "string" },
 		"source_provenance": {
 			"type": "object",

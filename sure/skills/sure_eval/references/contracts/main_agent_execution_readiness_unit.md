@@ -89,7 +89,6 @@ This unit should leave evidence for:
 
 - [main_agent_execution_surface_unit.md](main_agent_execution_surface_unit.md)
 - [main_agent_script_routing_unit.md](main_agent_script_routing_unit.md)
-- [single_model_single_dataset_shell.md](single_model_single_dataset_shell.md)
 - [prediction_generation_contract.md](prediction_generation_contract.md)
 
 ## Output Template

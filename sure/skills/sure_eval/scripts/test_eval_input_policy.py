@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests: strict main flow accepts only source-root dataset inputs.
+"""Tests: /sure_eval input resolution policy.
 
 Run directly:
     cd sure/skills/sure_eval/scripts && python test_eval_input_policy.py
@@ -19,29 +19,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import resolve_eval_input  # noqa: E402
 from sure_eval.datasets import source_resolver  # noqa: E402
-from test_source_conversion import make_manager, make_source_tree  # noqa: E402
+from test_source_conversion import make_flat_source_tree, make_manager, make_source_tree  # noqa: E402
 
 
-class DatasetInputPolicyTests(unittest.TestCase):
-    def test_source_entry_passes(self) -> None:
-        resolve_eval_input._check_dataset_input_policy(
-            [{"name": "demo_ds__v1.0.2", "requested_name": "/srv/sure/datasets/group/store/ds_pool/demo_ds"}]
-        )
+class MainFlowRemovalTests(unittest.TestCase):
+    def test_the_resolver_no_longer_exposes_the_dataset_input_policy_check(self) -> None:
+        self.assertFalse(hasattr(resolve_eval_input, "_check_dataset_input_policy"))
+        self.assertFalse(hasattr(resolve_eval_input, "MAIN_FLOW_SCRIPTS"))
 
-    def test_new_pipeline_jsonl_passes(self) -> None:
-        resolve_eval_input._check_dataset_input_policy(
-            [{"name": "demo_ds__v1.0.2", "requested_name": "demo_ds__v1.0.2", "source_root": "/srv/sure/datasets/x/ds_pool/demo_ds"}]
-        )
-
-    def test_legacy_name_is_rejected_with_migration_hint(self) -> None:
-        with self.assertRaises(resolve_eval_input.EvalInputError) as ctx:
-            resolve_eval_input._check_dataset_input_policy(
-                [{"name": "aishell1__v1.0.2__asr", "requested_name": "aishell1"}]
-            )
-        message = str(ctx.exception)
-        self.assertIn("aishell1", message)
-        self.assertIn("ds_pool", message)
-        self.assertIn("sure_reval", message)
+    def test_the_parser_no_longer_accepts_strict_main_flow(self) -> None:
+        parser = resolve_eval_input._build_parser()
+        for flag in ("--strict-main-flow", "--no-strict-main-flow"):
+            with self.subTest(flag=flag):
+                args, rest = parser.parse_known_args(["--model", "demo", "--datasets", "/x", flag])
+                self.assertEqual(rest, [flag])
+                self.assertFalse(hasattr(args, "strict_main_flow"))
 
 
 class RunIdPolicyTests(unittest.TestCase):
@@ -59,39 +51,41 @@ class RunIdPolicyTests(unittest.TestCase):
 
 
 class ExecutionSurfacePolicyTests(unittest.TestCase):
-    def test_auto_stays_local_when_site_disables_vc(self) -> None:
-        with mock.patch.object(resolve_eval_input, "_vc_available", return_value=True):
-            execution = resolve_eval_input._normalize_execution("auto", "auto", ["local"])
+    def test_auto_lands_on_the_approved_local_container_runtime(self) -> None:
+        execution = resolve_eval_input._normalize_execution("auto", "auto")
+        self.assertEqual(execution["requested"], "auto")
         self.assertEqual(execution["planned"], "local")
         self.assertEqual(execution["path_planned"], "local_docker")
+        self.assertEqual(execution["reason"], "auto_selected_local")
+        self.assertNotIn("vc_available_at_resolve", execution)
 
-    def test_explicit_disabled_surface_is_rejected(self) -> None:
-        with mock.patch.object(resolve_eval_input, "_vc_available", return_value=True):
-            with self.assertRaises(ValueError) as ctx:
-                resolve_eval_input._normalize_execution("vc", "auto", ["local"])
-        self.assertIn("not enabled by the active site policy", str(ctx.exception))
-
-    def test_python_runtime_is_local_even_when_vc_is_available(self) -> None:
-        with mock.patch.object(resolve_eval_input, "_vc_available", return_value=True):
-            execution = resolve_eval_input._normalize_execution(
-                "auto",
-                "auto",
-                ["local", "vc"],
-                "python",
-                ["container", "python"],
-            )
+    def test_python_runtime_lands_on_local_python(self) -> None:
+        execution = resolve_eval_input._normalize_execution("auto", "auto", "python", ["container", "python"])
         self.assertEqual(execution["path_planned"], "local_python")
         self.assertEqual(execution["reason"], "auto_selected_local_runtime_only")
 
-    def test_python_runtime_cannot_be_submitted_to_vc(self) -> None:
-        with self.assertRaisesRegex(ValueError, "approved container runtime"):
-            resolve_eval_input._normalize_execution(
-                "vc",
-                "vc_submit",
-                ["local", "vc"],
-                "python",
-                ["container", "python"],
-            )
+    def test_vc_is_no_longer_an_execution_surface(self) -> None:
+        with self.assertRaisesRegex(ValueError, "execution=vc is no longer supported"):
+            resolve_eval_input._normalize_execution("vc", "auto")
+        with self.assertRaisesRegex(ValueError, "execution=vc is no longer supported"):
+            resolve_eval_input._normalize_execution(None, "vc_submit")
+
+    def test_runtime_not_enabled_by_site_policy_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "local_runtimes"):
+            resolve_eval_input._normalize_execution("auto", "auto", "python", ["container"])
+
+    def test_legacy_local_bash_maps_to_the_approved_local_path(self) -> None:
+        execution = resolve_eval_input._normalize_execution(None, "local_bash")
+        self.assertEqual(execution["requested"], "local")
+        self.assertEqual(execution["path_planned"], "local_docker")
+        self.assertEqual(execution["reason"], "user_requested_local")
+
+    def test_device_resolution_no_longer_takes_an_execution_plan(self) -> None:
+        with mock.patch.object(resolve_eval_input, "_nvidia_smi_available", return_value=False):
+            device = resolve_eval_input._resolve_device("auto")
+        self.assertEqual(device["resolved"], "cpu")
+        self.assertEqual(device["execution_device_source"], "local_nvidia_smi")
+        self.assertEqual(device["notes"], [])
 
 
 class OutputDirPolicyTests(unittest.TestCase):
@@ -214,6 +208,19 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         self.assertTrue(detail["jsonl_exists"])
         self.assertEqual(detail["source_root"], str(self.dataset_root))
         self.assertEqual(detail["version_id"], "v1.0.2")
+
+    def test_flat_source_entry_yields_asr_detail_with_unversioned_id(self) -> None:
+        flat_root = make_flat_source_tree(self.source_root, "flat_ds")
+        details = resolve_eval_input._dataset_details(self.manager, [str(flat_root)], [], None)
+        self.assertEqual(len(details), 1)
+        detail = details[0]
+        self.assertEqual(detail["name"], "flat_ds__unversioned")
+        self.assertEqual(detail["requested_name"], str(flat_root))
+        self.assertEqual(detail["task"], "ASR")
+        self.assertEqual(detail["language"], "auto")
+        self.assertEqual(detail["source_root"], str(flat_root))
+        self.assertEqual(detail["source_dataset_name"], "flat_ds")
+        self.assertEqual(detail["version_id"], "unversioned")
 
 
 class MainErrorHandlingTests(unittest.TestCase):

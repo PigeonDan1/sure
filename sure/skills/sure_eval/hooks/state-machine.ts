@@ -15,29 +15,25 @@ import type { GateResult } from "./checkpoints.ts";
 //     fields, type, enum (allowedValues merged with schema.enum), and
 //     additionalProperties:false (forbidden later-unit fields). Every unit.
 //   - The Python gateScript owns SEMANTICS for gate units: cross-field
-//     conditions, environment probes (vc availability), filesystem cross-checks
-//     (template isolation, lockfile/weights existence). One authoritative
+//     conditions, environment probes, filesystem cross-checks
+//     (entrypoint provenance, lockfile/weights existence). One authoritative
 //     checker per concern — no duplicated constant lists, no === true vs
 //     truthy drift.
 //   - An in-process gateCheck is kept ONLY when it verifies something the
 //     Python script cannot: execution_surface (no gateScript — the heavy
 //     compliance audit runs at the downstream execution_readiness unit) and
 //     execution_readiness (self-reported readiness/audit booleans, disjoint from
-//     the python script's template-provenance audit). tool_readiness_routing is
+//     the python script's entrypoint-provenance audit). tool_readiness_routing is
 //     a gate-without-script: its handoff_to_tool_agent block is a cross-skill
 //     condition no python script owns.
 //
-// Two red lines (from the main-flow system prompt) are enforced as gates:
-//   EXECUTION_SURFACE_ISOLATION — execution_surface.source_provenance.template_file
-//     must sit under scripts/templates/; the read-only main-flow reference
-//     mirror is audit-only and is rejected for runtime execution surfaces.
-//     Checked by execution_readiness gate
+// One red line (from the main-flow system prompt) is enforced as a gate:
+//   EXECUTION_SURFACE_ISOLATION — execution_surface.json is written by
+//     scripts/run_infer.py, never by the agent, and must point at the bundled
+//     scripts/infer_entrypoint.py: source_provenance.template_file,
+//     template_sha256 and entrypoint_path name that file byte for byte, and no
+//     prior eval_runs are referenced. Checked by the execution_readiness gate
 //     (scripts/check_execution_surface_compliance.py).
-//   EXECUTION_POLICY — execution=vc must use vc_submit; execution=local must use
-//     local_docker even when vc is available; execution=auto prefers
-//     vc when available and requires an explicit fallback reason otherwise.
-//     Checked by scripts/vc_check.py, which probes the REAL environment (the
-//     agent-declared vc_available field is NOT trusted in-process).
 
 export type UnitKind = "linear" | "gate";
 
@@ -89,11 +85,12 @@ function checkToolReadiness(artifact: unknown): GateResult {
 	return { ok: true };
 }
 
-// EXECUTION_SURFACE_UNIT — produces both execution_surface.json AND
-// run_evaluation.sh. Main-flow templates use entrypoint_path; older harness
-// artifacts used entrypoint. Accept both while preserving source_provenance and
-// prior-run leakage checks. The heavy red-line isolation audit runs downstream
-// via check_execution_surface_compliance.py.
+// EXECUTION_SURFACE_UNIT — the agent runs scripts/run_infer.py, which writes
+// execution_surface.json from scripts/infer_entrypoint.py and launches
+// inference. This check only confirms the artifact has the shape run_infer.py
+// produces (entrypoint_path; older artifacts used entrypoint), carries
+// source_provenance and references no prior run. The authoritative provenance
+// and runtime audit runs downstream via check_execution_surface_compliance.py.
 function checkExecutionSurface(artifact: unknown): GateResult {
 	const record = asRecord(artifact);
 	if (!record) {
@@ -109,7 +106,7 @@ function checkExecutionSurface(artifact: unknown): GateResult {
 		return {
 			ok: false,
 			repair:
-				"execution_surface.json must declare entrypoint_path or entrypoint (the materialized run_evaluation.sh path).",
+				"execution_surface.json must declare entrypoint_path (the bundled scripts/infer_entrypoint.py). Run scripts/run_infer.py --run-dir <run_dir>, which writes this artifact; do not author the JSON by hand.",
 			reason: "entrypoint missing",
 		};
 	}
@@ -117,7 +114,8 @@ function checkExecutionSurface(artifact: unknown): GateResult {
 	if (!provenance) {
 		return {
 			ok: false,
-			repair: "execution_surface.json must declare source_provenance (template_file + isolation fields).",
+			repair:
+				"execution_surface.json must declare source_provenance (template_file, template_sha256, isolation_compliance). scripts/run_infer.py --run-dir <run_dir> writes it; do not author the JSON by hand.",
 			reason: "source_provenance missing",
 		};
 	}
@@ -126,7 +124,7 @@ function checkExecutionSurface(artifact: unknown): GateResult {
 		return {
 			ok: false,
 			repair:
-				"execution_surface.json must not reference prior eval_runs or copy prior-run scripts. The execution surface is derived ONLY from the declared template under an approved template root.",
+				"execution_surface.json must not reference prior eval_runs or copy prior-run scripts. The execution surface is written by scripts/run_infer.py from the bundled scripts/infer_entrypoint.py; rerun it instead of editing the JSON.",
 			reason: "prior-run leakage",
 		};
 	}
@@ -150,7 +148,7 @@ function checkExecutionReadiness(artifact: unknown): GateResult {
 		return {
 			ok: false,
 			repair:
-				"EXECUTION_READINESS_UNIT is a gate: execution_ready and isolation_audit.audit_passed must be true before advancing to SMOKE_TEST. Run scripts/check_execution_surface_compliance.py, resolve route blockers, then set both fields to true.",
+				"EXECUTION_READINESS_UNIT is a gate: execution_ready and isolation_audit.audit_passed must be true before advancing to SMOKE_TEST. Run scripts/check_execution_surface_compliance.py, fix what it reports, then set both fields to true.",
 			reason: `execution_ready=${executionReady} audit_passed=${auditPassed}`,
 		};
 	}
@@ -246,9 +244,8 @@ export const MAIN_FLOW_UNITS: Unit[] = [
 		kind: "gate",
 		produces: "submit_result.json",
 		schemaRef: "submit_result.schema.json",
-		requiredFields: ["execution_path", "vc_available"],
+		requiredFields: ["execution_path"],
 		forbiddenFields: ["report_persisted"],
-		gateScript: "vc_check.py",
 	},
 	{
 		id: "execute_wait",
@@ -259,7 +256,7 @@ export const MAIN_FLOW_UNITS: Unit[] = [
 		requiredFields: ["job_status"],
 		allowedValues: { job_status: ["succeeded", "running", "failed", "partial"] },
 		forbiddenFields: ["report_persisted"],
-		gateScript: "wait_vc_execution.py",
+		gateScript: "check_execution_result.py",
 	},
 	{
 		id: "assessment",

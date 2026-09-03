@@ -250,7 +250,7 @@ Never commit API keys, provider tokens, auth files, model weights, checkpoints, 
 
 ### Public Export
 
-`npm run public:export` requires a clean worktree and projects only files tracked by the current Git index. `public-export.yaml` defines the public exclusions and generic deny rules; the optional `private/site/public-export.overlay.yaml` may only add private deny rules and is itself excluded. The v2 manifest identifies the projected tree without exposing the source commit. Use `--private-attestation-output` with an absolute path outside the repository when a private source-commit mapping is required. New private content must live under `private/`. `sure/skills/sure_eval/references/main_flow_agent/` is the single grandfathered export exception (a frozen upstream audit mirror; see `sure/skills/sure_eval/SKILL.md`). The exclusion list is closed: `check:site-boundary` fails if `public-export.yaml` gains an entry outside the approved exception set.
+`npm run public:export` requires a clean worktree and projects only files tracked by the current Git index. `public-export.yaml` defines the public exclusions and generic deny rules; the optional `private/site/public-export.overlay.yaml` may only add private deny rules and is itself excluded. The v2 manifest identifies the projected tree without exposing the source commit. Use `--private-attestation-output` with an absolute path outside the repository when a private source-commit mapping is required. New private content must live under `private/`. The exclusion list is closed: `check:site-boundary` fails if `public-export.yaml` gains an entry outside the approved exception set.
 
 ### Handbook Copies
 

@@ -15,7 +15,7 @@ MAIN_FLOW_INPUT:
 
  harness:                          # ← 新增字段
     mandatory_doc: sure/skills/sure_eval/SKILL.md
-    execution_surface_template: sure/skills/sure_eval/scripts/templates/run_single_model.sh
+    execution_surface_template: sure/skills/sure_eval/scripts/infer_entrypoint.py
     prediction_source: regenerate
     isolate_from_prior_runs: true
 
