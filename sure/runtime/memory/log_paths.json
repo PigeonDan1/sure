@@ -19,9 +19,7 @@
     "validate_equivalence": ["artifact:equivalence_result.json", "{run_dir}/artifacts/equivalence_execution.log", "{run_dir}/artifacts/vc_logs/equivalence/stdout.log"],
     "package_container": ["{run_dir}/artifacts/vc_logs/post_pull_smoke/stdout.log"]
   },
-  "sure_eval": {
-    "smoke_test": ["{run_dir}/local_logs/smoke_test.log"],
-    "submit_vc_run": ["{run_dir}/vc_logs/job.log"],
-    "execute_wait": ["artifact:execution_result.json", "{run_dir}/vc_logs/job.log", "{run_dir}/artifacts/local_execution.stderr.log", "{run_dir}/artifacts/local_execution.stdout.log"]
+  "sure_infer": {
+    "execute_inference": ["artifact:execution_result.json", "{run_dir}/artifacts/local_execution.stderr.log", "{run_dir}/artifacts/local_execution.stdout.log"]
   }
 }

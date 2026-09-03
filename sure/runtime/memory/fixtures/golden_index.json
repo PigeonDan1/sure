@@ -1,7 +1,7 @@
 {
   "schema": "sure.memory.index.v1",
   "built_at": "2026-08-18T00:00:00Z",
-  "sources_sha256": "6de290ebe9da898236ad3bb57f5d52ea9b5684d5349ee315e3d28a9fab04f54c",
+  "sources_sha256": "22d4198a07ac5a85534fda519fdf474aa3b1f6deea59096c74b85eb9ab8a8396",
   "entries": [
     {
       "entry_id": "_shared/qwen-audio-needs-cu121",
@@ -272,14 +272,14 @@
       "superseded_by": null
     },
     {
-      "entry_id": "sure_eval/job-log-missing",
+      "entry_id": "sure_infer/job-log-missing",
       "type": "bad_case",
       "status": "disputed",
-      "target_skill": "sure_eval",
+      "target_skill": "sure_infer",
       "applies_to": [
-        "sure_eval"
+        "sure_infer"
       ],
-      "component": "execute_wait",
+      "component": "execute_inference",
       "cause": "infra",
       "trigger": [
         "job.log: No such file"
@@ -289,7 +289,7 @@
       ],
       "scope": null,
       "title": "vc job log never appeared",
-      "path": "sure/skills/sure_eval/references/memory/bad_cases/job-log-missing.md",
+      "path": "sure/skills/sure_infer/references/memory/bad_cases/job-log-missing.md",
       "legacy": false,
       "op": "add",
       "target_entry": null,
@@ -307,14 +307,14 @@
       "superseded_by": null
     },
     {
-      "entry_id": "sure_eval/smoke-oom",
+      "entry_id": "sure_infer/smoke-oom",
       "type": "bad_case",
       "status": "disputed",
-      "target_skill": "sure_eval",
+      "target_skill": "sure_infer",
       "applies_to": [
-        "sure_eval"
+        "sure_infer"
       ],
-      "component": "smoke_test",
+      "component": "dataset_scope",
       "cause": "resource_limit",
       "trigger": [
         "CUDA out of memory",
@@ -325,11 +325,11 @@
       ],
       "scope": null,
       "title": "Smoke test dies with CUDA out of memory",
-      "path": "sure/memory/provisional/sure_eval/smoke-oom/entry.md",
+      "path": "sure/memory/provisional/sure_infer/smoke-oom/entry.md",
       "legacy": false,
       "op": "add",
       "target_entry": null,
-      "similar_entry": "sure_eval/job-log-missing",
+      "similar_entry": "sure_infer/job-log-missing",
       "useful_activated": 0,
       "useful_unattributed": 0,
       "injections": 0,

@@ -20,7 +20,7 @@ from typing import Any, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-EVAL_SCRIPTS = REPO_ROOT / "sure" / "skills" / "sure_eval" / "scripts"
+EVAL_SCRIPTS = REPO_ROOT / "sure" / "skills" / "sure_infer" / "scripts"
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(EVAL_SCRIPTS))
 
@@ -842,7 +842,7 @@ def verify_publication(run_dir: Path) -> dict[str, Any]:
             raise ApprovalError("published bundle is outside the active site's approved model root")
         binding = load_deployment_binding(destination, str(packet["model_name"]))
     except DeploymentBindingError as exc:
-        raise ApprovalError(f"published bundle is not consumable by sure_eval: {exc}") from exc
+        raise ApprovalError(f"published bundle is not consumable by sure_infer: {exc}") from exc
     finally:
         if previous_policy is None:
             os.environ.pop("SURE_SITE_POLICY", None)

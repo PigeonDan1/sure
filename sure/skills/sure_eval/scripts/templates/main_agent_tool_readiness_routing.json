@@ -1,9 +1,0 @@
-{
-  "readiness": "ready",
-  "model_dir": "",
-  "verdict_status": "passed",
-  "server_present": true,
-  "model_py_present": true,
-  "handoff_to_tool_agent": false,
-  "routing_reason": "approved NFS deployment binding is ready"
-}

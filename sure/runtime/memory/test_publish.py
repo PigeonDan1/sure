@@ -132,7 +132,7 @@ class PublishFixture(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.repo = Path(self.tmp.name) / "repo"
-        for skill in ("sure_onboard", "sure_eval", "sure_trans", "sure_feed", "sure_reval"):
+        for skill in ("sure_onboard", "sure_eval", "sure_infer", "sure_trans", "sure_feed"):
             (self.repo / "sure" / "skills" / skill / "references" / "memory" / "bad_cases").mkdir(parents=True)
         (self.repo / "sure" / "skills" / "_shared" / "memory" / "facts").mkdir(parents=True)
         self.model_dir = self.repo / "sure" / "models" / MODEL_NAME
@@ -900,7 +900,7 @@ class MainTests(PublishFixture):
         self.assertNotIn(secret, err)
 
     def test_wrapper_scripts_forward_to_publish_main(self) -> None:
-        for skill in ("sure_onboard", "sure_eval", "sure_trans", "sure_feed"):
+        for skill in ("sure_onboard", "sure_infer", "sure_trans", "sure_feed"):
             with self.subTest(skill=skill):
                 wrapper = REPO_ROOT / "sure" / "skills" / skill / "scripts" / "publish_memory.py"
                 proc = subprocess.run([sys.executable, str(wrapper), "--help"], capture_output=True, text=True, check=False)

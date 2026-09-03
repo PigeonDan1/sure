@@ -16,13 +16,13 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SKILLS = REPO_ROOT / "sure" / "skills"
 EXTRACTION_MD = paths.LIB_DIR / "EXTRACTION.md"
 ONBOARD_SKILL = SKILLS / "sure_onboard" / "SKILL.md"
-EVAL_SKILL = SKILLS / "sure_eval" / "SKILL.md"
+INFER_SKILL = SKILLS / "sure_infer" / "SKILL.md"
 TRANS_SKILL = SKILLS / "sure_trans" / "SKILL.md"
 ONBOARD_ROUTING = SKILLS / "sure_onboard" / "references" / "memory" / "ROUTING.md"
 ONBOARD_COMMON = SKILLS / "sure_onboard" / "references" / "memory" / "COMMON.md"
 ONBOARD_BAD_CASES_README = SKILLS / "sure_onboard" / "references" / "memory" / "bad_cases" / "README.md"
-EVAL_ROUTING = SKILLS / "sure_eval" / "references" / "memory" / "ROUTING.md"
-EVAL_BAD_CASES_README = SKILLS / "sure_eval" / "references" / "memory" / "bad_cases" / "README.md"
+INFER_ROUTING = SKILLS / "sure_infer" / "references" / "memory" / "ROUTING.md"
+INFER_BAD_CASES_README = SKILLS / "sure_infer" / "references" / "memory" / "bad_cases" / "README.md"
 TRANS_ROUTING = SKILLS / "sure_trans" / "references" / "memory" / "ROUTING.md"
 TRANS_BAD_CASES_README = SKILLS / "sure_trans" / "references" / "memory" / "bad_cases" / "README.md"
 FEED_SKILL = SKILLS / "sure_feed" / "SKILL.md"
@@ -163,7 +163,7 @@ class SkillDocTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.units = paths.load_units()["skills"]
         cls.onboard = read(ONBOARD_SKILL)
-        cls.eval = read(EVAL_SKILL)
+        cls.infer = read(INFER_SKILL)
         cls.trans = read(TRANS_SKILL)
         cls.feed = read(FEED_SKILL)
 
@@ -172,10 +172,10 @@ class SkillDocTests(unittest.TestCase):
         self.assertEqual([r[0] for r in rows], list(range(1, len(self.units["sure_onboard"]) + 1)))
         self.assertEqual([r[1] for r in rows], self.units["sure_onboard"])
 
-    def test_eval_unit_table_matches_units_json(self) -> None:
-        rows = unit_table(self.eval)
-        self.assertEqual([r[0] for r in rows], list(range(1, len(self.units["sure_eval"]) + 1)))
-        self.assertEqual([r[1] for r in rows], self.units["sure_eval"])
+    def test_infer_unit_table_matches_units_json(self) -> None:
+        rows = unit_table(self.infer)
+        self.assertEqual([r[0] for r in rows], list(range(1, len(self.units["sure_infer"]) + 1)))
+        self.assertEqual([r[1] for r in rows], self.units["sure_infer"])
 
     def test_trans_unit_table_matches_units_json(self) -> None:
         rows = unit_table(self.trans)
@@ -188,14 +188,14 @@ class SkillDocTests(unittest.TestCase):
         self.assertEqual([r[1] for r in rows], self.units["sure_feed"])
 
     def test_extract_lessons_rows(self) -> None:
-        for text in (self.onboard, self.eval, self.trans, self.feed):
+        for text in (self.onboard, self.infer, self.trans, self.feed):
             row = next(r for r in unit_table(text) if r[1] == "extract_lessons")
             self.assertEqual(row[2], "**gate**")
             self.assertEqual(row[3], "`extraction_declaration.json`")
             self.assertEqual(row[4], "`scripts/check_memory_extraction.py`")
 
     def test_extraction_skills_point_to_the_contract_and_the_context_file(self) -> None:
-        for text in (self.onboard, self.eval, self.trans, self.feed):
+        for text in (self.onboard, self.infer, self.trans, self.feed):
             for token in (
                 "sure/runtime/memory/EXTRACTION.md", "artifacts/memory_context.json", "sure/memory/index.md",
                 "references/memory/ROUTING.md",
@@ -208,7 +208,7 @@ class SkillDocTests(unittest.TestCase):
 
     def test_inject_header_in_skill_docs_matches_config(self) -> None:
         header = paths.load_config()["inject_header"]
-        for text in (self.onboard, self.eval, self.trans, self.feed):
+        for text in (self.onboard, self.infer, self.trans, self.feed):
             self.assertIn(header, text)
 
     def test_onboard_context_selection_line(self) -> None:
@@ -216,8 +216,8 @@ class SkillDocTests(unittest.TestCase):
         self.assertIn("memory_context.json", line)
         self.assertIn("selected_references.memory", line)
 
-    def test_eval_task_classification_line(self) -> None:
-        line = contract_line(self.eval, "task_classification")
+    def test_infer_dataset_scope_line(self) -> None:
+        line = contract_line(self.infer, "dataset_scope")
         self.assertIn("memory_context.json", line)
         self.assertIn("do not add", line)
 
@@ -225,7 +225,7 @@ class SkillDocTests(unittest.TestCase):
         # The shape Task 12's preStartMemory writes (skeleton 1.13). The agent reads the file by this
         # description alone, so both contract lines quote every key and say the file exists when empty.
         for text, unit in (
-            (self.onboard, "context_selection"), (self.eval, "task_classification"), (self.feed, "scan_modelscope"),
+            (self.onboard, "context_selection"), (self.infer, "dataset_scope"), (self.feed, "scan_modelscope"),
         ):
             line = contract_line(text, unit)
             for token in (
@@ -270,11 +270,11 @@ class RoutingDocTests(unittest.TestCase):
             for key in ("memory_files_read", "memory_files_skipped"):
                 self.assertNotIn(key, text, f"{path.name} still has {key}")
 
-    def test_eval_routing_exists_and_routes_through_the_index(self) -> None:
-        text = read(EVAL_ROUTING)
+    def test_infer_routing_exists_and_routes_through_the_index(self) -> None:
+        text = read(INFER_ROUTING)
         for token in (
             "sure/memory/index.md", "artifacts/memory_context.json", "failure_taxonomy.md",
-            "retry_and_escalation.md", "memory/bad_cases/README.md", "task_classification.json",
+            "retry_and_escalation.md", "memory/bad_cases/README.md", "dataset_decision.json",
         ):
             self.assertIn(token, text, token)
 
@@ -297,7 +297,7 @@ class RoutingDocTests(unittest.TestCase):
     def test_bad_cases_readmes_share_the_route_table_header(self) -> None:
         onboard_lines = read(ONBOARD_BAD_CASES_README).splitlines()
         o = onboard_lines[onboard_lines.index("## Route Table") :]
-        for readme in (EVAL_BAD_CASES_README, TRANS_BAD_CASES_README, FEED_BAD_CASES_README):
+        for readme in (INFER_BAD_CASES_README, TRANS_BAD_CASES_README, FEED_BAD_CASES_README):
             with self.subTest(skill=readme.parents[3].name):
                 text = read(readme)
                 lines = text.splitlines()

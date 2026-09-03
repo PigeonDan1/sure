@@ -79,7 +79,7 @@ const requiredPaths = [
 	"sure/skills/sure_approve/sure.skill.json",
 	"sure/skills/sure_onboard/sure.skill.json",
 	"sure/skills/sure_trans/sure.skill.json",
-	"sure/skills/sure_eval/sure.skill.json",
+	"sure/skills/sure_infer/sure.skill.json",
 	"sure/skills/sure_reval/sure.skill.json",
 	"fixtures",
 ];
@@ -217,7 +217,7 @@ if (existsSync(datasetRoot)) {
 } else {
 	warn(
 		"sure-eval datasets",
-		`missing ${datasetRoot}; /sure_eval needs sure_benchmark/jsonl. Link it or set SURE_EVAL_DATASETS_ROOT`,
+		`missing ${datasetRoot}; /sure_infer needs sure_benchmark/jsonl. Link it or set SURE_EVAL_DATASETS_ROOT`,
 	);
 }
 

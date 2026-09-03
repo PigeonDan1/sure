@@ -1,0 +1,68 @@
+{
+	"name": "sure_infer",
+	"command": "/sure_infer",
+	"description": "Run an approved model over selected datasets: verify its sealed runtime binding, launch the bundled inference entrypoint in the approved container or trusted-host Python, and write predictions, protocol.yaml and reference projections for /sure_eval.",
+	"prompt": "SKILL.md",
+	"hooks": {
+		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
+		"pre_tool_call": [{ "module": "hooks/index.ts", "handler": "preToolCall" }],
+		"post_tool_result": [{ "module": "hooks/index.ts", "handler": "postToolResult" }],
+		"pre_finish": [{ "module": "hooks/index.ts", "handler": "preFinish" }],
+		"post_finish": [{ "module": "hooks/index.ts", "handler": "postFinish" }],
+		"on_error": [{ "module": "hooks/index.ts", "handler": "onError" }]
+	},
+	"artifacts": [
+		{
+			"type": "eval_input_resolved",
+			"path": "artifacts/eval_input_resolved.json",
+			"required": false,
+			"description": "Resolved /sure_infer product input: the approved model binding, canonical datasets and runtime plan every later unit reads."
+		},
+		{
+			"type": "dataset_decision",
+			"path": "artifacts/dataset_decision.json",
+			"required": true,
+			"description": "Dataset scope chosen by the agent: selected and skipped datasets with the selection basis."
+		},
+		{
+			"type": "execution_surface",
+			"path": "artifacts/execution_surface.json",
+			"required": true,
+			"description": "Execution surface written by scripts/run_infer.py: the bundled entrypoint, its digest, and the approved deployment binding summary."
+		},
+		{
+			"type": "execution_result",
+			"path": "artifacts/execution_result.json",
+			"required": true,
+			"description": "Terminal record of the inference launch: job status, exit code, failed stage, product directory and per-dataset counts."
+		},
+		{
+			"type": "run_report",
+			"path": "artifacts/main_agent_run_report.json",
+			"required": true,
+			"description": "Final SURE-INFER run report (main_agent_run_report.json)."
+		},
+		{
+			"type": "protocol",
+			"path": "artifacts/protocol.yaml",
+			"required": false,
+			"description": "Inference-only protocol.yaml using sure.eval.inference_protocol.v1."
+		},
+		{
+			"type": "prediction_manifests",
+			"path": "artifacts/predictions",
+			"required": false,
+			"description": "Prediction inventory and conversion trace: manifest.json and conversion_manifest.json."
+		},
+		{
+			"type": "model_eval_manifest",
+			"required": false,
+			"description": "Optional aligned model evaluation manifest (model_eval_manifest.json)."
+		}
+	],
+	"ui": {
+		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
+		"artifactTypes": ["eval_input_resolved", "dataset_decision", "execution_surface", "execution_result", "run_report", "protocol", "prediction_manifests", "model_eval_manifest"],
+		"defaultExpandedSections": ["diagnostics", "artifacts"]
+	}
+}

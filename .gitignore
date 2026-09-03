@@ -38,7 +38,7 @@ id_rsa.pub
 /results_*/
 /events.jsonl
 /sure/results/
-/sure/skills/sure_eval/results/
+/sure/skills/sure_infer/results/
 /sure/.runtime/
 /sure/handoffs/
 # instance memory data (provisional entries, usage, digests);

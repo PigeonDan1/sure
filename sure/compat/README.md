@@ -29,7 +29,7 @@ harness branch against the runnable SURE-EVAL sandbox.
 ## Useful Commands
 
 ```bash
-python3 sure/skills/sure_eval/scripts/resolve_model_dir.py \
+python3 sure/skills/sure_infer/scripts/resolve_model_dir.py \
   --model nvidia__parakeet-rnnt-1.1b \
   --require-verdict \
   --require-runtime-files
@@ -41,7 +41,7 @@ import json
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path("sure/skills/sure_eval/scripts").resolve()))
+sys.path.insert(0, str(Path("sure/skills/sure_infer/scripts").resolve()))
 from sure_eval.inference import get_runtime_readiness
 from sure_eval.models.registry import ModelRegistry
 

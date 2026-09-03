@@ -15,16 +15,16 @@ import {
 // gateDigest to run without a config, the same way sure-onboard-memory.test.ts spies on
 // memoryConfigOrUndefined.
 import * as matchModule from "../../../../sure/runtime/memory/match.ts";
-import * as evalCheckpoints from "../../../../sure/skills/sure_eval/hooks/checkpoints.ts";
-import {
-	LAST_UNIT as EVAL_LAST_UNIT,
-	findUnit as findEvalUnit,
-} from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
 import * as feedCheckpoints from "../../../../sure/skills/sure_feed/hooks/checkpoints.ts";
 import {
 	LAST_UNIT as FEED_LAST_UNIT,
 	findUnit as findFeedUnit,
 } from "../../../../sure/skills/sure_feed/hooks/state-machine.ts";
+import * as inferCheckpoints from "../../../../sure/skills/sure_infer/hooks/checkpoints.ts";
+import {
+	findUnit as findInferUnit,
+	LAST_UNIT as INFER_LAST_UNIT,
+} from "../../../../sure/skills/sure_infer/hooks/state-machine.ts";
 import * as onboardCheckpoints from "../../../../sure/skills/sure_onboard/hooks/checkpoints.ts";
 import {
 	findUnit as findOnboardUnit,
@@ -41,8 +41,8 @@ import type { SureHookContext } from "../../src/core/sure/types.ts";
 // isExtractionGateExhausted). The fixtures below are private to this file; the other
 // memory suites (hooks-flow, onboard, eval) carry their own copies.
 
-type Skill = "sure_onboard" | "sure_eval" | "sure_trans" | "sure_feed";
-const SKILLS: Skill[] = ["sure_onboard", "sure_eval", "sure_trans", "sure_feed"];
+type Skill = "sure_onboard" | "sure_infer" | "sure_trans" | "sure_feed";
+const SKILLS: Skill[] = ["sure_onboard", "sure_infer", "sure_trans", "sure_feed"];
 
 const SKILLS_ROOT = resolve(__dirname, "../../../../sure/skills");
 
@@ -92,25 +92,25 @@ const SAMPLE_MEMORY: MemoryCheckpoint = {
 
 const CHECKPOINT_MODULES = {
 	sure_onboard: onboardCheckpoints,
-	sure_eval: evalCheckpoints,
+	sure_infer: inferCheckpoints,
 	sure_trans: transCheckpoints,
 	sure_feed: feedCheckpoints,
 } as const;
 const UNIT_FINDERS = {
 	sure_onboard: findOnboardUnit,
-	sure_eval: findEvalUnit,
+	sure_infer: findInferUnit,
 	sure_trans: findTransUnit,
 	sure_feed: findFeedUnit,
 } as const;
 const GATE_UNIT_IDS = {
 	sure_onboard: "build_env",
-	sure_eval: "smoke_test",
+	sure_infer: "execute_inference",
 	sure_trans: "validate_contract",
 	sure_feed: "match_task",
 } as const;
 const LAST_UNITS = {
 	sure_onboard: ONBOARD_LAST_UNIT,
-	sure_eval: EVAL_LAST_UNIT,
+	sure_infer: INFER_LAST_UNIT,
 	sure_trans: TRANS_LAST_UNIT,
 	sure_feed: FEED_LAST_UNIT,
 } as const;
@@ -322,14 +322,16 @@ describe("gateDigest", () => {
 			writeArtifactFile(backward, rel, text);
 		}
 		const unit = { produces: "extraction_declaration.json", gateInputs: ["candidates", "memory_evidence"] };
-		expect(gateDigest(makeCtx("sure_eval", forward), unit)).toBe(gateDigest(makeCtx("sure_eval", backward), unit));
+		expect(gateDigest(makeCtx("sure_infer", forward), unit)).toBe(gateDigest(makeCtx("sure_infer", backward), unit));
 
 		const renamed = freshRunDir("gate-digest-order-renamed");
 		writeArtifactFile(renamed, "extraction_declaration.json", declaration);
 		writeArtifactFile(renamed, "candidates/03-b/proposal.json", '{"b":1}');
 		writeArtifactFile(renamed, "candidates/01-a/proposal.json", '{"a":1}');
 		writeArtifactFile(renamed, "memory_evidence/build_env.log", "line1\nline2\n");
-		expect(gateDigest(makeCtx("sure_eval", renamed), unit)).not.toBe(gateDigest(makeCtx("sure_eval", forward), unit));
+		expect(gateDigest(makeCtx("sure_infer", renamed), unit)).not.toBe(
+			gateDigest(makeCtx("sure_infer", forward), unit),
+		);
 	});
 
 	it("accepts a single file as a gateInputs entry", () => {

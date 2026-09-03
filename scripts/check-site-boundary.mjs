@@ -199,7 +199,7 @@ try {
 					failures.push("public export manifest omits Git modes");
 				}
 				if (existsSync(resolve(exportRoot, "private"))) failures.push("public export contains the private overlay");
-				const resolver = "sure/skills/sure_eval/scripts/resolve_model_dir.py";
+				const resolver = "sure/skills/sure_infer/scripts/resolve_model_dir.py";
 				const publicHelp = run("python3", [resolver, "--help"], { cwd: exportRoot });
 				if (publicHelp.status !== 0) failures.push("public resource CLI help failed without a site policy");
 				const publicResource = run("python3", [resolver, "--model", "missing-model"], { cwd: exportRoot });

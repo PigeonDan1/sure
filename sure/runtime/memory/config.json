@@ -27,7 +27,7 @@
     "is not permitted from unit",
     "Only the current unit's owned scripts may run here"
   ],
-  "target_skills": ["sure_onboard", "sure_eval", "sure_trans", "sure_feed", "sure_reval", "_shared"],
+  "target_skills": ["sure_onboard", "sure_eval", "sure_infer", "sure_trans", "sure_feed", "_shared"],
   "cause_enum": [
     "python_dependency_missing", "system_dependency_missing", "cuda_version_mismatch", "wrong_python_version",
     "missing_weights", "wrong_entrypoint", "config_not_set", "runtime_backend_incompatible",

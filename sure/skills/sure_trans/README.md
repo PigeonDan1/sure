@@ -12,7 +12,7 @@
 | 站点解析交付 | source/adapter 仓库由活动站点策略统一解析,agent 不拼接 namespace;解析结果和策略身份写入 `trans_input_resolved.json`。 |
 | Container-only | Eval 运行时完全在容器内:`host_python_fallback=false`、`image_override_allowed=false`,模型 payload 以只读方式挂载。 |
 | IO contract | `input_type=audio_path` 到 `output_type=json`,`primary_field=text`,`required_fields=["text"]`、`nonempty_fields=["text"]`、`json_serializable=true`,由 `validate.py --stage contract` 对 `sample_output.json` 校验。 |
-| 模型 bundle | 最终交接目录 `sure/models/<model_name>/`:wrapper 五件套 + `Dockerfile.sure` + 模型 payload + `fixture/<task>/` + `artifacts/` terminal sidecar。`/sure_eval` 只挂载该目录,外部绝对路径不是可执行交接。 |
+| 模型 bundle | 最终交接目录 `sure/models/<model_name>/`:wrapper 五件套 + `Dockerfile.sure` + 模型 payload + `fixture/<task>/` + `artifacts/` terminal sidecar。`/sure_infer` 只挂载该目录,外部绝对路径不是可执行交接。 |
 
 ## 参数
 
@@ -49,9 +49,9 @@
 
 source/adapter 仓库分别由 `network.container_registry` 和 `container_delivery.repository_template` 解析;source 仓库在目标仓库名后追加 `-source`。自动版本解析结果记录在 `trans_input_resolved.json.image_version_resolution`。查询复用 Docker 登录凭据但不把凭据写入 artifact；registry 查询失败会阻断，不会猜测可能重复的版本。并发运行仍可能同时选中同一版本，最终由 registry 的不可覆盖策略阻止冲突，失败的一方重新解析版本后再提交。
 
-source 镜像构建会自动追加一层：若基础镜像没有 `git`，按镜像内可用的 apt/apk/dnf/yum/microdnf 安装 `git` 和 `ca-certificates`；原始 Dockerfile 不会被改写，最终 `USER` 会恢复。这样 adapter 镜像继承该工具，避免 `/sure_eval` 运行时缺少 `git`。
+source 镜像构建会自动追加一层：若基础镜像没有 `git`，按镜像内可用的 apt/apk/dnf/yum/microdnf 安装 `git` 和 `ca-certificates`；原始 Dockerfile 不会被改写，最终 `USER` 会恢复。这样 adapter 镜像继承该工具，避免 `/sure_infer` 运行时缺少 `git`。
 
-adapter 镜像同时复制当前锁定的 Harness Runtime。默认从 `SURE_HARNESS_RUNTIME_ROOT` 目录复制；配置 digest 固定的 runtime image 后，设置 `SURE_HARNESS_RUNTIME_IMAGE=<repository>@sha256:<digest>`，并传入 `--build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>`。最终 `/sure_eval` 使用镜像内的 Model Python 和 Harness Python 两个独立运行时，不再把仓库 Harness Runtime 挂载进模型容器。
+adapter 镜像同时复制当前锁定的 Harness Runtime。默认从 `SURE_HARNESS_RUNTIME_ROOT` 目录复制；配置 digest 固定的 runtime image 后，设置 `SURE_HARNESS_RUNTIME_IMAGE=<repository>@sha256:<digest>`，并传入 `--build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>`。最终 `/sure_infer` 使用镜像内的 Model Python 和 Harness Python 两个独立运行时，不再把仓库 Harness Runtime 挂载进模型容器。
 
 ## 工作流(20 个单元)
 
@@ -93,7 +93,7 @@ adapter 镜像同时复制当前锁定的 Harness Runtime。默认从 `SURE_HARN
 
 ## 最终 bundle 布局(与 /sure_onboard 对齐)
 
-`finalize_model_bundle` 通过后,`sure/models/<model_name>/` 与 `/sure_onboard` 的产物布局一致,`/sure_eval` 直接消费同一组 terminal sidecar:
+`finalize_model_bundle` 通过后,`sure/models/<model_name>/` 与 `/sure_onboard` 的产物布局一致,`/sure_infer` 直接消费同一组 terminal sidecar:
 
 ```text
 sure/models/<model_name>/
@@ -115,7 +115,7 @@ sure/models/<model_name>/
 
 - `package_gate.json` 使用 `sure.onboard.package_gate.v2`,`model_dir="."`、`artifact_manifest_path="artifacts/artifact_manifest.json"`,`readiness.{local_ready,docker_ready,registry_ready,bundle_ready}=true`,`docker.dockerfile_sha256` 对应 bundle 根目录的 `Dockerfile.sure`。
 - `artifact_manifest.json` 使用 `sure.onboard.artifact_manifest.v1`,`phase=deployment_ready`、`status=finalized`,required 含全部 terminal sidecar。
-- `runtime_inventory.json` 使用 `sure.onboard.runtime_inventory.v2`,`policy.eval_runtime=container_only`、`host_python_fallback=false`、`image_override_allowed=false`、`nfs_models_mutable_by_eval=false`。adapter 镜像内置锁定版 Harness Runtime,`harness_runtime.required=true`,`/sure_eval` 使用镜像内的 Harness Python。
+- `runtime_inventory.json` 使用 `sure.onboard.runtime_inventory.v2`,`policy.eval_runtime=container_only`、`host_python_fallback=false`、`image_override_allowed=false`、`nfs_models_mutable_by_eval=false`。adapter 镜像内置锁定版 Harness Runtime,`harness_runtime.required=true`,`/sure_infer` 使用镜像内的 Harness Python。
 - `deployment_ready.json` 使用 `sure.onboard.deployment_ready.v1`,与 run 目录逐字节一致;ready bundle 必须声明 `integrity_profile=manifest-complete-v1`,`required_artifact_sha256` 覆盖 wrapper、Dockerfile、fixture、sample output、全部模型 payload 与 required sidecar,`bundle_identity_sha256` 为哈希表的摘要,四个 portable sidecar 不允许残留宿主机共享存储的绝对路径。
 - `check_artifact.py --kind deployment_ready` 与 `/sure_onboard` 的 `check_finalized_bundle.py` 执行同一组校验:bundle 与 run 双写一致、哈希复验、bundle identity 重算、portable manifest、Dockerfile 哈希、执行策略与 digest 固定引用。
 

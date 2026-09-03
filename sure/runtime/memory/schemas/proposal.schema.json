@@ -9,7 +9,7 @@
 		"schema": { "type": "string", "enum": ["sure.memory.proposal.v2"] },
 		"type": { "type": "string", "enum": ["bad_case", "fact"] },
 		"op": { "type": "string", "enum": ["add", "modify", "supersede"] },
-		"target_skill": { "type": "string", "enum": ["sure_onboard", "sure_eval", "sure_trans", "sure_feed", "sure_reval", "_shared"] },
+		"target_skill": { "type": "string", "enum": ["sure_onboard", "sure_eval", "sure_infer", "sure_trans", "sure_feed", "_shared"] },
 		"target_entry": { "type": ["string", "null"], "description": "entry id <target_skill>/<slug> for modify / supersede; null for add" },
 		"applies_to": { "type": "array", "items": { "type": "string" }, "description": "skills that may consume the entry; a bad_case must use exactly [target_skill]" },
 		"cell": {
@@ -43,7 +43,7 @@
 			"required": ["run_id", "skill", "target", "digest_sha256"],
 			"properties": {
 				"run_id": { "type": "string" },
-				"skill": { "type": "string", "enum": ["sure_onboard", "sure_eval", "sure_trans", "sure_feed", "sure_reval"] },
+				"skill": { "type": "string", "enum": ["sure_onboard", "sure_eval", "sure_infer", "sure_trans", "sure_feed"] },
 				"target": { "type": "string" },
 				"digest_sha256": { "type": "string", "description": "sha256 of artifacts/run_digest.json as built by the hook; gate rule 9 compares it with the checkpoint and the file on disk" }
 			},

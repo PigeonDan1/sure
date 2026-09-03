@@ -54,8 +54,8 @@ class ModelWrapper:
 with `class MCPServer` when the harness-provided fallback wrapper serves MCP for
 it instead. The harness decides this from `config.yaml`: if the model's `server`
 section omits `command`, `_resolve_server_command()` in
-`sure/skills/sure_eval/scripts/generate_predictions_via_server.py` and
-`sure/skills/sure_eval/scripts/run_model_mcp_smoke.py` launches
+`sure/skills/sure_infer/scripts/generate_predictions_via_server.py` and
+`sure/skills/sure_infer/scripts/run_model_mcp_smoke.py` launches
 `model_wrapper_mcp_server.py --model-dir <model_dir>` instead of
 `<model_dir>/server.py`. That adapter implements `initialize`, `tools/list`, and
 `tools/call` itself and calls the model's `model.py` `ModelWrapper` directly (or

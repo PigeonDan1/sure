@@ -2,8 +2,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MAIN_FLOW_UNITS } from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
 import { MODEL_FEED_UNITS } from "../../../../sure/skills/sure_feed/hooks/state-machine.ts";
+import { MAIN_FLOW_UNITS } from "../../../../sure/skills/sure_infer/hooks/state-machine.ts";
 import { MODEL_TOOL_UNITS } from "../../../../sure/skills/sure_onboard/hooks/state-machine.ts";
 import { TRANS_UNITS } from "../../../../sure/skills/sure_trans/hooks/state-machine.ts";
 
@@ -26,7 +26,7 @@ function readJson(path: string): any {
 const unitsRegistry = readJson(join(MEMORY_LIB, "units.json"));
 const memoryConfig = readJson(join(MEMORY_LIB, "config.json"));
 
-// Spec §4.1 / plan §1.10: the same object in sure_onboard and sure_eval. sure_trans's Unit type
+// Spec §4.1 / plan §1.10: the same object in sure_onboard and sure_infer. sure_trans's Unit type
 // has no helperScripts, so it carries the digest builder in ownedScripts instead; everything the
 // gate itself reads has to stay identical, which is what TRANS_EXTRACT_LESSONS_UNIT below pins.
 const EXTRACT_LESSONS_UNIT = {
@@ -57,7 +57,7 @@ const TRANS_EXTRACT_LESSONS_UNIT = { ...EXTRACT_LESSONS_UNIT_CORE, ownedScripts:
 type UnitLike = { id: string; schemaRef?: string; gateScript?: string; helperScripts?: string[] };
 const MACHINES: Array<{ skill: string; units: UnitLike[] }> = [
 	{ skill: "sure_onboard", units: MODEL_TOOL_UNITS },
-	{ skill: "sure_eval", units: MAIN_FLOW_UNITS },
+	{ skill: "sure_infer", units: MAIN_FLOW_UNITS },
 	{ skill: "sure_feed", units: MODEL_FEED_UNITS },
 	{ skill: "sure_trans", units: TRANS_UNITS },
 ];
@@ -66,15 +66,15 @@ describe("sure/runtime/memory/units.json mirrors the state machines", () => {
 	it("has the five skill keys and the v1 schema tag", () => {
 		expect(unitsRegistry.schema).toBe("sure.memory.units.v1");
 		const skills = Object.keys(unitsRegistry.skills).sort();
-		expect(skills).toEqual(["sure_eval", "sure_feed", "sure_onboard", "sure_reval", "sure_trans"]);
+		expect(skills).toEqual(["sure_feed", "sure_infer", "sure_onboard", "sure_reval", "sure_trans"]);
 	});
 
 	it("lists sure_onboard units in MODEL_TOOL_UNITS order", () => {
 		expect(unitsRegistry.skills.sure_onboard).toEqual(MODEL_TOOL_UNITS.map((unit) => unit.id));
 	});
 
-	it("lists sure_eval units in MAIN_FLOW_UNITS order", () => {
-		expect(unitsRegistry.skills.sure_eval).toEqual(MAIN_FLOW_UNITS.map((unit) => unit.id));
+	it("lists sure_infer units in MAIN_FLOW_UNITS order", () => {
+		expect(unitsRegistry.skills.sure_infer).toEqual(MAIN_FLOW_UNITS.map((unit) => unit.id));
 	});
 
 	it("lists sure_trans units in TRANS_UNITS order", () => {
@@ -96,12 +96,12 @@ describe("extract_lessons unit (spec §4.1)", () => {
 		expect(ids[22]).toBe("finalize_model_bundle");
 	});
 
-	it("sits between assessment and run_report in sure_eval", () => {
+	it("sits between execute_inference and run_report in sure_infer", () => {
 		const ids = MAIN_FLOW_UNITS.map((unit) => unit.id);
-		expect(ids.length).toBe(13);
-		expect(ids.indexOf("extract_lessons")).toBe(11);
-		expect(ids[10]).toBe("assessment");
-		expect(ids[12]).toBe("run_report");
+		expect(ids.length).toBe(4);
+		expect(ids.indexOf("extract_lessons")).toBe(2);
+		expect(ids[1]).toBe("execute_inference");
+		expect(ids[3]).toBe("run_report");
 	});
 
 	it("sits between verdict and finalize_model_bundle in sure_trans", () => {
@@ -112,7 +112,7 @@ describe("extract_lessons unit (spec §4.1)", () => {
 		expect(ids[20]).toBe("finalize_model_bundle");
 	});
 
-	it("is defined identically in sure_onboard and sure_eval", () => {
+	it("is defined identically in sure_onboard and sure_infer", () => {
 		const onboard = MODEL_TOOL_UNITS.find((unit) => unit.id === "extract_lessons");
 		const evaluation = MAIN_FLOW_UNITS.find((unit) => unit.id === "extract_lessons");
 		expect(onboard).toEqual(EXTRACT_LESSONS_UNIT);
@@ -161,7 +161,7 @@ describe("extraction_declaration.schema.json copies", () => {
 		expect([...schema.required].sort()).toEqual([...EXTRACT_LESSONS_UNIT.requiredFields].sort());
 	});
 
-	it.each(["sure_onboard", "sure_eval", "sure_trans"])("%s keeps a byte-identical copy under schemas/", (skill) => {
+	it.each(["sure_onboard", "sure_infer", "sure_trans"])("%s keeps a byte-identical copy under schemas/", (skill) => {
 		const copyPath = join(SKILLS_DIR, skill, "schemas", "extraction_declaration.schema.json");
 		expect(existsSync(copyPath), copyPath).toBe(true);
 		const same = readFileSync(copyPath).equals(readFileSync(sharedPath));
@@ -174,7 +174,7 @@ describe("config.json trigger_template_phrases still appear in the hook sources"
 	// triggers because they come from the hooks' own repair templates. If a
 	// phrase is reworded in validate.ts / index.ts the table must follow.
 	const sourceFiles: string[] = [];
-	for (const skill of ["sure_onboard", "sure_eval"]) {
+	for (const skill of ["sure_onboard", "sure_infer"]) {
 		for (const file of ["validate.ts", "index.ts"]) {
 			sourceFiles.push(join(SKILLS_DIR, skill, "hooks", file));
 		}

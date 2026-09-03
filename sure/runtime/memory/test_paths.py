@@ -275,7 +275,7 @@ class ConfigFilesTests(unittest.TestCase):
         self.assertTrue(cfg["inject_header"].startswith("Memory (advisory"))
 
     def test_cause_enum_starts_with_the_eval_failure_taxonomy(self) -> None:
-        taxonomy = REPO_ROOT / "sure" / "skills" / "sure_eval" / "references" / "failure_taxonomy.md"
+        taxonomy = REPO_ROOT / "sure" / "skills" / "sure_infer" / "references" / "failure_taxonomy.md"
         names = re.findall(r"^## \d+\. (\S+)$", taxonomy.read_text(encoding="utf-8"), flags=re.M)
         self.assertEqual(len(names), 8)
         self.assertEqual(paths.load_config()["cause_enum"][:8], names)
@@ -286,11 +286,11 @@ class ConfigFilesTests(unittest.TestCase):
         units = paths.load_units()
         self.assertEqual(units["schema"], "sure.memory.units.v1")
         skills = units["skills"]
-        self.assertEqual(set(skills), {"sure_onboard", "sure_eval", "sure_feed", "sure_reval", "sure_trans"})
-        ob, ev, tr, fd = skills["sure_onboard"], skills["sure_eval"], skills["sure_trans"], skills["sure_feed"]
+        self.assertEqual(set(skills), {"sure_onboard", "sure_infer", "sure_feed", "sure_reval", "sure_trans"})
+        ob, ev, tr, fd = skills["sure_onboard"], skills["sure_infer"], skills["sure_trans"], skills["sure_feed"]
         self.assertEqual(ob[ob.index("verdict") + 1], "extract_lessons")
         self.assertEqual(ob[-1], "finalize_model_bundle")
-        self.assertEqual(ev[ev.index("assessment") + 1], "extract_lessons")
+        self.assertEqual(ev[ev.index("execute_inference") + 1], "extract_lessons")
         self.assertEqual(ev[-1], "run_report")
         self.assertEqual(tr[0], "load_trans_input")
         self.assertEqual(tr[tr.index("verdict") + 1], "extract_lessons")

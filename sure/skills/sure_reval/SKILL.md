@@ -63,7 +63,7 @@ before re-evaluation.
 The agent runs:
 
 ```bash
-"$HARNESS_PYTHON_BIN" ../sure_eval/scripts/run_reval.py \
+"$HARNESS_PYTHON_BIN" ../sure_infer/scripts/run_reval.py \
   --model <model> \
   --datasets <dataset__version> \
   --protocol-id <standard_system|strict_core> \

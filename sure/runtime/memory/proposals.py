@@ -690,7 +690,7 @@ def prior_run_ids(digest: dict | None) -> list[str]:
 def prior_run_texts(digest: dict | None) -> list[str]:
     """The last_repair of each prior run a GATE wrote (last_repair_source "gate"), in digest order.
 
-    A unit that runs after extract_lessons -- sure_eval's run_report, sure_onboard's
+    A unit that runs after extract_lessons -- sure_infer's run_report, sure_onboard's
     finalize_model_bundle -- can only be blocked after this run's digest already exists, so its gate
     text never reaches units[] and no second extraction window opens. The next run of the same skill
     on the same target carries it in prior_runs[].last_repair, and that is the only place it is.
