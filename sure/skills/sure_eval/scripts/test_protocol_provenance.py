@@ -16,6 +16,7 @@ import check_run_report  # noqa: E402
 import evaluate_predictions  # noqa: E402
 import generate_predictions_via_server  # noqa: E402
 import import_prediction_source  # noqa: E402
+import protocol_writer  # noqa: E402
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -235,6 +236,38 @@ class ProtocolProvenanceTests(unittest.TestCase):
         self.assertEqual(payload["updated_at"], "new")
         self.assertEqual(dataset["dataset"], "new")
         self.assertEqual({row["dataset"] for row in payload["datasets"]}, {"old", "new"})
+
+
+class ProtocolWriterModuleTests(unittest.TestCase):
+    def test_write_protocol_yaml_without_results(self) -> None:
+        # The inference entrypoint writes protocol.yaml before any evaluation
+        # exists: no results rows, no model_dir, only the generation status.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "infer_run"
+            run_dir.mkdir()
+            write_json(
+                run_dir / "prediction_generation_status.json",
+                {"schema": "sure.eval.prediction_generation_status.v2", "runtime": {}, "generation": {}},
+            )
+            protocol_writer.write_protocol_yaml(
+                run_dir, "standard_system", None, results=None, tool_name="transcribe_audio"
+            )
+            protocol = yaml.safe_load((run_dir / "protocol.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(protocol["schema"], "sure.eval.inference_protocol.v1")
+        self.assertEqual(protocol["protocol_id"], "standard_system")
+        self.assertEqual(protocol["model"]["mcp_tool_name"], "transcribe_audio")
+        self.assertFalse(protocol["prediction_reuse"]["enabled"])
+        self.assertEqual(protocol["prediction_reuse"]["generation_policy"], "generated_by_model_server")
+        self.assertEqual(
+            protocol["provenance"]["prediction_generation_status"],
+            str(run_dir / "prediction_generation_status.json"),
+        )
+        self.assertEqual(
+            protocol["provenance"]["prediction_generation_status_schema"],
+            "sure.eval.prediction_generation_status.v2",
+        )
+        self.assertIsNone(protocol["provenance"]["evaluation_engine"]["root"])
+        self.assertEqual(len(protocol["execution_surface"]["template_sha256"]), 64)
 
 
 if __name__ == "__main__":
