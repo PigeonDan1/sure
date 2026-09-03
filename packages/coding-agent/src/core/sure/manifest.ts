@@ -7,19 +7,8 @@ const SURE_REPOSITORY_SKILLS_DIR = "sure/skills";
 const SURE_MANIFEST_NAME = "sure.skill.json";
 
 export const SURE_COMMANDS = [
-	"knowledge_graph",
-	"literature_survey",
-	"research_idea",
-	"novelty_check",
-	"run_experiment",
-	"data_workflow",
-	"model_eval",
-	"model_mcp",
-	"paper_reproduction",
-	"science_gateway",
-	"research_discussion",
-	"sure_eval",
 	"sure_infer",
+	"sure_eval",
 	"sure_approve",
 	"sure_onboard",
 	"sure_trans",

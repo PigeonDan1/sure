@@ -1,7 +1,7 @@
 {
   "schema": "sure.public_export_manifest.v2",
-  "projection_id": "sha256:45baf21b44dd266269f1abf09658bc7f9e2fe90a92857d6257ee5af7d406f048",
-  "tree_sha256": "45baf21b44dd266269f1abf09658bc7f9e2fe90a92857d6257ee5af7d406f048",
+  "projection_id": "sha256:d89298c9851175ff7503d10a1783d4140e9084a513d0c310fb2c007020a349c2",
+  "tree_sha256": "d89298c9851175ff7503d10a1783d4140e9084a513d0c310fb2c007020a349c2",
   "files": [
     {
       "path": ".gitattributes",
@@ -13,13 +13,13 @@
       "path": ".github/workflows/public-ci.yml",
       "type": "file",
       "mode": "100644",
-      "sha256": "0e7036a591458f4722dd51014bbce13ce69a0bdd72c39b28815278a8bdf53292"
+      "sha256": "5bc5aea09c1988e612effb30d64934bdfc2a8deaca52ac0321a1ce6bf6287efb"
     },
     {
       "path": ".gitignore",
       "type": "file",
       "mode": "100644",
-      "sha256": "a6b2d01d78e620dc3bcdb34e7e58d240040391fc7104d3cfde29e09843b53a49"
+      "sha256": "16a2e44d8997c003f036331230dfb8e19c881867be13677e6f34eed60e050c51"
     },
     {
       "path": ".gitmodules",
@@ -43,7 +43,7 @@
       "path": "AGENTS.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "f7e16c657a77779d3f57e81503f39dd35d984df24d0c64e726ee8383bdf0c328"
+      "sha256": "077080f8ed1df4ae19e4f58bbfcd5961fc1489abadb45c6616b4f9d8f2fe5f9d"
     },
     {
       "path": "biome.json",
@@ -67,25 +67,25 @@
       "path": "docs/assets/harness-terminal-dark.svg",
       "type": "file",
       "mode": "100644",
-      "sha256": "671d371543fa63698b53077b4a8aaae6809491f66af43d3e8760eb443a6b8178"
+      "sha256": "ced97e975592b746e53d2d5e401ebde3a41192059e694c92a46ed7c0c6914a38"
     },
     {
       "path": "docs/assets/harness-terminal.svg",
       "type": "file",
       "mode": "100644",
-      "sha256": "ee1421f8f4aeb57b4baff37cc60eb8acf9555ee1200040accc3c0fb6252791f1"
+      "sha256": "7805b048752f26be00f61f4fe2ffcc4f6889bf8ab4dfcc4686635eef9f549c25"
     },
     {
       "path": "docs/evaluation_engine.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "b58902c015a688d7db273db137052c3409320d6b294d19736aa7c62e95ed42bb"
+      "sha256": "474b2d73bf20eb413c324a54ee7790039fbd5c48929f6b24712e9480e71ecdf4"
     },
     {
       "path": "docs/site-configuration.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "c0d960733b56f65e8ec34b2f5052dee80c4a8e931395338bede5b9dae6d69d2f"
+      "sha256": "c9856ae0d90c37ce7339363c644d914cb208d595b1e56532d96118c1aa8ae9b5"
     },
     {
       "path": "docs/superpowers/plans/2026-08-18-memory-system-e2e-runbook.md",
@@ -3853,13 +3853,13 @@
       "path": "packages/coding-agent/src/core/sure/init.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "16e14e72ca8520478434e945b5044e75c16d0b0ee1608559af289f6c9212257c"
+      "sha256": "39b83206954a169169138dbec4c69b7ec9f2987f72343b7923e8dc050b10dead"
     },
     {
       "path": "packages/coding-agent/src/core/sure/manifest.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "8a8f669d01da67cfde7dc9cd19dd225659f46178c5384ac6931fe416ae927843"
+      "sha256": "325eec31e0ab282df9e1b2da4dbdfdfcf7fb2354734948bcebe45370fb24ea08"
     },
     {
       "path": "packages/coding-agent/src/core/sure/module-loader.ts",
@@ -5593,25 +5593,31 @@
       "path": "packages/coding-agent/test/suite/sure-eval-red-lines.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "abe23a5ae9d47bf7fccb2b465a98c07217cdf43ec3722f6e43007ea7cd3b7bfa"
+      "sha256": "21fe71d85af66b0ad20e6919e44493fd1a92a60463e1f41891e362bfa41f7235"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-eval-runbackend.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "cedee1ce8d74019f0ef6dbf507a2af06c7b9d31c699257fdac1ef469589d0726"
+      "sha256": "347bca2163aa22e4e607c12ba1671234da2cd716ec7fc06402ddf4d39ae83ada"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-eval-state-machine.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "f241cb0dffada8717d91f0631c20ec82cc22a264ed9bf1df3229c856d7c54998"
+      "sha256": "c382c4ce891cedd5b1ad44378b3f20e413437ad9bad1ab21f5d72b6b8bb7dbd7"
+    },
+    {
+      "path": "packages/coding-agent/test/suite/sure-eval-terminal.test.ts",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "d022542dc6b970fdd5ece45cf13280ef8054770ed0e288cf555ae012ae193c49"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-extension.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "f95e61a0c6427dd5447223744cb137798bfda6a2434d4cfcc375b6497dabd47b"
+      "sha256": "c966d883336c15d54d470b77d4533137a08ea1c478c79c43b69852543535a2e1"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-feed-memory.test.ts",
@@ -5626,10 +5632,16 @@
       "sha256": "6e3e774d6fc120c07e91e2ff01a1a88a2394bb15878fd5ed762027b418aac9eb"
     },
     {
+      "path": "packages/coding-agent/test/suite/sure-infer-state-machine.test.ts",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "0aa81cbad5cb6be71ba116647b06090c2faba501d63930a0911065d38a2085cc"
+    },
+    {
       "path": "packages/coding-agent/test/suite/sure-memory-eval-hooks.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "035301bbf0a26a159b30ce06229d4aeb159b96cafda8d56be23da8b86311d1f5"
+      "sha256": "63f397843bdeb123bc0b11b85dc9f516c80fc64590fa5d2c97b060b8b7072bdf"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-hooks-flow.test.ts",
@@ -5641,19 +5653,19 @@
       "path": "packages/coding-agent/test/suite/sure-memory-hooks.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "5b56286d284bc1ec63c34bb56ceba2c2ddf8b140af153b816cf3498d9c4fd806"
+      "sha256": "0b8715a677f19b0d8a3b2a60a6b9d457d81e95af53d150769dfcc55203ff01cb"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-match.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "04578f04a96d6164a21e9390e95616d00ab2b94e9a85b318e42cce7c36065dff"
+      "sha256": "f3de85b4a0080bf87ce0e56791134545a2f9a90e5952e92cdcbb9b8297e10563"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-units.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "1b3885eb0258f53176c8e9bb125d5ca6ba0ce36a369ec3d24f906885698c1374"
+      "sha256": "78c747e60eb9151ad0903c0795cba5b60d191ada4ef6546ce3dc7cd621141add"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-memory.test.ts",
@@ -5674,12 +5686,6 @@
       "sha256": "859620219726dcf41b2b382a53dd12b77c4b031005ea44a4e6a85f83b1813a0e"
     },
     {
-      "path": "packages/coding-agent/test/suite/sure-reval-terminal.test.ts",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "d6925f0ae29d784df92d071cdb6a462f389d521b675071d83a59e75cad47e34c"
-    },
-    {
       "path": "packages/coding-agent/test/suite/sure-run-output-dir.test.ts",
       "type": "file",
       "mode": "100644",
@@ -5689,19 +5695,19 @@
       "path": "packages/coding-agent/test/suite/sure-runtime-binding.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "7abcb6f30857380ac297ba3bef33b174fc58790cd85648e51873c77e802991fb"
+      "sha256": "76c18e904363a6f1fee68275545dde5fae7583c983d46525bdc81ac113d5d868"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-script-guard.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "565f57ac030225decd6f2b5c75c202884d0fe1dbdccb98517d70f8eea84f667b"
+      "sha256": "d7eaef90f2904f2490f64e0187770cab267b4d996cc0577af045053bdb6f8710"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-skill-output-dir.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "0933eae435ab68f67e2c6b8c45fb8eecde9cc017cd6a5edee6c9ade064a94ec6"
+      "sha256": "43b76b10f32f63476862c1663406c0af30d48ec8cf3a2da8b3248db8b0606ed0"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-trans-adapter-draft.test.ts",
@@ -5779,19 +5785,19 @@
       "path": "packages/coding-agent/test/sure/init.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "6cff5d5692077bb9d5855d62c34c608af3aead9f1def424bd130371c279097ef"
+      "sha256": "2caff071547596387e0eb02ae341cf83171296aae0df41b44e71b8da08d93865"
     },
     {
       "path": "packages/coding-agent/test/sure/manifest.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "0245f0abe9c606bda6b00b701f8f57d6fef955548accbebe1e42f70660f7ee3b"
+      "sha256": "cde5ba83312ace60aa6bfb77a7a8696ffc956886066ee46ad461340479157d64"
     },
     {
       "path": "packages/coding-agent/test/sure/site-loader.test.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "fd250dee4217ba27d5fb7fa8a1a79dcdcc9603c52fa142ec5a8c2b8078c0aee4"
+      "sha256": "b3fc53d4aaac35ff91668974144d92546607fde43798de108af1663b59935fe5"
     },
     {
       "path": "packages/coding-agent/test/syntax-highlight.test.ts",
@@ -6475,13 +6481,13 @@
       "path": "public-export.yaml",
       "type": "file",
       "mode": "100644",
-      "sha256": "47d18b3e71b2b54da4bfe0c4816c8685fc05b01f3b054904b45cb9c6a1cdce03"
+      "sha256": "505356c8f79626caf6be58d6b0cdb222b9b2b48f8ec62050345d7ec32ba3e7e9"
     },
     {
       "path": "README.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "e370e151a6dfbbf53535acc3f9be1136da034e3bf21cadf9a51032f9e794b5ff"
+      "sha256": "68ed8c56cce3c0302b6ee6d7e97ad71106e3ff161ca61f4aad5e72dc17e7ad2b"
     },
     {
       "path": "requirements.txt",
@@ -6529,7 +6535,7 @@
       "path": "scripts/check-pinned-deps.mjs",
       "type": "file",
       "mode": "100644",
-      "sha256": "36d40f115e3b9699523c44eb94ab0792f21e679145e639adabdbdf76f37bce84"
+      "sha256": "f3f98ba77fb7f74435cc4a28706d93dcfdbe8fd02e2f7e281491ecad92f7f817"
     },
     {
       "path": "scripts/check-repository-hygiene.mjs",
@@ -6541,13 +6547,13 @@
       "path": "scripts/check-site-boundary.mjs",
       "type": "file",
       "mode": "100644",
-      "sha256": "5802a1191df6279aaeec3fa01fdf3a8b9e4f45355840788ab1598c52bd0cada9"
+      "sha256": "9a2cac765b5e8a1cc00a8f88daa82f1756c67d18e0de597992272ccae45456dc"
     },
     {
       "path": "scripts/check-site-compatibility.mjs",
       "type": "file",
       "mode": "100644",
-      "sha256": "3d2c5471b49ece609813322d82df9647236716f8e144dd3c6a8ee9336d721627"
+      "sha256": "8f5a88c9377f58ff640dc7d2b5280e74745e5692314ec04df41327f4415f49bc"
     },
     {
       "path": "scripts/check-ts-relative-imports.mjs",
@@ -6601,7 +6607,7 @@
       "path": "scripts/generate-readme-terminal.mjs",
       "type": "file",
       "mode": "100644",
-      "sha256": "4ccad07198c0b46d8787df5743a44c9af8da7d78b6385de77e6142dbe8b54324"
+      "sha256": "c27936031f816998917808b8a7dc3da8855a4cbc1059745be813117cb4897747"
     },
     {
       "path": "scripts/local-release.mjs",
@@ -6685,7 +6691,7 @@
       "path": "scripts/sure-doctor.mjs",
       "type": "file",
       "mode": "100644",
-      "sha256": "44edbc6d20b8543a757c18e1aee6dfa236790a1d400e3e62f861b2bb571a9639"
+      "sha256": "5667130cd20c9c89dde686753243f75bd03784b9993dd23710a145772e0fb757"
     },
     {
       "path": "scripts/sure-site-check.ts",
@@ -6739,7 +6745,7 @@
       "path": "sure/compat/README.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "d989f425b8fa860488a6beac6b231f32e89c1984aef789218db8ac7df79c5961"
+      "sha256": "5bcbbd1c9d67c7790bc3942798748c65c93796106cb95bed0fc7d69fcd1bd09a"
     },
     {
       "path": "sure/external/README.md",
@@ -6847,7 +6853,7 @@
       "path": "sure/runtime/memory/__init__.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "8555f96437645ddde2777da3d9903f75349f08c5adad0d3c416457c2344d24d2"
+      "sha256": "bcc9577dc99ab185697f1a034c8b2168574ca5f50d14535aeeae52cd5d207cfb"
     },
     {
       "path": "sure/runtime/memory/cli.py",
@@ -6859,25 +6865,25 @@
       "path": "sure/runtime/memory/config.json",
       "type": "file",
       "mode": "100644",
-      "sha256": "c97cf7c44b65c214f316790f0c25b87c0991023a2613e1f21d6ff297808a9f77"
+      "sha256": "4c678d253599c4e3d328980600072c19a4502731de5b809a39d060f3c7089531"
     },
     {
       "path": "sure/runtime/memory/digest.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "40efe67fb6e91e187e472454e0eeba74f31063449f06f99a973a0b3fb9fea0d1"
+      "sha256": "0a8ab69a234fe4cf226eb2469a9cd49b3ad359b25a3150957c010f990911e579"
     },
     {
       "path": "sure/runtime/memory/EXTRACTION.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "99825a339c3ff82b83b63a20ea7329d38d804a395a7427d89c0f80e22cd8f2ef"
+      "sha256": "ccc671e6f1e66897aeb6315822d25b727fd94c7aaec95e1545f5e94bd1d26fba"
     },
     {
       "path": "sure/runtime/memory/fixtures/golden_index.json",
       "type": "file",
       "mode": "100644",
-      "sha256": "750cc7f243d63d5ba96080aa2aa02d46727d6369814ebce6187c13fd0f0d08da"
+      "sha256": "a230035c6ba8cda6d5daf168f09e7fe15e7841623cfb22d9da1a75545dbf4c61"
     },
     {
       "path": "sure/runtime/memory/fixtures/match_vectors.json",
@@ -6889,7 +6895,7 @@
       "path": "sure/runtime/memory/hooks.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "24b28af735d56b16c2aa49a23706b582492eb702e6e973cee80986b4549c757a"
+      "sha256": "a8e8e8c2ba032e6428012b7705859aac586e5bb7a1065745a3a82271e134170e"
     },
     {
       "path": "sure/runtime/memory/index.py",
@@ -6901,13 +6907,13 @@
       "path": "sure/runtime/memory/log_paths.json",
       "type": "file",
       "mode": "100644",
-      "sha256": "d9daffd1e44b3c570e36d3d3f95b375703dd759a413f4132cbd6151da6386627"
+      "sha256": "ab90cd8f0aa8dcaf1e6681c1a442687727ecaeaa9001234600c2cc1a94948211"
     },
     {
       "path": "sure/runtime/memory/match.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "7125fe080d83f27a93ec7695e1b072f755ddd3bb1a6f88613e930d94ca37c463"
+      "sha256": "d1fa7facb417c47d7593830f2ab6106b7fb9e5f2d1b8a4d522f0ca2700a67b05"
     },
     {
       "path": "sure/runtime/memory/paths.py",
@@ -6925,7 +6931,7 @@
       "path": "sure/runtime/memory/proposals.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "b89e2b2625d31e7467b7c7df6a0b71034f9dfe4035ac8f90a11605097d63d10e"
+      "sha256": "9232dc22504ef6d239856c20778e2d1741df3e6e2e528df6e9976244c15a3faa"
     },
     {
       "path": "sure/runtime/memory/publish.py",
@@ -6955,7 +6961,7 @@
       "path": "sure/runtime/memory/schemas/proposal.schema.json",
       "type": "file",
       "mode": "100644",
-      "sha256": "61e542b4f09bbf3fc2cd8d4611ccffd1a16ed62352a6d2c6a3b31657be7a069a"
+      "sha256": "6d46ecce458f03f8057d0a9da07c61942915678d37b8368c12de9954bc67fef2"
     },
     {
       "path": "sure/runtime/memory/schemas/run_digest.schema.json",
@@ -6967,31 +6973,31 @@
       "path": "sure/runtime/memory/test_cli.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "78db170a0f334a36228b098614dbb0a360242209d0d2ae89d2c5c85a4f919421"
+      "sha256": "6fd28862b55486e9e53b1776081452d3fecf651351d92a54453c4d51024adc1f"
     },
     {
       "path": "sure/runtime/memory/test_digest.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "fcf81a65db317b6d324db77f3c8eff977d8a1900e08f229375fc422ada69dd8a"
+      "sha256": "73d21e46701b154bb34f679f719f5a5630b2575d8a3e7c58162d0763ba93ba10"
     },
     {
       "path": "sure/runtime/memory/test_docs.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "debf3d306a87a1266707b6b1712cea509c42511a1c7c2c19b1e689e38f03e298"
+      "sha256": "66acea9f912fecf4febac6446bd6f265214e586847e461f6af14103160bf7995"
     },
     {
       "path": "sure/runtime/memory/test_index.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "bf30a49f1acc262a223c1cec126fbee0b203c3961e4a53125af5896b24ebf830"
+      "sha256": "c84e570650e777283b53d9f6f44c2ea7a2e4e0eb42173596c880362b150340e4"
     },
     {
       "path": "sure/runtime/memory/test_paths.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "9181f3c4bbce9cf71db4235029baa81414d1a58f643845b048b6f60dba385726"
+      "sha256": "73dfb054dffd51b41667296228488d874dd6871c746eb0607c69d1512a8e7ee1"
     },
     {
       "path": "sure/runtime/memory/test_promote.py",
@@ -7003,13 +7009,13 @@
       "path": "sure/runtime/memory/test_proposals.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "4bc05994d219692f6bf7a5578812811ee3ac71bcdbee2698a1403a395ebe0534"
+      "sha256": "294199546b03b68bd3d64304f5adef6f6e9ccbca6534e19bca2cb8b2b6859131"
     },
     {
       "path": "sure/runtime/memory/test_publish.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "4068ee6cb3724f88f861dd1588bd2eee0eaaac4fc26406c3a64b0220d3d03850"
+      "sha256": "9050e454c1445e231e876b02af247760fc2febfa43f49382bd14c8a143768bfc"
     },
     {
       "path": "sure/runtime/memory/test_usage.py",
@@ -7027,7 +7033,7 @@
       "path": "sure/runtime/memory/units.json",
       "type": "file",
       "mode": "100644",
-      "sha256": "35ad0763ff5269d03a21bb6933f220c456e21ef0b73885fe11fd89c88c2314b6"
+      "sha256": "206027d945ba7ed28007dee0698aca36ed889e14b62a7fbd999d9f6867233130"
     },
     {
       "path": "sure/runtime/memory/usage.py",
@@ -7087,19 +7093,19 @@
       "path": "sure/site/loader.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "59e7a9ce2e6e4f8c3c3644c6f4af2517d95a069e6c61015caf1801acc4871698"
+      "sha256": "6b937afa81b79246b0fe25fa3895a6292eb16b60e1e8f023f3fc0ef4c7fc2f28"
     },
     {
       "path": "sure/site/loader.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "6e8562651e2c3e2d3a600c84497160347e217acdcbbcca96579005a190be9290"
+      "sha256": "740a2512eb4b4a1aaef8d9578599e6c5161d04fe15ecd8751cc4c2caef62342a"
     },
     {
       "path": "sure/site/policy.schema.json",
       "type": "file",
       "mode": "100644",
-      "sha256": "a31d00fca98870e0228ac5d225657cb19b6e9d74f7bcf4a3f6bc9aa466e966ec"
+      "sha256": "10731d1823c9d89bdf4ce3516033857c77a7474396b4da4dc56666372a6fdec9"
     },
     {
       "path": "sure/site/public.example.yaml",
@@ -7123,7 +7129,7 @@
       "path": "sure/site/test_loader.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "e0770ac2d9f40057124de9a20f3793b731709056bcff4c8cd04f55062dec0553"
+      "sha256": "4721c2f063211db274168bb19520fe20dbb7e8231c39d4ba6385821ef8f79a3b"
     },
     {
       "path": "sure/skills/_shared/memory/facts/README.md",
@@ -7153,7 +7159,7 @@
       "path": "sure/skills/sure_approve/hooks/index.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "dbec24b817c7b1f2c45683d260d02714f904faca1e63736ec855d725a41a66a7"
+      "sha256": "15945da2c80705c368eaeb038d913efcd578f0d0ee7267de1456e6c1bd528bdb"
     },
     {
       "path": "sure/skills/sure_approve/hooks/state-machine.ts",
@@ -7255,7 +7261,7 @@
       "path": "sure/skills/sure_approve/scripts/approval_core.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "752785732f05ad3022ba6e9b4fb74f1bdd5d92f85986739538b5fbb797cd13dd"
+      "sha256": "83b46d4002a66bdb53ca9b1c4145d95a3f4b7078f9e0abcb8cd30a03d0576d56"
     },
     {
       "path": "sure/skills/sure_approve/scripts/audit_bundle.py",
@@ -7315,7 +7321,7 @@
       "path": "sure/skills/sure_approve/SKILL.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "9e840d8eaa4de854b18c3d37830651c221096675bfe4e9eb9150dd1b82d5712c"
+      "sha256": "1cfa0c8e44b72c4d11afeea03f6d50af100f97204300fd987706e97e4911cb50"
     },
     {
       "path": "sure/skills/sure_approve/sure.skill.json",
@@ -7324,34 +7330,22 @@
       "sha256": "a558f70b865bd65f2a83ad609adccad6359d7860fcb556c2bbb168c71c291051"
     },
     {
-      "path": "sure/skills/sure_eval/config/protocols.yaml",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "23a542bd7c045c11c5b86a564467a01a96c655e0fd62ef3c9646371403761218"
-    },
-    {
-      "path": "sure/skills/sure_eval/examples/minimal-input.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "df1677e7a33fc72ead1598f4cbb4ab14c5b560f091a225032253dacc0b9f925a"
-    },
-    {
       "path": "sure/skills/sure_eval/hooks/checkpoints.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "c0ace5b05294af979f2930d8dc24548a445ae84e3e77742e6137b84386d1df7c"
+      "sha256": "866dcf5e7fcb7158a9b4cbe0a4bc1ec78982ddc4f155d3cc2ead8dcce5175d59"
     },
     {
       "path": "sure/skills/sure_eval/hooks/index.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "8f78372f24f24553ccda6050ba27d9b38e1883658125adcbe0a348263d65c902"
+      "sha256": "2feadec7b636e732467e0b3c09bfdca50e56b2e7c46b805764a4449147541ff4"
     },
     {
       "path": "sure/skills/sure_eval/hooks/state-machine.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "ff79503d4551013eb9aeec171981d7d9801143b324ed58382639c02a67fd5b5e"
+      "sha256": "a617bd93281dcdb5a9788989dd93c8b36fd4336fffb406aa18e97c1d6f53b8e1"
     },
     {
       "path": "sure/skills/sure_eval/hooks/validate.ts",
@@ -7360,154 +7354,10 @@
       "sha256": "9a50ff464c7e6423c001c019652e2ceff62dc63c6abbecc72303f0bd42fa975c"
     },
     {
-      "path": "sure/skills/sure_eval/references/contracts/eval_run_layout.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "7ad126d93884b172eb6c203fa3d112a01931e17a8cd56b07cdd5213916e644de"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_assessment_unit.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "29d34702e4c2e13d666bac504dd71e7a8639fdcc868445e45ef945d2f1ae62cc"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_dataset_unit.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "b6ed17abb9226351521bc2640967dae48b00cb59f1b29cc87f647c5b9b65482e"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_execution_readiness_unit.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "b9511559505e73ed0528ce1e28e46145fe9a5864eb5a49d5e6fb5319d2af78a2"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_execution_surface_unit.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "87635a4348b984c8617efeafefd6f06f381e0afc28f082821a166260202fcef3"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_plan_unit.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "770330177907416b7f1b95aebe6f9418065b1d2b0dbe5f61fe7ec6be1d67083d"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_qwen3_asr_case.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "4d26b1f2393f86586b782fc50f72f0e8a01781f7963d622b239ff8efca16ab58"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_run_report_unit.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "dc6344de5e7834560f5309d94580916b4c0d715048dadee20cd54617845be398"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_script_routing_unit.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "61760aae1154b0350941b91fc3dca722cb8cdeae8427d586959157b48e9da6b0"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_spec.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "4ff187c7ba27a68dae60b567e2837be87d9584401a867ab1e492c5ca814bd8ef"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_task_unit.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "3330df63488fe9a899aa2ca6a3f3a8ba58ec0d15130dc1a281e8183b9870fe6c"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_tool_readiness_unit.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "f8faea9652882a4b52a979cc4ab540f290eef10bff2981cebe25949d040e5339"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_agent_worked_example.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "ccabcde051e0964c255743583428b7d8476f28b33238da26bb2d25cf3e3402f1"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/main_flow_architecture.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "b88be4142252f3d5de74dad6b8be16976bdbd7d7966038d3df4582d98fd38f95"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/model_eval_manifest.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "45e4ae9097e40519f46b50af64a3b6048f2b20b6859f8cfc6ed39af1a7b6accb"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/prediction_generation_contract.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "6adcda4f24dccb3dc88977ddc6b5c0d2f7eb1f0a352359296b5f99f7a8546736"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/contracts/single_model_single_dataset_shell.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "9a6ec7eb6d5247dc935183432b5176924eb88b442b5af53ed977b234b9f21488"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/examples/input_kimi.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "dbb663e57e70831949b96f9900544ebe01fa8e11ceae80a79d52c072c061af85"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/examples/input.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "4cf54ec6c98720dc5be40c5066bc9a53199a8d8098637cbc03dcbca6a6731b95"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/failure_taxonomy.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "d8f16489cb80baf2d54836fa271b5ea8ad8a6745adce1f592b10c13ebbba703f"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/memory/bad_cases/README.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e790374d5bd7006b03ae4512651653eed6974fc6dc6405fb087f931bfed535eb"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/memory/ROUTING.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "d4bbda4d2232dda03f4a8df0f6e0e3f4de7bdeccdde8321d5c6775bfe3e1d5fb"
-    },
-    {
-      "path": "sure/skills/sure_eval/references/retry_and_escalation.md",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "2809cab1a6aa985a396d6383ceca855e49db6aec726d1afd8b9dbbd63caaa835"
-    },
-    {
       "path": "sure/skills/sure_eval/schemas/assessment_report.schema.json",
       "type": "file",
       "mode": "100644",
       "sha256": "cbcb30d40a6a295df94b35cc6aff098b39885ce04cdef4bd4f24966a10c5ac2b"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/conversion_manifest.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "3cbe0178d7393cc3d38e8bac50b31151c83736fb114a87b27e2e531752c9656e"
     },
     {
       "path": "sure/skills/sure_eval/schemas/dataset_decision.schema.json",
@@ -7516,40 +7366,10 @@
       "sha256": "75136212399ed2d9426346949e89148f982fe0d044f942425b22c4a98ce24a33"
     },
     {
-      "path": "sure/skills/sure_eval/schemas/eval_input_resolved.schema.json",
+      "path": "sure/skills/sure_eval/schemas/eval_run_report.schema.json",
       "type": "file",
       "mode": "100644",
-      "sha256": "ec262079c67e2d11894cb80e207666baeeed5a60931510d495532b6b4a06ddf7"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/evaluation_route_plan.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "bde1875ff28ef28a4d0eefaa46c07ebc5c22f91eecf6d665bd6d347c87c2793a"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/execution_readiness_report.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "b110a42fabd84404173741f26706d8db0796f41216991bb8ab907638669c2318"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/execution_result.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "b0bc95fb307400e23d1b569b766303f12658198caa615c1be762448948f575bf"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/execution_surface_v2.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e0c8819e913b2badfa8e248e16bc1387377cc931a451a9bbe9a8a61b5e29550a"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/execution_surface.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "b3c9e2b646df587f9b66c6df71d149682a726f9c76d55fe98f4f5068397fa5ba"
+      "sha256": "410435ea28a1892f4112eeeae90a6e18e155f9a50309c748b3e897c8ffe901a7"
     },
     {
       "path": "sure/skills/sure_eval/schemas/extraction_declaration.schema.json",
@@ -7558,64 +7378,10 @@
       "sha256": "34be5a320df5e31634f50c2cde7704a657d086bf0381bc046a0d7229ab0e6cd6"
     },
     {
-      "path": "sure/skills/sure_eval/schemas/inference_protocol.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "3038e928b33b550067d8e5b25e39d51a31d1630c50b5f5fd6f56b36cce523385"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/main_agent_plan.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "384d2b6dc164b0313a69a7e1348e4c51245738fa38fc71761fe2e452b48f1cee"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/prediction_manifest.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "143b5180ed7e9508ca8866e97d810f1a43ac26fff201632fcdf39ae64d7a6e61"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/report_row.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e771ae6a50d9671e0f55a9a9f64efc85a61b7acf139d6cc1012a2282183d32c1"
-    },
-    {
       "path": "sure/skills/sure_eval/schemas/run_report.schema.json",
       "type": "file",
       "mode": "100644",
-      "sha256": "f3aa2d9d0d679d0d1dbd76b30b2df008a5124b474f49c726c593a7f52c72ddb4"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/script_routing.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "20ee32a6cd48b5f7a6e8ccda5bd57c22fd44195cc198e0a2d273d34f50aacc8f"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/smoke_test_result.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "8d4302824a0168ac30dc7ffffd0f164e9665ac9c2e83620fbaf85ddeeb21fe16"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/submit_result.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "aa47f181444242b4222e4fabfda5d6743ea65585d5098a068a6853859109e892"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/task_classification.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "766b5bcdbf0efc3d248c6c45bdaebfb3d9beed4be054886eb71411e199e5df39"
-    },
-    {
-      "path": "sure/skills/sure_eval/schemas/tool_readiness_routing.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "ca8ce22efa5feed36a45c356542381e83690340da256f52376fc1ba58fe8a875"
+      "sha256": "a48f42e932691849f6c6d54b76d342f6fa622fd6a117ce9540f3145b92b41c39"
     },
     {
       "path": "sure/skills/sure_eval/scripts/build_run_digest.py",
@@ -7627,19 +7393,13 @@
       "path": "sure/skills/sure_eval/scripts/check_assessment.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "a06aedc6a2bcc13124f1e0850a8b074854b0b0447e33bfaf3e8323dc28fb7f78"
+      "sha256": "85e2318dadc0b2c16a4acb7cb975f4e6ae0b29f47a5cbc17b2d3d1e01f93226f"
     },
     {
-      "path": "sure/skills/sure_eval/scripts/check_execution_surface_compliance.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "6cc122dfdfe1975ae948d53a76f81d3ddf2394bf2b30d05914a38e1f80c29ebd"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/check_main_flow_reference.py",
+      "path": "sure/skills/sure_eval/scripts/check_eval_run_report.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "8bf35a9416b30f847bad8c1afe933aa65c69644890e9910a020d75b05be4e62b"
+      "sha256": "98cc4be1dd936d029180cc9c478438ff2e96092f1a391c0040c2fde4d1e90915"
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_memory_extraction.py",
@@ -7657,139 +7417,7 @@
       "path": "sure/skills/sure_eval/scripts/check_run_report.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "3e01ca108a8564fe641f4e25c3ef10a3b113d337b0a6b1547e2580a4a7b02524"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/check_script_routing.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "4ec1f933680075e81094dd73861a2e3739ea2339b71f9ae8de0fa20425464b00"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/check_vc_submit_readiness.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "616fb2185454e13bfdd613e67dff25a0e100b1bedf6edd9264ce5f9ed039e454"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/compare_main_flow_artifacts.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "073571b0ec67db2ce57ffc86dd2e6804872d73119dfd9a38b10355e69ac1f1d1"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/container_execution.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "53e691b2309ac855d2ea4e25ee1b6510e52eef4f10986ce43041ee1af81de341"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/convert_sure_to_jsonl.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "47c59546679124bbcf544d340150f77b5098a4a850409a00527ce380663ab843"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/dataset_alias.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "8fae32db962f1089af513d0f71f0d3dca619b944aaf5e70db9cb27411b7753f0"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/deployment_binding.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "322618efcf803886486b87e65054abd80f093669b30a18eee33914aef60a9fcc"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/download_sure_data.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "2285158ebc3825b9caec2faf48ae0d9500a4d7d516136e5a7886b1135ff50f70"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/evaluate_predictions.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "1044f89b8b6736110fe240fa9fad90f25e64812df9c3190565cfbfc085076f9f"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/evaluation_capabilities.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "da7791e852f727c5910b622a99fae6ec78ea18fb233e5ee48355ab4ac3cd0005"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/evaluation_runtime.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e67d3a6241fc2c4b92c6e1703e0e71252f818bb06938f55528f1ee1c56aafeaa"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/extract_test_samples.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "a10833a543a02a93a3a26fe2ba01c37622e0b90673a1f59fba27df465a6f8d8a"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/finalize_result_bundle.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "63ffe23092b55934bff2c89d6967c57adacf04b1e48e7bc004044adb84857b9d"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/generate_predictions_via_server.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "a7280a56d9471e44df2fd1cc83b072ebd958d93ddd0f6af19a936c3323627561"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/generate_report_snapshot.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "67653236716eb9d5232184ef5bd7983917b97a8accf0cfc4a6bce1e97dc0f628"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/harness_runtime.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "3030b1b5e5cd8105fe6a28d143c256fe39a1b63cb8ff3a7a1f6702aa4e76e848"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/import_prediction_source.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "5b1af523196e58999b2fd9fcd36064dc6ebd13a4f58412fdfd549db28dcf4b84"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/materialize_predictions_template.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "c27d2b96dae788cdda50e0cee4f16a8204cd1bfcc822aafab042d42c9be70f12"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/migrate_nfs_standard_system.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "16310f599485e1a5063ff022362a1f008fe03237ab891c698bfc4409442fac65"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/model_wrapper_mcp_server.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "10d2a04b77144691526abe6d78cd8ac555c2ee86441b8684319e9a8439f7890a"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/preflight_evaluation_support.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "b3557cf875ef95afaf6da9a8a84eb02b7e8fae448ac26959d22a0851cca5de7a"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/prepare_sure_dataset.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "402fb46665e76b3e7824aa24944987d32d50d78a89429b6e5ca24bce54eb362a"
+      "sha256": "ee7248fed1b4366182234d9010a1a0d8c5ee63484ef457130526e38e0c187e3f"
     },
     {
       "path": "sure/skills/sure_eval/scripts/publish_memory.py",
@@ -7798,982 +7426,22 @@
       "sha256": "dc87f446772a5b8cee6ddb73066fb9fc8199e450211138ad46c5a956c8afe7be"
     },
     {
-      "path": "sure/skills/sure_eval/scripts/pyproject.toml",
+      "path": "sure/skills/sure_eval/scripts/templates/run_reval_existing_predictions.sh",
       "type": "file",
       "mode": "100644",
-      "sha256": "9ff543e8a4548653fc5b26c1f08392761bef275173f199eec1d8bd8a49e622fe"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/python_execution.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "434d51641f89bb2178d1f0063902c643f2f5ee36d9edc4e193bc119227f68b9d"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/recover_dnsmos_segment.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "a4fedf22f99eb0c2f52ec91d7048a899ca8546298e2a57408593ed268a614cc1"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/refresh_report_snapshot.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "f50a68fe84d0339522bc2d4678aa2599903d9f17cf227f74b28407961b721418"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/resolve_eval_input.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "58eb15576c5f73f7645e4a5a2571cf2bb5c26b8c7408c841c5cf247315b951be"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/resolve_evaluation_engine.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "cc880aff71894468b1324e40f1047fea1cfc2ced1c48d6a9fc383bbcf63f42c0"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/resolve_evaluation_route_plan.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "ec4e100d55bee701e096035444fd80b822056b608b1136cc04091cf9899db429"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/resolve_model_dir.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "9728e9544939732d3678f3170db573d97851bb4485fc3d8e7b422681a69c2cad"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/resolve_prediction_source.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "c7c797bb93fa63d3e8831f59aa8a3e4abd2467947ec7d8d63592947795cbe9bc"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/run_local_execution.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "254e42ce8fd89ea05ad7743482e485d9e0358d33e57da0b15064b5225a27044d"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/run_main_flow_parity_validation.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "41c6fef7863afcc6d8734e0a1c7e798e952b5424dd9caae48d842bc394bc051e"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/run_model_mcp_smoke.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "b69f44637e49c3b4d79b0c72f3de9a96705f936e8c04b9368e6d2476f4085cfe"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/run_reval.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "f95acbfa7b112260da9f789e27ff51e74790d1c25ee5cfc6795d5fecf78cc1d7"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/run_smoke.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "38082d475daca699ebc8d62f29ef9393a6015d2ee2e1174d06f871653d892abb"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/run_sure_evaluation.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "0cbdb48cadeafa53c8af90bc26134b89fe819713115ef38bf370109b04381507"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/run_vc_execution.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "ee2e1c99f9a8857623a6e8c8f1efca3734dccd9e2740b56d6b6eabeab6ac1a5b"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/__init__.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "d04ab4a0457b31781b42500acebec2acefff8eff7fa82c2c4f4422e8effac831"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/agent/__init__.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "f07a02f0d2c1c6c7bb6469a5010f2d20f60219e477673fb692ceb2bdaec12311"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/agent/evaluator.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "6db7c930219365e6a6785168b6659f2b877611ae2659d515bb5058a9959bae01"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/agent/orchestrator.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "6e012a84d9dea85cb8d68b8e5ac23cfb4783ac7b431735074fa10cf327a26728"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/agent/trigger_vc.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "b6d4df6a7ef28bc676bb53993ded6a0b9dc5a4b4a15eab1d548dbe7d9899568f"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/agent/validators.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "f1e6afde8a6439655699d8f07aedd2c13349d13565dc78786e009975ee41c514"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/agent/vc_precheck.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "bf3293218ea6482f809665e217854535aade74c49c8a9519e0f98ff48cbeba3c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/agent/vc_submitter.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "8fcc992bdaad7980a041380fb48dbdce9076e254553d524a0d18c401d7167444"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/cli.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "e309b629ac73c39810d47459b536fd8377c6c1d3906fe6aad06700132be6fe56"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/core/__init__.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "13e8ae5c0b04d510a76ab79c3df7701de9539ebbd9607cbc78df4147bac64cb3"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/core/config.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "70b50ebfd94e20f06ff65f87aaec4f315f088720e542b17360d1610424bb38c9"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/core/logging.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "1c26c380b9e8109dfd5732d3324afe73a1dd95a7f233622c257610bd7973a396"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/datasets/__init__.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "bbd4c667cb4bd8c052078a7ee258feb78ef9d1473d279619967c06e3d2186909"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/datasets/dataset_manager.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "11dde0cabc16a976fe96e1a0a95ecba6bcdf8db39416b44350aa53039b293ed6"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/datasets/source_resolver.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "6d51bfdd4859a2c01478db77ca4a458767b88bd2b9d98a5090e7d97f4311a391"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "1920486363a09af6b74d91bac83e9724568061b212e581282ba6cc04ec21e0b2"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/asr/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "9333d1dde2eb8b0b7803376b7dbedce80e378ee1637d04a99916b4ec79275703"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/asr/metrics.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "07306c2f0dda370bcea219cdfc083846f0314179dbfa2fd57b4e6e4d0651ad3f"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/asr/pyproject.toml",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "c0c09c78fd63f5f3d714f9b20381c2a8daf10edffd142b7abc1f27f1d11ca039"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/asr/README.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "7ab51e84aaba72de20d3151e602b3fbc452c16ad1a7d43adecd56a3cd003c8b8"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/asr/wenet_compute_cer.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "4511c4dce428b6c58b8ddaa6707ec11aabe0b0772bdb4aad44c2d8d0b829b2d8"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/base.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "6310b6af706d35c729d608ccc3eb7932889873c3667add18946596caad99a532"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/classification/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "1cdd33a69e9130028a7a734b2f77ffaf87a88436e3e02b61f444846911acd873"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/classification/metrics.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "a971c652fdcf225f3e45694e7e5c6d053225e34a1b7ca66ecb27e5618c3e3c6c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/classification/pyproject.toml",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "2c739b674396d5c4016c882d12ce575fc689fe897bdb762f515e78620831b7d6"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/classification/README.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e52f32be965eb19708332890b92a3ac12641f157d9ab4289289944fdd9d3eb4f"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/kws/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e4265d767303ce485e21287b2e8e507acc12ad580b9468f2fee7b60af07a426c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/kws/metrics.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "a26bda1714e70e9470a98534481510b934eb8f55e5f56a31eba626c019ce98ea"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/kws/pyproject.toml",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "7bec0ee8a41cd9a531af36fc7ef95cb6349df0adea6a194955bc2f20051fece5"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/kws/README.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "018df26847815df70c49fd4d47e768f85fa34c71e3f439f5825e4a81b4d3cc09"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "6589796fe4ef3f698ea41422df64b92bed2ff6824eec049403f521e03a370899"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/en/currency.map",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/en/digit.map",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "937d4d599eb85876636070fd8dd0ab0dba330b0a3931cc8aee20265314971547"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/en/symbol.map",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "2cb05a549bb7381003188ec5e3a548581a6ae6c599dc3d49e6c62e7b3422bb68"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/en/time.map",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "7c752fb513d11d6baf94bbd176e2db99666453703f79baa5a8e315d35b40a15d"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/english-numbers.txt",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "a77e53aa7551c6d742e20f94f02d505741be669546baf78d62b9b57bcbdbac59"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/english-percent.txt",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "fdd96c7df451202f882381d69f7fa3fac51b1560cbb4f2dd3337004529161da5"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/roman-numbers.txt",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "7d7f96d8fb34895bd35b6e45e23e4ff32480d3c1d7c9d67c43dcc854ae51330c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/zh/symbol.map",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "023125462ff7712636e3807b5e07e8b0903bd274670a09e434f662813aae6db4"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/asr_simple_tn.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "8a03d66191002d74c987c28012bd6ee21c7df83e086929151ebe7bdb512b9427"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/base.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "664cf6bfacc8b3a10de061855d83359c87af18e1be76e145e19ae69dad9040cb"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/lang_en.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "ddcf537c333267031ff9c10d857357248f9ce8226243f90d1d9b2b138a5c5130"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/lang_zh.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "5a8f7734894b982a830e8a83f05fbdac1109cf0fea56ce0e2ed77b06be8784c6"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/logger.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "6a23503bbe31299b67cc705134868286438343a78bfa156bb24031e6d97b8b5b"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "8c835745311bdb7c3c3bfc113c309481cb8099cb3f3fed5bde13ded4015eff72"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/base.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "3b4f9c5d64ac0dc90bd2fdce35e51d9fd4b5053f04e51211cb268b8d55323d9b"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/compat.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "5e302a28aa6e3fa35981c1b383a7f736c75a5cc973d8bff9e0ff19afd5387256"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/currency.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "6ab41fe056ea9b696fac3c278b0bab7b51cb06c57a50dbf84977de503be591c9"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/lang_EN.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "f005ba06990c5af2f6979ebee8224ab11a68d80cfb484b5b04d60cc59fcc597c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/lang_EU.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "63d5cf17097c42950576fcd304e3147a8edb42fd32902e08eacd4a6a0a339e32"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/lang_ZH_CN.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "86ad0360d7c19ce718cfdd7b7a4cc2bc75c86b908d4af3026d3dec9f96a940a2"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/lang_ZH.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "3519b76b9e1a4b654d1b57a83f10dbb4065307b028a431b01ccff4db1f9f07ef"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/README.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "7326304abc2b01975a62592ff7038be3ee21d7a3ce7d428415da56752edac5b2"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/num2words/utils.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "5a4cfa390464bb4134f9194d11261bfd9b85021b0c0af0fe2dda0ec6cea5bd81"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/normalization/utils.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "bb40879e2c9e5688fcb5a0c6c88e4f1c39222dc516be5e57bc55b164e93e35c2"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/registry.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "d62b75d9f4c47cc16f70964f6b3a45c79ffd7714b0977b5c467ef4c58d38d050"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/rps.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "771d5e335fd4e416013a4660152255e059cd207514d85da5dac9d12b78d34843"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/s2tt/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "9d8cc82982b29708f9fbe058ee6513218f8273446f9c71113c1a53741c183063"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/s2tt/metrics.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "af0d56e2267bbbecd742ee8af3b79e48c64ee8b376784e5d52f601f531d0b1ff"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/s2tt/pyproject.toml",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "f07c420b16a593fdc89555aa3b67a58a0339ff64de86c004a43fd939263613a0"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/s2tt/README.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "500c955a919ddd8d68007a78b9eb8058d732d0a4716d39f962c131f87446b693"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/speech_understanding/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "7c79e39748ea8191e20f8b22b7dd0b3d93d3860ad2a851d9e580512286f9c2d0"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/sure_evaluator.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "c42aeee5e8786f8524811afd6010b7988c0a84c240b0899b5f1a6145024a4407"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/tts/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "18de068fd299d57d85acf6ff26a16f65ffa2929fa15bf7d014e96c6aef45eacd"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/tts/metrics.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "8fd10e176f6430e57fcf3b1caa3597257c12febe55f9fa6ce0bdff579b301e0c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/tts/pyproject.toml",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "fd900a63d1a64b874527c92e51715401ecdb40454c15cfa34d60d25301777b07"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/tts/README.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "038e56e3b5ce2d3905f1a37ab9da985158121a0cba54382fd120c7f170b72610"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/vc/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "7a299af4605ea983839afc3dda3c79301c365fd7a62fd8c8a33b8e56b38cafea"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/vc/metrics.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "48abf803a18ceaabbaf4fc194c5d70624646fec874c26c7f5356ebb4d4d803ea"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/vc/pyproject.toml",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "3430238c2cc427e95b8d510e1ce661b3d530a13c51823a8ab1e0e772194a95af"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/evaluation/vc/README.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "7b2c43de0ca2adc62aa09bc06091dff6423cb85df18ed3ecb5bac5642857431c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/inference/__init__.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "c0a27ac9fbe5089ebd59f4574148db9ac9992db69bb9d3d2ed477723653b8f08"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/inference/adapters.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "e72dadeeca48255678d3d5768815353031155f5ea762efde7ea122a258bb48a0"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/inference/errors.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "b11fc12664f0cf7779057ba044a8fbddeef23acb3c2d7b332d267d120dd81326"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/inference/language.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "f9c59fb7901f5e2ecd16ba23d25a4ba6e283f705a2ba63c429a7cfdee58b48ed"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/inference/runner.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "211fabad62078a21f579cd5d7aa239d59d05bd80082249075a02e36379c4ad7a"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/inference/schemas.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "95c4ab8b5a0b8611ee9010f4071e6327a57edc7b555fe4cdac4ffe81d102d9c2"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/models/__init__.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "e2e63ddd923d6c1177d560736b3e202612c74456bc1a7235488c27f5be8bfa7b"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/models/base.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "d01978c83318c4f296a71ff20249c5b49f2be33303e3768c902a6866e527f240"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/models/model_mapping.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "4910c35214fce289b17cc230fe6e663628de3b0d23b296081b7bf96359fe860d"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/models/registry.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "5bae98b76f97a2130b2af00ed870030991ac8fc8ffe85312790c52e9d6d5b9e9"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/protocols/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/protocols/resolver.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "435e13c153210e993e56de21479266d1a6af6f54c257492885c227a28e9e8ea2"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/protocols/schema.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "2a66d5fe5fe2b3c671b6a2b732bf7dd4d3290c84652455f228903c6cc2c5103a"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/reports/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "205afb994edd2ae6998f6943bde9a67ce5c2e1eca69cf9f7ec2c463b1a14a900"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/reports/report_manager.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "cf94ca2b0a8de4993824d8fce303e5b17b49aad59c49da487244ffaf7b966aa8"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/reports/sota_manager.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "967d993444fb1fe0ea0e94281f6aa53542b415fe36a380719246bcf472599b5e"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/tools/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "8a7dbd11657442a4307bc8db15b936757a0118a3c67cbd2ad034b4f862eecb47"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/tools/api_adapter.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "b4df4691c4b2a55a971459ec87c13c66cc84d6bce1bc40093ebcfaffb2d7a8a6"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/tools/dashscope_adapter.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "85ec921c01bda917c43a8015ebf32d396205f82f0d703c1cadf260c6edec9079"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/tools/local_tool.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "4923bb89a8134415b5d474fc38fd5663594cb103aec177016e26468f24e85628"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/tools/mcp_client.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "f3378960493c9f1f77b15de486b70ed67dd2ddf58e77911cb4c6aa9b96d5a0be"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/sure_eval/utils/__init__.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "2bfc8ff2426e065cabf1d53d3d80fb12b85d4702ed78bf0a7ec2cb8c00c5ff6d"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_assessment_report.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "f89d01266f3a5abbf171275c416cbdb2669d7eb7c2a00a73275c6a5d66214d1b"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_dataset_decision.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "5fd75eb9745d0b5a06de198bdab93b378bde6b375ea47f4e724894633839ed43"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_execution_readiness_report.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "58d2ba469de56bcfa5f93c3923e4e1687a94ee921ef01a6e7228517ec18a5b69"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_execution_surface.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "6b29fb4f8ae07f95f786582dbec52a7cb1e423eb865b5806b2793d530e57a6d2"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_plan.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "bfa93c97a96aa366b8adf521e8758d145a54c63ed11e6c4c7550983870acd2d2"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_run_report.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "d77eb3c3df20983c04ff654c76b6114a4f34fd65984bbf131346ac82b04e1b4a"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_script_routing_compliance_check_prompt.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "3fb5ce2314c4e0fa6f2165d72a3cdd4d10a10c1dc1f8d4a69dca92d030018786"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_script_routing.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "3143c56d84c487d99e5885e708c645a5ceb6be62be7a3a56efab1b2950d3edf9"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_task_classification.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "a1e15515bdd00275eb8f94ab6394b86b09c750f5089dc67dd91835e294b14239"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/main_agent_tool_readiness_routing.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "fde427783c92a86b6c8e7af305af0c59f9498b1f7d67deaa3557f150813fbf4b"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/model_eval_manifest.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "db3c461b5acec69d6f07d9996cd5cf3f13d4a32957fdd496a55fd7a131bbb67a"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/protocol.yaml",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "c7954a1361b1ccb0883fbff9bb4ad06b6a9bef5e0571b71ff5da76ab7d4f8055"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/report_snapshot.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "36085d3f699cb59b245e6ea2d758f62473dd5547660e9f11f6557b7462a75e5c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/run_audio_evaluation_only.sh",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "07e20be1c7775d1aafa20aedfc47af16fac0d8d47f21b1f51459dcc6724d0b95"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/run_single_model_single_dataset.sh",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "69847ab84141ab54d8720f7d4ded519ba78b2421af8d86bc828627d9898c1905"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/run_single_model.sh",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "5aa081a81eb4478dcaa3ab56fc50c52ed286d5c7f9cb8f2a13fbfdc4dcc70d7c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/templates/script_routing_compliance_check.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "458e51ee48c32e4dd6d77d067eb906161d0e385e6000f9b57a2abaedf144018b"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_asr_simple_tn.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "76855520acef072dd62c13e3cc255be107c1ef93922a27ddf0666e864d19c433"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_dataset_alias.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e675b2af3f372caba606d11103a9ab22070491263c06009762601e2a3ff981a0"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_deployment_binding.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "040f75e1eeb8639e9bcd29e268f3e9c4c117b51a51ec2af111d6de0868191be3"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_eval_input_policy.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "af774e83ddd9a632269ce415fbbd7432e8f1a162684bbabea9e8e4be9a745694"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_evaluation_route_plan.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "843901f3087e9358365a13fdea7db95d1e995aa0fd77b366a5252bc90283fbfe"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_evaluation_runtime.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "96319116acbcbf240b6f24ce8bf9cdc335b9e67026b81ac6ab9f2e00d52b8cc2"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_execution_surface_checks.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "9a411da1e5fec8db4aa6a9fbc5ef044e8dbe62d614829e71f23c2a6b1898d4f3"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_external_bridge.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "54811a8d5e0421485bb0ec1d69cd0b555de48ed883f45270341418cbc8494b20"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_failed_run_report.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "a6e87c956a42656019c1e0d4acc2c0fb9a8020aa0a1dc3e8e60597c977218cb3"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_finalize_result_bundle.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "8a1c61f6fb964992394d21edf7f659bfcb231c6621b63c1052cc235c5e83297c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_harness_config_bootstrap.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "bf387d3253544a88441dd31576b1a640cb49fe6cb2be3368bb24aea742bca64b"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_harness_runtime.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "bbcb0259b7c6c88841420fe142309b9b52a95cb92a0d5cbc716b376dbfc77328"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_local_execution_exit.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "d19d3a3213f6667f915d405020a08dd4ed5816efc7cb8214dff3f2bf741349dc"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_model_registry.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "1df7b666b08bb21333b2f9023376838920fbd14710fde1c592f2fc30258d68cc"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_payload_artifact_paths.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e79b2fd3ac916ba2b8c5332bf1712ab4b5a9fd6e23aad14a0ea17621212c3956"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_prediction_payload.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "72172ad29f40b3b67a42d066a01a5811781f0dbded6f453b2cef647c1ceca1cd"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_preflight_evaluation_support.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "dd0e359b577076ec0c31f8257d36f273def818faf330abc4d2d417d95428c6b8"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_protocol_provenance.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "58b0ba4b8e9049ea6bcf842903dcc574c20ff11c0199b298d8f8a376fcf92632"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_python_deployment_binding.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "badae8bc3147141e52c9cdb5cf4b2d1681f5f926d6e57f99907c2f212f1cc241"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_python_execution.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "6abbb820abb524e3109992fe3b161268dbc337f6ab67ec6aaaa2133df572ceed"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_report_provenance.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "79782dc277dd9e4fc95da42b990c57608e20855d5fb5ef5c9be873824094cba1"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_resolve_partition_check.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "faffe40ed0f96c461d4834849863e1fe8809b5ed90386f9041f0b687b1e99d56"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_reval_bundle_append.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "7a4014414bc182ab0bf40d00b68e03734c4fbb9e0c7c4509e3c9553382c86769"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_reval_prediction_source.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "cc1fa72aea11694cadcba4873589a6e3473742f5d1d8bfbeacd3c8c9084c9097"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_smoke_dataset_version_guard.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "70c2fadb198500c3290414083838843d33203fcce649053c979c1b4d663b1df3"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_source_conversion.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "0f8289110125993a256f98835b40a584e5c5625a2cee16c47a044b6f2fbecd2e"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_source_naming_flow.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "b664e8d099be23ccdbe8355b7c49ed51b8943abbc8d009e721fc874b9020eeb4"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_source_resolver.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "82d67ed6fba83b1e3b01958537d8f23e16369c70d40d839dc5e171ab6fc7a6d6"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_text_normalization.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "4e817e4fb178203f07a2dc8654a725ce513b839ed625a746c404d7631cf4e96c"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_vc_submit_readiness.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "83f982aff56dd4ae2714e298cd72e34dbdbaee46f1fe9f6a599d794e4106be85"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_verdict_readiness.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "d28311e52b4c04d14c883b38266ea0899adc82dcf5176feebc68b6cce8065e16"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/test_wait_vc_execution.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "0d568b7e7d5d2ea2ecca023db21ef062bff1fa00f672b8901830c85885aa36a5"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/validate_prediction_files.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "cf9130f82f9f83a78586a20e6da08405d4ca04d5de362b68e97e27b8ab075083"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/vc_check.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "c427b898044dae45267e9f243613cd39177ad26f5ebc11537870ad7fc40544b9"
-    },
-    {
-      "path": "sure/skills/sure_eval/scripts/wait_vc_execution.py",
-      "type": "file",
-      "mode": "100755",
-      "sha256": "a1d5b0b829c33ba652dc6010f3515ce79bfbac5d438fade21efafc5da22c892c"
+      "sha256": "79fb072783008e8008dfdc610ff44fd5f05c7b49234eacc27eb56dacc9c50bef"
     },
     {
       "path": "sure/skills/sure_eval/SKILL.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "c1f67df103c51c6e37e3f79c7cb7834ac4db370655e45ff584a0651bc55425d6"
+      "sha256": "e699ba8d1b52a0f04bcc07c41fc301dbf4a2573832bca7f0b893d391366aedd5"
     },
     {
       "path": "sure/skills/sure_eval/sure.skill.json",
       "type": "file",
       "mode": "100644",
-      "sha256": "847686a058bb3b58f7cb060dc5a69a09d448d4361d525cfbba98b7af5bb583ce"
+      "sha256": "fc03e0df52413b0b91de5ecfb89f05d824587d0ced713ab2ca3d0e2ccb86b898"
     },
     {
       "path": "sure/skills/sure_feed/hooks/checkpoints.ts",
@@ -8785,7 +7453,7 @@
       "path": "sure/skills/sure_feed/hooks/index.ts",
       "type": "file",
       "mode": "100644",
-      "sha256": "14374659e0fb08fdd966bff52b278d4a3c68460df941ca35204595aa26c5a3cc"
+      "sha256": "c06b17205af83d9448b9e0ad7450c9ea5050b1975ca461721042cade17d97a9f"
     },
     {
       "path": "sure/skills/sure_feed/hooks/state-machine.ts",
@@ -8803,7 +7471,7 @@
       "path": "sure/skills/sure_feed/references/agents.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "b12f21c8ad0e8b97072cc483704a0e6edcfae36bda9defeffae77fb8fd532a27"
+      "sha256": "171b7eac90344ef024d53ca96905c3ab4b57e8a8308ed0027a65721faa7edd33"
     },
     {
       "path": "sure/skills/sure_feed/references/memory/bad_cases/README.md",
@@ -9067,13 +7735,949 @@
       "path": "sure/skills/sure_feed/SKILL.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "055af4b313fd6d5e328a3693a26b7631276ccb07f4491518ac4bb6aa010464a8"
+      "sha256": "3d8b5664576ff1526d47c24fba3045beb3c3ee9360e1681054d6dcb44dc497db"
     },
     {
       "path": "sure/skills/sure_feed/sure.skill.json",
       "type": "file",
       "mode": "100644",
       "sha256": "9ce8ffc114c0a6f8ee6bae8f403deac8773a0d4f11b07a6cc34fef21d43b748f"
+    },
+    {
+      "path": "sure/skills/sure_infer/config/protocols.yaml",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "23a542bd7c045c11c5b86a564467a01a96c655e0fd62ef3c9646371403761218"
+    },
+    {
+      "path": "sure/skills/sure_infer/examples/minimal-input.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "df1677e7a33fc72ead1598f4cbb4ab14c5b560f091a225032253dacc0b9f925a"
+    },
+    {
+      "path": "sure/skills/sure_infer/hooks/checkpoints.ts",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "866dcf5e7fcb7158a9b4cbe0a4bc1ec78982ddc4f155d3cc2ead8dcce5175d59"
+    },
+    {
+      "path": "sure/skills/sure_infer/hooks/index.ts",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "0bb6c97a0144a38cc27afc752ea4aed3534235fb87e3ddc4187fe94af3141dc1"
+    },
+    {
+      "path": "sure/skills/sure_infer/hooks/state-machine.ts",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "57d89d2084fa157f4e2d3bfe170a7373605a2e6ca9d92a8661e451c1a5e56d4d"
+    },
+    {
+      "path": "sure/skills/sure_infer/hooks/validate.ts",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "9a50ff464c7e6423c001c019652e2ceff62dc63c6abbecc72303f0bd42fa975c"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/eval_run_layout.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "7ad126d93884b172eb6c203fa3d112a01931e17a8cd56b07cdd5213916e644de"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/main_agent_assessment_unit.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "29d34702e4c2e13d666bac504dd71e7a8639fdcc868445e45ef945d2f1ae62cc"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/main_agent_dataset_unit.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "b6ed17abb9226351521bc2640967dae48b00cb59f1b29cc87f647c5b9b65482e"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/main_agent_execution_surface_unit.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "6478f8c9fb2522ed0b56e27fd55168f3680841d5b8fcbb089b26423369afaa82"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/main_agent_qwen3_asr_case.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "4d26b1f2393f86586b782fc50f72f0e8a01781f7963d622b239ff8efca16ab58"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/main_agent_run_report_unit.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "dc6344de5e7834560f5309d94580916b4c0d715048dadee20cd54617845be398"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/main_agent_spec.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "4ff187c7ba27a68dae60b567e2837be87d9584401a867ab1e492c5ca814bd8ef"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/main_agent_worked_example.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "ccabcde051e0964c255743583428b7d8476f28b33238da26bb2d25cf3e3402f1"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/main_flow_architecture.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "b88be4142252f3d5de74dad6b8be16976bdbd7d7966038d3df4582d98fd38f95"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/model_eval_manifest.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "45e4ae9097e40519f46b50af64a3b6048f2b20b6859f8cfc6ed39af1a7b6accb"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/contracts/prediction_generation_contract.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "6adcda4f24dccb3dc88977ddc6b5c0d2f7eb1f0a352359296b5f99f7a8546736"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/examples/input_kimi.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "feecb3d542c20eef1d98fc3feb416b15e57d83adf888f113ae181eb26bc4310a"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/examples/input.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "c58a25a3d70eb06e17387ad31cd9b3e7e14467adcb220310c7d63e4ae9c1569a"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/failure_taxonomy.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "d8f16489cb80baf2d54836fa271b5ea8ad8a6745adce1f592b10c13ebbba703f"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/memory/bad_cases/README.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "e790374d5bd7006b03ae4512651653eed6974fc6dc6405fb087f931bfed535eb"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/memory/ROUTING.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "9eae4e5b47e8ac1d14009ae74b9d29f47d9f202b285ba08cfa3d97e374749c65"
+    },
+    {
+      "path": "sure/skills/sure_infer/references/retry_and_escalation.md",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "2809cab1a6aa985a396d6383ceca855e49db6aec726d1afd8b9dbbd63caaa835"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/assessment_report.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "cbcb30d40a6a295df94b35cc6aff098b39885ce04cdef4bd4f24966a10c5ac2b"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/conversion_manifest.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "3cbe0178d7393cc3d38e8bac50b31151c83736fb114a87b27e2e531752c9656e"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/dataset_decision.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "75136212399ed2d9426346949e89148f982fe0d044f942425b22c4a98ce24a33"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/eval_input_resolved.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "7ec072639bc9c59f1866af12725c1987d804d0113507449bd5dff434588de8f3"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/evaluation_route_plan.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "bde1875ff28ef28a4d0eefaa46c07ebc5c22f91eecf6d665bd6d347c87c2793a"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/execution_result.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "a1bae25a2173a68169743ac47c69311c13ed6a7a794e9ce55a4b51b0ab0894dc"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/execution_surface_v2.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "49ea3d5e04c23818e42a1e726c147b08d78e0739ff884c0d99a7d114cf0339b3"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/extraction_declaration.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "34be5a320df5e31634f50c2cde7704a657d086bf0381bc046a0d7229ab0e6cd6"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/inference_protocol.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "99e0eec964cfe9b8a90fb91f328f421d78d4fb9469fc19dd032db5c04c4bd5f0"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/prediction_manifest.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "143b5180ed7e9508ca8866e97d810f1a43ac26fff201632fcdf39ae64d7a6e61"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/report_row.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "e771ae6a50d9671e0f55a9a9f64efc85a61b7acf139d6cc1012a2282183d32c1"
+    },
+    {
+      "path": "sure/skills/sure_infer/schemas/run_report.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "a48f42e932691849f6c6d54b76d342f6fa622fd6a117ce9540f3145b92b41c39"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/build_run_digest.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "9b62c22fe6a7f5b6591bc3e20131634144f0cf5fa6b411e2313809494a0dbb15"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/check_assessment.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "a06aedc6a2bcc13124f1e0850a8b074854b0b0447e33bfaf3e8323dc28fb7f78"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/check_execution_result.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "1dfdb2eb51ff171d459b65360ed4a9b79cf928e21700231ef270a5334d8c6351"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/check_execution_surface_compliance.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "0c516ee0d86da4dbcf1d16acba6476af27a00609df28a66d81cc61befd167f9e"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/check_memory_extraction.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "2ad539e94f868852fc35534369a42dc1b01d34b415b6b1c3e7dc80c42100ac41"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/check_memory_index.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "e7ee8af5b9275eddfb69085d4bfea80a96b50451ba23497b9b3a87e2ba6e90ff"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/check_run_report.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "e9810712ef3ac92d3dec30b235677b513c9ba1a615c4d7ea39464f320c754804"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/container_execution.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "208ad4fe4ad1c5b9998f7e9e352d18b44a79796bff684b566fbb6591723299cc"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/dataset_alias.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "4c856223021fe93ebab03ca58613166a6317d766a52e6d330ae1e77e0feb1233"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/deployment_binding.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "2aad3bae5e5bed785e8fc091f687f05839b0e81570e02afa91d4ae48e590297f"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/evaluate_predictions.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "e4b82c006b05834b0c3a7eb49eb993ad6bf0933c2ac189775f854991ffc1d979"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/evaluation_capabilities.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "da7791e852f727c5910b622a99fae6ec78ea18fb233e5ee48355ab4ac3cd0005"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/evaluation_runtime.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "a9f319ebb1f24b9cdbf67d101eb6bbd6b088d2e71452bfe5283e0f3a639a70e0"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/execution_result_checks.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "8f6ac74fb39570f8232464928f3e98ff3dc0d4f0208bca3d98ab26aa38425022"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/finalize_result_bundle.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "63ffe23092b55934bff2c89d6967c57adacf04b1e48e7bc004044adb84857b9d"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/generate_predictions_via_server.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "f09f75f90687492078176e4593e57618cbd321b9bb12b7289ad93162b6ed1ca9"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/generate_report_snapshot.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "67653236716eb9d5232184ef5bd7983917b97a8accf0cfc4a6bce1e97dc0f628"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/harness_runtime.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "3030b1b5e5cd8105fe6a28d143c256fe39a1b63cb8ff3a7a1f6702aa4e76e848"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/import_prediction_source.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "35676e3fd9fbc731838a1dfd98875ff450fd8120c20ba747587f2f8f297445dc"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/infer_entrypoint.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "f2896f72feba9659c00976e3a2cc5e0e7dcf025b53adf6f80d7e4b85fbde5b6f"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/materialize_predictions_template.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "c27d2b96dae788cdda50e0cee4f16a8204cd1bfcc822aafab042d42c9be70f12"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/model_wrapper_mcp_server.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "10d2a04b77144691526abe6d78cd8ac555c2ee86441b8684319e9a8439f7890a"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/preflight_evaluation_support.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "b3557cf875ef95afaf6da9a8a84eb02b7e8fae448ac26959d22a0851cca5de7a"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/prepare_sure_dataset.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "402fb46665e76b3e7824aa24944987d32d50d78a89429b6e5ca24bce54eb362a"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/protocol_writer.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "96b330b00d4f42627c797c46d0d312df96e73436d7eae599364602d13de2dc6e"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/publish_memory.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "dc87f446772a5b8cee6ddb73066fb9fc8199e450211138ad46c5a956c8afe7be"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/pyproject.toml",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "7934e5a8ab0ff9aefd914bf172d7ac775613f2346851eaed62ac7741cabaafc4"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/python_execution.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "b5be7140bcf51cb26ac00de455871869af50075cf911424ae210942eb2aff016"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/resolve_eval_input.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "beb92619e66c7309f05be52050fae8f9d745696cb5a052a754c65f9b0c8799a2"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/resolve_evaluation_engine.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "cc880aff71894468b1324e40f1047fea1cfc2ced1c48d6a9fc383bbcf63f42c0"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/resolve_evaluation_route_plan.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "ec4e100d55bee701e096035444fd80b822056b608b1136cc04091cf9899db429"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/resolve_model_dir.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "9728e9544939732d3678f3170db573d97851bb4485fc3d8e7b422681a69c2cad"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/resolve_prediction_source.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "f8929f5ed5ce5a4ac232c708413a4f1445c836db1eb89354f954ff3f1fb58f47"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/run_eval.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "57c509865339547540142846adcdb9fdf34f6e069c175c4811046216ff15e032"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/run_infer.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "89c66064fd978be70e5376d516afc8b287beaa467a93a948fbd362a6ee1dccbc"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/run_model_mcp_smoke.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "b69f44637e49c3b4d79b0c72f3de9a96705f936e8c04b9368e6d2476f4085cfe"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/__init__.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "073ee4417d58c87b0b67557c7c218e3cbbdc6cdb4a5069d51d6e71cc3ca88484"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/core/__init__.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "13e8ae5c0b04d510a76ab79c3df7701de9539ebbd9607cbc78df4147bac64cb3"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/core/config.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "70b50ebfd94e20f06ff65f87aaec4f315f088720e542b17360d1610424bb38c9"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/core/logging.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "1c26c380b9e8109dfd5732d3324afe73a1dd95a7f233622c257610bd7973a396"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/datasets/__init__.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "bbd4c667cb4bd8c052078a7ee258feb78ef9d1473d279619967c06e3d2186909"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/datasets/dataset_manager.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "154593ced0e927c9576427ea5b9fe6fd3ea7ba8b2125d72715d71a5f80c31df1"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/datasets/source_resolver.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "6709d196b7d4be47d50f8a2d272bccefed94575b9df41007d68cb2ff473528c2"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/__init__.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "2619bccd9d7d4d742ae384ef0b5fa996960377aedbb4ec2e967d727579fecbfe"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/asr/__init__.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "b2d9012848dced5c91311be112d53599aa8147f8165dab70e3327112e604e315"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/asr/pyproject.toml",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "c0c09c78fd63f5f3d714f9b20381c2a8daf10edffd142b7abc1f27f1d11ca039"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/asr/wenet_compute_cer.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "4511c4dce428b6c58b8ddaa6707ec11aabe0b0772bdb4aad44c2d8d0b829b2d8"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/__init__.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "6589796fe4ef3f698ea41422df64b92bed2ff6824eec049403f521e03a370899"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/en/currency.map",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/en/digit.map",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "937d4d599eb85876636070fd8dd0ab0dba330b0a3931cc8aee20265314971547"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/en/symbol.map",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "2cb05a549bb7381003188ec5e3a548581a6ae6c599dc3d49e6c62e7b3422bb68"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/en/time.map",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "7c752fb513d11d6baf94bbd176e2db99666453703f79baa5a8e315d35b40a15d"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/english-numbers.txt",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "a77e53aa7551c6d742e20f94f02d505741be669546baf78d62b9b57bcbdbac59"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/english-percent.txt",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "fdd96c7df451202f882381d69f7fa3fac51b1560cbb4f2dd3337004529161da5"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/roman-numbers.txt",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "7d7f96d8fb34895bd35b6e45e23e4ff32480d3c1d7c9d67c43dcc854ae51330c"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/asr_simple_tn_rules/zh/symbol.map",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "023125462ff7712636e3807b5e07e8b0903bd274670a09e434f662813aae6db4"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/asr_simple_tn.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "8a03d66191002d74c987c28012bd6ee21c7df83e086929151ebe7bdb512b9427"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/base.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "664cf6bfacc8b3a10de061855d83359c87af18e1be76e145e19ae69dad9040cb"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/lang_en.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "ddcf537c333267031ff9c10d857357248f9ce8226243f90d1d9b2b138a5c5130"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/lang_zh.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "5a8f7734894b982a830e8a83f05fbdac1109cf0fea56ce0e2ed77b06be8784c6"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/logger.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "6a23503bbe31299b67cc705134868286438343a78bfa156bb24031e6d97b8b5b"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/__init__.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "8c835745311bdb7c3c3bfc113c309481cb8099cb3f3fed5bde13ded4015eff72"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/base.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "3b4f9c5d64ac0dc90bd2fdce35e51d9fd4b5053f04e51211cb268b8d55323d9b"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/compat.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "5e302a28aa6e3fa35981c1b383a7f736c75a5cc973d8bff9e0ff19afd5387256"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/currency.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "6ab41fe056ea9b696fac3c278b0bab7b51cb06c57a50dbf84977de503be591c9"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/lang_EN.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "f005ba06990c5af2f6979ebee8224ab11a68d80cfb484b5b04d60cc59fcc597c"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/lang_EU.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "63d5cf17097c42950576fcd304e3147a8edb42fd32902e08eacd4a6a0a339e32"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/lang_ZH_CN.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "86ad0360d7c19ce718cfdd7b7a4cc2bc75c86b908d4af3026d3dec9f96a940a2"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/lang_ZH.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "3519b76b9e1a4b654d1b57a83f10dbb4065307b028a431b01ccff4db1f9f07ef"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/README.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "7326304abc2b01975a62592ff7038be3ee21d7a3ce7d428415da56752edac5b2"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/num2words/utils.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "5a4cfa390464bb4134f9194d11261bfd9b85021b0c0af0fe2dda0ec6cea5bd81"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/normalization/utils.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "bb40879e2c9e5688fcb5a0c6c88e4f1c39222dc516be5e57bc55b164e93e35c2"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/rps.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "771d5e335fd4e416013a4660152255e059cd207514d85da5dac9d12b78d34843"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/evaluation/sure_evaluator.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "c42aeee5e8786f8524811afd6010b7988c0a84c240b0899b5f1a6145024a4407"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/models/__init__.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "bbae81a5f7b8b0414df35ef4bd5b1a0a7269f29e075d6bd63cf88ba1f0358a8b"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/models/registry.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "5bae98b76f97a2130b2af00ed870030991ac8fc8ffe85312790c52e9d6d5b9e9"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/protocols/__init__.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/protocols/resolver.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "435e13c153210e993e56de21479266d1a6af6f54c257492885c227a28e9e8ea2"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/protocols/schema.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "2a66d5fe5fe2b3c671b6a2b732bf7dd4d3290c84652455f228903c6cc2c5103a"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/reports/__init__.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "b1c105eb94ee1532e18c15d738ce7761a5dd21a27dbe288d77d549d5018f0deb"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/sure_eval/reports/sota_manager.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "967d993444fb1fe0ea0e94281f6aa53542b415fe36a380719246bcf472599b5e"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/templates/main_agent_assessment_report.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "f89d01266f3a5abbf171275c416cbdb2669d7eb7c2a00a73275c6a5d66214d1b"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/templates/main_agent_dataset_decision.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "5fd75eb9745d0b5a06de198bdab93b378bde6b375ea47f4e724894633839ed43"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/templates/main_agent_run_report.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "b56b7927e43f12f6ddd6a8fa88f6283f992e7c1eb27cc5b5e7b61b19f824809c"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/templates/model_eval_manifest.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "db3c461b5acec69d6f07d9996cd5cf3f13d4a32957fdd496a55fd7a131bbb67a"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/templates/protocol.yaml",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "ef44fcfff00e6da0da51c947bd9770befa8407e75389a7ec5e3c5fa71eeb41e6"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/templates/report_snapshot.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "36085d3f699cb59b245e6ea2d758f62473dd5547660e9f11f6557b7462a75e5c"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_asr_simple_tn.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "c2b47366ee2051e212641488bdde9c15d2e87cf74c4830d8cfebdfdd8042a6f0"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_check_execution_result.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "e43cc05e7d3eb02d7c8087d38c2f680ec2bc1af79fe124f136f0ca4729b6920a"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_dataset_alias.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "d78ceb23b65779eadc86444de68f320ffa401de523ae991a88d1fed497806586"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_deployment_binding.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "92dbba310dd45b27d049f391150ffd6d375f111b7c2c1e716532b7edeff01c06"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_eval_input_policy.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "7bd7e4b8447a37343bd0b159f4cfb208ba0d19f50f8a30fbdea96bb8fc9219cf"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_evaluation_route_plan.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "843901f3087e9358365a13fdea7db95d1e995aa0fd77b366a5252bc90283fbfe"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_evaluation_runtime.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "75566276bd1269f876c812060289a61bcfcf94be370109f272ce89170b6f93af"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_execution_result_checks.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "2f677715608f8530a512f109555a63b712bbdb1e4641fab820d14013b828136e"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_execution_surface_checks.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "4b49adec1804ab3c876656aa8ec0c5abc65842c042fe176e23336caeb0c91df5"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_external_bridge.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "54811a8d5e0421485bb0ec1d69cd0b555de48ed883f45270341418cbc8494b20"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_failed_run_report.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "c5b6f25d847770acb22723c7c01e4d594302020eec171d23a730f3cd28620524"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_finalize_result_bundle.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "8a1c61f6fb964992394d21edf7f659bfcb231c6621b63c1052cc235c5e83297c"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_harness_config_bootstrap.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "bfaa748c4914d0439ff71e4f74bf38a2027a2fb5c656820322491fac042ff797"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_harness_runtime.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "bbcb0259b7c6c88841420fe142309b9b52a95cb92a0d5cbc716b376dbfc77328"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_infer_entrypoint.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "5bed843da8606de6a3dadc75a60174eee02e3c2d999eec6b05666b2ccc0c9262"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_model_registry.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "1df7b666b08bb21333b2f9023376838920fbd14710fde1c592f2fc30258d68cc"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_payload_artifact_paths.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "e79b2fd3ac916ba2b8c5332bf1712ab4b5a9fd6e23aad14a0ea17621212c3956"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_prediction_payload.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "72172ad29f40b3b67a42d066a01a5811781f0dbded6f453b2cef647c1ceca1cd"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_preflight_evaluation_support.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "dd0e359b577076ec0c31f8257d36f273def818faf330abc4d2d417d95428c6b8"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_protocol_provenance.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "2b3e91b012fed0d8bc0e86d6730761b72248895ac2d091f2be4579bb031dc65f"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_python_deployment_binding.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "badae8bc3147141e52c9cdb5cf4b2d1681f5f926d6e57f99907c2f212f1cc241"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_python_execution.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "e4a1dc7d76f19de868d84d72508567ca24f63d9de94696bc81688cde977296fe"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_report_provenance.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "5c7be5e2fd875b74f86b78f431f9afd640d1d77e2da6c12ec283c96beb9ba16d"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_reval_bundle_append.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "4a5e7fd70cd01441d5acd9090d9bff5d2140bc5a774a5d29369783ae1d37dac3"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_reval_prediction_source.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "856dae3b55e17900cf9d5fb3787eadfb52ada4b565cd612bf23c853910bd2dc7"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_run_infer.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "3e78c43f2941afcf2f3e1598ec7f6c15ce1476abc255b7c00573b81df340fd24"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_source_conversion.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "32f89e0e069d7ebb022ac03e3780c78db56dcc4848769ed18a469d215a267e32"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_source_naming_flow.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "d83c3376286cb28b8d777e63dd91b0f457aae3a73bdbb0ad06079c3bda5c94a3"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_source_resolver.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "567e0e9e491a05baf3ed7c6d7406b6830b1dca0c37353d8d47319fa21f246e56"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_text_normalization.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "87d9935eac786e2354c9a903b701e61133b4f01973905a29528fdb0739409b9f"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/test_verdict_readiness.py",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "d28311e52b4c04d14c883b38266ea0899adc82dcf5176feebc68b6cce8065e16"
+    },
+    {
+      "path": "sure/skills/sure_infer/scripts/validate_prediction_files.py",
+      "type": "file",
+      "mode": "100755",
+      "sha256": "cf9130f82f9f83a78586a20e6da08405d4ca04d5de362b68e97e27b8ab075083"
+    },
+    {
+      "path": "sure/skills/sure_infer/SKILL.md",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "a11e5c5bea8ce9540ec9e1c8bea6093e9bd6f075d325bc5b76fd38fe8da2fc63"
+    },
+    {
+      "path": "sure/skills/sure_infer/sure.skill.json",
+      "type": "file",
+      "mode": "100644",
+      "sha256": "2d8709d7d5b64fcfa7f80813f462a997f919cd357aeb00b89721b29f1f8efe9b"
     },
     {
       "path": "sure/skills/sure_onboard/examples/minimal-input.json",
@@ -9109,7 +8713,7 @@
       "path": "sure/skills/sure_onboard/references/AGENTS.md",
       "type": "file",
       "mode": "100755",
-      "sha256": "564cbbadf7637027a0d98ab0527ebf33ca9d80d530a63e58197a3953ee50da58"
+      "sha256": "b3946ffd5def2b22e8fa7769e8e20b2ae7b877946a279695075c76a18ec919f7"
     },
     {
       "path": "sure/skills/sure_onboard/references/contracts/fixture_policy.md",
@@ -9307,7 +8911,7 @@
       "path": "sure/skills/sure_onboard/references/specs/wrapper_contract.md",
       "type": "file",
       "mode": "100755",
-      "sha256": "1e1dd8605e1a48165429a469340741a3e3380cfe015cd9c8a66811e596765ced"
+      "sha256": "1a1adfc8533c084ba8863569113f8e9f1d71ee5f63049ba324a1ed4bff63546e"
     },
     {
       "path": "sure/skills/sure_onboard/references/task_playbooks/ASR.md",
@@ -9835,7 +9439,7 @@
       "path": "sure/skills/sure_onboard/scripts/test_python_delivery_contract.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "0c6ce1c111654c1c7833a5e71b2b65e2eacbdd517f455335d385a384a913351d"
+      "sha256": "b26a189d76b3ff74816013afc3e16fc20520c2005f5131006a0df4724e49526f"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/test_run_validate_paths.py",
@@ -9877,49 +9481,13 @@
       "path": "sure/skills/sure_onboard/SKILL.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "59ed892ccbd5756167e99cc7972ba67c82882f33fee7277edc12dfdec8560f15"
+      "sha256": "9f3d2881a757726f94c52778b98d29229ee7638bf707bc04f1a677cb42f99cda"
     },
     {
       "path": "sure/skills/sure_onboard/sure.skill.json",
       "type": "file",
       "mode": "100644",
       "sha256": "dedebac8c2b8a41a7e03d35b570ae5930a5207c1947bf8d1f98fce68ec3b44b9"
-    },
-    {
-      "path": "sure/skills/sure_reval/hooks/index.ts",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "5ce628cc7492cf19d89d6415cce79fb83046a5354d7617ace74a702a91ab3b62"
-    },
-    {
-      "path": "sure/skills/sure_reval/schemas/reval_run_report.schema.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "17edda142c1e04ab3e5e6c9ad9264cca8e170df047fa85a0cb6b902c0a9408fc"
-    },
-    {
-      "path": "sure/skills/sure_reval/scripts/check_reval_run_report.py",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "046cd0799cd23a6716ff64a1c0ffaeb417f0d367d898dfd284042a8e509f5878"
-    },
-    {
-      "path": "sure/skills/sure_reval/scripts/templates/run_reval_existing_predictions.sh",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "991401ed1c4b3330acaa02bce0fd6089c27615cc153c545ba77b3fc2dfc2e77a"
-    },
-    {
-      "path": "sure/skills/sure_reval/SKILL.md",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "b38cada9d44abcecc03bfdd54a9d2a9d3f5e025102e210d2eb4c2efd52f7731f"
-    },
-    {
-      "path": "sure/skills/sure_reval/sure.skill.json",
-      "type": "file",
-      "mode": "100644",
-      "sha256": "e6bd7038003a5501f3b31861fcaf70c57b85d6784fd23a99f655c2a002dec6f6"
     },
     {
       "path": "sure/skills/sure_trans/examples/minimal-input.json",
@@ -9955,13 +9523,13 @@
       "path": "sure/skills/sure_trans/README.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "c479407b1f73ac1f1147c1a046ef3444e8a66229b2db7a1b516d7c9f882bd236"
+      "sha256": "7c7feec3a5f6b8f505171ed9659210fccc80c08dfcf1d6bf59a407b8278b238b"
     },
     {
       "path": "sure/skills/sure_trans/references/image_packaging.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "ed5b04d92afd5db43f5fe15acd6e489ebc1ae2052f1040129a733c959c23d3a4"
+      "sha256": "fe020f9c83ca7a19a939a50f7d990047b0322ae5eb8a737b6cc3cb831e933b20"
     },
     {
       "path": "sure/skills/sure_trans/references/memory/bad_cases/README.md",
@@ -10255,7 +9823,7 @@
       "path": "sure/skills/sure_trans/scripts/test_trans_scripts.py",
       "type": "file",
       "mode": "100644",
-      "sha256": "0c3241dfa6f10e4318e397d4db2e7df98a84051f30f9580b3fcca8ce537040de"
+      "sha256": "86afe704b251c1743b634a813f85af39e09293c0b561181ff9ba528e5154c3b9"
     },
     {
       "path": "sure/skills/sure_trans/scripts/test_vc_exec.py",
@@ -10285,7 +9853,7 @@
       "path": "sure/skills/sure_trans/SKILL.md",
       "type": "file",
       "mode": "100644",
-      "sha256": "2d447d8ceb8a0b3d0ba6cad7e0bf77cbd681a5ecc63c57607e8db168552b4761"
+      "sha256": "c82bf5773263b11f76a4ae827a9c760fa976336728c9be0955971ea3fcca54c8"
     },
     {
       "path": "sure/skills/sure_trans/sure.skill.json",
