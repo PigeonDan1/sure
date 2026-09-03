@@ -32,6 +32,23 @@
 			"type": "string",
 			"enum": ["local_process"]
 		},
+		"product_dir": { "type": "string" },
+		"failed_stage": { "type": "string" },
+		"input_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+		"datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["dataset", "expected", "generated", "valid"],
+				"properties": {
+					"dataset": { "type": "string" },
+					"expected": { "type": "integer", "minimum": 0 },
+					"generated": { "type": "integer", "minimum": 0 },
+					"valid": { "type": "integer", "minimum": 0 }
+				},
+				"additionalProperties": false
+			}
+		},
 		"next_action": { "type": "string" }
 	},
 	"additionalProperties": false

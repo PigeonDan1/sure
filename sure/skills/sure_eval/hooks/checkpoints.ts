@@ -275,7 +275,7 @@ export function runBackend(
 	const runDir = args.find((a) => a === "--run-dir");
 	// Always pass --run-dir (gate scripts declare it required). --produces is the
 	// absolute path to the artifact; the run dir lets scripts locate sibling
-	// artifacts (e.g. run_evaluation.sh next to execution_surface.json).
+	// artifacts (e.g. the execution logs next to execution_surface.json).
 	const finalArgs = runDir ? [...args] : ["--run-dir", ctx.runDir, ...args];
 	// Defensive: if a caller passed --produces without an absolute path, resolve
 	// it under the run artifacts dir so the script can read it reliably.

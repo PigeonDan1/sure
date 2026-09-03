@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from harness_runtime import harness_runtime_from_eval_input
-from evaluation_runtime import evaluation_runtime_from_eval_input
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 
 
@@ -211,10 +210,9 @@ def build_local_container_command(
     harness_root = str(harness_runtime["runtime_root"])
     harness_python = str(harness_runtime["python_executable"])
     harness_manifest = str(harness_runtime["manifest_path"])
-    evaluation_runtime = evaluation_runtime_from_eval_input(eval_input, prepare=False)
     dataset_projection_root = dataset_projection_root_from_eval_input(eval_input)
 
-    command = ["docker", "run", "--rm", "--init", "--entrypoint", "bash"]
+    command = ["docker", "run", "--rm", "--init", "--entrypoint", harness_python]
     mounted_targets: dict[str, tuple[Path, bool]] = {}
     lowered = (device_request or "auto").lower()
     if lowered != "cpu" and container.get("gpu_required") is True:
@@ -287,7 +285,7 @@ def build_local_container_command(
             "SURE_HARNESS_RUNTIME_ROOT": harness_root,
             "SURE_EVAL_CONTAINER_IMAGE": str(binding["target_image_ref"]),
             "SURE_EVAL_CONTAINER_WORKING_DIR": str(container.get("working_dir") or model_target),
-            "SURE_EVAL_EXECUTION_SURFACE_TYPE": "main_flow_script",
+            "SURE_EVAL_EXECUTION_SURFACE_TYPE": str(surface.get("execution_surface_type") or "python_entrypoint"),
             "SURE_EVAL_EXECUTION_ENTRYPOINT": str(entrypoint.resolve()),
             "SURE_EVAL_EXECUTION_GENERATION_METHOD": str(surface.get("generation_method") or "harness_template"),
             "SURE_EVAL_EXECUTION_TEMPLATE_FILE": str(source_provenance.get("template_file") or ""),
@@ -305,16 +303,6 @@ def build_local_container_command(
     )
     if dataset_projection_root is not None:
         env["SURE_EVAL_DATASETS_ROOT"] = str(dataset_projection_root)
-    if evaluation_runtime is not None:
-        env.update(
-            {
-                "SURE_EVALUATION_PYTHON": str(evaluation_runtime["python_executable"]),
-                "SURE_EVALUATION_RUNTIME_ID": str(evaluation_runtime["runtime_id"]),
-                "SURE_EVALUATION_LOCK_SHA256": str(evaluation_runtime["lock_sha256"]),
-                "SURE_EVALUATION_RUNTIME_MANIFEST": str(evaluation_runtime["manifest_path"]),
-                "SURE_EVALUATION_HOME": str(evaluation_runtime["engine_root"]),
-            }
-        )
     for key in sorted(env):
         command.extend(["--env", f"{key}={env[key]}"])
     command.extend([str(binding["target_image_ref"]), str(entrypoint.resolve())])
@@ -334,7 +322,6 @@ def build_local_container_command(
             else None
         ),
         "harness_runtime": harness_runtime,
-        "evaluation_runtime": evaluation_runtime,
         "surface_env_refused": refused_surface_env(surface),
         "evaluation_node_runtime": {
             "runtime_type": "evaluation_node_python",

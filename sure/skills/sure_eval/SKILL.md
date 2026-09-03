@@ -19,7 +19,7 @@ Control principle: **agent decides scope, scripts enforce format and execution.*
 | `datasets` | ✅ | Comma-separated source paths below a configured `allowed_source_roots` entry, e.g. `datasets=/srv/sure/datasets/group/store/ds_pool/example@v1.0.2`. The strict main flow rejects legacy dataset names and short aliases; multi-version sources require the trailing `@<version_id>` (single-version sources may omit it). Dataset metadata, not a user-supplied task flag, determines ASR/TTS/VC/etc. |
 | `datasets_root` | — | Absolute writable projection root for generated JSONL indexes and metadata. Resolution precedence is this parameter, `SURE_EVAL_DATASETS_ROOT`, `datasets.projection_root` in site policy, an explicit config's `data.datasets`, then the repository development default. It must stay outside forbidden output roots and must not overlap a source root. Raw data is referenced in place and is never copied or moved. |
 | `protocol` | — | `standard_system` (default) follows the approved model's upstream configuration. `strict_core` requires every conservative parameter to be mapped to an MCP argument or explicitly proven not applicable. |
-| `device` | — | `auto \| cpu \| cuda \| cuda:<index>`. Default `auto`; resolved by `scripts/resolve_eval_input.py` and passed through inference/evaluation templates when materialized. `cuda:<index>` selects the local host GPU by setting `CUDA_VISIBLE_DEVICES=<index>`. |
+| `device` | — | `auto \| cpu \| cuda \| cuda:<index>`. Default `auto`; resolved by `scripts/resolve_eval_input.py` and handed to `scripts/infer_entrypoint.py` by `scripts/run_infer.py`. `cuda:<index>` selects the local host GPU by setting `CUDA_VISIBLE_DEVICES=<index>`. |
 | `target` | — | Target metric or paper to compare against. |
 | `max_samples` | — | Sample cap for bounded validation runs. Omitted or `0` means full dataset. |
 | `execution` | — | `auto \| local`. Both resolve to the approved local runtime: `local_docker` for container bindings, `local_python` for approved Python runtimes. `vc` is no longer accepted. |
@@ -31,7 +31,6 @@ Control principle: **agent decides scope, scripts enforce format and execution.*
 | `audit` | — | When true, triage existing results instead of running a new evaluation. |
 | `run_id` | — | Resume a specific run. |
 | `output_dir` | — | Absolute directory that becomes this invocation's product directory, replacing the repository-local `sure/results/<model>/<protocol>/<run_id>` staging path. The harness consumes it at `pre_start` and resolves it into the payload before the agent starts, so read `runtime.run_dir` rather than this parameter. It must be outside every configured `forbidden_output_roots` entry, creatable and writable. |
-| `template` | — | Execution-surface template name under `scripts/templates/`. |
 
 The invocation directory holds control artifacts under `.sure/runs/<run_id>/artifacts/`. The evaluation product directory recorded in `eval_input_resolved.json -> runtime.run_dir` is the source of truth for prediction, protocol, report, metric, and sample-level artifacts. It defaults to repository-local `sure/results/<model>/<protocol>/<run_id>`, and is the requested directory itself when the invocation passed `output_dir`. The `model_dir` parameter is forbidden.
 
@@ -63,15 +62,6 @@ Do not ask the user for `task` as the primary input. If a legacy prompt includes
 for evaluation task routing is the dataset metadata resolved into
 `eval_input_resolved.json`.
 
-At `execution_readiness`, the hook also resolves
-`<run_dir>/artifacts/evaluation_route_plan.json` by calling the standalone
-`sure-evaluation` route/capability contract through
-`scripts/resolve_evaluation_route_plan.py`. This artifact is the source of
-truth for supported metrics, default metrics, selected metric route choices,
-pipeline ids, node chains, required input roles, and selected node environment
-readiness. Do not infer metric support, normalization, transcription, or
-scoring chains inside harness code when this plan is available.
-
 ## State Machine
 
 Advance happens **only** when the current unit's `produces` artifact is compliant (location + format + value domain; no forbidden fields). Linear units are agent self-driven; gate units additionally run a Python semantic check. Produce the current unit's artifact, then call `sure_update_state`.
@@ -83,11 +73,11 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 | 3 | `plan` | linear | `main_agent_plan.json` | — |
 | 4 | `dataset_scope` | linear | `dataset_decision.json` | — |
 | 5 | `script_routing` | **gate** | `script_routing.json` | `scripts/check_script_routing.py` |
-| 6 | `execution_surface` | **gate** | `execution_surface.json` (+ `run_evaluation.sh`) | — |
+| 6 | `execution_surface` | **gate** | `execution_surface.json` | — (written by `scripts/run_infer.py`) |
 | 7 | `execution_readiness` | **gate** | `execution_readiness_report.json` | `scripts/check_execution_surface_compliance.py` |
 | 8 | `smoke_test` | **gate** | `smoke_test_result.json` | `scripts/run_smoke.py` |
 | 9 | `submit_vc_run` | **gate** | `submit_result.json` | — |
-| 10 | `execute_wait` | **gate** | `execution_result.json` | — |
+| 10 | `execute_wait` | **gate** | `execution_result.json` | `scripts/check_execution_result.py` |
 | 11 | `assessment` | **gate** | `assessment_report.json` | `scripts/check_assessment.py` |
 | 12 | `extract_lessons` | **gate** | `extraction_declaration.json` | `scripts/check_memory_extraction.py` |
 | 13 | `run_report` | **gate** | `main_agent_run_report.json` | `scripts/check_run_report.py` |
@@ -100,12 +90,12 @@ Each unit must satisfy: **Inputs** (previous unit's produces + evidence sources 
 - **tool_readiness_routing**: Inputs = exact approved NFS model with `artifacts/deployment_ready.json`, `runtime_inventory.json`, `package_gate.json`, and their declared hashes. Readiness requires either a `docker-registry`/digest-pinned/container-only binding, or a `package=none`/uv/content-addressed Python binding permitted by the active site. Python additionally requires model-core hashes and the matching site runtime. Missing or inconsistent fields route back to `/sure_onboard` and human promotion.
 - **plan**: Inputs = task classification + tool readiness + `eval_input_resolved.json`. Output follows `main_agent_plan.schema.json` and describes execution order only.
 - **dataset_scope**: Inputs = `eval_input_resolved.json` + explicit human constraints. Output = {selection_basis, selected_datasets, skipped_datasets}. User-provided datasets are validated/canonicalized here; this unit should not silently invent a different dataset scope.
-- **execution_surface** / **execute_wait**: produce the declared JSON; see `schemas/`. Do not emit later-unit fields.
 - **script_routing**: Output steps[] each {name, script}. name ∈ the whitelist (see `schemas/script_routing.schema.json`); `script` must resolve under `scripts/`.
-- **execution_surface**: Output {entrypoint_path or entrypoint, source_provenance.template_file, deployment_binding}. The script comes only from `scripts/templates/`. Copy the approved binding summary from `eval_input_resolved.json` exactly, including its schema version, runtime kind, bundle identity, execution mode, model integrity policy, and writable result policy. Current resolved bindings use `sure.eval.deployment_binding.v2`; historical container-only v1 surfaces remain accepted. Container surfaces also bind the immutable image. Do not invent or override a model interpreter.
-- **execution_readiness**: `check_execution_surface_compliance.py` compares the surface binding with the approved input, rejects `local_bash`, unapproved `.venv`/host interpreters, image changes, model-policy mismatches, and tool mismatches. It live-probes the exact approved container or site Model Python and validates the standalone evaluation route plan. A node that cannot start the approved container blocks the run, as does any probe that came up and reported a broken runtime.
-- **smoke_test**: bounded smoke on a tiny slice using the approved local container or Python runtime; `smoke_passed` true.
-- **submit_vc_run**: Containers use `local_docker`; Python uses `local_python`. Neither route may infer or rewrite a model `.venv`.
+- **execution_surface**: run `scripts/run_infer.py --run-dir <sure_run_dir>`. It writes `execution_surface.json` from `scripts/infer_entrypoint.py` (entrypoint path, its sha256, the approved binding summary copied from `eval_input_resolved.json`), runs the compliance checks, launches inference in the approved runtime and writes `execution_result.json`. Do not author the surface JSON by hand, and do not emit later-unit fields.
+- **execution_readiness**: `check_execution_surface_compliance.py` verifies the surface points at the bundled entrypoint (path + digest), that its binding matches the approved input (schema version, runtime kind, bundle identity, execution mode, model integrity policy, writable result policy, image for containers), rejects `local_bash`, unapproved `.venv`/host interpreters and tool mismatches, and live-probes the exact approved container or site Model Python. Any probe failure blocks: a node that cannot start the approved container, or a probe that came up and reported a broken runtime. The binding comparison here only catches a hand-edited surface; the cross-check against `eval_input_resolved.json` runs again at the `execute_wait` gate.
+- **smoke_test**: the bounded smoke pass is the `smoke` stage of `scripts/infer_entrypoint.py`. `run_smoke.py` reads `execution_result.json`, writes `smoke_test_result.json`, and fails when inference stopped in or before that stage; `smoke_passed` true.
+- **submit_vc_run**: a pass-through record of the local execution path (`local_docker` for containers, `local_python` for Python bindings) until the state machine is reshaped; `run_infer.py` writes `submit_result.json`. Neither route may infer or rewrite a model `.venv`.
+- **execute_wait**: `check_execution_result.py` validates the terminal record (`job_status`, exit code, execution path against the surface plan, surface binding against the approved input) and, for a succeeded run, cross-checks the product tree (`predictions/<dataset>.txt` counts, `prediction_generation_status.json`, `protocol.yaml`, `references/sure_benchmark/jsonl/<dataset>.jsonl`). A terminal failure is a valid outcome that the run report must then state.
 - **assessment**: {anomaly_detected, user_confirmed}. Anomaly (e.g. WER/CER > 50%, Accuracy < 20%) requires user confirmation.
 - **extract_lessons**: Inputs = `artifacts/run_digest.json`, written by the hook the moment `assessment` passed (read it; never rebuild it in place). Output = `extraction_declaration.json` {schema, no_new_lessons, no_lessons_reason, covered_by, candidates, infra_noise, infra_evidence} plus 0 to 5 candidate directories under `artifacts/candidates/<nn>-<slug>/` (`proposal.json` + `proposal.md`) and, for facts, evidence files under `artifacts/memory_evidence/`. The full contract (digest fields, candidate formats, the gate's ten checks, the write-tools-only rule) is `sure/runtime/memory/EXTRACTION.md`; read it before writing anything. Write candidates and evidence first and the declaration last. `no_new_lessons: true` with a one-line reason is the normal result of a clean run. Must Not Do: do not run `scripts/build_run_digest.py` onto `artifacts/run_digest.json` (a preview goes to `--out <run_dir>/artifacts/run_digest.preview.json` and the gate ignores it); do not write under `sure/memory/` or `references/memory/`; do not use bash heredocs for these files. Failure: `scripts/check_memory_extraction.py` says which check failed; after two consecutive failures the hook advances on its own with `extraction: failed`, and switching to `no_new_lessons: true` with the reason is always a valid way out.
 - **run_report**: {report_persisted, execution_path_actual}. Record `execution_path_requested`, `execution_path_actual`, `device_request`, `device_actual`, `max_samples`, total dataset samples, and evaluated samples.
@@ -114,17 +104,18 @@ Each unit must satisfy: **Inputs** (previous unit's produces + evidence sources 
 
 ```
 [SYSTEM_CONSTRAINT: EXECUTION_SURFACE_ISOLATION]
-When materializing the execution surface (run_evaluation.sh):
-1. ALLOWED_TEMPLATE_ROOTS: "scripts/templates/"
-   - The generated script MUST be derived ONLY from a template under this approved root.
-   - Use `scripts/templates/` for harness-adapted executable templates.
-   - You MUST NOT use any template outside this root.
-2. TEMPLATE_DECLARATION:
-   - execution_surface.json -> source_provenance.template_file MUST contain the
-     exact path of the template used, and it MUST resolve under an approved root.
+The execution surface (execution_surface.json) is generated, not authored:
+1. GENERATED_SURFACE:
+   - scripts/run_infer.py writes execution_surface.json from scripts/infer_entrypoint.py.
+   - You MUST NOT write or edit execution_surface.json by hand.
+   - You MUST NOT run any other entrypoint, and MUST NOT reference prior `eval_runs`.
+2. ENTRYPOINT_DECLARATION:
+   - execution_surface.json -> source_provenance.template_file, template_sha256 and
+     entrypoint_path MUST name the bundled scripts/infer_entrypoint.py, byte for byte.
 3. SELF_VERIFICATION:
-   - Before declaring execution_ready=false if unsure. The execution_readiness gate
-     runs scripts/check_execution_surface_compliance.py against the declared template.
+   - Declare execution_ready=false if unsure. The execution_readiness gate runs
+     scripts/check_execution_surface_compliance.py, which verifies the path + sha256
+     and the approved runtime binding.
 
 [SYSTEM_CONSTRAINT: EXECUTION_POLICY]
 The user controls where formal model inference runs:
@@ -176,18 +167,19 @@ standalone `sure-evaluation` engine when it is available. Flat scripts under
 `resolve_evaluation_route_plan.py`, `prepare_sure_dataset.py`,
 `materialize_predictions_template.py`, `generate_predictions_via_server.py`,
 `validate_prediction_files.py`, `evaluate_predictions.py`,
-`refresh_report_snapshot.py`, `run_local_execution.py`,
-`check_execution_surface_compliance.py`) are the routing targets. Templates live
-in `scripts/templates/`. Run them as:
+`refresh_report_snapshot.py`, `run_infer.py`, `infer_entrypoint.py`,
+`check_execution_surface_compliance.py`, `check_execution_result.py`) are the
+routing targets. Run them as:
 
 ```bash
 "$HARNESS_PYTHON_BIN" scripts/<script>.py <args>   # cwd = skill package dir
 ```
 
-For `execution=local`, call `scripts/run_local_execution.py --run-dir <sure_run_dir>`
-from the submit unit. It runs `run_evaluation.sh` through the approved container or
-site Model Python and writes
-both `submit_result.json` and `execution_result.json`.
+At `execution_surface`, call `scripts/run_infer.py --run-dir <sure_run_dir>`. It
+writes `execution_surface.json`, runs the compliance checks, then launches
+`scripts/infer_entrypoint.py` with the approved Harness Python inside the approved
+container (`local_docker`) or on the trusted host (`local_python`), and writes
+`execution_result.json` (plus, transitionally, `submit_result.json`).
 All execution routes inject the Model Python and server command declared by
 `runtime_inventory.json`, plus the independently resolved, versioned common
 `HARNESS_PYTHON_BIN`. Container routes resolve both roles inside the image. Python
@@ -199,8 +191,8 @@ interpreter. Host model-interpreter overrides and `.venv` rewrites are rejected.
 The standalone evaluator uses a third role, `SURE_EVALUATION_PYTHON`. Its root
 dependencies are resolved from the versioned contract under
 `sure/runtime/evaluation/`, cached by engine commit and lock hash under
-`sure/.runtime/evaluation/`, and recorded in `evaluation_route_plan.json`,
-`evaluation_payload.json`, and `protocol.yaml`. It may be prepared online only
+`sure/.runtime/evaluation/`, and recorded in `evaluation_payload.json` and
+`protocol.yaml`. It may be prepared online only
 during evaluation readiness and only from the committed lock. Never install an
 evaluation dependency into Harness Python or Model Python. Node-local evaluation
 environments remain owned by the selected pipeline nodes, and a run never builds
@@ -210,9 +202,8 @@ engine checkout, not a step inside a run. A missing node environment is a blocke
 to report, not to repair inline — one run spent twenty minutes compiling a
 normalization dependency, hit its own timeout, and produced nothing.
 
-Report it like this. `evaluation_route_plan.json` names every node that is
-missing under `node_environment_blockers`, each with its `node_id`, its
-`node_env.yaml` group, and the `prepare_command` that builds it. That command is
+Report it like this. The engine names the missing node by its `node_id`; the
+command that builds its environment is
 `sure-eval env setup --node <node_id>`, run once per engine checkout by whoever
 owns the checkout, never from inside a run — the environments live at
 `<engine>/src/sure_eval/evaluation/nodes/<node_id>/.venv` and are gitignored, so
@@ -242,7 +233,7 @@ approved model read-only. Configure the projection with `datasets_root`,
 repository-local `data/datasets` path is only the development fallback.
 
 `evaluate_predictions.py` accepts `--evaluation-backend auto|external|legacy`.
-Harness main-flow templates default to `EVALUATION_BACKEND=external`; this
+The evaluation runner passes `--evaluation-backend external` by default; this
 prevents the default path from falling back to the vendored legacy evaluator. Use `auto` or
 `legacy` only for explicit local compatibility work, not for aligned main-flow
 validation. Metric support is discovered from the current standalone
@@ -255,19 +246,21 @@ contract according to the selected route's required roles. Repeated `--metric`
 values produce one dataset-metric result each, and `--merge-payload` merges
 segmented TTS/VC evaluation payloads without rerunning metrics.
 
-`run_smoke.py` launches the approved local container or site Model Python with a
-bounded sample. `generate_predictions_via_server.py --device cpu` hides
+`run_smoke.py` launches nothing: it reads `execution_result.json` and fails when
+`infer_entrypoint.py` stopped in or before its bounded `smoke` stage.
+`generate_predictions_via_server.py --device cpu` hides
 `CUDA_VISIBLE_DEVICES` in the selected runtime; it never falls back to an
 unapproved host interpreter.
 
 ## Gate Checks (enforced by hooks)
 
 - `script_routing`: steps whitelisted, scripts under `scripts/`.
-- `execution_readiness`: `execution_ready && isolation_audit.audit_passed`; `check_execution_surface_compliance.py` (red line 1) also prepares/verifies the locked Evaluation Python, writes `evaluation_route_plan.json`, and blocks when standalone `sure-evaluation` reports root or selected node environment issues. The plan must include engine commit, Evaluation Runtime ID/lock, supported/default metrics, selected metrics, route choices, selected routes, and setup commands for blocking node-local environments. Bounded smoke is enforced by the next `smoke_test` gate.
-- `smoke_test`: `smoke_passed` true; entrypoint exists.
+- `execution_readiness`: `execution_ready && isolation_audit.audit_passed`; `check_execution_surface_compliance.py` (red line 1) verifies the surface names the bundled `infer_entrypoint.py` (path + sha256), compares its binding with the approved input, and live-probes the approved runtime; any probe failure blocks. Bounded smoke is enforced by the next `smoke_test` gate.
+- `smoke_test`: `smoke_passed` true; `run_smoke.py` reads `execution_result.json` and fails when inference stopped in or before the `smoke` stage.
+- `execute_wait`: `check_execution_result.py` validates the terminal record against the surface plan and the approved binding, and cross-checks the product tree of a succeeded run.
 - `assessment`: anomaly → `user_confirmed` true.
 - `extract_lessons`: `check_memory_extraction.py` checks the declaration and every candidate directory (shape, evidence paths, triggers, duplicates, digest sha); see `sure/runtime/memory/EXTRACTION.md`. Changing a candidate re-runs the gate even when `extraction_declaration.json` did not change.
-- `run_report`: `report_persisted` true, `execution_path_actual` declared, and execution/device/sample provenance recorded. Completed runs should index `eval_input_resolved.json` and `evaluation_route_plan.json`, and must contain model-local `evaluation_payload.json`, `protocol.yaml`, `report.jsonl`, `metrics/<dataset>/<metric_slug>/{report.json,pipeline_description.json}`, `sample_reports/<dataset>/<metric_slug>.jsonl`, and `predictions/<dataset>.txt/.jsonl`.
+- `run_report`: `report_persisted` true, `execution_path_actual` declared, and execution/device/sample provenance recorded. Completed runs should index `eval_input_resolved.json`, and must contain model-local `evaluation_payload.json`, `protocol.yaml`, `report.jsonl`, `metrics/<dataset>/<metric_slug>/{report.json,pipeline_description.json}`, `sample_reports/<dataset>/<metric_slug>.jsonl`, and `predictions/<dataset>.txt/.jsonl`.
 
 On gate failure the hook blocks with a `repair` message and bumps the retry counter (max 3); beyond that the unit is marked FAILED — classify via `references/failure_taxonomy.md` and repair or finish with `status: failed`. Do not blind-retry.
 

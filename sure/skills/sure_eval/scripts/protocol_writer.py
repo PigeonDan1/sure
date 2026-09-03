@@ -8,6 +8,7 @@ the inference side only (model, runtime, parameters, constraints); the
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import math
@@ -375,9 +376,9 @@ def write_protocol_yaml(
             },
         },
         "execution_surface": {
-            "materialized": bool(execution_entrypoint) or (results_dir / "run_evaluation.sh").is_file(),
-            "execution_surface_type": os.environ.get("SURE_EVAL_EXECUTION_SURFACE_TYPE") or "main_flow_script",
-            "entrypoint_path": execution_entrypoint or (str(results_dir / "run_evaluation.sh") if (results_dir / "run_evaluation.sh").is_file() else None),
+            "materialized": bool(execution_entrypoint),
+            "execution_surface_type": os.environ.get("SURE_EVAL_EXECUTION_SURFACE_TYPE") or "python_entrypoint",
+            "entrypoint_path": execution_entrypoint or None,
             "generation_method": os.environ.get("SURE_EVAL_EXECUTION_GENERATION_METHOD") or "harness_template",
             "template_file": os.environ.get("SURE_EVAL_EXECUTION_TEMPLATE_FILE"),
             "template_sha256": os.environ.get("SURE_EVAL_EXECUTION_TEMPLATE_SHA256") or _sha256_file(template_file),
@@ -445,3 +446,24 @@ def write_protocol_yaml(
         text = json.dumps(_to_strict_jsonable(payload), indent=2, ensure_ascii=False) + "\n"
     protocol_yaml.write_text(text, encoding="utf-8")
     logger.info("Wrote protocol.yaml", path=str(protocol_yaml))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Write protocol.yaml for an inference run")
+    parser.add_argument("--results-dir", required=True)
+    parser.add_argument("--protocol-id", required=True)
+    parser.add_argument("--model-dir")
+    parser.add_argument("--tool-name")
+    args = parser.parse_args()
+    write_protocol_yaml(
+        Path(args.results_dir),
+        args.protocol_id,
+        Path(args.model_dir) if args.model_dir else None,
+        results=None,
+        tool_name=args.tool_name,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

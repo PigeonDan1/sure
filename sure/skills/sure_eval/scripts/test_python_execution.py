@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import json
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -11,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import python_execution
-import run_local_execution
 
 
 class PythonExecutionTests(unittest.TestCase):
@@ -23,17 +20,18 @@ class PythonExecutionTests(unittest.TestCase):
         self.model_dir.mkdir()
         self.model_file = self.model_dir / "model.py"
         self.model_file.write_text("VALUE = 1\n", encoding="utf-8")
-        self.entrypoint = self.root / "run.sh"
+        self.entrypoint = self.root / "infer_entrypoint.py"
         self.entrypoint.write_text(
-            "#!/bin/bash\n"
-            "set -eu\n"
-            "test -x \"$MODEL_PYTHON\"\n"
-            "test -n \"$SURE_EVAL_MODEL_RUNTIME_ID\"\n"
-            "test -z \"${OPENAI_API_KEY:-}\"\n"
-            "test -z \"${SSH_AUTH_SOCK:-}\"\n",
+            "import os\n"
+            "assert os.access(os.environ['MODEL_PYTHON'], os.X_OK)\n"
+            "assert os.environ['SURE_EVAL_MODEL_RUNTIME_ID']\n"
+            "assert 'OPENAI_API_KEY' not in os.environ\n"
+            "assert 'SSH_AUTH_SOCK' not in os.environ\n"
+            "assert os.environ['NO_RESUME'] == '1'\n"
+            "assert os.environ['PROTOCOL_ID'] == 'strict_core'\n"
+            "assert os.environ['PATH'] != '/tmp/agent/bin'\n",
             encoding="utf-8",
         )
-        self.entrypoint.chmod(0o755)
         self.harness_python = self.root / "harness" / "bin" / "python"
         self.harness_python.parent.mkdir(parents=True)
         self.harness_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
@@ -76,6 +74,10 @@ class PythonExecutionTests(unittest.TestCase):
             "source_provenance": {},
             "env": {
                 "TOOL_NAME": "predict",
+                "NO_RESUME": "1",
+                "PROTOCOL_ID": "strict_core",
+                "PATH": "/tmp/agent/bin",
+                "PYTHONPATH": "/tmp/agent",
                 "OPENAI_API_KEY": "declared-secret",
                 "SURE_EVAL_API_TOKEN": "also-secret",
             },
@@ -83,7 +85,6 @@ class PythonExecutionTests(unittest.TestCase):
         repo_root = Path(__file__).resolve().parents[4]
         with (
             patch.object(python_execution, "harness_runtime_from_eval_input", return_value=harness),
-            patch.object(python_execution, "evaluation_runtime_from_eval_input", return_value=None),
             patch.dict(
                 os.environ,
                 {"OPENAI_API_KEY": "host-secret", "SSH_AUTH_SOCK": "/tmp/agent.sock"},
@@ -97,60 +98,25 @@ class PythonExecutionTests(unittest.TestCase):
                 repo_root=repo_root,
             )
 
-        self.assertEqual(command, ["bash", str(self.entrypoint)])
+        self.assertEqual(command, [str(self.harness_python), str(self.entrypoint)])
         self.assertNotIn("OPENAI_API_KEY", environment)
         self.assertNotIn("SURE_EVAL_API_TOKEN", environment)
         self.assertNotIn("SSH_AUTH_SOCK", environment)
+        self.assertEqual(environment["NO_RESUME"], "1")
+        self.assertEqual(environment["PROTOCOL_ID"], "strict_core")
+        self.assertNotEqual(environment["PATH"], "/tmp/agent/bin")
+        self.assertNotIn("PYTHONPATH", environment)
         self.assertEqual(environment["MODEL_PYTHON"], sys.executable)
         self.assertEqual(environment["HARNESS_PYTHON_BIN"], str(self.harness_python))
         self.assertNotEqual(environment["MODEL_PYTHON"], environment["HARNESS_PYTHON_BIN"])
         self.assertEqual(provenance["runtime_kind"], "python")
-        completed = subprocess.run(command, env=environment, check=False)
-        self.assertEqual(completed.returncode, 0)
+        self.assertNotIn("evaluation_runtime", provenance)
 
     def test_model_integrity_is_checked_again_after_execution(self) -> None:
         python_execution.verify_model_integrity(self.binding)
         self.model_file.write_text("VALUE = 2\n", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "changed after onboarding"):
             python_execution.verify_model_integrity(self.binding)
-
-    def test_local_python_route_never_builds_a_container_command(self) -> None:
-        artifacts = self.run_dir / "artifacts"
-        artifacts.mkdir(parents=True)
-        surface = {
-            "entrypoint_path": str(self.entrypoint),
-            "execution": {"requested": "local", "planned": "local", "path_planned": "local_python"},
-        }
-        (artifacts / "execution_surface.json").write_text(json.dumps(surface), encoding="utf-8")
-        (artifacts / "eval_input_resolved.json").write_text(
-            json.dumps({**self.eval_input, "runtime": {"run_dir": str(self.run_dir), "model_runtime": "python"}}),
-            encoding="utf-8",
-        )
-        launch = {
-            "runtime_kind": "python",
-            "model_runtime": {"runtime_id": self.binding["python"]["runtime_id"]},
-            "harness_runtime": {},
-        }
-        argv = ["run_local_execution.py", "--run-dir", str(self.run_dir)]
-        with (
-            patch.object(run_local_execution, "_vc_available", return_value=False),
-            patch.object(
-                run_local_execution,
-                "build_local_python_command",
-                return_value=(["bash", "-c", "exit 0"], os.environ.copy(), launch),
-            ),
-            patch.object(
-                run_local_execution,
-                "build_local_container_command",
-                side_effect=AssertionError("Docker route must not be used"),
-            ),
-            patch.object(run_local_execution, "verify_model_integrity", return_value={}),
-            patch.object(sys, "argv", argv),
-        ):
-            self.assertEqual(run_local_execution.main(), 0)
-        submit = json.loads((artifacts / "submit_result.json").read_text(encoding="utf-8"))
-        self.assertEqual(submit["execution_path"], "local_python")
-        self.assertEqual(submit["runtime_kind"], "python")
 
 
 if __name__ == "__main__":

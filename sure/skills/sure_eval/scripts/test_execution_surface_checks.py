@@ -218,6 +218,146 @@ def _host_cannot_probe() -> dict:
     }
 
 
+class EntrypointProvenanceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.artifacts = Path(self.temp.name) / "artifacts"
+        self.artifacts.mkdir()
+        self.entrypoint_sha = checks._sha256_file(checks.INFER_ENTRYPOINT)
+
+    def write_surface(self, *, provenance: dict | None = None, **overrides: object) -> Path:
+        surface: dict = {
+            "entrypoint_path": str(checks.INFER_ENTRYPOINT),
+            "source_provenance": {
+                "template_file": str(checks.INFER_ENTRYPOINT),
+                "template_sha256": self.entrypoint_sha,
+                "isolation_compliance": {"eval_runs_referenced": False, "prior_run_scripts_copied": False},
+            },
+        }
+        if provenance is not None:
+            surface["source_provenance"] = provenance
+        surface.update(overrides)
+        path = self.artifacts / "execution_surface.json"
+        path.write_text(json.dumps(surface), encoding="utf-8")
+        return path
+
+    def test_the_bundled_entrypoint_passes(self) -> None:
+        result = checks.check_entrypoint_provenance(self.write_surface())
+        self.assertTrue(result["passed"], result["evidence"])
+        self.assertEqual(result["entrypoint_sha256"], self.entrypoint_sha)
+
+    def test_another_script_is_rejected(self) -> None:
+        other = Path(self.temp.name) / "run_evaluation.sh"
+        other.write_text("#!/bin/bash\n", encoding="utf-8")
+        result = checks.check_entrypoint_provenance(
+            self.write_surface(
+                entrypoint_path=str(other),
+                provenance={
+                    "template_file": str(other),
+                    "template_sha256": checks._sha256_file(other),
+                    "isolation_compliance": {"eval_runs_referenced": False, "prior_run_scripts_copied": False},
+                },
+            )
+        )
+        self.assertFalse(result["passed"])
+        self.assertIn("bundled entrypoint", result["evidence"])
+
+    def test_a_stale_digest_is_rejected(self) -> None:
+        provenance = {
+            "template_file": str(checks.INFER_ENTRYPOINT),
+            "template_sha256": "0" * 64,
+            "isolation_compliance": {"eval_runs_referenced": False, "prior_run_scripts_copied": False},
+        }
+        result = checks.check_entrypoint_provenance(self.write_surface(provenance=provenance))
+        self.assertFalse(result["passed"])
+        self.assertIn("stale", result["evidence"])
+
+    def test_a_missing_template_file_is_rejected(self) -> None:
+        result = checks.check_entrypoint_provenance(self.write_surface(provenance={"template_sha256": self.entrypoint_sha}))
+        self.assertFalse(result["passed"])
+        self.assertIn("template_file is empty", result["evidence"])
+
+    def test_prior_run_leakage_is_rejected(self) -> None:
+        provenance = {
+            "template_file": str(checks.INFER_ENTRYPOINT),
+            "template_sha256": self.entrypoint_sha,
+            "isolation_compliance": {"eval_runs_referenced": True, "prior_run_scripts_copied": False},
+        }
+        result = checks.check_entrypoint_provenance(self.write_surface(provenance=provenance))
+        self.assertFalse(result["passed"])
+        self.assertIn("eval_runs_referenced=true", result["evidence"])
+
+    def test_a_missing_surface_is_rejected(self) -> None:
+        result = checks.check_entrypoint_provenance(self.artifacts / "execution_surface.json")
+        self.assertFalse(result["passed"])
+        self.assertIn("not found", result["evidence"])
+
+
+class ExpectedBindingSummaryTests(unittest.TestCase):
+    def test_a_v2_container_binding_carries_its_image(self) -> None:
+        approved = {
+            "schema": "sure.eval.deployment_binding.v2",
+            "runtime_kind": "container",
+            "target_image_ref": IMAGE_REF,
+            "policy": {"execution_mode": "container_only", "model_integrity": "image_digest"},
+            "evidence": {"bundle_identity_sha256": "b" * 64},
+        }
+        self.assertEqual(
+            checks.expected_binding_summary(approved),
+            {
+                "schema": "sure.eval.deployment_binding.v2",
+                "runtime_kind": "container",
+                "target_image_ref": IMAGE_REF,
+                "bundle_identity_sha256": "b" * 64,
+                "execution_mode": "container_only",
+                "model_mount_read_only": True,
+                "model_integrity": "image_digest",
+                "result_mount_writable": True,
+            },
+        )
+
+    def test_a_v2_python_binding_has_no_image_and_no_read_only_mount(self) -> None:
+        approved = {
+            "schema": "sure.eval.deployment_binding.v2",
+            "runtime_kind": "python",
+            "policy": {"execution_mode": "python", "model_integrity": "verify_before_after"},
+            "evidence": {"bundle_identity_sha256": "b" * 64},
+        }
+        summary = checks.expected_binding_summary(approved)
+        self.assertNotIn("target_image_ref", summary)
+        self.assertFalse(summary["model_mount_read_only"])
+        self.assertEqual(summary["model_integrity"], "verify_before_after")
+        self.assertEqual(summary["execution_mode"], "python")
+
+    def test_a_v1_binding_keeps_the_legacy_shape(self) -> None:
+        approved = {
+            "schema": "sure.eval.deployment_binding.v1",
+            "target_image_ref": IMAGE_REF,
+            "evidence": {"bundle_identity_sha256": "b" * 64},
+        }
+        self.assertEqual(
+            checks.expected_binding_summary(approved),
+            {
+                "schema": "sure.eval.deployment_binding.v1",
+                "target_image_ref": IMAGE_REF,
+                "bundle_identity_sha256": "b" * 64,
+                "execution_mode": "container_only",
+                "model_mount_read_only": True,
+                "result_mount_writable": True,
+            },
+        )
+
+    def test_binding_mismatches_name_every_drifted_field(self) -> None:
+        expected = {"schema": "sure.eval.deployment_binding.v2", "runtime_kind": "container"}
+        self.assertEqual(checks.binding_mismatches(None, expected), ["execution surface must declare deployment_binding"])
+        self.assertEqual(
+            checks.binding_mismatches({"schema": "sure.eval.deployment_binding.v2", "runtime_kind": "python"}, expected),
+            ["deployment_binding.runtime_kind must equal approved value 'container'"],
+        )
+        self.assertEqual(checks.binding_mismatches({**expected, "extra": 1}, expected), [])
+
+
 def _probe_fixture() -> tuple[dict, dict]:
     harness = {
         "runtime_id": "sure-harness-test",

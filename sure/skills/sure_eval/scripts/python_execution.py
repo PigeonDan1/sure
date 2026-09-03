@@ -9,9 +9,8 @@ import re
 from pathlib import Path
 from typing import Any, Mapping
 
-from container_execution import surface_env
+from container_execution import surface_env, surface_env_refuses
 from deployment_binding import DEPLOYMENT_BINDING_V2
-from evaluation_runtime import evaluation_runtime_from_eval_input
 from harness_runtime import harness_runtime_from_eval_input
 
 
@@ -26,24 +25,6 @@ HOST_ENV_ALLOW = {
     "PATH",
     "TERM",
     "TZ",
-}
-SURFACE_ENV_ALLOW = {
-    "DATASET",
-    "DATASETS",
-    "DEVICE",
-    "DEVICE_REQUEST",
-    "DEVICE_RESOLVED",
-    "EXECUTION_PATH",
-    "MAX_SAMPLES",
-    "METRICS",
-    "MODEL_NAME",
-    "PROTOCOL",
-    "RUN_ID",
-    "SMOKE_ONLY",
-    "SMOKE_TEST_SAMPLES",
-    "SURE_EVAL_CONFIG",
-    "SURE_EVAL_DATASETS_ROOT",
-    "TOOL_NAME",
 }
 SENSITIVE_PARTS = (
     "ACCESS_KEY",
@@ -110,7 +91,7 @@ def _safe_environment(source: Mapping[str, str], declared: Mapping[str, str]) ->
     for key, value in declared.items():
         if not ENV_NAME_RE.fullmatch(key) or any(part in key.upper() for part in SENSITIVE_PARTS):
             continue
-        if key in HOST_ENV_ALLOW or key in SURFACE_ENV_ALLOW or key.startswith(("SURE_EVAL_", "SURE_HARNESS_")):
+        if not surface_env_refuses(key):
             env[key] = str(value)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONNOUSERSITE"] = "1"
@@ -140,7 +121,6 @@ def build_local_python_command(
     harness_python = Path(str(harness_runtime["python_executable"])).expanduser()
     if model_python.parent.resolve() / model_python.name == harness_python.parent.resolve() / harness_python.name:
         raise ValueError("Harness Python and Model Python must remain separate execution roles")
-    evaluation_runtime = evaluation_runtime_from_eval_input(eval_input, prepare=False)
     runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
     output_dir = Path(str(runtime.get("run_dir") or "")).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -166,7 +146,7 @@ def build_local_python_command(
             "SURE_HARNESS_LOCK_SHA256": str(harness_runtime["lock_sha256"]),
             "SURE_HARNESS_MANIFEST_PATH": str(harness_runtime["manifest_path"]),
             "SURE_HARNESS_RUNTIME_ROOT": str(harness_runtime["runtime_root"]),
-            "SURE_EVAL_EXECUTION_SURFACE_TYPE": "main_flow_script",
+            "SURE_EVAL_EXECUTION_SURFACE_TYPE": str(surface.get("execution_surface_type") or "python_entrypoint"),
             "SURE_EVAL_EXECUTION_ENTRYPOINT": str(entrypoint.resolve()),
             "SURE_EVAL_EXECUTION_GENERATION_METHOD": str(surface.get("generation_method") or "harness_template"),
             "SURE_EVAL_EXECUTION_TEMPLATE_FILE": str(source_provenance.get("template_file") or ""),
@@ -185,21 +165,10 @@ def build_local_python_command(
             "XDG_CACHE_HOME": str(cache_root / "xdg"),
         }
     )
-    if evaluation_runtime is not None:
-        env.update(
-            {
-                "SURE_EVALUATION_PYTHON": str(evaluation_runtime["python_executable"]),
-                "SURE_EVALUATION_RUNTIME_ID": str(evaluation_runtime["runtime_id"]),
-                "SURE_EVALUATION_LOCK_SHA256": str(evaluation_runtime["lock_sha256"]),
-                "SURE_EVALUATION_RUNTIME_MANIFEST": str(evaluation_runtime["manifest_path"]),
-                "SURE_EVALUATION_HOME": str(evaluation_runtime["engine_root"]),
-            }
-        )
-    return ["bash", str(entrypoint.resolve())], env, {
+    return [str(harness_python), str(entrypoint.resolve())], env, {
         "runtime_kind": "python",
         "model_runtime": python,
         "harness_runtime": harness_runtime,
-        "evaluation_runtime": evaluation_runtime,
         "model_dir": str(model_dir),
         "working_dir": str(working_dir),
         "model_core_sha256": verified,

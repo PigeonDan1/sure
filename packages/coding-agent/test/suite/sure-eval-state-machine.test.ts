@@ -410,8 +410,8 @@ describe("sure_eval tool_readiness_routing handoff gate", () => {
 	});
 });
 
-// Gate-with-script units (smoke_test, assessment, run_report, script_routing) must
-// have NO in-process gateCheck — the python gateScript is
+// Gate-with-script units (smoke_test, execute_wait, assessment, run_report,
+// script_routing) must have NO in-process gateCheck — the python gateScript is
 // the single authoritative semantic checker. This is the redundancy-removal
 // contract: no duplicated === true vs truthy logic, no duplicated constant lists.
 describe("sure_eval gate-with-script units have no in-process gateCheck (python is sole authority)", () => {
@@ -419,6 +419,7 @@ describe("sure_eval gate-with-script units have no in-process gateCheck (python 
 		["script_routing", "check_script_routing.py"],
 		["execution_readiness", "check_execution_surface_compliance.py"],
 		["smoke_test", "run_smoke.py"],
+		["execute_wait", "check_execution_result.py"],
 		["assessment", "check_assessment.py"],
 		["extract_lessons", "check_memory_extraction.py"],
 		["run_report", "check_run_report.py"],
@@ -435,7 +436,14 @@ describe("sure_eval gate-with-script units have no in-process gateCheck (python 
 		expect(findUnit("execution_readiness")!.gateCheck).toBeDefined();
 	});
 	it("gate-with-script units drop the in-process gateCheck (incl. extract_lessons)", () => {
-		for (const id of ["script_routing", "smoke_test", "assessment", "extract_lessons", "run_report"]) {
+		for (const id of [
+			"script_routing",
+			"smoke_test",
+			"execute_wait",
+			"assessment",
+			"extract_lessons",
+			"run_report",
+		]) {
 			expect(findUnit(id)!.gateCheck).toBeUndefined();
 		}
 	});

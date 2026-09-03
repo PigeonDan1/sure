@@ -358,7 +358,7 @@ const UNIT_AGNOSTIC_SCRIPTS = new Set([
 	"scripts/resolve_evaluation_engine.py",
 	"scripts/resolve_evaluation_route_plan.py",
 	"scripts/preflight_evaluation_support.py",
-	"scripts/run_local_execution.py",
+	"scripts/run_infer.py",
 ]);
 
 export function preToolCall(ctx: SureHookContext): SureHookResult {

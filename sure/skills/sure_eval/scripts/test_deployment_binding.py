@@ -8,7 +8,6 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from container_execution import build_local_container_command
 from deployment_binding import (
@@ -353,6 +352,7 @@ class DeploymentBindingTests(unittest.TestCase):
         )
         self.assertIn(self.image_ref, command)
         self.assertIn("device=2", command)
+        self.assertEqual(command[command.index("--entrypoint") + 1], str(self.harness_python))
         self.assertTrue(any("src=" + str(self.model) in item and "readonly" in item for item in command))
         self.assertIn(f"HARNESS_PYTHON_BIN={self.harness_python}", command)
         self.assertIn(f"SURE_EVAL_NODE_LOCAL_PYTHON={self.harness_python}", command)
@@ -432,36 +432,6 @@ class DeploymentBindingTests(unittest.TestCase):
             [f"type=bind,src={self.projection},dst={self.projection}"],
         )
 
-    def test_local_command_injects_separate_evaluation_runtime(self) -> None:
-        binding = load_deployment_binding(self.model, "demo")
-        evaluation = {
-            "runtime_id": "sure-evaluation-test",
-            "python_executable": str(self.repo / "sure" / ".runtime" / "evaluation" / "bin" / "python"),
-            "runtime_root": str(self.repo / "sure" / ".runtime" / "evaluation"),
-            "manifest_path": str(self.repo / "sure" / ".runtime" / "evaluation" / "runtime-manifest.json"),
-            "lock_sha256": "e" * 64,
-            "engine_root": str(self.repo / "sure" / "external" / "sure-evaluation"),
-        }
-        with patch("container_execution.evaluation_runtime_from_eval_input", return_value=evaluation):
-            command, provenance = build_local_container_command(
-                surface={"env": {}},
-                eval_input={
-                    "model": {"deployment_binding": binding},
-                    "runtime": {
-                        "run_dir": str(self.output),
-                        "harness_runtime": self._runtime_binding(),
-                    },
-                    "datasets": [],
-                },
-                control_run_dir=self.control,
-                entrypoint=self.entrypoint,
-                repo_root=self.repo,
-                device_request="cpu",
-            )
-        self.assertIn(f"SURE_EVALUATION_PYTHON={evaluation['python_executable']}", command)
-        self.assertIn("SURE_EVALUATION_RUNTIME_ID=sure-evaluation-test", command)
-        self.assertEqual(provenance["evaluation_runtime"], evaluation)
-
     def test_local_command_refuses_surface_declared_path_and_provenance(self) -> None:
         # The agent writes execution_surface.json, so its env is a request, not
         # a fact. Run 20260828-142343 declared a PATH here whose first entry
@@ -469,14 +439,6 @@ class DeploymentBindingTests(unittest.TestCase):
         # it; another run declared GIT_CONFIG_* to make git accept a checkout it
         # would otherwise refuse. The mode of the run stays the agent's to pick.
         binding = load_deployment_binding(self.model, "demo")
-        evaluation = {
-            "runtime_id": "sure-evaluation-test",
-            "python_executable": str(self.repo / "sure" / ".runtime" / "evaluation" / "bin" / "python"),
-            "runtime_root": str(self.repo / "sure" / ".runtime" / "evaluation"),
-            "manifest_path": str(self.repo / "sure" / ".runtime" / "evaluation" / "runtime-manifest.json"),
-            "lock_sha256": "e" * 64,
-            "engine_root": str(self.repo / "sure" / "external" / "sure-evaluation"),
-        }
         surface = {
             "env": {
                 "PATH": "/tmp/agent/bin:/usr/bin",
@@ -491,22 +453,21 @@ class DeploymentBindingTests(unittest.TestCase):
                 "REPO_ROOT": "/tmp/agent/skill",
             }
         }
-        with patch("container_execution.evaluation_runtime_from_eval_input", return_value=evaluation):
-            command, provenance = build_local_container_command(
-                surface=surface,
-                eval_input={
-                    "model": {"deployment_binding": binding},
-                    "runtime": {
-                        "run_dir": str(self.output),
-                        "harness_runtime": self._runtime_binding(),
-                    },
-                    "datasets": [],
+        command, provenance = build_local_container_command(
+            surface=surface,
+            eval_input={
+                "model": {"deployment_binding": binding},
+                "runtime": {
+                    "run_dir": str(self.output),
+                    "harness_runtime": self._runtime_binding(),
                 },
-                control_run_dir=self.control,
-                entrypoint=self.entrypoint,
-                repo_root=self.repo,
-                device_request="cpu",
-            )
+                "datasets": [],
+            },
+            control_run_dir=self.control,
+            entrypoint=self.entrypoint,
+            repo_root=self.repo,
+            device_request="cpu",
+        )
         joined = " ".join(command)
         self.assertNotIn("/tmp/agent", joined)
         self.assertNotIn("forged-runtime", joined)
@@ -514,8 +475,7 @@ class DeploymentBindingTests(unittest.TestCase):
         # The run's own mode is still the agent's to declare.
         self.assertIn("EVALUATION_BACKEND=external", command)
         self.assertIn("REPAIR_INVALID_ONLY=1", command)
-        # The host's own value survives, and every refusal leaves a trace.
-        self.assertIn("SURE_EVALUATION_RUNTIME_ID=sure-evaluation-test", command)
+        # The harness's own value survives, and every refusal leaves a trace.
         self.assertIn(f"REPO_ROOT={self.repo / 'sure' / 'skills' / 'sure_eval'}", command)
         self.assertEqual(
             sorted(provenance["surface_env_refused"]),
