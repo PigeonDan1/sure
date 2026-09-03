@@ -28,7 +28,7 @@ sure/external/sure-evaluation
 git submodule update --init --recursive
 ```
 
-要指到另一个 checkout(高级用法,跟 `evaluation_engine_root=` 参数干的是同一件事):
+要指到另一个 checkout(高级用法;`/sure_eval` 不接受 `evaluation_engine_root=` 参数,只能用这个环境变量):
 
 ```bash
 export SURE_EVALUATION_HOME=/path/to/sure-evaluation
