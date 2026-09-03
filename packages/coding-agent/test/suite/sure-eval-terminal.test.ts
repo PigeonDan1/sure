@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { incompleteReportError } from "../../../../sure/skills/sure_reval/hooks/index.ts";
+import { incompleteReportError } from "../../../../sure/skills/sure_eval/hooks/index.ts";
 
-describe("sure_reval incomplete terminal contract", () => {
+describe("sure_eval incomplete terminal contract", () => {
 	const report = {
-		schema: "sure.reval.run_report.v1",
+		schema: "sure.eval.run_report.v1",
 		status: "incomplete",
 		error_code: "INPUT_EVIDENCE_MISSING",
 		evaluation_only: true,

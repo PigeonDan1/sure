@@ -21,5 +21,8 @@
   },
   "sure_infer": {
     "execute_inference": ["artifact:execution_result.json", "{run_dir}/artifacts/local_execution.stderr.log", "{run_dir}/artifacts/local_execution.stdout.log"]
+  },
+  "sure_eval": {
+    "execute_evaluation": []
   }
 }

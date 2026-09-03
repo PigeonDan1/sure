@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Regression tests for the eval/reval dataset identity boundary.
+"""Regression tests for the infer/eval dataset identity boundary.
 
 /sure_infer expands a short alias such as "aishell1" to the fully qualified,
 versioned dataset id it actually writes artifacts under (e.g.
 "aishell1__v1.0.2__asr") via
 DatasetManager._existing_jsonl_for_dataset -> normalize_dataset_name.
-/sure_reval deliberately has a stricter public identity: callers must provide
+/sure_eval deliberately has a stricter public identity: callers must provide
 the exact ``<dataset>__<version>`` value approved in NFS. It does not accept a
 short alias or the historical ``__task`` report suffix.
 
@@ -13,7 +13,7 @@ These tests exercise:
   - the shared resolve_dataset_alias() rule directly,
   - /sure_infer's own DatasetManager._existing_jsonl_for_dataset using that
     rule (proves the eval side keeps resolving exactly as before), and
-  - /sure_reval's canonical request validator (proves aliases and historical
+  - /sure_eval's canonical request validator (proves aliases and historical
     report suffixes cannot weaken exact dataset-set equality).
 
 Run directly:

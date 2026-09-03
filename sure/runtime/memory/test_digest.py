@@ -326,6 +326,13 @@ class ResolveTargetTests(DigestTestBase):
         run.artifact("eval_input_resolved.json", {"user_input": {"model": "demo-model", "datasets": ["librispeech"]}, "runtime": {"run_dir": "/tmp/out-dir-xyz"}})
         self.assertEqual(digest.resolve_target(run.dir, "sure_infer", run.args), {"kind": "eval", "id": "demo-model"})
 
+    def test_eval_reads_model_name_from_the_prediction_source_and_ignores_source_paths(self) -> None:
+        run = FakeRun(self.runs_root, "20260818-120000-eeee0021", "sure_eval", "model=arg-model datasets=librispeech__v1")
+        run.artifact("prediction_source_resolved.json", {"model_name": "demo-model", "source_results_dir": "/srv/results/demo-model/standard_system/r1"})
+        self.assertEqual(digest.resolve_target(run.dir, "sure_eval", run.args), {"kind": "eval", "id": "demo-model"})
+        (run.dir / "artifacts" / "prediction_source_resolved.json").unlink()
+        self.assertEqual(digest.resolve_target(run.dir, "sure_eval", run.args)["id"], "arg-model")
+
     def test_falls_back_to_args_when_artifact_missing(self) -> None:
         run = FakeRun(self.runs_root, "20260818-120000-eeee0002", "sure_infer", "model=arg-model output_dir=/tmp/o")
         self.assertEqual(digest.resolve_target(run.dir, "sure_infer", run.args)["id"], "arg-model")
@@ -362,6 +369,12 @@ class ProductDirTests(DigestTestBase):
         self.assertIsNone(digest._product_dir(run.dir, "sure_feed"))
         # sure_trans copies its logs into model_dir only in its last unit, so it registers none.
         self.assertIsNone(digest._product_dir(self.trans_run(run_id="20260818-120000-tttt0002").dir, "sure_trans"))
+
+    def test_eval_product_dir_is_the_source_results_dir(self) -> None:
+        run = FakeRun(self.runs_root, "20260818-120000-eeee0022", "sure_eval", "model=demo-model")
+        self.assertIsNone(digest._product_dir(run.dir, "sure_eval"))
+        run.artifact("prediction_source_resolved.json", {"model_name": "demo-model", "source_results_dir": "/srv/results/demo-model/standard_system/r1"})
+        self.assertEqual(digest._product_dir(run.dir, "sure_eval"), Path("/srv/results/demo-model/standard_system/r1"))
 
 
 class BuildDigestTests(DigestTestBase):

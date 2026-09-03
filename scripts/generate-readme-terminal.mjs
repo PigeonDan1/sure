@@ -2,7 +2,7 @@
 // Generate the animated README terminal (docs/assets/harness-terminal*.svg).
 //
 // The SVG replays one canonical SURE session — /sure_init → /sure_feed →
-// /sure_onboard → /sure_approve → /sure_eval — as a self-contained CSS animation: commands
+// /sure_onboard → /sure_approve → /sure_infer → /sure_eval — as a self-contained CSS animation: commands
 // type in behind a block cursor, agent output slides in, transient status
 // lines resolve into results, and the loop restarts. No scripts, no fonts,
 // no network: everything is plain SVG + CSS, so GitHub renders it inside
@@ -44,14 +44,25 @@ const SCENARIO = [
 	{ kind: "ok", text: "decision bound · published atomically · approval_ready.json" },
 	{
 		kind: "cmd",
-		cmd: "/sure_eval",
-		args: " model=Qwen__Qwen3-ASR-0.6B-hf datasets=aishell1 metrics=cer execution=local device=auto",
+		cmd: "/sure_infer",
+		args: " model=Qwen__Qwen3-ASR-0.6B-hf datasets=aishell1 execution=local device=auto",
 	},
-	{ kind: "out", text: "route asr.zh.cer.aispeech_norm_zh_v1.wenet_cer_v1 · protocol standard_system" },
-	{ kind: "status", text: "inference 1/1 · deterministic evaluation pipeline running…", holdS: 2.1 },
+	{ kind: "status", text: "inference 1/1 · predictions and protocol.yaml staged…", holdS: 2.1 },
 	{
 		kind: "ok",
-		text: "run_report · main_agent_run_report.json · report_persisted=true · execution_path_actual=local_bash",
+		text: "run_report · predictions/ · protocol.yaml · execution_path_actual=local_python",
+		replaces: true,
+	},
+	{
+		kind: "cmd",
+		cmd: "/sure_eval",
+		args: " model=Qwen__Qwen3-ASR-0.6B-hf datasets=aishell1 metrics=cer",
+	},
+	{ kind: "out", text: "route asr.zh.cer.identity_norm_v1.wenet_cer_v1 · protocol standard_system" },
+	{ kind: "status", text: "deterministic evaluation pipeline running…", holdS: 2.1 },
+	{
+		kind: "ok",
+		text: "eval_run_report.json · evaluation_runs/<batch> appended · report_persisted=true",
 		replaces: true,
 	},
 	{ kind: "idle" },
@@ -245,7 +256,7 @@ function render(themeName) {
 	const title = "sure-harness";
 	return (
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label="SURE harness terminal session">` +
-		`<title>SURE harness: one /sure_feed → /sure_onboard → /sure_approve → /sure_eval session in the interactive terminal</title>` +
+		`<title>SURE harness: one /sure_feed → /sure_onboard → /sure_approve → /sure_infer → /sure_eval session in the interactive terminal</title>` +
 		`<style>${css.join("\n")}</style>` +
 		`<rect x="1" y="1" width="${WIDTH - 2}" height="${HEIGHT - 2}" rx="12" fill="${c.bg}" stroke="${c.border}" stroke-width="1.5"/>` +
 		`<path d="M 1 ${TITLE_H} H ${WIDTH - 1}" stroke="${c.border}" stroke-width="1"/>` +

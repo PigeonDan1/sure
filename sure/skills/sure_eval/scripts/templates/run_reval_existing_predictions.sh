@@ -26,5 +26,5 @@ for pipeline_id in "${PIPELINE_ARRAY[@]}"; do
   ARGS+=(--pipeline-id "$pipeline_id")
 done
 
-: "${HARNESS_PYTHON_BIN:?HARNESS_PYTHON_BIN must be resolved by the /sure_reval pre-start hook}"
-"$HARNESS_PYTHON_BIN" "$REPO_ROOT/sure/skills/sure_eval/scripts/run_reval.py" "${ARGS[@]}"
+: "${HARNESS_PYTHON_BIN:?HARNESS_PYTHON_BIN must be resolved by the /sure_eval pre-start hook}"
+"$HARNESS_PYTHON_BIN" "$REPO_ROOT/sure/skills/sure_infer/scripts/run_eval.py" "${ARGS[@]}"

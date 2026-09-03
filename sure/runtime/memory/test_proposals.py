@@ -912,24 +912,17 @@ class Rule1Tests(GateTestCase):
     def test_cell_component_depends_on_skill_and_type(self) -> None:
         p1 = bad_case_proposal()
         p1["cell"]["component"] = "dataset_scope"  # an infer unit, not an onboard one
-        p2 = bad_case_proposal(target_skill="sure_eval", applies_to=["sure_eval"])  # a target skill with no units.json row
+        p2 = fact_proposal()
         p2["cell"]["component"] = "build_env"
-        p3 = fact_proposal()
-        p3["cell"]["component"] = "build_env"
-        p4 = bad_case_proposal(target_skill="sure_eval", applies_to=["sure_eval"])
-        p4["cell"]["component"] = "_"
-        p5 = bad_case_proposal()
-        p5["cell"] = "build_env x infra"
-        for cid, p, md in (("01-x", p1, bad_case_md()), ("02-x", p2, bad_case_md()), ("03-x", p3, fact_md()),
-                           ("04-x", p4, bad_case_md()), ("05-x", p5, bad_case_md())):
+        p3 = bad_case_proposal()
+        p3["cell"] = "build_env x infra"
+        for cid, p, md in (("01-x", p1, bad_case_md()), ("02-x", p2, fact_md()), ("03-x", p3, bad_case_md())):
             self.fx.add_candidate(cid, p, md)
         self.fx.write_declaration()
         failures = self.fx.run()
         self.assertFailure(failures, 1, "candidate 01-x: cell.component 'dataset_scope' must be a sure_onboard unit id")
-        self.assertFailure(failures, 1, "candidate 02-x: cell.component 'build_env' must be '_' (sure_eval has no state machine)")
-        self.assertFailure(failures, 1, "candidate 03-x: cell.component must be '_' for a fact")
-        self.assertFalse([f for f in failures if f.message.startswith("candidate 04-x") and "component" in f.message])
-        self.assertFailure(failures, 1, "candidate 05-x: cell must be an object with component and cause")
+        self.assertFailure(failures, 1, "candidate 02-x: cell.component must be '_' for a fact")
+        self.assertFailure(failures, 1, "candidate 03-x: cell must be an object with component and cause")
 
     def test_cell_component_must_be_named_by_a_claim(self) -> None:
         # match.ts filters bad_cases on component === unit with no fallback, so a component the

@@ -165,6 +165,6 @@ Earlier runs leave agent-written notes. `sure/memory/index.md` (repo root) is th
 
 ## Cross-Skill Handoff
 
-`sure/handoffs/<model_name>/model_input.yaml` → `/sure_onboard model=<model_name>` or `/sure_onboard model_input_path=sure/handoffs/<model_name>/model_input.yaml` → model staged under `sure/models/<model_name>/` with `artifacts/deployment_ready.json` → an operator reviews and copies the complete model directory into a configured `approved_models_roots` entry → `/sure_eval model=<model_name>` resolves only that approved copy. `sure/handoffs/<model_name>/artifacts/feed_report.json` is the user-facing run summary; `artifacts/debug/handoff_manifest.json` is retained as the terminal state-machine artifact.
+`sure/handoffs/<model_name>/model_input.yaml` → `/sure_onboard model=<model_name>` or `/sure_onboard model_input_path=sure/handoffs/<model_name>/model_input.yaml` → model staged under `sure/models/<model_name>/` with `artifacts/deployment_ready.json` → an operator reviews and copies the complete model directory into a configured `approved_models_roots` entry → `/sure_infer model=<model_name>` resolves only that approved copy. `sure/handoffs/<model_name>/artifacts/feed_report.json` is the user-facing run summary; `artifacts/debug/handoff_manifest.json` is retained as the terminal state-machine artifact.
 
 See `references/agents.md` for the full matching contract, false-positive case, and backend routing table.

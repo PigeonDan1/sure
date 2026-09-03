@@ -159,7 +159,7 @@ Attribution:
 
 ## SURE Harness
 
-This fork adds the SURE evaluation control plane (`/sure_feed`, `/sure_onboard`, `/sure_infer`, `/sure_reval`). The common user entry point is `README.md`; bundled company distributions also carry `private/site/docs/handbook.md`. This section is the maintainer side.
+This fork adds the SURE evaluation control plane (`/sure_feed`, `/sure_onboard`, `/sure_infer`, `/sure_eval`). The common user entry point is `README.md`; bundled company distributions also carry `private/site/docs/handbook.md`. This section is the maintainer side.
 
 ### Skill Package Layout
 
@@ -195,7 +195,7 @@ python3 -m unittest discover -s sure/runtime/memory -p "test_*.py"
 - Run `npm run sure:doctor` after changes that affect setup, skill discovery, or external engine detection.
 - `npm run check` covers repo checks only and never runs tests; it is non-mutating, so use `npm run format` when Biome should rewrite files.
 
-SURE test files live in `packages/coding-agent/test/suite/` (`sure-extension`, `sure-feed`, `sure-onboard-state-machine`, `sure-onboard-terminal`, `sure-eval-state-machine`, `sure-eval-runbackend`, `sure-eval-red-lines`, `sure-reval-terminal`, `sure-run-output-dir`, `sure-runtime-binding`, `sure-skill-output-dir`, `sure-memory-match`, `sure-memory-hooks`) plus the init suites under `packages/coding-agent/test/sure/`. Run them from `packages/coding-agent` per the vitest rule in Commands.
+SURE test files live in `packages/coding-agent/test/suite/` (`sure-extension`, `sure-feed`, `sure-onboard-state-machine`, `sure-onboard-terminal`, `sure-infer-state-machine`, `sure-eval-runbackend`, `sure-eval-red-lines`, `sure-eval-terminal`, `sure-run-output-dir`, `sure-runtime-binding`, `sure-skill-output-dir`, `sure-memory-match`, `sure-memory-hooks`) plus the init suites under `packages/coding-agent/test/sure/`. Run them from `packages/coding-agent` per the vitest rule in Commands.
 
 ### Credential-Free Launchers
 
@@ -214,8 +214,8 @@ Add new credential variable names there, sorted alphabetically, names only, neve
 | `/sure_onboard` | `runtime_inventory.json` | Summarize model-level backend, Python, runtime probe, weights manifest, and small evidence links. Do not link checkpoint payloads. |
 | `/sure_infer` | `prediction_generation_status.json` | Record the actual MCP server command, working directory, safe env snapshot, explicit tool args, protocol resolver output, and dataset generation status. |
 | `/sure_infer` | `protocol.yaml` | Read generation status first, runtime inventory second, model config third, environment fallback last. Keep inference fields separate from evaluation results. |
-| `/sure_reval` | `prediction_reuse_manifest.json` | Copy/filter predictions only; do not reuse old metric artifacts. |
-| `/sure_reval` | `source_inference_provenance.json` | Link source protocol/status/runtime inventory when available and mark unknown sources explicitly. |
+| `/sure_eval` | `prediction_reuse_manifest.json` | Copy/filter predictions only; do not reuse old metric artifacts. |
+| `/sure_eval` | `source_inference_provenance.json` | Link source protocol/status/runtime inventory when available and mark unknown sources explicitly. |
 
 ### Design Boundary
 

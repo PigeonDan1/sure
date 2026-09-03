@@ -184,6 +184,12 @@ class ProtocolProvenanceTests(unittest.TestCase):
         manifest = import_prediction_source._write_source_provenance_links(self.root / "reval_run", payload)
         self.assertFalse(manifest["policy"]["links_checkpoint_payloads"])
         self.assertIn("source_protocol", manifest["links"])
+        # The evidence must be a regular file: the scratch tree is later persisted
+        # into the result bundle by a copier that refuses symlinks.
+        linked_protocol = Path(manifest["links"]["source_protocol"]["path"])
+        self.assertEqual(manifest["links"]["source_protocol"]["mode"], "copy")
+        self.assertFalse(linked_protocol.is_symlink())
+        self.assertTrue(linked_protocol.is_file())
 
         reval_run = self.root / "reval_run"
         write_json(

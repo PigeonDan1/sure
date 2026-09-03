@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Validate the terminal /sure_reval report and its identity/evaluation evidence."""
+"""Validate the terminal /sure_eval report and its identity/evaluation evidence.
+
+Two prediction sources are accepted: a local /sure_infer bundle scored in place
+(source_kind local_infer_run) and an exact approved NFS result mirrored below
+sure/results (source_kind approved_nfs_results). NFS-only checks are gated on
+the source kind; everything about the evaluation batch itself is checked for both.
+"""
 
 from __future__ import annotations
 
@@ -23,18 +29,8 @@ for _parent in Path(__file__).resolve().parents:
 
 from sure.site.loader import load_site_policy
 
-_configured_policy = load_site_policy()
-APPROVED_MODELS_ROOT = (
-    Path(_configured_policy["policy"]["storage"]["approved_models_roots"][0]).resolve()
-    if _configured_policy
-    else Path("<site-policy-required>")
-)
-APPROVED_RESULTS_ROOT = (
-    Path(_configured_policy["policy"]["storage"]["approved_results_roots"][0]).resolve()
-    if _configured_policy and _configured_policy["policy"]["storage"]["approved_results_roots"]
-    else None
-)
 LOCAL_RESULTS_ROOT = (HARNESS_ROOT / "sure" / "results").resolve()
+SOURCE_KINDS = {"approved_nfs_results", "local_infer_run"}
 EVALUATION_ENGINE_ROOT = (HARNESS_ROOT / "sure" / "external" / "sure-evaluation").resolve()
 REQUIRED_ARTIFACTS = [
     "prediction_source_resolved",
@@ -186,17 +182,14 @@ def validate(path: Path) -> list[str]:
     try:
         resolved_policy = load_site_policy(required=True)
         approved_models_root = Path(resolved_policy["policy"]["storage"]["approved_models_roots"][0]).resolve()
-        if not resolved_policy["policy"]["storage"]["approved_results_roots"]:
-            return ["storage.approved_results_roots is not configured in the active site policy"]
-        approved_results_root = Path(resolved_policy["policy"]["storage"]["approved_results_roots"][0]).resolve()
     except ValueError as error:
         return [str(error)]
     try:
         payload = _read_json(path)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return [str(exc)]
-    if payload.get("schema") != "sure.reval.run_report.v1":
-        errors.append("schema must be sure.reval.run_report.v1")
+    if payload.get("schema") != "sure.eval.run_report.v1":
+        errors.append("schema must be sure.eval.run_report.v1")
     if payload.get("evaluation_only") is not True:
         errors.append("evaluation_only must be true")
     if payload.get("old_evaluation_reused") is not False:
@@ -223,25 +216,40 @@ def validate(path: Path) -> list[str]:
     source = _read_json(artifact_paths["prediction_source_resolved"])
     if source.get("schema") != "sure.reval.approved_prediction_source.v2":
         errors.append("prediction source must use approved_prediction_source.v2")
-    if source.get("source_kind") != "approved_nfs_results" or source.get("inference_allowed") is not False:
-        errors.append("prediction source must be approved NFS and inference_allowed=false")
+    source_kind = str(source.get("source_kind") or "")
+    nfs_source = source_kind == "approved_nfs_results"
+    if source_kind not in SOURCE_KINDS or source.get("inference_allowed") is not False:
+        errors.append("prediction source must be a local inference run or an approved NFS result with inference_allowed=false")
     if not _inside(Path(str(source.get("model_dir") or "")), approved_models_root):
         errors.append("source model_dir is outside approved NFS models")
-    if not _inside(Path(str(source.get("source_results_dir") or "")), approved_results_root):
-        errors.append("source results_dir is outside approved NFS results")
     source_model_dir = Path(str(source.get("model_dir") or "")).resolve()
     source_results_dir = Path(str(source.get("source_results_dir") or "")).resolve()
-    source_report = Path(str(source.get("source_report") or "")).resolve()
+    source_report = Path(str(source["source_report"])).resolve() if source.get("source_report") else None
     source_protocol = Path(str(source.get("source_protocol") or "")).resolve()
+    # approved_results_roots is only needed for an NFS source; a site that only runs
+    # /sure_infer locally may leave it empty.
+    approved_results_root: Path | None = None
+    if nfs_source:
+        results_roots = resolved_policy["policy"]["storage"]["approved_results_roots"]
+        if not results_roots:
+            return [*errors, "storage.approved_results_roots is not configured in the active site policy"]
+        approved_results_root = Path(results_roots[0]).resolve()
+        if not _inside(source_results_dir, approved_results_root):
+            errors.append("source results_dir is outside approved NFS results")
+    elif not source_results_dir.is_dir():
+        errors.append(f"local inference source directory does not exist: {source_results_dir}")
     verdict_path = Path(str(source.get("verdict_path") or "")).resolve()
     source_model_name = str(source.get("model_name") or "")
     expected_model_dir = (approved_models_root / source_model_name).resolve()
     if payload.get("model_name") != source_model_name or source_model_dir != expected_model_dir:
         errors.append("terminal model_name and NFS model directory must exactly match the resolved source")
-    if source_report != source_results_dir / "report.jsonl" or not source_report.is_file():
-        errors.append("source_report must be the approved result report.jsonl")
-    elif source.get("source_report_sha256") != _sha256(source_report):
-        errors.append("source_report_sha256 differs from the current approved report")
+    if nfs_source:
+        if source_report is None or source_report != source_results_dir / "report.jsonl" or not source_report.is_file():
+            errors.append("source_report must be the approved result report.jsonl")
+        elif source.get("source_report_sha256") != _sha256(source_report):
+            errors.append("source_report_sha256 differs from the current approved report")
+    elif source_report is not None:
+        errors.append("a local inference source has no report.jsonl to inherit; source_report must be null")
     if source_protocol != source_results_dir / "protocol.yaml" or not source_protocol.is_file():
         errors.append("source_protocol must be the approved result protocol.yaml")
     else:
@@ -292,6 +300,16 @@ def validate(path: Path) -> list[str]:
                 errors.append(f"approved prediction jsonl sample count changed: {dataset}")
     if sorted(prediction_by_dataset) != requested_datasets:
         errors.append("resolved prediction entries do not exactly cover the terminal dataset set")
+    if not nfs_source:
+        # Without a report.jsonl the source identity is the prediction set itself
+        # (resolve_prediction_source._local_infer_payload); recompute it.
+        triples = sorted(
+            [dataset, str(item.get("txt_sha256") or ""), item.get("txt_samples")]
+            for dataset, item in prediction_by_dataset.items()
+        )
+        expected_source_sha256 = hashlib.sha256(_canonical_json(triples).encode("utf-8")).hexdigest()
+        if source.get("source_report_sha256") != expected_source_sha256:
+            errors.append("source_report_sha256 differs from the identity of the local prediction set")
 
     identity = payload.get("source_identity") if isinstance(payload.get("source_identity"), dict) else {}
     for key in ("model_fingerprint", "protocol_id", "dataset_set_digest", "source_report_sha256"):
@@ -313,9 +331,6 @@ def validate(path: Path) -> list[str]:
     main_report = _read_json(artifact_paths["main_agent_run_report"])
     if main_report.get("evaluation_only") is not True:
         errors.append("main_agent_run_report.evaluation_only must be true")
-    notes = " ".join(str(item) for item in main_report.get("notes") or []).lower()
-    if "no inference" not in notes or "no model server" not in notes:
-        errors.append("main agent report must state that no inference and no model server ran")
 
     evaluation = _read_json(artifact_paths["evaluation_payload"])
     evaluation_rows = [row for row in evaluation.get("results") or [] if isinstance(row, dict)]
@@ -341,39 +356,56 @@ def validate(path: Path) -> list[str]:
     staging_report = Path(str(append.get("staging_report") or "")).resolve()
     staging_snapshot = Path(str(append.get("staging_snapshot") or "")).resolve()
     approved_base_result_dir = Path(str(append.get("approved_base_result_dir") or "")).resolve()
-    approved_base = Path(str(append.get("approved_base_report") or "")).resolve()
-    source_relative = str(source.get("source_result_relative_path") or "")
-    expected_staging_result_dir = (LOCAL_RESULTS_ROOT / source_relative).resolve()
-    expected_staging_report = expected_staging_result_dir / "report.jsonl"
-    expected_staging_snapshot = expected_staging_result_dir / "report_snapshot.md"
-    if (
-        not staging_result_dir.is_dir()
-        or staging_result_dir != expected_staging_result_dir
-        or not _inside(staging_result_dir, LOCAL_RESULTS_ROOT)
-    ):
-        errors.append("staging result directory must exactly mirror the approved NFS result below sure/results")
+    approved_base = Path(str(append["approved_base_report"])).resolve() if append.get("approved_base_report") else None
+    if nfs_source:
+        source_relative = str(source.get("source_result_relative_path") or "")
+        expected_staging_result_dir = (LOCAL_RESULTS_ROOT / source_relative).resolve()
+        if (
+            not staging_result_dir.is_dir()
+            or staging_result_dir != expected_staging_result_dir
+            or not _inside(staging_result_dir, LOCAL_RESULTS_ROOT)
+        ):
+            errors.append("staging result directory must exactly mirror the approved NFS result below sure/results")
+    elif not staging_result_dir.is_dir() or staging_result_dir != source_results_dir:
+        errors.append("a local inference source is scored in place: staging_result_dir must equal source_results_dir")
+    expected_staging_report = staging_result_dir / "report.jsonl"
+    expected_staging_snapshot = staging_result_dir / "report_snapshot.md"
     if not staging_report.is_file() or staging_report != expected_staging_report:
-        errors.append("staging report must be the aggregate report.jsonl in the local result mirror")
+        errors.append("staging report must be the aggregate report.jsonl in the staging result directory")
     if not staging_snapshot.is_file() or staging_snapshot != expected_staging_snapshot:
-        errors.append("staging snapshot must be the aggregate report_snapshot.md in the local result mirror")
+        errors.append("staging snapshot must be the aggregate report_snapshot.md in the staging result directory")
     if (staging_result_dir / "reval").exists():
         errors.append("staging result must not create a separate top-level reval directory")
     if approved_base_result_dir != source_results_dir:
-        errors.append("approved base result directory must equal the resolved NFS source result")
-    if not approved_base.is_file() or approved_base != source_report or not _inside(approved_base, approved_results_root):
-        errors.append("approved base report must equal the resolved NFS source report")
-    elif append.get("approved_base_sha256") != _sha256(approved_base):
-        errors.append("approved base report hash changed")
+        errors.append("approved base result directory must equal the resolved source result")
+    if nfs_source:
+        if (
+            approved_base is None
+            or not approved_base.is_file()
+            or approved_base != source_report
+            or approved_results_root is None
+            or not _inside(approved_base, approved_results_root)
+        ):
+            errors.append("approved base report must equal the resolved NFS source report")
+        elif append.get("approved_base_sha256") != _sha256(approved_base):
+            errors.append("approved base report hash changed")
+    elif approved_base is not None or append.get("approved_base_sha256") is not None:
+        errors.append("a local inference source has no approved base report; approved_base_report must be null")
     if staging_report.is_file():
         staging_bytes = staging_report.read_bytes()
         if append.get("staging_report_sha256") != hashlib.sha256(staging_bytes).hexdigest():
             errors.append("staging report hash differs from append receipt")
-        if approved_base.is_file() and not staging_bytes.startswith(approved_base.read_bytes()):
+        if (
+            nfs_source
+            and approved_base is not None
+            and approved_base.is_file()
+            and not staging_bytes.startswith(approved_base.read_bytes())
+        ):
             errors.append("staging report does not preserve the approved report as an exact prefix")
     if staging_snapshot.is_file() and append.get("staging_snapshot_sha256") != _sha256(staging_snapshot):
         errors.append("staging snapshot hash differs from append receipt")
 
-    if source_results_dir.is_dir() and staging_result_dir.is_dir():
+    if nfs_source and source_results_dir.is_dir() and staging_result_dir.is_dir():
         for source_artifact in source_results_dir.rglob("*"):
             if source_artifact.is_symlink():
                 errors.append(f"approved result contains a forbidden symlink: {source_artifact}")
@@ -391,7 +423,7 @@ def validate(path: Path) -> list[str]:
     expected_batch_digest = hashlib.sha256(
         _canonical_json({"record_ids": sorted(requested_record_ids)}).encode("utf-8")
     ).hexdigest()
-    expected_batch_id = f"sure_reval_{expected_batch_digest[:24]}"
+    expected_batch_id = f"sure_eval_{expected_batch_digest[:24]}"
     batch_id = str(append.get("batch_id") or "")
     batch_dir = Path(str(append.get("batch_dir") or "")).resolve()
     expected_batch_dir = staging_result_dir / "evaluation_runs" / expected_batch_id
@@ -467,14 +499,15 @@ def validate(path: Path) -> list[str]:
             errors.append(f"persisted artifact is missing or outside its batch: {key}={persisted}")
     if batch_dir.is_dir() and run_dir.is_dir():
         scratch_files = _regular_files(run_dir)
-        scratch_files.discard("reval_run_report.json")
+        scratch_files.discard("eval_run_report.json")
         persisted_files = _regular_files(batch_dir, exclude_manifest=True)
         if not scratch_files.issubset(persisted_files):
             missing_persisted = sorted(scratch_files - persisted_files)
             errors.append("persisted batch is missing scratch evaluation files: " + ", ".join(missing_persisted))
 
     approved_source_by_record_id: dict[str, dict[str, Any]] = {}
-    for row in _read_jsonl(source_report) if source_report.is_file() else []:
+    approved_rows = _read_jsonl(source_report) if nfs_source and source_report is not None and source_report.is_file() else []
+    for row in approved_rows:
         reval = row.get("reval") if isinstance(row.get("reval"), dict) else {}
         record_id = str(reval.get("record_id") or "")
         if record_id:
@@ -593,20 +626,22 @@ def validate(path: Path) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--report", required=True)
+    # The gate runner passes --run-dir and --produces; pre_finish passes --report.
+    parser.add_argument("--report", "--produces", dest="report", required=True)
+    parser.add_argument("--run-dir", help="accepted for the gate runner; the report path is authoritative")
     args = parser.parse_args()
     path = Path(args.report)
     if not path.is_file():
-        print(f"reval report not found: {path}", file=sys.stderr)
+        print(f"eval report not found: {path}", file=sys.stderr)
         return 1
     try:
         errors = validate(path)
     except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError) as exc:
         errors = [str(exc)]
     if errors:
-        print("reval report invalid:\n  - " + "\n  - ".join(errors), file=sys.stderr)
+        print("eval report invalid:\n  - " + "\n  - ".join(errors), file=sys.stderr)
         return 1
-    print(f"reval_run_report OK: {path}")
+    print(f"eval_run_report OK: {path}")
     return 0
 
 

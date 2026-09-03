@@ -226,7 +226,7 @@ class ReadinessArtifactTests(unittest.TestCase):
         self.assertTrue(record["error"]["message"])
 
     def test_the_success_payload_is_still_the_binding_alone(self) -> None:
-        # /sure_reval spawns this script and parses stdout against the binding
+        # /sure_eval spawns this script and parses stdout against the binding
         # schema, so the success shape is a contract and stays untouched.
         binding = {"schema": "sure.evaluation.runtime.binding.v1", "runtime_id": "x"}
         with tempfile.TemporaryDirectory() as raw_root:

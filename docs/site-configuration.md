@@ -40,8 +40,8 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `schema` | yes | Must be `sure.site.policy.v1` |
 | `site_id` | yes | Stable lowercase deployment identifier |
 | `policy_version` | yes | Must be `1` |
-| `storage.approved_models_roots` | yes | Protected model root written only by `/sure_approve` and read by `/sure_eval` |
-| `storage.approved_results_roots` | optional | Read-only roots containing human-approved evaluation results; required by `/sure_reval` |
+| `storage.approved_models_roots` | yes | Protected model root written only by `/sure_approve` and read by `/sure_infer` |
+| `storage.approved_results_roots` | optional | Read-only roots containing human-approved inference results; `/sure_eval` reads them only when configured, otherwise it scores the local `/sure_infer` run |
 | `storage.forbidden_output_roots` | yes | Roots where automated `output_dir` writes are forbidden |
 | `storage.runtime_root` | yes | Site-owned cache root for content-addressed Model Python runtimes and adapters |
 | `datasets.allowed_source_roots` | yes | Key-value map of dataset source key → absolute path accepted by the strict dataset source resolver. Each request specifies a `dataset_source_key` to select which root to use. |
@@ -59,7 +59,7 @@ Unknown fields, duplicate list values, unsupported surfaces, and relative paths 
 
 Policy v1 accepts exactly one path in each storage root list. The `datasets.allowed_source_roots` field uses a key-value map instead, allowing multiple source directories to be configured with distinct keys. Requests select which key to use via the `dataset_source_key` parameter.
 
-`storage.approved_models_roots[0]` is the single approval-root setting. `/sure_approve` publishes a verified model package only to `<approved_models_roots[0]>/<model>`, and `/sure_eval model=<model>` resolves that exact child directory from the same root. Neither command accepts a per-run approval-root override, so a deployment configures this location once rather than keeping publication and discovery settings in sync manually.
+`storage.approved_models_roots[0]` is the single approval-root setting. `/sure_approve` publishes a verified model package only to `<approved_models_roots[0]>/<model>`, and `/sure_infer model=<model>` resolves that exact child directory from the same root. Neither command accepts a per-run approval-root override, so a deployment configures this location once rather than keeping publication and discovery settings in sync manually.
 
 `execution.surfaces` constrains automatic and explicit execution selection. When `vc` is enabled, `execution.vc_project` is required and carries the submission project the VC backend expects. `execution.vc_partitions` documents site choices but does not replace the existing live `vc info -u` authorization check; changing partition authorization semantics is outside this separation phase.
 
@@ -73,7 +73,7 @@ Policy v1 accepts exactly one path in each storage root list. The `datasets.allo
 - A configured dataset projection root must stay outside forbidden output roots and must not overlap an allowed source root.
 - Path authorization resolves existing symlinks before comparison, so alternate names cannot bypass a protected root.
 - The policy validator does not create directories and does not require network access. Runtime commands perform their existing availability and permission checks at the same stages as before.
-- Sealed Model Python runtimes materialize under `storage.runtime_root/models/<runtime_id>`. The promoted model stores only the portable runtime identity and manifest; `/sure_eval` resolves and verifies the matching site runtime before use.
+- Sealed Model Python runtimes materialize under `storage.runtime_root/models/<runtime_id>`. The promoted model stores only the portable runtime identity and manifest; `/sure_infer` resolves and verifies the matching site runtime before use.
 - The locked Harness Runtime and Evaluation Runtime remain in their repository-local locations. `storage.runtime_root` does not redirect either role.
 - Container deployments must mount configured roots at paths that preserve the command's existing host/container path contract.
 

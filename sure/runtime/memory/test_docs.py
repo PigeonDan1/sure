@@ -17,6 +17,7 @@ SKILLS = REPO_ROOT / "sure" / "skills"
 EXTRACTION_MD = paths.LIB_DIR / "EXTRACTION.md"
 ONBOARD_SKILL = SKILLS / "sure_onboard" / "SKILL.md"
 INFER_SKILL = SKILLS / "sure_infer" / "SKILL.md"
+EVAL_SKILL = SKILLS / "sure_eval" / "SKILL.md"
 TRANS_SKILL = SKILLS / "sure_trans" / "SKILL.md"
 ONBOARD_ROUTING = SKILLS / "sure_onboard" / "references" / "memory" / "ROUTING.md"
 ONBOARD_COMMON = SKILLS / "sure_onboard" / "references" / "memory" / "COMMON.md"
@@ -164,6 +165,7 @@ class SkillDocTests(unittest.TestCase):
         cls.units = paths.load_units()["skills"]
         cls.onboard = read(ONBOARD_SKILL)
         cls.infer = read(INFER_SKILL)
+        cls.eval = read(EVAL_SKILL)
         cls.trans = read(TRANS_SKILL)
         cls.feed = read(FEED_SKILL)
 
@@ -177,6 +179,11 @@ class SkillDocTests(unittest.TestCase):
         self.assertEqual([r[0] for r in rows], list(range(1, len(self.units["sure_infer"]) + 1)))
         self.assertEqual([r[1] for r in rows], self.units["sure_infer"])
 
+    def test_eval_unit_table_matches_units_json(self) -> None:
+        rows = unit_table(self.eval)
+        self.assertEqual([r[0] for r in rows], list(range(1, len(self.units["sure_eval"]) + 1)))
+        self.assertEqual([r[1] for r in rows], self.units["sure_eval"])
+
     def test_trans_unit_table_matches_units_json(self) -> None:
         rows = unit_table(self.trans)
         self.assertEqual([r[0] for r in rows], list(range(1, len(self.units["sure_trans"]) + 1)))
@@ -188,14 +195,14 @@ class SkillDocTests(unittest.TestCase):
         self.assertEqual([r[1] for r in rows], self.units["sure_feed"])
 
     def test_extract_lessons_rows(self) -> None:
-        for text in (self.onboard, self.infer, self.trans, self.feed):
+        for text in (self.onboard, self.infer, self.eval, self.trans, self.feed):
             row = next(r for r in unit_table(text) if r[1] == "extract_lessons")
             self.assertEqual(row[2], "**gate**")
             self.assertEqual(row[3], "`extraction_declaration.json`")
             self.assertEqual(row[4], "`scripts/check_memory_extraction.py`")
 
     def test_extraction_skills_point_to_the_contract_and_the_context_file(self) -> None:
-        for text in (self.onboard, self.infer, self.trans, self.feed):
+        for text in (self.onboard, self.infer, self.eval, self.trans, self.feed):
             for token in (
                 "sure/runtime/memory/EXTRACTION.md", "artifacts/memory_context.json", "sure/memory/index.md",
                 "references/memory/ROUTING.md",
@@ -208,7 +215,7 @@ class SkillDocTests(unittest.TestCase):
 
     def test_inject_header_in_skill_docs_matches_config(self) -> None:
         header = paths.load_config()["inject_header"]
-        for text in (self.onboard, self.infer, self.trans, self.feed):
+        for text in (self.onboard, self.infer, self.eval, self.trans, self.feed):
             self.assertIn(header, text)
 
     def test_onboard_context_selection_line(self) -> None:
