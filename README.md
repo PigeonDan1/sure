@@ -105,7 +105,7 @@ Configure `storage.approved_models_roots[0]` once. `/sure_approve` publishes app
 
 For `docker-registry` delivery, the active site policy supplies the registry and repository template. SURE resolves the image destination and version before planning, rather than allowing an agent to invent a namespace; registry credentials remain in the deployment's Docker credential store.
 
-Site policy is independent from the evaluation engine configuration. Evaluation still resolves `config=` first, then `SURE_EVAL_CONFIG`, then the evaluation submodule's `config/default.yaml`.
+Site policy is independent from the evaluation engine configuration. `/sure_infer` resolves its `config=` parameter first, then `SURE_EVAL_CONFIG`, then the evaluation submodule's `config/default.yaml`. `/sure_eval` rejects an explicit `config=`; it always scores the source bundle as resolved.
 
 ## Verify Installation
 
