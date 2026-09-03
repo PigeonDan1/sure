@@ -18,6 +18,18 @@ from typing import Any, Dict, List, Set, Tuple
 from sure_eval.core.logging import get_logger
 from sure_eval.evaluation.asr.wenet_compute_cer import Calculator, characterize, normalize, compute_wer
 
+
+def _tn_rules_dir(language: str) -> str:
+    """Rule maps for one language: asr_simple_tn_rules/<language>/*.map.
+
+    This is the layout normalization/base.py and lang_*.py read; the rules root
+    itself only holds the shared word lists, so passing it as map_dir loads no
+    symbol/time/digit map at all and silently changes WER/CER.
+    """
+    import sure_eval.evaluation.normalization
+
+    return os.path.join(os.path.dirname(sure_eval.evaluation.normalization.__file__), "asr_simple_tn_rules", language)
+
 logger = get_logger(__name__)
 
 PUNCT_SET = set(string.punctuation) | {
@@ -310,8 +322,7 @@ class SUREEvaluator:
     def _get_preprocessor(self, lang: str):
         """Get text preprocessor for language."""
         from sure_eval.evaluation.normalization.asr_simple_tn import asr_num2words
-        import sure_eval.evaluation.normalization
-        default_map_dir = os.path.join(os.path.dirname(sure_eval.evaluation.normalization.__file__), "asr_simple_tn_rules")
+        default_map_dir = _tn_rules_dir(lang)
         
         class Preprocessor:
             def __init__(self, lang, map_dir=None):
@@ -414,10 +425,8 @@ class SUREEvaluator:
         
         # Normalize files first
         from sure_eval.evaluation.normalization.asr_simple_tn import asr_num2words
-        import sure_eval.evaluation.normalization
-        
-        # Get default map directory
-        map_dir = os.path.join(os.path.dirname(sure_eval.evaluation.normalization.__file__), "asr_simple_tn_rules")
+
+        map_dir = _tn_rules_dir(self.language)
         
         ref_norm_handle = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8")
         hyp_norm_handle = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8")
@@ -480,16 +489,14 @@ class SUREEvaluator:
     def _eval_asr_codeswitch(self, ref_file: str, hyp_file: str) -> Dict[str, Any]:
         """Evaluate code-switching ASR with upstream MER/WER/CER behavior."""
         from sure_eval.evaluation.normalization.asr_simple_tn import asr_num2words
-        import sure_eval.evaluation.normalization
-
-        map_dir = os.path.join(os.path.dirname(sure_eval.evaluation.normalization.__file__), "asr_simple_tn_rules")
 
         class Preprocessor:
             def __init__(self, lang: str):
                 self.lang = lang
+                self.map_dir = _tn_rules_dir(lang)
 
             def normalize(self, text: str) -> str:
-                return asr_num2words(text, self.lang, map_dir=map_dir, debug=False)
+                return asr_num2words(text, self.lang, map_dir=self.map_dir, debug=False)
 
         proc_en = Preprocessor('en')
         proc_zh = Preprocessor('zh')
