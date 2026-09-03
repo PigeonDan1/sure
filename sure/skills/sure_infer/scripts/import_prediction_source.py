@@ -212,17 +212,15 @@ def _copy_or_link(source: Path, dest: Path, mode: str) -> str:
     return "copy"
 
 
-def _link_or_copy_evidence(source: Path, dest: Path) -> dict[str, str]:
+def _copy_evidence(source: Path, dest: Path) -> dict[str, str]:
+    # Always a copy, never a symlink: the scratch tree is persisted into the
+    # result bundle by run_eval._copy_tree, which refuses symlinks, and the
+    # gate's _regular_files does the same.
     dest.parent.mkdir(parents=True, exist_ok=True)
     if dest.exists() or dest.is_symlink():
         dest.unlink()
-    try:
-        relative = os.path.relpath(source, start=dest.parent)
-        dest.symlink_to(relative)
-        return {"mode": "symlink", "path": str(dest), "target": relative, "source": str(source)}
-    except OSError:
-        shutil.copy2(source, dest)
-        return {"mode": "copy", "path": str(dest), "target": str(source), "source": str(source)}
+    shutil.copy2(source, dest)
+    return {"mode": "copy", "path": str(dest), "target": str(source), "source": str(source)}
 
 
 def _write_source_provenance_links(run_dir: Path, source: dict[str, Any]) -> dict[str, Any]:
@@ -243,7 +241,7 @@ def _write_source_provenance_links(run_dir: Path, source: dict[str, Any]) -> dic
         raw = provenance.get(key)
         path = Path(str(raw)).expanduser() if raw else None
         if path and path.is_file():
-            links[key] = _link_or_copy_evidence(path.resolve(), links_dir / filename)
+            links[key] = _copy_evidence(path.resolve(), links_dir / filename)
     manifest = {
         "schema": "sure.reval.source_inference_provenance.v1",
         "generated_at": _utc_now(),
