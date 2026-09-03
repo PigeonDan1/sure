@@ -880,8 +880,6 @@ def _proposal_shape(cand: Candidate, ctx: GateContext) -> list[GateFailure]:
             unit_ids = ctx.skills.get(target_skill) or []
             if unit_ids and component not in unit_ids:
                 fail(f"cell.component {component!r} must be a {target_skill} unit id from units.json")
-            elif not unit_ids and component != FACT_COMPONENT:
-                fail(f"cell.component {component!r} must be '_' ({target_skill} has no state machine)")
             elif (target_skill == ctx.run_skill and component != FACT_COMPONENT
                   and component in (_digest_units(ctx.digest) or {}) and component not in claim_units(p)):
                 # match.ts filters bad_cases on component === unit with no fallback, so a component

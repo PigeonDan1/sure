@@ -49,7 +49,10 @@ class SOTAManager:
         baselines: Dictionary of dataset name to SOTABaseline
     """
     
-    DEFAULT_SOTA_FILE = Path(__file__).parent.parent.parent.parent / "reports" / "sota" / "sota_baseline.yaml"
+    # Package-local table next to this module; evaluate_predictions._resolve_sota_file
+    # looks in the same place. Without the file RPS stays null and get_metric falls
+    # back to the task default.
+    DEFAULT_SOTA_FILE = Path(__file__).resolve().parent / "sota" / "sota_baseline.yaml"
     
     def __init__(self, sota_file: str | Path | None = None) -> None:
         """Initialize SOTA manager.
@@ -64,7 +67,10 @@ class SOTAManager:
     def _load_baselines(self) -> None:
         """Load baselines from YAML file."""
         if not self.sota_file.exists():
-            logger.warning(f"SOTA file not found: {self.sota_file}")
+            logger.warning(
+                f"SOTA file not found: {self.sota_file}; RPS baselines stay disabled until a "
+                "sota_baseline.yaml is placed there"
+            )
             return
         
         try:

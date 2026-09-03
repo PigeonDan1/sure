@@ -8,7 +8,10 @@ import test from "node:test";
 const exporter = resolve(import.meta.dirname, "export-public.mjs");
 
 function run(command, args, cwd) {
-	return spawnSync(command, args, { cwd, encoding: "utf8" });
+	// Under a husky pre-commit hook git exports GIT_DIR / GIT_INDEX_FILE for the real
+	// repository; inheriting them makes the fixture's init/add/commit land there.
+	const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
+	return spawnSync(command, args, { cwd, encoding: "utf8", env });
 }
 
 function write(root, path, content) {
@@ -27,6 +30,26 @@ function repository(root, files) {
 	assert.equal(run("git", ["add", "--", ...paths], root).status, 0);
 	assert.equal(run("git", ["-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "fixture"], root).status, 0);
 }
+
+test("fixture git commands ignore the git environment of a calling hook", () => {
+	const temporaryRoot = mkdtempSync(resolve(tmpdir(), "sure-public-export-env-"));
+	const saved = { GIT_DIR: process.env.GIT_DIR, GIT_INDEX_FILE: process.env.GIT_INDEX_FILE };
+	process.env.GIT_DIR = resolve(temporaryRoot, "elsewhere", ".git");
+	process.env.GIT_INDEX_FILE = resolve(temporaryRoot, "elsewhere", "index");
+	try {
+		const sourceRoot = resolve(temporaryRoot, "source");
+		mkdirSync(sourceRoot);
+		repository(sourceRoot, { "visible.txt": "public\n" });
+		assert.equal(run("git", ["rev-parse", "--git-dir"], sourceRoot).stdout.trim(), ".git");
+		assert.equal(existsSync(resolve(temporaryRoot, "elsewhere")), false);
+	} finally {
+		for (const [key, value] of Object.entries(saved)) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+		rmSync(temporaryRoot, { recursive: true, force: true });
+	}
+});
 
 test("exports a deterministic tracked projection and keeps source identity private", () => {
 	const temporaryRoot = mkdtempSync(resolve(tmpdir(), "sure-public-export-test-"));
