@@ -197,28 +197,6 @@ try {
 	const datasetMatches = datasetProbe.status === 0 && datasetProbe.stdout.trim() === expectedDatasetRoot;
 	record("dataset-root", "path", datasetMatches, datasetMatches ? expectedDatasetRoot : datasetProbe.stderr.trim() || datasetProbe.stdout.trim());
 
-	const executionProbe = run("python3", [
-		"-c",
-		"import json, sys; sys.path.insert(0, 'sure/skills/sure_eval/scripts'); import resolve_eval_input as r; out=[]; cases=[('auto-no-vc',None,None,False),('auto-vc',None,None,True),('explicit-local','local',None,True),('explicit-vc','vc',None,False),('legacy-local',None,'local_bash',False)];\nfor name,execution,path,available in cases:\n r._vc_available=lambda value=available:value; value=r._normalize_execution(execution,path,['local','vc']); out.append({'case':name,'planned':value['planned'],'path':value['path_planned'],'available':value['vc_available_at_resolve'],'fallback':value['fallback_allowed'],'reason':value['reason']})\nprint(json.dumps(out,sort_keys=True))",
-	]);
-	const expectedExecution = [
-		{ case: "auto-no-vc", planned: "local", path: "local_docker", available: false, fallback: true, reason: "auto_selected_local_vc_unavailable" },
-		{ case: "auto-vc", planned: "vc", path: "vc_submit", available: true, fallback: true, reason: "auto_selected_vc_available" },
-		{ case: "explicit-local", planned: "local", path: "local_docker", available: true, fallback: false, reason: "user_requested_local" },
-		{ case: "explicit-vc", planned: "vc", path: "vc_submit", available: false, fallback: false, reason: "user_requested_vc" },
-		{ case: "legacy-local", planned: "local", path: "local_docker", available: false, fallback: false, reason: "user_requested_local" },
-	];
-	let actualExecution;
-	try {
-		actualExecution = JSON.parse(executionProbe.stdout);
-	} catch {
-		actualExecution = null;
-	}
-	const executionMatches =
-		executionProbe.status === 0 &&
-		JSON.stringify(normalized(actualExecution)) === JSON.stringify(normalized(expectedExecution));
-	record("execution-selection", "command", executionMatches, executionMatches ? "five legacy execution decisions match" : executionProbe.stderr.trim() || executionProbe.stdout.trim(), expectedExecution.map((item) => item.case));
-
 	const explicitConfig = join(testRoot, "explicit.yaml");
 	const environmentConfig = join(testRoot, "environment.yaml");
 	const datasetsRoot = join(testRoot, "datasets");

@@ -141,8 +141,7 @@ function seedCompletedEvaluationArtifacts(runDir: string): string {
 			"  resolved_model_params: {}",
 			"  unmapped: {}",
 			"inference_environment:",
-			"  execution_path: vc_submit",
-			"  vc: {}",
+			"  execution_path: local_docker",
 			"  container:",
 			"    image_ref: registry.example.com/sure/fixture@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"    execution_mode: container_only",
@@ -411,8 +410,8 @@ describe("sure_eval tool_readiness_routing handoff gate", () => {
 	});
 });
 
-// Gate-with-script units (submit_vc_run, execute_wait, smoke_test, assessment, run_report,
-// script_routing) must have NO in-process gateCheck — the python gateScript is
+// Gate-with-script units (smoke_test, assessment, run_report, script_routing) must
+// have NO in-process gateCheck — the python gateScript is
 // the single authoritative semantic checker. This is the redundancy-removal
 // contract: no duplicated === true vs truthy logic, no duplicated constant lists.
 describe("sure_eval gate-with-script units have no in-process gateCheck (python is sole authority)", () => {
@@ -420,8 +419,6 @@ describe("sure_eval gate-with-script units have no in-process gateCheck (python 
 		["script_routing", "check_script_routing.py"],
 		["execution_readiness", "check_execution_surface_compliance.py"],
 		["smoke_test", "run_smoke.py"],
-		["submit_vc_run", "vc_check.py"],
-		["execute_wait", "wait_vc_execution.py"],
 		["assessment", "check_assessment.py"],
 		["extract_lessons", "check_memory_extraction.py"],
 		["run_report", "check_run_report.py"],
@@ -438,15 +435,7 @@ describe("sure_eval gate-with-script units have no in-process gateCheck (python 
 		expect(findUnit("execution_readiness")!.gateCheck).toBeDefined();
 	});
 	it("gate-with-script units drop the in-process gateCheck (incl. extract_lessons)", () => {
-		for (const id of [
-			"script_routing",
-			"smoke_test",
-			"submit_vc_run",
-			"execute_wait",
-			"assessment",
-			"extract_lessons",
-			"run_report",
-		]) {
+		for (const id of ["script_routing", "smoke_test", "assessment", "extract_lessons", "run_report"]) {
 			expect(findUnit(id)!.gateCheck).toBeUndefined();
 		}
 	});
@@ -509,7 +498,7 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 		// A report that violates check_run_report.py: report_persisted is false.
 		writeArtifact(runDir, "main_agent_run_report.json", {
 			report_persisted: false,
-			execution_path_actual: "vc_submit",
+			execution_path_actual: "local_docker",
 		});
 		const result = preFinish(ctx);
 		expect(result.ok).toBe(false);
@@ -549,7 +538,7 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 			executed_steps: [{ name: "evaluate_predictions", script: "scripts/evaluate_predictions.py" }],
 			status: "success",
 			report_persisted: true,
-			execution_path_actual: "vc_submit",
+			execution_path_actual: "local_docker",
 			artifact_root: artifactRoot,
 		});
 		const result = preFinish(ctx);
@@ -587,7 +576,7 @@ describe("sure_eval preFinish terminal-gate backstop (regression)", () => {
 			executed_steps: [{ name: "evaluate_predictions", script: "scripts/evaluate_predictions.py" }],
 			status: "success",
 			report_persisted: true,
-			execution_path_actual: "vc_submit",
+			execution_path_actual: "local_docker",
 			artifact_root: artifactRoot,
 		});
 		const result = preFinish(ctx);

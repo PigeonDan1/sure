@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -419,34 +418,6 @@ def _read_optional_json(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _execution_requested(data: dict[str, Any], run_dir: Path, report_path: Path) -> str:
-    execution = data.get("execution")
-    if isinstance(execution, dict) and isinstance(execution.get("requested"), str):
-        return str(execution["requested"])
-    for key in ("execution_path_requested", "execution_requested"):
-        if isinstance(data.get(key), str):
-            value = str(data[key])
-            if value in {"local", "vc", "auto"}:
-                return value
-            if value == "vc_submit":
-                return "vc"
-            if value in {"local_bash", "local_docker", "local_python"}:
-                return "local"
-
-    eval_input = _read_optional_json(run_dir / "artifacts" / "eval_input_resolved.json")
-    runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
-    resolved_execution = runtime.get("execution") if isinstance(runtime.get("execution"), dict) else {}
-    if isinstance(resolved_execution.get("requested"), str):
-        return str(resolved_execution["requested"])
-
-    execution_path_declared = str(data.get("execution_path_declared") or "")
-    if execution_path_declared == "vc_submit":
-        return "vc"
-    if execution_path_declared in {"local_bash", "local_docker", "local_python"}:
-        return "local"
-    return "auto"
-
-
 def _submit_result(run_dir: Path, report_path: Path) -> dict[str, Any]:
     candidates = [
         run_dir / "artifacts" / "submit_result.json",
@@ -528,12 +499,6 @@ def _validate_failed_execution_report(run_dir: Path, report_path: Path, data: di
         exit_code = execution_result.get("exit_code")
         if job_status in SUCCESS_STATUSES or exit_code == 0:
             errors.append("failed run report conflicts with successful execution_result.json")
-        if data.get("execution_path_actual") == "vc_submit" and not _is_failed_pre_submit(data):
-            vc_job_id = data.get("vc_job_id") or execution_result.get("vc_job_id")
-            execution = data.get("execution") if isinstance(data.get("execution"), dict) else {}
-            vc_job_id = vc_job_id or execution.get("vc_job_id")
-            if not vc_job_id:
-                errors.append("failed vc_submit run report requires vc_job_id")
 
     assessment = _read_optional_json(run_dir / "artifacts" / "assessment_report.json")
     if not assessment:
@@ -562,26 +527,8 @@ def _submitted_image_error(execution_path: str, submit_result: dict, approved: d
             return "local Python runtime differs from the approved runtime identity"
         return None
     approved_ref = str(approved.get("target_image_ref") or "")
-    if execution_path != "vc_submit":
-        actual_ref = ((submit_result.get("container_binding") or {}).get("image_ref")) or submit_result.get("vc_image")
-        return None if actual_ref == approved_ref else "local container image differs from approved digest identity"
-
-    submission = submit_result.get("vc_submission") if isinstance(submit_result.get("vc_submission"), dict) else {}
-    actual_tag = str(submission.get("image") or submit_result.get("vc_image") or "")
-    actual_digest = str(submission.get("image_digest") or submit_result.get("image_digest") or "")
-    actual_identity = str(submission.get("image_identity_ref") or submit_result.get("image_identity_ref") or "")
-    if actual_tag != str(approved.get("target_image") or ""):
-        return "VC submission tag differs from approved target_image"
-    if actual_digest != str(approved.get("target_image_digest") or "") or actual_identity != approved_ref:
-        return "VC submission digest identity differs from approved deployment binding"
-    try:
-        command = shlex.split(str(submit_result.get("vc_submit_command") or ""))
-        command_image = command[command.index("-i") + 1]
-    except (ValueError, IndexError):
-        return "VC submit command does not contain a parseable -i image"
-    if command_image != actual_tag:
-        return "VC submit command image differs from structured submission tag"
-    return None
+    actual_ref = ((submit_result.get("container_binding") or {}).get("image_ref")) or submit_result.get("vc_image")
+    return None if actual_ref == approved_ref else "local container image differs from approved digest identity"
 
 
 def main() -> int:
@@ -610,7 +557,6 @@ def main() -> int:
 
     execution_path_actual = data.get("execution_path_actual", "")
     allowed_execution_paths = {
-        "vc_submit",
         "local_bash",
         "local_docker",
         "local_python",
@@ -621,46 +567,20 @@ def main() -> int:
     if execution_path_actual not in allowed_execution_paths:
         print(
             "RUN_REPORT_UNIT gate: execution_path_actual must be one of "
-            "vc_submit / local_bash / local_docker / local_python.",
+            "local_bash / local_docker / local_python.",
             file=sys.stderr,
         )
         return 1
 
-    requested = _execution_requested(data, Path(args.run_dir), path)
     submit_result = _submit_result(Path(args.run_dir), path)
     evaluation_only = bool(data.get("evaluation_only"))
     failed_pre_submit = _is_failed_pre_submit(data)
-    if execution_path_actual != "vc_submit":
-        vc_available = bool(data.get("vc_available", submit_result.get("vc_available", False)))
-        fallback_approved = bool(data.get("fallback_approved", submit_result.get("fallback_approved", False)))
-        fallback_reason = data.get("local_fallback_reason") or submit_result.get("local_fallback_reason", "")
-        if execution_path_actual == "local_bash" and not evaluation_only and not failed_pre_submit:
-            print(
-                "RUN_REPORT_UNIT gate: formal model inference cannot use local_bash; use the approved local runtime.",
-                file=sys.stderr,
-            )
-            return 1
-        if not failed_pre_submit and not evaluation_only and requested != "local" and not fallback_reason:
-            print(
-                "RUN_REPORT_UNIT gate: a non-vc execution path with execution=auto "
-                "requires a non-empty local_fallback_reason unless evaluation_only=true.",
-                file=sys.stderr,
-            )
-            return 1
-        if not failed_pre_submit and not evaluation_only and requested == "auto" and vc_available and not fallback_approved:
-            print(
-                "RUN_REPORT_UNIT gate: execution=auto used local execution even though vc was available; "
-                "set fallback_approved=true for this intentional override.",
-                file=sys.stderr,
-            )
-            return 1
-        if requested == "vc" and not failed_pre_submit:
-            print(
-                "RUN_REPORT_UNIT gate: user requested execution=vc, but "
-                f"execution_path_actual={execution_path_actual}.",
-                file=sys.stderr,
-            )
-            return 1
+    if execution_path_actual == "local_bash" and not evaluation_only and not failed_pre_submit:
+        print(
+            "RUN_REPORT_UNIT gate: formal model inference cannot use local_bash; use the approved local runtime.",
+            file=sys.stderr,
+        )
+        return 1
 
     eval_input = _read_optional_json(Path(args.run_dir) / "artifacts" / "eval_input_resolved.json")
     approved = ((eval_input.get("model") or {}).get("deployment_binding") or {})

@@ -77,7 +77,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		);
 	}
 	let approvedModelsRoot: string;
-	let approvedResultsRoot: string;
+	let approvedResultsRoot: string | undefined;
 	try {
 		const policy = requireSitePolicy().policy;
 		approvedModelsRoot = policy.storage.approved_models_roots[0];
@@ -98,7 +98,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	]) {
 		if (deprecated in args) {
 			return failure(
-				`/sure_reval no longer accepts ${deprecated}; approved inputs resolve only from ${approvedModelsRoot} and ${approvedResultsRoot}.`,
+				`/sure_reval no longer accepts ${deprecated}; approved inputs resolve only from ${approvedModelsRoot} and ${approvedResultsRoot ?? "storage.approved_results_roots (unset in the active site policy)"}.`,
 			);
 		}
 	}

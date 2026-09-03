@@ -12,7 +12,7 @@
 		"storage": {
 			"type": "object",
 			"additionalProperties": false,
-			"required": ["approved_models_roots", "approved_results_roots", "forbidden_output_roots", "runtime_root"],
+			"required": ["approved_models_roots", "forbidden_output_roots", "runtime_root"],
 			"properties": {
 				"approved_models_roots": { "$ref": "#/$defs/absolutePaths" },
 				"approved_results_roots": { "$ref": "#/$defs/absolutePaths" },

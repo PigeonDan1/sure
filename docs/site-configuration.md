@@ -41,7 +41,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `site_id` | yes | Stable lowercase deployment identifier |
 | `policy_version` | yes | Must be `1` |
 | `storage.approved_models_roots` | yes | Protected model root written only by `/sure_approve` and read by `/sure_eval` |
-| `storage.approved_results_roots` | yes | Read-only roots containing human-approved evaluation results |
+| `storage.approved_results_roots` | optional | Read-only roots containing human-approved evaluation results; required by `/sure_reval` |
 | `storage.forbidden_output_roots` | yes | Roots where automated `output_dir` writes are forbidden |
 | `storage.runtime_root` | yes | Site-owned cache root for content-addressed Model Python runtimes and adapters |
 | `datasets.allowed_source_roots` | yes | Key-value map of dataset source key → absolute path accepted by the strict dataset source resolver. Each request specifies a `dataset_source_key` to select which root to use. |

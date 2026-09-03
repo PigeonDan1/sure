@@ -15,7 +15,7 @@ import type { GateResult } from "./checkpoints.ts";
 //     fields, type, enum (allowedValues merged with schema.enum), and
 //     additionalProperties:false (forbidden later-unit fields). Every unit.
 //   - The Python gateScript owns SEMANTICS for gate units: cross-field
-//     conditions, environment probes (vc availability), filesystem cross-checks
+//     conditions, environment probes, filesystem cross-checks
 //     (template isolation, lockfile/weights existence). One authoritative
 //     checker per concern — no duplicated constant lists, no === true vs
 //     truthy drift.
@@ -27,17 +27,12 @@ import type { GateResult } from "./checkpoints.ts";
 //     a gate-without-script: its handoff_to_tool_agent block is a cross-skill
 //     condition no python script owns.
 //
-// Two red lines (from the main-flow system prompt) are enforced as gates:
+// One red line (from the main-flow system prompt) is enforced as a gate:
 //   EXECUTION_SURFACE_ISOLATION — execution_surface.source_provenance.template_file
 //     must sit under scripts/templates/; the read-only main-flow reference
 //     mirror is audit-only and is rejected for runtime execution surfaces.
 //     Checked by execution_readiness gate
 //     (scripts/check_execution_surface_compliance.py).
-//   EXECUTION_POLICY — execution=vc must use vc_submit; execution=local must use
-//     local_docker even when vc is available; execution=auto prefers
-//     vc when available and requires an explicit fallback reason otherwise.
-//     Checked by scripts/vc_check.py, which probes the REAL environment (the
-//     agent-declared vc_available field is NOT trusted in-process).
 
 export type UnitKind = "linear" | "gate";
 
@@ -246,9 +241,8 @@ export const MAIN_FLOW_UNITS: Unit[] = [
 		kind: "gate",
 		produces: "submit_result.json",
 		schemaRef: "submit_result.schema.json",
-		requiredFields: ["execution_path", "vc_available"],
+		requiredFields: ["execution_path"],
 		forbiddenFields: ["report_persisted"],
-		gateScript: "vc_check.py",
 	},
 	{
 		id: "execute_wait",
@@ -259,7 +253,6 @@ export const MAIN_FLOW_UNITS: Unit[] = [
 		requiredFields: ["job_status"],
 		allowedValues: { job_status: ["succeeded", "running", "failed", "partial"] },
 		forbiddenFields: ["report_persisted"],
-		gateScript: "wait_vc_execution.py",
 	},
 	{
 		id: "assessment",

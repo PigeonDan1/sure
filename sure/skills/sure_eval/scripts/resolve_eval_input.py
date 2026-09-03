@@ -39,8 +39,6 @@ from resolve_evaluation_engine import resolve_engine_root
 from resolve_model_dir import APPROVED_MODELS_ROOT, resolve_approved_model
 from sure.site.loader import load_site_policy
 
-from sure_eval.agent import vc_submitter
-
 
 MAIN_FLOW_SCRIPTS = [
     "scripts/prepare_sure_dataset.py",
@@ -50,8 +48,6 @@ MAIN_FLOW_SCRIPTS = [
     "scripts/evaluate_predictions.py",
     "scripts/refresh_report_snapshot.py",
     "scripts/run_local_execution.py",
-    "scripts/run_vc_execution.py",
-    "scripts/wait_vc_execution.py",
 ]
 
 TEXT_DEFAULT_METRICS = {
@@ -409,38 +405,12 @@ def _nvidia_smi_available() -> bool:
     return completed.returncode == 0 and bool(completed.stdout.strip())
 
 
-def _resolve_device(requested: str, execution: dict[str, Any] | None = None) -> dict[str, Any]:
+def _resolve_device(requested: str) -> dict[str, Any]:
     request = (requested or "auto").strip()
     lowered = request.lower()
     cuda_available = _nvidia_smi_available()
-    execution = execution or {}
-    planned_path = str(execution.get("path_planned") or "")
-    planned_execution = str(execution.get("planned") or "")
-    vc_planned = planned_path == "vc_submit" or planned_execution == "vc"
-    notes: list[str] = []
-    source = "local_nvidia_smi"
 
-    if vc_planned:
-        source = "vc_allocation"
-        cuda_available = True
-        cuda_index = re.fullmatch(r"cuda:(\d+)", lowered)
-        if lowered == "auto":
-            resolved = "cuda:0"
-            notes.append("execution=vc uses the GPU allocated inside the vc container; host nvidia-smi is not used.")
-        elif lowered == "cuda":
-            resolved = "cuda:0"
-        elif cuda_index:
-            resolved = "cuda:0"
-            if cuda_index.group(1) != "0":
-                notes.append(
-                    f"device={request} names a host-local CUDA ordinal; vc containers expose allocated GPUs from cuda:0."
-                )
-        elif lowered == "cpu":
-            resolved = "cpu"
-            notes.append("execution=vc will still submit to vc, but model inference is explicitly requested on CPU.")
-        else:
-            raise ValueError(f"Unsupported device: {requested}. Use auto, cpu, cuda, or cuda:<index>.")
-    elif lowered == "auto":
+    if lowered == "auto":
         resolved = "cuda:0" if cuda_available else "cpu"
     elif lowered == "cuda":
         resolved = "cuda:0"
@@ -453,32 +423,22 @@ def _resolve_device(requested: str, execution: dict[str, Any] | None = None) -> 
         "resolved": resolved,
         "cuda_available": cuda_available,
         "cpu_forces_cuda_hidden": resolved.lower() == "cpu",
-        "execution_device_source": source,
-        "notes": notes,
+        "execution_device_source": "local_nvidia_smi",
+        "notes": [],
     }
-
-
-def _vc_available() -> bool:
-    if not shutil.which("vc"):
-        return False
-    try:
-        completed = subprocess.run(["vc", "info"], capture_output=True, text=True, check=False, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return completed.returncode == 0
 
 
 def _normalize_execution(
     execution: str | None,
     execution_path: str | None,
-    allowed_surfaces: list[str] | None = None,
     runtime_kind: str = "container",
     allowed_local_runtimes: list[str] | None = None,
 ) -> dict[str, Any]:
     requested_raw = (execution or "").strip().lower()
     path_raw = (execution_path or "").strip().lower()
+    if requested_raw in {"vc", "volcano", "vc_submit"} or path_raw == "vc_submit":
+        raise ValueError("execution=vc is no longer supported")
     path_to_execution = {
-        "vc_submit": "vc",
         "local_bash": "local",
         "local_docker": "local",
         "local_python": "local",
@@ -487,9 +447,6 @@ def _normalize_execution(
     if not requested_raw:
         requested_raw = path_to_execution.get(path_raw, "auto")
     aliases = {
-        "vc_submit": "vc",
-        "vc": "vc",
-        "volcano": "vc",
         "local": "local",
         "local_bash": "local",
         "local_docker": "local",
@@ -499,17 +456,15 @@ def _normalize_execution(
     }
     requested = aliases.get(requested_raw)
     if requested is None:
-        raise ValueError(f"Unsupported execution: {execution}. Use auto, local, or vc.")
+        raise ValueError(f"Unsupported execution: {execution}. Use auto or local.")
     if execution and path_raw and path_raw != "auto":
         path_requested = aliases.get(path_raw)
         if path_requested and path_requested != requested:
             raise ValueError(
                 f"Conflicting execution parameters: execution={execution} but execution_path={execution_path}. "
-                "Use execution=auto|local|vc, or the matching legacy execution_path."
+                "Use execution=auto|local, or the matching legacy execution_path."
             )
 
-    if requested == "vc" and runtime_kind != "container":
-        raise ValueError("execution=vc requires an approved container runtime")
     local_path = "local_python" if runtime_kind == "python" else "local_docker"
     if path_raw and path_raw != "auto":
         planned_path = local_path if path_raw == "local_bash" else path_raw
@@ -517,92 +472,30 @@ def _normalize_execution(
             raise ValueError(
                 f"execution_path={planned_path} conflicts with approved runtime={runtime_kind}; expected {local_path}"
             )
-    elif requested == "vc":
-        planned_path = "vc_submit"
-    elif requested == "local":
-        planned_path = local_path
     else:
-        planned_path = "auto"
-    if planned_path not in {"auto", "vc_submit", "local_bash", "local_docker", "local_python"}:
+        planned_path = local_path
+    if planned_path not in {"local_docker", "local_python"}:
         raise ValueError(
-            f"Unsupported execution_path: {execution_path}. Use auto, vc_submit, local_python, or local_docker."
+            f"Unsupported execution_path: {execution_path}. Use auto, local_python, or local_docker."
         )
 
-    available = _vc_available()
-    allowed = set(allowed_surfaces or ("local", "vc"))
-    local_runtime_allowed = runtime_kind in set(allowed_local_runtimes or ("container",))
-    if planned_path == "auto":
-        if runtime_kind == "container" and available and "vc" in allowed:
-            planned_path = "vc_submit"
-        elif "local" in allowed and local_runtime_allowed:
-            planned_path = local_path
-        elif runtime_kind == "container" and "vc" in allowed:
-            planned_path = "vc_submit"
-        else:
-            raise ValueError(f"site policy enables no execution surface for the approved {runtime_kind} runtime")
-    planned = "vc" if planned_path == "vc_submit" else "local"
-    if allowed_surfaces is not None and planned not in set(allowed_surfaces):
-        raise ValueError(f'execution surface "{planned}" is not enabled by the active site policy')
-    if planned == "local" and not local_runtime_allowed:
+    if runtime_kind not in set(allowed_local_runtimes or ("container",)):
         raise ValueError(f'local runtime "{runtime_kind}" is not enabled by execution.local_runtimes')
     reason = (
-        "user_requested_vc"
-        if requested == "vc"
-        else "user_requested_local"
+        "user_requested_local"
         if requested == "local"
-        else "auto_selected_vc_available"
-        if planned == "vc"
         else "auto_selected_local_runtime_only"
         if runtime_kind == "python"
-        else "auto_selected_local_vc_unavailable"
+        else "auto_selected_local"
     )
     return {
         "requested": requested,
-        "planned": planned,
+        "planned": "local",
         "path_requested": path_raw or "auto",
         "path_planned": planned_path,
-        "vc_available_at_resolve": available,
         "fallback_allowed": requested == "auto",
         "reason": reason,
     }
-
-
-def _vc_request(args: argparse.Namespace) -> dict[str, Any]:
-    return {
-        "partition": args.vc_partition,
-        "cpu": args.vc_cpu,
-        "mem": args.vc_mem,
-        "gpu": args.vc_gpu,
-        "image": args.vc_image,
-        "job_name": args.vc_job_name,
-    }
-
-
-_VC_INFO_TIMEOUT_SECONDS = 30
-
-
-def _validate_vc_partition(vc_request: dict[str, Any], execution: dict[str, Any]) -> None:
-    """Fail fast when an explicit vc_partition is not in the user's allowed set.
-
-    Skips silently when the run is not planned for vc, when ``vc info -u``
-    fails or times out, or when the parsed partition list is empty: the later
-    ``vc submit`` stays authoritative, this check only shortens the feedback
-    loop for typos.
-    """
-    partition = str(vc_request.get("partition") or "").strip()
-    if not partition or execution.get("planned") != "vc":
-        return
-    try:
-        allowed = vc_submitter.get_user_partitions(timeout=_VC_INFO_TIMEOUT_SECONDS)
-    except Exception:
-        return
-    if not allowed:
-        return
-    if partition not in allowed:
-        raise EvalInputError(
-            f'vc_partition "{partition}" is not in your allowed partitions. '
-            f"Allowed: {', '.join(sorted(allowed))}"
-        )
 
 
 def _count_jsonl_rows(path: Path) -> int | None:
@@ -848,26 +741,14 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     tasks = _dedupe([str(item.get("task") or "UNKNOWN") for item in datasets])
     languages = _dedupe([str(item.get("language") or "") for item in datasets if item.get("language")])
     metric_list = _dedupe([metric for item in datasets for metric in item.get("default_metrics", [])])
-    allowed_surfaces = list(active_site_policy["policy"]["execution"]["surfaces"])
     allowed_local_runtimes = list(active_site_policy["policy"]["execution"]["local_runtimes"])
     execution = _normalize_execution(
         args.execution,
         args.execution_path,
-        allowed_surfaces,
         runtime_kind,
         allowed_local_runtimes,
     )
-    device = _resolve_device(args.device, execution)
-    vc_request = _vc_request(args)
-    approved_image = str((model.get("deployment_binding") or {}).get("target_image_ref") or "")
-    if runtime_kind == "python" and vc_request.get("image"):
-        raise EvalInputError("vc_image is not valid for a local Python runtime")
-    if runtime_kind == "container" and vc_request.get("image") and vc_request["image"] != approved_image:
-        raise EvalInputError(
-            f"vc_image cannot override the approved digest-pinned image {approved_image}"
-        )
-    vc_request["image"] = approved_image if runtime_kind == "container" else ""
-    _validate_vc_partition(vc_request, execution)
+    device = _resolve_device(args.device)
 
     main_flow_input = {
         "user_goal": args.user_goal,
@@ -919,7 +800,6 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "execution": execution["requested"],
             "execution_path": args.execution_path or "auto",
             "user_goal": args.user_goal,
-            "vc": vc_request,
             "datasets_root": getattr(args, "datasets_root", None),
         },
         "model": model,
@@ -941,7 +821,6 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "execution": execution,
             "execution_path": execution["path_planned"],
             "model_runtime": runtime_kind,
-            "vc": vc_request,
             "deployment_binding": model["deployment_binding"],
             "harness_runtime": harness_runtime,
             "dataset_projection": dataset_projection,
@@ -976,18 +855,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--metrics", nargs="*", default=[])
     parser.add_argument("--max-samples", type=int, default=0)
-    parser.add_argument("--execution", choices=("auto", "local", "vc"))
+    parser.add_argument("--execution", choices=("auto", "local"))
     parser.add_argument(
         "--execution-path",
         default="auto",
-        choices=("local_bash", "local_docker", "local_python", "vc_submit", "auto"),
+        choices=("local_bash", "local_docker", "local_python", "auto"),
     )
-    parser.add_argument("--vc-partition", default="")
-    parser.add_argument("--vc-cpu", type=int, default=0)
-    parser.add_argument("--vc-mem", default="")
-    parser.add_argument("--vc-gpu", type=int, default=0)
-    parser.add_argument("--vc-image", default="")
-    parser.add_argument("--vc-job-name", default="")
     parser.add_argument("--evaluation-backend", default="external", choices=("auto", "external", "legacy"))
     parser.add_argument("--evaluation-engine-root")
     parser.add_argument("--strict-main-flow", action="store_true", default=True)

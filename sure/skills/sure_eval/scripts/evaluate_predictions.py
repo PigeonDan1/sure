@@ -1339,13 +1339,6 @@ def _count_nonempty_lines(path: Path) -> int:
         return sum(1 for line in handle if line.strip())
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
 def _load_model_sidecar(model_dir: Path | None, relative: str) -> dict[str, Any]:
     if model_dir is None:
         return {}
@@ -1635,17 +1628,6 @@ def _write_protocol_yaml(
         "inference_environment": {
             "execution_path": os.environ.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
             "runtime_kind": runtime_kind,
-            "vc": {
-                "job_id": os.environ.get("SURE_EVAL_EXECUTION_JOB_ID") or os.environ.get("VC_JOB_ID"),
-                "partition": os.environ.get("SURE_EVAL_VC_PARTITION") or os.environ.get("VC_PARTITION"),
-                "gpu_count": os.environ.get("SURE_EVAL_VC_GPU") or os.environ.get("VC_GPU"),
-                "memory": os.environ.get("SURE_EVAL_VC_MEMORY") or os.environ.get("VC_MEMORY"),
-                "cpu_count": os.environ.get("SURE_EVAL_VC_CPU") or os.environ.get("VC_CPU"),
-                "node_count": os.environ.get("SURE_EVAL_VC_NODES") or os.environ.get("VC_NODES"),
-                "require_vc_submit": _env_bool("SURE_EVAL_REQUIRE_VC_SUBMIT", False),
-                "allow_partition_fallback": _env_bool("SURE_EVAL_ALLOW_PARTITION_FALLBACK", False),
-                "preflight_required": True,
-            },
             "container": {
                 "image": inventory_container.get("target_image"),
                 "image_digest": inventory_container.get("target_image_digest"),

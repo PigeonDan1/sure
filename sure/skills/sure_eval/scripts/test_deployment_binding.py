@@ -21,15 +21,6 @@ from deployment_binding import (
     _validate_complete_manifest,
     load_deployment_binding,
 )
-from check_run_report import _submitted_image_error
-from run_vc_execution import (
-    _approved_memory_gb,
-    _build_vc_volume_mounts,
-    _job_name,
-    _normalize_job_name,
-    _surface_env_for_container,
-    _write_entrypoint,
-)
 
 
 def write_json(path: Path, payload: dict) -> None:
@@ -45,28 +36,6 @@ class DeploymentBindingTests(unittest.TestCase):
     def test_portable_path_rejects_the_bundle_root(self) -> None:
         with self.assertRaises(DeploymentBindingError):
             _portable_relative(".", "test path")
-
-    def test_vc_job_name_is_bounded_and_stable(self) -> None:
-        raw = "openai__" + "whisper-large-v3-turbo-" * 4
-        first = _normalize_job_name(raw)
-        second = _normalize_job_name(raw)
-
-        self.assertEqual(first, second)
-        self.assertEqual(len(first), 60)
-        self.assertRegex(first, r"^[a-z0-9.-]+-[0-9a-f]{8}$")
-
-    def test_generated_and_explicit_vc_job_names_share_platform_limit(self) -> None:
-        generated = _job_name(
-            "openai__whisper-large-v3-turbo",
-            {"runtime": {"run_id": "20260811-051124-0de179b0"}},
-            {},
-            {},
-        )
-        explicit = _job_name("model", {}, {}, {"job_name": "X" * 80})
-
-        self.assertLessEqual(len(generated), 60)
-        self.assertLessEqual(len(explicit), 60)
-        self.assertEqual(explicit, _normalize_job_name("X" * 80))
 
     def test_submit_schema_declares_runtime_and_image_provenance(self) -> None:
         schema_path = Path(__file__).resolve().parents[1] / "schemas" / "submit_result.schema.json"
@@ -94,28 +63,6 @@ class DeploymentBindingTests(unittest.TestCase):
 
         self.assertFalse(schema["additionalProperties"])
         self.assertIn("node_environment_blockers", schema["properties"])
-
-    def test_vc_submission_separates_platform_tag_from_digest_identity(self) -> None:
-        approved = {
-            "target_image": self.image,
-            "target_image_digest": self.digest,
-            "target_image_ref": self.image_ref,
-        }
-        submit = {
-            "vc_image": self.image,
-            "image_digest": self.digest,
-            "image_identity_ref": self.image_ref,
-            "vc_submit_command": f"vc submit -i {self.image} -j test",
-            "vc_submission": {
-                "image": self.image,
-                "image_digest": self.digest,
-                "image_identity_ref": self.image_ref,
-            },
-        }
-
-        self.assertIsNone(_submitted_image_error("vc_submit", submit, approved))
-        submit["vc_submission"]["image"] = self.image_ref
-        self.assertIn("tag differs", _submitted_image_error("vc_submit", submit, approved) or "")
 
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -485,27 +432,6 @@ class DeploymentBindingTests(unittest.TestCase):
             [f"type=bind,src={self.projection},dst={self.projection}"],
         )
 
-    def test_vc_mounts_keep_models_and_sources_read_only(self) -> None:
-        dataset_source = self.root / "source-dataset"
-        dataset_source.mkdir()
-        dataset_alias = self.root / "source-dataset-alias"
-        dataset_alias.symlink_to(dataset_source, target_is_directory=True)
-        volume = _build_vc_volume_mounts(
-            primary=f"{self.repo}:{self.repo}",
-            model_dir=self.model,
-            model_target="/workspace/model",
-            result_source=self.output,
-            result_target="/sure-output",
-            dataset_source_roots=[str(dataset_alias)],
-            dataset_projection_root=self.projection,
-        )
-        self.assertIn(f"{self.model}:{self.model}:ro", volume)
-        self.assertIn(f"{self.model}:/workspace/model:ro", volume)
-        self.assertIn(f"{dataset_alias}:{dataset_alias}:ro", volume)
-        self.assertIn(f"{self.projection}:{self.projection}", volume)
-        self.assertNotIn(f"{self.projection}:{self.projection}:ro", volume)
-        self.assertIn(f"{self.output}:/sure-output", volume)
-
     def test_local_command_injects_separate_evaluation_runtime(self) -> None:
         binding = load_deployment_binding(self.model, "demo")
         evaluation = {
@@ -602,137 +528,6 @@ class DeploymentBindingTests(unittest.TestCase):
             ],
         )
 
-    def test_vc_entrypoint_refuses_the_same_keys_as_the_local_container(self) -> None:
-        # The vc route had its own copy of the filter, so a key blocked on one
-        # route reached the container on the other.
-        values = _surface_env_for_container(
-            {
-                "env": {
-                    "PATH": "/tmp/agent/bin",
-                    "SURE_EVALUATION_LOCK_SHA256": "f" * 64,
-                    "TOOL_NAME": "transcribe_audio",
-                }
-            },
-            "/workspace",
-        )
-        self.assertEqual(values, {"TOOL_NAME": "transcribe_audio"})
-
-    def test_vc_entrypoint_lets_the_harness_have_the_last_word(self) -> None:
-        # The surface exports were written after the harness block, so a key
-        # the harness had already decided was simply re-exported by whatever
-        # the surface said. SURE_EVAL_NODE_LOCAL_PYTHON carries a skip for
-        # exactly this, which is one key patched and the rest left open.
-        path = self.control / "vc_entrypoint.sh"
-        _write_entrypoint(
-            path=path,
-            volume_mount=f"{self.root}:{self.root}",
-            container_image=self.image_ref,
-            container_repo_root=str(self.repo),
-            vc_partition="demo",
-            vc_memory="16G",
-            vc_gpus=1,
-            vc_cpus=4,
-            model_python_bin="/opt/model/bin/python",
-            model_pythonpath=[],
-            run_evaluation_path=str(self.entrypoint),
-            log_path=self.output / "vc.log",
-            execution_requested="vc",
-            device_request="cuda:0",
-            device_actual="cuda:0",
-            harness_python_bin=str(self.harness_python),
-            harness_library_paths=[],
-            harness_python_home="",
-            entrypoint_env={
-                "SURE_EVAL_EXECUTION_PATH": "local_bash",
-                "MODEL_PYTHON": "/tmp/agent/python",
-                "RUN_DIR": "/sure-output",
-            },
-            submission_token="d" * 32,
-            terminal_status_path=self.control / "vc_terminal_status.json",
-        )
-        text = path.read_text(encoding="utf-8")
-
-        for key, harness_value in (
-            ("SURE_EVAL_EXECUTION_PATH", "vc_submit"),
-            ("MODEL_PYTHON", "/opt/model/bin/python"),
-        ):
-            exports = [line for line in text.splitlines() if line.startswith(f"export {key}=")]
-            self.assertTrue(exports, key)
-            self.assertIn(harness_value, exports[-1])
-        # A key only the surface knows about still arrives.
-        self.assertIn("export RUN_DIR=", text)
-
-    def test_vc_entrypoint_never_rewrites_model_runtime(self) -> None:
-        path = self.control / "vc_entrypoint.sh"
-        terminal_status = self.control / "vc_terminal_status.json"
-        _write_entrypoint(
-            path=path,
-            volume_mount=f"{self.root}:{self.root}",
-            container_image=self.image_ref,
-            container_repo_root=str(self.repo),
-            vc_partition="demo",
-            vc_memory="16G",
-            vc_gpus=1,
-            vc_cpus=4,
-            model_python_bin="python",
-            model_pythonpath=[],
-            run_evaluation_path=str(self.entrypoint),
-            log_path=self.output / "vc.log",
-            execution_requested="vc",
-            device_request="cuda:0",
-            device_actual="cuda:0",
-            harness_python_bin=str(self.harness_python),
-            harness_library_paths=[],
-            harness_python_home="",
-            entrypoint_env={
-                "MODEL_DIR": "/workspace/model",
-                "SURE_EVAL_APPROVED_MODEL_DIR": "/workspace/model",
-                "RUN_DIR": "/sure-output",
-                "SURE_EVAL_APPROVED_RESULT_DIR": "/sure-output",
-                "SURE_EVAL_CACHE_DIR": "/sure-output/.runtime/cache/sure-eval",
-                "SURE_EVAL_NODE_LOCAL_PYTHON": "/usr/bin/python3.11",
-            },
-            submission_token="d" * 32,
-            terminal_status_path=terminal_status,
-        )
-        text = path.read_text(encoding="utf-8")
-        self.assertIn(self.image_ref, text)
-        self.assertIn(f"export SURE_EVAL_CONTAINER_IMAGE={self.image_ref}", text)
-        self.assertNotIn(".venv", text)
-        self.assertNotIn("/usr/bin/python3", text)
-        self.assertIn(f"export HARNESS_PYTHON_BIN={self.harness_python}", text)
-        self.assertIn(f"export SURE_EVAL_NODE_LOCAL_PYTHON={self.harness_python}", text)
-        self.assertNotIn("export SURE_EVAL_NODE_LOCAL_PYTHON=/usr/bin/python3.11", text)
-        self.assertIn("export MODEL_PYTHON=python", text)
-        self.assertIn("export SURE_EVAL_APPROVED_MODEL_DIR=/workspace/model", text)
-        self.assertIn("export SURE_EVAL_APPROVED_RESULT_DIR=/sure-output", text)
-        self.assertIn("export SURE_EVAL_CACHE_DIR=/sure-output/.runtime/cache/sure-eval", text)
-        self.assertIn("sure.eval.vc_terminal_status.v1", text)
-        self.assertIn("trap _sure_eval_write_terminal EXIT", text)
-        mutation_lines = [
-            line.strip()
-            for line in text.splitlines()
-            if line.strip().split(" ", 1)[0] in {"mv", "ln", "rm"}
-        ]
-        self.assertEqual(
-            mutation_lines,
-            ['mv -f -- "$terminal_tmp" "$_SURE_EVAL_TERMINAL_STATUS"'],
-        )
-        syntax = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True, check=False)
-        self.assertEqual(syntax.returncode, 0, syntax.stderr)
-        completed = subprocess.run(
-            ["bash", str(path)],
-            capture_output=True,
-            text=True,
-            check=False,
-            env={**os.environ, "VC_JOB_ID": "job-test"},
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        sentinel = json.loads(terminal_status.read_text(encoding="utf-8"))
-        self.assertEqual(sentinel["submission_token"], "d" * 32)
-        self.assertEqual(sentinel["job_status"], "succeeded")
-        self.assertEqual(sentinel["exit_code"], 0)
-
     def test_local_command_prefers_matching_image_harness_runtime(self) -> None:
         binding = load_deployment_binding(self.model, "demo")
         image_python = "/opt/sure-harness/test/bin/python"
@@ -762,12 +557,6 @@ class DeploymentBindingTests(unittest.TestCase):
         self.assertFalse(provenance["harness_runtime_mounted_from_repo"])
         self.assertEqual(provenance["harness_runtime"]["execution_source"], "approved_image")
 
-    def test_vc_memory_reads_only_the_approved_model_bundle(self) -> None:
-        (self.model / "model.spec.yaml").write_text(
-            "resources:\n  memory_gb: 24\nweights:\n  size_gb: 10\n",
-            encoding="utf-8",
-        )
-        self.assertEqual(_approved_memory_gb(self.model), 29)
 
 
 class MandatoryIntegrityPathTests(unittest.TestCase):

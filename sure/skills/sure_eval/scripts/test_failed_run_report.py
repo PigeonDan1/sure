@@ -73,7 +73,7 @@ class FailedRunReportTests(unittest.TestCase):
             report = artifacts / "main_agent_run_report.json"
             write_json(
                 artifacts / "execution_result.json",
-                {"job_status": "failed", "exit_code": 1, "execution_path": "vc_submit"},
+                {"job_status": "failed", "exit_code": 1, "execution_path": "local_docker"},
             )
             write_json(
                 report,
@@ -83,10 +83,10 @@ class FailedRunReportTests(unittest.TestCase):
                     "task_type": "evaluate_existing_model",
                     "goal": "bounded evaluation",
                     "selected_datasets": ["dataset__v1"],
-                    "executed_steps": ["submit_vc_run", "execute_wait"],
+                    "executed_steps": ["execution_surface", "execute_wait"],
                     "status": "success",
                     "report_persisted": True,
-                    "execution_path_actual": "vc_submit",
+                    "execution_path_actual": "local_docker",
                 },
             )
             stderr = io.StringIO()

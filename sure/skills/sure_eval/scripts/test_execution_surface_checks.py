@@ -106,12 +106,6 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
         result = checks.check_inference_runtime(self.write_surface())
         self.assertTrue(result["passed"], result.get("evidence"))
 
-    def test_vc_uses_the_same_binding(self) -> None:
-        result = checks.check_inference_runtime(
-            self.write_surface(execution={"requested": "vc", "path_planned": "vc_submit"})
-        )
-        self.assertTrue(result["passed"], result.get("evidence"))
-
     def test_legacy_v1_container_surface_still_passes(self) -> None:
         legacy_approved = {
             "schema": "sure.eval.deployment_binding.v1",
@@ -204,43 +198,12 @@ class InferenceRuntimeCheckTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertIn("approved common Harness Runtime", result["evidence"])
 
-    def test_a_node_that_cannot_run_containers_does_not_block_a_vc_run(self) -> None:
-        # The probe is a rehearsal. On the vc path the evaluation runs inside
-        # the VC container and the submitting node only stages the job, so a
-        # node with no container runtime is refusing work it was never going
-        # to do. The VC job has its own readiness gate for the real thing.
-        with patch.object(checks, "_live_runtime_probe", return_value=_host_cannot_probe()):
-            result = checks.check_inference_runtime(
-                self.write_surface(execution={"requested": "vc", "path_planned": "vc_submit"})
-            )
-
-        self.assertTrue(result["passed"], result.get("evidence"))
-        self.assertIn("PROBE_HOST_CANNOT_RUN_CONTAINERS", " ".join(result["warnings"]))
-
     def test_a_node_that_cannot_run_containers_still_blocks_a_local_docker_run(self) -> None:
         # Here the probe's docker is the execution environment. Waving this
         # through only moves the same failure a few minutes later, with no
         # gate left to catch it.
         with patch.object(checks, "_live_runtime_probe", return_value=_host_cannot_probe()):
             result = checks.check_inference_runtime(self.write_surface())
-
-        self.assertFalse(result["passed"])
-
-    def test_a_container_that_answers_wrong_still_blocks_a_vc_run(self) -> None:
-        # The container came up and reported a broken Harness Runtime. That is
-        # the subject failing, not the node, and the vc path must not use the
-        # rehearsal exemption to skip past it.
-        broken = {
-            "passed": False,
-            "probe_ran": True,
-            "failure_class": "HARNESS_RUNTIME_NOT_READY",
-            "exit_code": 41,
-            "evidence": "HARNESS_RUNTIME_NOT_READY: ModuleNotFoundError: structlog",
-        }
-        with patch.object(checks, "_live_runtime_probe", return_value=broken):
-            result = checks.check_inference_runtime(
-                self.write_surface(execution={"requested": "vc", "path_planned": "vc_submit"})
-            )
 
         self.assertFalse(result["passed"])
 

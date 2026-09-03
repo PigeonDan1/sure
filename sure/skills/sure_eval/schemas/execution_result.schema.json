@@ -2,7 +2,7 @@
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"$id": "execution_result.schema.json",
 	"title": "SURE-EVAL execute & wait result",
-	"description": "Structured output of the EXECUTE_WAIT_UNIT.",
+	"description": "Structured result of a local model-inference execution.",
 	"type": "object",
 	"required": ["job_status"],
 	"properties": {
@@ -10,10 +10,9 @@
 			"type": "string",
 			"enum": ["succeeded", "running", "failed", "partial"]
 		},
-		"vc_job_id": { "type": "string" },
-		"execution_path": { "type": "string", "enum": ["vc_submit", "local_bash", "local_docker", "local_python"] },
+		"execution_path": { "type": "string", "enum": ["local_docker", "local_python"] },
 		"runtime_kind": { "type": "string", "enum": ["container", "python"] },
-		"execution_requested": { "type": "string", "enum": ["auto", "local", "vc"] },
+		"execution_requested": { "type": "string", "enum": ["auto", "local"] },
 		"predictions_path": { "type": "string" },
 		"log_path": { "type": "string" },
 		"host": { "type": "string" },
@@ -31,14 +30,8 @@
 		"cuda_visible_devices": { "type": "string" },
 		"completion_source": {
 			"type": "string",
-			"enum": ["terminal_sentinel", "vc_terminal_without_sentinel", "wait_timeout", "local_process"]
+			"enum": ["local_process"]
 		},
-		"submission_token": { "type": "string" },
-		"terminal_sentinel": { "type": "string" },
-		"timed_out": { "type": "boolean" },
-		"poll_count": { "type": "integer", "minimum": 0 },
-		"vc_info_excerpt": { "type": "string" },
-		"vc_describe_excerpt": { "type": "string" },
 		"next_action": { "type": "string" }
 	},
 	"additionalProperties": false

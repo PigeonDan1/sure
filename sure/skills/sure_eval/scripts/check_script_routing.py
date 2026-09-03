@@ -10,8 +10,7 @@ authoritative names used by the contract
 exemplar (scripts/templates/main_agent_script_routing.json). Each step's
 `script` is the real file under scripts/ that the name maps to.
 submit_vc_run is NOT a script_routing step: it is a separate gate unit (produces
-submit_result.json, validated by vc_check.py) that invokes `vc submit` outside
-the run_evaluation.sh pipeline.
+submit_result.json) that sits outside the run_evaluation.sh pipeline.
 
 Called by the Sure hook with:
     python3 scripts/check_script_routing.py --run-dir <runDir> --produces <abs>

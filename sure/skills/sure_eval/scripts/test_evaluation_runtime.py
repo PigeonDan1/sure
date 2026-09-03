@@ -346,7 +346,7 @@ class AttestedBindingTests(unittest.TestCase):
 
     def test_a_resolvable_binding_beats_whatever_the_environment_attests(self) -> None:
         # The host runs this too, from a shell the model agent controls, so an
-        # `export SURE_EVALUATION_RUNTIME_ID=...` before scripts/run_vc_execution.py
+        # `export SURE_EVALUATION_RUNTIME_ID=...` before scripts/run_local_execution.py
         # used to make the host adopt the agent's binding and then inject it into
         # the container as the run's provenance. Where the binding can be
         # computed, it is computed.

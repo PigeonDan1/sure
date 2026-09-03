@@ -211,7 +211,10 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 		policy_version: 1,
 		storage: {
 			approved_models_roots: expectUniqueStrings(storage.approved_models_roots, "storage.approved_models_roots", true),
-			approved_results_roots: expectUniqueStrings(storage.approved_results_roots, "storage.approved_results_roots", true),
+			approved_results_roots:
+				storage.approved_results_roots === undefined
+					? []
+					: expectUniqueStrings(storage.approved_results_roots, "storage.approved_results_roots", true),
 			forbidden_output_roots: expectUniqueStrings(storage.forbidden_output_roots, "storage.forbidden_output_roots", true),
 			runtime_root: expectAbsolutePath(storage.runtime_root, "storage.runtime_root"),
 		},
