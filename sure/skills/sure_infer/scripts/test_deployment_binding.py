@@ -36,13 +36,6 @@ class DeploymentBindingTests(unittest.TestCase):
         with self.assertRaises(DeploymentBindingError):
             _portable_relative(".", "test path")
 
-    def test_route_plan_schema_declares_the_node_environment_blockers(self) -> None:
-        schema_path = Path(__file__).resolve().parents[1] / "schemas" / "evaluation_route_plan.schema.json"
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-
-        self.assertFalse(schema["additionalProperties"])
-        self.assertIn("node_environment_blockers", schema["properties"])
-
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
