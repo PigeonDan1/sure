@@ -65,10 +65,10 @@ allows no other memory field. Example:
     "memory": [
       "references/memory/COMMON.md",
       "sure/memory/index.md",
-      "references/memory/bad_cases/wrong_entrypoint.md"
+      "sure/memory/provisional/sure_onboard/launcher-wrong-file/entry.md"
     ]
   },
   "skipped_references": ["references/task_playbooks/TTS.md"],
-  "rationale": "ASR model on uv; the launcher error matched the wrong_entrypoint entry"
+  "rationale": "ASR model on uv; the launcher error matched the launcher-wrong-file entry"
 }
 ```

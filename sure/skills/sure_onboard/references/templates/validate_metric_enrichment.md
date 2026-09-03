@@ -62,12 +62,9 @@ Metric reports should include:
 If the only change is metric semantics, do not rerun model inference. Reuse the
 existing `sample_output.json` and model-local outputs.
 
-## Bad-Case Routing
+## Metric Bypass
 
-Read these memories when the trigger matches:
-
-- ASR hand-written edit distance: `references/memory/bad_cases/asr_metric_bypass.md`
-- TTS ad hoc MOS/SIM or file-size-only metric: `references/memory/bad_cases/tts_metric_bypass.md`
-- VC ad hoc similarity or missing provider report: `references/memory/bad_cases/vc_metric_bypass.md`
-- Speech-understanding report missing pipeline trace:
-  `references/memory/bad_cases/speech_understanding_metric_bypass.md`
+Hand-written edit distance (ASR), ad hoc MOS/SIM or file-size-only metrics
+(TTS), ad hoc similarity without a provider report (VC) and a
+speech-understanding report without its pipeline trace are all metric bypass:
+the report is not accepted, whatever the numbers say.
