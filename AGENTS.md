@@ -159,7 +159,7 @@ Attribution:
 
 ## SURE Harness
 
-This fork adds the SURE evaluation control plane (`/sure_feed`, `/sure_onboard`, `/sure_infer`, `/sure_eval`). The common user entry point is `README.md`; bundled company distributions also carry `private/site/docs/handbook.md`. This section is the maintainer side.
+This fork adds the SURE evaluation control plane: six skill commands (`/sure_feed`, `/sure_onboard`, `/sure_trans`, `/sure_approve`, `/sure_infer`, `/sure_eval`) plus the built-in `/sure_init` and `/sure_resume` commands. The common user entry point is `README.md`; bundled company distributions also carry `private/site/docs/handbook.md`. This section is the maintainer side.
 
 ### Skill Package Layout
 
