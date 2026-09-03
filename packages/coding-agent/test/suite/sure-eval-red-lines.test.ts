@@ -4,8 +4,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-// sure_eval skill package root (repo-relative from the test file).
-const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_eval");
+// sure_infer skill package root (repo-relative from the test file).
+const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_infer");
 const SCRIPTS_DIR = join(PACKAGE_DIR, "scripts");
 // The only entrypoint an execution surface may name; run_infer.py writes the
 // surface from it and check_execution_surface_compliance.py checks path + digest.
@@ -92,7 +92,7 @@ afterEach(() => {
 	}
 });
 
-describe("sure_eval red line 1 — EXECUTION_SURFACE_ISOLATION", () => {
+describe("sure_infer red line 1 — EXECUTION_SURFACE_ISOLATION", () => {
 	// The full gate also runs the inference_runtime check, which needs an approved
 	// binding and a live container probe no unit test has; so the pass case calls
 	// the provenance check directly, the way the old template check was exercised,

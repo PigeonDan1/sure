@@ -163,7 +163,7 @@ After original inference passes, materialize the model payload into the final mo
 "$HARNESS_PYTHON_BIN" scripts/stage_model_payload.py --run-dir <run_dir>
 ```
 
-`auto` attempts hardlinks and falls back to copies. The final approved model directory must contain the actual payload because `/sure_eval` mounts only that directory; an external absolute model path is not an executable handoff.
+`auto` attempts hardlinks and falls back to copies. The final approved model directory must contain the actual payload because `/sure_infer` mounts only that directory; an external absolute model path is not an executable handoff.
 
 Scaffold the adapter after original inference passes:
 
@@ -281,13 +281,12 @@ Write a successful `verdict.json`, then run:
 
 This seals the already-staged model payload, adapter, and small evidence under `sure/models/<model_name>/`. The sealed bundle matches the `/sure_onboard` product layout: wrapper set plus `Dockerfile.sure` at the bundle root, `fixture/<task>/` with `gt.jsonl`, and `artifacts/` carrying `package_gate.json` (`sure.onboard.package_gate.v2`), `artifact_manifest.json` (`sure.onboard.artifact_manifest.v1`), `runtime_inventory.json`, `verdict.json`, `docker_registry_result.json`, and `deployment_ready.json` (`sure.onboard.deployment_ready.v1`, written identically to the run directory). Ready bundles declare `integrity_profile=manifest-complete-v1` and `weights_integrity=bundled`; the deployment hashes cover every required wrapper, fixture, evidence file, generated sample output, and staged payload file. The terminal gate re-verifies the payload manifest, terminal timeline, hashes, bundle identity, portable paths, Dockerfile hash, and digest-pinned execution policy.
 
-The generated `validate.py` keeps the same CLI contract as `/sure_onboard`: `--stage import|load|infer|contract|all`, writing `<stage>_result.json` and, during infer, `sample_output.json` into `SURE_VALIDATE_ARTIFACTS_DIR`, then validating that sample against the filled `io_contract` in the contract stage — from the same directory. For `tts` and `vc`, the generated audio that `sample_output.audio_path` points at must be written below `$SURE_VALIDATE_ARTIFACTS_DIR/outputs`, because finalization only promotes generated audio from there into the bundle. The adapter image embeds the locked Harness Runtime; `runtime_inventory.harness_runtime.required=true`, so `/sure_eval` uses the image binding and does not mount the repository Harness Runtime into the model container.
+The generated `validate.py` keeps the same CLI contract as `/sure_onboard`: `--stage import|load|infer|contract|all`, writing `<stage>_result.json` and, during infer, `sample_output.json` into `SURE_VALIDATE_ARTIFACTS_DIR`, then validating that sample against the filled `io_contract` in the contract stage — from the same directory. For `tts` and `vc`, the generated audio that `sample_output.audio_path` points at must be written below `$SURE_VALIDATE_ARTIFACTS_DIR/outputs`, because finalization only promotes generated audio from there into the bundle. The adapter image embeds the locked Harness Runtime; `runtime_inventory.harness_runtime.required=true`, so `/sure_infer` uses the image binding and does not mount the repository Harness Runtime into the model container.
 
-After completion, run evaluation locally or through VC without changing the model protocol:
+After completion, run inference locally without changing the model protocol:
 
 ```text
-/sure_eval model=<model_name> execution=local
-/sure_eval model=<model_name> execution=vc
+/sure_infer model=<model_name> execution=local
 ```
 
 ## Stopping Without a Bundle

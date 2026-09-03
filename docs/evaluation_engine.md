@@ -6,7 +6,7 @@
 
 ## Harness 与引擎的分工
 
-Metric 能力表、route nodes、精确 `pipeline_id` 选择、node-local 环境来自 `sure-evaluation` submodule。另外 `sure/skills/sure_eval/scripts/sure_eval/` 下还有一份随 skill 打包的确定性评测后端(`sure-eval-backend`):CER 怎么算、normalizer 怎么写都在这份里,`evaluate_predictions.py` 直接 import 它。
+Metric 能力表、route nodes、精确 `pipeline_id` 选择、node-local 环境来自 `sure-evaluation` submodule。另外 `sure/skills/sure_infer/scripts/sure_eval/` 下还有一份随 skill 打包的确定性评测后端(`sure-eval-backend`):CER 怎么算、normalizer 怎么写都在这份里,`evaluate_predictions.py` 直接 import 它。
 
 所以别再往父仓库**新增**引擎源文件,也别就地改它们。这份 bundled backend 已经在库里了,要动它,submodule 基线得跟着一起同步。
 
@@ -80,11 +80,11 @@ git commit -m "chore(sure): bump sure-evaluation submodule"
 data/datasets/sure_benchmark/jsonl
 ```
 
-它**不是** `datasets=` 参数该填的东西。`datasets=` 传活动站点策略允许的数据源路径，详见 [`/sure_eval` skill 契约](../sure/skills/sure_eval/SKILL.md)。
+它**不是** `datasets=` 参数该填的东西。`datasets=` 传活动站点策略允许的数据源路径，详见 [`/sure_infer` skill 契约](../sure/skills/sure_infer/SKILL.md)。
 
 投影根目录是独立的可写工作区。首次运行会创建
 `sure_benchmark/jsonl` 以及索引和元数据；原始音频仍从站点策略允许的源目录读取，
-不会复制或迁移。优先级是 `/sure_eval datasets_root=`、
+不会复制或迁移。优先级是 `/sure_infer datasets_root=`、
 `SURE_EVAL_DATASETS_ROOT`、站点策略 `datasets.projection_root`、显式配置的
 `data.datasets`，最后才是仓库内开发默认值。环境变量示例:
 
@@ -100,14 +100,14 @@ export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
 1. JSONL 所在目录
 2. 仓库根
 3. 仓库根的 `data/datasets/sure_benchmark/SURE_Test_Suites/`
-4. skill 目录 `sure/skills/sure_eval/`
+4. skill 目录 `sure/skills/sure_infer/`
 5. skill 目录下同一串 `data/datasets/sure_benchmark/SURE_Test_Suites/`
 
 音频放在别处的话,在上面这几个位置里挑一个,留条软链指过去。
 
 ## Route 选择
 
-`metrics` 只有 `/sure_eval` 认:传一个 reported metric,就按它当前的默认链路跑。`/sure_reval` 反过来只认 `pipeline_id`,选的是精确链路;`metrics` 在 reval 是禁用参数,传了在 preStart 第一关就被拒。完整参数契约见对应的 [`/sure_eval`](../sure/skills/sure_eval/SKILL.md) 和 [`/sure_reval`](../sure/skills/sure_reval/SKILL.md) 文档。
+`metrics` 只有 `/sure_eval` 认:传一个 reported metric,就按它当前的默认链路跑。`/sure_reval` 反过来只认 `pipeline_id`,选的是精确链路;`metrics` 在 reval 是禁用参数,传了在 preStart 第一关就被拒。完整参数契约见对应的 [`/sure_eval`](../sure/skills/sure_infer/SKILL.md) 和 [`/sure_reval`](../sure/skills/sure_reval/SKILL.md) 文档。
 
 同一 dataset 和 metric 想比多条链路,就用逗号一次传多条:
 

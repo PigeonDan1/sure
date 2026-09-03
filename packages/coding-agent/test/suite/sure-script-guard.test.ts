@@ -23,8 +23,8 @@ describe("invokedSkillScripts", () => {
 	});
 
 	it("honours a caller-supplied prefix", () => {
-		expect(invokedSkillScripts("python3 sure_eval/scripts/run.py", "sure_eval/scripts")).toEqual([
-			"sure_eval/scripts/run.py",
+		expect(invokedSkillScripts("python3 sure_infer/scripts/run.py", "sure_infer/scripts")).toEqual([
+			"sure_infer/scripts/run.py",
 		]);
 	});
 });

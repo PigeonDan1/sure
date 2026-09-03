@@ -159,7 +159,7 @@ Attribution:
 
 ## SURE Harness
 
-This fork adds the SURE evaluation control plane (`/sure_feed`, `/sure_onboard`, `/sure_eval`, `/sure_reval`). The common user entry point is `README.md`; bundled company distributions also carry `private/site/docs/handbook.md`. This section is the maintainer side.
+This fork adds the SURE evaluation control plane (`/sure_feed`, `/sure_onboard`, `/sure_infer`, `/sure_reval`). The common user entry point is `README.md`; bundled company distributions also carry `private/site/docs/handbook.md`. This section is the maintainer side.
 
 ### Skill Package Layout
 
@@ -185,13 +185,13 @@ sure/memory/              # instance data, git-ignored, group-writable in a shar
 
 ```bash
 npm run check:sure-hooks
-python3 -m py_compile sure/skills/sure_eval/scripts/*.py
+python3 -m py_compile sure/skills/sure_infer/scripts/*.py
 cd sure/skills/sure_onboard/scripts && python3 -m unittest test_runtime_inventory.py
 python3 -m unittest discover -s sure/runtime/memory -p "test_*.py"
 ```
 
 - `test_runtime_inventory.py` imports its siblings without touching `sys.path`, so it only runs from inside that directory.
-- `python3 -m unittest sure/skills/sure_eval/scripts/test_protocol_provenance.py` needs an interpreter that has the harness-runtime dependencies (see `sure/runtime/harness/requirements.in`, which pins pydantic). The root `requirements.txt` is PyYAML-only and is not enough: on a bare interpreter this test fails with `ModuleNotFoundError: No module named 'pydantic'`. Skills at runtime use the locked venv that `sure/runtime/harness/bootstrap.py` materializes, not the system Python.
+- `python3 -m unittest sure/skills/sure_infer/scripts/test_protocol_provenance.py` needs an interpreter that has the harness-runtime dependencies (see `sure/runtime/harness/requirements.in`, which pins pydantic). The root `requirements.txt` is PyYAML-only and is not enough: on a bare interpreter this test fails with `ModuleNotFoundError: No module named 'pydantic'`. Skills at runtime use the locked venv that `sure/runtime/harness/bootstrap.py` materializes, not the system Python.
 - Run `npm run sure:doctor` after changes that affect setup, skill discovery, or external engine detection.
 - `npm run check` covers repo checks only and never runs tests; it is non-mutating, so use `npm run format` when Biome should rewrite files.
 
@@ -212,8 +212,8 @@ Add new credential variable names there, sorted alphabetically, names only, neve
 | Stage | Artifact | Rule |
 | --- | --- | --- |
 | `/sure_onboard` | `runtime_inventory.json` | Summarize model-level backend, Python, runtime probe, weights manifest, and small evidence links. Do not link checkpoint payloads. |
-| `/sure_eval` | `prediction_generation_status.json` | Record the actual MCP server command, working directory, safe env snapshot, explicit tool args, protocol resolver output, and dataset generation status. |
-| `/sure_eval` | `protocol.yaml` | Read generation status first, runtime inventory second, model config third, environment fallback last. Keep inference fields separate from evaluation results. |
+| `/sure_infer` | `prediction_generation_status.json` | Record the actual MCP server command, working directory, safe env snapshot, explicit tool args, protocol resolver output, and dataset generation status. |
+| `/sure_infer` | `protocol.yaml` | Read generation status first, runtime inventory second, model config third, environment fallback last. Keep inference fields separate from evaluation results. |
 | `/sure_reval` | `prediction_reuse_manifest.json` | Copy/filter predictions only; do not reuse old metric artifacts. |
 | `/sure_reval` | `source_inference_provenance.json` | Link source protocol/status/runtime inventory when available and mark unknown sources explicitly. |
 
@@ -237,7 +237,7 @@ Generated paths kept out of Git include:
 /results/
 /results_*/
 /sure/results/
-/sure/skills/sure_eval/results/
+/sure/skills/sure_infer/results/
 /sure/.runtime/
 /sure/handoffs/
 /sure/memory/

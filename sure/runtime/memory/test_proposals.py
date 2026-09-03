@@ -911,12 +911,12 @@ class Rule1Tests(GateTestCase):
 
     def test_cell_component_depends_on_skill_and_type(self) -> None:
         p1 = bad_case_proposal()
-        p1["cell"]["component"] = "task_classification"  # an eval unit, not an onboard one
-        p2 = bad_case_proposal(target_skill="sure_reval", applies_to=["sure_reval"])
+        p1["cell"]["component"] = "dataset_scope"  # an infer unit, not an onboard one
+        p2 = bad_case_proposal(target_skill="sure_eval", applies_to=["sure_eval"])  # a target skill with no units.json row
         p2["cell"]["component"] = "build_env"
         p3 = fact_proposal()
         p3["cell"]["component"] = "build_env"
-        p4 = bad_case_proposal(target_skill="sure_reval", applies_to=["sure_reval"])
+        p4 = bad_case_proposal(target_skill="sure_eval", applies_to=["sure_eval"])
         p4["cell"]["component"] = "_"
         p5 = bad_case_proposal()
         p5["cell"] = "build_env x infra"
@@ -925,8 +925,8 @@ class Rule1Tests(GateTestCase):
             self.fx.add_candidate(cid, p, md)
         self.fx.write_declaration()
         failures = self.fx.run()
-        self.assertFailure(failures, 1, "candidate 01-x: cell.component 'task_classification' must be a sure_onboard unit id")
-        self.assertFailure(failures, 1, "candidate 02-x: cell.component 'build_env' must be '_' (sure_reval has no state machine)")
+        self.assertFailure(failures, 1, "candidate 01-x: cell.component 'dataset_scope' must be a sure_onboard unit id")
+        self.assertFailure(failures, 1, "candidate 02-x: cell.component 'build_env' must be '_' (sure_eval has no state machine)")
         self.assertFailure(failures, 1, "candidate 03-x: cell.component must be '_' for a fact")
         self.assertFalse([f for f in failures if f.message.startswith("candidate 04-x") and "component" in f.message])
         self.assertFailure(failures, 1, "candidate 05-x: cell must be an object with component and cause")
@@ -937,8 +937,8 @@ class Rule1Tests(GateTestCase):
         p1 = bad_case_proposal()
         p1["cell"]["component"] = "fetch_weights"  # a unit this run walked, but no claim says so
         p2 = bad_case_proposal(claims=[])          # component build_env, nothing anchoring it
-        p3 = bad_case_proposal(target_skill="sure_eval", applies_to=["sure_eval"])
-        p3["cell"]["component"] = "task_classification"  # another skill's unit: not this run's to bind
+        p3 = bad_case_proposal(target_skill="sure_infer", applies_to=["sure_infer"])
+        p3["cell"]["component"] = "dataset_scope"  # another skill's unit: not this run's to bind
         p4 = bad_case_proposal(claims=[])
         p4["cell"]["component"] = "validate_import"  # an onboard unit this run never reached
         for cid, p in (("01-x", p1), ("02-x", p2), ("03-x", p3), ("04-x", p4)):
@@ -1275,13 +1275,13 @@ def prior_run_rows(gate_repair: str = PRIOR_GATE_REPAIR) -> list[dict]:
 
 
 def eval_digest_with_prior_gate_repair() -> dict:
-    """A sure_eval run sitting in extract_lessons. run_report comes after extract_lessons, so it is
+    """A sure_infer run sitting in extract_lessons. run_report comes after extract_lessons, so it is
     not in units[] and never can be; the previous run of the same target was blocked there."""
-    eval_units = paths.load_units()["skills"]["sure_eval"]
+    eval_units = paths.load_units()["skills"]["sure_infer"]
     walked = eval_units[: eval_units.index("extract_lessons")]
     return {
         "schema": proposals.DIGEST_SCHEMA,
-        "run": {"run_id": RUN_ID, "skill": "sure_eval", "args": "model=qwen2-audio-7b",
+        "run": {"run_id": RUN_ID, "skill": "sure_infer", "args": "model=qwen2-audio-7b",
                 "target": {"kind": "eval", "id": TARGET_ID}, "status_so_far": "running",
                 "cutoff": 0, "memory_usage": []},
         "units": [{"id": u, "outcome": "passed", "attempts": 1, "repairs": [], "fix_window": [],
@@ -1291,7 +1291,7 @@ def eval_digest_with_prior_gate_repair() -> dict:
         "tool_errors": 0,
         "prior_runs": prior_run_rows(),
         "memory_index_snapshot": [],
-        "units_registry": {"sure_eval": eval_units},
+        "units_registry": {"sure_infer": eval_units},
     }
 
 
@@ -1340,7 +1340,7 @@ class PriorRunTriggerTests(GateTestCase):
     def test_a_late_unit_bad_case_passes_rule_4_on_a_prior_gate_repair(self) -> None:
         self.fx.write_digest(eval_digest_with_prior_gate_repair())
         self.fx.add_candidate("01-x", bad_case_proposal(
-            target_skill="sure_eval", applies_to=["sure_eval"],
+            target_skill="sure_infer", applies_to=["sure_infer"],
             cell={"component": "run_report", "cause": "result_layout"}, claims=[], trigger=[LATE_TRIGGER],
         ), bad_case_md())
         self.fx.write_declaration()
@@ -1352,9 +1352,9 @@ class PriorRunTriggerTests(GateTestCase):
         self.fx.write_digest(eval_digest_with_prior_gate_repair())
         sha = paths.sha256_file(self.fx.artifacts / "run_digest.json")
         self.fx.add_candidate("01-x", bad_case_proposal(
-            target_skill="sure_eval", applies_to=["sure_eval"],
+            target_skill="sure_infer", applies_to=["sure_infer"],
             cell={"component": "run_report", "cause": "result_layout"}, claims=[], trigger=[LATE_TRIGGER],
-            source={"run_id": RUN_ID, "skill": "sure_eval", "target": TARGET_ID, "digest_sha256": sha},
+            source={"run_id": RUN_ID, "skill": "sure_infer", "target": TARGET_ID, "digest_sha256": sha},
         ), bad_case_md())
         self.fx.write_declaration()
         self.assertClean(self.fx.run(sha=sha))
@@ -1562,7 +1562,7 @@ B_REPO_ROOT = Path(__file__).resolve().parents[3]
 B_CONFIG = paths.load_config()
 B_UNITS = paths.load_units()
 B_RUN_ID = "20260818-120000-abcd1234"
-B_ALL_SKILLS = ["sure_onboard", "sure_eval", "sure_feed", "sure_reval"]
+B_ALL_SKILLS = ["sure_onboard", "sure_eval", "sure_infer", "sure_trans", "sure_feed"]
 B_BUILD_ENV_REPAIR = (
     "BUILD_ENV gate failed (status=failed). pip resolved torch==2.4.0+cu121 but the host runs CUDA 12.8; "
     "RuntimeError: no kernel image is available for execution on the device"
@@ -1607,7 +1607,7 @@ class PartBFixture:
         if skill == "sure_onboard":
             self.unit_a, self.unit_b, self.unit_c = "build_env", "validate_import", "verdict"
         else:
-            self.unit_a, self.unit_b, self.unit_c = "smoke_test", "execute_wait", "assessment"
+            self.unit_a, self.unit_b, self.unit_c = "dataset_scope", "execute_inference", "run_report"
         self.run_dir = self.repo / ".sure" / "runs" / B_RUN_ID
         self.art = self.run_dir / "artifacts"
         self.candidates_dir = self.art / "candidates"
@@ -1906,7 +1906,7 @@ class PartBEvidenceRuleTests(PartBCase):
 
 
 class PartBEvalEvidenceRuleTests(PartBCase):
-    skill = "sure_eval"
+    skill = "sure_infer"
 
     def test_eval_product_dir_comes_from_runtime_run_dir(self) -> None:
         self.assertEqual(proposals.product_dirs_for(self.fx.run_dir, self.fx.repo), [self.fx.eval_product_dir])
@@ -2311,13 +2311,13 @@ class PartBMainTests(PartBCase):
 
 class PartBWrapperAndSchemaCopyTests(unittest.TestCase):
     ONBOARD = B_REPO_ROOT / "sure" / "skills" / "sure_onboard"
-    EVAL = B_REPO_ROOT / "sure" / "skills" / "sure_eval"
+    INFER = B_REPO_ROOT / "sure" / "skills" / "sure_infer"
     TRANS = B_REPO_ROOT / "sure" / "skills" / "sure_trans"
     FEED = B_REPO_ROOT / "sure" / "skills" / "sure_feed"
 
     def test_every_wrapper_exists_and_is_identical(self) -> None:
         a = (self.ONBOARD / "scripts" / "check_memory_extraction.py").read_bytes()
-        for skill_dir in (self.EVAL, self.TRANS, self.FEED):
+        for skill_dir in (self.INFER, self.TRANS, self.FEED):
             with self.subTest(skill=skill_dir.name):
                 self.assertEqual((skill_dir / "scripts" / "check_memory_extraction.py").read_bytes(), a)
         self.assertIn(b"from memory import proposals", a)
@@ -2339,7 +2339,7 @@ class PartBWrapperAndSchemaCopyTests(unittest.TestCase):
 
     def test_schema_copies_are_byte_identical_to_the_shared_library(self) -> None:
         source = (paths.LIB_DIR / "schemas" / "extraction_declaration.schema.json").read_bytes()
-        for skill_dir in (self.ONBOARD, self.EVAL, self.TRANS, self.FEED):
+        for skill_dir in (self.ONBOARD, self.INFER, self.TRANS, self.FEED):
             with self.subTest(skill=skill_dir.name):
                 self.assertEqual((skill_dir / "schemas" / "extraction_declaration.schema.json").read_bytes(), source)
         schema = json.loads(source)

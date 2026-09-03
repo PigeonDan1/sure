@@ -104,9 +104,9 @@ def mask_arg_values(args: str) -> str:
     """Every absolute or `~/` path in an argument value replaced by `<path>` and every URL by `<url>`.
     run.args is copied into the digest verbatim, from there into the next run's prior_runs, and
     from there it can be lifted into a candidate entry that is published for good, so the site
-    paths a caller types (`/sure_trans dockerfile= model= inference_entrypoint=`, `/sure_eval
+    paths a caller types (`/sure_trans dockerfile= model= inference_entrypoint=`, `/sure_infer
     datasets=`) and an internal mirror in `hf_endpoint=` must not survive the copy. A value is
-    split on `,` first: /sure_eval takes several datasets in one token. Relative values, enum
+    split on `,` first: /sure_infer takes several datasets in one token. Relative values, enum
     values and numbers are left alone - those are the ones that identify what the run did."""
     masked: list[str] = []
     for token in (args or "").strip().split():
@@ -286,12 +286,12 @@ def resolve_target(run_dir: Path, skill: str | None, args: str) -> dict:
     falls back to `model_name=` and not to the shared `model=` / `model_id=`: its `model=` is the
     host path to the weights, so the shared fallback would make a site path the target id."""
     art = Path(run_dir) / "artifacts"
-    kind = "eval" if skill == "sure_eval" else "model"
+    kind = "eval" if skill in ("sure_infer", "sure_eval") else "model"
     target_id = ""
     fallback_keys = ("model", "model_id")
     if skill == "sure_onboard":
         target_id = _string_at(_load_json_quiet(art / "model_input_resolved.json"), "model_id")
-    elif skill == "sure_eval":
+    elif skill in ("sure_infer", "sure_eval"):
         target_id = _string_at(_load_json_quiet(art / "eval_input_resolved.json"), "user_input", "model")
     elif skill == "sure_trans":
         target_id = _string_at(_load_json_quiet(art / "trans_input_resolved.json"), "model_name")
@@ -315,7 +315,7 @@ def _product_dir(run_dir: Path, skill: str | None) -> Path | None:
     art = Path(run_dir) / "artifacts"
     if skill == "sure_onboard":
         raw = _string_at(_load_json_quiet(art / "model_input_resolved.json"), "model_dir")
-    elif skill == "sure_eval":
+    elif skill in ("sure_infer", "sure_eval"):
         raw = _string_at(_load_json_quiet(art / "eval_input_resolved.json"), "runtime", "run_dir")
     elif skill == "sure_feed":
         raw = _string_at(_load_json_quiet(art / "feed_report.json"), "handoff", "handoff_dir")

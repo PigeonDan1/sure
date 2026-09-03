@@ -43,7 +43,7 @@ import {
 	usageIds,
 } from "./match.ts";
 
-// Memory orchestration shared by the sure_onboard and sure_eval hooks.
+// Memory orchestration shared by the sure_onboard, sure_infer and sure_eval hooks.
 //
 // This module never imports anything from a skill package: the skills' hooks
 // import it (like ../harness/resolve.ts) and pass their own context in. Every
@@ -88,7 +88,7 @@ export interface MemoryCheckpoint {
 /** What every memory hook function needs from the calling skill hook. */
 export interface MemoryHookEnv {
 	ctx: SureHookContext;
-	skill: "sure_onboard" | "sure_eval" | "sure_trans" | "sure_feed";
+	skill: "sure_onboard" | "sure_infer" | "sure_eval" | "sure_trans" | "sure_feed";
 	/** harness python contract when preStart already resolved it; undefined otherwise. */
 	py: HarnessRuntimeContract | undefined;
 }

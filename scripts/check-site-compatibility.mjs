@@ -89,7 +89,7 @@ if (failures.length === 0) {
 	const manifestPaths = [
 		"sure/skills/sure_feed/sure.skill.json",
 		"sure/skills/sure_onboard/sure.skill.json",
-		"sure/skills/sure_eval/sure.skill.json",
+		"sure/skills/sure_infer/sure.skill.json",
 		"sure/skills/sure_reval/sure.skill.json",
 	];
 	const manifestDifferences = manifestPaths.flatMap((path) => {
@@ -189,7 +189,7 @@ try {
 
 	const datasetProbe = run("python3", [
 		"-c",
-		"import sys; sys.path.insert(0, 'sure/skills/sure_eval/scripts'); from sure_eval.datasets.source_resolver import accepted_source_root; print(accepted_source_root())",
+		"import sys; sys.path.insert(0, 'sure/skills/sure_infer/scripts'); from sure_eval.datasets.source_resolver import accepted_source_root; print(accepted_source_root())",
 	]);
 	// Get the single configured root from the key-value map
 	const sourceRoots = expectedPolicy.datasets.allowed_source_roots;
@@ -207,7 +207,7 @@ try {
 		"python3",
 		[
 			"-c",
-			"import json, os, sys; from pathlib import Path; sys.path.insert(0, 'sure/skills/sure_eval/scripts'); import resolve_eval_input as r; explicit=Path(sys.argv[1]); environment=Path(sys.argv[2]); run_dir=Path(sys.argv[3]); os.environ['SURE_EVAL_CONFIG']=str(environment); first=r._write_harness_config(run_dir=run_dir,config_path=str(explicit)); second=r._write_harness_config(run_dir=run_dir,config_path=None); os.environ.pop('SURE_EVAL_CONFIG'); third=r._write_harness_config(run_dir=run_dir,config_path=None); print(json.dumps([first.name,second.name,third.name]))",
+			"import json, os, sys; from pathlib import Path; sys.path.insert(0, 'sure/skills/sure_infer/scripts'); import resolve_eval_input as r; explicit=Path(sys.argv[1]); environment=Path(sys.argv[2]); run_dir=Path(sys.argv[3]); os.environ['SURE_EVAL_CONFIG']=str(environment); first=r._write_harness_config(run_dir=run_dir,config_path=str(explicit)); second=r._write_harness_config(run_dir=run_dir,config_path=None); os.environ.pop('SURE_EVAL_CONFIG'); third=r._write_harness_config(run_dir=run_dir,config_path=None); print(json.dumps([first.name,second.name,third.name]))",
 			explicitConfig,
 			environmentConfig,
 			join(testRoot, "config-run"),

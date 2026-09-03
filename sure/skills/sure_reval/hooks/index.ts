@@ -41,7 +41,7 @@ function prepareEvaluationRuntime(
 	ctx: SureHookContext,
 	harnessRuntime: HarnessRuntimeContract,
 ): { binding?: Record<string, unknown>; error?: string } {
-	const script = resolve(ctx.packageDir, "..", "sure_eval", "scripts", "evaluation_runtime.py");
+	const script = resolve(ctx.packageDir, "..", "sure_infer", "scripts", "evaluation_runtime.py");
 	const engineRoot = resolve(ctx.packageDir, "..", "..", "external", "sure-evaluation");
 	const completed = spawnSync(harnessRuntime.python_executable, [script, "--engine-root", engineRoot, "--prepare"], {
 		cwd: ctx.packageDir,
@@ -112,7 +112,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	const artifactsDir = join(ctx.runDir, "artifacts");
 	mkdirSync(artifactsDir, { recursive: true });
-	const resolver = resolve(ctx.packageDir, "..", "sure_eval", "scripts", "resolve_prediction_source.py");
+	const resolver = resolve(ctx.packageDir, "..", "sure_infer", "scripts", "resolve_prediction_source.py");
 	const output = join(artifactsDir, "prediction_source_resolved.json");
 	const argv = [
 		resolver,
@@ -218,10 +218,10 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	}
 	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
-	const backendScripts = invokedSkillScripts(command, "sure_eval/scripts");
+	const backendScripts = invokedSkillScripts(command, "sure_infer/scripts");
 	const forbiddenBackend = backendScripts.find(
 		(script) =>
-			script !== "sure_eval/scripts/run_reval.py" && script !== "sure_eval/scripts/resolve_prediction_source.py",
+			script !== "sure_infer/scripts/run_reval.py" && script !== "sure_infer/scripts/resolve_prediction_source.py",
 	);
 	if (forbiddenBackend) {
 		return failure(

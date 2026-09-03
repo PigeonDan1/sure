@@ -20,7 +20,7 @@ const ignoredPathPrefixes = [
 	"data/datasets",
 	"sure/handoffs",
 	"sure/models",
-	"sure/skills/sure_eval/results",
+	"sure/skills/sure_infer/results",
 ];
 const packageJsonFiles = [];
 

@@ -1,6 +1,6 @@
 // Memory matching, recall budget and usage rows for the SURE hooks (spec §7.2, §8.1).
 //
-// This module is shared by the sure_onboard and sure_eval hooks. It only READS
+// This module is shared by the sure_onboard, sure_infer and sure_eval hooks. It only READS
 // sure/memory/index.json (python builds it); it never parses entry files and never
 // touches meta. The only file it writes is the per-run usage jsonl (inject / pre_start /
 // settle rows), which python later replays into counts.

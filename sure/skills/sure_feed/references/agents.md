@@ -9,7 +9,7 @@ the `sure_feed` skill package — no external `XForge/skills` or upstream
 
 **Role boundary**: this is the model-feeding bridge. It is NOT the onboarding
 agent (`sure_onboard/SKILL.md`) and NOT the evaluation agent
-(`sure_eval/SKILL.md`). It hands selected models to `/sure_onboard` via
+(`sure_infer/SKILL.md`). It hands selected models to `/sure_onboard` via
 `artifacts/debug/model_input_result.json` and
 `artifacts/debug/handoff_manifest.json`.
 
@@ -176,5 +176,5 @@ the model in the global `sure/models/<model_name>/`, writing
 `artifacts/verdict.json` and, once the bundle is sealed,
 `artifacts/deployment_ready.json`. Staging is not approval: an operator reviews
 the bundle and copies the complete model directory into a configured
-`approved_models_roots` entry. `/sure_eval model=<model_name>` resolves only
+`approved_models_roots` entry. `/sure_infer model=<model_name>` resolves only
 that approved copy, and reads the `verdict.json` inside it to judge readiness.

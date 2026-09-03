@@ -19,7 +19,7 @@ from write_verdict import write_verdict
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "sure_eval" / "scripts"))
+sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "sure_infer" / "scripts"))
 from deployment_binding import load_deployment_binding  # noqa: E402
 
 

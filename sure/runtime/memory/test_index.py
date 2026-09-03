@@ -54,7 +54,7 @@ def make_repo(tmp: Path) -> Path:
     No .sure/runs/ directory exists: the index never needs one."""
     repo = tmp / "repo"
     onboard = repo / "sure" / "skills" / "sure_onboard" / "references" / "memory" / "bad_cases"
-    evald = repo / "sure" / "skills" / "sure_eval" / "references" / "memory" / "bad_cases"
+    evald = repo / "sure" / "skills" / "sure_infer" / "references" / "memory" / "bad_cases"
     facts = repo / "sure" / "skills" / "_shared" / "memory" / "facts"
     root = repo / "sure" / "memory"
 
@@ -77,7 +77,7 @@ def make_repo(tmp: Path) -> Path:
           + "| Legacy Headerless Case | `legacy_headerless.md` | keep me verbatim |\n"
           + "| a row for a file that no longer exists | `ghost.md` | should be dropped |\n")
     write(evald / "job-log-missing.md",
-          header("job.log: No such file", "sure_eval/execute_wait x infra",
+          header("job.log: No such file", "sure_infer/execute_inference x infra",
                  "run-20260805-eeee → qwen-audio", "2026-08-05", "confirmed")
           + bad_case_body("vc job log never appeared", "job.log: No such file"))
     write(facts / "vc-partition-names.md",
@@ -88,7 +88,7 @@ def make_repo(tmp: Path) -> Path:
           + fact_body("qwen-audio wheels need a cu121 torch build", "model_family:qwen-audio", "2099-01-01"))
 
     # meta for a reference entry: a confirmed file demoted to disputed in meta
-    write_meta(root, "sure_eval/job-log-missing", status="disputed", injections=2, disputed=1, entry_sha256="unused-for-references")
+    write_meta(root, "sure_infer/job-log-missing", status="disputed", injections=2, disputed=1, entry_sha256="unused-for-references")
 
     # provisional entries
     add_provisional(root, "sure_onboard", "pip-index-timeout", "Read timed out on the pip index", "ReadTimeoutError: HTTPSConnectionPool",
@@ -102,10 +102,10 @@ def make_repo(tmp: Path) -> Path:
                     op="add", status="provisional", meta_ok=True, publish=True)
     # two triggers in the header, but publish (Task 6) only found the first one in the run digest,
     # so meta.hook_trigger is a strict subset: the only entry in the golden index where they differ
-    add_provisional(root, "sure_eval", "smoke-oom", "Smoke test dies with CUDA out of memory",
+    add_provisional(root, "sure_infer", "smoke-oom", "Smoke test dies with CUDA out of memory",
                     "CUDA out of memory; evidence-only: dmesg oom-killer",
-                    "sure_eval/smoke_test x resource_limit", "run-20260812-ffff → qwen-audio", "2026-08-12",
-                    op="add", status="disputed", similar="sure_eval/job-log-missing", meta_ok=True, publish=True, disputed=1,
+                    "sure_infer/dataset_scope x resource_limit", "run-20260812-ffff → qwen-audio", "2026-08-12",
+                    op="add", status="disputed", similar="sure_infer/job-log-missing", meta_ok=True, publish=True, disputed=1,
                     hook_trigger=["CUDA out of memory"])
     add_provisional(root, "sure_onboard", "no-meta", "No meta at all", "some trigger text here",
                     "sure_onboard/build_env x infra", "run-20260813-0001 → m", "2026-08-13", meta_ok=None, publish=True)
@@ -274,7 +274,7 @@ class BuildIndexTests(IndexFixtureCase):
     def test_reference_entries_always_included_and_readme_skipped(self) -> None:
         ids = set(entry_map(self.build()))
         for expected in ("sure_onboard/legacy_headerless", "sure_onboard/no-kernel-image", "sure_onboard/partition-not-found",
-                         "sure_onboard/old-partition-name", "sure_eval/job-log-missing", "_shared/vc-partition-names",
+                         "sure_onboard/old-partition-name", "sure_infer/job-log-missing", "_shared/vc-partition-names",
                          "_shared/qwen-audio-needs-cu121"):
             self.assertIn(expected, ids)
         self.assertNotIn("sure_onboard/README", ids)
@@ -284,7 +284,7 @@ class BuildIndexTests(IndexFixtureCase):
         ids = set(entry_map(self.build()))
         self.assertIn("sure_onboard/pip-index-timeout", ids)          # meta + sha + publish row
         self.assertIn("sure_onboard/pip-index-timeout-v2", ids)
-        self.assertIn("sure_eval/smoke-oom", ids)
+        self.assertIn("sure_infer/smoke-oom", ids)
         self.assertNotIn("sure_onboard/no-meta", ids)                 # no meta
         self.assertNotIn("sure_onboard/sha-mismatch", ids)            # meta sha differs
         self.assertNotIn("sure_onboard/no-publish-row", ids)          # no publish row in decisions.jsonl
@@ -293,10 +293,10 @@ class BuildIndexTests(IndexFixtureCase):
     def test_an_orphan_meta_does_not_resurrect_a_deleted_entry(self) -> None:
         # Deleting a references entry leaves its meta behind (the instance tree is not in the same
         # repo); meta is a source of the hash and an overlay, never a source of rows.
-        (self.repo / "sure/skills/sure_eval/references/memory/bad_cases/job-log-missing.md").unlink()
-        self.assertTrue((self.root / "meta" / "sure_eval" / "job-log-missing.json").is_file())
+        (self.repo / "sure/skills/sure_infer/references/memory/bad_cases/job-log-missing.md").unlink()
+        self.assertTrue((self.root / "meta" / "sure_infer" / "job-log-missing.json").is_file())
         idx = self.build()
-        self.assertNotIn("sure_eval/job-log-missing", entry_map(idx))
+        self.assertNotIn("sure_infer/job-log-missing", entry_map(idx))
         self.assertIn("sure_onboard/no-kernel-image", entry_map(idx))
 
     def test_a_sha_mismatch_is_counted_and_reported_not_silently_dropped(self) -> None:
@@ -326,12 +326,12 @@ class BuildIndexTests(IndexFixtureCase):
     def test_hook_trigger_from_meta_else_trigger(self) -> None:
         entries = entry_map(self.build())
         # meta.hook_trigger present (Task 6 wrote it): the index copies it, even when it is a strict subset
-        self.assertEqual(entries["sure_eval/smoke-oom"]["trigger"], ["CUDA out of memory", "evidence-only: dmesg oom-killer"])
-        self.assertEqual(entries["sure_eval/smoke-oom"]["hook_trigger"], ["CUDA out of memory"])
+        self.assertEqual(entries["sure_infer/smoke-oom"]["trigger"], ["CUDA out of memory", "evidence-only: dmesg oom-killer"])
+        self.assertEqual(entries["sure_infer/smoke-oom"]["hook_trigger"], ["CUDA out of memory"])
         self.assertEqual(entries["sure_onboard/pip-index-timeout"]["hook_trigger"], ["ReadTimeoutError: HTTPSConnectionPool"])
         # no meta / meta without the key / legacy / headerless / fact: hook_trigger == trigger
         for entry_id in ("sure_onboard/no-kernel-image", "sure_onboard/legacy_headerless", "sure_onboard/partition-not-found",
-                         "sure_eval/job-log-missing", "_shared/qwen-audio-needs-cu121", "_shared/vc-partition-names"):
+                         "sure_infer/job-log-missing", "_shared/qwen-audio-needs-cu121", "_shared/vc-partition-names"):
             self.assertEqual(entries[entry_id]["hook_trigger"], entries[entry_id]["trigger"], entry_id)
         self.assertEqual(entries["sure_onboard/no-kernel-image"]["hook_trigger"], ["no kernel image is available", "CUDA error: no kernel image"])
         self.assertEqual(entries["sure_onboard/legacy_headerless"]["hook_trigger"], [])
@@ -346,9 +346,9 @@ class BuildIndexTests(IndexFixtureCase):
         entries = entry_map(self.build())
         self.assertEqual(entries["sure_onboard/partition-not-found"]["useful_activated"], 3)
         self.assertEqual(entries["sure_onboard/partition-not-found"]["injections"], 5)
-        self.assertEqual(entries["sure_eval/job-log-missing"]["status"], "disputed")
-        self.assertEqual(entries["sure_eval/smoke-oom"]["status"], "disputed")
-        self.assertEqual(entries["sure_eval/smoke-oom"]["similar_entry"], "sure_eval/job-log-missing")
+        self.assertEqual(entries["sure_infer/job-log-missing"]["status"], "disputed")
+        self.assertEqual(entries["sure_infer/smoke-oom"]["status"], "disputed")
+        self.assertEqual(entries["sure_infer/smoke-oom"]["similar_entry"], "sure_infer/job-log-missing")
 
     def test_proposal_overlays_op_and_target(self) -> None:
         entry = entry_map(self.build())["sure_onboard/pip-index-timeout-v2"]
@@ -374,7 +374,7 @@ class BuildIndexTests(IndexFixtureCase):
             "_shared/qwen-audio-needs-cu121", "_shared/vc-partition-names", "sure_onboard/legacy_headerless",
             "sure_onboard/no-kernel-image", "sure_onboard/partition-not-found",
             "sure_onboard/pip-index-timeout-v2", "sure_onboard/pip-index-timeout", "sure_onboard/pip-index-timeout-old",
-            "sure_eval/job-log-missing", "sure_eval/smoke-oom",
+            "sure_infer/job-log-missing", "sure_infer/smoke-oom",
             "sure_onboard/old-partition-name",
         ])
 
@@ -474,7 +474,7 @@ class SourcesShaAndCheckTests(IndexFixtureCase):
         self.assertTrue((self.root / "index.json").is_file())
         self.assertTrue((self.root / "index.md").is_file())
         self.assertFalse(index.check_index(self.repo, config=CONFIG, units=UNITS))
-        target = self.repo / "sure/skills/sure_eval/references/memory/bad_cases/job-log-missing.md"
+        target = self.repo / "sure/skills/sure_infer/references/memory/bad_cases/job-log-missing.md"
         stamp = target.stat().st_mtime + 3600
         os.utime(target, (stamp, stamp))
         self.assertFalse(index.check_index(self.repo, config=CONFIG, units=UNITS))
@@ -514,7 +514,7 @@ class RenderIndexMdTests(IndexFixtureCase):
         self.assertIn("- [confirmed] [legacy] [no hook trigger] sure_onboard/legacy_headerless — Legacy Headerless Case — triggers: (none; prompt-level only) — sure/skills/sure_onboard/references/memory/bad_cases/legacy_headerless.md", lines)
         self.assertIn("- [confirmed] [legacy] sure_onboard/no-kernel-image — CUDA arch mismatch: no kernel image — triggers: no kernel image is available; CUDA error: no kernel image — sure/skills/sure_onboard/references/memory/bad_cases/no-kernel-image.md", lines)
         self.assertIn("- [provisional] sure_onboard/pip-index-timeout-v2 — Read timed out on the pip index (mirror fix) — triggers: ReadTimeoutError: HTTPSConnectionPool — sure/memory/provisional/sure_onboard/pip-index-timeout-v2/entry.md", lines)
-        self.assertTrue(lines[-1].startswith("- [disputed] sure_eval/smoke-oom"))
+        self.assertTrue(lines[-1].startswith("- [disputed] sure_infer/smoke-oom"))
         self.assertNotIn("old-partition-name", text)  # superseded never appears
         statuses = [line.split("]")[0][3:] for line in lines]
         self.assertEqual(statuses, ["confirmed"] * 5 + ["provisional"] * 3 + ["disputed"] * 2)
@@ -626,7 +626,7 @@ class ReadmeReconcileTests(IndexFixtureCase):
         self.assertFalse(index.reconcile_readme(self.readme(), records))
 
     def test_missing_readme_is_bootstrapped(self) -> None:
-        readme = self.repo / "sure/skills/sure_eval/references/memory/bad_cases/README.md"
+        readme = self.repo / "sure/skills/sure_infer/references/memory/bad_cases/README.md"
         self.assertFalse(readme.exists())
         records = index.records_from_index(self.build())
         self.assertTrue(index.reconcile_readme(readme, records))
@@ -638,8 +638,8 @@ class ReadmeReconcileTests(IndexFixtureCase):
 
     def test_two_skills_with_the_same_file_name_keep_their_own_rows(self) -> None:
         # both skills may hold a bad case called partition-not-found.md; each README gets its own row
-        twin = self.repo / "sure/skills/sure_eval/references/memory/bad_cases/partition-not-found.md"
-        write(twin, header("partition not found on the eval queue", "sure_eval/execute_wait x infra",
+        twin = self.repo / "sure/skills/sure_infer/references/memory/bad_cases/partition-not-found.md"
+        write(twin, header("partition not found on the eval queue", "sure_infer/execute_inference x infra",
                            "run-20260816-aaaa → qwen-audio", "2026-08-16", "confirmed")
               + bad_case_body("vc eval submit rejects the queue alias", "partition not found on the eval queue"))
         records = index.records_from_index(self.build())
@@ -784,18 +784,18 @@ class GoldenIndexTests(IndexFixtureCase):
         self.assertEqual(golden["schema"], "sure.memory.index.v1")
         self.assertEqual(by_id["sure_onboard/legacy_headerless"]["trigger"], [])           # not matchable
         self.assertEqual(by_id["sure_onboard/pip-index-timeout-v2"]["op"], "modify")        # pending revision
-        self.assertEqual(by_id["sure_eval/smoke-oom"]["similar_entry"], "sure_eval/job-log-missing")
+        self.assertEqual(by_id["sure_infer/smoke-oom"]["similar_entry"], "sure_infer/job-log-missing")
         self.assertEqual(by_id["sure_onboard/old-partition-name"]["status"], "superseded")
         self.assertEqual(by_id["_shared/vc-partition-names"]["scope"], "cluster")
         self.assertEqual(by_id["_shared/qwen-audio-needs-cu121"]["scope"], "model_family:qwen-audio")
         self.assertEqual({e["status"] for e in golden["entries"]}, {"confirmed", "provisional", "disputed", "superseded"})
         # hook_trigger: the only entry where it differs from trigger is smoke-oom (evidence-only trigger left out);
         # every bad_case with a trigger keeps trigger[0] in hook_trigger, so Task 9's "each entry matches itself" holds
-        self.assertEqual(by_id["sure_eval/smoke-oom"]["hook_trigger"], ["CUDA out of memory"])
-        self.assertNotEqual(by_id["sure_eval/smoke-oom"]["hook_trigger"], by_id["sure_eval/smoke-oom"]["trigger"])
+        self.assertEqual(by_id["sure_infer/smoke-oom"]["hook_trigger"], ["CUDA out of memory"])
+        self.assertNotEqual(by_id["sure_infer/smoke-oom"]["hook_trigger"], by_id["sure_infer/smoke-oom"]["trigger"])
         for entry in golden["entries"]:
             self.assertIn("hook_trigger", entry, entry["entry_id"])
-            if entry["entry_id"] != "sure_eval/smoke-oom":
+            if entry["entry_id"] != "sure_infer/smoke-oom":
                 self.assertEqual(entry["hook_trigger"], entry["trigger"], entry["entry_id"])
             if entry["type"] == "bad_case" and entry["trigger"]:
                 self.assertIn(entry["trigger"][0], entry["hook_trigger"], entry["entry_id"])

@@ -322,13 +322,13 @@ class ResolveTargetTests(DigestTestBase):
         self.assertEqual(digest.resolve_target(run.dir, "sure_onboard", run.args), {"kind": "model", "id": "openai/whisper-large-v3"})
 
     def test_eval_reads_user_input_model_and_ignores_runtime_paths(self) -> None:
-        run = FakeRun(self.runs_root, "20260818-120000-eeee0001", "sure_eval", "model=demo-model datasets=librispeech")
+        run = FakeRun(self.runs_root, "20260818-120000-eeee0001", "sure_infer", "model=demo-model datasets=librispeech")
         run.artifact("eval_input_resolved.json", {"user_input": {"model": "demo-model", "datasets": ["librispeech"]}, "runtime": {"run_dir": "/tmp/out-dir-xyz"}})
-        self.assertEqual(digest.resolve_target(run.dir, "sure_eval", run.args), {"kind": "eval", "id": "demo-model"})
+        self.assertEqual(digest.resolve_target(run.dir, "sure_infer", run.args), {"kind": "eval", "id": "demo-model"})
 
     def test_falls_back_to_args_when_artifact_missing(self) -> None:
-        run = FakeRun(self.runs_root, "20260818-120000-eeee0002", "sure_eval", "model=arg-model output_dir=/tmp/o")
-        self.assertEqual(digest.resolve_target(run.dir, "sure_eval", run.args)["id"], "arg-model")
+        run = FakeRun(self.runs_root, "20260818-120000-eeee0002", "sure_infer", "model=arg-model output_dir=/tmp/o")
+        self.assertEqual(digest.resolve_target(run.dir, "sure_infer", run.args)["id"], "arg-model")
         run2 = FakeRun(self.runs_root, "20260818-120000-aaaa0002", "sure_onboard", "--model_id arg/onboard")
         self.assertEqual(digest.resolve_target(run2.dir, "sure_onboard", run2.args)["id"], "arg/onboard")
         self.assertEqual(digest.resolve_target(run2.dir, "sure_onboard", "")["id"], "")
@@ -585,9 +585,9 @@ class BuildDigestTests(DigestTestBase):
         (run_dir / "artifacts").mkdir(parents=True)
         d = digest.build_run_digest(run_dir, self.repo_root, cutoff=None, mark_passed=None, config=CONFIG, units=UNITS, log_paths=LOG_PATHS)
         self.assertEqual((d["run"]["skill"], d["units"], d["run"]["target"]["id"]), (None, [], ""))
-        d = digest.build_run_digest(run_dir, self.repo_root, cutoff=None, mark_passed=None, config=CONFIG, units=UNITS, log_paths=LOG_PATHS, skill="sure_eval")
-        self.assertEqual(d["run"]["skill"], "sure_eval")
-        self.assertEqual([(u["id"], u["outcome"]) for u in d["units"]], [("task_classification", "current")])
+        d = digest.build_run_digest(run_dir, self.repo_root, cutoff=None, mark_passed=None, config=CONFIG, units=UNITS, log_paths=LOG_PATHS, skill="sure_infer")
+        self.assertEqual(d["run"]["skill"], "sure_infer")
+        self.assertEqual([(u["id"], u["outcome"]) for u in d["units"]], [("dataset_scope", "current")])
 
     def test_repairs_prefer_diagnostics_raw_text_over_shown_repair(self) -> None:
         run = self.onboard_run()
@@ -730,33 +730,33 @@ class BuildDigestTests(DigestTestBase):
 
     def test_output_dir_never_appears_in_digest(self) -> None:
         out_dir = "/tmp/out-dir-xyz"
-        run = FakeRun(self.runs_root, "20260818-120000-eeee0003", "sure_eval", f"model=demo-model datasets=librispeech output_dir={out_dir}", output_dir=out_dir)
+        run = FakeRun(self.runs_root, "20260818-120000-eeee0003", "sure_infer", f"model=demo-model datasets=librispeech output_dir={out_dir}", output_dir=out_dir)
         run.artifact("eval_input_resolved.json", {
             "schema": "sure.eval.input_resolved.v1",
             "user_input": {"model": "demo-model", "datasets": ["librispeech"]},
             "runtime": {"run_dir": out_dir, "run_id": "main_agent_demo-model_20260818"},
             "expected_outputs": {"report_jsonl": f"{out_dir}/report.jsonl"},
         })
-        run.pass_through("smoke_test")
-        run.file("local_logs/smoke_test.log", b"smoke failed: CUDA error: no kernel image is available\n")
-        run.block("smoke_test", "smoke_test_result.json: status must be passed", exhausted=True)
+        run.pass_through("execute_inference")
+        run.file("artifacts/local_execution.stderr.log", b"smoke failed: CUDA error: no kernel image is available\n")
+        run.block("execute_inference", "execution_result.json: status must be passed", exhausted=True)
         d = self.build(run)
         blob = json.dumps(d)
         self.assertNotIn(out_dir, blob)
         self.assertNotIn("output_dir", blob)
         self.assertEqual(d["run"]["args"], "model=demo-model datasets=librispeech")
         self.assertEqual(d["run"]["target"], {"kind": "eval", "id": "demo-model"})
-        self.assertEqual(self.unit(d, "smoke_test")["log_tail"]["path"], "{run_dir}/local_logs/smoke_test.log")
+        self.assertEqual(self.unit(d, "execute_inference")["log_tail"]["path"], "{run_dir}/artifacts/local_execution.stderr.log")
 
     def test_output_dir_quoted_by_a_gate_is_masked(self) -> None:
         out_dir = str(Path(self.tmp.name) / "spelled-out")
-        run = FakeRun(self.runs_root, "20260818-120000-eeee0011", "sure_eval", f"model=demo-model output_dir={out_dir}", output_dir=out_dir)
-        run.pass_through("smoke_test")
-        run.file("local_logs/smoke_test.log", f"smoke failed, see {out_dir}/artifacts/smoke.log\n".encode("utf-8"))
-        run.block("smoke_test", f"smoke_test_result.json missing, see {out_dir}/artifacts/smoke.log", exhausted=True)
+        run = FakeRun(self.runs_root, "20260818-120000-eeee0011", "sure_infer", f"model=demo-model output_dir={out_dir}", output_dir=out_dir)
+        run.pass_through("execute_inference")
+        run.file("artifacts/local_execution.stderr.log", f"smoke failed, see {out_dir}/artifacts/smoke.log\n".encode("utf-8"))
+        run.block("execute_inference", f"execution_result.json missing, see {out_dir}/artifacts/smoke.log", exhausted=True)
         d = self.build(run)
-        row = self.unit(d, "smoke_test")
-        self.assertIn("smoke_test_result.json missing, see <path>/artifacts/smoke.log", row["repairs"][0]["text"])
+        row = self.unit(d, "execute_inference")
+        self.assertIn("execution_result.json missing, see <path>/artifacts/smoke.log", row["repairs"][0]["text"])
         self.assertEqual([line for line in row["log_tail"]["lines"] if out_dir in line], [])
         blob = json.dumps(d)
         self.assertNotIn(json.dumps(out_dir)[1:-1], blob)  # the blob escapes Windows backslashes
@@ -772,29 +772,29 @@ class BuildDigestTests(DigestTestBase):
             self.skipTest(f"cannot create a symlink here: {exc}")
         canonical = os.path.realpath(link)
         self.assertNotEqual(canonical, str(link))  # otherwise the test proves nothing about aliases
-        run = FakeRun(self.runs_root, "20260818-120000-eeee0012", "sure_eval", f"model=demo-model output_dir={link}", output_dir=str(link))
-        run.pass_through("smoke_test")
-        run.block("smoke_test", f"smoke_test_result.json missing, see {canonical}/x.log", exhausted=True)
+        run = FakeRun(self.runs_root, "20260818-120000-eeee0012", "sure_infer", f"model=demo-model output_dir={link}", output_dir=str(link))
+        run.pass_through("execute_inference")
+        run.block("execute_inference", f"execution_result.json missing, see {canonical}/x.log", exhausted=True)
         d = self.build(run)
-        self.assertIn("smoke_test_result.json missing, see <path>/x.log", self.unit(d, "smoke_test")["repairs"][0]["text"])
+        self.assertIn("execution_result.json missing, see <path>/x.log", self.unit(d, "execute_inference")["repairs"][0]["text"])
         self.assertNotIn(json.dumps(canonical)[1:-1], json.dumps(d))
 
     def test_relative_output_dir_spelling_does_not_mask_words(self) -> None:
         # typed as a bare name, the spelling is a substring of ordinary words; only its resolved form is a path
         resolved = str(Path(self.tmp.name) / "out")
-        run = FakeRun(self.runs_root, "20260818-120000-eeee0014", "sure_eval", "model=demo-model output_dir=out", output_dir=resolved)
-        run.pass_through("smoke_test")
-        run.block("smoke_test", f"smoke timeout, see {resolved}/x.log")
-        text = self.unit(self.build(run), "smoke_test")["repairs"][0]["text"]
+        run = FakeRun(self.runs_root, "20260818-120000-eeee0014", "sure_infer", "model=demo-model output_dir=out", output_dir=resolved)
+        run.pass_through("execute_inference")
+        run.block("execute_inference", f"smoke timeout, see {resolved}/x.log")
+        text = self.unit(self.build(run), "execute_inference")["repairs"][0]["text"]
         self.assertEqual(text, "smoke timeout, see <path>/x.log")
 
     def test_prior_run_last_repair_masks_that_runs_output_dir(self) -> None:
         prior_out = str(Path(self.tmp.name) / "prior-out")
-        prior = FakeRun(self.runs_root, "20260817-100000-prior000", "sure_eval", f"model=demo-model output_dir={prior_out}", output_dir=prior_out)
-        prior.pass_through("smoke_test")
-        prior.block("smoke_test", f"smoke_test_result.json missing, see {prior_out}/artifacts/smoke.log")
+        prior = FakeRun(self.runs_root, "20260817-100000-prior000", "sure_infer", f"model=demo-model output_dir={prior_out}", output_dir=prior_out)
+        prior.pass_through("execute_inference")
+        prior.block("execute_inference", f"execution_result.json missing, see {prior_out}/artifacts/smoke.log")
         prior.save()
-        current = FakeRun(self.runs_root, "20260818-120000-eeee0013", "sure_eval", "model=demo-model output_dir=/tmp/current-out")
+        current = FakeRun(self.runs_root, "20260818-120000-eeee0013", "sure_infer", "model=demo-model output_dir=/tmp/current-out")
         last_repair = self.build(current)["prior_runs"][0]["last_repair"]
         self.assertNotIn(prior_out, last_repair)
         self.assertIn("see <path>/artifacts/smoke.log", last_repair)
@@ -813,7 +813,7 @@ class BuildDigestTests(DigestTestBase):
         other_target = self.onboard_run(run_id="20260817-110000-other001", args="model_id=other/model")
         other_target.artifact("model_input_resolved.json", {"model_id": "other/model", "model_dir": "/x"})
         other_target.save()
-        other_skill = FakeRun(self.runs_root, "20260817-120000-eval0001", "sure_eval", "model=openai/whisper-large-v3")
+        other_skill = FakeRun(self.runs_root, "20260817-120000-eval0001", "sure_infer", "model=openai/whisper-large-v3")
         other_skill.save()
         newer = self.onboard_run(run_id="20260819-000000-newer001")  # newer than the current run: still a sibling
         newer.finish("success")
@@ -899,21 +899,21 @@ class BuildDigestTests(DigestTestBase):
         # extension.ts then clears lastRepair on the success finish and events.jsonl is all that is left
         repair = ('RUN_REPORT_UNIT completed-run execution gate failed:\n'
                   '  - successful run report conflicts with execution_result.json job_status "FAILED"')
-        prior = FakeRun(self.runs_root, "20260817-100000-prior000", "sure_eval", "model=demo-model")
+        prior = FakeRun(self.runs_root, "20260817-100000-prior000", "sure_infer", "model=demo-model")
         prior.pass_through("run_report")
         prior.block("run_report", repair)
         prior.finish("success")
         prior.save()
         self.assertNotIn("lastRepair", json.loads((prior.dir / "run.json").read_text(encoding="utf-8")))
-        current = FakeRun(self.runs_root, "20260818-120000-eeee0015", "sure_eval", "model=demo-model")
+        current = FakeRun(self.runs_root, "20260818-120000-eeee0015", "sure_infer", "model=demo-model")
         row = self.build(current)["prior_runs"][0]
         self.assertIn("successful run report conflicts with execution_result.json job_status", row["last_repair"])
         self.assertEqual(row["last_repair_source"], "gate")
 
     def test_prior_runs_empty_when_target_unknown(self) -> None:
-        prior = FakeRun(self.runs_root, "20260817-100000-prior000", "sure_eval", "")
+        prior = FakeRun(self.runs_root, "20260817-100000-prior000", "sure_infer", "")
         prior.save()
-        current = FakeRun(self.runs_root, "20260818-120000-eeee0009", "sure_eval", "")
+        current = FakeRun(self.runs_root, "20260818-120000-eeee0009", "sure_infer", "")
         self.assertEqual(self.build(current)["prior_runs"], [])
 
     def test_memory_usage_from_usage_jsonl(self) -> None:
@@ -1088,7 +1088,7 @@ class IndexSnapshotCapTests(DigestTestBase):
     run, so it is the one part that grows past digest_max_bytes on a run that did nothing unusual.
     index_snapshot_min shrinks every row to five fields and stops there; nothing dropped a row."""
 
-    SKILLS = ("sure_onboard", "sure_eval", "sure_feed")
+    SKILLS = ("sure_onboard", "sure_infer", "sure_feed")
 
     def write_index(self, count: int) -> list[dict]:
         """A realistic index.json: three target skills, the four live statuses, two triggers a row,
@@ -1294,7 +1294,7 @@ class WrapperTests(DigestTestBase):
     def test_skill_wrappers_call_the_shared_module(self) -> None:
         run = self.onboard_run()
         run.save()
-        for skill in ("sure_onboard", "sure_eval", "sure_trans", "sure_feed"):
+        for skill in ("sure_onboard", "sure_infer", "sure_trans", "sure_feed"):
             wrapper = REPO_ROOT / "sure" / "skills" / skill / "scripts" / "build_run_digest.py"
             with self.subTest(skill=skill):
                 self.assertTrue(wrapper.exists(), wrapper)

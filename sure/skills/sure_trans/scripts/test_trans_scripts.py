@@ -1576,7 +1576,7 @@ class TransScriptsTest(unittest.TestCase):
             model_dir = root / "sure" / "models" / "demo"
             check = subprocess.run(
                 [sys.executable, "-c", "from deployment_binding import load_deployment_binding; from pathlib import Path; print(load_deployment_binding(Path(__import__('sys').argv[1]), 'demo')['target_image_ref'])", str(model_dir)],
-                cwd=Path(__file__).resolve().parents[2] / "sure_eval" / "scripts",
+                cwd=Path(__file__).resolve().parents[2] / "sure_infer" / "scripts",
                 check=True,
                 capture_output=True,
                 text=True,

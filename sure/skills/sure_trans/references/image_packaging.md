@@ -10,7 +10,7 @@
 `/sure_trans` 固定产出两个镜像，registry 交付是成功条件：
 
 - source 镜像：由用户交付环境（Dockerfile 或镜像 tar）物化的原始推理环境，用于原始推理基线验证。
-- adapter 镜像：在 source 镜像上加 adapter 层（`/opt/sure_trans/` 下 wrapper 文件），实现 SURE ModelWrapper 与 MCP 协议，是 `/sure_eval` 的执行镜像。
+- adapter 镜像：在 source 镜像上加 adapter 层（`/opt/sure_trans/` 下 wrapper 文件），实现 SURE ModelWrapper 与 MCP 协议，是 `/sure_infer` 的执行镜像。
 
 `package_profile=docker-registry` 固定不变；推不上去 registry 时只能产出 partial/blocked，不能密封 Eval-ready bundle。
 
@@ -63,7 +63,7 @@ adapter 镜像 = source 镜像 + adapter 层，不额外安装包。
 - run 输出目录（`/sure-output` 类可写挂载）
 - 宿主 `.venv` 与开发代码
 
-trans 与 onboard 现在使用相同的 runtime 边界：adapter 镜像打包锁定的 Harness Runtime（`runtime_inventory.harness_runtime.required=true`），`/sure_eval` 直接使用镜像内 binding。
+trans 与 onboard 现在使用相同的 runtime 边界：adapter 镜像打包锁定的 Harness Runtime（`runtime_inventory.harness_runtime.required=true`），`/sure_infer` 直接使用镜像内 binding。
 
 ## 4. 必备文件
 

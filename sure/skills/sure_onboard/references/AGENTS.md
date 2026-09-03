@@ -21,7 +21,7 @@
 - `package=none`：用于 API，或在站点允许 Python、backend=`uv` 且哈希锁定的 Model Runtime 已物化和封存时用于本地模型；不能用于 VC。
 - VC/HPC submit/validate 不属于核心 `/sure_onboard` 成功条件；如需支持，应作为独立 deployment plugin 或独立 slash command。
 
-当本文档后续历史段落与以上边界冲突时，以本节和 `SKILL.md` 状态机为准。本地适配环境不能被隐式当作 `/sure_eval` 的 host fallback；Python 路径只能解析封存的 Model Runtime。
+当本文档后续历史段落与以上边界冲突时，以本节和 `SKILL.md` 状态机为准。本地适配环境不能被隐式当作 `/sure_infer` 的 host fallback；Python 路径只能解析封存的 Model Runtime。
 
 本文档定义第一阶段模型接入的标准 workflow，确保：
 

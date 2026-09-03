@@ -24,7 +24,7 @@ MODIFY_ID = "sure_onboard/kernel-image-arch-list"
 SUPERSEDE_ID = "sure_onboard/kernel-image-torch-index"
 LEGACY_MODIFY_ID = "sure_onboard/partition-alias-fix"
 FACT_ID = "_shared/vc-partition-names"
-COLD_ID = "sure_eval/cold-entry"
+COLD_ID = "sure_infer/cold-entry"
 
 LEGACY_README = """# Bad Case Memory Index
 
@@ -103,7 +103,7 @@ def proposal(*, type_: str, op: str, target_skill: str, component: str, cause: s
              target_entry: str | None = None, similar: dict | None = None, scope: str | None = None, checked_at: str | None = None) -> dict:
     return {
         "schema": "sure.memory.proposal.v2", "type": type_, "op": op, "target_skill": target_skill,
-        "target_entry": target_entry, "applies_to": [target_skill] if type_ == "bad_case" else ["sure_onboard", "sure_eval"],
+        "target_entry": target_entry, "applies_to": [target_skill] if type_ == "bad_case" else ["sure_onboard", "sure_infer"],
         "cell": {"component": component, "cause": cause}, "trigger": trigger, "causal": True,
         "evidence": ["artifacts/build_env.log:12"],
         "claims": [{"kind": "unit_result", "unit": component, "attempt": 2, "status": "passed"}],
@@ -122,7 +122,7 @@ def meta(entry_id: str, *, type_: str, target_skill: str, component: str, cause:
     return {
         "schema": "sure.memory.meta.v1",
         "entry_id": entry_id, "type": type_, "status": status, "target_skill": target_skill,
-        "applies_to": [target_skill] if type_ == "bad_case" else ["sure_onboard", "sure_eval"],
+        "applies_to": [target_skill] if type_ == "bad_case" else ["sure_onboard", "sure_infer"],
         "component": component, "cause": cause, "trigger": trigger, "hook_trigger": list(trigger), "scope": scope,
         "injections": 0, "useful_activated": 0, "useful_unattributed": 0, "useful_runs": [], "disputed": 0, "last_hit": None,
         "created": {"run_id": run_id, "date": created}, "confirmed": None, "exported": None,
@@ -170,7 +170,7 @@ class MemoryTree:
                            unit="build_env", cause="infra", run_id=RUN2, created=self.today,
                            op="modify", target_entry=LEGACY_ID, mitigation="Resolve the alias with vc info -u first.")
         self._add_bad_case(COLD_ID, title="Smoke test needs the vc partition flag", trigger="unknown partition flag",
-                           unit="smoke_test", cause="infra", run_id=RUN1, created="2020-01-01", target_skill="sure_eval")
+                           unit="dataset_scope", cause="infra", run_id=RUN1, created="2020-01-01", target_skill="sure_infer")
         self._add_fact()
         self._write_usage()
         self._write_digests()
@@ -184,7 +184,7 @@ class MemoryTree:
         paths.atomic_write_text(bad_cases / "vc_partition_name_mismatch.md", LEGACY_ENTRY)
         paths.atomic_write_text(root / "sure" / "skills" / "sure_onboard" / "references" / "task_playbooks" / "VC.md",
                                 "# VC\n\nRead `references/memory/bad_cases/vc_partition_name_mismatch.md` when vc submit fails.\n")
-        paths.atomic_write_text(root / "sure" / "skills" / "sure_eval" / "references" / "memory" / "bad_cases" / "README.md",
+        paths.atomic_write_text(root / "sure" / "skills" / "sure_infer" / "references" / "memory" / "bad_cases" / "README.md",
                                 "# Bad Case Memory Index\n\n## Route Table\n\n| Trigger or symptom | Suggested memory file | Notes |\n|---|---|---|\n")
         # every real clone has the shared facts tree; export refuses a --repo-root without it
         (root / "sure" / "skills" / "_shared" / "memory" / "facts").mkdir(parents=True, exist_ok=True)
@@ -326,7 +326,7 @@ class ListTests(CliTestBase):
         self.assertNotIn(COLD_ID, self.row_ids(out))
 
     def test_skill_filter(self) -> None:
-        _, out, _ = self.run_cli("list", "--skill", "sure_eval")
+        _, out, _ = self.run_cli("list", "--skill", "sure_infer")
         self.assertEqual(self.row_ids(out) & {COLD_ID, KERNEL_ID}, {COLD_ID})
         self.assertIn("1 entries", out)
 
@@ -360,7 +360,7 @@ class ListTests(CliTestBase):
     def test_list_marks_a_bad_case_whose_hook_trigger_is_empty(self) -> None:
         m = self.meta_of(COLD_ID)
         m["hook_trigger"] = []  # publish found none of the triggers in the run digest
-        paths.atomic_write_json(self.memory / "meta" / "sure_eval" / "cold-entry.json", m)
+        paths.atomic_write_json(self.memory / "meta" / "sure_infer" / "cold-entry.json", m)
         _, out, _ = self.run_cli("list")
         self.assertIn(cli.NOTE_NO_HOOK_TRIGGER, self.row_of(out, COLD_ID))
         self.assertNotIn(cli.NOTE_NO_HOOK_TRIGGER, self.row_of(out, KERNEL_ID))
@@ -368,7 +368,7 @@ class ListTests(CliTestBase):
     def test_list_marks_a_bad_case_whose_component_is_underscore(self) -> None:
         m = self.meta_of(COLD_ID)
         m["component"] = "_"  # matchBadCases needs component == the failing unit; no unit is named _
-        paths.atomic_write_json(self.memory / "meta" / "sure_eval" / "cold-entry.json", m)
+        paths.atomic_write_json(self.memory / "meta" / "sure_infer" / "cold-entry.json", m)
         _, out, _ = self.run_cli("list")
         self.assertIn(cli.NOTE_NO_HOOK_TRIGGER, self.row_of(out, COLD_ID))
 
@@ -450,7 +450,7 @@ class CompareTests(CliTestBase):
         self.assertIn("-Reinstall torch for the GPU arch.", out)
 
     def test_compare_add_uses_similar_entry(self) -> None:
-        prop_path = self.memory / "provisional" / "sure_eval" / "cold-entry" / "proposal.json"
+        prop_path = self.memory / "provisional" / "sure_infer" / "cold-entry" / "proposal.json"
         prop = json.loads(prop_path.read_text(encoding="utf-8"))
         prop["similar"] = {"entry": KERNEL_ID, "difference": "different unit"}
         paths.atomic_write_json(prop_path, prop)
@@ -510,7 +510,7 @@ class ConfirmTests(CliTestBase):
     def test_confirm_disputed_is_allowed(self) -> None:
         m = self.meta_of(COLD_ID)
         m["status"] = "disputed"
-        paths.atomic_write_json(self.memory / "meta" / "sure_eval" / "cold-entry.json", m)
+        paths.atomic_write_json(self.memory / "meta" / "sure_infer" / "cold-entry.json", m)
         code, _, _ = self.run_cli("confirm", COLD_ID)
         self.assertEqual(code, 0)
         self.assertEqual(self.meta_of(COLD_ID)["status"], "confirmed")
@@ -949,9 +949,9 @@ class RejectTests(CliTestBase):
     def test_reject_moves_provisional_to_rejected_and_records_reason(self) -> None:
         code, out, _ = self.run_cli("reject", COLD_ID, "--reason", "duplicate of a playbook rule")
         self.assertEqual(code, 0, out)
-        self.assertFalse((self.memory / "provisional" / "sure_eval" / "cold-entry").exists())
-        self.assertTrue((self.memory / "rejected" / "sure_eval" / "cold-entry" / "entry.md").is_file())
-        self.assertTrue((self.memory / "rejected" / "sure_eval" / "cold-entry" / "proposal.json").is_file())
+        self.assertFalse((self.memory / "provisional" / "sure_infer" / "cold-entry").exists())
+        self.assertTrue((self.memory / "rejected" / "sure_infer" / "cold-entry" / "entry.md").is_file())
+        self.assertTrue((self.memory / "rejected" / "sure_infer" / "cold-entry" / "proposal.json").is_file())
         self.assertEqual(self.meta_of(COLD_ID)["status"], "rejected")
         rows = self.decisions("reject")
         self.assertEqual(len(rows), 1)
@@ -1101,7 +1101,7 @@ class StatsTests(CliTestBase):
         self.assertIn("YYYY-MM-DD", err)
 
     def test_stats_skill_filter(self) -> None:
-        _, out, _ = self.run_cli("stats", "--skill", "sure_eval")
+        _, out, _ = self.run_cli("stats", "--skill", "sure_infer")
         self.assertIn(COLD_ID, self.row_ids(out))
         self.assertNotIn(KERNEL_ID, self.row_ids(out))
         self.assertIn("no digests", out)
@@ -1127,7 +1127,7 @@ class StatsTests(CliTestBase):
 
     def test_an_abandoned_settle_counts_as_settled_for_cold_ratio(self) -> None:
         paths.append_jsonl(self.memory / "usage" / f"{RUN2}.jsonl",
-                           {"kind": "settle", "run_id": RUN2, "skill": "sure_eval", "unit": "smoke_test",
+                           {"kind": "settle", "run_id": RUN2, "skill": "sure_infer", "unit": "dataset_scope",
                             "entry_id": COLD_ID, "outcome": "abandoned", "at": "2026-08-12T12:40:00Z"}, 4096)
         code, out, err = self.run_cli("stats")
         self.assertEqual(code, 0, err)

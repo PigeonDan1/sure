@@ -94,7 +94,7 @@ function parseArgs(raw: string): Record<string, string> {
 
 // sure_feed has no required parameters (source/watch_mode/query/max_models/
 // handoff/output_dir/since are all optional, with sensible defaults), so preStart
-// validates nothing — unlike sure_eval/sure_onboard which reject a missing param.
+// validates nothing — unlike sure_infer/sure_onboard which reject a missing param.
 // It still parses ctx.args for the memory target id, and failOrRetry parses them
 // again for the optional max_retries override.
 
@@ -118,7 +118,7 @@ function withMemory(checkpoint: RunCheckpoint, memory: MemoryCheckpoint): RunChe
 
 // A finish accepted while the state machine still sits on an unfinished unit is
 // that unit's terminal failure: entries pending on it become disputed rows
-// (spec 8.1). Same helper as sure_eval; a no-op when the unit already completed.
+// (spec 8.1). Same helper as sure_infer; a no-op when the unit already completed.
 function settleStuckUnit(
 	env: MemoryHookEnv,
 	data: CheckpointData,
