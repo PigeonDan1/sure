@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import prepare_sure_dataset  # noqa: E402
 from sure_eval.datasets import source_resolver  # noqa: E402
-from test_source_conversion import make_manager, make_source_tree  # noqa: E402
+from test_source_conversion import make_flat_source_tree, make_manager, make_source_tree  # noqa: E402
 
 
 class SourceNamingFlowTests(unittest.TestCase):
@@ -88,6 +88,13 @@ class SourceNamingFlowTests(unittest.TestCase):
         self.assertEqual(self.manager.normalize_dataset_name(entry), "multi_ds__v2.0.0")
         jsonl_path = self.manager.download_and_convert(entry)
         self.assertEqual(jsonl_path.name, "multi_ds__v2.0.0.jsonl")
+
+    def test_flat_source_flows_through_normalize_and_convert(self) -> None:
+        flat_root = make_flat_source_tree(self.source_root, "flat_ds")
+        self.assertEqual(self.manager.normalize_dataset_name(str(flat_root)), "flat_ds__unversioned")
+        jsonl_path = self.manager.download_and_convert(str(flat_root))
+        self.assertEqual(jsonl_path.name, "flat_ds__unversioned.jsonl")
+        self.assertEqual(self.manager.expand_dataset_names([str(flat_root)]), ["flat_ds__unversioned"])
 
 
 if __name__ == "__main__":

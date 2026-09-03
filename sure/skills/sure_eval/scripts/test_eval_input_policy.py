@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import resolve_eval_input  # noqa: E402
 from sure_eval.datasets import source_resolver  # noqa: E402
-from test_source_conversion import make_manager, make_source_tree  # noqa: E402
+from test_source_conversion import make_flat_source_tree, make_manager, make_source_tree  # noqa: E402
 
 
 class MainFlowRemovalTests(unittest.TestCase):
@@ -208,6 +208,19 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         self.assertTrue(detail["jsonl_exists"])
         self.assertEqual(detail["source_root"], str(self.dataset_root))
         self.assertEqual(detail["version_id"], "v1.0.2")
+
+    def test_flat_source_entry_yields_asr_detail_with_unversioned_id(self) -> None:
+        flat_root = make_flat_source_tree(self.source_root, "flat_ds")
+        details = resolve_eval_input._dataset_details(self.manager, [str(flat_root)], [], None)
+        self.assertEqual(len(details), 1)
+        detail = details[0]
+        self.assertEqual(detail["name"], "flat_ds__unversioned")
+        self.assertEqual(detail["requested_name"], str(flat_root))
+        self.assertEqual(detail["task"], "ASR")
+        self.assertEqual(detail["language"], "auto")
+        self.assertEqual(detail["source_root"], str(flat_root))
+        self.assertEqual(detail["source_dataset_name"], "flat_ds")
+        self.assertEqual(detail["version_id"], "unversioned")
 
 
 class MainErrorHandlingTests(unittest.TestCase):

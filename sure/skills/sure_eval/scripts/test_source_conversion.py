@@ -68,6 +68,34 @@ def make_source_tree(root: Path, name: str, version: str) -> Path:
     return dataset_root
 
 
+def make_flat_source_tree(root: Path, name: str) -> Path:
+    """A source directory with sample.jsonl and the audio side by side: no ds.jsonl, no raws/."""
+    dataset_root = root / name
+    dataset_root.mkdir(parents=True)
+    audio = dataset_root / "utt1.wav"
+    audio.write_bytes(b"RIFFxxxx")
+    (dataset_root / "sample.jsonl").write_text(
+        json.dumps(
+            {
+                "sample_id": "utt1",
+                "attribute": {
+                    "path": "utt1.wav",
+                    "size": audio.stat().st_size,
+                    "sample_rate": 16000,
+                    "duration": 1000,
+                    "raw_data_format": "wav",
+                    "channels": 1,
+                },
+                "annotation": [{"transcription": {"text": ["你好"]}}],
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return dataset_root
+
+
 class SourceConversionTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -142,6 +170,21 @@ class SourceConversionTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError) as ctx:
             self.manager._convert_source_root_to_jsonl(ref)
         self.assertIn("sample.jsonl", str(ctx.exception))
+
+    def test_flat_source_converts_with_unversioned_id_and_absolute_audio(self) -> None:
+        flat_root = make_flat_source_tree(self.source_root, "flat_ds")
+        ref = source_resolver.resolve_site_source_entry(str(flat_root))
+        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        self.assertEqual(jsonl_path.name, "flat_ds__unversioned.jsonl")
+        row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(row["dataset"], "flat_ds__unversioned")
+        self.assertEqual(row["task"], "ASR")
+        self.assertEqual(row["target"], "你好")
+        self.assertEqual(row["language"], "auto")
+        self.assertEqual(row["path"], str(flat_root / "utt1.wav"))
+        self.assertTrue(Path(row["path"]).is_absolute())
+        self.assertEqual(row["metadata"]["version_id"], "unversioned")
+        self.assertEqual(row["metadata"]["source_dataset_root"], str(flat_root))
 
 
 if __name__ == "__main__":
