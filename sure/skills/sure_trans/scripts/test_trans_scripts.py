@@ -834,7 +834,14 @@ class TransScriptsTest(unittest.TestCase):
             model.mkdir()
             entrypoint = source / "infer.py"
             lockfile = source / "requirements.lock.txt"
-            entrypoint.write_text("import torch\nprint('python-runtime-ok')\n", encoding="utf-8")
+            entrypoint.write_text(
+                "try:\n"
+                "    import torch\n"
+                "except ModuleNotFoundError:\n"
+                "    torch = None\n"
+                "print('python-runtime-ok')\n",
+                encoding="utf-8",
+            )
             lockfile.write_text("example==1.0 --hash=sha256:" + "a" * 64 + "\n", encoding="utf-8")
             common = [
                 "--run-dir", str(run_dir),
