@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { canonicalJsonDigest } from "../../sure-core/src/index.ts";
+import { canonicalJsonDigest, type ExecutionRequest, type JsonValue } from "../../sure-core/src/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const source = join(repositoryRoot, "packages/sure-cli/src/surectl.ts");
@@ -36,6 +36,38 @@ function digest(path: string): string {
 	return `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
 }
 
+function executionRequest(runId: string, artifacts: string, overrides: Record<string, unknown> = {}): ExecutionRequest {
+	return {
+		schema: "sure.execution_request.v1",
+		request_id: `${runId}-request`,
+		semantic_request_digest: `sha256:${DIGEST_A}`,
+		run_id: runId,
+		unit_id: "scan_modelscope",
+		attempt: 1,
+		operation: "validation",
+		subject: {
+			bundle_manifest_path: join(artifacts, "bundle.json"),
+			bundle_digest: `sha256:${DIGEST_A}`,
+			runtime_identity_digest: `sha256:${DIGEST_B}`,
+		},
+		inputs: [],
+		entrypoint: { executable: process.execPath, argv: ["-e", ""] },
+		runtime_requirements: {},
+		capability_requirements: [],
+		reference_snapshot_digest: `sha256:${DIGEST_B}`,
+		output_root: {
+			path: artifacts,
+			resolved_path: artifacts,
+			scope_id: runId,
+			policy_digest: `sha256:${DIGEST_A}`,
+			writable: true,
+		},
+		policy_digest: `sha256:${DIGEST_A}`,
+		created_at: "2026-09-06T00:00:00.000Z",
+		...overrides,
+	} as unknown as ExecutionRequest;
+}
+
 describe("surectl cooperative control plane", () => {
 	let root: string;
 
@@ -64,7 +96,7 @@ describe("surectl cooperative control plane", () => {
 		const runDir = String(run.runDir);
 
 		const missing = command(root, "validate", [...base, "--run-id", "run-one"]);
-		expect(missing.status).toBe(0);
+		expect(missing.status).toBe(5);
 		expect((missing.value?.outcome as Record<string, unknown>).outcome).toBe("NOT_EXECUTED");
 		expect(
 			((missing.value?.transition as Record<string, unknown>).checkpoint as { data: { currentUnit: string } }).data
@@ -99,7 +131,7 @@ describe("surectl cooperative control plane", () => {
 		expect(rejectedEvidence.status).toBe(1);
 		expect(rejectedEvidence.stderr).toMatch(/outside every allowed root|Path .* outside/);
 		const noEvidence = command(root, "validate", [...base, "--run-id", "run-one"]);
-		expect(noEvidence.status).toBe(0);
+		expect(noEvidence.status).toBe(5);
 		expect((noEvidence.value?.outcome as Record<string, unknown>).outcome).toBe("NOT_EXECUTED");
 
 		const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
@@ -252,7 +284,7 @@ describe("surectl cooperative control plane", () => {
 			"--execution-request",
 			requestPath,
 		]);
-		expect(admitted.status).toBe(0);
+		expect(admitted.status).toBe(5);
 		expect((admitted.value?.outcome as Record<string, unknown>).outcome).toBe("NOT_EXECUTED");
 		expect((admitted.value?.checkpoint as { data: { currentUnit: string } }).data.currentUnit).toBe(
 			"scan_modelscope",
@@ -262,7 +294,7 @@ describe("surectl cooperative control plane", () => {
 			schema: "sure.execution_receipt.v1",
 			receipt_id: "receipt-execution",
 			request_id: request.request_id,
-			request_digest: canonicalJsonDigest(request),
+			request_digest: canonicalJsonDigest(request as unknown as JsonValue),
 			semantic_request_digest: request.semantic_request_digest,
 			run_id: request.run_id,
 			unit_id: request.unit_id,
@@ -295,13 +327,317 @@ describe("surectl cooperative control plane", () => {
 			"--execution-receipt",
 			receiptPath,
 		]);
-		expect(receiptResult.status).toBe(0);
+		expect(receiptResult.status).toBe(5);
 		expect((receiptResult.value?.outcome as Record<string, unknown>).reason_code).toBe("VALIDATION_PENDING");
+	});
+
+	it("executes a local request into a receipt without advancing the checkpoint", () => {
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-local-executor",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const run = started.value?.run as Record<string, unknown>;
+		const runDir = String(run.runDir);
+		const artifacts = join(runDir, "artifacts");
+		const outputFile = join(artifacts, "generated.txt");
+		const request = executionRequest("run-local-executor", artifacts, {
+			entrypoint: {
+				executable: process.execPath,
+				argv: ["-e", `require('node:fs').writeFileSync(${JSON.stringify(outputFile)}, 'ok')`],
+			},
+		});
+		const requestPath = join(artifacts, "local-request.json");
+		writeFileSync(requestPath, JSON.stringify(request));
+		const executed = command(root, "execute", [
+			...base,
+			"--run-id",
+			"run-local-executor",
+			"--execution-request",
+			requestPath,
+			"--kind",
+			"local",
+			"--output",
+			outputFile,
+		]);
+		expect(executed.status).toBe(5);
+		expect((executed.value?.outcome as Record<string, unknown>).outcome).toBe("NOT_EXECUTED");
+		const receiptPath = join(artifacts, "execution_receipt.json");
+		const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+		expect(receipt.lifecycle).toBe("SUCCEEDED");
+		expect((receipt.executor as Record<string, unknown>).trust_level).toBe("cooperative");
+		expect(existsSync(outputFile)).toBe(true);
+		const status = command(root, "status", [...base, "--run-id", "run-local-executor"]);
+		expect((status.value?.checkpoint as { data: { currentUnit: string } }).data.currentUnit).toBe("scan_modelscope");
+	});
+
+	it("turns missing executor capability into a non-executed receipt", () => {
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-missing-capability",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		const requestPath = join(artifacts, "missing-request.json");
+		writeFileSync(
+			requestPath,
+			JSON.stringify(
+				executionRequest("run-missing-capability", artifacts, {
+					capability_requirements: [
+						{
+							capability_id: "sure.execution.trusted",
+							capability_class: "execution_capability",
+							required: true,
+						},
+					],
+				}),
+			),
+		);
+		const executed = command(root, "execute", [
+			...base,
+			"--run-id",
+			"run-missing-capability",
+			"--execution-request",
+			requestPath,
+			"--kind",
+			"local",
+		]);
+		expect(executed.status).toBe(5);
+		expect((executed.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
+		const receipt = JSON.parse(readFileSync(join(artifacts, "execution_receipt.json"), "utf8")) as Record<
+			string,
+			unknown
+		>;
+		expect(receipt.lifecycle).toBe("NOT_STARTED");
+	});
+
+	it("supports the Python adapter and fails closed when Docker is unavailable", () => {
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const pythonStarted = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-python-executor",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(pythonStarted.status).toBe(0);
+		const pythonRunDir = String((pythonStarted.value?.run as Record<string, unknown>).runDir);
+		const pythonArtifacts = join(pythonRunDir, "artifacts");
+		const pythonRequestPath = join(pythonArtifacts, "python-request.json");
+		writeFileSync(
+			pythonRequestPath,
+			JSON.stringify(
+				executionRequest("run-python-executor", pythonArtifacts, {
+					capability_requirements: [
+						{
+							capability_id: "sure.execution.local-python",
+							capability_class: "execution_capability",
+							required: true,
+						},
+					],
+				}),
+			),
+		);
+		const pythonResult = command(root, "execute", [
+			...base,
+			"--run-id",
+			"run-python-executor",
+			"--execution-request",
+			pythonRequestPath,
+			"--kind",
+			"python",
+		]);
+		expect(pythonResult.status).toBe(5);
+		const pythonReceipt = JSON.parse(readFileSync(join(pythonArtifacts, "execution_receipt.json"), "utf8")) as Record<
+			string,
+			unknown
+		>;
+		expect(pythonReceipt.lifecycle).toBe("SUCCEEDED");
+		expect((pythonReceipt.capability_evidence as Array<Record<string, unknown>>)[0]?.status).toBe("AVAILABLE");
+
+		const dockerStarted = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-docker-executor",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(dockerStarted.status).toBe(0);
+		const dockerRunDir = String((dockerStarted.value?.run as Record<string, unknown>).runDir);
+		const dockerArtifacts = join(dockerRunDir, "artifacts");
+		const dockerRequestPath = join(dockerArtifacts, "docker-request.json");
+		writeFileSync(
+			dockerRequestPath,
+			JSON.stringify(
+				executionRequest("run-docker-executor", dockerArtifacts, {
+					entrypoint: { executable: "/surectl/missing-docker", argv: ["version"] },
+					capability_requirements: [
+						{
+							capability_id: "sure.execution.docker",
+							capability_class: "execution_capability",
+							required: true,
+						},
+					],
+				}),
+			),
+		);
+		const dockerResult = command(root, "execute", [
+			...base,
+			"--run-id",
+			"run-docker-executor",
+			"--execution-request",
+			dockerRequestPath,
+			"--kind",
+			"docker",
+		]);
+		expect(dockerResult.status).toBe(5);
+		const dockerReceipt = JSON.parse(readFileSync(join(dockerArtifacts, "execution_receipt.json"), "utf8")) as Record<
+			string,
+			unknown
+		>;
+		expect(dockerReceipt.lifecycle).toBe("NOT_STARTED");
+	});
+
+	it("resumes only a failed run with the current binding", () => {
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-resume",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const finalized = command(root, "finalize", ["--run-id", "run-resume", "--status", "failed"]);
+		expect(finalized.status).toBe(0);
+		const resumed = command(root, "resume", [...base, "--run-id", "run-resume"]);
+		expect(resumed.status).toBe(0);
+		expect((resumed.value?.run as Record<string, unknown>).status).toBe("running");
+	});
+
+	it("blocks a direct checkpoint edit before validation can advance", () => {
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-forged-checkpoint",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const statePath = join(runDir, "state.json");
+		const state = JSON.parse(readFileSync(statePath, "utf8")) as Record<string, unknown>;
+		const checkpoint = state.checkpoint as Record<string, unknown>;
+		const data = checkpoint.data as Record<string, unknown>;
+		writeFileSync(
+			statePath,
+			JSON.stringify({
+				...state,
+				checkpoint: { ...checkpoint, data: { ...data, currentUnit: "collect_metadata", completedUnits: [] } },
+			}),
+		);
+		const result = command(root, "validate", [...base, "--run-id", "run-forged-checkpoint"]);
+		expect(result.status).toBe(5);
+		expect((result.value?.outcome as Record<string, unknown>).reason_code).toBe("INVALID_CONTRACT");
+	});
+
+	it("keeps cooperative conformance explicitly non-formal", () => {
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-conformance",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		const requestPath = join(artifacts, "conformance-request.json");
+		const receiptPath = join(artifacts, "conformance-receipt.json");
+		const request = executionRequest("run-conformance", artifacts);
+		writeFileSync(requestPath, JSON.stringify(request));
+		const receipt = {
+			schema: "sure.execution_receipt.v1",
+			receipt_id: "conformance-receipt",
+			request_id: request.request_id,
+			request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+			semantic_request_digest: request.semantic_request_digest,
+			run_id: request.run_id,
+			unit_id: request.unit_id,
+			attempt: request.attempt,
+			executor: {
+				executor_id: "surectl.local",
+				kind: "local",
+				version: "0.80.3",
+				digest: `sha256:${DIGEST_B}`,
+				trust_level: "cooperative",
+			},
+			lifecycle: "SUCCEEDED",
+			capability_evidence: [],
+			outputs: [],
+			reference_snapshot_digest: request.reference_snapshot_digest,
+			output_root: request.output_root,
+			policy_digest: request.policy_digest,
+			started_at: request.created_at,
+			finished_at: request.created_at,
+			exit_code: 0,
+		};
+		writeFileSync(receiptPath, JSON.stringify(receipt));
+		const result = command(root, "conformance", [
+			"--run-id",
+			"run-conformance",
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+			"--dataset-digest",
+			DIGEST_A,
+			"--scoring-digest",
+			DIGEST_B,
+			"--inference-protocol-digest",
+			DIGEST_A,
+			"--validator-verdict",
+			"PASS",
+			"--workflow-disposition",
+			"TERMINATE",
+		]);
+		expect(result.status).toBe(5);
+		expect((result.value?.eligibility as Record<string, unknown>).eligible).toBe(false);
+		expect((result.value?.conformance as Record<string, unknown>).reason_code).toBe("UPGRADE_REQUIRED");
 	});
 
 	it("reports capability absence as a non-passing status", () => {
 		const result = command(root, "capabilities", ["--skill", "sure_eval", "--definition", evalDefinition]);
-		expect(result.status).toBe(0);
+		expect(result.status).toBe(5);
 		expect((result.value?.admission as Record<string, unknown>).admitted).toBe(false);
 		const report = result.value?.report;
 		expect(report).toBeDefined();

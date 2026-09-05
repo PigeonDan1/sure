@@ -1,5 +1,7 @@
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from "node:path/posix";
+import { canonicalJsonDigest } from "../contracts/canonical-json.ts";
 import { evaluatePathBoundary, type ResolvedRoot } from "../contracts/path-boundary.ts";
+import type { JsonValue } from "../contracts/types.ts";
 import type {
 	CoreRunRecord,
 	CreateRunInput,
@@ -101,6 +103,13 @@ function jsonLine(value: unknown): string {
 	return `${JSON.stringify(value)}\n`;
 }
 
+function stateDigest(state: StateDocument): string {
+	// State patches are assembled from optional fields and JSON serialization
+	// drops `undefined`; hash the exact JSON representation that is persisted.
+	const persisted = JSON.parse(JSON.stringify(state)) as JsonValue;
+	return canonicalJsonDigest(persisted);
+}
+
 function pathInside(root: string, candidate: string): boolean {
 	const relation = relative(normalize(root), normalize(candidate));
 	return relation === "" || (relation !== ".." && !relation.startsWith("../") && !isAbsolute(relation));
@@ -168,6 +177,7 @@ function normalizeRecord(raw: unknown, expectedRunId: string, expectedRunDir: st
 		executorDigest: stringField(raw, "executorDigest", stringField(raw, "executor_digest")),
 		policyDigest: stringField(raw, "policyDigest", stringField(raw, "policy_digest")),
 		bindingDigest: stringField(raw, "bindingDigest", stringField(raw, "binding_digest")),
+		stateDigest: stringField(raw, "stateDigest", stringField(raw, "state_digest")),
 		revision: positiveRevision(raw.revision),
 		legacyCompatibility:
 			raw.coreVersion === undefined && raw.core_version === undefined ? true : Boolean(raw.legacyCompatibility),
@@ -400,6 +410,7 @@ export class CoreRunStore {
 				validatorDigest: input.validatorDigest,
 				executorDigest: input.executorDigest,
 				policyDigest: input.policyDigest,
+				stateDigest: stateDigest({}),
 				...(input.bindingDigest === undefined ? {} : { bindingDigest: input.bindingDigest }),
 				revision: 0,
 			};
@@ -522,8 +533,10 @@ export class CoreRunStore {
 			if (expectedRevision !== undefined && actualRevision !== expectedRevision) {
 				throw new RunStoreConflictError(expectedRevision, actualRevision, runId);
 			}
+			const nextStateDigest = stateDigest(state);
 			this.filesystem.writeFileAtomic(this.runFile(runId, "state.json"), `${JSON.stringify(state, null, 2)}\n`);
 			const next: CoreRunRecord = { ...current, updatedAt: this.clock(), revision: actualRevision + 1 };
+			next.stateDigest = nextStateDigest;
 			this.writeRun(next);
 			this.appendRunEvent(runId, next.revision ?? actualRevision + 1, eventType, data ?? { state });
 			return next;
@@ -564,6 +577,15 @@ export class CoreRunStore {
 			};
 		}
 		const state = this.readState(record);
+		if (record.stateDigest !== undefined) {
+			if (state === undefined || stateDigest(state) !== record.stateDigest) {
+				return {
+					allowed: false,
+					code: "INVALID_RECORD",
+					message: `Run ${runId} state digest does not match the run descriptor.`,
+				};
+			}
+		}
 		const checkpoint = state?.checkpoint;
 		if (!isRecord(checkpoint) || checkpoint.resumable !== true) {
 			return {
@@ -609,6 +631,9 @@ export class CoreRunStore {
 			const record = this.parseRun(runId);
 			if (!record) throw new RunStoreError("INVALID_RECORD", `Run ${runId} does not exist.`);
 			const state = this.readState(record);
+			if (record.stateDigest !== undefined && (state === undefined || stateDigest(state) !== record.stateDigest)) {
+				throw new RunStoreError("INVALID_RECORD", `Run ${runId} state digest does not match the run descriptor.`);
+			}
 			const checkpoint = state?.checkpoint;
 			if (!isRecord(checkpoint) || checkpoint.resumable !== false) {
 				throw new RunStoreError("SUCCESS_EVIDENCE_MISSING", "The persisted checkpoint is not terminal.");

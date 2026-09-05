@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	advance,
 	applyValidation,
+	auditCheckpointState,
 	auditCheckpointTransition,
 	initialCheckpoint,
 	unitFor,
@@ -68,6 +69,18 @@ describe("host-neutral workflow kernel", () => {
 		const audit = auditCheckpointTransition(def, initial, tampered);
 		expect(audit.ok).toBe(false);
 		expect(audit.reason).toMatch(/retry|currentUnit|current unit/i);
+	});
+
+	it("rejects a hand-written later checkpoint even when unit ids are known", () => {
+		const def = definition();
+		const initial = initialCheckpoint(def);
+		const second = def.branches[0]?.units[1];
+		if (!second) throw new Error("definition is incomplete");
+		const forged = {
+			...initial,
+			data: { ...initial.data, currentUnit: second.id, completedUnits: [] },
+		};
+		expect(auditCheckpointState(def, forged).ok).toBe(false);
 	});
 
 	it("advances one unit and preserves run-wide block count", () => {

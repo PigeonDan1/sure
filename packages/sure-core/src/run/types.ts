@@ -27,6 +27,8 @@ export interface CoreRunRecord {
 	executorDigest?: string;
 	policyDigest?: string;
 	bindingDigest?: string;
+	/** Canonical digest of the persisted state document for tamper detection. */
+	stateDigest?: string;
 	/** Monotonic CAS revision; legacy records are read as revision zero. */
 	revision?: number;
 	legacyCompatibility?: boolean;

@@ -9,6 +9,11 @@ export interface CheckpointTransitionAudit {
 	reason?: string;
 }
 
+export interface CheckpointStateAudit {
+	ok: boolean;
+	reason?: string;
+}
+
 function sameArray(left: readonly string[], right: readonly string[]): boolean {
 	return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -35,6 +40,59 @@ function keysOf<T>(...records: Array<Readonly<Record<string, T>> | undefined>): 
 
 function reject(reason: string): CheckpointTransitionAudit {
 	return { ok: false, reason };
+}
+
+function rejectState(reason: string): CheckpointStateAudit {
+	return { ok: false, reason };
+}
+
+/**
+ * Verify that a persisted checkpoint describes a position reachable by the
+ * canonical linear branch. This catches hand-written skips before a caller
+ * submits a new validator result. It does not prove who wrote the file; the
+ * run-store state digest supplies that provenance for newly created runs.
+ */
+export function auditCheckpointState<TMemory = unknown>(
+	definition: WorkflowDefinition,
+	checkpoint: WorkflowCheckpoint<TMemory>,
+): CheckpointStateAudit {
+	const branch = branchForCheckpoint(definition, checkpoint);
+	if (!branch) return rejectState(`Unknown workflow branch "${checkpoint.branch_id}".`);
+	const currentIndex = branch.units.findIndex((unit) => unit.id === checkpoint.data.currentUnit);
+	if (currentIndex < 0) return rejectState(`Unknown workflow unit "${checkpoint.data.currentUnit}".`);
+	const expectedBeforeCurrent = branch.units.slice(0, currentIndex).map((unit) => unit.id);
+	const expectedTerminal = branch.units.map((unit) => unit.id);
+	const completed = [...checkpoint.data.completedUnits];
+	if (hasDuplicates(completed)) return rejectState("Checkpoint completedUnits contains duplicate unit ids.");
+	if (!sameArray(completed, expectedBeforeCurrent) && !sameArray(completed, expectedTerminal)) {
+		return rejectState("Checkpoint completedUnits is not the canonical prefix for currentUnit.");
+	}
+	if (sameArray(completed, expectedTerminal) && checkpoint.resumable) {
+		return rejectState("A terminal checkpoint with all units completed cannot remain resumable.");
+	}
+	if (
+		!sameArray(completed, expectedTerminal) &&
+		currentIndex === branch.units.length - 1 &&
+		checkpoint.resumable === false
+	) {
+		return rejectState("A terminal unit cannot be marked final before it is completed.");
+	}
+	for (const [unitId, retries] of Object.entries(checkpoint.data.retries)) {
+		if (!branch.units.some((unit) => unit.id === unitId))
+			return rejectState(`Retry history contains unknown unit "${unitId}".`);
+		if (!Number.isSafeInteger(retries) || retries < 0) return rejectState(`Retry count for "${unitId}" is invalid.`);
+	}
+	for (const unitId of Object.keys(checkpoint.data.failedArtifactDigests ?? {})) {
+		if (!branch.units.some((unit) => unit.id === unitId))
+			return rejectState(`Failed-artifact evidence contains unknown unit "${unitId}".`);
+	}
+	if (
+		checkpoint.data.blocks !== undefined &&
+		(!Number.isSafeInteger(checkpoint.data.blocks) || checkpoint.data.blocks < 0)
+	) {
+		return rejectState("Checkpoint block count is invalid.");
+	}
+	return { ok: true };
 }
 
 /**
