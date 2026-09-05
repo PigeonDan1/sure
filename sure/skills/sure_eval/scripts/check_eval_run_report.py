@@ -21,13 +21,18 @@ from typing import Any
 import yaml
 
 
-HARNESS_ROOT = Path(__file__).resolve().parents[4]
+HARNESS_ROOT = next(
+    (parent for parent in Path(__file__).resolve().parents if (parent / "sure" / "site" / "loader.py").is_file()),
+    Path(__file__).resolve().parents[4],
+)
 for _parent in Path(__file__).resolve().parents:
     if (_parent / "sure" / "site" / "loader.py").is_file():
         sys.path.insert(0, str(_parent))
         break
 
 from sure.site.loader import load_site_policy
+from sure.runtime.execution_bridge import read_json as read_execution_json
+from sure.runtime.execution_bridge import validate_contract_pair
 
 LOCAL_RESULTS_ROOT = (HARNESS_ROOT / "sure" / "results").resolve()
 SOURCE_KINDS = {"approved_nfs_results", "local_infer_run"}
@@ -212,6 +217,26 @@ def validate(path: Path) -> list[str]:
             errors.append(f"scratch artifact escapes run_dir: {key}={artifact}")
     if errors:
         return errors
+
+    # New runners publish the neutral request/receipt beside the invocation
+    # report.  Legacy bundles without these files remain readable during the
+    # migration, but a partial or mismatched pair can never silently pass.
+    contract_root = path.resolve().parent
+    request_path = contract_root / "execution_request.json"
+    receipt_path = contract_root / "execution_receipt.json"
+    if request_path.exists() or receipt_path.exists():
+        request = read_execution_json(request_path)
+        receipt = read_execution_json(receipt_path)
+        if not request:
+            errors.append("execution_request.json is missing or invalid")
+        if not receipt:
+            errors.append("execution_receipt.json is missing or invalid")
+        if request and receipt:
+            errors.extend(validate_contract_pair(request, receipt))
+            if receipt.get("lifecycle") != "SUCCEEDED":
+                errors.append("eval_run_report cannot pass with a non-success execution receipt")
+        if errors:
+            return errors
 
     source = _read_json(artifact_paths["prediction_source_resolved"])
     if source.get("schema") != "sure.reval.approved_prediction_source.v2":

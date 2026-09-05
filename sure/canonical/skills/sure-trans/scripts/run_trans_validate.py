@@ -13,6 +13,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime").is_dir():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
+
 from vc_exec import (
     DEFAULT_CPUS,
     DEFAULT_GPUS,
@@ -24,6 +30,15 @@ from vc_exec import (
     recorded_push_digest,
     registry_image,
     run_vc_job,
+)
+from sure.runtime.execution_bridge import (
+    artifact_ref,
+    build_receipt,
+    build_request,
+    capability_evidence,
+    digest_json,
+    snapshot_digest,
+    write_contract_bundle,
 )
 
 GIB = 1024 ** 3
@@ -134,6 +149,143 @@ GPU_OOM_MAX_ATTEMPTS = 8
 # Leave the gate room to collect diagnostics and write the stage result after
 # the last attempt it is allowed to start.
 GATE_BUDGET_RESERVE_SECONDS = 120.0
+
+_CONTRACT_CONTEXT: dict | None = None
+
+
+def _start_validation_contract(run_dir: Path, output: Path, data: dict, resolved: dict, kind: str) -> None:
+    global _CONTRACT_CONTEXT
+    artifacts = run_dir / "artifacts"
+    input_paths = [
+        path
+        for path in (output, artifacts / "trans_input_resolved.json", artifacts / "execution_compat.json")
+        if path.is_file()
+    ]
+    snapshot = snapshot_digest(input_paths)
+    inputs = [
+        artifact_ref(
+            path,
+            origin="local_staging",
+            source_root=run_dir,
+            reference_snapshot_digest=snapshot,
+            artifact_id=f"input-{index}",
+        )
+        for index, path in enumerate(input_paths, start=1)
+    ]
+    raw_command = data.get("run_command")
+    if isinstance(raw_command, list) and raw_command:
+        executable, argv = str(raw_command[0]), [str(value) for value in raw_command[1:]]
+    elif isinstance(raw_command, str) and raw_command.strip():
+        executable, argv = "/bin/sh", ["-c", raw_command]
+    else:
+        executable, argv = sys.executable, ["-c", "SURE_TRANS_VALIDATION"]
+    source_kind = str(resolved.get("source_kind") or "docker")
+    compat_path = artifacts / "execution_compat.json"
+    compat = read_object(compat_path) if compat_path.is_file() else {}
+    selected_device = str(compat.get("selected_device") or "")
+    requirements = [
+        {"capability_id": "sure.execution.harness-python", "capability_class": "execution_capability", "required": True},
+        {"capability_id": "sure.execution.source-runtime", "capability_class": "execution_capability", "required": True},
+    ]
+    evidence = [
+        capability_evidence(
+            "sure.execution.harness-python",
+            status="AVAILABLE" if Path(sys.executable).is_file() else "MISSING",
+            details={"executable": sys.executable},
+        ),
+        capability_evidence(
+            "sure.execution.source-runtime",
+            status=(
+                "AVAILABLE"
+                if (source_kind == "python" and Path(str(resolved.get("python_executable") or "")).is_file())
+                or (source_kind != "python" and bool(resolved.get("model_path") or resolved.get("dockerfile")))
+                else "MISSING"
+            ),
+            details={"source_kind": source_kind},
+        ),
+    ]
+    if source_kind != "python" or executable == "/bin/sh":
+        requirements.append(
+            {"capability_id": "sure.execution.docker", "capability_class": "execution_capability", "required": True}
+        )
+        evidence.append(
+            capability_evidence(
+                "sure.execution.docker",
+                status="AVAILABLE" if shutil.which("docker") else "MISSING",
+                details={"executable": "docker"},
+            )
+        )
+    if selected_device == "cuda":
+        requirements.append(
+            {"capability_id": "sure.execution.gpu", "capability_class": "execution_capability", "required": True}
+        )
+        evidence.append(
+            capability_evidence(
+                "sure.execution.gpu",
+                status="AVAILABLE" if shutil.which("nvidia-smi") else "MISSING",
+                details={"probe": "nvidia-smi"},
+            )
+        )
+    request = build_request(
+        run_id=run_dir.name,
+        unit_id=f"validate_{kind}",
+        operation="validation",
+        entrypoint={"executable": executable, "argv": argv, "working_directory": str(run_dir)},
+        output_root=run_dir,
+        subject={
+            "bundle_manifest_path": str(Path(str(resolved.get("model_dir") or run_dir)).expanduser().resolve()),
+            "bundle_digest": resolved.get("model_payload_sha256") or digest_json(resolved),
+            "runtime_identity_digest": resolved.get("runtime_id")
+            or resolved.get("python_executable")
+            or digest_json({"source_kind": source_kind}),
+            "dataset_identity_digest": snapshot,
+        },
+        inputs=inputs,
+        capability_requirements=requirements,
+        runtime_requirements={"kind": kind, "selected_device": selected_device, "compatibility_mode": "legacy_views"},
+        reference_snapshot_digest=snapshot,
+    )
+    artifacts.mkdir(parents=True, exist_ok=True)
+    (artifacts / "execution_request.json").write_text(
+        json.dumps(request, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    _CONTRACT_CONTEXT = {
+        "run_dir": run_dir,
+        "artifacts": artifacts,
+        "request": request,
+        "evidence": evidence,
+        "output": output,
+        "log": None,
+        "executor_kind": "python" if source_kind == "python" else "docker",
+    }
+
+
+def _finish_validation_contract(
+    *, lifecycle: str, exit_code: int | None, diagnostics: list[dict] | None = None
+) -> None:
+    global _CONTRACT_CONTEXT
+    context = _CONTRACT_CONTEXT
+    if context is None:
+        return
+    outputs: list[dict] = []
+    for index, path in enumerate((context.get("output"), context.get("log")), start=1):
+        if isinstance(path, Path) and path.is_file():
+            outputs.append(
+                artifact_ref(path, origin="generated", source_root=context["run_dir"], artifact_id=f"output-{index}")
+            )
+    receipt = build_receipt(
+        context["request"],
+        lifecycle=lifecycle,
+        executor_kind=context["executor_kind"],
+        capability_evidence_values=context["evidence"],
+        outputs=outputs,
+        exit_code=exit_code if lifecycle != "NOT_STARTED" else None,
+        diagnostics=diagnostics or [],
+    )
+    write_contract_bundle(
+        context["artifacts"], context["request"], receipt, legacy_result=context.get("output")
+    )
+    _CONTRACT_CONTEXT = None
 
 
 def gate_budget_seconds() -> float:
@@ -443,7 +595,7 @@ def run_vc_validation(
     return exit_code, extra, rendered
 
 
-def main() -> int:
+def _main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--produces", required=True)
@@ -459,6 +611,7 @@ def main() -> int:
     compat = read_object(run_dir / "artifacts" / "execution_compat.json")
     resolved_path = run_dir / "artifacts" / "trans_input_resolved.json"
     resolved = read_object(resolved_path) if resolved_path.is_file() else {}
+    _start_validation_contract(run_dir, output, data, resolved, args.kind)
     python_source = resolved.get("source_kind") == "python"
     if python_source:
         if not isinstance(command, list) or not command:
@@ -481,6 +634,8 @@ def main() -> int:
     if not log_path.is_absolute():
         log_path = run_dir / "artifacts" / log_path
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    if _CONTRACT_CONTEXT is not None:
+        _CONTRACT_CONTEXT["log"] = log_path
     started = time.monotonic()
     extra: dict = {}
     if selected_device == "cuda" and not (python_source and args.kind == "original_inference"):
@@ -556,8 +711,29 @@ def main() -> int:
     output.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if not passed:
         raise ValueError(f"{args.kind} validation failed: {error_text}")
+    _finish_validation_contract(lifecycle="SUCCEEDED", exit_code=0)
     print(output)
     return 0
+
+
+def main() -> int:
+    try:
+        return _main()
+    except subprocess.TimeoutExpired as error:
+        _finish_validation_contract(
+            lifecycle="CANCELLED",
+            exit_code=124,
+            diagnostics=[{"code": "EXECUTOR_TIMEOUT", "message": str(error)}],
+        )
+        raise
+    except Exception as error:
+        missing = isinstance(error, (FileNotFoundError, OSError)) or "missing" in str(error).lower()
+        _finish_validation_contract(
+            lifecycle="NOT_STARTED" if missing else "FAILED",
+            exit_code=None if missing else 1,
+            diagnostics=[{"code": "CAPABILITY_MISSING" if missing else "EXECUTOR_FAILED", "message": str(error)}],
+        )
+        raise
 
 
 if __name__ == "__main__":

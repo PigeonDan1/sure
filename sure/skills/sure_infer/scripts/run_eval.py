@@ -33,10 +33,20 @@ from resolve_prediction_source import (
     build_payload as resolve_prediction_source,
 )
 from sure.site.loader import load_site_policy
+from sure.runtime.execution_bridge import (
+    artifact_ref,
+    build_receipt,
+    build_request,
+    capability_evidence,
+    digest_json,
+    snapshot_digest,
+    write_contract_bundle,
+)
 
 
 LOCAL_RESULTS_ROOT = HARNESS_ROOT / "sure" / "results"
 EVALUATION_ENGINE_ROOT = HARNESS_ROOT / "sure" / "external" / "sure-evaluation"
+_CONTRACT_CONTEXT: dict[str, Any] | None = None
 
 
 def _utc_now() -> str:
@@ -822,7 +832,129 @@ def _ensure_ffmpeg(run_dir: Path, env: dict[str, str]) -> None:
     env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
 
 
+def _start_eval_contract(
+    args: argparse.Namespace,
+    *,
+    evaluation_engine_root: Path | None,
+) -> None:
+    global _CONTRACT_CONTEXT
+    invocation = Path(str(getattr(args, "invocation_run_dir", ""))).expanduser().resolve()
+    expected_root = (HARNESS_ROOT / ".sure" / "runs").resolve()
+    try:
+        invocation.relative_to(expected_root)
+    except ValueError:
+        return
+    artifacts = invocation / "artifacts"
+    source_run = getattr(args, "source_run", None)
+    candidate_inputs: list[Path] = []
+    if source_run:
+        source_path = Path(str(source_run)).expanduser()
+        if not source_path.is_absolute():
+            source_path = (HARNESS_ROOT / source_path).resolve()
+        for candidate in (source_path / "report.jsonl", source_path / "protocol.yaml", source_path / "artifacts" / "execution_receipt.json"):
+            if candidate.is_file():
+                candidate_inputs.append(candidate)
+    snapshot = snapshot_digest(candidate_inputs) if candidate_inputs else digest_json({"datasets": args.datasets, "protocol": args.protocol_id})
+    inputs = [
+        artifact_ref(path, origin="local_staging", source_root=invocation, reference_snapshot_digest=snapshot, artifact_id=f"input-{index}")
+        for index, path in enumerate(candidate_inputs, start=1)
+    ]
+    engine = (evaluation_engine_root or EVALUATION_ENGINE_ROOT).expanduser().resolve()
+    requirements = [
+        {"capability_id": "sure.execution.harness-python", "capability_class": "execution_capability", "required": True},
+        {"capability_id": "sure.execution.evaluation-runtime", "capability_class": "execution_capability", "required": True},
+    ]
+    evidence = [
+        capability_evidence("sure.execution.harness-python", status="AVAILABLE" if Path(sys.executable).is_file() else "MISSING", details={"executable": sys.executable}),
+        capability_evidence("sure.execution.evaluation-runtime", status="AVAILABLE" if engine.is_dir() else "MISSING", details={"engine_root": str(engine)}),
+    ]
+    scoring = _split_values(getattr(args, "pipeline_id", None) or getattr(args, "metric", None))
+    request = build_request(
+        run_id=str(getattr(args, "run_id", None) or invocation.name),
+        unit_id="execute_evaluation",
+        operation="formal_evaluation",
+        entrypoint={"executable": sys.executable, "argv": [str(Path(__file__).resolve()), "--invocation-run-dir", str(invocation)], "working_directory": str(invocation)},
+        output_root=invocation,
+        subject={
+            "bundle_manifest_path": str((candidate_inputs[0].parent if candidate_inputs else invocation).resolve()),
+            "bundle_digest": digest_json({"model": args.model, "source_run": str(source_run or "")}),
+            "runtime_identity_digest": digest_json({"engine_root": str(engine)}),
+            "inference_protocol_digest": digest_json({"protocol_id": args.protocol_id}),
+            "dataset_identity_digest": snapshot,
+            "scoring_protocol_digest": digest_json({"requests": scoring}),
+        },
+        inputs=inputs,
+        capability_requirements=requirements,
+        runtime_requirements={"backend": "external", "engine_root": str(engine), "compatibility_mode": "legacy_views"},
+        reference_snapshot_digest=snapshot,
+    )
+    artifacts.mkdir(parents=True, exist_ok=True)
+    (artifacts / "execution_request.json").write_text(json.dumps(request, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _CONTRACT_CONTEXT = {
+        "invocation": invocation,
+        "artifacts": artifacts,
+        "request": request,
+        "evidence": evidence,
+        "output": artifacts / "eval_run_report.json",
+        "executor_kind": "python",
+    }
+
+
+def _finish_eval_contract(*, lifecycle: str, exit_code: int | None, diagnostics: list[dict] | None = None) -> None:
+    global _CONTRACT_CONTEXT
+    context = _CONTRACT_CONTEXT
+    if context is None:
+        return
+    outputs: list[dict] = []
+    output = context["output"]
+    if isinstance(output, Path) and output.is_file():
+        outputs.append(artifact_ref(output, origin="generated", source_root=context["invocation"], artifact_id="output-1"))
+    receipt = build_receipt(
+        context["request"],
+        lifecycle=lifecycle,
+        executor_kind=context["executor_kind"],
+        capability_evidence_values=context["evidence"],
+        outputs=outputs,
+        exit_code=exit_code if lifecycle != "NOT_STARTED" else None,
+        diagnostics=diagnostics or [],
+    )
+    write_contract_bundle(context["artifacts"], context["request"], receipt, legacy_result=output)
+    _CONTRACT_CONTEXT = None
+
+
 def run_eval(
+    args: argparse.Namespace,
+    *,
+    approved_models_root: Path | None = APPROVED_MODELS_ROOT,
+    approved_results_root: Path | None = APPROVED_RESULTS_ROOT,
+    local_results_root: Path = LOCAL_RESULTS_ROOT,
+    harness_config: Path | None = None,
+    evaluation_engine_root: Path | None = None,
+) -> dict[str, Any]:
+    _start_eval_contract(args, evaluation_engine_root=evaluation_engine_root)
+    try:
+        result = _run_eval_impl(
+            args,
+            approved_models_root=approved_models_root,
+            approved_results_root=approved_results_root,
+            local_results_root=local_results_root,
+            harness_config=harness_config,
+            evaluation_engine_root=evaluation_engine_root,
+        )
+        _finish_eval_contract(lifecycle="SUCCEEDED", exit_code=0)
+        return result
+    except FileNotFoundError as error:
+        _finish_eval_contract(lifecycle="NOT_STARTED", exit_code=None, diagnostics=[{"code": "CAPABILITY_MISSING", "message": str(error)}])
+        raise
+    except subprocess.TimeoutExpired as error:
+        _finish_eval_contract(lifecycle="CANCELLED", exit_code=124, diagnostics=[{"code": "EXECUTOR_TIMEOUT", "message": str(error)}])
+        raise
+    except Exception as error:
+        _finish_eval_contract(lifecycle="FAILED", exit_code=1, diagnostics=[{"code": "EXECUTOR_FAILED", "message": str(error)}])
+        raise
+
+
+def _run_eval_impl(
     args: argparse.Namespace,
     *,
     approved_models_root: Path | None = APPROVED_MODELS_ROOT,
@@ -929,6 +1061,7 @@ def run_eval(
         str(config_path),
         "--evaluation-backend",
         "external",
+        "--formal",
         "--output",
         str(run_dir / "evaluation_payload.json"),
         "--external-runs-dir",

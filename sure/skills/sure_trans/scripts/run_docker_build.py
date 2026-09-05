@@ -6,15 +6,33 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
+import sys
 import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime").is_dir():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
+
 from vc_exec import agent_bin_cleared_env
+from sure.runtime.execution_bridge import (
+    artifact_ref,
+    build_receipt,
+    build_request,
+    capability_evidence,
+    digest_json,
+    snapshot_digest,
+    write_contract_bundle,
+)
 
 
 ARCHIVE_SUFFIXES = (".tar", ".tar.gz", ".tgz")
+_CONTRACT_CONTEXT: dict | None = None
 GIT_INSTALL_RUN = """RUN set -eux; \
 if command -v git >/dev/null 2>&1; then \
   :; \
@@ -261,7 +279,79 @@ def write_log(path: Path, command: list[str], result: dict, extra: str = "") -> 
     )
 
 
-def main() -> int:
+def _start_build_contract(run_dir: Path, output: Path, artifacts: Path, resolved: dict) -> None:
+    global _CONTRACT_CONTEXT
+    source_kind = str(resolved.get("source_kind") or "docker")
+    input_paths = [path for path in (artifacts / "trans_input_resolved.json", Path(str(resolved.get("dockerfile") or ""))) if path.is_file()]
+    snapshot = snapshot_digest(input_paths)
+    inputs = [
+        artifact_ref(path, origin="local_staging", source_root=run_dir, reference_snapshot_digest=snapshot, artifact_id=f"input-{index}")
+        for index, path in enumerate(input_paths, start=1)
+    ]
+    requirements = [{"capability_id": "sure.execution.harness-python", "capability_class": "execution_capability", "required": True}]
+    evidence = [capability_evidence("sure.execution.harness-python", status="AVAILABLE" if Path(sys.executable).is_file() else "MISSING", details={"executable": sys.executable})]
+    if source_kind == "python":
+        requirements.append({"capability_id": "sure.execution.source-runtime", "capability_class": "execution_capability", "required": True})
+        python_executable = Path(str(resolved.get("python_executable") or ""))
+        evidence.append(capability_evidence("sure.execution.source-runtime", status="AVAILABLE" if python_executable.is_file() else "MISSING", details={"executable": str(python_executable)}))
+        executor_kind = "python"
+    else:
+        requirements.append({"capability_id": "sure.execution.docker", "capability_class": "execution_capability", "required": True})
+        evidence.append(capability_evidence("sure.execution.docker", status="AVAILABLE" if shutil.which("docker") else "MISSING", details={"executable": "docker"}))
+        executor_kind = "docker"
+    request = build_request(
+        run_id=run_dir.name,
+        unit_id="build_source_image",
+        operation="package",
+        entrypoint={"executable": sys.executable, "argv": [str(Path(__file__).resolve()), "--run-dir", str(run_dir)], "working_directory": str(run_dir)},
+        output_root=run_dir,
+        subject={
+            "bundle_manifest_path": str(Path(str(resolved.get("model_dir") or run_dir)).expanduser().resolve()),
+            "bundle_digest": resolved.get("dockerfile_sha256") or digest_json(resolved),
+            "runtime_identity_digest": resolved.get("python_executable") or resolved.get("dockerfile") or digest_json({"source_kind": source_kind}),
+            "dataset_identity_digest": snapshot,
+        },
+        inputs=inputs,
+        capability_requirements=requirements,
+        runtime_requirements={"source_kind": source_kind, "compatibility_mode": "legacy_views"},
+        reference_snapshot_digest=snapshot,
+    )
+    artifacts.mkdir(parents=True, exist_ok=True)
+    (artifacts / "execution_request.json").write_text(json.dumps(request, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _CONTRACT_CONTEXT = {
+        "run_dir": run_dir,
+        "artifacts": artifacts,
+        "request": request,
+        "evidence": evidence,
+        "output": output,
+        "log": None,
+        "executor_kind": executor_kind,
+    }
+
+
+def _finish_build_contract(*, lifecycle: str, exit_code: int | None, diagnostics: list[dict] | None = None) -> None:
+    global _CONTRACT_CONTEXT
+    context = _CONTRACT_CONTEXT
+    if context is None:
+        return
+    outputs: list[dict] = []
+    for index, path in enumerate((context.get("output"), context.get("log")), start=1):
+        if isinstance(path, Path) and path.is_file():
+            outputs.append(artifact_ref(path, origin="generated", source_root=context["run_dir"], artifact_id=f"output-{index}"))
+    receipt = build_receipt(
+        context["request"],
+        lifecycle=lifecycle,
+        executor_kind=context["executor_kind"],
+        capability_evidence_values=context["evidence"],
+        outputs=outputs,
+        exit_code=exit_code if lifecycle != "NOT_STARTED" else None,
+        diagnostics=diagnostics or [],
+    )
+    write_contract_bundle(context["artifacts"], context["request"], receipt, legacy_result=context.get("output"))
+    _CONTRACT_CONTEXT = None
+
+
+def _main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--produces", required=True)
@@ -272,6 +362,7 @@ def main() -> int:
     output = Path(args.produces).resolve()
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
+    _start_build_contract(run_dir, output, artifacts, resolved)
     if resolved.get("source_kind") == "python":
         python_executable = Path(str(resolved.get("python_executable") or "")).resolve()
         lockfile = Path(str(resolved.get("lockfile") or "")).resolve()
@@ -441,6 +532,24 @@ def main() -> int:
         raise RuntimeError(str(payload["error"]))
     print(output)
     return 0
+
+
+def main() -> int:
+    try:
+        result = _main()
+        _finish_build_contract(lifecycle="SUCCEEDED" if result == 0 else "FAILED", exit_code=0 if result == 0 else result)
+        return result
+    except subprocess.TimeoutExpired as error:
+        _finish_build_contract(lifecycle="CANCELLED", exit_code=124, diagnostics=[{"code": "EXECUTOR_TIMEOUT", "message": str(error)}])
+        raise
+    except Exception as error:
+        missing = isinstance(error, (FileNotFoundError, OSError)) or "missing" in str(error).lower()
+        _finish_build_contract(
+            lifecycle="NOT_STARTED" if missing else "FAILED",
+            exit_code=None if missing else 1,
+            diagnostics=[{"code": "CAPABILITY_MISSING" if missing else "EXECUTOR_FAILED", "message": str(error)}],
+        )
+        raise
 
 
 if __name__ == "__main__":

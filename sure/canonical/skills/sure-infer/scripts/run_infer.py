@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -29,10 +30,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime").is_dir():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
+
 import check_execution_surface_compliance as compliance
 from container_execution import build_local_container_command, effective_container_exit_code
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 from python_execution import build_local_python_command, verify_model_integrity
+from sure.runtime.execution_bridge import (
+    artifact_ref,
+    build_receipt,
+    build_request,
+    capability_evidence,
+    digest_json,
+    snapshot_digest,
+    write_contract_bundle,
+)
 
 ENTRYPOINT = Path(__file__).resolve().with_name("infer_entrypoint.py")
 STAGE_MARKER_RE = re.compile(r"^INFER_STAGE_FAILED (\S+)\s*$", re.MULTILINE)
@@ -74,6 +90,98 @@ def _input_digest(*paths: Path) -> str:
         digest.update(path.read_bytes() if path.exists() else b"")
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def _execution_inputs(eval_input_path: Path, decision_path: Path) -> tuple[list[dict[str, Any]], str]:
+    reference_root = os.environ.get("SURE_REFERENCE_ROOT", "").strip()
+    reference = Path(reference_root).expanduser().resolve() if reference_root else None
+    snapshot = snapshot_digest([eval_input_path, decision_path])
+    inputs: list[dict[str, Any]] = []
+    for index, path in enumerate((eval_input_path, decision_path)):
+        origin = "local_staging"
+        if reference is not None:
+            try:
+                path.resolve().relative_to(reference)
+            except ValueError:
+                pass
+            else:
+                origin = "read_only_reference"
+        inputs.append(
+            artifact_ref(
+                path,
+                origin=origin,
+                source_root=reference if origin == "read_only_reference" else path.parent,
+                reference_snapshot_digest=snapshot,
+                artifact_id=f"input-{index + 1}",
+            )
+        )
+    return inputs, snapshot
+
+
+def _execution_subject(eval_input: dict[str, Any], binding: dict[str, Any], *, snapshot: str) -> dict[str, Any]:
+    model = eval_input.get("model") if isinstance(eval_input.get("model"), dict) else {}
+    runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
+    evidence = binding.get("evidence") if isinstance(binding.get("evidence"), dict) else {}
+    bundle_digest = evidence.get("bundle_identity_sha256") or binding.get("target_image_digest")
+    python_binding = binding.get("python") if isinstance(binding.get("python"), dict) else {}
+    runtime_digest = binding.get("target_image_digest") or python_binding.get("runtime_id")
+    protocol = runtime.get("protocol_id") or (eval_input.get("user_input") or {}).get("protocol")
+    return {
+        "bundle_manifest_path": str(
+            Path(str(model.get("model_dir") or binding.get("model_dir") or "")).expanduser().resolve()
+            / "artifacts"
+            / "deployment_ready.json"
+        ),
+        "bundle_digest": bundle_digest or digest_json(binding),
+        "runtime_identity_digest": runtime_digest or digest_json({"binding": binding}),
+        "inference_protocol_digest": digest_json({"protocol_id": str(protocol or "standard_system")}),
+        "dataset_identity_digest": snapshot,
+    }
+
+
+def _execution_capabilities(
+    execution_path: str,
+    command: list[str],
+    binding: dict[str, Any],
+    eval_input: dict[str, Any],
+    device_request: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    requirements: list[dict[str, Any]] = [
+        {"capability_id": "sure.execution.model-runtime", "capability_class": "execution_capability", "required": True},
+        {"capability_id": "sure.execution.harness-python", "capability_class": "execution_capability", "required": True},
+    ]
+    if execution_path == "local_docker":
+        requirements.append(
+            {"capability_id": "sure.execution.docker", "capability_class": "execution_capability", "required": True}
+        )
+    if str(device_request).lower() in {"cuda", "gpu"} or str(device_request).lower().startswith("cuda:"):
+        requirements.append(
+            {"capability_id": "sure.execution.gpu", "capability_class": "execution_capability", "required": True}
+        )
+    runtime = binding.get("python") if isinstance(binding.get("python"), dict) else {}
+    resolved_runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
+    harness = resolved_runtime.get("harness_runtime") if isinstance(resolved_runtime.get("harness_runtime"), dict) else {}
+    harness_executable = str(harness.get("python_executable") or runtime.get("python_executable") or sys.executable)
+    evidence = [
+        capability_evidence("sure.execution.model-runtime", status="AVAILABLE" if binding else "MISSING", details={"binding": str(binding.get("schema") or "")}),
+        capability_evidence(
+            "sure.execution.harness-python",
+            status="AVAILABLE" if Path(harness_executable).is_file() else "MISSING",
+            details={"executable": harness_executable},
+        ),
+    ]
+    if execution_path == "local_docker":
+        executable = command[0] if command else "docker"
+        docker_available = bool(shutil.which(executable) or Path(executable).is_file())
+        evidence.append(
+            capability_evidence("sure.execution.docker", status="AVAILABLE" if docker_available else "MISSING", details={"executable": executable})
+        )
+    if any(item["capability_id"] == "sure.execution.gpu" for item in requirements):
+        gpu_available = bool(shutil.which("nvidia-smi") or os.environ.get("CUDA_VISIBLE_DEVICES"))
+        evidence.append(
+            capability_evidence("sure.execution.gpu", status="AVAILABLE" if gpu_available else "MISSING", details={"probe": "nvidia-smi"})
+        )
+    return requirements, evidence
 
 
 def _approved_binding(eval_input: dict[str, Any]) -> dict[str, Any]:
@@ -438,6 +546,13 @@ def main() -> int:
         "SURE_EVAL_EXECUTION_REQUESTED": execution["requested"],
         "SURE_EVAL_EXECUTION_JOB_ID": f"local:{host}:{run_dir.name}",
     }
+    if not execution_output.is_relative_to(run_dir):
+        raise ValueError(f"execution output must stay inside the run directory: {execution_output}")
+
+    # The request is written before launch.  Its input references are the only
+    # place where an approved/reference root is mentioned; all generated logs
+    # and result files remain in the local run root.
+    execution_inputs, reference_snapshot = _execution_inputs(eval_input_path, decision_path)
     if execution_path == "local_python":
         command, process_env, _launch = build_local_python_command(
             surface=surface,
@@ -457,52 +572,129 @@ def main() -> int:
             extra_env={**extra_env, "SURE_EVAL_CONTAINER_REPO_ROOT": str(cwd)},
         )
         process_env = os.environ.copy()
+    command = [str(value) for value in command]
+    requirements, evidence = _execution_capabilities(execution_path, command, binding, eval_input, device_request)
+    request = build_request(
+        run_id=str((eval_input.get("runtime") or {}).get("run_id") or run_dir.name),
+        unit_id="execute_inference",
+        operation="inference",
+        entrypoint={"executable": command[0] if command else "sure-infer", "argv": command[1:], "working_directory": str(cwd)},
+        output_root=run_dir,
+        subject=_execution_subject(eval_input, binding, snapshot=reference_snapshot),
+        inputs=execution_inputs,
+        capability_requirements=requirements,
+        runtime_requirements={
+            "execution_path": execution_path,
+            "device_request": device_request,
+            "compatibility_mode": "legacy_views",
+        },
+        reference_snapshot_digest=reference_snapshot,
+    )
+    _write_json(artifacts_dir / "execution_request.json", request)
 
     runtime_kind = "python" if execution_path == "local_python" else "container"
     start = time.monotonic()
     started_at = _utc_now()
-    with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open("w", encoding="utf-8") as stderr:
-        process = subprocess.Popen(command, cwd=cwd, env=process_env, stdout=stdout, stderr=stderr, text=True)
-        returncode = process.wait()
+    process: subprocess.Popen[str] | None = None
+    returncode: int | None = None
+    lifecycle = "NOT_STARTED"
+    diagnostics: list[dict[str, Any]] = []
+    missing = [
+        item["capability_id"]
+        for item in evidence
+        if item.get("status") != "AVAILABLE"
+        and any(req.get("capability_id") == item.get("capability_id") and req.get("required") is True for req in requirements)
+    ]
+    if missing:
+        diagnostics.append({"code": "CAPABILITY_MISSING", "message": ", ".join(missing)})
+        returncode = 125
+    else:
+        try:
+            with stdout_path.open("w", encoding="utf-8") as stdout, stderr_path.open("w", encoding="utf-8") as stderr:
+                process = subprocess.Popen(command, cwd=cwd, env=process_env, stdout=stdout, stderr=stderr, text=True)
+                timeout_value = float(os.environ.get("SURE_INFER_TIMEOUT_SECONDS", "0") or 0)
+                try:
+                    returncode = process.wait(timeout=timeout_value if timeout_value > 0 else None)
+                    lifecycle = "SUCCEEDED" if returncode == 0 else "FAILED"
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                    returncode = 124
+                    lifecycle = "CANCELLED"
+                    diagnostics.append({"code": "EXECUTOR_TIMEOUT", "message": f"execution exceeded {timeout_value}s"})
+        except OSError as error:
+            returncode = 127
+            diagnostics.append({"code": "EXECUTOR_SPAWN_FAILED", "message": str(error)})
+            lifecycle = "NOT_STARTED"
     stdout_text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
     stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
-    if execution_path == "local_docker":
+    if lifecycle in {"SUCCEEDED", "FAILED"} and execution_path == "local_docker" and returncode is not None:
         returncode = effective_container_exit_code(returncode, stdout_text, stderr_text)
-    else:
+        lifecycle = "SUCCEEDED" if returncode == 0 else "FAILED"
+    if lifecycle == "SUCCEEDED" and execution_path == "local_python":
         try:
             verify_model_integrity(binding)
         except ValueError as exc:
             with stderr_path.open("a", encoding="utf-8") as stderr:
                 stderr.write(f"\nMODEL_INTEGRITY_VIOLATION: {exc}\n")
             returncode = returncode or 70
+            lifecycle = "FAILED"
+            diagnostics.append({"code": "MODEL_INTEGRITY_VIOLATION", "message": str(exc)})
     duration = time.monotonic() - start
     product_dir = Path(str((eval_input.get("runtime") or {}).get("run_dir") or "")).expanduser()
     execution_payload = {
-        "job_status": "succeeded" if returncode == 0 else "failed",
+        "job_status": "succeeded" if lifecycle == "SUCCEEDED" else "failed",
         "execution_path": execution_path,
         "runtime_kind": runtime_kind,
         "execution_requested": execution["requested"],
         "host": host,
-        "pid": process.pid,
+        "pid": process.pid if process is not None else None,
         "command": shlex.join(command),
         "cwd": str(cwd),
         "started_at": started_at,
         "ended_at": _utc_now(),
         "duration_seconds": duration,
-        "exit_code": returncode,
+        "exit_code": returncode if returncode is not None else 125,
         "stdout_log": str(stdout_path),
         "stderr_log": str(stderr_path),
         "device_request": device_request,
         "device_actual": device_actual,
         "cuda_visible_devices": "" if cuda_visible is None else cuda_visible,
         "product_dir": str(product_dir),
-        "failed_stage": _failed_stage(stdout_text) if returncode != 0 else "",
+        "failed_stage": _failed_stage(stdout_text) if lifecycle != "SUCCEEDED" else "",
         "input_digest": _input_digest(eval_input_path, decision_path),
         "datasets": _dataset_rows(product_dir, names),
     }
+    if process is None:
+        execution_payload.pop("pid", None)
     _write_json(execution_output, execution_payload)
+    output_refs: list[dict[str, Any]] = []
+    for index, path in enumerate((stdout_path, stderr_path, execution_output, surface_path), start=1):
+        if path.is_file():
+            output_refs.append(artifact_ref(path, origin="generated", source_root=run_dir, artifact_id=f"output-{index}"))
+    receipt = build_receipt(
+        request,
+        lifecycle=lifecycle,
+        executor_kind="python" if execution_path == "local_python" else "docker",
+        capability_evidence_values=evidence,
+        outputs=output_refs,
+        started_at=started_at,
+        finished_at=_utc_now(),
+        exit_code=returncode if lifecycle != "NOT_STARTED" else None,
+        diagnostics=diagnostics,
+    )
+    write_contract_bundle(
+        artifacts_dir,
+        request,
+        receipt,
+        legacy_surface=surface_path,
+        legacy_result=execution_output,
+        forbidden_output_roots=(Path(os.environ["SURE_REFERENCE_ROOT"]).expanduser().resolve(),)
+        if os.environ.get("SURE_REFERENCE_ROOT")
+        else (),
+    )
     print(json.dumps({"execution_result": str(execution_output), **execution_payload}, indent=2, ensure_ascii=False))
-    return 0 if returncode == 0 else returncode
+    return 0 if lifecycle == "SUCCEEDED" else int(returncode or 125)
 
 
 if __name__ == "__main__":

@@ -14,12 +14,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime").is_dir():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
+
 import check_execution_surface_compliance as compliance
 from execution_result_checks import validation_errors
+from sure.runtime.execution_bridge import read_json as read_execution_json
+from sure.runtime.execution_bridge import validate_contract_pair
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -64,6 +73,25 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
         errors.append("eval_input_resolved.json carries no approved deployment binding")
     else:
         errors.extend(compliance.binding_mismatches(surface.get("deployment_binding"), compliance.expected_binding_summary(approved)))
+
+    request_path = artifacts / "execution_request.json"
+    receipt_path = artifacts / "execution_receipt.json"
+    if request_path.exists() or receipt_path.exists():
+        request = read_execution_json(request_path)
+        receipt = read_execution_json(receipt_path)
+        if not request:
+            errors.append("execution_request.json is missing or invalid")
+        if not receipt:
+            errors.append("execution_receipt.json is missing or invalid")
+        if request and receipt:
+            forbidden = []
+            if os.environ.get("SURE_REFERENCE_ROOT"):
+                forbidden.append(Path(os.environ["SURE_REFERENCE_ROOT"]).expanduser().resolve())
+            errors.extend(validate_contract_pair(request, receipt, forbidden_output_roots=forbidden))
+            if result.get("job_status") == "succeeded" and receipt.get("lifecycle") != "SUCCEEDED":
+                errors.append("successful execution_result.json conflicts with execution receipt lifecycle")
+            if result.get("job_status") != "succeeded" and receipt.get("lifecycle") == "SUCCEEDED":
+                errors.append("failed execution_result.json conflicts with successful execution receipt")
 
     if result.get("job_status") != "succeeded":
         return errors

@@ -3,12 +3,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime").is_dir():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
 
 from vc_exec import (
     DEFAULT_CPUS,
@@ -21,6 +29,15 @@ from vc_exec import (
     recorded_push_digest,
     registry_image,
     run_vc_job,
+)
+from sure.runtime.execution_bridge import (
+    artifact_ref,
+    build_receipt,
+    build_request,
+    capability_evidence,
+    digest_json,
+    snapshot_digest,
+    write_contract_bundle,
 )
 
 
@@ -87,7 +104,97 @@ def vc_resources(resolved: dict) -> tuple[str, int, int, int]:
     return partition, gpus, memory_gb, DEFAULT_CPUS
 
 
-def main() -> int:
+_CONTRACT_CONTEXT: dict | None = None
+
+
+def _start_contract(run_dir: Path, artifacts: Path, resolved: dict, source_image: dict, *, requested: str, source_kind: str, gpu_required: bool) -> None:
+    global _CONTRACT_CONTEXT
+    input_paths = [path for path in (artifacts / "trans_input_resolved.json", artifacts / "source_image_result.json") if path.is_file()]
+    snapshot = snapshot_digest(input_paths)
+    inputs = [
+        artifact_ref(path, origin="local_staging", source_root=run_dir, reference_snapshot_digest=snapshot, artifact_id=f"input-{index}")
+        for index, path in enumerate(input_paths, start=1)
+    ]
+    runtime_identity = source_image.get("image_id") or source_image.get("lockfile_sha256") or resolved.get("python_executable")
+    command = [str(resolved.get("python_executable") or "python3"), "-c", "SURE_TRANS_PROBE"]
+    if source_kind == "docker":
+        command = ["docker", "run", "--rm", str(source_image.get("image_id") or source_image.get("image") or "<missing-image>")]
+    requirements = [
+        {"capability_id": "sure.execution.harness-python", "capability_class": "execution_capability", "required": True},
+        {"capability_id": "sure.execution.source-runtime", "capability_class": "execution_capability", "required": True},
+    ]
+    evidence = [
+        capability_evidence("sure.execution.harness-python", status="AVAILABLE" if Path(sys.executable).is_file() else "MISSING", details={"executable": sys.executable}),
+        capability_evidence(
+            "sure.execution.source-runtime",
+            status=(
+                "AVAILABLE"
+                if (source_kind == "docker" and bool(runtime_identity))
+                or (source_kind == "python" and Path(str(resolved.get("python_executable") or "")).is_file())
+                else "MISSING"
+            ),
+            details={"source_kind": source_kind},
+        ),
+    ]
+    if source_kind == "docker":
+        requirements.append({"capability_id": "sure.execution.docker", "capability_class": "execution_capability", "required": True})
+        evidence.append(capability_evidence("sure.execution.docker", status="AVAILABLE" if shutil.which("docker") else "MISSING", details={"executable": "docker"}))
+    if gpu_required:
+        requirements.append({"capability_id": "sure.execution.gpu", "capability_class": "execution_capability", "required": True})
+        evidence.append(capability_evidence("sure.execution.gpu", status="AVAILABLE" if shutil.which("nvidia-smi") else "MISSING", details={"probe": "nvidia-smi"}))
+    request = build_request(
+        run_id=run_dir.name,
+        unit_id="validate_env_compat",
+        operation="validation",
+        entrypoint={"executable": command[0], "argv": command[1:], "working_directory": str(run_dir)},
+        output_root=run_dir,
+        subject={
+            "bundle_manifest_path": str(Path(str(resolved.get("model_path") or run_dir)).expanduser().resolve()),
+            "bundle_digest": resolved.get("model_payload_sha256") or digest_json(resolved),
+            "runtime_identity_digest": runtime_identity or digest_json({"source_kind": source_kind}),
+            "dataset_identity_digest": snapshot,
+        },
+        inputs=inputs,
+        capability_requirements=requirements,
+        runtime_requirements={"requested_device": requested, "source_kind": source_kind, "compatibility_mode": "legacy_views"},
+        reference_snapshot_digest=snapshot,
+    )
+    request_path = artifacts / "execution_request.json"
+    request_path.write_text(json.dumps(request, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _CONTRACT_CONTEXT = {
+        "run_dir": run_dir,
+        "artifacts": artifacts,
+        "request": request,
+        "evidence": evidence,
+        "output": None,
+        "log": artifacts / "execution_compat.log",
+        "requirements": requirements,
+    }
+
+
+def _finish_contract(*, lifecycle: str, exit_code: int | None, diagnostics: list[dict] | None = None) -> None:
+    global _CONTRACT_CONTEXT
+    context = _CONTRACT_CONTEXT
+    if context is None:
+        return
+    outputs: list[dict] = []
+    for index, path in enumerate((context.get("output"), context.get("log")), start=1):
+        if isinstance(path, Path) and path.is_file():
+            outputs.append(artifact_ref(path, origin="generated", source_root=context["run_dir"], artifact_id=f"output-{index}"))
+    receipt = build_receipt(
+        context["request"],
+        lifecycle=lifecycle,
+        executor_kind=str(context.get("executor_kind") or "python"),
+        capability_evidence_values=context["evidence"],
+        outputs=outputs,
+        exit_code=exit_code if lifecycle != "NOT_STARTED" else None,
+        diagnostics=diagnostics or [],
+    )
+    write_contract_bundle(context["artifacts"], context["request"], receipt, legacy_result=context.get("output"))
+    _CONTRACT_CONTEXT = None
+
+
+def _main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--produces", required=True)
@@ -98,8 +205,6 @@ def main() -> int:
     source_image = read_object(artifacts / "source_image_result.json")
     source_kind = str(resolved.get("source_kind") or "docker")
     image = str(source_image.get("image_id") or source_image.get("image") or "")
-    if source_kind == "docker" and not image:
-        raise ValueError("source image identity is missing")
     model_name = str(resolved.get("model_name") or "")
     # Input materialization canonicalizes Transformers aliases to this value.
     model_framework = str(resolved["model_framework"]).strip().lower()
@@ -110,6 +215,22 @@ def main() -> int:
     version = str(resolved.get("image_version") or "0.1.0")
     task_type = str(resolved.get("task_type") or "asr")
     delivery = resolved.get("container_delivery")
+
+    _start_contract(
+        run_dir,
+        artifacts,
+        resolved,
+        source_image,
+        requested=requested,
+        source_kind=source_kind,
+        gpu_required=gpu_required,
+    )
+    context = _CONTRACT_CONTEXT
+    if context is not None:
+        context["output"] = Path(args.produces).resolve()
+        context["executor_kind"] = "python" if source_kind == "python" else "docker"
+    if source_kind == "docker" and not image:
+        raise ValueError("source image identity is missing")
 
     vc_payload: dict = {}
     log_path = artifacts / "execution_compat.log"
@@ -253,8 +374,22 @@ def main() -> int:
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if incompatibilities:
         raise ValueError("; ".join(incompatibilities))
+    _finish_contract(lifecycle="SUCCEEDED", exit_code=0)
     print(output)
     return 0
+
+
+def main() -> int:
+    try:
+        return _main()
+    except Exception as error:
+        missing = isinstance(error, (FileNotFoundError, OSError)) or "missing" in str(error).lower() or "required" in str(error).lower()
+        _finish_contract(
+            lifecycle="NOT_STARTED" if missing else "FAILED",
+            exit_code=None if missing else 1,
+            diagnostics=[{"code": "CAPABILITY_MISSING" if missing else "EXECUTOR_FAILED", "message": str(error)}],
+        )
+        raise
 
 
 if __name__ == "__main__":

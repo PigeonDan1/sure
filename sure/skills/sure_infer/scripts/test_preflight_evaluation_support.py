@@ -56,13 +56,13 @@ def _capabilities(task: str, language: str) -> dict:
     return json.loads(result.stdout)
 
 
-def _run_preflight(payload: dict, *extra_args: str):
+def _run_preflight(payload: dict):
     with tempfile.TemporaryDirectory() as tmp:
         input_path = Path(tmp) / "eval_input_resolved.json"
         output_path = Path(tmp) / "evaluation_preflight.json"
         input_path.write_text(json.dumps(payload), encoding="utf-8")
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "--input", str(input_path), "--output", str(output_path), *extra_args],
+            [sys.executable, str(SCRIPT), "--input", str(input_path), "--output", str(output_path)],
             capture_output=True,
             text=True,
         )
@@ -118,8 +118,28 @@ class PreflightCliTests(unittest.TestCase):
         self.assertTrue(written["supported"])
         self.assertEqual(written["reason_code"], "PREFLIGHT_SKIPPED_ENGINE_UNAVAILABLE")
 
-    def test_formal_missing_engine_is_capability_missing(self):
-        result, written = _run_preflight(_payload([_dataset("ASR", "zh", ["cer"])], engine_root=None), "--formal")
+    def test_missing_engine_is_not_supported_in_formal_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_path = Path(tmp) / "eval_input_resolved.json"
+            output_path = Path(tmp) / "evaluation_preflight.json"
+            input_path.write_text(
+                json.dumps(_payload([_dataset("ASR", "zh", ["cer"])], engine_root=None)),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(output_path),
+                    "--formal",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            written = json.loads(output_path.read_text(encoding="utf-8"))
         self.assertEqual(result.returncode, 4)
         self.assertFalse(written["supported"])
         self.assertEqual(written["reason_code"], "CAPABILITY_MISSING")

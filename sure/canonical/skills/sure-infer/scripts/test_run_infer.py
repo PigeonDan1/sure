@@ -74,7 +74,14 @@ class RunInferTests(unittest.TestCase):
         probe.start()
         self.addCleanup(probe.stop)
 
-    def write_inputs(self, binding: dict, *, path_planned: str = "local_docker", requested_name: str = SOURCE_ENTRY) -> None:
+    def write_inputs(
+        self,
+        binding: dict,
+        *,
+        path_planned: str = "local_docker",
+        requested_name: str = SOURCE_ENTRY,
+        device: str = "cpu",
+    ) -> None:
         eval_input = {
             "user_input": {
                 "model": "demo",
@@ -82,7 +89,7 @@ class RunInferTests(unittest.TestCase):
                 "metrics": ["cer"],
                 "max_samples": 0,
                 "protocol": "standard_system",
-                "device": "cpu",
+                "device": device,
             },
             "model": {"model_dir": str(self.model_dir), "deployment_binding": binding},
             "datasets": [{"name": "demo_ds__v1.0.2", "requested_name": requested_name, "language": "zh", "task": "ASR"}],
@@ -91,7 +98,7 @@ class RunInferTests(unittest.TestCase):
                 "run_dir": str(self.product_dir),
                 "protocol_id": "standard_system",
                 "max_samples": 0,
-                "device": {"request": "cpu", "resolved": "cpu"},
+                "device": {"request": device, "resolved": device},
                 "execution": {
                     "requested": "local",
                     "planned": "local",
@@ -193,6 +200,36 @@ class RunInferTests(unittest.TestCase):
         self.assertRegex(result["input_digest"], r"^[a-f0-9]{64}$")
         self.assertEqual(result["execution_path"], "local_docker")
         self.assertEqual(surface["execution"]["path_planned"], "local_docker")
+        contract = json.loads((self.artifacts / "execution_contract.json").read_text(encoding="utf-8"))
+        receipt = json.loads((self.artifacts / "execution_receipt.json").read_text(encoding="utf-8"))
+        self.assertTrue(contract["contract_valid"])
+        self.assertEqual(receipt["lifecycle"], "SUCCEEDED")
+
+    def test_missing_gpu_writes_a_not_started_receipt_without_launching(self) -> None:
+        self.write_inputs(self.container_binding, device="cuda")
+        with patch.object(run_infer.shutil, "which", return_value=None):
+            return_code, result, _, _ = self.run_container([sys.executable, "-c", "raise SystemExit(99)"])
+        self.assertEqual(return_code, 125)
+        self.assertEqual(result["job_status"], "failed")
+        receipt = json.loads((self.artifacts / "execution_receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["lifecycle"], "NOT_STARTED")
+        self.assertTrue(any(item.get("code") == "CAPABILITY_MISSING" for item in receipt.get("diagnostics", [])))
+
+    def test_missing_docker_writes_a_not_started_receipt(self) -> None:
+        self.write_inputs(self.container_binding)
+        return_code, _, _, _ = self.run_container(["/sure/missing/docker", "run"])
+        self.assertEqual(return_code, 125)
+        receipt = json.loads((self.artifacts / "execution_receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["lifecycle"], "NOT_STARTED")
+        self.assertTrue(any(item.get("code") == "CAPABILITY_MISSING" for item in receipt.get("diagnostics", [])))
+
+    def test_timeout_writes_a_cancelled_receipt(self) -> None:
+        self.write_inputs(self.container_binding)
+        with patch.dict(os.environ, {"SURE_INFER_TIMEOUT_SECONDS": "0.01"}):
+            return_code, _, _, _ = self.run_container([sys.executable, "-c", "import time; time.sleep(1)"])
+        self.assertEqual(return_code, 124)
+        receipt = json.loads((self.artifacts / "execution_receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["lifecycle"], "CANCELLED")
 
     def test_surface_tool_name_comes_from_the_approved_binding(self) -> None:
         self.write_inputs(self.container_binding)

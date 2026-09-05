@@ -1942,6 +1942,11 @@ def main() -> int:
         default=os.environ.get("SURE_EVALUATION_BACKEND", "auto"),
         help="Evaluation backend. auto prefers external sure-evaluation when available.",
     )
+    parser.add_argument(
+        "--formal",
+        action="store_true",
+        help="Require the pinned external evaluator; never fall back to the legacy in-process backend.",
+    )
     parser.add_argument("--evaluation-engine-root", type=str, help="Explicit standalone sure-evaluation repository root")
     parser.add_argument("--external-runs-dir", type=str, help="Directory for external sure-evaluation per-dataset run outputs")
     parser.add_argument(
@@ -1969,6 +1974,10 @@ def main() -> int:
         help="When writing --results-dir, never copy protocol/report/snapshot from the source prediction run.",
     )
     args = parser.parse_args()
+
+    formal = bool(args.formal or os.environ.get("SURE_FORMAL_EVALUATION", "").strip().lower() in {"1", "true", "yes"})
+    if formal and args.evaluation_backend == "legacy":
+        raise ValueError("formal evaluation cannot use the legacy in-process evaluator")
 
     cfg = Config.from_yaml(args.config) if args.config else Config.from_env()
     dataset_manager = DatasetManager(cfg)
@@ -1998,10 +2007,10 @@ def main() -> int:
     resolved_engine = None
     if args.evaluation_backend in {"auto", "external"}:
         resolved_engine = resolve_engine_root(args.evaluation_engine_root)
-        if args.evaluation_backend == "external" and resolved_engine is None:
+        if (args.evaluation_backend == "external" or formal) and resolved_engine is None:
             raise FileNotFoundError(
                 "No standalone sure-evaluation engine found. "
-                "Set --evaluation-engine-root or SURE_EVALUATION_HOME."
+                "Set --evaluation-engine-root or SURE_EVALUATION_HOME; formal evaluation cannot fall back."
             )
     sota_file = _resolve_sota_file(resolved_engine)
     sota_manager = SOTAManager(sota_file) if sota_file is not None else SOTAManager()
@@ -2126,6 +2135,8 @@ def main() -> int:
 
         for metric_override, pipeline_id_override in applicable_requests:
             if args.evaluation_backend == "legacy" or resolved_engine is None:
+                if formal:
+                    raise FileNotFoundError("formal evaluation requires a resolved standalone sure-evaluation engine")
                 result = evaluate_prediction_file(
                     dataset_manager,
                     sota_manager,
@@ -2179,7 +2190,7 @@ def main() -> int:
                             task_override=effective_task,
                         )
                 except ExternalEvaluationUnsupported as exc:
-                    if args.evaluation_backend == "external":
+                    if args.evaluation_backend == "external" or formal:
                         raise
                     logger.warning(
                         "External evaluation unsupported for dataset; falling back to legacy evaluator",

@@ -8,8 +8,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime").is_dir():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
+
 import check_execution_result as gate
 import check_execution_surface_compliance as compliance
+from sure.runtime.execution_bridge import build_receipt, build_request, digest_json, write_contract_bundle
 
 IMAGE_REF = "registry.example.com/sure/demo@sha256:" + "a" * 64
 DATASET = "demo_ds__v1.0.2"
@@ -82,8 +89,38 @@ class CheckExecutionResultTests(unittest.TestCase):
     def errors(self) -> list[str]:
         return gate.gate_errors(self.run_dir, self.artifacts / "execution_result.json")
 
+    def write_contract(self, *, lifecycle: str = "SUCCEEDED") -> None:
+        request = build_request(
+            run_id="bridge-run",
+            unit_id="execute_inference",
+            operation="inference",
+            entrypoint={"executable": "/usr/bin/python3", "argv": ["-c", "pass"]},
+            output_root=self.run_dir,
+            subject={
+                "bundle_manifest_path": str(self.run_dir / "bundle.json"),
+                "bundle_digest": digest_json({"bundle": 1}),
+                "runtime_identity_digest": digest_json({"runtime": 1}),
+            },
+            policy_digest=digest_json({"policy": 1}),
+            reference_snapshot_digest=digest_json({"snapshot": 1}),
+        )
+        receipt = build_receipt(request, lifecycle=lifecycle, executor_kind="docker", exit_code=0 if lifecycle == "SUCCEEDED" else 3)
+        write_contract_bundle(self.artifacts, request, receipt)
+
     def test_a_clean_success_passes(self) -> None:
         self.assertEqual(self.errors(), [])
+
+    def test_a_bound_execution_receipt_is_checked(self) -> None:
+        self.write_contract()
+        self.assertEqual(self.errors(), [])
+
+    def test_a_bound_execution_receipt_digest_mismatch_is_refused(self) -> None:
+        self.write_contract()
+        receipt_path = self.artifacts / "execution_receipt.json"
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        receipt["request_digest"] = digest_json({"forged": True})
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+        self.assertTrue(any("request_digest" in error for error in self.errors()))
 
     def test_a_terminal_failure_is_a_valid_gate_outcome(self) -> None:
         self.write_result(job_status="failed", exit_code=3, failed_stage="generate", datasets=[])

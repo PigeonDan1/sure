@@ -209,6 +209,10 @@ function fixture(name: string, options: { publishStub?: boolean } = {}): Fixture
 	const links: Array<[target: string, link: string]> = [
 		[MEMORY_LIB_DIR, join(repoRoot, "sure", "runtime", "memory")],
 		[join(REPO_ROOT, "sure", "runtime", "model"), join(repoRoot, "sure", "runtime", "model")],
+		[
+			join(REPO_ROOT, "sure", "runtime", "execution_bridge.py"),
+			join(repoRoot, "sure", "runtime", "execution_bridge.py"),
+		],
 		[join(REPO_ROOT, "sure", "site"), join(repoRoot, "sure", "site")],
 		[join(REAL_PACKAGE_DIR, "schemas"), join(packageDir, "schemas")],
 	];

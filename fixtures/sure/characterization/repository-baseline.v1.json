@@ -6781,8 +6781,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-eval-hooks.test.ts",
-      "size_bytes": 49701,
-      "sha256": "63f397843bdeb123bc0b11b85dc9f516c80fc64590fa5d2c97b060b8b7072bdf"
+      "size_bytes": 49833,
+      "sha256": "8ae367b1dfa93eecdfa0950b6cd9d63f5d8bfec40486ab3486848994b81cc9ee"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-hooks-flow.test.ts",
@@ -6928,6 +6928,11 @@
       "path": "sure/runtime/evaluation/runtime.json",
       "size_bytes": 602,
       "sha256": "eb7d6836a8440227599bb497824196f1fed8a8fb91c9ce6918ff7e73a3f26e6b"
+    },
+    {
+      "path": "sure/runtime/execution_bridge.py",
+      "size_bytes": 21358,
+      "sha256": "74b49bb4389ad536fb6403445b2b6b0380541d46c5ecb3b76be42bb0392f48f9"
     },
     {
       "path": "sure/runtime/harness/bootstrap.py",
@@ -7183,6 +7188,11 @@
       "path": "sure/runtime/script-guard.ts",
       "size_bytes": 1166,
       "sha256": "f50e4cf955f0a81e5c17876e9103378851ab14b298ec7076d5047542c763c616"
+    },
+    {
+      "path": "sure/runtime/test_execution_bridge.py",
+      "size_bytes": 5393,
+      "sha256": "ae949d696b436cd0bf45b732d33817ce666d1f806822477c0a7d3a5d4f37c39b"
     },
     {
       "path": "sure/runtime/test_resource_locator.py",
@@ -7466,8 +7476,8 @@
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_eval_run_report.py",
-      "size_bytes": 36615,
-      "sha256": "98cc4be1dd936d029180cc9c478438ff2e96092f1a391c0040c2fde4d1e90915"
+      "size_bytes": 37928,
+      "sha256": "22ddc70830caac513028e1f64be0921e650f80235db4289d1288fd04d17adde5"
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_memory_extraction.py",
@@ -7941,8 +7951,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/check_execution_result.py",
-      "size_bytes": 4997,
-      "sha256": "1dfdb2eb51ff171d459b65360ed4a9b79cf928e21700231ef270a5334d8c6351"
+      "size_bytes": 6540,
+      "sha256": "1b65ac326c2b382ab9c9a7a35cd24e79af1f970bd4048cb9114445f26521aa28"
     },
     {
       "path": "sure/skills/sure_infer/scripts/check_execution_surface_compliance.py",
@@ -7981,8 +7991,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/evaluate_predictions.py",
-      "size_bytes": 93716,
-      "sha256": "e4b82c006b05834b0c3a7eb49eb993ad6bf0933c2ac189775f854991ffc1d979"
+      "size_bytes": 94369,
+      "sha256": "a70ee7f6c567fbb4af756103cc2262f6548d9b9a44be5219fcd59e79e114f6a4"
     },
     {
       "path": "sure/skills/sure_infer/scripts/evaluation_capabilities.py",
@@ -8096,13 +8106,13 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/run_eval.py",
-      "size_bytes": 50614,
-      "sha256": "57c509865339547540142846adcdb9fdf34f6e069c175c4811046216ff15e032"
+      "size_bytes": 56899,
+      "sha256": "f5581163da3687135e0f9f8c7c88d596307da794101ff31b545ff17450146ecf"
     },
     {
       "path": "sure/skills/sure_infer/scripts/run_infer.py",
-      "size_bytes": 21881,
-      "sha256": "89c66064fd978be70e5376d516afc8b287beaa467a93a948fbd362a6ee1dccbc"
+      "size_bytes": 31501,
+      "sha256": "2a97accd6fd39210854aefc4cae7426bc823c635d0a6d3020d635f50b9b8ade6"
     },
     {
       "path": "sure/skills/sure_infer/scripts/run_model_mcp_smoke.py",
@@ -8371,8 +8381,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_check_execution_result.py",
-      "size_bytes": 6575,
-      "sha256": "e43cc05e7d3eb02d7c8087d38c2f680ec2bc1af79fe124f136f0ca4729b6920a"
+      "size_bytes": 8398,
+      "sha256": "5c8a46a0fe8635053ec94497781b2a4ae8d7788d3793d2eff412275cbd290a2e"
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_dataset_alias.py",
@@ -8456,8 +8466,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_preflight_evaluation_support.py",
-      "size_bytes": 6233,
-      "sha256": "d8bb1b1ed3f34e15388ec18bd911b8f57e018fcb7db54ff9ce76691c62c36300"
+      "size_bytes": 6909,
+      "sha256": "dfe314fa9fb5e2055a1141eeb339841ef8a341210041b63e30f030c99ca5c251"
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_protocol_provenance.py",
@@ -8491,8 +8501,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_run_infer.py",
-      "size_bytes": 14987,
-      "sha256": "3e78c43f2941afcf2f3e1598ec7f6c15ce1476abc255b7c00573b81df340fd24"
+      "size_bytes": 17126,
+      "sha256": "b68e9a7233d6543f68db392486c4ec96f0af69e7a6e032f737f4eb860bd9b521"
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_source_conversion.py",
@@ -9411,8 +9421,8 @@
     },
     {
       "path": "sure/skills/sure_trans/scripts/package_python_runtime.py",
-      "size_bytes": 6658,
-      "sha256": "84aac091756c66b09f2ccc747c1a2dc1c2553208e764461c3c8778be8618e3de"
+      "size_bytes": 11241,
+      "sha256": "1da6351e5218d1ec159a18cea3ef2165202b59e02cbd7a3df07a6aa85a3b468f"
     },
     {
       "path": "sure/skills/sure_trans/scripts/prepare_fixture.py",
@@ -9431,18 +9441,18 @@
     },
     {
       "path": "sure/skills/sure_trans/scripts/run_docker_build.py",
-      "size_bytes": 21803,
-      "sha256": "3baa4dee1b5cd8070e6ae986018295d4640774e8c89d188861fff2800f456344"
+      "size_bytes": 27218,
+      "sha256": "3a818e02f6aab5eac24b13f810a4adf6a5cf5a6fd3c62fc409b899850a9276cb"
     },
     {
       "path": "sure/skills/sure_trans/scripts/run_execution_compat.py",
-      "size_bytes": 10621,
-      "sha256": "2a8c612e8d2c2a247481f6ab852bc4619e449e91ffdd307aa15620ce5282bbb7"
+      "size_bytes": 16847,
+      "sha256": "ca1feca139d2501c7ea136107e96bf44303803fab6d0b4252526ebea849e599c"
     },
     {
       "path": "sure/skills/sure_trans/scripts/run_trans_validate.py",
-      "size_bytes": 23921,
-      "sha256": "943a65c6d5d0fe79caa838749a84e55860d5233328d5d913389b65351712cbfc"
+      "size_bytes": 30943,
+      "sha256": "57832c52bb0a136203fc58df0a4ab4211ae65209413ddb03be359033b3ceff01"
     },
     {
       "path": "sure/skills/sure_trans/scripts/scaffold_adapter.py",
@@ -9611,5 +9621,5 @@
       ]
     }
   ],
-  "semantic_digest": "588928605840d922d2571291e83f546f4b4c7b0303d433078e207fa64050d06d"
+  "semantic_digest": "2744219210efd6a3ae7f242f5caa38b7a02ee10b693f43b631c761813244340d"
 }
