@@ -237,10 +237,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 			skill: "sure_trans",
 			harnessRuntime: runtime.contract,
 			harnessRole: "Input materialization, dependency inspection, artifact validation, and state-machine gates.",
-			modelRuntimeReason:
-				dockerfile
-					? "Model inference runs in the source and adapter containers built from the supplied Dockerfile."
-					: "Model inference starts from the supplied local Python runtime and locked dependencies.",
+			modelRuntimeReason: dockerfile
+				? "Model inference runs in the source and adapter containers built from the supplied Dockerfile."
+				: "Model inference starts from the supplied local Python runtime and locked dependencies.",
 			evaluationRuntime: { reason: "sure_trans performs no evaluation." },
 		});
 	} catch (error) {
