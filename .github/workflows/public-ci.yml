@@ -77,7 +77,7 @@ jobs:
       - name: Run coding-agent SURE tests
         working-directory: packages/coding-agent
         run: |
-          node node_modules/vitest/dist/cli.js --run \
+          npx --no-install vitest --run \
             test/suite/sure-*.test.ts \
             test/sure/*.test.ts \
             --exclude test/suite/sure-extension.test.ts
