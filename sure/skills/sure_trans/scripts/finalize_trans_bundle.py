@@ -51,8 +51,7 @@ REQUIRED_ARTIFACTS = [
     "sample_output.json",
 ]
 
-WRAPPER_FILES = ("model.py", "server.py", "__init__.py", "validate.py", "config.yaml", "model.spec.yaml", "Dockerfile.sure")
-CORE_MANIFEST_FILES = WRAPPER_FILES
+WRAPPER_FILES = ("model.py", "server.py", "__init__.py", "validate.py", "config.yaml", "model.spec.yaml")
 
 TERMINAL_FILES = (
     "package_gate.json",
@@ -129,8 +128,14 @@ def ensure_safe_bundle_parent(model_dir: Path, destination: Path) -> None:
         raise ValueError(f"bundle destination must not be a symlink: {destination}")
 
 
-def stage_wrapper(adapter_dir: Path, model_dir: Path) -> None:
-    for name in WRAPPER_FILES:
+def stage_wrapper(adapter_dir: Path, model_dir: Path, resolved: dict) -> None:
+    names = (*WRAPPER_FILES, "Dockerfile.sure") if resolved.get("package_profile") == "docker-registry" else WRAPPER_FILES
+    if resolved.get("package_profile") == "none":
+        missing = [name for name in names if not (model_dir / name).is_file()]
+        if missing:
+            raise ValueError("Python package did not stage wrapper files: " + ", ".join(missing))
+        return
+    for name in names:
         source = adapter_dir / name
         if source.is_symlink() or not source.is_file():
             raise ValueError(f"adapter file missing: {source}")
@@ -330,11 +335,14 @@ def promote_sample_output(run_dir: Path) -> None:
     write_identical(artifacts / "sample_output.json", json_bytes(sample))
 
 
-def stage_artifacts(run_dir: Path, model_dir: Path) -> dict[str, str]:
+def stage_artifacts(run_dir: Path, model_dir: Path, resolved: dict) -> dict[str, str]:
     artifacts = run_dir / "artifacts"
     model_artifacts = model_dir / "artifacts"
     hashes: dict[str, str] = {}
-    for name in REQUIRED_ARTIFACTS:
+    names = list(REQUIRED_ARTIFACTS)
+    if resolved.get("package_profile") == "none":
+        names.append("model_runtime_manifest.json")
+    for name in names:
         source = artifacts / name
         if source.is_symlink() or not source.is_file():
             raise ValueError(f"required artifact missing: {source}")
@@ -368,21 +376,28 @@ def stage_artifacts(run_dir: Path, model_dir: Path) -> dict[str, str]:
 
 def write_package_gate(run_dir: Path, model_dir: Path, registry: dict) -> dict:
     adapter_image = read_object(run_dir / "artifacts" / "adapter_image_result.json")
+    profile = str(registry.get("package_profile") or "docker-registry")
     package = {
         "schema": "sure.onboard.package_gate.v2",
         "generated_at": now_iso(),
         "status": "passed",
-        "package_profile": "docker-registry",
+        "package_profile": profile,
         "model_name": str(model_dir.name),
         "model_dir": ".",
         "artifact_manifest_path": "artifacts/artifact_manifest.json",
         "readiness": {
             "local_ready": True,
-            "docker_ready": True,
-            "registry_ready": registry.get("pull_verified") is True,
+            "container_ready": profile == "docker-registry",
+            "docker_ready": profile == "docker-registry",
+            "registry_ready": profile == "docker-registry" and registry.get("pull_verified") is True,
             "bundle_ready": True,
         },
-        "docker": {
+        "notes": "Eval binding produced by /sure_trans.",
+    }
+    if profile == "none":
+        package["model_runtime"] = registry.get("model_runtime")
+    else:
+        package["docker"] = {
             "dockerfile_path": "Dockerfile.sure",
             "dockerfile_sha256": sha256(model_dir / "Dockerfile.sure"),
             "base_image": adapter_image.get("source_image"),
@@ -392,9 +407,7 @@ def write_package_gate(run_dir: Path, model_dir: Path, registry: dict) -> dict:
             "build_result_path": "artifacts/adapter_image_result.json",
             "validation_result_path": "artifacts/contract_result.json",
             "registry_result_path": "artifacts/docker_registry_result.json",
-        },
-        "notes": "Container-only Eval binding produced by /sure_trans.",
-    }
+        }
     content = json_bytes(package)
     write_identical(run_dir / "artifacts" / "package_gate.json", content)
     model_output = model_dir / "artifacts" / "package_gate.json"
@@ -404,19 +417,23 @@ def write_package_gate(run_dir: Path, model_dir: Path, registry: dict) -> dict:
 
 
 def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict) -> dict:
+    core_files = (*WRAPPER_FILES, "Dockerfile.sure") if resolved.get("package_profile") == "docker-registry" else (*WRAPPER_FILES, "requirements.lock")
+    artifact_files = list(REQUIRED_ARTIFACTS)
+    if resolved.get("package_profile") == "none":
+        artifact_files.append("model_runtime_manifest.json")
     required = {
         name.replace(".", "_").replace("-", "_"): {
             "path": name,
             "description": f"Required model bundle file: {name}.",
         }
-        for name in CORE_MANIFEST_FILES
+        for name in core_files
     }
     required.update({
         name.replace(".", "_").replace("-", "_"): {
             "path": f"artifacts/{name}",
             "description": f"Finalized trans artifact: {name}.",
         }
-        for name in (*REQUIRED_ARTIFACTS, *TERMINAL_FILES)
+        for name in (*artifact_files, *TERMINAL_FILES)
     })
     fixture_root = model_dir / "fixture"
     if fixture_root.is_dir():
@@ -458,6 +475,17 @@ def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict) -> d
             required[key] = {
                 "path": relative,
                 "description": f"Generated smoke output file: {relative}.",
+            }
+    distributions_root = model_dir / "artifacts" / "local-distributions"
+    if distributions_root.is_dir():
+        for path in sorted(item for item in distributions_root.rglob("*") if item.is_file()):
+            relative = path.relative_to(model_dir).as_posix()
+            key = f"file:{relative}"
+            if key in required:
+                raise ValueError(f"local distribution conflicts with another required file: {relative}")
+            required[key] = {
+                "path": relative,
+                "description": f"Hash-locked local Python distribution: {relative}.",
             }
     manifest = {
         "schema": "sure.onboard.artifact_manifest.v1",
@@ -539,7 +567,10 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict, regis
         raise ValueError("verdict must be terminal-success before finalizing")
     if inventory.get("status") != "ready":
         raise ValueError("runtime inventory must be ready before finalizing")
-    if registry.get("status") != "passed" or registry.get("pull_verified") is not True:
+    profile = str(resolved.get("package_profile") or "docker-registry")
+    if registry.get("status") != "passed":
+        raise ValueError("runtime packaging must pass before finalizing")
+    if profile == "docker-registry" and registry.get("pull_verified") is not True:
         raise ValueError("docker-registry bundle requires passed registry push and digest pull verification")
 
     hashes = finalized_hashes(model_dir)
@@ -547,7 +578,7 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict, regis
         json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     deployment = {
-        "schema": "sure.onboard.deployment_ready.v1",
+        "schema": "sure.onboard.deployment_ready.v2" if profile == "none" else "sure.onboard.deployment_ready.v1",
         "integrity_profile": "manifest-complete-v1",
         # A trans payload is always copied into the bundle, so every weight
         # file is covered by required_artifact_sha256.
@@ -555,23 +586,36 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict, regis
         "generated_at": now_iso(),
         "status": "ready",
         "model_name": str(resolved["model_name"]),
-        "package_profile": str(package.get("package_profile") or "docker-registry"),
-        "target_image": registry.get("target_image"),
-        "target_image_digest": registry.get("target_image_digest"),
-        "target_image_ref": registry.get("target_image_ref"),
+        "package_profile": profile,
         "runtime_inventory": "artifacts/runtime_inventory.json",
         "package_gate": "artifacts/package_gate.json",
         "verdict": "artifacts/verdict.json",
         "artifact_manifest": "artifacts/artifact_manifest.json",
         "required_artifact_sha256": hashes,
         "bundle_identity_sha256": bundle_identity,
-        "execution_policy": {
-            "container_only": True,
-            "nfs_models_read_only": True,
-            "host_python_fallback": False,
+        "execution_policy": ({
+            "container_only": False, "eval_runtime": "python", "isolation": "trusted_host",
+            "model_integrity": "verify_before_after", "model_bundle_mutation_allowed": False,
+            "nfs_models_read_only": False, "host_python_fallback": False,
             "approved_image_override": False,
-        },
+        } if profile == "none" else {
+            "container_only": True, "nfs_models_read_only": True,
+            "host_python_fallback": False, "approved_image_override": False,
+        }),
     }
+    if profile == "none":
+        model_runtime = inventory.get("model_runtime") if isinstance(inventory.get("model_runtime"), dict) else {}
+        deployment["model_runtime"] = {
+            key: model_runtime.get(key)
+            for key in ("runtime_id", "backend", "python_executable", "python_version", "python_abi", "python_platform", "manifest_path", "manifest_sha256", "lockfile_path", "lock_sha256", "working_dir", "server_command", "tool_names")
+            if model_runtime.get(key) is not None
+        }
+    else:
+        deployment.update({
+            "target_image": registry.get("target_image"),
+            "target_image_digest": registry.get("target_image_digest"),
+            "target_image_ref": registry.get("target_image_ref"),
+        })
     harness = inventory.get("harness_runtime") if isinstance(inventory.get("harness_runtime"), dict) else {}
     if harness.get("required") is True:
         deployment["harness_runtime"] = {
@@ -607,13 +651,13 @@ def build_blocked_marker(run_dir: Path, resolved: dict, reason: str) -> dict:
         if name != "deployment_ready.json" and (artifacts / name).is_file()
     }
     return {
-        "schema": "sure.onboard.deployment_ready.v1",
+        "schema": "sure.onboard.deployment_ready.v2" if resolved.get("package_profile") == "none" else "sure.onboard.deployment_ready.v1",
         "integrity_profile": "partial-run-v1",
         "generated_at": now_iso(),
         "status": "blocked",
         "blocked_reason": reason,
         "model_name": str(resolved["model_name"]),
-        "package_profile": "docker-registry",
+        "package_profile": str(resolved.get("package_profile") or "docker-registry"),
         "required_artifact_sha256": hashes,
         "bundle_identity_sha256": hashlib.sha256(
             json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()
@@ -649,14 +693,14 @@ def main() -> int:
     model_artifacts = model_dir / "artifacts"
     ensure_safe_bundle_parent(model_dir, model_artifacts / ".artifact-placeholder")
 
-    stage_wrapper(run_dir / "adapter", model_dir)
+    stage_wrapper(run_dir / "adapter", model_dir, resolved)
     stage_fixture(run_dir, model_dir, resolved)
     promote_sample_output(run_dir)
-    stage_artifacts(run_dir, model_dir)
+    stage_artifacts(run_dir, model_dir, resolved)
     write_artifact_manifest(run_dir, model_dir, resolved)
     package = write_package_gate(run_dir, model_dir, registry)
     regenerate_terminal_evidence(run_dir)
-    stage_artifacts(run_dir, model_dir)
+    stage_artifacts(run_dir, model_dir, resolved)
     deployment = build_deployment_ready(run_dir, model_dir, resolved, registry, package)
     content = json_bytes(deployment)
     model_deployment = model_artifacts / "deployment_ready.json"

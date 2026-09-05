@@ -91,12 +91,14 @@ def main() -> int:
     run_dir = Path(args.run_dir).resolve()
     resolved = load_json(run_dir / "artifacts" / "trans_input_resolved.json")
     build_context = Path(resolved["build_context"])
-    dockerfile = Path(resolved["dockerfile"])
+    source_kind = str(resolved.get("source_kind") or "docker")
     entrypoint = Path(resolved["inference_entrypoint"])
     model_path = Path(resolved["model_path"])
 
-    instructions = docker_instructions(dockerfile)
-    sources = copy_sources(instructions)
+    sources: list[str] = []
+    if source_kind == "docker":
+        dockerfile = Path(resolved["dockerfile"])
+        sources = copy_sources(docker_instructions(dockerfile))
     unresolved: list[str] = []
     support_paths: set[str] = set()
     for source in sources:
@@ -118,6 +120,8 @@ def main() -> int:
         support_paths.add(str(entrypoint.parent.resolve()))
     else:
         external_paths.append(str(entrypoint))
+    if source_kind == "python":
+        support_paths.add(str(Path(resolved["lockfile"]).resolve()))
 
     payload = {
         "schema": "sure.trans.dependencies.v1",

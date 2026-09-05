@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import select
+import queue
 import subprocess
 import sys
 import threading
@@ -57,24 +57,13 @@ def output_is_nonempty(primary_field: str, value: str) -> bool:
     return True
 
 
-def _read_line(fd: int, buffer: bytearray, deadline: float) -> str | None:
-    """Read one line from fd before deadline; None on timeout or EOF."""
-    while True:
-        newline = buffer.find(b"\n")
-        if newline >= 0:
-            line = bytes(buffer[: newline + 1])
-            del buffer[: newline + 1]
-            return line.decode("utf-8", errors="replace").rstrip("\n")
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            return None
-        ready, _, _ = select.select([fd], [], [], min(remaining, 1.0))
-        if not ready:
-            continue
-        chunk = os.read(fd, 65536)
-        if not chunk:
-            return None
-        buffer.extend(chunk)
+def _drain_stdout(proc: subprocess.Popen, lines: queue.Queue[str | None]) -> None:
+    if proc.stdout is None:
+        lines.put(None)
+        return
+    for raw in proc.stdout:
+        lines.put(raw.decode("utf-8", errors="replace").rstrip("\n"))
+    lines.put(None)
 
 
 def _drain_stderr(proc: subprocess.Popen, tail: deque, log_handle) -> None:
@@ -103,10 +92,16 @@ def _send(proc: subprocess.Popen, request: dict, deadline: float) -> bool:
 
 
 def _read_response(
-    fd: int, buffer: bytearray, expected_id: int, deadline: float, junk_tail: deque[str]
+    lines: queue.Queue[str | None], expected_id: int, deadline: float, junk_tail: deque[str]
 ) -> tuple[bool, dict]:
     while True:
-        line = _read_line(fd, buffer, deadline)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False, {}
+        try:
+            line = lines.get(timeout=remaining)
+        except queue.Empty:
+            return False, {}
         if line is None:
             return False, {}
         try:
@@ -163,11 +158,12 @@ def main() -> int:
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
         threading.Thread(target=_drain_stderr, args=(proc, server_stderr, stderr_handle), daemon=True).start()
-        stdout_buffer = bytearray()
+        stdout_lines: queue.Queue[str | None] = queue.Queue()
+        threading.Thread(target=_drain_stdout, args=(proc, stdout_lines), daemon=True).start()
 
         ok, payload = False, {}
         if _send(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}, deadline):
-            ok, payload = _read_response(proc.stdout.fileno(), stdout_buffer, 1, deadline, junk_tail)
+            ok, payload = _read_response(stdout_lines, 1, deadline, junk_tail)
         if ok:
             steps["initialize"] = {
                 "ok": True,
@@ -177,7 +173,7 @@ def main() -> int:
             raise RuntimeError(f"initialize step failed: {json.dumps(payload, ensure_ascii=False)[:500]}")
 
         if _send(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, deadline):
-            ok, payload = _read_response(proc.stdout.fileno(), stdout_buffer, 2, deadline, junk_tail)
+            ok, payload = _read_response(stdout_lines, 2, deadline, junk_tail)
         tools = []
         if ok:
             tools = [item.get("name") for item in (payload.get("result") or {}).get("tools", []) if isinstance(item, dict)]
@@ -195,7 +191,7 @@ def main() -> int:
             },
             deadline,
         ):
-            ok, payload = _read_response(proc.stdout.fileno(), stdout_buffer, 3, deadline, junk_tail)
+            ok, payload = _read_response(stdout_lines, 3, deadline, junk_tail)
         text = ""
         if ok:
             try:
@@ -219,7 +215,7 @@ def main() -> int:
             raise RuntimeError(f"tools/call step failed: {json.dumps(payload, ensure_ascii=False)[:500]}")
 
         if _send(proc, {"jsonrpc": "2.0", "id": 4, "method": "shutdown", "params": {}}, deadline):
-            ok, payload = _read_response(proc.stdout.fileno(), stdout_buffer, 4, deadline, junk_tail)
+            ok, payload = _read_response(stdout_lines, 4, deadline, junk_tail)
         steps["shutdown"] = {"ok": ok}
         if proc.stdin is not None:
             try:

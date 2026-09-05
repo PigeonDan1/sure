@@ -162,9 +162,21 @@ def main() -> int:
     require(isinstance(value, dict), "artifact must be a JSON object")
     kind = args.kind
     if kind == "input":
-        for key in ("dockerfile", "build_context", "model_path", "inference_entrypoint"):
+        source_kind = value.get("source_kind")
+        require(source_kind in {"docker", "python"}, "source_kind must be docker or python")
+        package_profile = value.get("package_profile")
+        require(package_profile in {"docker-registry", "none"}, "package_profile is invalid")
+        for key in ("build_context", "model_path", "inference_entrypoint"):
             candidate = Path(str(value.get(key, "")))
             require(candidate.is_absolute() and candidate.exists(), f"{key} must exist and be absolute")
+        if source_kind == "docker":
+            require(package_profile == "docker-registry", "Docker input requires package_profile=docker-registry")
+            source_paths = ("dockerfile",)
+        else:
+            source_paths = ("python_executable", "lockfile")
+        for key in source_paths:
+            candidate = Path(str(value.get(key, "")))
+            require(candidate.is_absolute() and candidate.is_file(), f"{key} must be an existing absolute file")
         require(value.get("framework") == "pytorch", "framework must normalize to pytorch")
         require(
             isinstance(value.get("model_framework"), str) and bool(value["model_framework"].strip()),
@@ -249,9 +261,34 @@ def main() -> int:
             require(value.get("tar_sha256") == sha256_file(image_tar), "loaded image tar checksum changed")
             require(value.get("load_verified") is True, "loaded image was not verified")
     elif kind == "adapter_image":
-        require(value.get("status") == "passed", "adapter image build must pass")
+        require(value.get("status") == "passed", "adapter runtime materialization must pass")
+        if value.get("runtime_kind") == "python":
+            resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+            for key in ("python_executable", "lockfile"):
+                path = Path(str(value.get(key) or "")).resolve()
+                require(path == Path(str(resolved.get(key) or "")).resolve(), f"adapter runtime {key} changed")
+                require(path.is_file(), f"adapter runtime {key} is missing")
+                require(value.get(f"{key}_sha256") == sha256_file(path), f"adapter runtime {key} hash changed")
+            manifest = read_object(run_dir / "artifacts" / "adapter_manifest.json")
+            require(value.get("server_command") == manifest.get("server_command"), "adapter server_command changed")
+            require(value.get("working_dir") == manifest.get("working_dir"), "adapter working_dir changed")
+            files = value.get("files")
+            require(isinstance(files, dict), "Python adapter runtime must record file hashes")
+            for key, digest in files.items():
+                path = Path(str(manifest.get(key) or ""))
+                require(path.is_file() and digest == sha256_file(path), f"adapter runtime file hash changed: {key}")
     elif kind == "registry":
         require(value.get("status") == "passed", "registry package must pass")
+        if value.get("package_profile") == "none":
+            require(value.get("schema") == "sure.trans.python_package_result.v1", "invalid Python package result schema")
+            require(value.get("runtime_kind") == "python" and value.get("backend") == "uv", "Python package must use uv")
+            manifest_path = run_dir / "artifacts" / "model_runtime_manifest.json"
+            require(manifest_path.is_file(), "Python package is missing model_runtime_manifest.json")
+            manifest = read_object(manifest_path)
+            runtime = value.get("model_runtime") if isinstance(value.get("model_runtime"), dict) else {}
+            require(runtime.get("runtime_id") == manifest.get("runtime_id"), "Python package runtime ID changed")
+            require(value.get("lock_sha256") == manifest.get("lock_sha256"), "Python package lock hash changed")
+            return 0
         require(value.get("pull_verified") is True, "registry package must prove exact digest pull verification")
         require("@sha256:" in str(value.get("target_image_ref", "")), "registry target_image_ref must be digest-pinned")
         require(str(value.get("target_image_digest", "")).startswith("sha256:"), "registry target_image_digest must be a sha256 digest")
@@ -353,6 +390,36 @@ def main() -> int:
             if target.is_file():
                 actual_payload.add(relative.as_posix())
         require(actual_payload == set(verified_hashes), "model payload manifest must exactly cover staged payload files")
+    elif kind == "adapter" and value.get("runtime_kind") == "python":
+        require(value.get("status") == "ready", "adapter manifest must be ready")
+        resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+        python_executable = Path(str(value.get("python_executable") or "")).resolve()
+        require(
+            python_executable == Path(str(resolved.get("python_executable") or "")).resolve()
+            and python_executable.is_file(),
+            "adapter python_executable must match the resolved Python runtime",
+        )
+        server_command = value.get("server_command")
+        server_py = Path(str(value.get("server_py") or "")).resolve()
+        require(
+            isinstance(server_command, list)
+            and len(server_command) == 2
+            and Path(str(server_command[0])).resolve() == python_executable
+            and Path(str(server_command[1])).resolve() == server_py,
+            "Python adapter server_command must use python_executable and server.py",
+        )
+        require(Path(str(value.get("working_dir") or "")).resolve().is_dir(), "adapter working_dir is missing")
+        for key in ("model_py", "init_py", "validate_py", "server_py", "config_yaml", "model_spec", "mcp_smoke_py"):
+            require(Path(str(value.get(key) or "")).is_file(), f"adapter file missing: {key}")
+        config = yaml.safe_load(Path(str(value["config_yaml"])).read_text(encoding="utf-8"))
+        require(
+            isinstance(config, dict)
+            and isinstance(config.get("server"), dict)
+            and config["server"].get("command") == server_command,
+            "adapter config server.command must match adapter manifest",
+        )
+        model_source = Path(str(value["model_py"])).read_text(encoding="utf-8")
+        require("NotImplementedError" not in model_source and "TODO" not in model_source, "model.py is still a scaffold")
     elif kind == "adapter":
         require(value.get("status") == "ready", "adapter manifest must be ready")
         require(value.get("harness_runtime_embedded") is True, "adapter image must embed the common Harness Runtime")
@@ -448,6 +515,14 @@ def main() -> int:
         container = value.get("container_runtime") or {}
         model_runtime = value.get("model_runtime") or {}
         policy = value.get("policy") or {}
+        if policy.get("eval_runtime") == "python":
+            require(container.get("required") is False, "Python Eval runtime must not require a container")
+            require(model_runtime.get("required") is True, "Python Eval runtime must declare Model Python")
+            require(model_runtime.get("backend") == "uv", "Python Eval runtime must use uv")
+            require(model_runtime.get("runtime_id"), "Python Eval runtime must declare runtime_id")
+            require(model_runtime.get("manifest_path") == "artifacts/model_runtime_manifest.json", "Python runtime manifest path is invalid")
+            require(policy.get("host_python_fallback") is False, "host Python fallback must be disabled")
+            return 0
         require("@sha256:" in str(container.get("target_image_ref", "")), "runtime image must be digest-pinned")
         require(policy.get("eval_runtime") == "container_only", "Eval runtime must be container_only")
         require(policy.get("host_python_fallback") is False, "host Python fallback must be disabled")
@@ -499,14 +574,17 @@ def main() -> int:
     elif kind == "verdict":
         require(value.get("status") == "success", "verdict is not terminal-success")
         readiness = value.get("readiness")
+        profile = (value.get("package") or {}).get("profile") if isinstance(value.get("package"), dict) else None
         require(
             isinstance(readiness, dict)
             and readiness.get("bundle_ready") is True
-            and readiness.get("registry_ready") is True,
-            "verdict readiness must prove bundle and registry readiness",
+            and (profile == "none" or readiness.get("registry_ready") is True),
+            "verdict readiness must prove bundle readiness and registry readiness when packaged as a container",
         )
     elif kind == "deployment_ready":
-        require(value.get("schema") == "sure.onboard.deployment_ready.v1", "deployment schema is incompatible with sure_eval")
+        profile = str(value.get("package_profile") or "docker-registry")
+        expected_schema = "sure.onboard.deployment_ready.v2" if profile == "none" else "sure.onboard.deployment_ready.v1"
+        require(value.get("schema") == expected_schema, "deployment schema is incompatible with sure_eval")
         if value.get("status") == "blocked":
             require(
                 str(value.get("blocked_reason") or "").strip() != "",
@@ -524,7 +602,8 @@ def main() -> int:
             value.get("integrity_profile") == "manifest-complete-v1",
             "ready deployment must use the manifest-complete-v1 integrity profile",
         )
-        require("@sha256:" in str(value.get("target_image_ref", "")), "deployment image must be digest-pinned")
+        if profile == "docker-registry":
+            require("@sha256:" in str(value.get("target_image_ref", "")), "deployment image must be digest-pinned")
         model_dir = harness_model_dir(run_dir)
         model_copy = model_dir / "artifacts" / "deployment_ready.json"
         require(
@@ -532,13 +611,24 @@ def main() -> int:
             "deployment_ready.json must be written identically to the run and model bundle",
         )
         policy = value.get("execution_policy") if isinstance(value.get("execution_policy"), dict) else {}
-        require(
-            policy.get("container_only") is True
-            and policy.get("nfs_models_read_only") is True
-            and policy.get("host_python_fallback") is False
-            and policy.get("approved_image_override") is False,
-            "final execution policy must be container-only with NFS read-only and no host fallback",
-        )
+        if profile == "none":
+            require(
+                policy.get("container_only") is False
+                and policy.get("eval_runtime") == "python"
+                and policy.get("isolation") == "trusted_host"
+                and policy.get("model_integrity") == "verify_before_after"
+                and policy.get("model_bundle_mutation_allowed") is False
+                and policy.get("host_python_fallback") is False,
+                "final Python execution policy is invalid",
+            )
+        else:
+            require(
+                policy.get("container_only") is True
+                and policy.get("nfs_models_read_only") is True
+                and policy.get("host_python_fallback") is False
+                and policy.get("approved_image_override") is False,
+                "final execution policy must be container-only with NFS read-only and no host fallback",
+            )
         hashes = value.get("required_artifact_sha256")
         require(isinstance(hashes, dict) and hashes, "required_artifact_sha256 must list finalized artifacts")
         for raw, expected in hashes.items():
@@ -574,15 +664,22 @@ def main() -> int:
         require(package.get("status") == "passed", "package_gate must be passed")
         gate_readiness = package.get("readiness") if isinstance(package.get("readiness"), dict) else {}
         require(
-            gate_readiness.get("bundle_ready") is True and gate_readiness.get("registry_ready") is True,
-            "package_gate readiness must prove bundle and registry readiness",
+            gate_readiness.get("bundle_ready") is True
+            and (profile == "none" or gate_readiness.get("registry_ready") is True),
+            "package_gate readiness must prove bundle readiness and registry readiness when required",
         )
-        docker = package.get("docker") if isinstance(package.get("docker"), dict) else {}
-        dockerfile = model_dir / str(docker.get("dockerfile_path") or "Dockerfile.sure")
-        require(
-            dockerfile.is_file() and docker.get("dockerfile_sha256") == sha256_file(dockerfile),
-            "package gate Dockerfile hash does not match the model bundle",
-        )
+        if profile == "docker-registry":
+            docker = package.get("docker") if isinstance(package.get("docker"), dict) else {}
+            dockerfile = model_dir / str(docker.get("dockerfile_path") or "Dockerfile.sure")
+            require(
+                dockerfile.is_file() and docker.get("dockerfile_sha256") == sha256_file(dockerfile),
+                "package gate Dockerfile hash does not match the model bundle",
+            )
+        else:
+            runtime_manifest = model_dir / "artifacts" / "model_runtime_manifest.json"
+            require(runtime_manifest.is_file(), "Python bundle is missing model_runtime_manifest.json")
+            model_runtime = value.get("model_runtime") if isinstance(value.get("model_runtime"), dict) else {}
+            require(model_runtime.get("runtime_id") == read_object(runtime_manifest).get("runtime_id"), "deployment Model Runtime ID changed")
         inventory = read_object(model_dir / "artifacts" / "runtime_inventory.json")
         verdict = read_object(model_dir / "artifacts" / "verdict.json")
         timeline = [
@@ -594,7 +691,7 @@ def main() -> int:
         ]
         for (earlier_name, earlier), (later_name, later) in zip(timeline, timeline[1:]):
             require(earlier < later, f"terminal timeline is inverted: {earlier_name} must precede {later_name}")
-        declared_binding = value.get("harness_runtime") if isinstance(value.get("harness_runtime"), dict) else {}
+        declared_binding = value.get("harness_runtime") if profile == "docker-registry" and isinstance(value.get("harness_runtime"), dict) else {}
         if declared_binding:
             source_binding = inventory.get("harness_runtime") if isinstance(inventory.get("harness_runtime"), dict) else {}
             projected = {key: source_binding.get(key) for key in declared_binding}

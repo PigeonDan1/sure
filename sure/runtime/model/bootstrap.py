@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,37 @@ PACKAGES_NAME = "installed-packages.txt"
 
 class ModelRuntimeError(RuntimeError):
     """The selected Model Python runtime is missing or invalid."""
+
+
+def runtime_python_relative() -> str:
+    return "Scripts/python.exe" if os.name == "nt" else "bin/python"
+
+
+@contextmanager
+def exclusive_lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as lock:
+        if os.name == "nt":
+            import msvcrt
+
+            if lock.tell() == 0:
+                lock.write(b"\0")
+                lock.flush()
+            lock.seek(0)
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def sha256_file(path: Path) -> str:
@@ -54,7 +86,7 @@ def _probe(python: Path) -> dict[str, str]:
         "import hashlib,json,platform,sys,sysconfig;"
         "base=__import__('pathlib').Path(sys._base_executable).resolve();"
         "print(json.dumps({'python_version':platform.python_version(),"
-        "'python_abi':sysconfig.get_config_var('SOABI') or '',"
+        "'python_abi':sysconfig.get_config_var('SOABI') or sys.implementation.cache_tag or '',"
         "'python_platform':sysconfig.get_platform(),"
         "'base_python':str(base),"
         "'base_python_sha256':hashlib.sha256(base.read_bytes()).hexdigest()}))"
@@ -102,7 +134,13 @@ def _uv_binary(explicit: str | None = None) -> str:
     return str(Path(candidate).resolve())
 
 
-def _run(command: list[str], *, env: dict[str, str], timeout: int) -> subprocess.CompletedProcess[str]:
+def _run(
+    command: list[str],
+    *,
+    env: dict[str, str],
+    timeout: int,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
         command,
         env=env,
@@ -110,6 +148,7 @@ def _run(command: list[str], *, env: dict[str, str], timeout: int) -> subprocess
         text=True,
         check=False,
         timeout=timeout,
+        cwd=cwd,
     )
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or f"exit {completed.returncode}"
@@ -131,7 +170,7 @@ def _expected_manifest(
         "backend": "uv",
         "materialization": "uv_venv",
         "materialization_version": MATERIALIZATION_VERSION,
-        "python_executable": "bin/python",
+        "python_executable": runtime_python_relative(),
         "python_version": probe["python_version"],
         "python_abi": probe["python_abi"],
         "python_platform": probe["python_platform"],
@@ -155,7 +194,7 @@ def verify_runtime(runtime_root: Path, expected: dict[str, Any]) -> dict[str, An
         "backend": "uv",
         "materialization": "uv_venv",
         "materialization_version": MATERIALIZATION_VERSION,
-        "python_executable": "bin/python",
+        "python_executable": runtime_python_relative(),
         "lock_file": LOCK_NAME,
         "installed_packages_file": PACKAGES_NAME,
     }
@@ -204,7 +243,6 @@ def materialize_runtime(
 ) -> dict[str, Any]:
     """Build one immutable uv environment and return its verified contract."""
 
-    import fcntl
     source_python = source_python.expanduser().resolve()
     lock_path = lock_path.expanduser().resolve()
     if not source_python.is_file() or not os.access(source_python, os.X_OK):
@@ -219,8 +257,7 @@ def materialize_runtime(
     runtime_dir = root / runtime_id
     lock_file = root / f".{runtime_id}.lock"
 
-    with lock_file.open("a+", encoding="utf-8") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    with exclusive_lock(lock_file):
         if runtime_dir.exists():
             return verify_runtime(root, _read_json(runtime_dir / MANIFEST_NAME))
 
@@ -238,7 +275,7 @@ def materialize_runtime(
                 env=env,
                 timeout=180,
             )
-            runtime_python = staging / "bin" / "python"
+            runtime_python = staging / runtime_python_relative()
             _run(
                 [
                     uv,
@@ -254,6 +291,7 @@ def materialize_runtime(
                 ],
                 env=env,
                 timeout=1800,
+                cwd=lock_path.parent,
             )
             frozen = _run(
                 [uv, "pip", "freeze", "--python", str(runtime_python), "--strict", "--no-python-downloads"],

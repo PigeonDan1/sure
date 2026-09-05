@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -18,6 +19,14 @@ def read_object_optional(path: Path) -> dict:
     if not path.is_file():
         return {}
     return read_object(path)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def identity_evidence(build_context: str) -> dict:
@@ -67,11 +76,84 @@ def main() -> int:
     }
     validations = {name: read_object(artifacts / filename) for name, filename in validation_files.items()}
     if registry.get("status") != "passed" or any(value.get("status") != "passed" for value in validations.values()):
-        raise ValueError("registry and every adapter validation stage must pass before writing runtime inventory")
+        raise ValueError("packaging and every adapter validation stage must pass before writing runtime inventory")
     mount_target = str(resolved["model_mount_target"])
     task_type = str(resolved.get("task_type") or "asr").lower()
     default_tools = {"tts": "synthesize_speech", "vc": "convert_voice", "s2tt": "translate_audio"}
     tool_name = args.tool_name or default_tools.get(task_type, "transcribe_audio")
+    if resolved.get("package_profile") == "none":
+        manifest = read_object(artifacts / "model_runtime_manifest.json")
+        execution = read_object(artifacts / "execution_compat.json")
+        model_dir = Path(str(resolved["model_dir"])).resolve()
+        core_names = (
+            "model.py", "server.py", "__init__.py", "validate.py", "config.yaml",
+            "model.spec.yaml", "requirements.lock", "artifacts/model_runtime_manifest.json",
+        )
+        core_hashes = {
+            name: sha256_file(model_dir / name)
+            for name in core_names
+            if (model_dir / name).is_file()
+        }
+        if not core_hashes:
+            raise ValueError("Python model bundle core files have not been staged")
+        package_runtime = registry.get("model_runtime") if isinstance(registry.get("model_runtime"), dict) else {}
+        if package_runtime.get("runtime_id") != manifest.get("runtime_id"):
+            raise ValueError("packaged Python runtime does not match model_runtime_manifest.json")
+        payload = {
+            "schema": "sure.onboard.runtime_inventory.v2",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "status": "ready",
+            "model": {
+                "name": resolved["model_name"], "id": None, "task": resolved.get("task_type"),
+                "deployment_type": "local", "bundle_root": ".", "producer": "sure_trans",
+            },
+            "local_runtime": {
+                "purpose": "source_validation_evidence_only", "eligible_for_eval": False,
+                "probe": execution.get("probe", {}),
+            },
+            "model_runtime": {
+                "required": True, "schema": manifest.get("schema"),
+                "runtime_id": manifest.get("runtime_id"), "runtime_type": "model_python",
+                "backend": "uv", "python_executable": manifest.get("python_executable"),
+                "python_version": manifest.get("python_version"), "python_abi": manifest.get("python_abi"),
+                "python_platform": manifest.get("python_platform"),
+                "manifest_path": "artifacts/model_runtime_manifest.json",
+                "manifest_sha256": package_runtime.get("manifest_sha256"),
+                "lockfile_path": registry.get("lockfile_path"), "lock_sha256": manifest.get("lock_sha256"),
+                "working_dir": ".", "server_command": registry.get("server_command"),
+                "tool_names": registry.get("tool_names"),
+                "gpu_required": execution.get("selected_device") == "cuda",
+                "checks": {name: True for name in validation_files},
+            },
+            "harness_runtime": {
+                "required": True, "runtime_type": "harness_python", "binding_source": "active_eval_site",
+            },
+            "container_runtime": {"required": False},
+            "weights": {
+                "required": True, "source": "model_bundle",
+                "staged_manifest": "artifacts/model_payload_manifest.json",
+            },
+            "readiness": {
+                "adapter_validated": True,
+                "mcp_validated": validations["mcp"].get("mcp_passed") is True,
+                "equivalence_validated": validations["equivalence"].get("equivalent") is True,
+                "runtime_materialized": True,
+            },
+            "evidence": {
+                "validations": [f"artifacts/{filename}" for filename in validation_files.values()],
+                "model_runtime_manifest": "artifacts/model_runtime_manifest.json",
+                "model_payload_manifest": "artifacts/model_payload_manifest.json",
+                "model_core_sha256": core_hashes,
+            },
+            "policy": {
+                "eval_runtime": "python", "host_python_fallback": False,
+                "image_override_allowed": False, "nfs_models_mutable_by_eval": False,
+            },
+        }
+        output = artifacts / "runtime_inventory.json"
+        output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(output)
+        return 0
     harness = runtime_binding.get("runtimes", {}).get("harness", {}) if isinstance(runtime_binding, dict) else {}
     harness_binding = harness.get("binding") if isinstance(harness, dict) else None
     embedded = adapter_manifest.get("harness_runtime_embedded") is True

@@ -40,9 +40,10 @@ def main() -> int:
     for name, (_, pass_key) in validation_files.items():
         if validations[name].get("status") != "passed" or validations[name].get(pass_key) is not True:
             raise ValueError(f"adapter validation stage did not pass: {name}")
+    package_profile = str(resolved.get("package_profile") or "docker-registry")
     if registry.get("status") != "passed" or runtime.get("status") != "ready":
-        raise ValueError("registry and runtime inventory must be ready")
-    if registry.get("pull_verified") is not True:
+        raise ValueError("package and runtime inventory must be ready")
+    if package_profile == "docker-registry" and registry.get("pull_verified") is not True:
         raise ValueError("docker-registry verdict requires digest-pinned pull verification")
     if framework.get("status") != "ready" or framework.get("framework_requirement_met") is not True:
         raise ValueError("computation framework must be verified as PyTorch")
@@ -61,7 +62,7 @@ def main() -> int:
         "instance_id": artifacts.parent.name,
         "model_id": resolved["model_name"],
         "model_name": resolved["model_name"],
-        "package": {"profile": "docker-registry"},
+        "package": {"profile": package_profile},
         "framework": {
             "computation": {
                 "declared": framework.get("declared_framework"),
@@ -79,13 +80,14 @@ def main() -> int:
         },
         "readiness": {
             "local_ready": True,
-            "docker_ready": True,
-            "registry_ready": registry.get("pull_verified") is True,
+            "docker_ready": package_profile == "docker-registry",
+            "registry_ready": package_profile == "docker-registry" and registry.get("pull_verified") is True,
             "bundle_ready": True,
             "vc_ready": None,
         },
         "build": {
             "success": True,
+            "runtime_kind": "python" if package_profile == "none" else "container",
             "source_image": source_image.get("image"),
             "source_image_id": source_image.get("image_id"),
             "target_image": registry.get("target_image"),
@@ -101,7 +103,7 @@ def main() -> int:
             "adapter_contract": validations["contract"].get("contract_passed") is True,
             "mcp": validations["mcp"].get("mcp_passed") is True,
             "equivalent": validations["equivalent"].get("equivalent") is True,
-            "digest_pull": registry.get("pull_verified") is True,
+            "digest_pull": registry.get("pull_verified") is True if package_profile == "docker-registry" else None,
         },
         "artifacts": {
             "runtime_inventory": "artifacts/runtime_inventory.json",

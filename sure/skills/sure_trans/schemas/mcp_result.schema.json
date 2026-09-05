@@ -23,6 +23,9 @@
         "string"
       ]
     },
+    "protocol_path": {
+      "type": "string"
+    },
     "cwd": {
       "type": "string"
     },

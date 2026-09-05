@@ -100,7 +100,13 @@ def resolve_task_type(explicit: str | None, inference_entrypoint: Path, model_pa
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dockerfile", required=True)
+    parser.add_argument("--dockerfile")
+    parser.add_argument("--python-executable")
+    parser.add_argument("--lockfile")
+    parser.add_argument(
+        "--package", "--package-profile", dest="package_profile",
+        choices=("docker-registry", "none"), default="docker-registry",
+    )
     parser.add_argument("--model", required=True)
     parser.add_argument("--inference-entrypoint", required=True)
     parser.add_argument("--framework", required=True)
@@ -123,18 +129,39 @@ def main() -> int:
     parser.add_argument("--image-version")
     args = parser.parse_args()
 
-    dockerfile = existing_absolute(args.dockerfile, "dockerfile")
-    if not dockerfile.is_file():
+    if bool(args.dockerfile) == bool(args.python_executable):
+        raise ValueError("provide exactly one of --dockerfile or --python-executable")
+    source_kind = "docker" if args.dockerfile else "python"
+    dockerfile = existing_absolute(args.dockerfile, "dockerfile") if args.dockerfile else None
+    if dockerfile is not None and not dockerfile.is_file():
         raise ValueError(f"dockerfile must be a file: {dockerfile}")
+    python_executable = (
+        existing_absolute(args.python_executable, "python executable")
+        if args.python_executable else None
+    )
+    if python_executable is not None and not python_executable.is_file():
+        raise ValueError(f"python executable must be a file: {python_executable}")
+    lockfile = existing_absolute(args.lockfile, "lockfile") if args.lockfile else None
+    if source_kind == "python" and lockfile is None:
+        raise ValueError("Python input requires --lockfile")
+    if lockfile is not None and not lockfile.is_file():
+        raise ValueError(f"lockfile must be a file: {lockfile}")
+    if source_kind == "docker" and args.package_profile == "none":
+        raise ValueError("package=none requires Python input")
     model_path = existing_absolute(args.model, "model")
     inference_entrypoint = existing_absolute(args.inference_entrypoint, "inference entrypoint")
     if not inference_entrypoint.is_file():
         raise ValueError(f"inference entrypoint must be a file: {inference_entrypoint}")
-    build_context = existing_absolute(args.build_context, "build context") if args.build_context else dockerfile.parent
+    build_context = (
+        existing_absolute(args.build_context, "build context")
+        if args.build_context
+        else dockerfile.parent if dockerfile is not None else inference_entrypoint.parent
+    )
     if not build_context.is_dir():
         raise ValueError(f"build context must be a directory: {build_context}")
     try:
-        dockerfile.relative_to(build_context)
+        if dockerfile is not None:
+            dockerfile.relative_to(build_context)
     except ValueError as error:
         raise ValueError("dockerfile must be inside build context") from error
 
@@ -149,16 +176,22 @@ def main() -> int:
         )
     model_name = normalized_name(args.model_name) if args.model_name else re.sub(r"[^A-Za-z0-9._-]+", "__", model_path.name).strip("._-")
     task_type = resolve_task_type(args.task_type, inference_entrypoint, model_path)
-    site = load_site_policy(required=True) or {}
-    policy = site.get("policy")
-    if not isinstance(policy, dict):
-        raise ValueError("site policy did not resolve to an object")
-    source_repository = resolve_container_repository(
-        policy, task_type=task_type, model_name=model_name, stage="source"
-    )
-    target_repository = resolve_container_repository(
-        policy, task_type=task_type, model_name=model_name
-    )
+    site = {}
+    policy = {}
+    source_repository = None
+    target_repository = None
+    if args.package_profile == "docker-registry":
+        site = load_site_policy(required=True) or {}
+        policy = site.get("policy")
+        if not isinstance(policy, dict):
+            raise ValueError("site policy did not resolve to an object")
+        if source_kind == "docker":
+            source_repository = resolve_container_repository(
+                policy, task_type=task_type, model_name=model_name, stage="source"
+            )
+        target_repository = resolve_container_repository(
+            policy, task_type=task_type, model_name=model_name
+        )
     fixture_path = existing_absolute(args.fixture, "fixture") if args.fixture else None
     image_tar = existing_absolute(args.image_tar, "image tar") if args.image_tar else None
     if image_tar is not None and not image_tar.is_file():
@@ -178,8 +211,8 @@ def main() -> int:
         raise ValueError("model mount target must be absolute inside the container")
     if args.max_retries < 1:
         raise ValueError("max retries must be positive")
-    vc_partition = args.vc_partition or default_partition()
-    if not SAFE_TAG.fullmatch(vc_partition):
+    vc_partition = args.vc_partition or (default_partition() if source_kind == "docker" else None)
+    if vc_partition is not None and not SAFE_TAG.fullmatch(vc_partition):
         raise ValueError(f"invalid vc partition: {vc_partition!r}")
     vc_gpus = args.vc_gpus if args.vc_gpus is not None else DEFAULT_GPUS
     vc_memory_gb = args.vc_memory_gb if args.vc_memory_gb is not None else DEFAULT_MEMORY_GB
@@ -187,17 +220,41 @@ def main() -> int:
         raise ValueError("vc gpus must be positive")
     if vc_memory_gb < 1:
         raise ValueError("vc memory must be positive")
-    image_version, image_version_resolution = resolve_image_version(
-        [source_repository, target_repository], args.image_version
-    )
-    if not SAFE_TAG.fullmatch(image_version):
-        raise ValueError(f"invalid image version: {image_version!r}")
-    gpu_surface = args.device != "cpu"
+    image_version = None
+    image_version_resolution = None
+    container_delivery = None
+    if target_repository is not None:
+        repositories = [target_repository]
+        if source_repository is not None:
+            repositories.insert(0, source_repository)
+        image_version, image_version_resolution = resolve_image_version(repositories, args.image_version)
+        if not SAFE_TAG.fullmatch(image_version):
+            raise ValueError(f"invalid image version: {image_version!r}")
+        container_delivery = {
+            "target_repository": target_repository,
+            "target_image": resolve_container_image(
+                policy, task_type=task_type, model_name=model_name, version=image_version
+            ),
+            "site_policy_path": site.get("path"),
+            "site_policy_sha256": site.get("sha256"),
+        }
+        if source_repository is not None:
+            container_delivery.update({
+                "source_repository": source_repository,
+                "source_image": resolve_container_image(
+                    policy, task_type=task_type, model_name=model_name,
+                    version=image_version, stage="source",
+                ),
+            })
+    gpu_surface = source_kind == "docker" and args.device != "cpu"
 
     payload = {
         "schema": "sure.trans.input.v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "dockerfile": str(dockerfile),
+        "source_kind": source_kind,
+        "dockerfile": str(dockerfile) if dockerfile else None,
+        "python_executable": str(python_executable) if python_executable else None,
+        "lockfile": str(lockfile) if lockfile else None,
         "build_context": str(build_context),
         "model_path": str(model_path),
         "inference_entrypoint": str(inference_entrypoint),
@@ -208,36 +265,18 @@ def main() -> int:
         "task_type": task_type,
         "fixture_path": str(fixture_path) if fixture_path else None,
         "device": args.device,
-        "execution_surface": "vc" if gpu_surface else "local_docker",
+        "execution_surface": "local_python" if source_kind == "python" else "vc" if gpu_surface else "local_docker",
         "gpu_required": gpu_required,
         "bf16_required": bf16_required,
         "source_image_policy": args.source_image_policy,
         "image_tar": str(image_tar) if image_tar else None,
-        "package_profile": "docker-registry",
+        "package_profile": args.package_profile,
         "model_mount_target": mount_target,
         "model_stage_policy": args.model_stage_policy,
         "max_retries": args.max_retries,
         "image_version": image_version,
         "image_version_resolution": image_version_resolution,
-        "container_delivery": {
-            "source_repository": source_repository,
-            "source_image": resolve_container_image(
-                policy,
-                task_type=task_type,
-                model_name=model_name,
-                version=image_version,
-                stage="source",
-            ),
-            "target_repository": target_repository,
-            "target_image": resolve_container_image(
-                policy,
-                task_type=task_type,
-                model_name=model_name,
-                version=image_version,
-            ),
-            "site_policy_path": site.get("path"),
-            "site_policy_sha256": site.get("sha256"),
-        },
+        "container_delivery": container_delivery,
         "path_policy": {
             "model_read_only": True,
             "source_paths_read_only": True,

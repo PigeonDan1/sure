@@ -2,7 +2,7 @@ name: __MODEL_NAME__
 task: __TASK_TYPE__
 description: Transformed container inference adapter
 server:
-  command: ["__PYTHON_EXECUTABLE__", "/opt/sure_trans/server.py"]
+  command: __SERVER_COMMAND__
   timeout: 600
 tools:
   - name: __TOOL_NAME__

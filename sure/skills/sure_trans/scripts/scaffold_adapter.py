@@ -204,10 +204,19 @@ def main() -> int:
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
     source_image = read_object(artifacts / "source_image_result.json")
-    source_reference, probe_reference = source_image_reference(source_image)
-    python_executable = container_python_executable(probe_reference)
-    harness = harness_image_binding(artifacts)
-    harness_context = harness_runtime_build_context(harness)
+    source_kind = str(resolved.get("source_kind") or "docker")
+    python_source = source_kind == "python"
+    source_reference = ""
+    probe_reference = ""
+    if python_source:
+        python_executable = str(resolved["python_executable"])
+        harness = None
+        harness_context = "not-required"
+    else:
+        source_reference, probe_reference = source_image_reference(source_image)
+        python_executable = container_python_executable(probe_reference)
+        harness = harness_image_binding(artifacts)
+        harness_context = harness_runtime_build_context(harness)
     adapter_dir = run_dir / "adapter"
     adapter_dir.mkdir(parents=True, exist_ok=True)
     templates = Path(__file__).resolve().parent / "templates"
@@ -219,14 +228,19 @@ def main() -> int:
     task_type = str(resolved.get("task_type") or "asr").lower()
     tool_name, input_schema = tool_contract(task_type)
     io_contract = io_contract_for(task_type)
+    server_path = str(adapter_dir / "server.py") if python_source else "/opt/sure_trans/server.py"
+    server_command = [python_executable, server_path]
+    model_mount_target = str(resolved["model_dir"]) if python_source else str(resolved["model_mount_target"])
     replacements = {
         "__MODEL_NAME__": str(resolved["model_name"]),
         "__TASK_TYPE__": str(resolved.get("task_type") or "ASR").upper(),
         "__FRAMEWORK__": str(resolved["framework"]),
         "__MODEL_FRAMEWORK__": str(resolved["model_framework"]),
-        "__MODEL_MOUNT_TARGET__": str(resolved["model_mount_target"]),
+        "__MODEL_MOUNT_TARGET__": model_mount_target,
         "__SOURCE_IMAGE__": source_reference,
         "__PYTHON_EXECUTABLE__": python_executable,
+        "__SERVER_COMMAND__": json.dumps(server_command, ensure_ascii=False),
+        "__RUNTIME_TYPE__": "python" if python_source else "container",
         "__HARNESS_RUNTIME_COPY__": (
             f"COPY --from=sure_harness_runtime / /opt/sure-harness/{harness['runtime_id']}/"
             if harness
@@ -241,29 +255,33 @@ def main() -> int:
     render(templates / "server.py", adapter_dir / "server.py", replacements)
     render(templates / "config.yaml", adapter_dir / "config.yaml", replacements)
     render(templates / "model.spec.yaml", adapter_dir / "model.spec.yaml", replacements)
-    render(templates / "Dockerfile.sure", adapter_dir / "Dockerfile.sure", replacements)
+    dockerfile = adapter_dir / "Dockerfile.sure"
+    if not python_source:
+        render(templates / "Dockerfile.sure", dockerfile, replacements)
     render(templates / "validate.py", adapter_dir / "validate.py", replacements)
     manifest = {
         "schema": "sure.trans.adapter_manifest.v1",
         "status": "draft" if "NotImplementedError" in model_py.read_text(encoding="utf-8") else "ready",
         "strategy": "python-import",
+        "runtime_kind": "python" if python_source else "container",
         "model_py": str(model_py),
         "init_py": str(adapter_dir / "__init__.py"),
         "validate_py": str(adapter_dir / "validate.py"),
         "server_py": str(adapter_dir / "server.py"),
         "config_yaml": str(adapter_dir / "config.yaml"),
         "model_spec": str(adapter_dir / "model.spec.yaml"),
-        "dockerfile": str(adapter_dir / "Dockerfile.sure"),
+        "dockerfile": str(dockerfile) if not python_source else None,
         "mcp_smoke_py": str(adapter_dir / "mcp_smoke.py"),
         "source_inference_entrypoint": resolved["inference_entrypoint"],
-        "source_image_reference": source_reference,
-        "source_image_probe_reference": probe_reference,
-        "source_image_id": source_image["image_id"],
-        "model_mount_target": resolved["model_mount_target"],
+        "source_image_reference": source_reference or None,
+        "source_image_probe_reference": probe_reference or None,
+        "source_image_id": source_image.get("image_id"),
+        "model_mount_target": model_mount_target,
         "io_contract": io_contract,
-        "container_python_executable": python_executable,
-        "server_command": [python_executable, "/opt/sure_trans/server.py"],
-        "working_dir": "/opt/sure_trans",
+        "python_executable": python_executable,
+        "container_python_executable": python_executable if not python_source else None,
+        "server_command": server_command,
+        "working_dir": str(adapter_dir) if python_source else "/opt/sure_trans",
         "harness_runtime_embedded": harness is not None,
         "harness_runtime": harness,
         "harness_runtime_build_context": harness_context,

@@ -272,6 +272,30 @@ def main() -> int:
     output = Path(args.produces).resolve()
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
+    if resolved.get("source_kind") == "python":
+        python_executable = Path(str(resolved.get("python_executable") or "")).resolve()
+        lockfile = Path(str(resolved.get("lockfile") or "")).resolve()
+        if not python_executable.is_file() or not lockfile.is_file():
+            raise ValueError("Python source runtime requires an existing python_executable and lockfile")
+        log_path = artifacts / "source_runtime.log"
+        log_path.write_text(
+            f"python_executable={python_executable}\nlockfile={lockfile}\n",
+            encoding="utf-8",
+        )
+        payload = {
+            "schema": "sure.trans.source_image_result.v1",
+            "status": "passed",
+            "source_kind": "python",
+            "python_executable": str(python_executable),
+            "python_executable_sha256": sha256_file(python_executable),
+            "lockfile": str(lockfile),
+            "lockfile_sha256": sha256_file(lockfile),
+            "source_image_log_path": str(log_path),
+        }
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(output)
+        return 0
     dockerfile = Path(str(resolved["dockerfile"])).resolve()
     build_context = Path(str(resolved["build_context"])).resolve()
     if not dockerfile.is_file():

@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import run_docker_build  # noqa: E402
 import run_trans_validate  # noqa: E402
 import mcp_smoke  # noqa: E402
+import package_python_runtime  # noqa: E402
 import prepare_fixture  # noqa: E402
 import scaffold_adapter  # noqa: E402
 import stage_model_payload  # noqa: E402
@@ -643,6 +644,396 @@ class TransScriptsTest(unittest.TestCase):
             self.assertTrue(payload["build_executed"])
             self.assertEqual(payload["build_exit_code"], 0)
             self.assertEqual(payload["image_id"], "sha256:" + "b" * 64)
+
+    def test_materialize_python_input_without_packaging(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            model = root / "model"
+            run_dir = root / "run"
+            source.mkdir()
+            model.mkdir()
+            entrypoint = source / "infer.py"
+            lockfile = source / "requirements.lock.txt"
+            entrypoint.write_text("import torch\n", encoding="utf-8")
+            lockfile.write_text("torch==2.7.0 --hash=sha256:" + "a" * 64 + "\n", encoding="utf-8")
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "materialize_trans_inputs.py"),
+                    "--python-executable", sys.executable,
+                    "--lockfile", str(lockfile),
+                    "--package", "none",
+                    "--model", str(model),
+                    "--inference-entrypoint", str(entrypoint),
+                    "--framework", "pytorch",
+                    "--model-framework", "transformers",
+                    "--model-name", "openai__whisper-tiny",
+                    "--task-type", "asr",
+                    "--run-dir", str(run_dir),
+                    "--repo-root", str(root),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            resolved_path = run_dir / "artifacts" / "trans_input_resolved.json"
+            resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+            self.assertEqual(resolved["source_kind"], "python")
+            self.assertEqual(resolved["python_executable"], str(Path(sys.executable).resolve()))
+            self.assertEqual(resolved["lockfile"], str(lockfile.resolve()))
+            self.assertEqual(resolved["package_profile"], "none")
+            self.assertEqual(resolved["execution_surface"], "local_python")
+            self.assertIsNone(resolved["dockerfile"])
+            self.assertIsNone(resolved["container_delivery"])
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "check_artifact.py"),
+                    "--run-dir", str(run_dir),
+                    "--produces", str(resolved_path),
+                    "--kind", "input",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+    def test_python_package_materializes_a_portable_runtime_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = root / "run"
+            artifacts = run_dir / "artifacts"
+            adapter = run_dir / "adapter"
+            model_dir = root / "models" / "example__runtime"
+            artifacts.mkdir(parents=True)
+            adapter.mkdir(parents=True)
+            lockfile = root / "requirements.lock.txt"
+            lockfile.write_text("demo==1.0 --hash=sha256:" + "a" * 64 + "\n", encoding="utf-8")
+            (artifacts / "trans_input_resolved.json").write_text(json.dumps({
+                "source_kind": "python",
+                "package_profile": "none",
+                "python_executable": sys.executable,
+                "lockfile": str(lockfile),
+                "model_dir": str(model_dir),
+            }) + "\n", encoding="utf-8")
+            adapter_files = {}
+            for key, name in {
+                "model_py": "model.py", "init_py": "__init__.py",
+                "validate_py": "validate.py", "server_py": "server.py",
+                "config_yaml": "config.yaml", "model_spec": "model.spec.yaml",
+            }.items():
+                path = adapter / name
+                path.write_text(
+                    "server:\n  command: [python, server.py]\n" if name == "config.yaml" else "ok\n",
+                    encoding="utf-8",
+                )
+                adapter_files[key] = str(path)
+            (artifacts / "adapter_manifest.json").write_text(
+                json.dumps(adapter_files) + "\n", encoding="utf-8"
+            )
+            (artifacts / "mcp_result.json").write_text(
+                json.dumps({"tool_name": "transcribe_audio"}) + "\n", encoding="utf-8"
+            )
+            manifest = {
+                "schema": "sure.model.runtime.manifest.v1",
+                "runtime_id": "sure-model-python-v1-" + "b" * 24,
+                "runtime_type": "model_python",
+                "backend": "uv",
+                "materialization": "uv_venv",
+                "materialization_version": 1,
+                "python_executable": "Scripts/python.exe" if os.name == "nt" else "bin/python",
+                "python_version": "3.11.9",
+                "python_abi": "cp311",
+                "python_platform": "test-platform",
+                "base_python_sha256": "c" * 64,
+                "lock_file": "requirements.lock",
+                "lock_sha256": hashlib.sha256(lockfile.read_bytes()).hexdigest(),
+                "installed_packages_file": "installed-packages.txt",
+                "installed_packages_sha256": "d" * 64,
+            }
+            contract = {
+                **manifest,
+                "runtime_root": str(root / "runtime" / manifest["runtime_id"]),
+                "manifest_path": str(root / "runtime" / manifest["runtime_id"] / "runtime-manifest.json"),
+                "python_executable_resolved": sys.executable,
+                "manifest_sha256": package_python_runtime.manifest_sha256(manifest),
+                "probe": {},
+            }
+            argv = ["package_python_runtime.py", "--run-dir", str(run_dir)]
+            site = {
+                "policy": {
+                    "storage": {"runtime_root": str(root / "runtime")},
+                    "execution": {"surfaces": ["local"], "local_runtimes": ["python"]},
+                }
+            }
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                package_python_runtime, "load_site_policy", return_value=site
+            ), mock.patch.object(
+                package_python_runtime, "materialize_runtime", return_value=contract
+            ):
+                self.assertEqual(package_python_runtime.main(), 0)
+
+            result = json.loads(
+                (artifacts / "docker_registry_result.json").read_text(encoding="utf-8")
+            )
+            portable = json.loads(
+                (model_dir / "artifacts" / "model_runtime_manifest.json").read_text(encoding="utf-8")
+            )
+            config = (model_dir / "config.yaml").read_text(encoding="utf-8")
+            self.assertEqual(result["schema"], "sure.trans.python_package_result.v1")
+            self.assertEqual(result["model_runtime"]["runtime_id"], manifest["runtime_id"])
+            self.assertEqual(portable, manifest)
+            self.assertNotIn(str(root), json.dumps(portable))
+            self.assertIn(manifest["python_executable"], config)
+            self.assertTrue((model_dir / "requirements.lock").is_file())
+            checked = subprocess.run(
+                [
+                    sys.executable, str(SCRIPTS_DIR / "check_artifact.py"),
+                    "--run-dir", str(run_dir),
+                    "--produces", str(artifacts / "docker_registry_result.json"),
+                    "--kind", "registry",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_python_package_promotes_relative_locked_wheels(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            model_dir = root / "model"
+            (source / "vendor").mkdir(parents=True)
+            wheel = source / "vendor" / "demo-1.0-py3-none-any.whl"
+            wheel.write_bytes(b"wheel-content")
+            lockfile = source / "requirements.lock.txt"
+            lockfile.write_text(
+                "./vendor/demo-1.0-py3-none-any.whl \\\n"
+                "    --hash=sha256:" + hashlib.sha256(wheel.read_bytes()).hexdigest() + "\n",
+                encoding="utf-8",
+            )
+
+            promoted_lock, distributions = package_python_runtime.promote_lockfile(
+                lockfile, model_dir
+            )
+
+            expected = "./artifacts/local-distributions/" + hashlib.sha256(wheel.read_bytes()).hexdigest()[:16] + "-" + wheel.name
+            self.assertEqual(distributions, [expected])
+            self.assertIn(expected, promoted_lock.read_text(encoding="utf-8"))
+            self.assertEqual((model_dir / expected.removeprefix("./")).read_bytes(), wheel.read_bytes())
+
+    def test_python_source_execution_chain(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            model = root / "model"
+            run_dir = root / "run"
+            source.mkdir()
+            model.mkdir()
+            entrypoint = source / "infer.py"
+            lockfile = source / "requirements.lock.txt"
+            entrypoint.write_text("import torch\nprint('python-runtime-ok')\n", encoding="utf-8")
+            lockfile.write_text("example==1.0 --hash=sha256:" + "a" * 64 + "\n", encoding="utf-8")
+            common = [
+                "--run-dir", str(run_dir),
+                "--produces", str(run_dir / "artifacts" / "source_image_result.json"),
+            ]
+            subprocess.run(
+                [
+                    sys.executable, str(SCRIPTS_DIR / "materialize_trans_inputs.py"),
+                    "--python-executable", sys.executable,
+                    "--lockfile", str(lockfile),
+                    "--package", "none",
+                    "--model", str(model),
+                    "--inference-entrypoint", str(entrypoint),
+                    "--framework", "pytorch",
+                    "--model-framework", "custom",
+                    "--model-name", "example__python-runtime",
+                    "--task-type", "asr",
+                    "--device", "cpu",
+                    "--run-dir", str(run_dir),
+                    "--repo-root", str(root),
+                ], check=True, capture_output=True, text=True,
+            )
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "inspect_dependencies.py"), "--run-dir", str(run_dir)],
+                check=True, capture_output=True, text=True,
+            )
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "detect_framework.py"), "--run-dir", str(run_dir)],
+                check=True, capture_output=True, text=True,
+            )
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "run_docker_build.py"), *common],
+                check=True, capture_output=True, text=True,
+            )
+            compat_path = run_dir / "artifacts" / "execution_compat.json"
+            subprocess.run(
+                [
+                    sys.executable, str(SCRIPTS_DIR / "run_execution_compat.py"),
+                    "--run-dir", str(run_dir), "--produces", str(compat_path),
+                ], check=True, capture_output=True, text=True,
+            )
+            original_path = run_dir / "artifacts" / "original_inference_result.json"
+            original_path.write_text(
+                json.dumps({
+                    "status": "pending",
+                    "input": "fixture.wav",
+                    "run_command": [str(Path(sys.executable).resolve()), str(entrypoint)],
+                }) + "\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [
+                    sys.executable, str(SCRIPTS_DIR / "run_trans_validate.py"),
+                    "--run-dir", str(run_dir), "--produces", str(original_path),
+                    "--kind", "original_inference",
+                ], check=True, capture_output=True, text=True,
+            )
+            runtime = json.loads((run_dir / "artifacts" / "source_image_result.json").read_text(encoding="utf-8"))
+            dependencies = json.loads((run_dir / "artifacts" / "inference_dependency_report.json").read_text(encoding="utf-8"))
+            framework = json.loads((run_dir / "artifacts" / "framework_detection.json").read_text(encoding="utf-8"))
+            compat = json.loads(compat_path.read_text(encoding="utf-8"))
+            original = json.loads(original_path.read_text(encoding="utf-8"))
+            self.assertEqual(runtime["source_kind"], "python")
+            self.assertEqual(dependencies["docker_copy_sources"], [])
+            self.assertEqual(framework["status"], "ready")
+            self.assertEqual(compat["execution_surface"], "local_python")
+            self.assertTrue(compat["compat_ok"])
+            self.assertTrue(original["inference_passed"])
+            self.assertTrue(original["model_loaded"])
+
+    def test_python_adapter_validation_chain(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            adapter = run_dir / "adapter"
+            model_dir = run_dir / "model"
+            validation = artifacts / "adapter_validation"
+            artifacts.mkdir()
+            model_dir.mkdir()
+            lockfile = run_dir / "requirements.lock.txt"
+            entrypoint = run_dir / "infer.py"
+            fixture = run_dir / "fixture.wav"
+            lockfile.write_text("example==1.0 --hash=sha256:" + "a" * 64 + "\n", encoding="utf-8")
+            entrypoint.write_text("import torch\n", encoding="utf-8")
+            fixture.write_bytes(b"RIFF-test")
+            (artifacts / "trans_input_resolved.json").write_text(json.dumps({
+                "source_kind": "python",
+                "python_executable": str(Path(sys.executable).resolve()),
+                "lockfile": str(lockfile),
+                "inference_entrypoint": str(entrypoint),
+                "model_name": "example__python-adapter",
+                "model_dir": str(model_dir),
+                "model_mount_target": "/models/example__python-adapter",
+                "task_type": "asr",
+                "framework": "pytorch",
+                "model_framework": "custom",
+            }) + "\n", encoding="utf-8")
+            (artifacts / "source_image_result.json").write_text(json.dumps({
+                "status": "passed", "source_kind": "python",
+            }) + "\n", encoding="utf-8")
+            (artifacts / "execution_compat.json").write_text(json.dumps({
+                "status": "ready", "compat_ok": True, "selected_device": "cpu",
+            }) + "\n", encoding="utf-8")
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "scaffold_adapter.py"), "--run-dir", str(run_dir)],
+                check=True, capture_output=True, text=True,
+            )
+            (adapter / "model.py").write_text(
+                "class ModelWrapper:\n"
+                "    def __init__(self, config=None): self.model = None\n"
+                "    def load(self): self.model = object()\n"
+                "    def predict(self, input_data): return {'text': 'adapter-ok'}\n"
+                "    def healthcheck(self): return {'status': 'ready'}\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "scaffold_adapter.py"), "--run-dir", str(run_dir)],
+                check=True, capture_output=True, text=True,
+            )
+            subprocess.run(
+                [
+                    sys.executable, str(SCRIPTS_DIR / "check_artifact.py"),
+                    "--run-dir", str(run_dir),
+                    "--produces", str(artifacts / "adapter_manifest.json"),
+                    "--kind", "adapter",
+                ], check=True, capture_output=True, text=True,
+            )
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "materialize_adapter_runtime.py"), "--run-dir", str(run_dir)],
+                check=True, capture_output=True, text=True,
+            )
+            subprocess.run(
+                [
+                    sys.executable, str(SCRIPTS_DIR / "check_artifact.py"),
+                    "--run-dir", str(run_dir),
+                    "--produces", str(artifacts / "adapter_image_result.json"),
+                    "--kind", "adapter_image",
+                ], check=True, capture_output=True, text=True,
+            )
+            shared_env = {
+                "SURE_VALIDATE_ARTIFACTS_DIR": str(validation),
+                "SURE_VALIDATE_INPUT_JSON": json.dumps({"audio_path": str(fixture)}),
+            }
+            for stage in ("import", "load", "infer", "contract"):
+                stage_path = artifacts / f"{stage}_result.json"
+                stage_path.write_text(json.dumps({
+                    "status": "pending",
+                    "run_command": [str(Path(sys.executable).resolve()), str(adapter / "validate.py"), "--stage", stage],
+                    "cwd": str(adapter),
+                    "env": shared_env,
+                    **({"input": str(fixture)} if stage == "infer" else {}),
+                }) + "\n", encoding="utf-8")
+                stage_run = subprocess.run(
+                    [
+                        sys.executable, str(SCRIPTS_DIR / "run_trans_validate.py"),
+                        "--run-dir", str(run_dir), "--produces", str(stage_path), "--kind", stage,
+                    ], capture_output=True, text=True,
+                )
+                self.assertEqual(stage_run.returncode, 0, stage_run.stderr)
+            protocol = artifacts / "mcp_smoke.json"
+            mcp_path = artifacts / "mcp_result.json"
+            mcp_path.write_text(json.dumps({
+                "status": "pending",
+                "tool_name": "transcribe_audio",
+                "protocol_path": str(protocol),
+                "cwd": str(adapter),
+                "run_command": [
+                    str(Path(sys.executable).resolve()), str(adapter / "mcp_smoke.py"),
+                    "--audio", str(fixture), "--tool", "transcribe_audio",
+                    "--produces", str(protocol), "--timeout", "10",
+                    "--server-command", str(Path(sys.executable).resolve()), str(adapter / "server.py"),
+                ],
+            }) + "\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable, str(SCRIPTS_DIR / "run_trans_validate.py"),
+                    "--run-dir", str(run_dir), "--produces", str(mcp_path), "--kind", "mcp",
+                ], check=True, capture_output=True, text=True,
+            )
+            baseline = artifacts / "baseline_output.json"
+            baseline.write_text(json.dumps({"text": "adapter-ok"}) + "\n", encoding="utf-8")
+            equivalence_path = artifacts / "equivalence_result.json"
+            equivalence_path.write_text(json.dumps({
+                "status": "pending",
+                "baseline_output": str(baseline),
+                "adapter_output": str(validation / "sample_output.json"),
+                "run_command": [str(Path(sys.executable).resolve()), "-c", "pass"],
+            }) + "\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    sys.executable, str(SCRIPTS_DIR / "run_trans_validate.py"),
+                    "--run-dir", str(run_dir), "--produces", str(equivalence_path),
+                    "--kind", "equivalence",
+                ], check=True, capture_output=True, text=True,
+            )
+            adapter_runtime = json.loads((artifacts / "adapter_image_result.json").read_text(encoding="utf-8"))
+            self.assertEqual(adapter_runtime["runtime_kind"], "python")
+            self.assertTrue(json.loads(mcp_path.read_text(encoding="utf-8"))["mcp_passed"])
+            self.assertTrue(json.loads(equivalence_path.read_text(encoding="utf-8"))["equivalent"])
 
     def test_materialize_and_dependency_scan(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

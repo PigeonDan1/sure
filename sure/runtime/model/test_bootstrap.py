@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bootstrap import ModelRuntimeError, materialize_runtime, verify_runtime
+from bootstrap import ModelRuntimeError, materialize_runtime, runtime_python_relative, verify_runtime
 
 
 class ModelRuntimeBootstrapTests(unittest.TestCase):
@@ -36,6 +36,10 @@ class ModelRuntimeBootstrapTests(unittest.TestCase):
         manifest = json.loads(Path(first["manifest_path"]).read_text(encoding="utf-8"))
         self.assertNotIn("runtime_root", manifest)
         self.assertNotIn(str(self.root), json.dumps(manifest))
+
+    def test_runtime_python_path_matches_host_platform(self) -> None:
+        expected = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+        self.assertEqual(runtime_python_relative(), expected)
 
     def test_rejects_tampered_package_inventory(self) -> None:
         contract = materialize_runtime(

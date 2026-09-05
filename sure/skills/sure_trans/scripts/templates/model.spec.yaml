@@ -5,10 +5,10 @@ task: __TASK_TYPE__
 framework: __FRAMEWORK__
 model_framework: __MODEL_FRAMEWORK__
 runtime:
-  type: container
+  type: __RUNTIME_TYPE__
   model_mount_target: __MODEL_MOUNT_TARGET__
 entrypoints:
-  server: ["__PYTHON_EXECUTABLE__", "/opt/sure_trans/server.py"]
+  server: __SERVER_COMMAND__
 io_contract:
   input: __IO_CONTRACT_INPUT__
   output: __IO_CONTRACT_OUTPUT__

@@ -457,6 +457,17 @@ def main() -> int:
     if not cwd.is_dir():
         raise ValueError(f"validation cwd does not exist: {cwd}")
     compat = read_object(run_dir / "artifacts" / "execution_compat.json")
+    resolved_path = run_dir / "artifacts" / "trans_input_resolved.json"
+    resolved = read_object(resolved_path) if resolved_path.is_file() else {}
+    python_source = resolved.get("source_kind") == "python"
+    if python_source:
+        if not isinstance(command, list) or not command:
+            raise ValueError("Python validation run_command must be an argument list")
+        expected_python = Path(str(resolved.get("python_executable") or "")).resolve()
+        if Path(command[0]).resolve() != expected_python:
+            raise ValueError(
+                f"Python validation must use the resolved python_executable: {expected_python}"
+            )
     env = os.environ.copy()
     selected_device = str(compat.get("selected_device") or "")
     if selected_device:
@@ -472,8 +483,7 @@ def main() -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     extra: dict = {}
-    if selected_device == "cuda":
-        resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+    if selected_device == "cuda" and not (python_source and args.kind == "original_inference"):
         exit_code, extra, rendered = run_vc_validation(
             run_dir, resolved, data, args.kind, run_dir / "artifacts", timeout
         )
@@ -501,8 +511,13 @@ def main() -> int:
             "container command hit its hard timeout (exit 124); reduce the workload or "
             "raise the command timeout, then rerun the gate."
         )
-    if args.kind == "mcp" and selected_device == "cuda":
-        evidence_path = run_dir / "artifacts" / "vc_logs" / "mcp" / "mcp_smoke.json"
+    if args.kind == "mcp":
+        if selected_device == "cuda" and not python_source:
+            evidence_path = run_dir / "artifacts" / "vc_logs" / "mcp" / "mcp_smoke.json"
+        else:
+            evidence_path = Path(str(data.get("protocol_path") or run_dir / "artifacts" / "mcp_smoke.json"))
+            if not evidence_path.is_absolute():
+                evidence_path = run_dir / evidence_path
         mcp_error = validate_mcp_evidence(evidence_path, str(data.get("tool_name") or ""))
         if mcp_error:
             passed = False
