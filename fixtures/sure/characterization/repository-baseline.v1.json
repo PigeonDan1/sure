@@ -6635,14 +6635,19 @@
   ],
   "source_files": [
     {
+      "path": "packages/coding-agent/src/core/sure/controller.ts",
+      "size_bytes": 6665,
+      "sha256": "5f203eb0e2d9976ecf6c5e3e24e4ba70933309b13574fb47667958f09ce14de6"
+    },
+    {
       "path": "packages/coding-agent/src/core/sure/core-run-store.ts",
       "size_bytes": 2799,
       "sha256": "60a2b3b4ace81ee662ffc9dc560b09a00f68a55f055471b29bed6fc6729c949a"
     },
     {
       "path": "packages/coding-agent/src/core/sure/extension.ts",
-      "size_bytes": 42760,
-      "sha256": "60e8de39b964e1e830af65203e8e224f0dca70c354b1fd10baad44a894ca491b"
+      "size_bytes": 42856,
+      "sha256": "7ed6a4aa81de875f1fb5d80b4841046b2e3cf46f2ea96071469983f95335281d"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
@@ -6656,8 +6661,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/index.ts",
-      "size_bytes": 503,
-      "sha256": "d5ec11f3b8e4d48efa0ebf58b54993b46f641f6d175421aa8c3cf92d6f024d40"
+      "size_bytes": 671,
+      "sha256": "f4a5338faa0bec3ff18a7f1f7b00580a12eaf7ad03aa63a4f00a4c1d08c1781a"
     },
     {
       "path": "packages/coding-agent/src/core/sure/init-apply.ts",
@@ -9606,5 +9611,5 @@
       ]
     }
   ],
-  "semantic_digest": "ccae5f6da9ba4e747214f5f67a56d60b506ca496ab6c272cd81794d5d0b21f81"
+  "semantic_digest": "588928605840d922d2571291e83f546f4b4c7b0303d433078e207fa64050d06d"
 }

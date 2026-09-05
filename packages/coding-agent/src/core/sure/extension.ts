@@ -9,7 +9,7 @@ import {
 	type ExtensionContext,
 	type ExtensionFactory,
 } from "../extensions/index.ts";
-import { SureHookRunner } from "./hooks.ts";
+import { createPiSureController, type PiSureController } from "./controller.ts";
 import { runSureInit } from "./init.ts";
 import type { SureInitManifest } from "./init-types.ts";
 import { discoverSureSkillPackages, SURE_COMMANDS, type SureDiscoveryDiagnostic } from "./manifest.ts";
@@ -86,7 +86,7 @@ const updateStateToolParams = Type.Object({
 interface ActiveRun {
 	record: SureRunRecord;
 	skillPackage: SureSkillPackage;
-	hooks: SureHookRunner;
+	controller: PiSureController;
 	previousActiveTools: string[];
 	/** Set when an agent turn ended without sure_finish (excluding user aborts). */
 	finishMissing?: boolean;
@@ -491,12 +491,12 @@ async function startRun(
 	const active: ActiveRun = {
 		record,
 		skillPackage,
-		hooks: new SureHookRunner(skillPackage),
+		controller: createPiSureController(skillPackage),
 		previousActiveTools: pi.getActiveTools(),
 	};
 	setActiveRun(active);
 
-	const preStart = await active.hooks.run("pre_start", {
+	const preStart = await active.controller.run("pre_start", {
 		run: active.record,
 		skill: skillPackage.manifest,
 		cwd: ctx.cwd,
@@ -537,7 +537,7 @@ async function startRun(
 			"agent_error",
 			{ message },
 		);
-		const onError = await active.hooks.run("on_error", {
+		const onError = await active.controller.run("on_error", {
 			run: active.record,
 			skill: skillPackage.manifest,
 			cwd: ctx.cwd,
@@ -619,7 +619,7 @@ async function resumeRun(
 	const active: ActiveRun = {
 		record: resumed.record,
 		skillPackage,
-		hooks: new SureHookRunner(skillPackage),
+		controller: createPiSureController(skillPackage),
 		previousActiveTools: pi.getActiveTools(),
 	};
 	setActiveRun(active);
@@ -858,7 +858,7 @@ export function createSureExtension(): ExtensionFactory {
 						};
 					}
 
-					const gate = await active.hooks.run("pre_finish", {
+					const gate = await active.controller.run("pre_finish", {
 						run: active.record,
 						skill: active.skillPackage.manifest,
 						cwd: ctx.cwd,
@@ -897,7 +897,7 @@ export function createSureExtension(): ExtensionFactory {
 						{ finish, manifestPath },
 					);
 					pi.appendEntry("sure.run", active.record);
-					const postFinish = await active.hooks.run("post_finish", {
+					const postFinish = await active.controller.run("post_finish", {
 						run: active.record,
 						skill: active.skillPackage.manifest,
 						cwd: ctx.cwd,
@@ -1004,7 +1004,7 @@ export function createSureExtension(): ExtensionFactory {
 				toolCallId: event.toolCallId,
 				input: event.input,
 			});
-			const gate = await active.hooks.run("pre_tool_call", {
+			const gate = await active.controller.run("pre_tool_call", {
 				run: active.record,
 				skill: active.skillPackage.manifest,
 				cwd: ctx.cwd,
@@ -1039,7 +1039,7 @@ export function createSureExtension(): ExtensionFactory {
 				toolCallId: event.toolCallId,
 				isError: event.isError,
 			});
-			const gate = await active.hooks.run("post_tool_result", {
+			const gate = await active.controller.run("post_tool_result", {
 				run: active.record,
 				skill: active.skillPackage.manifest,
 				cwd: ctx.cwd,
@@ -1140,7 +1140,7 @@ export function createSureExtension(): ExtensionFactory {
 				"session_shutdown",
 			);
 			pi.appendEntry("sure.run", active.record);
-			const onError = await active.hooks.run("on_error", {
+			const onError = await active.controller.run("on_error", {
 				run: active.record,
 				skill: active.skillPackage.manifest,
 				cwd: ctx.cwd,

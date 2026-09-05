@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	advance,
 	applyValidation,
+	auditCheckpointTransition,
 	initialCheckpoint,
 	unitFor,
 	validateStructuralArtifact,
@@ -32,6 +33,43 @@ function definition(overrides: Partial<WorkflowDefinition> = {}): WorkflowDefini
 }
 
 describe("host-neutral workflow kernel", () => {
+	it("audits only legal one-step checkpoint transitions", () => {
+		const def = definition();
+		const initial = initialCheckpoint(def);
+		const retry = applyValidation(def, initial, {
+			kind: "fail",
+			reason: "repair",
+			artifact_digest: "a-1",
+		}).checkpoint;
+		expect(auditCheckpointTransition(def, initial, retry)).toMatchObject({ ok: true, action: "retry" });
+
+		const advanced = applyValidation(def, retry, { kind: "pass", artifact_digest: "a-2" }).checkpoint;
+		expect(auditCheckpointTransition(def, retry, advanced)).toMatchObject({ ok: true, action: "advanced" });
+
+		const skipped = {
+			...initial,
+			data: { ...initial.data, currentUnit: "c", completedUnits: ["a", "b"] },
+		};
+		expect(auditCheckpointTransition(def, initial, skipped)).toMatchObject({ ok: false });
+	});
+
+	it("rejects rewritten history and retry evidence", () => {
+		const def = definition();
+		const initial = initialCheckpoint(def);
+		const tampered = {
+			...initial,
+			data: {
+				...initial.data,
+				completedUnits: ["a"],
+				currentUnit: "b",
+				retries: { b: 99 },
+			},
+		};
+		const audit = auditCheckpointTransition(def, initial, tampered);
+		expect(audit.ok).toBe(false);
+		expect(audit.reason).toMatch(/retry|currentUnit|current unit/i);
+	});
+
 	it("advances one unit and preserves run-wide block count", () => {
 		const def = definition();
 		const initial = initialCheckpoint(def);
