@@ -4,7 +4,8 @@
 		"noEmit": true,
 		"paths": {
 			"@earendil-works/sure-core": ["./packages/sure-core/src/index.ts"],
-			"@earendil-works/sure-core/*": ["./packages/sure-core/src/*"]
+			"@earendil-works/sure-core/*": ["./packages/sure-core/src/*"],
+			"@earendil-works/pi-coding-agent/hooks": ["./packages/coding-agent/src/core/sure/hook-types.ts"]
 		}
 	},
 	"include": [
