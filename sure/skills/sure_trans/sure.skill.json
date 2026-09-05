@@ -1,7 +1,7 @@
 {
   "name": "sure_trans",
   "command": "/sure_trans",
-  "description": "Transform an existing Dockerfile, model path, and inference entrypoint into a digest-pinned SURE Eval deployment bundle.",
+  "description": "Transform an existing Docker or locked Python model runtime, model path, and inference entrypoint into a SURE Eval deployment bundle.",
   "prompt": "SKILL.md",
   "hooks": {
     "pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
@@ -15,16 +15,16 @@
     { "type": "dependency_report", "path": "artifacts/inference_dependency_report.json", "required": true, "description": "Resolved static and dynamic inference dependency evidence." },
     { "type": "framework_detection", "path": "artifacts/framework_detection.json", "required": true, "description": "Declared and detected computation/model framework evidence with architecture clarification." },
     { "type": "fixture", "path": "artifacts/fixture_manifest.json", "required": true, "description": "Bounded real smoke fixture staged for original and adapter inference." },
-    { "type": "execution_compat", "path": "artifacts/execution_compat.json", "required": true, "description": "Source-container Python, framework, CUDA, and BF16 compatibility probe." },
-    { "type": "source_image", "path": "artifacts/source_image_result.json", "required": true, "description": "Verified Docker load or Dockerfile build evidence for the source image." },
+    { "type": "execution_compat", "path": "artifacts/execution_compat.json", "required": true, "description": "Source-runtime Python, framework, CUDA, and BF16 compatibility probe." },
+    { "type": "source_runtime", "path": "artifacts/source_image_result.json", "required": true, "description": "Verified Docker image or locked local Python source runtime evidence." },
     { "type": "model_payload", "path": "artifacts/model_payload_manifest.json", "required": true, "description": "Materialized model payload manifest for the final approved bundle." },
-    { "type": "runtime_inventory", "path": "artifacts/runtime_inventory.json", "required": true, "description": "Container-only Eval runtime binding." },
+    { "type": "runtime_inventory", "path": "artifacts/runtime_inventory.json", "required": true, "description": "Container or sealed uv Model Runtime binding for Eval." },
     { "type": "verdict", "path": "artifacts/verdict.json", "required": true, "description": "Original and adapter inference validation verdict." },
-    { "type": "deployment_ready", "path": "artifacts/deployment_ready.json", "required": true, "description": "Terminal digest-pinned Eval readiness marker." }
+    { "type": "deployment_ready", "path": "artifacts/deployment_ready.json", "required": true, "description": "Terminal integrity-pinned Eval readiness marker." }
   ],
   "ui": {
     "primaryCounters": ["completed_units", "total_units", "gate_blocks"],
-    "artifactTypes": ["dependency_report", "framework_detection", "fixture", "execution_compat", "model_payload", "runtime_inventory", "verdict", "deployment_ready"],
+    "artifactTypes": ["dependency_report", "framework_detection", "fixture", "execution_compat", "source_runtime", "model_payload", "runtime_inventory", "verdict", "deployment_ready"],
     "defaultExpandedSections": ["diagnostics", "artifacts"]
   }
 }

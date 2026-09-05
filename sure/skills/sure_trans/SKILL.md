@@ -1,6 +1,6 @@
 ---
 name: sure-trans
-description: Transform an existing Dockerfile, model path, and inference entrypoint into the digest-pinned container-only model bundle consumed by SURE Eval. Use when a model already has a delivery environment and inference code but does not yet implement the SURE ModelWrapper and MCP contracts.
+description: Transform an existing Docker or locked local Python model runtime, model path, and inference entrypoint into a SURE Eval model bundle. Use when a model already has a delivery environment and inference code but does not yet implement the SURE ModelWrapper and MCP contracts.
 ---
 
 # /sure_trans
@@ -11,7 +11,10 @@ Convert an existing model delivery into the same Eval-ready contract produced by
 
 | Parameter | Required | Meaning |
 | --- | --- | --- |
-| `dockerfile` | yes | Existing Dockerfile absolute path. |
+| `dockerfile` | conditional | Existing Dockerfile absolute path. Exactly one of `dockerfile` and `python_executable` is required. |
+| `python_executable` | conditional | Existing local Python executable absolute path. Exactly one of `dockerfile` and `python_executable` is required. |
+| `lockfile` | for Python | Reproducible dependency lockfile absolute path. |
+| `package` / `package_profile` | no | `docker-registry` (default) or `none`. `none` requires Python input. |
 | `model` | yes | Existing model file or directory absolute path. |
 | `inference_entrypoint` | yes | Existing inference entrypoint absolute path. `inference_code` is an alias. |
 | `framework` | yes | Computation framework. Must be `pytorch`; accept `torch` as an alias. |
@@ -36,6 +39,22 @@ Example:
 ```text
 /sure_trans dockerfile=/path/to/Dockerfile model=/path/to/model inference_entrypoint=/path/to/infer.py framework=pytorch model_framework=transformers model_name=organization__model task_type=asr
 ```
+
+Python input example:
+
+```text
+/sure_trans python_executable=C:\path\.venv\Scripts\python.exe lockfile=C:\path\requirements.lock.txt model=C:\path\model inference_entrypoint=C:\path\infer.py framework=pytorch model_framework=transformers model_name=organization__model task_type=asr package=none
+```
+
+For Python input, dependency inspection, compatibility probing, original inference, and adapter validation run locally with the resolved `python_executable`. Every Python validation `run_command` must be an argument list whose first item is that exact executable. `package=none` finalization is handled by the later packaging path.
+
+The Python adapter validation stages also run with that exact interpreter. After the adapter manifest is ready, materialize its local runtime evidence:
+
+```bash
+"$HARNESS_PYTHON_BIN" scripts/materialize_adapter_runtime.py --run-dir <run_dir>
+```
+
+For `import`, `load`, `infer`, and `contract`, use `[<python_executable>, <adapter>/validate.py, --stage, <stage>]` and one shared `SURE_VALIDATE_ARTIFACTS_DIR`. For MCP, run `mcp_smoke.py` with the same interpreter, record `protocol_path`, and pass `[<python_executable>, <adapter>/server.py]` as `--server-command`. The gate validates MCP protocol evidence on local Python as well as VC. This phase fingerprints the supplied runtime; the final `package=none` phase materializes and seals the uv runtime.
 
 ## Boundaries
 
@@ -71,7 +90,7 @@ hook-enforced: the gate script below is the authoritative semantic check.
 | 14 | `validate_contract` | **gate** | `contract_result.json` | `scripts/run_trans_validate.py --kind contract` |
 | 15 | `validate_mcp` | **gate** | `mcp_result.json` | `scripts/run_trans_validate.py --kind mcp` |
 | 16 | `validate_equivalence` | **gate** | `equivalence_result.json` | `scripts/run_trans_validate.py --kind equivalence` |
-| 17 | `package_container` | **gate** | `docker_registry_result.json` | `scripts/check_artifact.py --kind registry` |
+| 17 | `package_container` | **gate** | `docker_registry_result.json` | Docker registry delivery or `scripts/package_python_runtime.py`; then `scripts/check_artifact.py --kind registry` |
 | 18 | `write_runtime_inventory` | **gate** | `runtime_inventory.json` | `scripts/check_artifact.py --kind runtime_inventory` |
 | 19 | `verdict` | **gate** | `verdict.json` | `scripts/check_artifact.py --kind verdict` |
 | 20 | `extract_lessons` | **gate** | `extraction_declaration.json` | `scripts/check_memory_extraction.py` |
@@ -107,6 +126,8 @@ Resolve the inputs first:
   --repo-root <repo_root>
 ```
 
+For Python input, replace `--dockerfile` with `--python-executable <absolute-python>` and `--lockfile <absolute-lockfile>`, and forward `--package <docker-registry|none>`.
+
 Forward every user-provided optional parameter from the slash command into this invocation. Omitted `--vc-*` flags resolve to `<vc_default_partition>`, 32 GiB, and 1 GPU. Forward `--image-version` only when the user supplied it; otherwise input materialization reads the authenticated Registry V2 tag lists for both `<model_name>-source` and `<model_name>`, selects the next patch version, and records the repositories and observed tags in `trans_input_resolved.json.image_version_resolution`. Registry lookup failure blocks instead of guessing a possibly occupied tag.
 
 Inspect the static dependency closure:
@@ -121,7 +142,7 @@ Inspect the static dependency closure:
 
 `prepare_fixture.py` copies both the selected audio and its same-stem `.expected.json`, writes `gt.jsonl` before the fixture gate runs, and records SHA256 for all three. Model predictions and equivalence baselines are never accepted as ground truth.
 
-Materialize the source image with the resolved policy:
+Materialize the source runtime with the resolved policy:
 
 ```bash
 "$HARNESS_PYTHON_BIN" scripts/run_docker_build.py \
@@ -129,13 +150,13 @@ Materialize the source image with the resolved policy:
   --produces <run_dir>/artifacts/source_image_result.json
 ```
 
-The source build automatically uses a generated Dockerfile layer that installs `git` and `ca-certificates` when `git` is absent. It supports apt, apk, dnf, yum, and microdnf; the supplied Dockerfile is never modified and its final `USER` is restored. A loaded source image tar receives the same derived layer before validation.
+For Docker input, the source build automatically uses a generated Dockerfile layer that installs `git` and `ca-certificates` when `git` is absent. It supports apt, apk, dnf, yum, and microdnf; the supplied Dockerfile is never modified and its final `USER` is restored. A loaded source image tar receives the same derived layer before validation. For Python input, the same command records the resolved interpreter and lockfile identities without building an image.
 
 With `source_image_policy=auto`, the runner recursively searches only below `build_context` for `.tar`, `.tar.gz`, or `.tgz` files. An explicit `image_tar` wins; otherwise candidates are ranked deterministically using in-context `delivery.json`, `SHA256SUMS`, and adjacent `image-inspect.json` evidence. Paths declared outside the current build context and symlinked archives are ignored.
 
 The runner verifies any declared archive checksum, executes `docker load --input <tar>`, and confirms the loaded tag and live image ID with `docker image inspect`. If discovery, checksum, load, or inspection fails, `auto` executes `docker build --progress plain --file <Dockerfile> --tag <generated-tag> <build_context>`. `load` blocks instead of falling back; `build` skips archive discovery. Commands, logs, attempts, archive hash, Dockerfile hash, and the final live image identity are recorded in `source_image_result.json`.
 
-Static analysis is evidence, not proof. Build the source image, create `execution_compat.json` with `status=pending`, and let the gate run `run_execution_compat.py`. It probes Python, Torch, Transformers, CUDA, and BF16 inside the source image.
+Static analysis is evidence, not proof. Materialize the source runtime, create `execution_compat.json` with `status=pending`, and let the gate run `run_execution_compat.py`. It probes Python, Torch, Transformers, CUDA, and BF16 inside the Docker image or through the resolved local Python executable.
 
 Execution surfaces split by device:
 
@@ -198,7 +219,15 @@ Equivalence is decided by the gate, not by the command. Write `equivalence_resul
 4. Validate import, persistent load, real inference, output contract, MCP initialize/list/call, and equivalence with original inference as separate gates.
 5. Push the adapter image to `trans_input_resolved.json.container_delivery.target_image`, resolve `sha256:...`, pull the exact `repository@sha256:...` reference, and repeat the MCP smoke test. Registry transport and authentication are deployment concerns; use the Docker daemon configuration for the active site. When the model was validated on GPU, the post-pull MCP smoke must itself run on VC through `mcp_smoke.py`; submit the **tag** with `--expect-digest` (see the VC section below — `vc submit` rejects digest-pinned references) and record its `vc_job_id`, `vc_partition=<vc_default_partition>`, `exit_code=0`, `image_ref`, the `resolved_digest` the submission proved, and the log path as `post_pull_smoke` in `docker_registry_result.json`, keeping `mcp_smoke.json` evidence next to that log path (the registry gate checks `resolved_digest` against `target_image_digest` and the initialize/tools/list/tools/call evidence).
 
-The source image is pushed before unit 6 and the adapter image before unit 11 by the gate scripts; both record `registry_ref` and `registry_push` evidence into `source_image_result.json` and `adapter_image_result.json` respectively. The unit 17 post-pull smoke reuses the same registry name without repushing.
+The source image is pushed before unit 6 and the adapter image before unit 11 by the gate scripts; both record `registry_ref` and `registry_push` evidence into `source_image_result.json` and `adapter_image_result.json` respectively. The unit 17 post-pull smoke reuses the same registry name without repushing. These image and registry steps apply only to `package=docker-registry`.
+
+For Python input with `package=none`, unit 17 instead runs:
+
+```bash
+"$HARNESS_PYTHON_BIN" scripts/package_python_runtime.py --run-dir <run_dir>
+```
+
+This uses the active site policy's Model Runtime root, materializes a content-addressed uv environment from the supplied Python and hash-locked requirements file, and writes a portable runtime manifest into the bundle. Relative local distributions referenced by the lock, including wheels, are content-addressed and copied below `artifacts/local-distributions/`; the rewritten portable lock and artifact manifest cover them. The virtual environment itself remains site-local because it is OS, architecture, Python ABI, and dependency specific. No Docker daemon or registry is involved. The legacy artifact filename `docker_registry_result.json` is retained only to avoid changing the state-machine artifact slot; its schema is `sure.trans.python_package_result.v1` for this profile.
 
 Naming, image boundary, tag increment, and push-failure recovery conventions live in `references/image_packaging.md`; on conflict, this section and the gates win.
 
@@ -263,13 +292,15 @@ Generate `runtime_inventory.json` with schema `sure.onboard.runtime_inventory.v2
 "$HARNESS_PYTHON_BIN" scripts/write_verdict.py --run-dir <run_dir>
 ```
 
-Verify:
+For `package=docker-registry`, verify:
 
 - `status=ready`
 - `policy.eval_runtime=container_only`
 - `policy.host_python_fallback=false`
 - `policy.image_override_allowed=false`
 - `container_runtime.target_image_ref` to a digest-pinned image
+
+For `package=none`, omit `--python-executable`: the writer reads the sealed Model Runtime manifest and emits `policy.eval_runtime=python`, `container_runtime.required=false`, a relative runtime executable (`bin/python` on POSIX or `Scripts/python.exe` on Windows), and `host_python_fallback=false`.
 - `container_runtime.server_command` to the adapter MCP server
 - `container_runtime.mount_policy.nfs_models_read_only=true`
 
@@ -279,7 +310,7 @@ Write a successful `verdict.json`, then run:
 "$HARNESS_PYTHON_BIN" scripts/finalize_trans_bundle.py --run-dir <run_dir>
 ```
 
-This seals the already-staged model payload, adapter, and small evidence under `sure/models/<model_name>/`. The sealed bundle matches the `/sure_onboard` product layout: wrapper set plus `Dockerfile.sure` at the bundle root, `fixture/<task>/` with `gt.jsonl`, and `artifacts/` carrying `package_gate.json` (`sure.onboard.package_gate.v2`), `artifact_manifest.json` (`sure.onboard.artifact_manifest.v1`), `runtime_inventory.json`, `verdict.json`, `docker_registry_result.json`, and `deployment_ready.json` (`sure.onboard.deployment_ready.v1`, written identically to the run directory). Ready bundles declare `integrity_profile=manifest-complete-v1` and `weights_integrity=bundled`; the deployment hashes cover every required wrapper, fixture, evidence file, generated sample output, and staged payload file. The terminal gate re-verifies the payload manifest, terminal timeline, hashes, bundle identity, portable paths, Dockerfile hash, and digest-pinned execution policy.
+This seals the already-staged model payload, adapter, and small evidence under `sure/models/<model_name>/`. Docker delivery produces the existing `sure.onboard.deployment_ready.v1` bundle with `Dockerfile.sure` and digest-pinned image evidence. Python `package=none` produces `sure.onboard.deployment_ready.v2` with `requirements.lock`, `artifacts/model_runtime_manifest.json`, and a Python Model Runtime binding compatible with `/sure_eval`. Both profiles include `fixture/<task>/`, terminal sidecars, `integrity_profile=manifest-complete-v1`, and `weights_integrity=bundled`; hashes cover every required wrapper, fixture, evidence file, generated sample output, and staged payload file.
 
 The generated `validate.py` keeps the same CLI contract as `/sure_onboard`: `--stage import|load|infer|contract|all`, writing `<stage>_result.json` and, during infer, `sample_output.json` into `SURE_VALIDATE_ARTIFACTS_DIR`, then validating that sample against the filled `io_contract` in the contract stage — from the same directory. For `tts` and `vc`, the generated audio that `sample_output.audio_path` points at must be written below `$SURE_VALIDATE_ARTIFACTS_DIR/outputs`, because finalization only promotes generated audio from there into the bundle. The adapter image embeds the locked Harness Runtime; `runtime_inventory.harness_runtime.required=true`, so `/sure_infer` uses the image binding and does not mount the repository Harness Runtime into the model container.
 

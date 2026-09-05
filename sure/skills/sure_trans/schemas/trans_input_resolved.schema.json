@@ -3,7 +3,7 @@
 	"type": "object",
 	"required": [
 		"schema",
-		"dockerfile",
+		"source_kind",
 		"build_context",
 		"model_path",
 		"inference_entrypoint",
@@ -13,19 +13,18 @@
 		"model_dir",
 		"task_type",
 		"package_profile",
-		"model_mount_target",
 		"model_stage_policy",
 		"device",
 		"execution_surface",
 		"gpu_required",
-		"bf16_required",
-		"source_image_policy",
-		"image_version",
-		"image_version_resolution"
+		"bf16_required"
 	],
 	"properties": {
 		"schema": { "const": "sure.trans.input.v2" },
-		"dockerfile": { "type": "string" },
+		"source_kind": { "enum": ["docker", "python"] },
+		"dockerfile": { "type": ["string", "null"] },
+		"python_executable": { "type": ["string", "null"] },
+		"lockfile": { "type": ["string", "null"] },
 		"build_context": { "type": "string" },
 		"model_path": { "type": "string" },
 		"inference_entrypoint": { "type": "string" },
@@ -39,21 +38,21 @@
 		"task_type": { "enum": ["asr", "s2tt", "tts", "vc"] },
 		"fixture_path": { "type": ["string", "null"] },
 		"device": { "enum": ["auto", "cuda", "cpu"] },
-		"execution_surface": { "enum": ["local_docker", "vc"] },
+		"execution_surface": { "enum": ["local_docker", "local_python", "vc"] },
 		"gpu_required": { "type": "boolean" },
 		"bf16_required": { "type": "boolean" },
 		"source_image_policy": { "enum": ["auto", "build", "load"] },
 		"image_tar": { "type": ["string", "null"] },
-		"package_profile": { "const": "docker-registry" },
+		"package_profile": { "enum": ["docker-registry", "none"] },
 		"model_mount_target": { "type": "string" },
 		"model_stage_policy": { "enum": ["copy", "hardlink", "auto"] },
 		"max_retries": { "type": "integer", "minimum": 1 },
 		"image_version": {
-			"type": "string",
+			"type": ["string", "null"],
 			"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 		},
 		"image_version_resolution": {
-			"type": "object",
+			"type": ["object", "null"],
 			"required": ["mode", "repositories", "existing_tags"],
 			"properties": {
 				"mode": { "enum": ["explicit", "registry_auto"] },
@@ -74,9 +73,40 @@
 			},
 			"additionalProperties": false
 		},
+		"container_delivery": { "type": ["object", "null"] },
 		"vc_partition": { "type": "string" },
 		"vc_memory_gb": { "type": "integer", "minimum": 1 },
 		"vc_gpus": { "type": "integer", "minimum": 1 }
 	},
+	"allOf": [
+		{
+			"if": { "properties": { "source_kind": { "const": "docker" } } },
+			"then": {
+				"required": ["dockerfile", "source_image_policy"],
+				"properties": {
+					"dockerfile": { "type": "string" },
+					"package_profile": { "const": "docker-registry" }
+				}
+			},
+			"else": {
+				"required": ["python_executable", "lockfile"],
+				"properties": {
+					"python_executable": { "type": "string" },
+					"lockfile": { "type": "string" }
+				}
+			}
+		},
+		{
+			"if": { "properties": { "package_profile": { "const": "docker-registry" } } },
+			"then": {
+				"required": ["model_mount_target", "image_version", "image_version_resolution", "container_delivery"],
+				"properties": {
+					"image_version": { "type": "string" },
+					"image_version_resolution": { "type": "object" },
+					"container_delivery": { "type": "object" }
+				}
+			}
+		}
+	],
 	"additionalProperties": true
 }

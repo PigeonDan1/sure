@@ -1,6 +1,6 @@
 # /sure_trans 技能介绍
 
-`/sure_trans` 把一个已有交付环境的模型(Dockerfile + 模型权重 + 推理入口)转换成 SURE Eval 可直接消费的、digest 固定的容器化模型包,产出与 `/sure_onboard` 相同的 Eval-ready 契约。
+`/sure_trans` 把已有模型交付转换成 SURE Eval 可消费的模型包。输入环境可以是 Dockerfile，也可以是本地 Python 可执行文件与锁文件；当前 Docker 流程保持不变，Python 已接通依赖扫描、环境探测、原始推理以及 adapter 的 import/load/infer/contract/MCP/等价性验证，`package=none` 最终交付在后续改造组接通。
 
 ## 核心概念
 
@@ -18,7 +18,10 @@
 
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
-| `dockerfile` | 是 | 既有 Dockerfile 绝对路径。 |
+| `dockerfile` | 条件必填 | Docker 输入的既有 Dockerfile 绝对路径；与 `python_executable` 二选一。 |
+| `python_executable` | 条件必填 | Python 输入的可执行文件绝对路径；与 `dockerfile` 二选一。 |
+| `lockfile` | Python 必填 | Python 输入的可复现依赖锁文件绝对路径。 |
+| `package` / `package_profile` | 否 | `docker-registry`（默认）或 `none`；`none` 仅接受 Python 输入。 |
 | `model` | 是 | 既有模型文件或目录绝对路径。 |
 | `inference_entrypoint` | 是 | 既有推理入口绝对路径,别名 `inference_code`。 |
 | `framework` | 是 | 计算框架，必须为 `pytorch`；接受 `torch` 别名。 |
@@ -42,6 +45,16 @@
 ```text
 /sure_trans dockerfile=/path/to/Dockerfile model=/path/to/model inference_entrypoint=/path/to/infer.py framework=pytorch model_framework=transformers model_name=organization__model task_type=asr source_image_policy=auto
 ```
+
+Python 输入示例:
+
+```text
+/sure_trans python_executable=C:\path\.venv\Scripts\python.exe lockfile=C:\path\requirements.lock.txt model=C:\path\model inference_entrypoint=C:\path\infer.py framework=pytorch model_framework=transformers model_name=organization__model task_type=asr package=none
+```
+
+Python 输入的原始推理命令必须使用 `python_executable` 指向的解释器。环境探测和原始推理直接在本机运行，不调用 Docker 或 VC。
+
+Python adapter 复用同一个已验证解释器与 lockfile。`materialize_adapter_runtime.py` 固定解释器、lockfile 和 adapter 文件哈希；本组不复制平台专用虚拟环境，最终 uv runtime 的物化和便携交付由 `package=none` 终态流程完成。
 
 `examples/minimal-input.json` 是同一组参数的 JSON 形式。
 

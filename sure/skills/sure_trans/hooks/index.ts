@@ -145,10 +145,12 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	demoteAgentBinDir(process.env, agentBinDir());
 	const args = parseArgs(ctx.args);
 	const dockerfile = args.dockerfile;
+	const pythonExecutable = args.python_executable;
+	const lockfile = args.lockfile;
+	const packageProfile = args.package ?? args.package_profile ?? "docker-registry";
 	const modelPath = args.model ?? args.model_path;
 	const inferenceEntrypoint = args.inference_entrypoint ?? args.inference_code;
 	const missing = [
-		["dockerfile", dockerfile],
 		["model", modelPath],
 		["inference_entrypoint", inferenceEntrypoint],
 		["framework", args.framework],
@@ -166,6 +168,18 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 			"TRANS_INPUT_MISSING",
 		);
 	}
+	if (Boolean(dockerfile) === Boolean(pythonExecutable)) {
+		return failure("Provide exactly one of dockerfile or python_executable", "TRANS_INPUT_INVALID");
+	}
+	if (pythonExecutable && !lockfile) {
+		return failure("Python input requires lockfile", "TRANS_INPUT_MISSING");
+	}
+	if (!new Set(["docker-registry", "none"]).has(packageProfile)) {
+		return failure("package must be docker-registry or none", "TRANS_INPUT_INVALID");
+	}
+	if (dockerfile && packageProfile === "none") {
+		return failure("package=none requires Python input", "TRANS_INPUT_INVALID");
+	}
 	if (!new Set(["pytorch", "torch"]).has(args.framework?.toLowerCase() ?? "")) {
 		return failure("framework must be pytorch (torch is accepted as an alias)", "TRANS_INPUT_INVALID");
 	}
@@ -175,11 +189,15 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 			"TRANS_INPUT_INVALID",
 		);
 	}
-	for (const [name, value] of [
-		["dockerfile", dockerfile],
+	const inputPaths: Array<readonly [string, string | undefined]> = [
+		[dockerfile ? "dockerfile" : "python_executable", dockerfile ?? pythonExecutable],
 		["model", modelPath],
 		["inference_entrypoint", inferenceEntrypoint],
-	] as const) {
+	];
+	if (pythonExecutable) {
+		inputPaths.push(["lockfile", lockfile]);
+	}
+	for (const [name, value] of inputPaths) {
 		if (!value || !isAbsolute(value) || !existsSync(value)) {
 			return failure(`${name} must be an existing absolute path: ${value ?? ""}`, "TRANS_INPUT_PATH_INVALID");
 		}
@@ -219,8 +237,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 			skill: "sure_trans",
 			harnessRuntime: runtime.contract,
 			harnessRole: "Input materialization, dependency inspection, artifact validation, and state-machine gates.",
-			modelRuntimeReason:
-				"Model inference runs only in the source and adapter containers built from the supplied Dockerfile.",
+			modelRuntimeReason: dockerfile
+				? "Model inference runs in the source and adapter containers built from the supplied Dockerfile."
+				: "Model inference starts from the supplied local Python runtime and locked dependencies.",
 			evaluationRuntime: { reason: "sure_trans performs no evaluation." },
 		});
 	} catch (error) {
@@ -255,7 +274,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 			phase: phaseFor(findUnit(checkpoint.data.currentUnit) ?? FIRST_UNIT, "running"),
 			message:
 				`SURE model transformation skill loaded with Harness Runtime ${runtime.contract.runtime_id}.` +
-				(device === "cpu"
+				(device === "cpu" || pythonExecutable
 					? ""
 					: ` GPU validation submits VC jobs to ${vcPartition ?? requireSitePolicy().policy.execution.vc_default_partition ?? "the configured VC partition"}.`),
 			counters: countersFor(checkpoint.data, 0),
@@ -266,7 +285,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 					name: "Skill runtime binding",
 					path: runtimeBindingPath,
 					status: "ready",
-					summary: "Harness Runtime controls gates; model execution is container-only.",
+					summary: `Harness Runtime controls gates; source execution is ${dockerfile ? "container" : "local Python"}.`,
 				},
 			],
 			checkpoint,

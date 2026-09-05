@@ -59,6 +59,16 @@ def run_probe(image: str, use_gpu: bool) -> tuple[list[str], subprocess.Complete
     return command, process, round((time.monotonic() - started) * 1000, 3)
 
 
+def run_python_probe(python_executable: str) -> tuple[list[str], subprocess.CompletedProcess[str], float]:
+    command = [python_executable, "-c", PROBE]
+    started = time.monotonic()
+    process = subprocess.run(
+        command, check=False, capture_output=True, text=True, timeout=180,
+        env=agent_bin_cleared_env(),
+    )
+    return command, process, round((time.monotonic() - started) * 1000, 3)
+
+
 def parse_probe(stdout: str) -> dict:
     probe: dict = {}
     lines = [line for line in stdout.splitlines() if line.strip()]
@@ -86,8 +96,9 @@ def main() -> int:
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
     source_image = read_object(artifacts / "source_image_result.json")
+    source_kind = str(resolved.get("source_kind") or "docker")
     image = str(source_image.get("image_id") or source_image.get("image") or "")
-    if not image:
+    if source_kind == "docker" and not image:
         raise ValueError("source image identity is missing")
     model_name = str(resolved.get("model_name") or "")
     # Input materialization canonicalizes Transformers aliases to this value.
@@ -102,7 +113,17 @@ def main() -> int:
 
     vc_payload: dict = {}
     log_path = artifacts / "execution_compat.log"
-    if requested == "cpu":
+    if source_kind == "python":
+        command, process, duration_ms = run_python_probe(str(resolved["python_executable"]))
+        probe_command = command
+        exit_code = process.returncode
+        stdout, stderr = process.stdout, process.stderr
+        fallback = None
+        execution_surface = "local_python"
+        log_path.write_text(
+            f"$ {' '.join(command[:-1])} <probe>\n{stdout}\n{stderr}", encoding="utf-8"
+        )
+    elif requested == "cpu":
         command, process, duration_ms = run_probe(image, False)
         probe_command: list[str] = command
         exit_code: int | None = process.returncode
@@ -194,18 +215,18 @@ def main() -> int:
     if requested != "cpu" and vc_payload.get("vc_timed_out"):
         incompatibilities.append("vc GPU probe timed out")
     elif exit_code is None:
-        incompatibilities.append("container runtime probe produced no exit code")
+        incompatibilities.append("source runtime probe produced no exit code")
     elif exit_code != 0:
         hint = diagnose_oom(exit_code, f"{stdout}\n{stderr}")
         incompatibilities.append(
-            f"container runtime probe exited {exit_code}" + (f": {hint}" if hint else "")
+            f"source runtime probe exited {exit_code}" + (f": {hint}" if hint else "")
         )
     if gpu_required and not cuda_available:
-        incompatibilities.append("model requires CUDA but the selected container cannot access a GPU")
+        incompatibilities.append("model requires CUDA but the selected runtime cannot access a GPU")
     if bf16_required and not bf16_supported:
         incompatibilities.append("model requires BF16 but the selected GPU does not report BF16 support")
     if transformers_required and "transformers" not in probe:
-        incompatibilities.append("Transformers import failed in the source image")
+        incompatibilities.append("Transformers import failed in the source runtime")
     payload = {
         "schema": "sure.trans.execution_compat.v1",
         "status": "ready" if not incompatibilities else "blocked",

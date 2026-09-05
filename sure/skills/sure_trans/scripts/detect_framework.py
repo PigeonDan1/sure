@@ -72,6 +72,12 @@ def main() -> int:
         if path.is_file():
             corpus.append(path.read_text(encoding="utf-8", errors="replace"))
             evidence.append(str(path))
+    declared_lockfile = resolved.get("lockfile")
+    if declared_lockfile:
+        lockfile = Path(str(declared_lockfile))
+        if lockfile.is_file() and str(lockfile) not in evidence:
+            corpus.append(lockfile.read_text(encoding="utf-8", errors="replace"))
+            evidence.append(str(lockfile))
     python_files: list[Path] = []
     for support in dependencies.get("support_paths", []):
         root = Path(str(support))
