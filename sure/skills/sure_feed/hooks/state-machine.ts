@@ -1,125 +1,13 @@
+import { SURE_FEED_CANONICAL } from "../../../canonical/skills/sure-feed/definition.ts";
+import type { CanonicalSkillDefinition } from "../../../canonical/types.ts";
+import { projectBranchUnits } from "../../../compatibility/legacy-v1/unit.ts";
 import type { Unit } from "./checkpoints.ts";
 
-// SURE model-feed state machine (the xforge→sure_feed port). Discovers models
-// from ModelScope/HuggingFace/GitHub, matches them to SURE task families,
-// collects metadata, converts optional fetched resources to the SURE resource
-// (oref) layout, synthesizes canonical MODEL_INPUT, ranks/selects, and emits a
-// handoff manifest for /sure_onboard to consume. Linear units are LLM
-// self-driven; gate units run validateProduces + a Python semantic gate script.
-//
-// The Unit contract is the single source of truth in checkpoints.ts; this
-// module only populates instances.
-//
-// Gate-check split principle (no redundancy, no drift):
-//   - validateProduces owns STRUCTURE (required fields, enum, additionalProperties
-//     /forbiddenFields) for every unit.
-//   - The Python gateScript owns SEMANTICS for the gate units:
-//     match_task (every matched candidate has match_source provenance),
-//     synthesize_model_input (every selected candidate has a complete
-//     MODEL_INPUT), and rank_and_select (non-empty selection, score ≥ 0, repo
-//     present for handoff).
-//     No in-process gateCheck is kept — the python scripts are the sole authority,
-//     so there is no duplicated === true vs truthy logic.
-//   - extract_lessons is the memory system's own unit (spec 4.1): its gate is the
-//     shared check_memory_extraction.py, and it is the only unit that declares
-//     gateInputs, because the agent's candidate and evidence trees are part of what
-//     the gate reads.
-//
-// Source of truth: xforge_sure_bridge/AGENTS.md (+ the renamed sure_feed pkg).
-
-export const MODEL_FEED_UNITS: Unit[] = [
-	{
-		id: "scan_modelscope",
-		label: "Discover sources",
-		kind: "linear",
-		produces: "scan_result.json",
-		schemaRef: "scan_result.schema.json",
-		requiredFields: ["candidates"],
-		forbiddenFields: ["selected", "handoff_manifest_path"],
-		ownedScripts: [
-			"sure_feed_online_discover.py",
-			"xforge_collect_model.py",
-			"xforge_daily_modelscope_summary.py",
-			"xforge_watch_modelscope.py",
-		],
-	},
-	{
-		id: "match_task",
-		label: "Match to SURE task",
-		kind: "gate",
-		produces: "match_task_result.json",
-		schemaRef: "match_task_result.schema.json",
-		requiredFields: ["candidates"],
-		gateScript: "check_match_task.py",
-	},
-	{
-		id: "collect_metadata",
-		label: "Collect metadata",
-		kind: "linear",
-		produces: "metadata_result.json",
-		schemaRef: "metadata_result.schema.json",
-		requiredFields: ["models"],
-		forbiddenFields: ["handoff_manifest_path"],
-		ownedScripts: ["xforge_modelscope_fetch.py"],
-	},
-	{
-		id: "convert_to_oref",
-		label: "Convert to SURE resource layout",
-		kind: "linear",
-		produces: "oref_result.json",
-		schemaRef: "oref_result.schema.json",
-		requiredFields: ["converted"],
-		forbiddenFields: ["handoff_manifest_path"],
-		ownedScripts: ["xforge_process_to_oref.py", "xforge_modelscope_dataset_to_oref.py", "xforge_process_to_sure.py"],
-	},
-	{
-		id: "synthesize_model_input",
-		label: "Synthesize MODEL_INPUT",
-		kind: "gate",
-		produces: "model_input_result.json",
-		schemaRef: "model_input_result.schema.json",
-		requiredFields: ["model_inputs"],
-		forbiddenFields: ["models", "handoff_manifest_path"],
-		gateScript: "check_model_input.py",
-	},
-	{
-		id: "rank_and_select",
-		label: "Rank & select",
-		kind: "gate",
-		produces: "rank_select_result.json",
-		schemaRef: "rank_select_result.schema.json",
-		requiredFields: ["selected"],
-		gateScript: "check_rank_select.py",
-	},
-	{
-		id: "extract_lessons",
-		label: "Extract lessons",
-		kind: "gate",
-		produces: "extraction_declaration.json",
-		schemaRef: "extraction_declaration.schema.json",
-		requiredFields: [
-			"schema",
-			"no_new_lessons",
-			"no_lessons_reason",
-			"covered_by",
-			"candidates",
-			"infra_noise",
-			"infra_evidence",
-		],
-		allowedValues: { schema: ["sure.memory.extraction.v2"] },
-		gateScript: "check_memory_extraction.py",
-		gateInputs: ["candidates", "memory_evidence"],
-		ownedScripts: ["build_run_digest.py"],
-	},
-	{
-		id: "emit_handoff_manifest",
-		label: "Emit handoff manifest",
-		kind: "linear",
-		produces: "handoff_manifest.json",
-		schemaRef: "handoff_manifest.schema.json",
-		requiredFields: ["models", "manifest_path"],
-	},
-];
+/** Legacy Pi projection. Workflow order and contracts live in canonical/. */
+export const MODEL_FEED_UNITS: Unit[] = projectBranchUnits(
+	SURE_FEED_CANONICAL.workflow.branches[0]?.units ?? [],
+) as Unit[];
+export const WORKFLOW_DEFINITION: CanonicalSkillDefinition["workflow"] = SURE_FEED_CANONICAL.workflow;
 
 export const TOTAL_UNITS = MODEL_FEED_UNITS.length;
 export const FIRST_UNIT = MODEL_FEED_UNITS[0];
@@ -131,8 +19,5 @@ export function findUnit(unitId: string): Unit | undefined {
 
 export function nextUnit(unitId: string): Unit | undefined {
 	const index = MODEL_FEED_UNITS.findIndex((unit) => unit.id === unitId);
-	if (index === -1 || index >= MODEL_FEED_UNITS.length - 1) {
-		return undefined;
-	}
-	return MODEL_FEED_UNITS[index + 1];
+	return index < 0 ? undefined : MODEL_FEED_UNITS[index + 1];
 }

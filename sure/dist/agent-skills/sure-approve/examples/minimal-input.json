@@ -1,0 +1,4 @@
+{
+	"audit": "/sure_approve model_dir=/srv/sure/staging/example-model",
+	"approve": "/sure_approve mode=approve review_manifest=/srv/sure/runs/example/artifacts/review_packet.json decision=approve"
+}

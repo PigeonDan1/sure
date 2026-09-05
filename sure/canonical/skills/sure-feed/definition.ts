@@ -1,0 +1,371 @@
+import { defineCanonicalSkill } from "../../define.ts";
+import type { CanonicalSkillDefinition } from "../../types.ts";
+
+export const SURE_FEED_CANONICAL: CanonicalSkillDefinition = defineCanonicalSkill({
+	schema: "sure.canonical.skill.v1",
+	skill_id: "sure_feed",
+	command_id: "sure-feed",
+	distribution_slug: "sure-feed",
+	display_name: "SURE Feed",
+	description:
+		"Feed ModelScope, HuggingFace, or GitHub speech models into the SURE pipeline and emit a validated onboarding handoff.",
+	workflow: {
+		schema: "sure.workflow.definition.v1",
+		workflow_id: "sure_feed",
+		version: "legacy-v1",
+		checkpoint_id: "main_flow",
+		checkpoint_label: "SURE model-feed state machine",
+		branches: [
+			{
+				id: "main",
+				units: [
+					{
+						id: "scan_modelscope",
+						label: "Discover sources",
+						kind: "linear",
+						produces: "scan_result.json",
+						schema_ref: "scan_result.schema.json",
+						required_fields: ["candidates"],
+						forbidden_fields: ["selected", "handoff_manifest_path"],
+						owned_scripts: [
+							"sure_feed_online_discover.py",
+							"xforge_collect_model.py",
+							"xforge_daily_modelscope_summary.py",
+							"xforge_watch_modelscope.py",
+						],
+					},
+					{
+						id: "match_task",
+						label: "Match to SURE task",
+						kind: "gate",
+						produces: "match_task_result.json",
+						schema_ref: "match_task_result.schema.json",
+						required_fields: ["candidates"],
+						gate: {
+							validator_id: "python-script",
+							script_id: "check_match_task.py",
+						},
+					},
+					{
+						id: "collect_metadata",
+						label: "Collect metadata",
+						kind: "linear",
+						produces: "metadata_result.json",
+						schema_ref: "metadata_result.schema.json",
+						required_fields: ["models"],
+						forbidden_fields: ["handoff_manifest_path"],
+						owned_scripts: ["xforge_modelscope_fetch.py"],
+					},
+					{
+						id: "convert_to_oref",
+						label: "Convert to SURE resource layout",
+						kind: "linear",
+						produces: "oref_result.json",
+						schema_ref: "oref_result.schema.json",
+						required_fields: ["converted"],
+						forbidden_fields: ["handoff_manifest_path"],
+						owned_scripts: [
+							"xforge_process_to_oref.py",
+							"xforge_modelscope_dataset_to_oref.py",
+							"xforge_process_to_sure.py",
+						],
+					},
+					{
+						id: "synthesize_model_input",
+						label: "Synthesize MODEL_INPUT",
+						kind: "gate",
+						produces: "model_input_result.json",
+						schema_ref: "model_input_result.schema.json",
+						required_fields: ["model_inputs"],
+						forbidden_fields: ["models", "handoff_manifest_path"],
+						gate: {
+							validator_id: "python-script",
+							script_id: "check_model_input.py",
+						},
+					},
+					{
+						id: "rank_and_select",
+						label: "Rank & select",
+						kind: "gate",
+						produces: "rank_select_result.json",
+						schema_ref: "rank_select_result.schema.json",
+						required_fields: ["selected"],
+						gate: {
+							validator_id: "python-script",
+							script_id: "check_rank_select.py",
+						},
+					},
+					{
+						id: "extract_lessons",
+						label: "Extract lessons",
+						kind: "gate",
+						produces: "extraction_declaration.json",
+						schema_ref: "extraction_declaration.schema.json",
+						required_fields: [
+							"schema",
+							"no_new_lessons",
+							"no_lessons_reason",
+							"covered_by",
+							"candidates",
+							"infra_noise",
+							"infra_evidence",
+						],
+						allowed_values: {
+							schema: ["sure.memory.extraction.v2"],
+						},
+						gate: {
+							validator_id: "python-script",
+							script_id: "check_memory_extraction.py",
+							gate_inputs: ["candidates", "memory_evidence"],
+						},
+						owned_scripts: ["build_run_digest.py"],
+					},
+					{
+						id: "emit_handoff_manifest",
+						label: "Emit handoff manifest",
+						kind: "linear",
+						produces: "handoff_manifest.json",
+						schema_ref: "handoff_manifest.schema.json",
+						required_fields: ["models", "manifest_path"],
+					},
+				],
+				initial_unit_id: "scan_modelscope",
+				terminal_unit_id: "emit_handoff_manifest",
+			},
+		],
+		default_branch_id: "main",
+		retry_policy: {
+			default_max_retries: 3,
+			exempt_from_exhaustion: ["extract_lessons"],
+		},
+	},
+	unit_outputs: [
+		{
+			type: "unit.scan_modelscope",
+			path: "artifacts/scan_result.json",
+			required: true,
+			description: "Output required before advancing from scan_modelscope.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "agent",
+		},
+		{
+			type: "unit.match_task",
+			path: "artifacts/match_task_result.json",
+			required: true,
+			description: "Output required before advancing from match_task.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "validator",
+		},
+		{
+			type: "unit.collect_metadata",
+			path: "artifacts/metadata_result.json",
+			required: true,
+			description: "Output required before advancing from collect_metadata.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "agent",
+		},
+		{
+			type: "unit.convert_to_oref",
+			path: "artifacts/oref_result.json",
+			required: true,
+			description: "Output required before advancing from convert_to_oref.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "agent",
+		},
+		{
+			type: "unit.synthesize_model_input",
+			path: "artifacts/model_input_result.json",
+			required: true,
+			description: "Output required before advancing from synthesize_model_input.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "validator",
+		},
+		{
+			type: "unit.rank_and_select",
+			path: "artifacts/rank_select_result.json",
+			required: true,
+			description: "Output required before advancing from rank_and_select.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "validator",
+		},
+		{
+			type: "unit.extract_lessons",
+			path: "artifacts/extraction_declaration.json",
+			required: true,
+			description: "Output required before advancing from extract_lessons.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "validator",
+		},
+		{
+			type: "unit.emit_handoff_manifest",
+			path: "artifacts/handoff_manifest.json",
+			required: true,
+			description: "Output required before advancing from emit_handoff_manifest.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "agent",
+		},
+	],
+	internal_evidence: [
+		{
+			type: "checkpoint",
+			path: "state.json",
+			required: true,
+			description: "Legacy-compatible checkpoint projection.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "harness",
+		},
+		{
+			type: "event_log",
+			path: "events.jsonl",
+			required: true,
+			description: "Append-only lifecycle and validator events.",
+			scope: "run-local",
+			publication_mode: "append-only",
+			owner: "harness",
+		},
+	],
+	published_artifacts: [
+		{
+			type: "runtime_binding",
+			path: "artifacts/runtime_binding.json",
+			required: true,
+			description:
+				"Formal three-runtime responsibility declaration: sure_feed binds the common Harness Runtime and explicitly marks Model/Evaluation runtimes as not required.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "executor",
+		},
+		{
+			type: "model_input",
+			path: "artifacts/model_input.yaml",
+			required: true,
+			description:
+				"Run-local MODEL_INPUT YAML; successful feed runs also publish the canonical onboarding copy under sure/handoffs/<model_name>/model_input.yaml.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "agent",
+		},
+		{
+			type: "feed_report",
+			path: "artifacts/feed_report.json",
+			required: true,
+			description:
+				"Human-readable feed report summarizing discovery, selected model, evidence, diagnostics, and the /sure_onboard next action.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "agent",
+		},
+		{
+			type: "model_input_result",
+			path: "artifacts/debug/model_input_result.json",
+			required: false,
+			description: "Debug-only synthesized MODEL_INPUT envelope used by the state-machine gate.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "agent",
+		},
+		{
+			type: "handoff_manifest",
+			path: "artifacts/debug/handoff_manifest.json",
+			required: false,
+			description: "Debug-only terminal state-machine manifest indexing the handoff MODEL_INPUT for /sure_onboard.",
+			scope: "run-local",
+			publication_mode: "run-local",
+			owner: "agent",
+		},
+	],
+	capabilities: [
+		{
+			capability_id: "sure.execution.harness-python",
+			capability_class: "execution_capability",
+			required: true,
+			description: "Locked SURE Harness Python runtime for deterministic gates.",
+		},
+	],
+	semantic_validators: [
+		{
+			id: "python-script",
+			operation: "validate",
+			script: "check_match_task.py",
+			description: "Semantic validator python-script registered by the match_task gate.",
+		},
+	],
+	instructions: {
+		common_path: "instructions.common.md",
+		portable_path: "instructions.portable.md",
+		pi_path: "instructions.pi.md",
+	},
+	resources: {
+		directories: ["scripts", "schemas", "references"],
+		legacy_root: "sure/skills/sure_feed",
+	},
+	pi: {
+		name: "sure_feed",
+		command: "/sure_feed",
+		description:
+			"Feed ModelScope, HuggingFace, or GitHub models into the SURE pipeline: discover, match to a SURE task family, collect metadata, synthesize MODEL_INPUT, rank/select, and emit a handoff manifest for /sure_onboard.",
+		prompt: "SKILL.md",
+		hooks: {
+			pre_start: [
+				{
+					module: "hooks/index.ts",
+					handler: "preStart",
+				},
+			],
+			pre_tool_call: [
+				{
+					module: "hooks/index.ts",
+					handler: "preToolCall",
+				},
+			],
+			post_tool_result: [
+				{
+					module: "hooks/index.ts",
+					handler: "postToolResult",
+				},
+			],
+			pre_finish: [
+				{
+					module: "hooks/index.ts",
+					handler: "preFinish",
+				},
+			],
+			post_finish: [
+				{
+					module: "hooks/index.ts",
+					handler: "postFinish",
+				},
+			],
+			on_error: [
+				{
+					module: "hooks/index.ts",
+					handler: "onError",
+				},
+			],
+		},
+		ui: {
+			primaryCounters: ["completed_units", "total_units", "gate_blocks"],
+			artifactTypes: [
+				"runtime_binding",
+				"model_input",
+				"feed_report",
+				"handoff_manifest",
+				"model_input_result",
+				"scan_result",
+				"rank_select_result",
+			],
+			defaultExpandedSections: ["diagnostics", "artifacts"],
+		},
+	},
+});
+
+export default SURE_FEED_CANONICAL;

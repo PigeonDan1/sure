@@ -41,6 +41,14 @@ id_rsa.pub
 /sure/skills/sure_infer/results/
 /sure/.runtime/
 /sure/handoffs/
+!/sure/generated/
+!/sure/generated/**
+!/sure/dist/
+!/sure/dist/**
+/sure/generated/**/__pycache__/
+/sure/generated/**/*.pyc
+/sure/dist/**/__pycache__/
+/sure/dist/**/*.pyc
 # instance memory data (provisional entries, usage, digests);
 # confirmed entries live under sure/skills/*/references/memory/
 /sure/memory/

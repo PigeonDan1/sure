@@ -1,0 +1,105 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "run_report.schema.json",
+	"title": "SURE-EVAL main-flow run report",
+	"description": "Structured output of the RUN_REPORT_UNIT. Ported from docs/agents/main_flow_agent/templates/main_agent_run_report.json in the sure-eval repo.",
+	"type": "object",
+	"required": [
+		"run_id",
+		"timestamp",
+		"task_type",
+		"goal",
+		"selected_datasets",
+		"executed_steps",
+		"status",
+		"report_persisted",
+		"execution_path_actual"
+	],
+	"properties": {
+		"run_id": { "type": "string" },
+		"timestamp": { "type": "string" },
+		"task_type": {
+			"type": "string",
+			"description": "onboarding_then_evaluate | evaluate_existing_model | repair_broken_model | audit_results"
+		},
+		"goal": { "type": "string" },
+		"selected_datasets": { "type": "array", "items": { "type": "string" } },
+		"executed_steps": { "type": "array", "items": { "type": "string" } },
+		"status": {
+			"type": "string",
+			"description": "Final run state reported by ASSESSMENT_UNIT."
+		},
+		"artifacts": {
+			"type": "object",
+			"description": "Index of upstream structured-output artifacts.",
+			"properties": {
+				"eval_input_resolved": { "type": "string" },
+				"evaluation_route_plan": { "type": "string" },
+				"task_classification": { "type": "string" },
+				"tool_readiness_routing": { "type": "string" },
+				"plan": { "type": "string" },
+				"dataset_decision": { "type": "string" },
+				"script_routing": { "type": "string" },
+				"execution_surface": { "type": "string" },
+				"execution_readiness_report": { "type": "string" },
+				"assessment_report": { "type": "string" },
+				"model_eval_manifest": { "type": "string" },
+				"evaluation_payload": { "type": "string" },
+				"report_jsonl": { "type": "string" },
+				"protocol": { "type": "string" },
+				"metrics_dir": { "type": "string" },
+				"sample_reports_dir": { "type": "string" },
+				"predictions_dir": { "type": "string" },
+				"report_snapshot": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"run_dir": {
+			"type": "string",
+			"description": "Main-flow run directory containing evaluation_payload.json/report.jsonl/protocol.yaml."
+		},
+		"evaluation_run_dir": {
+			"type": "string",
+			"description": "Alias for the completed evaluation artifact root."
+		},
+		"eval_run_dir": {
+			"type": "string",
+			"description": "Alias for the completed evaluation artifact root."
+		},
+		"artifact_root": {
+			"type": "string",
+			"description": "Alias for the completed evaluation artifact root."
+		},
+		"model_eval_manifest": { "type": "string" },
+		"next_action": { "type": "string" },
+		"report_persisted": {
+			"type": "boolean",
+			"description": "RUN_REPORT_UNIT gate: the report must be previewed and user-confirmed before persistence."
+		},
+		"execution_path_actual": {
+			"type": "string",
+			"description": "Actual execution path used: local_bash | local_docker | local_python."
+		},
+		"execution_path_requested": {
+			"type": "string",
+			"description": "User-facing execution request: auto | local, or legacy path alias."
+		},
+		"execution": { "type": "object", "additionalProperties": true },
+		"execution_path_declared": {
+			"type": "string",
+			"description": "Execution path declared in the harness."
+		},
+		"device_request": { "type": "string" },
+		"device_actual": { "type": "string" },
+		"cuda_visible_devices": { "type": "string" },
+		"max_samples": { "type": "number" },
+		"dataset_total_samples": { "type": "number" },
+		"evaluated_samples": { "type": "number" },
+		"evaluation_only": {
+			"type": "boolean",
+			"description": "True when RUN_REPORT_UNIT summarizes an evaluation-only surface such as TTS/VC audio metric evaluation."
+		},
+		"notes": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}

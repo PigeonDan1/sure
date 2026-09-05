@@ -1,0 +1,6 @@
+interface:
+  display_name: "SURE Approve"
+  short_description: "Approve workflow for reproducible model evaluation"
+  default_prompt: "Use $sure-approve to audit and explicitly approve a completed model bundle for publication to sure eval."
+policy:
+  allow_implicit_invocation: true

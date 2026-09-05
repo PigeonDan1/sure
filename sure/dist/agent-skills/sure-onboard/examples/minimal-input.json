@@ -1,0 +1,7 @@
+{
+	"model_id": "asr_qwen3",
+	"repo": "https://github.com/example/qwen3-asr",
+	"task_type": "asr",
+	"deployment_type": "local",
+	"preferred_backend": "uv"
+}

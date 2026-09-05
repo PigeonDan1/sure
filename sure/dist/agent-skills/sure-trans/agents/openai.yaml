@@ -1,0 +1,6 @@
+interface:
+  display_name: "SURE Trans"
+  short_description: "Trans workflow for reproducible model evaluation"
+  default_prompt: "Use $sure-trans to transform a docker or locked python model runtime into a sure eval deployment bundle."
+policy:
+  allow_implicit_invocation: true

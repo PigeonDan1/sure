@@ -2,9 +2,16 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import {
+	advanceLegacyUnit,
+	bumpLegacyRetry,
+	decodeLegacyState,
+	initialLegacyCheckpoint,
+	legacyRetryExhausted,
+} from "../../../compatibility/legacy-v1/checkpoint.ts";
 import { harnessRuntimeEnv, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
 import { type MemoryCheckpoint, type MemoryDiagnostic, readMemory } from "../../../runtime/memory/hooks.ts";
-import { FIRST_UNIT, LAST_UNIT, nextUnit } from "./state-machine.ts";
+import { WORKFLOW_DEFINITION } from "./state-machine.ts";
 
 // Checkpoint persisted in state.json -> checkpoint.data. Drives the mixed
 // state machine: linear units LLM self-drives (advance when produces is
@@ -74,10 +81,6 @@ export interface Unit {
 
 const DEFAULT_MAX_RETRIES = 3;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function readJson(path: string): unknown {
 	return JSON.parse(readFileSync(path, "utf-8"));
 }
@@ -86,56 +89,22 @@ function stateJsonPath(ctx: SureHookContext): string {
 	return join(ctx.runDir, "state.json");
 }
 
+const LEGACY_PROJECTION = {
+	definition: WORKFLOW_DEFINITION,
+	branchId: "main",
+	id: "main_flow",
+	label: "SURE model-feed state machine",
+	includeFailedArtifactDigests: true,
+	decodeMemory: (value: unknown): MemoryCheckpoint | undefined => readMemory({ memory: value }),
+} as const;
+
 // Read the persisted checkpoint from state.json. Falls back to the first unit
 // when no checkpoint exists yet (fresh run).
 export function readCheckpoint(ctx: SureHookContext): RunCheckpoint {
-	const startUnit: CheckpointData = {
-		currentUnit: FIRST_UNIT.id,
-		completedUnits: [],
-		retries: {},
-		failedArtifactDigests: {},
-	};
 	try {
-		const state = readJson(stateJsonPath(ctx));
-		const root = isRecord(state) ? state : {};
-		const checkpoint = isRecord(root.checkpoint) ? root.checkpoint : {};
-		const data = isRecord(checkpoint.data) ? checkpoint.data : {};
-		const currentUnit = typeof data.currentUnit === "string" ? data.currentUnit : FIRST_UNIT.id;
-		const blocks = typeof data.blocks === "number" ? data.blocks : undefined;
-		const completedUnits = Array.isArray(data.completedUnits)
-			? data.completedUnits.filter((entry): entry is string => typeof entry === "string")
-			: [];
-		const retriesRaw = isRecord(data.retries) ? data.retries : {};
-		const retries: Record<string, number> = {};
-		for (const [key, value] of Object.entries(retriesRaw)) {
-			if (typeof value === "number") {
-				retries[key] = value;
-			}
-		}
-		const failedArtifactDigestsRaw = isRecord(data.failedArtifactDigests) ? data.failedArtifactDigests : {};
-		const failedArtifactDigests: Record<string, string> = {};
-		for (const [key, value] of Object.entries(failedArtifactDigestsRaw)) {
-			if (typeof value === "string") {
-				failedArtifactDigests[key] = value;
-			}
-		}
-		// Older checkpoints have no memory key; keep them byte-for-byte (no empty object added).
-		const memory = isRecord(data.memory) ? readMemory(data) : undefined;
-		return {
-			id: "main_flow",
-			label: "SURE model-feed state machine",
-			resumable: true,
-			resume_hint: `Resume at unit "${currentUnit}".`,
-			data: { currentUnit, completedUnits, retries, blocks, failedArtifactDigests, memory },
-		};
+		return decodeLegacyState(LEGACY_PROJECTION, readJson(stateJsonPath(ctx))) as RunCheckpoint;
 	} catch {
-		return {
-			id: "main_flow",
-			label: "SURE model-feed state machine",
-			resumable: true,
-			resume_hint: `Start at unit "${FIRST_UNIT.id}".`,
-			data: startUnit,
-		};
+		return initialLegacyCheckpoint(LEGACY_PROJECTION) as RunCheckpoint;
 	}
 }
 
@@ -143,72 +112,16 @@ export function readCheckpoint(ctx: SureHookContext): RunCheckpoint {
 // given unit complete (clearing its retry counter). Returns undefined when
 // already at the last unit.
 export function advance(unit: Unit, completed: CheckpointData): RunCheckpoint | undefined {
-	const next = nextUnit(unit.id);
-	const completedUnits = completed.completedUnits.includes(unit.id)
-		? completed.completedUnits
-		: [...completed.completedUnits, unit.id];
-	const retries = { ...completed.retries };
-	const failedArtifactDigests = { ...completed.failedArtifactDigests };
-	delete retries[unit.id];
-	delete failedArtifactDigests[unit.id];
-	if (!next) {
-		return {
-			id: "main_flow",
-			label: "SURE model-feed state machine",
-			resumable: false,
-			resume_hint: "State machine reached the terminal unit.",
-			data: {
-				currentUnit: LAST_UNIT.id,
-				completedUnits,
-				retries,
-				blocks: completed.blocks,
-				failedArtifactDigests,
-				memory: completed.memory,
-			},
-		};
-	}
-	return {
-		id: "main_flow",
-		label: "SURE model-feed state machine",
-		resumable: true,
-		resume_hint: `Advanced to unit "${next.id}".`,
-		data: {
-			currentUnit: next.id,
-			completedUnits,
-			retries,
-			blocks: completed.blocks,
-			failedArtifactDigests,
-			memory: completed.memory,
-		},
-	};
+	return advanceLegacyUnit(LEGACY_PROJECTION, unit.id, completed) as RunCheckpoint | undefined;
 }
 
 // Bump the retry counter for a unit; return the new checkpoint (no advance).
 export function bumpRetry(unit: Unit, current: CheckpointData, artifactDigest?: string): RunCheckpoint {
-	const retries = { ...current.retries };
-	const failedArtifactDigests = { ...current.failedArtifactDigests };
-	retries[unit.id] = (retries[unit.id] ?? 0) + 1;
-	if (artifactDigest) {
-		failedArtifactDigests[unit.id] = artifactDigest;
-	}
-	return {
-		id: "main_flow",
-		label: "SURE model-feed state machine",
-		resumable: true,
-		resume_hint: `Retry unit "${unit.id}" (attempt ${retries[unit.id]}).`,
-		data: {
-			currentUnit: unit.id,
-			completedUnits: current.completedUnits,
-			retries,
-			blocks: (current.blocks ?? 0) + 1,
-			failedArtifactDigests,
-			memory: current.memory,
-		},
-	};
+	return bumpLegacyRetry(LEGACY_PROJECTION, unit.id, current, artifactDigest) as RunCheckpoint;
 }
 
 export function retryExhausted(unit: Unit, current: CheckpointData, max = DEFAULT_MAX_RETRIES): boolean {
-	return (current.retries[unit.id] ?? 0) >= max;
+	return legacyRetryExhausted(LEGACY_PROJECTION, unit.id, current, max);
 }
 
 export function artifactPath(ctx: SureHookContext, produces: string): string {

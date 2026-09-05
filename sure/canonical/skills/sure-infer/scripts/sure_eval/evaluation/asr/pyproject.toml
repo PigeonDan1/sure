@@ -1,0 +1,15 @@
+[project]
+name = "sure-eval-metric-asr"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "editdistance>=0.6.2",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "pyyaml>=6.0.0",
+    "rich>=13.0.0",
+    "structlog>=23.0.0",
+]
+
+[tool.uv]
+package = false

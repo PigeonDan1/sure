@@ -1,0 +1,34 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "context_selection.schema.json",
+	"title": "SURE onboard context selection",
+	"description": "Structured output of CONTEXT_SELECTION. It records the task, environment, contract, and failure-memory documents actually selected for this model instead of loading every playbook.",
+	"type": "object",
+	"required": ["task_type", "selected_references"],
+	"properties": {
+		"timestamp": { "type": "string" },
+		"model_id": { "type": "string" },
+		"model_name": { "type": "string" },
+		"task_type": {
+			"type": "string",
+			"enum": ["asr", "s2tt", "sd", "ser", "tts", "vc", "kws", "slu", "gr", "speech_understanding", "sa-asr", "sa_asr"]
+		},
+		"preferred_backend": { "type": "string" },
+		"selected_references": {
+			"type": "object",
+			"required": ["default", "task_playbooks", "environment_playbooks", "contracts"],
+			"properties": {
+				"default": { "type": "array", "items": { "type": "string" } },
+				"task_playbooks": { "type": "array", "items": { "type": "string" } },
+				"environment_playbooks": { "type": "array", "items": { "type": "string" } },
+				"contracts": { "type": "array", "items": { "type": "string" } },
+				"memory": { "type": "array", "items": { "type": "string" } },
+				"policies": { "type": "array", "items": { "type": "string" } }
+			},
+			"additionalProperties": false
+		},
+		"skipped_references": { "type": "array", "items": { "type": "string" } },
+		"rationale": { "type": "string" }
+	},
+	"additionalProperties": false
+}

@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { HarnessRuntimeContract } from "../../../../sure/runtime/harness/resolve.ts";
+import { type HarnessRuntimeContract, withHarnessRuntimeEnv } from "../../../../sure/runtime/harness/resolve.ts";
 import { validateSkillRuntimeBinding, writeSkillRuntimeBinding } from "../../../../sure/runtime/usage.ts";
 
 describe("SURE skill runtime responsibility binding", () => {
@@ -116,5 +116,13 @@ describe("SURE skill runtime responsibility binding", () => {
 		});
 		writeFileSync(harness.manifest_path, JSON.stringify({ runtime_id: "changed" }), "utf-8");
 		expect(validateSkillRuntimeBinding(path, "sure_feed", false)).toContain("runtime_id differs");
+	});
+
+	it("can derive a child environment without mutating the host environment", () => {
+		const base = { KEEP: "yes" };
+		const child = withHarnessRuntimeEnv(base, harness);
+		expect(child.KEEP).toBe("yes");
+		expect(child.HARNESS_PYTHON_BIN).toBe(harness.python_executable);
+		expect(base).toEqual({ KEEP: "yes" });
 	});
 });

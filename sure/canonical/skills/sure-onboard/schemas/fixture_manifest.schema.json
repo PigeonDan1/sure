@@ -1,0 +1,38 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "fixture_manifest.schema.json",
+	"title": "SURE onboard prepared fixture manifest",
+	"description": "Structured output of PREPARE_FIXTURE. It records the task fixture staged into sure/models/<model>/fixture/ for model-local validation.",
+	"type": "object",
+	"required": ["model_id", "model_name", "model_dir", "task_type", "source_dir", "staged_dir", "gt_jsonl", "samples", "sample_count", "link_policy"],
+	"properties": {
+		"model_id": { "type": "string" },
+		"model_name": { "type": "string" },
+		"model_dir": { "type": "string" },
+		"task_type": { "type": "string" },
+		"source_dir": { "type": "string" },
+		"staged_dir": { "type": "string" },
+		"gt_jsonl": { "type": "string" },
+		"sample_count": { "type": "number" },
+		"link_policy": { "type": "string", "enum": ["copy"] },
+		"samples": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["key", "audio", "audio_path"],
+				"properties": {
+					"key": { "type": "string" },
+					"audio": { "type": "string" },
+					"audio_path": { "type": "string" },
+					"duration_sec": { "type": "number" },
+					"sample_rate": { "type": "number" },
+					"annotation_fields": { "type": "array", "items": { "type": "string" } }
+				},
+				"additionalProperties": true
+			}
+		},
+		"validation_payload_env": { "type": "string" },
+		"notes": { "type": "string" }
+	},
+	"additionalProperties": false
+}

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import {
 	type HarnessRuntimeContract,
@@ -26,6 +26,7 @@ import {
 	settleOnTerminalFailure,
 	stripOutputDir,
 } from "../../../runtime/memory/hooks.ts";
+import { resolveSkillScript } from "../../../runtime/resource-locator.ts";
 import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
 import { validateSkillRuntimeBinding, writeSkillRuntimeBinding } from "../../../runtime/usage.ts";
 import {
@@ -76,7 +77,8 @@ export function countersFor(completed: CheckpointData, gateBlocks?: number) {
 }
 
 const PROTOCOLS = new Set(["standard_system", "strict_core"]);
-const BACKEND_SCRIPTS = (ctx: SureHookContext) => resolve(ctx.packageDir, "..", "sure_infer", "scripts");
+const BACKEND_SCRIPT = (ctx: SureHookContext, script: string) =>
+	resolveSkillScript(ctx.packageDir, "sure_infer", script);
 const ALLOWED_BACKEND = new Set(["sure_infer/scripts/run_eval.py", "sure_infer/scripts/resolve_prediction_source.py"]);
 const INFERENCE_SURFACE = [
 	"generate_predictions_via_server.py",
@@ -91,8 +93,8 @@ function prepareEvaluationRuntime(
 	ctx: SureHookContext,
 	harnessRuntime: HarnessRuntimeContract,
 ): { binding?: Record<string, unknown>; error?: string } {
-	const script = join(BACKEND_SCRIPTS(ctx), "evaluation_runtime.py");
-	const engineRoot = resolve(ctx.packageDir, "..", "..", "external", "sure-evaluation");
+	const script = BACKEND_SCRIPT(ctx, "evaluation_runtime.py");
+	const engineRoot = join(ctx.packageDir, "..", "..", "external", "sure-evaluation");
 	const completed = spawnSync(harnessRuntime.python_executable, [script, "--engine-root", engineRoot, "--prepare"], {
 		cwd: ctx.packageDir,
 		encoding: "utf-8",
@@ -241,7 +243,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	mkdirSync(artifactsDir, { recursive: true });
 	const sourcePath = join(artifactsDir, "prediction_source_resolved.json");
 	const resolveArgs = [
-		join(BACKEND_SCRIPTS(ctx), "resolve_prediction_source.py"),
+		BACKEND_SCRIPT(ctx, "resolve_prediction_source.py"),
 		"--model",
 		args.model,
 		"--datasets",
@@ -289,7 +291,12 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 
 	// Backend presence check (warn, do not block — gate scripts will surface real failures).
-	const backendPresent = existsSync(join(BACKEND_SCRIPTS(ctx), "run_eval.py"));
+	let backendPresent = false;
+	try {
+		backendPresent = existsSync(BACKEND_SCRIPT(ctx, "run_eval.py"));
+	} catch {
+		backendPresent = false;
+	}
 	const checkpoint = readCheckpoint(ctx);
 	const diagnostics: MemoryDiagnostic[] = backendPresent
 		? []

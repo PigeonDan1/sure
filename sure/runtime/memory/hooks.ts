@@ -21,6 +21,7 @@ import {
 	repoRootForPackage,
 	resolveHarnessPython,
 } from "../harness/resolve.ts";
+import { resolveSkillScript } from "../resource-locator.ts";
 import {
 	appendUsageRow,
 	applyRecallBudget,
@@ -95,6 +96,16 @@ export interface MemoryHookEnv {
 
 /** Diagnostics shape the skill hooks merge into their state_patch.diagnostics. */
 export type MemoryDiagnostic = { severity: "info" | "warning" | "error"; message: string; repair: string };
+
+function memoryScript(env: MemoryHookEnv, script: string): string {
+	try {
+		return resolveSkillScript(env.ctx.packageDir, env.skill, script, { packageLocalOnly: true });
+	} catch {
+		// Preserve the legacy package-local fallback while an installed bundle is
+		// being migrated to the generated resource registry.
+		return join(env.ctx.packageDir, "scripts", script);
+	}
+}
 
 const DIGEST_FILE = "run_digest.json";
 const DIGEST_SCHEMA = "sure.memory.run_digest.v1";
@@ -648,7 +659,7 @@ export function runMemoryGate(
 	if (!config) {
 		return { ok: false, repair: configError, reason: "memory config unreadable", ranFailed: true };
 	}
-	const script = join(env.ctx.packageDir, "scripts", "check_memory_extraction.py");
+	const script = memoryScript(env, "check_memory_extraction.py");
 	const args = [
 		"--run-dir",
 		env.ctx.runDir,
@@ -742,7 +753,7 @@ export function buildDigest(
 		const error = configError ?? "memory config unreadable";
 		return { ok: false, sha256: writeErrorDigest(digestPath, error), error };
 	}
-	const script = join(ctx.packageDir, "scripts", "build_run_digest.py");
+	const script = memoryScript(env, "build_run_digest.py");
 	const args = [
 		"--run-dir",
 		ctx.runDir,
@@ -1430,7 +1441,7 @@ export function preStartMemory(
 		}
 		const check = runMemoryScript(
 			env,
-			join(ctx.packageDir, "scripts", "check_memory_index.py"),
+			memoryScript(env, "check_memory_index.py"),
 			["--repo-root", repoRootForPackage(ctx.packageDir), "--check"],
 			config.index_check_timeout_ms,
 		);
@@ -1627,7 +1638,7 @@ export function postFinishMemory(env: MemoryHookEnv, memory: MemoryCheckpoint): 
 	if (!gate.ok) {
 		return { diagnostics: [notGatedAtPublish(env, gate.repair ?? "the gate gave no verdict.")] };
 	}
-	const script = join(ctx.packageDir, "scripts", "publish_memory.py");
+	const script = memoryScript(env, "publish_memory.py");
 	const run = runMemoryScript(
 		env,
 		script,

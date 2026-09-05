@@ -1,0 +1,6 @@
+interface:
+  display_name: "SURE Onboard"
+  short_description: "Onboard workflow for reproducible model evaluation"
+  default_prompt: "Use $sure-onboard to onboard or repair a model, validate its inference contract, and seal a reproducible eval runtime."
+policy:
+  allow_implicit_invocation: true

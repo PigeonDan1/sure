@@ -1,0 +1,52 @@
+{
+	"name": "@earendil-works/sure-core",
+	"version": "0.80.3",
+	"description": "Host-neutral contracts and workflow kernel for SURE",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./contracts": {
+			"types": "./dist/contracts/index.d.ts",
+			"import": "./dist/contracts/index.js"
+		},
+		"./workflow": {
+			"types": "./dist/workflow/index.d.ts",
+			"import": "./dist/workflow/index.js"
+		},
+		"./policy": {
+			"types": "./dist/policy/index.d.ts",
+			"import": "./dist/policy/index.js"
+		},
+		"./schemas/*": "./dist/contracts/*.schema.json",
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json && npm run copy-contracts",
+		"copy-contracts": "shx mkdir -p dist/contracts && shx cp ../../sure/core/contracts/*.schema.json dist/contracts/",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"typebox": "1.1.38"
+	},
+	"devDependencies": {
+		"@types/node": "22.19.19",
+		"shx": "0.4.0",
+		"typescript": "5.9.3",
+		"vitest": "4.1.9"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"license": "MIT"
+}

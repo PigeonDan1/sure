@@ -9,6 +9,7 @@
 			"version": "0.80.3",
 			"license": "MIT",
 			"dependencies": {
+				"@earendil-works/sure-core": "0.80.3",
 				"@earendil-works/pi-agent-core": "^0.80.3",
 				"@earendil-works/pi-ai": "^0.80.3",
 				"@earendil-works/pi-tui": "^0.80.3",
@@ -518,6 +519,17 @@
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",
 				"marked": "18.0.5"
+			},
+			"engines": {
+				"node": ">=22.19.0"
+			}
+		},
+		"node_modules/@earendil-works/sure-core": {
+			"version": "0.80.3",
+			"resolved": "https://registry.npmjs.org/@earendil-works/sure-core/-/sure-core-0.80.3.tgz",
+			"license": "MIT",
+			"dependencies": {
+				"typebox": "1.1.38"
 			},
 			"engines": {
 				"node": ">=22.19.0"

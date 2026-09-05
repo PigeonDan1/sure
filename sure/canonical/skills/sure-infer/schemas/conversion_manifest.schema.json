@@ -1,0 +1,24 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "conversion_manifest.schema.json",
+	"title": "SURE-EVAL prediction conversion manifest",
+	"description": "Trace of source prediction materialization and any conversion/projection used before evaluation.",
+	"type": "object",
+	"required": ["schema", "generated_at", "run_id", "predictions_dir", "datasets"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.eval.prediction_conversion_manifest.v1"] },
+		"generated_at": { "type": "string" },
+		"run_id": { "type": "string" },
+		"generated_by": { "type": "string" },
+		"predictions_dir": { "type": "string" },
+		"datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["dataset", "source_format", "format_used", "steps", "num_rows"],
+				"additionalProperties": true
+			}
+		}
+	},
+	"additionalProperties": true
+}

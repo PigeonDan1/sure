@@ -1,0 +1,745 @@
+{
+  "schema": "sure.characterization.reference_catalog.v1",
+  "observed_at": "2026-09-06T00:43:15+08:00",
+  "source_root": "/mnt/cloudstorfs/project/oref/nfs",
+  "access_mode": "read-only-observation",
+  "coverage": "bounded-metadata-selected-artifacts",
+  "hash_limit_bytes": 2097152,
+  "top_level": {
+    "models": {
+      "count": 26,
+      "names": [
+        ".sure-repair-rollback-20260831T004154",
+        "CohereLabs__cohere-transcribe-03-2026",
+        "FireRedTeam__FireRedASR-LLM-L",
+        "FireRedTeam__FireRedTTS3",
+        "FunAudioLLM__Fun-CosyVoice3-0.5B-2512",
+        "FunAudioLLM__SenseVoiceSmall",
+        "GilgameshWind__X-ASR-zh-en",
+        "IndexTeam__IndexTTS-2",
+        "OpenMOSS-Team__MOSS-Transcribe-preview-2B",
+        "Plachta__Seed-VC",
+        "Qwen__Qwen3-ASR-1.7B",
+        "Qwen__Qwen3-TTS-12Hz-1.7B-Base",
+        "SWivid__F5-TTS_Emilia-ZH-EN",
+        "_legacy_models_code",
+        "aispeech14.1",
+        "aispeech14.1_bak_yixuan",
+        "daydream-factory__keyword-spot-fsmn-ctc-wenwen",
+        "ibm-granite__granite-speech-4.1-2b",
+        "mistralai__Voxtral-Mini-4B-Realtime-2602",
+        "moonshotai__Kimi-Audio-7B-Instruct",
+        "nvidia__parakeet-rnnt-1.1b",
+        "nvidia__parakeet-tdt-0.6b-v2",
+        "openai__whisper-large-v3-turbo",
+        "openbmb__VoxCPM2",
+        "rednote-hilab__dots.tts-base",
+        "xs__qwen3-asr-t8i2-50-half-huiliu-minwer10-lora6k"
+      ]
+    },
+    "results": {
+      "count": 14,
+      "names": [
+        "FunAudioLLM__Fun-CosyVoice3-0.5B-2512",
+        "FunAudioLLM__SenseVoiceSmall",
+        "FunAudioLLM__SenseVoiceSmall.bad_protocol_20260805",
+        "IndexTeam__IndexTTS-2",
+        "OpenMOSS-Team__MOSS-Transcribe-preview-2B",
+        "Qwen__Qwen3-ASR-1.7B",
+        "Qwen__Qwen3-TTS-12Hz-1.7B-Base",
+        "SWivid__F5-TTS_Emilia-ZH-EN",
+        "ibm-granite__granite-speech-4.1-2b",
+        "nvidia__parakeet-rnnt-1.1b",
+        "openai__whisper-large-v3-turbo",
+        "openbmb__VoxCPM2",
+        "rednote-hilab__dots.tts-base",
+        "zz-dup-nested-verified-identical-deleteme"
+      ]
+    },
+    "standard_system_mirrors": {
+      "count": 11,
+      "paths": [
+        "results/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/standard_system",
+        "results/FunAudioLLM__SenseVoiceSmall/standard_system",
+        "results/IndexTeam__IndexTTS-2/standard_system",
+        "results/OpenMOSS-Team__MOSS-Transcribe-preview-2B/standard_system",
+        "results/Qwen__Qwen3-ASR-1.7B/standard_system",
+        "results/SWivid__F5-TTS_Emilia-ZH-EN/standard_system",
+        "results/ibm-granite__granite-speech-4.1-2b/standard_system",
+        "results/nvidia__parakeet-rnnt-1.1b/standard_system",
+        "results/openai__whisper-large-v3-turbo/standard_system",
+        "results/openbmb__VoxCPM2/standard_system",
+        "results/rednote-hilab__dots.tts-base/standard_system"
+      ]
+    }
+  },
+  "entries": [
+    {
+      "logical_path": "models/CohereLabs__cohere-transcribe-03-2026/model.spec.yaml",
+      "roles": [
+        "sure-feed",
+        "success",
+        "model-input"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0644",
+      "size_bytes": "1448",
+      "mtime_ns": "1787819244000000000",
+      "sha256": "7f8eeca1e181055a5e239906ead076c62433c1b95c420c440f6261e7bfac1bca",
+      "signals": {
+        "format": "yaml",
+        "top_level_keys": [
+          "acceptance",
+          "deployment_type",
+          "entrypoints",
+          "environment",
+          "io_contract",
+          "model_id",
+          "model_name",
+          "repo",
+          "task_type",
+          "weights"
+        ]
+      }
+    },
+    {
+      "logical_path": "models/CohereLabs__cohere-transcribe-03-2026/artifacts/artifact_manifest.json",
+      "roles": [
+        "sure-onboard",
+        "success",
+        "artifact-contract"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0644",
+      "size_bytes": "6684",
+      "mtime_ns": "1787820194000000000",
+      "sha256": "8b2c587b4360257a3aff111c710d48fb485092fecf86c30648012adf07fbf55e",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "$schema",
+          "artifacts",
+          "instance_id",
+          "model_dir",
+          "model_id",
+          "model_name",
+          "phase",
+          "staging",
+          "status",
+          "timestamp"
+        ],
+        "selected_scalars": {
+          "status": "finalized"
+        }
+      }
+    },
+    {
+      "logical_path": "models/CohereLabs__cohere-transcribe-03-2026/artifacts/runtime_inventory.json",
+      "roles": [
+        "sure-onboard",
+        "success",
+        "runtime-identity"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0644",
+      "size_bytes": "4777",
+      "mtime_ns": "1787820194000000000",
+      "sha256": "818d84bdd0c79499e0738c1a01f97ab2ae4b1e47b059baa03bb56f6c7a586411",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "container_runtime",
+          "evidence",
+          "generated_at",
+          "harness_runtime",
+          "local_runtime",
+          "model",
+          "model_runtime",
+          "policy",
+          "readiness",
+          "schema",
+          "status",
+          "weights"
+        ],
+        "selected_scalars": {
+          "schema": "sure.onboard.runtime_inventory.v2",
+          "status": "ready"
+        }
+      }
+    },
+    {
+      "logical_path": "models/CohereLabs__cohere-transcribe-03-2026/artifacts/deployment_ready.json",
+      "roles": [
+        "sure-onboard",
+        "success",
+        "bundle-identity"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0644",
+      "size_bytes": "2298",
+      "mtime_ns": "1787820194000000000",
+      "sha256": "39e1e445a3d38a298144a6d544a82537e76aeda5af61ec1d9c0bce5471341444",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "artifact_manifest",
+          "bundle_identity_sha256",
+          "execution_policy",
+          "generated_at",
+          "harness_runtime",
+          "model_name",
+          "package_gate",
+          "package_profile",
+          "required_artifact_sha256",
+          "runtime_inventory",
+          "schema",
+          "status",
+          "target_image",
+          "target_image_digest",
+          "target_image_ref",
+          "verdict"
+        ],
+        "selected_scalars": {
+          "schema": "sure.onboard.deployment_ready.v1",
+          "status": "ready",
+          "package_profile": "docker-registry"
+        }
+      }
+    },
+    {
+      "logical_path": "models/CohereLabs__cohere-transcribe-03-2026/artifacts/verdict.json",
+      "roles": [
+        "sure-onboard",
+        "success",
+        "terminal-verdict"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0644",
+      "size_bytes": "2151",
+      "mtime_ns": "1787820194000000000",
+      "sha256": "a534e30bff96180c06e2703e15586cef00a35360f67ec1e38b6425f11fef0ebe",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "artifacts",
+          "backend",
+          "build",
+          "instance_id",
+          "model_id",
+          "model_name",
+          "notes",
+          "package",
+          "phase",
+          "readiness",
+          "status",
+          "timestamp",
+          "tool_ready",
+          "validation"
+        ],
+        "selected_scalars": {
+          "status": "success"
+        }
+      }
+    },
+    {
+      "logical_path": "models/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/model.spec.yaml",
+      "roles": [
+        "sure-trans",
+        "success",
+        "model-input"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0675",
+      "size_bytes": "1921",
+      "mtime_ns": "1783254843000000000",
+      "sha256": "0abf73d5a6feab60d54a54f40d90e12839de8eab5354e5adbbbcce49077d83e1",
+      "signals": {
+        "format": "yaml",
+        "top_level_keys": [
+          "acceptance",
+          "deployment_type",
+          "entrypoints",
+          "environment",
+          "fixture",
+          "io_contract",
+          "model_id",
+          "model_name",
+          "repo",
+          "task_type",
+          "weights"
+        ]
+      }
+    },
+    {
+      "logical_path": "models/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/artifacts/runtime_inventory.json",
+      "roles": [
+        "sure-trans",
+        "success",
+        "runtime-identity"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0664",
+      "size_bytes": "2800",
+      "mtime_ns": "1786367248000000000",
+      "sha256": "dc6030d9a3c09a433f42b4d7472d26d246c96161926297fa05b2d60e9bcab2a6",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "container_runtime",
+          "evidence",
+          "generated_at",
+          "local_runtime",
+          "model",
+          "policy",
+          "readiness",
+          "schema",
+          "status",
+          "weights"
+        ],
+        "selected_scalars": {
+          "schema": "sure.onboard.runtime_inventory.v2",
+          "status": "ready"
+        }
+      }
+    },
+    {
+      "logical_path": "models/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/artifacts/deployment_ready.json",
+      "roles": [
+        "sure-trans",
+        "success",
+        "bundle-identity"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0664",
+      "size_bytes": "2228",
+      "mtime_ns": "1786367855000000000",
+      "sha256": "a83d8abfcbf2fdcd4b5f18f331e82669558f4d11c89cbe9f8e0a4a252c9b6bbe",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "approval",
+          "bundle_identity_sha256",
+          "contract_repaired_at",
+          "execution_policy",
+          "generated_at",
+          "migration_manifest",
+          "model_name",
+          "package_gate",
+          "package_profile",
+          "required_artifact_sha256",
+          "runtime_inventory",
+          "schema",
+          "status",
+          "target_image",
+          "target_image_digest",
+          "target_image_ref"
+        ],
+        "selected_scalars": {
+          "schema": "sure.onboard.deployment_ready.v1",
+          "status": "ready",
+          "package_profile": "docker-registry"
+        }
+      }
+    },
+    {
+      "logical_path": "models/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/eval_runs/main_agent_FunAudioLLM__Fun-CosyVoice3-0.5B-2512_001/execution_surface.json",
+      "roles": [
+        "sure-infer",
+        "success",
+        "execution-protocol"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0675",
+      "size_bytes": "7423",
+      "mtime_ns": "1783424512000000000",
+      "sha256": "62b2d5336436a3cb3f1c8566f968a471f91228c68537d36ee3d4e666b088c248",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "docker_image",
+          "entrypoint_path",
+          "execution_surface_type",
+          "expected_outputs",
+          "generation_method",
+          "materialized",
+          "notes",
+          "reason",
+          "resolved_inputs",
+          "resume_supported",
+          "run_id",
+          "source_provenance",
+          "timestamp",
+          "vc_runtime_contract"
+        ],
+        "selected_scalars": {}
+      }
+    },
+    {
+      "logical_path": "models/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/eval_runs/main_agent_FunAudioLLM__Fun-CosyVoice3-0.5B-2512_001/prediction_generation_status.json",
+      "roles": [
+        "sure-infer",
+        "success",
+        "execution-outcome"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0675",
+      "size_bytes": "2257",
+      "mtime_ns": "1783441953000000000",
+      "sha256": "cc778f5d456fade6f83b55a5d564eb746c02e02917222af1c5f69f36e8ee3335",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "datasets",
+          "execution_path",
+          "model_dir",
+          "model_dir_source",
+          "model_name",
+          "repo_model_root",
+          "run_id",
+          "shared_model_root",
+          "tool_name"
+        ],
+        "selected_scalars": {}
+      }
+    },
+    {
+      "logical_path": "models/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/eval_runs/main_agent_FunAudioLLM__Fun-CosyVoice3-0.5B-2512_001/protocol.yaml",
+      "roles": [
+        "sure-infer",
+        "sure-eval",
+        "success",
+        "frozen-protocol"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0675",
+      "size_bytes": "2024",
+      "mtime_ns": "1783481711000000000",
+      "sha256": "bda87d6bb651766a6b8a4de92ec0590414544ebd25ea9838b756d4ec826b9a7b",
+      "signals": {
+        "format": "yaml",
+        "top_level_keys": [
+          "artifact_layout",
+          "datasets",
+          "evaluation_policy",
+          "model",
+          "prediction_contract",
+          "protocol_id",
+          "run",
+          "schema"
+        ]
+      }
+    },
+    {
+      "logical_path": "models/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/eval_runs/main_agent_FunAudioLLM__Fun-CosyVoice3-0.5B-2512_001/main_agent_run_report.json",
+      "roles": [
+        "sure-infer",
+        "success",
+        "terminal-report"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0675",
+      "size_bytes": "1812",
+      "mtime_ns": "1783426065000000000",
+      "sha256": "288f7fc4900c61182d900aaf0bba181b5b25c0a81df2bf5fffd1bb0a94c34f56",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "artifact_index",
+          "datasets",
+          "estimated_memory_gb",
+          "execution_path_actual",
+          "execution_path_declared",
+          "fallback_approved",
+          "image",
+          "local_fallback_reason",
+          "model_dir",
+          "model_name",
+          "notes",
+          "partition",
+          "report_persisted",
+          "run_id",
+          "status",
+          "submit_time",
+          "task_type",
+          "timestamp",
+          "vc_job_id",
+          "vc_task_id"
+        ],
+        "selected_scalars": {
+          "status": "inference_submitted"
+        }
+      }
+    },
+    {
+      "logical_path": "results/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/standard_system/protocol.yaml",
+      "roles": [
+        "sure-eval",
+        "success",
+        "frozen-protocol"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0675",
+      "size_bytes": "4701",
+      "mtime_ns": "1786192541000000000",
+      "sha256": "ccad05caa06e547631dc8a3e4c5bb8a77e88f60b37b5681a998ff7bb7e67b4e3",
+      "signals": {
+        "format": "yaml",
+        "top_level_keys": [
+          "execution_surface",
+          "inference_constraints",
+          "inference_environment",
+          "model",
+          "notes",
+          "prediction_contract",
+          "protocol_id",
+          "protocol_selection",
+          "run",
+          "schema"
+        ]
+      }
+    },
+    {
+      "logical_path": "results/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/standard_system/report.jsonl",
+      "roles": [
+        "sure-eval",
+        "success",
+        "formal-results"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0675",
+      "size_bytes": "46419",
+      "mtime_ns": "1786439132000000000",
+      "sha256": "08483d12d17c680090134e49d1d0cd2d66937cb95bf296cd01e3f28ca1f51c18",
+      "signals": {
+        "format": "jsonl",
+        "first_record_keys": [
+          "artifacts",
+          "baseline",
+          "dataset",
+          "metric",
+          "model",
+          "pipeline",
+          "prediction",
+          "rps",
+          "run",
+          "schema",
+          "status",
+          "versions"
+        ],
+        "first_record_schema": "sure.eval.report.dataset_metric.v1"
+      }
+    },
+    {
+      "logical_path": "results/FunAudioLLM__SenseVoiceSmall.bad_protocol_20260805/main_agent_funaudiollm__SenseVoiceSmall_001/protocol.yaml",
+      "roles": [
+        "sure-eval",
+        "failure",
+        "bad-protocol"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0675",
+      "size_bytes": "4768",
+      "mtime_ns": "1786192641000000000",
+      "sha256": "ae0f661bdffd1a03e116981cf4472dd9927bb2463a09be575a05c9d3f037db44",
+      "signals": {
+        "format": "yaml",
+        "top_level_keys": [
+          "execution_surface",
+          "inference_constraints",
+          "inference_environment",
+          "model",
+          "notes",
+          "prediction_contract",
+          "protocol_id",
+          "protocol_selection",
+          "run",
+          "schema"
+        ]
+      }
+    },
+    {
+      "logical_path": "results/FunAudioLLM__SenseVoiceSmall.bad_protocol_20260805/main_agent_funaudiollm__SenseVoiceSmall_001/report.jsonl",
+      "roles": [
+        "sure-eval",
+        "failure",
+        "bad-protocol"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0675",
+      "size_bytes": "24113",
+      "mtime_ns": "1786428208000000000",
+      "sha256": "aa7f1e67570efc06ba4ec2f4ccfecf9e494af7da4c78335d82eb4ea838613c0b",
+      "signals": {
+        "format": "jsonl",
+        "first_record_keys": [
+          "artifacts",
+          "baseline",
+          "dataset",
+          "metric",
+          "model",
+          "pipeline",
+          "prediction",
+          "rps",
+          "run",
+          "schema",
+          "status",
+          "versions"
+        ],
+        "first_record_schema": "sure.eval.report.dataset_metric.v1"
+      }
+    },
+    {
+      "logical_path": "results/zz-dup-nested-verified-identical-deleteme/FunAudioLLM__Fun-CosyVoice3-0.5B-2512/standard_system",
+      "roles": [
+        "sure-eval",
+        "failure",
+        "nested-duplicate"
+      ],
+      "status": "present",
+      "expected_type": "directory",
+      "actual_type": "directory",
+      "mode": "2775",
+      "size_bytes": "4096",
+      "mtime_ns": "1786195558000000000",
+      "children": [
+        "predictions",
+        "protocol.yaml",
+        "report.jsonl",
+        "report_snapshot.md"
+      ]
+    },
+    {
+      "logical_path": "models/.sure-repair-rollback-20260831T004154/FunAudioLLM__SenseVoiceSmall/artifacts/migration_manifest.json",
+      "roles": [
+        "sure-approve",
+        "rollback",
+        "provenance"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0664",
+      "size_bytes": "2596",
+      "mtime_ns": "1786367248000000000",
+      "sha256": "b3ddfb9d7ef22d402ce2c982b0a0a2f947152ed403ae958bbb7d38442b9cb014",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "generated_at",
+          "image",
+          "installed_sidecars",
+          "migration_class",
+          "model_name",
+          "preserved_historical_files",
+          "replaced_files",
+          "schema",
+          "source",
+          "status"
+        ],
+        "selected_scalars": {
+          "schema": "sure.model.migration_manifest.v1",
+          "status": "candidate_validated"
+        }
+      }
+    },
+    {
+      "logical_path": "models/.sure-repair-rollback-20260831T004154/FunAudioLLM__SenseVoiceSmall/artifacts/deployment_ready.json",
+      "roles": [
+        "sure-approve",
+        "rollback",
+        "human-review-boundary"
+      ],
+      "status": "present",
+      "expected_type": "file",
+      "actual_type": "file",
+      "mode": "0664",
+      "size_bytes": "2201",
+      "mtime_ns": "1786367855000000000",
+      "sha256": "2ad074190f616fc27e4cc2406efb29ad7c42cc44b9bef2d0e42504264f9203e5",
+      "signals": {
+        "format": "json",
+        "top_level_keys": [
+          "approval",
+          "bundle_identity_sha256",
+          "contract_repaired_at",
+          "execution_policy",
+          "generated_at",
+          "migration_manifest",
+          "model_name",
+          "package_gate",
+          "package_profile",
+          "required_artifact_sha256",
+          "runtime_inventory",
+          "schema",
+          "status",
+          "target_image",
+          "target_image_digest",
+          "target_image_ref"
+        ],
+        "selected_scalars": {
+          "schema": "sure.onboard.deployment_ready.v1",
+          "status": "ready",
+          "package_profile": "docker-registry"
+        }
+      }
+    },
+    {
+      "logical_path": "models/FireRedTeam__FireRedASR-LLM-L/.venv",
+      "roles": [
+        "sure-onboard",
+        "sure-trans",
+        "external-runtime-symlink"
+      ],
+      "status": "present",
+      "expected_type": "symlink",
+      "actual_type": "symlink",
+      "mode": "0777",
+      "size_bytes": "24",
+      "mtime_ns": "1780549914000000000",
+      "link_target": "/opt/asr_fireredasr_venv"
+    }
+  ],
+  "read_only_marker": {
+    "before": "84a134fd9004f9ffac87a1cee8c97a6433e2c037899df4965c4a5cc7495beb02",
+    "after": "84a134fd9004f9ffac87a1cee8c97a6433e2c037899df4965c4a5cc7495beb02",
+    "unchanged": true
+  },
+  "limitations": [
+    "This is not a full-tree digest.",
+    "Model weights and prediction payloads are not copied or hashed.",
+    "Presence or a success-like scalar is evidence only and never a SURE PASS decision."
+  ],
+  "semantic_digest": "e6835f548e4f2388f92de7f9624b69f3a20932be075f28e3025181ffc27668a4"
+}

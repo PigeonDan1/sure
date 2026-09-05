@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
@@ -97,18 +98,49 @@ function setupSkillPackage(
 	});
 }
 
-function linkRepositorySkill(tempDir: string, skillName: string): void {
+function linkRepositorySkill(tempDir: string, skillName: string): string {
 	const target = resolve(__dirname, "../../../../sure/skills", skillName);
 	const parent = join(tempDir, "sure", "skills");
 	mkdirSync(parent, { recursive: true });
 	symlinkSync(target, join(parent, skillName), "dir");
-	// The hooks import ../../../runtime/... relative to their own path, and jiti
-	// resolves that from the symlink, not from its target, so the fixture needs
-	// the runtime tree next to sure/skills as well.
-	const runtime = join(tempDir, "sure", "runtime");
-	if (!existsSync(runtime)) {
-		symlinkSync(resolve(__dirname, "../../../../sure/runtime"), runtime, "dir");
+	// Jiti resolves relative imports from the fixture symlink rather than its
+	// target, so every repository-level support tree used by hooks must exist in
+	// the temporary repository too.
+	for (const supportTree of ["runtime", "site"]) {
+		const destination = join(tempDir, "sure", supportTree);
+		if (!existsSync(destination)) {
+			symlinkSync(resolve(__dirname, `../../../../sure/${supportTree}`), destination, "dir");
+		}
 	}
+	const sitePolicy = join(tempDir, "config", "site.bundled.yaml");
+	if (!existsSync(sitePolicy)) {
+		mkdirSync(resolve(sitePolicy, ".."), { recursive: true });
+		writeFileSync(
+			sitePolicy,
+			`${[
+				"schema: sure.site.policy.v1",
+				"site_id: extension-test",
+				"policy_version: 1",
+				"storage:",
+				"  approved_models_roots:",
+				`    - ${join(tempDir, "sure", "models")}`,
+				"  approved_results_roots:",
+				`    - ${join(tempDir, "sure", "results")}`,
+				"  forbidden_output_roots:",
+				"    - /definitely-forbidden-sure-extension-test",
+				`  runtime_root: ${join(tempDir, ".sure", "runtime")}`,
+				"datasets:",
+				"  allowed_source_roots:",
+				`    test: ${join(tempDir, "data", "source-pool")}`,
+				`  projection_root: ${join(tempDir, ".sure", "dataset-projections")}`,
+				"execution:",
+				"  surfaces: [local]",
+				"  local_runtimes: [python, container]",
+			].join("\n")}\n`,
+			"utf8",
+		);
+	}
+	return sitePolicy;
 }
 
 function writeOnboardModelInput(path: string): void {
@@ -134,15 +166,82 @@ function writeOnboardModelInput(path: string): void {
 
 function writeEvalModel(tempDir: string, modelName = "demo-asr"): string {
 	const modelDir = join(tempDir, "sure", "models", modelName);
-	mkdirSync(modelDir, { recursive: true });
+	const artifactsDir = join(modelDir, "artifacts");
+	mkdirSync(artifactsDir, { recursive: true });
+	const configPath = join(modelDir, "config.yaml");
 	writeFileSync(
-		join(modelDir, "config.yaml"),
+		configPath,
 		`${["model:", `  name: ${modelName}`, "  task: ASR", "server:", "  command: [python, server.py]"].join("\n")}\n`,
 		"utf-8",
 	);
 	writeFileSync(join(modelDir, "model.py"), "# test fixture\n", "utf-8");
 	writeFileSync(join(modelDir, "server.py"), "# test fixture\n", "utf-8");
 	writeJson(join(modelDir, "verdict.json"), { status: "success" });
+	const imageDigest = `sha256:${"a".repeat(64)}`;
+	const targetImage = "registry.example.test/sure/demo-asr:fixture";
+	const targetImageRef = `registry.example.test/sure/demo-asr@${imageDigest}`;
+	const requiredArtifactSha256 = {
+		"config.yaml": createHash("sha256").update(readFileSync(configPath)).digest("hex"),
+	};
+	const bundleIdentity = createHash("sha256").update(JSON.stringify(requiredArtifactSha256)).digest("hex");
+	writeJson(join(artifactsDir, "package_gate.json"), {
+		schema: "sure.onboard.package_gate.v2",
+		status: "passed",
+		package_profile: "docker-registry",
+		model_name: modelName,
+		readiness: {
+			local_ready: true,
+			container_ready: true,
+			docker_ready: true,
+			registry_ready: true,
+			bundle_ready: true,
+		},
+		docker: { target_image: targetImage, target_image_digest: imageDigest, target_image_ref: targetImageRef },
+	});
+	writeJson(join(artifactsDir, "runtime_inventory.json"), {
+		schema: "sure.onboard.runtime_inventory.v2",
+		status: "ready",
+		model: { name: modelName },
+		policy: {
+			eval_runtime: "container_only",
+			host_python_fallback: false,
+			image_override_allowed: false,
+			nfs_models_mutable_by_eval: false,
+		},
+		container_runtime: {
+			required: true,
+			target_image: targetImage,
+			target_image_digest: imageDigest,
+			target_image_ref: targetImageRef,
+			python_executable: "python",
+			working_dir: `/models/${modelName}`,
+			server_command: ["python", "server.py"],
+			tool_names: ["transcribe_audio"],
+			mount_policy: {
+				nfs_models_read_only: true,
+				model_bundle: { target: `/models/${modelName}`, read_only: true },
+				result_workspace: { target: "/results", read_only: false },
+			},
+		},
+	});
+	writeJson(join(artifactsDir, "deployment_ready.json"), {
+		schema: "sure.onboard.deployment_ready.v1",
+		status: "ready",
+		generated_at: "2026-08-01T00:00:00Z",
+		model_name: modelName,
+		package_profile: "docker-registry",
+		target_image: targetImage,
+		target_image_digest: imageDigest,
+		target_image_ref: targetImageRef,
+		execution_policy: {
+			container_only: true,
+			nfs_models_read_only: true,
+			host_python_fallback: false,
+			approved_image_override: false,
+		},
+		required_artifact_sha256: requiredArtifactSha256,
+		bundle_identity_sha256: bundleIdentity,
+	});
 	return modelDir;
 }
 
@@ -328,7 +427,7 @@ describe("Sure extension", () => {
 	it("passes output_dir from /sure_infer arguments into resolved input", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
-		linkRepositorySkill(harness.tempDir, "sure_infer");
+		const sitePolicy = linkRepositorySkill(harness.tempDir, "sure_infer");
 		writeEvalModel(harness.tempDir);
 		const datasetsRoot = join(harness.tempDir, "data", "datasets");
 		const jsonlDir = join(datasetsRoot, "sure_benchmark", "jsonl");
@@ -345,7 +444,7 @@ describe("Sure extension", () => {
 				dataset: datasetId,
 				metadata: {
 					source: "site_dataset_pool",
-					source_dataset_root: "/srv/sure/datasets/group/store/ds_pool/example-librispeech-test-clean",
+					source_dataset_root: join(harness.tempDir, "data", "source-pool", "example-librispeech-test-clean"),
 					source_dataset_name: "demo_speech_en_test",
 					version_id: "v1.0.1",
 				},
@@ -354,6 +453,8 @@ describe("Sure extension", () => {
 		);
 		const outputDir = join(harness.tempDir, "custom-eval-output");
 		harness.setResponses([fauxAssistantMessage("working")]);
+		const previousSitePolicy = process.env.SURE_SITE_POLICY;
+		process.env.SURE_SITE_POLICY = sitePolicy;
 		process.env.SURE_EVAL_DATASETS_ROOT = datasetsRoot;
 		try {
 			await harness.session.prompt(
@@ -362,6 +463,8 @@ describe("Sure extension", () => {
 			await harness.session.agent.waitForIdle();
 			await waitForCondition(() => getUserTexts(harness).length > 0);
 		} finally {
+			if (previousSitePolicy === undefined) delete process.env.SURE_SITE_POLICY;
+			else process.env.SURE_SITE_POLICY = previousSitePolicy;
 			delete process.env.SURE_EVAL_DATASETS_ROOT;
 		}
 

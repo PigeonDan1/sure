@@ -1,0 +1,6 @@
+interface:
+  display_name: "SURE Infer"
+  short_description: "Infer workflow for reproducible model evaluation"
+  default_prompt: "Use $sure-infer to run an approved model over selected datasets and produce a provenance-bound prediction bundle."
+policy:
+  allow_implicit_invocation: true

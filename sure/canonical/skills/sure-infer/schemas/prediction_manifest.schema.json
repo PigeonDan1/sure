@@ -1,0 +1,25 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "prediction_manifest.schema.json",
+	"title": "SURE-EVAL prediction manifest",
+	"description": "Dataset-level inventory for predictions/<dataset>.txt and predictions/<dataset>.jsonl.",
+	"type": "object",
+	"required": ["schema", "generated_at", "run_id", "predictions_dir", "datasets"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.eval.prediction_manifest.v1"] },
+		"generated_at": { "type": "string" },
+		"run_id": { "type": "string" },
+		"model_name": { "type": "string" },
+		"tool_name": { "type": "string" },
+		"predictions_dir": { "type": "string" },
+		"datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["dataset", "task", "language", "format_used", "txt", "jsonl", "num_rows"],
+				"additionalProperties": true
+			}
+		}
+	},
+	"additionalProperties": true
+}

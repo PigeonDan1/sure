@@ -1,0 +1,187 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/contracts/conformance.v1.schema.json",
+	"title": "SURE conformance record",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"schema",
+		"conformance_id",
+		"run_id",
+		"unit_id",
+		"attempt",
+		"request_digest",
+		"receipt_digest",
+		"subject_bundle_digest",
+		"workflow_digest",
+		"validator_digest",
+		"executor_digest",
+		"policy_digest",
+		"reference_snapshot_digest",
+		"output_root",
+		"validator_verdict",
+		"workflow_disposition",
+		"outcome",
+		"reason_code",
+		"assurance_profile",
+		"formal_evaluation_eligible",
+		"checked_at",
+		"evidence",
+		"diagnostics"
+	],
+	"properties": {
+		"schema": { "const": "sure.conformance.v1" },
+		"conformance_id": { "$ref": "#/$defs/id" },
+		"run_id": { "$ref": "#/$defs/id" },
+		"unit_id": { "$ref": "#/$defs/id" },
+		"attempt": { "type": "integer", "minimum": 1 },
+		"request_digest": { "$ref": "#/$defs/digest" },
+		"receipt_digest": { "$ref": "#/$defs/digest" },
+		"subject_bundle_digest": { "$ref": "#/$defs/digest" },
+		"runtime_identity_digest": { "$ref": "#/$defs/digest" },
+		"inference_protocol_digest": { "$ref": "#/$defs/digest" },
+		"dataset_identity_digest": { "$ref": "#/$defs/digest" },
+		"scoring_protocol_digest": { "$ref": "#/$defs/digest" },
+		"workflow_digest": { "$ref": "#/$defs/digest" },
+		"validator_digest": { "$ref": "#/$defs/digest" },
+		"executor_digest": { "$ref": "#/$defs/digest" },
+		"policy_digest": { "$ref": "#/$defs/digest" },
+		"reference_snapshot_digest": { "$ref": "#/$defs/digest" },
+		"output_root": { "$ref": "#/$defs/outputRoot" },
+		"validator_verdict": { "enum": ["PASS", "FAIL", "NOT_EXECUTED"] },
+		"workflow_disposition": { "enum": ["ADVANCE", "RETRY", "BLOCK", "TERMINATE", "WAIT"] },
+		"outcome": { "enum": ["PASS", "FAIL", "BLOCKED", "RETRY", "NOT_EXECUTED"] },
+		"reason_code": {
+			"enum": [
+				"VALIDATION_PASSED",
+				"VALIDATION_PENDING",
+				"VALIDATION_FAILED",
+				"MISSING_INPUT",
+				"RETRY_EXHAUSTED",
+				"AWAITING_EXECUTION",
+				"AWAITING_HUMAN",
+				"CAPABILITY_MISSING",
+				"UNKNOWN_CAPABILITY",
+				"POLICY_DENIED",
+				"EXECUTION_FAILED",
+				"EXECUTION_PARTIAL",
+				"EXECUTION_CANCELLED",
+				"PATH_OUT_OF_SCOPE",
+				"SYMLINK_ESCAPE",
+				"READ_ONLY_REFERENCE",
+				"DIGEST_MISMATCH",
+				"INVALID_CONTRACT",
+				"UPGRADE_REQUIRED"
+			]
+		},
+		"assurance_profile": { "enum": ["cooperative", "pi_enforced", "trusted"] },
+		"formal_evaluation_eligible": { "type": "boolean" },
+		"checked_at": { "type": "string", "format": "date-time" },
+		"evidence": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+		"diagnostics": { "type": "array", "items": { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } } }
+	},
+	"allOf": [
+		{
+			"if": { "properties": { "outcome": { "const": "PASS" } }, "required": ["outcome"] },
+			"then": {
+				"properties": {
+					"validator_verdict": { "const": "PASS" },
+					"workflow_disposition": { "enum": ["ADVANCE", "TERMINATE"] },
+					"reason_code": { "const": "VALIDATION_PASSED" }
+				}
+			}
+		},
+		{
+			"if": { "properties": { "outcome": { "const": "RETRY" } }, "required": ["outcome"] },
+			"then": { "properties": { "workflow_disposition": { "const": "RETRY" } } }
+		},
+		{
+			"if": { "properties": { "outcome": { "const": "BLOCKED" } }, "required": ["outcome"] },
+			"then": { "properties": { "workflow_disposition": { "const": "BLOCK" } } }
+		},
+		{
+			"if": { "properties": { "outcome": { "const": "FAIL" } }, "required": ["outcome"] },
+			"then": { "properties": { "validator_verdict": { "const": "FAIL" } } }
+		},
+		{
+			"if": { "properties": { "outcome": { "const": "NOT_EXECUTED" } }, "required": ["outcome"] },
+			"then": {
+				"properties": {
+					"validator_verdict": { "const": "NOT_EXECUTED" },
+					"workflow_disposition": { "enum": ["BLOCK", "WAIT"] }
+				}
+			}
+		},
+		{
+			"if": { "properties": { "formal_evaluation_eligible": { "const": true } }, "required": ["formal_evaluation_eligible"] },
+			"then": {
+				"required": [
+					"runtime_identity_digest",
+					"inference_protocol_digest",
+					"dataset_identity_digest",
+					"scoring_protocol_digest"
+				],
+				"properties": {
+					"validator_verdict": { "const": "PASS" },
+					"workflow_disposition": { "enum": ["ADVANCE", "TERMINATE"] },
+					"outcome": { "const": "PASS" }
+				}
+			}
+		},
+		{
+			"if": { "properties": { "reason_code": { "const": "CAPABILITY_MISSING" } }, "required": ["reason_code"] },
+			"then": {
+				"properties": {
+					"validator_verdict": { "const": "NOT_EXECUTED" },
+					"outcome": { "const": "NOT_EXECUTED" }
+				}
+			}
+		}
+	],
+	"$defs": {
+		"id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+		"digest": { "type": "string", "pattern": "^(sha256:)?[a-f0-9]{64}$" },
+		"absolutePath": { "type": "string", "pattern": "^/" },
+		"jsonValue": {
+			"oneOf": [
+				{ "type": ["string", "number", "boolean", "null"] },
+				{ "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
+				{ "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+			]
+		},
+		"artifact": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["artifact_id", "path", "resolved_path", "sha256", "size", "media_type", "origin", "source_root"],
+			"properties": {
+				"artifact_id": { "$ref": "#/$defs/id" },
+				"path": { "$ref": "#/$defs/absolutePath" },
+				"resolved_path": { "$ref": "#/$defs/absolutePath" },
+				"sha256": { "$ref": "#/$defs/digest" },
+				"size": { "type": "integer", "minimum": 0 },
+				"media_type": { "type": "string", "minLength": 1 },
+				"origin": { "enum": ["local_staging", "read_only_reference", "generated", "external"] },
+				"source_root": { "$ref": "#/$defs/absolutePath" },
+				"reference_snapshot_digest": { "$ref": "#/$defs/digest" }
+			},
+			"allOf": [
+				{
+					"if": { "properties": { "origin": { "const": "read_only_reference" } }, "required": ["origin"] },
+					"then": { "required": ["reference_snapshot_digest"] }
+				}
+			]
+		},
+		"outputRoot": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["path", "resolved_path", "scope_id", "policy_digest", "writable"],
+			"properties": {
+				"path": { "$ref": "#/$defs/absolutePath" },
+				"resolved_path": { "$ref": "#/$defs/absolutePath" },
+				"scope_id": { "$ref": "#/$defs/id" },
+				"policy_digest": { "$ref": "#/$defs/digest" },
+				"writable": { "const": true }
+			}
+		}
+	}
+}

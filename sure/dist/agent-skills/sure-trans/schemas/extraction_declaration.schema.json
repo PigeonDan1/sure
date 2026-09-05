@@ -1,0 +1,18 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "extraction_declaration.schema.json",
+	"title": "SURE memory extraction declaration",
+	"description": "Structured output of the extract_lessons unit (memory design spec 4.4). Declares this run's memory candidates (directory names under artifacts/candidates/) or an explicit no-new-lessons outcome. check_memory_extraction.py validates it together with every candidate's proposal.json / proposal.md. Constants use enum, not const, because the skill hooks' validate.ts only understands enum.",
+	"type": "object",
+	"required": ["schema", "no_new_lessons", "no_lessons_reason", "covered_by", "candidates", "infra_noise", "infra_evidence"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.memory.extraction.v2"] },
+		"no_new_lessons": { "type": "boolean", "description": "true when this run yields no new entry; then candidates is empty and no_lessons_reason says why. Normal for a clean success run." },
+		"no_lessons_reason": { "type": ["string", "null"], "description": "why there is nothing new (or why the candidates were dropped); required when no_new_lessons is true" },
+		"covered_by": { "type": "array", "items": { "type": "string" }, "description": "entry ids (<target_skill>/<slug>) whose lesson already covers what this run showed" },
+		"candidates": { "type": "array", "items": { "type": "string" }, "description": "single-segment directory names under artifacts/candidates/, each holding proposal.json + proposal.md; at most config max_candidates_per_run" },
+		"infra_noise": { "type": "boolean", "description": "true when the run was disturbed by infrastructure (queue, node, network); then every bad_case candidate must carry cell.cause infra" },
+		"infra_evidence": { "type": "array", "items": { "type": "string" }, "description": "path or path:line under the run directory that shows the disturbance; must be non-empty when infra_noise is true" }
+	},
+	"additionalProperties": false
+}

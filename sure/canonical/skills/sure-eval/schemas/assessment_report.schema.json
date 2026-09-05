@@ -1,0 +1,23 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "assessment_report.schema.json",
+	"title": "SURE-EVAL assessment report",
+	"description": "Structured output of the ASSESSMENT_UNIT. Anomalous results require user confirmation.",
+	"type": "object",
+	"required": ["anomaly_detected", "user_confirmed"],
+	"properties": {
+		"anomaly_detected": { "type": "boolean" },
+		"user_confirmed": { "type": "boolean" },
+		"status": {
+			"type": "string",
+			"enum": ["ok", "blocked", "needs_human_input", "failed"]
+		},
+		"metrics": {
+			"type": "object",
+			"additionalProperties": { "type": "number" }
+		},
+		"anomaly_reason": { "type": "string" },
+		"summary": { "type": "string" }
+	},
+	"additionalProperties": false
+}

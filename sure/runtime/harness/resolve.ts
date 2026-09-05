@@ -20,6 +20,12 @@ contract?: HarnessRuntimeContract;
 error?: string;
 }
 
+export interface HarnessRuntimeResolveOptions {
+	/** Do not mutate process.env when the caller only needs a child binding. */
+	activate?: boolean;
+	environment?: NodeJS.ProcessEnv;
+}
+
 const resolvedByRepo = new Map<string, HarnessRuntimeResolution>();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -62,27 +68,39 @@ SURE_HARNESS_LOCK_SHA256: contract.lock_sha256,
 	};
 }
 
+export function withHarnessRuntimeEnv(
+	base: NodeJS.ProcessEnv,
+	contract: HarnessRuntimeContract,
+): NodeJS.ProcessEnv {
+	return { ...base, ...harnessRuntimeEnv(contract) };
+}
+
 export function activateHarnessRuntime(contract: HarnessRuntimeContract): void {
 Object.assign(process.env, harnessRuntimeEnv(contract));
 }
 
-export function resolveHarnessPython(packageDir: string): HarnessRuntimeResolution {
-const repoRoot = repoRootForPackage(packageDir);
-const cached = resolvedByRepo.get(repoRoot);
-if (cached?.ok && cached.contract && existsSync(cached.contract.python_executable)) {
-activateHarnessRuntime(cached.contract);
-return cached;
+export function resolveHarnessPython(
+	packageDir: string,
+	options: HarnessRuntimeResolveOptions = {},
+): HarnessRuntimeResolution {
+	const environment = options.environment ?? process.env;
+	const activate = options.activate ?? true;
+	const repoRoot = repoRootForPackage(packageDir);
+	const cached = resolvedByRepo.get(repoRoot);
+	if (cached?.ok && cached.contract && existsSync(cached.contract.python_executable)) {
+		if (activate) activateHarnessRuntime(cached.contract);
+	return cached;
 }
 const bootstrap = resolve(repoRoot, "sure/runtime/harness/bootstrap.py");
 if (!existsSync(bootstrap)) {
 return { ok: false, error: `HARNESS_RUNTIME_NOT_READY: bootstrap is missing: ${bootstrap}` };
 }
-const bootstrapPython = process.env.SURE_HARNESS_BOOTSTRAP_PYTHON?.trim() || "python3";
+	const bootstrapPython = environment.SURE_HARNESS_BOOTSTRAP_PYTHON?.trim() || "python3";
 const completed = spawnSync(bootstrapPython, [bootstrap, "--json"], {
 cwd: repoRoot,
 encoding: "utf-8",
 timeout: 900_000,
-env: process.env,
+		env: environment,
 });
 if (completed.status !== 0) {
 const detail = completed.stderr?.trim() || completed.stdout?.trim() || `bootstrap exited ${completed.status}`;
@@ -96,7 +114,7 @@ if (!contract || !existsSync(contract.python_executable)) {
 throw new Error("bootstrap returned an incomplete runtime contract");
 }
 const success = { ok: true, contract };
-activateHarnessRuntime(contract);
+	if (activate) activateHarnessRuntime(contract);
 resolvedByRepo.set(repoRoot, success);
 return success;
 } catch (error) {

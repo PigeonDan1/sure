@@ -1,0 +1,27 @@
+{
+  "phase": {
+    "id": "execute_inference",
+    "label": "Execute inference",
+    "status": "running"
+  },
+  "message": "Execute inference.",
+  "counters": {
+    "completed": 1,
+    "total": 4,
+    "blocks": 0
+  },
+  "checkpoint": {
+    "id": "main_flow",
+    "label": "SURE infer state machine",
+    "resumable": true,
+    "resume_hint": "Resume at unit \"execute_inference\".",
+    "data": {
+      "currentUnit": "execute_inference",
+      "completedUnits": [
+        "dataset_scope"
+      ],
+      "retries": {},
+      "failedArtifactDigests": {}
+    }
+  }
+}

@@ -1,0 +1,392 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import {
+	canonicalJson,
+	canonicalJsonDigest,
+	canonicalJsonSha256,
+	evaluateCapabilityRequirements,
+	evaluatePathBoundary,
+	parseAndValidateJson,
+	validateJsonSchema,
+} from "../src/contracts/index.ts";
+import type {
+	CapabilityEvidence,
+	CapabilityRequirement,
+	ConformanceRecord,
+	ExecutionReceipt,
+	ExecutionRequest,
+	JsonValue,
+} from "../src/contracts/types.ts";
+import {
+	createOutcome,
+	outcomeFromExecutionLifecycle,
+	PUBLIC_OUTCOMES,
+	REASON_CODES,
+	VALIDATOR_VERDICTS,
+	WORKFLOW_DISPOSITIONS,
+} from "../src/workflow/outcome.ts";
+
+const DIGEST_A = "a".repeat(64);
+const DIGEST_B = "b".repeat(64);
+const DIGEST_C = "c".repeat(64);
+const NOW = "2026-09-06T00:00:00.000Z";
+
+function readSchema(name: string): Record<string, unknown> {
+	const path = fileURLToPath(new URL(`../../../sure/core/contracts/${name}.schema.json`, import.meta.url));
+	return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+}
+
+function outputRoot() {
+	return {
+		path: "/tmp/sure-dev/runs/run-1",
+		resolved_path: "/tmp/sure-dev/runs/run-1",
+		scope_id: "run-1",
+		policy_digest: DIGEST_A,
+		writable: true as const,
+	};
+}
+
+function executionRequest(): ExecutionRequest {
+	return {
+		schema: "sure.execution_request.v1",
+		request_id: "request-1",
+		semantic_request_digest: DIGEST_A,
+		run_id: "run-1",
+		unit_id: "execute",
+		attempt: 1,
+		operation: "inference",
+		subject: {
+			bundle_manifest_path: "/tmp/sure-dev/bundle.json",
+			bundle_digest: DIGEST_A,
+			runtime_identity_digest: DIGEST_B,
+			inference_protocol_digest: DIGEST_C,
+		},
+		inputs: [
+			{
+				artifact_id: "dataset-1",
+				path: "/hpc/reference/dataset.jsonl",
+				resolved_path: "/hpc/reference/dataset.jsonl",
+				sha256: DIGEST_B,
+				size: 12,
+				media_type: "application/x-ndjson",
+				origin: "read_only_reference",
+				source_root: "/hpc/reference",
+				reference_snapshot_digest: DIGEST_C,
+			},
+		],
+		entrypoint: { executable: "python3", argv: ["-s", "/tmp/sure-dev/run.py", "--input", "dataset.jsonl"] },
+		runtime_requirements: { python: "3.11" },
+		capability_requirements: [
+			{ capability_id: "sure.resource.gpu", capability_class: "execution_capability", required: true },
+		],
+		reference_snapshot_digest: DIGEST_C,
+		output_root: outputRoot(),
+		policy_digest: DIGEST_A,
+		created_at: NOW,
+	};
+}
+
+function executionReceipt(): ExecutionReceipt {
+	return {
+		schema: "sure.execution_receipt.v1",
+		receipt_id: "receipt-1",
+		request_id: "request-1",
+		request_digest: DIGEST_A,
+		semantic_request_digest: DIGEST_B,
+		run_id: "run-1",
+		unit_id: "execute",
+		attempt: 1,
+		executor: {
+			executor_id: "local-python-1",
+			kind: "python",
+			version: "1.0.0",
+			digest: DIGEST_A,
+			trust_level: "host_enforced",
+		},
+		lifecycle: "SUCCEEDED",
+		capability_evidence: [
+			{
+				capability_id: "sure.resource.gpu",
+				capability_class: "execution_capability",
+				status: "AVAILABLE",
+				source: "host_probe",
+				observed_at: NOW,
+				evidence_digest: DIGEST_B,
+			},
+		],
+		outputs: [],
+		reference_snapshot_digest: DIGEST_C,
+		output_root: outputRoot(),
+		policy_digest: DIGEST_A,
+		started_at: NOW,
+		finished_at: NOW,
+		exit_code: 0,
+	};
+}
+
+function conformanceRecord(): ConformanceRecord {
+	return {
+		schema: "sure.conformance.v1",
+		conformance_id: "conformance-1",
+		run_id: "run-1",
+		unit_id: "formal-evaluation",
+		attempt: 1,
+		request_digest: DIGEST_A,
+		receipt_digest: DIGEST_B,
+		subject_bundle_digest: DIGEST_C,
+		runtime_identity_digest: DIGEST_A,
+		inference_protocol_digest: DIGEST_B,
+		dataset_identity_digest: DIGEST_C,
+		scoring_protocol_digest: DIGEST_A,
+		workflow_digest: DIGEST_B,
+		validator_digest: DIGEST_C,
+		executor_digest: DIGEST_A,
+		policy_digest: DIGEST_B,
+		reference_snapshot_digest: DIGEST_C,
+		output_root: outputRoot(),
+		validator_verdict: "PASS",
+		workflow_disposition: "TERMINATE",
+		outcome: "PASS",
+		reason_code: "VALIDATION_PASSED",
+		assurance_profile: "pi_enforced",
+		formal_evaluation_eligible: true,
+		checked_at: NOW,
+		evidence: [],
+		diagnostics: [],
+	};
+}
+
+describe("canonical JSON", () => {
+	it("sorts object keys recursively and produces a stable SHA-256", () => {
+		const left: JsonValue = { b: 2, a: { z: true, y: [3, "x"] } };
+		const right: JsonValue = { a: { y: [3, "x"], z: true }, b: 2 };
+		expect(canonicalJson(left)).toBe('{"a":{"y":[3,"x"],"z":true},"b":2}');
+		expect(canonicalJsonSha256(left)).toBe(canonicalJsonSha256(right));
+		expect(canonicalJsonDigest(left)).toBe(`sha256:${canonicalJsonSha256(left)}`);
+	});
+
+	it("rejects values outside the JSON data model", () => {
+		expect(() => canonicalJson(Number.NaN as never)).toThrow(/non-finite/);
+		expect(() => canonicalJson({ value: undefined } as never)).toThrow(/undefined/);
+		const cyclic: { self?: unknown } = {};
+		cyclic.self = cyclic;
+		expect(() => canonicalJson(cyclic as never)).toThrow(/cyclic/);
+	});
+});
+
+describe("wire schemas", () => {
+	it("round-trips valid capability, request, receipt, and conformance records", () => {
+		const capability = {
+			schema: "sure.capability_report.v1",
+			requirements: executionRequest().capability_requirements,
+			evidence: executionReceipt().capability_evidence,
+			checked_at: NOW,
+		};
+		const cases: Array<[string, unknown]> = [
+			["capability", capability],
+			["execution_request", executionRequest()],
+			["execution_receipt", executionReceipt()],
+			["conformance", conformanceRecord()],
+		];
+		for (const [name, value] of cases) {
+			const serialized = JSON.stringify(value);
+			expect(parseAndValidateJson(readSchema(name), serialized)).toEqual({
+				ok: true,
+				value,
+				issues: [],
+			});
+			expect(canonicalJsonSha256(value as JsonValue)).toBe(canonicalJsonSha256(JSON.parse(serialized)));
+		}
+	});
+
+	it("rejects shell strings and unbound read-only references", () => {
+		const schema = readSchema("execution_request");
+		const shellRequest = { ...executionRequest(), command: "python3 run.py --input dataset.jsonl" };
+		expect(validateJsonSchema(schema, shellRequest).ok).toBe(false);
+
+		const missingSnapshot = executionRequest();
+		delete missingSnapshot.inputs[0].reference_snapshot_digest;
+		expect(validateJsonSchema(schema, missingSnapshot).ok).toBe(false);
+	});
+
+	it("rejects fake formal PASS and capability-missing PASS", () => {
+		const schema = readSchema("conformance");
+		const missingFreeze = conformanceRecord();
+		delete missingFreeze.dataset_identity_digest;
+		expect(validateJsonSchema(schema, missingFreeze).ok).toBe(false);
+
+		const fakePass = { ...conformanceRecord(), reason_code: "CAPABILITY_MISSING" };
+		expect(validateJsonSchema(schema, fakePass).ok).toBe(false);
+
+		const executorPass = { ...conformanceRecord(), formal_evaluation_eligible: false, validator_verdict: "FAIL" };
+		expect(validateJsonSchema(schema, executorPass).ok).toBe(false);
+	});
+
+	it("keeps TypeScript outcome enums aligned with the conformance schema", () => {
+		const schema = readSchema("conformance") as {
+			properties: Record<string, { enum?: string[] }>;
+		};
+		expect(schema.properties.validator_verdict.enum).toEqual([...VALIDATOR_VERDICTS]);
+		expect(schema.properties.workflow_disposition.enum).toEqual([...WORKFLOW_DISPOSITIONS]);
+		expect(schema.properties.outcome.enum).toEqual([...PUBLIC_OUTCOMES]);
+		expect(schema.properties.reason_code.enum).toEqual([...REASON_CODES]);
+	});
+});
+
+describe("outcome invariants", () => {
+	it("never maps missing execution capability to PASS", () => {
+		const outcome = createOutcome({
+			validatorVerdict: "NOT_EXECUTED",
+			workflowDisposition: "BLOCK",
+			reasonCode: "CAPABILITY_MISSING",
+		});
+		expect(outcome.outcome).toBe("NOT_EXECUTED");
+		expect(outcome.retryable).toBe(false);
+	});
+
+	it("does not allow PARTIAL, failed, cancelled, or running execution to pass", () => {
+		for (const lifecycle of ["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED", "RUNNING"] as const) {
+			expect(outcomeFromExecutionLifecycle(lifecycle).outcome).not.toBe("PASS");
+		}
+		expect(outcomeFromExecutionLifecycle("SUCCEEDED")).toMatchObject({
+			validator_verdict: "NOT_EXECUTED",
+			workflow_disposition: "WAIT",
+			reason_code: "VALIDATION_PENDING",
+		});
+		expect(outcomeFromExecutionLifecycle("PARTIAL")).toMatchObject({
+			validator_verdict: "FAIL",
+			workflow_disposition: "BLOCK",
+			reason_code: "EXECUTION_PARTIAL",
+		});
+	});
+
+	it("rejects contradictory outcome construction", () => {
+		expect(() =>
+			createOutcome({
+				validatorVerdict: "PASS",
+				workflowDisposition: "ADVANCE",
+				reasonCode: "VALIDATION_PASSED",
+				executionLifecycle: "PARTIAL",
+			}),
+		).toThrow(/cannot produce PASS/);
+		expect(() =>
+			createOutcome({
+				validatorVerdict: "FAIL",
+				workflowDisposition: "BLOCK",
+				reasonCode: "CAPABILITY_MISSING",
+			}),
+		).toThrow(/NOT_EXECUTED/);
+	});
+});
+
+describe("capability admission", () => {
+	const gpuRequirement: CapabilityRequirement = {
+		capability_id: "sure.resource.gpu",
+		capability_class: "execution_capability",
+		required: true,
+	};
+	const evidenceBase = {
+		capability_id: "sure.resource.gpu",
+		status: "AVAILABLE" as const,
+		observed_at: NOW,
+		evidence_digest: DIGEST_A,
+	};
+
+	it("accepts authoritative execution evidence", () => {
+		const evidence: CapabilityEvidence = {
+			...evidenceBase,
+			capability_class: "execution_capability",
+			source: "executor",
+		};
+		expect(evaluateCapabilityRequirements([gpuRequirement], [evidence])).toMatchObject({ admitted: true });
+	});
+
+	it("does not let an agent capability satisfy an execution requirement", () => {
+		const evidence: CapabilityEvidence = {
+			...evidenceBase,
+			capability_class: "agent_capability",
+			source: "agent",
+		};
+		const result = evaluateCapabilityRequirements([gpuRequirement], [evidence]);
+		expect(result).toMatchObject({
+			admitted: false,
+			missing: ["sure.resource.gpu"],
+			blocking_outcome: {
+				validator_verdict: "NOT_EXECUTED",
+				outcome: "NOT_EXECUTED",
+				reason_code: "CAPABILITY_MISSING",
+			},
+		});
+	});
+
+	it("blocks unknown and policy-denied capabilities without PASS", () => {
+		const unknown = evaluateCapabilityRequirements(
+			[{ capability_id: "sure.unknown.future", capability_class: "execution_capability", required: true }],
+			[],
+		);
+		expect(unknown.blocking_outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "UNKNOWN_CAPABILITY" });
+
+		const denied: CapabilityEvidence = {
+			...evidenceBase,
+			capability_class: "execution_capability",
+			status: "DENIED",
+			source: "site_policy",
+		};
+		expect(evaluateCapabilityRequirements([gpuRequirement], [denied]).blocking_outcome).toMatchObject({
+			outcome: "NOT_EXECUTED",
+			reason_code: "POLICY_DENIED",
+		});
+	});
+});
+
+describe("path admission", () => {
+	const allowed = [{ path: "/tmp/sure-dev", resolved_path: "/tmp/sure-dev" }];
+	const reference = [{ path: "/hpc/reference", resolved_path: "/hpc/reference" }];
+
+	it("accepts a local resolved output path", () => {
+		expect(
+			evaluatePathBoundary({
+				candidate_path: "/tmp/sure-dev/runs/one",
+				candidate_resolved_path: "/tmp/sure-dev/runs/one",
+				allowed_roots: allowed,
+				forbidden_roots: reference,
+			}),
+		).toEqual({ admitted: true });
+	});
+
+	it("blocks lexical traversal, symlink escape, and read-only reference output", () => {
+		const traversal = evaluatePathBoundary({
+			candidate_path: "/tmp/sure-dev/../outside",
+			candidate_resolved_path: "/tmp/outside",
+			allowed_roots: allowed,
+		});
+		expect(traversal).toMatchObject({ admitted: false, reason_code: "PATH_OUT_OF_SCOPE" });
+
+		const symlink = evaluatePathBoundary({
+			candidate_path: "/tmp/sure-dev/link/output",
+			candidate_resolved_path: "/hpc/reference/output",
+			allowed_roots: allowed,
+			forbidden_roots: reference,
+		});
+		expect(symlink).toMatchObject({ admitted: false, reason_code: "READ_ONLY_REFERENCE" });
+
+		const symlinkEscape = evaluatePathBoundary({
+			candidate_path: "/tmp/sure-dev/link/output",
+			candidate_resolved_path: "/tmp/other/output",
+			allowed_roots: allowed,
+		});
+		expect(symlinkEscape).toMatchObject({ admitted: false, reason_code: "SYMLINK_ESCAPE" });
+
+		const production = evaluatePathBoundary({
+			candidate_path: "/hpc/reference/new-output",
+			candidate_resolved_path: "/hpc/reference/new-output",
+			allowed_roots: reference,
+			forbidden_roots: reference,
+		});
+		expect(production.blocking_outcome).toMatchObject({
+			outcome: "NOT_EXECUTED",
+			reason_code: "READ_ONLY_REFERENCE",
+		});
+	});
+});

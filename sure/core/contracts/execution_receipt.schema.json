@@ -1,0 +1,137 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/contracts/execution-receipt.v1.schema.json",
+	"title": "SURE execution receipt",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"schema",
+		"receipt_id",
+		"request_id",
+		"request_digest",
+		"semantic_request_digest",
+		"run_id",
+		"unit_id",
+		"attempt",
+		"executor",
+		"lifecycle",
+		"capability_evidence",
+		"outputs",
+		"reference_snapshot_digest",
+		"output_root",
+		"policy_digest",
+		"started_at"
+	],
+	"properties": {
+		"schema": { "const": "sure.execution_receipt.v1" },
+		"receipt_id": { "$ref": "#/$defs/id" },
+		"request_id": { "$ref": "#/$defs/id" },
+		"request_digest": { "$ref": "#/$defs/digest" },
+		"semantic_request_digest": { "$ref": "#/$defs/digest" },
+		"run_id": { "$ref": "#/$defs/id" },
+		"unit_id": { "$ref": "#/$defs/id" },
+		"attempt": { "type": "integer", "minimum": 1 },
+		"executor": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["executor_id", "kind", "version", "digest", "trust_level"],
+			"properties": {
+				"executor_id": { "$ref": "#/$defs/id" },
+				"kind": { "enum": ["local", "python", "docker", "remote", "trusted"] },
+				"version": { "type": "string", "minLength": 1 },
+				"digest": { "$ref": "#/$defs/digest" },
+				"trust_level": { "enum": ["cooperative", "host_enforced", "attested"] }
+			}
+		},
+		"lifecycle": { "enum": ["NOT_STARTED", "QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"] },
+		"capability_evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+		"outputs": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+		"reference_snapshot_digest": { "$ref": "#/$defs/digest" },
+		"output_root": { "$ref": "#/$defs/outputRoot" },
+		"policy_digest": { "$ref": "#/$defs/digest" },
+		"started_at": { "type": "string", "format": "date-time" },
+		"finished_at": { "type": "string", "format": "date-time" },
+		"exit_code": { "type": "integer" },
+		"diagnostics": { "type": "array", "items": { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } } }
+	},
+	"allOf": [
+		{
+			"if": { "properties": { "lifecycle": { "enum": ["SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"] } }, "required": ["lifecycle"] },
+			"then": { "required": ["finished_at"] }
+		},
+		{
+			"if": { "properties": { "lifecycle": { "const": "SUCCEEDED" } }, "required": ["lifecycle"] },
+			"then": { "properties": { "exit_code": { "const": 0 } }, "required": ["exit_code"] }
+		}
+	],
+	"$defs": {
+		"id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+		"digest": { "type": "string", "pattern": "^(sha256:)?[a-f0-9]{64}$" },
+		"absolutePath": { "type": "string", "pattern": "^/" },
+		"jsonValue": {
+			"oneOf": [
+				{ "type": ["string", "number", "boolean", "null"] },
+				{ "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
+				{ "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+			]
+		},
+		"evidence": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["capability_id", "capability_class", "status", "source", "observed_at"],
+			"properties": {
+				"capability_id": { "type": "string", "pattern": "^sure\\.[a-z0-9][a-z0-9.-]*$" },
+				"capability_class": { "enum": ["agent_capability", "execution_capability"] },
+				"status": { "enum": ["AVAILABLE", "MISSING", "UNKNOWN", "DENIED"] },
+				"source": { "enum": ["agent", "host_probe", "executor", "site_policy", "trusted_attestation"] },
+				"observed_at": { "type": "string", "format": "date-time" },
+				"evidence_digest": { "$ref": "#/$defs/digest" },
+				"details": { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+			},
+			"allOf": [
+				{
+					"if": { "properties": { "capability_class": { "const": "execution_capability" } }, "required": ["capability_class"] },
+					"then": { "properties": { "source": { "enum": ["host_probe", "executor", "site_policy", "trusted_attestation"] } } }
+				},
+				{
+					"if": { "properties": { "status": { "const": "AVAILABLE" } }, "required": ["status"] },
+					"then": { "required": ["evidence_digest"] }
+				}
+			]
+		},
+		"artifact": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["artifact_id", "path", "resolved_path", "sha256", "size", "media_type", "origin", "source_root"],
+			"properties": {
+				"artifact_id": { "$ref": "#/$defs/id" },
+				"path": { "$ref": "#/$defs/absolutePath" },
+				"resolved_path": { "$ref": "#/$defs/absolutePath" },
+				"sha256": { "$ref": "#/$defs/digest" },
+				"size": { "type": "integer", "minimum": 0 },
+				"media_type": { "type": "string", "minLength": 1 },
+				"origin": { "enum": ["local_staging", "read_only_reference", "generated", "external"] },
+				"source_root": { "$ref": "#/$defs/absolutePath" },
+				"reference_snapshot_digest": { "$ref": "#/$defs/digest" }
+			},
+			"allOf": [
+				{
+					"if": { "properties": { "origin": { "const": "read_only_reference" } }, "required": ["origin"] },
+					"then": { "required": ["reference_snapshot_digest"] }
+				}
+			]
+		},
+		"outputRoot": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["path", "resolved_path", "scope_id", "policy_digest", "writable"],
+			"properties": {
+				"path": { "$ref": "#/$defs/absolutePath" },
+				"resolved_path": { "$ref": "#/$defs/absolutePath" },
+				"scope_id": { "$ref": "#/$defs/id" },
+				"policy_digest": { "$ref": "#/$defs/digest" },
+				"writable": { "const": true }
+			}
+		}
+	}
+}

@@ -1,0 +1,66 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/contracts/capability.v1.schema.json",
+	"title": "SURE capability report",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schema", "requirements", "evidence", "checked_at"],
+	"properties": {
+		"schema": { "const": "sure.capability_report.v1" },
+		"requirements": { "type": "array", "items": { "$ref": "#/$defs/requirement" } },
+		"evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+		"checked_at": { "type": "string", "format": "date-time" }
+	},
+	"$defs": {
+		"jsonValue": {
+			"oneOf": [
+				{ "type": ["string", "number", "boolean", "null"] },
+				{ "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
+				{ "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+			]
+		},
+		"requirement": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["capability_id", "capability_class", "required"],
+			"properties": {
+				"capability_id": { "type": "string", "pattern": "^sure\\.[a-z0-9][a-z0-9.-]*$" },
+				"capability_class": { "enum": ["agent_capability", "execution_capability"] },
+				"required": { "type": "boolean" },
+				"constraints": { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+			}
+		},
+		"evidence": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["capability_id", "capability_class", "status", "source", "observed_at"],
+			"properties": {
+				"capability_id": { "type": "string", "pattern": "^sure\\.[a-z0-9][a-z0-9.-]*$" },
+				"capability_class": { "enum": ["agent_capability", "execution_capability"] },
+				"status": { "enum": ["AVAILABLE", "MISSING", "UNKNOWN", "DENIED"] },
+				"source": { "enum": ["agent", "host_probe", "executor", "site_policy", "trusted_attestation"] },
+				"observed_at": { "type": "string", "format": "date-time" },
+				"evidence_digest": { "$ref": "#/$defs/digest" },
+				"details": { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+			},
+			"allOf": [
+				{
+					"if": {
+						"properties": { "capability_class": { "const": "execution_capability" } },
+						"required": ["capability_class"]
+					},
+					"then": {
+						"properties": {
+							"source": { "enum": ["host_probe", "executor", "site_policy", "trusted_attestation"] }
+						}
+					}
+				},
+				{
+					"if": { "properties": { "status": { "const": "AVAILABLE" } }, "required": ["status"] },
+					"then": { "required": ["evidence_digest"] }
+				}
+			]
+		},
+		"digest": { "type": "string", "pattern": "^(sha256:)?[a-f0-9]{64}$" }
+	}
+}

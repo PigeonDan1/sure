@@ -1,0 +1,55 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "execution_result.schema.json",
+	"title": "SURE-EVAL execute & wait result",
+	"description": "Structured result of a local model-inference execution.",
+	"type": "object",
+	"required": ["job_status"],
+	"properties": {
+		"job_status": {
+			"type": "string",
+			"enum": ["succeeded", "running", "failed", "partial"]
+		},
+		"execution_path": { "type": "string", "enum": ["local_docker", "local_python"] },
+		"runtime_kind": { "type": "string", "enum": ["container", "python"] },
+		"execution_requested": { "type": "string", "enum": ["auto", "local"] },
+		"predictions_path": { "type": "string" },
+		"log_path": { "type": "string" },
+		"host": { "type": "string" },
+		"pid": { "type": "number" },
+		"command": { "type": "string" },
+		"cwd": { "type": "string" },
+		"started_at": { "type": "string" },
+		"ended_at": { "type": "string" },
+		"duration_seconds": { "type": "number" },
+		"exit_code": { "type": "number" },
+		"stdout_log": { "type": "string" },
+		"stderr_log": { "type": "string" },
+		"device_request": { "type": "string" },
+		"device_actual": { "type": "string" },
+		"cuda_visible_devices": { "type": "string" },
+		"completion_source": {
+			"type": "string",
+			"enum": ["local_process"]
+		},
+		"product_dir": { "type": "string" },
+		"failed_stage": { "type": "string" },
+		"input_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+		"datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["dataset", "expected", "generated", "valid"],
+				"properties": {
+					"dataset": { "type": "string" },
+					"expected": { "type": "integer", "minimum": 0 },
+					"generated": { "type": "integer", "minimum": 0 },
+					"valid": { "type": "integer", "minimum": 0 }
+				},
+				"additionalProperties": false
+			}
+		},
+		"next_action": { "type": "string" }
+	},
+	"additionalProperties": false
+}

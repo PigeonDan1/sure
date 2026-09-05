@@ -1,0 +1,142 @@
+import { describe, expect, it } from "vitest";
+import {
+	canonicalJsonDigest,
+	type ExecutionReceipt,
+	type ExecutionRequest,
+	type JsonValue,
+	validateExecutionReceipt,
+	validateExecutionRequest,
+} from "../src/index.ts";
+
+const DIGEST_A = `sha256:${"a".repeat(64)}`;
+const DIGEST_B = `sha256:${"b".repeat(64)}`;
+const NOW = "2026-09-06T00:00:00.000Z";
+
+function request(): ExecutionRequest {
+	return {
+		schema: "sure.execution_request.v1",
+		request_id: "request-1",
+		semantic_request_digest: DIGEST_A,
+		run_id: "run-1",
+		unit_id: "execute_inference",
+		attempt: 1,
+		operation: "inference",
+		subject: {
+			bundle_manifest_path: "/tmp/sure-dev/bundle.json",
+			bundle_digest: DIGEST_A,
+			runtime_identity_digest: DIGEST_B,
+			inference_protocol_digest: DIGEST_A,
+		},
+		inputs: [],
+		entrypoint: { executable: "python3", argv: ["/tmp/sure-dev/run.py"] },
+		runtime_requirements: { python: "3.11" },
+		capability_requirements: [
+			{ capability_id: "sure.execution.local-python", capability_class: "execution_capability", required: true },
+		],
+		reference_snapshot_digest: DIGEST_B,
+		output_root: {
+			path: "/tmp/sure-dev/runs/run-1/artifacts",
+			resolved_path: "/tmp/sure-dev/runs/run-1/artifacts",
+			scope_id: "run-1",
+			policy_digest: DIGEST_A,
+			writable: true,
+		},
+		policy_digest: DIGEST_A,
+		created_at: NOW,
+	};
+}
+
+function receipt(input: ExecutionRequest, lifecycle: ExecutionReceipt["lifecycle"] = "SUCCEEDED"): ExecutionReceipt {
+	return {
+		schema: "sure.execution_receipt.v1",
+		receipt_id: "receipt-1",
+		request_id: input.request_id,
+		request_digest: canonicalJsonDigest(input as unknown as JsonValue),
+		semantic_request_digest: input.semantic_request_digest,
+		run_id: input.run_id,
+		unit_id: input.unit_id,
+		attempt: input.attempt,
+		executor: {
+			executor_id: "local-python-1",
+			kind: "python",
+			version: "1.0.0",
+			digest: DIGEST_A,
+			trust_level: "host_enforced",
+		},
+		lifecycle,
+		capability_evidence: [
+			{
+				capability_id: "sure.execution.local-python",
+				capability_class: "execution_capability",
+				status: "AVAILABLE",
+				source: "executor",
+				observed_at: NOW,
+				evidence_digest: DIGEST_B,
+			},
+		],
+		outputs: [],
+		reference_snapshot_digest: input.reference_snapshot_digest,
+		output_root: input.output_root,
+		policy_digest: input.policy_digest,
+		started_at: NOW,
+		finished_at: NOW,
+		exit_code: lifecycle === "SUCCEEDED" ? 0 : 1,
+	};
+}
+
+describe("execution boundary", () => {
+	it("accepts a receipt contract but leaves PASS to artifact validators", () => {
+		const input = request();
+		const result = validateExecutionReceipt(input, receipt(input));
+		expect(result.valid).toBe(true);
+		expect(result.outcome).toMatchObject({
+			outcome: "NOT_EXECUTED",
+			workflow_disposition: "WAIT",
+			reason_code: "VALIDATION_PENDING",
+		});
+	});
+
+	it("turns missing execution capability into NOT_EXECUTED", () => {
+		const input = request();
+		const failed = receipt(input);
+		failed.capability_evidence = [];
+		const result = validateExecutionReceipt(input, failed);
+		expect(result.valid).toBe(false);
+		expect(result.capability.missing).toEqual(["sure.execution.local-python"]);
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
+	});
+
+	it("keeps a failed executor distinct from a validator failure", () => {
+		const input = request();
+		const result = validateExecutionReceipt(input, receipt(input, "FAILED"));
+		expect(result.valid).toBe(true);
+		expect(result.outcome).toMatchObject({ outcome: "RETRY", reason_code: "EXECUTION_FAILED" });
+	});
+
+	it("rejects tampered request identity and output escape", () => {
+		const input = request();
+		const tampered = receipt(input);
+		tampered.semantic_request_digest = DIGEST_B;
+		tampered.outputs = [
+			{
+				artifact_id: "result",
+				path: "/tmp/outside/result.json",
+				resolved_path: "/tmp/outside/result.json",
+				sha256: DIGEST_A,
+				size: 1,
+				media_type: "application/json",
+				origin: "generated",
+				source_root: "/tmp/outside",
+			},
+		];
+		const result = validateExecutionReceipt(input, tampered);
+		expect(result.valid).toBe(false);
+		expect(result.errors.join(" ")).toMatch(/does not match request|outside every allowed root/);
+	});
+
+	it("checks request output root against an explicit site write boundary", () => {
+		const result = validateExecutionRequest(request(), { allowed_output_roots: ["/tmp/another-root"] });
+		expect(result.valid).toBe(false);
+		expect(result.outcome.reason_code).toBe("PATH_OUT_OF_SCOPE");
+	});
+});

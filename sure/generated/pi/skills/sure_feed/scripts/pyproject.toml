@@ -1,0 +1,14 @@
+[project]
+name = "sure-feed-backend"
+version = "0.1.0"
+description = "ModelScope feeding backend bundled inside the sure_feed skill package."
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "modelscope>=1.10",
+]
+
+[tool.uv]
+# modelscope is the only heavy dep (snapshot_download). It is imported at
+# module top-level by the flat scripts that actually fetch; the sure_feed
+# package itself imports cleanly without it.

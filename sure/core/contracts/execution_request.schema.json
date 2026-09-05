@@ -1,0 +1,143 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/contracts/execution-request.v1.schema.json",
+	"title": "SURE execution request",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"schema",
+		"request_id",
+		"semantic_request_digest",
+		"run_id",
+		"unit_id",
+		"attempt",
+		"operation",
+		"subject",
+		"inputs",
+		"entrypoint",
+		"runtime_requirements",
+		"capability_requirements",
+		"reference_snapshot_digest",
+		"output_root",
+		"policy_digest",
+		"created_at"
+	],
+	"properties": {
+		"schema": { "const": "sure.execution_request.v1" },
+		"request_id": { "$ref": "#/$defs/id" },
+		"semantic_request_digest": { "$ref": "#/$defs/digest" },
+		"run_id": { "$ref": "#/$defs/id" },
+		"unit_id": { "$ref": "#/$defs/id" },
+		"attempt": { "type": "integer", "minimum": 1 },
+		"operation": { "enum": ["validation", "inference", "formal_evaluation", "package", "publication"] },
+		"subject": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["bundle_manifest_path", "bundle_digest", "runtime_identity_digest"],
+			"properties": {
+				"bundle_manifest_path": { "$ref": "#/$defs/absolutePath" },
+				"bundle_digest": { "$ref": "#/$defs/digest" },
+				"runtime_identity_digest": { "$ref": "#/$defs/digest" },
+				"inference_protocol_digest": { "$ref": "#/$defs/digest" },
+				"dataset_identity_digest": { "$ref": "#/$defs/digest" },
+				"scoring_protocol_digest": { "$ref": "#/$defs/digest" }
+			}
+		},
+		"inputs": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+		"entrypoint": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["executable", "argv"],
+			"properties": {
+				"executable": { "type": "string", "minLength": 1 },
+				"argv": { "type": "array", "items": { "type": "string" } },
+				"working_directory": { "$ref": "#/$defs/absolutePath" }
+			}
+		},
+		"runtime_requirements": { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } },
+		"capability_requirements": { "type": "array", "items": { "$ref": "#/$defs/requirement" } },
+		"reference_snapshot_digest": { "$ref": "#/$defs/digest" },
+		"output_root": { "$ref": "#/$defs/outputRoot" },
+		"policy_digest": { "$ref": "#/$defs/digest" },
+		"created_at": { "type": "string", "format": "date-time" }
+	},
+	"allOf": [
+		{
+			"if": {
+				"properties": { "operation": { "const": "formal_evaluation" } },
+				"required": ["operation"]
+			},
+			"then": {
+				"properties": {
+					"subject": {
+						"required": [
+							"bundle_manifest_path",
+							"bundle_digest",
+							"runtime_identity_digest",
+							"inference_protocol_digest",
+							"dataset_identity_digest",
+							"scoring_protocol_digest"
+						]
+					}
+				}
+			}
+		}
+	],
+	"$defs": {
+		"id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+		"digest": { "type": "string", "pattern": "^(sha256:)?[a-f0-9]{64}$" },
+		"absolutePath": { "type": "string", "pattern": "^/" },
+		"jsonValue": {
+			"oneOf": [
+				{ "type": ["string", "number", "boolean", "null"] },
+				{ "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
+				{ "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+			]
+		},
+		"requirement": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["capability_id", "capability_class", "required"],
+			"properties": {
+				"capability_id": { "type": "string", "pattern": "^sure\\.[a-z0-9][a-z0-9.-]*$" },
+				"capability_class": { "enum": ["agent_capability", "execution_capability"] },
+				"required": { "type": "boolean" },
+				"constraints": { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+			}
+		},
+		"artifact": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["artifact_id", "path", "resolved_path", "sha256", "size", "media_type", "origin", "source_root"],
+			"properties": {
+				"artifact_id": { "$ref": "#/$defs/id" },
+				"path": { "$ref": "#/$defs/absolutePath" },
+				"resolved_path": { "$ref": "#/$defs/absolutePath" },
+				"sha256": { "$ref": "#/$defs/digest" },
+				"size": { "type": "integer", "minimum": 0 },
+				"media_type": { "type": "string", "minLength": 1 },
+				"origin": { "enum": ["local_staging", "read_only_reference", "generated", "external"] },
+				"source_root": { "$ref": "#/$defs/absolutePath" },
+				"reference_snapshot_digest": { "$ref": "#/$defs/digest" }
+			},
+			"allOf": [
+				{
+					"if": { "properties": { "origin": { "const": "read_only_reference" } }, "required": ["origin"] },
+					"then": { "required": ["reference_snapshot_digest"] }
+				}
+			]
+		},
+		"outputRoot": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["path", "resolved_path", "scope_id", "policy_digest", "writable"],
+			"properties": {
+				"path": { "$ref": "#/$defs/absolutePath" },
+				"resolved_path": { "$ref": "#/$defs/absolutePath" },
+				"scope_id": { "$ref": "#/$defs/id" },
+				"policy_digest": { "$ref": "#/$defs/digest" },
+				"writable": { "const": true }
+			}
+		}
+	}
+}

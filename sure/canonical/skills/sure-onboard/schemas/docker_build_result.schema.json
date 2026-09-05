@@ -1,0 +1,21 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "docker_build_result.schema.json",
+	"title": "SURE Docker build result",
+	"type": "object",
+	"required": ["schema", "status", "dockerfile_path", "dockerfile_sha256", "base_image", "target_image", "target_image_digest", "target_image_ref"],
+	"properties": {
+		"schema": { "const": "sure.onboard.docker_build_result.v2" },
+		"generated_at": { "type": "string" },
+		"status": { "enum": ["passed", "failed", "blocked"] },
+		"dockerfile_path": { "type": "string" },
+		"dockerfile_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+		"base_image": { "type": "string" },
+		"target_image": { "type": "string" },
+		"target_image_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+		"target_image_ref": { "type": "string" },
+		"image_id": { "type": "string" },
+		"build_log_path": { "type": "string" }
+	},
+	"additionalProperties": true
+}

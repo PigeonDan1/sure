@@ -1,0 +1,6 @@
+interface:
+  display_name: "SURE Eval"
+  short_description: "Eval workflow for reproducible model evaluation"
+  default_prompt: "Use $sure-eval to score an existing sure prediction bundle with the pinned evaluation engine without running inference."
+policy:
+  allow_implicit_invocation: true

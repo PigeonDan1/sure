@@ -1,0 +1,16 @@
+[project]
+name = "sure-onboard-backend"
+version = "0.1.0"
+description = "Model-tool onboarding backend bundled inside the sure_onboard skill package."
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "typer>=0.12",
+    "click>=8.0",
+]
+
+[tool.uv]
+# The model wrappers under sure/models/<model>/ may import torch/librosa/
+# modelscope at inference time; those deps belong to the model-local env, not
+# this onboarding backend. This package only needs the lightweight tooling.

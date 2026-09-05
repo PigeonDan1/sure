@@ -1,0 +1,64 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "docker_validation.schema.json",
+	"title": "SURE Docker validation result",
+	"type": "object",
+	"required": ["schema", "status", "target_image", "target_image_digest", "target_image_ref", "checks", "model_runtime", "harness_runtime", "runtime_separation", "sample_output_path", "sample_output_sha256"],
+	"properties": {
+		"schema": { "const": "sure.onboard.docker_validation.v2" },
+		"generated_at": { "type": "string" },
+		"status": { "enum": ["passed", "failed", "blocked"] },
+		"target_image": { "type": "string" },
+		"target_image_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+		"target_image_ref": { "type": "string" },
+		"container_id": { "type": "string" },
+		"checks": {
+			"type": "object",
+			"required": ["import", "load", "infer", "contract", "bounded_fixture_inference"],
+			"properties": {
+				"import": { "enum": [true, "passed"] },
+				"load": { "enum": [true, "passed"] },
+				"infer": { "enum": [true, "passed"] },
+				"contract": { "enum": [true, "passed"] },
+				"bounded_fixture_inference": { "enum": [true, "passed"] }
+			},
+			"additionalProperties": true
+		},
+		"model_runtime": {
+			"type": "object",
+			"required": ["runtime_type", "python_executable", "checks"],
+			"properties": {
+				"runtime_type": { "const": "model_python" },
+				"python_executable": { "type": "string" },
+				"python_version": { "type": ["string", "null"] },
+				"checks": { "type": "object" }
+			},
+			"additionalProperties": true
+		},
+		"harness_runtime": {
+			"type": "object",
+			"required": ["schema", "runtime_id", "runtime_type", "python_executable", "lock_sha256", "manifest_path", "runtime_root", "checks"],
+			"properties": {
+				"schema": { "const": "sure.harness.runtime.binding.v1" },
+				"runtime_id": { "type": "string" },
+				"runtime_type": { "const": "harness_python" },
+				"python_executable": { "type": "string" },
+				"lock_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+				"manifest_path": { "type": "string" },
+				"runtime_root": { "type": "string" },
+				"checks": { "type": "object" }
+			},
+			"additionalProperties": true
+		},
+		"runtime_separation": {
+			"type": "object",
+			"required": ["distinct_executables"],
+			"properties": { "distinct_executables": { "const": true } },
+			"additionalProperties": true
+		},
+		"sample_output_path": { "type": "string" },
+		"sample_output_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+		"validation_log_path": { "type": "string" }
+	},
+	"additionalProperties": true
+}

@@ -1,0 +1,1 @@
+{"resolution":"sure-core-registry","schema":"sure.semantic.backends.v1","validators":[{"description":"Semantic validator python-script registered by the execute_evaluation gate.","id":"python-script","operation":"validate","script":"check_eval_run_report.py"}]}

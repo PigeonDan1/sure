@@ -1,0 +1,178 @@
+schema: sure.eval.inference_protocol.v1
+protocol_id: {protocol_id}
+run:
+  run_id: {run_id}
+  run_dir: {run_dir}
+  created_at: '{created_at}'
+model:
+  model_name: {model_name}
+  model_dir: {model_dir}
+  model_source: {model_source}
+  weights_source: {weights_source}
+  model_dir_source: {model_dir_source}
+  mcp_tool_name: {mcp_tool_name}
+  server_config:
+    command:
+{server_command_yaml}
+    working_dir: {server_working_dir}
+    timeout: {server_timeout}
+    startup_timeout_sec: {server_startup_timeout_sec}
+    env_keys:
+{server_env_keys_yaml}
+protocol_selection:
+  protocol_id: {protocol_id}
+  definition_path: {protocol_definition_path}
+  model_protocol_config_path: {model_protocol_config_path}
+  is_default: {protocol_is_default}
+  purpose: {protocol_purpose}
+  standard_params:
+{protocol_standard_params_yaml}
+  resolved_model_params:
+{resolved_model_params_yaml}
+  unmapped:
+{unmapped_protocol_params_yaml}
+inference_environment:
+  execution_path: {execution_path}
+  container:
+    image: {docker_image}
+    image_digest: {docker_image_digest}
+    image_ref: {docker_image_ref}
+    dockerfile: {dockerfile}
+    repo_root: {container_repo_root}
+    model_dir: {container_model_dir}
+    python_executable: {container_python_executable}
+    working_dir: {container_working_dir}
+    execution_mode: container_only
+    host_python_fallback: false
+  harness_runtime:
+    schema: sure.harness.runtime.binding.v1
+    runtime_id: {harness_runtime_id}
+    runtime_type: harness_python
+    python_executable: {harness_python_executable}
+    process_python_executable: {harness_process_python_executable}
+    lock_sha256: {harness_lock_sha256}
+    manifest_path: {harness_manifest_path}
+    runtime_root: {harness_runtime_root}
+  server:
+    transport: {server_transport}
+    command:
+{server_command_yaml}
+    tool_name: {mcp_tool_name}
+    startup_timeout_sec: {server_startup_timeout_sec}
+    timeout: {server_timeout}
+  env:
+    device: {device}
+    env_keys:
+{server_env_keys_yaml}
+    safe_env_values:
+      {}
+    redacted_env_keys: []
+    modelscope_cache: {modelscope_cache}
+  runtime_inventory:
+    path: {runtime_inventory_path}
+    status: {runtime_inventory_status}
+    schema: sure.onboard.runtime_inventory.v2
+    local_evidence_backend: {runtime_inventory_backend}
+    execution_mode: container_only
+    target_image_ref: {docker_image_ref}
+  mount_policy:
+    mount_stable_absolute_roots:
+{mount_stable_absolute_roots_yaml}
+    reject_repo_internal_runtime_mount_overlays: {reject_repo_internal_runtime_mount_overlays}
+    nfs_models_read_only: true
+    result_workspace:
+      target: {container_result_dir}
+      read_only: false
+inference_constraints:
+  no_external_lm: {no_external_lm}
+  no_retrieval: {no_retrieval}
+  no_hotwords: {no_hotwords}
+  single_pass_decode: {single_pass_decode}
+  no_prompt_engineering: {no_prompt_engineering}
+  local_fallback_allowed: {local_fallback_allowed}
+  metric_logic_in_inference_image_allowed: {metric_logic_in_inference_image_allowed}
+  required_preflight_checks:
+{required_preflight_checks_yaml}
+inference_parameters:
+  source_priority:
+  - prediction_generation_status.json
+  - runtime_inventory.json
+  - model config.yaml protocols
+  - process environment fallback
+  protocol_id: {protocol_id}
+  protocol_resolution:
+    status: {protocol_resolution_status}
+    error: {protocol_resolution_error}
+    standard_params:
+{protocol_standard_params_yaml}
+    model_params:
+{resolved_model_params_yaml}
+    unmapped:
+{unmapped_protocol_params_yaml}
+  explicit_tool_args:
+    {}
+  argument_policy:
+    argument_keys: []
+    dynamic_argument_fields: []
+  raw_response_observation:
+    source_of_truth: false
+    payload_types: []
+    payload_keys: []
+  model_config_protocol:
+    standard_params:
+{protocol_standard_params_yaml}
+    resolved_model_params:
+{resolved_model_params_yaml}
+    unmapped:
+{unmapped_protocol_params_yaml}
+execution_surface:
+  materialized: {execution_surface_materialized}
+  execution_surface_type: {execution_surface_type}
+  entrypoint_path: {execution_entrypoint_path}
+  generation_method: {execution_generation_method}
+  template_file: {execution_template_file}
+  template_sha256: {execution_template_sha256}
+  isolation_compliance:
+    eval_runs_referenced: {eval_runs_referenced}
+    prior_run_scripts_copied: {prior_run_scripts_copied}
+    deviation_approved_by_user: {deviation_approved_by_user}
+prediction_reuse:
+  enabled: false
+  generation_policy: generated_by_model_server
+  manifest:
+  source_run_dir:
+  source_results_dir:
+  source_run_id:
+  source_protocol:
+  source_prediction_generation_status:
+  source_runtime_inventory:
+  old_evaluation_reused: false
+prediction_contract:
+  contract_path: {prediction_contract_path}
+  compatibility_tsv: {prediction_compatibility_tsv}
+  structured_jsonl: {prediction_structured_jsonl}
+  format_used: {prediction_format_used}
+  generated_by: {prediction_generated_by}
+  protocol_argument: {protocol_id}
+provenance:
+  harness_commit: {harness_commit}
+  evaluation_engine:
+    root: {evaluation_engine_root}
+    commit: {evaluation_engine_commit}
+  prediction_generation_status: {prediction_generation_status}
+  prediction_generation_status_schema: sure.eval.prediction_generation_status.v2
+  runtime_inventory: {runtime_inventory_path}
+  runtime_inventory_schema: sure.onboard.runtime_inventory.v2
+  deployment_ready: {deployment_ready_path}
+  package_gate: {package_gate_path}
+  source_inference_provenance_manifest:
+  source_protocol:
+  source_prediction_generation_status:
+  source_runtime_inventory:
+  raw_response_source_of_truth: false
+  notes:
+  - Inference parameters come from model config, CLI overrides, protocol resolver output, and the actual MCP call policy.
+  - raw_response is preserved in predictions JSONL as model output evidence only.
+notes:
+- This file records inference protocol, runtime environment, inference parameters, and inference constraints only.
+- Dataset scope, evaluation routes, metric results, validation, and metric artifacts are recorded in report_snapshot.md and report.jsonl.

@@ -1,0 +1,52 @@
+schema: sure.eval.protocol_catalog.v1
+protocols:
+  standard_system:
+    name: Standard system
+    description: Use the approved model package's upstream runtime and inference defaults without harness generation overrides.
+    is_default: true
+    params: {}
+    constraints:
+      - id: upstream-native-configuration
+        description: Generation behavior must come from the approved model package and every explicit harness override must be recorded.
+        category: required
+        scope: inference
+
+  strict_core:
+    name: Strict core
+    description: Apply deterministic conservative generation parameters through model-declared MCP argument mappings.
+    is_default: false
+    params:
+      temperature:
+        description: Disable sampling temperature.
+        default: 0
+        allowed_values: [0]
+        scope: inference
+      do_sample:
+        description: Disable sampling.
+        default: false
+        allowed_values: [false]
+        scope: inference
+      num_beams:
+        description: Use one decoding beam.
+        default: 1
+        allowed_values: [1]
+        scope: inference
+      num_return_sequences:
+        description: Return exactly one completed hypothesis.
+        default: 1
+        allowed_values: [1]
+        scope: inference
+      seed:
+        description: Fix the model-visible random seed.
+        default: 0
+        allowed_values: [0]
+        scope: inference
+    constraints:
+      - id: mapped-or-not-applicable
+        description: Every strict parameter must map to an MCP tool argument or be explicitly declared not applicable by the approved model package.
+        category: required
+        scope: inference
+      - id: no-user-override
+        description: Explicit tool arguments must not override strict protocol values.
+        category: forbidden
+        scope: inference

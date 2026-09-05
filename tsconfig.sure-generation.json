@@ -1,0 +1,18 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"@earendil-works/sure-core": ["./packages/sure-core/src/index.ts"],
+			"@earendil-works/sure-core/*": ["./packages/sure-core/src/*"]
+		}
+	},
+	"include": [
+		"scripts/generate-sure-skills.ts",
+		"scripts/sure-skill-generation.test.ts",
+		"sure/canonical/**/*.ts",
+		"sure/compatibility/**/*.ts",
+		"sure/core/**/*.ts"
+	],
+	"exclude": ["**/node_modules/**", "**/dist/**", "**/*.d.ts"]
+}

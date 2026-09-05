@@ -1,0 +1,6 @@
+interface:
+  display_name: "SURE Feed"
+  short_description: "Feed workflow for reproducible model evaluation"
+  default_prompt: "Use $sure-feed to feed modelscope, huggingface, or github speech models into the sure pipeline and emit a validated onboarding handoff."
+policy:
+  allow_implicit_invocation: true

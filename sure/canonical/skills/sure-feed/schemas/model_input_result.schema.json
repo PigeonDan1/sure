@@ -1,0 +1,44 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "model_input_result.schema.json",
+	"title": "SURE model-feed MODEL_INPUT synthesis",
+	"description": "Structured output of the SYNTHESIZE_MODEL_INPUT unit. Each item wraps a complete MODEL_INPUT object with evidence and confidence metadata.",
+	"type": "object",
+	"required": ["model_inputs"],
+	"properties": {
+		"source_query": { "type": "object" },
+		"model_inputs": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["model_id", "model_input", "evidence"],
+				"properties": {
+					"model_id": { "type": "string" },
+					"source": { "type": "string", "enum": ["modelscope", "huggingface", "github", "multi"] },
+					"model_input_path": { "type": "string" },
+					"model_input": { "type": "object" },
+					"evidence": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"source": { "type": "string", "enum": ["modelscope", "huggingface", "github", "manual", "local"] },
+								"field": { "type": "string" },
+								"model_input_field": { "type": "string" },
+								"value": {},
+								"url": { "type": "string" },
+								"strength": { "type": "string", "enum": ["strong", "medium", "weak"] }
+							},
+							"additionalProperties": true
+						}
+					},
+					"confidence": { "type": "object" },
+					"missing_or_weak_fields": { "type": "array", "items": { "type": "string" } }
+				},
+				"additionalProperties": false
+			}
+		},
+		"summary": { "type": "string" }
+	},
+	"additionalProperties": false
+}

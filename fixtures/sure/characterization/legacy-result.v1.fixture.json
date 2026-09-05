@@ -1,0 +1,14 @@
+{
+  "schema": "sure.run_result.v1",
+  "command": "/sure_infer",
+  "args": "model=example dataset=fixture",
+  "run_id": "20000101-000000-deadbeef",
+  "run_dir": "/workspace/project/.sure/runs/20000101-000000-deadbeef",
+  "status": "success",
+  "started_at": "2000-01-01T00:00:00.000Z",
+  "updated_at": "2000-01-01T00:01:00.000Z",
+  "finished_at": "2000-01-01T00:01:00.000Z",
+  "products": [
+    "artifacts/main_agent_run_report.json"
+  ]
+}

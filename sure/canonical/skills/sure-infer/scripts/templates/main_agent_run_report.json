@@ -1,0 +1,41 @@
+{
+  "run_id": "",
+  "timestamp": "",
+  "task_type": "",
+  "goal": "",
+  "selected_datasets": [],
+  "executed_steps": [],
+  "status": "pending",
+  "artifacts": {
+    "eval_input_resolved": "",
+    "evaluation_route_plan": "",
+    "task_classification": "",
+    "tool_readiness_routing": "",
+    "plan": "",
+    "dataset_decision": "",
+    "script_routing": "",
+    "execution_surface": "",
+    "execution_readiness_report": "",
+    "assessment_report": "",
+    "model_eval_manifest": ""
+  },
+  "model_eval_manifest": "",
+  "report_persisted": false,
+  "execution_path_requested": "auto",
+  "execution_path_declared": "",
+  "execution_path_actual": "",
+  "execution": {
+    "requested": "auto",
+    "actual": "",
+    "path_actual": ""
+  },
+  "evaluation_only": false,
+  "device_request": "auto",
+  "device_actual": "",
+  "cuda_visible_devices": "",
+  "max_samples": 0,
+  "dataset_total_samples": 0,
+  "evaluated_samples": 0,
+  "next_action": "",
+  "notes": []
+}

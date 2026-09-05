@@ -56,13 +56,13 @@ def _capabilities(task: str, language: str) -> dict:
     return json.loads(result.stdout)
 
 
-def _run_preflight(payload: dict):
+def _run_preflight(payload: dict, *extra_args: str):
     with tempfile.TemporaryDirectory() as tmp:
         input_path = Path(tmp) / "eval_input_resolved.json"
         output_path = Path(tmp) / "evaluation_preflight.json"
         input_path.write_text(json.dumps(payload), encoding="utf-8")
         result = subprocess.run(
-            [sys.executable, str(SCRIPT), "--input", str(input_path), "--output", str(output_path)],
+            [sys.executable, str(SCRIPT), "--input", str(input_path), "--output", str(output_path), *extra_args],
             capture_output=True,
             text=True,
         )
@@ -117,6 +117,12 @@ class PreflightCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(written["supported"])
         self.assertEqual(written["reason_code"], "PREFLIGHT_SKIPPED_ENGINE_UNAVAILABLE")
+
+    def test_formal_missing_engine_is_capability_missing(self):
+        result, written = _run_preflight(_payload([_dataset("ASR", "zh", ["cer"])], engine_root=None), "--formal")
+        self.assertEqual(result.returncode, 4)
+        self.assertFalse(written["supported"])
+        self.assertEqual(written["reason_code"], "CAPABILITY_MISSING")
 
     def test_missing_input_exits_two(self):
         result = subprocess.run(
