@@ -18,6 +18,7 @@ const source = join(repositoryRoot, "packages/sure-cli/src/surectl.ts");
 const definition = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/canonical-definition.json");
 const registryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/validator-registry.json");
 const evalDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/canonical-definition.json");
+const portableMemoryContract = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/memory-contract.json");
 const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
 const DIGEST_C = "c".repeat(64);
@@ -107,6 +108,35 @@ describe("surectl cooperative control plane", () => {
 
 	afterEach(() => {
 		rmSync(root, { recursive: true, force: true });
+	});
+
+	it("validates a portable memory contract and logical URI without Pi modules", () => {
+		const checked = command(root, "memory", [
+			"--contract",
+			portableMemoryContract,
+			"--skill",
+			"sure_feed",
+			"--uri",
+			"memory://sure_feed/bad_case/missing-runtime",
+		]);
+		expect(checked.status).toBe(0);
+		expect(checked.value?.ok).toBe(true);
+		expect(checked.value?.command).toBe("memory");
+		expect(checked.value?.uri).toEqual({
+			skill: "sure_feed",
+			kind: "bad_case",
+			slug: "missing-runtime",
+		});
+	});
+
+	it("reports a malformed memory contract as not executed instead of an advisory success", () => {
+		const malformed = join(root, "memory-contract.json");
+		writeFileSync(malformed, JSON.stringify({ schema: "sure.memory.contract.v0" }));
+		const checked = command(root, "memory", ["--contract", malformed]);
+		expect(checked.status).toBe(5);
+		expect(checked.value?.ok).toBe(false);
+		expect((checked.value?.outcome as Record<string, unknown>).outcome).toBe("NOT_EXECUTED");
+		expect((checked.value?.outcome as Record<string, unknown>).reason_code).toBe("INVALID_CONTRACT");
 	});
 
 	it("advances only from Core validation and registered gate evidence", () => {

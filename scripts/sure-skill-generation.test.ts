@@ -143,6 +143,18 @@ describe("canonical SURE skill generation", () => {
 		}
 	});
 
+	it("ships a Pi-free portable memory entrypoint description", () => {
+		for (const skill of CANONICAL_SKILLS) {
+			const readme = readFileSync(
+				join(repositoryRoot, "sure/dist/agent-skills", skill.distribution_slug, "memory", "README.md"),
+				"utf8",
+			);
+			expect(readme).toContain("surectl memory --contract ./memory-contract.json");
+			expect(readme).toContain(`--skill ${skill.skill_id}`);
+			expect(readme).not.toMatch(/@earendil-works\/pi-coding-agent|sure\/skills\/sure_|HARNESS_PYTHON_BIN/);
+		}
+	});
+
 	it("is reproducible and does not require a production reference root", () => {
 		const script = join(repositoryRoot, "scripts/generate-sure-skills.ts");
 		execFileSync(process.execPath, ["--import", "tsx", script, "--check"], { cwd: repositoryRoot, stdio: "pipe" });

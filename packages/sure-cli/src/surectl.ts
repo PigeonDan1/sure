@@ -2,10 +2,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
+	closeSync,
+	constants,
 	existsSync,
+	fsyncSync,
 	linkSync,
 	lstatSync,
 	mkdirSync,
+	openSync,
 	readdirSync,
 	readFileSync,
 	readlinkSync,
@@ -37,11 +41,13 @@ import {
 	type PolicyPathRole,
 	type PolicySnapshot,
 	type PublicOutcome,
+	parseMemoryUri,
 	type StateDocument,
 	type StructuralValidationResult,
 	validateExecutionReceipt,
 	validateExecutionRequest,
 	validateFrozenEvaluationSubject,
+	validateMemoryContract,
 	validatePolicySnapshot,
 	validateStructuralArtifact,
 	type WorkflowCheckpoint,
@@ -184,12 +190,50 @@ function output(value: unknown): void {
 	process.stdout.write(json(value));
 }
 
+const DIRECTORY_OPEN_FLAG = process.platform === "win32" ? 0 : (constants.O_DIRECTORY ?? 0);
+
+function syncDirectory(path: string): void {
+	let descriptor: number | undefined;
+	try {
+		descriptor = openSync(path, constants.O_RDONLY | DIRECTORY_OPEN_FLAG);
+		fsyncSync(descriptor);
+	} catch (error) {
+		if (!isUnsupportedDirectorySync(error)) throw error;
+	} finally {
+		if (descriptor !== undefined) closeSync(descriptor);
+	}
+}
+
+function isUnsupportedDirectorySync(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		(error.code === "EINVAL" || error.code === "ENOTSUP" || error.code === "EBADF" || error.code === "EPERM")
+	);
+}
+
+function writeDurableFile(path: string, content: string, exclusive: boolean): void {
+	const descriptor = openSync(
+		path,
+		constants.O_WRONLY | constants.O_CREAT | (exclusive ? constants.O_EXCL : 0),
+		0o666,
+	);
+	try {
+		writeFileSync(descriptor, content, { encoding: "utf8" });
+		fsyncSync(descriptor);
+	} finally {
+		closeSync(descriptor);
+	}
+}
+
 function writeJsonAtomic(path: string, value: unknown): void {
 	mkdirSync(dirname(path), { recursive: true });
 	const temporary = `${path}.sure-tmp-${process.pid}-${randomUUID()}`;
-	writeFileSync(temporary, json(value), { encoding: "utf8", flag: "wx" });
 	try {
+		writeDurableFile(temporary, json(value), true);
 		renameSync(temporary, path);
+		syncDirectory(dirname(path));
 	} catch (error) {
 		try {
 			// The temporary file is local to the admitted output root; cleanup is
@@ -213,10 +257,11 @@ function writeJsonImmutable(path: string, value: unknown): void {
 		return;
 	}
 	const temporary = `${path}.sure-immutable-${process.pid}-${randomUUID()}`;
-	writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
 	try {
+		writeDurableFile(temporary, content, true);
 		// A hard-link publish is no-clobber on POSIX filesystems, unlike rename().
 		linkSync(temporary, path);
+		syncDirectory(dirname(path));
 	} catch (error) {
 		if (isAlreadyExists(error)) {
 			const existing = readJson(path);
@@ -1237,6 +1282,86 @@ function capabilities(args: ParsedArgs): PublicOutcome {
 	return outcome.outcome;
 }
 
+/**
+ * Validate the host-neutral memory contract carried by a skill distribution.
+ * This command deliberately does not run a memory writer or alter a workflow;
+ * it gives portable hosts one small, Pi-free integrity/identity check. Future
+ * backend operations must return NOT_EXECUTED until they provide their own
+ * structured receipt.
+ */
+function memory(args: ParsedArgs): PublicOutcome {
+	const contractValue = one(args, "contract") ?? one(args, "memory-contract");
+	if (contractValue === undefined) throw new Error("--contract (or --memory-contract) is required.");
+	const contractPath = absolute(contractValue, "--contract");
+	assertRegularFile(contractPath, "Memory contract");
+	const validation = validateMemoryContract(readJson(contractPath));
+	const requestedDigest = one(args, "digest");
+	const skill = one(args, "skill");
+	const uriValue = one(args, "uri");
+	const diagnostics: string[] = [...validation.errors];
+	if (validation.valid && requestedDigest !== undefined) {
+		if (!validDigestValue(requestedDigest) || !sameDigest(requestedDigest, validation.digest ?? "")) {
+			diagnostics.push("memory contract digest does not match the supplied digest");
+		}
+	}
+	const projection =
+		validation.valid &&
+		validation.contract &&
+		typeof validation.contract.skill === "object" &&
+		validation.contract.skill !== null
+			? (validation.contract.skill as Record<string, unknown>)
+			: undefined;
+	if (validation.valid && skill !== undefined) {
+		if (projection?.skill_id !== skill) diagnostics.push("memory contract skill projection does not match --skill");
+		if (skill === "sure_approve" && projection?.enabled !== false)
+			diagnostics.push("sure_approve memory must be disabled");
+	}
+	let parsedUri: ReturnType<typeof parseMemoryUri> | undefined;
+	if (validation.valid && uriValue !== undefined) {
+		try {
+			parsedUri = parseMemoryUri(uriValue);
+			if (skill !== undefined && parsedUri.skill !== skill)
+				diagnostics.push("memory URI skill does not match --skill");
+		} catch (error) {
+			diagnostics.push(error instanceof Error ? error.message : String(error));
+		}
+	}
+	if (diagnostics.length > 0 || !validation.valid) {
+		const outcome = createOutcome({
+			validatorVerdict: "NOT_EXECUTED",
+			workflowDisposition: "BLOCK",
+			reasonCode: diagnostics.some((message) => message.includes("digest")) ? "DIGEST_MISMATCH" : "INVALID_CONTRACT",
+			diagnostics: diagnostics.map((message) => ({ code: "MEMORY_CONTRACT_REJECTED", message })),
+		});
+		output({
+			ok: false,
+			command: "memory",
+			operation: "contract",
+			contract_path: contractPath,
+			contract_digest: validation.digest,
+			errors: diagnostics,
+			outcome,
+		});
+		return outcome.outcome;
+	}
+	const outcome = createOutcome({
+		validatorVerdict: "PASS",
+		workflowDisposition: "ADVANCE",
+		reasonCode: "VALIDATION_PASSED",
+	});
+	output({
+		ok: true,
+		command: "memory",
+		operation: "contract",
+		contract_path: contractPath,
+		contract_digest: validation.digest,
+		contract: validation.contract,
+		...(parsedUri === undefined ? {} : { uri: parsedUri }),
+		outcome,
+	});
+	return outcome.outcome;
+}
+
 function resume(args: ParsedArgs): void {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
@@ -2014,6 +2139,8 @@ function help(): void {
 			resume: "surectl resume --run-id <id> [--policy-digest <sha256> --executor-digest <sha256>]",
 			execute: "surectl execute --run-id <id> --execution-request <json> [--kind local|python|docker]",
 			capabilities: "surectl capabilities [--skill <id>]",
+			memory:
+				"surectl memory --contract <memory-contract.json> [--skill <id>] [--uri memory://<skill>/<kind>/<slug>]",
 			conformance: "surectl conformance --run-id <id> --execution-request <json> --execution-receipt <json>",
 			freeze:
 				"surectl freeze --run-id <id> --execution-request <json> --execution-receipt <json> --prediction <path> --engine-digest <sha256> --route-digest <sha256> --approval-digest <sha256>",
@@ -2047,6 +2174,9 @@ export function runSurectl(argv: readonly string[] = process.argv.slice(2)): num
 				break;
 			case "capabilities":
 				outcome = capabilities(args);
+				break;
+			case "memory":
+				outcome = memory(args);
 				break;
 			case "conformance":
 				outcome = conformance(args);
