@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { coreDefinitionForLegacy, legacyUnitCounts } from "../../../sure/core/legacy-core-adapter.ts";
+import { CANONICAL_SKILLS } from "../../../sure/canonical/skills/index.ts";
+import {
+	coreDefinitionForLegacy,
+	type LegacySkillId,
+	legacyUnitCounts,
+} from "../../../sure/core/legacy-core-adapter.ts";
 import {
 	type RunCheckpoint as ApproveCheckpoint,
 	type CheckpointData as ApproveData,
@@ -240,6 +245,12 @@ function comparePassAndRetry(flow: LegacyFlow): void {
 }
 
 describe("legacy workflow shadow adapter", () => {
+	it("uses each canonical workflow object as the Pi compatibility authority", () => {
+		for (const skill of CANONICAL_SKILLS) {
+			expect(coreDefinitionForLegacy(skill.skill_id as LegacySkillId)).toBe(skill.workflow);
+		}
+	});
+
 	it("preserves unit order, retry defaults, and terminal boundaries", () => {
 		expect(legacyUnitCounts()).toEqual({
 			sure_feed: MODEL_FEED_UNITS.length,
