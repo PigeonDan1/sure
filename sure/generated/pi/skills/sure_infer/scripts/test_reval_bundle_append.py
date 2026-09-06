@@ -147,7 +147,7 @@ class RevalBundleAppendTest(unittest.TestCase):
     def _scratch(self, name: str) -> tuple[Path, dict[str, str], list[dict[str, object]]]:
         return _scratch_fixture(self.root, name, self.source)
 
-    def _append(self, scratch_name: str) -> dict[str, object]:
+    def _append(self, scratch_name: str, **kwargs: object) -> dict[str, object]:
         scratch, artifacts, rows = self._scratch(scratch_name)
         source_hash = hashlib.sha256((self.source / "report.jsonl").read_bytes()).hexdigest()
         reval = rows[0]["reval"]
@@ -159,6 +159,7 @@ class RevalBundleAppendTest(unittest.TestCase):
             scratch_root=scratch,
             scratch_artifacts=artifacts,
             rows=rows,
+            **kwargs,
         )
 
     def test_first_append_persists_complete_bundle_and_second_is_noop(self) -> None:
@@ -207,6 +208,14 @@ class RevalBundleAppendTest(unittest.TestCase):
         _write(Path(str(first["batch_dir"])) / "metrics" / "dataset__v1" / "wer__new_pipeline" / "report.json", "{}\n")
         with self.assertRaisesRegex(ValueError, "hash or size changed"):
             self._append("run_two")
+
+    def test_post_publish_gate_failure_rolls_back_the_candidate(self) -> None:
+        def reject(_: dict[str, object]) -> None:
+            raise ValueError("final gate rejected")
+
+        with self.assertRaisesRegex(ValueError, "final gate rejected"):
+            self._append("run_one", post_publish_check=reject)
+        self.assertFalse(self.staging.exists())
 
 
 class InPlaceAppendTests(unittest.TestCase):

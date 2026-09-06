@@ -182,7 +182,7 @@ def _engine_commit(root: Path) -> str:
     return completed.stdout.strip()
 
 
-def validate(path: Path) -> list[str]:
+def validate(path: Path, *, phase: str = "final") -> list[str]:
     errors: list[str] = []
     try:
         resolved_policy = load_site_policy(required=True)
@@ -229,7 +229,7 @@ def validate(path: Path) -> list[str]:
         receipt = read_execution_json(receipt_path)
         if not request:
             errors.append("execution_request.json is missing or invalid")
-        if not receipt:
+        if not receipt and not (phase == "prepare" and request):
             errors.append("execution_receipt.json is missing or invalid")
         if request and receipt:
             errors.extend(validate_contract_pair(request, receipt))
@@ -654,13 +654,19 @@ def main() -> int:
     # The gate runner passes --run-dir and --produces; pre_finish passes --report.
     parser.add_argument("--report", "--produces", dest="report", required=True)
     parser.add_argument("--run-dir", help="accepted for the gate runner; the report path is authoritative")
+    parser.add_argument(
+        "--phase",
+        choices=("prepare", "final"),
+        default="final",
+        help="prepare permits the request/receipt pair to be completed by the enclosing commit transaction",
+    )
     args = parser.parse_args()
     path = Path(args.report)
     if not path.is_file():
         print(f"eval report not found: {path}", file=sys.stderr)
         return 1
     try:
-        errors = validate(path)
+        errors = validate(path, phase=args.phase)
     except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError) as exc:
         errors = [str(exc)]
     if errors:

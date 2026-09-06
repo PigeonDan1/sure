@@ -14,7 +14,7 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -40,7 +40,15 @@ from sure.runtime.execution_bridge import (
     capability_evidence,
     digest_json,
     snapshot_digest,
+    write_json,
     write_contract_bundle,
+)
+from sure.runtime.evaluation_commit import (
+    EvaluationCommitError,
+    finalize_evaluation_commit,
+    prepare_evaluation_commit,
+    publish_evaluation_commit,
+    rollback_evaluation_commit,
 )
 
 
@@ -413,7 +421,7 @@ def _reval_report_rows(
     return rows
 
 
-def append_staging_bundle(
+def _append_staging_bundle_direct(
     *,
     source_result_dir: Path,
     staging_result_dir: Path,
@@ -598,6 +606,89 @@ def append_staging_bundle(
     finally:
         fcntl.flock(directory_fd, fcntl.LOCK_UN)
         os.close(directory_fd)
+
+
+def _rewrite_published_paths(value: Any, old_root: Path, new_root: Path) -> Any:
+    """Rewrite transaction-local absolute paths in the public append receipt."""
+
+    if isinstance(value, dict):
+        return {key: _rewrite_published_paths(item, old_root, new_root) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_rewrite_published_paths(item, old_root, new_root) for item in value]
+    if isinstance(value, str):
+        old_text = str(old_root)
+        if value == old_text:
+            return str(new_root)
+        prefix = old_text + os.sep
+        if value.startswith(prefix):
+            return str(new_root / value[len(prefix) :])
+    return value
+
+
+def append_staging_bundle(
+    *,
+    source_result_dir: Path,
+    staging_result_dir: Path,
+    scratch_root: Path,
+    scratch_artifacts: dict[str, str],
+    rows: list[dict[str, Any]],
+    post_publish_check: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Prepare, publish and finalize a result bundle with rollback support.
+
+    The existing direct implementation remains the compatibility writer.  It
+    now writes into an isolated candidate first; the destination is changed
+    only after all candidate artifacts and deterministic identities are valid.
+    ``post_publish_check`` is intentionally optional so the caller can run a
+    full report/conformance gate while the rollback journal is still retained.
+    """
+
+    source = source_result_dir.expanduser().resolve()
+    destination = staging_result_dir.expanduser().resolve()
+    in_place = source == destination
+    prepared = prepare_evaluation_commit(
+        destination,
+        source=source,
+        metadata={
+            "source_result_dir": str(source),
+            "staging_result_dir": str(destination),
+            "requested_record_ids": [str(row.get("reval", {}).get("record_id")) for row in rows],
+        },
+    )
+    try:
+        direct_source = prepared.candidate_root if in_place else source
+        direct_result = _append_staging_bundle_direct(
+            source_result_dir=direct_source,
+            staging_result_dir=prepared.candidate_root,
+            scratch_root=scratch_root,
+            scratch_artifacts=scratch_artifacts,
+            rows=rows,
+        )
+        publish_evaluation_commit(prepared)
+        result = _rewrite_published_paths(direct_result, prepared.candidate_root, destination)
+        if not isinstance(result, dict):
+            raise EvaluationCommitError("append receipt must be an object")
+        # The direct compatibility writer sees a pre-materialized candidate;
+        # preserve its historical receipt bit for a previously absent mirror.
+        if not prepared.destination_existed and not in_place:
+            result["base_materialized"] = True
+            result["idempotent"] = False
+        result["commit_phase"] = "published"
+        result["commit_source_fingerprint"] = prepared.source_fingerprint
+        result["commit_destination_fingerprint"] = prepared.destination_fingerprint
+        if post_publish_check is not None:
+            post_publish_check(result)
+        finalize_evaluation_commit(prepared)
+        result["commit_phase"] = "finalized"
+        return result
+    except Exception:
+        try:
+            rollback_evaluation_commit(prepared)
+        except Exception:
+            # Keep the original validation/commit error; the journal remains
+            # recoverable by recover_pending on the next invocation.
+            pass
+        raise
 
 
 def _run(command: list[str], *, cwd: Path = SCRIPT_DIR, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -900,7 +991,13 @@ def _start_eval_contract(
     }
 
 
-def _finish_eval_contract(*, lifecycle: str, exit_code: int | None, diagnostics: list[dict] | None = None) -> None:
+def _finish_eval_contract(
+    *,
+    lifecycle: str,
+    exit_code: int | None,
+    diagnostics: list[dict] | None = None,
+    clear: bool = True,
+) -> None:
     global _CONTRACT_CONTEXT
     context = _CONTRACT_CONTEXT
     if context is None:
@@ -909,17 +1006,72 @@ def _finish_eval_contract(*, lifecycle: str, exit_code: int | None, diagnostics:
     output = context["output"]
     if isinstance(output, Path) and output.is_file():
         outputs.append(artifact_ref(output, origin="generated", source_root=context["invocation"], artifact_id="output-1"))
+    preview = context.get("preview_receipt")
+    receipt = (
+        dict(preview)
+        if lifecycle == "SUCCEEDED" and isinstance(preview, dict)
+        else build_receipt(
+            context["request"],
+            lifecycle=lifecycle,
+            executor_kind=context["executor_kind"],
+            capability_evidence_values=context["evidence"],
+            outputs=outputs,
+            exit_code=exit_code if lifecycle != "NOT_STARTED" else None,
+            diagnostics=diagnostics or [],
+        )
+    )
+    write_contract_bundle(context["artifacts"], context["request"], receipt, legacy_result=output)
+    if clear:
+        _CONTRACT_CONTEXT = None
+
+
+def _preview_eval_contract() -> dict[str, Any] | None:
+    """Write a non-history receipt so the final report gate can inspect it."""
+
+    context = _CONTRACT_CONTEXT
+    if context is None:
+        return None
+    output = context["output"]
+    outputs: list[dict] = []
+    if isinstance(output, Path) and output.is_file():
+        outputs.append(artifact_ref(output, origin="generated", source_root=context["invocation"], artifact_id="output-1"))
     receipt = build_receipt(
         context["request"],
-        lifecycle=lifecycle,
+        lifecycle="SUCCEEDED",
         executor_kind=context["executor_kind"],
         capability_evidence_values=context["evidence"],
         outputs=outputs,
-        exit_code=exit_code if lifecycle != "NOT_STARTED" else None,
-        diagnostics=diagnostics or [],
+        exit_code=0,
     )
-    write_contract_bundle(context["artifacts"], context["request"], receipt, legacy_result=output)
-    _CONTRACT_CONTEXT = None
+    write_json(context["artifacts"] / "execution_receipt.json", receipt)
+    context["preview_receipt"] = receipt
+    return receipt
+
+
+def _eval_report_checker() -> Path | None:
+    candidates = (
+        SCRIPT_DIR.parent.parent / "sure-eval" / "scripts" / "check_eval_run_report.py",
+        SCRIPT_DIR.parent.parent / "sure_eval" / "scripts" / "check_eval_run_report.py",
+    )
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+def _run_eval_report_gate(report: Path, *, phase: str) -> None:
+    checker = _eval_report_checker()
+    if checker is None:
+        raise FileNotFoundError("SURE evaluation report checker is not bundled")
+    _run(
+        [
+            sys.executable,
+            str(checker),
+            "--report",
+            str(report),
+            "--run-dir",
+            str(report.parent),
+            "--phase",
+            phase,
+        ]
+    )
 
 
 def run_eval(
@@ -941,7 +1093,10 @@ def run_eval(
             harness_config=harness_config,
             evaluation_engine_root=evaluation_engine_root,
         )
-        _finish_eval_contract(lifecycle="SUCCEEDED", exit_code=0)
+        # The two-phase callback may already have written and checked a
+        # success receipt while its rollback journal was retained.
+        if _CONTRACT_CONTEXT is not None:
+            _finish_eval_contract(lifecycle="SUCCEEDED", exit_code=0)
         return result
     except FileNotFoundError as error:
         _finish_eval_contract(lifecycle="NOT_STARTED", exit_code=None, diagnostics=[{"code": "CAPABILITY_MISSING", "message": str(error)}])
@@ -1206,36 +1361,54 @@ def _run_eval_impl(
         "model_eval_manifest": str(run_dir / "model_eval_manifest.json"),
         "main_agent_run_report": str(run_dir / "main_agent_run_report.json"),
     }
+    eval_report_holder: dict[str, Any] = {}
+
+    def publish_check(append_result: dict[str, Any]) -> None:
+        """Write and validate the complete report before the commit finalizes."""
+
+        eval_report = {
+            "schema": "sure.eval.run_report.v1",
+            "run_id": run_id,
+            "run_dir": str(run_dir),
+            "model_name": model_name,
+            "datasets": datasets,
+            "metrics": metrics,
+            "pipeline_ids": pipeline_ids,
+            "evaluation_only": True,
+            "old_evaluation_reused": False,
+            "artifacts": scratch_artifacts,
+            "summary": summary,
+            "source_identity": {
+                "model_fingerprint": source_payload["model_fingerprint"],
+                "protocol_id": source_payload["protocol_id"],
+                "dataset_set_digest": source_payload["dataset_set_digest"],
+                "source_report_sha256": source_payload["source_report_sha256"],
+            },
+            "staging_append": append_result,
+        }
+        _write_json(run_dir / "eval_run_report.json", eval_report)
+        _write_json(invocation_run_dir / "artifacts" / "eval_run_report.json", eval_report)
+        _run_eval_report_gate(invocation_run_dir / "artifacts" / "eval_run_report.json", phase="prepare")
+        _preview_eval_contract()
+        _run_eval_report_gate(invocation_run_dir / "artifacts" / "eval_run_report.json", phase="final")
+        eval_report_holder.update(eval_report)
+
     append_result = append_staging_bundle(
         source_result_dir=Path(source_payload["source_results_dir"]),
         staging_result_dir=staging_result_dir,
         scratch_root=run_dir,
         scratch_artifacts=scratch_artifacts,
         rows=appended_rows,
+        post_publish_check=publish_check,
     )
-
-    eval_report = {
-        "schema": "sure.eval.run_report.v1",
-        "run_id": run_id,
-        "run_dir": str(run_dir),
-        "model_name": model_name,
-        "datasets": datasets,
-        "metrics": metrics,
-        "pipeline_ids": pipeline_ids,
-        "evaluation_only": True,
-        "old_evaluation_reused": False,
-        "artifacts": scratch_artifacts,
-        "summary": summary,
-        "source_identity": {
-            "model_fingerprint": source_payload["model_fingerprint"],
-            "protocol_id": source_payload["protocol_id"],
-            "dataset_set_digest": source_payload["dataset_set_digest"],
-            "source_report_sha256": source_payload["source_report_sha256"],
-        },
-        "staging_append": append_result,
-    }
-    _write_json(run_dir / "eval_run_report.json", eval_report)
-    _write_json(invocation_run_dir / "artifacts" / "eval_run_report.json", eval_report)
+    eval_report = eval_report_holder
+    if not eval_report:
+        raise EvaluationCommitError("evaluation commit did not produce a validated report")
+    # The transaction is finalized only after the report gate above. Persist
+    # immutable receipt history after that publication point, reusing the
+    # preview receipt that the final gate already checked.
+    if _CONTRACT_CONTEXT is not None:
+        _finish_eval_contract(lifecycle="SUCCEEDED", exit_code=0)
     print(json.dumps(eval_report, indent=2, ensure_ascii=False))
     return eval_report
 
