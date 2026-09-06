@@ -71,6 +71,16 @@ function safeSlug(value: string): string {
 	return safeSegment(value, "memory slug");
 }
 
+function validateKindForSkill(skill: string, kind: MemoryEntryKind): void {
+	safeSkill(skill);
+	if (kind === "fact" && skill !== "_shared") {
+		throw new Error("memory facts must use the _shared skill");
+	}
+	if (kind === "bad_case" && skill === "_shared") {
+		throw new Error("memory bad cases must use a skill-specific namespace");
+	}
+}
+
 function inside(root: string, candidate: string): boolean {
 	const relation = relative(root, candidate);
 	return relation === "" || (relation !== ".." && !relation.startsWith(`..${sep}`) && !isAbsolute(relation));
@@ -164,6 +174,7 @@ export class MemoryService {
 
 	/** Return the stable URI used in contracts and cross-host evidence. */
 	logicalUri(skill: string, kind: MemoryEntryKind, slug: string): string {
+		validateKindForSkill(skill, kind);
 		return `${URI_PREFIX}${safeSkill(skill)}/${kindSegment(kind)}/${safeSlug(slug)}`;
 	}
 
@@ -174,6 +185,7 @@ export class MemoryService {
 		const skill = safeSkill(parts[0] ?? "");
 		const kind = parts[1] as MemoryEntryKind;
 		if (kind !== "bad_case" && kind !== "fact") throw new Error(`unknown memory URI kind: ${parts[1]}`);
+		validateKindForSkill(skill, kind);
 		const slug = safeSlug(parts[2] ?? "");
 		return { skill, kind, slug };
 	}
@@ -185,7 +197,7 @@ export class MemoryService {
 	}
 
 	canonicalPath(skill: string, kind: MemoryEntryKind, slug: string): string {
-		safeSkill(skill);
+		validateKindForSkill(skill, kind);
 		safeSlug(slug);
 		const base =
 			kind === "fact"
@@ -195,7 +207,7 @@ export class MemoryService {
 	}
 
 	legacyPath(skill: string, kind: MemoryEntryKind, slug: string): string {
-		safeSkill(skill);
+		validateKindForSkill(skill, kind);
 		safeSlug(slug);
 		const base =
 			kind === "fact"
@@ -243,16 +255,39 @@ export class MemoryService {
 		const roots = [this.roots.legacySkillsRoot, this.roots.canonicalRoot];
 		for (const root of roots) {
 			if (!inside(root, candidate)) continue;
-			const rel = relative(root, candidate).split(sep).join("/").split("/");
-			const factIndex = rel.indexOf("facts");
-			if (factIndex >= 1 && rel[factIndex - 1] === "memory" && rel.length === factIndex + 2) {
-				return this.logicalUri("_shared", "fact", (rel[factIndex + 1] ?? "").replace(/\.md$/, ""));
+			try {
+				assertPath(root, candidate, "memory reference path");
+			} catch {
+				continue;
 			}
-			const badIndex = rel.indexOf("bad_cases");
-			if (badIndex >= 3 && rel[badIndex - 1] === "memory" && rel.length === badIndex + 2) {
-				const skill =
-					root === this.roots.canonicalRoot ? (rel[badIndex - 3] ?? "").replaceAll("-", "_") : (rel[0] ?? "");
-				return this.logicalUri(skill, "bad_case", (rel[badIndex + 1] ?? "").replace(/\.md$/, ""));
+			const rel = relative(root, candidate).split(sep).join("/").split("/");
+			const leaf = rel.at(-1) ?? "";
+			if (!leaf.endsWith(".md")) continue;
+			const slug = leaf.slice(0, -3);
+			if (!slug || !SEGMENT.test(slug)) continue;
+			if (root === this.roots.legacySkillsRoot) {
+				if (rel.length === 4 && rel[0] === "_shared" && rel[1] === "memory" && rel[2] === "facts") {
+					return this.logicalUri("_shared", "fact", slug);
+				}
+				if (rel.length === 5 && rel[1] === "references" && rel[2] === "memory" && rel[3] === "bad_cases") {
+					return this.logicalUri(rel[0] ?? "", "bad_case", slug);
+				}
+			} else if (
+				rel.length === 5 &&
+				rel[0] === "shared" &&
+				rel[1] === "legacy-resources" &&
+				rel[2] === "memory" &&
+				rel[3] === "facts"
+			) {
+				return this.logicalUri("_shared", "fact", slug);
+			} else if (
+				rel.length === 6 &&
+				rel[0] === "skills" &&
+				rel[2] === "references" &&
+				rel[3] === "memory" &&
+				rel[4] === "bad_cases"
+			) {
+				return this.logicalUri((rel[1] ?? "").replaceAll("-", "_"), "bad_case", slug);
 			}
 		}
 		return undefined;

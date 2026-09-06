@@ -71,6 +71,8 @@ describe("neutral memory reference service", () => {
 		expect(() => service.parseUri("memory://sure_infer/fact/a/b")).toThrow();
 		expect(() => service.parseUri("memory://sure_infer/unknown/entry")).toThrow();
 		expect(() => service.uriForEntry("sure_infer/a/b", "fact")).toThrow();
+		expect(() => service.logicalUri("sure_infer", "fact", "not-shared")).toThrow(/_shared/);
+		expect(() => service.logicalUri("_shared", "bad_case", "not-a-fact")).toThrow(/skill-specific/);
 	});
 
 	it("rejects an admitted alias that resolves through a symlink outside its root", () => {
@@ -85,6 +87,21 @@ describe("neutral memory reference service", () => {
 
 		expect(() => service.legacyPath("sure_eval", "bad_case", "escape")).toThrow(/outside|escapes/);
 		expect(existsSync(escapedAlias)).toBe(true);
+	});
+
+	it("does not reverse-map escaped symlinks or non-reference shapes", () => {
+		const repoRoot = freshRoot("uri-security");
+		const service = MemoryService.fromRepoRoot(repoRoot);
+		const outside = freshRoot("uri-security-outside");
+		const legacyRoot = join(repoRoot, "sure", "skills");
+		mkdirSync(legacyRoot, { recursive: true });
+		const escaped = join(legacyRoot, "sure_eval");
+		mkdirSync(join(outside, "references", "memory", "bad_cases"), { recursive: true });
+		symlinkSync(outside, escaped, "dir");
+		expect(service.uriForPath(join(escaped, "references", "memory", "bad_cases", "leak.md"))).toBeUndefined();
+		expect(
+			service.uriForPath(join(repoRoot, "sure", "skills", "sure_eval", "nested", "memory", "bad_cases", "odd.md")),
+		).toBeUndefined();
 	});
 
 	it("supports an explicitly injected memory root independent of package layout", () => {

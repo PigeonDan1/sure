@@ -6801,8 +6801,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-service.test.ts",
-      "size_bytes": 4620,
-      "sha256": "3033b020fbde060ad3e4e6fb32220550e5c2fec4652404bc7a51211b4045f01a"
+      "size_bytes": 5577,
+      "sha256": "64020b1216406d4e4f2ab94e1273ed859851a07bc12de0db2f046ae737497e62"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-units.test.ts",
@@ -7081,8 +7081,8 @@
     },
     {
       "path": "sure/runtime/memory/reference_registry.py",
-      "size_bytes": 11501,
-      "sha256": "9c9a7137648ac726fc53040a97d793f8170ea4e8738e794d679440ab10ea93eb"
+      "size_bytes": 12736,
+      "sha256": "cce354419d2539b159de7393b4bfaa0888fa584e7b1e37e114a805e9bc423a51"
     },
     {
       "path": "sure/runtime/memory/schemas/extraction_declaration.schema.json",
@@ -7111,8 +7111,8 @@
     },
     {
       "path": "sure/runtime/memory/service.ts",
-      "size_bytes": 9852,
-      "sha256": "cfa58dfca1aa6a347d4d175488fefdbdfd9d261609e3677bff4ff1993cbc48bb"
+      "size_bytes": 10793,
+      "sha256": "598e706ae34f587334516dcc3f11a04bac3ecca288d0ff5596536d92c4563e47"
     },
     {
       "path": "sure/runtime/memory/test_cli.py",
@@ -7156,8 +7156,8 @@
     },
     {
       "path": "sure/runtime/memory/test_reference_registry.py",
-      "size_bytes": 6318,
-      "sha256": "808651299787bdea2d4a8cf461dd47b578f91c8c9f1aa3ffcf2702676f3ad29f"
+      "size_bytes": 6604,
+      "sha256": "c7611d6872b92425c50d5ac67746b31be9f3bdee09be4c9023f8e0f2ec37039c"
     },
     {
       "path": "sure/runtime/memory/test_usage.py",
@@ -9656,5 +9656,5 @@
       ]
     }
   ],
-  "semantic_digest": "ad26a8ac08a0faff81d853fd95cfe51705457eeb4b6f9c6c79b5adc74fcd31db"
+  "semantic_digest": "2ec14c6b5a11d609c8f7201a2d5b34f3da7cae7b545d81c825db77103564604a"
 }

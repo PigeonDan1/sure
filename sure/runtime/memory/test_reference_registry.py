@@ -88,6 +88,12 @@ class ReferenceRegistryTests(unittest.TestCase):
         finally:
             outside.rmdir()
 
+    def test_rejects_kind_namespace_mismatch(self) -> None:
+        with self.assertRaises(ValueError):
+            self.registry.path_for("sure_infer/not-a-fact", "fact")
+        with self.assertRaises(ValueError):
+            self.registry.path_for("_shared/not-a-case", "bad_case")
+
     def test_ignores_a_reference_file_symlink_that_escapes_the_alias_root(self) -> None:
         outside = Path(self.tmp.name).parent / (Path(self.tmp.name).name + "-file-outside")
         outside.mkdir()

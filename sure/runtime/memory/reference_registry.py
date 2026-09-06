@@ -43,6 +43,13 @@ def _kind(value: str) -> str:
     return value
 
 
+def _validate_kind_for_skill(skill: str, entry_type: str) -> None:
+    if entry_type == "fact" and skill != "_shared":
+        raise ValueError("memory facts must use the _shared skill")
+    if entry_type == "bad_case" and skill == "_shared":
+        raise ValueError("memory bad cases must use a skill-specific namespace")
+
+
 def _inside(root: Path, candidate: Path) -> bool:
     try:
         candidate.relative_to(root)
@@ -114,6 +121,7 @@ class ReferenceRegistry:
     def logical_uri(self, entry_id: str, entry_type: str | None = None) -> str:
         skill, slug = _split_entry_id(entry_id)
         resolved_type = "fact" if entry_type == "fact" or (entry_type is None and skill == "_shared") else "bad_case"
+        _validate_kind_for_skill(skill, resolved_type)
         return f"{URI_PREFIX}{skill}/{_kind(resolved_type)}/{slug}"
 
     def parse_uri(self, uri: str) -> tuple[str, str, str]:
@@ -122,12 +130,16 @@ class ReferenceRegistry:
         parts = uri[len(URI_PREFIX) :].split("/")
         if len(parts) != 3:
             raise ValueError(f"memory URI must be <skill>/<kind>/<slug>: {uri!r}")
-        return _safe_segment(parts[0], "memory skill"), _kind(parts[1]), _safe_segment(parts[2], "memory slug")
+        skill = _safe_segment(parts[0], "memory skill")
+        entry_type = _kind(parts[1])
+        _validate_kind_for_skill(skill, entry_type)
+        return skill, entry_type, _safe_segment(parts[2], "memory slug")
 
     def _path(self, skill: str, entry_type: str, slug: str, alias: str) -> Path:
         skill = _safe_segment(skill, "memory skill")
         slug = _safe_segment(slug, "memory slug")
         entry_type = _kind(entry_type)
+        _validate_kind_for_skill(skill, entry_type)
         if alias == "legacy":
             root = self.roots.legacy_skills_root
             base = root / "_shared" / "memory" / "facts" if entry_type == "fact" else root / skill / "references" / "memory" / "bad_cases"
@@ -142,17 +154,20 @@ class ReferenceRegistry:
     def path_for(self, entry_id: str, entry_type: str | None = None, *, alias: str | None = None) -> Path:
         skill, slug = _split_entry_id(entry_id)
         resolved_type = "fact" if entry_type == "fact" or (entry_type is None and skill == "_shared") else "bad_case"
+        _validate_kind_for_skill(skill, resolved_type)
         selected = alias or self.roots.write_root
         return self._path(skill, resolved_type, slug, selected)
 
     def candidates(self, entry_id: str, entry_type: str | None = None) -> list[Path]:
         skill, slug = _split_entry_id(entry_id)
         resolved_type = "fact" if entry_type == "fact" or (entry_type is None and skill == "_shared") else "bad_case"
+        _validate_kind_for_skill(skill, resolved_type)
         return [self._path(skill, resolved_type, slug, alias) for alias in self.roots.read_order]
 
     def resolve(self, entry_id: str, entry_type: str | None = None) -> Path | None:
         skill, slug = _split_entry_id(entry_id)
         resolved_type = "fact" if entry_type == "fact" or (entry_type is None and skill == "_shared") else "bad_case"
+        _validate_kind_for_skill(skill, resolved_type)
         for alias in self.roots.read_order:
             try:
                 path = self._path(skill, resolved_type, slug, alias)
@@ -171,6 +186,7 @@ class ReferenceRegistry:
     def directory(self, skill: str, entry_type: str, *, alias: str) -> Path:
         skill = _safe_segment(skill, "memory skill")
         entry_type = _kind(entry_type)
+        _validate_kind_for_skill(skill, entry_type)
         if alias == "legacy":
             root = self.roots.legacy_skills_root
             directory = root / "_shared" / "memory" / "facts" if entry_type == "fact" else root / skill / "references" / "memory" / "bad_cases"
@@ -199,20 +215,32 @@ class ReferenceRegistry:
                 for skill_dir in sorted(path for path in root.iterdir() if path.is_dir()):
                     skill = skill_dir.name
                     kind = "fact" if skill == "_shared" else "bad_case"
-                    directory = self.directory(skill, kind, alias=alias)
+                    try:
+                        directory = self.directory(skill, kind, alias=alias)
+                    except (OSError, ValueError):
+                        continue
                     if directory.is_dir() and directory not in seen:
                         seen.add(directory)
                         yield skill, directory
             else:
-                facts = self.directory("_shared", "fact", alias=alias)
-                if facts.is_dir() and facts not in seen:
+                try:
+                    facts = self.directory("_shared", "fact", alias=alias)
+                except (OSError, ValueError):
+                    facts = None
+                if facts is not None and facts.is_dir() and facts not in seen:
                     seen.add(facts)
                     yield "_shared", facts
                 skills = root / "skills"
-                if not skills.is_dir():
+                try:
+                    if not skills.is_dir() or not _inside(root, skills.resolve()):
+                        continue
+                except OSError:
                     continue
                 for skill_dir in sorted(path for path in skills.iterdir() if path.is_dir()):
-                    directory = self.directory(skill_dir.name.replace("-", "_"), "bad_case", alias=alias)
+                    try:
+                        directory = self.directory(skill_dir.name.replace("-", "_"), "bad_case", alias=alias)
+                    except (OSError, ValueError):
+                        continue
                     if directory.is_dir() and directory not in seen:
                         seen.add(directory)
                         yield skill_dir.name.replace("-", "_"), directory
