@@ -1223,9 +1223,12 @@ function validateRegisteredGateExecution(
 	const artifactInputDigest =
 		typeof persisted.artifact_input_digest === "string" ? persisted.artifact_input_digest : undefined;
 	if (artifactInputDigest === undefined) diagnostics.push("registered execution is missing artifact_input_digest");
-	if (artifactInputDigest !== undefined && !sameDigest(artifactInputDigest, artifactDigest)) {
-		diagnostics.push("registered execution artifact_input_digest does not match the current artifact");
-	}
+	// The registered operation may legitimately update the gate artifact in
+	// place (for example, a runtime runner appends its measured result).  The
+	// input digest below binds the pre-execution bytes; the receipt output digest
+	// binds the post-execution bytes.  Comparing the input to the current file
+	// would reject that valid producer/runner contract and conflate mutation
+	// with tampering.
 	const requestPathValue = typeof persisted.request_path === "string" ? persisted.request_path : undefined;
 	const receiptPathValue = typeof persisted.receipt_path === "string" ? persisted.receipt_path : undefined;
 	if (requestPathValue === undefined || receiptPathValue === undefined) {
@@ -1375,6 +1378,14 @@ function validateRegisteredGateExecution(
 	);
 	if (output === undefined || !sameDigest(output.sha256, artifactDigest)) {
 		diagnostics.push("execution receipt does not bind the current gate artifact digest");
+	}
+	const persistedOutputDigest =
+		typeof persisted.artifact_output_digest === "string" ? persisted.artifact_output_digest : undefined;
+	if (
+		persistedOutputDigest !== undefined &&
+		(output === undefined || !sameDigest(persistedOutputDigest, output.sha256))
+	) {
+		diagnostics.push("registered execution artifact_output_digest does not match the receipt");
 	}
 	if (run.executorDigest && (!receipt.executor || !sameDigest(receipt.executor.digest, run.executorDigest))) {
 		diagnostics.push("execution receipt executor digest does not match the run binding");

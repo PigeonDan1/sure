@@ -145,6 +145,56 @@ class SemanticBackendTests(unittest.TestCase):
                 manifest_path=MANIFEST_PATH,
                 expected_registry_digest="sha256:" + "0" * 64,
             )
+
+    def test_execution_artifact_modes_are_preserved_and_strictly_parsed(self) -> None:
+        manifest = load_semantic_backend_manifest(PACKAGE_DIR, manifest_path=MANIFEST_PATH)
+        for operation_id, expected_mode in (
+            ("sure.eval.run", "producing"),
+            ("sure.onboard.execute_build_env", "preexisting"),
+            ("sure.onboard.execute_import", "mutating"),
+        ):
+            resolved = resolve_semantic_backend_operation(
+                operation_id,
+                package_dir=PACKAGE_DIR,
+                manifest_path=MANIFEST_PATH,
+                expected_registry_digest=manifest.registry_digest,
+            )
+            self.assertEqual(resolved.artifact_mode, expected_mode)
+
+        bundle = manifest.bundles[0]
+        unsigned = {
+            "schema": "sure.semantic.backend.manifest.v1",
+            "bundles": [
+                {
+                    "schema": "sure.semantic.backend.bundle.v1",
+                    "bundle_id": bundle.bundle_id,
+                    "version": bundle.version,
+                    "description": bundle.description,
+                    "canonical_root": bundle.canonical_root,
+                    "legacy_root": bundle.legacy_root,
+                    "integrity_root": bundle.integrity_root,
+                    "operations": [
+                        {
+                            "operation_id": "sure.test.invalid.mode",
+                            "description": "Invalid mode",
+                            "entrypoint": "scripts/run_eval.py",
+                            "consumer_skill_ids": ["sure_eval"],
+                            "kind": "validate",
+                            "timeout_ms": 1,
+                            "deterministic": True,
+                            "artifact_mode": "producing",
+                        }
+                    ],
+                }
+            ],
+        }
+        encoded = json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
+        invalid = {**unsigned, "registry_digest": f"sha256:{hashlib.sha256(encoded).hexdigest()}"}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "semantic-backends.json"
+            path.write_text(json.dumps(invalid), encoding="utf-8")
+            with self.assertRaises(SemanticBackendResolutionError):
+                load_semantic_backend_manifest(PACKAGE_DIR, manifest_path=path)
         manifest = load_semantic_backend_manifest(PACKAGE_DIR, manifest_path=MANIFEST_PATH)
         bundle_digest = manifest.bundles[0].canonical_tree_digest
         self.assertIsNotNone(bundle_digest)

@@ -356,6 +356,7 @@ describe("canonical SURE skill generation", () => {
 				expect(resolved.source).toBe("package");
 				expect(resolved.registry_digest).toBe(manifest.registry_digest);
 				expect(resolved.bundle_digest).toBe(bundle.canonical_tree_digest);
+				expect(resolved.artifact_mode).toBe(operation.artifact_mode);
 				entrypoints.push(resolved.path);
 				operationIds.push(String(operation.operation_id));
 			}

@@ -20,6 +20,8 @@ export interface SemanticBackendOperation {
 	deterministic: boolean;
 	/** Refuse execution unless the run carries immutable site-policy evidence. */
 	requires_policy_snapshot?: boolean;
+	/** Relationship between an execute operation and its gate artifact. */
+	artifact_mode?: "preexisting" | "mutating" | "producing";
 }
 
 export type SemanticBackendRootKind = "skill" | "repository";
@@ -83,6 +85,7 @@ export const SURE_EVALUATION_BACKEND: SemanticBackendBundle = {
 			kind: "execute",
 			timeout_ms: 3_600_000,
 			deterministic: false,
+			artifact_mode: "producing",
 		},
 		{
 			operation_id: "sure.infer.validate_execution_result",
@@ -332,6 +335,7 @@ export const SURE_ONBOARD_EXECUTION_BACKEND: SemanticBackendBundle = {
 			kind: "execute",
 			timeout_ms: 3_600_000,
 			deterministic: false,
+			artifact_mode: "preexisting",
 			requires_policy_snapshot: true,
 		},
 		{
@@ -342,6 +346,7 @@ export const SURE_ONBOARD_EXECUTION_BACKEND: SemanticBackendBundle = {
 			kind: "execute",
 			timeout_ms: 3_600_000,
 			deterministic: false,
+			artifact_mode: "preexisting",
 		},
 		{
 			operation_id: "sure.onboard.execute_import",
@@ -351,6 +356,7 @@ export const SURE_ONBOARD_EXECUTION_BACKEND: SemanticBackendBundle = {
 			kind: "execute",
 			timeout_ms: 3_600_000,
 			deterministic: false,
+			artifact_mode: "mutating",
 		},
 		{
 			operation_id: "sure.onboard.execute_load",
@@ -360,6 +366,7 @@ export const SURE_ONBOARD_EXECUTION_BACKEND: SemanticBackendBundle = {
 			kind: "execute",
 			timeout_ms: 3_600_000,
 			deterministic: false,
+			artifact_mode: "mutating",
 		},
 		{
 			operation_id: "sure.onboard.execute_infer",
@@ -369,6 +376,7 @@ export const SURE_ONBOARD_EXECUTION_BACKEND: SemanticBackendBundle = {
 			kind: "execute",
 			timeout_ms: 3_600_000,
 			deterministic: false,
+			artifact_mode: "mutating",
 		},
 		{
 			operation_id: "sure.onboard.execute_contract",
@@ -378,6 +386,7 @@ export const SURE_ONBOARD_EXECUTION_BACKEND: SemanticBackendBundle = {
 			kind: "execute",
 			timeout_ms: 3_600_000,
 			deterministic: false,
+			artifact_mode: "mutating",
 		},
 		{
 			operation_id: "sure.onboard.execute_package_container",
@@ -387,6 +396,7 @@ export const SURE_ONBOARD_EXECUTION_BACKEND: SemanticBackendBundle = {
 			kind: "execute",
 			timeout_ms: 3_600_000,
 			deterministic: false,
+			artifact_mode: "preexisting",
 			requires_policy_snapshot: true,
 		},
 	],
@@ -521,7 +531,6 @@ export const SURE_TRANS_VALIDATOR_BACKEND: SemanticBackendBundle = {
 		},
 	],
 };
-
 export const CANONICAL_SEMANTIC_BACKENDS: readonly SemanticBackendBundle[] = [
 	SURE_EVALUATION_BACKEND,
 	SURE_EVALUATION_VALIDATOR_BACKEND,

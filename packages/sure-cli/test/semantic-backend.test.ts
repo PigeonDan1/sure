@@ -124,6 +124,16 @@ describe("semantic backend registry", () => {
 			);
 			expect(resolved.kind).toBe("execute");
 			expect(resolved.consumer_skill_ids).toEqual(["sure_onboard"]);
+			expect(resolved.artifact_mode).toBe(
+				new Set([
+					"sure.onboard.execute_import",
+					"sure.onboard.execute_load",
+					"sure.onboard.execute_infer",
+					"sure.onboard.execute_contract",
+				]).has(operationId)
+					? "mutating"
+					: "preexisting",
+			);
 		}
 	});
 
@@ -149,6 +159,37 @@ describe("semantic backend registry", () => {
 			);
 			expect(resolved.kind).toBe("validate");
 			expect(resolved.consumer_skill_ids).toEqual(["sure_trans"]);
+		}
+	});
+
+	it("rejects artifact modes on validators and unknown artifact modes", () => {
+		const manifest = loadSemanticBackendManifest(packageDir, { manifestPath });
+		const bundle = manifest.bundles[0];
+		const baseOperation = bundle.operations[0];
+		for (const artifactMode of ["unknown", "producing"] as const) {
+			const operation = {
+				...baseOperation,
+				operation_id: `sure.test.invalid.${artifactMode}`,
+				artifact_mode: artifactMode,
+				...(artifactMode === "producing" ? { kind: "validate" } : {}),
+			};
+			const unsigned = {
+				schema: "sure.semantic.backend.manifest.v1",
+				bundles: [{ ...bundle, operations: [operation] }],
+			};
+			const temporary = mkdtempSync(join(tmpdir(), "sure-semantic-backend-invalid-mode-"));
+			try {
+				const invalidPath = join(temporary, "semantic-backends.json");
+				writeFileSync(
+					invalidPath,
+					JSON.stringify({ ...unsigned, registry_digest: canonicalJsonDigest(unsigned as unknown as JsonValue) }),
+				);
+				expect(() => loadSemanticBackendManifest(packageDir, { manifestPath: invalidPath })).toThrow(
+					SemanticBackendResolutionError,
+				);
+			} finally {
+				rmSync(temporary, { recursive: true, force: true });
+			}
 		}
 	});
 

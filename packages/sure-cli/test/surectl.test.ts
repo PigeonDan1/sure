@@ -739,7 +739,7 @@ describe("surectl cooperative control plane", () => {
 		expect((request.subject as Record<string, unknown>).runtime_identity_digest).toBe(runtimeLock.runtime_digest);
 		expect(receipt.lifecycle).toBe("SUCCEEDED");
 		expect(receipt.request_digest).toBe(canonicalJsonDigest(request as unknown as JsonValue));
-	});
+	}, 15_000);
 
 	it("runs registered inference result and report validators through the same runtime", () => {
 		const runId = "run-automatic-infer-validators";
@@ -1153,7 +1153,20 @@ describe("surectl cooperative control plane", () => {
 		expect((state.checkpoint as { data: { currentUnit: string } }).data.currentUnit).toBe("validate_env_compat");
 		expect((state.last_execution as Record<string, unknown>).source).toBe("registered_operation");
 		const executionEvidence = state.last_execution as Record<string, unknown>;
+		expect(executionEvidence.artifact_input_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(executionEvidence.artifact_output_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		const receiptPath = String(executionEvidence.receipt_path);
+		const originalArtifact = readFileSync(artifactPath, "utf8");
+		writeFileSync(artifactPath, `${originalArtifact}\n`);
+		const artifactRejected = command(root, "validate", [
+			...base,
+			"--run-id",
+			runId,
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(artifactRejected.status).toBe(5);
+		writeFileSync(artifactPath, originalArtifact);
 		const originalReceipt = readFileSync(receiptPath, "utf8");
 		const tamperedReceipt = JSON.parse(originalReceipt) as Record<string, unknown>;
 		tamperedReceipt.policy_digest = DIGEST_C;

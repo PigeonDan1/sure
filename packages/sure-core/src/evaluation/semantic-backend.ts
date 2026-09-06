@@ -13,6 +13,8 @@ export interface SemanticBackendOperation {
 	timeout_ms: number;
 	deterministic: boolean;
 	requires_policy_snapshot?: boolean;
+	/** Relationship between an execute operation and its gate artifact. */
+	artifact_mode?: "preexisting" | "mutating" | "producing";
 	canonical_resource_digest?: string;
 	legacy_resource_digest?: string;
 }
@@ -65,6 +67,7 @@ export interface ResolvedSemanticBackend {
 	timeout_ms: number;
 	deterministic: boolean;
 	requires_policy_snapshot: boolean;
+	artifact_mode?: SemanticBackendOperation["artifact_mode"];
 	kind: SemanticBackendOperation["kind"];
 	consumer_skill_ids: readonly string[];
 }
@@ -231,6 +234,17 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 			) {
 				throw new SemanticBackendResolutionError(`${operationId}.requires_policy_snapshot is invalid`);
 			}
+			if (
+				operation.artifact_mode !== undefined &&
+				!["preexisting", "mutating", "producing"].includes(String(operation.artifact_mode))
+			) {
+				throw new SemanticBackendResolutionError(`${operationId}.artifact_mode is invalid`);
+			}
+			if (operation.artifact_mode !== undefined && operation.kind !== "execute") {
+				throw new SemanticBackendResolutionError(
+					`${operationId}.artifact_mode is only valid for execute operations`,
+				);
+			}
 			const canonicalResourceDigest = digest(
 				operation.canonical_resource_digest,
 				`${operationId}.canonical_resource_digest`,
@@ -247,6 +261,9 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 				...(operation.requires_policy_snapshot === undefined
 					? {}
 					: { requires_policy_snapshot: operation.requires_policy_snapshot }),
+				...(operation.artifact_mode === undefined
+					? {}
+					: { artifact_mode: operation.artifact_mode as "preexisting" | "mutating" | "producing" }),
 				...(canonicalResourceDigest === undefined ? {} : { canonical_resource_digest: canonicalResourceDigest }),
 				...(legacyResourceDigest === undefined ? {} : { legacy_resource_digest: legacyResourceDigest }),
 			};
@@ -471,6 +488,7 @@ export function resolveSemanticBackendOperation(
 			timeout_ms: operation.timeout_ms,
 			deterministic: operation.deterministic,
 			requires_policy_snapshot: operation.requires_policy_snapshot ?? false,
+			...(operation.artifact_mode === undefined ? {} : { artifact_mode: operation.artifact_mode }),
 			kind: operation.kind,
 			consumer_skill_ids: [...operation.consumer_skill_ids],
 		};

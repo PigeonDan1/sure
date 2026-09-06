@@ -26,6 +26,8 @@ export interface RegisteredOperationEvidence {
 	reason_code: string;
 	diagnostics: readonly string[];
 	artifact_input_digest: string;
+	/** Digest observed after the executor completed, when it emitted the gate artifact. */
+	artifact_output_digest?: string;
 	runtime_digest?: string;
 	backend_registry_digest?: string;
 	backend_bundle_digest?: string;
@@ -233,6 +235,11 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 				`${options.runtime_binding.skill_id} is not an admitted consumer of ${operation.operation_id}`,
 			);
 		}
+		if (operation.artifact_mode === "producing") {
+			throw new Error(
+				`${operation.operation_id} declares a producing artifact; an explicit output contract is required before gate binding`,
+			);
+		}
 	} catch (error) {
 		return unavailable(
 			options,
@@ -264,6 +271,7 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 		output_paths: [options.artifact.path],
 	});
 	const persistedReceipt = execution.receipt ? options.persist_receipt(execution.receipt) : undefined;
+	const outputArtifact = execution.receipt?.outputs.find((candidate) => candidate.path === options.artifact.path);
 	const validReceipt = execution.receipt !== undefined && execution.receipt_validation?.valid === true;
 	const verdict =
 		!validReceipt || !execution.capability.admitted
@@ -287,6 +295,7 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 				verdict === "PASS" ? "EXECUTION_SUCCEEDED" : verdict === "FAIL" ? "EXECUTION_FAILED" : "CAPABILITY_MISSING",
 			diagnostics: diagnostics(execution),
 			artifact_input_digest: options.artifact.sha256,
+			...(outputArtifact === undefined ? {} : { artifact_output_digest: outputArtifact.sha256 }),
 			runtime_digest: verification.lock.runtime_digest,
 			backend_registry_digest: operation.registry_digest,
 			...(operation.bundle_digest === undefined ? {} : { backend_bundle_digest: operation.bundle_digest }),
