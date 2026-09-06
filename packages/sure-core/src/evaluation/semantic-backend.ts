@@ -12,6 +12,7 @@ export interface SemanticBackendOperation {
 	kind: "execute" | "validate" | "resolve";
 	timeout_ms: number;
 	deterministic: boolean;
+	requires_policy_snapshot?: boolean;
 	canonical_resource_digest?: string;
 	legacy_resource_digest?: string;
 }
@@ -63,6 +64,7 @@ export interface ResolvedSemanticBackend {
 	registry_digest: string;
 	timeout_ms: number;
 	deterministic: boolean;
+	requires_policy_snapshot: boolean;
 	kind: SemanticBackendOperation["kind"];
 	consumer_skill_ids: readonly string[];
 }
@@ -223,6 +225,12 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 				throw new SemanticBackendResolutionError(`${operationId}.timeout_ms is invalid`);
 			if (typeof operation.deterministic !== "boolean")
 				throw new SemanticBackendResolutionError(`${operationId}.deterministic is invalid`);
+			if (
+				operation.requires_policy_snapshot !== undefined &&
+				typeof operation.requires_policy_snapshot !== "boolean"
+			) {
+				throw new SemanticBackendResolutionError(`${operationId}.requires_policy_snapshot is invalid`);
+			}
 			const canonicalResourceDigest = digest(
 				operation.canonical_resource_digest,
 				`${operationId}.canonical_resource_digest`,
@@ -236,6 +244,9 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 				kind: operation.kind as SemanticBackendOperation["kind"],
 				timeout_ms: Number(operation.timeout_ms),
 				deterministic: operation.deterministic,
+				...(operation.requires_policy_snapshot === undefined
+					? {}
+					: { requires_policy_snapshot: operation.requires_policy_snapshot }),
 				...(canonicalResourceDigest === undefined ? {} : { canonical_resource_digest: canonicalResourceDigest }),
 				...(legacyResourceDigest === undefined ? {} : { legacy_resource_digest: legacyResourceDigest }),
 			};
@@ -459,6 +470,7 @@ export function resolveSemanticBackendOperation(
 			registry_digest: manifest.registry_digest,
 			timeout_ms: operation.timeout_ms,
 			deterministic: operation.deterministic,
+			requires_policy_snapshot: operation.requires_policy_snapshot ?? false,
 			kind: operation.kind,
 			consumer_skill_ids: [...operation.consumer_skill_ids],
 		};

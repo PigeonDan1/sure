@@ -163,6 +163,7 @@ describe("canonical SURE skill generation", () => {
 				.map((descriptor) => [descriptor.unit_id, descriptor.backend_operation_id]),
 		);
 		expect(onboardOperations).toMatchObject({
+			load_model_input: "sure.onboard.validate_model_input",
 			build_plan: "sure.onboard.validate_build_plan",
 			validate_spec: "sure.onboard.validate_spec",
 			prepare_fixture: "sure.onboard.validate_fixture",
@@ -286,6 +287,10 @@ describe("canonical SURE skill generation", () => {
 		}
 		const manifest = readJson(join(root, "semantic-backends.json"));
 		expect(lock.semantic_backend_registry_digest).toBe(manifest.registry_digest);
+		const modelInputOperation = (manifest.bundles as Array<Record<string, unknown>>)
+			.flatMap((bundle) => bundle.operations as Array<Record<string, unknown>>)
+			.find((operation) => operation.operation_id === "sure.onboard.validate_model_input");
+		expect(modelInputOperation?.requires_policy_snapshot).toBe(true);
 		const entrypoints: string[] = [];
 		const operationIds: string[] = [];
 		for (const bundle of manifest.bundles as Array<Record<string, unknown>>) {

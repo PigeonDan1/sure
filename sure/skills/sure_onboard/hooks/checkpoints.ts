@@ -79,6 +79,19 @@ export interface Unit {
 
 const DEFAULT_MAX_RETRIES = 3;
 
+function backendEnvironment(ctx: SureHookContext, runtime: Parameters<typeof harnessRuntimeEnv>[0]): NodeJS.ProcessEnv {
+	const environment: NodeJS.ProcessEnv = { ...process.env, ...harnessRuntimeEnv(runtime) };
+	delete environment.SURE_SITE_POLICY_SNAPSHOT;
+	delete environment.SURE_POLICY_SNAPSHOT_DIGEST;
+	if (ctx.run.policySnapshotPath !== undefined && ctx.run.policySnapshotDigest !== undefined) {
+		environment.SURE_SITE_POLICY_SNAPSHOT = ctx.run.policySnapshotPath;
+		environment.SURE_POLICY_SNAPSHOT_DIGEST = ctx.run.policySnapshotDigest;
+		if (ctx.run.policyDigest !== undefined) environment.SURE_POLICY_DIGEST = ctx.run.policyDigest;
+		delete environment.SURE_SITE_POLICY;
+	}
+	return environment;
+}
+
 function readJson(path: string): unknown {
 	return JSON.parse(readFileSync(path, "utf-8"));
 }
@@ -212,7 +225,7 @@ export function runBackend(
 		cwd: ctx.packageDir,
 		encoding: "utf-8",
 		timeout: 3_600_000,
-		env: { ...process.env, ...harnessRuntimeEnv(runtime.contract) },
+		env: backendEnvironment(ctx, runtime.contract),
 	});
 	return {
 		ok: r.status === 0,

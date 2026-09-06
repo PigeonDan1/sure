@@ -326,7 +326,17 @@ function validatorEnvironment(options: RegisteredValidationOptions, runtimeRoot:
 		SURE_RUNTIME_SUPPORT_ROOT: runtimeRoot,
 		SURE_SEMANTIC_BACKEND_MANIFEST: join(runtimeRoot, "semantic-backends.json"),
 		SURE_SEMANTIC_BACKEND_ROOT: join(runtimeRoot, "backends"),
+		SURE_POLICY_DIGEST: options.policy_digest,
 	};
+	delete environment.SURE_SITE_POLICY_SNAPSHOT;
+	delete environment.SURE_POLICY_SNAPSHOT_DIGEST;
+	if (options.run.policySnapshotPath !== undefined) {
+		environment.SURE_SITE_POLICY_SNAPSHOT = options.run.policySnapshotPath;
+		if (options.run.policySnapshotDigest !== undefined) {
+			environment.SURE_POLICY_SNAPSHOT_DIGEST = options.run.policySnapshotDigest;
+		}
+		delete environment.SURE_SITE_POLICY;
+	}
 	delete environment.PYTHONHOME;
 	delete environment.PYTHONSTARTUP;
 	delete environment.SURE_CANONICAL_SKILLS_ROOT;
@@ -397,6 +407,24 @@ export function runRegisteredValidators(options: RegisteredValidationOptions): R
 					verification.lock.runtime_digest,
 				),
 			);
+			continue;
+		}
+		if (
+			operation.requires_policy_snapshot &&
+			(options.run.policySnapshotPath === undefined || options.run.policySnapshotDigest === undefined)
+		) {
+			entries.push({
+				validator_id: validator.id,
+				backend_operation_id: operation.operation_id,
+				verdict: "NOT_EXECUTED",
+				artifact_digest: options.artifact.sha256,
+				reason_code: "CAPABILITY_MISSING",
+				diagnostics: [`${operation.operation_id} requires an immutable site-policy snapshot bound to the run`],
+				runtime_digest: verification.lock.runtime_digest,
+				backend_registry_digest: operation.registry_digest,
+				...(operation.bundle_digest === undefined ? {} : { backend_bundle_digest: operation.bundle_digest }),
+				backend_resource_digest: operation.resource_digest,
+			});
 			continue;
 		}
 		const request = requestFor(options, validator, operation, index);

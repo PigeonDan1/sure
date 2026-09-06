@@ -363,6 +363,7 @@ class SemanticBackendTests(unittest.TestCase):
     def test_shared_onboard_validators_resolve_and_preserve_legacy_cli_output(self) -> None:
         manifest = load_semantic_backend_manifest(PACKAGE_DIR, manifest_path=MANIFEST_PATH)
         cases = (
+            ("sure.onboard.validate_model_input", "check_model_input.py"),
             ("sure.onboard.validate_build_plan", "check_build_plan.py"),
             ("sure.onboard.validate_spec", "check_spec.py"),
             ("sure.onboard.validate_fixture", "check_fixture.py"),
@@ -390,6 +391,10 @@ class SemanticBackendTests(unittest.TestCase):
                 self.assertEqual(
                     resolved.path,
                     REPOSITORY_ROOT / "sure" / "canonical" / "shared" / "onboard-validator" / "scripts" / filename,
+                )
+                self.assertEqual(
+                    resolved.requires_policy_snapshot,
+                    operation_id == "sure.onboard.validate_model_input",
                 )
                 legacy = REPOSITORY_ROOT / "sure" / "skills" / "sure_onboard" / "scripts" / filename
                 canonical_result = subprocess.run(

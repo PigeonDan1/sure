@@ -53,6 +53,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						},
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_model_input",
 							script_id: "check_model_input.py",
 						},
 						helper_scripts: ["materialize_onboard_inputs.py"],

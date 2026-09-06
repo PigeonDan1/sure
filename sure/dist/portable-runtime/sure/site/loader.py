@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import posixpath
 import re
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -17,7 +18,20 @@ else:
     from container_delivery import ContainerDeliveryError, validate_repository_template
 
 SITE_POLICY_ENV = "SURE_SITE_POLICY"
+SITE_POLICY_SNAPSHOT_ENV = "SURE_SITE_POLICY_SNAPSHOT"
+POLICY_DIGEST_ENV = "SURE_POLICY_DIGEST"
+POLICY_SNAPSHOT_DIGEST_ENV = "SURE_POLICY_SNAPSHOT_DIGEST"
 SITE_POLICY_SCHEMA = "sure.site.policy.v1"
+POLICY_SNAPSHOT_SCHEMA = "sure.policy.snapshot.v1"
+POLICY_PATH_ROLES = {
+    "read_only_reference",
+    "controlled_publication",
+    "dataset_source",
+    "runtime_cache",
+    "forbidden_output",
+}
+DIGEST_RE = re.compile(r"^(?:sha256:)?[0-9a-f]{64}$")
+ROOT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 MISSING_POLICY_MESSAGE = (
     "SURE site policy is not configured.\n"
     "Missing: config/site.bundled.yaml (bundled distribution) or config/site.local.yaml (local configuration).\n"
@@ -95,6 +109,51 @@ def _source_roots(value: Any, location: str) -> dict[str, str]:
     if not result:
         raise SitePolicyError(f"{location} must contain at least one entry")
     return result
+
+
+def _canonical_digest(value: Any) -> str:
+    content = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(content).hexdigest()
+
+
+def _normalized_digest(value: Any, location: str) -> str:
+    digest = _string(value, location)
+    if DIGEST_RE.fullmatch(digest) is None:
+        raise SitePolicyError(f"{location} must be SHA-256")
+    return digest if digest.startswith("sha256:") else f"sha256:{digest}"
+
+
+def _normalized_snapshot_path(value: Any, location: str) -> str:
+    path = _absolute_path(value, location)
+    if posixpath.normpath(path) != path:
+        raise SitePolicyError(f"{location} must be normalized")
+    return path
+
+
+def _snapshot_binding(value: Any, index: int) -> dict[str, str]:
+    location = f"policy snapshot path_bindings[{index}]"
+    binding = _mapping(value, location)
+    _reject_unknown(binding, {"root_id", "role", "path", "resolved_path"}, location)
+    root_id = _string(binding.get("root_id"), f"{location}.root_id")
+    if ROOT_ID_RE.fullmatch(root_id) is None:
+        raise SitePolicyError(f"{location}.root_id has an invalid format")
+    role = _string(binding.get("role"), f"{location}.role")
+    if role not in POLICY_PATH_ROLES:
+        raise SitePolicyError(f"{location}.role is invalid")
+    return {
+        "root_id": root_id,
+        "role": role,
+        "path": _normalized_snapshot_path(binding.get("path"), f"{location}.path"),
+        "resolved_path": _normalized_snapshot_path(
+            binding.get("resolved_path"),
+            f"{location}.resolved_path",
+        ),
+    }
 
 
 def validate_site_policy(value: Any) -> dict[str, Any]:
@@ -218,6 +277,24 @@ def load_site_policy(
 ) -> dict[str, Any] | None:
     root = (repository_root or Path(__file__).resolve().parents[2]).resolve()
     env = environment if environment is not None else os.environ
+    snapshot = env.get(SITE_POLICY_SNAPSHOT_ENV, "").strip()
+    if snapshot:
+        path = Path(snapshot)
+        if not path.is_absolute():
+            raise SitePolicyError(f"{SITE_POLICY_SNAPSHOT_ENV} must be an absolute path")
+        if path.is_symlink():
+            raise SitePolicyError(f"{SITE_POLICY_SNAPSHOT_ENV} must not be a symlink")
+        resolved = _load_snapshot(path.resolve())
+        for variable, field in (
+            (POLICY_DIGEST_ENV, "policy_digest"),
+            (POLICY_SNAPSHOT_DIGEST_ENV, "snapshot_digest"),
+        ):
+            expected = env.get(variable, "").strip()
+            if expected and _normalized_digest(expected, variable) != resolved[field]:
+                raise SitePolicyError(
+                    f"site policy snapshot {field} does not match the run binding"
+                )
+        return resolved
     explicit = env.get(SITE_POLICY_ENV, "").strip()
     if explicit:
         path = Path(explicit)
@@ -233,6 +310,104 @@ def load_site_policy(
     if required:
         raise SitePolicyError(MISSING_POLICY_MESSAGE)
     return None
+
+
+def _load_snapshot(path: Path) -> dict[str, Any]:
+    try:
+        decoded = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise SitePolicyError(f"Cannot read site policy snapshot {path}: {error}") from error
+    except json.JSONDecodeError as error:
+        raise SitePolicyError(f"Cannot parse site policy snapshot {path}: {error}") from error
+
+    root = _mapping(decoded, "policy snapshot")
+    _reject_unknown(
+        root,
+        {
+            "schema",
+            "site_id",
+            "policy_version",
+            "policy",
+            "source",
+            "path_bindings",
+            "policy_digest",
+            "bindings_digest",
+            "snapshot_digest",
+        },
+        "policy snapshot",
+    )
+    if root.get("schema") != POLICY_SNAPSHOT_SCHEMA:
+        raise SitePolicyError(f"policy snapshot schema must be {POLICY_SNAPSHOT_SCHEMA}")
+
+    policy = validate_site_policy(root.get("policy"))
+    if root.get("policy") != policy:
+        raise SitePolicyError("policy snapshot policy is not canonically normalized")
+    if root.get("site_id") != policy["site_id"]:
+        raise SitePolicyError("policy snapshot site_id does not match its policy")
+    if root.get("policy_version") != policy["policy_version"]:
+        raise SitePolicyError("policy snapshot policy_version does not match its policy")
+
+    source = _mapping(root.get("source"), "policy snapshot source")
+    _reject_unknown(source, {"kind", "path", "raw_sha256"}, "policy snapshot source")
+    source_kind = _string(source.get("kind"), "policy snapshot source.kind")
+    raw_sha256 = _normalized_digest(
+        source.get("raw_sha256"),
+        "policy snapshot source.raw_sha256",
+    )
+    normalized_source: dict[str, str] = {
+        "kind": source_kind,
+        "raw_sha256": raw_sha256,
+    }
+    if "path" in source:
+        normalized_source["path"] = _normalized_snapshot_path(
+            source.get("path"),
+            "policy snapshot source.path",
+        )
+
+    raw_bindings = root.get("path_bindings")
+    if not isinstance(raw_bindings, list):
+        raise SitePolicyError("policy snapshot path_bindings must be a list")
+    bindings = [_snapshot_binding(value, index) for index, value in enumerate(raw_bindings)]
+    root_ids = [binding["root_id"] for binding in bindings]
+    if len(set(root_ids)) != len(root_ids):
+        raise SitePolicyError("policy snapshot path_bindings contains a duplicate root_id")
+    bindings.sort(key=lambda binding: binding["root_id"])
+
+    policy_digest = _canonical_digest(policy)
+    bindings_digest = _canonical_digest(bindings)
+    payload = {
+        "schema": POLICY_SNAPSHOT_SCHEMA,
+        "site_id": policy["site_id"],
+        "policy_version": policy["policy_version"],
+        "policy": policy,
+        "source": normalized_source,
+        "path_bindings": bindings,
+        "policy_digest": policy_digest,
+        "bindings_digest": bindings_digest,
+    }
+    snapshot_digest = _canonical_digest(payload)
+    for field, expected in (
+        ("policy_digest", policy_digest),
+        ("bindings_digest", bindings_digest),
+        ("snapshot_digest", snapshot_digest),
+    ):
+        supplied = _normalized_digest(root.get(field), f"policy snapshot {field}")
+        if supplied != expected:
+            raise SitePolicyError(
+                f"policy snapshot {field} does not match its canonical contents"
+            )
+
+    return {
+        "policy": policy,
+        "path": normalized_source.get("path", str(path)),
+        "source": source_kind,
+        "sha256": raw_sha256.removeprefix("sha256:"),
+        "policy_digest": policy_digest,
+        "bindings_digest": bindings_digest,
+        "snapshot_digest": snapshot_digest,
+        "snapshot_path": str(path),
+        "path_bindings": bindings,
+    }
 
 
 def _load(path: Path, source: str) -> dict[str, Any]:

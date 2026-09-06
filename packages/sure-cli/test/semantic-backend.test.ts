@@ -76,8 +76,9 @@ describe("semantic backend registry", () => {
 		}
 	});
 
-	it("resolves side-effect-free onboard validators from the shared repository backend", () => {
+	it("resolves shared onboard validators from the repository backend", () => {
 		for (const [operationId, file] of [
+			["sure.onboard.validate_model_input", "check_model_input.py"],
 			["sure.onboard.validate_build_plan", "check_build_plan.py"],
 			["sure.onboard.validate_spec", "check_spec.py"],
 			["sure.onboard.validate_fixture", "check_fixture.py"],
@@ -92,6 +93,7 @@ describe("semantic backend registry", () => {
 			);
 			expect(resolved.kind).toBe("validate");
 			expect(resolved.consumer_skill_ids).toEqual(["sure_onboard"]);
+			expect(resolved.requires_policy_snapshot).toBe(operationId === "sure.onboard.validate_model_input");
 		}
 	});
 

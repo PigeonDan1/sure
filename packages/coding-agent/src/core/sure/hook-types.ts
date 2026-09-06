@@ -70,7 +70,21 @@ export interface SureRunRecord {
 	summary?: string;
 	errorSummary?: string;
 	lastRepair?: string;
+	staleSince?: string;
 	artifacts?: unknown;
+	coreVersion?: string;
+	workflowDigest?: string;
+	validatorDigest?: string;
+	executorDigest?: string;
+	policyDigest?: string;
+	bindingDigest?: string;
+	policySnapshotDigest?: string;
+	policySnapshotPath?: string;
+	stateDigest?: string;
+	revision?: number;
+	successReceiptPath?: string;
+	successReceiptDigest?: string;
+	legacyCompatibility?: boolean;
 }
 
 export type SureDisplayPhaseStatus =

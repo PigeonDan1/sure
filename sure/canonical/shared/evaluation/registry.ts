@@ -18,6 +18,8 @@ export interface SemanticBackendOperation {
 	kind: "execute" | "validate" | "resolve";
 	timeout_ms: number;
 	deterministic: boolean;
+	/** Refuse execution unless the run carries immutable site-policy evidence. */
+	requires_policy_snapshot?: boolean;
 }
 
 export type SemanticBackendRootKind = "skill" | "repository";
@@ -201,13 +203,23 @@ export const SURE_ONBOARD_VALIDATOR_BACKEND: SemanticBackendBundle = {
 	schema: "sure.semantic.backend.bundle.v1",
 	bundle_id: "sure-onboard-validators",
 	version: "legacy-v1",
-	description: "Side-effect-free SURE onboard artifact validators.",
+	description: "SURE onboard artifact and immutable site-policy validators.",
 	canonical_root: "sure/canonical/shared/onboard-validator",
 	canonical_root_kind: "repository",
 	legacy_root: "sure/skills/sure_onboard",
 	legacy_root_kind: "repository",
 	integrity_root: "scripts",
 	operations: [
+		{
+			operation_id: "sure.onboard.validate_model_input",
+			description: "Validate normalized onboarding input against the immutable site policy.",
+			entrypoint: "scripts/check_model_input.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+			requires_policy_snapshot: true,
+		},
 		{
 			operation_id: "sure.onboard.validate_build_plan",
 			description: "Validate an executable onboarding build plan.",

@@ -6651,13 +6651,13 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
-      "size_bytes": 31697,
-      "sha256": "bf0d4c72e72b235548720f119f8bc96c8cefb7df60e8bdce383ab0b6fc028c69"
+      "size_bytes": 31756,
+      "sha256": "5d8cb0358a83766373fce50604e8bb8d2d4687fc4751ccc23d41faac0ea2e6ad"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
-      "size_bytes": 3605,
-      "sha256": "b6cedf5e3116472e260d3f34a8cf1d80e74ede324c3b616f59f1823bc5a19cff"
+      "size_bytes": 3977,
+      "sha256": "43fbf63f902bdc504332619d5a83ec440901115e28433b0685be6789e1b27fdc"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hooks.ts",
@@ -6826,8 +6826,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-state-machine.test.ts",
-      "size_bytes": 111379,
-      "sha256": "817d8ea07417e780bd33138680c48177a97888efb271496cd7b6efc57fc9f8a6"
+      "size_bytes": 114571,
+      "sha256": "2e1ea12bf6bd7f7989baa1f98796e8edb632f7c6c4aea40fca519e10f4906d21"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-terminal.test.ts",
@@ -7182,7 +7182,7 @@
     {
       "path": "sure/runtime/memory/units.generation.lock.json",
       "size_bytes": 506,
-      "sha256": "b97a43178d4488b3f0773fa13ffd17f9aba3a4d37ef09bcf9623de35c5a190bf"
+      "sha256": "6630e2d88a31d6886a2c6025fb9c2268c1b4c35acd6db15487ce1451481821cf"
     },
     {
       "path": "sure/runtime/memory/units.json",
@@ -7236,8 +7236,8 @@
     },
     {
       "path": "sure/runtime/semantic_backend.py",
-      "size_bytes": 20573,
-      "sha256": "cfb9075b6e56de79416df92b678691f18ada885473af7912f545026a9f762fe4"
+      "size_bytes": 21254,
+      "sha256": "e4108d0e17484a71126d2d025155fae97c8b9252d097595ead9f8b4cc07468fd"
     },
     {
       "path": "sure/runtime/semantic-backend.ts",
@@ -7266,8 +7266,8 @@
     },
     {
       "path": "sure/runtime/test_semantic_backend.py",
-      "size_bytes": 20740,
-      "sha256": "2b4c32ad5a1627e5d59f20ee6842ec71463ce816b621f365099338488317ed49"
+      "size_bytes": 20995,
+      "sha256": "e068f1e1afb31484644089ab646ebdcaeba3f4d8e04074fbbba6656ee5ee7df7"
     },
     {
       "path": "sure/runtime/usage.ts",
@@ -7286,8 +7286,8 @@
     },
     {
       "path": "sure/site/loader.py",
-      "size_bytes": 12093,
-      "sha256": "6b937afa81b79246b0fe25fa3895a6292eb16b60e1e8f023f3fc0ef4c7fc2f28"
+      "size_bytes": 18887,
+      "sha256": "85e2b71d6109ac1259bdb4ce82fa867ce74b866af8c0fb903f3beb6b72e0a1f4"
     },
     {
       "path": "sure/site/loader.ts",
@@ -7321,8 +7321,8 @@
     },
     {
       "path": "sure/site/test_loader.py",
-      "size_bytes": 7963,
-      "sha256": "4721c2f063211db274168bb19520fe20dbb7e8231c39d4ba6385821ef8f79a3b"
+      "size_bytes": 13558,
+      "sha256": "b45cefad49bb327a9a68084387e5dd9ebd61ba62083922ad93c9def3ec8b66f7"
     },
     {
       "path": "sure/skills/_shared/memory/facts/README.md",
@@ -8631,8 +8631,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/hooks/checkpoints.ts",
-      "size_bytes": 8859,
-      "sha256": "0328f9c442474a8174a9de609e5cb2593bc67ce5a57a052084d7a6fa0b06f4e0"
+      "size_bytes": 9552,
+      "sha256": "d8223052e0ca2c5b661009dd0dd7f24abd2a1868ba4e069b8374ea11591d78c1"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/index.ts",
@@ -9056,8 +9056,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_model_input.py",
-      "size_bytes": 9033,
-      "sha256": "250c1921f5f689b1b50c707826b569012f7624c6e15fb258acbecbcb8edd05cc"
+      "size_bytes": 950,
+      "sha256": "d17ca8d4bba9b887eae111ede77cfab2b46c6be97e88fdc0ddf73da9cf904629"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_package_gate.py",
@@ -9701,5 +9701,5 @@
       ]
     }
   ],
-  "semantic_digest": "fcfcb3251b94f0c17a5d59b923089ea4fca32f0a1c33b253fd3ba21a6fde3518"
+  "semantic_digest": "8916db77ab50503567680f352cb475712e7e7ca70c1076b50e5f768b7c836b15"
 }

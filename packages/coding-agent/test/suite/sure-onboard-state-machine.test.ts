@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { createPolicySnapshot, type JsonValue } from "@earendil-works/sure-core";
 import { describe, expect, it } from "vitest";
 import {
 	advance,
@@ -848,6 +849,74 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 			},
 		});
 		const result = postToolResult(ctx);
+		expect(result.ok).toBe(true);
+		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
+		expect(checkpoint?.data.currentUnit).toBe("context_selection");
+	});
+
+	it("runs the LOAD_MODEL_INPUT gate against the run-bound site-policy snapshot", () => {
+		const { ctx, runDir } = freshCtx("load-model-input-policy-snapshot");
+		const models = join(ctx.cwd, "sure", "models");
+		const results = join(ctx.cwd, "sure", "results");
+		const forbidden = join(ctx.cwd, "forbidden");
+		const runtime = join(ctx.cwd, ".runtime");
+		const datasets = join(ctx.cwd, "datasets");
+		const sourcePath = join(runDir, "mutable-site.local.yaml");
+		const policy = {
+			schema: "sure.site.policy.v1",
+			site_id: "pi-snapshot-test",
+			policy_version: 1,
+			storage: {
+				approved_models_roots: [models],
+				approved_results_roots: [results],
+				forbidden_output_roots: [forbidden],
+				runtime_root: runtime,
+			},
+			datasets: { allowed_source_roots: { default: datasets } },
+			execution: { surfaces: ["local"], local_runtimes: ["python", "container"] },
+			network: { container_registry: "registry.example" },
+			container_delivery: { repository_template: "{registry}/sure-{task}-{model_name}" },
+		} as const;
+		const snapshot = createPolicySnapshot({
+			site_id: policy.site_id,
+			policy_version: policy.policy_version,
+			policy: policy as unknown as JsonValue,
+			source: { kind: "local", path: sourcePath, raw_sha256: "a".repeat(64) },
+			path_bindings: [
+				{ root_id: "approved-models.0", role: "read_only_reference", path: models, resolved_path: models },
+				{ root_id: "approved-results.0", role: "controlled_publication", path: results, resolved_path: results },
+				{ root_id: "dataset.default", role: "dataset_source", path: datasets, resolved_path: datasets },
+				{ root_id: "forbidden-output.0", role: "forbidden_output", path: forbidden, resolved_path: forbidden },
+				{ root_id: "runtime", role: "runtime_cache", path: runtime, resolved_path: runtime },
+			],
+		});
+		const snapshotPath = join(runDir, "artifacts", "site_policy.resolved.json");
+		writeFileSync(snapshotPath, JSON.stringify(snapshot), "utf-8");
+		Object.assign(ctx.run, {
+			policyDigest: snapshot.policy_digest,
+			policySnapshotDigest: snapshot.snapshot_digest,
+			policySnapshotPath: snapshotPath,
+		});
+		seedCheckpoint(runDir, { currentUnit: "load_model_input", completedUnits: [], retries: {} });
+		writeArtifact(runDir, "model_input_resolved.json", {
+			model_id: "owner/model",
+			model_name: "owner__model",
+			model_dir: join(models, "owner__model"),
+			repo_url: "https://huggingface.co/owner/model",
+			task_type: "asr",
+			deployment_type: "local",
+			package_profile: "docker-registry",
+			container_delivery: {
+				repository: "registry.example/sure-asr-owner__model",
+				image_version: "v1",
+				target_image: "registry.example/sure-asr-owner__model:v1",
+				image_version_resolution: "explicit",
+			},
+		});
+		writeFileSync(sourcePath, "schema: deliberately-invalid-after-start\n", "utf-8");
+
+		const result = withEnv("SURE_SITE_POLICY", sourcePath, () => postToolResult(ctx));
+
 		expect(result.ok).toBe(true);
 		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
 		expect(checkpoint?.data.currentUnit).toBe("context_selection");

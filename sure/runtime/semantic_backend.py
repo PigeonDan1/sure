@@ -119,6 +119,7 @@ class SemanticBackendOperation:
     kind: str
     timeout_ms: int
     deterministic: bool
+    requires_policy_snapshot: bool | None = None
     canonical_resource_digest: str | None = None
     legacy_resource_digest: str | None = None
 
@@ -158,6 +159,7 @@ class ResolvedSemanticBackend:
     registry_digest: str
     timeout_ms: int
     deterministic: bool
+    requires_policy_snapshot: bool
 
 
 def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
@@ -209,6 +211,9 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                 raise SemanticBackendResolutionError(f"{operation_id}.timeout_ms is invalid")
             if not isinstance(operation.get("deterministic"), bool):
                 raise SemanticBackendResolutionError(f"{operation_id}.deterministic is invalid")
+            requires_policy_snapshot = operation.get("requires_policy_snapshot")
+            if requires_policy_snapshot is not None and not isinstance(requires_policy_snapshot, bool):
+                raise SemanticBackendResolutionError(f"{operation_id}.requires_policy_snapshot is invalid")
             entrypoint = _relative(operation.get("entrypoint"), f"{operation_id}.entrypoint")
             if integrity_root is not None:
                 try:
@@ -230,6 +235,7 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                     kind=kind,
                     timeout_ms=timeout,
                     deterministic=operation["deterministic"],
+                    requires_policy_snapshot=requires_policy_snapshot,
                     canonical_resource_digest=digests["canonical_resource_digest"],
                     legacy_resource_digest=digests["legacy_resource_digest"],
                 )
@@ -285,6 +291,7 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                         "kind": operation.kind,
                         "timeout_ms": operation.timeout_ms,
                         "deterministic": operation.deterministic,
+                        **({"requires_policy_snapshot": operation.requires_policy_snapshot} if operation.requires_policy_snapshot is not None else {}),
                         **({"canonical_resource_digest": operation.canonical_resource_digest} if operation.canonical_resource_digest is not None else {}),
                         **({"legacy_resource_digest": operation.legacy_resource_digest} if operation.legacy_resource_digest is not None else {}),
                     }
@@ -424,5 +431,6 @@ def resolve_semantic_backend_operation(
             registry_digest=manifest.registry_digest,
             timeout_ms=operation.timeout_ms,
             deterministic=operation.deterministic,
+            requires_policy_snapshot=operation.requires_policy_snapshot is True,
         )
     raise SemanticBackendResolutionError(f"semantic backend operation is unavailable: {operation_id}")

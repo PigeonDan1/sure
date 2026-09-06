@@ -57,6 +57,46 @@ function policySnapshot(root: string): PolicySnapshot {
 	});
 }
 
+function onboardPolicySnapshot(root: string, sourcePath: string): PolicySnapshot {
+	const models = join(root, "sure", "models");
+	const results = join(root, "results");
+	const forbidden = join(root, "production-reference");
+	const runtime = join(root, "runtime");
+	const datasets = join(root, "datasets");
+	const policy = {
+		schema: "sure.site.policy.v1",
+		site_id: "cli-onboard-test",
+		policy_version: 1,
+		storage: {
+			approved_models_roots: [models],
+			approved_results_roots: [results],
+			forbidden_output_roots: [forbidden],
+			runtime_root: runtime,
+		},
+		datasets: { allowed_source_roots: { default: datasets } },
+		execution: { surfaces: ["local"], local_runtimes: ["python", "container"] },
+		network: { container_registry: "registry.example" },
+		container_delivery: { repository_template: "{registry}/sure-{task}-{model_name}" },
+	} as const;
+	return createPolicySnapshot({
+		site_id: policy.site_id,
+		policy_version: policy.policy_version,
+		policy: policy as unknown as JsonValue,
+		source: {
+			kind: "environment",
+			path: sourcePath,
+			raw_sha256: createHash("sha256").update(readFileSync(sourcePath)).digest("hex"),
+		},
+		path_bindings: [
+			{ root_id: "approved-models.0", role: "read_only_reference", path: models, resolved_path: models },
+			{ root_id: "approved-results.0", role: "controlled_publication", path: results, resolved_path: results },
+			{ root_id: "dataset.default", role: "dataset_source", path: datasets, resolved_path: datasets },
+			{ root_id: "forbidden-output.0", role: "forbidden_output", path: forbidden, resolved_path: forbidden },
+			{ root_id: "runtime", role: "runtime_cache", path: runtime, resolved_path: runtime },
+		],
+	});
+}
+
 interface CommandResult {
 	status: number | null;
 	stdout: string;
@@ -313,7 +353,34 @@ describe("surectl cooperative control plane", () => {
 
 	it("advances an onboard static gate only after its registered checker passes", () => {
 		const runId = "run-automatic-onboard-validator";
-		const base = [
+		const mutablePolicyPath = join(root, "site-policy.yaml");
+		const snapshotPath = join(root, "site-policy.snapshot.json");
+		for (const path of [
+			join(root, "sure", "models"),
+			join(root, "results"),
+			join(root, "production-reference"),
+			join(root, "runtime"),
+			join(root, "datasets"),
+		]) {
+			mkdirSync(path, { recursive: true });
+		}
+		writeFileSync(mutablePolicyPath, "captured policy bytes\n");
+		const modelInput = {
+			model_id: "owner/model",
+			model_name: "owner__model",
+			model_dir: join(root, "sure", "models", "owner__model"),
+			repo_url: "https://huggingface.co/owner/model",
+			task_type: "asr",
+			deployment_type: "local",
+			package_profile: "docker-registry",
+			container_delivery: {
+				repository: "registry.example/sure-asr-owner__model",
+				image_version: "v1",
+				target_image: "registry.example/sure-asr-owner__model:v1",
+				image_version_resolution: "explicit",
+			},
+		};
+		const noSnapshotBase = [
 			"--skill",
 			"sure_onboard",
 			"--definition",
@@ -321,56 +388,64 @@ describe("surectl cooperative control plane", () => {
 			"--validator-registry",
 			onboardRegistryPath,
 		];
-		const started = command(root, "start", [
-			...base,
+		const noSnapshotRunId = "run-onboard-without-policy-snapshot";
+		const noSnapshotStart = command(root, "start", [
+			...noSnapshotBase,
 			"--run-id",
-			runId,
+			noSnapshotRunId,
 			"--policy-digest",
 			DIGEST_A,
 			"--executor-digest",
 			DIGEST_B,
 		]);
+		expect(noSnapshotStart.status).toBe(0);
+		const noSnapshotRunDir = String((noSnapshotStart.value?.run as Record<string, unknown>).runDir);
+		writeFileSync(join(noSnapshotRunDir, "artifacts", "model_input_resolved.json"), JSON.stringify(modelInput));
+		const noSnapshotValidation = command(root, "validate", [
+			...noSnapshotBase,
+			"--run-id",
+			noSnapshotRunId,
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(noSnapshotValidation.status).toBe(5);
+		expect((noSnapshotValidation.value?.outcome as Record<string, unknown>).outcome).toBe("NOT_EXECUTED");
+		expect((noSnapshotValidation.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
+		const noSnapshotState = JSON.parse(readFileSync(join(noSnapshotRunDir, "state.json"), "utf8")) as {
+			checkpoint: { data: { currentUnit: string } };
+		};
+		expect(noSnapshotState.checkpoint.data.currentUnit).toBe("load_model_input");
+		writeFileSync(snapshotPath, JSON.stringify(onboardPolicySnapshot(root, mutablePolicyPath)));
+		const base = [
+			"--skill",
+			"sure_onboard",
+			"--definition",
+			onboardDefinition,
+			"--validator-registry",
+			onboardRegistryPath,
+			"--policy-snapshot",
+			snapshotPath,
+		];
+		const started = command(root, "start", [...base, "--run-id", runId, "--executor-digest", DIGEST_B]);
 		expect(started.status).toBe(0);
 		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
 		const artifacts = join(runDir, "artifacts");
-		const modelDir = join(root, "sure", "models", "owner__model");
+		const modelDir = modelInput.model_dir;
 		const resolvedInput = join(artifacts, "model_input_resolved.json");
-		writeFileSync(
-			resolvedInput,
-			JSON.stringify({
-				model_id: "owner/model",
-				model_name: "owner__model",
-				model_dir: modelDir,
-				repo_url: "https://huggingface.co/owner/model",
-				task_type: "asr",
-				deployment_type: "local",
-				package_profile: "none",
-			}),
-		);
-		const registry = JSON.parse(readFileSync(onboardRegistryPath, "utf8")) as {
-			digest: string;
-			validators: Array<{ id: string; unit_id?: string }>;
-		};
-		const inputValidator = registry.validators.find((entry) => entry.unit_id === "load_model_input");
-		expect(inputValidator).toBeDefined();
-		const compatibilityEvidence = join(artifacts, "onboard-input-compatibility-evidence.json");
-		writeFileSync(
-			compatibilityEvidence,
-			JSON.stringify({
-				schema: "sure.validator.evidence.v1",
-				registry_digest: registry.digest,
-				validators: [
-					{
-						validator_id: inputValidator?.id,
-						verdict: "PASS",
-						artifact_digest: digest(resolvedInput),
-					},
-				],
-			}),
-		);
-		expect(command(root, "validate", [...base, "--run-id", runId, "--evidence", compatibilityEvidence]).status).toBe(
-			0,
-		);
+		writeFileSync(resolvedInput, JSON.stringify(modelInput));
+		writeFileSync(mutablePolicyPath, "mutated after run start\n");
+		const inputValidation = command(root, "validate", [
+			...base,
+			"--run-id",
+			runId,
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(inputValidation.status).toBe(0);
+		let state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		let validation = state.last_validation as Record<string, unknown>;
+		let evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.onboard.validate_model_input");
 
 		writeFileSync(
 			join(artifacts, "context_selection.json"),
@@ -389,7 +464,7 @@ describe("surectl cooperative control plane", () => {
 		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
 		writeFileSync(join(artifacts, "classification.json"), JSON.stringify({ task_type: "asr" }));
 		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
-		writeFileSync(join(artifacts, "backend_choice.json"), JSON.stringify({ backend: "uv" }));
+		writeFileSync(join(artifacts, "backend_choice.json"), JSON.stringify({ backend: "docker" }));
 		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
 
 		writeFileSync(
@@ -397,10 +472,23 @@ describe("surectl cooperative control plane", () => {
 			JSON.stringify({
 				model_id: "owner/model",
 				model_dir: modelDir,
-				backend: "uv",
+				backend: "docker",
 				deployment_type: "local",
-				package_profile: "none",
-				steps: [{ state: "materialize", action: "run materialize_model_runtime.py with a hash lock" }],
+				package_profile: "docker-registry",
+				container_delivery: {
+					dockerfile_path: "Dockerfile",
+					target_image: "registry.example/sure-asr-owner__model:v1",
+					registry_required: true,
+					model_mount_read_only: true,
+					result_mount_separate: true,
+				},
+				steps: [
+					{
+						state: "package",
+						action:
+							"adapt Dockerfile; docker build target; docker run container validation; docker push registry; pull sha256 digest verification",
+					},
+				],
 				blockers: [],
 			}),
 		);
@@ -410,9 +498,9 @@ describe("surectl cooperative control plane", () => {
 		const validated = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
 		expect(validated.status).toBe(0);
 		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
-		const state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
-		const validation = state.last_validation as Record<string, unknown>;
-		const evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		validation = state.last_validation as Record<string, unknown>;
+		evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
 		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.onboard.validate_build_plan");
 		expect(
 			((validated.value?.transition as Record<string, unknown>).checkpoint as { data: { currentUnit: string } }).data
