@@ -624,7 +624,11 @@ export const SURE_TRANS_EXECUTION_BACKEND: SemanticBackendBundle = {
 			timeout_ms: 7_200_000,
 			deterministic: false,
 			artifact_mode: "mutating",
-			output_contract: transOutputContract("mutating", "original-inference-result", "original_inference_result.json"),
+			output_contract: transOutputContract(
+				"mutating",
+				"original-inference-result",
+				"original_inference_result.json",
+			),
 		},
 		{
 			operation_id: "sure.trans.execute_adapter_image",

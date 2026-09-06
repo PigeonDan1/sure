@@ -183,10 +183,7 @@ function requestFor(
 	) {
 		throw new Error(`${operation.operation_id} output_path does not match its output contract`);
 	}
-	const outputPath =
-		contract === undefined
-			? options.artifact.path
-			: (options.output_path ?? declaredOutputPath!);
+	const outputPath = contract === undefined ? options.artifact.path : (options.output_path ?? declaredOutputPath!);
 	const contractDigest = contract === undefined ? undefined : executionOutputContractDigest(contract);
 	const declaredCapabilities = registeredOperationCapabilityRequirements(operation);
 	const capabilityRequirementsDigest = registeredOperationCapabilityRequirementsDigest(operation);

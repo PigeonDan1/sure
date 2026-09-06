@@ -16,6 +16,8 @@
 			"@earendil-works/pi-orchestrator": ["./packages/orchestrator/src/index.ts"],
 			"@earendil-works/pi-orchestrator/*": ["./packages/orchestrator/src/*"],
 			"@earendil-works/sure-core": ["./packages/sure-core/src/index.ts"],
+			"@earendil-works/sure-core/evaluation": ["./packages/sure-core/src/evaluation/index.ts"],
+			"@earendil-works/sure-core/site": ["./packages/sure-core/src/policy/site.ts"],
 			"@earendil-works/sure-core/*": ["./packages/sure-core/src/*"],
 			"typebox": ["./node_modules/typebox"],
 			"@earendil-works/pi-tui": ["./packages/tui/src/index.ts"],
