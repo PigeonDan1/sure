@@ -6651,8 +6651,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
-      "size_bytes": 31637,
-      "sha256": "c5defedad21fac534382e6876a5876c95ee8a8ffec6c50763689b939b60e82d9"
+      "size_bytes": 31697,
+      "sha256": "bf0d4c72e72b235548720f119f8bc96c8cefb7df60e8bdce383ab0b6fc028c69"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
@@ -7182,7 +7182,7 @@
     {
       "path": "sure/runtime/memory/units.generation.lock.json",
       "size_bytes": 506,
-      "sha256": "45aaed4f547fd147673bd41b1fceb1059e13410353dd05389c0f5321fc7d83f3"
+      "sha256": "b97a43178d4488b3f0773fa13ffd17f9aba3a4d37ef09bcf9623de35c5a190bf"
     },
     {
       "path": "sure/runtime/memory/units.json",
@@ -7266,8 +7266,8 @@
     },
     {
       "path": "sure/runtime/test_semantic_backend.py",
-      "size_bytes": 20673,
-      "sha256": "074180b159cff583a2c2981c4315933c048b010fdf8407780d1938c3033c7e98"
+      "size_bytes": 20740,
+      "sha256": "2b4c32ad5a1627e5d59f20ee6842ec71463ce816b621f365099338488317ed49"
     },
     {
       "path": "sure/runtime/usage.ts",
@@ -9076,8 +9076,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_verdict.py",
-      "size_bytes": 14816,
-      "sha256": "676229e959217c4427d735075f2fc787ce4b4046801b4e01bb40d7154047655c"
+      "size_bytes": 946,
+      "sha256": "4d8bf201022d812de325bf4afe7306f8dbcf74a11747f9fa38559a2d85a5fdce"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_weights.py",
@@ -9086,8 +9086,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/scripts/deployment_contract.py",
-      "size_bytes": 11666,
-      "sha256": "ad60e64270bcc57d776b0486a9ee974be5b6ee1af525312fa086b20391d6b70b"
+      "size_bytes": 925,
+      "sha256": "1dd85803cf7acffcd965260097ddd25c327d0d5601df4ff1dc5b088eb5fb06ff"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/describe_harness_runtime.py",
@@ -9701,5 +9701,5 @@
       ]
     }
   ],
-  "semantic_digest": "5f2046e31f6d7737217f11e57e696f9503693a586ac834ba63033290d3118bc6"
+  "semantic_digest": "fcfcb3251b94f0c17a5d59b923089ea4fca32f0a1c33b253fd3ba21a6fde3518"
 }

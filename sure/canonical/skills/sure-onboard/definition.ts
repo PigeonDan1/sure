@@ -332,6 +332,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["status"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_verdict",
 							script_id: "check_verdict.py",
 						},
 						helper_scripts: ["write_verdict.py"],

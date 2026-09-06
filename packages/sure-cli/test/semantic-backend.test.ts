@@ -83,6 +83,7 @@ describe("semantic backend registry", () => {
 			["sure.onboard.validate_fixture", "check_fixture.py"],
 			["sure.onboard.validate_weights", "check_weights.py"],
 			["sure.onboard.validate_artifact_manifest", "check_artifact_manifest.py"],
+			["sure.onboard.validate_verdict", "check_verdict.py"],
 		] as const) {
 			const resolved = resolveSemanticBackendOperation(packageDir, operationId, { manifestPath });
 			expect(resolved.source).toBe("canonical");

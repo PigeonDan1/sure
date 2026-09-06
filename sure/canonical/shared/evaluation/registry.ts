@@ -253,6 +253,15 @@ export const SURE_ONBOARD_VALIDATOR_BACKEND: SemanticBackendBundle = {
 			timeout_ms: 300_000,
 			deterministic: true,
 		},
+		{
+			operation_id: "sure.onboard.validate_verdict",
+			description: "Validate the terminal onboarding verdict against its preceding evidence.",
+			entrypoint: "scripts/check_verdict.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
 	],
 };
 

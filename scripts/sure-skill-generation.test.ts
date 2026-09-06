@@ -168,6 +168,7 @@ describe("canonical SURE skill generation", () => {
 			prepare_fixture: "sure.onboard.validate_fixture",
 			fetch_weights: "sure.onboard.validate_weights",
 			save_artifacts: "sure.onboard.validate_artifact_manifest",
+			verdict: "sure.onboard.validate_verdict",
 			extract_lessons: "sure.memory.validate_extraction",
 		});
 	});
