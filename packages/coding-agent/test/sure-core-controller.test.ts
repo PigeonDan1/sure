@@ -1,16 +1,26 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { coreDefinitionForLegacy } from "../../../sure/core/legacy-core-adapter.ts";
+import { coreDefinitionForLegacy, type LegacySkillId } from "../../../sure/core/legacy-core-adapter.ts";
+import { applyValidation, initialCheckpoint, type WorkflowCheckpoint } from "../../sure-core/src/index.ts";
 import { PiSureController, type SureHookDispatcher, translatePiEvent } from "../src/core/sure/controller.ts";
 import type { SureHookContext, SureSkillPackage } from "../src/core/sure/types.ts";
 
 const roots: string[] = [];
 
-function skillPackage(): SureSkillPackage {
+interface HostParityFixture {
+	schema: string;
+	traces: Array<{ skill_id: LegacySkillId; branch_id: string }>;
+}
+
+const HOST_PARITY_FIXTURE = JSON.parse(
+	readFileSync(new URL("../../../sure/canonical/fixtures/host-parity-traces.json", import.meta.url), "utf8"),
+) as HostParityFixture;
+
+function skillPackage(name: LegacySkillId = "sure_infer"): SureSkillPackage {
 	return {
-		manifest: { name: "sure_infer", command: "sure_infer", prompt: "test" },
+		manifest: { name, command: name, prompt: "test" },
 		manifestPath: "/repo/sure.skill.json",
 		packageDir: "/repo",
 		promptPath: "/repo/SKILL.md",
@@ -20,12 +30,12 @@ function skillPackage(): SureSkillPackage {
 	};
 }
 
-function context(runDir: string): Omit<SureHookContext, "point"> {
+function context(runDir: string, skillName: LegacySkillId = "sure_infer"): Omit<SureHookContext, "point"> {
 	return {
 		run: {
 			runId: "controller-run",
-			skillName: "sure_infer",
-			command: "sure_infer",
+			skillName,
+			command: skillName,
 			status: "running",
 			cwd: runDir,
 			packageDir: "/repo",
@@ -34,13 +44,40 @@ function context(runDir: string): Omit<SureHookContext, "point"> {
 			startedAt: "2026-09-06T00:00:00.000Z",
 			updatedAt: "2026-09-06T00:00:00.000Z",
 		},
-		skill: skillPackage().manifest,
+		skill: skillPackage(skillName).manifest,
 		cwd: runDir,
 		packageDir: "/repo",
 		runDir,
 		args: "",
 		event: { toolName: "bash", toolCallId: "call-1", input: { command: "echo ok" } },
 	};
+}
+
+function checkpointPatch(checkpoint: WorkflowCheckpoint): Record<string, unknown> {
+	return {
+		checkpoint: {
+			id: checkpoint.id,
+			label: checkpoint.label,
+			resumable: checkpoint.resumable,
+			resume_hint: checkpoint.resume_hint,
+			data: checkpoint.data,
+		},
+	};
+}
+
+async function acceptedByPiController(
+	root: string,
+	skillId: LegacySkillId,
+	before: WorkflowCheckpoint,
+	after: WorkflowCheckpoint,
+	step: string,
+): Promise<void> {
+	writeFileSync(join(root, "state.json"), JSON.stringify(checkpointPatch(before)));
+	const controller = new PiSureController(skillPackage(skillId), dispatcher(checkpointPatch(after)));
+	const result = await controller.run("post_tool_result", context(root, skillId));
+	expect(result.ok, `${skillId}/${before.branch_id}/${step}: ${result.repair ?? result.message ?? "rejected"}`).toBe(
+		true,
+	);
 }
 
 function dispatcher(result: unknown): SureHookDispatcher {
@@ -118,5 +155,57 @@ describe("Pi/Core SURE controller boundary", () => {
 		);
 		const result = await controller.run("post_tool_result", context(root));
 		expect(result.ok).toBe(true);
+	});
+
+	it("accepts the canonical host-parity trace on every Pi workflow branch", async () => {
+		expect(HOST_PARITY_FIXTURE.schema).toBe("sure.host_parity.traces.v1");
+		for (const trace of HOST_PARITY_FIXTURE.traces) {
+			const root = mkdtempSync(join(tmpdir(), `sure-controller-${trace.skill_id}-`));
+			roots.push(root);
+			const definition = coreDefinitionForLegacy(trace.skill_id);
+			const branch = definition.branches.find((candidate) => candidate.id === trace.branch_id);
+			if (!branch) throw new Error(`Missing fixture branch ${trace.skill_id}/${trace.branch_id}`);
+			const initialOptions =
+				trace.skill_id === "sure_approve"
+					? { id: "approval_flow", label: "SURE approval state machine", mode: trace.branch_id }
+					: undefined;
+			let checkpoint = initialCheckpoint(definition, trace.branch_id, initialOptions);
+
+			const applyAndAudit = async (
+				signal:
+					| { kind: "missing"; reason: string }
+					| { kind: "fail"; reason: string; artifact_digest: string }
+					| { kind: "pass" },
+				step: string,
+			): Promise<void> => {
+				const transition = applyValidation(definition, checkpoint, signal);
+				await acceptedByPiController(root, trace.skill_id, checkpoint, transition.checkpoint, step);
+				checkpoint = transition.checkpoint;
+			};
+
+			await applyAndAudit({ kind: "missing", reason: "fixture artifact missing" }, "missing");
+			await applyAndAudit(
+				{ kind: "fail", reason: "fixture failure", artifact_digest: "fixture:failure-1" },
+				"retry-1",
+			);
+			await applyAndAudit(
+				{ kind: "fail", reason: "fixture bytes unchanged", artifact_digest: "fixture:failure-1" },
+				"unchanged",
+			);
+			for (let attempt = 2; attempt <= definition.retry_policy.default_max_retries; attempt += 1) {
+				await applyAndAudit(
+					{
+						kind: "fail",
+						reason: `fixture failure ${attempt}`,
+						artifact_digest: `fixture:failure-${attempt}`,
+					},
+					`retry-${attempt}`,
+				);
+			}
+			await applyAndAudit({ kind: "pass" }, "repair-pass");
+			for (const unit of branch.units.slice(1)) await applyAndAudit({ kind: "pass" }, `pass-${unit.id}`);
+			expect(checkpoint.resumable, `${trace.skill_id}/${trace.branch_id}/terminal`).toBe(false);
+			expect(checkpoint.data.completedUnits).toEqual(branch.units.map((unit) => unit.id));
+		}
 	});
 });

@@ -6,11 +6,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+	applyValidation,
 	canonicalJsonDigest,
 	createPolicySnapshot,
 	type ExecutionRequest,
+	initialCheckpoint,
 	type JsonValue,
 	type PolicySnapshot,
+	type TransitionResult,
+	type WorkflowDefinition,
 } from "../../sure-core/src/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -19,6 +23,7 @@ const definition = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/canoni
 const registryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/validator-registry.json");
 const evalDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/canonical-definition.json");
 const portableMemoryContract = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/memory-contract.json");
+const hostParityFixturePath = join(repositoryRoot, "sure/canonical/fixtures/host-parity-traces.json");
 const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
 const DIGEST_C = "c".repeat(64);
@@ -51,6 +56,17 @@ interface CommandResult {
 	stdout: string;
 	stderr: string;
 	value?: Record<string, unknown>;
+}
+
+interface HostParityFixture {
+	schema: string;
+	recipe: string[];
+	portable: {
+		skill_id: string;
+		branch_id: string;
+		invalid_artifacts: Record<string, JsonValue>;
+		valid_artifacts: Record<string, JsonValue>;
+	};
 }
 
 function command(root: string, name: string, args: string[]): CommandResult {
@@ -217,6 +233,160 @@ describe("surectl cooperative control plane", () => {
 				.currentUnit,
 		).toBe("collect_metadata");
 	});
+
+	it("matches the canonical host-parity trace through the portable control plane", () => {
+		const fixture = JSON.parse(readFileSync(hostParityFixturePath, "utf8")) as HostParityFixture;
+		expect(fixture.schema).toBe("sure.host_parity.traces.v1");
+		expect(fixture.recipe).toEqual([
+			"missing",
+			"fail_new",
+			"fail_unchanged",
+			"fail_until_exhausted",
+			"pass_current",
+			"pass_remaining",
+		]);
+		const canonical = JSON.parse(readFileSync(definition, "utf8")) as { workflow: WorkflowDefinition };
+		const workflow = canonical.workflow;
+		const branch = workflow.branches.find((candidate) => candidate.id === fixture.portable.branch_id);
+		if (!branch) throw new Error("Host-parity fixture branch is missing.");
+		const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
+			digest: string;
+			validators: Array<{ id: string; branch_id?: string; unit_id?: string }>;
+		};
+		const base = [
+			"--skill",
+			fixture.portable.skill_id,
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+		];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			"host-parity",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const run = started.value?.run as Record<string, unknown>;
+		expect(run.workflowDigest).toBe(canonicalJsonDigest(workflow as unknown as JsonValue));
+		expect(run.validatorDigest).toBe(registry.digest);
+		const runDir = String(run.runDir);
+		let core = initialCheckpoint(workflow, fixture.portable.branch_id);
+
+		const compare = (
+			actual: CommandResult,
+			expected: TransitionResult,
+			outcome: "PASS" | "BLOCKED" | "RETRY" | "NOT_EXECUTED",
+			disposition: "ADVANCE" | "RETRY" | "BLOCK" | "TERMINATE" | "WAIT",
+			status: number,
+		): void => {
+			expect(actual.status).toBe(status);
+			const transition = actual.value?.transition as unknown as TransitionResult;
+			expect(transition.action).toBe(expected.action);
+			expect(transition.accepted).toBe(expected.accepted);
+			expect(transition.retry_consumed).toBe(expected.retry_consumed);
+			expect(transition.exhausted).toBe(expected.exhausted);
+			expect(transition.checkpoint).toEqual(expected.checkpoint);
+			const actualOutcome = actual.value?.outcome as Record<string, unknown>;
+			expect(actualOutcome.outcome).toBe(outcome);
+			expect(actualOutcome.workflow_disposition).toBe(disposition);
+		};
+
+		let expected = applyValidation(workflow, core, { kind: "missing", reason: "artifact missing" });
+		compare(command(root, "validate", [...base, "--run-id", "host-parity"]), expected, "NOT_EXECUTED", "WAIT", 5);
+		core = expected.checkpoint;
+
+		const initialUnit = branch.units[0];
+		if (!initialUnit) throw new Error("Host-parity fixture workflow is empty.");
+		const initialArtifact = join(runDir, "artifacts", initialUnit.produces);
+		writeFileSync(initialArtifact, `${JSON.stringify(fixture.portable.invalid_artifacts["failure-1"])}\n`);
+		expected = applyValidation(workflow, core, {
+			kind: "fail",
+			reason: "fixture failure",
+			artifact_digest: digest(initialArtifact),
+		});
+		compare(command(root, "validate", [...base, "--run-id", "host-parity"]), expected, "RETRY", "RETRY", 4);
+		core = expected.checkpoint;
+
+		expected = applyValidation(workflow, core, {
+			kind: "fail",
+			reason: "fixture bytes unchanged",
+			artifact_digest: digest(initialArtifact),
+		});
+		compare(command(root, "validate", [...base, "--run-id", "host-parity"]), expected, "RETRY", "RETRY", 4);
+		core = expected.checkpoint;
+
+		for (let attempt = 2; attempt <= workflow.retry_policy.default_max_retries; attempt += 1) {
+			const invalid = fixture.portable.invalid_artifacts[`failure-${attempt}`];
+			if (invalid === undefined) throw new Error(`Missing invalid artifact fixture for attempt ${attempt}.`);
+			writeFileSync(initialArtifact, `${JSON.stringify(invalid)}\n`);
+			expected = applyValidation(workflow, core, {
+				kind: "fail",
+				reason: `fixture failure ${attempt}`,
+				artifact_digest: digest(initialArtifact),
+			});
+			const exhausted = attempt === workflow.retry_policy.default_max_retries;
+			compare(
+				command(root, "validate", [...base, "--run-id", "host-parity"]),
+				expected,
+				exhausted ? "BLOCKED" : "RETRY",
+				exhausted ? "BLOCK" : "RETRY",
+				exhausted ? 3 : 4,
+			);
+			core = expected.checkpoint;
+		}
+
+		for (const unit of branch.units) {
+			const artifact = fixture.portable.valid_artifacts[unit.id];
+			if (artifact === undefined) throw new Error(`Missing valid artifact fixture for ${unit.id}.`);
+			const artifactPath = join(runDir, "artifacts", unit.produces);
+			writeFileSync(artifactPath, `${JSON.stringify(artifact)}\n`);
+			const validateArgs = [...base, "--run-id", "host-parity"];
+			if (unit.kind === "gate") {
+				const validators = registry.validators.filter(
+					(entry) => entry.branch_id === branch.id && entry.unit_id === unit.id,
+				);
+				expect(validators.length, `registered validators for ${unit.id}`).toBeGreaterThan(0);
+				const evidencePath = join(runDir, "artifacts", `host-parity-${unit.id}-evidence.json`);
+				writeFileSync(
+					evidencePath,
+					`${JSON.stringify({
+						schema: "sure.validator.evidence.v1",
+						registry_digest: registry.digest,
+						validators: validators.map((validator) => ({
+							validator_id: validator.id,
+							verdict: "PASS",
+							artifact_digest: digest(artifactPath),
+						})),
+					})}\n`,
+				);
+				validateArgs.push("--evidence", evidencePath);
+			}
+			expected = applyValidation(workflow, core, {
+				kind: "pass",
+				artifact_digest: digest(artifactPath),
+			});
+			compare(
+				command(root, "validate", validateArgs),
+				expected,
+				"PASS",
+				expected.action === "terminal" ? "TERMINATE" : "ADVANCE",
+				0,
+			);
+			core = expected.checkpoint;
+		}
+
+		const finalStatus = command(root, "status", [...base, "--run-id", "host-parity"]);
+		expect(finalStatus.status).toBe(0);
+		expect(finalStatus.value?.checkpoint).toEqual(core);
+		expect(core.resumable).toBe(false);
+		expect(core.data.completedUnits).toEqual(branch.units.map((unit) => unit.id));
+		expect(core.data.blocks).toBe(workflow.retry_policy.default_max_retries);
+	}, 30_000);
 
 	it("rejects output beneath an explicit read-only reference root", () => {
 		const reference = join(root, "reference");

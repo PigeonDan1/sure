@@ -1,0 +1,50 @@
+{
+	"schema": "sure.host_parity.traces.v1",
+	"recipe": [
+		"missing",
+		"fail_new",
+		"fail_unchanged",
+		"fail_until_exhausted",
+		"pass_current",
+		"pass_remaining"
+	],
+	"traces": [
+		{ "skill_id": "sure_feed", "branch_id": "main" },
+		{ "skill_id": "sure_onboard", "branch_id": "main" },
+		{ "skill_id": "sure_infer", "branch_id": "main" },
+		{ "skill_id": "sure_eval", "branch_id": "main" },
+		{ "skill_id": "sure_trans", "branch_id": "main" },
+		{ "skill_id": "sure_approve", "branch_id": "audit" },
+		{ "skill_id": "sure_approve", "branch_id": "approve" }
+	],
+	"portable": {
+		"skill_id": "sure_feed",
+		"branch_id": "main",
+		"invalid_artifacts": {
+			"failure-1": { "invalid": "failure-1" },
+			"failure-2": { "invalid": "failure-2" },
+			"failure-3": { "invalid": "failure-3" }
+		},
+		"valid_artifacts": {
+			"scan_modelscope": { "candidates": [] },
+			"match_task": { "candidates": [] },
+			"collect_metadata": { "models": [] },
+			"convert_to_oref": { "converted": [] },
+			"synthesize_model_input": { "model_inputs": [] },
+			"rank_and_select": { "selected": [] },
+			"extract_lessons": {
+				"schema": "sure.memory.extraction.v2",
+				"no_new_lessons": true,
+				"no_lessons_reason": "host parity fixture",
+				"covered_by": [],
+				"candidates": [],
+				"infra_noise": false,
+				"infra_evidence": []
+			},
+			"emit_handoff_manifest": {
+				"models": [],
+				"manifest_path": "artifacts/model_input.yaml"
+			}
+		}
+	}
+}

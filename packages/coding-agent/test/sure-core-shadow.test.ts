@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CANONICAL_SKILLS } from "../../../sure/canonical/skills/index.ts";
 import {
@@ -72,6 +73,26 @@ interface LegacyFlow {
 	advance: (state: LegacyState) => LegacyState;
 	bump: (state: LegacyState, digest: string) => LegacyState;
 }
+
+interface HostParityFixture {
+	schema: string;
+	recipe: string[];
+	traces: Array<{ skill_id: LegacySkillId; branch_id: string }>;
+}
+
+interface HostParityFlow {
+	skillId: LegacySkillId;
+	branchId: string;
+	units: readonly { id: string }[];
+	maxRetries: number;
+	initial: LegacyState;
+	advance: (state: LegacyState) => LegacyState;
+	bump: (state: LegacyState, digest: string) => LegacyState;
+}
+
+const HOST_PARITY_FIXTURE = JSON.parse(
+	readFileSync(new URL("../../../sure/canonical/fixtures/host-parity-traces.json", import.meta.url), "utf8"),
+) as HostParityFixture;
 
 function project(data: LegacyState | WorkflowCheckpointData): LegacyState {
 	return {
@@ -200,6 +221,104 @@ const FLOWS: LegacyFlow[] = [
 	),
 ];
 
+function approvalTraceFlow(mode: "audit" | "approve", units: readonly ApproveUnit[]): HostParityFlow {
+	function checkpoint(state: LegacyState): ApproveCheckpoint {
+		return {
+			...approveInitialCheckpoint(mode),
+			data: {
+				mode,
+				currentUnit: state.currentUnit,
+				completedUnits: [...state.completedUnits],
+				retries: { ...state.retries },
+				...(state.blocks === undefined ? {} : { blocks: state.blocks }),
+				failedArtifactDigests: { ...(state.failedArtifactDigests ?? {}) },
+			},
+		};
+	}
+	return {
+		skillId: "sure_approve",
+		branchId: mode,
+		units,
+		maxRetries: 3,
+		initial: project(approveInitialCheckpoint(mode).data),
+		advance: (state) => project(approveAdvance(checkpoint(state)).data),
+		bump: (state, digest) => project(approveBumpRetry(checkpoint(state), digest).data),
+	};
+}
+
+const HOST_PARITY_FLOWS: HostParityFlow[] = [
+	...FLOWS.map((flow) => ({ ...flow, branchId: "main" })),
+	approvalTraceFlow("audit", AUDIT_UNITS),
+	approvalTraceFlow("approve", DECISION_UNITS),
+];
+
+function compareCanonicalTrace(flow: HostParityFlow): void {
+	const definition = coreDefinitionForLegacy(flow.skillId);
+	const initialOptions =
+		flow.skillId === "sure_approve"
+			? { id: "approval_flow", label: "SURE approval state machine", mode: flow.branchId }
+			: undefined;
+	let core = initialCheckpoint(definition, flow.branchId, initialOptions);
+	let legacy = project(flow.initial);
+
+	const missing = applyValidation(definition, core, { kind: "missing", reason: "fixture artifact missing" });
+	expect(missing.action, `${flow.skillId}/${flow.branchId}/missing`).toBe("missing");
+	expect(project(missing.checkpoint.data)).toEqual(legacy);
+	core = missing.checkpoint;
+
+	const firstDigest = "fixture:failure-1";
+	legacy = flow.bump(legacy, firstDigest);
+	let failed = applyValidation(definition, core, {
+		kind: "fail",
+		reason: "fixture failure",
+		artifact_digest: firstDigest,
+	});
+	expect(failed.action, `${flow.skillId}/${flow.branchId}/retry-1`).toBe("retry");
+	expect(project(failed.checkpoint.data)).toEqual(legacy);
+	core = failed.checkpoint;
+
+	const unchanged = applyValidation(definition, core, {
+		kind: "fail",
+		reason: "fixture bytes unchanged",
+		artifact_digest: firstDigest,
+	});
+	expect(unchanged.action, `${flow.skillId}/${flow.branchId}/unchanged`).toBe("unchanged");
+	expect(project(unchanged.checkpoint.data)).toEqual(legacy);
+	core = unchanged.checkpoint;
+
+	for (let attempt = 2; attempt <= flow.maxRetries; attempt += 1) {
+		const digest = `fixture:failure-${attempt}`;
+		legacy = flow.bump(legacy, digest);
+		failed = applyValidation(definition, core, {
+			kind: "fail",
+			reason: `fixture failure ${attempt}`,
+			artifact_digest: digest,
+		});
+		expect(failed.action, `${flow.skillId}/${flow.branchId}/retry-${attempt}`).toBe(
+			attempt === flow.maxRetries ? "exhausted" : "retry",
+		);
+		expect(project(failed.checkpoint.data)).toEqual(legacy);
+		core = failed.checkpoint;
+	}
+
+	legacy = flow.advance(legacy);
+	let passed = applyValidation(definition, core, { kind: "pass" });
+	expect(project(passed.checkpoint.data), `${flow.skillId}/${flow.branchId}/repaired`).toEqual(legacy);
+	core = passed.checkpoint;
+
+	for (const unit of flow.units.slice(1)) {
+		legacy = flow.advance(legacy);
+		passed = applyValidation(definition, core, { kind: "pass" });
+		expect(passed.accepted, `${flow.skillId}/${flow.branchId}/${unit.id}`).toBe(true);
+		expect(project(passed.checkpoint.data), `${flow.skillId}/${flow.branchId}/${unit.id}`).toEqual(legacy);
+		core = passed.checkpoint;
+	}
+
+	expect(core.resumable, `${flow.skillId}/${flow.branchId}/terminal`).toBe(false);
+	expect(core.data.completedUnits).toEqual(flow.units.map((unit) => unit.id));
+	expect(core.data.blocks).toBe(flow.maxRetries);
+}
+
 function comparePassAndRetry(flow: LegacyFlow): void {
 	const definition = coreDefinitionForLegacy(flow.skillId);
 	let legacy = project(flow.initial);
@@ -276,6 +395,22 @@ describe("legacy workflow shadow adapter", () => {
 
 	it.each(FLOWS.map((flow) => [flow.skillId, flow] as const))("matches old pass/retry trace for %s", (_id, flow) => {
 		comparePassAndRetry(flow);
+	});
+
+	it("matches the canonical missing/retry/exhaustion/repair trace on every Pi branch", () => {
+		expect(HOST_PARITY_FIXTURE.schema).toBe("sure.host_parity.traces.v1");
+		expect(HOST_PARITY_FIXTURE.recipe).toEqual([
+			"missing",
+			"fail_new",
+			"fail_unchanged",
+			"fail_until_exhausted",
+			"pass_current",
+			"pass_remaining",
+		]);
+		expect(HOST_PARITY_FLOWS.map((flow) => ({ skill_id: flow.skillId, branch_id: flow.branchId }))).toEqual(
+			HOST_PARITY_FIXTURE.traces,
+		);
+		for (const flow of HOST_PARITY_FLOWS) compareCanonicalTrace(flow);
 	});
 
 	it("retains gate scripts, helper/owned scripts, and trans semantic marker", () => {

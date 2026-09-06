@@ -1113,7 +1113,7 @@ function validate(args: ParsedArgs): PublicOutcome {
 	const disposition =
 		validatorVerdict === "NOT_EXECUTED"
 			? "WAIT"
-			: transition.action === "retry"
+			: transition.action === "retry" || transition.action === "unchanged"
 				? "RETRY"
 				: transition.action === "exhausted" && !transition.accepted
 					? "BLOCK"

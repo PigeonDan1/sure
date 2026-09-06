@@ -27,6 +27,7 @@
 		"sure:site-check": "node --import tsx scripts/sure-site-check.ts",
 		"sure:characterize": "node --import tsx scripts/sure-characterization.ts repository",
 		"check:sure-characterization": "node --import tsx scripts/sure-characterization.ts repository --check && node --import tsx --test scripts/sure-characterization.test.ts && tsgo --noEmit -p tsconfig.sure-characterization.json",
+		"check:sure-host-parity": "cd packages/coding-agent && ../../node_modules/.bin/vitest --run test/sure-core-shadow.test.ts test/sure-core-controller.test.ts && cd ../sure-cli && ../../node_modules/.bin/vitest --run test/surectl.test.ts -t 'host-parity trace'",
 		"sure:generate-skills": "node --import tsx scripts/generate-sure-skills.ts",
 		"surectl": "node --import tsx packages/sure-cli/src/surectl.ts",
 		"check:sure-generation": "node --import tsx scripts/generate-sure-skills.ts --check && node_modules/.bin/vitest --run scripts/sure-skill-generation.test.ts && tsgo --noEmit -p tsconfig.sure-generation.json",
