@@ -60,6 +60,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function readJson(path: string): unknown {
+	return JSON.parse(readFileSync(path, "utf-8")) as unknown;
+}
+
 function phaseFor(unit: Unit, status: "running" | "blocked" | "success") {
 	return { id: unit.id, label: unit.label, status };
 }
@@ -501,6 +505,50 @@ function runGateScript(ctx: SureHookContext, unit: Unit): GateResult | undefined
 	return { ok: false, repair, reason: `gate script ${unit.gateScript} failed` };
 }
 
+/**
+ * Re-run the complete evaluation evidence graph immediately before a successful
+ * Pi finish is admitted.  `run_eval.py` already performs this check before its
+ * publication transaction; this second invocation closes the window in which
+ * an agent could mutate the invocation report (or any referenced evidence)
+ * between that transaction and `sure_finish`.
+ *
+ * The checker is intentionally conditional on a success-shaped report.  A
+ * failed/incomplete evaluation follows the separate `incompleteReportError`
+ * contract above and need not manufacture the success-only evidence graph.
+ */
+export function finalEvaluationGate(
+	ctx: SureHookContext,
+	runner: (ctx: SureHookContext, script: string, args: string[]) => GateResultLike = runBackendGate,
+): GateResult | undefined {
+	const reportPath = artifactPath(ctx, "eval_run_report.json");
+	if (!existsSync(reportPath)) return undefined;
+	let payload: unknown;
+	try {
+		payload = readJson(reportPath);
+	} catch {
+		return {
+			ok: false,
+			repair: "artifacts/eval_run_report.json exists but is not valid JSON.",
+			reason: "evaluation report is not valid JSON",
+		};
+	}
+	if (!isRecord(payload) || payload.status !== "success") return undefined;
+	return runner(ctx, "check_eval_run_report.py", ["--produces", reportPath, "--phase", "final"]);
+}
+
+type GateResultLike = Pick<GateResult, "ok" | "repair" | "reason">;
+
+function runBackendGate(ctx: SureHookContext, script: string, args: string[]): GateResultLike {
+	const result = runBackend(ctx, script, args);
+	if (result.ok) return { ok: true };
+	return {
+		ok: false,
+		repair:
+			result.stderr?.trim() || result.stdout?.trim() || `Gate script scripts/${script} exited ${result.status}.`,
+		reason: `gate script ${script} failed`,
+	};
+}
+
 export function postToolResult(ctx: SureHookContext): SureHookResult {
 	const event = isRecord(ctx.event) ? ctx.event : {};
 	if (event.isError === true) {
@@ -868,6 +916,14 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 		return failure(
 			gateResult.repair ?? "Final gate failed.",
 			`SURE-EVAL terminal gate "${LAST_UNIT.id}" rejected the finish.`,
+			countersFor(checkpoint.data, 1),
+		);
+	}
+	const finalEvaluationResult = finalEvaluationGate(ctx);
+	if (finalEvaluationResult && !finalEvaluationResult.ok) {
+		return failure(
+			finalEvaluationResult.repair ?? "Final evaluation evidence gate failed.",
+			"SURE-EVAL evaluation evidence changed after publication; the finish is blocked.",
 			countersFor(checkpoint.data, 1),
 		);
 	}
