@@ -67,6 +67,33 @@ class SemanticBackendTests(unittest.TestCase):
             )
             self.assertEqual(resolved.source, "semantic-backend-root")
             self.assertEqual(resolved.path, backend_root / "sure-evaluation-backend" / "scripts" / "run_eval.py")
+            self.assertEqual(resolved.integrity_root, "scripts")
+            (backend_root / "sure-evaluation-backend" / "host-metadata.txt").write_text(
+                "outside integrity root\n", encoding="utf-8"
+            )
+            still_resolved = resolve_semantic_backend_operation(
+                "sure.eval.run",
+                package_dir=PACKAGE_DIR,
+                manifest_path=MANIFEST_PATH,
+                environment={
+                    "SURE_REPOSITORY_ROOT": str(REPOSITORY_ROOT),
+                    SEMANTIC_BACKEND_ROOT_ENV: str(backend_root),
+                },
+            )
+            self.assertEqual(still_resolved.path, resolved.path)
+            (backend_root / "sure-evaluation-backend" / "scripts" / "tampered.txt").write_text(
+                "inside integrity root\n", encoding="utf-8"
+            )
+            with self.assertRaises(SemanticBackendResolutionError):
+                resolve_semantic_backend_operation(
+                    "sure.eval.run",
+                    package_dir=PACKAGE_DIR,
+                    manifest_path=MANIFEST_PATH,
+                    environment={
+                        "SURE_REPOSITORY_ROOT": str(REPOSITORY_ROOT),
+                        SEMANTIC_BACKEND_ROOT_ENV: str(backend_root),
+                    },
+                )
 
     def test_tampered_tree_and_symlink_are_rejected_before_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

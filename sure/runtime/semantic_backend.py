@@ -123,6 +123,7 @@ class SemanticBackendBundle:
     canonical_root: str
     legacy_root: str
     operations: tuple[SemanticBackendOperation, ...]
+    integrity_root: str | None = None
     canonical_tree_digest: str | None = None
     legacy_tree_digest: str | None = None
 
@@ -139,6 +140,8 @@ class ResolvedSemanticBackend:
     bundle_id: str
     bundle_version: str
     path: Path
+    bundle_root: Path
+    integrity_root: str
     source: str
     resource_digest: str
     bundle_digest: str | None
@@ -168,6 +171,11 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
         if not isinstance(raw_operations, list) or not raw_operations:
             raise SemanticBackendResolutionError(f"bundles[{bundle_index}] has no operations")
         operations: list[SemanticBackendOperation] = []
+        integrity_root = (
+            _relative(bundle.get("integrity_root"), "integrity_root")
+            if bundle.get("integrity_root") is not None
+            else None
+        )
         seen: set[str] = set()
         for operation_index, raw_operation in enumerate(raw_operations):
             operation = _record(raw_operation)
@@ -191,6 +199,14 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                 raise SemanticBackendResolutionError(f"{operation_id}.timeout_ms is invalid")
             if not isinstance(operation.get("deterministic"), bool):
                 raise SemanticBackendResolutionError(f"{operation_id}.deterministic is invalid")
+            entrypoint = _relative(operation.get("entrypoint"), f"{operation_id}.entrypoint")
+            if integrity_root is not None:
+                try:
+                    PurePosixPath(entrypoint).relative_to(PurePosixPath(integrity_root))
+                except ValueError as exc:
+                    raise SemanticBackendResolutionError(
+                        f"{operation_id}.entrypoint is outside integrity_root"
+                    ) from exc
             digests: dict[str, str | None] = {
                 field: _digest_value(operation.get(field), f"{operation_id}.{field}")
                 for field in ("canonical_resource_digest", "legacy_resource_digest")
@@ -199,7 +215,7 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                 SemanticBackendOperation(
                     operation_id=operation_id,
                     description=_required_string(operation.get("description"), f"{operation_id}.description"),
-                    entrypoint=_relative(operation.get("entrypoint"), f"{operation_id}.entrypoint"),
+                    entrypoint=entrypoint,
                     consumer_skill_ids=tuple(consumers),
                     kind=kind,
                     timeout_ms=timeout,
@@ -215,6 +231,7 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                 description=_required_string(bundle.get("description"), "description"),
                 canonical_root=_relative(bundle.get("canonical_root"), "canonical_root"),
                 legacy_root=_relative(bundle.get("legacy_root"), "legacy_root"),
+                integrity_root=integrity_root,
                 canonical_tree_digest=_digest_value(
                     bundle.get("canonical_tree_digest"),
                     f"bundles[{bundle_index}].canonical_tree_digest",
@@ -242,6 +259,7 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                 "description": bundle.description,
                 "canonical_root": bundle.canonical_root,
                 "legacy_root": bundle.legacy_root,
+                **({"integrity_root": bundle.integrity_root} if bundle.integrity_root is not None else {}),
                 **({"canonical_tree_digest": bundle.canonical_tree_digest} if bundle.canonical_tree_digest is not None else {}),
                 **({"legacy_tree_digest": bundle.legacy_tree_digest} if bundle.legacy_tree_digest is not None else {}),
                 "operations": [
@@ -336,6 +354,7 @@ def resolve_semantic_backend_operation(
     if selected is None:
         raise SemanticBackendResolutionError(f"semantic backend operation is not registered: {operation_id}")
     bundle, operation = selected
+    integrity_root = bundle.integrity_root or "."
     root = _repository_root(package, env)
     canonical_skill = bundle.canonical_root.removeprefix("skills/")
     legacy_skill = bundle.legacy_root.removeprefix("skills/")
@@ -366,13 +385,15 @@ def resolve_semantic_backend_operation(
             raise SemanticBackendResolutionError(f"semantic backend entrypoint digest mismatch: {operation_id}")
         if expected_bundle_digest and bundle_digest and expected_bundle_digest != bundle_digest:
             raise SemanticBackendResolutionError(f"semantic backend bundle digest mismatch: {operation_id}")
-        if verify_tree and bundle_digest and _tree_digest(candidate_root) != bundle_digest:
+        if verify_tree and bundle_digest and _tree_digest(candidate_root / integrity_root) != bundle_digest:
             raise SemanticBackendResolutionError(f"semantic backend tree digest mismatch: {operation_id}")
         return ResolvedSemanticBackend(
             operation_id=operation.operation_id,
             bundle_id=bundle.bundle_id,
             bundle_version=bundle.version,
             path=path,
+            bundle_root=candidate_root,
+            integrity_root=integrity_root,
             source=source,
             resource_digest=resource_digest or _digest_file(path),
             bundle_digest=bundle_digest,

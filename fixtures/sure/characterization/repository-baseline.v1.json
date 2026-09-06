@@ -7231,8 +7231,8 @@
     },
     {
       "path": "sure/runtime/semantic_backend.py",
-      "size_bytes": 18536,
-      "sha256": "382933b0d2705017fad560a3869cef63a694be5215c7731124e4c6f5b58a9b5e"
+      "size_bytes": 19509,
+      "sha256": "f8c34d10172c9549805dc290eb54bacd62eef97c25bff5fb11a4a39b84d1e8da"
     },
     {
       "path": "sure/runtime/semantic-backend.ts",
@@ -7256,8 +7256,8 @@
     },
     {
       "path": "sure/runtime/test_semantic_backend.py",
-      "size_bytes": 6464,
-      "sha256": "5af204bc4f97a149eb918ab43b18a8fe66269ffeb6144960aa92fc694ae4d8c4"
+      "size_bytes": 7773,
+      "sha256": "d860e695a3d3c64dec572d894c1b9b57147a9f23864e6d120c8ef940d044a389"
     },
     {
       "path": "sure/runtime/usage.ts",
@@ -9681,5 +9681,5 @@
       ]
     }
   ],
-  "semantic_digest": "0fbb768a94d9e8c4c917cc0fe1462368b1864745ddb1fdf3d91f4c41cdec2ac9"
+  "semantic_digest": "7650bbd0f36f550b4e1c4ffb5824514af74c33f2ace5f1d3496e164c3804fb0c"
 }

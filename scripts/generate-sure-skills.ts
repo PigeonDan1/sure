@@ -154,8 +154,10 @@ function materializedSemanticBackendManifest(): MaterializedSemanticBackendManif
 	const bundles = CANONICAL_SEMANTIC_BACKENDS.map((bundle) => {
 		const canonicalRoot = join(canonicalSkillsRoot, bundle.canonical_root);
 		const legacyRoot = join(repositoryRoot, "sure", bundle.legacy_root);
-		const canonicalTree = existsSync(canonicalRoot) ? backendTreeDigest(canonicalRoot) : undefined;
-		const legacyTree = existsSync(legacyRoot) ? backendTreeDigest(legacyRoot) : undefined;
+		const canonicalIntegrityRoot = join(canonicalRoot, bundle.integrity_root);
+		const legacyIntegrityRoot = join(legacyRoot, bundle.integrity_root);
+		const canonicalTree = existsSync(canonicalIntegrityRoot) ? backendTreeDigest(canonicalIntegrityRoot) : undefined;
+		const legacyTree = existsSync(legacyIntegrityRoot) ? backendTreeDigest(legacyIntegrityRoot) : undefined;
 		const operations = bundle.operations.map((operation) => {
 			const canonicalPath = join(canonicalRoot, operation.entrypoint);
 			const legacyPath = join(legacyRoot, operation.entrypoint);

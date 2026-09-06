@@ -23,6 +23,7 @@ export interface SemanticBackendBundle {
 	description: string;
 	canonical_root: string;
 	legacy_root: string;
+	integrity_root?: string;
 	canonical_tree_digest?: string;
 	legacy_tree_digest?: string;
 	operations: readonly SemanticBackendOperation[];
@@ -50,6 +51,8 @@ export interface ResolvedSemanticBackend {
 	bundle_id: string;
 	bundle_version: string;
 	path: string;
+	bundle_root: string;
+	integrity_root: string;
 	source: "package" | "semantic-backend-root" | "canonical" | "legacy";
 	resource_digest: string;
 	bundle_digest?: string;
@@ -80,6 +83,10 @@ function relativeResource(value: string, field: string): string {
 		throw new SemanticBackendResolutionError(`${field} must be a relative non-escaping path: ${value}`);
 	}
 	return normalized;
+}
+
+function resourceWithin(path: string, root: string): boolean {
+	return path === root || path.startsWith(`${root}/`);
 }
 
 function digestFile(path: string): string {
@@ -166,6 +173,10 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 			throw new SemanticBackendResolutionError(`unsupported backend bundle schema: ${schema}`);
 		const canonicalRoot = relativeResource(requiredString(bundle.canonical_root, "canonical_root"), "canonical_root");
 		const legacyRoot = relativeResource(requiredString(bundle.legacy_root, "legacy_root"), "legacy_root");
+		const integrityRoot =
+			bundle.integrity_root === undefined
+				? undefined
+				: relativeResource(requiredString(bundle.integrity_root, "integrity_root"), "integrity_root");
 		const bundleId = requiredString(bundle.bundle_id, "bundle_id");
 		if (bundleIds.has(bundleId)) throw new SemanticBackendResolutionError(`duplicate backend bundle: ${bundleId}`);
 		bundleIds.add(bundleId);
@@ -181,6 +192,9 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 				throw new SemanticBackendResolutionError(`duplicate backend operation: ${operationId}`);
 			operationIds.add(operationId);
 			const entrypoint = relativeResource(requiredString(operation.entrypoint, "entrypoint"), "entrypoint");
+			if (integrityRoot !== undefined && !resourceWithin(entrypoint, integrityRoot)) {
+				throw new SemanticBackendResolutionError(`${operationId}.entrypoint is outside integrity_root`);
+			}
 			if (
 				!Array.isArray(operation.consumer_skill_ids) ||
 				operation.consumer_skill_ids.some((id) => typeof id !== "string")
@@ -217,6 +231,7 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 			description: requiredString(bundle.description, "description"),
 			canonical_root: canonicalRoot,
 			legacy_root: legacyRoot,
+			...(integrityRoot === undefined ? {} : { integrity_root: integrityRoot }),
 			...(canonicalTreeDigest === undefined ? {} : { canonical_tree_digest: canonicalTreeDigest }),
 			...(legacyTreeDigest === undefined ? {} : { legacy_tree_digest: legacyTreeDigest }),
 			operations,
@@ -255,6 +270,7 @@ export function loadSemanticBackendManifest(
 interface Candidate {
 	path: string;
 	root: string;
+	integrityRoot: string;
 	source: ResolvedSemanticBackend["source"];
 	resourceDigest?: string;
 	treeDigest?: string;
@@ -282,8 +298,16 @@ function rootCandidate(
 	source: Candidate["source"],
 	resourceDigest?: string,
 	treeDigestValue?: string,
+	integrityRoot = ".",
 ): Candidate {
-	return { path: resolve(path), root: resolve(root), source, resourceDigest, treeDigest: treeDigestValue };
+	return {
+		path: resolve(path),
+		root: resolve(root),
+		integrityRoot,
+		source,
+		resourceDigest,
+		treeDigest: treeDigestValue,
+	};
 }
 
 /** Resolve and verify a semantic operation without exposing sibling-skill paths to callers. */
@@ -302,6 +326,7 @@ export function resolveSemanticBackendOperation(
 	const { bundle, operation } = found;
 	const env = options.environment ?? process.env;
 	const root = repositoryRootForPackage(packageDir, env);
+	const integrityRoot = bundle.integrity_root ?? ".";
 	const canonicalSkill = bundle.canonical_root.replace(/^skills\//, "");
 	const legacySkill = bundle.legacy_root.replace(/^skills\//, "");
 	const candidates: Candidate[] = [];
@@ -315,6 +340,7 @@ export function resolveSemanticBackendOperation(
 				"semantic-backend-root",
 				operation.canonical_resource_digest,
 				bundle.canonical_tree_digest,
+				integrityRoot,
 			),
 		);
 		candidates.push(
@@ -324,6 +350,7 @@ export function resolveSemanticBackendOperation(
 				"semantic-backend-root",
 				operation.canonical_resource_digest,
 				bundle.canonical_tree_digest,
+				integrityRoot,
 			),
 		);
 	}
@@ -335,6 +362,7 @@ export function resolveSemanticBackendOperation(
 			"package",
 			operation.canonical_resource_digest,
 			bundle.canonical_tree_digest,
+			integrityRoot,
 		),
 	);
 	const canonicalRoot = env.SURE_CANONICAL_SKILLS_ROOT
@@ -347,6 +375,7 @@ export function resolveSemanticBackendOperation(
 			"canonical",
 			operation.canonical_resource_digest,
 			bundle.canonical_tree_digest,
+			integrityRoot,
 		),
 	);
 	const legacyRoot = env.SURE_LEGACY_SKILLS_ROOT ? resolve(env.SURE_LEGACY_SKILLS_ROOT) : join(root, "sure", "skills");
@@ -357,6 +386,7 @@ export function resolveSemanticBackendOperation(
 			"legacy",
 			operation.legacy_resource_digest,
 			bundle.legacy_tree_digest,
+			integrityRoot,
 		),
 	);
 	for (const candidate of candidates) {
@@ -383,7 +413,8 @@ export function resolveSemanticBackendOperation(
 			throw new SemanticBackendResolutionError(`semantic backend bundle digest mismatch: ${operationId}`);
 		}
 		if (options.verifyTree !== false && candidate.treeDigest) {
-			if (!existsSync(candidate.root) || treeDigest(candidate.root) !== candidate.treeDigest) {
+			const integrityPath = join(candidate.root, candidate.integrityRoot);
+			if (!existsSync(integrityPath) || treeDigest(integrityPath) !== candidate.treeDigest) {
 				throw new SemanticBackendResolutionError(`semantic backend tree digest mismatch: ${operationId}`);
 			}
 		}
@@ -392,6 +423,8 @@ export function resolveSemanticBackendOperation(
 			bundle_id: bundle.bundle_id,
 			bundle_version: bundle.version,
 			path: candidate.path,
+			bundle_root: candidate.root,
+			integrity_root: candidate.integrityRoot,
 			source: candidate.source,
 			resource_digest: candidate.resourceDigest ?? digestFile(candidate.path),
 			...(candidate.treeDigest === undefined ? {} : { bundle_digest: candidate.treeDigest }),

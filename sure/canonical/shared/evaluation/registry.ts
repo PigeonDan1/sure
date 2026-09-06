@@ -29,6 +29,8 @@ export interface SemanticBackendBundle {
 	canonical_root: string;
 	/** Compatibility directory relative to sure/. */
 	legacy_root: string;
+	/** Subtree containing every executable byte that defines this backend. */
+	integrity_root: string;
 	operations: readonly SemanticBackendOperation[];
 }
 
@@ -45,6 +47,7 @@ export const SURE_EVALUATION_BACKEND: SemanticBackendBundle = {
 	description: "SURE evaluation source resolver, runtime bridge, and report runner.",
 	canonical_root: "sure-infer",
 	legacy_root: "skills/sure_infer",
+	integrity_root: "scripts",
 	operations: [
 		{
 			operation_id: "sure.eval.resolve_prediction_source",
@@ -101,6 +104,7 @@ export const SURE_EVALUATION_VALIDATOR_BACKEND: SemanticBackendBundle = {
 	description: "Evaluation report validator implementation.",
 	canonical_root: "sure-eval",
 	legacy_root: "skills/sure_eval",
+	integrity_root: "scripts",
 	operations: [
 		{
 			operation_id: "sure.eval.validate_eval_report",

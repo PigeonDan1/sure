@@ -26,6 +26,7 @@ describe("semantic backend registry", () => {
 		);
 		expect(resolved.resource_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(resolved.bundle_digest).toBe(manifest.bundles[0].canonical_tree_digest);
+		expect(resolved.integrity_root).toBe("scripts");
 	});
 
 	it("uses an installed backend root only when its complete tree matches the manifest", () => {
@@ -45,7 +46,14 @@ describe("semantic backend registry", () => {
 			});
 			expect(resolved.source).toBe("semantic-backend-root");
 			expect(resolved.path).toBe(join(backendRoot, "sure-evaluation-backend", "scripts", "run_eval.py"));
-			writeFileSync(join(backendRoot, "sure-evaluation-backend", "unregistered.txt"), "tamper\n");
+			writeFileSync(join(backendRoot, "sure-evaluation-backend", "unregistered.txt"), "host metadata\n");
+			expect(
+				resolveSemanticBackendOperation(packageDir, "sure.eval.run", {
+					manifestPath,
+					environment: { ...process.env, SURE_SEMANTIC_BACKEND_ROOT: backendRoot },
+				}).source,
+			).toBe("semantic-backend-root");
+			writeFileSync(join(backendRoot, "sure-evaluation-backend", "scripts", "unregistered.txt"), "tamper\n");
 			expect(() =>
 				resolveSemanticBackendOperation(packageDir, "sure.eval.run", {
 					manifestPath,
@@ -64,7 +72,7 @@ describe("semantic backend registry", () => {
 			cpSync(join(repositoryRoot, "sure", "canonical", "skills", "sure-infer"), join(canonicalRoot, "sure-infer"), {
 				recursive: true,
 			});
-			const unrelated = join(canonicalRoot, "sure-infer", "tampered.txt");
+			const unrelated = join(canonicalRoot, "sure-infer", "scripts", "tampered.txt");
 			writeFileSync(unrelated, "tamper\n");
 			const environment = { ...process.env, SURE_CANONICAL_SKILLS_ROOT: canonicalRoot };
 			expect(() =>
