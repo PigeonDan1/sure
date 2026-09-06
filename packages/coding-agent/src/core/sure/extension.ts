@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { basename, isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
@@ -308,12 +308,9 @@ function artifactSatisfiesRequirement(
 	if (!artifact.path || !artifactPathExists(runManager, run, artifact.path)) {
 		return false;
 	}
-	if (requirementPath !== "" && basename(artifact.path) === basename(requirementPath)) {
-		return true;
-	}
-	if (requirement.type && artifact.type !== requirement.type) {
-		return false;
-	}
+	// A declared artifact must identify the required path exactly (after the
+	// supported project/run-relative normalization above).  Matching by basename
+	// allows an agent to publish a same-named file from an unrelated directory.
 	return false;
 }
 

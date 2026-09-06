@@ -1086,6 +1086,46 @@ describe("Sure extension", () => {
 		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
 	});
 
+	it("does not satisfy a required artifact with a same-named file from another directory", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir, {
+			artifacts: [{ type: "verdict", path: "artifacts/verdict.json", required: true }],
+		});
+
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				const runRoot = join(harness.tempDir, ".sure", "runs", runId);
+				mkdirSync(join(runRoot, "artifacts"), { recursive: true });
+				mkdirSync(join(runRoot, "other"), { recursive: true });
+				writeJson(join(runRoot, "artifacts", "verdict.json"), { status: "expected" });
+				writeJson(join(runRoot, "other", "verdict.json"), { status: "wrong-directory" });
+				writeValidManifest(harness.tempDir, runId, {
+					artifacts: [{ type: "json", path: `.sure/runs/${runId}/other/verdict.json` }],
+				});
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+			fauxAssistantMessage("repairing the required artifact path"),
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
+
+		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
+		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain(
+			"missing required artifact",
+		);
+		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
+	});
+
 	it("does not demand required artifacts from a run that finished failed", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
