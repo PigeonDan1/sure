@@ -7,7 +7,7 @@ import {
 	type WorkflowCheckpoint,
 	type WorkflowDefinition,
 } from "@earendil-works/sure-core";
-import { coreDefinitionForLegacy, type LegacySkillId } from "../../../../../sure/core/legacy-core-adapter.ts";
+import { isSureWorkflowId, type SureWorkflowId, workflowDefinitionForSkill } from "./generated-workflows.ts";
 import { type SureGateResult, SureHookRunner } from "./hooks.ts";
 import type { SureHookContext, SureHookPoint, SureSkillPackage } from "./types.ts";
 
@@ -30,11 +30,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function skillIdForPackage(skillPackage: SureSkillPackage): LegacySkillId | undefined {
+function skillIdForPackage(skillPackage: SureSkillPackage): SureWorkflowId | undefined {
 	const name = skillPackage.manifest.name;
-	return ["sure_feed", "sure_onboard", "sure_infer", "sure_eval", "sure_trans", "sure_approve"].includes(name)
-		? (name as LegacySkillId)
-		: undefined;
+	return isSureWorkflowId(name) ? name : undefined;
 }
 
 function toolNameFromEvent(event: unknown): string | undefined {
@@ -82,7 +80,7 @@ function withCoreEvent(event: unknown, coreEvent: CoreHookEvent): unknown {
 
 function checkpointFromRaw(
 	definition: WorkflowDefinition,
-	skillId: LegacySkillId,
+	skillId: SureWorkflowId,
 	raw: unknown,
 ): WorkflowCheckpoint | undefined {
 	if (!isRecord(raw) || !isRecord(raw.checkpoint) || !isRecord(raw.checkpoint.data)) return undefined;
@@ -109,7 +107,7 @@ function checkpointFromRaw(
 
 function checkpointFromPatch(
 	definition: WorkflowDefinition,
-	skillId: LegacySkillId,
+	skillId: SureWorkflowId,
 	patch: unknown,
 ): WorkflowCheckpoint | undefined {
 	if (!isRecord(patch) || !isRecord(patch.checkpoint)) return undefined;
@@ -139,13 +137,13 @@ function transitionFailure(result: SureGateResult, reason: string): SureGateResu
  */
 export class PiSureController {
 	private readonly definition?: WorkflowDefinition;
-	private readonly skillId?: LegacySkillId;
+	private readonly skillId?: SureWorkflowId;
 	private readonly hookRunner: SureHookDispatcher;
 
 	constructor(skillPackage: SureSkillPackage, hookRunner?: SureHookDispatcher) {
 		this.hookRunner = hookRunner ?? new SureHookRunner(skillPackage);
 		this.skillId = skillIdForPackage(skillPackage);
-		this.definition = this.skillId ? coreDefinitionForLegacy(this.skillId) : undefined;
+		this.definition = this.skillId ? workflowDefinitionForSkill(this.skillId) : undefined;
 	}
 
 	async run(point: SureHookPoint, context: Omit<SureHookContext, "point">): Promise<SureGateResult> {

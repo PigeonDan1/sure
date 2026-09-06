@@ -2,23 +2,23 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { coreDefinitionForLegacy, type LegacySkillId } from "../../../sure/core/legacy-core-adapter.ts";
 import { applyValidation, initialCheckpoint, type WorkflowCheckpoint } from "../../sure-core/src/index.ts";
 import { PiSureController, type SureHookDispatcher, translatePiEvent } from "../src/core/sure/controller.ts";
+import { type SureWorkflowId, workflowDefinitionForSkill } from "../src/core/sure/generated-workflows.ts";
 import type { SureHookContext, SureSkillPackage } from "../src/core/sure/types.ts";
 
 const roots: string[] = [];
 
 interface HostParityFixture {
 	schema: string;
-	traces: Array<{ skill_id: LegacySkillId; branch_id: string }>;
+	traces: Array<{ skill_id: SureWorkflowId; branch_id: string }>;
 }
 
 const HOST_PARITY_FIXTURE = JSON.parse(
 	readFileSync(new URL("../../../sure/canonical/fixtures/host-parity-traces.json", import.meta.url), "utf8"),
 ) as HostParityFixture;
 
-function skillPackage(name: LegacySkillId = "sure_infer"): SureSkillPackage {
+function skillPackage(name: SureWorkflowId = "sure_infer"): SureSkillPackage {
 	return {
 		manifest: { name, command: name, prompt: "test" },
 		manifestPath: "/repo/sure.skill.json",
@@ -30,7 +30,7 @@ function skillPackage(name: LegacySkillId = "sure_infer"): SureSkillPackage {
 	};
 }
 
-function context(runDir: string, skillName: LegacySkillId = "sure_infer"): Omit<SureHookContext, "point"> {
+function context(runDir: string, skillName: SureWorkflowId = "sure_infer"): Omit<SureHookContext, "point"> {
 	return {
 		run: {
 			runId: "controller-run",
@@ -67,7 +67,7 @@ function checkpointPatch(checkpoint: WorkflowCheckpoint): Record<string, unknown
 
 async function acceptedByPiController(
 	root: string,
-	skillId: LegacySkillId,
+	skillId: SureWorkflowId,
 	before: WorkflowCheckpoint,
 	after: WorkflowCheckpoint,
 	step: string,
@@ -107,7 +107,7 @@ describe("Pi/Core SURE controller boundary", () => {
 		const root = mkdtempSync(join(tmpdir(), "sure-controller-"));
 		roots.push(root);
 		mkdirSync(join(root, "artifacts"), { recursive: true });
-		const definition = coreDefinitionForLegacy("sure_infer");
+		const definition = workflowDefinitionForSkill("sure_infer");
 		const first = definition.branches[0]?.units[0];
 		const third = definition.branches[0]?.units[2];
 		if (!first || !third) throw new Error("inference definition is incomplete");
@@ -136,7 +136,7 @@ describe("Pi/Core SURE controller boundary", () => {
 	it("accepts a legal one-step Pi hook transition", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sure-controller-"));
 		roots.push(root);
-		const definition = coreDefinitionForLegacy("sure_infer");
+		const definition = workflowDefinitionForSkill("sure_infer");
 		const first = definition.branches[0]?.units[0];
 		const second = definition.branches[0]?.units[1];
 		if (!first || !second) throw new Error("inference definition is incomplete");
@@ -162,7 +162,7 @@ describe("Pi/Core SURE controller boundary", () => {
 		for (const trace of HOST_PARITY_FIXTURE.traces) {
 			const root = mkdtempSync(join(tmpdir(), `sure-controller-${trace.skill_id}-`));
 			roots.push(root);
-			const definition = coreDefinitionForLegacy(trace.skill_id);
+			const definition = workflowDefinitionForSkill(trace.skill_id);
 			const branch = definition.branches.find((candidate) => candidate.id === trace.branch_id);
 			if (!branch) throw new Error(`Missing fixture branch ${trace.skill_id}/${trace.branch_id}`);
 			const initialOptions =

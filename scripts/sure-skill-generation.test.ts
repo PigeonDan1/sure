@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { SURE_WORKFLOWS } from "../packages/coding-agent/src/core/sure/generated-workflows.ts";
 import { canonicalJson, canonicalJsonDigest } from "../packages/sure-core/src/contracts/canonical-json.ts";
 import type { JsonValue } from "../packages/sure-core/src/contracts/types.ts";
 import { executorRegistrySnapshot } from "../packages/sure-core/src/execution/registry.ts";
@@ -22,6 +23,17 @@ function asJson(value: unknown): JsonValue {
 }
 
 describe("canonical SURE skill generation", () => {
+	it("compiles canonical workflows into the Pi package boundary", () => {
+		for (const skill of CANONICAL_SKILLS) {
+			expect(SURE_WORKFLOWS[skill.skill_id as keyof typeof SURE_WORKFLOWS]).toEqual(skill.workflow);
+		}
+		const controller = readFileSync(
+			join(repositoryRoot, "packages/coding-agent/src/core/sure/controller.ts"),
+			"utf8",
+		);
+		expect(controller).not.toMatch(/sure\/(?:core|canonical|runtime|site)/);
+	});
+
 	it("has one stable command mapping per skill and matching host workflow digests", () => {
 		const canonicalRegistry = readJson(join(repositoryRoot, "sure/canonical/validators/registry.json"));
 		expect(CANONICAL_SKILLS).toHaveLength(6);
