@@ -92,6 +92,39 @@ describe("cooperative executor capability probes", () => {
 		expect(result.receipt?.lifecycle).toBe("NOT_STARTED");
 	});
 
+	it("reports a missing static host capability before launching the operation", () => {
+		const root = freshRoot();
+		const missingUv = join(root, "missing-uv");
+		const sentinel = join(root, "started");
+		const result = executeRequest(
+			request(
+				root,
+				"sure.execution.uv",
+				{ uv_executable: missingUv },
+				{
+					entrypoint: {
+						executable: process.execPath,
+						argv: ["-e", `require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'started')`],
+					},
+				},
+			),
+			{
+				kind: "python",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [root],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+
+		expect(existsSync(sentinel)).toBe(false);
+		expect(result.capability.missing).toEqual(["sure.execution.uv"]);
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
+		expect(result.receipt?.lifecycle).toBe("NOT_STARTED");
+	});
+
 	it("does not infer model-runtime availability from a Node entrypoint", () => {
 		const root = freshRoot();
 		const result = executeRequest(request(root, "sure.execution.model-runtime"), {

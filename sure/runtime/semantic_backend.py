@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -121,6 +122,8 @@ class SemanticBackendOperation:
     deterministic: bool
     requires_policy_snapshot: bool | None = None
     artifact_mode: str | None = None
+    output_contract: dict[str, Any] | None = None
+    capability_requirements: tuple[dict[str, Any], ...] | None = None
     canonical_resource_digest: str | None = None
     legacy_resource_digest: str | None = None
 
@@ -162,6 +165,85 @@ class ResolvedSemanticBackend:
     deterministic: bool
     requires_policy_snapshot: bool
     artifact_mode: str | None = None
+    output_contract: dict[str, Any] | None = None
+    capability_requirements: tuple[dict[str, Any], ...] | None = None
+
+
+def _validate_output_contract(value: Any, operation_id: str, kind: str, artifact_mode: str | None) -> dict[str, Any]:
+    """Validate the operation's declarative output boundary before digest admission."""
+    if not isinstance(value, dict):
+        raise SemanticBackendResolutionError(f"{operation_id}.output_contract must be an object")
+    if value.get("schema") != "sure.execution_output_contract.v1":
+        raise SemanticBackendResolutionError(f"{operation_id}.output_contract schema is unsupported")
+    mode = value.get("mode")
+    if mode not in {"preexisting", "mutating", "producing"}:
+        raise SemanticBackendResolutionError(f"{operation_id}.output_contract.mode is invalid")
+    if kind != "execute":
+        raise SemanticBackendResolutionError(f"{operation_id}.output_contract is only valid for execute operations")
+    if artifact_mode is not None and mode != artifact_mode:
+        raise SemanticBackendResolutionError(f"{operation_id}.output_contract.mode must match artifact_mode")
+    outputs = value.get("outputs")
+    if not isinstance(outputs, list) or not outputs:
+        raise SemanticBackendResolutionError(f"{operation_id}.output_contract.outputs must not be empty")
+    ids: set[str] = set()
+    paths: set[str] = set()
+    for index, output in enumerate(outputs):
+        if not isinstance(output, dict):
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.outputs[{index}] must be an object")
+        artifact_id = output.get("artifact_id")
+        path = output.get("path")
+        if not isinstance(artifact_id, str) or not artifact_id:
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.outputs[{index}].artifact_id is invalid")
+        if artifact_id in ids:
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.outputs[{index}].artifact_id is duplicated")
+        ids.add(artifact_id)
+        if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.outputs[{index}].path is invalid")
+        normalized = PurePosixPath(path).as_posix()
+        if normalized != path or path in {".", ".."} or ".." in PurePosixPath(path).parts or "" in PurePosixPath(path).parts:
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.outputs[{index}].path is not normalized")
+        if path in paths:
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.outputs[{index}].path is duplicated")
+        paths.add(path)
+        if output.get("kind") not in {"file", "directory"} or not isinstance(output.get("required"), bool):
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.outputs[{index}] has invalid kind/required")
+    if mode == "producing" and not any(output.get("required") is True for output in outputs):
+        raise SemanticBackendResolutionError(f"{operation_id}.output_contract must require an output for producing mode")
+    temporary = value.get("temporary_paths")
+    if not isinstance(temporary, list):
+        raise SemanticBackendResolutionError(f"{operation_id}.output_contract.temporary_paths must be an array")
+    temporary_paths: set[str] = set()
+    for index, path in enumerate(temporary):
+        if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path:
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.temporary_paths[{index}] is invalid")
+        normalized = PurePosixPath(path).as_posix()
+        if normalized != path or path in {".", ".."} or ".." in PurePosixPath(path).parts or "" in PurePosixPath(path).parts:
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.temporary_paths[{index}] is not normalized")
+        if path in temporary_paths:
+            raise SemanticBackendResolutionError(f"{operation_id}.output_contract.temporary_paths[{index}] is duplicated")
+        temporary_paths.add(path)
+    if not isinstance(value.get("allow_missing_on_failure"), bool) or not isinstance(value.get("retain_failed_outputs"), bool):
+        raise SemanticBackendResolutionError(f"{operation_id}.output_contract failure policy is invalid")
+    return value
+
+
+def _validate_capability_requirements(value: Any, operation_id: str) -> tuple[dict[str, Any], ...]:
+    if not isinstance(value, list):
+        raise SemanticBackendResolutionError(f"{operation_id}.capability_requirements must be an array")
+    requirements: list[dict[str, Any]] = []
+    for index, requirement in enumerate(value):
+        if not isinstance(requirement, dict):
+            raise SemanticBackendResolutionError(f"{operation_id}.capability_requirements[{index}] is invalid")
+        capability_id = requirement.get("capability_id")
+        if (
+            not isinstance(capability_id, str)
+            or re.fullmatch(r"sure\.[a-z0-9][a-z0-9.-]*", capability_id) is None
+            or requirement.get("capability_class") != "execution_capability"
+            or not isinstance(requirement.get("required"), bool)
+        ):
+            raise SemanticBackendResolutionError(f"{operation_id}.capability_requirements[{index}] is invalid")
+        requirements.append(requirement)
+    return tuple(requirements)
 
 
 def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
@@ -223,6 +305,16 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                 raise SemanticBackendResolutionError(
                     f"{operation_id}.artifact_mode is only valid for execute operations"
                 )
+            output_contract = (
+                _validate_output_contract(operation["output_contract"], operation_id, kind, artifact_mode)
+                if "output_contract" in operation
+                else None
+            )
+            capability_requirements = (
+                _validate_capability_requirements(operation["capability_requirements"], operation_id)
+                if "capability_requirements" in operation
+                else None
+            )
             entrypoint = _relative(operation.get("entrypoint"), f"{operation_id}.entrypoint")
             if integrity_root is not None:
                 try:
@@ -246,6 +338,8 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                     deterministic=operation["deterministic"],
                     requires_policy_snapshot=requires_policy_snapshot,
                     artifact_mode=artifact_mode,
+                    output_contract=output_contract,
+                    capability_requirements=capability_requirements,
                     canonical_resource_digest=digests["canonical_resource_digest"],
                     legacy_resource_digest=digests["legacy_resource_digest"],
                 )
@@ -303,6 +397,8 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                         "deterministic": operation.deterministic,
                         **({"requires_policy_snapshot": operation.requires_policy_snapshot} if operation.requires_policy_snapshot is not None else {}),
                         **({"artifact_mode": operation.artifact_mode} if operation.artifact_mode is not None else {}),
+                        **({"output_contract": operation.output_contract} if operation.output_contract is not None else {}),
+                        **({"capability_requirements": list(operation.capability_requirements)} if operation.capability_requirements is not None else {}),
                         **({"canonical_resource_digest": operation.canonical_resource_digest} if operation.canonical_resource_digest is not None else {}),
                         **({"legacy_resource_digest": operation.legacy_resource_digest} if operation.legacy_resource_digest is not None else {}),
                     }
@@ -444,5 +540,7 @@ def resolve_semantic_backend_operation(
             deterministic=operation.deterministic,
             requires_policy_snapshot=operation.requires_policy_snapshot is True,
             artifact_mode=operation.artifact_mode,
+            output_contract=operation.output_contract,
+            capability_requirements=operation.capability_requirements,
         )
     raise SemanticBackendResolutionError(f"semantic backend operation is unavailable: {operation_id}")

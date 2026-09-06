@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type {
 	ArtifactRef,
+	CapabilityRequirement,
 	CoreOutcome,
 	CoreRunRecord,
 	ExecutionOperation,
@@ -9,7 +10,7 @@ import type {
 	ExecutionRequest,
 	JsonValue,
 } from "@earendil-works/sure-core";
-import { canonicalJsonDigest, createOutcome } from "@earendil-works/sure-core";
+import { canonicalJsonDigest, createOutcome, executionOutputContractDigest } from "@earendil-works/sure-core";
 import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
 import { type ExecutorRunResult, executeRequest } from "./executor.ts";
 import {
@@ -26,8 +27,12 @@ export interface RegisteredOperationEvidence {
 	reason_code: string;
 	diagnostics: readonly string[];
 	artifact_input_digest: string;
+	/** Input anchor used by a producer operation; omitted for legacy requests. */
+	artifact_input_path?: string;
 	/** Digest observed after the executor completed, when it emitted the gate artifact. */
 	artifact_output_digest?: string;
+	/** Declared output path for a producer/mutating contract. */
+	artifact_output_path?: string;
 	runtime_digest?: string;
 	backend_registry_digest?: string;
 	backend_bundle_digest?: string;
@@ -57,6 +62,8 @@ export interface RegisteredOperationOptions {
 	request_operation: ExecutionOperation;
 	script_args: readonly string[];
 	artifact: ArtifactRef;
+	/** Optional output path for a producer; defaults to the contract's first output. */
+	output_path?: string;
 	python_executable: string;
 	package_dir: string;
 	workspace_root: string;
@@ -79,6 +86,7 @@ export interface RegisteredOperationSemanticBinding {
 	operation_id: string;
 	request_operation: ExecutionOperation;
 	artifact_input_digest: string;
+	artifact_input_path?: string;
 	workflow_digest?: string;
 	runtime_digest: string;
 	backend_registry_digest: string;
@@ -87,10 +95,39 @@ export interface RegisteredOperationSemanticBinding {
 	reference_snapshot_digest: string;
 	script_args: readonly string[];
 	policy_digest: string;
+	artifact_output_path?: string;
+	output_contract_digest?: string;
+	capability_requirements_digest?: string;
 }
 
 export function registeredOperationSemanticDigest(binding: RegisteredOperationSemanticBinding): string {
 	return canonicalJsonDigest({ schema: "sure.semantic.operation.request.v1", ...binding } as unknown as JsonValue);
+}
+
+/** Return the canonical capability set required by a registered operation. */
+export function registeredOperationCapabilityRequirements(
+	operation: ReturnType<typeof resolveSemanticBackendOperation>,
+): readonly CapabilityRequirement[] {
+	const requirements = new Map<string, CapabilityRequirement>();
+	// Registered operations always execute through the SURE Python bridge.
+	requirements.set("sure.execution.harness-python", {
+		capability_id: "sure.execution.harness-python",
+		capability_class: "execution_capability",
+		required: true,
+	});
+	for (const requirement of operation.capability_requirements ?? []) {
+		if (requirement.capability_id === "sure.execution.harness-python") continue;
+		requirements.set(requirement.capability_id, { ...requirement });
+	}
+	return [...requirements.values()];
+}
+
+export function registeredOperationCapabilityRequirementsDigest(
+	operation: ReturnType<typeof resolveSemanticBackendOperation>,
+): string | undefined {
+	return operation.capability_requirements === undefined
+		? undefined
+		: canonicalJsonDigest(registeredOperationCapabilityRequirements(operation) as unknown as JsonValue);
 }
 
 function diagnostics(result: ExecutorRunResult): string[] {
@@ -132,6 +169,27 @@ function requestFor(
 	options: RegisteredOperationOptions,
 	operation: ReturnType<typeof resolveSemanticBackendOperation>,
 ): ExecutionRequest {
+	const contract = operation.output_contract;
+	if (contract !== undefined && contract.outputs.length !== 1) {
+		throw new Error(`${operation.operation_id} currently requires exactly one declared output`);
+	}
+	const declaredOutputPath =
+		contract === undefined ? undefined : join(options.artifacts_root, contract.outputs[0]?.path ?? "");
+	if (
+		contract !== undefined &&
+		options.output_path !== undefined &&
+		declaredOutputPath !== undefined &&
+		resolve(options.output_path) !== resolve(declaredOutputPath)
+	) {
+		throw new Error(`${operation.operation_id} output_path does not match its output contract`);
+	}
+	const outputPath =
+		contract === undefined
+			? options.artifact.path
+			: (options.output_path ?? declaredOutputPath!);
+	const contractDigest = contract === undefined ? undefined : executionOutputContractDigest(contract);
+	const declaredCapabilities = registeredOperationCapabilityRequirements(operation);
+	const capabilityRequirementsDigest = registeredOperationCapabilityRequirementsDigest(operation);
 	const binding: RegisteredOperationSemanticBinding = {
 		run_id: options.run.runId,
 		branch_id: options.branch_id,
@@ -148,6 +206,11 @@ function requestFor(
 		reference_snapshot_digest: options.reference_snapshot_digest,
 		script_args: [...options.script_args],
 		policy_digest: options.policy_digest,
+		...(contract === undefined ? {} : { artifact_output_path: outputPath, output_contract_digest: contractDigest }),
+		...(contract === undefined ? {} : { artifact_input_path: options.artifact.path }),
+		...(capabilityRequirementsDigest === undefined
+			? {}
+			: { capability_requirements_digest: capabilityRequirementsDigest }),
 	};
 	return {
 		schema: "sure.execution_request.v1",
@@ -165,14 +228,7 @@ function requestFor(
 		inputs: [options.artifact],
 		entrypoint: {
 			executable: options.python_executable,
-			argv: [
-				operation.path,
-				"--run-dir",
-				options.run.runDir,
-				"--produces",
-				options.artifact.path,
-				...options.script_args,
-			],
+			argv: [operation.path, "--run-dir", options.run.runDir, "--produces", outputPath, ...options.script_args],
 			working_directory: options.package_dir,
 		},
 		runtime_requirements: {
@@ -187,14 +243,15 @@ function requestFor(
 			branch_id: options.branch_id,
 			script_args: [...options.script_args],
 			artifact_input_digest: options.artifact.sha256,
+			...(contract === undefined ? {} : { artifact_input_path: options.artifact.path }),
+			...(contract === undefined
+				? {}
+				: { artifact_output_path: outputPath, output_contract_digest: contractDigest }),
+			...(capabilityRequirementsDigest === undefined
+				? {}
+				: { capability_requirements_digest: capabilityRequirementsDigest }),
 		},
-		capability_requirements: [
-			{
-				capability_id: "sure.execution.harness-python",
-				capability_class: "execution_capability",
-				required: true,
-			},
-		],
+		capability_requirements: [...declaredCapabilities],
 		reference_snapshot_digest: options.reference_snapshot_digest,
 		output_root: {
 			path: options.artifacts_root,
@@ -205,6 +262,7 @@ function requestFor(
 		},
 		policy_digest: options.policy_digest,
 		created_at: options.created_at,
+		...(contract === undefined ? {} : { output_contract: contract }),
 	};
 }
 
@@ -235,7 +293,7 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 				`${options.runtime_binding.skill_id} is not an admitted consumer of ${operation.operation_id}`,
 			);
 		}
-		if (operation.artifact_mode === "producing") {
+		if (operation.artifact_mode === "producing" && operation.output_contract === undefined) {
 			throw new Error(
 				`${operation.operation_id} declares a producing artifact; an explicit output contract is required before gate binding`,
 			);
@@ -257,7 +315,16 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 			verification.lock.runtime_digest,
 		);
 	}
-	const request = requestFor(options, operation);
+	let request: ExecutionRequest;
+	try {
+		request = requestFor(options, operation);
+	} catch (error) {
+		return unavailable(
+			options,
+			error instanceof Error ? error.message : String(error),
+			verification.lock.runtime_digest,
+		);
+	}
 	const persistedRequest = options.persist_request(request);
 	const execution = executeRequest(request, {
 		kind: "python",
@@ -268,10 +335,20 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 		forbidden_output_roots: options.forbidden_output_roots,
 		timeout_ms: operation.timeout_ms,
 		environment,
-		output_paths: [options.artifact.path],
+		output_paths: [
+			operation.output_contract === undefined
+				? options.artifact.path
+				: (options.output_path ?? join(options.artifacts_root, operation.output_contract.outputs[0]?.path ?? "")),
+		],
 	});
 	const persistedReceipt = execution.receipt ? options.persist_receipt(execution.receipt) : undefined;
-	const outputArtifact = execution.receipt?.outputs.find((candidate) => candidate.path === options.artifact.path);
+	const outputPath =
+		operation.output_contract === undefined
+			? options.artifact.path
+			: (options.output_path ?? resolve(options.artifacts_root, operation.output_contract.outputs[0]?.path ?? ""));
+	const outputArtifact = execution.receipt?.outputs.find(
+		(candidate) => resolve(candidate.path) === resolve(outputPath),
+	);
 	const validReceipt = execution.receipt !== undefined && execution.receipt_validation?.valid === true;
 	const verdict =
 		!validReceipt || !execution.capability.admitted
@@ -295,6 +372,8 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 				verdict === "PASS" ? "EXECUTION_SUCCEEDED" : verdict === "FAIL" ? "EXECUTION_FAILED" : "CAPABILITY_MISSING",
 			diagnostics: diagnostics(execution),
 			artifact_input_digest: options.artifact.sha256,
+			...(operation.output_contract === undefined ? {} : { artifact_input_path: options.artifact.path }),
+			...(operation.output_contract === undefined ? {} : { artifact_output_path: outputPath }),
 			...(outputArtifact === undefined ? {} : { artifact_output_digest: outputArtifact.sha256 }),
 			runtime_digest: verification.lock.runtime_digest,
 			backend_registry_digest: operation.registry_digest,

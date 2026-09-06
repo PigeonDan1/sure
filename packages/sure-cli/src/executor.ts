@@ -37,6 +37,9 @@ const CAPABILITY_PROBE_IDS = new Set([
 	"sure.execution.local-python",
 	"sure.execution.model-runtime",
 	"sure.execution.source-runtime",
+	"sure.execution.uv",
+	"sure.execution.vc",
+	"sure.execution.gpu",
 ]);
 
 const MAX_CAPTURED_OUTPUT = 8192;
@@ -98,9 +101,21 @@ function probeTarget(capabilityId: string, request: ExecutionRequest, options: E
 			return runtimeExecutable(request, "source_runtime_executable");
 		case "sure.execution.evaluation-runtime":
 			return runtimeExecutable(request, "evaluation_runtime_executable");
+		case "sure.execution.uv":
+			return runtimeExecutable(request, "uv_executable") ?? environment.UV_BIN ?? environment.SURE_UV_BIN ?? "uv";
+		case "sure.execution.vc":
+			return runtimeExecutable(request, "vc_executable") ?? environment.VC_BIN ?? "vc";
+		case "sure.execution.gpu":
+			return runtimeExecutable(request, "gpu_probe_executable") ?? environment.NVIDIA_SMI_BIN ?? "nvidia-smi";
 		default:
 			return undefined;
 	}
+}
+
+function probeArguments(capabilityId: string): readonly string[] {
+	// The TRANS adapter uses `vc info` as its login-side health check; retain
+	// that check here so the outer receipt and the adapter agree on admission.
+	return capabilityId === "sure.execution.vc" ? ["info"] : ["--version"];
 }
 
 function probeCapabilities(
@@ -122,7 +137,7 @@ function probeCapabilities(
 		try {
 			results.set(capabilityId, {
 				executable,
-				result: spawnSync(executable, ["--version"], {
+				result: spawnSync(executable, [...probeArguments(capabilityId)], {
 					cwd: options.working_directory,
 					env: options.environment,
 					encoding: "utf8",
@@ -160,7 +175,7 @@ function capabilityEvidence(
 		}
 		if (requirement.capability_class !== "execution_capability") continue;
 		const probe = probes.get(requirement.capability_id);
-		const probeSupported =
+		const kindBoundProbeSupported =
 			(requirement.capability_id === "sure.execution.local-python" &&
 				(options.kind === "python" || options.kind === "local")) ||
 			(requirement.capability_id === "sure.execution.harness-python" && options.kind === "python") ||
@@ -171,6 +186,12 @@ function capabilityEvidence(
 			(requirement.capability_id === "sure.execution.evaluation-runtime" && options.kind === "python") ||
 			(requirement.capability_id === "sure.execution.model-runtime" &&
 				(options.kind === "local" || options.kind === "python"));
+		const hostProbeSupported =
+			(requirement.capability_id === "sure.execution.uv" ||
+				requirement.capability_id === "sure.execution.vc" ||
+				requirement.capability_id === "sure.execution.gpu") &&
+			probe !== undefined;
+		const probeSupported = kindBoundProbeSupported || hostProbeSupported;
 		const available = probeSupported && probe?.result?.status === 0;
 		const status = available ? ("AVAILABLE" as const) : ("MISSING" as const);
 		const base = {

@@ -26,6 +26,9 @@ def sha256_file(path: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
+    # Core registered operations pass the declared output path explicitly;
+    # retaining the historical default keeps direct Pi invocations compatible.
+    parser.add_argument("--produces")
     args = parser.parse_args()
     run_dir = Path(args.run_dir).resolve()
     artifacts = run_dir / "artifacts"
@@ -56,7 +59,8 @@ def main() -> int:
         "files": files,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-    output = artifacts / "adapter_image_result.json"
+    output = Path(args.produces).resolve() if args.produces else artifacts / "adapter_image_result.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(output)
     return 0

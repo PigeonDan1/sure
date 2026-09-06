@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { canonicalJsonDigest } from "../contracts/canonical-json.ts";
-import type { JsonValue } from "../contracts/types.ts";
+import type { CapabilityRequirement, ExecutionOutputContract, JsonValue } from "../contracts/types.ts";
+import { validateExecutionOutputContract } from "../execution/output-contract.ts";
 
 export interface SemanticBackendOperation {
 	operation_id: string;
@@ -15,6 +16,10 @@ export interface SemanticBackendOperation {
 	requires_policy_snapshot?: boolean;
 	/** Relationship between an execute operation and its gate artifact. */
 	artifact_mode?: "preexisting" | "mutating" | "producing";
+	/** Declarative output boundary for producer/mutating execution adapters. */
+	output_contract?: ExecutionOutputContract;
+	/** Static execution capabilities; input-dependent capabilities stay in the adapter. */
+	capability_requirements?: readonly CapabilityRequirement[];
 	canonical_resource_digest?: string;
 	legacy_resource_digest?: string;
 }
@@ -68,6 +73,8 @@ export interface ResolvedSemanticBackend {
 	deterministic: boolean;
 	requires_policy_snapshot: boolean;
 	artifact_mode?: SemanticBackendOperation["artifact_mode"];
+	output_contract?: ExecutionOutputContract;
+	capability_requirements?: readonly CapabilityRequirement[];
 	kind: SemanticBackendOperation["kind"];
 	consumer_skill_ids: readonly string[];
 }
@@ -245,6 +252,49 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 					`${operationId}.artifact_mode is only valid for execute operations`,
 				);
 			}
+			let outputContract: ExecutionOutputContract | undefined;
+			if (operation.output_contract !== undefined) {
+				const rawOutputContract = record(operation.output_contract);
+				if (!rawOutputContract) {
+					throw new SemanticBackendResolutionError(`${operationId}.output_contract must be an object`);
+				}
+				const contractValidation = validateExecutionOutputContract(rawOutputContract);
+				if (!contractValidation.valid) {
+					throw new SemanticBackendResolutionError(
+						`${operationId}.output_contract is invalid: ${contractValidation.errors.join("; ")}`,
+					);
+				}
+				if (operation.kind !== "execute") {
+					throw new SemanticBackendResolutionError(
+						`${operationId}.output_contract is only valid for execute operations`,
+					);
+				}
+				if (operation.artifact_mode !== undefined && rawOutputContract.mode !== operation.artifact_mode) {
+					throw new SemanticBackendResolutionError(`${operationId}.output_contract.mode must match artifact_mode`);
+				}
+				outputContract = rawOutputContract as unknown as ExecutionOutputContract;
+			}
+			let capabilityRequirements: readonly CapabilityRequirement[] | undefined;
+			if (operation.capability_requirements !== undefined) {
+				if (!Array.isArray(operation.capability_requirements)) {
+					throw new SemanticBackendResolutionError(`${operationId}.capability_requirements must be an array`);
+				}
+				for (const [index, rawRequirement] of operation.capability_requirements.entries()) {
+					const requirement = record(rawRequirement);
+					if (
+						!requirement ||
+						typeof requirement.capability_id !== "string" ||
+						!/^sure\.[a-z0-9][a-z0-9.-]*$/.test(requirement.capability_id) ||
+						requirement.capability_class !== "execution_capability" ||
+						typeof requirement.required !== "boolean"
+					) {
+						throw new SemanticBackendResolutionError(
+							`${operationId}.capability_requirements[${index}] is invalid`,
+						);
+					}
+				}
+				capabilityRequirements = operation.capability_requirements as CapabilityRequirement[];
+			}
 			const canonicalResourceDigest = digest(
 				operation.canonical_resource_digest,
 				`${operationId}.canonical_resource_digest`,
@@ -264,6 +314,8 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 				...(operation.artifact_mode === undefined
 					? {}
 					: { artifact_mode: operation.artifact_mode as "preexisting" | "mutating" | "producing" }),
+				...(outputContract === undefined ? {} : { output_contract: outputContract }),
+				...(capabilityRequirements === undefined ? {} : { capability_requirements: capabilityRequirements }),
 				...(canonicalResourceDigest === undefined ? {} : { canonical_resource_digest: canonicalResourceDigest }),
 				...(legacyResourceDigest === undefined ? {} : { legacy_resource_digest: legacyResourceDigest }),
 			};
@@ -489,6 +541,10 @@ export function resolveSemanticBackendOperation(
 			deterministic: operation.deterministic,
 			requires_policy_snapshot: operation.requires_policy_snapshot ?? false,
 			...(operation.artifact_mode === undefined ? {} : { artifact_mode: operation.artifact_mode }),
+			...(operation.output_contract === undefined ? {} : { output_contract: operation.output_contract }),
+			...(operation.capability_requirements === undefined
+				? {}
+				: { capability_requirements: operation.capability_requirements }),
 			kind: operation.kind,
 			consumer_skill_ids: [...operation.consumer_skill_ids],
 		};

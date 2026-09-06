@@ -22,6 +22,50 @@ export interface SemanticBackendOperation {
 	requires_policy_snapshot?: boolean;
 	/** Relationship between an execute operation and its gate artifact. */
 	artifact_mode?: "preexisting" | "mutating" | "producing";
+	/** Declarative output boundary consumed by the host-neutral executor. */
+	output_contract?: SemanticBackendOutputContract;
+	/** Static execution capabilities; input-dependent capabilities stay in the adapter. */
+	capability_requirements?: readonly SemanticBackendCapabilityRequirement[];
+}
+
+export interface SemanticBackendCapabilityRequirement {
+	capability_id: string;
+	capability_class: "execution_capability";
+	required: boolean;
+}
+
+export interface SemanticBackendOutputSpec {
+	artifact_id: string;
+	path: string;
+	kind: "file" | "directory";
+	required: boolean;
+}
+
+export interface SemanticBackendOutputContract {
+	schema: "sure.execution_output_contract.v1";
+	mode: "preexisting" | "mutating" | "producing";
+	outputs: readonly SemanticBackendOutputSpec[];
+	temporary_paths: readonly string[];
+	allow_missing_on_failure: boolean;
+	retain_failed_outputs: boolean;
+}
+
+function transOutputContract(
+	mode: SemanticBackendOutputContract["mode"],
+	artifactId: string,
+	path: string,
+): SemanticBackendOutputContract {
+	return {
+		schema: "sure.execution_output_contract.v1",
+		mode,
+		outputs: [{ artifact_id: artifactId, path, kind: "file", required: true }],
+		// The legacy runners retain ordinary logs on successful runs. They are
+		// intentionally outside the declared output set; only the result file is
+		// eligible to bind a workflow artifact.
+		temporary_paths: [],
+		allow_missing_on_failure: true,
+		retain_failed_outputs: false,
+	};
 }
 
 export type SemanticBackendRootKind = "skill" | "repository";
@@ -531,6 +575,151 @@ export const SURE_TRANS_VALIDATOR_BACKEND: SemanticBackendBundle = {
 		},
 	],
 };
+
+/**
+ * TRANS execution adapters. The entrypoints remain the proven Python runners
+ * for now; registering them here moves path selection and output binding into
+ * SURE Core without changing their legacy workflow semantics. Gate binding is
+ * deliberately a later migration step after differential traces pass.
+ */
+export const SURE_TRANS_EXECUTION_BACKEND: SemanticBackendBundle = {
+	schema: "sure.semantic.backend.bundle.v1",
+	bundle_id: "sure-trans-execution",
+	version: "legacy-v1",
+	description: "Docker, VC, local Python, and uv execution adapters for SURE transformation.",
+	canonical_root: "sure/canonical/skills/sure-trans",
+	canonical_root_kind: "repository",
+	legacy_root: "sure/skills/sure_trans",
+	legacy_root_kind: "repository",
+	integrity_root: "scripts",
+	operations: [
+		{
+			operation_id: "sure.trans.execute_source_image",
+			description: "Materialize and verify the source Docker or locked Python runtime.",
+			entrypoint: "scripts/run_docker_build.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "producing",
+			output_contract: transOutputContract("producing", "source-image-result", "source_image_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_env_compat",
+			description: "Probe source-runtime compatibility on local Docker, VC, or Python.",
+			entrypoint: "scripts/run_execution_compat.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "producing",
+			output_contract: transOutputContract("producing", "execution-compat", "execution_compat.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_original_inference",
+			description: "Run and record the original model inference baseline.",
+			entrypoint: "scripts/run_trans_validate.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "mutating",
+			output_contract: transOutputContract("mutating", "original-inference-result", "original_inference_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_adapter_image",
+			description: "Materialize the generated Python adapter runtime evidence.",
+			entrypoint: "scripts/materialize_adapter_runtime.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 3_600_000,
+			deterministic: false,
+			artifact_mode: "producing",
+			output_contract: transOutputContract("producing", "adapter-image-result", "adapter_image_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_import",
+			description: "Execute the generated adapter import validation.",
+			entrypoint: "scripts/run_trans_validate.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "mutating",
+			output_contract: transOutputContract("mutating", "import-result", "import_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_load",
+			description: "Execute the generated adapter persistent-load validation.",
+			entrypoint: "scripts/run_trans_validate.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "mutating",
+			output_contract: transOutputContract("mutating", "load-result", "load_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_infer",
+			description: "Execute the generated adapter inference validation.",
+			entrypoint: "scripts/run_trans_validate.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "mutating",
+			output_contract: transOutputContract("mutating", "infer-result", "infer_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_contract",
+			description: "Execute the generated adapter output-contract validation.",
+			entrypoint: "scripts/run_trans_validate.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "mutating",
+			output_contract: transOutputContract("mutating", "contract-result", "contract_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_mcp",
+			description: "Execute and record the generated MCP protocol validation.",
+			entrypoint: "scripts/run_trans_validate.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "mutating",
+			output_contract: transOutputContract("mutating", "mcp-result", "mcp_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_equivalence",
+			description: "Execute the original-versus-adapter equivalence validation.",
+			entrypoint: "scripts/run_trans_validate.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "mutating",
+			output_contract: transOutputContract("mutating", "equivalence-result", "equivalence_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_package_container",
+			description: "Package the validated Python runtime through the uv/site-policy adapter.",
+			entrypoint: "scripts/package_python_runtime.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "producing",
+			requires_policy_snapshot: true,
+			capability_requirements: [
+				{ capability_id: "sure.execution.uv", capability_class: "execution_capability", required: true },
+			],
+			output_contract: transOutputContract("producing", "package-container-result", "docker_registry_result.json"),
+		},
+	],
+};
 export const CANONICAL_SEMANTIC_BACKENDS: readonly SemanticBackendBundle[] = [
 	SURE_EVALUATION_BACKEND,
 	SURE_EVALUATION_VALIDATOR_BACKEND,
@@ -539,4 +728,5 @@ export const CANONICAL_SEMANTIC_BACKENDS: readonly SemanticBackendBundle[] = [
 	SURE_ONBOARD_VALIDATOR_BACKEND,
 	SURE_ONBOARD_EXECUTION_BACKEND,
 	SURE_TRANS_VALIDATOR_BACKEND,
+	SURE_TRANS_EXECUTION_BACKEND,
 ];

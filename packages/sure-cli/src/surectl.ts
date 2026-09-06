@@ -34,6 +34,7 @@ import {
 	type ExecutionRequest,
 	encodeLegacyCheckpoint,
 	evaluateCapabilityRequirements,
+	executionOutputContractDigest,
 	executorDescriptor,
 	executorRegistrySnapshot,
 	type FrozenEvaluationSubject,
@@ -61,7 +62,11 @@ import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendi
 import { type LoadedDefinition, loadDefinition, unitForCurrent } from "./definition.ts";
 import { executeRequest } from "./executor.ts";
 import { NodeRunStore } from "./node-run-store.ts";
-import { registeredOperationSemanticDigest, runRegisteredOperation } from "./registered-operation.ts";
+import {
+	registeredOperationCapabilityRequirementsDigest,
+	registeredOperationSemanticDigest,
+	runRegisteredOperation,
+} from "./registered-operation.ts";
 import {
 	artifactRef,
 	loadSkillRuntimeBinding,
@@ -310,6 +315,39 @@ function assertRegularFile(path: string, label: string): void {
 		throw new Error(`${label} is missing: ${path}`);
 	}
 	if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`${label} must be a regular file: ${path}`);
+}
+
+/** Pick a stable predecessor artifact when a registered producer has no output yet. */
+function producerInputArtifactPath(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	loaded: LoadedDefinition,
+	checkpoint: WorkflowCheckpoint,
+	currentUnit: WorkflowUnit,
+	requested: string | undefined,
+	targetPath: string,
+): string {
+	if (requested !== undefined)
+		return admittedRunArtifactPath(store, run, absolute(requested, "registered operation artifact"));
+	try {
+		assertRegularFile(targetPath, "Registered operation artifact");
+		return targetPath;
+	} catch {
+		const branch = loaded.definition.branches.find((candidate) => candidate.id === checkpoint.branch_id);
+		const currentIndex = branch?.units.findIndex((candidate) => candidate.id === currentUnit.id) ?? -1;
+		for (const unit of branch?.units.slice(0, currentIndex).reverse() ?? []) {
+			const candidate = join(run.runDir, "artifacts", unit.produces);
+			try {
+				assertRegularFile(candidate, `Producer input artifact for ${currentUnit.id}`);
+				return candidate;
+			} catch {
+				// A prior unit may be agent-owned and legitimately have no artifact yet.
+			}
+		}
+		const transInput = join(run.runDir, "artifacts", "trans_input_resolved.json");
+		assertRegularFile(transInput, `Producer input artifact for ${currentUnit.id}`);
+		return transInput;
+	}
 }
 
 function recordObject(value: unknown, label: string): Record<string, unknown> {
@@ -1228,6 +1266,13 @@ function validateRegisteredGateExecution(
 	const artifactInputDigest =
 		typeof persisted.artifact_input_digest === "string" ? persisted.artifact_input_digest : undefined;
 	if (artifactInputDigest === undefined) diagnostics.push("registered execution is missing artifact_input_digest");
+	const operationOutputContract = operation.output_contract;
+	const inputPath = typeof persisted.artifact_input_path === "string" ? persisted.artifact_input_path : artifactPath;
+	const outputPath =
+		typeof persisted.artifact_output_path === "string" ? persisted.artifact_output_path : artifactPath;
+	if (operationOutputContract !== undefined && typeof persisted.artifact_output_path !== "string") {
+		diagnostics.push("producer execution is missing artifact_output_path");
+	}
 	// The registered operation may legitimately update the gate artifact in
 	// place (for example, a runtime runner appends its measured result).  The
 	// input digest below binds the pre-execution bytes; the receipt output digest
@@ -1274,6 +1319,43 @@ function validateRegisteredGateExecution(
 	) {
 		diagnostics.push("execution request does not match the current run, unit, attempt, or operation domain");
 	}
+	if (operationOutputContract !== undefined) {
+		let requestContractDigest: string | undefined;
+		try {
+			requestContractDigest =
+				request.output_contract === undefined ? undefined : executionOutputContractDigest(request.output_contract);
+		} catch {
+			requestContractDigest = undefined;
+		}
+		const expectedContractDigest = executionOutputContractDigest(operationOutputContract);
+		if (requestContractDigest !== expectedContractDigest) {
+			diagnostics.push("execution request output_contract does not match the registered operation");
+		}
+		const declaredOutput = operationOutputContract.outputs[0];
+		const requestRootResolved =
+			typeof request.output_root?.resolved_path === "string" ? request.output_root.resolved_path : undefined;
+		if (declaredOutput !== undefined) {
+			if (requestRootResolved === undefined) {
+				diagnostics.push("execution request output_root.resolved_path is missing");
+			} else if (resolve(requestRootResolved, declaredOutput.path) !== resolve(outputPath)) {
+				diagnostics.push("registered execution output path does not match the output contract");
+			}
+		}
+	}
+	const expectedCapabilityRequirementsDigest = registeredOperationCapabilityRequirementsDigest(operation);
+	if (expectedCapabilityRequirementsDigest !== undefined) {
+		let requestCapabilityRequirementsDigest: string | undefined;
+		try {
+			requestCapabilityRequirementsDigest = Array.isArray(request.capability_requirements)
+				? canonicalJsonDigest(request.capability_requirements as unknown as JsonValue)
+				: undefined;
+		} catch {
+			requestCapabilityRequirementsDigest = undefined;
+		}
+		if (requestCapabilityRequirementsDigest !== expectedCapabilityRequirementsDigest) {
+			diagnostics.push("execution request capability requirements do not match the registered operation");
+		}
+	}
 	const runtimeRequirements =
 		typeof request.runtime_requirements === "object" && request.runtime_requirements !== null
 			? (request.runtime_requirements as Record<string, unknown>)
@@ -1316,6 +1398,13 @@ function validateRegisteredGateExecution(
 		["workflow_digest", run.workflowDigest],
 		["branch_id", branchId],
 		["artifact_input_digest", artifactInputDigest],
+		["artifact_input_path", operationOutputContract === undefined ? undefined : inputPath],
+		["artifact_output_path", operationOutputContract === undefined ? undefined : outputPath],
+		[
+			"output_contract_digest",
+			operationOutputContract === undefined ? undefined : executionOutputContractDigest(operationOutputContract),
+		],
+		["capability_requirements_digest", expectedCapabilityRequirementsDigest],
 	] as const) {
 		if (expected !== undefined && runtimeRequirements[field] !== expected) {
 			diagnostics.push(`execution request ${field} does not match its canonical binding`);
@@ -1327,7 +1416,7 @@ function validateRegisteredGateExecution(
 		: [];
 	if (!sameStrings(requestScriptArgs, scriptArgs))
 		diagnostics.push("execution request script_args do not match the gate");
-	const expectedArgv = [operation.path, "--run-dir", run.runDir, "--produces", artifactPath, ...scriptArgs];
+	const expectedArgv = [operation.path, "--run-dir", run.runDir, "--produces", outputPath, ...scriptArgs];
 	if (!sameStrings(request.entrypoint?.argv ?? [], expectedArgv)) {
 		diagnostics.push("execution request entrypoint arguments do not match the locked operation");
 	}
@@ -1339,14 +1428,14 @@ function validateRegisteredGateExecution(
 	}
 	if (
 		artifactInputDigest !== undefined &&
-		(request.subject?.bundle_manifest_path !== artifactPath || request.subject?.bundle_digest !== artifactInputDigest)
+		(request.subject?.bundle_manifest_path !== inputPath || request.subject?.bundle_digest !== artifactInputDigest)
 	) {
 		diagnostics.push("execution request subject does not match the pre-execution artifact");
 	}
 	const input = Array.isArray(request.inputs) ? request.inputs[0] : undefined;
 	if (
 		artifactInputDigest !== undefined &&
-		(input === undefined || input.path !== artifactPath || input.sha256 !== artifactInputDigest)
+		(input === undefined || input.path !== inputPath || input.sha256 !== artifactInputDigest)
 	) {
 		diagnostics.push("execution request input does not match the pre-execution artifact");
 	}
@@ -1359,6 +1448,14 @@ function validateRegisteredGateExecution(
 			operation_id: operation.operation_id,
 			request_operation: requestOperation,
 			artifact_input_digest: artifactInputDigest,
+			...(operationOutputContract === undefined ? {} : { artifact_input_path: inputPath }),
+			...(operationOutputContract === undefined ? {} : { artifact_output_path: outputPath }),
+			...(operationOutputContract === undefined
+				? {}
+				: { output_contract_digest: executionOutputContractDigest(operationOutputContract) }),
+			...(expectedCapabilityRequirementsDigest === undefined
+				? {}
+				: { capability_requirements_digest: expectedCapabilityRequirementsDigest }),
 			workflow_digest: run.workflowDigest,
 			runtime_digest: verification.lock.runtime_digest,
 			backend_registry_digest: operation.registry_digest,
@@ -1379,7 +1476,7 @@ function validateRegisteredGateExecution(
 	const receiptValidation = validateExecutionReceipt(request, receipt, boundaryOptions);
 	diagnostics.push(...receiptValidation.errors);
 	const output = (Array.isArray(receipt.outputs) ? receipt.outputs : []).find(
-		(candidate) => candidate.path === artifactPath,
+		(candidate) => resolve(candidate.path) === resolve(outputPath),
 	);
 	if (output === undefined || !sameDigest(output.sha256, artifactDigest)) {
 		diagnostics.push("execution receipt does not bind the current gate artifact digest");
@@ -2059,15 +2156,20 @@ function execute(args: ParsedArgs): PublicOutcome {
 				`Current unit ${currentUnit.id} does not authorize registered execution operation ${registeredOperationId}.`,
 			);
 		}
-		const artifactPath = admittedRunArtifactPath(
+		const targetArtifactPath = admittedRunArtifactPath(
 			store,
 			run,
-			absolute(
-				one(args, "artifact") ?? join(run.runDir, "artifacts", currentUnit.produces),
-				"registered operation artifact",
-			),
+			join(run.runDir, "artifacts", currentUnit.produces),
 		);
-		assertRegularFile(artifactPath, "Registered operation artifact");
+		const artifactPath = producerInputArtifactPath(
+			store,
+			run,
+			loaded,
+			checkpoint,
+			currentUnit,
+			one(args, "artifact"),
+			targetArtifactPath,
+		);
 		const artifact = artifactRef(artifactPath, currentUnit.id, run.runDir);
 		const runtimeBinding = loadSkillRuntimeBinding(loaded.root, {
 			skill_id: loaded.definition.workflow_id,
@@ -2097,6 +2199,7 @@ function execute(args: ParsedArgs): PublicOutcome {
 			request_operation: currentUnit.gate.execution_request_operation ?? "validation",
 			script_args: [...(currentUnit.gate.script_args ?? [])],
 			artifact,
+			output_path: targetArtifactPath,
 			python_executable:
 				one(args, "operation-python") ??
 				one(args, "validator-python") ??

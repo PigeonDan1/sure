@@ -1252,6 +1252,122 @@ describe("surectl cooperative control plane", () => {
 		expect(JSON.parse(readFileSync(String(validator.receipt_path), "utf8")).lifecycle).toBe("SUCCEEDED");
 	}, 30_000);
 
+	it("executes a TRANS producer through its output contract before validation", () => {
+		const operationRoot = join(root, "trans-producer-operation");
+		const operationPackage = join(operationRoot, "skill");
+		mkdirSync(operationPackage, { recursive: true });
+		const operationWorkflow = {
+			schema: "sure.workflow.definition.v1",
+			workflow_id: "sure_trans",
+			version: "test-v1",
+			branches: [
+				{
+					id: "main",
+					initial_unit_id: "build_adapter_image",
+					terminal_unit_id: "build_adapter_image",
+					units: [
+						{
+							id: "build_adapter_image",
+							label: "Materialize adapter runtime",
+							kind: "gate",
+							produces: "adapter_image_result.json",
+							required_fields: ["status"],
+							gate: {
+								validator_id: "python-script",
+								execution_operation_id: "sure.trans.execute_adapter_image",
+								execution_request_operation: "package",
+								script_id: "materialize_adapter_runtime.py",
+							},
+						},
+					],
+				},
+			],
+			default_branch_id: "main",
+			retry_policy: { default_max_retries: 3 },
+		} as const;
+		const customDefinition = join(operationPackage, "canonical-definition.json");
+		writeFileSync(customDefinition, JSON.stringify({ workflow: operationWorkflow, capabilities: [] }));
+		const lock = JSON.parse(
+			readFileSync(join(repositoryRoot, "sure/dist/agent-skills/sure-trans/generation.lock.json"), "utf8"),
+		) as Record<string, unknown>;
+		lock.workflow_digest = canonicalJsonDigest(operationWorkflow as unknown as JsonValue);
+		writeFileSync(join(operationPackage, "generation.lock.json"), JSON.stringify(lock));
+		const base = [
+			"--skill",
+			"sure_trans",
+			"--definition",
+			customDefinition,
+			"--validator-registry",
+			transRegistryPath,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		];
+		const runId = "run-trans-producer-contract";
+		const started = command(root, "start", [...base, "--run-id", runId]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		const modelDir = join(root, "model");
+		mkdirSync(modelDir, { recursive: true });
+		const lockfile = join(modelDir, "requirements.lock");
+		writeFileSync(lockfile, "# test lock\n");
+		writeFileSync(
+			join(artifacts, "trans_input_resolved.json"),
+			JSON.stringify({ source_kind: "python", python_executable: process.execPath, lockfile }),
+		);
+		const adapterManifest: Record<string, unknown> = {
+			status: "ready",
+			runtime_kind: "python",
+			server_command: [process.execPath, "server.py"],
+			working_dir: ".",
+		};
+		for (const key of [
+			"model_py",
+			"init_py",
+			"validate_py",
+			"server_py",
+			"config_yaml",
+			"model_spec",
+			"mcp_smoke_py",
+		]) {
+			const path = join(modelDir, key);
+			writeFileSync(path, `${key}\n`);
+			adapterManifest[key] = path;
+		}
+		writeFileSync(join(artifacts, "adapter_manifest.json"), JSON.stringify(adapterManifest));
+
+		const executed = command(root, "execute", [
+			...base,
+			"--run-id",
+			runId,
+			"--operation",
+			"sure.trans.execute_adapter_image",
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(executed.status, `${executed.stdout}\n${executed.stderr}`).toBe(5);
+		const executionEvidence = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")).last_execution as Record<
+			string,
+			unknown
+		>;
+		expect(executionEvidence.artifact_input_path).toContain("trans_input_resolved.json");
+		expect(executionEvidence.artifact_output_path).toContain("adapter_image_result.json");
+		expect(executionEvidence.artifact_input_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(executionEvidence.artifact_output_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		const receipt = JSON.parse(readFileSync(String(executionEvidence.receipt_path), "utf8")) as Record<
+			string,
+			unknown
+		>;
+		expect(receipt.output_contract_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(receipt.output_set_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect((receipt.outputs as Array<Record<string, unknown>>)[0]?.path).toContain("adapter_image_result.json");
+		const validated = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(validated.status).toBe(0);
+		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+	}, 30_000);
+
 	it("rejects output beneath an explicit read-only reference root", () => {
 		const reference = join(root, "reference");
 		mkdirSync(reference);

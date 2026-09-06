@@ -162,6 +162,59 @@ describe("semantic backend registry", () => {
 		}
 	});
 
+	it("resolves TRANS execution adapters with an immutable output contract", () => {
+		const manifest = loadSemanticBackendManifest(packageDir, { manifestPath });
+		const bundle = manifest.bundles.find((candidate) => candidate.bundle_id === "sure-trans-execution");
+		expect(bundle).toBeDefined();
+		expect(bundle?.canonical_tree_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(bundle?.legacy_tree_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		for (const [operationId, path, mode, outputPath] of [
+			["sure.trans.execute_source_image", "run_docker_build.py", "producing", "source_image_result.json"],
+			["sure.trans.execute_env_compat", "run_execution_compat.py", "producing", "execution_compat.json"],
+			[
+				"sure.trans.execute_original_inference",
+				"run_trans_validate.py",
+				"mutating",
+				"original_inference_result.json",
+			],
+			[
+				"sure.trans.execute_adapter_image",
+				"materialize_adapter_runtime.py",
+				"producing",
+				"adapter_image_result.json",
+			],
+			["sure.trans.execute_import", "run_trans_validate.py", "mutating", "import_result.json"],
+			["sure.trans.execute_load", "run_trans_validate.py", "mutating", "load_result.json"],
+			["sure.trans.execute_infer", "run_trans_validate.py", "mutating", "infer_result.json"],
+			["sure.trans.execute_contract", "run_trans_validate.py", "mutating", "contract_result.json"],
+			["sure.trans.execute_mcp", "run_trans_validate.py", "mutating", "mcp_result.json"],
+			["sure.trans.execute_equivalence", "run_trans_validate.py", "mutating", "equivalence_result.json"],
+			[
+				"sure.trans.execute_package_container",
+				"package_python_runtime.py",
+				"producing",
+				"docker_registry_result.json",
+			],
+		] as const) {
+			const resolved = resolveSemanticBackendOperation(packageDir, operationId, { manifestPath });
+			expect(resolved.source).toBe("canonical");
+			expect(resolved.path).toBe(join(repositoryRoot, "sure", "canonical", "skills", "sure-trans", "scripts", path));
+			expect(resolved.kind).toBe("execute");
+			expect(resolved.artifact_mode).toBe(mode);
+			expect(resolved.output_contract).toMatchObject({
+				mode,
+				outputs: [{ path: outputPath, kind: "file", required: true }],
+			});
+			const manifestOperation = bundle?.operations.find((candidate) => candidate.operation_id === operationId);
+			expect(manifestOperation?.canonical_resource_digest).toBe(manifestOperation?.legacy_resource_digest);
+			if (operationId === "sure.trans.execute_package_container") {
+				expect(resolved.capability_requirements).toEqual([
+					{ capability_id: "sure.execution.uv", capability_class: "execution_capability", required: true },
+				]);
+			}
+		}
+	});
+
 	it("rejects artifact modes on validators and unknown artifact modes", () => {
 		const manifest = loadSemanticBackendManifest(packageDir, { manifestPath });
 		const bundle = manifest.bundles[0];
