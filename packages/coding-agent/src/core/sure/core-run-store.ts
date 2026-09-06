@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	appendFileSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	readFileSync,
 	realpathSync,
@@ -64,6 +65,24 @@ class NodeRunStoreFileSystem implements RunStoreFileSystem {
 			if (isMissing(error)) return undefined;
 			throw error;
 		}
+	}
+
+	fileType(path: string): "missing" | "file" | "directory" | "symlink" | "other" {
+		try {
+			const stat = lstatSync(path);
+			if (stat.isSymbolicLink()) return "symlink";
+			if (stat.isFile()) return "file";
+			if (stat.isDirectory()) return "directory";
+			return "other";
+		} catch (error) {
+			if (isMissing(error)) return "missing";
+			throw error;
+		}
+	}
+
+	digestFile(path: string): string | undefined {
+		if (this.fileType(path) !== "file") return undefined;
+		return `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
 	}
 }
 

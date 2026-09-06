@@ -35,6 +35,10 @@ export interface CoreRunRecord {
 	stateDigest?: string;
 	/** Monotonic CAS revision; legacy records are read as revision zero. */
 	revision?: number;
+	/** Run-local execution receipt bound at successful finalization. */
+	successReceiptPath?: string;
+	/** Raw-byte SHA-256 digest of the bound execution receipt. */
+	successReceiptDigest?: string;
 	legacyCompatibility?: boolean;
 }
 
@@ -70,6 +74,10 @@ export interface RunStoreFileSystem {
 	exists(path: string): boolean;
 	/** Resolve a path through symlinks. Return undefined if no resolution is possible. */
 	realpath(path: string): string | undefined;
+	/** Return the lstat kind without following a final symlink. */
+	fileType(path: string): "missing" | "file" | "directory" | "symlink" | "other";
+	/** Return a raw-byte SHA-256 digest, or undefined when the path is absent. */
+	digestFile(path: string): string | undefined;
 }
 
 export interface RunStoreLock {
@@ -115,6 +123,8 @@ export interface SuccessEvidence {
 	terminalCheckpoint: boolean;
 	requiredArtifacts: readonly string[];
 	successReceipt: boolean;
+	/** Path to the receipt whose bytes are covered by successReceiptDigest. */
+	successReceiptPath?: string;
 	/** SHA-256 digest of the persisted execution receipt bytes. */
 	successReceiptDigest?: string;
 }

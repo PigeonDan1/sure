@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -86,14 +87,18 @@ describe("NodeCoreRunStore adapter", () => {
 		store.setStatus(created.runId, "running");
 		const artifacts = join(created.runDir, "artifacts");
 		writeFileSync(join(artifacts, "manifest.json"), "{}\n");
+		const receiptPath = join(artifacts, "execution_receipt.json");
+		writeFileSync(receiptPath, "{}\n");
+		const receiptDigest = `sha256:${createHash("sha256").update(readFileSync(receiptPath)).digest("hex")}`;
 		store.writeState(created.runId, {
 			checkpoint: { resumable: false, data: { currentUnit: "last", completedUnits: ["last"], retries: {} } },
 		});
 		const finished = store.finalizeRun(created.runId, "success", {
 			terminalCheckpoint: true,
-			requiredArtifacts: ["manifest.json"],
+			requiredArtifacts: ["manifest.json", receiptPath],
 			successReceipt: true,
-			successReceiptDigest: `sha256:${"e".repeat(64)}`,
+			successReceiptPath: receiptPath,
+			successReceiptDigest: receiptDigest,
 		});
 		expect(finished.status).toBe("success");
 		expect(store.resolveRunPath(created.runId, "../outside")).toBeUndefined();

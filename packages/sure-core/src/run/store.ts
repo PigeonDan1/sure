@@ -79,6 +79,10 @@ const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SHA256_DIGEST = /^sha256:[0-9a-f]{64}$/;
 const TERMINAL_STATUSES = new Set<RunStatus>(["success", "failed", "incomplete", "cancelled"]);
 
+function sameDigest(left: string, right: string): boolean {
+	return left.replace(/^sha256:/, "").toLowerCase() === right.replace(/^sha256:/, "").toLowerCase();
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -175,6 +179,26 @@ function normalizeRecord(raw: unknown, expectedRunId: string, expectedRunDir: st
 			);
 		}
 	}
+	const successReceiptPath = stringField(raw, "successReceiptPath", stringField(raw, "success_receipt_path"));
+	const successReceiptDigest = stringField(raw, "successReceiptDigest", stringField(raw, "success_receipt_digest"));
+	if ((successReceiptPath === undefined) !== (successReceiptDigest === undefined)) {
+		throw new RunStoreError("INVALID_RECORD", `Run ${expectedRunId} has an incomplete success receipt binding.`);
+	}
+	if (successReceiptDigest !== undefined && !SHA256_DIGEST.test(successReceiptDigest)) {
+		throw new RunStoreError("INVALID_RECORD", `Run ${expectedRunId} has an invalid success receipt digest.`);
+	}
+	if (successReceiptPath !== undefined) {
+		if (
+			!isAbsolute(successReceiptPath) ||
+			!pathInside(join(expectedRunDir, "artifacts"), normalize(successReceiptPath))
+		) {
+			throw new RunStoreError(
+				"PATH_OUT_OF_SCOPE",
+				`Run ${expectedRunId} success receipt path must be inside its artifacts directory.`,
+				successReceiptPath,
+			);
+		}
+	}
 	return {
 		...(raw as unknown as CoreRunRecord),
 		runId,
@@ -199,6 +223,8 @@ function normalizeRecord(raw: unknown, expectedRunId: string, expectedRunDir: st
 		policySnapshotPath,
 		stateDigest: stringField(raw, "stateDigest", stringField(raw, "state_digest")),
 		revision: positiveRevision(raw.revision),
+		successReceiptPath,
+		successReceiptDigest,
 		legacyCompatibility:
 			raw.coreVersion === undefined && raw.core_version === undefined ? true : Boolean(raw.legacyCompatibility),
 	};
@@ -508,6 +534,29 @@ export class CoreRunStore {
 			if (patch.runDir !== undefined && normalize(patch.runDir) !== normalize(current.runDir)) {
 				throw new RunStoreError("PATH_OUT_OF_SCOPE", "runDir is immutable.", patch.runDir);
 			}
+			if (patch.successReceiptPath !== undefined) {
+				if (
+					current.successReceiptPath !== undefined &&
+					normalize(patch.successReceiptPath) !== normalize(current.successReceiptPath)
+				) {
+					throw new RunStoreError(
+						"TERMINAL_IMMUTABLE",
+						"success receipt path is immutable.",
+						patch.successReceiptPath,
+					);
+				}
+				if (!isAbsolute(patch.successReceiptPath)) {
+					throw new RunStoreError(
+						"PATH_OUT_OF_SCOPE",
+						"success receipt path must be absolute.",
+						patch.successReceiptPath,
+					);
+				}
+				this.admitPath(patch.successReceiptPath, [join(current.runDir, "artifacts")]);
+			}
+			if (patch.successReceiptDigest !== undefined && !SHA256_DIGEST.test(patch.successReceiptDigest)) {
+				throw new RunStoreError("INVALID_RECORD", "success receipt digest must be a SHA-256 digest.");
+			}
 			const nextStatus = patch.status ?? current.status;
 			if (
 				!transitionAllowed(current.status, nextStatus) &&
@@ -670,6 +719,8 @@ export class CoreRunStore {
 		status: "success" | "incomplete" | "failed" | "cancelled",
 		evidence?: SuccessEvidence,
 	): CoreRunRecord {
+		const record = this.parseRun(runId);
+		if (!record) throw new RunStoreError("INVALID_RECORD", `Run ${runId} does not exist.`);
 		if (status === "success") {
 			if (
 				!evidence?.terminalCheckpoint ||
@@ -683,8 +734,6 @@ export class CoreRunStore {
 					"A successful run requires a terminal checkpoint, explicit artifacts, and a SHA-256 success receipt digest.",
 				);
 			}
-			const record = this.parseRun(runId);
-			if (!record) throw new RunStoreError("INVALID_RECORD", `Run ${runId} does not exist.`);
 			const state = this.readState(record);
 			if (record.stateDigest !== undefined && (state === undefined || stateDigest(state) !== record.stateDigest)) {
 				throw new RunStoreError("INVALID_RECORD", `Run ${runId} state digest does not match the run descriptor.`);
@@ -692,6 +741,70 @@ export class CoreRunStore {
 			const checkpoint = state?.checkpoint;
 			if (!isRecord(checkpoint) || checkpoint.resumable !== false) {
 				throw new RunStoreError("SUCCESS_EVIDENCE_MISSING", "The persisted checkpoint is not terminal.");
+			}
+			if (!transitionAllowed(record.status, status)) {
+				throw new RunStoreError(
+					"INVALID_STATUS_TRANSITION",
+					`Cannot transition run ${runId} from ${record.status} to ${status}.`,
+				);
+			}
+			// New Core records must bind the successful transition to a concrete,
+			// admitted receipt. Legacy records keep the old boolean compatibility
+			// path because their original producer did not persist this field.
+			if (!record.legacyCompatibility && typeof evidence.successReceiptPath !== "string") {
+				throw new RunStoreError(
+					"SUCCESS_EVIDENCE_MISSING",
+					"A successful Core run requires the execution receipt path to be bound.",
+				);
+			}
+			let receiptPath: string | undefined;
+			if (evidence.successReceiptPath !== undefined) {
+				try {
+					const candidate = isAbsolute(evidence.successReceiptPath)
+						? evidence.successReceiptPath
+						: join(record.runDir, "artifacts", evidence.successReceiptPath);
+					const admitted = this.admitPath(candidate, [
+						join(record.runDir, "artifacts"),
+						record.runDir,
+						...(record.outputDir ? [record.outputDir] : []),
+					]);
+					if (this.filesystem.fileType(admitted.path) !== "file") {
+						throw new RunStoreError(
+							"SUCCESS_EVIDENCE_MISSING",
+							`Execution receipt is not a regular file: ${evidence.successReceiptPath}.`,
+							evidence.successReceiptPath,
+						);
+					}
+					const actualDigest = this.filesystem.digestFile(admitted.path);
+					if (actualDigest === undefined || !sameDigest(actualDigest, evidence.successReceiptDigest)) {
+						throw new RunStoreError(
+							"SUCCESS_EVIDENCE_MISSING",
+							"Execution receipt digest does not match the current file.",
+							evidence.successReceiptPath,
+						);
+					}
+					receiptPath = admitted.path;
+				} catch (error) {
+					if (error instanceof RunStoreError) throw error;
+					throw new RunStoreError(
+						"SUCCESS_EVIDENCE_MISSING",
+						`Execution receipt is not admitted: ${evidence.successReceiptPath}.`,
+						evidence.successReceiptPath,
+					);
+				}
+			}
+			if (receiptPath !== undefined) {
+				const receiptMatchesArtifact = evidence.requiredArtifacts.some((artifact) => {
+					const candidate = isAbsolute(artifact) ? artifact : join(record.runDir, "artifacts", artifact);
+					return normalize(candidate) === receiptPath;
+				});
+				if (!receiptMatchesArtifact) {
+					throw new RunStoreError(
+						"SUCCESS_EVIDENCE_MISSING",
+						"The bound execution receipt must be listed among required artifacts.",
+						evidence.successReceiptPath,
+					);
+				}
 			}
 			for (const artifact of evidence.requiredArtifacts) {
 				try {
@@ -701,7 +814,7 @@ export class CoreRunStore {
 						record.runDir,
 						...(record.outputDir ? [record.outputDir] : []),
 					]);
-					if (!this.filesystem.exists(admitted.path)) {
+					if (this.filesystem.fileType(admitted.path) !== "file") {
 						throw new RunStoreError(
 							"SUCCESS_EVIDENCE_MISSING",
 							`Required artifact is missing: ${artifact}.`,
@@ -718,7 +831,22 @@ export class CoreRunStore {
 				}
 			}
 		}
-		return this.setStatus(runId, status, "finalized");
+		return this.updateRun(
+			runId,
+			{
+				status,
+				...(status === "success" && evidence?.successReceiptPath !== undefined
+					? {
+							successReceiptPath: isAbsolute(evidence.successReceiptPath)
+								? normalize(evidence.successReceiptPath)
+								: normalize(join(record.runDir, "artifacts", evidence.successReceiptPath)),
+							successReceiptDigest: evidence.successReceiptDigest,
+						}
+					: {}),
+			},
+			"finalized",
+			{ status, ...(status === "success" ? { success_receipt: true } : {}) },
+		);
 	}
 
 	/** Compatibility resolver: invalid paths return undefined after a local diagnostic. */

@@ -98,6 +98,8 @@ export interface SureRunRecord {
 	/** Digest of the persisted state document and monotonic durable revision. */
 	stateDigest?: string;
 	revision?: number;
+	successReceiptPath?: string;
+	successReceiptDigest?: string;
 	legacyCompatibility?: boolean;
 }
 

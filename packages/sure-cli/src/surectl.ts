@@ -1998,6 +1998,7 @@ function finalize(args: ParsedArgs): void {
 		terminalCheckpoint: true,
 		requiredArtifacts: artifacts,
 		successReceipt,
+		...(receiptPath === undefined ? {} : { successReceiptPath: receiptPath }),
 		...(successReceiptDigest === undefined ? {} : { successReceiptDigest }),
 	});
 	output({ ok: true, command: "finalize", run: finalized, receipt_path: receiptPath });

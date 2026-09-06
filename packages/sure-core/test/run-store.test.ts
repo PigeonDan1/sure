@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { CoreRunStore, RunStoreConflictError, RunStoreError } from "../src/run/store.ts";
 import type { ResumeBinding, RunStoreFileSystem, RunStoreLock, StateDocument } from "../src/run/types.ts";
@@ -53,6 +54,19 @@ class MemoryFileSystem implements RunStoreFileSystem {
 			const suffix = candidate.slice(match[0].length).replace(/^\//, "");
 			candidate = this.normalize(suffix ? `${match[1]}/${suffix}` : match[1]);
 		}
+	}
+
+	fileType(path: string): "missing" | "file" | "directory" | "symlink" | "other" {
+		const normalized = this.normalize(path);
+		if (this.symlinks.has(normalized)) return "symlink";
+		if (this.files.has(normalized)) return "file";
+		if (this.directories.has(normalized)) return "directory";
+		return "missing";
+	}
+
+	digestFile(path: string): string | undefined {
+		const value = this.readFile(path);
+		return value === undefined ? undefined : `sha256:${createHash("sha256").update(value).digest("hex")}`;
 	}
 
 	symlink(source: string, target: string): void {
@@ -260,15 +274,53 @@ describe("CoreRunStore", () => {
 		store.setStatus("run-1", "running", "started");
 		store.writeState("run-1", checkpointState(false));
 		filesystem.writeFileAtomic("/workspace/.sure/runs/run-1/artifacts/manifest.json", "{}\n");
+		filesystem.writeFileAtomic("/workspace/.sure/runs/run-1/artifacts/execution_receipt.json", "{}\n");
+		const receiptDigest = filesystem.digestFile("/workspace/.sure/runs/run-1/artifacts/execution_receipt.json");
 		const success = store.finalizeRun("run-1", "success", {
 			terminalCheckpoint: true,
-			requiredArtifacts: ["manifest.json"],
+			requiredArtifacts: ["manifest.json", "execution_receipt.json"],
 			successReceipt: true,
-			successReceiptDigest: `sha256:${"e".repeat(64)}`,
+			successReceiptPath: "execution_receipt.json",
+			successReceiptDigest: receiptDigest,
 		});
 		expect(success.status).toBe("success");
+		expect(success.successReceiptPath).toContain("execution_receipt.json");
 		expect(() => store.setStatus("run-1", "running")).toThrow(/success to running/);
 		expect(() => store.writeState("run-1", checkpointState(false))).toThrow(/terminal/);
 		expect(() => store.appendEvent("run-1", "late-mutating-event")).toThrow(/terminal/);
+	});
+
+	it("rejects a missing, tampered, or symlinked terminal receipt", () => {
+		const { store, filesystem } = makeStore();
+		store.createRun(createInput("receipt-check"));
+		store.setStatus("receipt-check", "running");
+		store.writeState("receipt-check", checkpointState(false));
+		const receipt = "/workspace/.sure/runs/receipt-check/artifacts/execution_receipt.json";
+		filesystem.writeFileAtomic(receipt, "receipt-v1\n");
+		const digest = filesystem.digestFile(receipt);
+		filesystem.writeFileAtomic(receipt, "receipt-v2\n");
+		expect(() =>
+			store.finalizeRun("receipt-check", "success", {
+				terminalCheckpoint: true,
+				requiredArtifacts: [receipt],
+				successReceipt: true,
+				successReceiptPath: receipt,
+				successReceiptDigest: digest,
+			}),
+		).toThrow(/digest does not match/);
+		// Replace the receipt with a link to an otherwise valid in-root file.
+		const target = "/workspace/.sure/runs/receipt-check/artifacts/receipt-target";
+		filesystem.writeFileAtomic(target, "receipt-v2\n");
+		filesystem.files.delete(receipt);
+		filesystem.symlink(receipt, target);
+		expect(() =>
+			store.finalizeRun("receipt-check", "success", {
+				terminalCheckpoint: true,
+				requiredArtifacts: [receipt],
+				successReceipt: true,
+				successReceiptPath: receipt,
+				successReceiptDigest: digest,
+			}),
+		).toThrow(/regular file|digest/);
 	});
 });
