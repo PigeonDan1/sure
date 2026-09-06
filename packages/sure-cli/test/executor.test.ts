@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ function request(
 	root: string,
 	capabilityId: string,
 	runtimeRequirements: Record<string, JsonValue> = {},
+	overrides: Partial<ExecutionRequest> = {},
 ): ExecutionRequest {
 	const artifacts = join(root, "artifacts");
 	return {
@@ -44,7 +45,8 @@ function request(
 		},
 		policy_digest: A,
 		created_at: "2026-09-06T00:00:00.000Z",
-	};
+		...overrides,
+	} as unknown as ExecutionRequest;
 }
 
 function freshRoot(): string {
@@ -113,5 +115,47 @@ describe("cooperative executor capability probes", () => {
 		expect(result.capability.missing).toEqual([]);
 		expect(result.receipt?.lifecycle).toBe("SUCCEEDED");
 		expect(existsSync(join(root, "artifacts"))).toBe(false);
+	});
+
+	it("does not admit an output replaced with a symlink after execution", () => {
+		const root = freshRoot();
+		const outside = join(root, "outside.txt");
+		writeFileSync(outside, "reference\n");
+		const output = join(root, "generated.txt");
+		const requestValue = request(
+			root,
+			"sure.execution.local-python",
+			{ python_executable: process.execPath },
+			{
+				output_root: {
+					path: root,
+					resolved_path: root,
+					scope_id: "run-probe",
+					policy_digest: A,
+					writable: true,
+				},
+				entrypoint: {
+					executable: process.execPath,
+					argv: ["-e", `require('node:fs').symlinkSync(${JSON.stringify(outside)}, ${JSON.stringify(output)})`],
+				},
+			},
+		);
+		const result = executeRequest(requestValue, {
+			kind: "local",
+			executor_digest: A,
+			executor_version: "test",
+			working_directory: root,
+			allowed_output_roots: [root],
+			forbidden_output_roots: [],
+			timeout_ms: 1000,
+			output_paths: [output],
+		});
+
+		expect(result.receipt?.outputs).toEqual([]);
+		expect(result.receipt?.lifecycle).toBe("PARTIAL");
+		expect(result.receipt?.diagnostics).toEqual(
+			expect.arrayContaining([expect.objectContaining({ code: "OUTPUT_REJECTED" })]),
+		);
+		expect(result.outcome.outcome).not.toBe("PASS");
 	});
 });

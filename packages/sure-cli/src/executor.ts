@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import type {
 	ArtifactRef,
 	CapabilityEvidence,
@@ -17,6 +17,7 @@ import {
 	type ExecutionReceiptValidation,
 	type ExecutionRequestValidation,
 	evaluateCapabilityRequirements,
+	evaluatePathBoundary,
 	validateExecutionReceipt,
 	validateExecutionRequest,
 } from "@earendil-works/sure-core";
@@ -56,10 +57,6 @@ export interface ExecutorRunResult {
 
 function now(options: ExecutorRunOptions): string {
 	return options.now?.() ?? new Date().toISOString();
-}
-
-function digestFile(path: string): string {
-	return `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
 }
 
 function truncate(value: string): string {
@@ -187,25 +184,76 @@ function capabilityEvidence(
 	};
 }
 
-function outputArtifact(path: string, index: number): ArtifactRef | undefined {
-	if (!existsSync(path)) return undefined;
-	let stat: ReturnType<typeof statSync>;
+interface OutputInspection {
+	artifact?: ArtifactRef;
+	reason?: string;
+}
+
+function resolvedRoot(path: string): { path: string; resolved_path: string } {
+	const lexical = resolve(path);
+	let resolvedPath = lexical;
 	try {
-		stat = statSync(path);
+		resolvedPath = realpathSync.native(lexical);
 	} catch {
-		return undefined;
+		// A root may be created by the child process. In that case its lexical
+		// identity is the only stable value available to the boundary check.
 	}
-	if (!stat.isFile()) return undefined;
-	return {
-		artifact_id: `output-${index + 1}`,
-		path,
-		resolved_path: path,
-		sha256: digestFile(path),
-		size: stat.size,
-		media_type: "application/octet-stream",
-		origin: "generated",
-		source_root: dirname(path),
-	};
+	return { path: lexical, resolved_path: resolve(resolvedPath) };
+}
+
+function outputArtifact(
+	path: string,
+	index: number,
+	allowedRoots: readonly string[],
+	forbiddenRoots: readonly string[],
+): OutputInspection {
+	const lexical = resolve(path);
+	let stat: ReturnType<typeof lstatSync>;
+	try {
+		stat = lstatSync(lexical);
+	} catch {
+		return {};
+	}
+	if (stat.isSymbolicLink()) return { reason: "OUTPUT_SYMLINK" };
+	if (!stat.isFile()) return { reason: "OUTPUT_NOT_REGULAR" };
+	let resolvedPath: string;
+	try {
+		resolvedPath = resolve(realpathSync.native(lexical));
+	} catch {
+		return { reason: "OUTPUT_UNRESOLVED" };
+	}
+	const boundary = evaluatePathBoundary({
+		candidate_path: lexical,
+		candidate_resolved_path: resolvedPath,
+		allowed_roots: allowedRoots.map(resolvedRoot),
+		forbidden_roots: forbiddenRoots.map(resolvedRoot),
+	});
+	if (!boundary.admitted) return { reason: boundary.reason_code ?? "OUTPUT_OUT_OF_SCOPE" };
+	// O_NOFOLLOW prevents a replacement race between lstat and the digest read
+	// from turning a reference path into an apparently generated artifact.
+	let descriptor: number | undefined;
+	try {
+		descriptor = openSync(lexical, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+		const opened = fstatSync(descriptor);
+		if (!opened.isFile()) return { reason: "OUTPUT_NOT_REGULAR" };
+		const bytes = readFileSync(descriptor);
+		return {
+			artifact: {
+				artifact_id: `output-${index + 1}`,
+				path: lexical,
+				resolved_path: resolvedPath,
+				sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+				size: opened.size,
+				media_type: "application/octet-stream",
+				origin: "generated",
+				source_root: dirname(lexical),
+			},
+		};
+	} catch {
+		return { reason: "OUTPUT_READ_FAILED" };
+	} finally {
+		if (descriptor !== undefined) closeSync(descriptor);
+	}
 }
 
 function executorIdentity(options: ExecutorRunOptions) {
@@ -330,9 +378,11 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 	const outputPaths = options.output_paths ?? [];
 	const outputs: ArtifactRef[] = [];
 	const missingOutputs: string[] = [];
+	const rejectedOutputs: Array<{ path: string; reason: string }> = [];
 	for (const [index, path] of outputPaths.entries()) {
-		const artifact = outputArtifact(path, index);
-		if (artifact) outputs.push(artifact);
+		const inspection = outputArtifact(path, index, options.allowed_output_roots, options.forbidden_output_roots);
+		if (inspection.artifact) outputs.push(inspection.artifact);
+		else if (inspection.reason) rejectedOutputs.push({ path, reason: inspection.reason });
 		else missingOutputs.push(path);
 	}
 	receipt.outputs = outputs;
@@ -350,6 +400,13 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 	if (timedOut) diagnostics.push({ code: "EXECUTOR_TIMEOUT", message: `Execution exceeded ${options.timeout_ms}ms.` });
 	if (missingOutputs.length > 0) {
 		diagnostics.push({ code: "OUTPUT_MISSING", paths: missingOutputs });
+		if (receipt.lifecycle === "SUCCEEDED") {
+			receipt.lifecycle = "PARTIAL";
+			receipt.exit_code = 1;
+		}
+	}
+	if (rejectedOutputs.length > 0) {
+		diagnostics.push({ code: "OUTPUT_REJECTED", outputs: rejectedOutputs });
 		if (receipt.lifecycle === "SUCCEEDED") {
 			receipt.lifecycle = "PARTIAL";
 			receipt.exit_code = 1;
