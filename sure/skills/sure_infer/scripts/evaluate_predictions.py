@@ -1668,6 +1668,45 @@ def _unsupported_request_message(
     return message
 
 
+def _require_formal_external_backend(
+    *,
+    formal: bool,
+    evaluation_backend: str,
+    resolved_engine: tuple[str, Path] | None,
+) -> None:
+    """Enforce the formal evaluator admission boundary in one place."""
+    if not formal:
+        return
+    if evaluation_backend == "legacy":
+        raise ValueError("formal evaluation cannot use the legacy in-process evaluator")
+    if resolved_engine is None:
+        raise FileNotFoundError("formal evaluation requires a resolved standalone sure-evaluation engine")
+
+
+def _validate_formal_merged_results(
+    results: list[dict[str, Any]],
+    resolved_engine: tuple[str, Path] | None,
+) -> None:
+    """Reject merged rows that do not carry an external-evaluator identity."""
+    if resolved_engine is None:
+        raise FileNotFoundError("formal evaluation requires a resolved standalone sure-evaluation engine")
+    expected_root = resolved_engine[1].resolve()
+    for index, result in enumerate(results):
+        if result.get("evaluation_backend") != "external":
+            raise ValueError(f"formal merged result {index} is not produced by the external evaluator")
+        context = result.get("evaluation_context")
+        if not isinstance(context, dict) or context.get("backend") != "sure-evaluation":
+            raise ValueError(f"formal merged result {index} is missing external evaluator provenance")
+        engine_root = context.get("engine_root")
+        if not isinstance(engine_root, str) or Path(engine_root).resolve() != expected_root:
+            raise ValueError(f"formal merged result {index} is bound to a different evaluation engine")
+        runtime = context.get("evaluation_runtime")
+        if not isinstance(runtime, dict) or not runtime.get("runtime_id"):
+            raise ValueError(f"formal merged result {index} is missing evaluation runtime identity")
+        if not result.get("pipeline_id") and not context.get("pipeline_id"):
+            raise ValueError(f"formal merged result {index} is missing evaluation pipeline identity")
+
+
 def _external_metric_applies_to_task_language(
     *,
     engine_root: Path,
@@ -1976,8 +2015,6 @@ def main() -> int:
     args = parser.parse_args()
 
     formal = bool(args.formal or os.environ.get("SURE_FORMAL_EVALUATION", "").strip().lower() in {"1", "true", "yes"})
-    if formal and args.evaluation_backend == "legacy":
-        raise ValueError("formal evaluation cannot use the legacy in-process evaluator")
 
     cfg = Config.from_yaml(args.config) if args.config else Config.from_env()
     dataset_manager = DatasetManager(cfg)
@@ -2007,16 +2044,23 @@ def main() -> int:
     resolved_engine = None
     if args.evaluation_backend in {"auto", "external"}:
         resolved_engine = resolve_engine_root(args.evaluation_engine_root)
-        if (args.evaluation_backend == "external" or formal) and resolved_engine is None:
+        if args.evaluation_backend == "external" and resolved_engine is None:
             raise FileNotFoundError(
                 "No standalone sure-evaluation engine found. "
                 "Set --evaluation-engine-root or SURE_EVALUATION_HOME; formal evaluation cannot fall back."
             )
+    _require_formal_external_backend(
+        formal=formal,
+        evaluation_backend=args.evaluation_backend,
+        resolved_engine=resolved_engine,
+    )
     sota_file = _resolve_sota_file(resolved_engine)
     sota_manager = SOTAManager(sota_file) if sota_file is not None else SOTAManager()
 
     if args.merge_payload:
         results = merge_payload_results([Path(path) for path in args.merge_payload])
+        if formal:
+            _validate_formal_merged_results(results, resolved_engine)
         payload = _to_strict_jsonable(
             _evaluation_payload_v2(
                 evaluation_backend="external",

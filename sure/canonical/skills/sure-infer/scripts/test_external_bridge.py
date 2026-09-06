@@ -150,5 +150,45 @@ class UnsupportedMessageTests(unittest.TestCase):
         self.assertNotIn("rejected", message)
 
 
+class FormalAdmissionTests(unittest.TestCase):
+    def test_formal_mode_rejects_legacy_backend_before_any_dataset_work(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            ep._require_formal_external_backend(
+                formal=True,
+                evaluation_backend="legacy",
+                resolved_engine=("explicit", Path("/engine")),
+            )
+        self.assertIn("legacy", str(caught.exception))
+
+    def test_formal_mode_rejects_missing_engine(self) -> None:
+        with self.assertRaises(FileNotFoundError):
+            ep._require_formal_external_backend(
+                formal=True,
+                evaluation_backend="auto",
+                resolved_engine=None,
+            )
+
+    def test_formal_merge_requires_external_runtime_and_engine_identity(self) -> None:
+        base = {
+            "evaluation_backend": "external",
+            "evaluation_context": {
+                "backend": "sure-evaluation",
+                "engine_root": "/engine",
+                "evaluation_runtime": {"runtime_id": "locked"},
+                "pipeline_id": "asr.zh.cer.v1",
+            },
+            "pipeline_id": "asr.zh.cer.v1",
+        }
+        ep._validate_formal_merged_results([base], ("explicit", Path("/engine")))
+        for key in ("evaluation_backend", "evaluation_context"):
+            row = dict(base)
+            if key == "evaluation_context":
+                row[key] = {"backend": "sure-evaluation", "engine_root": "/engine"}
+            else:
+                row[key] = "legacy"
+            with self.assertRaises(ValueError):
+                ep._validate_formal_merged_results([row], ("explicit", Path("/engine")))
+
+
 if __name__ == "__main__":
     unittest.main()
