@@ -20,6 +20,8 @@ export interface SemanticBackendOperation {
 	deterministic: boolean;
 }
 
+export type SemanticBackendRootKind = "skill" | "repository";
+
 export interface SemanticBackendBundle {
 	schema: "sure.semantic.backend.bundle.v1";
 	bundle_id: string;
@@ -27,8 +29,12 @@ export interface SemanticBackendBundle {
 	description: string;
 	/** Skill directory relative to sure/canonical/skills/. */
 	canonical_root: string;
+	/** Defaults to skill; repository roots are relative to the checkout root. */
+	canonical_root_kind?: SemanticBackendRootKind;
 	/** Compatibility directory relative to sure/. */
 	legacy_root: string;
+	/** Defaults to skill; repository roots are relative to the checkout root. */
+	legacy_root_kind?: SemanticBackendRootKind;
 	/** Subtree containing every executable byte that defines this backend. */
 	integrity_root: string;
 	operations: readonly SemanticBackendOperation[];

@@ -39,6 +39,14 @@ def _relative(value: Any, field: str) -> str:
     return path.as_posix()
 
 
+def _root_kind(value: Any, field: str) -> str | None:
+    if value is None:
+        return None
+    if value not in {"skill", "repository"}:
+        raise SemanticBackendResolutionError(f"{field} must be skill or repository")
+    return value
+
+
 def _digest_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -123,6 +131,8 @@ class SemanticBackendBundle:
     canonical_root: str
     legacy_root: str
     operations: tuple[SemanticBackendOperation, ...]
+    canonical_root_kind: str | None = None
+    legacy_root_kind: str | None = None
     integrity_root: str | None = None
     canonical_tree_digest: str | None = None
     legacy_tree_digest: str | None = None
@@ -231,6 +241,8 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                 description=_required_string(bundle.get("description"), "description"),
                 canonical_root=_relative(bundle.get("canonical_root"), "canonical_root"),
                 legacy_root=_relative(bundle.get("legacy_root"), "legacy_root"),
+                canonical_root_kind=_root_kind(bundle.get("canonical_root_kind"), "canonical_root_kind"),
+                legacy_root_kind=_root_kind(bundle.get("legacy_root_kind"), "legacy_root_kind"),
                 integrity_root=integrity_root,
                 canonical_tree_digest=_digest_value(
                     bundle.get("canonical_tree_digest"),
@@ -258,7 +270,9 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                 "version": bundle.version,
                 "description": bundle.description,
                 "canonical_root": bundle.canonical_root,
+                **({"canonical_root_kind": bundle.canonical_root_kind} if bundle.canonical_root_kind is not None else {}),
                 "legacy_root": bundle.legacy_root,
+                **({"legacy_root_kind": bundle.legacy_root_kind} if bundle.legacy_root_kind is not None else {}),
                 **({"integrity_root": bundle.integrity_root} if bundle.integrity_root is not None else {}),
                 **({"canonical_tree_digest": bundle.canonical_tree_digest} if bundle.canonical_tree_digest is not None else {}),
                 **({"legacy_tree_digest": bundle.legacy_tree_digest} if bundle.legacy_tree_digest is not None else {}),
@@ -356,8 +370,6 @@ def resolve_semantic_backend_operation(
     bundle, operation = selected
     integrity_root = bundle.integrity_root or "."
     root = _repository_root(package, env)
-    canonical_skill = bundle.canonical_root.removeprefix("skills/")
-    legacy_skill = bundle.legacy_root.removeprefix("skills/")
     candidates: list[tuple[Path, Path, str, str | None, str | None]] = []
     backend_root = str(env.get("SURE_SEMANTIC_BACKEND_ROOT") or "").strip()
     if backend_root:
@@ -370,10 +382,22 @@ def resolve_semantic_backend_operation(
         )
     package_backend = package / "backends" / bundle.bundle_id
     candidates.append((package_backend / operation.entrypoint, package_backend, "package", operation.canonical_resource_digest, bundle.canonical_tree_digest))
-    canonical_root = Path(str(env.get("SURE_CANONICAL_SKILLS_ROOT") or root / "sure" / "canonical" / "skills")).expanduser().resolve()
-    candidates.append((canonical_root / canonical_skill / operation.entrypoint, canonical_root / canonical_skill, "canonical", operation.canonical_resource_digest, bundle.canonical_tree_digest))
-    legacy_root = Path(str(env.get("SURE_LEGACY_SKILLS_ROOT") or root / "sure" / "skills")).expanduser().resolve()
-    candidates.append((legacy_root / legacy_skill / operation.entrypoint, legacy_root / legacy_skill, "legacy", operation.legacy_resource_digest, bundle.legacy_tree_digest))
+    if bundle.canonical_root_kind == "repository":
+        canonical_root = (root / bundle.canonical_root).resolve()
+    else:
+        canonical_skills_root = Path(
+            str(env.get("SURE_CANONICAL_SKILLS_ROOT") or root / "sure" / "canonical" / "skills")
+        ).expanduser().resolve()
+        canonical_root = canonical_skills_root / bundle.canonical_root.removeprefix("skills/")
+    candidates.append((canonical_root / operation.entrypoint, canonical_root, "canonical", operation.canonical_resource_digest, bundle.canonical_tree_digest))
+    if bundle.legacy_root_kind == "repository":
+        legacy_root = (root / bundle.legacy_root).resolve()
+    else:
+        legacy_skills_root = Path(
+            str(env.get("SURE_LEGACY_SKILLS_ROOT") or root / "sure" / "skills")
+        ).expanduser().resolve()
+        legacy_root = legacy_skills_root / bundle.legacy_root.removeprefix("skills/")
+    candidates.append((legacy_root / operation.entrypoint, legacy_root, "legacy", operation.legacy_resource_digest, bundle.legacy_tree_digest))
     for path, candidate_root, source, resource_digest, bundle_digest in candidates:
         try:
             path.lstat()

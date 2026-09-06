@@ -1,8 +1,11 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { canonicalJsonDigest } from "../../sure-core/src/contracts/canonical-json.ts";
+import type { JsonValue } from "../../sure-core/src/contracts/types.ts";
 import {
 	loadSemanticBackendManifest,
 	resolveSemanticBackendOperation,
@@ -121,6 +124,86 @@ describe("semantic backend registry", () => {
 				expectedBundleDigest: `sha256:${"f".repeat(64)}`,
 			}),
 		).toThrow(SemanticBackendResolutionError);
+	});
+
+	it("resolves explicitly repository-relative backend roots without weakening tree admission", () => {
+		const temporary = mkdtempSync(join(tmpdir(), "sure-semantic-repository-root-"));
+		try {
+			const repository = join(temporary, "repository");
+			const packageRoot = join(repository, "package");
+			const backendRoot = join(repository, "sure", "runtime", "shared-validator");
+			mkdirSync(packageRoot, { recursive: true });
+			mkdirSync(backendRoot, { recursive: true });
+			const script = Buffer.from("print('shared validator')\n", "utf8");
+			writeFileSync(join(backendRoot, "check.py"), script);
+			const resourceDigest = `sha256:${createHash("sha256").update(script).digest("hex")}`;
+			const treeDigest = `sha256:${createHash("sha256").update(`check.py\0${resourceDigest}`).digest("hex")}`;
+			const bundle = {
+				schema: "sure.semantic.backend.bundle.v1",
+				bundle_id: "shared-validator",
+				version: "test-v1",
+				description: "Repository-relative test backend.",
+				canonical_root: "sure/runtime/shared-validator",
+				canonical_root_kind: "repository",
+				legacy_root: "sure/runtime/shared-validator",
+				legacy_root_kind: "repository",
+				integrity_root: ".",
+				canonical_tree_digest: treeDigest,
+				legacy_tree_digest: treeDigest,
+				operations: [
+					{
+						operation_id: "sure.test.shared.validate",
+						description: "Validate from a repository root.",
+						entrypoint: "check.py",
+						consumer_skill_ids: ["sure_infer"],
+						kind: "validate",
+						timeout_ms: 1_000,
+						deterministic: true,
+						canonical_resource_digest: resourceDigest,
+						legacy_resource_digest: resourceDigest,
+					},
+				],
+			};
+			const unsigned = { schema: "sure.semantic.backend.manifest.v1", bundles: [bundle] };
+			const syntheticManifest = join(temporary, "semantic-backends.json");
+			writeFileSync(
+				syntheticManifest,
+				JSON.stringify({ ...unsigned, registry_digest: canonicalJsonDigest(unsigned as unknown as JsonValue) }),
+			);
+			const resolved = resolveSemanticBackendOperation(packageRoot, "sure.test.shared.validate", {
+				manifestPath: syntheticManifest,
+				environment: { SURE_REPOSITORY_ROOT: repository },
+			});
+			expect(resolved.source).toBe("canonical");
+			expect(resolved.path).toBe(join(backendRoot, "check.py"));
+			const invalidUnsigned = {
+				...unsigned,
+				bundles: [{ ...bundle, canonical_root_kind: "ambient" }],
+			};
+			const invalidManifest = join(temporary, "invalid-semantic-backends.json");
+			writeFileSync(
+				invalidManifest,
+				JSON.stringify({
+					...invalidUnsigned,
+					registry_digest: canonicalJsonDigest(invalidUnsigned as unknown as JsonValue),
+				}),
+			);
+			expect(() =>
+				loadSemanticBackendManifest(packageRoot, {
+					manifestPath: invalidManifest,
+					environment: { SURE_REPOSITORY_ROOT: repository },
+				}),
+			).toThrow(SemanticBackendResolutionError);
+			writeFileSync(join(backendRoot, "unregistered.txt"), "tamper\n");
+			expect(() =>
+				resolveSemanticBackendOperation(packageRoot, "sure.test.shared.validate", {
+					manifestPath: syntheticManifest,
+					environment: { SURE_REPOSITORY_ROOT: repository },
+				}),
+			).toThrow(SemanticBackendResolutionError);
+		} finally {
+			rmSync(temporary, { recursive: true, force: true });
+		}
 	});
 
 	it("keeps the generated manifest digest stable across host projections", () => {

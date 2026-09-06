@@ -6,7 +6,10 @@ import { canonicalJson, canonicalJsonDigest, sha256Hex } from "../packages/sure-
 import type { JsonValue } from "../packages/sure-core/src/contracts/types.ts";
 import { executorRegistrySnapshot } from "../packages/sure-core/src/execution/registry.ts";
 import { ValidatorRegistry, type ValidatorRegistrySnapshot } from "../packages/sure-core/src/validation/index.ts";
-import { CANONICAL_SEMANTIC_BACKENDS } from "../sure/canonical/shared/evaluation/registry.ts";
+import {
+	CANONICAL_SEMANTIC_BACKENDS,
+	type SemanticBackendRootKind,
+} from "../sure/canonical/shared/evaluation/registry.ts";
 import { CANONICAL_MEMORY_CONTRACT } from "../sure/canonical/shared/memory-contract.ts";
 import { CANONICAL_SKILLS } from "../sure/canonical/skills/index.ts";
 import type { CanonicalSkillDefinition } from "../sure/canonical/types.ts";
@@ -191,6 +194,16 @@ function backendTreeDigest(root: string): string {
 	return `sha256:${sha256Hex(rows)}`;
 }
 
+function semanticBackendSourceRoot(
+	source: "canonical" | "legacy",
+	rootPath: string,
+	rootKind: SemanticBackendRootKind | undefined,
+): string {
+	if (rootKind === "repository") return join(repositoryRoot, rootPath);
+	const skill = rootPath.replace(/^skills\//, "");
+	return source === "canonical" ? join(canonicalSkillsRoot, skill) : join(repositoryRoot, "sure", "skills", skill);
+}
+
 interface MaterializedSemanticBackendManifest {
 	schema: "sure.semantic.backend.manifest.v1";
 	registry_digest: string;
@@ -210,8 +223,8 @@ interface PortableRuntimeLock {
 
 function materializedSemanticBackendManifest(): MaterializedSemanticBackendManifest {
 	const bundles = CANONICAL_SEMANTIC_BACKENDS.map((bundle) => {
-		const canonicalRoot = join(canonicalSkillsRoot, bundle.canonical_root);
-		const legacyRoot = join(repositoryRoot, "sure", bundle.legacy_root);
+		const canonicalRoot = semanticBackendSourceRoot("canonical", bundle.canonical_root, bundle.canonical_root_kind);
+		const legacyRoot = semanticBackendSourceRoot("legacy", bundle.legacy_root, bundle.legacy_root_kind);
 		const canonicalIntegrityRoot = join(canonicalRoot, bundle.integrity_root);
 		const legacyIntegrityRoot = join(legacyRoot, bundle.integrity_root);
 		const canonicalTree = existsSync(canonicalIntegrityRoot) ? backendTreeDigest(canonicalIntegrityRoot) : undefined;
@@ -278,8 +291,9 @@ function portableRuntimeFiles(semanticBackendManifest: MaterializedSemanticBacke
 		const bundle = rawBundle as Record<string, JsonValue>;
 		const bundleId = String(bundle.bundle_id);
 		const canonicalRoot = String(bundle.canonical_root);
+		const canonicalRootKind = bundle.canonical_root_kind as SemanticBackendRootKind | undefined;
 		const integrityRoot = String(bundle.integrity_root ?? ".");
-		const sourceRoot = join(canonicalSkillsRoot, canonicalRoot, integrityRoot);
+		const sourceRoot = join(semanticBackendSourceRoot("canonical", canonicalRoot, canonicalRootKind), integrityRoot);
 		if (!existsSync(sourceRoot) || !lstatSync(sourceRoot).isDirectory()) {
 			throw new Error(`Portable semantic backend root is missing: ${bundleId} -> ${sourceRoot}`);
 		}

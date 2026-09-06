@@ -16,13 +16,17 @@ export interface SemanticBackendOperation {
 	legacy_resource_digest?: string;
 }
 
+export type SemanticBackendRootKind = "skill" | "repository";
+
 export interface SemanticBackendBundle {
 	schema: "sure.semantic.backend.bundle.v1";
 	bundle_id: string;
 	version: string;
 	description: string;
 	canonical_root: string;
+	canonical_root_kind?: SemanticBackendRootKind;
 	legacy_root: string;
+	legacy_root_kind?: SemanticBackendRootKind;
 	integrity_root?: string;
 	canonical_tree_digest?: string;
 	legacy_tree_digest?: string;
@@ -87,8 +91,16 @@ function relativeResource(value: string, field: string): string {
 	return normalized;
 }
 
+function backendRootKind(value: unknown, field: string): SemanticBackendRootKind | undefined {
+	if (value === undefined) return undefined;
+	if (value !== "skill" && value !== "repository") {
+		throw new SemanticBackendResolutionError(`${field} must be skill or repository`);
+	}
+	return value;
+}
+
 function resourceWithin(path: string, root: string): boolean {
-	return path === root || path.startsWith(`${root}/`);
+	return root === "." || path === root || path.startsWith(`${root}/`);
 }
 
 function digestFile(path: string): string {
@@ -175,6 +187,8 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 			throw new SemanticBackendResolutionError(`unsupported backend bundle schema: ${schema}`);
 		const canonicalRoot = relativeResource(requiredString(bundle.canonical_root, "canonical_root"), "canonical_root");
 		const legacyRoot = relativeResource(requiredString(bundle.legacy_root, "legacy_root"), "legacy_root");
+		const canonicalRootKind = backendRootKind(bundle.canonical_root_kind, "canonical_root_kind");
+		const legacyRootKind = backendRootKind(bundle.legacy_root_kind, "legacy_root_kind");
 		const integrityRoot =
 			bundle.integrity_root === undefined
 				? undefined
@@ -232,7 +246,9 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 			version: requiredString(bundle.version, "version"),
 			description: requiredString(bundle.description, "description"),
 			canonical_root: canonicalRoot,
+			...(canonicalRootKind === undefined ? {} : { canonical_root_kind: canonicalRootKind }),
 			legacy_root: legacyRoot,
+			...(legacyRootKind === undefined ? {} : { legacy_root_kind: legacyRootKind }),
 			...(integrityRoot === undefined ? {} : { integrity_root: integrityRoot }),
 			...(canonicalTreeDigest === undefined ? {} : { canonical_tree_digest: canonicalTreeDigest }),
 			...(legacyTreeDigest === undefined ? {} : { legacy_tree_digest: legacyTreeDigest }),
@@ -329,8 +345,6 @@ export function resolveSemanticBackendOperation(
 	const env = options.environment ?? process.env;
 	const root = repositoryRootForPackage(packageDir, env);
 	const integrityRoot = bundle.integrity_root ?? ".";
-	const canonicalSkill = bundle.canonical_root.replace(/^skills\//, "");
-	const legacySkill = bundle.legacy_root.replace(/^skills\//, "");
 	const candidates: Candidate[] = [];
 	const backendRoot = env.SURE_SEMANTIC_BACKEND_ROOT;
 	if (backendRoot) {
@@ -367,24 +381,36 @@ export function resolveSemanticBackendOperation(
 			integrityRoot,
 		),
 	);
-	const canonicalRoot = env.SURE_CANONICAL_SKILLS_ROOT
-		? resolve(env.SURE_CANONICAL_SKILLS_ROOT)
-		: join(root, "sure", "canonical", "skills");
+	const canonicalRoot =
+		bundle.canonical_root_kind === "repository"
+			? join(root, bundle.canonical_root)
+			: join(
+					env.SURE_CANONICAL_SKILLS_ROOT
+						? resolve(env.SURE_CANONICAL_SKILLS_ROOT)
+						: join(root, "sure", "canonical", "skills"),
+					bundle.canonical_root.replace(/^skills\//, ""),
+				);
 	candidates.push(
 		rootCandidate(
-			join(canonicalRoot, canonicalSkill, operation.entrypoint),
-			join(canonicalRoot, canonicalSkill),
+			join(canonicalRoot, operation.entrypoint),
+			canonicalRoot,
 			"canonical",
 			operation.canonical_resource_digest,
 			bundle.canonical_tree_digest,
 			integrityRoot,
 		),
 	);
-	const legacyRoot = env.SURE_LEGACY_SKILLS_ROOT ? resolve(env.SURE_LEGACY_SKILLS_ROOT) : join(root, "sure", "skills");
+	const legacyRoot =
+		bundle.legacy_root_kind === "repository"
+			? join(root, bundle.legacy_root)
+			: join(
+					env.SURE_LEGACY_SKILLS_ROOT ? resolve(env.SURE_LEGACY_SKILLS_ROOT) : join(root, "sure", "skills"),
+					bundle.legacy_root.replace(/^skills\//, ""),
+				);
 	candidates.push(
 		rootCandidate(
-			join(legacyRoot, legacySkill, operation.entrypoint),
-			join(legacyRoot, legacySkill),
+			join(legacyRoot, operation.entrypoint),
+			legacyRoot,
 			"legacy",
 			operation.legacy_resource_digest,
 			bundle.legacy_tree_digest,

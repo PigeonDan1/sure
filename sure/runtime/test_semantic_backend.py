@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import tempfile
@@ -151,6 +152,81 @@ class SemanticBackendTests(unittest.TestCase):
                 manifest_path=MANIFEST_PATH,
                 expected_bundle_digest="sha256:" + "f" * 64,
             )
+
+    def test_repository_relative_roots_are_explicit_and_tree_pinned(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = root / "repository"
+            package = repository / "package"
+            backend = repository / "sure" / "runtime" / "shared-validator"
+            package.mkdir(parents=True)
+            backend.mkdir(parents=True)
+            script = b"print('shared validator')\n"
+            (backend / "check.py").write_bytes(script)
+            resource_digest = f"sha256:{hashlib.sha256(script).hexdigest()}"
+            tree_digest = f"sha256:{hashlib.sha256(f'check.py{chr(0)}{resource_digest}'.encode()).hexdigest()}"
+            bundle = {
+                "schema": "sure.semantic.backend.bundle.v1",
+                "bundle_id": "shared-validator",
+                "version": "test-v1",
+                "description": "Repository-relative test backend.",
+                "canonical_root": "sure/runtime/shared-validator",
+                "canonical_root_kind": "repository",
+                "legacy_root": "sure/runtime/shared-validator",
+                "legacy_root_kind": "repository",
+                "integrity_root": ".",
+                "canonical_tree_digest": tree_digest,
+                "legacy_tree_digest": tree_digest,
+                "operations": [
+                    {
+                        "operation_id": "sure.test.shared.validate",
+                        "description": "Validate from a repository root.",
+                        "entrypoint": "check.py",
+                        "consumer_skill_ids": ["sure_infer"],
+                        "kind": "validate",
+                        "timeout_ms": 1000,
+                        "deterministic": True,
+                        "canonical_resource_digest": resource_digest,
+                        "legacy_resource_digest": resource_digest,
+                    }
+                ],
+            }
+            unsigned = {"schema": "sure.semantic.backend.manifest.v1", "bundles": [bundle]}
+            encoded = json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
+            manifest = {**unsigned, "registry_digest": f"sha256:{hashlib.sha256(encoded).hexdigest()}"}
+            manifest_path = root / "semantic-backends.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            resolved = resolve_semantic_backend_operation(
+                "sure.test.shared.validate",
+                package_dir=package,
+                manifest_path=manifest_path,
+                environment={"SURE_REPOSITORY_ROOT": str(repository)},
+            )
+            self.assertEqual(resolved.source, "canonical")
+            self.assertEqual(resolved.path, backend / "check.py")
+            invalid_bundle = {**bundle, "canonical_root_kind": "ambient"}
+            invalid_unsigned = {"schema": "sure.semantic.backend.manifest.v1", "bundles": [invalid_bundle]}
+            invalid_encoded = json.dumps(invalid_unsigned, sort_keys=True, separators=(",", ":")).encode()
+            invalid_manifest = {
+                **invalid_unsigned,
+                "registry_digest": f"sha256:{hashlib.sha256(invalid_encoded).hexdigest()}",
+            }
+            invalid_manifest_path = root / "invalid-semantic-backends.json"
+            invalid_manifest_path.write_text(json.dumps(invalid_manifest), encoding="utf-8")
+            with self.assertRaises(SemanticBackendResolutionError):
+                load_semantic_backend_manifest(
+                    package,
+                    manifest_path=invalid_manifest_path,
+                    environment={"SURE_REPOSITORY_ROOT": str(repository)},
+                )
+            (backend / "unregistered.txt").write_text("tamper\n", encoding="utf-8")
+            with self.assertRaises(SemanticBackendResolutionError):
+                resolve_semantic_backend_operation(
+                    "sure.test.shared.validate",
+                    package_dir=package,
+                    manifest_path=manifest_path,
+                    environment={"SURE_REPOSITORY_ROOT": str(repository)},
+                )
 
     def test_invalid_manifest_is_not_replaced_by_a_later_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
