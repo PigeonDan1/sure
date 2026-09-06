@@ -1,63 +1,29 @@
 #!/usr/bin/env python3
-"""Gate script for the VALIDATE_SPEC unit.
-
-Verifies the seven spec checks all pass and status is terminal-passed. Reads
-spec_validation.json. Called by the Sure hook:
-    python3 scripts/check_spec.py --run-dir <runDir> --produces <abs>
-
-exit 0 = pass; non-zero = fail (stderr carries the repair text).
-"""
+"""Compatibility entrypoint for the shared onboard validator."""
 from __future__ import annotations
 
-import argparse
-import json
-import sys
+import os
+import runpy
 from pathlib import Path
 
-SEVEN_CHECKS = [
-    "spec_completeness",
-    "evidence_sufficiency",
-    "conflict_resolution",
-    "build_plan_executable",
-    "fixture_availability",
-    "io_contract_sufficient",
-    "preflight_compatible",
-]
+
+_TARGET = Path("sure/canonical/shared/onboard-validator/scripts/check_spec.py")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--produces", required=True)
-    args = parser.parse_args()
-
-    path = Path(args.produces)
-    if not path.exists():
-        print(f"spec_validation.json not found at {path}", file=sys.stderr)
-        return 1
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        print(f"spec_validation.json is not valid JSON: {exc}", file=sys.stderr)
-        return 1
-
-    checks = data.get("checks") or {}
-    failed = [c for c in SEVEN_CHECKS if not (checks.get(c) or {}).get("passed")]
-    status = data.get("status", "")
-    if status != "passed" or failed:
-        blockers = data.get("blockers") or []
-        detail = ""
-        if failed:
-            detail = "\n  - failed checks: " + ", ".join(failed)
-        if blockers:
-            detail += "\n  - blockers: " + "; ".join(blockers)
-        if status != "passed":
-            detail += '\n  - status must be "passed" after all seven checks succeed'
-        print(f"VALIDATE_SPEC gate failed (status={status}).{detail}", file=sys.stderr)
-        return 1
-    print(f"check_spec OK: all 7 checks passed, status={status}")
-    return 0
+def _target_path() -> Path:
+    roots = []
+    configured = os.environ.get("SURE_REPOSITORY_ROOT", "").strip()
+    if configured:
+        roots.append(Path(configured))
+    roots.extend(Path(__file__).resolve().parents)
+    for root in roots:
+        candidate = root / _TARGET
+        if candidate.is_file() and not candidate.is_symlink():
+            return candidate
+    raise RuntimeError("canonical shared onboard validator is unavailable")
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+_namespace = runpy.run_path(str(_target_path()), run_name=__name__)
+for _name, _value in _namespace.items():
+    if _name not in {"__name__", "__file__", "__cached__", "__loader__", "__package__"}:
+        globals()[_name] = _value

@@ -197,9 +197,69 @@ export const SURE_FEED_VALIDATOR_BACKEND: SemanticBackendBundle = {
 	],
 };
 
+export const SURE_ONBOARD_VALIDATOR_BACKEND: SemanticBackendBundle = {
+	schema: "sure.semantic.backend.bundle.v1",
+	bundle_id: "sure-onboard-validators",
+	version: "legacy-v1",
+	description: "Side-effect-free SURE onboard artifact validators.",
+	canonical_root: "sure/canonical/shared/onboard-validator",
+	canonical_root_kind: "repository",
+	legacy_root: "sure/skills/sure_onboard",
+	legacy_root_kind: "repository",
+	integrity_root: "scripts",
+	operations: [
+		{
+			operation_id: "sure.onboard.validate_build_plan",
+			description: "Validate an executable onboarding build plan.",
+			entrypoint: "scripts/check_build_plan.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.onboard.validate_spec",
+			description: "Validate the seven onboarding specification checks.",
+			entrypoint: "scripts/check_spec.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.onboard.validate_fixture",
+			description: "Validate the staged onboarding fixture and annotation evidence.",
+			entrypoint: "scripts/check_fixture.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.onboard.validate_weights",
+			description: "Validate resolved onboarding weight paths and provenance.",
+			entrypoint: "scripts/check_weights.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.onboard.validate_artifact_manifest",
+			description: "Validate the onboarded model artifact manifest and referenced files.",
+			entrypoint: "scripts/check_artifact_manifest.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+	],
+};
+
 export const CANONICAL_SEMANTIC_BACKENDS: readonly SemanticBackendBundle[] = [
 	SURE_EVALUATION_BACKEND,
 	SURE_EVALUATION_VALIDATOR_BACKEND,
 	SURE_MEMORY_VALIDATOR_BACKEND,
 	SURE_FEED_VALIDATOR_BACKEND,
+	SURE_ONBOARD_VALIDATOR_BACKEND,
 ];

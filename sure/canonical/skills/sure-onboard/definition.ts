@@ -142,6 +142,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						},
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_build_plan",
 							script_id: "check_build_plan.py",
 						},
 					},
@@ -154,6 +155,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["checks", "status"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_spec",
 							script_id: "check_spec.py",
 						},
 					},
@@ -166,6 +168,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["model_dir", "task_type", "staged_dir", "gt_jsonl", "samples", "sample_count"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_fixture",
 							script_id: "check_fixture.py",
 						},
 						helper_scripts: ["prepare_fixture.py"],
@@ -191,6 +194,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						schema_ref: "weights_manifest.schema.json",
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_weights",
 							script_id: "check_weights.py",
 						},
 					},
@@ -284,6 +288,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						schema_ref: "artifact_manifest.schema.json",
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_artifact_manifest",
 							script_id: "check_artifact_manifest.py",
 						},
 						helper_scripts: ["stage_model_artifacts.py"],

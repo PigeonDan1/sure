@@ -76,6 +76,24 @@ describe("semantic backend registry", () => {
 		}
 	});
 
+	it("resolves side-effect-free onboard validators from the shared repository backend", () => {
+		for (const [operationId, file] of [
+			["sure.onboard.validate_build_plan", "check_build_plan.py"],
+			["sure.onboard.validate_spec", "check_spec.py"],
+			["sure.onboard.validate_fixture", "check_fixture.py"],
+			["sure.onboard.validate_weights", "check_weights.py"],
+			["sure.onboard.validate_artifact_manifest", "check_artifact_manifest.py"],
+		] as const) {
+			const resolved = resolveSemanticBackendOperation(packageDir, operationId, { manifestPath });
+			expect(resolved.source).toBe("canonical");
+			expect(resolved.path).toBe(
+				join(repositoryRoot, "sure", "canonical", "shared", "onboard-validator", "scripts", file),
+			);
+			expect(resolved.kind).toBe("validate");
+			expect(resolved.consumer_skill_ids).toEqual(["sure_onboard"]);
+		}
+	});
+
 	it("uses an installed backend root only when its complete tree matches the manifest", () => {
 		const temporary = mkdtempSync(join(tmpdir(), "sure-semantic-backend-"));
 		try {

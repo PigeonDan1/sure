@@ -6651,8 +6651,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
-      "size_bytes": 31337,
-      "sha256": "d9f76e1dde87afccd2c88a94891de0f43fea8f450a1bb96fd0c281e44b16d11e"
+      "size_bytes": 31637,
+      "sha256": "c5defedad21fac534382e6876a5876c95ee8a8ffec6c50763689b939b60e82d9"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
@@ -7182,7 +7182,7 @@
     {
       "path": "sure/runtime/memory/units.generation.lock.json",
       "size_bytes": 506,
-      "sha256": "1e3f801b4523cacf9de8a35bf30a763e6b42a50188010d44570a09fe81a9f12d"
+      "sha256": "45aaed4f547fd147673bd41b1fceb1059e13410353dd05389c0f5321fc7d83f3"
     },
     {
       "path": "sure/runtime/memory/units.json",
@@ -7266,8 +7266,8 @@
     },
     {
       "path": "sure/runtime/test_semantic_backend.py",
-      "size_bytes": 18124,
-      "sha256": "3e3ea80e662b958a4fbdd2fd3fb3d9e3ba8b22ed8205424c6eff9618aeb1c832"
+      "size_bytes": 20673,
+      "sha256": "074180b159cff583a2c2981c4315933c048b010fdf8407780d1938c3033c7e98"
     },
     {
       "path": "sure/runtime/usage.ts",
@@ -9006,13 +9006,13 @@
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_artifact_manifest.py",
-      "size_bytes": 5370,
-      "sha256": "30aa778c105d41dfe6f4bb0ec0aa4934413d6275e52338cd03ffb38a58045871"
+      "size_bytes": 956,
+      "sha256": "37471981a99681d37054dc6334c08c784e583df59c481af0ec64a5716933e3a1"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_build_plan.py",
-      "size_bytes": 8614,
-      "sha256": "5dff955f7f72961037866db9d57e9b862293d6d6c8475fd36532fed65295b494"
+      "size_bytes": 949,
+      "sha256": "e366b9610fcb7be5c3999daaaa6c942411e72daa9bf41babccab4dc6964e1d32"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_container_package.py",
@@ -9041,8 +9041,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_fixture.py",
-      "size_bytes": 5391,
-      "sha256": "ff870ac177129fbc36196320c8c81a7a84f8fd1917a6bb3d7ae35f971dbc21b8"
+      "size_bytes": 946,
+      "sha256": "86b558f7f5d2b0d7403631cd2966991c592b8506f868f2a3507162a2ca7c7b3b"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_memory_extraction.py",
@@ -9071,8 +9071,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_spec.py",
-      "size_bytes": 1978,
-      "sha256": "1709d5c9dc2041c876013018ebb32c048049f9d1e144961ebc5b1615991b1430"
+      "size_bytes": 943,
+      "sha256": "05090646df06d97e3267b42c2381344a046f6f2cefb41ba8c5e1860c470c8ef1"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_verdict.py",
@@ -9081,8 +9081,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_weights.py",
-      "size_bytes": 8459,
-      "sha256": "1126852d0a5d8f1ffb0e5065af493290cfa9603fd6a8bdd77ede984a1d22f1db"
+      "size_bytes": 946,
+      "sha256": "dd08a1863b09dfe5b2ebea4b67beeb3d4b5f7a436cfe17680a684ee16cad0d0d"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/deployment_contract.py",
@@ -9701,5 +9701,5 @@
       ]
     }
   ],
-  "semantic_digest": "daeef6e151e562271afbe0860f816f280f66025450f54e18afe53f5aa14e60f6"
+  "semantic_digest": "5f2046e31f6d7737217f11e57e696f9503693a586ac834ba63033290d3118bc6"
 }

@@ -157,6 +157,19 @@ describe("canonical SURE skill generation", () => {
 			rank_and_select: "sure.feed.validate_rank_select",
 			extract_lessons: "sure.memory.validate_extraction",
 		});
+		const onboardOperations = Object.fromEntries(
+			descriptors
+				.filter((descriptor) => descriptor.skill_id === "sure_onboard" && descriptor.branch_id === "main")
+				.map((descriptor) => [descriptor.unit_id, descriptor.backend_operation_id]),
+		);
+		expect(onboardOperations).toMatchObject({
+			build_plan: "sure.onboard.validate_build_plan",
+			validate_spec: "sure.onboard.validate_spec",
+			prepare_fixture: "sure.onboard.validate_fixture",
+			fetch_weights: "sure.onboard.validate_weights",
+			save_artifacts: "sure.onboard.validate_artifact_manifest",
+			extract_lessons: "sure.memory.validate_extraction",
+		});
 	});
 
 	it("projects the legacy Pi manifest without changing its public fields", () => {

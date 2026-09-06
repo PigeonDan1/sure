@@ -25,6 +25,8 @@ const evalDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/ca
 const evalRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/validator-registry.json");
 const inferDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-infer/canonical-definition.json");
 const inferRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-infer/validator-registry.json");
+const onboardDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-onboard/canonical-definition.json");
+const onboardRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-onboard/validator-registry.json");
 const portableRuntime = join(repositoryRoot, "sure/dist/portable-runtime");
 const portableMemoryContract = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/memory-contract.json");
 const hostParityFixturePath = join(repositoryRoot, "sure/canonical/fixtures/host-parity-traces.json");
@@ -307,6 +309,115 @@ describe("surectl cooperative control plane", () => {
 		validation = state.last_validation as Record<string, unknown>;
 		evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
 		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.memory.validate_extraction");
+	}, 30_000);
+
+	it("advances an onboard static gate only after its registered checker passes", () => {
+		const runId = "run-automatic-onboard-validator";
+		const base = [
+			"--skill",
+			"sure_onboard",
+			"--definition",
+			onboardDefinition,
+			"--validator-registry",
+			onboardRegistryPath,
+		];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			runId,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		const modelDir = join(root, "sure", "models", "owner__model");
+		const resolvedInput = join(artifacts, "model_input_resolved.json");
+		writeFileSync(
+			resolvedInput,
+			JSON.stringify({
+				model_id: "owner/model",
+				model_name: "owner__model",
+				model_dir: modelDir,
+				repo_url: "https://huggingface.co/owner/model",
+				task_type: "asr",
+				deployment_type: "local",
+				package_profile: "none",
+			}),
+		);
+		const registry = JSON.parse(readFileSync(onboardRegistryPath, "utf8")) as {
+			digest: string;
+			validators: Array<{ id: string; unit_id?: string }>;
+		};
+		const inputValidator = registry.validators.find((entry) => entry.unit_id === "load_model_input");
+		expect(inputValidator).toBeDefined();
+		const compatibilityEvidence = join(artifacts, "onboard-input-compatibility-evidence.json");
+		writeFileSync(
+			compatibilityEvidence,
+			JSON.stringify({
+				schema: "sure.validator.evidence.v1",
+				registry_digest: registry.digest,
+				validators: [
+					{
+						validator_id: inputValidator?.id,
+						verdict: "PASS",
+						artifact_digest: digest(resolvedInput),
+					},
+				],
+			}),
+		);
+		expect(command(root, "validate", [...base, "--run-id", runId, "--evidence", compatibilityEvidence]).status).toBe(
+			0,
+		);
+
+		writeFileSync(
+			join(artifacts, "context_selection.json"),
+			JSON.stringify({
+				task_type: "asr",
+				selected_references: {
+					default: [],
+					task_playbooks: [],
+					environment_playbooks: [],
+					contracts: [],
+				},
+			}),
+		);
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+		writeFileSync(join(artifacts, "repo_summary.json"), JSON.stringify({ repo_url: "https://example.test/model" }));
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+		writeFileSync(join(artifacts, "classification.json"), JSON.stringify({ task_type: "asr" }));
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+		writeFileSync(join(artifacts, "backend_choice.json"), JSON.stringify({ backend: "uv" }));
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+
+		writeFileSync(
+			join(artifacts, "build_plan.json"),
+			JSON.stringify({
+				model_id: "owner/model",
+				model_dir: modelDir,
+				backend: "uv",
+				deployment_type: "local",
+				package_profile: "none",
+				steps: [{ state: "materialize", action: "run materialize_model_runtime.py with a hash lock" }],
+				blockers: [],
+			}),
+		);
+		const missing = command(root, "validate", [...base, "--run-id", runId]);
+		expect(missing.status).toBe(5);
+		expect((missing.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
+		const validated = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(validated.status).toBe(0);
+		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+		const state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		const validation = state.last_validation as Record<string, unknown>;
+		const evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.onboard.validate_build_plan");
+		expect(
+			((validated.value?.transition as Record<string, unknown>).checkpoint as { data: { currentUnit: string } }).data
+				.currentUnit,
+		).toBe("validate_spec");
 	}, 30_000);
 
 	it("reports a malformed memory contract as not executed instead of an advisory success", () => {

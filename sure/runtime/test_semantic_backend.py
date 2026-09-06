@@ -360,6 +360,55 @@ class SemanticBackendTests(unittest.TestCase):
                 self.assertEqual(canonical_result.stdout, legacy_result.stdout)
                 self.assertEqual(canonical_result.stderr, legacy_result.stderr)
 
+    def test_shared_onboard_validators_resolve_and_preserve_legacy_cli_output(self) -> None:
+        manifest = load_semantic_backend_manifest(PACKAGE_DIR, manifest_path=MANIFEST_PATH)
+        cases = (
+            ("sure.onboard.validate_build_plan", "check_build_plan.py"),
+            ("sure.onboard.validate_spec", "check_spec.py"),
+            ("sure.onboard.validate_fixture", "check_fixture.py"),
+            ("sure.onboard.validate_weights", "check_weights.py"),
+            ("sure.onboard.validate_artifact_manifest", "check_artifact_manifest.py"),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifact = run_dir / "artifact.json"
+            artifact.write_text("{}\n", encoding="utf-8")
+            environment = {
+                **os.environ,
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "SURE_REPOSITORY_ROOT": str(REPOSITORY_ROOT),
+            }
+            for operation_id, filename in cases:
+                resolved = resolve_semantic_backend_operation(
+                    operation_id,
+                    package_dir=PACKAGE_DIR,
+                    manifest_path=MANIFEST_PATH,
+                    expected_registry_digest=manifest.registry_digest,
+                )
+                self.assertEqual(resolved.source, "canonical")
+                self.assertEqual(
+                    resolved.path,
+                    REPOSITORY_ROOT / "sure" / "canonical" / "shared" / "onboard-validator" / "scripts" / filename,
+                )
+                legacy = REPOSITORY_ROOT / "sure" / "skills" / "sure_onboard" / "scripts" / filename
+                canonical_result = subprocess.run(
+                    [sys.executable, "-B", str(resolved.path), "--run-dir", str(run_dir), "--produces", str(artifact)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+                legacy_result = subprocess.run(
+                    [sys.executable, "-B", str(legacy), "--run-dir", str(run_dir), "--produces", str(artifact)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+                self.assertEqual(canonical_result.returncode, legacy_result.returncode)
+                self.assertEqual(canonical_result.stdout, legacy_result.stdout)
+                self.assertEqual(canonical_result.stderr, legacy_result.stderr)
+
     def test_invalid_manifest_is_not_replaced_by_a_later_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "semantic-backends.json"
