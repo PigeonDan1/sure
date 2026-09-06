@@ -56,15 +56,18 @@ import {
 	type WorkflowDefinition,
 	type WorkflowUnit,
 } from "@earendil-works/sure-core";
+import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
 import { type LoadedDefinition, loadDefinition, unitForCurrent } from "./definition.ts";
 import { executeRequest } from "./executor.ts";
 import { NodeRunStore } from "./node-run-store.ts";
+import { registeredOperationSemanticDigest, runRegisteredOperation } from "./registered-operation.ts";
 import {
 	artifactRef,
 	loadSkillRuntimeBinding,
 	type RegisteredValidationResult,
 	type RegisteredValidatorDescriptor,
 	runRegisteredValidators,
+	semanticRuntimeEnvironment,
 	unavailableRegisteredValidation,
 } from "./registered-validator.ts";
 
@@ -939,6 +942,13 @@ function validatorMatches(
 		(entry) => entry.skill_id !== undefined && entry.branch_id === branchId && entry.unit_id === unit.id,
 	);
 	if (unit.gate?.validator_id === "structural" && (unit.gate.auxiliary_validator_ids?.length ?? 0) === 0) return [];
+	if (
+		unit.gate?.execution_operation_id !== undefined &&
+		unit.gate.backend_operation_id === undefined &&
+		(unit.gate.auxiliary_validator_ids?.length ?? 0) === 0
+	) {
+		return [];
+	}
 	if (entries.length === 0) throw new Error(`No registered validator for ${branchId}/${unit.id}.`);
 	return entries;
 }
@@ -1108,6 +1118,304 @@ function automaticGateValidation(
 	const evidencePath = admittedRunArtifactPath(store, run, join(invocationRoot, "validator-evidence.json"));
 	writeJsonImmutable(evidencePath, result.evidence);
 	return { result, evidence_path: evidencePath, evidence_digest: digestFile(evidencePath) };
+}
+
+interface ExecutionGateValidation {
+	verdict: "PASS" | "FAIL" | "NOT_EXECUTED";
+	reason: string;
+	evidence: unknown;
+	evidence_path?: string;
+	evidence_digest?: string;
+	lifecycle?: ExecutionReceipt["lifecycle"];
+}
+
+function executionGateUnavailable(reason: string, evidence: unknown = null): ExecutionGateValidation {
+	return { verdict: "NOT_EXECUTED", reason, evidence };
+}
+
+function sameStrings(actual: readonly string[], expected: readonly string[]): boolean {
+	return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+}
+
+/**
+ * Re-admit a registered operation receipt against the current run and locked
+ * runtime. A generic caller-authored execution request can never satisfy this
+ * check because it lacks the Core-written registered_operation state binding.
+ */
+function validateRegisteredGateExecution(
+	args: ParsedArgs,
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	state: StateDocument | undefined,
+	loaded: LoadedDefinition,
+	unit: WorkflowUnit,
+	branchId: string,
+	checkpoint: WorkflowCheckpoint,
+	artifactPath: string,
+	artifactDigest: string,
+	policyReferences: readonly string[],
+): ExecutionGateValidation {
+	const operationId = unit.gate?.execution_operation_id;
+	if (operationId === undefined) return { verdict: "PASS", reason: "no execution operation required", evidence: null };
+	const rawExecution = state?.last_execution;
+	if (typeof rawExecution !== "object" || rawExecution === null || Array.isArray(rawExecution)) {
+		return executionGateUnavailable(`registered execution ${operationId} has not run`);
+	}
+	const persisted = rawExecution as Record<string, unknown>;
+	if (persisted.source !== "registered_operation" || persisted.operation_id !== operationId) {
+		return executionGateUnavailable(`current gate requires registered execution ${operationId}`, persisted);
+	}
+	const expectedAttempt = (checkpoint.data.retries[unit.id] ?? 0) + 1;
+	if (persisted.unit_id !== unit.id || persisted.branch_id !== branchId || persisted.attempt !== expectedAttempt) {
+		return executionGateUnavailable("registered execution does not match the current gate attempt", persisted);
+	}
+	const runtimeValue = one(args, "semantic-runtime") ?? process.env.SURE_RUNTIME_SUPPORT_ROOT;
+	if (runtimeValue === undefined) {
+		return executionGateUnavailable("portable semantic operation runtime was not provided", persisted);
+	}
+	const runtimeRoot = absolute(runtimeValue, "--semantic-runtime");
+	let runtimeBinding: ReturnType<typeof loadSkillRuntimeBinding>;
+	let verification: ReturnType<typeof verifyPortableRuntime>;
+	let operation: ReturnType<typeof resolveSemanticBackendOperation>;
+	try {
+		runtimeBinding = loadSkillRuntimeBinding(loaded.root, {
+			skill_id: loaded.definition.workflow_id,
+			workflow_digest: run.workflowDigest ?? workflowDigest(loaded.definition),
+			validator_registry_digest: run.validatorDigest ?? "",
+			core_version: run.coreVersion ?? CORE_VERSION,
+		});
+		verification = verifyPortableRuntime(runtimeRoot, {
+			expected_runtime_digest: runtimeBinding.semantic_runtime_digest,
+			expected_core_package_version: runtimeBinding.core_package_version,
+			expected_semantic_backend_registry_digest: runtimeBinding.semantic_backend_registry_digest,
+			expected_executor_registry_digest: runtimeBinding.executor_registry_digest,
+		});
+		const environment = semanticRuntimeEnvironment(
+			{
+				run,
+				workspace_root: run.cwd,
+				policy_digest: run.policyDigest ?? canonicalJsonDigest(null),
+			},
+			verification.root,
+		);
+		operation = resolveSemanticBackendOperation(verification.root, operationId, {
+			manifestPath: join(verification.root, "semantic-backends.json"),
+			expectedRegistryDigest: verification.lock.semantic_backend_registry_digest,
+			environment,
+		});
+		if (operation.kind !== "execute") throw new Error(`${operationId} is not an execute operation`);
+		if (!operation.consumer_skill_ids.includes(runtimeBinding.skill_id)) {
+			throw new Error(`${runtimeBinding.skill_id} is not an admitted consumer of ${operationId}`);
+		}
+	} catch (error) {
+		return executionGateUnavailable(error instanceof Error ? error.message : String(error), persisted);
+	}
+	const diagnostics: string[] = [];
+	for (const [field, expected] of [
+		["runtime_digest", verification.lock.runtime_digest],
+		["backend_registry_digest", operation.registry_digest],
+		["backend_bundle_digest", operation.bundle_digest],
+		["backend_resource_digest", operation.resource_digest],
+	] as const) {
+		if (expected !== undefined && persisted[field] !== expected)
+			diagnostics.push(`${field} does not match locked operation`);
+	}
+	const artifactInputDigest =
+		typeof persisted.artifact_input_digest === "string" ? persisted.artifact_input_digest : undefined;
+	if (artifactInputDigest === undefined) diagnostics.push("registered execution is missing artifact_input_digest");
+	if (artifactInputDigest !== undefined && !sameDigest(artifactInputDigest, artifactDigest)) {
+		diagnostics.push("registered execution artifact_input_digest does not match the current artifact");
+	}
+	const requestPathValue = typeof persisted.request_path === "string" ? persisted.request_path : undefined;
+	const receiptPathValue = typeof persisted.receipt_path === "string" ? persisted.receipt_path : undefined;
+	if (requestPathValue === undefined || receiptPathValue === undefined) {
+		return executionGateUnavailable("registered execution has no complete request/receipt pair", persisted);
+	}
+	let requestPath: string;
+	let receiptPath: string;
+	let request: ExecutionRequest;
+	let receipt: ExecutionReceipt;
+	try {
+		requestPath = admittedRunArtifactPath(store, run, requestPathValue);
+		receiptPath = admittedRunArtifactPath(store, run, receiptPathValue);
+		assertRegularFile(requestPath, "Registered execution request");
+		assertRegularFile(receiptPath, "Registered execution receipt");
+		if (
+			typeof persisted.request_digest !== "string" ||
+			!sameDigest(digestFile(requestPath), persisted.request_digest)
+		) {
+			diagnostics.push("registered execution request digest does not match its file");
+		}
+		if (
+			typeof persisted.receipt_digest !== "string" ||
+			!sameDigest(digestFile(receiptPath), persisted.receipt_digest)
+		) {
+			diagnostics.push("registered execution receipt digest does not match its file");
+		}
+		request = recordObject(readJson(requestPath), "registered execution request") as unknown as ExecutionRequest;
+		receipt = recordObject(readJson(receiptPath), "registered execution receipt") as unknown as ExecutionReceipt;
+	} catch (error) {
+		return executionGateUnavailable(error instanceof Error ? error.message : String(error), persisted);
+	}
+	const requestOperation = unit.gate?.execution_request_operation ?? "validation";
+	if (
+		request.run_id !== run.runId ||
+		request.unit_id !== unit.id ||
+		request.attempt !== expectedAttempt ||
+		request.operation !== requestOperation
+	) {
+		diagnostics.push("execution request does not match the current run, unit, attempt, or operation domain");
+	}
+	const runtimeRequirements =
+		typeof request.runtime_requirements === "object" && request.runtime_requirements !== null
+			? (request.runtime_requirements as Record<string, unknown>)
+			: {};
+	const expectedPolicyDigest = run.policyDigest ?? canonicalJsonDigest(null);
+	const expectedReferenceDigest = validatorReferenceDigest(run, policyReferences);
+	if (
+		!validDigestValue(request.reference_snapshot_digest) ||
+		!sameDigest(request.reference_snapshot_digest, expectedReferenceDigest)
+	) {
+		diagnostics.push("execution request reference_snapshot_digest does not match the run binding");
+	}
+	if (!validDigestValue(request.policy_digest) || !sameDigest(request.policy_digest, expectedPolicyDigest)) {
+		diagnostics.push("execution request policy_digest does not match the run binding");
+	}
+	const requestOutputRoot = request.output_root;
+	if (
+		typeof requestOutputRoot !== "object" ||
+		requestOutputRoot === null ||
+		!validDigestValue(requestOutputRoot.policy_digest) ||
+		!sameDigest(requestOutputRoot.policy_digest, expectedPolicyDigest)
+	) {
+		diagnostics.push("execution request output_root policy_digest does not match the run binding");
+	}
+	if (
+		!validDigestValue(receipt.reference_snapshot_digest) ||
+		!sameDigest(receipt.reference_snapshot_digest, expectedReferenceDigest)
+	) {
+		diagnostics.push("execution receipt reference_snapshot_digest does not match the run binding");
+	}
+	if (!validDigestValue(receipt.policy_digest) || !sameDigest(receipt.policy_digest, expectedPolicyDigest)) {
+		diagnostics.push("execution receipt policy_digest does not match the run binding");
+	}
+	for (const [field, expected] of [
+		["semantic_backend_operation_id", operation.operation_id],
+		["semantic_backend_registry_digest", operation.registry_digest],
+		["semantic_backend_bundle_digest", operation.bundle_digest],
+		["semantic_backend_resource_digest", operation.resource_digest],
+		["portable_runtime_digest", verification.lock.runtime_digest],
+		["workflow_digest", run.workflowDigest],
+		["branch_id", branchId],
+		["artifact_input_digest", artifactInputDigest],
+	] as const) {
+		if (expected !== undefined && runtimeRequirements[field] !== expected) {
+			diagnostics.push(`execution request ${field} does not match its canonical binding`);
+		}
+	}
+	const scriptArgs = [...(unit.gate?.script_args ?? [])];
+	const requestScriptArgs = Array.isArray(runtimeRequirements.script_args)
+		? runtimeRequirements.script_args.filter((value): value is string => typeof value === "string")
+		: [];
+	if (!sameStrings(requestScriptArgs, scriptArgs))
+		diagnostics.push("execution request script_args do not match the gate");
+	const expectedArgv = [operation.path, "--run-dir", run.runDir, "--produces", artifactPath, ...scriptArgs];
+	if (!sameStrings(request.entrypoint?.argv ?? [], expectedArgv)) {
+		diagnostics.push("execution request entrypoint arguments do not match the locked operation");
+	}
+	if (request.entrypoint?.working_directory !== loaded.root) {
+		diagnostics.push("execution request working directory does not match the skill package");
+	}
+	if (request.entrypoint?.executable !== runtimeRequirements.harness_python_executable) {
+		diagnostics.push("execution request executable does not match its harness Python binding");
+	}
+	if (
+		artifactInputDigest !== undefined &&
+		(request.subject?.bundle_manifest_path !== artifactPath || request.subject?.bundle_digest !== artifactInputDigest)
+	) {
+		diagnostics.push("execution request subject does not match the pre-execution artifact");
+	}
+	const input = Array.isArray(request.inputs) ? request.inputs[0] : undefined;
+	if (
+		artifactInputDigest !== undefined &&
+		(input === undefined || input.path !== artifactPath || input.sha256 !== artifactInputDigest)
+	) {
+		diagnostics.push("execution request input does not match the pre-execution artifact");
+	}
+	if (artifactInputDigest !== undefined) {
+		const semanticDigest = registeredOperationSemanticDigest({
+			run_id: run.runId,
+			branch_id: branchId,
+			unit_id: unit.id,
+			attempt: expectedAttempt,
+			operation_id: operation.operation_id,
+			request_operation: requestOperation,
+			artifact_input_digest: artifactInputDigest,
+			workflow_digest: run.workflowDigest,
+			runtime_digest: verification.lock.runtime_digest,
+			backend_registry_digest: operation.registry_digest,
+			...(operation.bundle_digest === undefined ? {} : { backend_bundle_digest: operation.bundle_digest }),
+			backend_resource_digest: operation.resource_digest,
+			reference_snapshot_digest: expectedReferenceDigest,
+			script_args: scriptArgs,
+			policy_digest: expectedPolicyDigest,
+		});
+		if (!sameDigest(request.semantic_request_digest, semanticDigest)) {
+			diagnostics.push("execution request semantic digest does not match the canonical operation binding");
+		}
+	}
+	const boundaryOptions = {
+		allowed_output_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
+		forbidden_output_roots: policyReferences,
+	};
+	const receiptValidation = validateExecutionReceipt(request, receipt, boundaryOptions);
+	diagnostics.push(...receiptValidation.errors);
+	const output = (Array.isArray(receipt.outputs) ? receipt.outputs : []).find(
+		(candidate) => candidate.path === artifactPath,
+	);
+	if (output === undefined || !sameDigest(output.sha256, artifactDigest)) {
+		diagnostics.push("execution receipt does not bind the current gate artifact digest");
+	}
+	if (run.executorDigest && (!receipt.executor || !sameDigest(receipt.executor.digest, run.executorDigest))) {
+		diagnostics.push("execution receipt executor digest does not match the run binding");
+	}
+	if (diagnostics.length > 0) {
+		return executionGateUnavailable("registered execution evidence failed admission", {
+			...persisted,
+			diagnostics,
+		});
+	}
+	if (!receiptValidation.capability.admitted || receipt.lifecycle === "NOT_STARTED") {
+		return executionGateUnavailable("registered execution capability was not available", persisted);
+	}
+	if (receipt.lifecycle === "CANCELLED" || receipt.lifecycle === "QUEUED" || receipt.lifecycle === "RUNNING") {
+		return {
+			verdict: "NOT_EXECUTED",
+			reason: `registered execution ended in ${receipt.lifecycle}`,
+			evidence: persisted,
+			evidence_path: receiptPath,
+			evidence_digest: digestFile(receiptPath),
+			lifecycle: receipt.lifecycle,
+		};
+	}
+	if (receipt.lifecycle !== "SUCCEEDED") {
+		return {
+			verdict: "FAIL",
+			reason: `registered execution ended in ${receipt.lifecycle}`,
+			evidence: persisted,
+			evidence_path: receiptPath,
+			evidence_digest: digestFile(receiptPath),
+			lifecycle: receipt.lifecycle,
+		};
+	}
+	return {
+		verdict: "PASS",
+		reason: "registered execution receipt passed",
+		evidence: persisted,
+		evidence_path: receiptPath,
+		evidence_digest: digestFile(receiptPath),
+		lifecycle: receipt.lifecycle,
+	};
 }
 
 function validate(args: ParsedArgs): PublicOutcome {
@@ -1283,38 +1591,89 @@ function validate(args: ParsedArgs): PublicOutcome {
 	let evidencePath: string | undefined;
 	let evidenceDigest: string | undefined;
 	let notExecutedReasonCode: "CAPABILITY_MISSING" | "VALIDATION_PENDING" = "VALIDATION_PENDING";
+	let executionLifecycle: ExecutionReceipt["lifecycle"] | undefined;
 	if (structural.ok && unit.kind === "gate") {
-		const evidenceValue = one(args, "evidence");
-		if (evidenceValue !== undefined) {
-			evidencePath = admittedRunArtifactPath(store, run, absolute(evidenceValue, "--evidence"));
-			assertRegularFile(evidencePath, "Validator evidence");
-			evidenceDigest = digestFile(evidencePath);
-			const gate = validateGateEvidence(evidencePath, unit, checkpoint.branch_id, registry, artifactDigest ?? "");
-			validatorVerdict = gate.verdict;
-			reason = gate.reason ?? "registered validators passed";
-			evidence = gate.evidence;
-			evidenceSource = "external";
-			notExecutedReasonCode = "CAPABILITY_MISSING";
-		} else {
-			const automatic = automaticGateValidation(
+		let executionEvidence: ExecutionGateValidation | undefined;
+		if (unit.gate?.execution_operation_id !== undefined) {
+			executionEvidence = validateRegisteredGateExecution(
 				args,
 				store,
 				run,
+				state,
 				loaded,
 				unit,
 				checkpoint.branch_id,
 				checkpoint,
-				registry,
 				artifactPath,
+				artifactDigest ?? "",
 				policyReferences,
 			);
-			validatorVerdict = automatic.result.verdict;
-			reason = automatic.result.reason;
-			evidence = automatic.result.evidence;
-			evidenceSource = "surectl_executor";
-			evidencePath = automatic.evidence_path;
-			evidenceDigest = automatic.evidence_digest;
+			validatorVerdict = executionEvidence.verdict;
+			reason = executionEvidence.reason;
+			evidence = executionEvidence.evidence;
+			evidenceSource = "surectl_operation";
+			evidencePath = executionEvidence.evidence_path;
+			evidenceDigest = executionEvidence.evidence_digest;
+			executionLifecycle = executionEvidence.lifecycle;
 			notExecutedReasonCode = "CAPABILITY_MISSING";
+		}
+		if (
+			validatorVerdict === "PASS" &&
+			registeredValidatorDescriptors(unit, checkpoint.branch_id, registry).length > 0
+		) {
+			const evidenceValue = one(args, "evidence");
+			if (evidenceValue !== undefined) {
+				const validatorEvidencePath = admittedRunArtifactPath(store, run, absolute(evidenceValue, "--evidence"));
+				assertRegularFile(validatorEvidencePath, "Validator evidence");
+				const gate = validateGateEvidence(
+					validatorEvidencePath,
+					unit,
+					checkpoint.branch_id,
+					registry,
+					artifactDigest ?? "",
+				);
+				validatorVerdict = gate.verdict;
+				reason = gate.reason ?? "registered validators passed";
+				evidence =
+					executionEvidence === undefined
+						? gate.evidence
+						: {
+								schema: "sure.gate.evidence.v1",
+								execution: executionEvidence.evidence,
+								validation: gate.evidence,
+							};
+				evidenceSource = "external";
+				evidencePath = validatorEvidencePath;
+				evidenceDigest = digestFile(validatorEvidencePath);
+				notExecutedReasonCode = "CAPABILITY_MISSING";
+			} else {
+				const automatic = automaticGateValidation(
+					args,
+					store,
+					run,
+					loaded,
+					unit,
+					checkpoint.branch_id,
+					checkpoint,
+					registry,
+					artifactPath,
+					policyReferences,
+				);
+				validatorVerdict = automatic.result.verdict;
+				reason = automatic.result.reason;
+				evidence =
+					executionEvidence === undefined
+						? automatic.result.evidence
+						: {
+								schema: "sure.gate.evidence.v1",
+								execution: executionEvidence.evidence,
+								validation: automatic.result.evidence,
+							};
+				evidenceSource = "surectl_executor";
+				evidencePath = automatic.evidence_path;
+				evidenceDigest = automatic.evidence_digest;
+				notExecutedReasonCode = "CAPABILITY_MISSING";
+			}
 		}
 	}
 	const signal =
@@ -1346,12 +1705,19 @@ function validate(args: ParsedArgs): PublicOutcome {
 		workflowDisposition: disposition,
 		reasonCode:
 			validatorVerdict === "NOT_EXECUTED"
-				? notExecutedReasonCode
+				? executionLifecycle === "CANCELLED"
+					? "EXECUTION_CANCELLED"
+					: notExecutedReasonCode
 				: validatorVerdict === "FAIL"
-					? transition.action === "exhausted"
-						? "RETRY_EXHAUSTED"
-						: "VALIDATION_FAILED"
+					? executionLifecycle === "PARTIAL"
+						? "EXECUTION_PARTIAL"
+						: executionLifecycle === "FAILED"
+							? "EXECUTION_FAILED"
+							: transition.action === "exhausted"
+								? "RETRY_EXHAUSTED"
+								: "VALIDATION_FAILED"
 					: "VALIDATION_PASSED",
+		...(executionLifecycle === undefined ? {} : { executionLifecycle }),
 	});
 	const nextState = stateWithCheckpoint(state, transition.checkpoint, {
 		last_validation: {
@@ -1670,6 +2036,108 @@ function execute(args: ParsedArgs): PublicOutcome {
 	const checkpointAudit = auditCheckpointState(loaded.definition, checkpoint);
 	if (!checkpointAudit.ok) throw new Error(checkpointAudit.reason ?? "Invalid checkpoint.");
 	const currentUnit = unitForCurrent(loaded.definition, checkpoint.data.currentUnit, checkpoint.branch_id);
+	const registeredOperationId = one(args, "operation");
+	if (registeredOperationId !== undefined) {
+		if (currentUnit.gate?.execution_operation_id !== registeredOperationId) {
+			throw new Error(
+				`Current unit ${currentUnit.id} does not authorize registered execution operation ${registeredOperationId}.`,
+			);
+		}
+		const artifactPath = admittedRunArtifactPath(
+			store,
+			run,
+			absolute(
+				one(args, "artifact") ?? join(run.runDir, "artifacts", currentUnit.produces),
+				"registered operation artifact",
+			),
+		);
+		assertRegularFile(artifactPath, "Registered operation artifact");
+		const artifact = artifactRef(artifactPath, currentUnit.id, run.runDir);
+		const runtimeBinding = loadSkillRuntimeBinding(loaded.root, {
+			skill_id: loaded.definition.workflow_id,
+			workflow_digest: run.workflowDigest ?? workflowDigest(loaded.definition),
+			validator_registry_digest: run.validatorDigest ?? "",
+			core_version: run.coreVersion ?? CORE_VERSION,
+		});
+		const runtimeValue = one(args, "semantic-runtime") ?? process.env.SURE_RUNTIME_SUPPORT_ROOT;
+		const runtimeRoot = runtimeValue === undefined ? undefined : absolute(runtimeValue, "--semantic-runtime");
+		const artifactsRoot = admittedRunArtifactPath(store, run, join(run.runDir, "artifacts"));
+		const artifactsAdmission = store.admitPath(artifactsRoot, [run.runDir]);
+		const attempt = (checkpoint.data.retries[currentUnit.id] ?? 0) + 1;
+		const invocationId = randomUUID().replaceAll("-", "").slice(0, 16);
+		const invocationRoot = admittedRunArtifactPath(
+			store,
+			run,
+			join(artifactsRoot, "execution", currentUnit.id, invocationId),
+		);
+		const result = runRegisteredOperation({
+			runtime_root: runtimeRoot,
+			runtime_binding: runtimeBinding,
+			run,
+			branch_id: checkpoint.branch_id,
+			unit_id: currentUnit.id,
+			attempt,
+			operation_id: registeredOperationId,
+			request_operation: currentUnit.gate.execution_request_operation ?? "validation",
+			script_args: [...(currentUnit.gate.script_args ?? [])],
+			artifact,
+			python_executable:
+				one(args, "operation-python") ??
+				one(args, "validator-python") ??
+				process.env.HARNESS_PYTHON_BIN ??
+				process.env.PYTHON ??
+				"python3",
+			package_dir: loaded.root,
+			workspace_root: run.cwd,
+			artifacts_root: artifactsRoot,
+			artifacts_resolved_root: artifactsAdmission.resolvedPath,
+			reference_snapshot_digest: validatorReferenceDigest(run, policyReferences),
+			policy_digest: run.policyDigest ?? canonicalJsonDigest(null),
+			forbidden_output_roots: policyReferences,
+			created_at: new Date().toISOString(),
+			persist_request(request) {
+				const path = admittedRunArtifactPath(store, run, join(invocationRoot, "execution_request.json"));
+				writeJsonImmutable(path, request);
+				return { path, digest: digestFile(path) };
+			},
+			persist_receipt(receipt) {
+				const path = admittedRunArtifactPath(store, run, join(invocationRoot, "execution_receipt.json"));
+				writeJsonImmutable(path, receipt);
+				return { path, digest: digestFile(path) };
+			},
+		});
+		const nextState = {
+			...(existingState ?? {}),
+			last_execution: {
+				...result.evidence,
+				source: "registered_operation",
+				branch_id: checkpoint.branch_id,
+				unit_id: currentUnit.id,
+				attempt,
+				outcome: result.outcome,
+			},
+		};
+		const updatedRun = store.writeState(
+			runId,
+			nextState,
+			"execution_recorded",
+			{ unit_id: currentUnit.id, operation_id: registeredOperationId, outcome: result.outcome },
+			run.revision,
+		);
+		output({
+			ok: result.evidence.verdict === "PASS",
+			command: "execute",
+			kind: "registered_operation",
+			run: updatedRun,
+			unit: currentUnit.id,
+			operation_id: registeredOperationId,
+			evidence: result.evidence,
+			request: result.request,
+			receipt: result.receipt,
+			outcome: result.outcome,
+		});
+		return result.outcome.outcome;
+	}
 	const requestValue = one(args, "execution-request") ?? one(args, "request");
 	if (!requestValue) throw new Error("--execution-request (or --request) is required.");
 	const requestPath = admittedRunArtifactPath(store, run, absolute(requestValue, "--execution-request"));
@@ -2377,7 +2845,8 @@ function help(): void {
 			validate:
 				"surectl validate --run-id <id> [--artifact <path>] [--semantic-runtime <path> --validator-python <path>] [--evidence <compatibility-json>] [--execution-request <json> --execution-receipt <json>]",
 			resume: "surectl resume --run-id <id> [--policy-digest <sha256> --executor-digest <sha256>]",
-			execute: "surectl execute --run-id <id> --execution-request <json> [--kind local|python|docker]",
+			execute:
+				"surectl execute --run-id <id> (--operation <registered-id> --semantic-runtime <path> [--artifact <path>] | --execution-request <json> [--kind local|python|docker])",
 			capabilities: "surectl capabilities [--skill <id>]",
 			memory:
 				"surectl memory --contract <memory-contract.json> [--skill <id>] [--uri memory://<skill>/<kind>/<slug>]",

@@ -28,6 +28,19 @@ function assertWorkflow(definition: CanonicalSkillDefinition): void {
 					`Invalid backend operation id for ${workflow.workflow_id}/${unit.id}: ${unit.gate.backend_operation_id}`,
 				);
 			}
+			if (
+				unit.gate?.execution_operation_id !== undefined &&
+				!OPERATION_PATTERN.test(unit.gate.execution_operation_id)
+			) {
+				throw new Error(
+					`Invalid execution operation id for ${workflow.workflow_id}/${unit.id}: ${unit.gate.execution_operation_id}`,
+				);
+			}
+			if (unit.gate?.execution_request_operation !== undefined && unit.gate.execution_operation_id === undefined) {
+				throw new Error(
+					`Execution request operation for ${workflow.workflow_id}/${unit.id} requires execution_operation_id.`,
+				);
+			}
 			for (const script of [
 				...(unit.helper_scripts ?? []),
 				...(unit.owned_scripts ?? []),

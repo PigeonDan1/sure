@@ -2,6 +2,9 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type { CapabilityRequirement, WorkflowDefinition, WorkflowUnit } from "@earendil-works/sure-core";
 
+const OPERATION_ID_PATTERN = /^sure\.[a-z0-9][a-z0-9._:-]*$/;
+const EXECUTION_OPERATIONS = new Set(["validation", "inference", "formal_evaluation", "package", "publication"]);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -33,6 +36,22 @@ function validateDefinition(value: unknown): WorkflowDefinition {
 			requiredString(unitValue.produces, `${id}.${unitId}.produces`);
 			if (kind === "gate" && !isRecord(unitValue.gate))
 				throw new Error(`Gate ${id}.${unitId} has no gate declaration.`);
+			if (kind === "gate" && isRecord(unitValue.gate)) {
+				const executionOperationId = unitValue.gate.execution_operation_id;
+				if (
+					executionOperationId !== undefined &&
+					(typeof executionOperationId !== "string" || !OPERATION_ID_PATTERN.test(executionOperationId))
+				) {
+					throw new Error(`Gate ${id}.${unitId} has an invalid execution_operation_id.`);
+				}
+				const requestOperation = unitValue.gate.execution_request_operation;
+				if (requestOperation !== undefined && !EXECUTION_OPERATIONS.has(String(requestOperation))) {
+					throw new Error(`Gate ${id}.${unitId} has an invalid execution_request_operation.`);
+				}
+				if (requestOperation !== undefined && executionOperationId === undefined) {
+					throw new Error(`Gate ${id}.${unitId} declares execution_request_operation without an operation id.`);
+				}
+			}
 			return unitValue as unknown as WorkflowUnit;
 		});
 		const ids = new Set(units.map((unit) => unit.id));

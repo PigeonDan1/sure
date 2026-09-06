@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import {
 	advanceLegacyUnit,
@@ -71,6 +71,8 @@ export interface Unit {
 	gateCheck?: (artifact: unknown) => GateResult;
 	/** Python script under scripts/ for semantic gate checks (spawnSync). */
 	gateScript?: string;
+	executionOperationId?: string;
+	executionRequestOperation?: string;
 	/** Extra argv passed to gateScript after --run-dir/--produces. */
 	gateScriptArgs?: (ctx: SureHookContext) => string[];
 	/** Files or dirs under artifacts/ hashed together with produces (gate re-runs when any of them change). */
@@ -81,6 +83,9 @@ const DEFAULT_MAX_RETRIES = 3;
 
 function backendEnvironment(ctx: SureHookContext, runtime: Parameters<typeof harnessRuntimeEnv>[0]): NodeJS.ProcessEnv {
 	const environment: NodeJS.ProcessEnv = { ...process.env, ...harnessRuntimeEnv(runtime) };
+	const repositoryRoot = resolve(ctx.packageDir, "../../..");
+	environment.SURE_REPOSITORY_ROOT = repositoryRoot;
+	environment.SURE_RUNTIME_SUPPORT_ROOT = repositoryRoot;
 	delete environment.SURE_SITE_POLICY_SNAPSHOT;
 	delete environment.SURE_POLICY_SNAPSHOT_DIGEST;
 	if (ctx.run.policySnapshotPath !== undefined && ctx.run.policySnapshotDigest !== undefined) {

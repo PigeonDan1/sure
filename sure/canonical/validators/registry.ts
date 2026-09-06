@@ -53,18 +53,22 @@ function descriptorsForSkill(skill: CanonicalSkillDefinition): ValidatorDescript
 	for (const branch of skill.workflow.branches) {
 		for (const unit of branch.units) {
 			if (unit.gate === undefined) continue;
-			descriptors.push(
-				descriptorForUnit(
-					skill,
-					branch.id,
-					unit.id,
-					unit.gate.validator_id,
-					unit.gate.backend_operation_id,
-					unit.gate.script_id,
-					unit.gate.script_args,
-					unit.gate.validator_id,
-				),
-			);
+			// An execution-only gate is authorized by its bound request/receipt pair,
+			// not by relabelling the executor entrypoint as a validator.
+			if (unit.gate.execution_operation_id === undefined || unit.gate.backend_operation_id !== undefined) {
+				descriptors.push(
+					descriptorForUnit(
+						skill,
+						branch.id,
+						unit.id,
+						unit.gate.validator_id,
+						unit.gate.backend_operation_id,
+						unit.gate.script_id,
+						unit.gate.script_args,
+						unit.gate.validator_id,
+					),
+				);
+			}
 			for (const auxiliary of unit.gate.auxiliary_validator_ids ?? []) {
 				descriptors.push(
 					descriptorForUnit(

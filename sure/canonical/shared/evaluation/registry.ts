@@ -307,10 +307,96 @@ export const SURE_ONBOARD_VALIDATOR_BACKEND: SemanticBackendBundle = {
 	],
 };
 
+/**
+ * Compatibility execution adapters for onboarding gates whose historical
+ * scripts both perform the host/model action and emit the gate result. They
+ * are deliberately separate from the validator bundle: a receipt proves that
+ * the locked action ran, while Core still decides whether the gate may advance.
+ */
+export const SURE_ONBOARD_EXECUTION_BACKEND: SemanticBackendBundle = {
+	schema: "sure.semantic.backend.bundle.v1",
+	bundle_id: "sure-onboard-execution",
+	version: "legacy-v1",
+	description: "Onboarding environment, model-runtime, and container execution adapters.",
+	canonical_root: "sure/canonical/shared/onboard-execution",
+	canonical_root_kind: "repository",
+	legacy_root: "sure/skills/sure_onboard",
+	legacy_root_kind: "repository",
+	integrity_root: "scripts",
+	operations: [
+		{
+			operation_id: "sure.onboard.execute_build_env",
+			description: "Build and probe the model execution environment.",
+			entrypoint: "scripts/check_env.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "execute",
+			timeout_ms: 3_600_000,
+			deterministic: false,
+			requires_policy_snapshot: true,
+		},
+		{
+			operation_id: "sure.onboard.execute_env_compat",
+			description: "Probe device and environment compatibility for the staged model.",
+			entrypoint: "scripts/check_env_compat.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "execute",
+			timeout_ms: 3_600_000,
+			deterministic: false,
+		},
+		{
+			operation_id: "sure.onboard.execute_import",
+			description: "Execute the model import validation command in its declared runtime.",
+			entrypoint: "scripts/run_validate.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "execute",
+			timeout_ms: 3_600_000,
+			deterministic: false,
+		},
+		{
+			operation_id: "sure.onboard.execute_load",
+			description: "Execute the model load validation command in its declared runtime.",
+			entrypoint: "scripts/run_validate.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "execute",
+			timeout_ms: 3_600_000,
+			deterministic: false,
+		},
+		{
+			operation_id: "sure.onboard.execute_infer",
+			description: "Execute the model inference smoke validation in its declared runtime.",
+			entrypoint: "scripts/run_validate.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "execute",
+			timeout_ms: 3_600_000,
+			deterministic: false,
+		},
+		{
+			operation_id: "sure.onboard.execute_contract",
+			description: "Execute and check the model output contract in its declared runtime.",
+			entrypoint: "scripts/run_validate.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "execute",
+			timeout_ms: 3_600_000,
+			deterministic: false,
+		},
+		{
+			operation_id: "sure.onboard.execute_package_container",
+			description: "Build/probe the digest-pinned onboarding container package.",
+			entrypoint: "scripts/check_container_package.py",
+			consumer_skill_ids: ["sure_onboard"],
+			kind: "execute",
+			timeout_ms: 3_600_000,
+			deterministic: false,
+			requires_policy_snapshot: true,
+		},
+	],
+};
+
 export const CANONICAL_SEMANTIC_BACKENDS: readonly SemanticBackendBundle[] = [
 	SURE_EVALUATION_BACKEND,
 	SURE_EVALUATION_VALIDATOR_BACKEND,
 	SURE_MEMORY_VALIDATOR_BACKEND,
 	SURE_FEED_VALIDATOR_BACKEND,
 	SURE_ONBOARD_VALIDATOR_BACKEND,
+	SURE_ONBOARD_EXECUTION_BACKEND,
 ];

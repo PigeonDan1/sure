@@ -28,7 +28,7 @@ Use the host-neutral `surectl` executable. Set `SURE_DEV_ROOT` to a local writab
 
 1. Start with `surectl start --skill <skill> --run-id <run-id> --root "$SURE_DEV_ROOT"`.
 2. Produce only the artifact for the current unit.
-3. For an execution unit, write an `execution_request.json` and call `surectl execute --run-id <run-id> --execution-request <path>`; this writes a receipt only and never advances the checkpoint.
+3. For a unit whose canonical definition declares `execution_operation_id`, first produce its declared artifact, then call `surectl execute --run-id <run-id> --operation <execution_operation_id> --artifact <path>`; Core resolves the pinned operation and writes the request/receipt. Do not author a replacement request. For a unit without a registered operation, provide an `execution_request.json` and call `surectl execute --run-id <run-id> --execution-request <path>`. Either form writes execution evidence only and never advances the checkpoint.
 4. Call `surectl validate --run-id <run-id>`; Core alone decides `PASS`, `FAIL`, `BLOCKED`, `RETRY`, or `NOT_EXECUTED` and the process exit code mirrors that outcome.
 5. Inspect `surectl status --run-id <run-id>` before choosing the next action; use `surectl resume --run-id <run-id>` only for a failed, binding-compatible run.
 6. Finalize only through `surectl finalize --run-id <run-id> --status <status>`.

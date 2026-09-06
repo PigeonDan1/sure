@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1062,6 +1062,111 @@ describe("surectl cooperative control plane", () => {
 		expect(core.resumable).toBe(false);
 		expect(core.data.completedUnits).toEqual(branch.units.map((unit) => unit.id));
 		expect(core.data.blocks).toBe(workflow.retry_policy.default_max_retries);
+	}, 30_000);
+
+	it("executes a registered gate operation without advancing until receipt validation", () => {
+		const operationRoot = join(root, "registered-operation");
+		const operationPackage = join(operationRoot, "skill");
+		mkdirSync(operationPackage, { recursive: true });
+		const operationWorkflow = {
+			schema: "sure.workflow.definition.v1",
+			workflow_id: "sure_onboard",
+			version: "test-v1",
+			branches: [
+				{
+					id: "main",
+					initial_unit_id: "validate_env_compat",
+					terminal_unit_id: "validate_env_compat",
+					units: [
+						{
+							id: "validate_env_compat",
+							label: "Validate environment compatibility",
+							kind: "gate",
+							produces: "env_compat_result.json",
+							required_fields: ["compat_ok"],
+							gate: {
+								validator_id: "python-script",
+								execution_operation_id: "sure.onboard.execute_env_compat",
+								execution_request_operation: "validation",
+								script_id: "check_env_compat.py",
+							},
+						},
+					],
+				},
+			],
+			default_branch_id: "main",
+			retry_policy: { default_max_retries: 3 },
+		} as const;
+		const customDefinition = join(operationPackage, "canonical-definition.json");
+		writeFileSync(customDefinition, JSON.stringify({ workflow: operationWorkflow, capabilities: [] }));
+		const lock = JSON.parse(
+			readFileSync(join(repositoryRoot, "sure/dist/agent-skills/sure-onboard/generation.lock.json"), "utf8"),
+		) as Record<string, unknown>;
+		lock.workflow_digest = canonicalJsonDigest(operationWorkflow as unknown as JsonValue);
+		writeFileSync(join(operationPackage, "generation.lock.json"), JSON.stringify(lock));
+		const customRegistry = join(operationRoot, "validator-registry.json");
+		cpSync(onboardRegistryPath, customRegistry);
+		const base = [
+			"--skill",
+			"sure_onboard",
+			"--definition",
+			customDefinition,
+			"--validator-registry",
+			customRegistry,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		];
+		const runId = "run-registered-operation";
+		const started = command(root, "start", [...base, "--run-id", runId]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifactPath = join(runDir, "artifacts", "env_compat_result.json");
+		writeFileSync(artifactPath, JSON.stringify({ compat_ok: true, device: "cpu" }));
+
+		const wrongOperation = command(root, "execute", [
+			...base,
+			"--run-id",
+			runId,
+			"--operation",
+			"sure.onboard.execute_build_env",
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(wrongOperation.status).toBe(1);
+
+		const executed = command(root, "execute", [
+			...base,
+			"--run-id",
+			runId,
+			"--operation",
+			"sure.onboard.execute_env_compat",
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(executed.status).toBe(5);
+		expect((executed.value?.evidence as Record<string, unknown>).verdict).toBe("PASS");
+		let state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		expect((state.checkpoint as { data: { currentUnit: string } }).data.currentUnit).toBe("validate_env_compat");
+		expect((state.last_execution as Record<string, unknown>).source).toBe("registered_operation");
+		const executionEvidence = state.last_execution as Record<string, unknown>;
+		const receiptPath = String(executionEvidence.receipt_path);
+		const originalReceipt = readFileSync(receiptPath, "utf8");
+		const tamperedReceipt = JSON.parse(originalReceipt) as Record<string, unknown>;
+		tamperedReceipt.policy_digest = DIGEST_C;
+		writeFileSync(receiptPath, `${JSON.stringify(tamperedReceipt)}\n`);
+		const rejected = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(rejected.status).toBe(5);
+		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		expect((state.checkpoint as { resumable: boolean }).resumable).toBe(true);
+		writeFileSync(receiptPath, originalReceipt);
+
+		const validated = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(validated.status).toBe(0);
+		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		expect((state.checkpoint as { resumable: boolean }).resumable).toBe(false);
 	}, 30_000);
 
 	it("rejects output beneath an explicit read-only reference root", () => {

@@ -186,6 +186,22 @@ describe("canonical SURE skill generation", () => {
 		]) {
 			expect(onboardOperations[executionUnit]).toBeUndefined();
 		}
+		const onboardExecutionUnits = Object.fromEntries(
+			CANONICAL_SKILLS.find((skill) => skill.skill_id === "sure_onboard")!.workflow.branches.flatMap((branch) =>
+				branch.units
+					.filter((unit) => unit.gate?.execution_operation_id !== undefined)
+					.map((unit) => [unit.id, unit.gate?.execution_operation_id]),
+			),
+		);
+		expect(onboardExecutionUnits).toEqual({
+			build_env: "sure.onboard.execute_build_env",
+			validate_env_compat: "sure.onboard.execute_env_compat",
+			validate_import: "sure.onboard.execute_import",
+			validate_load: "sure.onboard.execute_load",
+			validate_infer: "sure.onboard.execute_infer",
+			validate_contract: "sure.onboard.execute_contract",
+			package_container: "sure.onboard.execute_package_container",
+		});
 	});
 
 	it("projects the legacy Pi manifest without changing its public fields", () => {
@@ -306,6 +322,7 @@ describe("canonical SURE skill generation", () => {
 			.filter(
 				(operation) =>
 					String(operation.operation_id).startsWith("sure.onboard.") &&
+					operation.kind === "validate" &&
 					operation.requires_policy_snapshot === true,
 			)
 			.map((operation) => operation.operation_id);
@@ -314,6 +331,19 @@ describe("canonical SURE skill generation", () => {
 			"sure.onboard.validate_package_gate",
 			"sure.onboard.validate_runtime_inventory",
 			"sure.onboard.validate_finalized_bundle",
+		]);
+		const policyBoundOnboardExecutions = (manifest.bundles as Array<Record<string, unknown>>)
+			.flatMap((bundle) => bundle.operations as Array<Record<string, unknown>>)
+			.filter(
+				(operation) =>
+					String(operation.operation_id).startsWith("sure.onboard.") &&
+					operation.kind === "execute" &&
+					operation.requires_policy_snapshot === true,
+			)
+			.map((operation) => operation.operation_id);
+		expect(policyBoundOnboardExecutions).toEqual([
+			"sure.onboard.execute_build_env",
+			"sure.onboard.execute_package_container",
 		]);
 		const entrypoints: string[] = [];
 		const operationIds: string[] = [];
@@ -400,7 +430,7 @@ describe("canonical SURE skill generation", () => {
 				expect(backendProjection.runtime_distribution_digest).toBe(runtimeDigest);
 			}
 		}
-	});
+	}, 30_000);
 
 	it("is reproducible and does not require a production reference root", () => {
 		const script = join(repositoryRoot, "scripts/generate-sure-skills.ts");

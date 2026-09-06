@@ -1,4 +1,4 @@
-import type { WorkflowUnit } from "../../../packages/sure-core/src/index.ts";
+import type { ExecutionOperation, WorkflowUnit } from "../../../packages/sure-core/src/index.ts";
 
 export interface LegacyProjectedUnit {
 	id: string;
@@ -10,6 +10,8 @@ export interface LegacyProjectedUnit {
 	allowedValues?: Record<string, unknown[]>;
 	forbiddenFields?: string[];
 	gateScript?: string;
+	executionOperationId?: string;
+	executionRequestOperation?: ExecutionOperation;
 	gateScriptArgs?: () => string[];
 	helperScripts?: string[];
 	ownedScripts?: string[];
@@ -35,6 +37,12 @@ export function projectUnit(unit: WorkflowUnit): LegacyProjectedUnit {
 				}),
 		...(unit.forbidden_fields === undefined ? {} : { forbiddenFields: [...unit.forbidden_fields] }),
 		...(unit.gate?.script_id === undefined ? {} : { gateScript: unit.gate.script_id }),
+		...(unit.gate?.execution_operation_id === undefined
+			? {}
+			: { executionOperationId: unit.gate.execution_operation_id }),
+		...(unit.gate?.execution_request_operation === undefined
+			? {}
+			: { executionRequestOperation: unit.gate.execution_request_operation }),
 		...(gateArgs === undefined ? {} : { gateScriptArgs: () => [...gateArgs] }),
 		...(unit.helper_scripts === undefined ? {} : { helperScripts: [...unit.helper_scripts] }),
 		...(unit.owned_scripts === undefined ? {} : { ownedScripts: [...unit.owned_scripts] }),

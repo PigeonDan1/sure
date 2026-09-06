@@ -888,7 +888,7 @@ function runGateScript(ctx: SureHookContext, unit: Unit): GateResult | undefined
 	// accepts --kind; the other gate scripts (check_spec.py, check_env.py,
 	// check_weights.py, check_env_compat.py, check_verdict.py) would reject it.
 	const kindArgs: string[] =
-		unit.gateScript === "run_validate.py" && unit.id.startsWith("validate_")
+		unit.gateScript === "run_validate.py" && unit.id.startsWith("validate_") && !extra.includes("--kind")
 			? ["--kind", unit.id.replace("validate_", "")]
 			: [];
 	const r = runBackend(ctx, unit.gateScript, ["--produces", produces, ...kindArgs, ...extra]);

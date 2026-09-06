@@ -1,4 +1,4 @@
-import type { JsonValue } from "../contracts/types.ts";
+import type { ExecutionOperation, JsonValue } from "../contracts/types.ts";
 
 export type UnitKind = "linear" | "gate";
 
@@ -6,6 +6,13 @@ export interface GateDefinition {
 	validator_id: string;
 	/** Stable semantic-backend operation used by host-neutral validator execution. */
 	backend_operation_id?: string;
+	/**
+	 * Stable semantic-backend operation that must execute before this gate can
+	 * advance. Executors only produce receipts; Core remains transition authority.
+	 */
+	execution_operation_id?: string;
+	/** Execution-request domain for an execution-backed gate. Defaults to validation. */
+	execution_request_operation?: ExecutionOperation;
 	/** Additional in-process or cross-artifact validators that must also pass. */
 	auxiliary_validator_ids?: readonly string[];
 	script_id?: string;

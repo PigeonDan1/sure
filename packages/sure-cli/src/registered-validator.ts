@@ -315,7 +315,18 @@ function requestFor(
 	};
 }
 
-function validatorEnvironment(options: RegisteredValidationOptions, runtimeRoot: string): NodeJS.ProcessEnv {
+export interface SemanticRuntimeEnvironmentOptions {
+	base_environment?: NodeJS.ProcessEnv;
+	run: CoreRunRecord;
+	workspace_root: string;
+	policy_digest: string;
+}
+
+/** Build the isolated environment shared by registered validators and operations. */
+export function semanticRuntimeEnvironment(
+	options: SemanticRuntimeEnvironmentOptions,
+	runtimeRoot: string,
+): NodeJS.ProcessEnv {
 	const environment: NodeJS.ProcessEnv = {
 		...(options.base_environment ?? process.env),
 		PYTHONHASHSEED: "0",
@@ -372,7 +383,7 @@ export function runRegisteredValidators(options: RegisteredValidationOptions): R
 		);
 	}
 	const entries: ValidatorEvidenceEntry[] = [];
-	const environment = validatorEnvironment(options, verification.root);
+	const environment = semanticRuntimeEnvironment(options, verification.root);
 	for (const [index, validator] of options.validators.entries()) {
 		if (!validator.backend_operation_id) {
 			entries.push(

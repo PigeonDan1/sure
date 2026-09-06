@@ -183,6 +183,8 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["env_ready"],
 						gate: {
 							validator_id: "python-script",
+							execution_operation_id: "sure.onboard.execute_build_env",
+							execution_request_operation: "package",
 							script_id: "check_env.py",
 						},
 						helper_scripts: ["materialize_model_runtime.py"],
@@ -208,6 +210,8 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["compat_ok"],
 						gate: {
 							validator_id: "python-script",
+							execution_operation_id: "sure.onboard.execute_env_compat",
+							execution_request_operation: "validation",
 							script_id: "check_env_compat.py",
 						},
 					},
@@ -229,7 +233,10 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["import_passed"],
 						gate: {
 							validator_id: "python-script",
+							execution_operation_id: "sure.onboard.execute_import",
+							execution_request_operation: "validation",
 							script_id: "run_validate.py",
+							script_args: ["--kind", "import"],
 						},
 					},
 					{
@@ -241,7 +248,10 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["load_passed"],
 						gate: {
 							validator_id: "python-script",
+							execution_operation_id: "sure.onboard.execute_load",
+							execution_request_operation: "validation",
 							script_id: "run_validate.py",
+							script_args: ["--kind", "load"],
 						},
 					},
 					{
@@ -253,7 +263,10 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["infer_passed"],
 						gate: {
 							validator_id: "python-script",
+							execution_operation_id: "sure.onboard.execute_infer",
+							execution_request_operation: "inference",
 							script_id: "run_validate.py",
+							script_args: ["--kind", "infer"],
 						},
 					},
 					{
@@ -265,7 +278,10 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["contract_passed"],
 						gate: {
 							validator_id: "python-script",
+							execution_operation_id: "sure.onboard.execute_contract",
+							execution_request_operation: "validation",
 							script_id: "run_validate.py",
+							script_args: ["--kind", "contract"],
 						},
 					},
 					{
@@ -277,6 +293,8 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["schema", "status"],
 						gate: {
 							validator_id: "python-script",
+							execution_operation_id: "sure.onboard.execute_package_container",
+							execution_request_operation: "package",
 							script_id: "check_container_package.py",
 						},
 						helper_scripts: ["describe_harness_runtime.py"],

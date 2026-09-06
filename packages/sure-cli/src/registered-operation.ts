@@ -1,0 +1,301 @@
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import type {
+	ArtifactRef,
+	CoreOutcome,
+	CoreRunRecord,
+	ExecutionOperation,
+	ExecutionReceipt,
+	ExecutionRequest,
+	JsonValue,
+} from "@earendil-works/sure-core";
+import { canonicalJsonDigest, createOutcome } from "@earendil-works/sure-core";
+import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
+import { type ExecutorRunResult, executeRequest } from "./executor.ts";
+import {
+	type PersistedValidatorDocument,
+	type SkillRuntimeBinding,
+	semanticRuntimeEnvironment,
+} from "./registered-validator.ts";
+
+export interface RegisteredOperationEvidence {
+	schema: "sure.operation.execution.v1";
+	source: "surectl";
+	operation_id: string;
+	verdict: "PASS" | "FAIL" | "NOT_EXECUTED";
+	reason_code: string;
+	diagnostics: readonly string[];
+	artifact_input_digest: string;
+	runtime_digest?: string;
+	backend_registry_digest?: string;
+	backend_bundle_digest?: string;
+	backend_resource_digest?: string;
+	request_path?: string;
+	request_digest?: string;
+	receipt_path?: string;
+	receipt_digest?: string;
+}
+
+export interface RegisteredOperationResult {
+	outcome: CoreOutcome;
+	evidence: RegisteredOperationEvidence;
+	request?: ExecutionRequest;
+	receipt?: ExecutionReceipt;
+	execution?: ExecutorRunResult;
+}
+
+export interface RegisteredOperationOptions {
+	runtime_root?: string;
+	runtime_binding: SkillRuntimeBinding;
+	run: CoreRunRecord;
+	branch_id: string;
+	unit_id: string;
+	attempt: number;
+	operation_id: string;
+	request_operation: ExecutionOperation;
+	script_args: readonly string[];
+	artifact: ArtifactRef;
+	python_executable: string;
+	package_dir: string;
+	workspace_root: string;
+	artifacts_root: string;
+	artifacts_resolved_root: string;
+	reference_snapshot_digest: string;
+	policy_digest: string;
+	forbidden_output_roots: readonly string[];
+	created_at: string;
+	base_environment?: NodeJS.ProcessEnv;
+	persist_request(request: ExecutionRequest): PersistedValidatorDocument;
+	persist_receipt(receipt: ExecutionReceipt): PersistedValidatorDocument;
+}
+
+export interface RegisteredOperationSemanticBinding {
+	run_id: string;
+	branch_id: string;
+	unit_id: string;
+	attempt: number;
+	operation_id: string;
+	request_operation: ExecutionOperation;
+	artifact_input_digest: string;
+	workflow_digest?: string;
+	runtime_digest: string;
+	backend_registry_digest: string;
+	backend_bundle_digest?: string;
+	backend_resource_digest: string;
+	reference_snapshot_digest: string;
+	script_args: readonly string[];
+	policy_digest: string;
+}
+
+export function registeredOperationSemanticDigest(binding: RegisteredOperationSemanticBinding): string {
+	return canonicalJsonDigest({ schema: "sure.semantic.operation.request.v1", ...binding } as unknown as JsonValue);
+}
+
+function diagnostics(result: ExecutorRunResult): string[] {
+	const messages = [...result.request_validation.errors, ...(result.receipt_validation?.errors ?? [])];
+	for (const diagnostic of result.receipt?.diagnostics ?? []) {
+		if (typeof diagnostic.message === "string") messages.push(diagnostic.message);
+		else if (typeof diagnostic.text === "string") messages.push(diagnostic.text);
+		else messages.push(JSON.stringify(diagnostic));
+	}
+	return [...new Set(messages.filter((message) => message.trim() !== ""))];
+}
+
+function unavailable(
+	options: RegisteredOperationOptions,
+	reason: string,
+	runtimeDigest?: string,
+): RegisteredOperationResult {
+	const outcome = createOutcome({
+		validatorVerdict: "NOT_EXECUTED",
+		workflowDisposition: "WAIT",
+		reasonCode: "CAPABILITY_MISSING",
+	});
+	return {
+		outcome,
+		evidence: {
+			schema: "sure.operation.execution.v1",
+			source: "surectl",
+			operation_id: options.operation_id,
+			verdict: "NOT_EXECUTED",
+			reason_code: "CAPABILITY_MISSING",
+			diagnostics: [reason],
+			artifact_input_digest: options.artifact.sha256,
+			...(runtimeDigest === undefined ? {} : { runtime_digest: runtimeDigest }),
+		},
+	};
+}
+
+function requestFor(
+	options: RegisteredOperationOptions,
+	operation: ReturnType<typeof resolveSemanticBackendOperation>,
+): ExecutionRequest {
+	const binding: RegisteredOperationSemanticBinding = {
+		run_id: options.run.runId,
+		branch_id: options.branch_id,
+		unit_id: options.unit_id,
+		attempt: options.attempt,
+		operation_id: operation.operation_id,
+		request_operation: options.request_operation,
+		artifact_input_digest: options.artifact.sha256,
+		workflow_digest: options.run.workflowDigest,
+		runtime_digest: options.runtime_binding.semantic_runtime_digest,
+		backend_registry_digest: operation.registry_digest,
+		...(operation.bundle_digest === undefined ? {} : { backend_bundle_digest: operation.bundle_digest }),
+		backend_resource_digest: operation.resource_digest,
+		reference_snapshot_digest: options.reference_snapshot_digest,
+		script_args: [...options.script_args],
+		policy_digest: options.policy_digest,
+	};
+	return {
+		schema: "sure.execution_request.v1",
+		request_id: `operation-${randomUUID().replaceAll("-", "").slice(0, 20)}`,
+		semantic_request_digest: registeredOperationSemanticDigest(binding),
+		run_id: options.run.runId,
+		unit_id: options.unit_id,
+		attempt: options.attempt,
+		operation: options.request_operation,
+		subject: {
+			bundle_manifest_path: options.artifact.path,
+			bundle_digest: options.artifact.sha256,
+			runtime_identity_digest: options.runtime_binding.semantic_runtime_digest,
+		},
+		inputs: [options.artifact],
+		entrypoint: {
+			executable: options.python_executable,
+			argv: [
+				operation.path,
+				"--run-dir",
+				options.run.runDir,
+				"--produces",
+				options.artifact.path,
+				...options.script_args,
+			],
+			working_directory: options.package_dir,
+		},
+		runtime_requirements: {
+			executor_kind: "python",
+			harness_python_executable: options.python_executable,
+			semantic_backend_operation_id: operation.operation_id,
+			semantic_backend_registry_digest: operation.registry_digest,
+			...(operation.bundle_digest === undefined ? {} : { semantic_backend_bundle_digest: operation.bundle_digest }),
+			semantic_backend_resource_digest: operation.resource_digest,
+			portable_runtime_digest: options.runtime_binding.semantic_runtime_digest,
+			workflow_digest: options.run.workflowDigest ?? "",
+			branch_id: options.branch_id,
+			script_args: [...options.script_args],
+			artifact_input_digest: options.artifact.sha256,
+		},
+		capability_requirements: [
+			{
+				capability_id: "sure.execution.harness-python",
+				capability_class: "execution_capability",
+				required: true,
+			},
+		],
+		reference_snapshot_digest: options.reference_snapshot_digest,
+		output_root: {
+			path: options.artifacts_root,
+			resolved_path: options.artifacts_resolved_root,
+			scope_id: options.run.runId,
+			policy_digest: options.policy_digest,
+			writable: true,
+		},
+		policy_digest: options.policy_digest,
+		created_at: options.created_at,
+	};
+}
+
+export function runRegisteredOperation(options: RegisteredOperationOptions): RegisteredOperationResult {
+	if (!options.runtime_root) return unavailable(options, "portable semantic operation runtime was not provided");
+	let verification: ReturnType<typeof verifyPortableRuntime>;
+	try {
+		verification = verifyPortableRuntime(options.runtime_root, {
+			expected_runtime_digest: options.runtime_binding.semantic_runtime_digest,
+			expected_core_package_version: options.runtime_binding.core_package_version,
+			expected_semantic_backend_registry_digest: options.runtime_binding.semantic_backend_registry_digest,
+			expected_executor_registry_digest: options.runtime_binding.executor_registry_digest,
+		});
+	} catch (error) {
+		return unavailable(options, error instanceof Error ? error.message : String(error));
+	}
+	const environment = semanticRuntimeEnvironment(options, verification.root);
+	let operation: ReturnType<typeof resolveSemanticBackendOperation>;
+	try {
+		operation = resolveSemanticBackendOperation(verification.root, options.operation_id, {
+			manifestPath: join(verification.root, "semantic-backends.json"),
+			expectedRegistryDigest: verification.lock.semantic_backend_registry_digest,
+			environment,
+		});
+		if (operation.kind !== "execute") throw new Error(`${operation.operation_id} is not an execute operation`);
+		if (!operation.consumer_skill_ids.includes(options.runtime_binding.skill_id)) {
+			throw new Error(
+				`${options.runtime_binding.skill_id} is not an admitted consumer of ${operation.operation_id}`,
+			);
+		}
+	} catch (error) {
+		return unavailable(
+			options,
+			error instanceof Error ? error.message : String(error),
+			verification.lock.runtime_digest,
+		);
+	}
+	if (
+		operation.requires_policy_snapshot &&
+		(options.run.policySnapshotPath === undefined || options.run.policySnapshotDigest === undefined)
+	) {
+		return unavailable(
+			options,
+			`${operation.operation_id} requires an immutable site-policy snapshot bound to the run`,
+			verification.lock.runtime_digest,
+		);
+	}
+	const request = requestFor(options, operation);
+	const persistedRequest = options.persist_request(request);
+	const execution = executeRequest(request, {
+		kind: "python",
+		executor_digest: options.run.executorDigest ?? options.runtime_binding.executor_registry_digest,
+		executor_version: options.runtime_binding.core_package_version,
+		working_directory: options.package_dir,
+		allowed_output_roots: [options.run.runDir, ...(options.run.outputDir ? [options.run.outputDir] : [])],
+		forbidden_output_roots: options.forbidden_output_roots,
+		timeout_ms: operation.timeout_ms,
+		environment,
+		output_paths: [options.artifact.path],
+	});
+	const persistedReceipt = execution.receipt ? options.persist_receipt(execution.receipt) : undefined;
+	const validReceipt = execution.receipt !== undefined && execution.receipt_validation?.valid === true;
+	const verdict =
+		!validReceipt || !execution.capability.admitted
+			? "NOT_EXECUTED"
+			: execution.receipt?.lifecycle === "SUCCEEDED"
+				? "PASS"
+				: execution.receipt?.lifecycle === "NOT_STARTED"
+					? "NOT_EXECUTED"
+					: "FAIL";
+	return {
+		outcome: execution.outcome,
+		request,
+		receipt: execution.receipt,
+		execution,
+		evidence: {
+			schema: "sure.operation.execution.v1",
+			source: "surectl",
+			operation_id: operation.operation_id,
+			verdict,
+			reason_code:
+				verdict === "PASS" ? "EXECUTION_SUCCEEDED" : verdict === "FAIL" ? "EXECUTION_FAILED" : "CAPABILITY_MISSING",
+			diagnostics: diagnostics(execution),
+			artifact_input_digest: options.artifact.sha256,
+			runtime_digest: verification.lock.runtime_digest,
+			backend_registry_digest: operation.registry_digest,
+			...(operation.bundle_digest === undefined ? {} : { backend_bundle_digest: operation.bundle_digest }),
+			backend_resource_digest: operation.resource_digest,
+			request_path: persistedRequest.path,
+			request_digest: persistedRequest.digest,
+			...(persistedReceipt === undefined
+				? {}
+				: { receipt_path: persistedReceipt.path, receipt_digest: persistedReceipt.digest }),
+		},
+	};
+}

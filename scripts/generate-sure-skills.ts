@@ -126,11 +126,39 @@ function sha256(value: Uint8Array): string {
 }
 
 function materializedValidatorRegistry(): ValidatorRegistrySnapshot {
-	const backendOperations = new Map(
-		CANONICAL_SEMANTIC_BACKENDS.flatMap((bundle) =>
-			bundle.operations.map((operation) => [operation.operation_id, operation] as const),
-		),
-	);
+	const backendOperations = new Map<string, (typeof CANONICAL_SEMANTIC_BACKENDS)[number]["operations"][number]>();
+	for (const bundle of CANONICAL_SEMANTIC_BACKENDS) {
+		for (const operation of bundle.operations) {
+			if (backendOperations.has(operation.operation_id)) {
+				throw new Error(`Duplicate semantic backend operation: ${operation.operation_id}`);
+			}
+			backendOperations.set(operation.operation_id, operation);
+		}
+	}
+	for (const skill of CANONICAL_SKILLS) {
+		for (const branch of skill.workflow.branches) {
+			for (const unit of branch.units) {
+				const operationId = unit.gate?.execution_operation_id;
+				if (operationId === undefined) continue;
+				const operation = backendOperations.get(operationId);
+				if (operation === undefined) {
+					throw new Error(
+						`Gate ${skill.skill_id}/${branch.id}/${unit.id} references unknown execution operation ${operationId}`,
+					);
+				}
+				if (operation.kind !== "execute") {
+					throw new Error(
+						`Gate ${skill.skill_id}/${branch.id}/${unit.id} operation is not executable: ${operationId}`,
+					);
+				}
+				if (!operation.consumer_skill_ids.includes(skill.skill_id)) {
+					throw new Error(
+						`Gate ${skill.skill_id}/${branch.id}/${unit.id} is not an admitted consumer of ${operationId}`,
+					);
+				}
+			}
+		}
+	}
 	const descriptors = canonicalValidatorRegistry()
 		.list()
 		.map((descriptor) => {

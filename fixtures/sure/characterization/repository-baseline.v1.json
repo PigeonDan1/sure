@@ -530,7 +530,7 @@
         "allowed_values": {},
         "forbidden_fields": [],
         "gate_script": "run_validate.py",
-        "gate_script_args": [],
+        "gate_script_args": "contextual-function",
         "has_in_process_gate": false,
         "helper_scripts": [],
         "owned_scripts": [],
@@ -548,7 +548,7 @@
         "allowed_values": {},
         "forbidden_fields": [],
         "gate_script": "run_validate.py",
-        "gate_script_args": [],
+        "gate_script_args": "contextual-function",
         "has_in_process_gate": false,
         "helper_scripts": [],
         "owned_scripts": [],
@@ -566,7 +566,7 @@
         "allowed_values": {},
         "forbidden_fields": [],
         "gate_script": "run_validate.py",
-        "gate_script_args": [],
+        "gate_script_args": "contextual-function",
         "has_in_process_gate": false,
         "helper_scripts": [],
         "owned_scripts": [],
@@ -584,7 +584,7 @@
         "allowed_values": {},
         "forbidden_fields": [],
         "gate_script": "run_validate.py",
-        "gate_script_args": [],
+        "gate_script_args": "contextual-function",
         "has_in_process_gate": false,
         "helper_scripts": [],
         "owned_scripts": [],
@@ -6651,8 +6651,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
-      "size_bytes": 31955,
-      "sha256": "532f340075479978fb48299c7f670dbe0965abf357f01fd893c479f369030280"
+      "size_bytes": 32826,
+      "sha256": "42054f4776c4714193cd6192bd5d2f94ddb59321ad1cdc29c885eeaea936afbc"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
@@ -7182,7 +7182,7 @@
     {
       "path": "sure/runtime/memory/units.generation.lock.json",
       "size_bytes": 506,
-      "sha256": "84f563433912b4302c21a9daa5d1814b9d1a0d2fbbc49949c3a808da252a9b64"
+      "sha256": "7c38e29ded4dda3237e1117be2ca0c4be7c277bc2a56c0f982406cdad66e21b5"
     },
     {
       "path": "sure/runtime/memory/units.json",
@@ -8631,13 +8631,13 @@
     },
     {
       "path": "sure/skills/sure_onboard/hooks/checkpoints.ts",
-      "size_bytes": 9552,
-      "sha256": "d8223052e0ca2c5b661009dd0dd7f24abd2a1868ba4e069b8374ea11591d78c1"
+      "size_bytes": 9800,
+      "sha256": "a28e50c3b095dea1ad3c2000f8f7c265c4813fea3924a04eeb15759e135f2450"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/index.ts",
-      "size_bytes": 56180,
-      "sha256": "ea0f4798df6d6c203ff83a46561083aaff7e2c94fa54262cf91c2f266290fcd0"
+      "size_bytes": 56209,
+      "sha256": "53194a35b9bf9404e7720ee4199c24dfc55f5e649fa1105263d27c274d1796b1"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/state-machine.ts",
@@ -9701,5 +9701,5 @@
       ]
     }
   ],
-  "semantic_digest": "84682623441483ae8a9d3f7a0e8485d71fd6a2124ba5e0ea99b4bf58b1b5e37c"
+  "semantic_digest": "0baa21265a906d09dd5196c46620c5ca66cd971324d9087291a04ab0833842b8"
 }
