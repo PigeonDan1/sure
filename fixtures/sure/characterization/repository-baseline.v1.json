@@ -6786,8 +6786,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-eval-hooks.test.ts",
-      "size_bytes": 49833,
-      "sha256": "8ae367b1dfa93eecdfa0950b6cd9d63f5d8bfec40486ab3486848994b81cc9ee"
+      "size_bytes": 49865,
+      "sha256": "d653e41c27bec081d5a5cf0e4d9413ee089605da4fe27e3bd6b92cc828d7d2ef"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-hooks-flow.test.ts",
@@ -6836,8 +6836,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-run-output-dir.test.ts",
-      "size_bytes": 7172,
-      "sha256": "a237ecf011a4630ea04fc5f7578d3b3bdec18f3bc7921630abde1630642fe8c1"
+      "size_bytes": 7522,
+      "sha256": "095d512aefd18e98d193d9396f9e11fe4c5e543ffc4bfd670a086cf6c1269acc"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-runtime-binding.test.ts",
@@ -6851,8 +6851,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-skill-output-dir.test.ts",
-      "size_bytes": 3436,
-      "sha256": "43b76b10f32f63476862c1663406c0af30d48ec8cf3a2da8b3248db8b0606ed0"
+      "size_bytes": 4435,
+      "sha256": "9a2f72a81b6b692ea077e6c73a70344837bde05a422f3c29a34bdf9692c01c56"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-trans-adapter-draft.test.ts",
@@ -9701,5 +9701,5 @@
       ]
     }
   ],
-  "semantic_digest": "4bdc12fd49915a45328c2f553841e3b71ce52677787374681cfe4deb2865c442"
+  "semantic_digest": "94a420564396a4d4945b1f590e846ee3526d27a22fc836e888dc55c41d6c2b46"
 }

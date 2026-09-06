@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { preStart as evalPreStart } from "../../../../sure/skills/sure_eval/hooks/index.ts";
@@ -30,19 +30,52 @@ function inferCtx(name: string, args: string): SureHookContext {
 	return preStartCtx("sure_infer", INFER_PACKAGE_DIR, name, args);
 }
 
+function inferPreStart(name: string, args: string) {
+	const ctx = inferCtx(name, args);
+	const root = resolve(ctx.cwd, "..");
+	const policyPath = join(root, "site.local.yaml");
+	writeFileSync(
+		policyPath,
+		JSON.stringify({
+			schema: "sure.site.policy.v1",
+			site_id: "skill-output-dir-test",
+			policy_version: 1,
+			storage: {
+				approved_models_roots: [join(root, "models")],
+				approved_results_roots: [join(root, "results")],
+				forbidden_output_roots: [join(root, "production-reference")],
+				runtime_root: join(root, "runtime"),
+			},
+			datasets: { allowed_source_roots: { default: join(root, "datasets") } },
+			execution: { surfaces: ["local"], local_runtimes: ["python"] },
+		}),
+	);
+	const previousPolicy = process.env.SURE_SITE_POLICY;
+	process.env.SURE_SITE_POLICY = policyPath;
+	try {
+		return preStart(ctx);
+	} finally {
+		if (previousPolicy === undefined) {
+			delete process.env.SURE_SITE_POLICY;
+		} else {
+			process.env.SURE_SITE_POLICY = previousPolicy;
+		}
+	}
+}
+
 function evalCtx(name: string, args: string): SureHookContext {
 	return preStartCtx("sure_eval", EVAL_PACKAGE_DIR, name, args);
 }
 
 describe("/sure_infer output_dir", () => {
 	it("accepts output_dir instead of refusing it upfront", () => {
-		const result = preStart(inferCtx("accepts", "model=demo datasets=/ds/demo output_dir=/tmp/products"));
+		const result = inferPreStart("accepts", "model=demo datasets=/ds/demo output_dir=/tmp/products");
 
 		expect(result.repair ?? "").not.toContain("no longer accepts output_dir");
 	});
 
 	it("still refuses model_dir", () => {
-		const result = preStart(inferCtx("refuses-model-dir", "model=demo datasets=/ds/demo model_dir=/tmp/models"));
+		const result = inferPreStart("refuses-model-dir", "model=demo datasets=/ds/demo model_dir=/tmp/models");
 
 		expect(result.ok).toBe(false);
 		expect(result.repair ?? "").toContain("does not accept model_dir");

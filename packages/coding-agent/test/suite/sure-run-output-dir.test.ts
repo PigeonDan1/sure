@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildInvocationPrompt } from "../../src/core/sure/extension.ts";
-import { NFS_ROOT, resolveOutputDir, stripOutputDir } from "../../src/core/sure/output-dir.ts";
+import { resolveOutputDir, stripOutputDir } from "../../src/core/sure/output-dir.ts";
 import { SureRunManager } from "../../src/core/sure/run-manager.ts";
 import type { SureRunRecord, SureSkillPackage } from "../../src/core/sure/types.ts";
 
@@ -11,6 +11,27 @@ function freshRoot(name: string): string {
 	rmSync(root, { recursive: true, force: true });
 	mkdirSync(root, { recursive: true });
 	return root;
+}
+
+function policyOptions(root: string, forbiddenRoot = join(root, "production-reference")) {
+	const config = join(root, "config");
+	mkdirSync(config, { recursive: true });
+	writeFileSync(
+		join(config, "site.local.yaml"),
+		JSON.stringify({
+			schema: "sure.site.policy.v1",
+			site_id: "output-dir-test",
+			policy_version: 1,
+			storage: {
+				approved_models_roots: [join(root, "models")],
+				forbidden_output_roots: [forbiddenRoot],
+				runtime_root: join(root, "runtime"),
+			},
+			datasets: { allowed_source_roots: { default: join(root, "datasets") } },
+			execution: { surfaces: ["local"] },
+		}),
+	);
+	return { repositoryRoot: root, environment: {} };
 }
 
 function skillPackage(): SureSkillPackage {
@@ -69,7 +90,7 @@ describe("output_dir resolution", () => {
 		const root = freshRoot("creates");
 		const target = join(root, "job-1234");
 
-		const result = resolveOutputDir(`model=demo output_dir=${target}`);
+		const result = resolveOutputDir(`model=demo output_dir=${target}`, policyOptions(root));
 
 		expect(result).toEqual({ ok: true, dir: target });
 		expect(existsSync(target)).toBe(true);
@@ -82,38 +103,26 @@ describe("output_dir resolution", () => {
 		expect(result.error ?? "").toContain("absolute");
 	});
 
-	it("refuses a directory inside NFS", () => {
-		const result = resolveOutputDir(`model=demo output_dir=${join(NFS_ROOT, "results", "job-1234")}`);
+	it("refuses a directory inside the configured production reference", () => {
+		const root = freshRoot("production-reference");
+		const forbiddenRoot = join(root, "nfs");
+		const result = resolveOutputDir(
+			`model=demo output_dir=${join(forbiddenRoot, "results", "job-1234")}`,
+			policyOptions(root, forbiddenRoot),
+		);
 
 		expect(result.ok).toBe(false);
-		expect(result.error ?? "").toContain(NFS_ROOT);
+		expect(result.error ?? "").toContain(forbiddenRoot);
 	});
 
 	it("uses the active project policy for containment and diagnostics", () => {
 		const root = freshRoot("project-policy");
-		const config = join(root, "config");
 		const forbiddenRoot = join(root, "protected");
-		mkdirSync(config);
-		writeFileSync(
-			join(config, "site.local.yaml"),
-			JSON.stringify({
-				schema: "sure.site.policy.v1",
-				site_id: "project-policy",
-				policy_version: 1,
-				storage: {
-					approved_models_roots: [join(forbiddenRoot, "models")],
-					forbidden_output_roots: [forbiddenRoot],
-					runtime_root: join(root, "runtime"),
-				},
-				datasets: { allowed_source_roots: { default: join(root, "datasets") } },
-				execution: { surfaces: ["local"] },
-			}),
-		);
 
-		const result = resolveOutputDir(`output_dir=${join(forbiddenRoot, "job-1234")}`, {
-			repositoryRoot: root,
-			environment: {},
-		});
+		const result = resolveOutputDir(
+			`output_dir=${join(forbiddenRoot, "job-1234")}`,
+			policyOptions(root, forbiddenRoot),
+		);
 
 		expect(result.ok).toBe(false);
 		expect(result.error ?? "").toContain(forbiddenRoot);
@@ -124,7 +133,7 @@ describe("output_dir resolution", () => {
 		const blocker = join(root, "blocker");
 		writeFileSync(blocker, "not a directory", "utf-8");
 
-		const result = resolveOutputDir(`model=demo output_dir=${join(blocker, "job-1234")}`);
+		const result = resolveOutputDir(`model=demo output_dir=${join(blocker, "job-1234")}`, policyOptions(root));
 
 		expect(result.ok).toBe(false);
 		expect(result.error ?? "").toContain("blocker");

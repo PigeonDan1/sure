@@ -143,6 +143,7 @@ const COPIED_SCRIPTS = [
 	"harness_runtime.py",
 	"container_execution.py",
 	"deployment_binding.py",
+	"runtime_layout_bootstrap.py",
 	"check_run_report.py",
 ];
 
