@@ -156,8 +156,50 @@ export const SURE_MEMORY_VALIDATOR_BACKEND: SemanticBackendBundle = {
 	],
 };
 
+export const SURE_FEED_VALIDATOR_BACKEND: SemanticBackendBundle = {
+	schema: "sure.semantic.backend.bundle.v1",
+	bundle_id: "sure-feed-validators",
+	version: "legacy-v1",
+	description: "SURE feed task, model-input, and ranking validators.",
+	canonical_root: "sure/canonical/shared/feed-validator",
+	canonical_root_kind: "repository",
+	legacy_root: "sure/skills/sure_feed",
+	legacy_root_kind: "repository",
+	integrity_root: "scripts",
+	operations: [
+		{
+			operation_id: "sure.feed.validate_match_task",
+			description: "Validate feed candidate task matching and provenance.",
+			entrypoint: "scripts/check_match_task.py",
+			consumer_skill_ids: ["sure_feed"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.feed.validate_model_input",
+			description: "Validate synthesized feed model-input envelopes.",
+			entrypoint: "scripts/check_model_input.py",
+			consumer_skill_ids: ["sure_feed"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.feed.validate_rank_select",
+			description: "Validate the selected feed candidate set and score domain.",
+			entrypoint: "scripts/check_rank_select.py",
+			consumer_skill_ids: ["sure_feed"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+	],
+};
+
 export const CANONICAL_SEMANTIC_BACKENDS: readonly SemanticBackendBundle[] = [
 	SURE_EVALUATION_BACKEND,
 	SURE_EVALUATION_VALIDATOR_BACKEND,
 	SURE_MEMORY_VALIDATOR_BACKEND,
+	SURE_FEED_VALIDATOR_BACKEND,
 ];

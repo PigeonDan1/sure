@@ -6651,8 +6651,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
-      "size_bytes": 31165,
-      "sha256": "55e1a024e5e896c19a1e0ceaa51a997e4b48b129e2640547606cc57d63309ec3"
+      "size_bytes": 31337,
+      "sha256": "d9f76e1dde87afccd2c88a94891de0f43fea8f450a1bb96fd0c281e44b16d11e"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
@@ -7182,7 +7182,7 @@
     {
       "path": "sure/runtime/memory/units.generation.lock.json",
       "size_bytes": 506,
-      "sha256": "25739e7bbc949895660cbd02cc601bb836851ea0aaeedb742cecc356d2506223"
+      "sha256": "1e3f801b4523cacf9de8a35bf30a763e6b42a50188010d44570a09fe81a9f12d"
     },
     {
       "path": "sure/runtime/memory/units.json",
@@ -7266,8 +7266,8 @@
     },
     {
       "path": "sure/runtime/test_semantic_backend.py",
-      "size_bytes": 15725,
-      "sha256": "6d4c9195ca91f022bc70387045b2d5a09792a23e98273bed5296712e6b6e4f23"
+      "size_bytes": 18124,
+      "sha256": "3e3ea80e662b958a4fbdd2fd3fb3d9e3ba8b22ed8205424c6eff9618aeb1c832"
     },
     {
       "path": "sure/runtime/usage.ts",
@@ -7676,8 +7676,8 @@
     },
     {
       "path": "sure/skills/sure_feed/scripts/check_match_task.py",
-      "size_bytes": 2852,
-      "sha256": "e11e44ff0c7387119a0057d84f5c994d13cf9d26b73ad89b32b42f03665eeaa7"
+      "size_bytes": 940,
+      "sha256": "dfde48491d95dd552bfd04add3f734ed7bb1a2436fc87e089df1ee58b2823c74"
     },
     {
       "path": "sure/skills/sure_feed/scripts/check_memory_extraction.py",
@@ -7691,13 +7691,13 @@
     },
     {
       "path": "sure/skills/sure_feed/scripts/check_model_input.py",
-      "size_bytes": 16581,
-      "sha256": "9293e5121a2494679adef83e7ccc169482a61b27fa4043699caf9d14018de0cd"
+      "size_bytes": 941,
+      "sha256": "eafe3c599084a21371ef1fe3b9362d6c82c7d671bafb959b6ec4afe84269de68"
     },
     {
       "path": "sure/skills/sure_feed/scripts/check_rank_select.py",
-      "size_bytes": 2284,
-      "sha256": "4b170ee6812b24476d3f02ad57c69c690dcdddc3d9a790638128b5a313fd8500"
+      "size_bytes": 941,
+      "sha256": "5690c2dcc83b7bfd8781bbc55489d3425adeb03207202a55f3d7357436bfaed5"
     },
     {
       "path": "sure/skills/sure_feed/scripts/publish_memory.py",
@@ -9701,5 +9701,5 @@
       ]
     }
   ],
-  "semantic_digest": "3c0b756fc4a5fbacc4b7a684441dc4224c7ef01789a39d4a891ee81956735020"
+  "semantic_digest": "daeef6e151e562271afbe0860f816f280f66025450f54e18afe53f5aa14e60f6"
 }

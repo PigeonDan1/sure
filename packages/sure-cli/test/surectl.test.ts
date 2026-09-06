@@ -149,6 +149,166 @@ describe("surectl cooperative control plane", () => {
 		});
 	});
 
+	it("runs feed gates through the shared portable semantic backends", () => {
+		const runId = "run-automatic-feed-validators";
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			runId,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+
+		writeFileSync(join(artifacts, "scan_result.json"), JSON.stringify({ candidates: [{ model_id: "owner/model" }] }));
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+
+		writeFileSync(
+			join(artifacts, "match_task_result.json"),
+			JSON.stringify({
+				candidates: [
+					{ model_id: "owner/model", match: { matched: true, match_source: "tasks", task_type: "asr" } },
+				],
+			}),
+		);
+		const missing = command(root, "validate", [...base, "--run-id", runId]);
+		expect(missing.status).toBe(5);
+		expect((missing.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
+		const matched = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(matched.status).toBe(0);
+		expect((matched.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+		let state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		let validation = state.last_validation as Record<string, unknown>;
+		let evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.feed.validate_match_task");
+
+		writeFileSync(join(artifacts, "metadata_result.json"), JSON.stringify({ models: [] }));
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+		writeFileSync(join(artifacts, "oref_result.json"), JSON.stringify({ converted: [] }));
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+
+		const modelInput = {
+			model_id: "owner/model",
+			model_name: "model",
+			task_type: "asr",
+			deployment_type: "local",
+			repo: { url: "https://huggingface.co/owner/model", commit: null },
+			weights: {
+				source: "huggingface",
+				required: true,
+				local_path: null,
+				cache_policy: "download",
+				local_dir_name: "owner__model",
+			},
+			environment_hint: {
+				preferred_backend: "python",
+				python_version: "3.12",
+				requires_gpu: false,
+				system_packages: [],
+			},
+			phase1_runtime_target: "python",
+			entrypoints: {
+				import_test: "python -c pass",
+				load_test: "python -c pass",
+				infer_test: "python -c pass",
+			},
+			fixture: {
+				task_specific: true,
+				fallback_allowed: false,
+				fixture_source: "task_registry",
+				fixture_id: "asr-basic",
+				fixture_index: "fixtures/tasks/asr/index.json",
+				fixture_root: "fixtures/tasks/asr",
+				audio: "fixtures/tasks/asr/sample.wav",
+			},
+			io_contract: {
+				input_type: "audio",
+				output_type: "json",
+				primary_field: "text",
+				required_fields: ["text"],
+				nonempty_fields: ["text"],
+				json_serializable: true,
+			},
+		};
+		const evidenceFields: Array<[string, unknown]> = [
+			["repo.url", modelInput.repo.url],
+			["weights.source", modelInput.weights.source],
+			["environment_hint.preferred_backend", modelInput.environment_hint.preferred_backend],
+			["environment_hint.python_version", modelInput.environment_hint.python_version],
+			["environment_hint.requires_gpu", modelInput.environment_hint.requires_gpu],
+			["phase1_runtime_target", modelInput.phase1_runtime_target],
+			["entrypoints.import_test", modelInput.entrypoints.import_test],
+			["entrypoints.load_test", modelInput.entrypoints.load_test],
+			["entrypoints.infer_test", modelInput.entrypoints.infer_test],
+			["fixture", modelInput.fixture],
+			["io_contract", modelInput.io_contract],
+		];
+		writeFileSync(
+			join(artifacts, "model_input_result.json"),
+			JSON.stringify({
+				model_inputs: [
+					{
+						model_id: "owner/model",
+						model_input: modelInput,
+						evidence: evidenceFields.map(([field, value]) => ({
+							source: field === "fixture" ? "local" : "huggingface",
+							field: field === "fixture" ? "fixture_registry.index" : field,
+							model_input_field: field,
+							value,
+						})),
+					},
+				],
+			}),
+		);
+		const modelInputValidation = command(root, "validate", [
+			...base,
+			"--run-id",
+			runId,
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(modelInputValidation.status).toBe(0);
+		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		validation = state.last_validation as Record<string, unknown>;
+		evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.feed.validate_model_input");
+
+		writeFileSync(
+			join(artifacts, "rank_select_result.json"),
+			JSON.stringify({ selected: [{ model_id: "owner/model", repo: "owner/model", score: 1 }] }),
+		);
+		const ranked = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(ranked.status).toBe(0);
+		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		validation = state.last_validation as Record<string, unknown>;
+		evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.feed.validate_rank_select");
+
+		writeFileSync(
+			join(artifacts, "extraction_declaration.json"),
+			JSON.stringify({
+				schema: "sure.memory.extraction.v2",
+				no_new_lessons: true,
+				no_lessons_reason: "No reusable lesson in this fixture.",
+				covered_by: [],
+				candidates: [],
+				infra_noise: false,
+				infra_evidence: [],
+			}),
+		);
+		const extraction = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(extraction.status).toBe(0);
+		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		validation = state.last_validation as Record<string, unknown>;
+		evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.memory.validate_extraction");
+	}, 30_000);
+
 	it("reports a malformed memory contract as not executed instead of an advisory success", () => {
 		const malformed = join(root, "memory-contract.json");
 		writeFileSync(malformed, JSON.stringify({ schema: "sure.memory.contract.v0" }));

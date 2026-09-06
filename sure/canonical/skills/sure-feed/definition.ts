@@ -43,6 +43,7 @@ export const SURE_FEED_CANONICAL: CanonicalSkillDefinition = defineCanonicalSkil
 						required_fields: ["candidates"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.feed.validate_match_task",
 							script_id: "check_match_task.py",
 						},
 					},
@@ -80,6 +81,7 @@ export const SURE_FEED_CANONICAL: CanonicalSkillDefinition = defineCanonicalSkil
 						forbidden_fields: ["models", "handoff_manifest_path"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.feed.validate_model_input",
 							script_id: "check_model_input.py",
 						},
 					},
@@ -92,6 +94,7 @@ export const SURE_FEED_CANONICAL: CanonicalSkillDefinition = defineCanonicalSkil
 						required_fields: ["selected"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.feed.validate_rank_select",
 							script_id: "check_rank_select.py",
 						},
 					},

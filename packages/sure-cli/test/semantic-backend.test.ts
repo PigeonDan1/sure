@@ -60,6 +60,22 @@ describe("semantic backend registry", () => {
 		);
 	});
 
+	it("resolves feed validators from the shared repository backend", () => {
+		for (const [operationId, file] of [
+			["sure.feed.validate_match_task", "check_match_task.py"],
+			["sure.feed.validate_model_input", "check_model_input.py"],
+			["sure.feed.validate_rank_select", "check_rank_select.py"],
+		] as const) {
+			const resolved = resolveSemanticBackendOperation(packageDir, operationId, { manifestPath });
+			expect(resolved.source).toBe("canonical");
+			expect(resolved.path).toBe(
+				join(repositoryRoot, "sure", "canonical", "shared", "feed-validator", "scripts", file),
+			);
+			expect(resolved.kind).toBe("validate");
+			expect(resolved.consumer_skill_ids).toEqual(["sure_feed"]);
+		}
+	});
+
 	it("uses an installed backend root only when its complete tree matches the manifest", () => {
 		const temporary = mkdtempSync(join(tmpdir(), "sure-semantic-backend-"));
 		try {
