@@ -6951,8 +6951,8 @@
     },
     {
       "path": "sure/runtime/execution_bridge.py",
-      "size_bytes": 21358,
-      "sha256": "74b49bb4389ad536fb6403445b2b6b0380541d46c5ecb3b76be42bb0392f48f9"
+      "size_bytes": 37804,
+      "sha256": "d52ab03252d8819352b743965f1d0a793adaae80e7530d38fc377a2470a71fb8"
     },
     {
       "path": "sure/runtime/harness/bootstrap.py",
@@ -7236,8 +7236,8 @@
     },
     {
       "path": "sure/runtime/semantic_backend.py",
-      "size_bytes": 22036,
-      "sha256": "2d5cea4f47e33312efb731389596414600fcf851ad27278fe872de3c31fe7d76"
+      "size_bytes": 28601,
+      "sha256": "51c88ed1c30c2240a61200897b38b599d78a6da8fb6e7e59e870b465b0b70a95"
     },
     {
       "path": "sure/runtime/semantic-backend.ts",
@@ -7251,8 +7251,8 @@
     },
     {
       "path": "sure/runtime/test_execution_bridge.py",
-      "size_bytes": 5393,
-      "sha256": "ae949d696b436cd0bf45b732d33817ce666d1f806822477c0a7d3a5d4f37c39b"
+      "size_bytes": 10082,
+      "sha256": "f404d92078f858a2b020d8b44765afc7c601e65ce32d9c1be0a95d97c6bbd753"
     },
     {
       "path": "sure/runtime/test_repository_layout.py",
@@ -9486,8 +9486,8 @@
     },
     {
       "path": "sure/skills/sure_trans/scripts/materialize_adapter_runtime.py",
-      "size_bytes": 2490,
-      "sha256": "c1195d0183e7aa608d6bb6a0e508179a665f97c63928086603aa220903aa4b45"
+      "size_bytes": 2787,
+      "sha256": "e4db481ab125d801b69a53dc66be858138d13066c54e73564b4b7ff178ac8be4"
     },
     {
       "path": "sure/skills/sure_trans/scripts/materialize_trans_inputs.py",
@@ -9701,5 +9701,5 @@
       ]
     }
   ],
-  "semantic_digest": "5e4fa35c372ff528c1098f00f53a9dee9cf5b81ac3aa4af77cff4e766605fdeb"
+  "semantic_digest": "4bdc12fd49915a45328c2f553841e3b71ce52677787374681cfe4deb2865c442"
 }
