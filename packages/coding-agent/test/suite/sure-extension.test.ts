@@ -17,6 +17,7 @@ import { SettingsManager } from "../../src/core/settings-manager.ts";
 import { switchToInitializedModel } from "../../src/core/sure/extension.ts";
 import { sureExtension } from "../../src/core/sure/index.ts";
 import type { SureInitManifest } from "../../src/core/sure/init-types.ts";
+import { SureRunManager } from "../../src/core/sure/run-manager.ts";
 import { runPrintMode } from "../../src/modes/print-mode.ts";
 import { createHarness, getUserTexts, type Harness } from "./harness.ts";
 
@@ -998,7 +999,10 @@ describe("Sure extension", () => {
 
 		const runId = getOnlyRunId(harness.tempDir);
 		const runDir = join(harness.tempDir, ".sure", "runs", runId);
-		writeJson(join(runDir, "state.json"), {
+		const runManager = new SureRunManager(harness.tempDir);
+		const runRecord = runManager.readRun(runId);
+		expect(runRecord).toBeDefined();
+		runManager.updateState(runRecord!, {
 			checkpoint: { id: "main_flow", resumable: true, resume_hint: "Start at unit two." },
 		});
 		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
@@ -1027,7 +1031,10 @@ describe("Sure extension", () => {
 
 		const runId = getOnlyRunId(harness.tempDir);
 		const runDir = join(harness.tempDir, ".sure", "runs", runId);
-		writeJson(join(runDir, "state.json"), { checkpoint: { id: "main_flow", resumable: false } });
+		const runManager = new SureRunManager(harness.tempDir);
+		const runRecord = runManager.readRun(runId);
+		expect(runRecord).toBeDefined();
+		runManager.updateState(runRecord!, { checkpoint: { id: "main_flow", resumable: false } });
 		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
 
 		await harness.session.prompt("/sure_resume");

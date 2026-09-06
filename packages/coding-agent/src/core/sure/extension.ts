@@ -622,7 +622,14 @@ async function resumeRun(
 	setActiveRun(active);
 	// pre_start is deliberately not re-run: it resolves inputs and resets the
 	// checkpoint to the first unit, which is the progress a resume is protecting.
-	active.record = runManager.updateRun(active.record, { status: "running", finishedAt: undefined }, "resumed");
+	try {
+		active.record = runManager.resumeRun(active.record, skillPackage);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		ctx.ui.notify(`Cannot resume Sure run ${active.record.runId}: ${message}`, "error");
+		clearActiveRun(pi, active, setActiveRun);
+		return;
+	}
 	pi.setActiveTools(activeToolNames(active));
 	setRunStatusText(ctx, active.record, resumed.state);
 	pi.appendEntry("sure.run", active.record);
@@ -879,23 +886,17 @@ export function createSureExtension(): ExtensionFactory {
 						};
 					}
 
-					active.record = runManager.updateRun(
-						active.record,
-						{
+					// Post-finish hooks may publish advisory memory and a final display
+					// snapshot. Run them while the durable record is still non-terminal;
+					// the subsequent Core mutation is the single terminal commit.
+					const postFinish = await active.controller.run("post_finish", {
+						run: {
+							...active.record,
 							status: finish.status,
 							manifestPath,
 							summary: finish.summary,
 							errorSummary: finish.error_summary,
-							artifacts: finish.artifacts,
-							finishedAt: new Date().toISOString(),
-							lastRepair: undefined,
 						},
-						"finished",
-						{ finish, manifestPath },
-					);
-					pi.appendEntry("sure.run", active.record);
-					const postFinish = await active.controller.run("post_finish", {
-						run: active.record,
 						skill: active.skillPackage.manifest,
 						cwd: ctx.cwd,
 						packageDir: active.skillPackage.packageDir,
@@ -911,6 +912,22 @@ export function createSureExtension(): ExtensionFactory {
 							path: active.skillPackage.manifestPath,
 						});
 					}
+
+					active.record = runManager.updateRun(
+						active.record,
+						{
+							status: finish.status,
+							manifestPath,
+							summary: finish.summary,
+							errorSummary: finish.error_summary,
+							artifacts: finish.artifacts,
+							finishedAt: new Date().toISOString(),
+							lastRepair: undefined,
+						},
+						"finished",
+						{ finish, manifestPath },
+					);
+					pi.appendEntry("sure.run", active.record);
 					ctx.ui.setStatus(STATUS_KEY, undefined);
 					clearActiveRun(pi, active, setActiveRun);
 					return {
@@ -1129,16 +1146,17 @@ export function createSureExtension(): ExtensionFactory {
 				return;
 			}
 			const runManager = new SureRunManager(active.record.cwd);
+			// A hook or an external cooperative writer may have advanced the
+			// descriptor since the last Pi event. Reload before the terminal CAS.
+			const latest = runManager.readRun(active.record.runId);
+			if (latest) active.record = latest;
 			// A run abandoned by the agent (turn ended, no sure_finish) failed;
 			// "cancelled" is reserved for runs interrupted mid-work.
-			active.record = runManager.setStatus(
-				active.record,
-				active.finishMissing ? "failed" : "cancelled",
-				"session_shutdown",
-			);
-			pi.appendEntry("sure.run", active.record);
+			const shutdownStatus = active.finishMissing ? "failed" : "cancelled";
+			// on_error writes the final diagnostic/checkpoint snapshot. It must
+			// run before the terminal commit because Core freezes terminal state.
 			const onError = await active.controller.run("on_error", {
-				run: active.record,
+				run: { ...active.record, status: shutdownStatus },
 				skill: active.skillPackage.manifest,
 				cwd: ctx.cwd,
 				packageDir: active.skillPackage.packageDir,
@@ -1147,6 +1165,8 @@ export function createSureExtension(): ExtensionFactory {
 				event: { reason: "session_shutdown" },
 			});
 			applyStatePatch(pi, ctx, active, onError.state_patch, "on_error_state");
+			active.record = runManager.setStatus(active.record, shutdownStatus, "session_shutdown");
+			pi.appendEntry("sure.run", active.record);
 			ctx.ui.setStatus(STATUS_KEY, undefined);
 			clearActiveRun(pi, active, setActiveRun);
 		});

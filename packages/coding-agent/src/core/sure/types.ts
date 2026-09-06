@@ -85,6 +85,17 @@ export interface SureRunRecord {
 	/** When the agent turn ended with the run still open; cleared when work resumes. */
 	staleSince?: string;
 	artifacts?: unknown;
+	/** Core binding fields are optional on legacy records and required on new runs. */
+	coreVersion?: string;
+	workflowDigest?: string;
+	validatorDigest?: string;
+	executorDigest?: string;
+	policyDigest?: string;
+	bindingDigest?: string;
+	/** Digest of the persisted state document and monotonic durable revision. */
+	stateDigest?: string;
+	revision?: number;
+	legacyCompatibility?: boolean;
 }
 
 export type SureDisplayPhaseStatus =
