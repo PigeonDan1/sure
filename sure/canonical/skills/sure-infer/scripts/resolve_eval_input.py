@@ -36,6 +36,7 @@ from evaluation_capabilities import default_metrics_for_task_language, supported
 from harness_runtime import HarnessRuntimeBindingError, load_harness_runtime
 from resolve_evaluation_engine import resolve_engine_root
 from resolve_model_dir import APPROVED_MODELS_ROOT, resolve_approved_model
+from sure.runtime.repository_layout import repository_root
 from sure.site.loader import load_site_policy
 
 
@@ -61,7 +62,7 @@ NFS_ROOT = (
 )
 
 def _repo_root_from_script() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return repository_root(__file__)
 
 
 def _utc_now() -> str:

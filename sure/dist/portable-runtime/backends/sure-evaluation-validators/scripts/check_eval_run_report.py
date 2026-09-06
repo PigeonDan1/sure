@@ -20,23 +20,33 @@ from typing import Any
 
 import yaml
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 
-HARNESS_ROOT = next(
-    (parent for parent in Path(__file__).resolve().parents if (parent / "sure" / "site" / "loader.py").is_file()),
-    Path(__file__).resolve().parents[4],
+from runtime_layout_bootstrap import activate_runtime_support
+
+_RUNTIME_SUPPORT_HINT = activate_runtime_support(__file__)
+
+from sure.runtime.repository_layout import (
+    evaluation_engine_root,
+    local_results_root,
+    repository_root,
+    runtime_support_root,
 )
-for _parent in Path(__file__).resolve().parents:
-    if (_parent / "sure" / "site" / "loader.py").is_file():
-        sys.path.insert(0, str(_parent))
-        break
+
+HARNESS_ROOT = repository_root(__file__)
+RUNTIME_SUPPORT_ROOT = runtime_support_root(__file__, repository=HARNESS_ROOT)
+os.environ.setdefault("SURE_REPOSITORY_ROOT", str(HARNESS_ROOT))
+os.environ.setdefault("SURE_RUNTIME_SUPPORT_ROOT", str(RUNTIME_SUPPORT_ROOT))
+sys.path.insert(0, str(RUNTIME_SUPPORT_ROOT))
 
 from sure.site.loader import load_site_policy
 from sure.runtime.execution_bridge import read_json as read_execution_json
 from sure.runtime.execution_bridge import validate_contract_pair
 
-LOCAL_RESULTS_ROOT = (HARNESS_ROOT / "sure" / "results").resolve()
+LOCAL_RESULTS_ROOT = local_results_root(HARNESS_ROOT)
 SOURCE_KINDS = {"approved_nfs_results", "local_infer_run"}
-EVALUATION_ENGINE_ROOT = (HARNESS_ROOT / "sure" / "external" / "sure-evaluation").resolve()
+EVALUATION_ENGINE_ROOT = evaluation_engine_root(HARNESS_ROOT)
 REQUIRED_ARTIFACTS = [
     "prediction_source_resolved",
     "prediction_reuse_manifest",

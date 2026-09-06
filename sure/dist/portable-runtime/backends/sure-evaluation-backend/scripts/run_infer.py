@@ -40,6 +40,7 @@ import check_execution_surface_compliance as compliance
 from container_execution import build_local_container_command, effective_container_exit_code
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 from python_execution import build_local_python_command, verify_model_integrity
+from sure.runtime.repository_layout import repository_root
 from sure.runtime.execution_bridge import (
     artifact_ref,
     build_receipt,
@@ -534,7 +535,7 @@ def main() -> int:
 
     execution_path = execution["path_planned"]
     host = socket.gethostname()
-    cwd = Path(args.cwd).expanduser().resolve() if args.cwd else Path(__file__).resolve().parents[4]
+    cwd = Path(args.cwd).expanduser().resolve() if args.cwd else repository_root(__file__)
     stdout_path = artifacts_dir / "local_execution.stdout.log"
     stderr_path = artifacts_dir / "local_execution.stderr.log"
     execution_output = (

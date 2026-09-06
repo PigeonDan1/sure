@@ -18,11 +18,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from runtime_layout_bootstrap import activate_runtime_support
+
+_RUNTIME_SUPPORT_HINT = activate_runtime_support(__file__)
+
+from sure.runtime.repository_layout import repository_root, runtime_support_root
 from harness_runtime import HarnessRuntimeBindingError, load_harness_runtime
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-SPEC_ROOT = REPO_ROOT / "sure" / "runtime" / "evaluation"
+REPO_ROOT = repository_root(__file__)
+RUNTIME_SUPPORT_ROOT = runtime_support_root(__file__, repository=REPO_ROOT)
+SPEC_ROOT = RUNTIME_SUPPORT_ROOT / "sure" / "runtime" / "evaluation"
 CACHE_ROOT = REPO_ROOT / "sure" / ".runtime" / "evaluation"
 
 

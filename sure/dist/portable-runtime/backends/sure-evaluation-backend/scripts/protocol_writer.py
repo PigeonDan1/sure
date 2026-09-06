@@ -14,9 +14,18 @@ import json
 import math
 import os
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from runtime_layout_bootstrap import activate_runtime_support
+
+activate_runtime_support(__file__)
+from sure.runtime.repository_layout import repository_root
 
 from sure_eval.core.logging import get_logger
 
@@ -24,7 +33,7 @@ from evaluation_runtime import evaluation_child_environment
 
 logger = get_logger(__name__)
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-HARNESS_ROOT = Path(__file__).resolve().parents[4]
+HARNESS_ROOT = repository_root(__file__)
 
 
 def _utc_now() -> str:

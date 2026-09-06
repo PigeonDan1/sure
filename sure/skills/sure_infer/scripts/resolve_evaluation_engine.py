@@ -12,9 +12,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from runtime_layout_bootstrap import activate_runtime_support
+
+activate_runtime_support(__file__)
+from sure.runtime.repository_layout import repository_root
+
 
 def _repo_root_from_script() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return repository_root(__file__)
 
 
 def _candidate_roots(explicit: str | None) -> list[tuple[str, Path]]:

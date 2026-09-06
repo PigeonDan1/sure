@@ -11,22 +11,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-def _repository_root() -> Path:
-    configured = os.environ.get("SURE_REPOSITORY_ROOT", "").strip()
-    if configured:
-        root = Path(configured).expanduser().resolve()
-        if (root / "sure" / "site").is_dir():
-            return root
-    script_dir = Path(__file__).resolve().parent
-    for candidate in (script_dir, *script_dir.parents):
-        if (candidate / "sure" / "site").is_dir():
-            return candidate
-    return script_dir.parents[4]
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 
+from runtime_layout_bootstrap import activate_runtime_support
 
-REPO_ROOT = _repository_root()
+_RUNTIME_SUPPORT_HINT = activate_runtime_support(__file__)
+
+from sure.runtime.repository_layout import repository_root, runtime_support_root
+
+REPO_ROOT = repository_root(__file__)
+RUNTIME_SUPPORT_ROOT = runtime_support_root(__file__, repository=REPO_ROOT)
 os.environ.setdefault("SURE_REPOSITORY_ROOT", str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT))
+os.environ.setdefault("SURE_RUNTIME_SUPPORT_ROOT", str(RUNTIME_SUPPORT_ROOT))
+sys.path.insert(0, str(RUNTIME_SUPPORT_ROOT))
 
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
 from sure.site.loader import SitePolicyError, load_site_policy

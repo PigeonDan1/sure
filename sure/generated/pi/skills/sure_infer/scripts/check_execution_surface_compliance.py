@@ -33,6 +33,7 @@ from typing import Any
 from harness_runtime import HarnessRuntimeBindingError, harness_runtime_from_eval_input
 from container_execution import resolve_container_harness_runtime
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
+from sure.runtime.repository_layout import repository_root
 
 
 def _sha256_file(path: Path) -> str:
@@ -296,7 +297,7 @@ def _live_runtime_probe(
             if completed.returncode == 0
             else f"MODEL_RUNTIME_NEEDS_REPAIR: {detail or f'exit {completed.returncode}'}",
         }
-    repo_root = Path(__file__).resolve().parents[4]
+    repo_root = repository_root(__file__)
     try:
         harness, mounted = resolve_container_harness_runtime(binding, host_harness, repo_root)
     except ValueError as exc:

@@ -12,24 +12,19 @@ from pathlib import Path
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 
+from runtime_layout_bootstrap import activate_runtime_support
 
-def _repository_root() -> Path:
-    configured = os.environ.get("SURE_REPOSITORY_ROOT", "").strip()
-    if configured:
-        root = Path(configured).expanduser().resolve()
-        if (root / "sure" / "canonical").is_dir() and (root / "sure" / "skills").is_dir():
-            return root
-    for candidate in (SCRIPT_DIR, *SCRIPT_DIR.parents):
-        if (candidate / "sure" / "canonical").is_dir() and (candidate / "sure" / "skills").is_dir():
-            return candidate
-    return SCRIPT_DIR.parents[4]
+_RUNTIME_SUPPORT_HINT = activate_runtime_support(__file__)
 
+from sure.runtime.repository_layout import repository_root, runtime_support_root
 
-HARNESS_ROOT = _repository_root()
+HARNESS_ROOT = repository_root(__file__)
+RUNTIME_SUPPORT_ROOT = runtime_support_root(__file__, repository=HARNESS_ROOT)
 os.environ.setdefault("SURE_REPOSITORY_ROOT", str(HARNESS_ROOT))
-if str(HARNESS_ROOT) not in sys.path:
-    sys.path.insert(0, str(HARNESS_ROOT))
+os.environ.setdefault("SURE_RUNTIME_SUPPORT_ROOT", str(RUNTIME_SUPPORT_ROOT))
+sys.path.insert(0, str(RUNTIME_SUPPORT_ROOT))
 
 from deployment_binding import DeploymentBindingError, load_deployment_binding
 

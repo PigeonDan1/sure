@@ -19,27 +19,26 @@ from typing import Any, Callable
 import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 
+from runtime_layout_bootstrap import activate_runtime_support
 
-def _repository_root() -> Path:
-    configured = os.environ.get("SURE_REPOSITORY_ROOT", "").strip()
-    if configured:
-        root = Path(configured).expanduser().resolve()
-        if (root / "sure" / "canonical").is_dir() and (root / "sure" / "skills").is_dir():
-            return root
-    for candidate in (SCRIPT_DIR, *SCRIPT_DIR.parents):
-        if (candidate / "sure" / "canonical").is_dir() and (candidate / "sure" / "skills").is_dir():
-            return candidate
-    # Preserve the historical layout as a last-resort compatibility mode for
-    # an unpacked backend that has no repository marker yet.
-    return SCRIPT_DIR.parents[4]
+_RUNTIME_SUPPORT_HINT = activate_runtime_support(__file__)
 
+from sure.runtime.repository_layout import (
+    evaluation_engine_root,
+    local_results_root,
+    repository_root,
+    runtime_support_root,
+)
 
-HARNESS_ROOT = _repository_root()
+HARNESS_ROOT = repository_root(__file__)
+RUNTIME_SUPPORT_ROOT = runtime_support_root(__file__, repository=HARNESS_ROOT)
 os.environ.setdefault("SURE_REPOSITORY_ROOT", str(HARNESS_ROOT))
+os.environ.setdefault("SURE_RUNTIME_SUPPORT_ROOT", str(RUNTIME_SUPPORT_ROOT))
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent / "src"))
-sys.path.insert(0, str(HARNESS_ROOT))
+sys.path.insert(0, str(RUNTIME_SUPPORT_ROOT))
 
 from import_prediction_source import import_predictions
 from generate_report_snapshot import build_snapshot
@@ -70,8 +69,8 @@ from sure.runtime.evaluation_commit import (
 from sure.runtime.resource_locator import resolve_backend_script
 
 
-LOCAL_RESULTS_ROOT = HARNESS_ROOT / "sure" / "results"
-EVALUATION_ENGINE_ROOT = HARNESS_ROOT / "sure" / "external" / "sure-evaluation"
+LOCAL_RESULTS_ROOT = local_results_root(HARNESS_ROOT)
+EVALUATION_ENGINE_ROOT = evaluation_engine_root(HARNESS_ROOT)
 _CONTRACT_CONTEXT: dict[str, Any] | None = None
 
 
@@ -766,7 +765,7 @@ def _harness_config(
         if not path.exists():
             raise FileNotFoundError(path)
         return path.resolve()
-    base_config = HARNESS_ROOT / "sure" / "external" / "sure-evaluation" / "config" / "default.yaml"
+    base_config = EVALUATION_ENGINE_ROOT / "config" / "default.yaml"
     datasets_root = _approved_reference_datasets_root(
         source,
         approved_models_root=approved_models_root,

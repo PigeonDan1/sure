@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { SURE_WORKFLOWS } from "../packages/coding-agent/src/core/sure/generated-workflows.ts";
 import { canonicalJson, canonicalJsonDigest } from "../packages/sure-core/src/contracts/canonical-json.ts";
 import { validateJsonSchema } from "../packages/sure-core/src/contracts/schema.ts";
@@ -195,6 +196,8 @@ describe("canonical SURE skill generation", () => {
 
 	it("ships one independently verifiable semantic runtime for both hosts", () => {
 		const root = join(repositoryRoot, "sure/dist/portable-runtime");
+		const workspace = mkdtempSync(join(tmpdir(), "sure-portable-workspace-"));
+		onTestFinished(() => rmSync(workspace, { force: true, recursive: true }));
 		const lock = readJson(join(root, "runtime-support.lock.json"));
 		const { runtime_digest: runtimeDigest, ...unsigned } = lock;
 		expect(lock.schema).toBe("sure.portable.runtime.lock.v1");
@@ -239,6 +242,13 @@ describe("canonical SURE skill generation", () => {
 			"resolved = [resolve_semantic_backend_operation(op, package_dir=root, manifest_path=manifest_path, environment={}) for op in operations]",
 			"assert all(item.source == 'package' for item in resolved)",
 			"assert all(item.registry_digest == manifest['registry_digest'] for item in resolved)",
+			"sys.path.insert(0, str(root / 'backends' / 'sure-evaluation-backend' / 'scripts'))",
+			"import evaluation_runtime",
+			"workspace = Path(sys.argv[2]).resolve()",
+			"assert evaluation_runtime.REPO_ROOT == workspace",
+			"assert evaluation_runtime.RUNTIME_SUPPORT_ROOT == root",
+			"assert evaluation_runtime.SPEC_ROOT == root / 'sure' / 'runtime' / 'evaluation'",
+			"assert evaluation_runtime.CACHE_ROOT == workspace / 'sure' / '.runtime' / 'evaluation'",
 			"print(len(resolved))",
 		].join("\n");
 		const python = process.env.PYTHON?.trim() || "python3";
@@ -246,11 +256,12 @@ describe("canonical SURE skill generation", () => {
 			...process.env,
 			PYTHONDONTWRITEBYTECODE: "1",
 			PYTHONPATH: root,
-			SURE_REPOSITORY_ROOT: root,
+			SURE_REPOSITORY_ROOT: workspace,
+			SURE_RUNTIME_SUPPORT_ROOT: root,
 			SURE_SEMANTIC_BACKEND_MANIFEST: join(root, "semantic-backends.json"),
 			SURE_SEMANTIC_BACKEND_ROOT: join(root, "backends"),
 		};
-		const probeOutput = execFileSync(python, ["-B", "-c", pythonProbe, root], {
+		const probeOutput = execFileSync(python, ["-B", "-c", pythonProbe, root, workspace], {
 			cwd: root,
 			env: probeEnvironment,
 			stdio: "pipe",
@@ -269,6 +280,15 @@ describe("canonical SURE skill generation", () => {
 				timeout: 15_000,
 			});
 		}
+		expect(() =>
+			execFileSync(python, ["-B", entrypoints[0], "--help"], {
+				cwd: root,
+				env: { ...probeEnvironment, SURE_RUNTIME_SUPPORT_ROOT: workspace },
+				stdio: "pipe",
+				timeout: 15_000,
+			}),
+		).toThrow();
+		expect(readdirSync(workspace)).toEqual([]);
 		const combined = Buffer.concat(files.map((file) => readFileSync(join(root, file.path))));
 		expect(combined.toString("utf8")).not.toMatch(/@earendil-works\/pi-coding-agent|\/hpc_stor03/);
 		for (const skill of CANONICAL_SKILLS) {

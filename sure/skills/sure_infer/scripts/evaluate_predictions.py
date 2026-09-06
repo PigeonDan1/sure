@@ -24,6 +24,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from runtime_layout_bootstrap import activate_runtime_support
+
+activate_runtime_support(__file__)
+from sure.runtime.repository_layout import repository_root
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from sure_eval.core.config import Config
@@ -44,7 +52,7 @@ from evaluation_runtime import (
 configure_logging(level="INFO")
 logger = get_logger(__name__)
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-HARNESS_ROOT = Path(__file__).resolve().parents[4]
+HARNESS_ROOT = repository_root(__file__)
 SURE_SUITES_ROOT = Path("data/datasets/sure_benchmark/SURE_Test_Suites")
 
 LOWER_IS_BETTER_METRICS = {

@@ -16,24 +16,19 @@ from typing import Any
 import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
 
+from runtime_layout_bootstrap import activate_runtime_support
 
-def _repository_root() -> Path:
-    configured = os.environ.get("SURE_REPOSITORY_ROOT", "").strip()
-    if configured:
-        root = Path(configured).expanduser().resolve()
-        if (root / "sure" / "canonical").is_dir() and (root / "sure" / "skills").is_dir():
-            return root
-    for candidate in (SCRIPT_DIR, *SCRIPT_DIR.parents):
-        if (candidate / "sure" / "canonical").is_dir() and (candidate / "sure" / "skills").is_dir():
-            return candidate
-    return SCRIPT_DIR.parents[4]
+_RUNTIME_SUPPORT_HINT = activate_runtime_support(__file__)
 
+from sure.runtime.repository_layout import local_results_root, repository_root, runtime_support_root
 
-HARNESS_ROOT = _repository_root()
+HARNESS_ROOT = repository_root(__file__)
+RUNTIME_SUPPORT_ROOT = runtime_support_root(__file__, repository=HARNESS_ROOT)
 os.environ.setdefault("SURE_REPOSITORY_ROOT", str(HARNESS_ROOT))
-if str(HARNESS_ROOT) not in sys.path:
-    sys.path.insert(0, str(HARNESS_ROOT))
+os.environ.setdefault("SURE_RUNTIME_SUPPORT_ROOT", str(RUNTIME_SUPPORT_ROOT))
+sys.path.insert(0, str(RUNTIME_SUPPORT_ROOT))
 
 from resolve_model_dir import APPROVED_MODELS_ROOT, resolve_approved_model_identity
 
@@ -46,9 +41,7 @@ APPROVED_RESULTS_ROOT = (
     if _configured_policy and _configured_policy["policy"]["storage"]["approved_results_roots"]
     else None
 )
-LOCAL_RESULTS_ROOT = Path(
-    os.environ.get("SURE_LOCAL_RESULTS_ROOT", str(HARNESS_ROOT / "sure" / "results"))
-).expanduser().resolve()
+LOCAL_RESULTS_ROOT = local_results_root(HARNESS_ROOT)
 LOCAL_BUNDLE_FILES = ("protocol.yaml", "prediction_generation_status.json", "predictions")
 ALLOWED_PROTOCOLS = frozenset({"standard_system", "strict_core"})
 DATASET_ID_RE = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)__(?P<version>v[0-9][A-Za-z0-9.-]*)$")

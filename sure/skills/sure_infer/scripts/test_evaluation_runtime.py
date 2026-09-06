@@ -278,9 +278,11 @@ class ApprovedHarnessRuntimeTests(unittest.TestCase):
                     _approved_harness_runtime()
 
     def test_a_python_outside_the_runtime_root_is_refused(self) -> None:
-        with tempfile.TemporaryDirectory() as raw_root:
-            root = Path(raw_root)
-            outside = root.parent / "outside-python"
+        with tempfile.TemporaryDirectory() as raw_parent:
+            parent = Path(raw_parent)
+            root = parent / "runtime"
+            root.mkdir()
+            outside = parent / "outside-python"
             outside.write_text("#!/bin/sh\n", encoding="utf-8")
             outside.chmod(0o755)
             env = self._runtime(root)
