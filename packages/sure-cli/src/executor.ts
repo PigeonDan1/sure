@@ -13,11 +13,13 @@ import type {
 } from "@earendil-works/sure-core";
 import {
 	canonicalJsonDigest,
+	createOutcome,
 	type ExecutionBoundaryOptions,
 	type ExecutionReceiptValidation,
 	type ExecutionRequestValidation,
 	evaluateCapabilityRequirements,
 	evaluatePathBoundary,
+	executorDescriptor,
 	validateExecutionReceipt,
 	validateExecutionRequest,
 } from "@earendil-works/sure-core";
@@ -35,7 +37,7 @@ const CAPABILITY_PROBE_IDS = new Set([
 const MAX_CAPTURED_OUTPUT = 8192;
 
 export interface ExecutorRunOptions {
-	kind: Extract<ExecutorKind, "local" | "python" | "docker">;
+	kind: ExecutorKind;
 	executor_digest: string;
 	executor_version: string;
 	working_directory: string;
@@ -257,14 +259,13 @@ function outputArtifact(
 }
 
 function executorIdentity(options: ExecutorRunOptions) {
+	const descriptor = executorDescriptor(options.kind);
 	return {
-		executor_id: `surectl.${options.kind}`,
+		executor_id: descriptor?.executor_id ?? `surectl.${options.kind}`,
 		kind: options.kind,
 		version: options.executor_version,
 		digest: options.executor_digest,
-		// A portable CLI can prove which adapter ran, but it cannot enforce the
-		// Pi lifecycle or provide a trusted attestation.
-		trust_level: "cooperative" as const,
+		trust_level: descriptor?.minimum_trust_level ?? ("cooperative" as const),
 	};
 }
 
@@ -312,6 +313,51 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 			request_validation: requestValidation,
 			outcome: requestValidation.outcome,
 			capability: evaluateCapabilityRequirements([], []),
+		};
+	}
+	const descriptor = executorDescriptor(options.kind);
+	if (!descriptor || descriptor.implementation !== "builtin") {
+		const observedAt = now(options);
+		const capabilityIds = descriptor?.capability_ids ?? [`sure.execution.${options.kind}`];
+		const evidence: CapabilityEvidence[] = capabilityIds.map((capabilityId) => {
+			const base = {
+				capability_id: capabilityId,
+				capability_class: "execution_capability" as const,
+				status: "MISSING" as const,
+				source: "executor" as const,
+				observed_at: observedAt,
+				details: { kind: options.kind, implementation: "external_registration_required" },
+			};
+			return { ...base, evidence_digest: canonicalJsonDigest(base as unknown as JsonValue) };
+		});
+		const outcome = createOutcome({
+			validatorVerdict: "NOT_EXECUTED",
+			workflowDisposition: "BLOCK",
+			reasonCode: "CAPABILITY_MISSING",
+			executionLifecycle: "NOT_STARTED",
+			diagnostics: [
+				{
+					code: "CAPABILITY_MISSING",
+					message: `Executor ${options.kind} requires an external adapter that is not installed.`,
+				},
+			],
+		});
+		const receipt = baseReceipt(request, options, evidence, "NOT_STARTED", observedAt, now(options));
+		receipt.diagnostics = outcome.diagnostics.map(({ code, message }) => ({ code, message }));
+		const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
+		return {
+			request_validation: requestValidation,
+			receipt,
+			receipt_validation: receiptValidation,
+			outcome,
+			capability: {
+				admitted: false,
+				unknown: [],
+				missing: [...capabilityIds],
+				denied: [],
+				invalid_evidence: [],
+				blocking_outcome: outcome,
+			},
 		};
 	}
 	const capabilities = capabilityEvidence(request, options);

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { canonicalJson, canonicalJsonDigest } from "../packages/sure-core/src/contracts/canonical-json.ts";
 import type { JsonValue } from "../packages/sure-core/src/contracts/types.ts";
+import { executorRegistrySnapshot } from "../packages/sure-core/src/execution/registry.ts";
 import { CANONICAL_MEMORY_CONTRACT } from "../sure/canonical/shared/memory-contract.ts";
 import { CANONICAL_SKILLS } from "../sure/canonical/skills/index.ts";
 import { canonicalValidatorRegistry } from "../sure/canonical/validators/index.ts";
@@ -152,6 +153,26 @@ describe("canonical SURE skill generation", () => {
 			expect(readme).toContain("surectl memory --contract ./memory-contract.json");
 			expect(readme).toContain(`--skill ${skill.skill_id}`);
 			expect(readme).not.toMatch(/@earendil-works\/pi-coding-agent|sure\/skills\/sure_|HARNESS_PYTHON_BIN/);
+		}
+	});
+
+	it("projects one executor registry and digest to both hosts", () => {
+		const canonical = executorRegistrySnapshot();
+		const canonicalFile = readJson(join(repositoryRoot, "sure/canonical/shared/executor-registry.json"));
+		expect(canonicalFile).toEqual(canonical);
+		for (const skill of CANONICAL_SKILLS) {
+			const pi = readJson(
+				join(repositoryRoot, "sure/generated/pi/skills", skill.skill_id, "executor-registry.json"),
+			);
+			const portable = readJson(
+				join(repositoryRoot, "sure/dist/agent-skills", skill.distribution_slug, "executor-registry.json"),
+			);
+			expect(pi).toEqual(canonical);
+			expect(portable).toEqual(canonical);
+			const lock = readJson(
+				join(repositoryRoot, "sure/dist/agent-skills", skill.distribution_slug, "generation.lock.json"),
+			);
+			expect(lock.executor_registry_digest).toBe(canonical.registry_digest);
 		}
 	});
 

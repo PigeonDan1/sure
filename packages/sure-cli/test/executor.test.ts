@@ -94,6 +94,38 @@ describe("cooperative executor capability probes", () => {
 		expect(result.receipt?.lifecycle).toBe("NOT_STARTED");
 	});
 
+	it("does not launch a local entrypoint for an uninstalled remote or trusted adapter", () => {
+		for (const kind of ["remote", "trusted"] as const) {
+			const root = freshRoot();
+			const sentinel = join(root, `${kind}-started`);
+			const input = request(
+				root,
+				`sure.execution.${kind}`,
+				{},
+				{
+					entrypoint: {
+						executable: process.execPath,
+						argv: ["-e", `require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'started')`],
+					},
+				},
+			);
+			const result = executeRequest(input, {
+				kind,
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [root],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			});
+
+			expect(existsSync(sentinel)).toBe(false);
+			expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
+			expect(result.receipt?.lifecycle).toBe("NOT_STARTED");
+			expect(result.capability.missing).toContain(`sure.execution.${kind}`);
+		}
+	});
+
 	it("accepts an explicitly declared Python interpreter probe", () => {
 		const root = freshRoot();
 		const result = executeRequest(

@@ -34,6 +34,8 @@ import {
 	type ExecutionRequest,
 	encodeLegacyCheckpoint,
 	evaluateCapabilityRequirements,
+	executorDescriptor,
+	executorRegistrySnapshot,
 	type FrozenEvaluationSubject,
 	type FrozenFormalSubject,
 	initialCheckpoint,
@@ -1151,6 +1153,7 @@ function validate(args: ParsedArgs): PublicOutcome {
 function capabilities(args: ParsedArgs): PublicOutcome {
 	const now = new Date().toISOString();
 	const evidence: CapabilityEvidence[] = [];
+	const executorRegistry = executorRegistrySnapshot();
 	const python = one(args, "python") ?? process.env.PYTHON ?? "python3";
 	const pythonProbe = spawnSync(python, ["--version"], { encoding: "utf8", timeout: 5000 });
 	if (pythonProbe.status === 0) {
@@ -1278,7 +1281,14 @@ function capabilities(args: ParsedArgs): PublicOutcome {
 			workflowDisposition: "ADVANCE",
 			reasonCode: "VALIDATION_PASSED",
 		});
-	output({ ok: outcome.outcome === "PASS", command: "capabilities", report, admission, outcome });
+	output({
+		ok: outcome.outcome === "PASS",
+		command: "capabilities",
+		report,
+		executor_registry: executorRegistry,
+		admission,
+		outcome,
+	});
 	return outcome.outcome;
 }
 
@@ -1403,7 +1413,10 @@ function resume(args: ParsedArgs): void {
 	output({ ok: true, command: "resume", run: resumed, state, checkpoint, binding });
 }
 
-function executionKind(args: ParsedArgs, request: ExecutionRequest): "local" | "python" | "docker" {
+function executionKind(
+	args: ParsedArgs,
+	request: ExecutionRequest,
+): "local" | "python" | "docker" | "remote" | "trusted" {
 	const raw = one(args, "kind") ?? one(args, "executor");
 	const runtimeRequirements =
 		typeof request.runtime_requirements === "object" && request.runtime_requirements !== null
@@ -1411,9 +1424,16 @@ function executionKind(args: ParsedArgs, request: ExecutionRequest): "local" | "
 			: {};
 	const candidate =
 		raw ?? (typeof runtimeRequirements.executor_kind === "string" ? runtimeRequirements.executor_kind : "local");
-	if (candidate !== "local" && candidate !== "python" && candidate !== "docker") {
-		throw new Error(`Unsupported cooperative executor kind: ${candidate}`);
+	if (
+		candidate !== "local" &&
+		candidate !== "python" &&
+		candidate !== "docker" &&
+		candidate !== "remote" &&
+		candidate !== "trusted"
+	) {
+		throw new Error(`Unsupported executor kind: ${candidate}`);
 	}
+	if (!executorDescriptor(candidate)) throw new Error(`Executor ${candidate} is not registered.`);
 	return candidate;
 }
 

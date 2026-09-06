@@ -4,6 +4,7 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalJson, canonicalJsonDigest, sha256Hex } from "../packages/sure-core/src/contracts/canonical-json.ts";
 import type { JsonValue } from "../packages/sure-core/src/contracts/types.ts";
+import { executorRegistrySnapshot } from "../packages/sure-core/src/execution/registry.ts";
 import { ValidatorRegistry, type ValidatorRegistrySnapshot } from "../packages/sure-core/src/validation/index.ts";
 import { CANONICAL_SEMANTIC_BACKENDS } from "../sure/canonical/shared/evaluation/registry.ts";
 import { CANONICAL_MEMORY_CONTRACT } from "../sure/canonical/shared/memory-contract.ts";
@@ -329,6 +330,7 @@ function lockFor(
 		semantic_backend_digest: backendDigest,
 		validator_registry_digest: validatorRegistryDigest,
 		semantic_backend_registry_digest: semanticBackendManifest.registry_digest,
+		executor_registry_digest: executorRegistrySnapshot().registry_digest,
 		memory_contract_digest: canonicalJsonDigest(asJson(memoryContract)),
 		core_package_version: "0.80.3",
 		portable_omitted_resources: [...omitted].sort(),
@@ -372,6 +374,7 @@ function buildHostFiles(
 	const root = host === "pi" ? join(generatedPiRoot, skill.skill_id) : join(portableRoot, skill.distribution_slug);
 	const files: GeneratedFile[] = [];
 	const memoryContract = memoryContractFor(skill);
+	const executorRegistry = executorRegistrySnapshot();
 	if (host === "pi") {
 		files.push({
 			path: join(root, "SKILL.md"),
@@ -404,6 +407,10 @@ function buildHostFiles(
 			),
 		});
 	}
+	files.push({
+		path: join(root, "executor-registry.json"),
+		content: jsonFile(executorRegistry),
+	});
 	if (host === "pi") {
 		files.push({
 			path: join(root, "semantic-backends.json"),
@@ -448,6 +455,10 @@ function expectedFiles(): GeneratedFile[] {
 	files.push({
 		path: join(repositoryRoot, "sure", "canonical", "shared", "memory-contract.json"),
 		content: jsonFile(CANONICAL_MEMORY_CONTRACT),
+	});
+	files.push({
+		path: join(repositoryRoot, "sure", "canonical", "shared", "executor-registry.json"),
+		content: jsonFile(executorRegistrySnapshot()),
 	});
 	for (const skill of CANONICAL_SKILLS) {
 		files.push(

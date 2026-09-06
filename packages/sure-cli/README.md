@@ -11,3 +11,8 @@ The portable executor is deliberately cooperative. Its receipts identify
 `local`, `python`, or `docker` execution, but use `trust_level: cooperative`;
 they cannot claim Pi-enforced or trusted formal assurance. Missing or unknown
 capabilities produce `NOT_EXECUTED/CAPABILITY_MISSING`.
+
+`surectl capabilities` includes the immutable executor registry. `remote` and
+`trusted` are declared extension points, not built-in implementations: until a
+deployment registers those adapters, `execute` writes a `NOT_STARTED` receipt
+with `CAPABILITY_MISSING` and never launches the request locally.

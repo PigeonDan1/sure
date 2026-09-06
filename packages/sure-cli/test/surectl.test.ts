@@ -484,6 +484,44 @@ describe("surectl cooperative control plane", () => {
 		expect(receipt.lifecycle).toBe("NOT_STARTED");
 	});
 
+	it("records missing external adapters for registered remote and trusted executors", () => {
+		for (const kind of ["remote", "trusted"] as const) {
+			const runId = `run-${kind}-executor`;
+			const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+			const started = command(root, "start", [
+				...base,
+				"--run-id",
+				runId,
+				"--policy-digest",
+				DIGEST_A,
+				"--executor-digest",
+				DIGEST_B,
+			]);
+			expect(started.status).toBe(0);
+			const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+			const artifacts = join(runDir, "artifacts");
+			const requestPath = join(artifacts, `${kind}-request.json`);
+			writeFileSync(requestPath, JSON.stringify(executionRequest(runId, artifacts)));
+			const executed = command(root, "execute", [
+				...base,
+				"--run-id",
+				runId,
+				"--execution-request",
+				requestPath,
+				"--kind",
+				kind,
+			]);
+			expect(executed.status).toBe(5);
+			expect((executed.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
+			const receipt = JSON.parse(readFileSync(join(artifacts, "execution_receipt.json"), "utf8")) as Record<
+				string,
+				unknown
+			>;
+			expect(receipt.lifecycle).toBe("NOT_STARTED");
+			expect((receipt.executor as Record<string, unknown>).kind).toBe(kind);
+		}
+	});
+
 	it("supports the Python adapter and fails closed when Docker is unavailable", () => {
 		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
 		const pythonStarted = command(root, "start", [
@@ -911,6 +949,15 @@ describe("surectl cooperative control plane", () => {
 		expect((result.value?.admission as Record<string, unknown>).admitted).toBe(false);
 		const report = result.value?.report;
 		expect(report).toBeDefined();
+		const executorRegistry = result.value?.executor_registry as Record<string, unknown>;
+		expect(executorRegistry.schema).toBe("sure.executor.registry.v1");
+		expect(executorRegistry.registry_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(executorRegistry.executors).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ kind: "remote", implementation: "external_registration_required" }),
+				expect.objectContaining({ kind: "trusted", implementation: "external_registration_required" }),
+			]),
+		);
 	});
 
 	it("binds start/resume to an immutable site-policy snapshot", () => {
