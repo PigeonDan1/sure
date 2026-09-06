@@ -22,7 +22,7 @@ import {
 	settleOnTerminalFailure,
 	stripOutputDir,
 } from "../../../runtime/memory/hooks.ts";
-import { memoryServiceForPackage } from "../../../runtime/memory/pi-bridge.ts";
+import { memoryServiceForContext } from "../../../runtime/memory/pi-bridge.ts";
 import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
 import { validateSkillRuntimeBinding, writeSkillRuntimeBinding } from "../../../runtime/usage.ts";
 import {
@@ -106,7 +106,7 @@ function parseArgs(raw: string): Record<string, string> {
 // never flips ok to false.
 
 function memoryEnv(ctx: SureHookContext, py?: HarnessRuntimeContract): MemoryHookEnv {
-	return { ctx, skill: "sure_feed", py, memoryService: memoryServiceForPackage(ctx.packageDir) };
+	return { ctx, skill: "sure_feed", py, memoryService: memoryServiceForContext(ctx) };
 }
 
 function memoryOf(data: CheckpointData): MemoryCheckpoint {

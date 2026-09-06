@@ -46,6 +46,11 @@ export interface MemoryRunContext {
 	packageDir: string;
 	runDir: string;
 	cwd: string;
+	/** Explicit roots supplied by a host adapter; package layout is compatibility-only. */
+	repoRoot?: string;
+	memoryRoot?: string;
+	canonicalRoot?: string;
+	legacySkillsRoot?: string;
 }
 
 const SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
@@ -162,6 +167,19 @@ export class MemoryService {
 
 	static fromRepoRoot(repoRoot: string, options: Omit<MemoryServiceOptions, "repoRoot"> = {}): MemoryService {
 		return new MemoryService({ ...options, repoRoot });
+	}
+
+	/** Build a service from host-supplied roots without inspecting package layout. */
+	static fromRunContext(context: MemoryRunContext): MemoryService {
+		if (!context.repoRoot) {
+			throw new Error("memory run context must provide an explicit repoRoot");
+		}
+		return new MemoryService({
+			repoRoot: context.repoRoot,
+			...(context.memoryRoot === undefined ? {} : { memoryRoot: context.memoryRoot }),
+			...(context.canonicalRoot === undefined ? {} : { canonicalRoot: context.canonicalRoot }),
+			...(context.legacySkillsRoot === undefined ? {} : { legacySkillsRoot: context.legacySkillsRoot }),
+		});
 	}
 
 	get repoRoot(): string {

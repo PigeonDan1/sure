@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
@@ -103,6 +103,25 @@ function buildFinishNudge(run: SureRunRecord): string {
 		`Continue the run now: complete the remaining work, then call ${FINISH_TOOL_NAME} with the final manifest.`,
 		`If the run cannot proceed, call ${FINISH_TOOL_NAME} with status "failed" and summarize the blocker.`,
 	].join(" ");
+}
+
+/**
+ * Bind memory locations once at the Pi host boundary. Hook code can then use
+ * the neutral context without reconstructing roots from packageDir.
+ */
+function memoryRoots(repoRoot: string): {
+	repoRoot: string;
+	memoryRoot: string;
+	canonicalRoot: string;
+	legacySkillsRoot: string;
+} {
+	const root = resolve(repoRoot);
+	return {
+		repoRoot: root,
+		memoryRoot: join(root, "sure", "memory"),
+		canonicalRoot: join(root, "sure", "canonical"),
+		legacySkillsRoot: join(root, "sure", "skills"),
+	};
 }
 
 function formatDiagnostics(diagnostics: SureDiscoveryDiagnostic[]): string {
@@ -500,6 +519,7 @@ async function startRun(
 		packageDir: skillPackage.packageDir,
 		runDir: active.record.runDir,
 		args,
+		...memoryRoots(active.record.cwd),
 	});
 	applyStatePatch(pi, ctx, active, preStart.state_patch, "pre_start_state");
 	if (!preStart.ok) {
@@ -541,6 +561,7 @@ async function startRun(
 			packageDir: skillPackage.packageDir,
 			runDir: active.record.runDir,
 			args,
+			...memoryRoots(active.record.cwd),
 			event: { reason: "agent_error", message },
 		});
 		applyStatePatch(pi, ctx, active, onError.state_patch, "on_error_state");
@@ -869,6 +890,7 @@ export function createSureExtension(): ExtensionFactory {
 						packageDir: active.skillPackage.packageDir,
 						runDir: active.record.runDir,
 						args: active.record.args,
+						...memoryRoots(active.record.cwd),
 						event: { finish, manifest, manifestPath },
 					});
 					applyStatePatch(pi, ctx, active, gate.state_patch, "pre_finish_state");
@@ -902,6 +924,7 @@ export function createSureExtension(): ExtensionFactory {
 						packageDir: active.skillPackage.packageDir,
 						runDir: active.record.runDir,
 						args: active.record.args,
+						...memoryRoots(active.record.cwd),
 						event: { finish, manifest, manifestPath },
 					});
 					applyStatePatch(pi, ctx, active, postFinish.state_patch, "post_finish_state");
@@ -1026,6 +1049,7 @@ export function createSureExtension(): ExtensionFactory {
 				runDir: active.record.runDir,
 				args: active.record.args,
 				event,
+				...memoryRoots(active.record.cwd),
 			});
 			applyStatePatch(pi, ctx, active, gate.state_patch, "pre_tool_call_state");
 			if (!gate.ok) {
@@ -1060,6 +1084,7 @@ export function createSureExtension(): ExtensionFactory {
 				packageDir: active.skillPackage.packageDir,
 				runDir: active.record.runDir,
 				args: active.record.args,
+				...memoryRoots(active.record.cwd),
 				event,
 			});
 			applyStatePatch(pi, ctx, active, gate.state_patch, "post_tool_result_state");
@@ -1162,6 +1187,7 @@ export function createSureExtension(): ExtensionFactory {
 				packageDir: active.skillPackage.packageDir,
 				runDir: active.record.runDir,
 				args: active.record.args,
+				...memoryRoots(active.record.cwd),
 				event: { reason: "session_shutdown" },
 			});
 			applyStatePatch(pi, ctx, active, onError.state_patch, "on_error_state");

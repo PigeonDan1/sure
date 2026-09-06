@@ -6,6 +6,7 @@ import { canonicalJson, canonicalJsonDigest, sha256Hex } from "../packages/sure-
 import type { JsonValue } from "../packages/sure-core/src/contracts/types.ts";
 import { ValidatorRegistry, type ValidatorRegistrySnapshot } from "../packages/sure-core/src/validation/index.ts";
 import { CANONICAL_SEMANTIC_BACKENDS } from "../sure/canonical/shared/evaluation/registry.ts";
+import { CANONICAL_MEMORY_CONTRACT } from "../sure/canonical/shared/memory-contract.ts";
 import { CANONICAL_SKILLS } from "../sure/canonical/skills/index.ts";
 import type { CanonicalSkillDefinition } from "../sure/canonical/types.ts";
 import { canonicalValidatorRegistry } from "../sure/canonical/validators/index.ts";
@@ -289,6 +290,7 @@ function lockFor(
 	resources: readonly { path: string; content: Uint8Array }[],
 	omitted: readonly string[],
 	semanticBackendManifest: MaterializedSemanticBackendManifest,
+	memoryContract: Record<string, unknown>,
 ): Record<string, unknown> {
 	const definitionDigest = canonicalJsonDigest(asJson(skill));
 	const workflowDigest = canonicalJsonDigest(asJson(skill.workflow));
@@ -309,8 +311,21 @@ function lockFor(
 		semantic_backend_digest: backendDigest,
 		validator_registry_digest: validatorRegistryDigest,
 		semantic_backend_registry_digest: semanticBackendManifest.registry_digest,
+		memory_contract_digest: canonicalJsonDigest(asJson(memoryContract)),
 		core_package_version: "0.80.3",
 		portable_omitted_resources: [...omitted].sort(),
+	};
+}
+
+function memoryContractFor(skill: CanonicalSkillDefinition): Record<string, unknown> {
+	const enabled = skill.skill_id !== "sure_approve";
+	return {
+		...CANONICAL_MEMORY_CONTRACT,
+		skill: {
+			skill_id: skill.skill_id,
+			enabled,
+			participates_in_checkpoint: enabled,
+		},
 	};
 }
 
@@ -338,6 +353,7 @@ function buildHostFiles(
 			: { files: readCanonicalResourceFiles(skill), omitted: [] as string[] };
 	const root = host === "pi" ? join(generatedPiRoot, skill.skill_id) : join(portableRoot, skill.distribution_slug);
 	const files: GeneratedFile[] = [];
+	const memoryContract = memoryContractFor(skill);
 	if (host === "pi") {
 		files.push({
 			path: join(root, "SKILL.md"),
@@ -390,7 +406,8 @@ function buildHostFiles(
 		}),
 	});
 	for (const resource of resourceSet.files) files.push({ path: join(root, resource.path), content: resource.content });
-	const lock = lockFor(skill, host, resourceSet.files, resourceSet.omitted, semanticBackendManifest);
+	files.push({ path: join(root, "memory-contract.json"), content: jsonFile(memoryContract) });
+	const lock = lockFor(skill, host, resourceSet.files, resourceSet.omitted, semanticBackendManifest, memoryContract);
 	files.push({ path: join(root, "generation.lock.json"), content: jsonFile(lock) });
 	files.push({
 		path: join(root, "canonical-definition.json"),
@@ -405,6 +422,10 @@ function expectedFiles(): GeneratedFile[] {
 	files.push({
 		path: join(repositoryRoot, "sure", "canonical", "shared", "evaluation", "backend-manifest.json"),
 		content: jsonFile(semanticBackendManifest),
+	});
+	files.push({
+		path: join(repositoryRoot, "sure", "canonical", "shared", "memory-contract.json"),
+		content: jsonFile(CANONICAL_MEMORY_CONTRACT),
 	});
 	for (const skill of CANONICAL_SKILLS) {
 		files.push(

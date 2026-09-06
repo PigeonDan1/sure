@@ -21,7 +21,7 @@ import {
 	settleOnTerminalFailure,
 	stripOutputDir,
 } from "../../../runtime/memory/hooks.ts";
-import { memoryServiceForPackage } from "../../../runtime/memory/pi-bridge.ts";
+import { memoryServiceForContext } from "../../../runtime/memory/pi-bridge.ts";
 import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
 import { requireSitePolicy } from "../../../site/loader.ts";
 import {
@@ -98,7 +98,7 @@ type OnboardDiagnostic = { severity: "error" | "warning" | "info"; message: stri
 // --- memory system wiring (shared logic lives in sure/runtime/memory/hooks.ts) --------------
 
 function memoryEnv(ctx: SureHookContext, py?: HarnessRuntimeContract): MemoryHookEnv {
-	return { ctx, skill: "sure_onboard", py, memoryService: memoryServiceForPackage(ctx.packageDir) };
+	return { ctx, skill: "sure_onboard", py, memoryService: memoryServiceForContext(ctx) };
 }
 
 function memoryOf(data: CheckpointData): MemoryCheckpoint {

@@ -133,6 +133,11 @@ export interface SureHookContext {
 	packageDir: string;
 	runDir: string;
 	args: string;
+	/** Explicit SURE memory roots; packageDir remains for legacy script resolution. */
+	repoRoot?: string;
+	memoryRoot?: string;
+	canonicalRoot?: string;
+	legacySkillsRoot?: string;
 	event?: unknown;
 }
 

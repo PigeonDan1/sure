@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { canonicalJson, canonicalJsonDigest } from "../packages/sure-core/src/contracts/canonical-json.ts";
 import type { JsonValue } from "../packages/sure-core/src/contracts/types.ts";
+import { CANONICAL_MEMORY_CONTRACT } from "../sure/canonical/shared/memory-contract.ts";
 import { CANONICAL_SKILLS } from "../sure/canonical/skills/index.ts";
 import { canonicalValidatorRegistry } from "../sure/canonical/validators/index.ts";
 
@@ -110,6 +111,35 @@ describe("canonical SURE skill generation", () => {
 			expect(markdown).not.toMatch(forbidden);
 			expect(readFileSync(join(root, "agents/openai.yaml"), "utf8")).toContain(`$${skill.distribution_slug}`);
 			expect(readFileSync(join(root, "canonical-definition.json"), "utf8")).not.toMatch(forbidden);
+		}
+	});
+
+	it("ships one memory contract projection to both hosts", () => {
+		const canonical = readJson(join(repositoryRoot, "sure/canonical/shared/memory-contract.json"));
+		expect(canonical).toEqual(CANONICAL_MEMORY_CONTRACT);
+		for (const skill of CANONICAL_SKILLS) {
+			const pi = readJson(join(repositoryRoot, "sure/generated/pi/skills", skill.skill_id, "memory-contract.json"));
+			const portable = readJson(
+				join(repositoryRoot, "sure/dist/agent-skills", skill.distribution_slug, "memory-contract.json"),
+			);
+			expect(pi).toEqual(portable);
+			const { skill: projection, ...base } = pi;
+			expect(base).toEqual(canonical);
+			expect(projection).toEqual({
+				skill_id: skill.skill_id,
+				enabled: skill.skill_id !== "sure_approve",
+				participates_in_checkpoint: skill.skill_id !== "sure_approve",
+			});
+			const piLock = readJson(
+				join(repositoryRoot, "sure/generated/pi/skills", skill.skill_id, "generation.lock.json"),
+			);
+			expect(piLock.memory_contract_digest).toBe(canonicalJsonDigest(asJson(pi)));
+			expect(
+				readFileSync(
+					join(repositoryRoot, "sure/dist/agent-skills", skill.distribution_slug, "memory-contract.json"),
+					"utf8",
+				),
+			).not.toMatch(/@earendil-works\/pi-coding-agent|sure\/skills\/sure_/);
 		}
 	});
 

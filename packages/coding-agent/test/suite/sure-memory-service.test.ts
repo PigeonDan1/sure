@@ -112,4 +112,30 @@ describe("neutral memory reference service", () => {
 		expect(service.memoryRoot).toBe(resolve(memoryRoot));
 		expect(service.roots.repoRoot).toBe(resolve(repoRoot));
 	});
+
+	it("builds from an explicit host context without consulting package layout", () => {
+		const repoRoot = freshRoot("context-roots");
+		const memoryRoot = join(repoRoot, "state", "memory");
+		const canonicalRoot = join(repoRoot, "references");
+		const legacySkillsRoot = join(repoRoot, "compat", "skills");
+		const service = MemoryService.fromRunContext({
+			packageDir: "/an/installed/skill",
+			runDir: join(repoRoot, ".sure", "runs", "run-1"),
+			cwd: repoRoot,
+			repoRoot,
+			memoryRoot,
+			canonicalRoot,
+			legacySkillsRoot,
+		});
+
+		expect(service.roots).toMatchObject({
+			repoRoot: resolve(repoRoot),
+			memoryRoot: resolve(memoryRoot),
+			canonicalRoot: resolve(canonicalRoot),
+			legacySkillsRoot: resolve(legacySkillsRoot),
+		});
+		expect(service.legacyPath("sure_infer", "bad_case", "installed-host")).toBe(
+			join(legacySkillsRoot, "sure_infer", "references", "memory", "bad_cases", "installed-host.md"),
+		);
+	});
 });

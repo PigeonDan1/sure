@@ -99,10 +99,11 @@ export interface MemoryHookEnv {
 export type MemoryDiagnostic = { severity: "info" | "warning" | "error"; message: string; repair: string };
 
 function memoryServiceFor(env: MemoryHookEnv): MemoryService {
-	// Direct unit tests and old callers do not provide the service yet. Keep the
-	// package-derived legacy location as a compatibility fallback until every
-	// host adapter has been migrated to explicit roots.
-	return env.memoryService ?? MemoryService.fromRepoRoot(repoRootForPackage(env.ctx.packageDir));
+	if (env.memoryService) return env.memoryService;
+	// New hosts pass explicit roots in the neutral context. Direct unit tests and
+	// old callers retain the package-derived fallback during the migration.
+	if (env.ctx.repoRoot) return MemoryService.fromRunContext(env.ctx);
+	return MemoryService.fromRepoRoot(repoRootForPackage(env.ctx.packageDir));
 }
 
 function memoryScript(env: MemoryHookEnv, script: string): string {
