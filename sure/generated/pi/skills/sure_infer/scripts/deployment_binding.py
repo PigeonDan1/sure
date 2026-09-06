@@ -5,12 +5,27 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+def _repository_root() -> Path:
+    configured = os.environ.get("SURE_REPOSITORY_ROOT", "").strip()
+    if configured:
+        root = Path(configured).expanduser().resolve()
+        if (root / "sure" / "site").is_dir():
+            return root
+    script_dir = Path(__file__).resolve().parent
+    for candidate in (script_dir, *script_dir.parents):
+        if (candidate / "sure" / "site").is_dir():
+            return candidate
+    return script_dir.parents[4]
+
+
+REPO_ROOT = _repository_root()
+os.environ.setdefault("SURE_REPOSITORY_ROOT", str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT))
 
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
@@ -113,7 +128,7 @@ def _load_python_binding(
     package: dict[str, Any],
 ) -> dict[str, Any]:
     try:
-        configured = load_site_policy(required=True)
+        configured = load_site_policy(repository_root=REPO_ROOT, required=True)
     except SitePolicyError as exc:
         raise DeploymentBindingError(str(exc)) from exc
     assert configured is not None

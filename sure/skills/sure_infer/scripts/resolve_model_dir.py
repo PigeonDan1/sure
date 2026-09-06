@@ -5,21 +5,37 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 from typing import Any
 
-from deployment_binding import DeploymentBindingError, load_deployment_binding
+SCRIPT_DIR = Path(__file__).resolve().parent
 
-for _parent in Path(__file__).resolve().parents:
-    if (_parent / "sure" / "site" / "loader.py").is_file():
-        sys.path.insert(0, str(_parent))
-        break
+
+def _repository_root() -> Path:
+    configured = os.environ.get("SURE_REPOSITORY_ROOT", "").strip()
+    if configured:
+        root = Path(configured).expanduser().resolve()
+        if (root / "sure" / "canonical").is_dir() and (root / "sure" / "skills").is_dir():
+            return root
+    for candidate in (SCRIPT_DIR, *SCRIPT_DIR.parents):
+        if (candidate / "sure" / "canonical").is_dir() and (candidate / "sure" / "skills").is_dir():
+            return candidate
+    return SCRIPT_DIR.parents[4]
+
+
+HARNESS_ROOT = _repository_root()
+os.environ.setdefault("SURE_REPOSITORY_ROOT", str(HARNESS_ROOT))
+if str(HARNESS_ROOT) not in sys.path:
+    sys.path.insert(0, str(HARNESS_ROOT))
+
+from deployment_binding import DeploymentBindingError, load_deployment_binding
 
 from sure.site.loader import load_site_policy
 
-_configured_policy = load_site_policy()
+_configured_policy = load_site_policy(repository_root=HARNESS_ROOT)
 APPROVED_MODELS_ROOT = (
     Path(_configured_policy["policy"]["storage"]["approved_models_roots"][0])
     if _configured_policy
@@ -30,7 +46,7 @@ SUCCESSFUL_VERDICT_STATUSES = frozenset({"pass", "passed", "success"})
 
 
 def configured_approved_models_root() -> Path:
-    resolved = load_site_policy(required=True)
+    resolved = load_site_policy(repository_root=HARNESS_ROOT, required=True)
     return Path(resolved["policy"]["storage"]["approved_models_roots"][0])
 
 

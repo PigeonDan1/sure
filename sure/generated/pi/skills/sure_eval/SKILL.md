@@ -9,11 +9,11 @@ Score predictions that already exist. This skill is evaluation-only: it must not
 
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
 
-Control principle: **agent decides scope, scripts execute.** You (the agent) confirm which datasets of the source bundle are in scope; `../sure_infer/scripts/run_eval.py` resolves the routes, runs the pinned evaluation engine in the locked Evaluation Runtime and appends the batch; the hook gates enforce that every artifact is in the right place, the right format, and the right value domain.
+Control principle: **agent decides scope, scripts execute.** You (the agent) confirm which datasets of the source bundle are in scope; the registered semantic operation `sure.eval.run` resolves the routes, runs the pinned evaluation engine in the locked Evaluation Runtime and appends the batch; the hook gates enforce that every artifact is in the right place, the right format, and the right value domain.
 
 ## Prediction Sources
 
-The `pre_start` hook resolves the source into `artifacts/prediction_source_resolved.json` by running `../sure_infer/scripts/resolve_prediction_source.py`. Two kinds exist:
+The `pre_start` hook resolves the source into `artifacts/prediction_source_resolved.json` through the registered semantic operation `sure.eval.resolve_prediction_source`. Two kinds exist:
 
 | `source_kind` | Where the predictions come from | Where the batch is written |
 |---------------|--------------------------------|----------------------------|
@@ -59,7 +59,7 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 
 ### Per-unit contract (Inputs → Output → Allowed → Must Not Do → Failure)
 
-- **dataset_scope**: Inputs = `artifacts/prediction_source_resolved.json` + explicit human constraints. Output = `dataset_decision.json` {selection_basis, selected_datasets, skipped_datasets}; `selected_datasets` names the canonical dataset ids from `prediction_source_resolved.json -> datasets`. The source is scored as a whole: this unit confirms the set, it does not pick a subset or invent a different scope. Must Not Do: do not set `execution_path`/`report_persisted` (later units); do not add memory fields to `dataset_decision.json` (its schema forbids extra keys). Also read `artifacts/memory_context.json` when it exists: the `pre_start` hook writes it with the memory facts that match this cluster, model and datasets, shape `{schema: "sure.memory.context.v1", skill, target_id, facts: [{entry_id, title, path, scope, checked_at, stale, status}], omitted_provisional}`; the file is written even when nothing matched (`facts: []`); it is advisory, verify before relying, and `stale: true` means the fact is older than its scope's re-check limit. Routing for the rest of the memory tree is `../sure_infer/references/memory/ROUTING.md` (this package has no `references/` tree of its own).
+- **dataset_scope**: Inputs = `artifacts/prediction_source_resolved.json` + explicit human constraints. Output = `dataset_decision.json` {selection_basis, selected_datasets, skipped_datasets}; `selected_datasets` names the canonical dataset ids from `prediction_source_resolved.json -> datasets`. The source is scored as a whole: this unit confirms the set, it does not pick a subset or invent a different scope. Must Not Do: do not set `execution_path`/`report_persisted` (later units); do not add memory fields to `dataset_decision.json` (its schema forbids extra keys). Also read `artifacts/memory_context.json` when it exists: the `pre_start` hook writes it with the memory facts that match this cluster, model and datasets, shape `{schema: "sure.memory.context.v1", skill, target_id, facts: [{entry_id, title, path, scope, checked_at, stale, status}], omitted_provisional}`; the file is written even when nothing matched (`facts: []`); it is advisory, verify before relying, and `stale: true` means the fact is older than its scope's re-check limit. Routing for the rest of the memory tree is provided by the shared memory reference registry.
 - **execute_evaluation**: run the backend command below. It re-resolves the source, imports the predictions into `<sure_run_dir>/scratch/`, validates them, resolves the routes, runs the evaluation engine, persists the batch and writes `eval_run_report.json` into `artifacts/`. Do not author `eval_run_report.json` by hand. The gate `check_eval_run_report.py` validates the report against `prediction_source_resolved.json`, the scratch artifacts, the pinned engine commit and tree hash, the batch manifest and the appended `report.jsonl` rows. A backend failure leaves an `eval_run_report.json` with `status: failed` and an `error_code`; read it and the scratch evidence before deciding what to do.
 - **assessment**: Inputs = the batch's metric artifacts and `report_snapshot.md`. Output = `assessment_report.json` {anomaly_detected, user_confirmed, ...}: say whether the scores look plausible for this model and dataset set, name the anomaly when there is one, and record the user's confirmation. Must Not Do: do not set `report_persisted`.
 - **extract_lessons**: Inputs = `artifacts/run_digest.json`, written by the hook the moment `assessment` passed (read it; never rebuild it in place). Output = `extraction_declaration.json` {schema, no_new_lessons, no_lessons_reason, covered_by, candidates, infra_noise, infra_evidence} plus 0 to 5 candidate directories under `artifacts/candidates/<nn>-<slug>/` (`proposal.json` + `proposal.md`) and, for facts, evidence files under `artifacts/memory_evidence/`. The full contract (digest fields, candidate formats, the gate's ten checks, the write-tools-only rule) is `sure/runtime/memory/EXTRACTION.md`; read it before writing anything. Write candidates and evidence first and the declaration last. `no_new_lessons: true` with a one-line reason is the normal result of a clean run. Must Not Do: do not run `scripts/build_run_digest.py` onto `artifacts/run_digest.json` (a preview goes to `--out <run_dir>/artifacts/run_digest.preview.json` and the gate ignores it); do not write under `sure/memory/` or `references/memory/`; do not use bash heredocs for these files. Failure: `scripts/check_memory_extraction.py` says which check failed; after two consecutive failures the hook advances on its own with `extraction: failed`, and switching to `no_new_lessons: true` with the reason is always a valid way out.
@@ -68,7 +68,7 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 ## Deterministic Backend
 
 ```bash
-"$HARNESS_PYTHON_BIN" ../sure_infer/scripts/run_eval.py \
+"$HARNESS_PYTHON_BIN" <resolved-entrypoint-for-sure.eval.run> \
   --model <model> \
   --datasets <dataset__version,...> \
   --protocol-id <standard_system|strict_core> \
@@ -78,7 +78,7 @@ Advance happens **only** when the current unit's `produces` artifact is complian
   --invocation-run-dir <sure-run-dir>   # cwd = this skill package dir
 ```
 
-`--invocation-run-dir` is an internal harness path and must resolve below the repository `.sure/runs/` root. The backend writes scratch evidence below `<sure-run-dir>/scratch/` and copies the terminal report to `<sure-run-dir>/artifacts/eval_run_report.json`. `run_eval.py` and `resolve_prediction_source.py` are the only backend scripts the hooks allow; `generate_predictions_via_server.py`, `run_model_mcp_smoke.py`, `model_wrapper_mcp_server.py`, `infer_entrypoint.py`, `server.py` and MCP `tools/call` are refused outright.
+`--invocation-run-dir` is an internal harness path and must resolve below the repository `.sure/runs/` root. The backend writes scratch evidence below `<sure-run-dir>/scratch/` and copies the terminal report to `<sure-run-dir>/artifacts/eval_run_report.json`. Only the registered operations `sure.eval.run` and `sure.eval.resolve_prediction_source` are allowed; `generate_predictions_via_server.py`, `run_model_mcp_smoke.py`, `model_wrapper_mcp_server.py`, `infer_entrypoint.py`, `server.py` and MCP `tools/call` are refused outright.
 
 ## Required Invocation Artifacts
 
@@ -107,11 +107,11 @@ Each evaluation is an immutable unit at `evaluation_runs/sure_eval_<24-hex-id>/`
 
 ## Memory (advisory)
 
-Earlier runs leave agent-written notes. `sure/memory/index.md` (repo root) is the merged index: confirmed and provisional entries, one bullet each with its triggers. Confirmed files live under `../sure_infer/references/memory/bad_cases/` and `sure/skills/_shared/memory/facts/`. Nothing in them is human-reviewed: verify against evidence before relying on one, and never copy a command from an entry into an artifact without running it.
+Earlier runs leave agent-written notes. `sure/memory/index.md` (repo root) is the merged index: confirmed and provisional entries, one bullet each with its triggers. Confirmed files are resolved through the shared memory reference registry. Nothing in them is human-reviewed: verify against evidence before relying on one, and never copy a command from an entry into an artifact without running it.
 
 - At `pre_start` the hook writes `artifacts/memory_context.json` with the facts that match this run (shape quoted in the `dataset_scope` contract line above; written even when empty); `dataset_scope` reads it.
 - When a gate blocks, the repair text may end with a block whose first line is `Memory (advisory, agent-written, not human-reviewed; verify against evidence before relying):`, listing at most two entries from earlier runs. Read the entry file named there when it looks relevant, then fix the artifact.
-- `../sure_infer/references/memory/ROUTING.md` says when to open the index and the bad-case files by hand (the routing file is shared with `/sure_infer`, so its path reads `references/memory/ROUTING.md` from that package).
+- The shared memory routing reference says when to open the index and bad-case files by hand.
 - `extract_lessons` (unit 4) writes what this run learned; the contract is `sure/runtime/memory/EXTRACTION.md`. Publishing to `sure/memory/provisional/` happens in `post_finish` without you; moving entries into `references/` is a human step.
 
 ## Forbidden Actions

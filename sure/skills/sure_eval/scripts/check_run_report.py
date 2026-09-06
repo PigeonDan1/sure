@@ -11,15 +11,15 @@ import sys
 from pathlib import Path
 
 try:
-    from sure.runtime.resource_locator import resolve_skill_script
+    from sure.runtime.resource_locator import resolve_backend_script
 except ModuleNotFoundError:
     for _parent in Path(__file__).resolve().parents:
         if (_parent / "sure" / "runtime" / "resource_locator.py").is_file():
             sys.path.insert(0, str(_parent))
             break
-    from sure.runtime.resource_locator import resolve_skill_script
+    from sure.runtime.resource_locator import resolve_backend_script
 
-TARGET = resolve_skill_script("sure_infer", "check_run_report.py")
+TARGET = resolve_backend_script("sure.eval.validate_run_report", "sure_infer", "check_run_report.py")
 
 if __name__ == "__main__":
     sys.argv[0] = str(TARGET)

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import {
 	type HarnessRuntimeContract,
@@ -27,8 +27,13 @@ import {
 	stripOutputDir,
 } from "../../../runtime/memory/hooks.ts";
 import { memoryServiceForPackage } from "../../../runtime/memory/pi-bridge.ts";
-import { resolveSkillScript } from "../../../runtime/resource-locator.ts";
 import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
+import {
+	type ResolvedSemanticBackend,
+	repositoryRootForPackage,
+	resolveSemanticBackendOperation,
+	SemanticBackendResolutionError,
+} from "../../../runtime/semantic-backend.ts";
 import { validateSkillRuntimeBinding, writeSkillRuntimeBinding } from "../../../runtime/usage.ts";
 import {
 	advance,
@@ -53,8 +58,9 @@ import { validateProduces } from "./validate.ts";
 //   3. gateCheck (gate units run a Python semantic script via spawnSync)
 //   4. memory (sure/runtime/memory/hooks.ts): digest on entering extract_lessons,
 //      injection on gate blocks, settlement, publish; advisory only, never blocks.
-// The backend scripts live in ../sure_infer/scripts/; this package only carries
-// the gate scripts and the memory wrappers.
+// Evaluation implementations are selected by stable operation IDs from the
+// semantic backend registry. The legacy sure_infer path remains only as a
+// compatibility projection of that registry; it is not a hook dependency.
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -82,9 +88,72 @@ export function countersFor(completed: CheckpointData, gateBlocks?: number) {
 }
 
 const PROTOCOLS = new Set(["standard_system", "strict_core"]);
-const BACKEND_SCRIPT = (ctx: SureHookContext, script: string) =>
-	resolveSkillScript(ctx.packageDir, "sure_infer", script);
-const ALLOWED_BACKEND = new Set(["sure_infer/scripts/run_eval.py", "sure_infer/scripts/resolve_prediction_source.py"]);
+const BACKEND_OPERATION_BY_SCRIPT = new Map([
+	["resolve_prediction_source.py", "sure.eval.resolve_prediction_source"],
+	["evaluation_runtime.py", "sure.eval.evaluation_runtime"],
+	["run_eval.py", "sure.eval.run"],
+	["check_assessment.py", "sure.eval.validate_assessment"],
+	["check_run_report.py", "sure.eval.validate_run_report"],
+	["check_eval_run_report.py", "sure.eval.validate_eval_report"],
+]);
+
+function backendOperation(ctx: SureHookContext, script: string): ResolvedSemanticBackend {
+	const operationId = BACKEND_OPERATION_BY_SCRIPT.get(script);
+	if (!operationId) throw new SemanticBackendResolutionError(`unregistered evaluation backend script: ${script}`);
+	return resolveSemanticBackendOperation(ctx.packageDir, operationId);
+}
+
+type BackendProcessResult = { ok: boolean; stdout: string; stderr: string; status: number | null };
+
+/**
+ * Execute a registered backend operation with the same argv contract as the
+ * legacy checkpoint runner. Keeping this adapter here preserves the Pi hook's
+ * display/error shape while making the selected implementation auditable.
+ */
+function runRegisteredBackend(ctx: SureHookContext, script: string, args: string[]): BackendProcessResult | undefined {
+	let operation: ResolvedSemanticBackend;
+	try {
+		operation = backendOperation(ctx, script);
+	} catch (error) {
+		// A copied legacy fixture may predate the generated backend manifest. Let
+		// its package-local compatibility runner handle that case; any manifest
+		// that exists but fails verification is never silently downgraded.
+		if (
+			error instanceof SemanticBackendResolutionError &&
+			/manifest is not available|operation is not registered/.test(error.message)
+		) {
+			return undefined;
+		}
+		return {
+			ok: false,
+			stdout: "",
+			stderr: error instanceof Error ? error.message : String(error),
+			status: null,
+		};
+	}
+	const runtime = resolveHarnessPython(ctx.packageDir, { activate: false });
+	if (!runtime.ok || !runtime.contract) {
+		return { ok: false, stdout: "", stderr: runtime.error ?? "HARNESS_RUNTIME_NOT_READY", status: null };
+	}
+	const finalArgs = args.some((value) => value === "--run-dir") ? [...args] : ["--run-dir", ctx.runDir, ...args];
+	const producesIndex = finalArgs.indexOf("--produces");
+	if (producesIndex >= 0 && typeof finalArgs[producesIndex + 1] === "string") {
+		const value = finalArgs[producesIndex + 1];
+		if (!isAbsolute(value)) finalArgs[producesIndex + 1] = join(ctx.runDir, "artifacts", value);
+	}
+	const result = spawnSync(runtime.contract.python_executable, [operation.path, ...finalArgs], {
+		cwd: ctx.packageDir,
+		encoding: "utf-8",
+		timeout: operation.timeout_ms,
+		env: { ...process.env, ...harnessRuntimeEnv(runtime.contract) },
+	});
+	return {
+		ok: result.status === 0,
+		stdout: result.stdout ?? "",
+		stderr: result.stderr ?? (result.error ? result.error.message : ""),
+		status: result.status,
+	};
+}
 const INFERENCE_SURFACE = [
 	"generate_predictions_via_server.py",
 	"run_model_mcp_smoke.py",
@@ -98,8 +167,15 @@ function prepareEvaluationRuntime(
 	ctx: SureHookContext,
 	harnessRuntime: HarnessRuntimeContract,
 ): { binding?: Record<string, unknown>; error?: string } {
-	const script = BACKEND_SCRIPT(ctx, "evaluation_runtime.py");
-	const engineRoot = join(ctx.packageDir, "..", "..", "external", "sure-evaluation");
+	let script: string;
+	try {
+		script = backendOperation(ctx, "evaluation_runtime.py").path;
+	} catch (error) {
+		return { error: error instanceof Error ? error.message : String(error) };
+	}
+	const engineRoot =
+		process.env.SURE_EVALUATION_HOME?.trim() ||
+		join(repositoryRootForPackage(ctx.packageDir), "sure", "external", "sure-evaluation");
 	const completed = spawnSync(harnessRuntime.python_executable, [script, "--engine-root", engineRoot, "--prepare"], {
 		cwd: ctx.packageDir,
 		encoding: "utf-8",
@@ -247,8 +323,17 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	const artifactsDir = join(ctx.runDir, "artifacts");
 	mkdirSync(artifactsDir, { recursive: true });
 	const sourcePath = join(artifactsDir, "prediction_source_resolved.json");
+	let sourceResolver: ResolvedSemanticBackend;
+	try {
+		sourceResolver = backendOperation(ctx, "resolve_prediction_source.py");
+	} catch (error) {
+		return failure(
+			`Evaluation backend is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+			"EVALUATION_BACKEND_NOT_READY",
+		);
+	}
 	const resolveArgs = [
-		BACKEND_SCRIPT(ctx, "resolve_prediction_source.py"),
+		sourceResolver.path,
 		"--model",
 		args.model,
 		"--datasets",
@@ -298,7 +383,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	// Backend presence check (warn, do not block — gate scripts will surface real failures).
 	let backendPresent = false;
 	try {
-		backendPresent = existsSync(BACKEND_SCRIPT(ctx, "run_eval.py"));
+		backendPresent = Boolean(backendOperation(ctx, "run_eval.py"));
 	} catch {
 		backendPresent = false;
 	}
@@ -308,8 +393,8 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		: [
 				{
 					severity: "warning",
-					message: "../sure_infer/scripts/run_eval.py is not bundled.",
-					repair: "Install the sure_infer skill package next to this one before running a real evaluation.",
+					message: "The registered SURE evaluation backend is not available.",
+					repair: "Install the pinned SURE evaluation backend bundle before running a real evaluation.",
 				},
 			];
 	// Memory: index freshness check (index.py --check) + fact matching into
@@ -367,9 +452,10 @@ export function incompleteReportError(payload: Record<string, unknown>, finishSt
 	return undefined;
 }
 
-// preToolCall: two tables in front of the per-unit whitelist. Backend scripts
-// come from ../sure_infer/scripts and only the evaluation runner and the source
-// resolver may be called; anything that could start a model is refused outright.
+// preToolCall: two tables in front of the per-unit whitelist. The registered
+// evaluation backend exposes only the runner and source resolver; anything that
+// could start a model is refused outright. The old path prefix is retained as
+// a compatibility detector for commands written against the legacy projection.
 // Then the package's own gate scripts (scripts/*.py) may only be invoked from
 // the unit that owns them.
 const UNIT_AGNOSTIC_SCRIPTS = new Set<string>([]);
@@ -385,8 +471,9 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	}
 	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
+	const allowedBackendScripts = new Set(["run_eval.py", "resolve_prediction_source.py"]);
 	const forbiddenBackend = invokedSkillScripts(command, "sure_infer/scripts").find(
-		(script) => !ALLOWED_BACKEND.has(script),
+		(script) => !allowedBackendScripts.has(script.split("/").at(-1) ?? ""),
 	);
 	if (forbiddenBackend) {
 		return failure(
@@ -497,7 +584,9 @@ function runGateScript(ctx: SureHookContext, unit: Unit): GateResult | undefined
 		};
 	}
 	const extra = unit.gateScriptArgs ? unit.gateScriptArgs(ctx) : [];
-	const r = runBackend(ctx, unit.gateScript, ["--produces", produces, ...extra]);
+	const r =
+		runRegisteredBackend(ctx, unit.gateScript, ["--produces", produces, ...extra]) ??
+		runBackend(ctx, unit.gateScript, ["--produces", produces, ...extra]);
 	if (r.ok) {
 		return { ok: true };
 	}
@@ -539,7 +628,7 @@ export function finalEvaluationGate(
 type GateResultLike = Pick<GateResult, "ok" | "repair" | "reason">;
 
 function runBackendGate(ctx: SureHookContext, script: string, args: string[]): GateResultLike {
-	const result = runBackend(ctx, script, args);
+	const result = runRegisteredBackend(ctx, script, args) ?? runBackend(ctx, script, args);
 	if (result.ok) return { ok: true };
 	return {
 		ok: false,

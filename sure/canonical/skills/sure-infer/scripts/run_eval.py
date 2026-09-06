@@ -19,7 +19,24 @@ from typing import Any, Callable
 import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-HARNESS_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _repository_root() -> Path:
+    configured = os.environ.get("SURE_REPOSITORY_ROOT", "").strip()
+    if configured:
+        root = Path(configured).expanduser().resolve()
+        if (root / "sure" / "canonical").is_dir() and (root / "sure" / "skills").is_dir():
+            return root
+    for candidate in (SCRIPT_DIR, *SCRIPT_DIR.parents):
+        if (candidate / "sure" / "canonical").is_dir() and (candidate / "sure" / "skills").is_dir():
+            return candidate
+    # Preserve the historical layout as a last-resort compatibility mode for
+    # an unpacked backend that has no repository marker yet.
+    return SCRIPT_DIR.parents[4]
+
+
+HARNESS_ROOT = _repository_root()
+os.environ.setdefault("SURE_REPOSITORY_ROOT", str(HARNESS_ROOT))
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent / "src"))
 sys.path.insert(0, str(HARNESS_ROOT))
@@ -50,6 +67,7 @@ from sure.runtime.evaluation_commit import (
     publish_evaluation_commit,
     rollback_evaluation_commit,
 )
+from sure.runtime.resource_locator import resolve_backend_script
 
 
 LOCAL_RESULTS_ROOT = HARNESS_ROOT / "sure" / "results"
@@ -1049,11 +1067,18 @@ def _preview_eval_contract() -> dict[str, Any] | None:
 
 
 def _eval_report_checker() -> Path | None:
-    candidates = (
-        SCRIPT_DIR.parent.parent / "sure-eval" / "scripts" / "check_eval_run_report.py",
-        SCRIPT_DIR.parent.parent / "sure_eval" / "scripts" / "check_eval_run_report.py",
-    )
-    return next((candidate for candidate in candidates if candidate.is_file()), None)
+    try:
+        return resolve_backend_script(
+            "sure.eval.validate_eval_report",
+            "sure_eval",
+            "check_eval_run_report.py",
+        )
+    except FileNotFoundError as exc:
+        # A genuinely incomplete old unpacked tree has no checker at all.  The
+        # caller records that absence in the report instead of inventing PASS.
+        if str(exc).startswith("SURE resource is not available"):
+            return None
+        raise
 
 
 def _run_eval_report_gate(report: Path, *, phase: str) -> None:

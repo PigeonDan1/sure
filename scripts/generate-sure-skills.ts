@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { canonicalJson, canonicalJsonDigest, sha256Hex } from "../packages/sure-core/src/contracts/canonical-json.ts";
 import type { JsonValue } from "../packages/sure-core/src/contracts/types.ts";
 import { ValidatorRegistry, type ValidatorRegistrySnapshot } from "../packages/sure-core/src/validation/index.ts";
+import { CANONICAL_SEMANTIC_BACKENDS } from "../sure/canonical/shared/evaluation/registry.ts";
 import { CANONICAL_SKILLS } from "../sure/canonical/skills/index.ts";
 import type { CanonicalSkillDefinition } from "../sure/canonical/types.ts";
 import { canonicalValidatorRegistry } from "../sure/canonical/validators/index.ts";
@@ -80,6 +81,57 @@ function fileDigest(entries: readonly { path: string; content: Uint8Array }[]): 
 		.map((entry) => `${entry.path}\0${sha256(entry.content)}`)
 		.join("\n");
 	return sha256Hex(digestInput);
+}
+
+/** Hash a complete backend tree with the same path/content ordering on every host. */
+function backendTreeDigest(root: string): string {
+	const paths = allFiles(root).sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+	const rows = paths.map((path) => `${path}\0sha256:${sha256(readFileSync(join(root, path)))}`).join("\n");
+	return `sha256:${sha256Hex(rows)}`;
+}
+
+interface MaterializedSemanticBackendManifest {
+	schema: "sure.semantic.backend.manifest.v1";
+	registry_digest: string;
+	bundles: JsonValue[];
+}
+
+function materializedSemanticBackendManifest(): MaterializedSemanticBackendManifest {
+	const bundles = CANONICAL_SEMANTIC_BACKENDS.map((bundle) => {
+		const canonicalRoot = join(canonicalSkillsRoot, bundle.canonical_root);
+		const legacyRoot = join(repositoryRoot, "sure", bundle.legacy_root);
+		const canonicalTree = existsSync(canonicalRoot) ? backendTreeDigest(canonicalRoot) : undefined;
+		const legacyTree = existsSync(legacyRoot) ? backendTreeDigest(legacyRoot) : undefined;
+		const operations = bundle.operations.map((operation) => {
+			const canonicalPath = join(canonicalRoot, operation.entrypoint);
+			const legacyPath = join(legacyRoot, operation.entrypoint);
+			if (!existsSync(canonicalPath) || !lstatSync(canonicalPath).isFile()) {
+				throw new Error(
+					`Canonical semantic backend resource is missing: ${operation.operation_id} -> ${canonicalPath}`,
+				);
+			}
+			if (!existsSync(legacyPath) || !lstatSync(legacyPath).isFile()) {
+				throw new Error(`Legacy semantic backend resource is missing: ${operation.operation_id} -> ${legacyPath}`);
+			}
+			return {
+				...operation,
+				canonical_resource_digest: `sha256:${sha256(readFileSync(canonicalPath))}`,
+				legacy_resource_digest: `sha256:${sha256(readFileSync(legacyPath))}`,
+			};
+		});
+		return {
+			...bundle,
+			canonical_tree_digest: canonicalTree,
+			legacy_tree_digest: legacyTree,
+			operations,
+		};
+	});
+	const unsigned = { schema: "sure.semantic.backend.manifest.v1", bundles } as unknown as JsonValue;
+	return {
+		schema: "sure.semantic.backend.manifest.v1",
+		registry_digest: canonicalJsonDigest(unsigned),
+		bundles: bundles as unknown as JsonValue[],
+	};
 }
 
 function readCanonicalResourceFiles(skill: CanonicalSkillDefinition): { path: string; content: Buffer }[] {
@@ -236,6 +288,7 @@ function lockFor(
 	host: "pi" | "portable",
 	resources: readonly { path: string; content: Uint8Array }[],
 	omitted: readonly string[],
+	semanticBackendManifest: MaterializedSemanticBackendManifest,
 ): Record<string, unknown> {
 	const definitionDigest = canonicalJsonDigest(asJson(skill));
 	const workflowDigest = canonicalJsonDigest(asJson(skill.workflow));
@@ -255,6 +308,7 @@ function lockFor(
 		resource_digest: resourceDigest,
 		semantic_backend_digest: backendDigest,
 		validator_registry_digest: validatorRegistryDigest,
+		semantic_backend_registry_digest: semanticBackendManifest.registry_digest,
 		core_package_version: "0.80.3",
 		portable_omitted_resources: [...omitted].sort(),
 	};
@@ -275,6 +329,7 @@ function hookFacade(skill: CanonicalSkillDefinition): Buffer {
 function buildHostFiles(
 	skill: CanonicalSkillDefinition,
 	host: "pi" | "portable",
+	semanticBackendManifest: MaterializedSemanticBackendManifest,
 ): { files: GeneratedFile[]; lock: Record<string, unknown> } {
 	const canonicalRoot = join(canonicalSkillsRoot, skill.distribution_slug);
 	const resourceSet =
@@ -299,6 +354,8 @@ function buildHostFiles(
 				schema: "sure.semantic.backends.v1",
 				validators: skill.semantic_validators,
 				resolution: "sure-core-registry",
+				registry_digest: semanticBackendManifest.registry_digest,
+				bundles: semanticBackendManifest.bundles,
 			}),
 		});
 		files.push({
@@ -307,6 +364,18 @@ function buildHostFiles(
 				`# Bundled references\n\nThis directory contains host-neutral references selected from the canonical skill. ${resourceSet.omitted.length} legacy host/backend files are intentionally resolved by the pinned SURE Core registry instead of copied into a portable skill.\n`,
 				"utf8",
 			),
+		});
+	}
+	if (host === "pi") {
+		files.push({
+			path: join(root, "semantic-backends.json"),
+			content: jsonFile({
+				schema: "sure.semantic.backends.v1",
+				validators: skill.semantic_validators,
+				resolution: "sure-core-registry",
+				registry_digest: semanticBackendManifest.registry_digest,
+				bundles: semanticBackendManifest.bundles,
+			}),
 		});
 	}
 	const registry = materializedValidatorRegistry();
@@ -321,7 +390,7 @@ function buildHostFiles(
 		}),
 	});
 	for (const resource of resourceSet.files) files.push({ path: join(root, resource.path), content: resource.content });
-	const lock = lockFor(skill, host, resourceSet.files, resourceSet.omitted);
+	const lock = lockFor(skill, host, resourceSet.files, resourceSet.omitted, semanticBackendManifest);
 	files.push({ path: join(root, "generation.lock.json"), content: jsonFile(lock) });
 	files.push({
 		path: join(root, "canonical-definition.json"),
@@ -332,8 +401,16 @@ function buildHostFiles(
 
 function expectedFiles(): GeneratedFile[] {
 	const files: GeneratedFile[] = [];
+	const semanticBackendManifest = materializedSemanticBackendManifest();
+	files.push({
+		path: join(repositoryRoot, "sure", "canonical", "shared", "evaluation", "backend-manifest.json"),
+		content: jsonFile(semanticBackendManifest),
+	});
 	for (const skill of CANONICAL_SKILLS) {
-		files.push(...buildHostFiles(skill, "pi").files, ...buildHostFiles(skill, "portable").files);
+		files.push(
+			...buildHostFiles(skill, "pi", semanticBackendManifest).files,
+			...buildHostFiles(skill, "portable", semanticBackendManifest).files,
+		);
 	}
 	const registry = CANONICAL_SKILLS.map((skill) => ({
 		skill_id: skill.skill_id,
