@@ -66,6 +66,69 @@ function truncate(value: string): string {
 	return value.length <= MAX_CAPTURED_OUTPUT ? value : `${value.slice(0, MAX_CAPTURED_OUTPUT)}\n...[truncated]`;
 }
 
+function runtimeExecutable(request: ExecutionRequest, key: string): string | undefined {
+	const value = request.runtime_requirements?.[key];
+	return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+function probeTarget(capabilityId: string, request: ExecutionRequest, options: ExecutorRunOptions): string | undefined {
+	switch (capabilityId) {
+		case "sure.execution.docker":
+		case "sure.execution.docker-optional":
+			return runtimeExecutable(request, "docker_executable") ?? process.env.DOCKER_BIN ?? "docker";
+		case "sure.execution.local-python":
+			return (
+				runtimeExecutable(request, "python_executable") ??
+				(options.kind === "local" || options.kind === "python" ? request.entrypoint.executable : undefined)
+			);
+		case "sure.execution.harness-python":
+			return (
+				runtimeExecutable(request, "harness_python_executable") ?? runtimeExecutable(request, "python_executable")
+			);
+		case "sure.execution.model-runtime":
+			return runtimeExecutable(request, "model_runtime_executable");
+		case "sure.execution.source-runtime":
+			return runtimeExecutable(request, "source_runtime_executable");
+		case "sure.execution.evaluation-runtime":
+			return runtimeExecutable(request, "evaluation_runtime_executable");
+		default:
+			return undefined;
+	}
+}
+
+function probeCapabilities(
+	request: ExecutionRequest,
+	options: ExecutorRunOptions,
+): Map<string, { executable?: string; result?: ReturnType<typeof spawnSync> }> {
+	const targets = new Map<string, string>();
+	for (const requirement of request.capability_requirements ?? []) {
+		if (
+			requirement.capability_class !== "execution_capability" ||
+			!CAPABILITY_PROBE_IDS.has(requirement.capability_id)
+		)
+			continue;
+		const target = probeTarget(requirement.capability_id, request, options);
+		if (target !== undefined) targets.set(requirement.capability_id, target);
+	}
+	const results = new Map<string, { executable?: string; result?: ReturnType<typeof spawnSync> }>();
+	for (const [capabilityId, executable] of targets) {
+		try {
+			results.set(capabilityId, {
+				executable,
+				result: spawnSync(executable, ["--version"], {
+					cwd: options.working_directory,
+					encoding: "utf8",
+					timeout: Math.min(options.timeout_ms, 5000),
+					maxBuffer: MAX_CAPTURED_OUTPUT,
+				}),
+			});
+		} catch {
+			results.set(capabilityId, { executable });
+		}
+	}
+	return results;
+}
+
 function capabilityEvidence(
 	request: ExecutionRequest,
 	options: ExecutorRunOptions,
@@ -73,28 +136,7 @@ function capabilityEvidence(
 	const requirements = request.capability_requirements ?? [];
 	const observedAt = now(options);
 	const evidence: CapabilityEvidence[] = [];
-	const executable = request.entrypoint.executable;
-	let probe: ReturnType<typeof spawnSync> | undefined;
-	const needsProbe = requirements.some(
-		(requirement) =>
-			requirement.capability_class === "execution_capability" &&
-			CAPABILITY_PROBE_IDS.has(requirement.capability_id) &&
-			((options.kind === "python" && requirement.capability_id !== "sure.execution.docker") ||
-				(options.kind === "docker" && requirement.capability_id.includes("docker")) ||
-				(options.kind === "local" && requirement.capability_id === "sure.execution.local-python")),
-	);
-	if (needsProbe) {
-		try {
-			probe = spawnSync(executable, ["--version"], {
-				cwd: options.working_directory,
-				encoding: "utf8",
-				timeout: Math.min(options.timeout_ms, 5000),
-				maxBuffer: MAX_CAPTURED_OUTPUT,
-			});
-		} catch {
-			probe = undefined;
-		}
-	}
+	const probes = probeCapabilities(request, options);
 	for (const requirement of requirements) {
 		if (requirement.capability_id === "sure.core" && requirement.capability_class === "agent_capability") {
 			const base = {
@@ -109,6 +151,7 @@ function capabilityEvidence(
 			continue;
 		}
 		if (requirement.capability_class !== "execution_capability") continue;
+		const probe = probes.get(requirement.capability_id);
 		const probeSupported =
 			(requirement.capability_id === "sure.execution.local-python" &&
 				(options.kind === "python" || options.kind === "local")) ||
@@ -120,7 +163,7 @@ function capabilityEvidence(
 			(requirement.capability_id === "sure.execution.evaluation-runtime" && options.kind === "python") ||
 			(requirement.capability_id === "sure.execution.model-runtime" &&
 				(options.kind === "local" || options.kind === "python"));
-		const available = probeSupported && probe?.status === 0;
+		const available = probeSupported && probe?.result?.status === 0;
 		const status = available ? ("AVAILABLE" as const) : ("MISSING" as const);
 		const base = {
 			capability_id: requirement.capability_id,
@@ -130,8 +173,10 @@ function capabilityEvidence(
 			observed_at: observedAt,
 			details: {
 				kind: options.kind,
-				executable,
-				...(probe?.status === 0 ? { version: String(probe.stdout || probe.stderr || "").trim() } : {}),
+				...(probe?.executable === undefined ? {} : { executable: probe.executable }),
+				...(probe?.result?.status === 0
+					? { version: String(probe.result.stdout || probe.result.stderr || "").trim() }
+					: {}),
 			},
 		};
 		evidence.push({ ...base, evidence_digest: canonicalJsonDigest(base as unknown as JsonValue) });
