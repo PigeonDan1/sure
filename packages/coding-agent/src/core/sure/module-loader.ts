@@ -6,6 +6,7 @@ import * as _bundledPiAgentCore from "@earendil-works/pi-agent-core";
 import * as _bundledPiAiCompat from "@earendil-works/pi-ai/compat";
 import * as _bundledPiAiOauth from "@earendil-works/pi-ai/oauth";
 import * as _bundledPiTui from "@earendil-works/pi-tui";
+import * as _bundledSureCoreEvaluation from "@earendil-works/sure-core/evaluation";
 import * as _bundledTypebox from "typebox";
 import * as _bundledTypeboxCompile from "typebox/compile";
 import * as _bundledTypeboxValue from "typebox/value";
@@ -53,6 +54,10 @@ export function getSureHookAliases(): Record<string, string> {
 		["ai/dist/oauth.js", "ai/src/oauth.ts"],
 		"@earendil-works/pi-ai/oauth",
 	);
+	const sureCoreEvaluationEntry = resolveWorkspaceOrImport(
+		["sure-core/dist/evaluation/index.js", "sure-core/src/evaluation/index.ts"],
+		"@earendil-works/sure-core/evaluation",
+	);
 
 	aliases = {
 		"@earendil-works/pi-agent-core": piAgentCoreEntry,
@@ -62,6 +67,7 @@ export function getSureHookAliases(): Record<string, string> {
 		"@earendil-works/pi-ai/oauth": piAiOauthEntry,
 		"@earendil-works/pi-coding-agent": piCodingAgentEntry,
 		"@earendil-works/pi-coding-agent/hooks": piCodingAgentHooksEntry,
+		"@earendil-works/sure-core/evaluation": sureCoreEvaluationEntry,
 		"@mariozechner/pi-agent-core": piAgentCoreEntry,
 		"@mariozechner/pi-tui": piTuiEntry,
 		"@mariozechner/pi-ai": piAiCompatEntry,
@@ -95,6 +101,7 @@ export function getSureHookVirtualModules(): Record<string, unknown> {
 		"@earendil-works/pi-ai/oauth": _bundledPiAiOauth,
 		"@earendil-works/pi-coding-agent": _bundledPiCodingAgent,
 		"@earendil-works/pi-coding-agent/hooks": _bundledPiCodingAgentHooks,
+		"@earendil-works/sure-core/evaluation": _bundledSureCoreEvaluation,
 		"@mariozechner/pi-agent-core": _bundledPiAgentCore,
 		"@mariozechner/pi-tui": _bundledPiTui,
 		"@mariozechner/pi-ai": _bundledPiAiCompat,

@@ -6711,8 +6711,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/module-loader.ts",
-      "size_bytes": 4590,
-      "sha256": "62d9213d49d24b1a84d00c02a77de3bc66f0da173295c56da20f9c91f885480e"
+      "size_bytes": 4995,
+      "sha256": "ac85d074fa3556aacb36ce2182222c194c0e81140d4ffbd42b5cfd5c7b152c31"
     },
     {
       "path": "packages/coding-agent/src/core/sure/output-dir.ts",
@@ -6813,6 +6813,11 @@
       "path": "packages/coding-agent/test/suite/sure-memory-units.test.ts",
       "size_bytes": 9690,
       "sha256": "78c747e60eb9151ad0903c0795cba5b60d191ada4ef6546ce3dc7cd621141add"
+    },
+    {
+      "path": "packages/coding-agent/test/suite/sure-module-loader.test.ts",
+      "size_bytes": 653,
+      "sha256": "004a339bdf8353d692323e07eec9cd8e9383f9fc12d378982c6f88e90222929f"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-memory.test.ts",
@@ -7231,8 +7236,8 @@
     },
     {
       "path": "sure/runtime/semantic-backend.ts",
-      "size_bytes": 16256,
-      "sha256": "0563431c4b3e77bfad82b0f685dd929c14325623b7d489344a77a0e51f944d4a"
+      "size_bytes": 135,
+      "sha256": "1e7747be7c88ea2d79d702858c5aa2a2919d5499f7aefe57defeedbb075f23d0"
     },
     {
       "path": "sure/runtime/test_evaluation_commit.py",
@@ -7482,7 +7487,7 @@
     {
       "path": "sure/skills/sure_eval/hooks/index.ts",
       "size_bytes": 47529,
-      "sha256": "10ddc0e95363ca533ce8425b748ba356b327c75380ee7d85bcfa57f9d28b37e7"
+      "sha256": "13cfbbd9615bc94bd16bbc2510b87203027f0c031ae163f81a129dc819a1d87f"
     },
     {
       "path": "sure/skills/sure_eval/hooks/state-machine.ts",
@@ -9676,5 +9681,5 @@
       ]
     }
   ],
-  "semantic_digest": "6b0eec2594b2e00bc8a67f79ed62dbc938c5dfa7ef318cbbca06102b4695a476"
+  "semantic_digest": "0fbb768a94d9e8c4c917cc0fe1462368b1864745ddb1fdf3d91f4c41cdec2ac9"
 }

@@ -3,6 +3,12 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import {
+	type ResolvedSemanticBackend,
+	repositoryRootForPackage,
+	resolveSemanticBackendOperation,
+	SemanticBackendResolutionError,
+} from "@earendil-works/sure-core/evaluation";
+import {
 	type HarnessRuntimeContract,
 	harnessRuntimeEnv,
 	resolveHarnessPython,
@@ -28,12 +34,6 @@ import {
 } from "../../../runtime/memory/hooks.ts";
 import { memoryServiceForContext } from "../../../runtime/memory/pi-bridge.ts";
 import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
-import {
-	type ResolvedSemanticBackend,
-	repositoryRootForPackage,
-	resolveSemanticBackendOperation,
-	SemanticBackendResolutionError,
-} from "../../../runtime/semantic-backend.ts";
 import { validateSkillRuntimeBinding, writeSkillRuntimeBinding } from "../../../runtime/usage.ts";
 import {
 	advance,

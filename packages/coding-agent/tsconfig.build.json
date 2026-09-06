@@ -4,6 +4,7 @@
 		"outDir": "./dist",
 		"paths": {
 			"@earendil-works/sure-core": ["../sure-core/dist/index.d.ts"],
+			"@earendil-works/sure-core/evaluation": ["../sure-core/dist/evaluation/index.d.ts"],
 			"@earendil-works/sure-core/site": ["../sure-core/dist/policy/site.d.ts"],
 			"@earendil-works/sure-core/*": ["../sure-core/dist/*.d.ts", "../sure-core/dist/run/*.d.ts", "../sure-core/dist/workflow/*.d.ts", "../sure-core/dist/contracts/*.d.ts"],
 			"@earendil-works/pi-agent-core": ["../agent/dist/index.d.ts"],

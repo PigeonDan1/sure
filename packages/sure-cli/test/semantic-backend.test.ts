@@ -7,7 +7,7 @@ import {
 	loadSemanticBackendManifest,
 	resolveSemanticBackendOperation,
 	SemanticBackendResolutionError,
-} from "../../../sure/runtime/semantic-backend.ts";
+} from "../../sure-core/src/evaluation/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const manifestPath = join(repositoryRoot, "sure", "canonical", "shared", "evaluation", "backend-manifest.json");

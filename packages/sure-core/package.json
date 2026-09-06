@@ -26,6 +26,10 @@
 			"types": "./dist/policy/site.d.ts",
 			"import": "./dist/policy/site.js"
 		},
+		"./evaluation": {
+			"types": "./dist/evaluation/index.d.ts",
+			"import": "./dist/evaluation/index.js"
+		},
 		"./schemas/*": "./dist/contracts/*.schema.json",
 		"./package.json": "./package.json"
 	},

@@ -3,7 +3,8 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"paths": {
-			"@earendil-works/pi-coding-agent/hooks": ["./packages/coding-agent/src/core/sure/hook-types.ts"]
+			"@earendil-works/pi-coding-agent/hooks": ["./packages/coding-agent/src/core/sure/hook-types.ts"],
+			"@earendil-works/sure-core/evaluation": ["./packages/sure-core/src/evaluation/index.ts"]
 		}
 	},
 	"include": ["sure/skills/*/hooks/**/*.ts", "sure/runtime/memory/**/*.ts"]
