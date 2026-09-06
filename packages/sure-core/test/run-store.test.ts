@@ -201,6 +201,25 @@ describe("CoreRunStore", () => {
 		expect(() => store.resumeRun("run-1", BINDING)).toThrow(/Only failed runs can resume/);
 	});
 
+	it("does not resume a snapshot-bound run through an unbound caller", () => {
+		const { store, filesystem } = makeStore();
+		const snapshotPath = "/workspace/.sure/runs/run-snapshot/artifacts/site_policy.resolved.json";
+		store.createRun({
+			...createInput("run-snapshot"),
+			policySnapshotDigest: `sha256:${"f".repeat(64)}`,
+			policySnapshotPath: snapshotPath,
+		});
+		store.setStatus("run-snapshot", "running", "started");
+		store.writeState("run-snapshot", checkpointState(true));
+		store.setStatus("run-snapshot", "failed", "failed");
+		filesystem.writeFileAtomic(snapshotPath, "{}\n");
+		const { policySnapshotDigest: _ignored, ...unbound } = BINDING;
+		expect(store.checkResume("run-snapshot", unbound)).toMatchObject({
+			allowed: false,
+			code: "CONFLICT",
+		});
+	});
+
 	it("rejects traversal, reference roots, and symlink escapes while recording local diagnostics", () => {
 		const { store, filesystem } = makeStore();
 		for (const runId of ["../escape", "/absolute", "a/b", "..", "bad\\name"]) {

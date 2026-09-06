@@ -232,6 +232,12 @@ function bindingMismatch(record: CoreRunRecord, binding: ResumeBinding): string 
 		const actual = record[recordKey];
 		if (typeof actual !== "string" || actual !== expected) return bindingKey;
 	}
+	// A snapshot-bound run must never be resumed through an older caller that
+	// silently omits the snapshot binding.  Legacy runs remain compatible
+	// because they have no snapshot field to enforce.
+	if (record.policySnapshotDigest !== undefined && binding.policySnapshotDigest === undefined) {
+		return "policySnapshotDigest";
+	}
 	return undefined;
 }
 

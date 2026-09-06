@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { canonicalJsonDigest, type ExecutionRequest, type JsonValue } from "../../sure-core/src/index.ts";
+import {
+	canonicalJsonDigest,
+	createPolicySnapshot,
+	type ExecutionRequest,
+	type JsonValue,
+	type PolicySnapshot,
+} from "../../sure-core/src/index.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const source = join(repositoryRoot, "packages/sure-cli/src/surectl.ts");
@@ -15,6 +21,29 @@ const evalDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/ca
 const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
 const DIGEST_C = "c".repeat(64);
+
+function policySnapshot(): PolicySnapshot {
+	return createPolicySnapshot({
+		site_id: "cli-test",
+		policy_version: 1,
+		policy: { schema: "sure.site.policy.v1", execution: { surfaces: ["local"] } },
+		source: { kind: "test", path: "/tmp/site-policy.yaml", raw_sha256: DIGEST_A },
+		path_bindings: [
+			{
+				root_id: "reference",
+				role: "read_only_reference",
+				path: "/tmp/sure-cli-reference",
+				resolved_path: "/tmp/sure-cli-reference",
+			},
+			{
+				root_id: "publication",
+				role: "controlled_publication",
+				path: "/tmp/sure-cli-publication",
+				resolved_path: "/tmp/sure-cli-publication",
+			},
+		],
+	});
+}
 
 interface CommandResult {
 	status: number | null;
@@ -489,6 +518,7 @@ describe("surectl cooperative control plane", () => {
 			JSON.stringify(
 				executionRequest("run-docker-executor", dockerArtifacts, {
 					entrypoint: { executable: "/surectl/missing-docker", argv: ["version"] },
+					runtime_requirements: { docker_executable: "/surectl/missing-docker" },
 					capability_requirements: [
 						{
 							capability_id: "sure.execution.docker",
@@ -777,5 +807,75 @@ describe("surectl cooperative control plane", () => {
 		expect((result.value?.admission as Record<string, unknown>).admitted).toBe(false);
 		const report = result.value?.report;
 		expect(report).toBeDefined();
+	});
+
+	it("binds start/resume to an immutable site-policy snapshot", () => {
+		const snapshotPath = join(root, "site-policy.snapshot.json");
+		const snapshot = policySnapshot();
+		writeFileSync(snapshotPath, JSON.stringify(snapshot));
+		const base = [
+			"--skill",
+			"sure_feed",
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+			"--policy-snapshot",
+			snapshotPath,
+		];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-policy-snapshot",
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const run = started.value?.run as Record<string, unknown>;
+		expect(run.policyDigest).toBe(snapshot.policy_digest);
+		expect(run.policySnapshotDigest).toBe(snapshot.snapshot_digest);
+		const persistedPath = String(run.policySnapshotPath);
+		expect(JSON.parse(readFileSync(persistedPath, "utf8"))).toMatchObject({
+			snapshot_digest: snapshot.snapshot_digest,
+		});
+
+		const failed = command(root, "finalize", [
+			"--run-id",
+			"run-policy-snapshot",
+			"--status",
+			"failed",
+			"--policy-snapshot",
+			snapshotPath,
+		]);
+		expect(failed.status).toBe(0);
+		const resumed = command(root, "resume", [...base, "--run-id", "run-policy-snapshot"]);
+		expect(resumed.status).toBe(0);
+		const failedAgain = command(root, "finalize", [
+			"--run-id",
+			"run-policy-snapshot",
+			"--status",
+			"failed",
+			"--policy-snapshot",
+			snapshotPath,
+		]);
+		expect(failedAgain.status).toBe(0);
+
+		const changed = { ...snapshot, policy: { changed: true } };
+		const changedPath = join(root, "changed-policy.snapshot.json");
+		writeFileSync(
+			changedPath,
+			JSON.stringify(
+				createPolicySnapshot({
+					site_id: changed.site_id,
+					policy_version: changed.policy_version,
+					policy: changed.policy,
+					source: changed.source,
+					path_bindings: changed.path_bindings,
+				}),
+			),
+		);
+		const rejected = command(root, "resume", [...base.slice(0, -1), changedPath, "--run-id", "run-policy-snapshot"]);
+		expect(rejected.status).toBe(1);
+		expect(rejected.stderr).toMatch(/does not match the run binding|policy_digest/);
 	});
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPolicySnapshot, type PolicySnapshotInput } from "../src/index.ts";
+import { createPolicySnapshot, type PolicySnapshotInput, validatePolicySnapshot } from "../src/index.ts";
 
 function input(): PolicySnapshotInput {
 	return {
@@ -47,5 +47,25 @@ describe("policy snapshot", () => {
 		const invalid = input();
 		invalid.source = { kind: "environment", path: "site.yaml", raw_sha256: "not-a-digest" };
 		expect(() => createPolicySnapshot(invalid)).toThrow(/digest/);
+	});
+
+	it("recomputes persisted digests and rejects tampered snapshots", () => {
+		const snapshot = createPolicySnapshot(input());
+		expect(validatePolicySnapshot(JSON.parse(JSON.stringify(snapshot)))).toEqual(snapshot);
+
+		const tamperedPolicy = { ...snapshot, policy: { changed: true } };
+		expect(() => validatePolicySnapshot(tamperedPolicy)).toThrow(/policy_digest|canonical contents/);
+
+		const unknownField = { ...snapshot, unexpected: true };
+		expect(() => validatePolicySnapshot(unknownField)).toThrow(/unknown field/);
+	});
+
+	it("requires normalized absolute source paths", () => {
+		const snapshot = createPolicySnapshot(input());
+		const tampered = {
+			...snapshot,
+			source: { ...snapshot.source, path: "/config/../site.yaml" },
+		};
+		expect(() => validatePolicySnapshot(tampered)).toThrow(/absolute normalized/);
 	});
 });

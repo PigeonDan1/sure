@@ -1,4 +1,4 @@
-export { createPolicySnapshot } from "./snapshot.ts";
+export { createPolicySnapshot, parsePolicySnapshot, validatePolicySnapshot } from "./snapshot.ts";
 export {
 	POLICY_PATH_ROLES,
 	type PolicyPathBinding,

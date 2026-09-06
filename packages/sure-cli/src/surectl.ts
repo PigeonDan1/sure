@@ -33,12 +33,15 @@ import {
 	type FrozenFormalSubject,
 	initialCheckpoint,
 	type JsonValue,
+	type PolicyPathRole,
+	type PolicySnapshot,
 	type PublicOutcome,
 	type StateDocument,
 	type StructuralValidationResult,
 	validateExecutionReceipt,
 	validateExecutionRequest,
 	validateFrozenEvaluationSubject,
+	validatePolicySnapshot,
 	validateStructuralArtifact,
 	type WorkflowCheckpoint,
 	type WorkflowDefinition,
@@ -127,10 +130,39 @@ function envPaths(...names: string[]): string[] {
 	});
 }
 
-function referenceRoots(args: ParsedArgs): string[] {
+interface LoadedPolicySnapshot {
+	snapshot: PolicySnapshot;
+	path: string;
+}
+
+function policySnapshotFor(args: ParsedArgs): LoadedPolicySnapshot | undefined {
+	const candidate = one(args, "policy-snapshot") ?? process.env.SURE_POLICY_SNAPSHOT;
+	if (candidate === undefined || candidate.trim() === "") return undefined;
+	const path = absolute(candidate, "--policy-snapshot");
+	const stat = lstatSync(path);
+	if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`--policy-snapshot must name a regular file: ${path}`);
+	return { snapshot: validatePolicySnapshot(readJson(path)), path };
+}
+
+function snapshotPaths(snapshot: PolicySnapshot | undefined, roles: readonly PolicyPathRole[]): string[] {
+	if (snapshot === undefined) return [];
+	return snapshot.path_bindings
+		.filter((binding) => roles.includes(binding.role))
+		.flatMap((binding) => [binding.path, binding.resolved_path]);
+}
+
+function referenceRoots(args: ParsedArgs, snapshot = policySnapshotFor(args)?.snapshot): string[] {
 	return [
 		...many(args, "reference-root").map((value) => absolute(value, "--reference-root")),
 		...envPaths("SURE_REFERENCE_ROOT", "REFERENCE_ROOT").map((value) => absolute(value, "reference root")),
+		...snapshotPaths(snapshot, ["read_only_reference", "dataset_source", "forbidden_output"]),
+	].filter((value, index, values) => values.indexOf(value) === index);
+}
+
+function writeRoots(args: ParsedArgs, snapshot = policySnapshotFor(args)?.snapshot): string[] {
+	return [
+		...many(args, "write-root").map((value) => absolute(value, "--write-root")),
+		...snapshotPaths(snapshot, ["controlled_publication", "runtime_cache"]),
 	].filter((value, index, values) => values.indexOf(value) === index);
 }
 
@@ -265,12 +297,65 @@ function sameDigest(left: string, right: string): boolean {
 	return left.replace(/^sha256:/, "").toLowerCase() === right.replace(/^sha256:/, "").toLowerCase();
 }
 
-function storeFor(args: ParsedArgs, root: string, digestOverrides: Partial<Record<string, string>> = {}): NodeRunStore {
+function policyDigestFor(args: ParsedArgs, snapshot: PolicySnapshot | undefined): string {
+	const explicit = one(args, "policy-digest") ?? process.env.SURE_POLICY_DIGEST;
+	if (snapshot !== undefined) {
+		const expected = normalizeDigest(snapshot.policy_digest, "policy snapshot policy_digest");
+		if (explicit !== undefined && !sameDigest(expected, normalizeDigest(explicit, "--policy-digest"))) {
+			throw new Error("--policy-digest does not match the supplied policy snapshot.");
+		}
+		return expected;
+	}
+	return normalizeDigest(requiredValue(args, "policy-digest", "SURE_POLICY_DIGEST"), "--policy-digest");
+}
+
+function runPolicySnapshot(run: {
+	policySnapshotDigest?: string;
+	policySnapshotPath?: string;
+}): LoadedPolicySnapshot | undefined {
+	if (run.policySnapshotDigest === undefined && run.policySnapshotPath === undefined) return undefined;
+	if (run.policySnapshotDigest === undefined || run.policySnapshotPath === undefined)
+		throw new Error("Run has an incomplete policy snapshot binding.");
+	const path = run.policySnapshotPath;
+	const stat = lstatSync(path);
+	if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Run policy snapshot is not a regular file: ${path}`);
+	const snapshot = validatePolicySnapshot(readJson(path));
+	if (!sameDigest(snapshot.snapshot_digest, run.policySnapshotDigest))
+		throw new Error("Run policy snapshot digest does not match its persisted snapshot.");
+	return { snapshot, path };
+}
+
+function assertRunPolicySnapshot(
+	run: { policySnapshotDigest?: string; policySnapshotPath?: string },
+	supplied: LoadedPolicySnapshot | undefined,
+	options: { requireCurrent?: boolean } = {},
+): LoadedPolicySnapshot | undefined {
+	const persisted = runPolicySnapshot(run);
+	if (persisted === undefined) {
+		if (supplied !== undefined)
+			throw new Error("A policy snapshot was supplied for a run without a snapshot binding.");
+		return undefined;
+	}
+	if (supplied === undefined) {
+		if (options.requireCurrent) throw new Error("A current --policy-snapshot is required to resume this run.");
+		return persisted;
+	}
+	if (!sameDigest(persisted.snapshot.snapshot_digest, supplied.snapshot.snapshot_digest))
+		throw new Error("Supplied policy snapshot does not match the run binding.");
+	return supplied;
+}
+
+function storeFor(
+	args: ParsedArgs,
+	root: string,
+	digestOverrides: Partial<Record<string, string>> = {},
+	snapshot = policySnapshotFor(args)?.snapshot,
+): NodeRunStore {
 	return new NodeRunStore({
 		rootDir: root,
 		coreVersion: CORE_VERSION,
-		referenceRoots: referenceRoots(args),
-		writeRoots: many(args, "write-root").map((value) => absolute(value, "--write-root")),
+		referenceRoots: referenceRoots(args, snapshot),
+		writeRoots: writeRoots(args, snapshot),
 		...digestOverrides,
 	});
 }
@@ -408,19 +493,20 @@ function admittedReadArtifactPath(
 
 function start(args: ParsedArgs): void {
 	const root = rootFor(args);
+	const suppliedPolicy = policySnapshotFor(args);
 	const loaded = currentDefinition(args, root);
 	const registry = registryFor(loaded, args);
 	const skillName = one(args, "skill") ?? loaded.definition.workflow_id;
 	const runId =
 		one(args, "run-id") ??
 		`${new Date().toISOString().replace(/[-:.]/g, "").replace(/Z$/, "")}-${randomUUID().slice(0, 8)}`;
-	const policyDigest = normalizeDigest(requiredValue(args, "policy-digest", "SURE_POLICY_DIGEST"), "--policy-digest");
+	const policyDigest = policyDigestFor(args, suppliedPolicy?.snapshot);
 	const executorDigest = normalizeDigest(
 		requiredValue(args, "executor-digest", "SURE_EXECUTOR_DIGEST"),
 		"--executor-digest",
 	);
 	const bindingDigest = one(args, "binding-digest");
-	const store = storeFor(args, root);
+	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
 	const outputDir = outputRootFor(args);
 	const branchId = one(args, "branch") ?? loaded.definition.default_branch_id;
 	if (!loaded.definition.branches.some((branch) => branch.id === branchId))
@@ -438,8 +524,20 @@ function start(args: ParsedArgs): void {
 		validatorDigest: registry.digest,
 		executorDigest,
 		policyDigest,
+		...(suppliedPolicy === undefined
+			? {}
+			: {
+					policySnapshotDigest: suppliedPolicy.snapshot.snapshot_digest,
+					policySnapshotPath: join(store.runsRoot, runId, "artifacts", "site_policy.resolved.json"),
+				}),
 		...(bindingDigest === undefined ? {} : { bindingDigest: normalizeDigest(bindingDigest, "--binding-digest") }),
 	});
+	if (suppliedPolicy !== undefined) {
+		const snapshotPath = join(store.runsRoot, runId, "artifacts", "site_policy.resolved.json");
+		writeJsonImmutable(snapshotPath, suppliedPolicy.snapshot);
+		// Verify the bytes that were published, not just the in-memory object.
+		validatePolicySnapshot(readJson(snapshotPath));
+	}
 	const checkpoint = initialCheckpoint(loaded.definition, branchId);
 	store.writeState(
 		runId,
@@ -540,9 +638,12 @@ function validateGateEvidence(
 function validate(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const store = storeFor(args, root);
+	const suppliedPolicy = policySnapshotFor(args);
+	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
 	const run = store.readRun(runId);
 	if (!run) throw new Error(`Run ${runId} does not exist.`);
+	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
+	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
 	const state = store.readState(runId);
 	const loaded = currentDefinition(args, root, run.skillName);
 	const registry = registryFor(loaded, args);
@@ -585,7 +686,7 @@ function validate(args: ParsedArgs): PublicOutcome {
 		const allowedOutputRoots = [run.runDir, ...(run.outputDir ? [run.outputDir] : [])];
 		const boundaryOptions = {
 			allowed_output_roots: allowedOutputRoots,
-			forbidden_output_roots: many(args, "reference-root").map((value) => absolute(value, "--reference-root")),
+			forbidden_output_roots: policyReferences,
 		};
 		const requestValidation = validateExecutionRequest(request, boundaryOptions);
 		let execution = requestValidation;
@@ -881,9 +982,11 @@ function capabilities(args: ParsedArgs): PublicOutcome {
 function resume(args: ParsedArgs): void {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const store = storeFor(args, root);
+	const suppliedPolicy = policySnapshotFor(args);
+	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
 	const run = store.readRun(runId);
 	if (!run) throw new Error(`Run ${runId} does not exist.`);
+	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
 	const existingState = store.readState(run);
 	const integrityError = stateIntegrityError(run, existingState);
 	if (integrityError) throw new Error(integrityError);
@@ -895,10 +998,15 @@ function resume(args: ParsedArgs): void {
 			requiredValue(args, "executor-digest", "SURE_EXECUTOR_DIGEST"),
 		"--executor-digest",
 	);
-	const policyDigest = normalizeDigest(
-		one(args, "policy-digest") ?? run.policyDigest ?? requiredValue(args, "policy-digest", "SURE_POLICY_DIGEST"),
-		"--policy-digest",
-	);
+	const policyDigest =
+		suppliedPolicy === undefined
+			? normalizeDigest(
+					one(args, "policy-digest") ??
+						run.policyDigest ??
+						requiredValue(args, "policy-digest", "SURE_POLICY_DIGEST"),
+					"--policy-digest",
+				)
+			: policyDigestFor(args, suppliedPolicy.snapshot);
 	const bindingDigest = one(args, "binding-digest") ?? run.bindingDigest;
 	const binding = {
 		coreVersion: run.coreVersion ?? CORE_VERSION,
@@ -906,6 +1014,7 @@ function resume(args: ParsedArgs): void {
 		validatorDigest: registry.digest,
 		executorDigest,
 		policyDigest,
+		...(suppliedPolicy === undefined ? {} : { policySnapshotDigest: suppliedPolicy.snapshot.snapshot_digest }),
 		...(bindingDigest === undefined ? {} : { bindingDigest: normalizeDigest(bindingDigest, "--binding-digest") }),
 	};
 	const resumed = store.resumeRun(runId, binding);
@@ -931,9 +1040,12 @@ function executionKind(args: ParsedArgs, request: ExecutionRequest): "local" | "
 function execute(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const store = storeFor(args, root);
+	const suppliedPolicy = policySnapshotFor(args);
+	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
 	const run = store.readRun(runId);
 	if (!run) throw new Error(`Run ${runId} does not exist.`);
+	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
+	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
 	const existingState = store.readState(run);
 	const integrityError = stateIntegrityError(run, existingState);
 	if (integrityError) throw new Error(integrityError);
@@ -986,7 +1098,7 @@ function execute(args: ParsedArgs): PublicOutcome {
 		executor_version: CORE_VERSION,
 		working_directory: run.cwd,
 		allowed_output_roots: allowedOutputRoots,
-		forbidden_output_roots: referenceRoots(args),
+		forbidden_output_roots: policyReferences,
 		timeout_ms: timeoutMs,
 		output_paths: outputPaths,
 	});
@@ -1044,9 +1156,12 @@ function digestOrLegacy(value: string | undefined, label: string, missing: strin
 function freeze(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const store = storeFor(args, root);
+	const suppliedPolicy = policySnapshotFor(args);
+	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
 	const run = store.readRun(runId);
 	if (!run) throw new Error(`Run ${runId} does not exist.`);
+	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
+	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
 	const state = store.readState(run);
 	const integrityError = stateIntegrityError(run, state);
 	if (integrityError) throw new Error(integrityError);
@@ -1068,7 +1183,7 @@ function freeze(args: ParsedArgs): PublicOutcome {
 		throw new Error("Frozen subject receipt is not bound to the request.");
 	const boundary = {
 		allowed_output_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
-		forbidden_output_roots: referenceRoots(args),
+		forbidden_output_roots: policyReferences,
 	};
 	const requestValidation = validateExecutionRequest(request, boundary);
 	const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
@@ -1086,7 +1201,7 @@ function freeze(args: ParsedArgs): PublicOutcome {
 					store,
 					run,
 					absolute(subjectInputPath, "--subject-input"),
-					referenceRoots(args),
+					policyReferences,
 				);
 				subjectInputResolvedPath = admittedPath;
 				return recordObject(readJson(admittedPath), "subject input");
@@ -1135,12 +1250,7 @@ function freeze(args: ParsedArgs): PublicOutcome {
 	let predictionPath = "/__sure__/legacy-unverified/predictions";
 	const predictionArg = one(args, "prediction");
 	if (predictionArg) {
-		predictionPath = admittedReadArtifactPath(
-			store,
-			run,
-			absolute(predictionArg, "--prediction"),
-			referenceRoots(args),
-		);
+		predictionPath = admittedReadArtifactPath(store, run, absolute(predictionArg, "--prediction"), policyReferences);
 	} else {
 		missing.push("prediction");
 	}
@@ -1151,14 +1261,14 @@ function freeze(args: ParsedArgs): PublicOutcome {
 	let evaluatorEngineDigest = digestOrLegacy(one(args, "engine-digest"), "evaluator_engine_digest", missing);
 	if (enginePathArg && one(args, "engine-digest") === undefined) {
 		const enginePath = absolute(enginePathArg, "--engine-root");
-		const admittedEnginePath = admittedReadArtifactPath(store, run, enginePath, referenceRoots(args));
+		const admittedEnginePath = admittedReadArtifactPath(store, run, enginePath, policyReferences);
 		evaluatorEngineDigest = digestPath(admittedEnginePath);
 		missing.splice(missing.indexOf("evaluator_engine_digest"), 1);
 	}
 	const routeArg = one(args, "route");
 	let evaluatorRouteDigest: string;
 	if (routeArg?.startsWith("/")) {
-		const routePath = admittedReadArtifactPath(store, run, routeArg, referenceRoots(args));
+		const routePath = admittedReadArtifactPath(store, run, routeArg, policyReferences);
 		evaluatorRouteDigest = digestPath(routePath);
 	} else if (routeArg) {
 		// A route id is data, not a path; normalize it into a stable identity.
@@ -1173,7 +1283,7 @@ function freeze(args: ParsedArgs): PublicOutcome {
 			store,
 			run,
 			absolute(approvalArg, "--approval-event"),
-			referenceRoots(args),
+			policyReferences,
 		);
 		approvalEventDigest = digestPath(approvalPath);
 	} else if (one(args, "approval-digest")) {
@@ -1230,9 +1340,12 @@ function freeze(args: ParsedArgs): PublicOutcome {
 function conformance(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const store = storeFor(args, root);
+	const suppliedPolicy = policySnapshotFor(args);
+	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
 	const run = store.readRun(runId);
 	if (!run) throw new Error(`Run ${runId} does not exist.`);
+	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
+	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
 	const existingState = store.readState(run);
 	const integrityError = stateIntegrityError(run, existingState);
 	if (integrityError) throw new Error(integrityError);
@@ -1253,7 +1366,7 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		throw new Error(`Invalid --assurance-profile: ${profileValue}`);
 	const boundary = {
 		allowed_output_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
-		forbidden_output_roots: referenceRoots(args),
+		forbidden_output_roots: policyReferences,
 		require_attested_executor: profileValue === "trusted",
 	};
 	const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
@@ -1291,7 +1404,7 @@ function conformance(args: ParsedArgs): PublicOutcome {
 						store,
 						run,
 						absolute(subjectInputValue, "--subject"),
-						referenceRoots(args),
+						policyReferences,
 					);
 					subjectManifestPath = admittedPath;
 					return recordObject(readJson(admittedPath), "subject");
@@ -1427,9 +1540,12 @@ function finalize(args: ParsedArgs): void {
 	const status = required(args, "status");
 	if (!["success", "incomplete", "failed", "cancelled"].includes(status))
 		throw new Error(`Invalid final status: ${status}`);
-	const store = storeFor(args, root);
+	const suppliedPolicy = policySnapshotFor(args);
+	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
 	const run = store.readRun(runId);
 	if (!run) throw new Error(`Run ${runId} does not exist.`);
+	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
+	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
 	const state = store.readState(run);
 	const integrityError = stateIntegrityError(run, state);
 	if (integrityError) throw new Error(integrityError);
@@ -1458,7 +1574,7 @@ function finalize(args: ParsedArgs): void {
 		const receipt = recordObject(readJson(receiptPath), "execution receipt") as unknown as ExecutionReceipt;
 		const validation = validateExecutionReceipt(request, receipt, {
 			allowed_output_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
-			forbidden_output_roots: many(args, "reference-root").map((value) => absolute(value, "--reference-root")),
+			forbidden_output_roots: policyReferences,
 		});
 		if (!validation.valid || receipt.run_id !== runId || receipt.lifecycle !== "SUCCEEDED") {
 			throw new Error(
