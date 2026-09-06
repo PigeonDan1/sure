@@ -21,6 +21,7 @@ import {
 	auditCheckpointState,
 	type CapabilityEvidence,
 	type CapabilityReport,
+	type CoreRunRecord,
 	canonicalJsonDigest,
 	createFrozenEvaluationSubject,
 	createOutcome,
@@ -309,10 +310,7 @@ function policyDigestFor(args: ParsedArgs, snapshot: PolicySnapshot | undefined)
 	return normalizeDigest(requiredValue(args, "policy-digest", "SURE_POLICY_DIGEST"), "--policy-digest");
 }
 
-function runPolicySnapshot(run: {
-	policySnapshotDigest?: string;
-	policySnapshotPath?: string;
-}): LoadedPolicySnapshot | undefined {
+function runPolicySnapshot(run: CoreRunRecord): LoadedPolicySnapshot | undefined {
 	if (run.policySnapshotDigest === undefined && run.policySnapshotPath === undefined) return undefined;
 	if (run.policySnapshotDigest === undefined || run.policySnapshotPath === undefined)
 		throw new Error("Run has an incomplete policy snapshot binding.");
@@ -322,11 +320,13 @@ function runPolicySnapshot(run: {
 	const snapshot = validatePolicySnapshot(readJson(path));
 	if (!sameDigest(snapshot.snapshot_digest, run.policySnapshotDigest))
 		throw new Error("Run policy snapshot digest does not match its persisted snapshot.");
+	if (run.policyDigest === undefined || !sameDigest(snapshot.policy_digest, run.policyDigest))
+		throw new Error("Run policy digest does not match its persisted policy snapshot.");
 	return { snapshot, path };
 }
 
 function assertRunPolicySnapshot(
-	run: { policySnapshotDigest?: string; policySnapshotPath?: string },
+	run: CoreRunRecord,
 	supplied: LoadedPolicySnapshot | undefined,
 	options: { requireCurrent?: boolean } = {},
 ): LoadedPolicySnapshot | undefined {
@@ -343,6 +343,34 @@ function assertRunPolicySnapshot(
 	if (!sameDigest(persisted.snapshot.snapshot_digest, supplied.snapshot.snapshot_digest))
 		throw new Error("Supplied policy snapshot does not match the run binding.");
 	return supplied;
+}
+
+interface RunContext {
+	store: NodeRunStore;
+	run: CoreRunRecord;
+	policySnapshot?: PolicySnapshot;
+}
+
+function contextForRun(
+	args: ParsedArgs,
+	root: string,
+	runId: string,
+	options: { requireCurrentPolicy?: boolean } = {},
+): RunContext {
+	const supplied = policySnapshotFor(args);
+	let store = storeFor(args, root, {}, supplied?.snapshot);
+	let run = store.readRun(runId);
+	if (!run) throw new Error(`Run ${runId} does not exist.`);
+	const active = assertRunPolicySnapshot(run, supplied, { requireCurrent: options.requireCurrentPolicy });
+	if (active !== undefined && supplied === undefined) {
+		// Recreate the adapter with the immutable run policy roots. Bootstrap
+		// lookup above only reads the descriptor inside rootDir.
+		store = storeFor(args, root, {}, active.snapshot);
+		run = store.readRun(runId);
+		if (!run) throw new Error(`Run ${runId} does not exist.`);
+		assertRunPolicySnapshot(run, active);
+	}
+	return { store, run, ...(active === undefined ? {} : { policySnapshot: active.snapshot }) };
 }
 
 function storeFor(
@@ -535,8 +563,9 @@ function start(args: ParsedArgs): void {
 	if (suppliedPolicy !== undefined) {
 		const snapshotPath = join(store.runsRoot, runId, "artifacts", "site_policy.resolved.json");
 		writeJsonImmutable(snapshotPath, suppliedPolicy.snapshot);
-		// Verify the bytes that were published, not just the in-memory object.
-		validatePolicySnapshot(readJson(snapshotPath));
+		// Verify the bytes and file type that were published, not just the
+		// in-memory object.
+		runPolicySnapshot(record);
 	}
 	const checkpoint = initialCheckpoint(loaded.definition, branchId);
 	store.writeState(
@@ -557,9 +586,7 @@ function start(args: ParsedArgs): void {
 function status(args: ParsedArgs): void {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const store = storeFor(args, root);
-	const run = store.readRun(runId);
-	if (!run) throw new Error(`Run ${runId} does not exist.`);
+	const { store, run } = contextForRun(args, root, runId);
 	const state = store.readState(runId);
 	const integrityError = stateIntegrityError(run, state);
 	if (integrityError) throw new Error(integrityError);
@@ -638,12 +665,8 @@ function validateGateEvidence(
 function validate(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const suppliedPolicy = policySnapshotFor(args);
-	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
-	const run = store.readRun(runId);
-	if (!run) throw new Error(`Run ${runId} does not exist.`);
-	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
-	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
+	const { store, run, policySnapshot } = contextForRun(args, root, runId);
+	const policyReferences = referenceRoots(args, policySnapshot);
 	const state = store.readState(runId);
 	const loaded = currentDefinition(args, root, run.skillName);
 	const registry = registryFor(loaded, args);
@@ -983,10 +1006,7 @@ function resume(args: ParsedArgs): void {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
 	const suppliedPolicy = policySnapshotFor(args);
-	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
-	const run = store.readRun(runId);
-	if (!run) throw new Error(`Run ${runId} does not exist.`);
-	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
+	const { store, run } = contextForRun(args, root, runId, { requireCurrentPolicy: true });
 	const existingState = store.readState(run);
 	const integrityError = stateIntegrityError(run, existingState);
 	if (integrityError) throw new Error(integrityError);
@@ -1040,12 +1060,8 @@ function executionKind(args: ParsedArgs, request: ExecutionRequest): "local" | "
 function execute(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const suppliedPolicy = policySnapshotFor(args);
-	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
-	const run = store.readRun(runId);
-	if (!run) throw new Error(`Run ${runId} does not exist.`);
-	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
-	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
+	const { store, run, policySnapshot } = contextForRun(args, root, runId);
+	const policyReferences = referenceRoots(args, policySnapshot);
 	const existingState = store.readState(run);
 	const integrityError = stateIntegrityError(run, existingState);
 	if (integrityError) throw new Error(integrityError);
@@ -1156,12 +1172,8 @@ function digestOrLegacy(value: string | undefined, label: string, missing: strin
 function freeze(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const suppliedPolicy = policySnapshotFor(args);
-	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
-	const run = store.readRun(runId);
-	if (!run) throw new Error(`Run ${runId} does not exist.`);
-	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
-	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
+	const { store, run, policySnapshot } = contextForRun(args, root, runId);
+	const policyReferences = referenceRoots(args, policySnapshot);
 	const state = store.readState(run);
 	const integrityError = stateIntegrityError(run, state);
 	if (integrityError) throw new Error(integrityError);
@@ -1340,12 +1352,8 @@ function freeze(args: ParsedArgs): PublicOutcome {
 function conformance(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
-	const suppliedPolicy = policySnapshotFor(args);
-	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
-	const run = store.readRun(runId);
-	if (!run) throw new Error(`Run ${runId} does not exist.`);
-	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
-	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
+	const { store, run, policySnapshot } = contextForRun(args, root, runId);
+	const policyReferences = referenceRoots(args, policySnapshot);
 	const existingState = store.readState(run);
 	const integrityError = stateIntegrityError(run, existingState);
 	if (integrityError) throw new Error(integrityError);
@@ -1540,12 +1548,8 @@ function finalize(args: ParsedArgs): void {
 	const status = required(args, "status");
 	if (!["success", "incomplete", "failed", "cancelled"].includes(status))
 		throw new Error(`Invalid final status: ${status}`);
-	const suppliedPolicy = policySnapshotFor(args);
-	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
-	const run = store.readRun(runId);
-	if (!run) throw new Error(`Run ${runId} does not exist.`);
-	assertRunPolicySnapshot(run, suppliedPolicy, { requireCurrent: true });
-	const policyReferences = referenceRoots(args, suppliedPolicy?.snapshot);
+	const { store, run, policySnapshot } = contextForRun(args, root, runId);
+	const policyReferences = referenceRoots(args, policySnapshot);
 	const state = store.readState(run);
 	const integrityError = stateIntegrityError(run, state);
 	if (integrityError) throw new Error(integrityError);

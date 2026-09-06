@@ -22,7 +22,7 @@ const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
 const DIGEST_C = "c".repeat(64);
 
-function policySnapshot(): PolicySnapshot {
+function policySnapshot(root: string): PolicySnapshot {
 	return createPolicySnapshot({
 		site_id: "cli-test",
 		policy_version: 1,
@@ -32,14 +32,14 @@ function policySnapshot(): PolicySnapshot {
 			{
 				root_id: "reference",
 				role: "read_only_reference",
-				path: "/tmp/sure-cli-reference",
-				resolved_path: "/tmp/sure-cli-reference",
+				path: join(root, "policy-reference"),
+				resolved_path: join(root, "policy-reference"),
 			},
 			{
 				root_id: "publication",
 				role: "controlled_publication",
-				path: "/tmp/sure-cli-publication",
-				resolved_path: "/tmp/sure-cli-publication",
+				path: join(root, "policy-publication"),
+				resolved_path: join(root, "policy-publication"),
 			},
 		],
 	});
@@ -811,7 +811,9 @@ describe("surectl cooperative control plane", () => {
 
 	it("binds start/resume to an immutable site-policy snapshot", () => {
 		const snapshotPath = join(root, "site-policy.snapshot.json");
-		const snapshot = policySnapshot();
+		const snapshot = policySnapshot(root);
+		mkdirSync(join(root, "policy-reference"));
+		mkdirSync(join(root, "policy-publication"));
 		writeFileSync(snapshotPath, JSON.stringify(snapshot));
 		const base = [
 			"--skill",
@@ -839,25 +841,11 @@ describe("surectl cooperative control plane", () => {
 			snapshot_digest: snapshot.snapshot_digest,
 		});
 
-		const failed = command(root, "finalize", [
-			"--run-id",
-			"run-policy-snapshot",
-			"--status",
-			"failed",
-			"--policy-snapshot",
-			snapshotPath,
-		]);
+		const failed = command(root, "finalize", ["--run-id", "run-policy-snapshot", "--status", "failed"]);
 		expect(failed.status).toBe(0);
 		const resumed = command(root, "resume", [...base, "--run-id", "run-policy-snapshot"]);
 		expect(resumed.status).toBe(0);
-		const failedAgain = command(root, "finalize", [
-			"--run-id",
-			"run-policy-snapshot",
-			"--status",
-			"failed",
-			"--policy-snapshot",
-			snapshotPath,
-		]);
+		const failedAgain = command(root, "finalize", ["--run-id", "run-policy-snapshot", "--status", "failed"]);
 		expect(failedAgain.status).toBe(0);
 
 		const changed = { ...snapshot, policy: { changed: true } };
@@ -877,5 +865,24 @@ describe("surectl cooperative control plane", () => {
 		const rejected = command(root, "resume", [...base.slice(0, -1), changedPath, "--run-id", "run-policy-snapshot"]);
 		expect(rejected.status).toBe(1);
 		expect(rejected.stderr).toMatch(/does not match the run binding|policy_digest/);
+
+		const rejectedOutput = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-policy-reference-output",
+			"--executor-digest",
+			DIGEST_B,
+			"--output-dir",
+			join(root, "policy-reference", "result"),
+		]);
+		expect(rejectedOutput.status).toBe(1);
+		expect(rejectedOutput.stderr).toMatch(/read-only reference root/);
+
+		const persisted = JSON.parse(readFileSync(persistedPath, "utf8")) as Record<string, unknown>;
+		persisted.policy = { tampered: true };
+		writeFileSync(persistedPath, JSON.stringify(persisted));
+		const rejectedTamper = command(root, "status", ["--run-id", "run-policy-snapshot"]);
+		expect(rejectedTamper.status).toBe(1);
+		expect(rejectedTamper.stderr).toMatch(/policy_digest|canonical contents/);
 	});
 });

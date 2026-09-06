@@ -137,6 +137,7 @@ export function validatePolicySnapshot(value: unknown): PolicySnapshot {
 	if (!Array.isArray(value.path_bindings)) throw new Error("Policy snapshot path_bindings must be an array.");
 	const bindings: PolicyPathBinding[] = value.path_bindings.map((raw, index) => {
 		if (!object(raw)) throw new Error(`Policy snapshot path_bindings[${index}] must be an object.`);
+		exactKeys(raw, ["root_id", "role", "path", "resolved_path"], `Policy snapshot path_bindings[${index}]`);
 		return {
 			root_id: requiredString(raw.root_id, `Policy snapshot path_bindings[${index}].root_id`),
 			role: requiredString(raw.role, `Policy snapshot path_bindings[${index}].role`) as PolicyPathBinding["role"],
