@@ -22,6 +22,8 @@ const source = join(repositoryRoot, "packages/sure-cli/src/surectl.ts");
 const definition = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/canonical-definition.json");
 const registryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/validator-registry.json");
 const evalDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/canonical-definition.json");
+const evalRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/validator-registry.json");
+const portableRuntime = join(repositoryRoot, "sure/dist/portable-runtime");
 const portableMemoryContract = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/memory-contract.json");
 const hostParityFixturePath = join(repositoryRoot, "sure/canonical/fixtures/host-parity-traces.json");
 const DIGEST_A = "a".repeat(64);
@@ -228,10 +230,152 @@ describe("surectl cooperative control plane", () => {
 		const validated = command(root, "validate", [...base, "--run-id", "run-one", "--evidence", evidencePath]);
 		expect(validated.status).toBe(0);
 		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+		const persistedState = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		expect((persistedState.last_validation as Record<string, unknown>).evidence_source).toBe("external");
 		expect(
 			((validated.value?.transition as Record<string, unknown>).checkpoint as { data: { currentUnit: string } }).data
 				.currentUnit,
 		).toBe("collect_metadata");
+	});
+
+	it("runs a registered gate validator through the locked portable runtime", () => {
+		const runId = "run-automatic-eval-validator";
+		const base = ["--skill", "sure_eval", "--definition", evalDefinition, "--validator-registry", evalRegistryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			runId,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		writeFileSync(
+			join(artifacts, "dataset_decision.json"),
+			JSON.stringify({ selected_datasets: [], skipped_datasets: [], selection_basis: [] }),
+		);
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+
+		const evalReport = join(artifacts, "eval_run_report.json");
+		writeFileSync(
+			evalReport,
+			JSON.stringify({
+				schema: "sure.eval.run_report.v1",
+				run_id: runId,
+				run_dir: runDir,
+				evaluation_only: true,
+				old_evaluation_reused: false,
+				artifacts: {},
+				summary: {},
+				source_identity: {
+					model_fingerprint: DIGEST_A,
+					protocol_id: "standard_system",
+					dataset_set_digest: DIGEST_B,
+					source_report_sha256: DIGEST_C,
+				},
+				staging_append: {
+					staging_result_dir: "staging",
+					staging_report: "report.jsonl",
+					staging_snapshot: "snapshot.md",
+					approved_base_result_dir: "approved",
+					batch_id: `sure_eval_${"a".repeat(24)}`,
+					batch_dir: "batch",
+					artifact_manifest: "manifest.json",
+					artifact_manifest_sha256: DIGEST_A,
+					persisted_artifacts: { report: "report.jsonl" },
+					persisted_artifact_count: 1,
+					base_materialized: true,
+					batch_materialized: true,
+					appended_record_ids: ["record-1"],
+					requested_record_ids: ["record-1"],
+					idempotent: false,
+					staging_report_sha256: DIGEST_B,
+					staging_snapshot_sha256: DIGEST_C,
+				},
+			}),
+		);
+		const registry = JSON.parse(readFileSync(evalRegistryPath, "utf8")) as {
+			digest: string;
+			validators: Array<{ id: string; unit_id?: string }>;
+		};
+		const reportValidator = registry.validators.find((entry) => entry.unit_id === "execute_evaluation");
+		const compatibilityEvidence = join(artifacts, "eval-report-compatibility-evidence.json");
+		writeFileSync(
+			compatibilityEvidence,
+			JSON.stringify({
+				schema: "sure.validator.evidence.v1",
+				registry_digest: registry.digest,
+				validators: [
+					{
+						validator_id: reportValidator?.id,
+						verdict: "PASS",
+						artifact_digest: digest(evalReport),
+					},
+				],
+			}),
+		);
+		expect(command(root, "validate", [...base, "--run-id", runId, "--evidence", compatibilityEvidence]).status).toBe(
+			0,
+		);
+
+		const assessment = join(artifacts, "assessment_report.json");
+		writeFileSync(assessment, JSON.stringify({ anomaly_detected: false, user_confirmed: false, status: "ok" }));
+		const unavailable = command(root, "validate", [...base, "--run-id", runId]);
+		expect(unavailable.status).toBe(5);
+		expect((unavailable.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
+		expect(
+			((unavailable.value?.transition as Record<string, unknown>).checkpoint as { data: { currentUnit: string } })
+				.data.currentUnit,
+		).toBe("assessment");
+
+		writeFileSync(assessment, JSON.stringify({ anomaly_detected: true, user_confirmed: false, status: "ok" }));
+		const rejected = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(rejected.status).toBe(4);
+		expect((rejected.value?.outcome as Record<string, unknown>).outcome).toBe("RETRY");
+		const rejectedState = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		const rejectedValidation = rejectedState.last_validation as Record<string, unknown>;
+		const rejectedEvidence = JSON.parse(readFileSync(String(rejectedValidation.evidence_path), "utf8")) as {
+			validators: Array<Record<string, unknown>>;
+		};
+		expect(rejectedEvidence.validators[0]?.verdict).toBe("FAIL");
+		const rejectedReceipt = JSON.parse(
+			readFileSync(String(rejectedEvidence.validators[0]?.receipt_path), "utf8"),
+		) as Record<string, unknown>;
+		expect(rejectedReceipt.lifecycle).toBe("FAILED");
+
+		writeFileSync(assessment, JSON.stringify({ anomaly_detected: false, user_confirmed: false, status: "ok" }));
+		const validated = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(validated.status).toBe(0);
+		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+		expect(
+			((validated.value?.transition as Record<string, unknown>).checkpoint as { data: { currentUnit: string } }).data
+				.currentUnit,
+		).toBe("extract_lessons");
+		const state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		const lastValidation = state.last_validation as Record<string, unknown>;
+		expect(lastValidation.evidence_source).toBe("surectl_executor");
+		const evidencePath = String(lastValidation.evidence_path);
+		expect(digest(evidencePath)).toBe(lastValidation.evidence_digest);
+		const evidence = JSON.parse(readFileSync(evidencePath, "utf8")) as {
+			source: string;
+			validators: Array<Record<string, unknown>>;
+		};
+		expect(evidence.source).toBe("surectl");
+		expect(evidence.validators).toHaveLength(1);
+		expect(evidence.validators[0]?.verdict).toBe("PASS");
+		const requestPath = String(evidence.validators[0]?.request_path);
+		const receiptPath = String(evidence.validators[0]?.receipt_path);
+		const request = JSON.parse(readFileSync(requestPath, "utf8")) as Record<string, unknown>;
+		const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+		const runtimeLock = JSON.parse(
+			readFileSync(join(portableRuntime, "runtime-support.lock.json"), "utf8"),
+		) as Record<string, unknown>;
+		expect((request.subject as Record<string, unknown>).runtime_identity_digest).toBe(runtimeLock.runtime_digest);
+		expect(receipt.lifecycle).toBe("SUCCEEDED");
+		expect(receipt.request_digest).toBe(canonicalJsonDigest(request as unknown as JsonValue));
 	});
 
 	it("matches the canonical host-parity trace through the portable control plane", () => {
@@ -940,6 +1084,111 @@ describe("surectl cooperative control plane", () => {
 		]);
 		expect(tamperedReceipt.status).toBe(5);
 		expect((tamperedReceipt.value?.conformance as Record<string, unknown>).reason_code).toBe("DIGEST_MISMATCH");
+	});
+
+	it("does not promote caller-supplied gate evidence to formal conformance", () => {
+		const runId = "run-external-validator-evidence";
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			runId,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		writeFileSync(join(artifacts, "scan_result.json"), '{"candidates":[]}\n');
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+
+		const request = executionRequest(runId, artifacts, {
+			unit_id: "match_task",
+			operation: "formal_evaluation",
+			subject: {
+				bundle_manifest_path: join(artifacts, "bundle.json"),
+				bundle_digest: `sha256:${DIGEST_A}`,
+				runtime_identity_digest: `sha256:${DIGEST_B}`,
+				inference_protocol_digest: `sha256:${DIGEST_C}`,
+				dataset_identity_digest: `sha256:${DIGEST_A}`,
+				scoring_protocol_digest: `sha256:${DIGEST_B}`,
+			},
+		});
+		const requestPath = join(artifacts, "external-evidence-request.json");
+		writeFileSync(requestPath, JSON.stringify(request));
+		const receipt = {
+			schema: "sure.execution_receipt.v1",
+			receipt_id: "external-evidence-receipt",
+			request_id: request.request_id,
+			request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+			semantic_request_digest: request.semantic_request_digest,
+			run_id: request.run_id,
+			unit_id: request.unit_id,
+			attempt: request.attempt,
+			executor: {
+				executor_id: "pi-python",
+				kind: "python",
+				version: "1",
+				digest: `sha256:${DIGEST_B}`,
+				trust_level: "host_enforced",
+			},
+			lifecycle: "SUCCEEDED",
+			capability_evidence: [],
+			outputs: [],
+			reference_snapshot_digest: request.reference_snapshot_digest,
+			output_root: request.output_root,
+			policy_digest: request.policy_digest,
+			started_at: request.created_at,
+			finished_at: request.created_at,
+			exit_code: 0,
+		};
+		const receiptPath = join(artifacts, "external-evidence-receipt.json");
+		writeFileSync(receiptPath, JSON.stringify(receipt));
+		expect(
+			command(root, "validate", [
+				...base,
+				"--run-id",
+				runId,
+				"--execution-request",
+				requestPath,
+				"--execution-receipt",
+				receiptPath,
+			]).status,
+		).toBe(5);
+
+		const matchArtifact = join(artifacts, "match_task_result.json");
+		writeFileSync(matchArtifact, '{"candidates":[]}\n');
+		const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
+			digest: string;
+			validators: Array<{ id: string; unit_id?: string }>;
+		};
+		const validator = registry.validators.find((entry) => entry.unit_id === "match_task");
+		const evidencePath = join(artifacts, "external-formal-evidence.json");
+		writeFileSync(
+			evidencePath,
+			JSON.stringify({
+				registry_digest: registry.digest,
+				validators: [{ validator_id: validator?.id, verdict: "PASS", artifact_digest: digest(matchArtifact) }],
+			}),
+		);
+		expect(command(root, "validate", [...base, "--run-id", runId, "--evidence", evidencePath]).status).toBe(0);
+		const conformance = command(root, "conformance", [
+			...base,
+			"--run-id",
+			runId,
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+			"--assurance-profile",
+			"pi_enforced",
+		]);
+		expect(conformance.status).toBe(5);
+		expect((conformance.value?.eligibility as { eligible: boolean }).eligible).toBe(false);
+		expect((conformance.value?.eligibility as { diagnostics: string[] }).diagnostics).toContain(
+			"formal conformance does not accept caller-supplied validator verdicts",
+		);
 	});
 
 	it("freezes a fully bound evaluation subject and refuses tampered subjects", () => {

@@ -44,6 +44,8 @@ export interface ExecutorRunOptions {
 	allowed_output_roots: readonly string[];
 	forbidden_output_roots: readonly string[];
 	timeout_ms: number;
+	/** Exact environment used for capability probes and the executed process. */
+	environment?: NodeJS.ProcessEnv;
 	output_paths?: readonly string[];
 	now?: () => string;
 	receipt_id?: string;
@@ -71,10 +73,11 @@ function runtimeExecutable(request: ExecutionRequest, key: string): string | und
 }
 
 function probeTarget(capabilityId: string, request: ExecutionRequest, options: ExecutorRunOptions): string | undefined {
+	const environment = options.environment ?? process.env;
 	switch (capabilityId) {
 		case "sure.execution.docker":
 		case "sure.execution.docker-optional":
-			return runtimeExecutable(request, "docker_executable") ?? process.env.DOCKER_BIN ?? "docker";
+			return runtimeExecutable(request, "docker_executable") ?? environment.DOCKER_BIN ?? "docker";
 		case "sure.execution.local-python":
 			return (
 				runtimeExecutable(request, "python_executable") ??
@@ -116,6 +119,7 @@ function probeCapabilities(
 				executable,
 				result: spawnSync(executable, ["--version"], {
 					cwd: options.working_directory,
+					env: options.environment,
 					encoding: "utf8",
 					timeout: Math.min(options.timeout_ms, 5000),
 					maxBuffer: MAX_CAPTURED_OUTPUT,
@@ -388,6 +392,7 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 	try {
 		processResult = spawnSync(request.entrypoint.executable, request.entrypoint.argv, {
 			cwd: request.entrypoint.working_directory ?? options.working_directory,
+			env: options.environment,
 			encoding: "utf8",
 			timeout: options.timeout_ms,
 			maxBuffer: MAX_CAPTURED_OUTPUT * 4,

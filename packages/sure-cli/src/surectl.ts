@@ -59,6 +59,14 @@ import {
 import { type LoadedDefinition, loadDefinition, unitForCurrent } from "./definition.ts";
 import { executeRequest } from "./executor.ts";
 import { NodeRunStore } from "./node-run-store.ts";
+import {
+	artifactRef,
+	loadSkillRuntimeBinding,
+	type RegisteredValidationResult,
+	type RegisteredValidatorDescriptor,
+	runRegisteredValidators,
+	unavailableRegisteredValidation,
+} from "./registered-validator.ts";
 
 const CORE_VERSION = "0.80.3";
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -724,6 +732,67 @@ function formalValidationBinding(
 	if (!validation || !outcome) {
 		diagnostics.push("formal conformance requires a persisted validation outcome");
 	} else {
+		if (validation.evidence_source === "external") {
+			diagnostics.push("formal conformance does not accept caller-supplied validator verdicts");
+		}
+		if (validation.evidence_source === "surectl_executor") {
+			const rawEvidence = validation.evidence;
+			const evidence =
+				typeof rawEvidence === "object" && rawEvidence !== null && !Array.isArray(rawEvidence)
+					? (rawEvidence as Record<string, unknown>)
+					: undefined;
+			const validators = evidence && Array.isArray(evidence.validators) ? evidence.validators : [];
+			if (validators.length === 0) diagnostics.push("formal conformance requires validator execution receipts");
+			for (const rawValidator of validators) {
+				if (typeof rawValidator !== "object" || rawValidator === null || Array.isArray(rawValidator)) {
+					diagnostics.push("persisted validator evidence is malformed");
+					continue;
+				}
+				const validator = rawValidator as Record<string, unknown>;
+				if (typeof validator.request_path !== "string" || typeof validator.receipt_path !== "string") {
+					diagnostics.push("persisted validator evidence is missing request/receipt paths");
+					continue;
+				}
+				try {
+					const validatorRequestPath = admittedReadArtifactPath(store, run, validator.request_path);
+					const validatorReceiptPath = admittedReadArtifactPath(store, run, validator.receipt_path);
+					assertRegularFile(validatorRequestPath, "Validator execution request");
+					assertRegularFile(validatorReceiptPath, "Validator execution receipt");
+					if (
+						typeof validator.request_digest !== "string" ||
+						!sameDigest(digestFile(validatorRequestPath), validator.request_digest)
+					) {
+						diagnostics.push("persisted validator request digest does not match its file");
+					}
+					if (
+						typeof validator.receipt_digest !== "string" ||
+						!sameDigest(digestFile(validatorReceiptPath), validator.receipt_digest)
+					) {
+						diagnostics.push("persisted validator receipt digest does not match its file");
+					}
+					const validatorRequest = recordObject(
+						readJson(validatorRequestPath),
+						"validator execution request",
+					) as unknown as ExecutionRequest;
+					const validatorReceipt = recordObject(
+						readJson(validatorReceiptPath),
+						"validator execution receipt",
+					) as unknown as ExecutionReceipt;
+					const receiptValidation = validateExecutionReceipt(validatorRequest, validatorReceipt, {
+						allowed_output_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
+						forbidden_output_roots: policyReferences,
+					});
+					if (!receiptValidation.valid || validatorReceipt.lifecycle !== "SUCCEEDED") {
+						diagnostics.push("persisted validator execution receipt is not a successful valid receipt");
+					}
+					if (validatorReceipt.executor.trust_level === "cooperative") {
+						diagnostics.push("formal conformance requires host-enforced validator execution");
+					}
+				} catch (error) {
+					diagnostics.push(error instanceof Error ? error.message : String(error));
+				}
+			}
+		}
 		if (validation.unit_id !== request.unit_id) {
 			diagnostics.push("persisted validation unit_id does not match the formal execution request");
 		}
@@ -918,6 +987,129 @@ function validateGateEvidence(
 	return { verdict: "PASS", evidence };
 }
 
+function registeredValidatorDescriptors(
+	unit: WorkflowUnit,
+	branchId: string,
+	registry: { digest: string; validators: Array<Record<string, unknown>> },
+): RegisteredValidatorDescriptor[] {
+	return validatorMatches(unit, branchId, registry).map((raw) => {
+		if (typeof raw.id !== "string" || raw.id.trim() === "") throw new Error("Registered validator has no id.");
+		if (raw.backend_operation_id !== undefined && typeof raw.backend_operation_id !== "string") {
+			throw new Error(`Registered validator ${raw.id} has an invalid backend operation id.`);
+		}
+		if (
+			raw.script_args !== undefined &&
+			(!Array.isArray(raw.script_args) || raw.script_args.some((value) => typeof value !== "string"))
+		) {
+			throw new Error(`Registered validator ${raw.id} has invalid script arguments.`);
+		}
+		return {
+			id: raw.id,
+			...(typeof raw.skill_id === "string" ? { skill_id: raw.skill_id } : {}),
+			...(typeof raw.branch_id === "string" ? { branch_id: raw.branch_id } : {}),
+			...(typeof raw.unit_id === "string" ? { unit_id: raw.unit_id } : {}),
+			...(typeof raw.backend_operation_id === "string" ? { backend_operation_id: raw.backend_operation_id } : {}),
+			...(Array.isArray(raw.script_args) ? { script_args: raw.script_args as string[] } : {}),
+		};
+	});
+}
+
+function validatorReferenceDigest(run: CoreRunRecord, policyReferences: readonly string[]): string {
+	return (
+		run.policySnapshotDigest ??
+		canonicalJsonDigest({
+			schema: "sure.reference.binding.v1",
+			policy_digest: run.policyDigest ?? canonicalJsonDigest(null),
+			roots: [...policyReferences].sort(),
+		} as unknown as JsonValue)
+	);
+}
+
+function automaticGateValidation(
+	args: ParsedArgs,
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	loaded: LoadedDefinition,
+	unit: WorkflowUnit,
+	branchId: string,
+	checkpoint: WorkflowCheckpoint,
+	registry: { digest: string; validators: Array<Record<string, unknown>> },
+	artifactPath: string,
+	policyReferences: readonly string[],
+): { result: RegisteredValidationResult; evidence_path: string; evidence_digest: string } {
+	const validators = registeredValidatorDescriptors(unit, branchId, registry);
+	const artifact = artifactRef(artifactPath, unit.id, run.runDir);
+	const invocationId = randomUUID().replaceAll("-", "").slice(0, 16);
+	const invocationRoot = admittedRunArtifactPath(
+		store,
+		run,
+		join(run.runDir, "artifacts", "validation", unit.id, invocationId),
+	);
+	let result = unavailableRegisteredValidation(
+		registry.digest,
+		validators,
+		artifact.sha256,
+		"skill runtime binding was not loaded",
+	);
+	let runtimeBinding: ReturnType<typeof loadSkillRuntimeBinding> | undefined;
+	try {
+		runtimeBinding = loadSkillRuntimeBinding(loaded.root, {
+			skill_id: loaded.definition.workflow_id,
+			workflow_digest: run.workflowDigest ?? workflowDigest(loaded.definition),
+			validator_registry_digest: registry.digest,
+			core_version: run.coreVersion ?? CORE_VERSION,
+		});
+	} catch (error) {
+		result = unavailableRegisteredValidation(
+			registry.digest,
+			validators,
+			artifact.sha256,
+			error instanceof Error ? error.message : String(error),
+		);
+	}
+	if (runtimeBinding !== undefined) {
+		const runtimeValue = one(args, "semantic-runtime") ?? process.env.SURE_RUNTIME_SUPPORT_ROOT;
+		const runtimeRoot = runtimeValue === undefined ? undefined : absolute(runtimeValue, "--semantic-runtime");
+		const artifactsRoot = admittedRunArtifactPath(store, run, join(run.runDir, "artifacts"));
+		const artifactsAdmission = store.admitPath(artifactsRoot, [run.runDir]);
+		result = runRegisteredValidators({
+			runtime_root: runtimeRoot,
+			runtime_binding: runtimeBinding,
+			run,
+			branch_id: branchId,
+			unit_id: unit.id,
+			attempt: (checkpoint.data.retries[unit.id] ?? 0) + 1,
+			artifact,
+			validators,
+			validator_registry_digest: registry.digest,
+			python_executable:
+				one(args, "validator-python") ?? process.env.HARNESS_PYTHON_BIN ?? process.env.PYTHON ?? "python3",
+			package_dir: loaded.root,
+			workspace_root: run.cwd,
+			artifacts_root: artifactsRoot,
+			artifacts_resolved_root: artifactsAdmission.resolvedPath,
+			reference_snapshot_digest: validatorReferenceDigest(run, policyReferences),
+			policy_digest: run.policyDigest ?? canonicalJsonDigest(null),
+			forbidden_output_roots: policyReferences,
+			invocation_id: invocationId,
+			created_at: new Date().toISOString(),
+			persist_request(key, request) {
+				const path = admittedRunArtifactPath(store, run, join(invocationRoot, `${key}.request.json`));
+				writeJsonImmutable(path, request);
+				return { path, digest: digestFile(path) };
+			},
+			persist_receipt(key, receipt) {
+				const path = admittedRunArtifactPath(store, run, join(invocationRoot, `${key}.receipt.json`));
+				writeJsonImmutable(path, receipt);
+				return { path, digest: digestFile(path) };
+			},
+		});
+	}
+	const evidencePath = admittedRunArtifactPath(store, run, join(invocationRoot, "validator-evidence.json"));
+	writeJsonImmutable(evidencePath, result.evidence);
+	return { result, evidence_path: evidencePath, evidence_digest: digestFile(evidencePath) };
+}
+
 function validate(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
@@ -1087,16 +1279,43 @@ function validate(args: ParsedArgs): PublicOutcome {
 			: "FAIL";
 	let reason = structural.reason ?? "structural validation passed";
 	let evidence: unknown = null;
+	let evidenceSource = "surectl_structural";
+	let evidencePath: string | undefined;
+	let evidenceDigest: string | undefined;
+	let notExecutedReasonCode: "CAPABILITY_MISSING" | "VALIDATION_PENDING" = "VALIDATION_PENDING";
 	if (structural.ok && unit.kind === "gate") {
 		const evidenceValue = one(args, "evidence");
-		const evidencePath =
-			evidenceValue === undefined
-				? undefined
-				: admittedRunArtifactPath(store, run, absolute(evidenceValue, "--evidence"));
-		const gate = validateGateEvidence(evidencePath, unit, checkpoint.branch_id, registry, artifactDigest ?? "");
-		validatorVerdict = gate.verdict;
-		reason = gate.reason ?? "registered validators passed";
-		evidence = gate.evidence;
+		if (evidenceValue !== undefined) {
+			evidencePath = admittedRunArtifactPath(store, run, absolute(evidenceValue, "--evidence"));
+			assertRegularFile(evidencePath, "Validator evidence");
+			evidenceDigest = digestFile(evidencePath);
+			const gate = validateGateEvidence(evidencePath, unit, checkpoint.branch_id, registry, artifactDigest ?? "");
+			validatorVerdict = gate.verdict;
+			reason = gate.reason ?? "registered validators passed";
+			evidence = gate.evidence;
+			evidenceSource = "external";
+			notExecutedReasonCode = "CAPABILITY_MISSING";
+		} else {
+			const automatic = automaticGateValidation(
+				args,
+				store,
+				run,
+				loaded,
+				unit,
+				checkpoint.branch_id,
+				checkpoint,
+				registry,
+				artifactPath,
+				policyReferences,
+			);
+			validatorVerdict = automatic.result.verdict;
+			reason = automatic.result.reason;
+			evidence = automatic.result.evidence;
+			evidenceSource = "surectl_executor";
+			evidencePath = automatic.evidence_path;
+			evidenceDigest = automatic.evidence_digest;
+			notExecutedReasonCode = "CAPABILITY_MISSING";
+		}
 	}
 	const signal =
 		validatorVerdict === "PASS"
@@ -1127,9 +1346,7 @@ function validate(args: ParsedArgs): PublicOutcome {
 		workflowDisposition: disposition,
 		reasonCode:
 			validatorVerdict === "NOT_EXECUTED"
-				? reason.includes("capability") || reason.includes("validator")
-					? "CAPABILITY_MISSING"
-					: "VALIDATION_PENDING"
+				? notExecutedReasonCode
 				: validatorVerdict === "FAIL"
 					? transition.action === "exhausted"
 						? "RETRY_EXHAUSTED"
@@ -1143,6 +1360,9 @@ function validate(args: ParsedArgs): PublicOutcome {
 			artifact_digest: artifactDigest,
 			outcome,
 			evidence,
+			evidence_source: evidenceSource,
+			...(evidencePath === undefined ? {} : { evidence_path: evidencePath }),
+			...(evidenceDigest === undefined ? {} : { evidence_digest: evidenceDigest }),
 		},
 	});
 	const updated = store.writeState(runId, nextState, "validated", { unit_id: unit.id, outcome }, run.revision);
@@ -2155,7 +2375,7 @@ function help(): void {
 			start: "surectl start --skill <id> --run-id <id> --policy-digest <sha256> --executor-digest <sha256>",
 			status: "surectl status --run-id <id>",
 			validate:
-				"surectl validate --run-id <id> [--artifact <path>] [--evidence <json>] [--execution-request <json> --execution-receipt <json>]",
+				"surectl validate --run-id <id> [--artifact <path>] [--semantic-runtime <path> --validator-python <path>] [--evidence <compatibility-json>] [--execution-request <json> --execution-receipt <json>]",
 			resume: "surectl resume --run-id <id> [--policy-digest <sha256> --executor-digest <sha256>]",
 			execute: "surectl execute --run-id <id> --execution-request <json> [--kind local|python|docker]",
 			capabilities: "surectl capabilities [--skill <id>]",

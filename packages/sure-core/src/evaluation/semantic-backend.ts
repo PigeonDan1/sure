@@ -59,6 +59,8 @@ export interface ResolvedSemanticBackend {
 	registry_digest: string;
 	timeout_ms: number;
 	deterministic: boolean;
+	kind: SemanticBackendOperation["kind"];
+	consumer_skill_ids: readonly string[];
 }
 
 export class SemanticBackendResolutionError extends Error {
@@ -431,6 +433,8 @@ export function resolveSemanticBackendOperation(
 			registry_digest: manifest.registry_digest,
 			timeout_ms: operation.timeout_ms,
 			deterministic: operation.deterministic,
+			kind: operation.kind,
+			consumer_skill_ids: [...operation.consumer_skill_ids],
 		};
 	}
 	throw new SemanticBackendResolutionError(`semantic backend operation is unavailable: ${operationId}`);

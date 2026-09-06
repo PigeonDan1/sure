@@ -27,6 +27,8 @@ describe("semantic backend registry", () => {
 		expect(resolved.resource_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(resolved.bundle_digest).toBe(manifest.bundles[0].canonical_tree_digest);
 		expect(resolved.integrity_root).toBe("scripts");
+		expect(resolved.kind).toBe("execute");
+		expect(resolved.consumer_skill_ids).toEqual(["sure_eval"]);
 	});
 
 	it("uses an installed backend root only when its complete tree matches the manifest", () => {

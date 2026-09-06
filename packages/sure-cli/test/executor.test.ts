@@ -149,6 +149,37 @@ describe("cooperative executor capability probes", () => {
 		expect(existsSync(join(root, "artifacts"))).toBe(false);
 	});
 
+	it("uses the same locked environment for capability probes and execution", () => {
+		const root = freshRoot();
+		const input = request(
+			root,
+			"sure.execution.harness-python",
+			{ harness_python_executable: process.execPath },
+			{
+				entrypoint: {
+					executable: process.execPath,
+					argv: [
+						"-e",
+						"process.exit(process.env.SURE_EXECUTOR_TEST === 'locked' && process.env.SURE_EXECUTOR_LEAK === undefined ? 0 : 9)",
+					],
+				},
+			},
+		);
+		const result = executeRequest(input, {
+			kind: "python",
+			executor_digest: A,
+			executor_version: "test",
+			working_directory: root,
+			allowed_output_roots: [root],
+			forbidden_output_roots: [],
+			timeout_ms: 1000,
+			environment: { SURE_EXECUTOR_TEST: "locked" },
+		});
+
+		expect(result.capability.admitted).toBe(true);
+		expect(result.receipt?.lifecycle).toBe("SUCCEEDED");
+	});
+
 	it("does not admit an output replaced with a symlink after execution", () => {
 		const root = freshRoot();
 		const outside = join(root, "outside.txt");

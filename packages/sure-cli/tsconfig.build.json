@@ -10,6 +10,7 @@
 				"../sure-core/dist/conformance/*.d.ts",
 				"../sure-core/dist/contracts/*.d.ts",
 				"../sure-core/dist/execution/*.d.ts",
+				"../sure-core/dist/evaluation/*.d.ts",
 				"../sure-core/dist/policy/*.d.ts",
 				"../sure-core/dist/run/*.d.ts",
 				"../sure-core/dist/validation/*.d.ts",
