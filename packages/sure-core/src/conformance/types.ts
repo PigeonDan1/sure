@@ -6,8 +6,8 @@ import type {
 	FrozenSubjectRef,
 } from "../contracts/types.ts";
 import type { ExecutionReceiptValidation } from "../execution/types.ts";
-import type { FrozenEvaluationSubject } from "./frozen.ts";
 import type { CoreOutcome, ValidatorVerdict, WorkflowDisposition } from "../workflow/outcome.ts";
+import type { FrozenEvaluationSubject } from "./frozen.ts";
 
 export interface FrozenFormalSubject extends FrozenSubjectRef {
 	dataset_identity_digest: string;

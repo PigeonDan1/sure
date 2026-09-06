@@ -6800,6 +6800,11 @@
       "sha256": "f3de85b4a0080bf87ce0e56791134545a2f9a90e5952e92cdcbb9b8297e10563"
     },
     {
+      "path": "packages/coding-agent/test/suite/sure-memory-service.test.ts",
+      "size_bytes": 4220,
+      "sha256": "3ab0eac269ec1b168e321080cd75eddeb56b720920f52c15912894e3ce5710f6"
+    },
+    {
       "path": "packages/coding-agent/test/suite/sure-memory-units.test.ts",
       "size_bytes": 9690,
       "sha256": "78c747e60eb9151ad0903c0795cba5b60d191ada4ef6546ce3dc7cd621141add"
@@ -6915,6 +6920,11 @@
       "sha256": "f32875e3a9344bae9dbc3431ed9b95c2cdd187ca15b54e9a61ad6bbecc104358"
     },
     {
+      "path": "sure/runtime/evaluation_commit.py",
+      "size_bytes": 16621,
+      "sha256": "1d81baf919b9daac1145edf3293b227681483a94eb2f26a3ff53dfb3768c9703"
+    },
+    {
       "path": "sure/runtime/evaluation/requirements.in",
       "size_bytes": 220,
       "sha256": "85d7134a7e474a2c244e60f87db1c932e52f3fec75fc6e3700a8890c2663fd69"
@@ -6996,8 +7006,8 @@
     },
     {
       "path": "sure/runtime/memory/cli.py",
-      "size_bytes": 57885,
-      "sha256": "80ee51fac94196a8d044802480f10c3ed6b30baff8ce74d4820ff417f3d3b703"
+      "size_bytes": 58326,
+      "sha256": "acea8690a2af1d5d7fcbca12b896121c58e0659c37cd428bed5e2ea48870f59e"
     },
     {
       "path": "sure/runtime/memory/config.json",
@@ -7026,13 +7036,13 @@
     },
     {
       "path": "sure/runtime/memory/hooks.ts",
-      "size_bytes": 67388,
-      "sha256": "8a4e2e44bcbdcaad9edcacbabae42b471e888f1091799367300d3d286e1202e4"
+      "size_bytes": 67866,
+      "sha256": "36481031e00e4761953dca9454c39ade31d19c65f342d8dd606d2653e1eea5dc"
     },
     {
       "path": "sure/runtime/memory/index.py",
-      "size_bytes": 36783,
-      "sha256": "7942768ae74125e285beae9c5e9bcad83c20e5a48cf436fa6ca0328018a84029"
+      "size_bytes": 36501,
+      "sha256": "166439a9546375adfcaa41aab687014a7b1ea840dc319ccd4f6676d91ccbcbbd"
     },
     {
       "path": "sure/runtime/memory/log_paths.json",
@@ -7041,18 +7051,23 @@
     },
     {
       "path": "sure/runtime/memory/match.ts",
-      "size_bytes": 30843,
-      "sha256": "d1fa7facb417c47d7593830f2ab6106b7fb9e5f2d1b8a4d522f0ca2700a67b05"
+      "size_bytes": 30886,
+      "sha256": "ad78d6ba9aa35259f3ac36e1bfb472b120d0d6402816212353877b6c6cc1459e"
     },
     {
       "path": "sure/runtime/memory/paths.py",
-      "size_bytes": 12827,
-      "sha256": "a59d2ded7003a44cab99bb9a5c977b7178ee9b96046e69859a17ddf35132c599"
+      "size_bytes": 13106,
+      "sha256": "5c5bd2d5339bd0e8bb12537153f39b908339553dc2a20e27c5c8addafe8845ca"
+    },
+    {
+      "path": "sure/runtime/memory/pi-bridge.ts",
+      "size_bytes": 576,
+      "sha256": "99c8134bd50ef332f4ae6a86ccde18bf11745acf7b8a9013c927b6a9249d0538"
     },
     {
       "path": "sure/runtime/memory/promote.py",
-      "size_bytes": 24310,
-      "sha256": "cc0bee8e7d7369e41365cb8f0b511f253680f0ace2449b1149b269d3e06c7590"
+      "size_bytes": 23803,
+      "sha256": "57ec7fc3d3f3b33129d45a77ec47c7180bd44d7a63eb81ebf44a55e7a812f5a6"
     },
     {
       "path": "sure/runtime/memory/proposals.py",
@@ -7061,8 +7076,13 @@
     },
     {
       "path": "sure/runtime/memory/publish.py",
-      "size_bytes": 42548,
-      "sha256": "f4a4279b56b7404c926e675e065091548306afd7aee415c68b51785b84e8be75"
+      "size_bytes": 42513,
+      "sha256": "430cc02dbb05927b189cd5a064e0c6a93ceb39fcf005fc58ed32625d6584403b"
+    },
+    {
+      "path": "sure/runtime/memory/reference_registry.py",
+      "size_bytes": 11467,
+      "sha256": "c2c30a9db7c4b2f7805154e1631c79780b4bf229481396488dace632e1e6ce01"
     },
     {
       "path": "sure/runtime/memory/schemas/extraction_declaration.schema.json",
@@ -7088,6 +7108,11 @@
       "path": "sure/runtime/memory/schemas/run_digest.schema.json",
       "size_bytes": 3620,
       "sha256": "3ea1a4d392b5cec4ad52889adaae28bc01d0b2e7d6e0d6ca52a7155cc7d2e661"
+    },
+    {
+      "path": "sure/runtime/memory/service.ts",
+      "size_bytes": 9836,
+      "sha256": "6e92bf596b06e78f641462f73ac45c422125e8e8e2e3339e26413a776ee57362"
     },
     {
       "path": "sure/runtime/memory/test_cli.py",
@@ -7128,6 +7153,11 @@
       "path": "sure/runtime/memory/test_publish.py",
       "size_bytes": 58889,
       "sha256": "9050e454c1445e231e876b02af247760fc2febfa43f49382bd14c8a143768bfc"
+    },
+    {
+      "path": "sure/runtime/memory/test_reference_registry.py",
+      "size_bytes": 5990,
+      "sha256": "d71cb09207bff2577c4c633aaae104f39b5a073da8597cf7959c5497d3d67b97"
     },
     {
       "path": "sure/runtime/memory/test_usage.py",
@@ -7188,6 +7218,11 @@
       "path": "sure/runtime/script-guard.ts",
       "size_bytes": 1166,
       "sha256": "f50e4cf955f0a81e5c17876e9103378851ab14b298ec7076d5047542c763c616"
+    },
+    {
+      "path": "sure/runtime/test_evaluation_commit.py",
+      "size_bytes": 7359,
+      "sha256": "8caa0cc845e27db5d2ab7bc1158f49030186602c8d06637465c53eb49eb49658"
     },
     {
       "path": "sure/runtime/test_execution_bridge.py",
@@ -7426,8 +7461,8 @@
     },
     {
       "path": "sure/skills/sure_eval/hooks/index.ts",
-      "size_bytes": 41564,
-      "sha256": "c648dbf8c4bd2c989f85edaa2a2d7c7d98b9d63e6992408e50f597abff3ff866"
+      "size_bytes": 41700,
+      "sha256": "10d33bc465acf1fe1e0115ee6bfabb3e9db615b2e8015c48a659533f55051c53"
     },
     {
       "path": "sure/skills/sure_eval/hooks/state-machine.ts",
@@ -7476,8 +7511,8 @@
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_eval_run_report.py",
-      "size_bytes": 37928,
-      "sha256": "22ddc70830caac513028e1f64be0921e650f80235db4289d1288fd04d17adde5"
+      "size_bytes": 38234,
+      "sha256": "1b65e9ad2cdb98091fda52b79b6aae5fe903d662c572664710305478b48d2c12"
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_memory_extraction.py",
@@ -7521,8 +7556,8 @@
     },
     {
       "path": "sure/skills/sure_feed/hooks/index.ts",
-      "size_bytes": 29626,
-      "sha256": "c06b17205af83d9448b9e0ad7450c9ea5050b1975ca461721042cade17d97a9f"
+      "size_bytes": 29762,
+      "sha256": "5504dc18b9e0ecd8069f8916512afb678a8647a43b67dbffdf42b666817ee3eb"
     },
     {
       "path": "sure/skills/sure_feed/hooks/state-machine.ts",
@@ -7781,8 +7816,8 @@
     },
     {
       "path": "sure/skills/sure_infer/hooks/index.ts",
-      "size_bytes": 37115,
-      "sha256": "0bb6c97a0144a38cc27afc752ea4aed3534235fb87e3ddc4187fe94af3141dc1"
+      "size_bytes": 37251,
+      "sha256": "9fd19730b9c17c5bda6409bbb9190787b52c544c2196831997384428080bc4e6"
     },
     {
       "path": "sure/skills/sure_infer/hooks/state-machine.ts",
@@ -8106,8 +8141,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/run_eval.py",
-      "size_bytes": 56899,
-      "sha256": "f5581163da3687135e0f9f8c7c88d596307da794101ff31b545ff17450146ecf"
+      "size_bytes": 63775,
+      "sha256": "7c88a3350624971b40031d581bc82814091ca780a0d2331a65713816ce2a9e68"
     },
     {
       "path": "sure/skills/sure_infer/scripts/run_infer.py",
@@ -8491,8 +8526,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_reval_bundle_append.py",
-      "size_bytes": 14262,
-      "sha256": "4a5e7fd70cd01441d5acd9090d9bff5d2140bc5a774a5d29369783ae1d37dac3"
+      "size_bytes": 14668,
+      "sha256": "82ebeb8a77032f92d640f1759cafa302e46e1ca8e5776260a4d3d21a51b4066c"
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_reval_prediction_source.py",
@@ -8556,8 +8591,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/hooks/index.ts",
-      "size_bytes": 56055,
-      "sha256": "4dd3b2d7c3e99e9fb79f8f8f3cd6f0dea6acc457da626821ce274610edb6ed81"
+      "size_bytes": 56191,
+      "sha256": "a3ace9f57665b08ec8a46ce3d0964dbe3bbb43133dc1bc637e293670df7bb27c"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/state-machine.ts",
@@ -9231,8 +9266,8 @@
     },
     {
       "path": "sure/skills/sure_trans/hooks/index.ts",
-      "size_bytes": 39722,
-      "sha256": "025daae5da627456741c87e80d85f7ca053e5350dcaa938a9635766fe073ef1c"
+      "size_bytes": 39858,
+      "sha256": "280cd5fd5fcae9a0fa8270758bad45bc2c74e27ba55f9973eba2525d706aed15"
     },
     {
       "path": "sure/skills/sure_trans/hooks/state-machine.ts",
@@ -9621,5 +9656,5 @@
       ]
     }
   ],
-  "semantic_digest": "2744219210efd6a3ae7f242f5caa38b7a02ee10b693f43b631c761813244340d"
+  "semantic_digest": "f9aaafbc6dc51daa146bd2086d91e700a669a698f4de5e652adba2abbbf2a5d1"
 }

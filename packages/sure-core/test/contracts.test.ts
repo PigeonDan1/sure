@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { createFrozenEvaluationSubject } from "../src/conformance/frozen.ts";
 import {
 	canonicalJson,
 	canonicalJsonDigest,
@@ -10,7 +11,6 @@ import {
 	parseAndValidateJson,
 	validateJsonSchema,
 } from "../src/contracts/index.ts";
-import { createFrozenEvaluationSubject } from "../src/conformance/frozen.ts";
 import type {
 	CapabilityEvidence,
 	CapabilityRequirement,

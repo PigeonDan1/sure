@@ -22,23 +22,23 @@ import {
 	type CapabilityEvidence,
 	type CapabilityReport,
 	canonicalJsonDigest,
+	createFrozenEvaluationSubject,
 	createOutcome,
 	decodeLegacyCheckpoint,
 	type ExecutionReceipt,
 	type ExecutionRequest,
 	encodeLegacyCheckpoint,
 	evaluateCapabilityRequirements,
-	createFrozenEvaluationSubject,
-	type FrozenFormalSubject,
 	type FrozenEvaluationSubject,
+	type FrozenFormalSubject,
 	initialCheckpoint,
 	type JsonValue,
 	type PublicOutcome,
 	type StateDocument,
 	type StructuralValidationResult,
 	validateExecutionReceipt,
-	validateFrozenEvaluationSubject,
 	validateExecutionRequest,
+	validateFrozenEvaluationSubject,
 	validateStructuralArtifact,
 	type WorkflowCheckpoint,
 	type WorkflowDefinition,
@@ -1157,7 +1157,7 @@ function freeze(args: ParsedArgs): PublicOutcome {
 	}
 	const routeArg = one(args, "route");
 	let evaluatorRouteDigest: string;
-	if (routeArg && routeArg.startsWith("/")) {
+	if (routeArg?.startsWith("/")) {
 		const routePath = admittedReadArtifactPath(store, run, routeArg, referenceRoots(args));
 		evaluatorRouteDigest = digestPath(routePath);
 	} else if (routeArg) {
