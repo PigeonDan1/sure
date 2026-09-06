@@ -22,6 +22,10 @@
 			"types": "./dist/policy/index.d.ts",
 			"import": "./dist/policy/index.js"
 		},
+		"./site": {
+			"types": "./dist/policy/site.d.ts",
+			"import": "./dist/policy/site.js"
+		},
 		"./schemas/*": "./dist/contracts/*.schema.json",
 		"./package.json": "./package.json"
 	},
@@ -37,7 +41,8 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"typebox": "1.1.38"
+		"typebox": "1.1.38",
+		"yaml": "2.9.0"
 	},
 	"devDependencies": {
 		"@types/node": "22.19.19",

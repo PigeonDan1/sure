@@ -10,8 +10,7 @@ import {
 	RUN_ID_PATTERN,
 	RunStoreError,
 } from "@earendil-works/sure-core";
-import { resolveSitePolicy } from "../../../../../sure/site/loader.ts";
-import { snapshotResolvedSitePolicy } from "../../../../../sure/site/snapshot.ts";
+import { resolveSitePolicy, snapshotResolvedSitePolicy } from "@earendil-works/sure-core/site";
 import { createNodeCoreRunStore, type NodeCoreRunStore } from "./core-run-store.ts";
 import { mergeSureDisplayState } from "./state.ts";
 import type { SureDisplayState, SureRunRecord, SureRunStatus, SureSkillPackage } from "./types.ts";

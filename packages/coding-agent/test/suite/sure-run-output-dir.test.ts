@@ -89,6 +89,36 @@ describe("output_dir resolution", () => {
 		expect(result.error ?? "").toContain(NFS_ROOT);
 	});
 
+	it("uses the active project policy for containment and diagnostics", () => {
+		const root = freshRoot("project-policy");
+		const config = join(root, "config");
+		const forbiddenRoot = join(root, "protected");
+		mkdirSync(config);
+		writeFileSync(
+			join(config, "site.local.yaml"),
+			JSON.stringify({
+				schema: "sure.site.policy.v1",
+				site_id: "project-policy",
+				policy_version: 1,
+				storage: {
+					approved_models_roots: [join(forbiddenRoot, "models")],
+					forbidden_output_roots: [forbiddenRoot],
+					runtime_root: join(root, "runtime"),
+				},
+				datasets: { allowed_source_roots: { default: join(root, "datasets") } },
+				execution: { surfaces: ["local"] },
+			}),
+		);
+
+		const result = resolveOutputDir(`output_dir=${join(forbiddenRoot, "job-1234")}`, {
+			repositoryRoot: root,
+			environment: {},
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.error ?? "").toContain(forbiddenRoot);
+	});
+
 	it("refuses a directory it cannot create", () => {
 		const root = freshRoot("blocked");
 		const blocker = join(root, "blocker");

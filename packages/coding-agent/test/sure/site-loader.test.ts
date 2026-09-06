@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateSitePolicy } from "../../../../sure/site/loader.ts";
+import { validateSitePolicy } from "../../../sure-core/src/policy/site.ts";
 
 const ROOT = "/srv";
 

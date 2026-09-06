@@ -1,10 +1,12 @@
 import { accessSync, constants, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
-import { requireSitePolicy, resolveSitePolicy } from "../../../../../sure/site/loader.ts";
+import { requireSitePolicy, resolveSitePolicy, type SitePolicyLoadOptions } from "@earendil-works/sure-core/site";
 
 // Approved models and promoted results both live below this root. Runs never
 // write inside it; a human promotes reviewed products there.
-export const NFS_ROOT = resolveSitePolicy()?.policy.storage.forbidden_output_roots[0] ?? "<site-policy-required>";
+export const NFS_ROOT =
+	resolveSitePolicy({ repositoryRoot: process.cwd() })?.policy.storage.forbidden_output_roots[0] ??
+	"<site-policy-required>";
 
 export interface OutputDirResolution {
 	ok: boolean;
@@ -75,21 +77,22 @@ function realPathish(path: string): string {
 	return tail.length > 0 ? join(realpathSync(current), ...tail) : realpathSync(current);
 }
 
-function insideNfs(dir: string): boolean {
-	const configuredRoots = requireSitePolicy().policy.storage.forbidden_output_roots;
-	const roots = new Set(configuredRoots.map((root) => resolve(root)));
-	for (const root of configuredRoots) {
-		if (existsSync(root)) roots.add(realpathSync(root));
-	}
+function forbiddenRootContaining(dir: string, policyOptions: SitePolicyLoadOptions): string | undefined {
+	const configuredRoots = requireSitePolicy(policyOptions).policy.storage.forbidden_output_roots;
 	const candidates = new Set([resolve(dir), realPathish(dir)]);
-	for (const root of roots) {
-		for (const candidate of candidates) {
-			if (candidate === root || candidate.startsWith(root + sep)) {
-				return true;
+	for (const configuredRoot of configuredRoots) {
+		const normalizedRoot = resolve(configuredRoot);
+		const rootAliases = new Set([normalizedRoot]);
+		if (existsSync(normalizedRoot)) rootAliases.add(realpathSync(normalizedRoot));
+		for (const root of rootAliases) {
+			for (const candidate of candidates) {
+				if (candidate === root || candidate.startsWith(root + sep)) {
+					return normalizedRoot;
+				}
 			}
 		}
 	}
-	return false;
+	return undefined;
 }
 
 /**
@@ -98,7 +101,7 @@ function insideNfs(dir: string): boolean {
  * Cloud callers read one directory per invocation, so the directory has to be
  * usable before the run starts: absolute, outside NFS, and writable.
  */
-export function resolveOutputDir(args: string): OutputDirResolution {
+export function resolveOutputDir(args: string, policyOptions: SitePolicyLoadOptions = {}): OutputDirResolution {
 	const { requested } = splitOutputDir(args);
 	if (!requested) {
 		return { ok: true, dir: undefined };
@@ -111,8 +114,12 @@ export function resolveOutputDir(args: string): OutputDirResolution {
 	}
 	const dir = resolve(requested);
 	try {
-		if (insideNfs(dir)) {
-			return { ok: false, error: `output_dir must stay outside ${NFS_ROOT}: promotion into NFS is a human step` };
+		const forbiddenRoot = forbiddenRootContaining(dir, policyOptions);
+		if (forbiddenRoot !== undefined) {
+			return {
+				ok: false,
+				error: `output_dir must stay outside ${forbiddenRoot}: promotion into NFS is a human step`,
+			};
 		}
 	} catch (error) {
 		return { ok: false, error: error instanceof Error ? error.message : String(error) };

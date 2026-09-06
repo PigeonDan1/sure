@@ -6636,23 +6636,28 @@
   "source_files": [
     {
       "path": "packages/coding-agent/src/core/sure/controller.ts",
-      "size_bytes": 6665,
-      "sha256": "5f203eb0e2d9976ecf6c5e3e24e4ba70933309b13574fb47667958f09ce14de6"
+      "size_bytes": 6569,
+      "sha256": "d2c08bb5137ff6a0c94f760e9d6d155f61c3e35b74d7fc8289264f7b88abdf74"
     },
     {
       "path": "packages/coding-agent/src/core/sure/core-run-store.ts",
-      "size_bytes": 2799,
-      "sha256": "60a2b3b4ace81ee662ffc9dc560b09a00f68a55f055471b29bed6fc6729c949a"
+      "size_bytes": 3376,
+      "sha256": "ee0de7d470596266d0acf318f330330ca18152d66e1f3d09abe19dc96c91eccc"
     },
     {
       "path": "packages/coding-agent/src/core/sure/extension.ts",
-      "size_bytes": 43899,
-      "sha256": "2a57d34abaf228aac3bd4c2f71ab259a783ef5c7313892db4bfebc803c11587b"
+      "size_bytes": 44712,
+      "sha256": "60545d7d31b48a1fe66d0b5a0c23a5b2f2aea23f7f6076d7d6198826e5053e1f"
+    },
+    {
+      "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
+      "size_bytes": 30567,
+      "sha256": "6af26c75dacc45ae6ad0cfb0313d7a3683b540eb3b034109eb797c8dbf037a2b"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
-      "size_bytes": 3425,
-      "sha256": "aa730d43787fd36564247b7ad1d97a62fcb4189d4216ba93da040214cf8ef817"
+      "size_bytes": 3605,
+      "sha256": "b6cedf5e3116472e260d3f34a8cf1d80e74ede324c3b616f59f1823bc5a19cff"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hooks.ts",
@@ -6711,13 +6716,13 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/output-dir.ts",
-      "size_bytes": 4349,
-      "sha256": "ac89a46afc5732f2003606e1f0dff6e4383ff07d9c61a9072b71f26184b8559c"
+      "size_bytes": 4718,
+      "sha256": "508a97ffd06fc64441bc7bc23e46851d9bb25d3d3897aad7d6fbf8ddfec79372"
     },
     {
       "path": "packages/coding-agent/src/core/sure/run-manager.ts",
-      "size_bytes": 12348,
-      "sha256": "5102e28b978bafe769b09ee99f54765ad65d397fe73f50238b7758ac58714d85"
+      "size_bytes": 15752,
+      "sha256": "eb3b9ad8a8d32e5966b623fbcb1bbcc52a9247326a42ec707c08b5dda769d046"
     },
     {
       "path": "packages/coding-agent/src/core/sure/state.ts",
@@ -6726,8 +6731,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/types.ts",
-      "size_bytes": 4262,
-      "sha256": "3ef1cd2baa6acffba4932dc2776757a6a8470aa9eb60d4f4f4a0a8d9fcc2c2d3"
+      "size_bytes": 4649,
+      "sha256": "fbcc569e52414993c41ebd5a020ac27e3d9f5b32c94cc8f8317112bf9f47b8ff"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-agent-path.test.ts",
@@ -6756,8 +6761,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-eval-terminal.test.ts",
-      "size_bytes": 852,
-      "sha256": "d022542dc6b970fdd5ece45cf13280ef8054770ed0e288cf555ae012ae193c49"
+      "size_bytes": 3439,
+      "sha256": "b6c39257f8a6144c6406eace80f29da73135bcdfa419a08a8ffdeb8e3c8b41fd"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-extension.test.ts",
@@ -6801,8 +6806,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-service.test.ts",
-      "size_bytes": 5577,
-      "sha256": "64020b1216406d4e4f2ab94e1273ed859851a07bc12de0db2f046ae737497e62"
+      "size_bytes": 6508,
+      "sha256": "3d9480a72d2ed9d72e2a05d327b30fd0c9bb2f916af543411070453a95b9b9c5"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-memory-units.test.ts",
@@ -6826,8 +6831,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-run-output-dir.test.ts",
-      "size_bytes": 6247,
-      "sha256": "3c03534160db6a56dff31052d708cce6b7ec5a90846901e7d49585117d3210ac"
+      "size_bytes": 7172,
+      "sha256": "a237ecf011a4630ea04fc5f7578d3b3bdec18f3bc7921630abde1630642fe8c1"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-runtime-binding.test.ts",
@@ -6911,8 +6916,8 @@
     },
     {
       "path": "packages/coding-agent/test/sure/site-loader.test.ts",
-      "size_bytes": 6054,
-      "sha256": "b3fc53d4aaac35ff91668974144d92546607fde43798de108af1663b59935fe5"
+      "size_bytes": 6060,
+      "sha256": "aabdd6ab9e2bb74a4244d978b3f834a8d592682cbb619e20891d74e16e6e8bc5"
     },
     {
       "path": "sure/runtime/agent-path.ts",
@@ -6921,8 +6926,8 @@
     },
     {
       "path": "sure/runtime/evaluation_commit.py",
-      "size_bytes": 16621,
-      "sha256": "1d81baf919b9daac1145edf3293b227681483a94eb2f26a3ff53dfb3768c9703"
+      "size_bytes": 18694,
+      "sha256": "fd9ec48c875d21cc3ddf20141c8ca055e744791103e02add9e90f06cffa4a149"
     },
     {
       "path": "sure/runtime/evaluation/requirements.in",
@@ -7036,8 +7041,8 @@
     },
     {
       "path": "sure/runtime/memory/hooks.ts",
-      "size_bytes": 67866,
-      "sha256": "36481031e00e4761953dca9454c39ade31d19c65f342d8dd606d2653e1eea5dc"
+      "size_bytes": 67909,
+      "sha256": "09710dd8b1aec7e94470554724225905ef11731d3f4afe0c24cd01f096362401"
     },
     {
       "path": "sure/runtime/memory/index.py",
@@ -7061,8 +7066,8 @@
     },
     {
       "path": "sure/runtime/memory/pi-bridge.ts",
-      "size_bytes": 576,
-      "sha256": "99c8134bd50ef332f4ae6a86ccde18bf11745acf7b8a9013c927b6a9249d0538"
+      "size_bytes": 1375,
+      "sha256": "673a051be87ada65fab4e22e9cebcce5a2b9596668afe64d71858065e68a217c"
     },
     {
       "path": "sure/runtime/memory/promote.py",
@@ -7111,8 +7116,8 @@
     },
     {
       "path": "sure/runtime/memory/service.ts",
-      "size_bytes": 10793,
-      "sha256": "598e706ae34f587334516dcc3f11a04bac3ecca288d0ff5596536d92c4563e47"
+      "size_bytes": 11584,
+      "sha256": "25fc74ecd0dbac5d217b4d3fe00ec63fd3b2957157fc9b0427bd2e140a176d41"
     },
     {
       "path": "sure/runtime/memory/test_cli.py",
@@ -7201,8 +7206,8 @@
     },
     {
       "path": "sure/runtime/resource_locator.py",
-      "size_bytes": 5594,
-      "sha256": "55e5a3bb9ef1d5e3d74b74ad4fabefb006f896f43a30f88cd5b32efff983d6f9"
+      "size_bytes": 9705,
+      "sha256": "1ddaad3146d484e3c9ce5e30adea034ebc907f5ea842aa933e1c537dbd40ae10"
     },
     {
       "path": "sure/runtime/resource-locator.ts",
@@ -7220,9 +7225,19 @@
       "sha256": "f50e4cf955f0a81e5c17876e9103378851ab14b298ec7076d5047542c763c616"
     },
     {
+      "path": "sure/runtime/semantic_backend.py",
+      "size_bytes": 18536,
+      "sha256": "382933b0d2705017fad560a3869cef63a694be5215c7731124e4c6f5b58a9b5e"
+    },
+    {
+      "path": "sure/runtime/semantic-backend.ts",
+      "size_bytes": 16256,
+      "sha256": "0563431c4b3e77bfad82b0f685dd929c14325623b7d489344a77a0e51f944d4a"
+    },
+    {
       "path": "sure/runtime/test_evaluation_commit.py",
-      "size_bytes": 7359,
-      "sha256": "8caa0cc845e27db5d2ab7bc1158f49030186602c8d06637465c53eb49eb49658"
+      "size_bytes": 12895,
+      "sha256": "7b49bd299dd0ac0c0fd69d67e483a8aae42e38cc896cb521a357e1fca54c7a06"
     },
     {
       "path": "sure/runtime/test_execution_bridge.py",
@@ -7233,6 +7248,11 @@
       "path": "sure/runtime/test_resource_locator.py",
       "size_bytes": 2900,
       "sha256": "57eeb78ea0ec7b964dab5bf0aa929e0f36f9454858f00c3c6dd09a50184f3dcc"
+    },
+    {
+      "path": "sure/runtime/test_semantic_backend.py",
+      "size_bytes": 6464,
+      "sha256": "5af204bc4f97a149eb918ab43b18a8fe66269ffeb6144960aa92fc694ae4d8c4"
     },
     {
       "path": "sure/runtime/usage.ts",
@@ -7256,8 +7276,8 @@
     },
     {
       "path": "sure/site/loader.ts",
-      "size_bytes": 13660,
-      "sha256": "740a2512eb4b4a1aaef8d9578599e6c5161d04fe15ecd8751cc4c2caef62342a"
+      "size_bytes": 148,
+      "sha256": "02a5369755ddc4cf443e1b9ea6978eda7743ef76ee004f8feee4f1e2e526b2bf"
     },
     {
       "path": "sure/site/policy.schema.json",
@@ -7271,8 +7291,8 @@
     },
     {
       "path": "sure/site/snapshot.ts",
-      "size_bytes": 1978,
-      "sha256": "ed052a7525ca0a6ee0f6f84642ab98feca755ee705d97286faeec1d22e9146bf"
+      "size_bytes": 266,
+      "sha256": "c82c220ee9f1f6381c999dc945a12467949065c891994a8a0376defb2915d97b"
     },
     {
       "path": "sure/site/test_container_delivery.py",
@@ -7461,8 +7481,8 @@
     },
     {
       "path": "sure/skills/sure_eval/hooks/index.ts",
-      "size_bytes": 41700,
-      "sha256": "10d33bc465acf1fe1e0115ee6bfabb3e9db615b2e8015c48a659533f55051c53"
+      "size_bytes": 47529,
+      "sha256": "10ddc0e95363ca533ce8425b748ba356b327c75380ee7d85bcfa57f9d28b37e7"
     },
     {
       "path": "sure/skills/sure_eval/hooks/state-machine.ts",
@@ -7506,8 +7526,8 @@
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_assessment.py",
-      "size_bytes": 845,
-      "sha256": "246836e3086534c3e6f203265a960c5c425a9e88a42fe2e9222ced010cf027c2"
+      "size_bytes": 884,
+      "sha256": "e244ac6951f4152530c37d7e53ab097eec1e0f877c4943f9b07febed80d709c6"
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_eval_run_report.py",
@@ -7526,8 +7546,8 @@
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_run_report.py",
-      "size_bytes": 875,
-      "sha256": "901d7d99ce2a6e530b86eab2974f666a6417b9ebcaca9179ff698eef9dfd0970"
+      "size_bytes": 914,
+      "sha256": "2f0c9f304af3aba29904322981465eeba896f99c53e164ed56a5d464adc132f5"
     },
     {
       "path": "sure/skills/sure_eval/scripts/publish_memory.py",
@@ -7556,8 +7576,8 @@
     },
     {
       "path": "sure/skills/sure_feed/hooks/index.ts",
-      "size_bytes": 29762,
-      "sha256": "5504dc18b9e0ecd8069f8916512afb678a8647a43b67dbffdf42b666817ee3eb"
+      "size_bytes": 29751,
+      "sha256": "360ed34f39bde1f398a2e73a3960e7bbeb17ef81654bfef9b5b6f7f098c68c3d"
     },
     {
       "path": "sure/skills/sure_feed/hooks/state-machine.ts",
@@ -7816,8 +7836,8 @@
     },
     {
       "path": "sure/skills/sure_infer/hooks/index.ts",
-      "size_bytes": 37251,
-      "sha256": "9fd19730b9c17c5bda6409bbb9190787b52c544c2196831997384428080bc4e6"
+      "size_bytes": 37240,
+      "sha256": "1e1a1257ab1e4f81ea478a4836427a6b62b2d9edb810fded2d811a70a7e42f7e"
     },
     {
       "path": "sure/skills/sure_infer/hooks/state-machine.ts",
@@ -8021,8 +8041,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/deployment_binding.py",
-      "size_bytes": 39294,
-      "sha256": "2aad3bae5e5bed785e8fc091f687f05839b0e81570e02afa91d4ae48e590297f"
+      "size_bytes": 39840,
+      "sha256": "d1218b6234b0cf94336736cd44e873ce9e677fd21e201ae422358ac82a524ad3"
     },
     {
       "path": "sure/skills/sure_infer/scripts/evaluate_predictions.py",
@@ -8131,8 +8151,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/resolve_model_dir.py",
-      "size_bytes": 8249,
-      "sha256": "9728e9544939732d3678f3170db573d97851bb4485fc3d8e7b422681a69c2cad"
+      "size_bytes": 8889,
+      "sha256": "a5dd460d0104cd03e70804b51708d1a31552f6b7a229c6407b51b800d440c106"
     },
     {
       "path": "sure/skills/sure_infer/scripts/resolve_prediction_source.py",
@@ -8591,8 +8611,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/hooks/index.ts",
-      "size_bytes": 56191,
-      "sha256": "a3ace9f57665b08ec8a46ce3d0964dbe3bbb43133dc1bc637e293670df7bb27c"
+      "size_bytes": 56180,
+      "sha256": "ea0f4798df6d6c203ff83a46561083aaff7e2c94fa54262cf91c2f266290fcd0"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/state-machine.ts",
@@ -9266,8 +9286,8 @@
     },
     {
       "path": "sure/skills/sure_trans/hooks/index.ts",
-      "size_bytes": 39858,
-      "sha256": "280cd5fd5fcae9a0fa8270758bad45bc2c74e27ba55f9973eba2525d706aed15"
+      "size_bytes": 39847,
+      "sha256": "9bd7dc9dc7622a9f60d27cd5874d4ba71aceaf1d833b03b36b04ea113ff4670e"
     },
     {
       "path": "sure/skills/sure_trans/hooks/state-machine.ts",
@@ -9656,5 +9676,5 @@
       ]
     }
   ],
-  "semantic_digest": "00254776ca6e47b933a53bd103a43b019cd456a163288af0eee18c6413076041"
+  "semantic_digest": "6b0eec2594b2e00bc8a67f79ed62dbc938c5dfa7ef318cbbca06102b4695a476"
 }

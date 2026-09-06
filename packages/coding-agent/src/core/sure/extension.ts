@@ -496,7 +496,7 @@ async function startRun(
 		return;
 	}
 
-	const outputDir = resolveOutputDir(args);
+	const outputDir = resolveOutputDir(args, { repositoryRoot: ctx.cwd });
 	if (!outputDir.ok) {
 		ctx.ui.notify(outputDir.error ?? "Sure rejected the requested output_dir.", "error");
 		return;
