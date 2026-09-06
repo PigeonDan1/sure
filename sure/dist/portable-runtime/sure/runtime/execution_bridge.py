@@ -21,7 +21,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import posixpath
 import re
+import stat as stat_module
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -32,10 +34,21 @@ from typing import Any, Iterable, Mapping, Sequence
 REQUEST_SCHEMA = "sure.execution_request.v1"
 RECEIPT_SCHEMA = "sure.execution_receipt.v1"
 COMPATIBILITY_SCHEMA = "sure.execution_compatibility.v1"
+OUTPUT_CONTRACT_SCHEMA = "sure.execution_output_contract.v1"
+OUTPUT_SET_SCHEMA = "sure.execution.output-set.v1"
+OUTPUT_MODES = {"preexisting", "mutating", "producing"}
+OUTPUT_KINDS = {"file", "directory"}
+OUTPUT_DIGEST_KINDS = {"file_sha256", "tree_sha256"}
 DIGEST_RE = re.compile(r"^(?:sha256:)?[0-9a-f]{64}$")
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 TERMINAL_LIFECYCLES = {"SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"}
 LIFECYCLES = {"NOT_STARTED", "QUEUED", "RUNNING", *TERMINAL_LIFECYCLES}
+
+
+def _utf16_sort_key(value: str) -> bytes:
+    """Match JavaScript's UTF-16 code-unit ordering for cross-runtime digests."""
+
+    return value.encode("utf-16-be", errors="surrogatepass")
 
 
 def utc_now() -> str:
@@ -64,6 +77,42 @@ def digest_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return f"sha256:{digest.hexdigest()}"
+
+
+def digest_tree(path: Path) -> tuple[str, int]:
+    """Return a stable digest and byte size for a regular directory tree."""
+
+    lexical_root = path.expanduser().absolute()
+    root_stat = lexical_root.lstat()
+    if stat_module.S_ISLNK(root_stat.st_mode):
+        raise ValueError(f"output path is a symlink: {lexical_root}")
+    root = lexical_root.resolve()
+    if not stat_module.S_ISDIR(root_stat.st_mode):
+        raise ValueError(f"output path is not a directory: {lexical_root}")
+    entries: list[tuple[str, str, str | None, int | None]] = []
+
+    def visit(current: Path) -> int:
+        stat = current.lstat()
+        if stat_module.S_ISLNK(stat.st_mode):
+            raise ValueError(f"output path contains a symlink: {current}")
+        relative = current.relative_to(root).as_posix() or "."
+        if stat_module.S_ISREG(stat.st_mode):
+            entries.append((relative, "file", digest_file(current), stat.st_size))
+            return stat.st_size
+        if not stat_module.S_ISDIR(stat.st_mode):
+            raise ValueError(f"output path is not a regular file or directory: {current}")
+        entries.append((relative, "directory", None, None))
+        total = 0
+        for child in sorted(current.iterdir(), key=lambda item: _utf16_sort_key(item.name)):
+            total += visit(child)
+        return total
+
+    size = visit(root)
+    rows = "".join(
+        f"{relative}\0directory\n" if kind == "directory" else f"{relative}\0file\0{digest}\0{entry_size}\n"
+        for relative, kind, digest, entry_size in sorted(entries, key=lambda item: _utf16_sort_key(item[0]))
+    )
+    return digest_text(rows), size
 
 
 def valid_digest(value: object) -> bool:
@@ -161,23 +210,44 @@ def artifact_ref(
     reference_snapshot_digest: str | None = None,
     artifact_id: str | None = None,
 ) -> dict[str, Any]:
-    """Build a strict artifact reference for an existing regular file."""
+    """Build a strict artifact reference for an existing regular file or directory."""
 
-    resolved = path.expanduser().resolve()
-    if not resolved.is_file() or resolved.is_symlink():
+    lexical = path.expanduser().absolute()
+    stat = lexical.lstat() if lexical.exists() or lexical.is_symlink() else None
+    resolved = lexical.resolve()
+    if stat is None or stat_module.S_ISLNK(stat.st_mode) or not (
+        stat_module.S_ISREG(stat.st_mode) or stat_module.S_ISDIR(stat.st_mode)
+    ):
         raise FileNotFoundError(resolved)
     if origin not in {"local_staging", "read_only_reference", "generated", "external"}:
         raise ValueError(f"unsupported artifact origin: {origin}")
+    if stat_module.S_ISDIR(stat.st_mode):
+        sha256, size = digest_tree(resolved)
+        kind = "directory"
+        digest_kind = "tree_sha256"
+        media_type = "inode/directory"
+    else:
+        sha256 = digest_file(resolved)
+        size = stat.st_size
+        kind = "file"
+        digest_kind = "file_sha256"
+        media_type = "application/json" if resolved.suffix.lower() == ".json" else "application/octet-stream"
     result: dict[str, Any] = {
         "artifact_id": safe_id(artifact_id, f"artifact-{hashlib.sha256(str(resolved).encode()).hexdigest()[:12]}"),
-        "path": str(path.expanduser().absolute()),
+        "path": str(lexical),
         "resolved_path": str(resolved),
-        "sha256": digest_file(resolved),
-        "size": resolved.stat().st_size,
-        "media_type": "application/json" if resolved.suffix.lower() == ".json" else "application/octet-stream",
+        "sha256": sha256,
+        "size": size,
+        "media_type": media_type,
         "origin": origin,
         "source_root": str(_source_root(resolved, source_root)),
     }
+    # Preserve the historical file-artifact wire shape. Directory artifacts
+    # need explicit metadata because their digest is a tree digest; legacy
+    # consumers and Core validation treat omitted fields as file defaults.
+    if kind == "directory":
+        result["kind"] = kind
+        result["digest_kind"] = digest_kind
     if origin == "read_only_reference":
         result["reference_snapshot_digest"] = normalize_digest(
             reference_snapshot_digest, fallback={"path": str(resolved), "sha256": result["sha256"]}
@@ -244,6 +314,245 @@ def capability_summary(
     }
 
 
+def _relative_contract_path(value: object, field: str, errors: list[str]) -> str | None:
+    if not isinstance(value, str) or not value or value.startswith("/") or "\\" in value:
+        errors.append(f"{field} must be a non-empty relative POSIX path")
+        return None
+    normalized = posixpath.normpath(value)
+    if normalized in {".", ".."} or normalized.startswith("../") or normalized != value:
+        errors.append(f"{field} must be normalized and non-escaping: {value}")
+        return None
+    return normalized
+
+
+def validate_output_contract(value: object) -> list[str]:
+    """Validate the declarative output contract without touching the filesystem."""
+
+    errors: list[str] = []
+    if not isinstance(value, Mapping):
+        return ["execution output contract must be an object"]
+    if value.get("schema") != OUTPUT_CONTRACT_SCHEMA:
+        errors.append("output contract schema is unsupported")
+    mode = value.get("mode")
+    if mode not in OUTPUT_MODES:
+        errors.append("output contract mode is invalid")
+    outputs = value.get("outputs")
+    output_paths: set[str] = set()
+    output_ids: set[str] = set()
+    if not isinstance(outputs, list) or not outputs:
+        errors.append("output contract must declare at least one output")
+    else:
+        for index, raw in enumerate(outputs):
+            field = f"output_contract.outputs[{index}]"
+            if not isinstance(raw, Mapping):
+                errors.append(f"{field} must be an object")
+                continue
+            artifact_id = raw.get("artifact_id")
+            if not isinstance(artifact_id, str) or not ID_RE.fullmatch(artifact_id):
+                errors.append(f"{field}.artifact_id is invalid")
+            elif artifact_id in output_ids:
+                errors.append(f"{field}.artifact_id is duplicated")
+            else:
+                output_ids.add(artifact_id)
+            path = _relative_contract_path(raw.get("path"), f"{field}.path", errors)
+            if path is not None:
+                if path in output_paths:
+                    errors.append(f"{field}.path is duplicated")
+                else:
+                    output_paths.add(path)
+            if raw.get("kind") not in OUTPUT_KINDS:
+                errors.append(f"{field}.kind must be file or directory")
+            if not isinstance(raw.get("required"), bool):
+                errors.append(f"{field}.required must be boolean")
+        if mode == "producing" and not any(isinstance(raw, Mapping) and raw.get("required") is True for raw in outputs):
+            errors.append("producing output contract must declare a required output")
+    temporary = value.get("temporary_paths")
+    if not isinstance(temporary, list):
+        errors.append("output_contract.temporary_paths must be an array")
+    else:
+        temporary_paths: set[str] = set()
+        for index, raw in enumerate(temporary):
+            path = _relative_contract_path(raw, f"output_contract.temporary_paths[{index}]", errors)
+            if path is not None:
+                if path in temporary_paths:
+                    errors.append(f"output_contract.temporary_paths[{index}] is duplicated")
+                else:
+                    temporary_paths.add(path)
+    if not isinstance(value.get("allow_missing_on_failure"), bool):
+        errors.append("output_contract.allow_missing_on_failure must be boolean")
+    if not isinstance(value.get("retain_failed_outputs"), bool):
+        errors.append("output_contract.retain_failed_outputs must be boolean")
+    return errors
+
+
+def output_contract_digest(contract: Mapping[str, Any]) -> str:
+    return digest_json(dict(contract))
+
+
+def output_set_digest(
+    outputs: Sequence[Mapping[str, Any]], residuals: Sequence[Mapping[str, Any]] = ()
+) -> str:
+    sorted_outputs = sorted(
+        (dict(item) for item in outputs),
+        key=lambda item: _utf16_sort_key(f"{item.get('artifact_id', '')}\0{item.get('resolved_path', '')}"),
+    )
+    sorted_residuals = sorted(
+        (dict(item) for item in residuals),
+        key=lambda item: _utf16_sort_key(f"{item.get('path', '')}\0{item.get('resolved_path', '')}"),
+    )
+    return digest_json({"schema": OUTPUT_SET_SCHEMA, "outputs": sorted_outputs, "residuals": sorted_residuals})
+
+
+def _output_relative(request: Mapping[str, Any], path: object, *, root_key: str = "resolved_path") -> str | None:
+    if not isinstance(path, str) or not path:
+        return None
+    output_root = request.get("output_root") if isinstance(request.get("output_root"), Mapping) else {}
+    try:
+        root = Path(os.path.abspath(os.path.expanduser(str(output_root.get(root_key) or ""))))
+        candidate = Path(os.path.abspath(os.path.expanduser(path)))
+        relative = candidate.relative_to(root).as_posix()
+    except (OSError, ValueError):
+        return None
+    return relative if relative and relative != "." else None
+
+
+def _validate_output_digest_shape(output: Mapping[str, Any], field: str, expected_kind: str, errors: list[str]) -> None:
+    kind = output.get("kind", "file")
+    if kind != expected_kind:
+        errors.append(f"{field}.kind does not match declared output kind")
+    expected_digest_kind = "tree_sha256" if expected_kind == "directory" else "file_sha256"
+    if output.get("digest_kind", "file_sha256") != expected_digest_kind:
+        errors.append(f"{field}.digest_kind must be {expected_digest_kind} for a {expected_kind} output")
+    if expected_kind == "directory" and output.get("media_type") != "inode/directory":
+        errors.append(f"{field}.media_type must be inode/directory for a directory output")
+
+
+def _validate_residual(
+    residual: object,
+    index: int,
+    request: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    errors: list[str],
+) -> None:
+    field = f"receipt.residuals[{index}]"
+    if not isinstance(residual, Mapping):
+        errors.append(f"{field} must be an object")
+        return
+    for key in ("path", "resolved_path"):
+        if not isinstance(residual.get(key), str) or not residual.get(key):
+            errors.append(f"{field}.{key} must be a non-empty string")
+    kind = residual.get("kind")
+    if kind not in OUTPUT_KINDS:
+        errors.append(f"{field}.kind must be file or directory")
+        return
+    if residual.get("status") not in {"present", "missing"}:
+        errors.append(f"{field}.status must be present or missing")
+    relative = _output_relative(request, residual.get("resolved_path"), root_key="resolved_path")
+    temporary = contract.get("temporary_paths") if isinstance(contract.get("temporary_paths"), list) else []
+    if relative is None or not any(isinstance(root, str) and (relative == root or relative.startswith(f"{root}/")) for root in temporary):
+        errors.append(f"{field}.resolved_path is not declared as a temporary path")
+    lexical_relative = _output_relative(request, residual.get("path"), root_key="path")
+    if lexical_relative is None or relative is None or lexical_relative != relative:
+        errors.append(f"{field}.path does not resolve to resolved_path within the output root")
+    if residual.get("status") == "present":
+        if not valid_digest(residual.get("sha256")):
+            errors.append(f"{field}.sha256 is required for present residuals")
+        expected = "tree_sha256" if kind == "directory" else "file_sha256"
+        if residual.get("digest_kind") != expected:
+            errors.append(f"{field}.digest_kind must be {expected} for a present residual")
+        if not isinstance(residual.get("size"), int) or residual.get("size") < 0:
+            errors.append(f"{field}.size is required for present residuals")
+    elif any(key in residual for key in ("sha256", "digest_kind", "size")):
+        errors.append(f"{field} missing residuals cannot carry digest or size")
+
+
+def validate_output_binding(request: Mapping[str, Any], receipt: Mapping[str, Any]) -> list[str]:
+    contract = request.get("output_contract")
+    has_extension = any(key in receipt for key in ("output_contract_digest", "output_set_digest", "residuals"))
+    if contract is None:
+        return ["receipt carries output-contract fields without a request output_contract"] if has_extension else []
+    contract_errors = validate_output_contract(contract)
+    if contract_errors:
+        return contract_errors
+    assert isinstance(contract, Mapping)
+    errors: list[str] = []
+    expected_contract_digest = output_contract_digest(contract)
+    if not valid_digest(receipt.get("output_contract_digest")):
+        errors.append("receipt.output_contract_digest is required when request.output_contract is present")
+    elif not same_digest(receipt.get("output_contract_digest"), expected_contract_digest):
+        errors.append("receipt.output_contract_digest does not match request.output_contract")
+    outputs = receipt.get("outputs") if isinstance(receipt.get("outputs"), list) else []
+    specs = {
+        str(item.get("artifact_id")): item
+        for item in contract.get("outputs", [])
+        if isinstance(item, Mapping) and isinstance(item.get("artifact_id"), str)
+    }
+    seen_ids: set[str] = set()
+    seen_paths: set[str] = set()
+    output_root = request.get("output_root") if isinstance(request.get("output_root"), Mapping) else {}
+    root = Path(os.path.abspath(os.path.expanduser(str(output_root.get("resolved_path") or ""))))
+    for index, raw in enumerate(outputs):
+        field = f"receipt.outputs[{index}]"
+        if not isinstance(raw, Mapping):
+            continue
+        artifact_id = str(raw.get("artifact_id") or "")
+        if artifact_id in seen_ids:
+            errors.append(f"{field}.artifact_id is duplicated")
+        seen_ids.add(artifact_id)
+        spec = specs.get(artifact_id)
+        if spec is None:
+            errors.append(f"{field}.artifact_id is not declared by output_contract")
+            continue
+        relative = _output_relative(request, raw.get("resolved_path"), root_key="resolved_path")
+        if relative is None:
+            errors.append(f"{field}.resolved_path is outside the output root")
+        else:
+            if relative in seen_paths:
+                errors.append(f"{field}.resolved_path is duplicated")
+            seen_paths.add(relative)
+            if relative != spec.get("path"):
+                errors.append(f"{field}.resolved_path does not match output_contract path {spec.get('path')}")
+            try:
+                if Path(os.path.abspath(str(raw.get("resolved_path")))) != (root / str(spec.get("path"))).absolute():
+                    errors.append(f"{field}.resolved_path is not the declared output path")
+            except (OSError, TypeError):
+                errors.append(f"{field}.resolved_path is invalid")
+        lexical_relative = _output_relative(request, raw.get("path"), root_key="path")
+        if lexical_relative is None or lexical_relative != spec.get("path"):
+            errors.append(f"{field}.path does not match output_contract path {spec.get('path')}")
+        _validate_output_digest_shape(raw, field, str(spec.get("kind")), errors)
+    lifecycle = receipt.get("lifecycle")
+    terminal = lifecycle in TERMINAL_LIFECYCLES
+    for artifact_id, spec in specs.items():
+        if spec.get("required") is True and artifact_id not in seen_ids and (
+            lifecycle == "SUCCEEDED" or (terminal and contract.get("allow_missing_on_failure") is not True)
+        ):
+            errors.append(f"required output {artifact_id} is missing from receipt")
+    residuals = receipt.get("residuals") if isinstance(receipt.get("residuals"), list) else []
+    if lifecycle == "SUCCEEDED" and residuals:
+        errors.append("successful execution cannot retain output residuals")
+    if residuals and contract.get("retain_failed_outputs") is not True:
+        errors.append("receipt residuals are not permitted by output_contract")
+    seen_residuals: set[tuple[str, str]] = set()
+    for index, residual in enumerate(residuals):
+        if isinstance(residual, Mapping):
+            key = (str(residual.get("path")), str(residual.get("resolved_path")))
+            if key in seen_residuals:
+                errors.append(f"receipt.residuals[{index}] is duplicated")
+            seen_residuals.add(key)
+        _validate_residual(residual, index, request, contract, errors)
+    try:
+        observed_digest = output_set_digest(outputs, residuals)
+    except (TypeError, ValueError) as error:
+        errors.append(f"receipt output set cannot be canonicalized: {error}")
+        observed_digest = None
+    if not valid_digest(receipt.get("output_set_digest")):
+        errors.append("receipt.output_set_digest is required when request.output_contract is present")
+    elif observed_digest is not None and not same_digest(receipt.get("output_set_digest"), observed_digest):
+        errors.append("receipt.output_set_digest does not match observed outputs and residuals")
+    return errors
+
+
 def _subject_defaults(subject: Mapping[str, Any] | None, *, run_id: str, unit_id: str) -> dict[str, Any]:
     value = dict(subject or {})
     manifest = Path(str(value.get("bundle_manifest_path") or f"/tmp/sure/{run_id}/bundle.json")).expanduser()
@@ -276,6 +585,7 @@ def build_request(
     reference_snapshot_digest: str | None = None,
     request_id: str | None = None,
     created_at: str | None = None,
+    output_contract: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Construct a v1 request, deriving only auditable compatibility digests."""
 
@@ -321,6 +631,8 @@ def build_request(
         "policy_digest": policy,
         "created_at": created_at or utc_now(),
     }
+    if output_contract is not None:
+        request["output_contract"] = dict(output_contract)
     semantic = dict(request)
     semantic.pop("request_id", None)
     semantic.pop("created_at", None)
@@ -347,6 +659,7 @@ def build_receipt(
     exit_code: int | None = None,
     diagnostics: Sequence[Mapping[str, Any]] = (),
     receipt_id: str | None = None,
+    residuals: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     if lifecycle not in LIFECYCLES:
         raise ValueError(f"invalid execution lifecycle: {lifecycle}")
@@ -382,6 +695,10 @@ def build_receipt(
         receipt["exit_code"] = int(exit_code)
     if diagnostics:
         receipt["diagnostics"] = [dict(item) for item in diagnostics]
+    if isinstance(request_dict.get("output_contract"), Mapping):
+        receipt["output_contract_digest"] = output_contract_digest(request_dict["output_contract"])
+        receipt["residuals"] = [dict(item) for item in residuals]
+        receipt["output_set_digest"] = output_set_digest(receipt["outputs"], receipt["residuals"])
     return receipt
 
 
@@ -439,6 +756,7 @@ def validate_contract_pair(
             except ValueError:
                 continue
             errors.append(f"receipt output enters forbidden root: {candidate}")
+    errors.extend(validate_output_binding(request, receipt))
     requirements = request.get("capability_requirements") if isinstance(request.get("capability_requirements"), list) else []
     evidence = receipt.get("capability_evidence") if isinstance(receipt.get("capability_evidence"), list) else []
     capabilities = capability_summary(requirements, evidence)

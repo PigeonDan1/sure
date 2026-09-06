@@ -10,6 +10,7 @@ import type {
 	JsonValue,
 } from "../contracts/types.ts";
 import { type CoreOutcome, createOutcome, outcomeFromExecutionLifecycle } from "../workflow/outcome.ts";
+import { validateExecutionOutputBinding, validateExecutionOutputContract } from "./output-contract.ts";
 import type { ExecutionBoundaryOptions, ExecutionReceiptValidation, ExecutionRequestValidation } from "./types.ts";
 
 const DIGEST = /^(?:sha256:)?[0-9a-f]{64}$/;
@@ -63,6 +64,19 @@ function validateArtifactRef(
 		errors.push(`${field}.size must be a non-negative integer`);
 	if (artifact.origin === "read_only_reference" && !validDigest(artifact.reference_snapshot_digest)) {
 		errors.push(`${field}.reference_snapshot_digest is required for read-only references`);
+	}
+	const kind = artifact.kind ?? "file";
+	if (kind !== "file" && kind !== "directory") errors.push(`${field}.kind is invalid`);
+	const digestKind = artifact.digest_kind ?? "file_sha256";
+	if (digestKind !== "file_sha256" && digestKind !== "tree_sha256") errors.push(`${field}.digest_kind is invalid`);
+	if (kind === "directory" && digestKind !== "tree_sha256") {
+		errors.push(`${field}.digest_kind must be tree_sha256 for a directory artifact`);
+	}
+	if (kind === "directory" && artifact.media_type !== "inode/directory") {
+		errors.push(`${field}.media_type must be inode/directory for a directory artifact`);
+	}
+	if (kind === "file" && digestKind === "tree_sha256") {
+		errors.push(`${field}.digest_kind cannot be tree_sha256 for a file artifact`);
 	}
 	if (requireOutputOrigin && (artifact.origin === "read_only_reference" || artifact.origin === "external")) {
 		errors.push(`${field}.origin ${String(artifact.origin)} cannot be an executor output`);
@@ -198,6 +212,9 @@ function validateRequestShape(request: ExecutionRequest, options: ExecutionBound
 		}
 	}
 	validateOutputRoot(request.output_root, "request.output_root", errors);
+	if (request.output_contract !== undefined) {
+		errors.push(...validateExecutionOutputContract(request.output_contract).errors);
+	}
 	if (options.allowed_output_roots && options.allowed_output_roots.length > 0) {
 		const boundary = evaluatePathBoundary({
 			candidate_path: request.output_root.path,
@@ -343,6 +360,7 @@ export function validateExecutionReceipt(
 		)
 			errors.push("receipt.policy_digest does not match request");
 		compareOutputRoot(request, receipt, errors);
+		errors.push(...validateExecutionOutputBinding(request, receipt));
 		for (const output of Array.isArray(receipt.outputs) ? receipt.outputs : []) {
 			if (!object(output) || typeof output.path !== "string" || typeof output.resolved_path !== "string") continue;
 			const boundary = evaluatePathBoundary({

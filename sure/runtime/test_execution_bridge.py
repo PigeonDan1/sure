@@ -11,7 +11,11 @@ from sure.runtime.execution_bridge import (
     build_request,
     capability_evidence,
     digest_json,
+    digest_tree,
+    output_set_digest,
     validate_contract_pair,
+    validate_output_binding,
+    validate_output_contract,
     write_contract_bundle,
 )
 
@@ -99,6 +103,8 @@ class ExecutionBridgeTests(unittest.TestCase):
             )
             self.assertEqual(artifact["origin"], "read_only_reference")
             self.assertTrue(str(artifact["reference_snapshot_digest"]).startswith("sha256:"))
+            self.assertNotIn("kind", artifact)
+            self.assertNotIn("digest_kind", artifact)
 
     def test_fixed_views_are_aliases_and_history_is_retained(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -121,6 +127,104 @@ class ExecutionBridgeTests(unittest.TestCase):
             self.assertEqual(len(list(history.glob("*.receipt.json"))), 2)
             latest = json.loads((root / "execution_request.json").read_text(encoding="utf-8"))
             self.assertEqual(latest["request_id"], "bridge-test-second")
+
+    def output_contract(self, mode: str = "producing") -> dict:
+        return {
+            "schema": "sure.execution_output_contract.v1",
+            "mode": mode,
+            "outputs": [
+                {"artifact_id": "manifest", "path": "manifest.json", "kind": "file", "required": True},
+                {"artifact_id": "bundle", "path": "bundle", "kind": "directory", "required": False},
+            ],
+            "temporary_paths": [".staging"],
+            "allow_missing_on_failure": True,
+            "retain_failed_outputs": True,
+        }
+
+    def test_output_contract_allows_failure_residue_and_multiple_output_kinds(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = build_request(
+                run_id="bridge-output",
+                unit_id="produce",
+                operation="package",
+                entrypoint={"executable": "/usr/bin/python3", "argv": ["-c", "pass"]},
+                output_root=root,
+                subject={"bundle_manifest_path": str(root / "bundle.json")},
+                output_contract=self.output_contract(),
+            )
+            (root / ".staging").mkdir()
+            (root / ".staging" / "partial.bin").write_bytes(b"x")
+            residual_digest, residual_size = digest_tree(root / ".staging")
+            residual = {
+                "path": str(root / ".staging"),
+                "resolved_path": str((root / ".staging").resolve()),
+                "kind": "directory",
+                "status": "present",
+                "sha256": residual_digest,
+                "digest_kind": "tree_sha256",
+                "size": residual_size,
+            }
+            receipt = build_receipt(
+                request,
+                lifecycle="FAILED",
+                executor_kind="python",
+                exit_code=23,
+                residuals=[residual],
+            )
+            self.assertEqual(validate_output_contract(request["output_contract"]), [])
+            self.assertEqual(validate_output_binding(request, receipt), [])
+            self.assertEqual(validate_contract_pair(request, receipt), [])
+
+    def test_output_contract_rejects_success_without_required_output_or_tampered_set(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            request["output_contract"] = self.output_contract()
+            receipt = build_receipt(request, lifecycle="SUCCEEDED", executor_kind="python", exit_code=0)
+            self.assertIn("required output manifest is missing from receipt", validate_output_binding(request, receipt))
+            receipt["output_set_digest"] = digest_json({"forged": True})
+            self.assertIn("receipt.output_set_digest does not match observed outputs and residuals", validate_output_binding(request, receipt))
+
+    def test_output_set_digest_matches_typescript_utf16_ordering(self) -> None:
+        outputs = [
+            {
+                "artifact_id": "z",
+                "path": "/tmp/根/z",
+                "resolved_path": "/tmp/根/z",
+                "sha256": "sha256:" + "a" * 64,
+                "size": 1,
+                "media_type": "application/octet-stream",
+                "origin": "generated",
+                "source_root": "/tmp/根",
+            },
+            {
+                "artifact_id": "a",
+                "path": "/tmp/根/😀",
+                "resolved_path": "/tmp/根/😀",
+                "sha256": "sha256:" + "b" * 64,
+                "size": 2,
+                "media_type": "application/octet-stream",
+                "origin": "generated",
+                "source_root": "/tmp/根",
+            },
+        ]
+        self.assertEqual(
+            output_set_digest(outputs),
+            "sha256:a67a440e2802ca59ec5977ed45820d99c5d69ef303fffc49f4f8378f4551056d",
+        )
+
+    def test_directory_digest_is_deterministic_and_changes_with_contents(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "bundle"
+            root.mkdir()
+            (root / "a.txt").write_text("a", encoding="utf-8")
+            first, first_size = digest_tree(root)
+            (root / "b.txt").write_text("b", encoding="utf-8")
+            second, second_size = digest_tree(root)
+            self.assertNotEqual(first, second)
+            self.assertEqual(first_size, 1)
+            self.assertEqual(second_size, 2)
 
 
 if __name__ == "__main__":

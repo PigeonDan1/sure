@@ -244,6 +244,67 @@ describe("wire schemas", () => {
 		expect(validateJsonSchema(schema, missingSnapshot).ok).toBe(false);
 	});
 
+	it("validates the shared output contract across request and receipt schemas", () => {
+		const outputContract = {
+			schema: "sure.execution_output_contract.v1",
+			mode: "producing",
+			outputs: [
+				{ artifact_id: "manifest", path: "manifest.json", kind: "file", required: true },
+				{ artifact_id: "bundle", path: "bundle", kind: "directory", required: false },
+			],
+			temporary_paths: [".staging"],
+			allow_missing_on_failure: true,
+			retain_failed_outputs: true,
+		};
+		expect(validateJsonSchema(readSchema("execution_output_contract"), outputContract).ok).toBe(true);
+		expect(
+			validateJsonSchema(readSchema("execution_request"), { ...executionRequest(), output_contract: outputContract })
+				.ok,
+		).toBe(true);
+		const receipt = {
+			...executionReceipt(),
+			outputs: [
+				{
+					artifact_id: "bundle",
+					path: "/tmp/sure-dev/runs/run-1/bundle",
+					resolved_path: "/tmp/sure-dev/runs/run-1/bundle",
+					sha256: DIGEST_A,
+					size: 12,
+					media_type: "inode/directory",
+					origin: "generated",
+					source_root: "/tmp/sure-dev/runs/run-1",
+					kind: "directory",
+					digest_kind: "tree_sha256",
+				},
+			],
+			residuals: [
+				{
+					path: "/tmp/sure-dev/runs/run-1/.staging",
+					resolved_path: "/tmp/sure-dev/runs/run-1/.staging",
+					kind: "directory",
+					status: "present",
+					sha256: DIGEST_B,
+					digest_kind: "tree_sha256",
+					size: 2,
+				},
+			],
+			output_contract_digest: DIGEST_C,
+			output_set_digest: DIGEST_A,
+		};
+		expect(validateJsonSchema(readSchema("execution_receipt"), receipt).ok).toBe(true);
+		const noRequiredOutput = {
+			...outputContract,
+			outputs: outputContract.outputs.map((output) => ({ ...output, required: false })),
+		};
+		expect(validateJsonSchema(readSchema("execution_output_contract"), noRequiredOutput).ok).toBe(false);
+		expect(
+			validateJsonSchema(readSchema("execution_output_contract"), {
+				...outputContract,
+				outputs: [{ ...outputContract.outputs[0], path: "manifest/" }],
+			}).ok,
+		).toBe(false);
+	});
+
 	it("rejects fake formal PASS and capability-missing PASS", () => {
 		const schema = readSchema("conformance");
 		const missingFreeze = conformanceRecord();

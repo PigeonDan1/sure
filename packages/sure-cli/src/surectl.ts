@@ -39,6 +39,7 @@ import {
 	type FrozenEvaluationSubject,
 	type FrozenFormalSubject,
 	initialCheckpoint,
+	inspectExecutionArtifact,
 	type JsonValue,
 	type PolicyPathRole,
 	type PolicySnapshot,
@@ -638,11 +639,15 @@ function receiptOutputErrors(
 				continue;
 			}
 			const lexical = admitted.path;
-			assertRegularFile(lexical, `Receipt output ${output.artifact_id}`);
-			const stat = lstatSync(lexical);
-			if (!sameDigest(digestFile(lexical), output.sha256))
+			const inspected = inspectExecutionArtifact(lexical);
+			const expectedKind = output.kind ?? "file";
+			if (inspected.kind !== expectedKind)
+				errors.push(`Receipt output ${output.artifact_id} kind does not match its declared artifact kind.`);
+			if (output.digest_kind !== undefined && inspected.digest_kind !== output.digest_kind)
+				errors.push(`Receipt output ${output.artifact_id} digest kind does not match its declared digest kind.`);
+			if (!sameDigest(inspected.sha256, output.sha256))
 				errors.push(`Receipt output ${output.artifact_id} digest does not match the current file.`);
-			if (stat.size !== output.size)
+			if (inspected.size !== output.size)
 				errors.push(`Receipt output ${output.artifact_id} size does not match the current file.`);
 		} catch (error) {
 			errors.push(error instanceof Error ? error.message : String(error));

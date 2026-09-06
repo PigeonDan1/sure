@@ -55,6 +55,20 @@ function freshRoot(): string {
 	return root;
 }
 
+function outputContract() {
+	return {
+		schema: "sure.execution_output_contract.v1" as const,
+		mode: "producing" as const,
+		outputs: [
+			{ artifact_id: "manifest", path: "manifest.json", kind: "file" as const, required: true },
+			{ artifact_id: "bundle", path: "bundle", kind: "directory" as const, required: false },
+		],
+		temporary_paths: [".staging"],
+		allow_missing_on_failure: true,
+		retain_failed_outputs: true,
+	};
+}
+
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -218,6 +232,117 @@ describe("cooperative executor capability probes", () => {
 		expect(result.receipt?.lifecycle).toBe("PARTIAL");
 		expect(result.receipt?.diagnostics).toEqual(
 			expect.arrayContaining([expect.objectContaining({ code: "OUTPUT_REJECTED" })]),
+		);
+		expect(result.outcome.outcome).not.toBe("PASS");
+	});
+
+	it("collects and validates declared file and directory outputs", () => {
+		const root = freshRoot();
+		const artifacts = join(root, "artifacts");
+		const contract = outputContract();
+		const result = executeRequest(
+			request(
+				root,
+				"sure.execution.local-python",
+				{ python_executable: process.execPath },
+				{
+					output_contract: contract,
+					entrypoint: {
+						executable: process.execPath,
+						argv: [
+							"-e",
+							`const fs=require('node:fs');fs.mkdirSync(${JSON.stringify(join(artifacts, "bundle"))},{recursive:true});fs.writeFileSync(${JSON.stringify(join(artifacts, "manifest.json"))},'ok');fs.writeFileSync(${JSON.stringify(join(artifacts, "bundle", "part.bin"))},'part');`,
+						],
+					},
+				},
+			),
+			{
+				kind: "local",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [root],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+
+		expect(result.receipt?.lifecycle).toBe("SUCCEEDED");
+		expect(result.receipt?.outputs).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ artifact_id: "manifest" }),
+				expect.objectContaining({ artifact_id: "bundle", kind: "directory", digest_kind: "tree_sha256" }),
+			]),
+		);
+		expect(result.receipt?.outputs?.find((output) => output.artifact_id === "manifest")).not.toHaveProperty("kind");
+		expect(result.receipt?.outputs?.find((output) => output.artifact_id === "manifest")).not.toHaveProperty(
+			"digest_kind",
+		);
+		expect(result.receipt_validation?.valid).toBe(true);
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "VALIDATION_PENDING" });
+	});
+
+	it("turns a missing required producer output into a non-pass partial execution", () => {
+		const root = freshRoot();
+		const result = executeRequest(
+			request(
+				root,
+				"sure.execution.local-python",
+				{ python_executable: process.execPath },
+				{
+					output_contract: outputContract(),
+				},
+			),
+			{
+				kind: "local",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [root],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+
+		expect(result.receipt?.lifecycle).toBe("PARTIAL");
+		expect(result.receipt_validation?.valid).toBe(true);
+		expect(result.outcome.outcome).not.toBe("PASS");
+	});
+
+	it("fails closed when a declared temporary path is replaced by a symlink", () => {
+		const root = freshRoot();
+		const artifacts = join(root, "artifacts");
+		const outside = join(root, "outside");
+		const result = executeRequest(
+			request(
+				root,
+				"sure.execution.local-python",
+				{ python_executable: process.execPath },
+				{
+					output_contract: outputContract(),
+					entrypoint: {
+						executable: process.execPath,
+						argv: [
+							"-e",
+							`const fs=require('node:fs');fs.mkdirSync(${JSON.stringify(artifacts)},{recursive:true});fs.writeFileSync(${JSON.stringify(join(artifacts, "manifest.json"))},'ok');fs.mkdirSync(${JSON.stringify(outside)});fs.symlinkSync(${JSON.stringify(outside)},${JSON.stringify(join(artifacts, ".staging"))});`,
+						],
+					},
+				},
+			),
+			{
+				kind: "local",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [root],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+
+		expect(result.receipt?.lifecycle).toBe("PARTIAL");
+		expect(result.receipt?.diagnostics).toEqual(
+			expect.arrayContaining([expect.objectContaining({ code: "OUTPUT_RESIDUAL_REJECTED" })]),
 		);
 		expect(result.outcome.outcome).not.toBe("PASS");
 	});

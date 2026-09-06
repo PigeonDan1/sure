@@ -64,6 +64,11 @@ const PORTABLE_RUNTIME_SUPPORT_FILES = [
 	"sure/site/loader.py",
 	"sure/site/policy.schema.json",
 ] as const;
+const PORTABLE_EXECUTION_CONTRACT_SCHEMAS = [
+	"execution_request.schema.json",
+	"execution_receipt.schema.json",
+	"execution_output_contract.schema.json",
+] as const;
 
 interface GeneratedFile {
 	path: string;
@@ -315,6 +320,12 @@ function portableRuntimeFiles(semanticBackendManifest: MaterializedSemanticBacke
 		files.push({
 			path: join(portableRuntimeRoot, path),
 			content: Buffer.from('"""Generated SURE portable runtime package."""\n', "utf8"),
+		});
+	}
+	for (const schema of PORTABLE_EXECUTION_CONTRACT_SCHEMAS) {
+		files.push({
+			path: join(portableRuntimeRoot, "contracts", schema),
+			content: readFileSync(join(repositoryRoot, "sure", "core", "contracts", schema)),
 		});
 	}
 	for (const sourcePath of PORTABLE_RUNTIME_SUPPORT_FILES) {

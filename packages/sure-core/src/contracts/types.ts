@@ -12,6 +12,15 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 export const ARTIFACT_ORIGINS = ["local_staging", "read_only_reference", "generated", "external"] as const;
 export type ArtifactOrigin = (typeof ARTIFACT_ORIGINS)[number];
 
+export const EXECUTION_ARTIFACT_MODES = ["preexisting", "mutating", "producing"] as const;
+export type ExecutionArtifactMode = (typeof EXECUTION_ARTIFACT_MODES)[number];
+
+export const EXECUTION_OUTPUT_KINDS = ["file", "directory"] as const;
+export type ExecutionOutputKind = (typeof EXECUTION_OUTPUT_KINDS)[number];
+
+export const EXECUTION_DIGEST_KINDS = ["file_sha256", "tree_sha256"] as const;
+export type ExecutionDigestKind = (typeof EXECUTION_DIGEST_KINDS)[number];
+
 export interface ArtifactRef {
 	artifact_id: string;
 	path: string;
@@ -21,7 +30,45 @@ export interface ArtifactRef {
 	media_type: string;
 	origin: ArtifactOrigin;
 	source_root: string;
+	/** Omitted for legacy file artifacts; directory outputs must set this explicitly. */
+	kind?: ExecutionOutputKind;
+	/** Omitted for legacy file artifacts; directory outputs use a deterministic tree digest. */
+	digest_kind?: ExecutionDigestKind;
 	reference_snapshot_digest?: string;
+}
+
+/** A path is relative to ExecutionRequest.output_root.resolved_path. */
+export interface ExecutionOutputSpec {
+	artifact_id: string;
+	path: string;
+	kind: ExecutionOutputKind;
+	required: boolean;
+}
+
+/**
+ * Declares the output boundary for an executor operation. The request binds
+ * this object; the receipt binds its digest and the observed output set.
+ */
+export interface ExecutionOutputContract {
+	schema: "sure.execution_output_contract.v1";
+	mode: ExecutionArtifactMode;
+	outputs: ExecutionOutputSpec[];
+	/** Relative paths (or directory roots) where failed-run residue may remain. */
+	temporary_paths: string[];
+	/** Required outputs may be absent on a non-success lifecycle when true. */
+	allow_missing_on_failure: boolean;
+	/** Whether the receipt may retain and describe temporary residue. */
+	retain_failed_outputs: boolean;
+}
+
+export interface ExecutionOutputResidual {
+	path: string;
+	resolved_path: string;
+	kind: ExecutionOutputKind;
+	status: "present" | "missing";
+	sha256?: string;
+	digest_kind?: ExecutionDigestKind;
+	size?: number;
 }
 
 export interface ReferenceSnapshot {
@@ -115,6 +162,8 @@ export interface ExecutionRequest {
 	output_root: OutputRootBinding;
 	policy_digest: string;
 	created_at: string;
+	/** Optional for backwards compatibility; required for producer operations. */
+	output_contract?: ExecutionOutputContract;
 }
 
 export const EXECUTOR_KINDS = ["local", "python", "docker", "remote", "trusted"] as const;
@@ -151,6 +200,11 @@ export interface ExecutionReceipt {
 	finished_at?: string;
 	exit_code?: number;
 	diagnostics?: Record<string, JsonValue>[];
+	/** Digest of request.output_contract when an output contract is present. */
+	output_contract_digest?: string;
+	/** Digest of the canonical observed outputs and failure residuals. */
+	output_set_digest?: string;
+	residuals?: ExecutionOutputResidual[];
 }
 
 export const ASSURANCE_PROFILES = ["cooperative", "pi_enforced", "trusted"] as const;

@@ -6,6 +6,8 @@ import type {
 	ArtifactRef,
 	CapabilityEvidence,
 	CoreOutcome,
+	ExecutionOutputKind,
+	ExecutionOutputResidual,
 	ExecutionReceipt,
 	ExecutionRequest,
 	ExecutorKind,
@@ -19,7 +21,10 @@ import {
 	type ExecutionRequestValidation,
 	evaluateCapabilityRequirements,
 	evaluatePathBoundary,
+	executionOutputContractDigest,
+	executionOutputSetDigest,
 	executorDescriptor,
+	inspectExecutionArtifact,
 	validateExecutionReceipt,
 	validateExecutionRequest,
 } from "@earendil-works/sure-core";
@@ -195,6 +200,11 @@ interface OutputInspection {
 	reason?: string;
 }
 
+interface ResidualInspection {
+	residual?: ExecutionOutputResidual;
+	reason?: string;
+}
+
 function resolvedRoot(path: string): { path: string; resolved_path: string } {
 	const lexical = resolve(path);
 	let resolvedPath = lexical;
@@ -212,6 +222,8 @@ function outputArtifact(
 	index: number,
 	allowedRoots: readonly string[],
 	forbiddenRoots: readonly string[],
+	artifactId?: string,
+	expectedKind: ExecutionOutputKind = "file",
 ): OutputInspection {
 	const lexical = resolve(path);
 	let stat: ReturnType<typeof lstatSync>;
@@ -221,7 +233,7 @@ function outputArtifact(
 		return {};
 	}
 	if (stat.isSymbolicLink()) return { reason: "OUTPUT_SYMLINK" };
-	if (!stat.isFile()) return { reason: "OUTPUT_NOT_REGULAR" };
+	if (expectedKind === "directory" ? !stat.isDirectory() : !stat.isFile()) return { reason: "OUTPUT_NOT_REGULAR" };
 	let resolvedPath: string;
 	try {
 		resolvedPath = resolve(realpathSync.native(lexical));
@@ -235,6 +247,23 @@ function outputArtifact(
 		forbidden_roots: forbiddenRoots.map(resolvedRoot),
 	});
 	if (!boundary.admitted) return { reason: boundary.reason_code ?? "OUTPUT_OUT_OF_SCOPE" };
+	if (expectedKind === "directory") {
+		try {
+			const inspected = inspectExecutionArtifact(lexical);
+			return {
+				artifact: {
+					artifact_id: artifactId ?? `output-${index + 1}`,
+					path: lexical,
+					resolved_path: resolvedPath,
+					...inspected,
+					origin: "generated",
+					source_root: dirname(lexical),
+				},
+			};
+		} catch (error) {
+			return { reason: error instanceof Error ? "OUTPUT_TREE_INVALID" : "OUTPUT_READ_FAILED" };
+		}
+	}
 	// O_NOFOLLOW prevents a replacement race between lstat and the digest read
 	// from turning a reference path into an apparently generated artifact.
 	let descriptor: number | undefined;
@@ -245,7 +274,7 @@ function outputArtifact(
 		const bytes = readFileSync(descriptor);
 		return {
 			artifact: {
-				artifact_id: `output-${index + 1}`,
+				artifact_id: artifactId ?? `output-${index + 1}`,
 				path: lexical,
 				resolved_path: resolvedPath,
 				sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
@@ -253,6 +282,9 @@ function outputArtifact(
 				media_type: "application/octet-stream",
 				origin: "generated",
 				source_root: dirname(lexical),
+				// Keep the legacy file artifact shape stable. The Core validator
+				// defaults omitted metadata to file/file_sha256; directory outputs
+				// carry explicit kind/digest_kind fields below.
 			},
 		};
 	} catch {
@@ -281,6 +313,7 @@ function baseReceipt(
 	startedAt: string,
 	finishedAt: string,
 ): ExecutionReceipt {
+	const outputContract = request.output_contract;
 	return {
 		schema: "sure.execution_receipt.v1",
 		receipt_id: options.receipt_id ?? `receipt-${randomUUID().slice(0, 12)}`,
@@ -299,7 +332,73 @@ function baseReceipt(
 		policy_digest: request.policy_digest,
 		started_at: startedAt,
 		finished_at: finishedAt,
+		...(outputContract === undefined
+			? {}
+			: {
+					output_contract_digest: executionOutputContractDigest(outputContract),
+					output_set_digest: executionOutputSetDigest([], []),
+					residuals: [],
+				}),
 	};
+}
+
+function contractOutputDefinitions(
+	request: ExecutionRequest,
+): Map<string, { artifactId: string; kind: ExecutionOutputKind }> {
+	const definitions = new Map<string, { artifactId: string; kind: ExecutionOutputKind }>();
+	for (const spec of request.output_contract?.outputs ?? []) {
+		definitions.set(resolve(request.output_root.resolved_path, ...spec.path.split("/")), {
+			artifactId: spec.artifact_id,
+			kind: spec.kind,
+		});
+	}
+	return definitions;
+}
+
+function inspectResidual(
+	path: string,
+	allowedRoots: readonly string[],
+	forbiddenRoots: readonly string[],
+): ResidualInspection {
+	const lexical = resolve(path);
+	let stat: ReturnType<typeof lstatSync>;
+	try {
+		stat = lstatSync(lexical);
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ENOENT") return {};
+		return { reason: "OUTPUT_RESIDUAL_STAT_FAILED" };
+	}
+	if (stat.isSymbolicLink()) return { reason: "OUTPUT_RESIDUAL_SYMLINK" };
+	let resolvedPath: string;
+	try {
+		resolvedPath = resolve(realpathSync.native(lexical));
+	} catch {
+		return { reason: "OUTPUT_RESIDUAL_UNRESOLVED" };
+	}
+	const boundary = evaluatePathBoundary({
+		candidate_path: lexical,
+		candidate_resolved_path: resolvedPath,
+		allowed_roots: allowedRoots.map(resolvedRoot),
+		forbidden_roots: forbiddenRoots.map(resolvedRoot),
+	});
+	if (!boundary.admitted) return { reason: boundary.reason_code ?? "OUTPUT_RESIDUAL_OUT_OF_SCOPE" };
+	try {
+		const kind: ExecutionOutputKind = stat.isDirectory() ? "directory" : "file";
+		const inspected = inspectExecutionArtifact(lexical);
+		return {
+			residual: {
+				path: lexical,
+				resolved_path: resolvedPath,
+				kind,
+				status: "present",
+				sha256: inspected.sha256,
+				digest_kind: inspected.digest_kind,
+				size: inspected.size,
+			},
+		};
+	} catch (error) {
+		return { reason: error instanceof Error ? "OUTPUT_RESIDUAL_INVALID" : "OUTPUT_RESIDUAL_READ_FAILED" };
+	}
 }
 
 /**
@@ -426,17 +525,48 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 			: "FAILED";
 	const receipt = baseReceipt(request, options, capabilities.evidence, lifecycle, startedAt, now(options));
 	if (processResult.status !== null) receipt.exit_code = processResult.status;
-	const outputPaths = options.output_paths ?? [];
+	const definitions = contractOutputDefinitions(request);
+	const outputPaths = [...definitions.keys(), ...(options.output_paths ?? [])].filter(
+		(path, index, paths) => paths.indexOf(path) === index,
+	);
 	const outputs: ArtifactRef[] = [];
 	const missingOutputs: string[] = [];
 	const rejectedOutputs: Array<{ path: string; reason: string }> = [];
 	for (const [index, path] of outputPaths.entries()) {
-		const inspection = outputArtifact(path, index, options.allowed_output_roots, options.forbidden_output_roots);
+		const definition = definitions.get(resolve(path));
+		const inspection = outputArtifact(
+			path,
+			index,
+			options.allowed_output_roots,
+			options.forbidden_output_roots,
+			definition?.artifactId,
+			definition?.kind ?? "file",
+		);
 		if (inspection.artifact) outputs.push(inspection.artifact);
 		else if (inspection.reason) rejectedOutputs.push({ path, reason: inspection.reason });
 		else missingOutputs.push(path);
 	}
 	receipt.outputs = outputs;
+	const residualRejections: Array<{ path: string; reason: string }> = [];
+	if (request.output_contract !== undefined) {
+		const residualInspections = request.output_contract.temporary_paths.map((path) => ({
+			path,
+			inspection: inspectResidual(
+				resolve(request.output_root.resolved_path, ...path.split("/")),
+				options.allowed_output_roots,
+				options.forbidden_output_roots,
+			),
+		}));
+		const residuals = residualInspections.flatMap(({ path, inspection }) => {
+			if (inspection.reason !== undefined) {
+				residualRejections.push({ path, reason: inspection.reason });
+				return [];
+			}
+			return inspection.residual === undefined ? [] : [inspection.residual];
+		});
+		receipt.residuals = residuals;
+		receipt.output_set_digest = executionOutputSetDigest(outputs, residuals);
+	}
 	const diagnostics: Record<string, JsonValue>[] = [];
 	if (processResult.error) {
 		diagnostics.push({
@@ -458,6 +588,13 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 	}
 	if (rejectedOutputs.length > 0) {
 		diagnostics.push({ code: "OUTPUT_REJECTED", outputs: rejectedOutputs });
+		if (receipt.lifecycle === "SUCCEEDED") {
+			receipt.lifecycle = "PARTIAL";
+			receipt.exit_code = 1;
+		}
+	}
+	if (residualRejections.length > 0) {
+		diagnostics.push({ code: "OUTPUT_RESIDUAL_REJECTED", outputs: residualRejections });
 		if (receipt.lifecycle === "SUCCEEDED") {
 			receipt.lifecycle = "PARTIAL";
 			receipt.exit_code = 1;

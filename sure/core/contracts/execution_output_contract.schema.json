@@ -1,0 +1,45 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/contracts/execution-output-contract.v1.schema.json",
+	"title": "SURE execution output contract",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schema", "mode", "outputs", "temporary_paths", "allow_missing_on_failure", "retain_failed_outputs"],
+	"properties": {
+		"schema": { "const": "sure.execution_output_contract.v1" },
+		"mode": { "enum": ["preexisting", "mutating", "producing"] },
+		"outputs": {
+			"type": "array",
+			"minItems": 1,
+			"items": { "$ref": "#/$defs/outputSpec" }
+		},
+		"temporary_paths": { "type": "array", "items": { "$ref": "#/$defs/relativePath" } },
+		"allow_missing_on_failure": { "type": "boolean" },
+		"retain_failed_outputs": { "type": "boolean" }
+	},
+	"allOf": [
+		{
+			"if": { "properties": { "mode": { "const": "producing" } }, "required": ["mode"] },
+			"then": { "properties": { "outputs": { "contains": { "properties": { "required": { "const": true } }, "required": ["required"] } } } }
+		}
+	],
+	"$defs": {
+		"id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+		"relativePath": {
+			"type": "string",
+			"minLength": 1,
+			"pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*//)(?!.*\\/$)(?!.*\\\\).+"
+		},
+		"outputSpec": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["artifact_id", "path", "kind", "required"],
+			"properties": {
+				"artifact_id": { "$ref": "#/$defs/id" },
+				"path": { "$ref": "#/$defs/relativePath" },
+				"kind": { "enum": ["file", "directory"] },
+				"required": { "type": "boolean" }
+			}
+		}
+	}
+}
