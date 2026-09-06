@@ -112,11 +112,16 @@ class PreflightCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 3)
         self.assertEqual(written["reason_code"], "EVALUATION_PACKAGE_UNSUPPORTED")
 
-    def test_missing_engine_skips_preflight(self):
+    def test_missing_engine_is_never_a_successful_advisory_pass(self):
         result, written = _run_preflight(_payload([_dataset("ASR", "zh", ["cer"])], engine_root=None))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(written["supported"])
-        self.assertEqual(written["reason_code"], "PREFLIGHT_SKIPPED_ENGINE_UNAVAILABLE")
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertFalse(written["supported"])
+        self.assertEqual(written["reason_code"], "CAPABILITY_MISSING")
+        self.assertEqual(written["legacy_reason_code"], "PREFLIGHT_SKIPPED_ENGINE_UNAVAILABLE")
+        self.assertEqual(written["validator_verdict"], "NOT_EXECUTED")
+        self.assertEqual(written["workflow_disposition"], "BLOCK")
+        self.assertEqual(written["outcome"], "NOT_EXECUTED")
+        self.assertTrue(written["advisory_skip"])
 
     def test_missing_engine_is_not_supported_in_formal_mode(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -143,6 +148,19 @@ class PreflightCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 4)
         self.assertFalse(written["supported"])
         self.assertEqual(written["reason_code"], "CAPABILITY_MISSING")
+        self.assertFalse(written["advisory_skip"])
+
+    def test_empty_datasets_are_input_error_instead_of_vacuous_pass(self):
+        result, written = _run_preflight(_payload([]))
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(written)
+        self.assertIn("at least one dataset", result.stderr)
+
+    def test_non_object_dataset_is_input_error(self):
+        result, written = _run_preflight(_payload(["not-a-dataset"]))
+        self.assertEqual(result.returncode, 2)
+        self.assertIsNone(written)
+        self.assertIn("datasets[0] must be an object", result.stderr)
 
     def test_missing_input_exits_two(self):
         result = subprocess.run(

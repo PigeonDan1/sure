@@ -4,11 +4,12 @@
 Reads eval_input_resolved.json and writes evaluation_preflight.json with the
 verdict. Exit codes:
 
-    - 0: every requested (task, language, metric) is supported, or the legacy
-      non-formal check records an advisory skip when the engine is unavailable.
+    - 0: every requested (task, language, metric) is supported.
 - 2: usage or input errors.
 - 3: the evaluation package does not support a requested route. This is a
   terminal verdict — no retry can make an unsupported route runnable.
+- 4: the evaluation capability was not executed (for example, the pinned
+  engine is unavailable). This is never a successful/advisory PASS.
 """
 
 from __future__ import annotations
@@ -122,11 +123,17 @@ def build_preflight(payload: dict, engine_override: str = "", *, formal: bool = 
         return {
             "schema": PREFLIGHT_SCHEMA,
             "generated_at": _utc_now(),
-            "supported": not formal,
-            "reason_code": REASON_CODE_CAPABILITY_MISSING if formal else REASON_CODE_SKIPPED,
-            "reason": "evaluation engine unavailable; formal evaluation cannot execute" if formal else "evaluation engine unavailable; route support preflight skipped",
+            "supported": False,
+            "reason_code": REASON_CODE_CAPABILITY_MISSING,
+            "legacy_reason_code": REASON_CODE_SKIPPED,
+            "reason": "evaluation engine unavailable; evaluation route support was not executed",
             "formal": formal,
             "capability_status": "missing",
+            "validator_verdict": "NOT_EXECUTED",
+            "workflow_disposition": "BLOCK",
+            "outcome": "NOT_EXECUTED",
+            "retryable": False,
+            "advisory_skip": not formal,
             "engine": None,
             "checks": [],
         }
@@ -134,10 +141,13 @@ def build_preflight(payload: dict, engine_override: str = "", *, formal: bool = 
     datasets = payload.get("datasets")
     if not isinstance(datasets, list):
         raise PreflightInputError("resolved input datasets must be a list")
+    if not datasets:
+        raise PreflightInputError("resolved input datasets must contain at least one dataset")
     checks = []
-    for item in datasets:
-        if isinstance(item, dict):
-            checks.extend(_check_dataset(engine_root, item))
+    for index, item in enumerate(datasets):
+        if not isinstance(item, dict):
+            raise PreflightInputError(f"resolved input datasets[{index}] must be an object")
+        checks.extend(_check_dataset(engine_root, item))
     supported = all(check["supported"] for check in checks)
     return {
         "schema": PREFLIGHT_SCHEMA,
@@ -145,6 +155,12 @@ def build_preflight(payload: dict, engine_override: str = "", *, formal: bool = 
         "supported": supported,
         "reason_code": REASON_CODE_SUPPORTED if supported else REASON_CODE_UNSUPPORTED,
         "reason": "all requested evaluation routes are supported" if supported else REASON_UNSUPPORTED,
+        "formal": formal,
+        "capability_status": "available",
+        "validator_verdict": "PASS" if supported else "FAIL",
+        "workflow_disposition": "ADVANCE" if supported else "BLOCK",
+        "outcome": "PASS" if supported else "BLOCKED",
+        "retryable": False,
         "engine": engine,
         "checks": checks,
     }
