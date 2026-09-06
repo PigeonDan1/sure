@@ -47,6 +47,7 @@ export const SURE_EVAL_CANONICAL: CanonicalSkillDefinition = defineCanonicalSkil
 						},
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.eval.validate_eval_report",
 							script_id: "check_eval_run_report.py",
 						},
 					},
@@ -60,6 +61,7 @@ export const SURE_EVAL_CANONICAL: CanonicalSkillDefinition = defineCanonicalSkil
 						forbidden_fields: ["report_persisted"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.eval.validate_assessment",
 							script_id: "check_assessment.py",
 						},
 					},
@@ -97,6 +99,7 @@ export const SURE_EVAL_CANONICAL: CanonicalSkillDefinition = defineCanonicalSkil
 						required_fields: ["report_persisted", "execution_path_actual"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.eval.validate_run_report",
 							script_id: "check_run_report.py",
 							script_args: ["--profile", "eval"],
 						},

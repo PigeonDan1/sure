@@ -14,6 +14,8 @@ export interface ValidatorDescriptor {
 	unit_id?: string;
 	/** Name used by the legacy hook/state-machine implementation. */
 	legacy_id?: string;
+	/** Registered semantic-backend operation; hosts must not infer this from a path. */
+	backend_operation_id?: string;
 	script_args?: readonly string[];
 	resource_path?: string;
 	resource_digest?: string;

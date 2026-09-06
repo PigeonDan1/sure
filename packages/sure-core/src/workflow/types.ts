@@ -4,6 +4,8 @@ export type UnitKind = "linear" | "gate";
 
 export interface GateDefinition {
 	validator_id: string;
+	/** Stable semantic-backend operation used by host-neutral validator execution. */
+	backend_operation_id?: string;
 	/** Additional in-process or cross-artifact validators that must also pass. */
 	auxiliary_validator_ids?: readonly string[];
 	script_id?: string;

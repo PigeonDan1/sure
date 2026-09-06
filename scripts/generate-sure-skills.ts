@@ -27,6 +27,7 @@ const codingAgentWorkflowRegistry = join(
 	"generated-workflows.ts",
 );
 const GENERATED_MARKER = ".sure-generated";
+const GENERATED_MARKER_CONTENT = Buffer.from("sure generated; do not edit\n", "utf8");
 const UNSAFE_PORTABLE_TEXT =
 	/@earendil-works\/pi-coding-agent|HARNESS_PYTHON_BIN|sure_finish|sure_update_state|pre_start|pre_tool_call|post_tool_result|\.\.\/sure_[a-z_]+|sure\/skills\/sure_/;
 const PORTABLE_RUNTIME_SUPPORT_FILES = [
@@ -113,9 +114,32 @@ function sha256(value: Uint8Array): string {
 }
 
 function materializedValidatorRegistry(): ValidatorRegistrySnapshot {
+	const backendOperations = new Map(
+		CANONICAL_SEMANTIC_BACKENDS.flatMap((bundle) =>
+			bundle.operations.map((operation) => [operation.operation_id, operation] as const),
+		),
+	);
 	const descriptors = canonicalValidatorRegistry()
 		.list()
 		.map((descriptor) => {
+			if (descriptor.backend_operation_id !== undefined) {
+				const operation = backendOperations.get(descriptor.backend_operation_id);
+				if (operation === undefined) {
+					throw new Error(
+						`Validator ${descriptor.id} references an unknown backend operation: ${descriptor.backend_operation_id}`,
+					);
+				}
+				if (operation.kind !== "validate") {
+					throw new Error(
+						`Validator ${descriptor.id} backend operation is not a validator: ${descriptor.backend_operation_id}`,
+					);
+				}
+				if (descriptor.skill_id === undefined || !operation.consumer_skill_ids.includes(descriptor.skill_id)) {
+					throw new Error(
+						`Validator ${descriptor.id} is not an admitted consumer of ${descriptor.backend_operation_id}`,
+					);
+				}
+			}
 			if (descriptor.resource_path === undefined) return descriptor;
 			const path = join(canonicalSkillsRoot, descriptor.resource_path);
 			if (!existsSync(path) || !lstatSync(path).isFile()) {
@@ -229,6 +253,7 @@ function portableRuntimeFiles(semanticBackendManifest: MaterializedSemanticBacke
 	lock: PortableRuntimeLock;
 } {
 	const files: GeneratedFile[] = [
+		{ path: join(portableRuntimeRoot, GENERATED_MARKER), content: GENERATED_MARKER_CONTENT },
 		{ path: join(portableRuntimeRoot, "semantic-backends.json"), content: jsonFile(semanticBackendManifest) },
 		{ path: join(portableRuntimeRoot, "executor-registry.json"), content: jsonFile(executorRegistrySnapshot()) },
 		{
@@ -275,7 +300,7 @@ function portableRuntimeFiles(semanticBackendManifest: MaterializedSemanticBacke
 			size_bytes: file.content.byteLength,
 			sha256: `sha256:${sha256(file.content)}`,
 		}))
-		.sort((left, right) => left.path.localeCompare(right.path));
+		.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
 	const unsigned = {
 		schema: "sure.portable.runtime.lock.v1" as const,
 		runtime_version: "portable-v1" as const,
@@ -702,7 +727,7 @@ function writeGenerated(files: readonly GeneratedFile[]): void {
 			rmSync(root, { recursive: true, force: true });
 		}
 		mkdirSync(root, { recursive: true });
-		writeFileSync(markerPath(root), "sure generated; do not edit\n", "utf8");
+		writeFileSync(markerPath(root), GENERATED_MARKER_CONTENT);
 	}
 	for (const file of files) {
 		mkdirSync(dirname(file.path), { recursive: true });

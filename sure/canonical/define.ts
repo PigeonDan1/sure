@@ -2,6 +2,7 @@ import type { CanonicalSkillDefinition } from "./types.ts";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const COMMAND_PATTERN = /^[a-z0-9_][a-z0-9_-]*$/;
+const OPERATION_PATTERN = /^sure\.[a-z0-9][a-z0-9._:-]*$/;
 
 function assertRelativeResource(value: string, label: string): void {
 	if (value.startsWith("/") || value.includes("\\") || value.split("/").includes("..")) {
@@ -21,6 +22,11 @@ function assertWorkflow(definition: CanonicalSkillDefinition): void {
 			unitIds.add(unit.id);
 			if (unit.kind === "gate" && unit.gate === undefined) {
 				throw new Error(`Gate unit ${workflow.workflow_id}/${unit.id} has no validator definition.`);
+			}
+			if (unit.gate?.backend_operation_id !== undefined && !OPERATION_PATTERN.test(unit.gate.backend_operation_id)) {
+				throw new Error(
+					`Invalid backend operation id for ${workflow.workflow_id}/${unit.id}: ${unit.gate.backend_operation_id}`,
+				);
 			}
 			for (const script of [
 				...(unit.helper_scripts ?? []),

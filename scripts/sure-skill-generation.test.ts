@@ -9,6 +9,7 @@ import { SURE_WORKFLOWS } from "../packages/coding-agent/src/core/sure/generated
 import { canonicalJson, canonicalJsonDigest } from "../packages/sure-core/src/contracts/canonical-json.ts";
 import { validateJsonSchema } from "../packages/sure-core/src/contracts/schema.ts";
 import type { JsonValue } from "../packages/sure-core/src/contracts/types.ts";
+import { verifyPortableRuntime } from "../packages/sure-core/src/evaluation/portable-runtime.ts";
 import { resolveSemanticBackendOperation } from "../packages/sure-core/src/evaluation/semantic-backend.ts";
 import { executorRegistrySnapshot } from "../packages/sure-core/src/execution/registry.ts";
 import { CANONICAL_MEMORY_CONTRACT } from "../sure/canonical/shared/memory-contract.ts";
@@ -110,6 +111,21 @@ describe("canonical SURE skill generation", () => {
 		).toBe(true);
 	});
 
+	it("binds registered gate validators to semantic operations without filename inference", () => {
+		const descriptors = canonicalValidatorRegistry()
+			.snapshot()
+			.validators.filter((descriptor) => descriptor.skill_id === "sure_eval" && descriptor.branch_id === "main");
+		const operations = Object.fromEntries(
+			descriptors.map((descriptor) => [descriptor.unit_id, descriptor.backend_operation_id]),
+		);
+		expect(operations).toMatchObject({
+			execute_evaluation: "sure.eval.validate_eval_report",
+			assessment: "sure.eval.validate_assessment",
+			run_report: "sure.eval.validate_run_report",
+		});
+		expect(operations.extract_lessons).toBeUndefined();
+	});
+
 	it("projects the legacy Pi manifest without changing its public fields", () => {
 		for (const skill of CANONICAL_SKILLS) {
 			const generated = readJson(
@@ -205,7 +221,15 @@ describe("canonical SURE skill generation", () => {
 			true,
 		);
 		expect(runtimeDigest).toBe(canonicalJsonDigest(asJson(unsigned)));
+		const verified = verifyPortableRuntime(root, {
+			expected_runtime_digest: String(runtimeDigest),
+			expected_core_package_version: "0.80.3",
+			expected_semantic_backend_registry_digest: String(lock.semantic_backend_registry_digest),
+			expected_executor_registry_digest: String(lock.executor_registry_digest),
+		});
+		expect(verified.lock.runtime_digest).toBe(runtimeDigest);
 		const files = lock.files as Array<{ path: string; size_bytes: number; sha256: string }>;
+		expect(files.some((file) => file.path === ".sure-generated")).toBe(true);
 		for (const file of files) {
 			expect(file.path.startsWith("/")).toBe(false);
 			expect(file.path.split("/")).not.toContain("..");

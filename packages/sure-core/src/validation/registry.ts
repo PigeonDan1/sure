@@ -6,6 +6,9 @@ const ID_PATTERN = /^[a-z0-9][a-z0-9._:-]*$/;
 
 function assertDescriptor(descriptor: ValidatorDescriptor): ValidatorDescriptor {
 	if (!ID_PATTERN.test(descriptor.id)) throw new Error(`Invalid validator id: ${descriptor.id}`);
+	if (descriptor.backend_operation_id !== undefined && !ID_PATTERN.test(descriptor.backend_operation_id)) {
+		throw new Error(`Invalid backend operation id: ${descriptor.backend_operation_id}`);
+	}
 	if (!descriptor.version.trim()) throw new Error(`Validator ${descriptor.id} needs a version.`);
 	if (descriptor.resource_path !== undefined) {
 		if (descriptor.resource_path.startsWith("/") || descriptor.resource_path.split("/").includes("..")) {

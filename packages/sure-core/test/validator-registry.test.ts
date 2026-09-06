@@ -21,6 +21,7 @@ describe("host-neutral validator registry", () => {
 				authority: "semantic",
 				operation: "validate",
 				deterministic: true,
+				backend_operation_id: "sure.eval.validate_report",
 				resource_path: "backends/eval/check.py",
 			},
 		]);
@@ -31,6 +32,7 @@ describe("host-neutral validator registry", () => {
 				authority: "semantic",
 				operation: "validate",
 				deterministic: true,
+				backend_operation_id: "sure.eval.validate_report",
 				resource_path: "backends/eval/check.py",
 			},
 			structural,
@@ -57,6 +59,9 @@ describe("host-neutral validator registry", () => {
 		expect(
 			() => new ValidatorRegistry([{ ...structural, id: "sure.absolute", resource_path: "/tmp/check.py" }]),
 		).toThrow(/resource path/);
+		expect(
+			() => new ValidatorRegistry([{ ...structural, id: "sure.operation", backend_operation_id: "unsafe/op" }]),
+		).toThrow(/backend operation id/);
 	});
 
 	it("distinguishes an unregistered validator from a registered one", () => {
