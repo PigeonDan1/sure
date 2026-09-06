@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -89,6 +91,141 @@ class EvaluationCommitTests(unittest.TestCase):
         recovered = recover_pending(self.destination)
         self.assertEqual(recovered, [str(prepared.transaction_root)])
         self.assertEqual(self.destination.joinpath("report.jsonl").read_text(encoding="utf-8"), "before\n")
+
+    def test_subprocess_crash_matrix_recovers_from_durable_journal(self) -> None:
+        child_program = r"""
+import os
+import sys
+from pathlib import Path
+
+from evaluation_commit import prepare_evaluation_commit, publish_evaluation_commit
+
+source = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+fault_point = sys.argv[3]
+
+def crash(point: str) -> None:
+    if point == fault_point:
+        os._exit(73)
+
+prepared = prepare_evaluation_commit(destination, source=source, fault=crash)
+(prepared.candidate_root / "report.jsonl").write_text("candidate\n", encoding="utf-8")
+publish_evaluation_commit(prepared, fault=crash)
+raise SystemExit(0)
+"""
+        fault_points = (
+            "initializing_journal",
+            "candidate_materialized",
+            "prepared_journal",
+            "publish_intent",
+            "backup_renamed",
+            "backup_journal",
+            "candidate_renamed",
+            "published_journal",
+        )
+        runtime_dir = Path(evaluation_commit.__file__).resolve().parent
+        child_environment = dict(os.environ)
+        existing_python_path = child_environment.get("PYTHONPATH")
+        child_environment["PYTHONPATH"] = (
+            str(runtime_dir)
+            if not existing_python_path
+            else str(runtime_dir) + os.pathsep + existing_python_path
+        )
+
+        for destination_existed in (True, False):
+            for fault_point in fault_points:
+                with self.subTest(destination_existed=destination_existed, fault_point=fault_point):
+                    case_root = self.root / ("existing" if destination_existed else "new") / fault_point
+                    source = case_root / "source"
+                    destination = case_root / "destination"
+                    source.mkdir(parents=True)
+                    if destination_existed:
+                        destination.mkdir()
+                    (source / "report.jsonl").write_text("source\n", encoding="utf-8")
+                    if destination_existed:
+                        (destination / "report.jsonl").write_text("before\n", encoding="utf-8")
+
+                    completed = subprocess.run(
+                        [sys.executable, "-c", child_program, str(source), str(destination), fault_point],
+                        cwd=runtime_dir,
+                        env=child_environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                        check=False,
+                    )
+
+                    self.assertEqual(
+                        completed.returncode,
+                        73,
+                        msg=f"stdout={completed.stdout!r}\nstderr={completed.stderr!r}",
+                    )
+                    recovered = recover_pending(destination)
+                    self.assertEqual(len(recovered), 1)
+                    if destination_existed:
+                        self.assertEqual(
+                            destination.joinpath("report.jsonl").read_text(encoding="utf-8"),
+                            "before\n",
+                        )
+                    else:
+                        self.assertFalse(destination.exists())
+                    self.assertEqual(source.joinpath("report.jsonl").read_text(encoding="utf-8"), "source\n")
+                    self.assertEqual(list(case_root.glob(".sure-eval-txn-*")), [])
+
+    def test_subprocess_crash_before_finalize_rolls_back_published_tree(self) -> None:
+        child_program = r"""
+import os
+import sys
+from pathlib import Path
+
+from evaluation_commit import finalize_evaluation_commit, prepare_evaluation_commit, publish_evaluation_commit
+
+source = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+
+def crash(point: str) -> None:
+    if point == "before_finalize_cleanup":
+        os._exit(73)
+
+prepared = prepare_evaluation_commit(destination, source=source)
+(prepared.candidate_root / "report.jsonl").write_text("candidate\n", encoding="utf-8")
+publish_evaluation_commit(prepared)
+finalize_evaluation_commit(prepared, fault=crash)
+raise SystemExit(0)
+"""
+        runtime_dir = Path(evaluation_commit.__file__).resolve().parent
+        child_environment = dict(os.environ)
+        existing_python_path = child_environment.get("PYTHONPATH")
+        child_environment["PYTHONPATH"] = (
+            str(runtime_dir)
+            if not existing_python_path
+            else str(runtime_dir) + os.pathsep + existing_python_path
+        )
+        case_root = self.root / "finalize-crash"
+        source = case_root / "source"
+        destination = case_root / "destination"
+        source.mkdir(parents=True)
+        destination.mkdir()
+        (source / "report.jsonl").write_text("source\n", encoding="utf-8")
+        (destination / "report.jsonl").write_text("before\n", encoding="utf-8")
+
+        completed = subprocess.run(
+            [sys.executable, "-c", child_program, str(source), str(destination)],
+            cwd=runtime_dir,
+            env=child_environment,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        self.assertEqual(
+            completed.returncode,
+            73,
+            msg=f"stdout={completed.stdout!r}\nstderr={completed.stderr!r}",
+        )
+        self.assertEqual(len(recover_pending(destination)), 1)
+        self.assertEqual(destination.joinpath("report.jsonl").read_text(encoding="utf-8"), "before\n")
+        self.assertEqual(list(case_root.glob(".sure-eval-txn-*")), [])
 
     def test_second_rename_failure_can_be_rolled_back_without_losing_original(self) -> None:
         self.destination.mkdir()

@@ -16,7 +16,7 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 try:  # pragma: no cover - the supported deployment is POSIX, but imports stay portable.
     import fcntl
@@ -26,6 +26,21 @@ except ImportError:  # pragma: no cover
 
 class EvaluationCommitError(RuntimeError):
     """Raised when a prepared publication no longer matches its inputs."""
+
+
+CommitFaultPoint = str
+CommitFaultInjector = Callable[[CommitFaultPoint], None]
+
+
+def _fault(injector: CommitFaultInjector | None, point: CommitFaultPoint) -> None:
+    """Invoke an opt-in crash injector used by the recovery test matrix.
+
+    The normal evaluator never supplies this callback. Keeping it as an explicit
+    argument makes fault injection deterministic without making an environment
+    variable or a signal part of the publication protocol.
+    """
+    if injector is not None:
+        injector(point)
 
 
 def _sha256(path: Path) -> str:
@@ -118,7 +133,10 @@ def _publication_lock(path: Path) -> Iterator[None]:
 
 def _write_journal(path: Path, payload: dict[str, object]) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    with temporary.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True, indent=2) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temporary, path)
     _fsync_directory(path.parent)
 
@@ -191,7 +209,7 @@ def recover_pending(destination: Path, *, rollback_published: bool = True) -> li
             backup = expected_backup if backup_value else None
             if backup is not None and Path(str(backup_value)).resolve() != expected_backup:
                 continue
-            if phase not in {"prepared", "publishing", "backup_moved", "published"}:
+            if phase not in {"initializing", "prepared", "publishing", "backup_moved", "published"}:
                 continue
             with _publication_lock(destination):
                 # Any phase after the journal was made visible is rolled back by
@@ -224,6 +242,7 @@ def prepare_evaluation_commit(
     *,
     source: Path | None = None,
     metadata: dict[str, object] | None = None,
+    fault: CommitFaultInjector | None = None,
 ) -> PreparedEvaluationCommit:
     """Materialize an isolated candidate without touching the destination."""
 
@@ -239,31 +258,44 @@ def prepare_evaluation_commit(
     source_fingerprint = tree_fingerprint(source) if source is not None else None
     transaction_root = Path(tempfile.mkdtemp(prefix=".sure-eval-txn-", dir=destination.parent))
     candidate = transaction_root / "candidate"
+    prepared = PreparedEvaluationCommit(
+        transaction_root=transaction_root,
+        candidate_root=candidate,
+        destination_root=destination,
+        source_root=source,
+        source_fingerprint=source_fingerprint,
+        destination_fingerprint=destination_fingerprint,
+        destination_existed=destination_existed,
+        phase="initializing",
+        metadata=dict(metadata or {}),
+    )
     try:
+        # Make the transaction discoverable before candidate materialization.
+        # A process exit during a large copy can then be cleaned by the next
+        # invocation without guessing whether a journal-less directory is live.
+        _write_journal(prepared.journal_path, prepared.journal())
+        _fault(fault, "initializing_journal")
         if destination_existed:
             _copy_tree(destination, candidate)
         elif source is not None:
             _copy_tree(source, candidate)
         else:
             candidate.mkdir()
-        prepared = PreparedEvaluationCommit(
-            transaction_root=transaction_root,
-            candidate_root=candidate,
-            destination_root=destination,
-            source_root=source,
-            source_fingerprint=source_fingerprint,
-            destination_fingerprint=destination_fingerprint,
-            destination_existed=destination_existed,
-            metadata=dict(metadata or {}),
-        )
+        _fault(fault, "candidate_materialized")
+        prepared.phase = "prepared"
         _write_journal(prepared.journal_path, prepared.journal())
+        _fault(fault, "prepared_journal")
         return prepared
     except Exception:
         shutil.rmtree(transaction_root, ignore_errors=True)
         raise
 
 
-def publish_evaluation_commit(prepared: PreparedEvaluationCommit) -> PreparedEvaluationCommit:
+def publish_evaluation_commit(
+    prepared: PreparedEvaluationCommit,
+    *,
+    fault: CommitFaultInjector | None = None,
+) -> PreparedEvaluationCommit:
     """Publish a prepared candidate with source/destination compare-and-swap."""
 
     if prepared.phase != "prepared":
@@ -291,12 +323,23 @@ def publish_evaluation_commit(prepared: PreparedEvaluationCommit) -> PreparedEva
         prepared.backup_root = backup
         prepared.phase = "publishing"
         _write_journal(prepared.journal_path, prepared.journal())
+        _fault(fault, "publish_intent")
         try:
             if destination.exists():
                 os.replace(destination, backup)
+                _fsync_directory(destination.parent)
+                _fsync_directory(prepared.transaction_root)
+            # The point denotes completion of the optional backup step.  It is
+            # still reached for a new destination so crash tests exercise the
+            # same journal state on both publication paths.
+            _fault(fault, "backup_renamed")
             prepared.phase = "backup_moved"
             _write_journal(prepared.journal_path, prepared.journal())
+            _fault(fault, "backup_journal")
             os.replace(prepared.candidate_root, destination)
+            _fsync_directory(destination.parent)
+            _fsync_directory(prepared.transaction_root)
+            _fault(fault, "candidate_renamed")
         except Exception:
             # Leave the journal and backup in place.  The caller can perform a
             # single rollback, and a process restart can recover the same state;
@@ -305,11 +348,16 @@ def publish_evaluation_commit(prepared: PreparedEvaluationCommit) -> PreparedEva
             raise
         prepared.phase = "published"
         _write_journal(prepared.journal_path, prepared.journal())
+        _fault(fault, "published_journal")
         _fsync_directory(destination.parent)
     return prepared
 
 
-def finalize_evaluation_commit(prepared: PreparedEvaluationCommit) -> None:
+def finalize_evaluation_commit(
+    prepared: PreparedEvaluationCommit,
+    *,
+    fault: CommitFaultInjector | None = None,
+) -> None:
     """Delete the retained rollback copy after final validation succeeds."""
 
     if prepared.phase != "published":
@@ -319,11 +367,16 @@ def finalize_evaluation_commit(prepared: PreparedEvaluationCommit) -> None:
             current = tree_fingerprint(prepared.destination_root)
             if current != prepared.candidate_fingerprint:
                 raise EvaluationCommitError("published destination changed before finalize")
+        _fault(fault, "before_finalize_cleanup")
         shutil.rmtree(prepared.transaction_root)
         prepared.phase = "finalized"
 
 
-def rollback_evaluation_commit(prepared: PreparedEvaluationCommit) -> None:
+def rollback_evaluation_commit(
+    prepared: PreparedEvaluationCommit,
+    *,
+    fault: CommitFaultInjector | None = None,
+) -> None:
     """Restore the pre-commit destination, including after a process restart."""
 
     if prepared.phase == "finalized":
@@ -347,4 +400,5 @@ def rollback_evaluation_commit(prepared: PreparedEvaluationCommit) -> None:
             elif prepared.destination_existed:
                 raise EvaluationCommitError("cannot prove the pre-commit destination is recoverable")
         shutil.rmtree(prepared.transaction_root, ignore_errors=True)
+        _fault(fault, "rollback_cleanup")
         prepared.phase = "rolled_back"
