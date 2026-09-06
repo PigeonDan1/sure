@@ -6651,8 +6651,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
-      "size_bytes": 32826,
-      "sha256": "42054f4776c4714193cd6192bd5d2f94ddb59321ad1cdc29c885eeaea936afbc"
+      "size_bytes": 33490,
+      "sha256": "7c3f14b7e0bd1ade9707e70f3f62fbdc636bf6245deba994aed49fdaf3b0c78c"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
@@ -7182,7 +7182,7 @@
     {
       "path": "sure/runtime/memory/units.generation.lock.json",
       "size_bytes": 506,
-      "sha256": "7c38e29ded4dda3237e1117be2ca0c4be7c277bc2a56c0f982406cdad66e21b5"
+      "sha256": "7384f1c801054c280b0ae05f60e79ee53177124d57ddbf6eb6b857839294d0c2"
     },
     {
       "path": "sure/runtime/memory/units.json",
@@ -9456,8 +9456,8 @@
     },
     {
       "path": "sure/skills/sure_trans/scripts/check_artifact.py",
-      "size_bytes": 42559,
-      "sha256": "548480fbceaaa692888307585ca141b8e564fccc08583554be8f6a53c306c7fb"
+      "size_bytes": 1059,
+      "sha256": "2367b354a75528e74788c8d6ad5161a7a739237692c04f3fadf8183513b5d7f2"
     },
     {
       "path": "sure/skills/sure_trans/scripts/check_memory_extraction.py",
@@ -9701,5 +9701,5 @@
       ]
     }
   ],
-  "semantic_digest": "0baa21265a906d09dd5196c46620c5ca66cd971324d9087291a04ab0833842b8"
+  "semantic_digest": "0bf43f51222bff9f4fd1d9c1e071f5ab162c7e92cd9b1138f025db87cc52683b"
 }

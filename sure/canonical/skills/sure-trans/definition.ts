@@ -46,6 +46,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						},
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_input",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "input"],
 						},
@@ -69,6 +70,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_dependencies",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "dependencies"],
 						},
@@ -101,6 +103,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						},
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_framework",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "framework"],
 						},
@@ -132,6 +135,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_fixture",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "fixture"],
 						},
@@ -194,6 +198,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_model_payload",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "model_payload"],
 						},
@@ -222,6 +227,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_adapter",
 							auxiliary_validator_ids: ["legacy-in-process"],
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "adapter"],
@@ -237,6 +243,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						required_fields: ["status", "server_command", "working_dir"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_adapter_image",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "adapter_image"],
 						},
@@ -330,6 +337,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						required_fields: ["schema", "status"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_package_container",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "registry"],
 						},
@@ -344,6 +352,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						required_fields: ["schema", "status", "model", "container_runtime", "weights", "readiness", "policy"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_runtime_inventory",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "runtime_inventory"],
 						},
@@ -358,6 +367,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						required_fields: ["status", "model_name", "readiness", "validation", "artifacts"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_verdict",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "verdict"],
 						},
@@ -406,6 +416,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.trans.validate_finalized_bundle",
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "deployment_ready"],
 						},

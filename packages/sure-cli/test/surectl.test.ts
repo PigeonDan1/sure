@@ -27,6 +27,8 @@ const inferDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-infer/
 const inferRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-infer/validator-registry.json");
 const onboardDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-onboard/canonical-definition.json");
 const onboardRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-onboard/validator-registry.json");
+const transDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-trans/canonical-definition.json");
+const transRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-trans/validator-registry.json");
 const portableRuntime = join(repositoryRoot, "sure/dist/portable-runtime");
 const portableMemoryContract = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/memory-contract.json");
 const hostParityFixturePath = join(repositoryRoot, "sure/canonical/fixtures/host-parity-traces.json");
@@ -212,11 +214,11 @@ describe("surectl cooperative control plane", () => {
 
 		writeFileSync(
 			join(artifacts, "match_task_result.json"),
-			JSON.stringify({
+			`${JSON.stringify({
 				candidates: [
 					{ model_id: "owner/model", match: { matched: true, match_source: "tasks", task_type: "asr" } },
 				],
-			}),
+			})}\n`,
 		);
 		const missing = command(root, "validate", [...base, "--run-id", runId]);
 		expect(missing.status).toBe(5);
@@ -1167,6 +1169,74 @@ describe("surectl cooperative control plane", () => {
 		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
 		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
 		expect((state.checkpoint as { resumable: boolean }).resumable).toBe(false);
+	}, 30_000);
+
+	it("runs a TRANS artifact validator from the shared portable runtime", () => {
+		const runId = "run-trans-shared-validator";
+		const base = [
+			"--skill",
+			"sure_trans",
+			"--definition",
+			transDefinition,
+			"--validator-registry",
+			transRegistryPath,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		];
+		const started = command(root, "start", [...base, "--run-id", runId]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const modelDir = join(root, "sure", "models", "demo");
+		const buildContext = join(root, "build-context");
+		mkdirSync(modelDir, { recursive: true });
+		mkdirSync(buildContext, { recursive: true });
+		const modelPath = join(modelDir, "model.py");
+		const inferenceEntrypoint = join(modelDir, "infer.py");
+		const lockfile = join(modelDir, "requirements.lock");
+		writeFileSync(modelPath, "# test model\n");
+		writeFileSync(inferenceEntrypoint, "# test entrypoint\n");
+		writeFileSync(lockfile, "# locked\n");
+		const artifactPath = join(runDir, "artifacts", "trans_input_resolved.json");
+		writeFileSync(
+			artifactPath,
+			`${JSON.stringify({
+				schema: "sure.trans.input.v2",
+				source_kind: "python",
+				build_context: buildContext,
+				model_path: modelPath,
+				inference_entrypoint: inferenceEntrypoint,
+				python_executable: process.execPath,
+				lockfile,
+				framework: "pytorch",
+				model_framework: "custom",
+				model_name: "demo",
+				model_dir: modelDir,
+				task_type: "asr",
+				device: "cpu",
+				package_profile: "none",
+				model_stage_policy: "copy",
+				execution_surface: "local_python",
+				gpu_required: false,
+				bf16_required: false,
+				fixture_path: null,
+			})}\n`,
+		);
+
+		const validated = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(validated.status).toBe(0);
+		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+		const state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		const validation = state.last_validation as Record<string, unknown>;
+		expect(validation.evidence_source).toBe("surectl_executor");
+		const evidence = validation.evidence as Record<string, unknown>;
+		const validator = (evidence.validators as Array<Record<string, unknown>>)[0];
+		expect(validator.backend_operation_id).toBe("sure.trans.validate_input");
+		expect(validator.verdict).toBe("PASS");
+		expect(typeof validator.request_path).toBe("string");
+		expect(typeof validator.receipt_path).toBe("string");
+		expect(JSON.parse(readFileSync(String(validator.receipt_path), "utf8")).lifecycle).toBe("SUCCEEDED");
 	}, 30_000);
 
 	it("rejects output beneath an explicit read-only reference root", () => {

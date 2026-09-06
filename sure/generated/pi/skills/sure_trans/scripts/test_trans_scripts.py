@@ -1974,7 +1974,7 @@ class TransScriptsTest(unittest.TestCase):
             model_dir = root / "sure" / "models" / "demo"
             check = subprocess.run(
                 [sys.executable, "-c", "from deployment_binding import load_deployment_binding; from pathlib import Path; print(load_deployment_binding(Path(__import__('sys').argv[1]), 'demo')['target_image_ref'])", str(model_dir)],
-                cwd=Path(__file__).resolve().parents[2] / "sure_infer" / "scripts",
+                cwd=Path(__file__).resolve().parents[2] / "sure-infer" / "scripts",
                 check=True,
                 capture_output=True,
                 text=True,
@@ -2026,7 +2026,7 @@ class TransScriptsTest(unittest.TestCase):
             finalized_check = subprocess.run(
                 [
                     sys.executable,
-                    str(SCRIPTS_DIR.parents[1] / "sure_onboard" / "scripts" / "check_finalized_bundle.py"),
+                    str(SCRIPTS_DIR.parents[1] / "sure-onboard" / "scripts" / "check_finalized_bundle.py"),
                     "--run-dir",
                     str(run_dir),
                     "--produces",
@@ -2043,7 +2043,7 @@ class TransScriptsTest(unittest.TestCase):
             fixture_check = subprocess.run(
                 [
                     sys.executable,
-                    str(SCRIPTS_DIR.parents[1] / "sure_onboard" / "scripts" / "check_fixture.py"),
+                    str(SCRIPTS_DIR.parents[1] / "sure-onboard" / "scripts" / "check_fixture.py"),
                     "--run-dir",
                     str(run_dir),
                     "--produces",

@@ -127,6 +127,31 @@ describe("semantic backend registry", () => {
 		}
 	});
 
+	it("resolves TRANS artifact validators from one shared backend", () => {
+		for (const operationId of [
+			"sure.trans.validate_input",
+			"sure.trans.validate_dependencies",
+			"sure.trans.validate_framework",
+			"sure.trans.validate_fixture",
+			"sure.trans.validate_source_image",
+			"sure.trans.validate_model_payload",
+			"sure.trans.validate_adapter",
+			"sure.trans.validate_adapter_image",
+			"sure.trans.validate_package_container",
+			"sure.trans.validate_runtime_inventory",
+			"sure.trans.validate_verdict",
+			"sure.trans.validate_finalized_bundle",
+		] as const) {
+			const resolved = resolveSemanticBackendOperation(packageDir, operationId, { manifestPath });
+			expect(resolved.source).toBe("canonical");
+			expect(resolved.path).toBe(
+				join(repositoryRoot, "sure", "canonical", "shared", "trans-validator", "scripts", "check_artifact.py"),
+			);
+			expect(resolved.kind).toBe("validate");
+			expect(resolved.consumer_skill_ids).toEqual(["sure_trans"]);
+		}
+	});
+
 	it("uses an installed backend root only when its complete tree matches the manifest", () => {
 		const temporary = mkdtempSync(join(tmpdir(), "sure-semantic-backend-"));
 		try {
