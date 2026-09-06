@@ -40,6 +40,7 @@ export const SURE_INFER_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						},
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.infer.validate_execution_result",
 							script_id: "check_execution_result.py",
 						},
 					},
@@ -77,6 +78,7 @@ export const SURE_INFER_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 						required_fields: ["report_persisted", "execution_path_actual"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.eval.validate_run_report",
 							script_id: "check_run_report.py",
 							script_args: ["--profile", "infer"],
 						},

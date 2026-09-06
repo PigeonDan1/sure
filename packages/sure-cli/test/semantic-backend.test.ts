@@ -31,6 +31,20 @@ describe("semantic backend registry", () => {
 		expect(resolved.consumer_skill_ids).toEqual(["sure_eval"]);
 	});
 
+	it("admits inference gates only through their registered operations", () => {
+		const execution = resolveSemanticBackendOperation(packageDir, "sure.infer.validate_execution_result", {
+			manifestPath,
+		});
+		expect(execution.kind).toBe("validate");
+		expect(execution.consumer_skill_ids).toEqual(["sure_infer"]);
+		expect(execution.path).toBe(
+			join(repositoryRoot, "sure", "canonical", "skills", "sure-infer", "scripts", "check_execution_result.py"),
+		);
+		const report = resolveSemanticBackendOperation(packageDir, "sure.eval.validate_run_report", { manifestPath });
+		expect(report.kind).toBe("validate");
+		expect(report.consumer_skill_ids).toEqual(["sure_eval", "sure_infer"]);
+	});
+
 	it("uses an installed backend root only when its complete tree matches the manifest", () => {
 		const temporary = mkdtempSync(join(tmpdir(), "sure-semantic-backend-"));
 		try {

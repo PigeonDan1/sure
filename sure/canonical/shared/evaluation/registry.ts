@@ -77,6 +77,15 @@ export const SURE_EVALUATION_BACKEND: SemanticBackendBundle = {
 			deterministic: false,
 		},
 		{
+			operation_id: "sure.infer.validate_execution_result",
+			description: "Validate the terminal inference execution result and its bound evidence.",
+			entrypoint: "scripts/check_execution_result.py",
+			consumer_skill_ids: ["sure_infer"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
 			operation_id: "sure.eval.validate_assessment",
 			description: "Validate the evaluation assessment artifact.",
 			entrypoint: "scripts/check_assessment.py",
@@ -87,9 +96,9 @@ export const SURE_EVALUATION_BACKEND: SemanticBackendBundle = {
 		},
 		{
 			operation_id: "sure.eval.validate_run_report",
-			description: "Validate the terminal evaluation run report.",
+			description: "Validate a terminal inference or evaluation run report under its declared profile.",
 			entrypoint: "scripts/check_run_report.py",
-			consumer_skill_ids: ["sure_eval"],
+			consumer_skill_ids: ["sure_eval", "sure_infer"],
 			kind: "validate",
 			timeout_ms: 300_000,
 			deterministic: true,

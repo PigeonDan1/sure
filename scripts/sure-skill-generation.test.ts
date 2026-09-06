@@ -112,18 +112,28 @@ describe("canonical SURE skill generation", () => {
 	});
 
 	it("binds registered gate validators to semantic operations without filename inference", () => {
-		const descriptors = canonicalValidatorRegistry()
-			.snapshot()
-			.validators.filter((descriptor) => descriptor.skill_id === "sure_eval" && descriptor.branch_id === "main");
-		const operations = Object.fromEntries(
-			descriptors.map((descriptor) => [descriptor.unit_id, descriptor.backend_operation_id]),
+		const descriptors = canonicalValidatorRegistry().snapshot().validators;
+		const evalOperations = Object.fromEntries(
+			descriptors
+				.filter((descriptor) => descriptor.skill_id === "sure_eval" && descriptor.branch_id === "main")
+				.map((descriptor) => [descriptor.unit_id, descriptor.backend_operation_id]),
 		);
-		expect(operations).toMatchObject({
+		expect(evalOperations).toMatchObject({
 			execute_evaluation: "sure.eval.validate_eval_report",
 			assessment: "sure.eval.validate_assessment",
 			run_report: "sure.eval.validate_run_report",
 		});
-		expect(operations.extract_lessons).toBeUndefined();
+		expect(evalOperations.extract_lessons).toBeUndefined();
+		const inferOperations = Object.fromEntries(
+			descriptors
+				.filter((descriptor) => descriptor.skill_id === "sure_infer" && descriptor.branch_id === "main")
+				.map((descriptor) => [descriptor.unit_id, descriptor.backend_operation_id]),
+		);
+		expect(inferOperations).toMatchObject({
+			execute_inference: "sure.infer.validate_execution_result",
+			run_report: "sure.eval.validate_run_report",
+		});
+		expect(inferOperations.extract_lessons).toBeUndefined();
 	});
 
 	it("projects the legacy Pi manifest without changing its public fields", () => {

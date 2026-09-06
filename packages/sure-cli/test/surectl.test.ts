@@ -23,6 +23,8 @@ const definition = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/canoni
 const registryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/validator-registry.json");
 const evalDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/canonical-definition.json");
 const evalRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/validator-registry.json");
+const inferDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-infer/canonical-definition.json");
+const inferRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-infer/validator-registry.json");
 const portableRuntime = join(repositoryRoot, "sure/dist/portable-runtime");
 const portableMemoryContract = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/memory-contract.json");
 const hostParityFixturePath = join(repositoryRoot, "sure/canonical/fixtures/host-parity-traces.json");
@@ -377,6 +379,166 @@ describe("surectl cooperative control plane", () => {
 		expect(receipt.lifecycle).toBe("SUCCEEDED");
 		expect(receipt.request_digest).toBe(canonicalJsonDigest(request as unknown as JsonValue));
 	});
+
+	it("runs registered inference result and report validators through the same runtime", () => {
+		const runId = "run-automatic-infer-validators";
+		const base = [
+			"--skill",
+			"sure_infer",
+			"--definition",
+			inferDefinition,
+			"--validator-registry",
+			inferRegistryPath,
+		];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			runId,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		writeFileSync(
+			join(artifacts, "dataset_decision.json"),
+			JSON.stringify({ selected_datasets: ["demo__v1"], skipped_datasets: [], selection_basis: ["test"] }),
+		);
+		expect(command(root, "validate", [...base, "--run-id", runId]).status).toBe(0);
+
+		const approved = {
+			schema: "sure.eval.deployment_binding.v2",
+			runtime_kind: "container",
+			target_image_ref: `registry.example/sure/demo@sha256:${DIGEST_A}`,
+			policy: {
+				execution_mode: "container_only",
+				model_integrity: "image_digest",
+				host_python_fallback: false,
+			},
+			evidence: { bundle_identity_sha256: DIGEST_B },
+		};
+		writeFileSync(
+			join(artifacts, "eval_input_resolved.json"),
+			JSON.stringify({ model: { deployment_binding: approved } }),
+		);
+		writeFileSync(
+			join(artifacts, "execution_surface.json"),
+			JSON.stringify({
+				execution: { requested: "local", path_planned: "local_docker" },
+				deployment_binding: {
+					schema: approved.schema,
+					runtime_kind: approved.runtime_kind,
+					bundle_identity_sha256: DIGEST_B,
+					execution_mode: "container_only",
+					model_mount_read_only: true,
+					model_integrity: "image_digest",
+					result_mount_writable: true,
+					target_image_ref: approved.target_image_ref,
+				},
+			}),
+		);
+		writeFileSync(
+			join(artifacts, "execution_result.json"),
+			JSON.stringify({
+				job_status: "failed",
+				exit_code: 3,
+				execution_path: "local_docker",
+				runtime_kind: "container",
+				product_dir: "",
+				failed_stage: "generate",
+				input_digest: DIGEST_C,
+				datasets: [],
+			}),
+		);
+		const unavailable = command(root, "validate", [...base, "--run-id", runId]);
+		expect(unavailable.status).toBe(5);
+		expect((unavailable.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
+		expect(
+			((unavailable.value?.transition as Record<string, unknown>).checkpoint as { data: { currentUnit: string } })
+				.data.currentUnit,
+		).toBe("execute_inference");
+		const execution = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(execution.status).toBe(0);
+		expect((execution.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+		expect(
+			((execution.value?.transition as Record<string, unknown>).checkpoint as { data: { currentUnit: string } }).data
+				.currentUnit,
+		).toBe("extract_lessons");
+		let state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		let validation = state.last_validation as Record<string, unknown>;
+		let evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.infer.validate_execution_result");
+		expect(
+			(JSON.parse(readFileSync(String(evidence.validators[0]?.receipt_path), "utf8")) as Record<string, unknown>)
+				.lifecycle,
+		).toBe("SUCCEEDED");
+
+		const extraction = join(artifacts, "extraction_declaration.json");
+		writeFileSync(
+			extraction,
+			JSON.stringify({
+				schema: "sure.memory.extraction.v2",
+				no_new_lessons: true,
+				no_lessons_reason: "No reusable lesson in this fixture.",
+				covered_by: [],
+				candidates: [],
+				infra_noise: false,
+				infra_evidence: [],
+			}),
+		);
+		const registry = JSON.parse(readFileSync(inferRegistryPath, "utf8")) as {
+			digest: string;
+			validators: Array<{ id: string; unit_id?: string }>;
+		};
+		const extractionValidator = registry.validators.find((entry) => entry.unit_id === "extract_lessons");
+		const compatibilityEvidence = join(artifacts, "infer-memory-compatibility-evidence.json");
+		writeFileSync(
+			compatibilityEvidence,
+			JSON.stringify({
+				schema: "sure.validator.evidence.v1",
+				registry_digest: registry.digest,
+				validators: [
+					{
+						validator_id: extractionValidator?.id,
+						verdict: "PASS",
+						artifact_digest: digest(extraction),
+					},
+				],
+			}),
+		);
+		expect(command(root, "validate", [...base, "--run-id", runId, "--evidence", compatibilityEvidence]).status).toBe(
+			0,
+		);
+
+		writeFileSync(
+			join(artifacts, "main_agent_run_report.json"),
+			JSON.stringify({
+				run_id: runId,
+				timestamp: "2026-09-06T00:00:00.000Z",
+				task_type: "evaluate_existing_model",
+				goal: "record the bounded terminal inference failure",
+				selected_datasets: ["demo__v1"],
+				executed_steps: ["dataset_scope", "execute_inference"],
+				status: "failed",
+				report_persisted: true,
+				execution_path_actual: "local_docker",
+				next_action: "Repair the failed generation stage before retrying inference.",
+			}),
+		);
+		const report = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(report.status).toBe(0);
+		expect((report.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		validation = state.last_validation as Record<string, unknown>;
+		evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.eval.validate_run_report");
+		const request = JSON.parse(readFileSync(String(evidence.validators[0]?.request_path), "utf8")) as {
+			entrypoint: { argv: string[] };
+		};
+		expect(request.entrypoint.argv).toEqual(expect.arrayContaining(["--profile", "infer"]));
+	}, 15_000);
 
 	it("matches the canonical host-parity trace through the portable control plane", () => {
 		const fixture = JSON.parse(readFileSync(hostParityFixturePath, "utf8")) as HostParityFixture;
