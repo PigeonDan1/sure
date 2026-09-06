@@ -257,6 +257,22 @@ describe("wire schemas", () => {
 		expect(validateJsonSchema(schema, executorPass).ok).toBe(false);
 	});
 
+	it("validates the portable runtime lock contract", () => {
+		const lock = {
+			schema: "sure.portable.runtime.lock.v1",
+			runtime_version: "portable-v1",
+			core_package_version: "0.80.3",
+			semantic_backend_registry_digest: `sha256:${DIGEST_A}`,
+			executor_registry_digest: `sha256:${DIGEST_B}`,
+			operation_ids: ["sure.eval.run"],
+			files: [{ path: "backends/eval/scripts/run.py", size_bytes: 12, sha256: `sha256:${DIGEST_A}` }],
+			runtime_digest: `sha256:${DIGEST_B}`,
+		};
+		const schema = readSchema("portable_runtime_lock");
+		expect(validateJsonSchema(schema, lock).ok).toBe(true);
+		expect(validateJsonSchema(schema, { ...lock, files: [{ ...lock.files[0], path: "../run.py" }] }).ok).toBe(false);
+	});
+
 	it("keeps TypeScript outcome enums aligned with the conformance schema", () => {
 		const schema = readSchema("conformance") as {
 			properties: Record<string, { enum?: string[] }>;

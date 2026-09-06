@@ -20,3 +20,6 @@
 *.wav binary
 *.avi binary
 *.mov binary
+
+# Generated semantic backends are byte-for-byte, digest-locked source projections.
+sure/dist/portable-runtime/backends/** -whitespace

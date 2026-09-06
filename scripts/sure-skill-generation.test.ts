@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { SURE_WORKFLOWS } from "../packages/coding-agent/src/core/sure/generated-workflows.ts";
 import { canonicalJson, canonicalJsonDigest } from "../packages/sure-core/src/contracts/canonical-json.ts";
+import { validateJsonSchema } from "../packages/sure-core/src/contracts/schema.ts";
 import type { JsonValue } from "../packages/sure-core/src/contracts/types.ts";
+import { resolveSemanticBackendOperation } from "../packages/sure-core/src/evaluation/semantic-backend.ts";
 import { executorRegistrySnapshot } from "../packages/sure-core/src/execution/registry.ts";
 import { CANONICAL_MEMORY_CONTRACT } from "../sure/canonical/shared/memory-contract.ts";
 import { CANONICAL_SKILLS } from "../sure/canonical/skills/index.ts";
@@ -36,6 +38,7 @@ describe("canonical SURE skill generation", () => {
 
 	it("has one stable command mapping per skill and matching host workflow digests", () => {
 		const canonicalRegistry = readJson(join(repositoryRoot, "sure/canonical/validators/registry.json"));
+		const runtimeLock = readJson(join(repositoryRoot, "sure/dist/portable-runtime/runtime-support.lock.json"));
 		expect(CANONICAL_SKILLS).toHaveLength(6);
 		expect(new Set(CANONICAL_SKILLS.map((skill) => skill.command_id)).size).toBe(6);
 		for (const skill of CANONICAL_SKILLS) {
@@ -50,6 +53,8 @@ describe("canonical SURE skill generation", () => {
 			expect(piLock.semantic_backend_digest).toBe(portableLock.semantic_backend_digest);
 			expect(piLock.validator_registry_digest).toBe(canonicalRegistry.digest);
 			expect(portableLock.validator_registry_digest).toBe(piLock.validator_registry_digest);
+			expect(piLock.semantic_runtime_digest).toBe(runtimeLock.runtime_digest);
+			expect(portableLock.semantic_runtime_digest).toBe(runtimeLock.runtime_digest);
 			expect(piLock.workflow_digest).toBe(canonicalJsonDigest(asJson(skill.workflow)));
 		}
 	});
@@ -188,6 +193,95 @@ describe("canonical SURE skill generation", () => {
 		}
 	});
 
+	it("ships one independently verifiable semantic runtime for both hosts", () => {
+		const root = join(repositoryRoot, "sure/dist/portable-runtime");
+		const lock = readJson(join(root, "runtime-support.lock.json"));
+		const { runtime_digest: runtimeDigest, ...unsigned } = lock;
+		expect(lock.schema).toBe("sure.portable.runtime.lock.v1");
+		expect(validateJsonSchema(readJson(join(root, "contracts/portable_runtime_lock.schema.json")), lock).ok).toBe(
+			true,
+		);
+		expect(runtimeDigest).toBe(canonicalJsonDigest(asJson(unsigned)));
+		const files = lock.files as Array<{ path: string; size_bytes: number; sha256: string }>;
+		for (const file of files) {
+			expect(file.path.startsWith("/")).toBe(false);
+			expect(file.path.split("/")).not.toContain("..");
+			const content = readFileSync(join(root, file.path));
+			expect(content.byteLength).toBe(file.size_bytes);
+			expect(`sha256:${createHash("sha256").update(content).digest("hex")}`).toBe(file.sha256);
+		}
+		const manifest = readJson(join(root, "semantic-backends.json"));
+		expect(lock.semantic_backend_registry_digest).toBe(manifest.registry_digest);
+		const entrypoints: string[] = [];
+		const operationIds: string[] = [];
+		for (const bundle of manifest.bundles as Array<Record<string, unknown>>) {
+			for (const operation of bundle.operations as Array<Record<string, unknown>>) {
+				const resolved = resolveSemanticBackendOperation(root, String(operation.operation_id), {
+					manifestPath: join(root, "semantic-backends.json"),
+					environment: {},
+				});
+				expect(resolved.source).toBe("package");
+				expect(resolved.registry_digest).toBe(manifest.registry_digest);
+				expect(resolved.bundle_digest).toBe(bundle.canonical_tree_digest);
+				entrypoints.push(resolved.path);
+				operationIds.push(String(operation.operation_id));
+			}
+		}
+		expect(lock.operation_ids).toEqual(operationIds.sort());
+		const pythonProbe = [
+			"import json, sys",
+			"from pathlib import Path",
+			"from sure.runtime.semantic_backend import resolve_semantic_backend_operation",
+			"root = Path(sys.argv[1]).resolve()",
+			"manifest_path = root / 'semantic-backends.json'",
+			"manifest = json.loads(manifest_path.read_text(encoding='utf-8'))",
+			"operations = [op['operation_id'] for bundle in manifest['bundles'] for op in bundle['operations']]",
+			"resolved = [resolve_semantic_backend_operation(op, package_dir=root, manifest_path=manifest_path, environment={}) for op in operations]",
+			"assert all(item.source == 'package' for item in resolved)",
+			"assert all(item.registry_digest == manifest['registry_digest'] for item in resolved)",
+			"print(len(resolved))",
+		].join("\n");
+		const python = process.env.PYTHON?.trim() || "python3";
+		const probeEnvironment = {
+			...process.env,
+			PYTHONDONTWRITEBYTECODE: "1",
+			PYTHONPATH: root,
+			SURE_REPOSITORY_ROOT: root,
+			SURE_SEMANTIC_BACKEND_MANIFEST: join(root, "semantic-backends.json"),
+			SURE_SEMANTIC_BACKEND_ROOT: join(root, "backends"),
+		};
+		const probeOutput = execFileSync(python, ["-B", "-c", pythonProbe, root], {
+			cwd: root,
+			env: probeEnvironment,
+			stdio: "pipe",
+		}).toString("utf8");
+		expect(Number(probeOutput.trim())).toBe(
+			(manifest.bundles as Array<Record<string, unknown>>).reduce(
+				(count, bundle) => count + (bundle.operations as unknown[]).length,
+				0,
+			),
+		);
+		for (const entrypoint of entrypoints) {
+			execFileSync(python, ["-B", entrypoint, "--help"], {
+				cwd: root,
+				env: probeEnvironment,
+				stdio: "pipe",
+				timeout: 15_000,
+			});
+		}
+		const combined = Buffer.concat(files.map((file) => readFileSync(join(root, file.path))));
+		expect(combined.toString("utf8")).not.toMatch(/@earendil-works\/pi-coding-agent|\/hpc_stor03/);
+		for (const skill of CANONICAL_SKILLS) {
+			for (const packageRoot of [
+				join(repositoryRoot, "sure/generated/pi/skills", skill.skill_id),
+				join(repositoryRoot, "sure/dist/agent-skills", skill.distribution_slug),
+			]) {
+				const backendProjection = readJson(join(packageRoot, "semantic-backends.json"));
+				expect(backendProjection.runtime_distribution_digest).toBe(runtimeDigest);
+			}
+		}
+	});
+
 	it("is reproducible and does not require a production reference root", () => {
 		const script = join(repositoryRoot, "scripts/generate-sure-skills.ts");
 		execFileSync(process.execPath, ["--import", "tsx", script, "--check"], { cwd: repositoryRoot, stdio: "pipe" });
@@ -199,5 +293,8 @@ describe("canonical SURE skill generation", () => {
 		expect(readFileSync(join(repositoryRoot, "sure/dist/agent-skills/registry.json"), "utf8")).not.toContain(
 			"/hpc_stor03",
 		);
+		expect(
+			readFileSync(join(repositoryRoot, "sure/dist/portable-runtime/runtime-support.lock.json"), "utf8"),
+		).not.toContain("/hpc_stor03");
 	});
 });

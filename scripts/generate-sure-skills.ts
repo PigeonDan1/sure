@@ -16,6 +16,7 @@ const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const canonicalSkillsRoot = join(repositoryRoot, "sure", "canonical", "skills");
 const generatedPiRoot = join(repositoryRoot, "sure", "generated", "pi", "skills");
 const portableRoot = join(repositoryRoot, "sure", "dist", "agent-skills");
+const portableRuntimeRoot = join(repositoryRoot, "sure", "dist", "portable-runtime");
 const codingAgentWorkflowRegistry = join(
 	repositoryRoot,
 	"packages",
@@ -28,6 +29,27 @@ const codingAgentWorkflowRegistry = join(
 const GENERATED_MARKER = ".sure-generated";
 const UNSAFE_PORTABLE_TEXT =
 	/@earendil-works\/pi-coding-agent|HARNESS_PYTHON_BIN|sure_finish|sure_update_state|pre_start|pre_tool_call|post_tool_result|\.\.\/sure_[a-z_]+|sure\/skills\/sure_/;
+const PORTABLE_RUNTIME_SUPPORT_FILES = [
+	"sure/runtime/semantic_backend.py",
+	"sure/runtime/resource_locator.py",
+	"sure/runtime/execution_bridge.py",
+	"sure/runtime/evaluation_commit.py",
+	"sure/runtime/model/__init__.py",
+	"sure/runtime/model/bootstrap.py",
+	"sure/runtime/evaluation/requirements.in",
+	"sure/runtime/evaluation/requirements.lock.txt",
+	"sure/runtime/evaluation/runtime.json",
+	"sure/runtime/harness/bootstrap.py",
+	"sure/runtime/harness/build_image.py",
+	"sure/runtime/harness/model_child_env.py",
+	"sure/runtime/harness/Dockerfile",
+	"sure/runtime/harness/requirements.in",
+	"sure/runtime/harness/requirements.lock.txt",
+	"sure/runtime/harness/runtime.json",
+	"sure/site/container_delivery.py",
+	"sure/site/loader.py",
+	"sure/site/policy.schema.json",
+] as const;
 
 interface GeneratedFile {
 	path: string;
@@ -150,6 +172,17 @@ interface MaterializedSemanticBackendManifest {
 	bundles: JsonValue[];
 }
 
+interface PortableRuntimeLock {
+	schema: "sure.portable.runtime.lock.v1";
+	runtime_version: "portable-v1";
+	core_package_version: string;
+	semantic_backend_registry_digest: string;
+	executor_registry_digest: string;
+	operation_ids: string[];
+	files: Array<{ path: string; size_bytes: number; sha256: string }>;
+	runtime_digest: string;
+}
+
 function materializedSemanticBackendManifest(): MaterializedSemanticBackendManifest {
 	const bundles = CANONICAL_SEMANTIC_BACKENDS.map((bundle) => {
 		const canonicalRoot = join(canonicalSkillsRoot, bundle.canonical_root);
@@ -188,6 +221,79 @@ function materializedSemanticBackendManifest(): MaterializedSemanticBackendManif
 		registry_digest: canonicalJsonDigest(unsigned),
 		bundles: bundles as unknown as JsonValue[],
 	};
+}
+
+function portableRuntimeFiles(semanticBackendManifest: MaterializedSemanticBackendManifest): {
+	files: GeneratedFile[];
+	lock: PortableRuntimeLock;
+} {
+	const files: GeneratedFile[] = [
+		{ path: join(portableRuntimeRoot, "semantic-backends.json"), content: jsonFile(semanticBackendManifest) },
+		{ path: join(portableRuntimeRoot, "executor-registry.json"), content: jsonFile(executorRegistrySnapshot()) },
+		{
+			path: join(portableRuntimeRoot, "contracts", "portable_runtime_lock.schema.json"),
+			content: readFileSync(join(repositoryRoot, "sure", "core", "contracts", "portable_runtime_lock.schema.json")),
+		},
+	];
+	for (const path of ["sure/__init__.py", "sure/runtime/__init__.py", "sure/site/__init__.py"]) {
+		files.push({
+			path: join(portableRuntimeRoot, path),
+			content: Buffer.from('"""Generated SURE portable runtime package."""\n', "utf8"),
+		});
+	}
+	for (const sourcePath of PORTABLE_RUNTIME_SUPPORT_FILES) {
+		const source = join(repositoryRoot, sourcePath);
+		if (!existsSync(source) || !lstatSync(source).isFile()) {
+			throw new Error(`Portable runtime support file is missing: ${source}`);
+		}
+		files.push({ path: join(portableRuntimeRoot, sourcePath), content: readFileSync(source) });
+	}
+	for (const rawBundle of semanticBackendManifest.bundles) {
+		const bundle = rawBundle as Record<string, JsonValue>;
+		const bundleId = String(bundle.bundle_id);
+		const canonicalRoot = String(bundle.canonical_root);
+		const integrityRoot = String(bundle.integrity_root ?? ".");
+		const sourceRoot = join(canonicalSkillsRoot, canonicalRoot, integrityRoot);
+		if (!existsSync(sourceRoot) || !lstatSync(sourceRoot).isDirectory()) {
+			throw new Error(`Portable semantic backend root is missing: ${bundleId} -> ${sourceRoot}`);
+		}
+		for (const path of allFiles(sourceRoot)) {
+			files.push({
+				path: join(portableRuntimeRoot, "backends", bundleId, integrityRoot, path),
+				content: readFileSync(join(sourceRoot, path)),
+			});
+		}
+	}
+	const generatedPaths = files.map((file) => relative(portableRuntimeRoot, file.path).replaceAll("\\", "/"));
+	if (new Set(generatedPaths).size !== generatedPaths.length) {
+		throw new Error("Portable runtime contains duplicate generated paths");
+	}
+	const fileEntries = files
+		.map((file) => ({
+			path: relative(portableRuntimeRoot, file.path).replaceAll("\\", "/"),
+			size_bytes: file.content.byteLength,
+			sha256: `sha256:${sha256(file.content)}`,
+		}))
+		.sort((left, right) => left.path.localeCompare(right.path));
+	const unsigned = {
+		schema: "sure.portable.runtime.lock.v1" as const,
+		runtime_version: "portable-v1" as const,
+		core_package_version: "0.80.3",
+		semantic_backend_registry_digest: semanticBackendManifest.registry_digest,
+		executor_registry_digest: executorRegistrySnapshot().registry_digest,
+		operation_ids: semanticBackendManifest.bundles
+			.flatMap((rawBundle) => {
+				const bundle = rawBundle as Record<string, JsonValue>;
+				return (bundle.operations as Array<Record<string, JsonValue>>).map((operation) =>
+					String(operation.operation_id),
+				);
+			})
+			.sort(),
+		files: fileEntries,
+	};
+	const lock: PortableRuntimeLock = { ...unsigned, runtime_digest: canonicalJsonDigest(asJson(unsigned)) };
+	files.push({ path: join(portableRuntimeRoot, "runtime-support.lock.json"), content: jsonFile(lock) });
+	return { files, lock };
 }
 
 function readCanonicalResourceFiles(skill: CanonicalSkillDefinition): { path: string; content: Buffer }[] {
@@ -364,6 +470,7 @@ function lockFor(
 	omitted: readonly string[],
 	semanticBackendManifest: MaterializedSemanticBackendManifest,
 	memoryContract: Record<string, unknown>,
+	semanticRuntimeDigest: string,
 ): Record<string, unknown> {
 	const definitionDigest = canonicalJsonDigest(asJson(skill));
 	const workflowDigest = canonicalJsonDigest(asJson(skill.workflow));
@@ -384,6 +491,7 @@ function lockFor(
 		semantic_backend_digest: backendDigest,
 		validator_registry_digest: validatorRegistryDigest,
 		semantic_backend_registry_digest: semanticBackendManifest.registry_digest,
+		semantic_runtime_digest: semanticRuntimeDigest,
 		executor_registry_digest: executorRegistrySnapshot().registry_digest,
 		memory_contract_digest: canonicalJsonDigest(asJson(memoryContract)),
 		core_package_version: "0.80.3",
@@ -419,6 +527,7 @@ function buildHostFiles(
 	skill: CanonicalSkillDefinition,
 	host: "pi" | "portable",
 	semanticBackendManifest: MaterializedSemanticBackendManifest,
+	semanticRuntimeDigest: string,
 ): { files: GeneratedFile[]; lock: Record<string, unknown> } {
 	const canonicalRoot = join(canonicalSkillsRoot, skill.distribution_slug);
 	const resourceSet =
@@ -450,6 +559,7 @@ function buildHostFiles(
 				validators: skill.semantic_validators,
 				resolution: "sure-core-registry",
 				registry_digest: semanticBackendManifest.registry_digest,
+				runtime_distribution_digest: semanticRuntimeDigest,
 				bundles: semanticBackendManifest.bundles,
 			}),
 		});
@@ -473,6 +583,7 @@ function buildHostFiles(
 				validators: skill.semantic_validators,
 				resolution: "sure-core-registry",
 				registry_digest: semanticBackendManifest.registry_digest,
+				runtime_distribution_digest: semanticRuntimeDigest,
 				bundles: semanticBackendManifest.bundles,
 			}),
 		});
@@ -490,7 +601,15 @@ function buildHostFiles(
 	});
 	for (const resource of resourceSet.files) files.push({ path: join(root, resource.path), content: resource.content });
 	files.push({ path: join(root, "memory-contract.json"), content: jsonFile(memoryContract) });
-	const lock = lockFor(skill, host, resourceSet.files, resourceSet.omitted, semanticBackendManifest, memoryContract);
+	const lock = lockFor(
+		skill,
+		host,
+		resourceSet.files,
+		resourceSet.omitted,
+		semanticBackendManifest,
+		memoryContract,
+		semanticRuntimeDigest,
+	);
 	files.push({ path: join(root, "generation.lock.json"), content: jsonFile(lock) });
 	files.push({
 		path: join(root, "canonical-definition.json"),
@@ -503,6 +622,8 @@ function expectedFiles(): GeneratedFile[] {
 	const files: GeneratedFile[] = [];
 	files.push({ path: codingAgentWorkflowRegistry, content: workflowRegistryModule() });
 	const semanticBackendManifest = materializedSemanticBackendManifest();
+	const portableRuntime = portableRuntimeFiles(semanticBackendManifest);
+	files.push(...portableRuntime.files);
 	files.push({
 		path: join(repositoryRoot, "sure", "canonical", "shared", "evaluation", "backend-manifest.json"),
 		content: jsonFile(semanticBackendManifest),
@@ -517,8 +638,8 @@ function expectedFiles(): GeneratedFile[] {
 	});
 	for (const skill of CANONICAL_SKILLS) {
 		files.push(
-			...buildHostFiles(skill, "pi", semanticBackendManifest).files,
-			...buildHostFiles(skill, "portable", semanticBackendManifest).files,
+			...buildHostFiles(skill, "pi", semanticBackendManifest, portableRuntime.lock.runtime_digest).files,
+			...buildHostFiles(skill, "portable", semanticBackendManifest, portableRuntime.lock.runtime_digest).files,
 		);
 	}
 	const registry = CANONICAL_SKILLS.map((skill) => ({
@@ -573,7 +694,7 @@ function markerPath(root: string): string {
 }
 
 function writeGenerated(files: readonly GeneratedFile[]): void {
-	const roots = [generatedPiRoot, portableRoot];
+	const roots = [generatedPiRoot, portableRoot, portableRuntimeRoot];
 	for (const root of roots) {
 		if (existsSync(root)) {
 			if (!existsSync(markerPath(root))) throw new Error(`Refusing to replace unmarked generated root: ${root}`);
@@ -603,7 +724,7 @@ function checkGenerated(files: readonly GeneratedFile[]): void {
 		if (!lstatSync(path).isFile() || !readFileSync(path).equals(content))
 			problems.push(`stale ${relative(repositoryRoot, path)}`);
 	}
-	for (const root of [generatedPiRoot, portableRoot]) {
+	for (const root of [generatedPiRoot, portableRoot, portableRuntimeRoot]) {
 		for (const path of actualFiles(root)) {
 			const absolute = join(root, path);
 			if (!expected.has(absolute)) problems.push(`unexpected ${relative(repositoryRoot, absolute)}`);
