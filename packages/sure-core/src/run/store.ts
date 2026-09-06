@@ -157,6 +157,24 @@ function normalizeRecord(raw: unknown, expectedRunId: string, expectedRunDir: st
 	if (!cwd || !packageDir || !startedAt || !updatedAt || args === undefined) {
 		throw new RunStoreError("INVALID_RECORD", `Run ${expectedRunId} is missing legacy descriptor fields.`);
 	}
+	const policySnapshotDigest = stringField(raw, "policySnapshotDigest", stringField(raw, "policy_snapshot_digest"));
+	const policySnapshotPath = stringField(raw, "policySnapshotPath", stringField(raw, "policy_snapshot_path"));
+	if ((policySnapshotDigest === undefined) !== (policySnapshotPath === undefined)) {
+		throw new RunStoreError("INVALID_RECORD", `Run ${expectedRunId} has an incomplete policy snapshot binding.`);
+	}
+	if (policySnapshotDigest !== undefined && !SHA256_DIGEST.test(policySnapshotDigest)) {
+		throw new RunStoreError("INVALID_RECORD", `Run ${expectedRunId} has an invalid policy snapshot digest.`);
+	}
+	if (policySnapshotPath !== undefined) {
+		const snapshotRoot = normalize(join(expectedRunDir, "artifacts"));
+		if (!isAbsolute(policySnapshotPath) || !pathInside(snapshotRoot, normalize(policySnapshotPath))) {
+			throw new RunStoreError(
+				"PATH_OUT_OF_SCOPE",
+				`Run ${expectedRunId} policy snapshot path must be inside its artifacts directory.`,
+				policySnapshotPath,
+			);
+		}
+	}
 	return {
 		...(raw as unknown as CoreRunRecord),
 		runId,
@@ -177,6 +195,8 @@ function normalizeRecord(raw: unknown, expectedRunId: string, expectedRunDir: st
 		executorDigest: stringField(raw, "executorDigest", stringField(raw, "executor_digest")),
 		policyDigest: stringField(raw, "policyDigest", stringField(raw, "policy_digest")),
 		bindingDigest: stringField(raw, "bindingDigest", stringField(raw, "binding_digest")),
+		policySnapshotDigest,
+		policySnapshotPath,
 		stateDigest: stringField(raw, "stateDigest", stringField(raw, "state_digest")),
 		revision: positiveRevision(raw.revision),
 		legacyCompatibility:
@@ -203,6 +223,7 @@ function bindingMismatch(record: CoreRunRecord, binding: ResumeBinding): string 
 		["validatorDigest", "validatorDigest"],
 		["executorDigest", "executorDigest"],
 		["policyDigest", "policyDigest"],
+		["policySnapshotDigest", "policySnapshotDigest"],
 		["bindingDigest", "bindingDigest"],
 	];
 	for (const [bindingKey, recordKey] of fields) {
@@ -402,6 +423,15 @@ export class CoreRunStore {
 			throw error;
 		}
 		const dir = this.admittedRunDir(input.runId);
+		if ((input.policySnapshotDigest === undefined) !== (input.policySnapshotPath === undefined)) {
+			throw new RunStoreError("INVALID_RECORD", "Policy snapshot digest and path must be supplied together.");
+		}
+		if (input.policySnapshotDigest !== undefined && !SHA256_DIGEST.test(input.policySnapshotDigest)) {
+			throw new RunStoreError("INVALID_RECORD", "Policy snapshot digest must be a SHA-256 digest.");
+		}
+		if (input.policySnapshotPath !== undefined) {
+			this.admitPath(input.policySnapshotPath, [join(dir, "artifacts")]);
+		}
 		return this.lock.withLock(dir, () => {
 			if (this.filesystem.exists(this.runFile(input.runId, "run.json"))) {
 				throw new RunStoreError("ALREADY_EXISTS", `Run ${input.runId} already exists.`, dir);
@@ -427,6 +457,8 @@ export class CoreRunStore {
 				validatorDigest: input.validatorDigest,
 				executorDigest: input.executorDigest,
 				policyDigest: input.policyDigest,
+				...(input.policySnapshotDigest === undefined ? {} : { policySnapshotDigest: input.policySnapshotDigest }),
+				...(input.policySnapshotPath === undefined ? {} : { policySnapshotPath: input.policySnapshotPath }),
 				stateDigest: stateDigest({}),
 				...(input.bindingDigest === undefined ? {} : { bindingDigest: input.bindingDigest }),
 				revision: 0,

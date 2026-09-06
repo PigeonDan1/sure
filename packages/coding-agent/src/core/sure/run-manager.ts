@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	type CoreRunRecord,
 	canonicalJsonDigest,
 	type JsonValue,
+	type PolicySnapshot,
 	type ResumeBinding,
 	RUN_ID_PATTERN,
 	RunStoreError,
 } from "@earendil-works/sure-core";
+import { resolveSitePolicy } from "../../../../../sure/site/loader.ts";
+import { snapshotResolvedSitePolicy } from "../../../../../sure/site/snapshot.ts";
 import { createNodeCoreRunStore, type NodeCoreRunStore } from "./core-run-store.ts";
 import { mergeSureDisplayState } from "./state.ts";
 import type { SureDisplayState, SureRunRecord, SureRunStatus, SureSkillPackage } from "./types.ts";
@@ -26,6 +29,8 @@ export interface SureRunManagerOptions {
 	executorDigest?: string;
 	policyDigest?: string;
 	bindingDigest?: string;
+	/** Optional immutable policy evidence supplied by a caller or site loader. */
+	policySnapshot?: PolicySnapshot;
 	/** Read-only roots that may never receive run/output writes. */
 	referenceRoots?: readonly string[];
 	/** Additional site-approved writable roots (output_dir is added per run). */
@@ -74,15 +79,43 @@ function writeJsonAtomic(path: string, value: unknown): void {
 	}
 }
 
-function isAbsolutePathList(values: readonly string[]): string[] {
-	return values.filter((value) => isAbsolute(value));
-}
-
 function environmentReferenceRoots(): string[] {
 	return [process.env.SURE_REFERENCE_ROOT, process.env.REFERENCE_ROOT]
 		.flatMap((value) => (value ? value.split(delimiter) : []))
 		.map((value) => value.trim())
 		.filter((value) => value.length > 0 && isAbsolute(value));
+}
+
+interface SitePolicyBinding {
+	policyDigest?: string;
+	snapshot?: PolicySnapshot;
+	referenceRoots: string[];
+	writeRoots: string[];
+}
+
+function uniqueAbsolutePaths(paths: readonly string[]): string[] {
+	return [...new Set(paths.filter((path) => isAbsolute(path)).map((path) => resolve(path)))];
+}
+
+/** Reject symlinks and special files anywhere in a tree before copying or listing it. */
+function assertRegularTree(root: string): void {
+	const visit = (path: string, isRoot = false): void => {
+		const stat = lstatSync(path);
+		if (stat.isSymbolicLink()) {
+			throw new RunStoreError("SYMLINK_ESCAPE", `Artifact tree contains a symlink: ${path}`, path);
+		}
+		if (stat.isDirectory()) {
+			for (const entry of readdirSync(path, { withFileTypes: true })) visit(join(path, entry.name));
+			return;
+		}
+		if (!stat.isFile()) {
+			throw new RunStoreError("PATH_OUT_OF_SCOPE", `Artifact tree contains a non-regular file: ${path}`, path);
+		}
+		if (isRoot) {
+			throw new RunStoreError("PATH_OUT_OF_SCOPE", `Artifact root is not a directory: ${path}`, path);
+		}
+	};
+	visit(root, true);
 }
 
 function toSureRecord(record: CoreRunRecord): SureRunRecord {
@@ -114,20 +147,44 @@ export class SureRunManager {
 		return join(this.cwd, SURE_RUNS_DIR);
 	}
 
-	private referenceRoots(): string[] {
-		return isAbsolutePathList([...(this.options.referenceRoots ?? []), ...environmentReferenceRoots()]);
+	private referenceRoots(site = this.sitePolicyBinding()): string[] {
+		return uniqueAbsolutePaths([
+			...(this.options.referenceRoots ?? []),
+			...environmentReferenceRoots(),
+			...site.referenceRoots,
+		]);
 	}
 
-	private coreFor(extraWriteRoots: readonly string[] = []): NodeCoreRunStore {
+	private coreFor(extraWriteRoots: readonly string[] = [], site = this.sitePolicyBinding()): NodeCoreRunStore {
 		return createNodeCoreRunStore({
 			rootDir: this.cwd,
 			coreVersion: this.options.coreVersion ?? COMPAT_CORE_VERSION,
-			referenceRoots: this.referenceRoots(),
-			writeRoots: isAbsolutePathList([...(this.options.writeRoots ?? []), ...extraWriteRoots]),
+			referenceRoots: this.referenceRoots(site),
+			writeRoots: uniqueAbsolutePaths([...(this.options.writeRoots ?? []), ...site.writeRoots, ...extraWriteRoots]),
 		});
 	}
 
-	private bindingFor(skillPackage: SureSkillPackage): ResumeBinding {
+	private sitePolicyBinding(): SitePolicyBinding {
+		const resolved =
+			this.options.policySnapshot === undefined ? resolveSitePolicy({ repositoryRoot: this.cwd }) : undefined;
+		const snapshot =
+			this.options.policySnapshot ?? (resolved === undefined ? undefined : snapshotResolvedSitePolicy(resolved));
+		if (snapshot === undefined) return { referenceRoots: [], writeRoots: [] };
+		const referenceRoles = new Set(["read_only_reference", "dataset_source", "forbidden_output"]);
+		const writeRoles = new Set(["controlled_publication"]);
+		return {
+			policyDigest: snapshot.policy_digest,
+			snapshot,
+			referenceRoots: snapshot.path_bindings
+				.filter((binding) => referenceRoles.has(binding.role))
+				.map((binding) => binding.path),
+			writeRoots: snapshot.path_bindings
+				.filter((binding) => writeRoles.has(binding.role))
+				.map((binding) => binding.path),
+		};
+	}
+
+	private bindingFor(skillPackage: SureSkillPackage, sitePolicy = this.sitePolicyBinding()): ResumeBinding {
 		const definitionIdentity = JSON.parse(
 			JSON.stringify({
 				profile: "legacy-v1",
@@ -142,13 +199,15 @@ export class SureRunManager {
 		const workflowDigest = this.options.workflowDigest ?? digest("workflow");
 		const validatorDigest = this.options.validatorDigest ?? digest("validator");
 		const executorDigest = this.options.executorDigest ?? digest("executor");
-		const policyDigest = this.options.policyDigest ?? digest("policy");
+		const policyDigest = this.options.policyDigest ?? sitePolicy.policyDigest ?? digest("policy");
+		const policySnapshotDigest = sitePolicy.snapshot?.snapshot_digest;
 		return {
 			coreVersion: this.options.coreVersion ?? COMPAT_CORE_VERSION,
 			workflowDigest,
 			validatorDigest,
 			executorDigest,
 			policyDigest,
+			...(policySnapshotDigest === undefined ? {} : { policySnapshotDigest }),
 			bindingDigest:
 				this.options.bindingDigest ??
 				canonicalJsonDigest({
@@ -156,15 +215,22 @@ export class SureRunManager {
 					validatorDigest,
 					executorDigest,
 					policyDigest,
+					policySnapshotDigest: policySnapshotDigest ?? null,
 				} as unknown as JsonValue),
 		};
 	}
 
 	createRun(skillPackage: SureSkillPackage, args: string, outputDir?: string): SureRunRecord {
 		const runId = `${safeTimestamp()}-${randomUUID().slice(0, 8)}`;
-		const binding = this.bindingFor(skillPackage);
+		const sitePolicy = this.sitePolicyBinding();
+		const binding = this.bindingFor(skillPackage, sitePolicy);
 		const normalizedOutputDir = outputDir === undefined ? undefined : resolve(outputDir);
-		const core = this.coreFor(normalizedOutputDir === undefined ? [] : [normalizedOutputDir]);
+		const core = this.coreFor(normalizedOutputDir === undefined ? [] : [normalizedOutputDir], sitePolicy);
+		const policySnapshot = sitePolicy.snapshot;
+		const policySnapshotPath =
+			policySnapshot === undefined
+				? undefined
+				: join(this.runsRoot, runId, "artifacts", "site_policy.resolved.json");
 		const record = core.createRun({
 			runId,
 			skillName: skillPackage.manifest.name,
@@ -173,9 +239,15 @@ export class SureRunManager {
 			packageDir: resolve(skillPackage.packageDir),
 			args,
 			...(normalizedOutputDir === undefined ? {} : { outputDir: normalizedOutputDir }),
+			...(policySnapshot === undefined ? {} : { policySnapshotDigest: policySnapshot.snapshot_digest }),
+			...(policySnapshotPath === undefined ? {} : { policySnapshotPath }),
 			...binding,
 		});
 		const sureRecord = toSureRecord(record);
+		if (policySnapshot !== undefined && policySnapshotPath !== undefined) {
+			const admittedSnapshot = core.admitPath(policySnapshotPath, [join(sureRecord.runDir, "artifacts")]).path;
+			writeJsonAtomic(admittedSnapshot, policySnapshot);
+		}
 		// The historical facade did not materialize state.json until the first
 		// checkpoint patch. Core keeps an empty state digest for new runs, but the
 		// compatibility surface preserves that observable absence.
@@ -275,6 +347,7 @@ export class SureRunManager {
 			"validatorDigest",
 			"executorDigest",
 			"policyDigest",
+			"policySnapshotDigest",
 		] as const) {
 			if (record[key] !== binding[key]) {
 				throw new RunStoreError(
@@ -307,15 +380,20 @@ export class SureRunManager {
 		const core = this.coreFor([outputDir]);
 		const admittedOutput = core.admitPath(outputDir, [outputDir]).path;
 		mkdirSync(admittedOutput, { recursive: true });
+		assertRegularTree(admittedOutput);
 		if (TERMINAL_RUN_STATUSES.has(record.status)) {
 			const artifactsDir = join(record.runDir, "artifacts");
 			if (existsSync(artifactsDir)) {
 				core.admitPath(artifactsDir, [record.runDir]);
+				assertRegularTree(artifactsDir);
 				const destination = join(admittedOutput, "artifacts");
 				core.admitPath(destination, [admittedOutput]);
+				if (existsSync(destination)) assertRegularTree(destination);
 				cpSync(artifactsDir, destination, { recursive: true });
+				assertRegularTree(destination);
 			}
 		}
+		assertRegularTree(admittedOutput);
 		writeJsonAtomic(join(admittedOutput, RESULT_FILE), {
 			schema: "sure.run_result.v1",
 			command: `/${record.command.replace(/^\//, "")}`,

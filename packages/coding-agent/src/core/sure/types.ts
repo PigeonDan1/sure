@@ -92,6 +92,9 @@ export interface SureRunRecord {
 	executorDigest?: string;
 	policyDigest?: string;
 	bindingDigest?: string;
+	/** Digest and run-local evidence path for the immutable site-policy snapshot. */
+	policySnapshotDigest?: string;
+	policySnapshotPath?: string;
 	/** Digest of the persisted state document and monotonic durable revision. */
 	stateDigest?: string;
 	revision?: number;

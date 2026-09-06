@@ -27,6 +27,10 @@ export interface CoreRunRecord {
 	executorDigest?: string;
 	policyDigest?: string;
 	bindingDigest?: string;
+	/** Digest of the immutable site-policy snapshot captured for this run. */
+	policySnapshotDigest?: string;
+	/** Run-local path containing the captured site-policy snapshot. */
+	policySnapshotPath?: string;
 	/** Canonical digest of the persisted state document for tamper detection. */
 	stateDigest?: string;
 	/** Monotonic CAS revision; legacy records are read as revision zero. */
@@ -48,6 +52,8 @@ export interface CreateRunInput {
 	executorDigest: string;
 	policyDigest: string;
 	bindingDigest?: string;
+	policySnapshotDigest?: string;
+	policySnapshotPath?: string;
 	startedAt?: string;
 }
 
@@ -89,6 +95,7 @@ export interface ResumeBinding {
 	validatorDigest: string;
 	executorDigest: string;
 	policyDigest: string;
+	policySnapshotDigest?: string;
 	bindingDigest?: string;
 }
 
