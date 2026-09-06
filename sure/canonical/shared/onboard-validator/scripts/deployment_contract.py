@@ -4,14 +4,41 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 IMAGE_TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z0-9.-]+(?::[0-9]+)?/.+:[A-Za-z0-9_.-]+$")
+
+
+def resolve_runtime_support_root(
+    script_path: Path,
+    environment: Mapping[str, str] | None = None,
+) -> Path:
+    env = environment if environment is not None else os.environ
+    candidates = [
+        env.get("SURE_RUNTIME_SUPPORT_ROOT", "").strip(),
+        env.get("SURE_REPOSITORY_ROOT", "").strip(),
+        *(str(parent) for parent in script_path.resolve().parents),
+    ]
+    seen: set[Path] = set()
+    for raw in candidates:
+        if not raw:
+            continue
+        candidate = Path(raw).expanduser().resolve()
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if (
+            (candidate / "sure" / "runtime" / "model" / "bootstrap.py").is_file()
+            and (candidate / "sure" / "site" / "loader.py").is_file()
+        ):
+            return candidate
+    raise RuntimeError("SURE runtime support root is unavailable")
 
 
 def document_timestamp(document: dict[str, Any], name: str) -> datetime:

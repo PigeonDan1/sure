@@ -84,7 +84,10 @@ describe("semantic backend registry", () => {
 			["sure.onboard.validate_fixture", "check_fixture.py"],
 			["sure.onboard.validate_weights", "check_weights.py"],
 			["sure.onboard.validate_artifact_manifest", "check_artifact_manifest.py"],
+			["sure.onboard.validate_package_gate", "check_package_gate.py"],
+			["sure.onboard.validate_runtime_inventory", "check_runtime_inventory.py"],
 			["sure.onboard.validate_verdict", "check_verdict.py"],
+			["sure.onboard.validate_finalized_bundle", "check_finalized_bundle.py"],
 		] as const) {
 			const resolved = resolveSemanticBackendOperation(packageDir, operationId, { manifestPath });
 			expect(resolved.source).toBe("canonical");
@@ -93,7 +96,14 @@ describe("semantic backend registry", () => {
 			);
 			expect(resolved.kind).toBe("validate");
 			expect(resolved.consumer_skill_ids).toEqual(["sure_onboard"]);
-			expect(resolved.requires_policy_snapshot).toBe(operationId === "sure.onboard.validate_model_input");
+			expect(resolved.requires_policy_snapshot).toBe(
+				new Set([
+					"sure.onboard.validate_model_input",
+					"sure.onboard.validate_package_gate",
+					"sure.onboard.validate_runtime_inventory",
+					"sure.onboard.validate_finalized_bundle",
+				]).has(operationId),
+			);
 		}
 	});
 

@@ -169,9 +169,23 @@ describe("canonical SURE skill generation", () => {
 			prepare_fixture: "sure.onboard.validate_fixture",
 			fetch_weights: "sure.onboard.validate_weights",
 			save_artifacts: "sure.onboard.validate_artifact_manifest",
+			package_gate: "sure.onboard.validate_package_gate",
+			write_runtime_inventory: "sure.onboard.validate_runtime_inventory",
 			verdict: "sure.onboard.validate_verdict",
 			extract_lessons: "sure.memory.validate_extraction",
+			finalize_model_bundle: "sure.onboard.validate_finalized_bundle",
 		});
+		for (const executionUnit of [
+			"build_env",
+			"validate_env_compat",
+			"validate_import",
+			"validate_load",
+			"validate_infer",
+			"validate_contract",
+			"package_container",
+		]) {
+			expect(onboardOperations[executionUnit]).toBeUndefined();
+		}
 	});
 
 	it("projects the legacy Pi manifest without changing its public fields", () => {
@@ -287,10 +301,20 @@ describe("canonical SURE skill generation", () => {
 		}
 		const manifest = readJson(join(root, "semantic-backends.json"));
 		expect(lock.semantic_backend_registry_digest).toBe(manifest.registry_digest);
-		const modelInputOperation = (manifest.bundles as Array<Record<string, unknown>>)
+		const policyBoundOnboardOperations = (manifest.bundles as Array<Record<string, unknown>>)
 			.flatMap((bundle) => bundle.operations as Array<Record<string, unknown>>)
-			.find((operation) => operation.operation_id === "sure.onboard.validate_model_input");
-		expect(modelInputOperation?.requires_policy_snapshot).toBe(true);
+			.filter(
+				(operation) =>
+					String(operation.operation_id).startsWith("sure.onboard.") &&
+					operation.requires_policy_snapshot === true,
+			)
+			.map((operation) => operation.operation_id);
+		expect(policyBoundOnboardOperations).toEqual([
+			"sure.onboard.validate_model_input",
+			"sure.onboard.validate_package_gate",
+			"sure.onboard.validate_runtime_inventory",
+			"sure.onboard.validate_finalized_bundle",
+		]);
 		const entrypoints: string[] = [];
 		const operationIds: string[] = [];
 		for (const bundle of manifest.bundles as Array<Record<string, unknown>>) {

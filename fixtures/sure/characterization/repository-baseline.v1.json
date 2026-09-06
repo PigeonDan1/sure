@@ -6651,8 +6651,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
-      "size_bytes": 31756,
-      "sha256": "5d8cb0358a83766373fce50604e8bb8d2d4687fc4751ccc23d41faac0ea2e6ad"
+      "size_bytes": 31955,
+      "sha256": "532f340075479978fb48299c7f670dbe0965abf357f01fd893c479f369030280"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
@@ -7182,7 +7182,7 @@
     {
       "path": "sure/runtime/memory/units.generation.lock.json",
       "size_bytes": 506,
-      "sha256": "6630e2d88a31d6886a2c6025fb9c2268c1b4c35acd6db15487ce1451481821cf"
+      "sha256": "84f563433912b4302c21a9daa5d1814b9d1a0d2fbbc49949c3a808da252a9b64"
     },
     {
       "path": "sure/runtime/memory/units.json",
@@ -7266,8 +7266,8 @@
     },
     {
       "path": "sure/runtime/test_semantic_backend.py",
-      "size_bytes": 20995,
-      "sha256": "e068f1e1afb31484644089ab646ebdcaeba3f4d8e04074fbbba6656ee5ee7df7"
+      "size_bytes": 21508,
+      "sha256": "f92b6cdf4475954d538d24fb9a31ceddd236e633ceddeefafaa539632b4b46b2"
     },
     {
       "path": "sure/runtime/usage.ts",
@@ -9036,8 +9036,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_finalized_bundle.py",
-      "size_bytes": 9743,
-      "sha256": "d4fba99949dabefa4e0883a9efe1ecaef0eb64a1fba76d95a433bc5f79e9e1bd"
+      "size_bytes": 955,
+      "sha256": "54ce707643f7898cf1740d735327c0f175937751d8fff230ffb8e324bff54845"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_fixture.py",
@@ -9061,13 +9061,13 @@
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_package_gate.py",
-      "size_bytes": 13126,
-      "sha256": "151fe42dc3695fd895ea59a1e213e2b37e26c98a1b9f8fdcf7ad6546f72da304"
+      "size_bytes": 951,
+      "sha256": "0fd734bb1457580a20ce009112b61a01809766f6298b8ea556d21dbd48b25d79"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_runtime_inventory.py",
-      "size_bytes": 8160,
-      "sha256": "320119aae9a385fa245f65826f706c25ac09f424911c9ca3b382449d4853f60d"
+      "size_bytes": 956,
+      "sha256": "02f6a77fcdbf826ecda1cbb34df0017f768c32e216d926e8908c02397190d602"
     },
     {
       "path": "sure/skills/sure_onboard/scripts/check_spec.py",
@@ -9701,5 +9701,5 @@
       ]
     }
   ],
-  "semantic_digest": "8916db77ab50503567680f352cb475712e7e7ca70c1076b50e5f768b7c836b15"
+  "semantic_digest": "84682623441483ae8a9d3f7a0e8485d71fd6a2124ba5e0ea99b4bf58b1b5e37c"
 }

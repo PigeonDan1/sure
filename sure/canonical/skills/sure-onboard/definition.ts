@@ -307,6 +307,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						},
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_package_gate",
 							script_id: "check_package_gate.py",
 						},
 						helper_scripts: ["write_package_gate.py"],
@@ -320,6 +321,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["schema", "status", "model", "local_runtime", "container_runtime", "policy"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_runtime_inventory",
 							script_id: "check_runtime_inventory.py",
 						},
 						helper_scripts: ["write_runtime_inventory.py"],
@@ -373,6 +375,7 @@ export const SURE_ONBOARD_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["schema", "status", "model_name", "package_profile", "execution_policy"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.onboard.validate_finalized_bundle",
 							script_id: "check_finalized_bundle.py",
 						},
 						helper_scripts: ["finalize_model_bundle.py"],

@@ -369,7 +369,10 @@ class SemanticBackendTests(unittest.TestCase):
             ("sure.onboard.validate_fixture", "check_fixture.py"),
             ("sure.onboard.validate_weights", "check_weights.py"),
             ("sure.onboard.validate_artifact_manifest", "check_artifact_manifest.py"),
+            ("sure.onboard.validate_package_gate", "check_package_gate.py"),
+            ("sure.onboard.validate_runtime_inventory", "check_runtime_inventory.py"),
             ("sure.onboard.validate_verdict", "check_verdict.py"),
+            ("sure.onboard.validate_finalized_bundle", "check_finalized_bundle.py"),
         )
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
@@ -394,7 +397,13 @@ class SemanticBackendTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     resolved.requires_policy_snapshot,
-                    operation_id == "sure.onboard.validate_model_input",
+                    operation_id
+                    in {
+                        "sure.onboard.validate_model_input",
+                        "sure.onboard.validate_package_gate",
+                        "sure.onboard.validate_runtime_inventory",
+                        "sure.onboard.validate_finalized_bundle",
+                    },
                 )
                 legacy = REPOSITORY_ROOT / "sure" / "skills" / "sure_onboard" / "scripts" / filename
                 canonical_result = subprocess.run(
