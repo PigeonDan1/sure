@@ -121,9 +121,9 @@ describe("canonical SURE skill generation", () => {
 		expect(evalOperations).toMatchObject({
 			execute_evaluation: "sure.eval.validate_eval_report",
 			assessment: "sure.eval.validate_assessment",
+			extract_lessons: "sure.memory.validate_extraction",
 			run_report: "sure.eval.validate_run_report",
 		});
-		expect(evalOperations.extract_lessons).toBeUndefined();
 		const inferOperations = Object.fromEntries(
 			descriptors
 				.filter((descriptor) => descriptor.skill_id === "sure_infer" && descriptor.branch_id === "main")
@@ -131,9 +131,21 @@ describe("canonical SURE skill generation", () => {
 		);
 		expect(inferOperations).toMatchObject({
 			execute_inference: "sure.infer.validate_execution_result",
+			extract_lessons: "sure.memory.validate_extraction",
 			run_report: "sure.eval.validate_run_report",
 		});
-		expect(inferOperations.extract_lessons).toBeUndefined();
+		const extractionOperations = Object.fromEntries(
+			descriptors
+				.filter((descriptor) => descriptor.unit_id === "extract_lessons")
+				.map((descriptor) => [descriptor.skill_id, descriptor.backend_operation_id]),
+		);
+		expect(extractionOperations).toEqual({
+			sure_eval: "sure.memory.validate_extraction",
+			sure_feed: "sure.memory.validate_extraction",
+			sure_infer: "sure.memory.validate_extraction",
+			sure_onboard: "sure.memory.validate_extraction",
+			sure_trans: "sure.memory.validate_extraction",
+		});
 	});
 
 	it("projects the legacy Pi manifest without changing its public fields", () => {

@@ -85,6 +85,7 @@ export const SURE_EVAL_CANONICAL: CanonicalSkillDefinition = defineCanonicalSkil
 						},
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.memory.validate_extraction",
 							script_id: "check_memory_extraction.py",
 							gate_inputs: ["candidates", "memory_evidence"],
 						},

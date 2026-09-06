@@ -488,29 +488,40 @@ describe("surectl cooperative control plane", () => {
 				infra_evidence: [],
 			}),
 		);
-		const registry = JSON.parse(readFileSync(inferRegistryPath, "utf8")) as {
-			digest: string;
-			validators: Array<{ id: string; unit_id?: string }>;
-		};
-		const extractionValidator = registry.validators.find((entry) => entry.unit_id === "extract_lessons");
-		const compatibilityEvidence = join(artifacts, "infer-memory-compatibility-evidence.json");
-		writeFileSync(
-			compatibilityEvidence,
-			JSON.stringify({
-				schema: "sure.validator.evidence.v1",
-				registry_digest: registry.digest,
-				validators: [
-					{
-						validator_id: extractionValidator?.id,
-						verdict: "PASS",
-						artifact_digest: digest(extraction),
-					},
-				],
-			}),
-		);
-		expect(command(root, "validate", [...base, "--run-id", runId, "--evidence", compatibilityEvidence]).status).toBe(
-			0,
-		);
+		const unavailableMemory = command(root, "validate", [...base, "--run-id", runId]);
+		expect(unavailableMemory.status).toBe(5);
+		expect((unavailableMemory.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
+		expect(
+			(
+				(unavailableMemory.value?.transition as Record<string, unknown>).checkpoint as {
+					data: { currentUnit: string };
+				}
+			).data.currentUnit,
+		).toBe("extract_lessons");
+		const extractionResult = command(root, "validate", [
+			...base,
+			"--run-id",
+			runId,
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(extractionResult.status).toBe(0);
+		expect((extractionResult.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		validation = state.last_validation as Record<string, unknown>;
+		evidence = validation.evidence as { validators: Array<Record<string, unknown>> };
+		expect(evidence.validators[0]?.backend_operation_id).toBe("sure.memory.validate_extraction");
+		expect(
+			(JSON.parse(readFileSync(String(evidence.validators[0]?.receipt_path), "utf8")) as Record<string, unknown>)
+				.lifecycle,
+		).toBe("SUCCEEDED");
+		expect(
+			(
+				(extractionResult.value?.transition as Record<string, unknown>).checkpoint as {
+					data: { currentUnit: string };
+				}
+			).data.currentUnit,
+		).toBe("run_report");
 
 		writeFileSync(
 			join(artifacts, "main_agent_run_report.json"),

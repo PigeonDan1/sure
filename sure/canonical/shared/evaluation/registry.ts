@@ -133,7 +133,31 @@ export const SURE_EVALUATION_VALIDATOR_BACKEND: SemanticBackendBundle = {
 	],
 };
 
+export const SURE_MEMORY_VALIDATOR_BACKEND: SemanticBackendBundle = {
+	schema: "sure.semantic.backend.bundle.v1",
+	bundle_id: "sure-memory-validator",
+	version: "legacy-v1",
+	description: "Shared SURE memory extraction validator backed by the existing memory rules.",
+	canonical_root: "sure/canonical/shared/memory-backend",
+	canonical_root_kind: "repository",
+	legacy_root: "sure/skills/sure_infer",
+	legacy_root_kind: "repository",
+	integrity_root: "scripts",
+	operations: [
+		{
+			operation_id: "sure.memory.validate_extraction",
+			description: "Validate an extraction declaration and its provenance-bound memory candidates.",
+			entrypoint: "scripts/check_memory_extraction.py",
+			consumer_skill_ids: ["sure_feed", "sure_onboard", "sure_infer", "sure_eval", "sure_trans"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+	],
+};
+
 export const CANONICAL_SEMANTIC_BACKENDS: readonly SemanticBackendBundle[] = [
 	SURE_EVALUATION_BACKEND,
 	SURE_EVALUATION_VALIDATOR_BACKEND,
+	SURE_MEMORY_VALIDATOR_BACKEND,
 ];

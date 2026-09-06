@@ -48,6 +48,18 @@ describe("semantic backend registry", () => {
 		expect(report.consumer_skill_ids).toEqual(["sure_eval", "sure_infer"]);
 	});
 
+	it("resolves the shared memory gate outside every sibling skill", () => {
+		const memory = resolveSemanticBackendOperation(packageDir, "sure.memory.validate_extraction", {
+			manifestPath,
+		});
+		expect(memory.kind).toBe("validate");
+		expect(memory.source).toBe("canonical");
+		expect(memory.consumer_skill_ids).toEqual(["sure_feed", "sure_onboard", "sure_infer", "sure_eval", "sure_trans"]);
+		expect(memory.path).toBe(
+			join(repositoryRoot, "sure", "canonical", "shared", "memory-backend", "scripts", "check_memory_extraction.py"),
+		);
+	});
+
 	it("uses an installed backend root only when its complete tree matches the manifest", () => {
 		const temporary = mkdtempSync(join(tmpdir(), "sure-semantic-backend-"));
 		try {

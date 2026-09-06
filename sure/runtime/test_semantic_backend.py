@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -227,6 +230,88 @@ class SemanticBackendTests(unittest.TestCase):
                     manifest_path=manifest_path,
                     environment={"SURE_REPOSITORY_ROOT": str(repository)},
                 )
+
+    def test_shared_memory_entrypoint_matches_all_legacy_wrappers(self) -> None:
+        canonical = (
+            REPOSITORY_ROOT
+            / "sure"
+            / "canonical"
+            / "shared"
+            / "memory-backend"
+            / "scripts"
+            / "check_memory_extraction.py"
+        )
+        legacy_wrappers = [
+            REPOSITORY_ROOT / "sure" / "skills" / skill / "scripts" / "check_memory_extraction.py"
+            for skill in ("sure_feed", "sure_onboard", "sure_infer", "sure_eval", "sure_trans")
+        ]
+        self.assertTrue(all(path.read_bytes() == legacy_wrappers[0].read_bytes() for path in legacy_wrappers))
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            run_dir = workspace / "run"
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir(parents=True)
+            declaration = artifacts / "extraction_declaration.json"
+            declaration.write_text(
+                json.dumps(
+                    {
+                        "schema": "sure.memory.extraction.v2",
+                        "no_new_lessons": True,
+                        "no_lessons_reason": "No reusable lesson in this fixture.",
+                        "covered_by": [],
+                        "candidates": [],
+                        "infra_noise": False,
+                        "infra_evidence": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            environment = {
+                **os.environ,
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "SURE_RUNTIME_SUPPORT_ROOT": str(REPOSITORY_ROOT),
+                "SURE_REPOSITORY_ROOT": str(workspace),
+            }
+            common = ["--run-dir", str(run_dir), "--produces", str(declaration)]
+            def run(entrypoint: Path) -> subprocess.CompletedProcess[str]:
+                return subprocess.run(
+                    [sys.executable, "-B", str(entrypoint), *common, "--repo-root", str(workspace)]
+                    if entrypoint != canonical
+                    else [sys.executable, "-B", str(entrypoint), *common],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=environment,
+                )
+
+            canonical_result = run(canonical)
+            self.assertEqual(canonical_result.returncode, 0, canonical_result.stderr)
+            for legacy in legacy_wrappers:
+                legacy_result = run(legacy)
+                self.assertEqual(canonical_result.returncode, legacy_result.returncode)
+                self.assertEqual(canonical_result.stdout, legacy_result.stdout)
+                self.assertEqual(canonical_result.stderr, legacy_result.stderr)
+            declaration.write_text(
+                json.dumps(
+                    {
+                        "schema": "sure.memory.extraction.v2",
+                        "no_new_lessons": True,
+                        "no_lessons_reason": "",
+                        "covered_by": [],
+                        "candidates": [],
+                        "infra_noise": False,
+                        "infra_evidence": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            canonical_failure = run(canonical)
+            self.assertEqual(canonical_failure.returncode, 1)
+            for legacy in legacy_wrappers:
+                legacy_failure = run(legacy)
+                self.assertEqual(canonical_failure.returncode, legacy_failure.returncode)
+                self.assertEqual(canonical_failure.stdout, legacy_failure.stdout)
+                self.assertEqual(canonical_failure.stderr, legacy_failure.stderr)
 
     def test_invalid_manifest_is_not_replaced_by_a_later_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
