@@ -612,6 +612,8 @@ describe("surectl cooperative control plane", () => {
 		const receiptPath = join(artifacts, "conformance-receipt.json");
 		const request = executionRequest("run-conformance", artifacts);
 		writeFileSync(requestPath, JSON.stringify(request));
+		const outputPath = join(artifacts, "conformance-output.txt");
+		writeFileSync(outputPath, "stable\n");
 		const receipt = {
 			schema: "sure.execution_receipt.v1",
 			receipt_id: "conformance-receipt",
@@ -630,7 +632,18 @@ describe("surectl cooperative control plane", () => {
 			},
 			lifecycle: "SUCCEEDED",
 			capability_evidence: [],
-			outputs: [],
+			outputs: [
+				{
+					artifact_id: "conformance-output",
+					path: outputPath,
+					resolved_path: outputPath,
+					sha256: digest(outputPath),
+					size: readFileSync(outputPath).byteLength,
+					media_type: "text/plain",
+					origin: "generated",
+					source_root: artifacts,
+				},
+			],
 			reference_snapshot_digest: request.reference_snapshot_digest,
 			output_root: request.output_root,
 			policy_digest: request.policy_digest,
@@ -664,6 +677,31 @@ describe("surectl cooperative control plane", () => {
 		expect(result.status).toBe(5);
 		expect((result.value?.eligibility as Record<string, unknown>).eligible).toBe(false);
 		expect((result.value?.conformance as Record<string, unknown>).reason_code).toBe("UPGRADE_REQUIRED");
+		writeFileSync(outputPath, "tampered\n");
+		const tamperedReceipt = command(root, "conformance", [
+			"--run-id",
+			"run-conformance",
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+			"--dataset-digest",
+			DIGEST_A,
+			"--scoring-digest",
+			DIGEST_B,
+			"--inference-protocol-digest",
+			DIGEST_A,
+			"--validator-verdict",
+			"PASS",
+			"--workflow-disposition",
+			"TERMINATE",
+		]);
+		expect(tamperedReceipt.status).toBe(5);
+		expect((tamperedReceipt.value?.conformance as Record<string, unknown>).reason_code).toBe("DIGEST_MISMATCH");
 	});
 
 	it("freezes a fully bound evaluation subject and refuses tampered subjects", () => {
@@ -721,6 +759,42 @@ describe("surectl cooperative control plane", () => {
 		};
 		const receiptPath = join(artifacts, "freeze-receipt.json");
 		writeFileSync(receiptPath, JSON.stringify(receipt));
+		const prematureConformance = command(root, "conformance", [
+			"--run-id",
+			"run-freeze",
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+			"--assurance-profile",
+			"pi_enforced",
+			"--validator-verdict",
+			"PASS",
+			"--workflow-disposition",
+			"TERMINATE",
+		]);
+		expect(prematureConformance.status).toBe(5);
+		expect((prematureConformance.value?.conformance as Record<string, unknown>).reason_code).toBe(
+			"VALIDATION_PENDING",
+		);
+		const executionRecorded = command(root, "validate", [
+			...base,
+			"--run-id",
+			"run-freeze",
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+		]);
+		expect(executionRecorded.status).toBe(5);
+		const validatedArtifact = join(artifacts, "scan_result.json");
+		writeFileSync(validatedArtifact, '{"candidates":[]}\n');
+		const validated = command(root, "validate", [...base, "--run-id", "run-freeze"]);
+		expect(validated.status).toBe(0);
 		const predictionPath = join(artifacts, "predictions.txt");
 		writeFileSync(predictionPath, "sample\tanswer\n");
 		const frozen = command(root, "freeze", [

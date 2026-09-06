@@ -243,6 +243,16 @@ function readJson(path: string): unknown {
 	return JSON.parse(readFileSync(path, "utf8")) as unknown;
 }
 
+function assertRegularFile(path: string, label: string): void {
+	let stat: ReturnType<typeof lstatSync>;
+	try {
+		stat = lstatSync(path);
+	} catch {
+		throw new Error(`${label} is missing: ${path}`);
+	}
+	if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`${label} must be a regular file: ${path}`);
+}
+
 function recordObject(value: unknown, label: string): Record<string, unknown> {
 	if (typeof value !== "object" || value === null || Array.isArray(value))
 		throw new Error(`${label} must be an object.`);
@@ -292,6 +302,10 @@ function normalizeDigest(value: string, label: string): string {
 	const digest = value.startsWith("sha256:") ? value.slice(7) : value;
 	if (!SHA256.test(digest)) throw new Error(`${label} must be a SHA-256 digest.`);
 	return `sha256:${digest}`;
+}
+
+function validDigestValue(value: unknown): value is string {
+	return typeof value === "string" && /^(?:sha256:)?[0-9a-f]{64}$/i.test(value);
 }
 
 function sameDigest(left: string, right: string): boolean {
@@ -519,6 +533,201 @@ function admittedReadArtifactPath(
 	]).path;
 }
 
+function outputRootBindingError(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	request: ExecutionRequest,
+	policyReferences: readonly string[],
+): string | undefined {
+	if (typeof request.output_root !== "object" || request.output_root === null) {
+		return "Execution request output_root must be an object.";
+	}
+	const allowedOutputRoots = [run.runDir, ...(run.outputDir ? [run.outputDir] : [])];
+	try {
+		const admitted = store.admitPath(request.output_root.path, allowedOutputRoots);
+		if (request.output_root.resolved_path !== admitted.resolvedPath) {
+			return "Execution request output_root.resolved_path does not match the admitted path.";
+		}
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+	const boundary = validateExecutionRequest(request, {
+		allowed_output_roots: allowedOutputRoots,
+		forbidden_output_roots: policyReferences,
+	});
+	return boundary.valid ? undefined : `Execution request is not admissible: ${boundary.errors.join("; ")}`;
+}
+
+function receiptOutputErrors(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	request: ExecutionRequest,
+	receipt: ExecutionReceipt,
+): string[] {
+	const errors: string[] = [];
+	if (typeof request.output_root !== "object" || request.output_root === null) {
+		errors.push("Execution request output_root must be an object.");
+		return errors;
+	}
+	if (!Array.isArray(receipt.outputs)) return errors;
+	const allowedOutputRoots = [run.runDir, ...(run.outputDir ? [run.outputDir] : [])];
+	for (const output of receipt.outputs) {
+		if (typeof output.path !== "string" || typeof output.resolved_path !== "string") continue;
+		try {
+			const admitted = store.admitPath(output.path, [request.output_root.path, ...allowedOutputRoots]);
+			if (admitted.resolvedPath !== output.resolved_path) {
+				errors.push(`Receipt output ${output.artifact_id} resolved path does not match the admitted path.`);
+				continue;
+			}
+			const lexical = admitted.path;
+			assertRegularFile(lexical, `Receipt output ${output.artifact_id}`);
+			const stat = lstatSync(lexical);
+			if (!sameDigest(digestFile(lexical), output.sha256))
+				errors.push(`Receipt output ${output.artifact_id} digest does not match the current file.`);
+			if (stat.size !== output.size)
+				errors.push(`Receipt output ${output.artifact_id} size does not match the current file.`);
+		} catch (error) {
+			errors.push(error instanceof Error ? error.message : String(error));
+		}
+	}
+	return errors;
+}
+
+function assertOutputRootBinding(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	request: ExecutionRequest,
+	policyReferences: readonly string[],
+): void {
+	const error = outputRootBindingError(store, run, request, policyReferences);
+	if (error) throw new Error(error);
+}
+
+function assertReceiptOutputFiles(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	request: ExecutionRequest,
+	receipt: ExecutionReceipt,
+): void {
+	const errors = receiptOutputErrors(store, run, request, receipt);
+	if (errors.length > 0) throw new Error(errors.join("; "));
+}
+
+function frozenSubjectFileErrors(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	subject: FrozenEvaluationSubject,
+	policyReferences: readonly string[],
+): string[] {
+	const errors: string[] = [];
+	try {
+		const predictionPath = admittedReadArtifactPath(
+			store,
+			run,
+			absolute(subject.prediction_path, "frozen prediction"),
+			policyReferences,
+		);
+		assertRegularFile(predictionPath, "Frozen prediction");
+		if (!sameDigest(digestFile(predictionPath), subject.prediction_digest)) {
+			errors.push("Frozen prediction digest does not match the current file.");
+		}
+	} catch (error) {
+		errors.push(error instanceof Error ? error.message : String(error));
+	}
+	return errors;
+}
+
+function lastValidationOutcome(state: StateDocument | undefined): Record<string, unknown> | undefined {
+	if (!state || typeof state.last_validation !== "object" || state.last_validation === null) return undefined;
+	const validation = state.last_validation as Record<string, unknown>;
+	return typeof validation.outcome === "object" && validation.outcome !== null
+		? (validation.outcome as Record<string, unknown>)
+		: undefined;
+}
+
+interface FormalValidationBinding {
+	validatorVerdict: "PASS" | "FAIL" | "NOT_EXECUTED";
+	workflowDisposition: "ADVANCE" | "RETRY" | "BLOCK" | "TERMINATE" | "WAIT";
+	diagnostics: string[];
+}
+
+/**
+ * Formal conformance must consume the durable validation/execution record. A
+ * caller-provided verdict is useful for legacy/non-formal inspection, but it
+ * cannot manufacture evidence for a formal subject.
+ */
+function formalValidationBinding(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	state: StateDocument | undefined,
+	request: ExecutionRequest,
+	receiptPath: string,
+	policyReferences: readonly string[],
+): FormalValidationBinding {
+	const diagnostics: string[] = [];
+	const rawValidation = state?.last_validation;
+	const validation =
+		typeof rawValidation === "object" && rawValidation !== null
+			? (rawValidation as Record<string, unknown>)
+			: undefined;
+	const outcome =
+		validation && typeof validation.outcome === "object" && validation.outcome !== null
+			? (validation.outcome as Record<string, unknown>)
+			: undefined;
+	if (!validation || !outcome) {
+		diagnostics.push("formal conformance requires a persisted validation outcome");
+	} else {
+		if (validation.unit_id !== request.unit_id) {
+			diagnostics.push("persisted validation unit_id does not match the formal execution request");
+		}
+		if (outcome.outcome !== "PASS" || outcome.validator_verdict !== "PASS") {
+			diagnostics.push("persisted validation outcome is not PASS");
+		}
+		if (!(["ADVANCE", "TERMINATE"] as readonly unknown[]).includes(outcome.workflow_disposition)) {
+			diagnostics.push("persisted validation did not authorize workflow advancement");
+		}
+		const artifactPath = validation.artifact_path;
+		const artifactDigest = validation.artifact_digest;
+		if (typeof artifactPath !== "string" || typeof artifactDigest !== "string") {
+			diagnostics.push("persisted PASS validation is missing artifact binding");
+		} else {
+			try {
+				const admittedArtifact = admittedReadArtifactPath(
+					store,
+					run,
+					absolute(artifactPath, "persisted validation artifact"),
+					policyReferences,
+				);
+				assertRegularFile(admittedArtifact, "Persisted validation artifact");
+				if (!sameDigest(digestFile(admittedArtifact), artifactDigest)) {
+					diagnostics.push("persisted validation artifact digest does not match the current file");
+				}
+			} catch (error) {
+				diagnostics.push(error instanceof Error ? error.message : String(error));
+			}
+		}
+	}
+	const rawExecution = state?.last_execution;
+	const execution =
+		typeof rawExecution === "object" && rawExecution !== null ? (rawExecution as Record<string, unknown>) : undefined;
+	if (!execution) {
+		diagnostics.push("formal conformance requires persisted execution evidence");
+	} else {
+		const requestDigest = canonicalJsonDigest(request as unknown as JsonValue);
+		if (execution.request_digest !== requestDigest) {
+			diagnostics.push("persisted execution request digest does not match the formal request");
+		}
+		const receiptDigest = digestFile(receiptPath);
+		if (execution.receipt_digest !== receiptDigest) {
+			diagnostics.push("persisted execution receipt digest does not match the supplied receipt");
+		}
+	}
+	if (diagnostics.length > 0) {
+		return { validatorVerdict: "NOT_EXECUTED", workflowDisposition: "WAIT", diagnostics };
+	}
+	return { validatorVerdict: "PASS", workflowDisposition: "ADVANCE", diagnostics };
+}
+
 function start(args: ParsedArgs): void {
 	const root = rootFor(args);
 	const suppliedPolicy = policySnapshotFor(args);
@@ -702,6 +911,7 @@ function validate(args: ParsedArgs): PublicOutcome {
 		throw new Error("--execution-receipt requires --execution-request.");
 	if (executionRequestPath) {
 		const requestPath = admittedRunArtifactPath(store, run, absolute(executionRequestPath, "--execution-request"));
+		assertRegularFile(requestPath, "Execution request");
 		const request = recordObject(readJson(requestPath), "execution request") as unknown as ExecutionRequest;
 		if (request.run_id !== runId) throw new Error("Execution request run_id does not match the selected run.");
 		if (request.unit_id !== unit.id)
@@ -717,8 +927,33 @@ function validate(args: ParsedArgs): PublicOutcome {
 		let receipt: ExecutionReceipt | undefined;
 		if (executionReceiptPath) {
 			receiptPath = admittedRunArtifactPath(store, run, absolute(executionReceiptPath, "--execution-receipt"));
+			assertRegularFile(receiptPath, "Execution receipt");
 			receipt = recordObject(readJson(receiptPath), "execution receipt") as unknown as ExecutionReceipt;
-			const receiptValidation = validateExecutionReceipt(request, receipt, boundaryOptions);
+			const baseReceiptValidation = validateExecutionReceipt(request, receipt, boundaryOptions);
+			const outputRootError = outputRootBindingError(store, run, request, policyReferences);
+			const boundaryErrors = [
+				...(outputRootError === undefined ? [] : [outputRootError]),
+				...receiptOutputErrors(store, run, request, receipt),
+			];
+			const receiptValidation =
+				boundaryErrors.length === 0
+					? baseReceiptValidation
+					: {
+							...baseReceiptValidation,
+							valid: false,
+							errors: [...baseReceiptValidation.errors, ...boundaryErrors],
+							outcome: createOutcome({
+								validatorVerdict: "NOT_EXECUTED",
+								workflowDisposition: "BLOCK",
+								reasonCode: boundaryErrors.some((message) => /outside|root|symlink|reference/i.test(message))
+									? "PATH_OUT_OF_SCOPE"
+									: "INVALID_CONTRACT",
+								diagnostics: boundaryErrors.map((message) => ({
+									code: "EXECUTION_EVIDENCE_REJECTED",
+									message,
+								})),
+							}),
+						};
 			if (
 				run.executorDigest &&
 				receipt.executor?.digest &&
@@ -1187,6 +1422,8 @@ function freeze(args: ParsedArgs): PublicOutcome {
 		run,
 		absolute(requiredValue(args, "execution-receipt", "SURE_EXECUTION_RECEIPT"), "--execution-receipt"),
 	);
+	assertRegularFile(requestPath, "Execution request");
+	assertRegularFile(receiptPath, "Execution receipt");
 	const request = recordObject(readJson(requestPath), "execution request") as unknown as ExecutionRequest;
 	const receipt = recordObject(readJson(receiptPath), "execution receipt") as unknown as ExecutionReceipt;
 	if (request.run_id !== runId || receipt.run_id !== runId)
@@ -1202,6 +1439,12 @@ function freeze(args: ParsedArgs): PublicOutcome {
 	const missing: string[] = [];
 	if (!requestValidation.valid) missing.push("valid execution request");
 	if (!receiptValidation.valid) missing.push("valid execution receipt");
+	if (
+		outputRootBindingError(store, run, request, policyReferences) !== undefined ||
+		receiptOutputErrors(store, run, request, receipt).length > 0
+	) {
+		missing.push("admissible execution output files");
+	}
 	if (receipt.lifecycle !== "SUCCEEDED") missing.push("successful execution receipt");
 	const loaded = currentDefinition(args, root, run.skillName);
 	const registry = registryFor(loaded, args);
@@ -1367,17 +1610,46 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		run,
 		absolute(requiredValue(args, "execution-receipt", "SURE_EXECUTION_RECEIPT"), "--execution-receipt"),
 	);
+	assertRegularFile(requestPath, "Execution request");
+	assertRegularFile(receiptPath, "Execution receipt");
 	const request = recordObject(readJson(requestPath), "execution request") as unknown as ExecutionRequest;
 	const receipt = recordObject(readJson(receiptPath), "execution receipt") as unknown as ExecutionReceipt;
-	const profileValue = one(args, "assurance-profile") ?? "cooperative";
-	if (profileValue !== "cooperative" && profileValue !== "pi_enforced" && profileValue !== "trusted")
-		throw new Error(`Invalid --assurance-profile: ${profileValue}`);
+	const profileArgument = one(args, "assurance-profile");
+	const requestedProfileValue = profileArgument ?? "cooperative";
+	if (
+		requestedProfileValue !== "cooperative" &&
+		requestedProfileValue !== "pi_enforced" &&
+		requestedProfileValue !== "trusted"
+	)
+		throw new Error(`Invalid --assurance-profile: ${requestedProfileValue}`);
 	const boundary = {
 		allowed_output_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
 		forbidden_output_roots: policyReferences,
-		require_attested_executor: profileValue === "trusted",
+		require_attested_executor: requestedProfileValue === "trusted",
 	};
-	const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
+	const outputRootError = outputRootBindingError(store, run, request, policyReferences);
+	const baseReceiptValidation = validateExecutionReceipt(request, receipt, boundary);
+	const receiptFileErrors = receiptOutputErrors(store, run, request, receipt);
+	const receiptBoundaryErrors = [...(outputRootError === undefined ? [] : [outputRootError]), ...receiptFileErrors];
+	const receiptValidation =
+		receiptBoundaryErrors.length === 0
+			? baseReceiptValidation
+			: {
+					...baseReceiptValidation,
+					valid: false,
+					errors: [...baseReceiptValidation.errors, ...receiptBoundaryErrors],
+					outcome: createOutcome({
+						validatorVerdict: "NOT_EXECUTED",
+						workflowDisposition: "BLOCK",
+						reasonCode: receiptBoundaryErrors.some((message) => /outside|root|symlink|reference/i.test(message))
+							? "PATH_OUT_OF_SCOPE"
+							: "INVALID_CONTRACT",
+						diagnostics: receiptBoundaryErrors.map((message) => ({
+							code: "EXECUTION_EVIDENCE_REJECTED",
+							message,
+						})),
+					}),
+				};
 	const state = store.readState(run) ?? {};
 	const lastValidation =
 		typeof state.last_validation === "object" && state.last_validation !== null
@@ -1387,8 +1659,25 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		typeof lastValidation.outcome === "object" && lastValidation.outcome !== null
 			? (lastValidation.outcome as Record<string, unknown>)
 			: {};
-	const validatorVerdictValue = one(args, "validator-verdict") ?? lastOutcome.validator_verdict;
-	const workflowDispositionValue = one(args, "workflow-disposition") ?? lastOutcome.workflow_disposition;
+	const formalDiagnostics: string[] = [];
+	const formalBinding =
+		request.operation === "formal_evaluation"
+			? formalValidationBinding(store, run, state, request, receiptPath, policyReferences)
+			: undefined;
+	if (formalBinding !== undefined && formalBinding.diagnostics.length === 0) {
+		const suppliedVerdict = one(args, "validator-verdict");
+		if (suppliedVerdict !== undefined && suppliedVerdict !== formalBinding.validatorVerdict) {
+			formalDiagnostics.push("validator verdict argument cannot override the persisted validation outcome");
+		}
+		const suppliedDisposition = one(args, "workflow-disposition");
+		if (suppliedDisposition !== undefined && !["ADVANCE", "TERMINATE"].includes(suppliedDisposition)) {
+			formalDiagnostics.push("workflow disposition argument cannot override the persisted validation outcome");
+		}
+	}
+	const validatorVerdictValue =
+		formalBinding?.validatorVerdict ?? one(args, "validator-verdict") ?? lastOutcome.validator_verdict;
+	const workflowDispositionValue =
+		formalBinding?.workflowDisposition ?? one(args, "workflow-disposition") ?? lastOutcome.workflow_disposition;
 	const validatorVerdict =
 		validatorVerdictValue === "PASS" || validatorVerdictValue === "FAIL" || validatorVerdictValue === "NOT_EXECUTED"
 			? validatorVerdictValue
@@ -1421,56 +1710,115 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		subjectInput.schema === "sure.evaluation_subject.v1"
 			? (subjectInput as unknown as FrozenEvaluationSubject)
 			: undefined;
+	const formalOperation = request.operation === "formal_evaluation";
+	const profileValue = formalOperation && frozenSubject ? frozenSubject.assurance_profile : requestedProfileValue;
+	if (formalOperation && frozenSubject) {
+		formalDiagnostics.push(...frozenSubjectFileErrors(store, run, frozenSubject, policyReferences));
+	}
+	if (formalOperation && frozenSubject && profileArgument !== undefined && profileArgument !== profileValue) {
+		formalDiagnostics.push("assurance profile argument does not match the frozen evaluation subject");
+	}
+	if (formalOperation && frozenSubject) {
+		for (const [argument, expected] of [
+			["bundle-digest", frozenSubject.bundle_digest],
+			["runtime-digest", frozenSubject.runtime_identity_digest],
+			["inference-protocol-digest", frozenSubject.inference_protocol_digest],
+			["dataset-digest", frozenSubject.dataset_identity_digest],
+			["scoring-digest", frozenSubject.scoring_protocol_digest],
+		] as const) {
+			const supplied = one(args, argument);
+			if (supplied !== undefined && (!validDigestValue(supplied) || !sameDigest(supplied, expected ?? ""))) {
+				formalDiagnostics.push(`${argument} does not match the frozen evaluation subject`);
+			}
+		}
+	}
 	const subject: FrozenFormalSubject = {
 		bundle_manifest_path:
-			typeof subjectInput.bundle_manifest_path === "string"
-				? subjectInput.bundle_manifest_path
-				: request.subject.bundle_manifest_path,
+			formalOperation && frozenSubject
+				? frozenSubject.bundle_manifest_path
+				: typeof subjectInput.bundle_manifest_path === "string"
+					? subjectInput.bundle_manifest_path
+					: request.subject.bundle_manifest_path,
 		bundle_digest:
-			digestOrUndefined(one(args, "bundle-digest")) ??
-			(typeof subjectInput.bundle_digest === "string" ? subjectInput.bundle_digest : request.subject.bundle_digest),
+			formalOperation && frozenSubject
+				? frozenSubject.bundle_digest
+				: (digestOrUndefined(one(args, "bundle-digest")) ??
+					(typeof subjectInput.bundle_digest === "string"
+						? subjectInput.bundle_digest
+						: request.subject.bundle_digest)),
 		runtime_identity_digest:
-			digestOrUndefined(one(args, "runtime-digest")) ??
-			(typeof subjectInput.runtime_identity_digest === "string"
-				? subjectInput.runtime_identity_digest
-				: request.subject.runtime_identity_digest),
+			formalOperation && frozenSubject
+				? frozenSubject.runtime_identity_digest
+				: (digestOrUndefined(one(args, "runtime-digest")) ??
+					(typeof subjectInput.runtime_identity_digest === "string"
+						? subjectInput.runtime_identity_digest
+						: request.subject.runtime_identity_digest)),
 		inference_protocol_digest:
-			digestOrUndefined(one(args, "inference-protocol-digest")) ??
-			(typeof subjectInput.inference_protocol_digest === "string"
-				? subjectInput.inference_protocol_digest
-				: request.subject.inference_protocol_digest),
+			formalOperation && frozenSubject
+				? (frozenSubject.inference_protocol_digest ?? "")
+				: (digestOrUndefined(one(args, "inference-protocol-digest")) ??
+					(typeof subjectInput.inference_protocol_digest === "string"
+						? subjectInput.inference_protocol_digest
+						: request.subject.inference_protocol_digest)),
 		dataset_identity_digest:
-			digestOrUndefined(one(args, "dataset-digest")) ??
-			(typeof subjectInput.dataset_identity_digest === "string"
-				? subjectInput.dataset_identity_digest
-				: (request.subject.dataset_identity_digest ?? "")),
+			formalOperation && frozenSubject
+				? (frozenSubject.dataset_identity_digest ?? "")
+				: (digestOrUndefined(one(args, "dataset-digest")) ??
+					(typeof subjectInput.dataset_identity_digest === "string"
+						? subjectInput.dataset_identity_digest
+						: (request.subject.dataset_identity_digest ?? ""))),
 		scoring_protocol_digest:
-			digestOrUndefined(one(args, "scoring-digest")) ??
-			(typeof subjectInput.scoring_protocol_digest === "string"
-				? subjectInput.scoring_protocol_digest
-				: (request.subject.scoring_protocol_digest ?? "")),
+			formalOperation && frozenSubject
+				? (frozenSubject.scoring_protocol_digest ?? "")
+				: (digestOrUndefined(one(args, "scoring-digest")) ??
+					(typeof subjectInput.scoring_protocol_digest === "string"
+						? subjectInput.scoring_protocol_digest
+						: (request.subject.scoring_protocol_digest ?? ""))),
 	};
 	const loaded = currentDefinition(args, root, run.skillName);
-	const workflowDigest =
-		digestOrUndefined(one(args, "workflow-digest")) ??
-		digestOrUndefined(run.workflowDigest) ??
-		workflowDigestForFallback(loaded.definition);
-	const validatorDigest =
-		digestOrUndefined(one(args, "validator-digest")) ??
-		digestOrUndefined(run.validatorDigest) ??
-		registryFor(loaded, args).digest;
-	const executorDigest =
-		digestOrUndefined(one(args, "executor-digest")) ??
-		digestOrUndefined(run.executorDigest) ??
-		digestOrUndefined(receipt.executor.digest) ??
-		"";
-	const policyDigest =
-		digestOrUndefined(one(args, "policy-digest")) ??
-		digestOrUndefined(run.policyDigest) ??
-		digestOrUndefined(request.policy_digest) ??
-		"";
-	const referenceSnapshotDigest =
-		digestOrUndefined(one(args, "reference-snapshot-digest")) ?? request.reference_snapshot_digest;
+	const loadedRegistry = registryFor(loaded, args);
+	const definitionWorkflowDigest = workflowDigestForFallback(loaded.definition);
+	const boundWorkflowDigest = digestOrUndefined(run.workflowDigest) ?? definitionWorkflowDigest;
+	const boundValidatorDigest = digestOrUndefined(run.validatorDigest) ?? loadedRegistry.digest;
+	const boundExecutorDigest =
+		digestOrUndefined(run.executorDigest) ?? digestOrUndefined(receipt.executor.digest) ?? "";
+	const boundPolicyDigest = digestOrUndefined(run.policyDigest) ?? digestOrUndefined(request.policy_digest) ?? "";
+	const boundReferenceSnapshotDigest = request.reference_snapshot_digest;
+	if (formalOperation) {
+		for (const [argument, expected] of [
+			["workflow-digest", boundWorkflowDigest],
+			["validator-digest", boundValidatorDigest],
+			["executor-digest", boundExecutorDigest],
+			["policy-digest", boundPolicyDigest],
+			["reference-snapshot-digest", boundReferenceSnapshotDigest],
+		] as const) {
+			const supplied = one(args, argument);
+			if (supplied !== undefined && (!validDigestValue(supplied) || !sameDigest(supplied, expected))) {
+				formalDiagnostics.push(`${argument} does not match the run evidence binding`);
+			}
+		}
+		if (run.workflowDigest !== undefined && !sameDigest(run.workflowDigest, definitionWorkflowDigest)) {
+			formalDiagnostics.push("loaded workflow definition does not match the run workflow digest");
+		}
+		if (run.validatorDigest !== undefined && !sameDigest(run.validatorDigest, loadedRegistry.digest)) {
+			formalDiagnostics.push("loaded validator registry does not match the run validator digest");
+		}
+	}
+	const workflowDigest = formalOperation
+		? boundWorkflowDigest
+		: (digestOrUndefined(one(args, "workflow-digest")) ?? boundWorkflowDigest);
+	const validatorDigest = formalOperation
+		? boundValidatorDigest
+		: (digestOrUndefined(one(args, "validator-digest")) ?? boundValidatorDigest);
+	const executorDigest = formalOperation
+		? boundExecutorDigest
+		: (digestOrUndefined(one(args, "executor-digest")) ?? boundExecutorDigest);
+	const policyDigest = formalOperation
+		? boundPolicyDigest
+		: (digestOrUndefined(one(args, "policy-digest")) ?? boundPolicyDigest);
+	const referenceSnapshotDigest = formalOperation
+		? boundReferenceSnapshotDigest
+		: (digestOrUndefined(one(args, "reference-snapshot-digest")) ?? boundReferenceSnapshotDigest);
 	const eligibility = assessFormalEligibility({
 		request,
 		receipt,
@@ -1487,6 +1835,33 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		...(frozenSubject === undefined ? {} : { frozen_subject: frozenSubject }),
 		receipt_digest: digestFile(receiptPath),
 	});
+	const authoritativeDiagnostics = [
+		...formalDiagnostics,
+		...(formalBinding === undefined ? [] : formalBinding.diagnostics),
+	];
+	const eligibilityWithEvidence =
+		authoritativeDiagnostics.length === 0
+			? eligibility
+			: {
+					...eligibility,
+					eligible: false,
+					outcome: createOutcome({
+						validatorVerdict: "NOT_EXECUTED",
+						workflowDisposition: authoritativeDiagnostics.some((message) => /requires|not PASS/i.test(message))
+							? "WAIT"
+							: "BLOCK",
+						reasonCode: authoritativeDiagnostics.some((message) =>
+							/digest|definition|registry|profile|match/i.test(message),
+						)
+							? "DIGEST_MISMATCH"
+							: "VALIDATION_PENDING",
+						diagnostics: authoritativeDiagnostics.map((message) => ({
+							code: "FORMAL_EVIDENCE_REJECTED",
+							message,
+						})),
+					}),
+					diagnostics: [...authoritativeDiagnostics, ...eligibility.diagnostics],
+				};
 	const conformanceRecord = {
 		schema: "sure.conformance.v1",
 		conformance_id: one(args, "conformance-id") ?? `conformance-${randomUUID().slice(0, 12)}`,
@@ -1520,13 +1895,13 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		output_root: request.output_root,
 		validator_verdict: validatorVerdict,
 		workflow_disposition: workflowDisposition,
-		outcome: eligibility.outcome.outcome,
-		reason_code: eligibility.outcome.reason_code,
+		outcome: eligibilityWithEvidence.outcome.outcome,
+		reason_code: eligibilityWithEvidence.outcome.reason_code,
 		assurance_profile: profileValue,
-		formal_evaluation_eligible: eligibility.eligible,
+		formal_evaluation_eligible: eligibilityWithEvidence.eligible,
 		checked_at: new Date().toISOString(),
 		evidence: [],
-		diagnostics: eligibility.diagnostics.map((message) => ({ message })),
+		diagnostics: eligibilityWithEvidence.diagnostics.map((message) => ({ message })),
 	};
 	const outputPath = admittedRunArtifactPath(
 		store,
@@ -1534,8 +1909,13 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		absolute(one(args, "output") ?? join(run.runDir, "artifacts", "conformance.json"), "--output"),
 	);
 	writeJsonAtomic(outputPath, conformanceRecord);
-	output({ ok: eligibility.eligible, command: "conformance", conformance: conformanceRecord, eligibility });
-	return eligibility.outcome.outcome;
+	output({
+		ok: eligibilityWithEvidence.eligible,
+		command: "conformance",
+		conformance: conformanceRecord,
+		eligibility: eligibilityWithEvidence,
+	});
+	return eligibilityWithEvidence.outcome.outcome;
 }
 
 function workflowDigestForFallback(definition: WorkflowDefinition): string {
@@ -1553,12 +1933,6 @@ function finalize(args: ParsedArgs): void {
 	const state = store.readState(run);
 	const integrityError = stateIntegrityError(run, state);
 	if (integrityError) throw new Error(integrityError);
-	if (status === "success" && (one(args, "definition") !== undefined || one(args, "skill") !== undefined)) {
-		const loaded = currentDefinition(args, root, run.skillName);
-		const checkpoint = checkpointFromState(loaded.definition, state);
-		const checkpointAudit = auditCheckpointState(loaded.definition, checkpoint);
-		if (!checkpointAudit.ok) throw new Error(checkpointAudit.reason ?? "Invalid checkpoint.");
-	}
 	const artifacts = many(args, "artifact");
 	let receiptPath: string | undefined;
 	let successReceipt = false;
@@ -1574,8 +1948,11 @@ function finalize(args: ParsedArgs): void {
 			run,
 			absolute(one(args, "execution-receipt") ?? required(args, "receipt"), "--execution-receipt"),
 		);
+		assertRegularFile(requestPath, "Execution request");
+		assertRegularFile(receiptPath, "Execution receipt");
 		const request = recordObject(readJson(requestPath), "execution request") as unknown as ExecutionRequest;
 		const receipt = recordObject(readJson(receiptPath), "execution receipt") as unknown as ExecutionReceipt;
+		assertOutputRootBinding(store, run, request, policyReferences);
 		const validation = validateExecutionReceipt(request, receipt, {
 			allowed_output_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
 			forbidden_output_roots: policyReferences,
@@ -1590,6 +1967,27 @@ function finalize(args: ParsedArgs): void {
 		}
 		if (run.policyDigest && !sameDigest(run.policyDigest, receipt.policy_digest)) {
 			throw new Error("Success execution receipt policy digest does not match the run binding.");
+		}
+		assertReceiptOutputFiles(store, run, request, receipt);
+		let loaded: LoadedDefinition | undefined;
+		try {
+			loaded = currentDefinition(args, root, run.skillName);
+		} catch (error) {
+			if (!run.legacyCompatibility) {
+				throw new Error(
+					`Success finalization requires the canonical workflow definition: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
+		if (loaded !== undefined) {
+			const checkpoint = checkpointFromState(loaded.definition, state);
+			const checkpointAudit = auditCheckpointState(loaded.definition, checkpoint);
+			if (!checkpointAudit.ok) throw new Error(checkpointAudit.reason ?? "Invalid checkpoint.");
+			if (checkpoint.resumable) throw new Error("Success finalization requires a terminal checkpoint.");
+			const lastOutcome = lastValidationOutcome(state);
+			if (!run.legacyCompatibility && lastOutcome?.outcome !== "PASS") {
+				throw new Error("Success finalization requires a persisted PASS validation for the terminal unit.");
+			}
 		}
 		artifacts.push(requestPath);
 		successReceipt = true;
