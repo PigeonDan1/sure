@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	assessFormalEligibility,
 	canonicalJsonDigest,
+	createFrozenEvaluationSubject,
 	type ExecutionReceipt,
 	type ExecutionRequest,
 	type FrozenFormalSubject,
@@ -206,5 +207,64 @@ describe("formal conformance boundary", () => {
 		const result = eligibility({ validator_verdict: "FAIL" });
 		expect(result.eligible).toBe(false);
 		expect(result.outcome).toMatchObject({ outcome: "BLOCKED", reason_code: "VALIDATION_FAILED" });
+	});
+
+	it("requires a frozen subject for a formal evaluation operation", () => {
+		const input = request();
+		input.operation = "formal_evaluation";
+		input.subject = {
+			...input.subject,
+			dataset_identity_digest: C,
+			scoring_protocol_digest: D,
+		};
+		const result = eligibility({
+			request: input,
+			receipt: receipt(input),
+			receipt_validation: validateExecutionReceipt(input, receipt(input)),
+		});
+		expect(result.eligible).toBe(false);
+		expect(result.diagnostics).toContain("formal evaluation requires an immutable evaluation subject");
+	});
+
+	it("admits a fully bound frozen formal subject", () => {
+		const input = request();
+		input.operation = "formal_evaluation";
+		input.subject = {
+			...input.subject,
+			dataset_identity_digest: C,
+			scoring_protocol_digest: D,
+		};
+		const currentReceipt = receipt(input);
+		const frozen = createFrozenEvaluationSubject({
+			subject_id: "subject-formal",
+			bundle_manifest_path: input.subject.bundle_manifest_path,
+			bundle_digest: input.subject.bundle_digest,
+			runtime_identity_digest: input.subject.runtime_identity_digest,
+			inference_protocol_digest: input.subject.inference_protocol_digest!,
+			dataset_identity_digest: input.subject.dataset_identity_digest!,
+			scoring_protocol_digest: input.subject.scoring_protocol_digest!,
+			prediction_path: "/tmp/sure/predictions",
+			prediction_digest: A,
+			execution_receipt_digest: canonicalJsonDigest(currentReceipt as unknown as JsonValue),
+			evaluator_engine_digest: A,
+			evaluator_route_digest: B,
+			workflow_digest: A,
+			validator_digest: B,
+			executor_digest: B,
+			policy_digest: A,
+			reference_snapshot_digest: D,
+			assurance_profile: "pi_enforced",
+			legacy_unverified: false,
+			approval_event_digest: C,
+			frozen_at: NOW,
+		});
+		const result = eligibility({
+			request: input,
+			receipt: currentReceipt,
+			receipt_validation: validateExecutionReceipt(input, currentReceipt),
+			frozen_subject: frozen,
+			receipt_digest: canonicalJsonDigest(currentReceipt as unknown as JsonValue),
+		});
+		expect(result.eligible).toBe(true);
 	});
 });

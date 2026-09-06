@@ -6,6 +6,7 @@ import type {
 	FrozenSubjectRef,
 } from "../contracts/types.ts";
 import type { ExecutionReceiptValidation } from "../execution/types.ts";
+import type { FrozenEvaluationSubject } from "./frozen.ts";
 import type { CoreOutcome, ValidatorVerdict, WorkflowDisposition } from "../workflow/outcome.ts";
 
 export interface FrozenFormalSubject extends FrozenSubjectRef {
@@ -27,6 +28,10 @@ export interface FormalEligibilityInput {
 	policy_digest: string;
 	reference_snapshot_digest: string;
 	evidence?: readonly ArtifactRef[];
+	/** Self-digesting subject manifest required for formal evaluation operations. */
+	frozen_subject?: FrozenEvaluationSubject;
+	/** Digest of the receipt file bound by the subject manifest. */
+	receipt_digest?: string;
 }
 
 export interface FormalEligibilityResult {

@@ -10,6 +10,7 @@ import {
 	parseAndValidateJson,
 	validateJsonSchema,
 } from "../src/contracts/index.ts";
+import { createFrozenEvaluationSubject } from "../src/conformance/frozen.ts";
 import type {
 	CapabilityEvidence,
 	CapabilityRequirement,
@@ -135,6 +136,12 @@ function conformanceRecord(): ConformanceRecord {
 		request_digest: DIGEST_A,
 		receipt_digest: DIGEST_B,
 		subject_bundle_digest: DIGEST_C,
+		subject_manifest_digest: DIGEST_A,
+		prediction_digest: DIGEST_B,
+		evaluator_engine_digest: DIGEST_C,
+		evaluator_route_digest: DIGEST_A,
+		approval_event_digest: DIGEST_B,
+		legacy_unverified: false,
 		runtime_identity_digest: DIGEST_A,
 		inference_protocol_digest: DIGEST_B,
 		dataset_identity_digest: DIGEST_C,
@@ -155,6 +162,32 @@ function conformanceRecord(): ConformanceRecord {
 		evidence: [],
 		diagnostics: [],
 	};
+}
+
+function frozenEvaluationSubject() {
+	return createFrozenEvaluationSubject({
+		subject_id: "subject-1",
+		bundle_manifest_path: "/tmp/sure-dev/bundle.json",
+		bundle_digest: DIGEST_A,
+		runtime_identity_digest: DIGEST_B,
+		inference_protocol_digest: DIGEST_C,
+		dataset_identity_digest: DIGEST_A,
+		scoring_protocol_digest: DIGEST_B,
+		prediction_path: "/tmp/sure-dev/predictions.jsonl",
+		prediction_digest: DIGEST_C,
+		execution_receipt_digest: DIGEST_A,
+		evaluator_engine_digest: DIGEST_B,
+		evaluator_route_digest: DIGEST_C,
+		workflow_digest: DIGEST_A,
+		validator_digest: DIGEST_B,
+		executor_digest: DIGEST_C,
+		policy_digest: DIGEST_A,
+		reference_snapshot_digest: DIGEST_B,
+		assurance_profile: "pi_enforced",
+		legacy_unverified: false,
+		approval_event_digest: DIGEST_C,
+		frozen_at: NOW,
+	});
 }
 
 describe("canonical JSON", () => {
@@ -188,6 +221,7 @@ describe("wire schemas", () => {
 			["execution_request", executionRequest()],
 			["execution_receipt", executionReceipt()],
 			["conformance", conformanceRecord()],
+			["evaluation_subject", frozenEvaluationSubject()],
 		];
 		for (const [name, value] of cases) {
 			const serialized = JSON.stringify(value);

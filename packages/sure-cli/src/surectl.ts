@@ -1,7 +1,18 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	linkSync,
+	lstatSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	readlinkSync,
+	renameSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	type AssuranceProfile,
@@ -17,13 +28,16 @@ import {
 	type ExecutionRequest,
 	encodeLegacyCheckpoint,
 	evaluateCapabilityRequirements,
+	createFrozenEvaluationSubject,
 	type FrozenFormalSubject,
+	type FrozenEvaluationSubject,
 	initialCheckpoint,
 	type JsonValue,
 	type PublicOutcome,
 	type StateDocument,
 	type StructuralValidationResult,
 	validateExecutionReceipt,
+	validateFrozenEvaluationSubject,
 	validateExecutionRequest,
 	validateStructuralArtifact,
 	type WorkflowCheckpoint,
@@ -155,6 +169,43 @@ function writeJsonAtomic(path: string, value: unknown): void {
 	}
 }
 
+function writeJsonImmutable(path: string, value: unknown): void {
+	const content = json(value);
+	mkdirSync(dirname(path), { recursive: true });
+	if (existsSync(path)) {
+		const existing = readJson(path);
+		if (canonicalJsonDigest(existing as JsonValue) !== canonicalJsonDigest(value as JsonValue)) {
+			throw new Error(`Refusing to replace immutable SURE subject: ${path}`);
+		}
+		return;
+	}
+	const temporary = `${path}.sure-immutable-${process.pid}-${randomUUID()}`;
+	writeFileSync(temporary, content, { encoding: "utf8", flag: "wx" });
+	try {
+		// A hard-link publish is no-clobber on POSIX filesystems, unlike rename().
+		linkSync(temporary, path);
+	} catch (error) {
+		if (isAlreadyExists(error)) {
+			const existing = readJson(path);
+			if (canonicalJsonDigest(existing as JsonValue) !== canonicalJsonDigest(value as JsonValue)) {
+				throw new Error(`Refusing to replace immutable SURE subject: ${path}`);
+			}
+		} else {
+			throw error;
+		}
+	} finally {
+		try {
+			if (existsSync(temporary)) unlinkSync(temporary);
+		} catch {
+			// Preserve the publish or comparison result.
+		}
+	}
+}
+
+function isAlreadyExists(error: unknown): boolean {
+	return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
+}
+
 function readJson(path: string): unknown {
 	return JSON.parse(readFileSync(path, "utf8")) as unknown;
 }
@@ -167,6 +218,41 @@ function recordObject(value: unknown, label: string): Record<string, unknown> {
 
 function digestFile(path: string): string {
 	return `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
+}
+
+function digestPath(path: string): string {
+	const root = resolve(path);
+	const stat = lstatSync(root);
+	if (stat.isSymbolicLink())
+		return canonicalJsonDigest({
+			kind: "symlink",
+			target: readlinkSync(root, { encoding: "utf8" }),
+		} as unknown as JsonValue);
+	if (stat.isFile()) return digestFile(root);
+	if (!stat.isDirectory()) throw new Error(`Cannot digest unsupported path: ${root}`);
+	const rows: JsonValue[] = [];
+	const walk = (directory: string, relativePrefix: string): void => {
+		for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+			left.name.localeCompare(right.name),
+		)) {
+			const child = join(directory, entry.name);
+			const childRelative = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
+			const childStat = lstatSync(child);
+			if (childStat.isSymbolicLink()) {
+				rows.push({
+					path: childRelative,
+					kind: "symlink",
+					target: readlinkSync(child, { encoding: "utf8" }),
+				});
+			} else if (childStat.isDirectory()) {
+				walk(child, childRelative);
+			} else if (childStat.isFile()) {
+				rows.push({ path: childRelative, kind: "file", digest: digestFile(child), size: childStat.size });
+			}
+		}
+	};
+	walk(root, "");
+	return canonicalJsonDigest(rows);
 }
 
 function normalizeDigest(value: string, label: string): string {
@@ -299,6 +385,20 @@ function admittedReadPath(
 	additionalRoots: readonly string[] = [],
 ): string {
 	return store.admitPath(path, [
+		...additionalRoots,
+		join(run.runDir, "artifacts"),
+		run.runDir,
+		...(run.outputDir ? [run.outputDir] : []),
+	]).path;
+}
+
+function admittedReadArtifactPath(
+	store: NodeRunStore,
+	run: { runDir: string; outputDir?: string },
+	path: string,
+	additionalRoots: readonly string[] = [],
+): string {
+	return store.admitReadPath(path, [
 		...additionalRoots,
 		join(run.runDir, "artifacts"),
 		run.runDir,
@@ -928,6 +1028,205 @@ function digestOrUndefined(value: unknown): string | undefined {
 	return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
+function digestOrLegacy(value: string | undefined, label: string, missing: string[]): string {
+	if (value !== undefined && value.trim() !== "") {
+		try {
+			return normalizeDigest(value.trim(), label);
+		} catch {
+			missing.push(label);
+		}
+	} else {
+		missing.push(label);
+	}
+	return canonicalJsonDigest({ legacy_unverified: label } as unknown as JsonValue);
+}
+
+function freeze(args: ParsedArgs): PublicOutcome {
+	const root = rootFor(args);
+	const runId = required(args, "run-id");
+	const store = storeFor(args, root);
+	const run = store.readRun(runId);
+	if (!run) throw new Error(`Run ${runId} does not exist.`);
+	const state = store.readState(run);
+	const integrityError = stateIntegrityError(run, state);
+	if (integrityError) throw new Error(integrityError);
+	const requestPath = admittedRunArtifactPath(
+		store,
+		run,
+		absolute(requiredValue(args, "execution-request", "SURE_EXECUTION_REQUEST"), "--execution-request"),
+	);
+	const receiptPath = admittedRunArtifactPath(
+		store,
+		run,
+		absolute(requiredValue(args, "execution-receipt", "SURE_EXECUTION_RECEIPT"), "--execution-receipt"),
+	);
+	const request = recordObject(readJson(requestPath), "execution request") as unknown as ExecutionRequest;
+	const receipt = recordObject(readJson(receiptPath), "execution receipt") as unknown as ExecutionReceipt;
+	if (request.run_id !== runId || receipt.run_id !== runId)
+		throw new Error("Frozen subject run_id does not match the selected run.");
+	if (receipt.request_id !== request.request_id)
+		throw new Error("Frozen subject receipt is not bound to the request.");
+	const boundary = {
+		allowed_output_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
+		forbidden_output_roots: referenceRoots(args),
+	};
+	const requestValidation = validateExecutionRequest(request, boundary);
+	const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
+	const missing: string[] = [];
+	if (!requestValidation.valid) missing.push("valid execution request");
+	if (!receiptValidation.valid) missing.push("valid execution receipt");
+	if (receipt.lifecycle !== "SUCCEEDED") missing.push("successful execution receipt");
+	const loaded = currentDefinition(args, root, run.skillName);
+	const registry = registryFor(loaded, args);
+	const subjectInputPath = one(args, "subject-input");
+	let subjectInputResolvedPath: string | undefined;
+	const subjectInput = subjectInputPath
+		? (() => {
+				const admittedPath = admittedReadArtifactPath(
+					store,
+					run,
+					absolute(subjectInputPath, "--subject-input"),
+					referenceRoots(args),
+				);
+				subjectInputResolvedPath = admittedPath;
+				return recordObject(readJson(admittedPath), "subject input");
+			})()
+		: {};
+	const requestSubject = request.subject;
+	const field = (name: string): string | undefined => {
+		const override = one(args, name);
+		const fromFile = subjectInput[name];
+		return override ?? (typeof fromFile === "string" ? fromFile : undefined);
+	};
+	const bundleDigest = digestOrLegacy(
+		field("bundle-digest") ?? requestSubject.bundle_digest,
+		"bundle_digest",
+		missing,
+	);
+	const runtimeDigest = digestOrLegacy(
+		field("runtime-digest") ?? requestSubject.runtime_identity_digest,
+		"runtime_identity_digest",
+		missing,
+	);
+	const inferenceDigest = digestOrLegacy(
+		field("inference-protocol-digest") ?? requestSubject.inference_protocol_digest,
+		"inference_protocol_digest",
+		missing,
+	);
+	const datasetDigest = digestOrLegacy(
+		field("dataset-digest") ?? requestSubject.dataset_identity_digest,
+		"dataset_identity_digest",
+		missing,
+	);
+	const scoringDigest = digestOrLegacy(
+		field("scoring-digest") ?? requestSubject.scoring_protocol_digest,
+		"scoring_protocol_digest",
+		missing,
+	);
+	const workflow = digestOrLegacy(one(args, "workflow-digest") ?? run.workflowDigest, "workflow_digest", missing);
+	const validator = digestOrLegacy(one(args, "validator-digest") ?? registry.digest, "validator_digest", missing);
+	const executor = digestOrLegacy(one(args, "executor-digest") ?? receipt.executor.digest, "executor_digest", missing);
+	const policy = digestOrLegacy(one(args, "policy-digest") ?? request.policy_digest, "policy_digest", missing);
+	const snapshot = digestOrLegacy(
+		one(args, "reference-snapshot-digest") ?? request.reference_snapshot_digest,
+		"reference_snapshot_digest",
+		missing,
+	);
+	let predictionPath = "/__sure__/legacy-unverified/predictions";
+	const predictionArg = one(args, "prediction");
+	if (predictionArg) {
+		predictionPath = admittedReadArtifactPath(
+			store,
+			run,
+			absolute(predictionArg, "--prediction"),
+			referenceRoots(args),
+		);
+	} else {
+		missing.push("prediction");
+	}
+	const predictionDigest = predictionArg
+		? digestPath(predictionPath)
+		: digestOrLegacy(undefined, "prediction_digest", missing);
+	const enginePathArg = one(args, "engine-root");
+	let evaluatorEngineDigest = digestOrLegacy(one(args, "engine-digest"), "evaluator_engine_digest", missing);
+	if (enginePathArg && one(args, "engine-digest") === undefined) {
+		const enginePath = absolute(enginePathArg, "--engine-root");
+		const admittedEnginePath = admittedReadArtifactPath(store, run, enginePath, referenceRoots(args));
+		evaluatorEngineDigest = digestPath(admittedEnginePath);
+		missing.splice(missing.indexOf("evaluator_engine_digest"), 1);
+	}
+	const routeArg = one(args, "route");
+	let evaluatorRouteDigest: string;
+	if (routeArg && routeArg.startsWith("/")) {
+		const routePath = admittedReadArtifactPath(store, run, routeArg, referenceRoots(args));
+		evaluatorRouteDigest = digestPath(routePath);
+	} else if (routeArg) {
+		// A route id is data, not a path; normalize it into a stable identity.
+		evaluatorRouteDigest = canonicalJsonDigest({ route_id: routeArg } as unknown as JsonValue);
+	} else {
+		evaluatorRouteDigest = digestOrLegacy(one(args, "route-digest"), "evaluator_route_digest", missing);
+	}
+	let approvalEventDigest: string | undefined;
+	const approvalArg = one(args, "approval-event");
+	if (approvalArg) {
+		const approvalPath = admittedReadArtifactPath(
+			store,
+			run,
+			absolute(approvalArg, "--approval-event"),
+			referenceRoots(args),
+		);
+		approvalEventDigest = digestPath(approvalPath);
+	} else if (one(args, "approval-digest")) {
+		approvalEventDigest = normalizeDigest(required(args, "approval-digest"), "--approval-digest");
+	} else {
+		missing.push("approval_event_digest");
+	}
+	const explicitLegacy = one(args, "legacy-unverified") === "true" || one(args, "legacy-unverified") === "1";
+	const subject = createFrozenEvaluationSubject({
+		subject_id: one(args, "subject-id") ?? `subject-${runId}-${request.unit_id}`,
+		bundle_manifest_path: requestSubject.bundle_manifest_path,
+		bundle_digest: bundleDigest,
+		runtime_identity_digest: runtimeDigest,
+		inference_protocol_digest: inferenceDigest,
+		dataset_identity_digest: datasetDigest,
+		scoring_protocol_digest: scoringDigest,
+		prediction_path: predictionPath,
+		prediction_digest: predictionDigest,
+		execution_receipt_digest: digestFile(receiptPath),
+		evaluator_engine_digest: evaluatorEngineDigest,
+		evaluator_route_digest: evaluatorRouteDigest,
+		workflow_digest: workflow,
+		validator_digest: validator,
+		executor_digest: executor,
+		policy_digest: policy,
+		reference_snapshot_digest: snapshot,
+		assurance_profile: (one(args, "assurance-profile") ?? "cooperative") as AssuranceProfile,
+		legacy_unverified: explicitLegacy || missing.length > 0,
+		...(approvalEventDigest === undefined ? {} : { approval_event_digest: approvalEventDigest }),
+		frozen_at: one(args, "frozen-at") ?? new Date().toISOString(),
+	});
+	const subjectErrors = validateFrozenEvaluationSubject(subject);
+	if (subjectErrors.length > 0) throw new Error(`Invalid frozen evaluation subject: ${subjectErrors.join("; ")}`);
+	const outputPath = admittedRunArtifactPath(
+		store,
+		run,
+		absolute(one(args, "output") ?? join(run.runDir, "artifacts", "evaluation_subject.json"), "--output"),
+	);
+	writeJsonImmutable(outputPath, subject);
+	output({
+		ok: !subject.legacy_unverified,
+		command: "freeze",
+		subject,
+		subject_path: outputPath,
+		subject_manifest_digest: digestFile(outputPath),
+		legacy_reasons: missing,
+		...(subjectInputResolvedPath === undefined
+			? {}
+			: { subject_input_manifest_digest: digestFile(subjectInputResolvedPath) }),
+	});
+	return subject.legacy_unverified ? "NOT_EXECUTED" : "PASS";
+}
+
 function conformance(args: ParsedArgs): PublicOutcome {
 	const root = rootFor(args);
 	const runId = required(args, "run-id");
@@ -981,14 +1280,26 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		workflowDispositionValue === "WAIT"
 			? workflowDispositionValue
 			: "WAIT";
-	const subjectInputValue = one(args, "subject");
+	const defaultSubjectPath = join(run.runDir, "artifacts", "evaluation_subject.json");
+	const subjectInputValue = one(args, "subject") ?? (existsSync(defaultSubjectPath) ? defaultSubjectPath : undefined);
+	let subjectManifestPath: string | undefined;
 	const subjectInput =
 		subjectInputValue === undefined
 			? {}
-			: recordObject(
-					readJson(admittedRunArtifactPath(store, run, absolute(subjectInputValue, "--subject"))),
-					"subject",
-				);
+			: (() => {
+					const admittedPath = admittedReadArtifactPath(
+						store,
+						run,
+						absolute(subjectInputValue, "--subject"),
+						referenceRoots(args),
+					);
+					subjectManifestPath = admittedPath;
+					return recordObject(readJson(admittedPath), "subject");
+				})();
+	const frozenSubject =
+		subjectInput.schema === "sure.evaluation_subject.v1"
+			? (subjectInput as unknown as FrozenEvaluationSubject)
+			: undefined;
 	const subject: FrozenFormalSubject = {
 		bundle_manifest_path:
 			typeof subjectInput.bundle_manifest_path === "string"
@@ -1052,6 +1363,8 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		executor_digest: executorDigest,
 		policy_digest: policyDigest,
 		reference_snapshot_digest: referenceSnapshotDigest,
+		...(frozenSubject === undefined ? {} : { frozen_subject: frozenSubject }),
+		receipt_digest: digestFile(receiptPath),
 	});
 	const conformanceRecord = {
 		schema: "sure.conformance.v1",
@@ -1062,6 +1375,18 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		request_digest: canonicalJsonDigest(request as unknown as JsonValue),
 		receipt_digest: digestFile(receiptPath),
 		subject_bundle_digest: subject.bundle_digest,
+		...(subjectManifestPath === undefined ? {} : { subject_manifest_digest: digestFile(subjectManifestPath) }),
+		...(frozenSubject === undefined
+			? {}
+			: {
+					prediction_digest: frozenSubject.prediction_digest,
+					evaluator_engine_digest: frozenSubject.evaluator_engine_digest,
+					evaluator_route_digest: frozenSubject.evaluator_route_digest,
+					...(frozenSubject.approval_event_digest === undefined
+						? {}
+						: { approval_event_digest: frozenSubject.approval_event_digest }),
+					legacy_unverified: frozenSubject.legacy_unverified,
+				}),
 		runtime_identity_digest: subject.runtime_identity_digest,
 		inference_protocol_digest: subject.inference_protocol_digest,
 		dataset_identity_digest: subject.dataset_identity_digest,
@@ -1171,6 +1496,8 @@ function help(): void {
 			execute: "surectl execute --run-id <id> --execution-request <json> [--kind local|python|docker]",
 			capabilities: "surectl capabilities [--skill <id>]",
 			conformance: "surectl conformance --run-id <id> --execution-request <json> --execution-receipt <json>",
+			freeze:
+				"surectl freeze --run-id <id> --execution-request <json> --execution-receipt <json> --prediction <path> --engine-digest <sha256> --route-digest <sha256> --approval-digest <sha256>",
 			finalize: "surectl finalize --run-id <id> --status <success|incomplete|failed|cancelled>",
 		},
 		exit_codes: SURECTL_EXIT_CODES,
@@ -1204,6 +1531,9 @@ export function runSurectl(argv: readonly string[] = process.argv.slice(2)): num
 				break;
 			case "conformance":
 				outcome = conformance(args);
+				break;
+			case "freeze":
+				outcome = freeze(args);
 				break;
 			case "finalize":
 				finalize(args);

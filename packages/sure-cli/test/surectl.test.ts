@@ -14,6 +14,7 @@ const registryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/vali
 const evalDefinition = join(repositoryRoot, "sure/dist/agent-skills/sure-eval/canonical-definition.json");
 const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
+const DIGEST_C = "c".repeat(64);
 
 interface CommandResult {
 	status: number | null;
@@ -633,6 +634,141 @@ describe("surectl cooperative control plane", () => {
 		expect(result.status).toBe(5);
 		expect((result.value?.eligibility as Record<string, unknown>).eligible).toBe(false);
 		expect((result.value?.conformance as Record<string, unknown>).reason_code).toBe("UPGRADE_REQUIRED");
+	});
+
+	it("freezes a fully bound evaluation subject and refuses tampered subjects", () => {
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-freeze",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		const request = executionRequest("run-freeze", artifacts, {
+			operation: "formal_evaluation",
+			subject: {
+				bundle_manifest_path: join(artifacts, "bundle.json"),
+				bundle_digest: `sha256:${DIGEST_A}`,
+				runtime_identity_digest: `sha256:${DIGEST_B}`,
+				inference_protocol_digest: `sha256:${DIGEST_C}`,
+				dataset_identity_digest: `sha256:${DIGEST_A}`,
+				scoring_protocol_digest: `sha256:${DIGEST_B}`,
+			},
+		});
+		const requestPath = join(artifacts, "freeze-request.json");
+		writeFileSync(requestPath, JSON.stringify(request));
+		const receipt = {
+			schema: "sure.execution_receipt.v1",
+			receipt_id: "freeze-receipt",
+			request_id: request.request_id,
+			request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+			semantic_request_digest: request.semantic_request_digest,
+			run_id: request.run_id,
+			unit_id: request.unit_id,
+			attempt: request.attempt,
+			executor: {
+				executor_id: "pi-python",
+				kind: "python",
+				version: "1",
+				digest: `sha256:${DIGEST_B}`,
+				trust_level: "host_enforced",
+			},
+			lifecycle: "SUCCEEDED",
+			capability_evidence: [],
+			outputs: [],
+			reference_snapshot_digest: request.reference_snapshot_digest,
+			output_root: request.output_root,
+			policy_digest: request.policy_digest,
+			started_at: request.created_at,
+			finished_at: request.created_at,
+			exit_code: 0,
+		};
+		const receiptPath = join(artifacts, "freeze-receipt.json");
+		writeFileSync(receiptPath, JSON.stringify(receipt));
+		const predictionPath = join(artifacts, "predictions.txt");
+		writeFileSync(predictionPath, "sample\tanswer\n");
+		const frozen = command(root, "freeze", [
+			"--run-id",
+			"run-freeze",
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+			"--prediction",
+			predictionPath,
+			"--engine-digest",
+			DIGEST_A,
+			"--route",
+			"asr.zh.cer.v1",
+			"--approval-digest",
+			DIGEST_C,
+			"--assurance-profile",
+			"pi_enforced",
+		]);
+		expect(frozen.status).toBe(0);
+		const subjectPath = join(artifacts, "evaluation_subject.json");
+		const subject = JSON.parse(readFileSync(subjectPath, "utf8")) as Record<string, unknown>;
+		expect(subject.legacy_unverified).toBe(false);
+		expect(typeof subject.subject_digest).toBe("string");
+
+		const conformance = command(root, "conformance", [
+			"--run-id",
+			"run-freeze",
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+			"--subject",
+			subjectPath,
+			"--assurance-profile",
+			"pi_enforced",
+			"--validator-verdict",
+			"PASS",
+			"--workflow-disposition",
+			"TERMINATE",
+		]);
+		expect(conformance.status).toBe(0);
+		expect((conformance.value?.eligibility as Record<string, unknown>).eligible).toBe(true);
+
+		subject.prediction_digest = `sha256:${DIGEST_C}`;
+		writeFileSync(subjectPath, JSON.stringify(subject));
+		const tampered = command(root, "conformance", [
+			"--run-id",
+			"run-freeze",
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+			"--subject",
+			subjectPath,
+			"--assurance-profile",
+			"pi_enforced",
+			"--validator-verdict",
+			"PASS",
+			"--workflow-disposition",
+			"TERMINATE",
+		]);
+		expect(tampered.status).toBe(5);
+		expect((tampered.value?.eligibility as Record<string, unknown>).eligible).toBe(false);
+		expect((tampered.value?.conformance as Record<string, unknown>).reason_code).toBe("DIGEST_MISMATCH");
 	});
 
 	it("reports capability absence as a non-passing status", () => {

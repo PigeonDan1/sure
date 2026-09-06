@@ -165,6 +165,13 @@ export interface ConformanceRecord {
 	request_digest: string;
 	receipt_digest: string;
 	subject_bundle_digest: string;
+	/** Digest of the self-binding evaluation_subject.v1 manifest, when present. */
+	subject_manifest_digest?: string;
+	prediction_digest?: string;
+	evaluator_engine_digest?: string;
+	evaluator_route_digest?: string;
+	approval_event_digest?: string;
+	legacy_unverified?: boolean;
 	runtime_identity_digest?: string;
 	inference_protocol_digest?: string;
 	dataset_identity_digest?: string;

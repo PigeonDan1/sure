@@ -38,6 +38,12 @@
 		"request_digest": { "$ref": "#/$defs/digest" },
 		"receipt_digest": { "$ref": "#/$defs/digest" },
 		"subject_bundle_digest": { "$ref": "#/$defs/digest" },
+		"subject_manifest_digest": { "$ref": "#/$defs/digest" },
+		"prediction_digest": { "$ref": "#/$defs/digest" },
+		"evaluator_engine_digest": { "$ref": "#/$defs/digest" },
+		"evaluator_route_digest": { "$ref": "#/$defs/digest" },
+		"approval_event_digest": { "$ref": "#/$defs/digest" },
+		"legacy_unverified": { "type": "boolean" },
 		"runtime_identity_digest": { "$ref": "#/$defs/digest" },
 		"inference_protocol_digest": { "$ref": "#/$defs/digest" },
 		"dataset_identity_digest": { "$ref": "#/$defs/digest" },
@@ -116,6 +122,11 @@
 			"if": { "properties": { "formal_evaluation_eligible": { "const": true } }, "required": ["formal_evaluation_eligible"] },
 			"then": {
 				"required": [
+					"subject_manifest_digest",
+					"prediction_digest",
+					"evaluator_engine_digest",
+					"evaluator_route_digest",
+					"approval_event_digest",
 					"runtime_identity_digest",
 					"inference_protocol_digest",
 					"dataset_identity_digest",
@@ -124,7 +135,8 @@
 				"properties": {
 					"validator_verdict": { "const": "PASS" },
 					"workflow_disposition": { "enum": ["ADVANCE", "TERMINATE"] },
-					"outcome": { "const": "PASS" }
+					"outcome": { "const": "PASS" },
+					"legacy_unverified": { "const": false }
 				}
 			}
 		},

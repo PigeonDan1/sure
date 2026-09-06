@@ -295,9 +295,26 @@ export class CoreRunStore {
 
 	/** Check lexical and resolved containment, including forbidden reference roots. */
 	admitPath(pathValue: string, allowedRoots = this.writeRoots): AdmittedPath {
+		return this.admitPathInternal(pathValue, allowedRoots, this.referenceRoots);
+	}
+
+	/**
+	 * Admit a read-only input.  Reference roots are valid inputs but are never
+	 * valid outputs, so this deliberately uses a separate API instead of
+	 * weakening `admitPath`'s write boundary.
+	 */
+	admitReadPath(pathValue: string, allowedRoots = [...this.writeRoots, ...this.referenceRoots]): AdmittedPath {
+		return this.admitPathInternal(pathValue, allowedRoots, []);
+	}
+
+	private admitPathInternal(
+		pathValue: string,
+		allowedRoots: readonly string[],
+		forbiddenRoots: readonly string[],
+	): AdmittedPath {
 		const lexical = normalize(isAbsolute(pathValue) ? pathValue : resolve(this.rootDir, pathValue));
 		const allowed = allowedRoots.map((root) => this.rootDescriptor(root));
-		const forbidden = this.referenceRoots.map((root) => this.rootDescriptor(root));
+		const forbidden = forbiddenRoots.map((root) => this.rootDescriptor(root));
 		const resolved = this.realpathWithParent(lexical);
 		if (!resolved) {
 			throw new RunStoreError("SYMLINK_ESCAPE", `Cannot resolve path for containment: ${lexical}.`, lexical);

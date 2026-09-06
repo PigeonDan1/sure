@@ -1,4 +1,5 @@
 import { type CoreOutcome, createOutcome } from "../workflow/outcome.ts";
+import { sameDigest as sameFrozenDigest, validateFrozenEvaluationSubject } from "./frozen.ts";
 import type { FormalEligibilityInput, FormalEligibilityResult } from "./types.ts";
 
 const DIGEST = /^(?:sha256:)?[0-9a-f]{64}$/;
@@ -41,6 +42,58 @@ function blocked(
  */
 export function assessFormalEligibility(input: FormalEligibilityInput): FormalEligibilityResult {
 	const diagnostics: string[] = [];
+	const formalOperation = input.request.operation === "formal_evaluation";
+	if (formalOperation) {
+		if (input.frozen_subject === undefined) {
+			diagnostics.push("formal evaluation requires an immutable evaluation subject");
+		} else {
+			for (const error of validateFrozenEvaluationSubject(input.frozen_subject)) diagnostics.push(error);
+			if (input.frozen_subject.legacy_unverified) {
+				diagnostics.push("legacy_unverified evaluation subjects are not eligible for formal evaluation");
+			}
+			if (!input.frozen_subject.approval_event_digest) {
+				diagnostics.push("formal evaluation requires a digest-bound human approval event");
+			}
+			if (
+				!input.receipt_digest ||
+				!sameFrozenDigest(input.receipt_digest, input.frozen_subject.execution_receipt_digest)
+			) {
+				diagnostics.push("execution receipt digest does not match the frozen evaluation subject");
+			}
+			const bindings: Array<[string, unknown, unknown]> = [
+				["bundle", input.request.subject.bundle_digest, input.frozen_subject.bundle_digest],
+				[
+					"runtime identity",
+					input.request.subject.runtime_identity_digest,
+					input.frozen_subject.runtime_identity_digest,
+				],
+				[
+					"inference protocol",
+					input.request.subject.inference_protocol_digest,
+					input.frozen_subject.inference_protocol_digest,
+				],
+				[
+					"dataset identity",
+					input.request.subject.dataset_identity_digest,
+					input.frozen_subject.dataset_identity_digest,
+				],
+				[
+					"scoring protocol",
+					input.request.subject.scoring_protocol_digest,
+					input.frozen_subject.scoring_protocol_digest,
+				],
+				["workflow", input.workflow_digest, input.frozen_subject.workflow_digest],
+				["validator", input.validator_digest, input.frozen_subject.validator_digest],
+				["executor", input.executor_digest, input.frozen_subject.executor_digest],
+				["policy", input.policy_digest, input.frozen_subject.policy_digest],
+				["reference snapshot", input.reference_snapshot_digest, input.frozen_subject.reference_snapshot_digest],
+			];
+			for (const [name, current, frozen] of bindings) {
+				if (!sameFrozenDigest(current, frozen))
+					diagnostics.push(`${name} digest does not match the frozen evaluation subject`);
+			}
+		}
+	}
 	if (input.assurance_profile === "cooperative") {
 		diagnostics.push("cooperative host enforcement is insufficient for formal evaluation");
 	}
