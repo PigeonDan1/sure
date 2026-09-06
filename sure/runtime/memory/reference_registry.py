@@ -134,7 +134,7 @@ class ReferenceRegistry:
         elif alias == "canonical":
             root = self.roots.canonical_root
             canonical_skill = skill.replace("_", "-")
-            base = root / "references" / "memory" / "facts" if entry_type == "fact" else root / "skills" / canonical_skill / "references" / "memory" / "bad_cases"
+            base = root / "shared" / "legacy-resources" / "memory" / "facts" if entry_type == "fact" else root / "skills" / canonical_skill / "references" / "memory" / "bad_cases"
         else:
             raise ValueError(f"unknown reference alias: {alias!r}")
         return _admit(root, base / f"{slug}.md", f"{alias} memory reference")
@@ -176,7 +176,7 @@ class ReferenceRegistry:
             directory = root / "_shared" / "memory" / "facts" if entry_type == "fact" else root / skill / "references" / "memory" / "bad_cases"
         elif alias == "canonical":
             root = self.roots.canonical_root
-            directory = root / "references" / "memory" / "facts" if entry_type == "fact" else root / "skills" / skill.replace("_", "-") / "references" / "memory" / "bad_cases"
+            directory = root / "shared" / "legacy-resources" / "memory" / "facts" if entry_type == "fact" else root / "skills" / skill.replace("_", "-") / "references" / "memory" / "bad_cases"
         else:
             raise ValueError(f"unknown reference alias: {alias!r}")
         return _admit(root, directory, f"{alias} memory reference directory")

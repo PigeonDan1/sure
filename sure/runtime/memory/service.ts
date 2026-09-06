@@ -189,7 +189,7 @@ export class MemoryService {
 		safeSlug(slug);
 		const base =
 			kind === "fact"
-				? join(this.roots.canonicalRoot, "references", "memory", "facts")
+				? join(this.roots.canonicalRoot, "shared", "legacy-resources", "memory", "facts")
 				: join(this.roots.canonicalRoot, "skills", skill.replaceAll("_", "-"), "references", "memory", "bad_cases");
 		return assertPath(this.roots.canonicalRoot, join(base, `${slug}.md`), "canonical memory reference");
 	}

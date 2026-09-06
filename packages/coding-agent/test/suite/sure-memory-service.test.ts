@@ -54,6 +54,15 @@ describe("neutral memory reference service", () => {
 		);
 	});
 
+	it("maps shared facts to the checked-in canonical legacy-resource tree", () => {
+		const repoRoot = freshRoot("canonical-facts");
+		const service = MemoryService.fromRepoRoot(repoRoot, { writeRoot: "canonical" });
+
+		expect(service.canonicalPath("_shared", "fact", "site-gpu")).toBe(
+			join(repoRoot, "sure", "canonical", "shared", "legacy-resources", "memory", "facts", "site-gpu.md"),
+		);
+	});
+
 	it("rejects traversal and malformed logical identities", () => {
 		const service = MemoryService.fromRepoRoot(freshRoot("invalid"));
 

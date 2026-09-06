@@ -49,6 +49,13 @@ class ReferenceRegistryTests(unittest.TestCase):
         self.assertEqual(canonical_first.resolve(entry_id, "bad_case"), canonical)
         self.assertEqual(canonical_first.path_for(entry_id, "bad_case"), canonical)
 
+    def test_shared_fact_uses_checked_in_canonical_legacy_resource_tree(self) -> None:
+        canonical = self.registry.path_for("_shared/site-gpu", "fact", alias="canonical")
+        self.assertEqual(
+            canonical,
+            self.repo / "sure/canonical/shared/legacy-resources/memory/facts/site-gpu.md",
+        )
+
     def test_shared_fact_and_reference_file_enumeration(self) -> None:
         fact = self.registry.path_for("_shared/site-gpu", "fact")
         bad = self.registry.path_for("sure_infer/partition", "bad_case")
