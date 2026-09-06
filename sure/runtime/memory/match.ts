@@ -13,6 +13,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, statSyn
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { repoRootForPackage } from "../harness/resolve.ts";
+import { MemoryService } from "./service.ts";
 
 export interface MemoryConfig {
 	schema: string;
@@ -219,9 +220,9 @@ export function applyMemoryConfigDefaults(parsed: Record<string, unknown>): Memo
 	return config as unknown as MemoryConfig;
 }
 
-/** <repo root>/sure/memory for the skill package at packageDir (same root rule as resolve.ts). */
+/** Compatibility facade for callers not yet given an explicit MemoryService. */
 export function memoryRootFor(packageDir: string): string {
-	return join(repoRootForPackage(packageDir), "sure", "memory");
+	return MemoryService.fromRepoRoot(repoRootForPackage(packageDir)).memoryRoot;
 }
 
 function normalizeEntry(raw: unknown): MemoryIndexEntry | undefined {

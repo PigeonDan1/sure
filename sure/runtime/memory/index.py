@@ -216,17 +216,7 @@ def parse_entry_file(path: Path, *, target_skill: str, legacy_dir: bool) -> Entr
 
 def _reference_dirs(repo_root: Path) -> list[tuple[str, Path]]:
     """(target_skill, directory) for every git-tracked entry directory that exists."""
-    skills_dir = Path(repo_root) / "sure" / "skills"
-    found: list[tuple[str, Path]] = []
-    if not skills_dir.is_dir():
-        return found
-    for skill_dir in sorted(p for p in skills_dir.iterdir() if p.is_dir()):
-        candidate = skill_dir / "references" / "memory" / "bad_cases"
-        if skill_dir.name == "_shared":
-            candidate = skill_dir / "memory" / "facts"
-        if candidate.is_dir():
-            found.append((skill_dir.name, candidate))
-    return found
+    return list(paths.reference_registry(Path(repo_root)).iter_reference_dirs())
 
 
 def _entry_files(directory: Path) -> list[Path]:
@@ -461,6 +451,8 @@ def _build_once(repo_root: Path, *, config: dict, units: dict, sources: str) -> 
                 rec = parse_entry_file(path, target_skill=skill, legacy_dir=True)
             except OSError:
                 continue
+            if rec.entry_id in seen:
+                continue  # logical alias already selected by the registry's read order
             _apply_meta(rec, _load_meta(root, rec.entry_id))
             _finish(rec, repo_root, config, units, today)
             records.append(rec)

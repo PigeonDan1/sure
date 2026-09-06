@@ -14,7 +14,6 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
-import type { SureHookContext } from "@earendil-works/pi-coding-agent/hooks";
 import {
 	type HarnessRuntimeContract,
 	harnessRuntimeEnv,
@@ -36,13 +35,13 @@ import {
 	matchBadCases,
 	matchFacts,
 	memoryLibDir,
-	memoryRootFor,
 	readEventCount,
 	readMemoryIndex,
 	redactHostPaths,
 	triggerHits,
 	usageIds,
 } from "./match.ts";
+import { type MemoryRunContext, MemoryService } from "./service.ts";
 
 // Memory orchestration shared by the sure_onboard, sure_infer and sure_eval hooks.
 //
@@ -88,14 +87,23 @@ export interface MemoryCheckpoint {
 
 /** What every memory hook function needs from the calling skill hook. */
 export interface MemoryHookEnv {
-	ctx: SureHookContext;
+	ctx: MemoryRunContext;
 	skill: "sure_onboard" | "sure_infer" | "sure_eval" | "sure_trans" | "sure_feed";
 	/** harness python contract when preStart already resolved it; undefined otherwise. */
 	py: HarnessRuntimeContract | undefined;
+	/** Explicit host-neutral reference service supplied by the host adapter. */
+	memoryService?: MemoryService;
 }
 
 /** Diagnostics shape the skill hooks merge into their state_patch.diagnostics. */
 export type MemoryDiagnostic = { severity: "info" | "warning" | "error"; message: string; repair: string };
+
+function memoryServiceFor(env: MemoryHookEnv): MemoryService {
+	// Direct unit tests and old callers do not provide the service yet. Keep the
+	// package-derived legacy location as a compatibility fallback until every
+	// host adapter has been migrated to explicit roots.
+	return env.memoryService ?? MemoryService.fromRepoRoot(repoRootForPackage(env.ctx.packageDir));
+}
 
 function memoryScript(env: MemoryHookEnv, script: string): string {
 	try {
@@ -296,7 +304,7 @@ export function readMemory(checkpointData: unknown): MemoryCheckpoint {
 }
 
 /** run_id is the run directory name; ctx.run.runId is undefined in the hook test fixtures. */
-export function runIdOf(ctx: SureHookContext): string {
+export function runIdOf(ctx: MemoryRunContext): string {
 	return basename(ctx.runDir);
 }
 
@@ -427,7 +435,7 @@ function compareStrings(a: string, b: string): number {
  * config.json there are no budgets to honour, so gateInputs are skipped entirely and
  * the result is sha256(produces).
  */
-export function gateDigest(ctx: SureHookContext, unit: { produces: string; gateInputs?: string[] }): string {
+export function gateDigest(ctx: MemoryRunContext, unit: { produces: string; gateInputs?: string[] }): string {
 	const artifactsDir = join(ctx.runDir, "artifacts");
 	const hash = createHash("sha256");
 	hash.update(readFileSync(join(artifactsDir, unit.produces)));
@@ -488,7 +496,7 @@ export function gateDigest(ctx: SureHookContext, unit: { produces: string; gateI
  * stored digest, since two absent digests are not evidence of unchanged content.
  */
 export function safeGateDigest(
-	ctx: SureHookContext,
+	ctx: MemoryRunContext,
 	unit: { produces: string; gateInputs?: string[] },
 ): string | undefined {
 	try {
@@ -666,7 +674,7 @@ export function runMemoryGate(
 		"--produces",
 		producesPath,
 		"--repo-root",
-		repoRootForPackage(env.ctx.packageDir),
+		memoryServiceFor(env).repoRoot,
 	];
 	const run = runMemoryScript(env, script, args, config.publish_timeout_ms);
 	if (run.ok) {
@@ -758,7 +766,7 @@ export function buildDigest(
 		"--run-dir",
 		ctx.runDir,
 		"--repo-root",
-		repoRootForPackage(ctx.packageDir),
+		memoryServiceFor(env).repoRoot,
 		"--cutoff",
 		String(opts.cutoff),
 		"--skill",
@@ -898,7 +906,11 @@ function loadLogPaths(): Record<string, unknown> {
  * product dir is known); anything else under <run_dir>/artifacts/. Only an
  * existing file counts.
  */
-function resolveDeclaredLogPath(raw: string, ctx: SureHookContext, productDir: string | undefined): string | undefined {
+function resolveDeclaredLogPath(
+	raw: string,
+	ctx: MemoryRunContext,
+	productDir: string | undefined,
+): string | undefined {
 	let candidate: string;
 	if (isAbsolute(raw)) {
 		candidate = raw;
@@ -1112,7 +1124,7 @@ export function injectOnBlock(
 	if (!config) {
 		return { repair: args.rawRepair, memory: args.memory, diagnostics: [configFailure(configError)] };
 	}
-	const memoryRoot = memoryRootFor(env.ctx.packageDir);
+	const memoryRoot = memoryServiceFor(env).memoryRoot;
 	const diagnostics: MemoryDiagnostic[] = [];
 	const loaded = readMemoryIndex(memoryRoot);
 	if (!loaded.ok || !loaded.index) {
@@ -1237,7 +1249,7 @@ export function settleOnPass(
 	if (!config) {
 		return { memory, diagnostics: [configFailure(configError)] };
 	}
-	const memoryRoot = memoryRootFor(env.ctx.packageDir);
+	const memoryRoot = memoryServiceFor(env).memoryRoot;
 	const rows = readUsageRows(memoryRoot, runIdOf(env.ctx));
 	// An abandoned row is not a settlement the unit earned, so it must not suppress this one:
 	// on_error abandons the stuck unit and /sure_resume then reuses the same run id and usage file.
@@ -1302,7 +1314,7 @@ export function settleOnTerminalFailure(
 	if (!config) {
 		return { memory, diagnostics: [configFailure(configError)] };
 	}
-	const memoryRoot = memoryRootFor(env.ctx.packageDir);
+	const memoryRoot = memoryServiceFor(env).memoryRoot;
 	const settled = settledIds(readUsageRows(memoryRoot, runIdOf(env.ctx)), args.unitId);
 	const diagnostics: MemoryDiagnostic[] = [];
 	for (const [outcome, ids] of [
@@ -1426,7 +1438,8 @@ export function preStartMemory(
 	args: { targetId: string; strippedArgs: string },
 ): { diagnostics: MemoryDiagnostic[] } {
 	const ctx = env.ctx;
-	const memoryRoot = memoryRootFor(ctx.packageDir);
+	const memoryService = memoryServiceFor(env);
+	const memoryRoot = memoryService.memoryRoot;
 	const diagnostics: MemoryDiagnostic[] = [];
 	const { config, error: configError } = tryConfig();
 	let kept: MemoryMatch[] = [];
@@ -1442,7 +1455,7 @@ export function preStartMemory(
 		const check = runMemoryScript(
 			env,
 			memoryScript(env, "check_memory_index.py"),
-			["--repo-root", repoRootForPackage(ctx.packageDir), "--check"],
+			["--repo-root", memoryService.repoRoot, "--check"],
 			config.index_check_timeout_ms,
 		);
 		if (!check.ok) {
@@ -1642,7 +1655,7 @@ export function postFinishMemory(env: MemoryHookEnv, memory: MemoryCheckpoint): 
 	const run = runMemoryScript(
 		env,
 		script,
-		["--run-dir", ctx.runDir, "--repo-root", repoRootForPackage(ctx.packageDir)],
+		["--run-dir", ctx.runDir, "--repo-root", memoryServiceFor(env).repoRoot],
 		config.publish_timeout_ms,
 	);
 	if (!run.ok) {

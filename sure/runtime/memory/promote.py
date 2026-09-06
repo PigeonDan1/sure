@@ -81,17 +81,21 @@ def outbox_entry(memory_root: Path, entry_id: str) -> Path:
 def references_entry(repo_root: Path, entry_id: str, entry_type: str | None) -> Path:
     """Where `cli export` puts the entry: bad_cases of the target skill, or the shared facts dir.
     entry_type None means "unknown": _shared ids are facts, everything else a bad_case."""
-    skill, slug = _split(entry_id)
-    if entry_type == "fact" or (entry_type is None and skill == "_shared"):
-        return Path(repo_root) / "sure" / "skills" / "_shared" / "memory" / "facts" / f"{slug}.md"
-    return Path(repo_root) / "sure" / "skills" / skill / "references" / "memory" / "bad_cases" / f"{slug}.md"
+    # The registry retains the legacy alias as the default write target while
+    # giving future canonical publishers one explicit path decision.
+    return paths.reference_registry(repo_root).path_for(entry_id, entry_type)
 
 
 def entry_files(repo_root: Path, entry_id: str, entry_type: str | None) -> list[Path]:
     """Every copy of the entry that exists on disk (references, provisional, outbox), in that order."""
     root = paths.memory_root(repo_root)
+    reference = paths.reference_registry(repo_root).resolve(entry_id, entry_type)
+    if reference is None:
+        # Keep the old destination in the candidate list for callers that are
+        # about to create/export it; it is filtered out below until materialized.
+        reference = references_entry(repo_root, entry_id, entry_type)
     candidates = [
-        references_entry(repo_root, entry_id, entry_type),
+        reference,
         provisional_entry(root, entry_id),
         outbox_entry(root, entry_id),
     ]
@@ -102,24 +106,7 @@ def reference_entry_files(repo_root: Path) -> list[tuple[str, Path]]:
     """(entry_id, path) for every git-tracked entry file: <skill>/references/memory/bad_cases/*.md
     plus _shared/memory/facts/*.md (spec 6.1). README.md is the routing table, not an entry, and a
     file name that cannot be a slug is skipped rather than turned into a malformed entry id."""
-    skills_dir = Path(repo_root) / "sure" / "skills"
-    found: list[tuple[str, Path]] = []
-    if not skills_dir.is_dir():
-        return found
-    for skill_dir in sorted(p for p in skills_dir.iterdir() if p.is_dir()):
-        if skill_dir.name == "_shared":
-            directory = skill_dir / "memory" / "facts"
-        else:
-            directory = skill_dir / "references" / "memory" / "bad_cases"
-        if not directory.is_dir():
-            continue
-        for path in sorted(directory.glob("*.md")):
-            if not path.is_file() or path.name.lower() == "readme.md":
-                continue
-            entry_id = f"{skill_dir.name}/{path.stem}"
-            if paths.split_entry_id(entry_id) is not None:
-                found.append((entry_id, path))
-    return found
+    return list(paths.reference_registry(repo_root).iter_reference_files())
 
 
 def _split(entry_id: str) -> tuple[str, str]:

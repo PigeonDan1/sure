@@ -62,6 +62,13 @@ def memory_root(repo_root: Path) -> Path:
     return Path(repo_root) / "sure" / "memory"
 
 
+def reference_registry(repo_root: Path, **kwargs: object):
+    """Construct the shared reference alias registry without coupling callers to its module path."""
+    from memory.reference_registry import ReferenceRegistry
+
+    return ReferenceRegistry(Path(repo_root), **kwargs)
+
+
 def split_entry_id(entry_id: str) -> tuple[str, str] | None:
     """'<target_skill>/<slug>' -> (target_skill, slug); None when malformed."""
     if not isinstance(entry_id, str) or entry_id.count("/") != 1:

@@ -450,9 +450,7 @@ def provenance_lines(
 
 def references_path(repo_root: Path, target_skill: str, entry_type: str, slug: str) -> Path:
     """Where `cli export` would put this entry; a file there means the slug is taken."""
-    if entry_type == "fact":
-        return repo_root / "sure" / "skills" / "_shared" / "memory" / "facts" / f"{slug}.md"
-    return repo_root / "sure" / "skills" / target_skill / "references" / "memory" / "bad_cases" / f"{slug}.md"
+    return paths.reference_registry(repo_root).path_for(f"{target_skill}/{slug}", entry_type)
 
 
 # --- writing one candidate ------------------------------------------------------------
@@ -524,12 +522,15 @@ def _validate_proposal(ctx: _RunContext, proposal: dict) -> tuple[str, str, str,
 def _entry_taken(ctx: _RunContext, target_skill: str, entry_type: str, slug: str) -> bool:
     """An entry_id is unique across the whole library, not just provisional/."""
     root = ctx.root
+    reference_aliases = paths.reference_registry(ctx.repo_root).candidates(
+        f"{target_skill}/{slug}", entry_type
+    )
     return (
         (root / "provisional" / target_skill / slug).exists()
         or (root / "outbox" / target_skill / slug).exists()
         or (root / "rejected" / target_skill / slug).exists()
         or (root / "meta" / target_skill / f"{slug}.json").exists()
-        or references_path(ctx.repo_root, target_skill, entry_type, slug).exists()
+        or any(path.exists() for path in reference_aliases)
     )
 
 

@@ -26,6 +26,7 @@ import {
 	settleOnTerminalFailure,
 	stripOutputDir,
 } from "../../../runtime/memory/hooks.ts";
+import { memoryServiceForPackage } from "../../../runtime/memory/pi-bridge.ts";
 import { invokedSkillScripts } from "../../../runtime/script-guard.ts";
 import { requireSitePolicy } from "../../../site/loader.ts";
 import {
@@ -125,7 +126,7 @@ function parseArgs(raw: string): Record<string, string> {
 // never flips ok to false.
 
 function memoryEnv(ctx: SureHookContext, py?: HarnessRuntimeContract): MemoryHookEnv {
-	return { ctx, skill: "sure_infer", py };
+	return { ctx, skill: "sure_infer", py, memoryService: memoryServiceForPackage(ctx.packageDir) };
 }
 
 function memoryOf(data: CheckpointData): MemoryCheckpoint {

@@ -334,11 +334,15 @@ def _proposal(ctx: Ctx, entry_id: str) -> tuple[Path, dict] | None:
 
 
 def _references_file(ctx: Ctx, view: dict) -> Path | None:
-    """The git-tracked copy under sure/skills/, when the index says the entry lives there."""
-    path = view.get("path") or ""
-    if path.startswith("sure/skills/") and (ctx.repo_root / path).is_file():
-        return ctx.repo_root / path
-    return None
+    """The materialized reference alias, resolved through the shared registry."""
+    registry = paths.reference_registry(ctx.repo_root)
+    indexed = Path(str(view.get("path") or "")).as_posix()
+    for candidate in registry.candidates(view["entry_id"], view.get("type")):
+        if candidate.is_file() and (not indexed or _rel(candidate, ctx.repo_root) == indexed):
+            return candidate
+    # A stale index path should not hide a valid alias that was created between
+    # index rebuilds; legacy-first ordering preserves the previous behavior.
+    return next((candidate for candidate in registry.candidates(view["entry_id"], view.get("type")) if candidate.is_file()), None)
 
 
 def _split_header(text: str) -> tuple[list[str], str]:
@@ -762,19 +766,20 @@ def _contained(dest: Path, root: Path) -> bool:
 
 def _export_destination(ctx: Ctx, clone: Path, view: dict) -> Path:
     skill, slug = _split_id(view["entry_id"])
-    skills_root = clone / "sure" / "skills"
+    registry = paths.reference_registry(clone)
+    skills_root = registry.roots.legacy_skills_root
     if view["type"] == "fact":
         # Same clone check as the bad_case branch: a mistyped --repo-root would otherwise get a
         # facts/ tree created under it, and cmd_export would then delete the outbox copy.
         if not (skills_root / "_shared").is_dir():
             raise CliError(f"{_rel(skills_root / '_shared', clone)} is not a directory in {clone}; is --repo-root a SURE clone?")
-        dest = skills_root / "_shared" / "memory" / "facts" / f"{slug}.md"
+        dest = registry.path_for(view["entry_id"], "fact")
     else:
         if skill not in ctx.config["target_skills"] or skill == "_shared":
             raise CliError(f"bad_case with target_skill {skill!r} has no references destination")
         if not (skills_root / skill).is_dir():
             raise CliError(f"{_rel(skills_root / skill, clone)} is not a directory in {clone}; is --repo-root a SURE clone?")
-        dest = skills_root / skill / "references" / "memory" / "bad_cases" / f"{slug}.md"
+        dest = registry.path_for(view["entry_id"], "bad_case")
     if not _contained(dest, skills_root):
         raise CliError(f"destination {dest} escapes {skills_root}")
     return dest
