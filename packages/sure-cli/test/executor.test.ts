@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -69,23 +69,220 @@ function outputContract() {
 	};
 }
 
+function fakeDocker(root: string): string {
+	const executable = join(root, "fake-docker");
+	writeFileSync(
+		executable,
+		`#!${process.execPath}
+const fs = require("node:fs");
+const path = require("node:path");
+const args = process.argv.slice(2);
+if (args.length === 1 && args[0] === "--version") process.exit(0);
+fs.writeFileSync(process.env.SURE_FAKE_DOCKER_ARGS, JSON.stringify(args));
+const envIndex = args.indexOf("--env");
+const outputInContainer = envIndex >= 0 ? args[envIndex + 1].split("=").slice(1).join("=") : "";
+const mountArgs = args.reduce((mounts, value, index) => {
+  if (value !== "--mount") return mounts;
+  const spec = args[index + 1] ?? "";
+  const fields = Object.fromEntries(spec.split(",").map((field) => field.split("=")));
+  if (fields.src && fields.dst) mounts.push({ source: fields.src, target: fields.dst });
+  return mounts;
+}, []);
+const mount = mountArgs.find((candidate) => outputInContainer === candidate.target || outputInContainer.startsWith(candidate.target + "/"));
+const output = mount ? mount.source + outputInContainer.slice(mount.target.length) : outputInContainer;
+if (output) {
+  fs.writeFileSync(output, "docker-output");
+  fs.mkdirSync(path.join(path.dirname(output), "bundle"), { recursive: true });
+  fs.writeFileSync(path.join(path.dirname(output), "bundle", "part.bin"), "part");
+}
+process.exit(output ? 0 : 17);
+`,
+	);
+	chmodSync(executable, 0o755);
+	return executable;
+}
+
 afterEach(() => {
 	for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 describe("cooperative executor capability probes", () => {
+	it("executes Docker requests through docker run and binds host outputs", () => {
+		const root = freshRoot();
+		const artifacts = join(root, "artifacts");
+		mkdirSync(artifacts);
+		const argsPath = join(root, "docker-argv.json");
+		const outputPath = join(artifacts, "manifest.json");
+		const dockerExecutable = fakeDocker(root);
+		const result = executeRequest(
+			request(
+				root,
+				"sure.execution.docker",
+				{
+					executor_kind: "docker",
+					docker_executable: dockerExecutable,
+					docker_image: `registry.example/sure/test@sha256:${"c".repeat(64)}`,
+					docker_mounts: [{ source: artifacts, target: "/work", read_only: false }],
+					docker_workdir: "/work",
+					docker_env: { SURE_OUTPUT: "/work/manifest.json" },
+				},
+				{
+					entrypoint: { executable: "/not-run-on-host", argv: ["--inside-image"] },
+					output_contract: outputContract(),
+				},
+			),
+			{
+				kind: "docker",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [artifacts],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+				environment: { SURE_FAKE_DOCKER_ARGS: argsPath },
+			},
+		);
+
+		expect(result.capability.admitted).toBe(true);
+		expect(result.receipt?.lifecycle).toBe("SUCCEEDED");
+		expect(result.receipt?.executor.kind).toBe("docker");
+		expect(result.receipt_validation?.valid).toBe(true);
+		expect(readFileSync(outputPath, "utf8")).toBe("docker-output");
+		const argv = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
+		expect(argv).toEqual(
+			expect.arrayContaining([
+				"run",
+				"--rm",
+				"--workdir",
+				"/work",
+				"--entrypoint",
+				"/not-run-on-host",
+				`registry.example/sure/test@sha256:${"c".repeat(64)}`,
+				"--inside-image",
+			]),
+		);
+		expect(argv.join(" ")).toContain(`type=bind,src=${artifacts},dst=/work`);
+	});
+
+	it("rejects Docker execution before capability probing when image metadata is absent", () => {
+		const root = freshRoot();
+		const result = executeRequest(
+			request(root, "sure.execution.docker", {
+				executor_kind: "docker",
+				docker_executable: join(root, "missing-docker"),
+			}),
+			{
+				kind: "docker",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [join(root, "artifacts")],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		expect(result.receipt).toBeUndefined();
+		expect(result.request_validation.valid).toBe(false);
+		expect(result.request_validation.errors).toEqual(
+			expect.arrayContaining([
+				"runtime_requirements.docker_image must be a non-empty string",
+				"runtime_requirements.docker_mounts must be an array",
+			]),
+		);
+	});
+
+	it("rejects a writable mount that overlaps a forbidden reference root", () => {
+		const root = freshRoot();
+		const reference = mkdtempSync(join(tmpdir(), "sure-docker-reference-"));
+		roots.push(reference);
+		const result = executeRequest(
+			request(root, "sure.execution.docker", {
+				executor_kind: "docker",
+				docker_image: `registry.example/sure/test@sha256:${"d".repeat(64)}`,
+				docker_mounts: [{ source: reference, target: "/reference", read_only: false }],
+			}),
+			{
+				kind: "docker",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [join(root, "artifacts")],
+				forbidden_output_roots: [reference],
+				timeout_ms: 1000,
+			},
+		);
+
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		expect(result.receipt?.lifecycle).toBe("NOT_STARTED");
+	});
+
+	it("rejects a writable input mount even when no explicit forbidden root is supplied", () => {
+		const root = freshRoot();
+		const inputRoot = join(root, "input");
+		mkdirSync(inputRoot);
+		const inputPath = join(inputRoot, "input.bin");
+		writeFileSync(inputPath, "input");
+		const result = executeRequest(
+			request(
+				root,
+				"sure.execution.docker",
+				{
+					executor_kind: "docker",
+					docker_image: `registry.example/sure/test@sha256:${"f".repeat(64)}`,
+					docker_mounts: [{ source: inputRoot, target: "/input", read_only: false }],
+				},
+				{
+					inputs: [
+						{
+							artifact_id: "input",
+							path: inputPath,
+							resolved_path: inputPath,
+							sha256: A,
+							size: 5,
+							media_type: "application/octet-stream",
+							origin: "local_staging",
+							source_root: inputRoot,
+						},
+					],
+				},
+			),
+			{
+				kind: "docker",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [join(root, "artifacts")],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		expect(result.receipt?.lifecycle).toBe("NOT_STARTED");
+	});
+
 	it("probes Docker itself instead of trusting the business entrypoint", () => {
 		const root = freshRoot();
 		const missingDocker = join(root, "missing-docker");
-		const result = executeRequest(request(root, "sure.execution.docker", { docker_executable: missingDocker }), {
-			kind: "docker",
-			executor_digest: A,
-			executor_version: "test",
-			working_directory: root,
-			allowed_output_roots: [root],
-			forbidden_output_roots: [],
-			timeout_ms: 1000,
-		});
+		const result = executeRequest(
+			request(root, "sure.execution.docker", {
+				executor_kind: "docker",
+				docker_executable: missingDocker,
+				docker_image: `registry.example/sure/test@sha256:${"e".repeat(64)}`,
+				docker_mounts: [],
+			}),
+			{
+				kind: "docker",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: root,
+				allowed_output_roots: [root],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
 
 		expect(result.capability.missing).toContain("sure.execution.docker");
 		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });

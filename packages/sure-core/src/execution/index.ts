@@ -1,3 +1,4 @@
+export * from "./docker.ts";
 export * from "./evidence.ts";
 export * from "./input-contract.ts";
 export * from "./output-contract.ts";

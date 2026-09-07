@@ -83,6 +83,33 @@
 					}
 				}
 			}
+		},
+		{
+			"if": {
+				"properties": {
+					"runtime_requirements": {
+						"type": "object",
+						"properties": { "executor_kind": { "const": "docker" } },
+						"required": ["executor_kind"]
+					}
+				},
+				"required": ["runtime_requirements"]
+			},
+			"then": {
+				"properties": {
+					"runtime_requirements": {
+						"required": ["executor_kind", "docker_image", "docker_mounts"],
+						"properties": {
+							"docker_image": { "type": "string", "minLength": 1 },
+							"docker_mounts": { "type": "array", "items": { "$ref": "#/$defs/dockerMount" } },
+							"docker_env": { "type": "object", "additionalProperties": { "type": "string" } },
+							"docker_workdir": { "$ref": "#/$defs/absolutePath" },
+							"docker_network": { "type": "string", "minLength": 1 },
+							"docker_image_digest": { "$ref": "#/$defs/digest" }
+						}
+					}
+				}
+			}
 		}
 	],
 	"$defs": {
@@ -95,6 +122,16 @@
 				{ "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
 				{ "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
 			]
+		},
+		"dockerMount": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["source", "target", "read_only"],
+			"properties": {
+				"source": { "$ref": "#/$defs/absolutePath" },
+				"target": { "$ref": "#/$defs/absolutePath" },
+				"read_only": { "type": "boolean" }
+			}
 		},
 		"requirement": {
 			"type": "object",

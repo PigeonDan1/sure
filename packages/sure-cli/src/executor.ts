@@ -25,6 +25,7 @@ import {
 	executionOutputSetDigest,
 	executorDescriptor,
 	inspectExecutionArtifact,
+	parseDockerRuntimeRequirements,
 	validateExecutionReceipt,
 	validateExecutionRequest,
 } from "@earendil-works/sure-core";
@@ -226,6 +227,12 @@ interface ResidualInspection {
 	reason?: string;
 }
 
+interface SpawnInvocation {
+	executable: string;
+	argv: readonly string[];
+	working_directory?: string;
+}
+
 function resolvedRoot(path: string): { path: string; resolved_path: string } {
 	const lexical = resolve(path);
 	let resolvedPath = lexical;
@@ -323,6 +330,142 @@ function executorIdentity(options: ExecutorRunOptions) {
 		version: options.executor_version,
 		digest: options.executor_digest,
 		trust_level: descriptor?.minimum_trust_level ?? ("cooperative" as const),
+	};
+}
+
+function dockerMountRoots(
+	request: ExecutionRequest,
+	options: ExecutorRunOptions,
+): { writable: string[]; read_only: string[] } {
+	const writable = new Set<string>();
+	for (const root of options.allowed_output_roots) writable.add(resolve(root));
+	const readOnly = new Set<string>();
+	for (const input of request.inputs) readOnly.add(resolve(input.source_root));
+	const manifest = request.subject.bundle_manifest_path;
+	if (typeof manifest === "string" && manifest.length > 0) readOnly.add(dirname(resolve(manifest)));
+	return { writable: [...writable], read_only: [...readOnly].filter((root) => !writable.has(root)) };
+}
+
+function validateDockerMounts(
+	request: ExecutionRequest,
+	options: ExecutorRunOptions,
+	spec: NonNullable<ReturnType<typeof parseDockerRuntimeRequirements>["spec"]>,
+): string[] {
+	const errors: string[] = [];
+	const mountRoots = dockerMountRoots(request, options);
+	const seenTargets = new Set<string>();
+	for (const [index, mount] of spec.mounts.entries()) {
+		const field = `runtime_requirements.docker_mounts[${index}]`;
+		if (!mount.source.startsWith("/")) {
+			errors.push(`${field}.source must be an absolute host path`);
+			continue;
+		}
+		if (mount.source.includes(",") || mount.target.includes(",")) {
+			errors.push(`${field} cannot contain commas in host or container paths`);
+			continue;
+		}
+		const target = resolve(mount.target);
+		if (seenTargets.has(target)) errors.push(`${field}.target is duplicated`);
+		seenTargets.add(target);
+		let stat: ReturnType<typeof lstatSync>;
+		try {
+			stat = lstatSync(mount.source);
+		} catch {
+			errors.push(`${field}.source does not exist: ${mount.source}`);
+			continue;
+		}
+		if (stat.isSymbolicLink()) {
+			errors.push(`${field}.source must not be a symlink: ${mount.source}`);
+			continue;
+		}
+		if (!stat.isFile() && !stat.isDirectory()) {
+			errors.push(`${field}.source must be a regular file or directory: ${mount.source}`);
+			continue;
+		}
+		let resolvedSource: string;
+		try {
+			resolvedSource = resolve(realpathSync.native(mount.source));
+		} catch {
+			errors.push(`${field}.source could not be resolved: ${mount.source}`);
+			continue;
+		}
+		const allowedRoots = [...mountRoots.writable, ...(mount.read_only ? mountRoots.read_only : [])].map(resolvedRoot);
+		const boundary = evaluatePathBoundary({
+			candidate_path: resolve(mount.source),
+			candidate_resolved_path: resolvedSource,
+			allowed_roots: allowedRoots,
+			forbidden_roots: mount.read_only ? [] : options.forbidden_output_roots.map(resolvedRoot),
+		});
+		if (!boundary.admitted) {
+			errors.push(
+				`${field}.source is outside the admitted mount boundary: ${boundary.reason_code ?? "INVALID_CONTRACT"}`,
+			);
+		}
+	}
+	return errors;
+}
+
+function dockerInvocation(
+	request: ExecutionRequest,
+	options: ExecutorRunOptions,
+): { invocation?: SpawnInvocation; errors: readonly string[] } {
+	const requirements = request.runtime_requirements;
+	const dockerRequirement = request.capability_requirements.find(
+		(requirement) =>
+			requirement.required &&
+			requirement.capability_class === "execution_capability" &&
+			requirement.capability_id === "sure.execution.docker",
+	);
+	if (dockerRequirement === undefined) {
+		return {
+			errors: ["docker executor requests must declare required capability sure.execution.docker"],
+		};
+	}
+	const parsed = parseDockerRuntimeRequirements(requirements);
+	if (!parsed.valid || parsed.spec === undefined) return { errors: parsed.errors };
+	const mountErrors = validateDockerMounts(request, options, parsed.spec);
+	if (mountErrors.length > 0) return { errors: mountErrors };
+	const environment = options.environment ?? process.env;
+	const executable = runtimeExecutable(request, "docker_executable") ?? environment.DOCKER_BIN ?? "docker";
+	const argv: string[] = ["run", "--rm"];
+	if (parsed.spec.network !== undefined) argv.push("--network", parsed.spec.network);
+	for (const mount of parsed.spec.mounts) {
+		argv.push("--mount", `type=bind,src=${mount.source},dst=${mount.target}${mount.read_only ? ",readonly" : ""}`);
+	}
+	for (const key of Object.keys(parsed.spec.environment).sort()) {
+		argv.push("--env", `${key}=${parsed.spec.environment[key]}`);
+	}
+	if (parsed.spec.working_directory !== undefined) argv.push("--workdir", parsed.spec.working_directory);
+	argv.push("--entrypoint", request.entrypoint.executable, parsed.spec.image, ...request.entrypoint.argv);
+	return { invocation: { executable, argv, working_directory: options.working_directory }, errors: [] };
+}
+
+function contractFailure(
+	requestValidation: ExecutionRequestValidation,
+	request: ExecutionRequest,
+	options: ExecutorRunOptions,
+	errors: readonly string[],
+): ExecutorRunResult {
+	const startedAt = now(options);
+	const outcome = createOutcome({
+		validatorVerdict: "NOT_EXECUTED",
+		workflowDisposition: "BLOCK",
+		reasonCode: "INVALID_CONTRACT",
+		executionLifecycle: "NOT_STARTED",
+		diagnostics: errors.map((message) => ({ code: "INVALID_CONTRACT", message })),
+	});
+	const receipt = baseReceipt(request, options, [], "NOT_STARTED", startedAt, now(options));
+	receipt.diagnostics = outcome.diagnostics.map(({ code, message }) => ({ code, message }));
+	const receiptValidation = validateExecutionReceipt(request, receipt, {
+		allowed_output_roots: options.allowed_output_roots,
+		forbidden_output_roots: options.forbidden_output_roots,
+	});
+	return {
+		request_validation: requestValidation,
+		receipt,
+		receipt_validation: receiptValidation,
+		outcome,
+		capability: evaluateCapabilityRequirements(request.capability_requirements, []),
 	};
 }
 
@@ -440,6 +583,26 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 			capability: evaluateCapabilityRequirements([], []),
 		};
 	}
+	let invocation: SpawnInvocation = {
+		executable: request.entrypoint.executable,
+		argv: request.entrypoint.argv,
+		...(request.entrypoint.working_directory === undefined
+			? {}
+			: { working_directory: request.entrypoint.working_directory }),
+	};
+	if (options.kind === "docker") {
+		const declaredKind = request.runtime_requirements.executor_kind;
+		if (declaredKind !== undefined && declaredKind !== "docker") {
+			return contractFailure(requestValidation, request, options, [
+				`runtime_requirements.executor_kind must be docker for a docker executor (received ${String(declaredKind)})`,
+			]);
+		}
+		const docker = dockerInvocation(request, options);
+		if (docker.errors.length > 0 || docker.invocation === undefined) {
+			return contractFailure(requestValidation, request, options, docker.errors);
+		}
+		invocation = docker.invocation;
+	}
 	const descriptor = executorDescriptor(options.kind);
 	if (!descriptor || descriptor.implementation !== "builtin") {
 		const observedAt = now(options);
@@ -511,8 +674,8 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 
 	let processResult: ReturnType<typeof spawnSync>;
 	try {
-		processResult = spawnSync(request.entrypoint.executable, request.entrypoint.argv, {
-			cwd: request.entrypoint.working_directory ?? options.working_directory,
+		processResult = spawnSync(invocation.executable, [...invocation.argv], {
+			cwd: invocation.working_directory ?? options.working_directory,
 			env: options.environment,
 			encoding: "utf8",
 			timeout: options.timeout_ms,

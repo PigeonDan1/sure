@@ -274,6 +274,27 @@ describe("wire schemas", () => {
 		expect(validateJsonSchema(schema, missingSnapshot).ok).toBe(false);
 	});
 
+	it("requires the structured Docker runtime shape when Docker is selected", () => {
+		const schema = readSchema("execution_request");
+		const dockerRequest = {
+			...executionRequest(),
+			runtime_requirements: {
+				executor_kind: "docker",
+				docker_image: `registry.example/sure/test@sha256:${DIGEST_A}`,
+				docker_mounts: [{ source: "/tmp/sure-dev/runs/run-1", target: "/work", read_only: true }],
+			},
+			capability_requirements: [
+				{ capability_id: "sure.execution.docker", capability_class: "execution_capability", required: true },
+			],
+		};
+		expect(validateJsonSchema(schema, dockerRequest).ok).toBe(true);
+		const missingMounts = {
+			...dockerRequest,
+			runtime_requirements: { executor_kind: "docker", docker_image: "image" },
+		};
+		expect(validateJsonSchema(schema, missingMounts).ok).toBe(false);
+	});
+
 	it("validates the shared output contract across request and receipt schemas", () => {
 		const outputContract = {
 			schema: "sure.execution_output_contract.v1",

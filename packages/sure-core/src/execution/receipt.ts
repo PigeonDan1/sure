@@ -10,6 +10,7 @@ import type {
 	JsonValue,
 } from "../contracts/types.ts";
 import { type CoreOutcome, createOutcome, outcomeFromExecutionLifecycle } from "../workflow/outcome.ts";
+import { parseDockerRuntimeRequirements } from "./docker.ts";
 import { validateExecutionInputBinding } from "./input-contract.ts";
 import { validateExecutionOutputBinding, validateExecutionOutputContract } from "./output-contract.ts";
 import type { ExecutionBoundaryOptions, ExecutionReceiptValidation, ExecutionRequestValidation } from "./types.ts";
@@ -197,6 +198,11 @@ function validateRequestShape(request: ExecutionRequest, options: ExecutionBound
 		request.inputs.forEach((artifact, index) => {
 			validateArtifactRef(artifact, `request.inputs[${index}]`, errors);
 		});
+	if (!object(request.runtime_requirements)) {
+		errors.push("request.runtime_requirements must be an object");
+	} else if (request.runtime_requirements.executor_kind === "docker") {
+		errors.push(...parseDockerRuntimeRequirements(request.runtime_requirements).errors);
+	}
 	if (request.input_binding !== undefined) {
 		errors.push(...validateExecutionInputBinding(request.input_binding, request.inputs).errors);
 	}
