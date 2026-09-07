@@ -6651,8 +6651,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
-      "size_bytes": 36082,
-      "sha256": "b66d0ff8793f5143991aff64867fec2819c49cf57cfaaf270b4ecc63ef126be2"
+      "size_bytes": 36675,
+      "sha256": "10fe0db8dbb5ac0b4dc81249a497e3cf44e6e1d347a49be9b41f91004cd72bc2"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
@@ -7451,8 +7451,8 @@
     },
     {
       "path": "sure/skills/sure_approve/scripts/approval_core.py",
-      "size_bytes": 51772,
-      "sha256": "6d4f3b0ed091478e49ebc9e5c1c40df579b7eb06d745c053be824825b19ba41f"
+      "size_bytes": 51897,
+      "sha256": "aafee9eac010b9ea1c6de74e809694f4ca4b08df0c664ac7362f8cdae1f4a523"
     },
     {
       "path": "sure/skills/sure_approve/scripts/audit_bundle.py",
@@ -7463,6 +7463,11 @@
       "path": "sure/skills/sure_approve/scripts/build_approval_manifest.py",
       "size_bytes": 129,
       "sha256": "480dd4cfc89260c2a70c07ad338d3a2ee69cf664315662f5a9acc0a61193a4ab"
+    },
+    {
+      "path": "sure/skills/sure_approve/scripts/check_approval_artifact.py",
+      "size_bytes": 9898,
+      "sha256": "aa51001baa3e073f2a8e79d0cdc8e5ef24a0cf4d79be94a80750604e142792d8"
     },
     {
       "path": "sure/skills/sure_approve/scripts/plan_repairs.py",
@@ -7481,8 +7486,8 @@
     },
     {
       "path": "sure/skills/sure_approve/scripts/test_approval_flow.py",
-      "size_bytes": 18970,
-      "sha256": "324fefef12f02d31a8048e3f7e64102177724f3d6f3b507d0625ebbbf62a0388"
+      "size_bytes": 22035,
+      "sha256": "b41a921b6dc2ee4a0c433fcc0d3cc98dccbd99ace76fafc1b3cf59ee689d65b7"
     },
     {
       "path": "sure/skills/sure_approve/scripts/verify_candidate_runtime.py",
@@ -9721,5 +9726,5 @@
       ]
     }
   ],
-  "semantic_digest": "826ecd02deb5dc90f45c8f03dad6f3f09630317939248699a7924243ee96046f"
+  "semantic_digest": "608141616eae69e09d5e3b8572025daca7562e151e7e260b8cce7012419de8f8"
 }

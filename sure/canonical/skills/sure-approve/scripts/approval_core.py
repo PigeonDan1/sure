@@ -20,16 +20,21 @@ from typing import Any, Iterable
 
 
 try:
-    from sure.runtime.resource_locator import ResourceLocator
+    from sure.runtime.resource_locator import ResourceLocator, resolve_backend_script
 except ModuleNotFoundError:
     for _parent in Path(__file__).resolve().parents:
         if (_parent / "sure" / "runtime" / "resource_locator.py").is_file():
             sys.path.insert(0, str(_parent))
             break
-    from sure.runtime.resource_locator import ResourceLocator
+    from sure.runtime.resource_locator import ResourceLocator, resolve_backend_script
 
 REPO_ROOT = ResourceLocator.from_environment().repository_root
-EVAL_SCRIPTS = ResourceLocator.from_environment().resolve_skill_script("sure_infer", "deployment_binding.py").parent
+DEPLOYMENT_BINDING_SCRIPT = resolve_backend_script(
+    "sure.infer.resolve_deployment_binding",
+    "sure_infer",
+    "deployment_binding.py",
+)
+EVAL_SCRIPTS = DEPLOYMENT_BINDING_SCRIPT.parent
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(EVAL_SCRIPTS))
 

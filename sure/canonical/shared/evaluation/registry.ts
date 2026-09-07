@@ -122,6 +122,15 @@ export const SURE_EVALUATION_BACKEND: SemanticBackendBundle = {
 			deterministic: true,
 		},
 		{
+			operation_id: "sure.infer.resolve_deployment_binding",
+			description: "Resolve the shared deployment-binding implementation for approval and inference consumers.",
+			entrypoint: "scripts/deployment_binding.py",
+			consumer_skill_ids: ["sure_infer", "sure_approve"],
+			kind: "resolve",
+			timeout_ms: 120_000,
+			deterministic: true,
+		},
+		{
 			operation_id: "sure.eval.run",
 			description: "Execute the pinned evaluator and publish an immutable batch.",
 			entrypoint: "scripts/run_eval.py",
@@ -797,6 +806,92 @@ export const SURE_TRANS_EXECUTION_BACKEND: SemanticBackendBundle = {
 		},
 	],
 };
+
+/**
+ * Read-only approval evidence checks. The historical approval commands also
+ * create artifacts and remain Pi lifecycle entrypoints; these operations are
+ * deliberately separate and only re-compute/verify an already written
+ * artifact for portable/Core validation.
+ */
+export const SURE_APPROVE_VALIDATOR_BACKEND: SemanticBackendBundle = {
+	schema: "sure.semantic.backend.bundle.v1",
+	bundle_id: "sure-approve-validators",
+	version: "legacy-v1",
+	description: "Read-only approval audit and human-decision evidence validators.",
+	canonical_root: "sure-approve",
+	legacy_root: "skills/sure_approve",
+	integrity_root: "scripts",
+	operations: [
+		{
+			operation_id: "sure.approve.validate_input_resolved",
+			description: "Recompute and validate the resolved approval input evidence.",
+			entrypoint: "scripts/check_approval_artifact.py",
+			consumer_skill_ids: ["sure_approve"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+			requires_policy_snapshot: true,
+		},
+		{
+			operation_id: "sure.approve.validate_producer_contract",
+			description: "Recompute and validate producer contract classification evidence.",
+			entrypoint: "scripts/check_approval_artifact.py",
+			consumer_skill_ids: ["sure_approve"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.approve.validate_integrity",
+			description: "Recompute and validate the immutable bundle integrity audit.",
+			entrypoint: "scripts/check_approval_artifact.py",
+			consumer_skill_ids: ["sure_approve"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+			requires_policy_snapshot: true,
+		},
+		{
+			operation_id: "sure.approve.validate_repair_plan",
+			description: "Recompute and validate the bounded repair plan without applying repairs.",
+			entrypoint: "scripts/check_approval_artifact.py",
+			consumer_skill_ids: ["sure_approve"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.approve.validate_manifest",
+			description: "Validate the sealed candidate manifest and current candidate digest.",
+			entrypoint: "scripts/check_approval_artifact.py",
+			consumer_skill_ids: ["sure_approve"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.approve.validate_review_packet",
+			description: "Validate review packet links, policy identity, and candidate/source digests.",
+			entrypoint: "scripts/check_approval_artifact.py",
+			consumer_skill_ids: ["sure_approve"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+			requires_policy_snapshot: true,
+		},
+		{
+			operation_id: "sure.approve.validate_decision",
+			description: "Validate an explicit human approval or rejection against the review packet.",
+			entrypoint: "scripts/check_approval_artifact.py",
+			consumer_skill_ids: ["sure_approve"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+			requires_policy_snapshot: true,
+		},
+	],
+};
+
 export const CANONICAL_SEMANTIC_BACKENDS: readonly SemanticBackendBundle[] = [
 	SURE_EVALUATION_BACKEND,
 	SURE_EVALUATION_VALIDATOR_BACKEND,
@@ -806,4 +901,5 @@ export const CANONICAL_SEMANTIC_BACKENDS: readonly SemanticBackendBundle[] = [
 	SURE_ONBOARD_EXECUTION_BACKEND,
 	SURE_TRANS_VALIDATOR_BACKEND,
 	SURE_TRANS_EXECUTION_BACKEND,
+	SURE_APPROVE_VALIDATOR_BACKEND,
 ];

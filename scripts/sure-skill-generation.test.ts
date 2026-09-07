@@ -202,6 +202,27 @@ describe("canonical SURE skill generation", () => {
 			validate_contract: "sure.onboard.execute_contract",
 			package_container: "sure.onboard.execute_package_container",
 		});
+		const approveOperations = Object.fromEntries(
+			descriptors
+				.filter((descriptor) => descriptor.skill_id === "sure_approve" && descriptor.branch_id !== undefined)
+				.map((descriptor) => [descriptor.unit_id, descriptor.backend_operation_id]),
+		);
+		expect(approveOperations).toMatchObject({
+			resolve_input: "sure.approve.validate_input_resolved",
+			classify_producer: "sure.approve.validate_producer_contract",
+			audit_integrity: "sure.approve.validate_integrity",
+			plan_repairs: "sure.approve.validate_repair_plan",
+			seal_candidate: "sure.approve.validate_manifest",
+			prepare_review: "sure.approve.validate_review_packet",
+			verify_decision: "sure.approve.validate_decision",
+		});
+		for (const unit of CANONICAL_SKILLS.find((skill) => skill.skill_id === "sure_approve")!.workflow.branches.flatMap(
+			(branch) => branch.units,
+		)) {
+			if (["apply_repairs", "verify_runtime", "publish", "verify_publication"].includes(unit.id)) {
+				expect(unit.gate?.backend_operation_id).toBeUndefined();
+			}
+		}
 	});
 
 	it("projects the legacy Pi manifest without changing its public fields", () => {

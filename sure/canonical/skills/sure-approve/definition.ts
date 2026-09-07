@@ -27,6 +27,8 @@ export const SURE_APPROVE_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["schema", "status", "mode", "source", "approval", "site_policy"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.approve.validate_input_resolved",
+							validator_script_args: ["--kind", "input_resolved"],
 							script_id: "resolve_approve_input.py",
 						},
 					},
@@ -47,6 +49,7 @@ export const SURE_APPROVE_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.approve.validate_producer_contract",
 							script_id: "audit_bundle.py",
 							script_args: ["--kind", "producer"],
 						},
@@ -60,6 +63,7 @@ export const SURE_APPROVE_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["schema", "status", "source_digest", "checks", "findings"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.approve.validate_integrity",
 							script_id: "audit_bundle.py",
 							script_args: ["--kind", "integrity"],
 						},
@@ -73,6 +77,8 @@ export const SURE_APPROVE_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["schema", "status", "repair_mode", "safe_repairs", "rerun_required"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.approve.validate_repair_plan",
+							validator_script_args: ["--kind", "repair_plan"],
 							script_id: "plan_repairs.py",
 						},
 					},
@@ -104,6 +110,7 @@ export const SURE_APPROVE_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						required_fields: ["schema", "status", "model_name", "candidate_dir", "candidate_digest", "files"],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.approve.validate_manifest",
 							script_id: "build_approval_manifest.py",
 							script_args: ["--kind", "manifest"],
 						},
@@ -139,6 +146,7 @@ export const SURE_APPROVE_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.approve.validate_review_packet",
 							script_id: "build_approval_manifest.py",
 							script_args: ["--kind", "review"],
 						},
@@ -167,6 +175,8 @@ export const SURE_APPROVE_CANONICAL: CanonicalSkillDefinition = defineCanonicalS
 						],
 						gate: {
 							validator_id: "python-script",
+							backend_operation_id: "sure.approve.validate_decision",
+							validator_script_args: ["--kind", "decision"],
 							script_id: "verify_human_decision.py",
 						},
 					},

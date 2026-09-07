@@ -48,6 +48,31 @@ describe("semantic backend registry", () => {
 		expect(report.consumer_skill_ids).toEqual(["sure_eval", "sure_infer"]);
 	});
 
+	it("resolves approval audit and decision validators from the neutral backend", () => {
+		const expected = new Map([
+			["sure.approve.validate_input_resolved", "check_approval_artifact.py"],
+			["sure.approve.validate_producer_contract", "check_approval_artifact.py"],
+			["sure.approve.validate_integrity", "check_approval_artifact.py"],
+			["sure.approve.validate_repair_plan", "check_approval_artifact.py"],
+			["sure.approve.validate_manifest", "check_approval_artifact.py"],
+			["sure.approve.validate_review_packet", "check_approval_artifact.py"],
+			["sure.approve.validate_decision", "check_approval_artifact.py"],
+		]);
+		for (const [operationId, file] of expected) {
+			const resolved = resolveSemanticBackendOperation(packageDir, operationId, { manifestPath });
+			expect(resolved.kind).toBe("validate");
+			expect(resolved.consumer_skill_ids).toEqual(["sure_approve"]);
+			expect(resolved.path).toBe(
+				join(repositoryRoot, "sure", "canonical", "skills", "sure-approve", "scripts", file),
+			);
+		}
+		const deployment = resolveSemanticBackendOperation(packageDir, "sure.infer.resolve_deployment_binding", {
+			manifestPath,
+		});
+		expect(deployment.kind).toBe("resolve");
+		expect(deployment.consumer_skill_ids).toEqual(["sure_infer", "sure_approve"]);
+	});
+
 	it("resolves the shared memory gate outside every sibling skill", () => {
 		const memory = resolveSemanticBackendOperation(packageDir, "sure.memory.validate_extraction", {
 			manifestPath,

@@ -338,6 +338,87 @@ class ApprovalFlowTests(unittest.TestCase):
         with self.assertRaisesRegex(approval_core.ApprovalError, "requires an approved explicit decision"):
             approval_core.publish(approve_run, replace=False)
 
+    def test_read_only_backend_validates_audit_and_decision_evidence(self) -> None:
+        self.build_python_bundle()
+        audit_run = self.root / "runs" / "backend-audit"
+        self.audit(audit_run)
+        checker = Path(__file__).with_name("check_approval_artifact.py")
+        artifacts = audit_run / "artifacts"
+        for name, kind in (
+            ("approve_input_resolved.json", "input_resolved"),
+            ("producer_contract_report.json", "producer"),
+            ("integrity_report.json", "integrity"),
+            ("repair_plan.json", "repair_plan"),
+            ("approval_manifest.json", "manifest"),
+            ("review_packet.json", "review"),
+        ):
+            target = artifacts / name
+            before = target.read_bytes()
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-B",
+                    str(checker),
+                    "--run-dir",
+                    str(audit_run),
+                    "--produces",
+                    str(target),
+                    "--kind",
+                    kind,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+            self.assertEqual(completed.returncode, 0, f"{kind}: {completed.stderr}")
+            self.assertEqual(target.read_bytes(), before)
+
+        approve_run = self.root / "runs" / "backend-decision"
+        decision_path = approve_run / "artifacts" / "approval_decision.json"
+        decision = approval_core.verify_decision(artifacts / "review_packet.json", "reject", "backend test")
+        write_json(decision_path, decision)
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(checker),
+                "--run-dir",
+                str(approve_run),
+                "--produces",
+                str(decision_path),
+                "--kind",
+                "decision",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        tampered = approval_core.read_json(decision_path)
+        tampered["candidate_digest"] = "0" * 64
+        write_json(decision_path, tampered)
+        rejected = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(checker),
+                "--run-dir",
+                str(approve_run),
+                "--produces",
+                str(decision_path),
+                "--kind",
+                "decision",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        self.assertEqual(rejected.returncode, 1)
+        self.assertIn("does not match recomputed approval evidence", rejected.stderr)
+
     def test_published_decision_tamper_is_rejected(self) -> None:
         self.build_python_bundle()
         audit_run = self.root / "runs" / "publish-audit"
