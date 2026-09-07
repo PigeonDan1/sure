@@ -123,6 +123,7 @@ class SemanticBackendOperation:
     requires_policy_snapshot: bool | None = None
     artifact_mode: str | None = None
     output_contract: dict[str, Any] | None = None
+    input_contract: dict[str, Any] | None = None
     capability_requirements: tuple[dict[str, Any], ...] | None = None
     canonical_resource_digest: str | None = None
     legacy_resource_digest: str | None = None
@@ -166,6 +167,7 @@ class ResolvedSemanticBackend:
     requires_policy_snapshot: bool
     artifact_mode: str | None = None
     output_contract: dict[str, Any] | None = None
+    input_contract: dict[str, Any] | None = None
     capability_requirements: tuple[dict[str, Any], ...] | None = None
 
 
@@ -225,6 +227,122 @@ def _validate_output_contract(value: Any, operation_id: str, kind: str, artifact
     if not isinstance(value.get("allow_missing_on_failure"), bool) or not isinstance(value.get("retain_failed_outputs"), bool):
         raise SemanticBackendResolutionError(f"{operation_id}.output_contract failure policy is invalid")
     return value
+
+
+_INPUT_LOCATOR_KINDS = {"run_artifact", "run_path", "resolved_input_field"}
+_INPUT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_INPUT_FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
+
+
+def _input_path(value: Any, field: str, *, resolved_field: bool = False) -> str:
+    if not isinstance(value, str) or not value:
+        raise SemanticBackendResolutionError(f"{field} is invalid")
+    if resolved_field:
+        if _INPUT_FIELD.fullmatch(value) is None:
+            raise SemanticBackendResolutionError(f"{field} is invalid")
+        return value
+    if "\\" in value:
+        raise SemanticBackendResolutionError(f"{field} is invalid")
+    normalized = PurePosixPath(value).as_posix()
+    if (
+        PurePosixPath(value).is_absolute()
+        or ".." in PurePosixPath(value).parts
+        or normalized != value
+        or normalized in {"", "."}
+    ):
+        raise SemanticBackendResolutionError(f"{field} is invalid")
+    return normalized
+
+
+def _input_selectors_overlap(left: Mapping[str, str], right: Mapping[str, str]) -> bool:
+    for field in set(left) | set(right):
+        if field in left and field in right and left[field] != right[field]:
+            return False
+    return True
+
+
+def _validate_input_contract(value: Any, operation_id: str, kind: str) -> dict[str, Any]:
+    """Validate conditional input selectors before they participate in registry hashing."""
+    if not isinstance(value, dict):
+        raise SemanticBackendResolutionError(f"{operation_id}.input_contract must be an object")
+    if value.get("schema") != "sure.execution_input_contract.v1":
+        raise SemanticBackendResolutionError(f"{operation_id}.input_contract schema is unsupported")
+    if kind != "execute":
+        raise SemanticBackendResolutionError(f"{operation_id}.input_contract is only valid for execute operations")
+    context_artifact = _input_path(value.get("context_artifact"), f"{operation_id}.input_contract.context_artifact")
+    if value.get("selection") != "exactly_one":
+        raise SemanticBackendResolutionError(f"{operation_id}.input_contract.selection is invalid")
+    raw_selectors = value.get("selectors")
+    if not isinstance(raw_selectors, list) or not raw_selectors:
+        raise SemanticBackendResolutionError(f"{operation_id}.input_contract.selectors must not be empty")
+    selectors: list[dict[str, Any]] = []
+    selector_ids: set[str] = set()
+    for selector_index, raw_selector in enumerate(raw_selectors):
+        prefix = f"{operation_id}.input_contract.selectors[{selector_index}]"
+        if not isinstance(raw_selector, dict):
+            raise SemanticBackendResolutionError(f"{prefix} must be an object")
+        selector_id = raw_selector.get("selector_id")
+        if not isinstance(selector_id, str) or _INPUT_ID.fullmatch(selector_id) is None:
+            raise SemanticBackendResolutionError(f"{prefix}.selector_id is invalid")
+        if selector_id in selector_ids:
+            raise SemanticBackendResolutionError(f"{prefix}.selector_id is duplicated")
+        selector_ids.add(selector_id)
+        match = raw_selector.get("match")
+        if not isinstance(match, dict) or not match:
+            raise SemanticBackendResolutionError(f"{prefix}.match must be a non-empty object")
+        normalized_match: dict[str, str] = {}
+        for field, expected in match.items():
+            if not isinstance(field, str) or _INPUT_FIELD.fullmatch(field) is None:
+                raise SemanticBackendResolutionError(f"{prefix}.match field is invalid")
+            if not isinstance(expected, str) or not expected:
+                raise SemanticBackendResolutionError(f"{prefix}.match.{field} must be a non-empty string")
+            normalized_match[field] = expected
+        raw_inputs = raw_selector.get("inputs")
+        if not isinstance(raw_inputs, list) or not raw_inputs:
+            raise SemanticBackendResolutionError(f"{prefix}.inputs must not be empty")
+        inputs: list[dict[str, Any]] = []
+        input_ids: set[str] = set()
+        for input_index, raw_input in enumerate(raw_inputs):
+            input_prefix = f"{prefix}.inputs[{input_index}]"
+            if not isinstance(raw_input, dict):
+                raise SemanticBackendResolutionError(f"{input_prefix} must be an object")
+            input_id = raw_input.get("input_id")
+            if not isinstance(input_id, str) or _INPUT_ID.fullmatch(input_id) is None:
+                raise SemanticBackendResolutionError(f"{input_prefix}.input_id is invalid")
+            if input_id in input_ids:
+                raise SemanticBackendResolutionError(f"{input_prefix}.input_id is duplicated")
+            input_ids.add(input_id)
+            locator_kind = raw_input.get("locator_kind")
+            if locator_kind not in _INPUT_LOCATOR_KINDS:
+                raise SemanticBackendResolutionError(f"{input_prefix}.locator_kind is invalid")
+            path = _input_path(
+                raw_input.get("path"),
+                f"{input_prefix}.path",
+                resolved_field=locator_kind == "resolved_input_field",
+            )
+            if not isinstance(raw_input.get("required"), bool):
+                raise SemanticBackendResolutionError(f"{input_prefix}.required must be boolean")
+            inputs.append(
+                {
+                    "input_id": input_id,
+                    "locator_kind": locator_kind,
+                    "path": path,
+                    "required": raw_input["required"],
+                }
+            )
+        selectors.append({"selector_id": selector_id, "match": normalized_match, "inputs": inputs})
+    for left_index, left in enumerate(selectors):
+        for right in selectors[left_index + 1 :]:
+            if _input_selectors_overlap(left["match"], right["match"]):
+                raise SemanticBackendResolutionError(
+                    f"{operation_id}.input_contract selectors {left['selector_id']} and {right['selector_id']} overlap"
+                )
+    return {
+        "schema": "sure.execution_input_contract.v1",
+        "context_artifact": context_artifact,
+        "selection": "exactly_one",
+        "selectors": selectors,
+    }
 
 
 def _validate_capability_requirements(value: Any, operation_id: str) -> tuple[dict[str, Any], ...]:
@@ -310,6 +428,11 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                 if "output_contract" in operation
                 else None
             )
+            input_contract = (
+                _validate_input_contract(operation["input_contract"], operation_id, kind)
+                if "input_contract" in operation
+                else None
+            )
             capability_requirements = (
                 _validate_capability_requirements(operation["capability_requirements"], operation_id)
                 if "capability_requirements" in operation
@@ -339,6 +462,7 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                     requires_policy_snapshot=requires_policy_snapshot,
                     artifact_mode=artifact_mode,
                     output_contract=output_contract,
+                    input_contract=input_contract,
                     capability_requirements=capability_requirements,
                     canonical_resource_digest=digests["canonical_resource_digest"],
                     legacy_resource_digest=digests["legacy_resource_digest"],
@@ -398,6 +522,7 @@ def _parse_manifest(value: Any, path: Path) -> SemanticBackendManifest:
                         **({"requires_policy_snapshot": operation.requires_policy_snapshot} if operation.requires_policy_snapshot is not None else {}),
                         **({"artifact_mode": operation.artifact_mode} if operation.artifact_mode is not None else {}),
                         **({"output_contract": operation.output_contract} if operation.output_contract is not None else {}),
+                        **({"input_contract": operation.input_contract} if operation.input_contract is not None else {}),
                         **({"capability_requirements": list(operation.capability_requirements)} if operation.capability_requirements is not None else {}),
                         **({"canonical_resource_digest": operation.canonical_resource_digest} if operation.canonical_resource_digest is not None else {}),
                         **({"legacy_resource_digest": operation.legacy_resource_digest} if operation.legacy_resource_digest is not None else {}),
@@ -541,6 +666,7 @@ def resolve_semantic_backend_operation(
             requires_policy_snapshot=operation.requires_policy_snapshot is True,
             artifact_mode=operation.artifact_mode,
             output_contract=operation.output_contract,
+            input_contract=operation.input_contract,
             capability_requirements=operation.capability_requirements,
         )
     raise SemanticBackendResolutionError(f"semantic backend operation is unavailable: {operation_id}")

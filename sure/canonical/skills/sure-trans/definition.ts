@@ -1,4 +1,8 @@
 import { defineCanonicalSkill } from "../../define.ts";
+import {
+	SURE_TRANS_BUILD_ADAPTER_DISPATCH,
+	SURE_TRANS_PACKAGE_DISPATCH,
+} from "../../shared/evaluation/trans-execution-contracts.ts";
 import type { CanonicalSkillDefinition } from "../../types.ts";
 
 export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSkill({
@@ -266,6 +270,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 							validator_script_args: ["--kind", "adapter_image"],
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "adapter_image"],
+							execution_dispatch: SURE_TRANS_BUILD_ADAPTER_DISPATCH,
 						},
 						owned_scripts: ["materialize_adapter_runtime.py"],
 					},
@@ -398,6 +403,7 @@ export const SURE_TRANS_CANONICAL: CanonicalSkillDefinition = defineCanonicalSki
 							validator_script_args: ["--kind", "registry"],
 							script_id: "check_artifact.py",
 							script_args: ["--kind", "registry"],
+							execution_dispatch: SURE_TRANS_PACKAGE_DISPATCH,
 						},
 						owned_scripts: ["vc_exec.py", "mcp_smoke.py", "package_python_runtime.py"],
 					},

@@ -1,6 +1,17 @@
 import type { ExecutionOperation, JsonValue } from "../contracts/types.ts";
+import type { ExecutionInputContract } from "../execution/input-contract.ts";
 
 export type UnitKind = "linear" | "gate";
+
+export interface ExecutionDispatchCase {
+	case_id: string;
+	/** Exact string comparisons against the resolved input context artifact. */
+	match: Readonly<Record<string, string>>;
+	/** Operation selected for this case; the host must resolve it from the pinned registry. */
+	operation_id: string;
+	/** All inputs that must be bound before the selected executor may start. */
+	input_contract: ExecutionInputContract;
+}
 
 export interface GateDefinition {
 	validator_id: string;
@@ -13,6 +24,8 @@ export interface GateDefinition {
 	execution_operation_id?: string;
 	/** Upstream run artifact whose bytes are bound as the execution input. */
 	execution_input_produces?: string;
+	/** Conditional operation/input cases for a gate that is not yet safely single-bound. */
+	execution_dispatch?: readonly ExecutionDispatchCase[];
 	/** Execution-request domain for an execution-backed gate. Defaults to validation. */
 	execution_request_operation?: ExecutionOperation;
 	/** Additional in-process or cross-artifact validators that must also pass. */

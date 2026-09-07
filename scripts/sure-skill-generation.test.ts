@@ -239,6 +239,41 @@ describe("canonical SURE skill generation", () => {
 			transSkill!.workflow.branches.flatMap((branch) => branch.units).find((unit) => unit.id === "package_container")
 				?.gate?.execution_operation_id,
 		).toBeUndefined();
+		const adapterDispatch = transSkill!.workflow.branches
+			.flatMap((branch) => branch.units)
+			.find((unit) => unit.id === "build_adapter_image")?.gate?.execution_dispatch;
+		expect(adapterDispatch?.map((entry) => [entry.case_id, entry.operation_id])).toEqual([
+			["python-source", "sure.trans.execute_adapter_image.python"],
+			["docker-source", "sure.trans.execute_adapter_image.docker"],
+		]);
+		expect(adapterDispatch?.[0]?.input_contract.selectors[0]?.inputs.map((input) => input.input_id)).toEqual([
+			"trans-input",
+			"adapter-manifest",
+			"lockfile",
+		]);
+		const packageDispatch = transSkill!.workflow.branches
+			.flatMap((branch) => branch.units)
+			.find((unit) => unit.id === "package_container")?.gate?.execution_dispatch;
+		expect(packageDispatch?.map((entry) => [entry.case_id, entry.operation_id])).toEqual([
+			["python-none", "sure.trans.execute_package_container.python"],
+			["docker-registry", "sure.trans.execute_package_container.docker"],
+		]);
+		expect(packageDispatch?.[1]?.input_contract.selectors[0]?.inputs.map((input) => input.input_id)).toContain(
+			"adapter-image",
+		);
+		const backendManifest = readJson(join(repositoryRoot, "sure/canonical/shared/evaluation/backend-manifest.json"));
+		const transBackend = (backendManifest.bundles as Array<Record<string, unknown>>).find(
+			(bundle) => bundle.bundle_id === "sure-trans-execution",
+		);
+		const backendOperations = transBackend?.operations as Array<Record<string, unknown>>;
+		expect(
+			backendOperations.find((operation) => operation.operation_id === "sure.trans.execute_adapter_image")
+				?.input_contract,
+		).toEqual(adapterDispatch?.[0]?.input_contract);
+		expect(
+			backendOperations.find((operation) => operation.operation_id === "sure.trans.execute_package_container")
+				?.input_contract,
+		).toEqual(packageDispatch?.[0]?.input_contract);
 		const approveOperations = Object.fromEntries(
 			descriptors
 				.filter((descriptor) => descriptor.skill_id === "sure_approve" && descriptor.branch_id !== undefined)

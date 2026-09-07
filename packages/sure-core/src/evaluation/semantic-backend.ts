@@ -8,6 +8,8 @@ import type {
 	ExecutionOutputContract,
 	JsonValue,
 } from "../contracts/types.ts";
+import type { ExecutionInputContract } from "../execution/input-contract.ts";
+import { validateExecutionInputContract } from "../execution/input-contract.ts";
 import { validateExecutionOutputContract } from "../execution/output-contract.ts";
 
 export interface SemanticBackendOperation {
@@ -23,6 +25,8 @@ export interface SemanticBackendOperation {
 	artifact_mode?: ExecutionArtifactMode;
 	/** Declarative output boundary for producer/mutating execution adapters. */
 	output_contract?: ExecutionOutputContract;
+	/** Conditional, fail-closed input boundary for operations with multiple runtime profiles. */
+	input_contract?: ExecutionInputContract;
 	/** Static execution capabilities; input-dependent capabilities stay in the adapter. */
 	capability_requirements?: readonly CapabilityRequirement[];
 	canonical_resource_digest?: string;
@@ -83,6 +87,7 @@ export interface ResolvedSemanticBackend {
 	requires_policy_snapshot: boolean;
 	artifact_mode?: SemanticBackendOperation["artifact_mode"];
 	output_contract?: ExecutionOutputContract;
+	input_contract?: ExecutionInputContract;
 	capability_requirements?: readonly CapabilityRequirement[];
 	kind: SemanticBackendOperation["kind"];
 	consumer_skill_ids: readonly string[];
@@ -283,6 +288,25 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 				}
 				outputContract = rawOutputContract as unknown as ExecutionOutputContract;
 			}
+			let inputContract: ExecutionInputContract | undefined;
+			if (operation.input_contract !== undefined) {
+				const rawInputContract = record(operation.input_contract);
+				if (!rawInputContract) {
+					throw new SemanticBackendResolutionError(`${operationId}.input_contract must be an object`);
+				}
+				const contractValidation = validateExecutionInputContract(rawInputContract);
+				if (!contractValidation.valid) {
+					throw new SemanticBackendResolutionError(
+						`${operationId}.input_contract is invalid: ${contractValidation.errors.join("; ")}`,
+					);
+				}
+				if (operation.kind !== "execute") {
+					throw new SemanticBackendResolutionError(
+						`${operationId}.input_contract is only valid for execute operations`,
+					);
+				}
+				inputContract = rawInputContract as unknown as ExecutionInputContract;
+			}
 			let capabilityRequirements: readonly CapabilityRequirement[] | undefined;
 			if (operation.capability_requirements !== undefined) {
 				if (!Array.isArray(operation.capability_requirements)) {
@@ -324,6 +348,7 @@ function parseManifest(value: unknown, path: string): SemanticBackendManifest {
 					? {}
 					: { artifact_mode: operation.artifact_mode as "preexisting" | "mutating" | "producing" }),
 				...(outputContract === undefined ? {} : { output_contract: outputContract }),
+				...(inputContract === undefined ? {} : { input_contract: inputContract }),
 				...(capabilityRequirements === undefined ? {} : { capability_requirements: capabilityRequirements }),
 				...(canonicalResourceDigest === undefined ? {} : { canonical_resource_digest: canonicalResourceDigest }),
 				...(legacyResourceDigest === undefined ? {} : { legacy_resource_digest: legacyResourceDigest }),
@@ -552,6 +577,7 @@ export function resolveSemanticBackendOperation(
 			requires_policy_snapshot: operation.requires_policy_snapshot ?? false,
 			...(operation.artifact_mode === undefined ? {} : { artifact_mode: operation.artifact_mode }),
 			...(operation.output_contract === undefined ? {} : { output_contract: operation.output_contract }),
+			...(operation.input_contract === undefined ? {} : { input_contract: operation.input_contract }),
 			...(operation.capability_requirements === undefined
 				? {}
 				: { capability_requirements: operation.capability_requirements }),

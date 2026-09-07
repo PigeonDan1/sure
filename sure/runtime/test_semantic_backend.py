@@ -206,6 +206,71 @@ class SemanticBackendTests(unittest.TestCase):
                 expected_bundle_digest="sha256:" + "f" * 64,
             )
 
+    def test_trans_conditional_input_contract_is_pinned_and_missing_profile_fails_closed(self) -> None:
+        manifest = load_semantic_backend_manifest(PACKAGE_DIR, manifest_path=MANIFEST_PATH)
+        adapter = resolve_semantic_backend_operation(
+            "sure.trans.execute_adapter_image",
+            package_dir=PACKAGE_DIR,
+            manifest_path=MANIFEST_PATH,
+            expected_registry_digest=manifest.registry_digest,
+        )
+        self.assertIsNotNone(adapter.input_contract)
+        self.assertEqual(adapter.input_contract["selectors"][0]["match"], {"source_kind": "python"})
+        self.assertEqual(
+            [entry["input_id"] for entry in adapter.input_contract["selectors"][0]["inputs"]],
+            ["trans-input", "adapter-manifest", "lockfile"],
+        )
+        package = resolve_semantic_backend_operation(
+            "sure.trans.execute_package_container",
+            package_dir=PACKAGE_DIR,
+            manifest_path=MANIFEST_PATH,
+        )
+        self.assertEqual(
+            package.input_contract["selectors"][0]["match"],
+            {"source_kind": "python", "package_profile": "none"},
+        )
+
+        bundle = next(item for item in manifest.bundles if item.bundle_id == "sure-trans-execution")
+        operation = next(item for item in bundle.operations if item.operation_id == "sure.trans.execute_adapter_image")
+        unsigned = {
+            "schema": "sure.semantic.backend.manifest.v1",
+            "bundles": [
+                {
+                    "schema": "sure.semantic.backend.bundle.v1",
+                    "bundle_id": bundle.bundle_id,
+                    "version": bundle.version,
+                    "description": bundle.description,
+                    "canonical_root": bundle.canonical_root,
+                    "legacy_root": bundle.legacy_root,
+                    "integrity_root": bundle.integrity_root,
+                    "operations": [
+                        {
+                            "operation_id": "sure.test.invalid.input-contract",
+                            "description": operation.description,
+                            "entrypoint": operation.entrypoint,
+                            "consumer_skill_ids": list(operation.consumer_skill_ids),
+                            "kind": "execute",
+                            "timeout_ms": operation.timeout_ms,
+                            "deterministic": operation.deterministic,
+                            "input_contract": {
+                                "schema": "sure.execution_input_contract.v1",
+                                "context_artifact": "../outside.json",
+                                "selection": "exactly_one",
+                                "selectors": [],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        encoded = json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
+        invalid = {**unsigned, "registry_digest": f"sha256:{hashlib.sha256(encoded).hexdigest()}"}
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "semantic-backends.json"
+            path.write_text(json.dumps(invalid), encoding="utf-8")
+            with self.assertRaises(SemanticBackendResolutionError):
+                load_semantic_backend_manifest(PACKAGE_DIR, manifest_path=path)
+
     def test_repository_relative_roots_are_explicit_and_tree_pinned(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

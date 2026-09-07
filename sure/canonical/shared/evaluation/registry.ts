@@ -8,6 +8,11 @@
  * materializes the digests and the host adapters resolve this manifest before
  * spawning Python.
  */
+import type { ExecutionInputContract } from "../../../../packages/sure-core/src/execution/input-contract.ts";
+import {
+	SURE_TRANS_PYTHON_ADAPTER_INPUT_CONTRACT,
+	SURE_TRANS_PYTHON_PACKAGE_INPUT_CONTRACT,
+} from "./trans-execution-contracts.ts";
 
 export interface SemanticBackendOperation {
 	operation_id: string;
@@ -24,6 +29,8 @@ export interface SemanticBackendOperation {
 	artifact_mode?: "preexisting" | "mutating" | "producing";
 	/** Declarative output boundary consumed by the host-neutral executor. */
 	output_contract?: SemanticBackendOutputContract;
+	/** Conditional, fail-closed input boundary for runtime-specific operations. */
+	input_contract?: ExecutionInputContract;
 	/** Static execution capabilities; input-dependent capabilities stay in the adapter. */
 	capability_requirements?: readonly SemanticBackendCapabilityRequirement[];
 }
@@ -721,6 +728,7 @@ export const SURE_TRANS_EXECUTION_BACKEND: SemanticBackendBundle = {
 			timeout_ms: 3_600_000,
 			deterministic: false,
 			artifact_mode: "producing",
+			input_contract: SURE_TRANS_PYTHON_ADAPTER_INPUT_CONTRACT,
 			output_contract: transOutputContract("producing", "adapter-image-result", "adapter_image_result.json"),
 		},
 		{
@@ -798,6 +806,7 @@ export const SURE_TRANS_EXECUTION_BACKEND: SemanticBackendBundle = {
 			timeout_ms: 7_200_000,
 			deterministic: false,
 			artifact_mode: "producing",
+			input_contract: SURE_TRANS_PYTHON_PACKAGE_INPUT_CONTRACT,
 			requires_policy_snapshot: true,
 			capability_requirements: [
 				{ capability_id: "sure.execution.uv", capability_class: "execution_capability", required: true },

@@ -1,3 +1,4 @@
+import { validateExecutionInputContract } from "../../packages/sure-core/src/execution/input-contract.ts";
 import type { CanonicalSkillDefinition } from "./types.ts";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -8,6 +9,23 @@ function assertRelativeResource(value: string, label: string): void {
 	if (value.startsWith("/") || value.includes("\\") || value.split("/").includes("..")) {
 		throw new Error(`${label} must be a relative POSIX resource path: ${value}`);
 	}
+}
+
+function dispatchCasesOverlap(
+	left: Readonly<Record<string, string>>,
+	right: Readonly<Record<string, string>>,
+): boolean {
+	const fields = new Set([...Object.keys(left), ...Object.keys(right)]);
+	for (const field of fields) {
+		if (left[field] !== undefined && right[field] !== undefined && left[field] !== right[field]) return false;
+	}
+	return true;
+}
+
+function dispatchMatchEquals(left: Readonly<Record<string, string>>, right: Readonly<Record<string, string>>): boolean {
+	const leftKeys = Object.keys(left);
+	const rightKeys = Object.keys(right);
+	return leftKeys.length === rightKeys.length && leftKeys.every((key) => left[key] === right[key]);
 }
 
 function assertWorkflow(definition: CanonicalSkillDefinition): void {
@@ -51,6 +69,59 @@ function assertWorkflow(definition: CanonicalSkillDefinition): void {
 					unit.gate.execution_input_produces,
 					`execution input artifact ${workflow.workflow_id}/${unit.id}`,
 				);
+			}
+			if (unit.gate?.execution_dispatch !== undefined) {
+				if (unit.gate.execution_operation_id !== undefined) {
+					throw new Error(
+						`Execution dispatch for ${workflow.workflow_id}/${unit.id} cannot coexist with execution_operation_id.`,
+					);
+				}
+				const caseIds = new Set<string>();
+				for (const [index, entry] of unit.gate.execution_dispatch.entries()) {
+					if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(entry.case_id)) {
+						throw new Error(
+							`Invalid execution dispatch case id for ${workflow.workflow_id}/${unit.id}/${index}.`,
+						);
+					}
+					if (caseIds.has(entry.case_id)) {
+						throw new Error(
+							`Duplicate execution dispatch case for ${workflow.workflow_id}/${unit.id}: ${entry.case_id}`,
+						);
+					}
+					caseIds.add(entry.case_id);
+					if (!OPERATION_PATTERN.test(entry.operation_id)) {
+						throw new Error(
+							`Invalid execution dispatch operation id for ${workflow.workflow_id}/${unit.id}: ${entry.operation_id}`,
+						);
+					}
+					if (
+						Object.keys(entry.match).length === 0 ||
+						Object.values(entry.match).some((value) => value.length === 0)
+					) {
+						throw new Error(`Execution dispatch match must be non-empty for ${workflow.workflow_id}/${unit.id}.`);
+					}
+					const inputValidation = validateExecutionInputContract(entry.input_contract);
+					if (!inputValidation.valid) {
+						throw new Error(
+							`Invalid execution input contract for ${workflow.workflow_id}/${unit.id}/${entry.case_id}: ${inputValidation.errors.join("; ")}`,
+						);
+					}
+					if (
+						entry.input_contract.selectors.length !== 1 ||
+						!dispatchMatchEquals(entry.input_contract.selectors[0]?.match ?? {}, entry.match)
+					) {
+						throw new Error(
+							`Execution dispatch input selector must exactly match its case for ${workflow.workflow_id}/${unit.id}/${entry.case_id}.`,
+						);
+					}
+					for (const previous of unit.gate.execution_dispatch.slice(0, index)) {
+						if (dispatchCasesOverlap(previous.match, entry.match)) {
+							throw new Error(
+								`Overlapping execution dispatch cases for ${workflow.workflow_id}/${unit.id}: ${previous.case_id}/${entry.case_id}`,
+							);
+						}
+					}
+				}
 			}
 			for (const script of [
 				...(unit.helper_scripts ?? []),

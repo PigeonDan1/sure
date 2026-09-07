@@ -1,0 +1,67 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/contracts/execution-input-contract.v1.schema.json",
+	"title": "SURE execution input contract",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["schema", "context_artifact", "selection", "selectors"],
+	"properties": {
+		"schema": { "const": "sure.execution_input_contract.v1" },
+		"context_artifact": { "$ref": "#/$defs/relativePath" },
+		"selection": { "const": "exactly_one" },
+		"selectors": {
+			"type": "array",
+			"minItems": 1,
+			"items": { "$ref": "#/$defs/selector" }
+		}
+	},
+	"$defs": {
+		"id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+		"relativePath": {
+			"type": "string",
+			"minLength": 1,
+			"pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*//)(?!.*\\/$)(?!.*\\\\).+"
+		},
+		"field": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,127}$" },
+		"locator": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["input_id", "locator_kind", "path", "required"],
+			"properties": {
+				"input_id": { "$ref": "#/$defs/id" },
+				"locator_kind": { "enum": ["run_artifact", "run_path", "resolved_input_field"] },
+				"path": { "type": "string", "minLength": 1 },
+				"required": { "type": "boolean" }
+			},
+			"allOf": [
+				{
+					"if": { "properties": { "locator_kind": { "const": "resolved_input_field" } } },
+					"then": { "properties": { "path": { "$ref": "#/$defs/field" } } }
+				},
+				{
+					"if": { "properties": { "locator_kind": { "enum": ["run_artifact", "run_path"] } } },
+					"then": { "properties": { "path": { "$ref": "#/$defs/relativePath" } } }
+				}
+			]
+		},
+		"selector": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["selector_id", "match", "inputs"],
+			"properties": {
+				"selector_id": { "$ref": "#/$defs/id" },
+				"match": {
+					"type": "object",
+					"minProperties": 1,
+					"additionalProperties": { "type": "string", "minLength": 1 },
+					"propertyNames": { "$ref": "#/$defs/field" }
+				},
+				"inputs": {
+					"type": "array",
+					"minItems": 1,
+					"items": { "$ref": "#/$defs/locator" }
+				}
+			}
+		}
+	}
+}

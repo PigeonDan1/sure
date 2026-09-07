@@ -335,6 +335,48 @@ describe("wire schemas", () => {
 		).toBe(false);
 	});
 
+	it("validates conditional execution input contracts with locator-specific paths", () => {
+		const contract = {
+			schema: "sure.execution_input_contract.v1",
+			context_artifact: "trans_input_resolved.json",
+			selection: "exactly_one",
+			selectors: [
+				{
+					selector_id: "python-source",
+					match: { source_kind: "python" },
+					inputs: [
+						{ input_id: "source", locator_kind: "run_artifact", path: "source.json", required: true },
+						{ input_id: "lock", locator_kind: "resolved_input_field", path: "lockfile", required: true },
+					],
+				},
+			],
+		};
+		const schema = readSchema("execution_input_contract");
+		expect(validateJsonSchema(schema, contract).ok).toBe(true);
+		expect(
+			validateJsonSchema(schema, {
+				...contract,
+				selectors: [
+					{
+						...contract.selectors[0],
+						inputs: [{ ...contract.selectors[0].inputs[0], path: "../outside.json" }],
+					},
+				],
+			}).ok,
+		).toBe(false);
+		expect(
+			validateJsonSchema(schema, {
+				...contract,
+				selectors: [
+					{
+						...contract.selectors[0],
+						inputs: [{ ...contract.selectors[0].inputs[1], path: "../lockfile" }],
+					},
+				],
+			}).ok,
+		).toBe(false);
+	});
+
 	it("rejects fake formal PASS and capability-missing PASS", () => {
 		const schema = readSchema("conformance");
 		const missingFreeze = conformanceRecord();

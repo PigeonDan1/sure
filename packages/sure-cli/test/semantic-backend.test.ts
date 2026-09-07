@@ -11,6 +11,7 @@ import {
 	resolveSemanticBackendOperation,
 	SemanticBackendResolutionError,
 } from "../../sure-core/src/evaluation/index.ts";
+import { selectExecutionInputSelector } from "../../sure-core/src/execution/input-contract.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const manifestPath = join(repositoryRoot, "sure", "canonical", "shared", "evaluation", "backend-manifest.json");
@@ -255,6 +256,28 @@ describe("semantic backend registry", () => {
 				expect(resolved.capability_requirements).toEqual([
 					{ capability_id: "sure.execution.uv", capability_class: "execution_capability", required: true },
 				]);
+			}
+			if (operationId === "sure.trans.execute_adapter_image") {
+				expect(selectExecutionInputSelector(resolved.input_contract!, { source_kind: "python" }).selector_id).toBe(
+					"python-source",
+				);
+				expect(() => selectExecutionInputSelector(resolved.input_contract!, { source_kind: "docker" })).toThrow(
+					/has no selector/,
+				);
+			}
+			if (operationId === "sure.trans.execute_package_container") {
+				expect(
+					selectExecutionInputSelector(resolved.input_contract!, {
+						source_kind: "python",
+						package_profile: "none",
+					}).selector_id,
+				).toBe("python-none");
+				expect(() =>
+					selectExecutionInputSelector(resolved.input_contract!, {
+						source_kind: "docker",
+						package_profile: "docker-registry",
+					}),
+				).toThrow(/has no selector/);
 			}
 		}
 	});

@@ -1,4 +1,5 @@
 export * from "./evidence.ts";
+export * from "./input-contract.ts";
 export * from "./output-contract.ts";
 export * from "./receipt.ts";
 export * from "./registry.ts";
