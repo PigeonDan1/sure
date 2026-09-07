@@ -134,6 +134,94 @@
 					}
 				}
 			}
+		},
+		{
+			"if": {
+				"properties": {
+					"runtime_requirements": {
+						"type": "object",
+						"required": ["execution_surface"],
+						"properties": { "execution_surface": { "type": "string" } }
+					}
+				},
+				"required": ["runtime_requirements"]
+			},
+			"then": {
+				"properties": {
+					"runtime_requirements": {
+						"properties": {
+							"execution_surface": { "enum": ["vc", "remote", "trusted"] }
+						}
+					}
+				}
+			}
+		},
+		{
+			"if": {
+				"properties": {
+					"runtime_requirements": {
+						"type": "object",
+						"required": ["execution_surface"],
+						"properties": { "execution_surface": { "const": "vc" } }
+					}
+				},
+				"required": ["runtime_requirements"]
+			},
+			"then": {
+				"properties": {
+					"runtime_requirements": {
+						"required": ["executor_kind", "vc_project", "vc_partition"],
+						"properties": {
+							"executor_kind": { "enum": ["remote", "trusted"] },
+							"vc_project": { "type": "string", "minLength": 1 },
+							"vc_partition": { "type": "string", "minLength": 1 },
+							"vc_gpus": { "type": "integer", "minimum": 1 },
+							"vc_memory_gb": { "type": "integer", "minimum": 1 },
+							"vc_cpus": { "type": "integer", "minimum": 1 }
+						}
+					}
+				}
+			}
+		},
+		{
+			"if": {
+			"properties": {
+				"runtime_requirements": {
+					"type": "object",
+					"required": ["execution_surface"],
+					"properties": { "execution_surface": { "const": "remote" } }
+				}
+			},
+			"required": ["runtime_requirements"]
+			},
+			"then": {
+				"properties": {
+					"runtime_requirements": {
+						"required": ["executor_kind"],
+						"properties": { "executor_kind": { "const": "remote" } }
+					}
+				}
+			}
+		},
+		{
+			"if": {
+			"properties": {
+				"runtime_requirements": {
+					"type": "object",
+					"required": ["execution_surface"],
+					"properties": { "execution_surface": { "const": "trusted" } }
+				}
+			},
+			"required": ["runtime_requirements"]
+			},
+			"then": {
+				"properties": {
+					"runtime_requirements": {
+						"required": ["executor_kind"],
+						"properties": { "executor_kind": { "const": "trusted" } }
+					}
+				}
+			}
 		}
 	],
 	"$defs": {

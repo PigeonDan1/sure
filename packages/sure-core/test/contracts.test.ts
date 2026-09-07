@@ -325,6 +325,37 @@ describe("wire schemas", () => {
 		).toBe(false);
 	});
 
+	it("requires an explicit registered transport for external execution routes", () => {
+		const schema = readSchema("execution_request");
+		const base = executionRequest();
+		const vcRequest = {
+			...base,
+			runtime_requirements: {
+				execution_surface: "vc",
+				executor_kind: "remote",
+				vc_project: "sure-test",
+				vc_partition: "gpu-test",
+			},
+			capability_requirements: [
+				{ capability_id: "sure.execution.remote", capability_class: "execution_capability", required: true },
+				{ capability_id: "sure.execution.vc", capability_class: "execution_capability", required: true },
+			],
+		};
+		expect(validateJsonSchema(schema, vcRequest).ok).toBe(true);
+		expect(
+			validateJsonSchema(schema, {
+				...vcRequest,
+				runtime_requirements: { ...vcRequest.runtime_requirements, executor_kind: "python" },
+			}).ok,
+		).toBe(false);
+		expect(
+			validateJsonSchema(schema, {
+				...vcRequest,
+				runtime_requirements: { ...vcRequest.runtime_requirements, vc_partition: undefined },
+			}).ok,
+		).toBe(false);
+	});
+
 	it("validates the shared output contract across request and receipt schemas", () => {
 		const outputContract = {
 			schema: "sure.execution_output_contract.v1",

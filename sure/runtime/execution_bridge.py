@@ -39,6 +39,12 @@ OUTPUT_SET_SCHEMA = "sure.execution.output-set.v1"
 OUTPUT_MODES = {"preexisting", "mutating", "producing"}
 OUTPUT_KINDS = {"file", "directory"}
 OUTPUT_DIGEST_KINDS = {"file_sha256", "tree_sha256"}
+EXECUTION_ADAPTER_SURFACES = {"vc", "remote", "trusted"}
+EXECUTION_ADAPTER_KINDS = {
+    "vc": {"remote", "trusted"},
+    "remote": {"remote"},
+    "trusted": {"trusted"},
+}
 DIGEST_RE = re.compile(r"^(?:sha256:)?[0-9a-f]{64}$")
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 TERMINAL_LIFECYCLES = {"SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"}
@@ -312,6 +318,38 @@ def capability_summary(
         "denied": denied,
         "invalid": invalid,
     }
+
+
+def validate_adapter_route(runtime_requirements: Mapping[str, Any]) -> list[str]:
+    """Validate the optional external transport route in a v1 request.
+
+    The Python bridge mirrors the Core parser so legacy scripts can continue
+    writing their historical views while rejecting a VC/remote request that
+    could otherwise be silently executed by a local fallback.
+    """
+
+    surface = runtime_requirements.get("execution_surface")
+    if surface is None:
+        return []
+    errors: list[str] = []
+    if not isinstance(surface, str) or surface not in EXECUTION_ADAPTER_SURFACES:
+        return ["runtime_requirements.execution_surface must be vc, remote, or trusted"]
+    executor_kind = runtime_requirements.get("executor_kind")
+    if not isinstance(executor_kind, str) or executor_kind not in EXECUTION_ADAPTER_KINDS[surface]:
+        allowed = " or ".join(sorted(EXECUTION_ADAPTER_KINDS[surface]))
+        errors.append(
+            f"runtime_requirements.executor_kind must be {allowed} for execution_surface={surface}"
+        )
+    if surface == "vc":
+        for field in ("vc_project", "vc_partition"):
+            value = runtime_requirements.get(field)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"runtime_requirements.{field} must be a non-empty string")
+        for field in ("vc_gpus", "vc_memory_gb", "vc_cpus"):
+            value = runtime_requirements.get(field)
+            if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
+                errors.append(f"runtime_requirements.{field} must be a positive integer when present")
+    return errors
 
 
 def _relative_contract_path(value: object, field: str, errors: list[str]) -> str | None:
@@ -711,6 +749,9 @@ def validate_contract_pair(
     """Perform the Python-side fail-closed checks shared by legacy gates."""
 
     errors: list[str] = []
+    runtime_requirements = request.get("runtime_requirements")
+    if isinstance(runtime_requirements, Mapping):
+        errors.extend(validate_adapter_route(runtime_requirements))
     if request.get("schema") != REQUEST_SCHEMA:
         errors.append("execution request schema is unsupported")
     if receipt.get("schema") != RECEIPT_SCHEMA:

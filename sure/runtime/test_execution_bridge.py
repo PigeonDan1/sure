@@ -13,6 +13,7 @@ from sure.runtime.execution_bridge import (
     digest_json,
     digest_tree,
     output_set_digest,
+    validate_adapter_route,
     validate_contract_pair,
     validate_output_binding,
     validate_output_contract,
@@ -80,6 +81,45 @@ class ExecutionBridgeTests(unittest.TestCase):
             errors = validate_contract_pair(request, receipt)
             self.assertTrue(any("sure.execution.gpu" in error for error in errors))
             self.assertNotEqual(receipt["lifecycle"], "SUCCEEDED")
+
+    def test_external_adapter_route_is_mirrored_and_fail_closed(self) -> None:
+        self.assertEqual(
+            validate_adapter_route(
+                {
+                    "execution_surface": "vc",
+                    "executor_kind": "remote",
+                    "vc_project": "sure-test",
+                    "vc_partition": "gpu-test",
+                    "vc_gpus": 1,
+                }
+            ),
+            [],
+        )
+        self.assertIn(
+            "runtime_requirements.executor_kind must be remote for execution_surface=remote",
+            validate_adapter_route({"execution_surface": "remote", "executor_kind": "python"}),
+        )
+        self.assertIn(
+            "runtime_requirements.vc_partition must be a non-empty string",
+            validate_adapter_route({"execution_surface": "vc", "executor_kind": "remote", "vc_project": "sure-test"}),
+        )
+
+    def test_contract_pair_rejects_invalid_external_route(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            request["runtime_requirements"] = {
+                "execution_surface": "vc",
+                "executor_kind": "python",
+                "vc_project": "sure-test",
+                "vc_partition": "gpu-test",
+            }
+            receipt = build_receipt(request, lifecycle="FAILED", executor_kind="python", exit_code=23)
+            errors = validate_contract_pair(request, receipt)
+            self.assertIn(
+                "runtime_requirements.executor_kind must be remote or trusted for execution_surface=vc",
+                errors,
+            )
 
     def test_receipt_digest_mismatch_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -10,6 +10,7 @@ import type {
 	JsonValue,
 } from "../contracts/types.ts";
 import { type CoreOutcome, createOutcome, outcomeFromExecutionLifecycle } from "../workflow/outcome.ts";
+import { parseExecutionAdapterRoute } from "./adapter.ts";
 import { dockerImageDigest, parseDockerRuntimeRequirements } from "./docker.ts";
 import { validateExecutionInputBinding } from "./input-contract.ts";
 import { validateExecutionOutputBinding, validateExecutionOutputContract } from "./output-contract.ts";
@@ -209,17 +210,21 @@ function validateRequestShape(request: ExecutionRequest, options: ExecutionBound
 		});
 	if (!object(request.runtime_requirements)) {
 		errors.push("request.runtime_requirements must be an object");
-	} else if (request.runtime_requirements.executor_kind === "docker") {
-		const docker = parseDockerRuntimeRequirements(request.runtime_requirements);
-		errors.push(...docker.errors);
-		if (request.operation === "formal_evaluation") {
-			const image = request.runtime_requirements.docker_image;
-			if (
-				typeof image !== "string" ||
-				dockerImageDigest(image) === undefined ||
-				docker.spec?.image_digest === undefined
-			) {
-				errors.push("formal Docker execution requires a digest-pinned docker_image");
+	} else {
+		const route = parseExecutionAdapterRoute(request.runtime_requirements);
+		errors.push(...route.errors);
+		if (request.runtime_requirements.executor_kind === "docker") {
+			const docker = parseDockerRuntimeRequirements(request.runtime_requirements);
+			errors.push(...docker.errors);
+			if (request.operation === "formal_evaluation") {
+				const image = request.runtime_requirements.docker_image;
+				if (
+					typeof image !== "string" ||
+					dockerImageDigest(image) === undefined ||
+					docker.spec?.image_digest === undefined
+				) {
+					errors.push("formal Docker execution requires a digest-pinned docker_image");
+				}
 			}
 		}
 	}
