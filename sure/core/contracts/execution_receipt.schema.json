@@ -51,6 +51,7 @@
 		"output_root": { "$ref": "#/$defs/outputRoot" },
 		"policy_digest": { "$ref": "#/$defs/digest" },
 		"policy_snapshot_digest": { "$ref": "#/$defs/digest" },
+		"adapter_manifest_digest": { "$ref": "#/$defs/digest" },
 		"started_at": { "type": "string", "format": "date-time" },
 		"finished_at": { "type": "string", "format": "date-time" },
 		"exit_code": { "type": "integer" },

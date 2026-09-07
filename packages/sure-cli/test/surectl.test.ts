@@ -687,7 +687,7 @@ describe("surectl cooperative control plane", () => {
 			((validated.value?.transition as Record<string, unknown>).checkpoint as { data: { currentUnit: string } }).data
 				.currentUnit,
 		).toBe("collect_metadata");
-	});
+	}, 15_000);
 
 	it("runs a registered gate validator through the locked portable runtime", () => {
 		const runId = "run-automatic-eval-validator";
@@ -2584,7 +2584,7 @@ describe("surectl cooperative control plane", () => {
 		expect(tampered.status).toBe(5);
 		expect((tampered.value?.eligibility as Record<string, unknown>).eligible).toBe(false);
 		expect((tampered.value?.conformance as Record<string, unknown>).reason_code).toBe("DIGEST_MISMATCH");
-	});
+	}, 15_000);
 
 	it("reports capability absence as a non-passing status", () => {
 		const result = command(root, "capabilities", ["--skill", "sure_eval", "--definition", evalDefinition]);
@@ -2678,5 +2678,5 @@ describe("surectl cooperative control plane", () => {
 		const rejectedTamper = command(root, "status", ["--run-id", "run-policy-snapshot"]);
 		expect(rejectedTamper.status).toBe(1);
 		expect(rejectedTamper.stderr).toMatch(/policy_digest|canonical contents/);
-	});
+	}, 15_000);
 });

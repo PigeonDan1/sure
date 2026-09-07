@@ -16,6 +16,32 @@ export interface ExecutionAdapterRouteValidation {
 	route?: ExecutionAdapterRoute;
 }
 
+export const EXECUTION_ADAPTER_TIMEOUT_FIELDS = [
+	"submit_seconds",
+	"wait_seconds",
+	"command_seconds",
+	"cancel_seconds",
+	"poll_seconds",
+] as const;
+
+export type ExecutionAdapterTimeoutField = (typeof EXECUTION_ADAPTER_TIMEOUT_FIELDS)[number];
+
+const MAX_ADAPTER_TIMEOUT_SECONDS = 604_800;
+
+export interface ExecutionAdapterTimeoutRequest {
+	submit_seconds?: number;
+	wait_seconds?: number;
+	command_seconds?: number;
+	cancel_seconds?: number;
+	poll_seconds?: number;
+}
+
+export interface ExecutionAdapterTimeoutValidation {
+	valid: boolean;
+	errors: readonly string[];
+	timeouts?: ExecutionAdapterTimeoutRequest;
+}
+
 const ROUTES: Readonly<Record<ExecutionAdapterSurface, ExecutionAdapterRoute>> = {
 	vc: {
 		surface: "vc",
@@ -46,6 +72,59 @@ function positiveInteger(value: JsonValue | undefined, field: string, errors: st
 	}
 }
 
+function boundedTimeout(value: JsonValue | undefined, field: string, errors: string[]): void {
+	positiveInteger(value, field, errors);
+	if (typeof value === "number" && Number.isSafeInteger(value) && value > MAX_ADAPTER_TIMEOUT_SECONDS) {
+		errors.push(`${field} exceeds the maximum allowed value`);
+	}
+}
+
+/** Parse the optional, host-neutral timeout budget carried by an external request. */
+export function parseExecutionAdapterTimeouts(
+	runtimeRequirements: Record<string, JsonValue>,
+): ExecutionAdapterTimeoutValidation {
+	const raw = runtimeRequirements.adapter_timeouts;
+	if (raw === undefined) return { valid: true, errors: [], timeouts: {} };
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		return { valid: false, errors: ["runtime_requirements.adapter_timeouts must be an object"] };
+	}
+	const record = raw as Record<string, JsonValue>;
+	const errors: string[] = [];
+	for (const key of Object.keys(record).sort()) {
+		if (!EXECUTION_ADAPTER_TIMEOUT_FIELDS.includes(key as ExecutionAdapterTimeoutField)) {
+			errors.push(`runtime_requirements.adapter_timeouts has unknown field ${key}`);
+		}
+	}
+	const timeouts: ExecutionAdapterTimeoutRequest = {};
+	for (const field of EXECUTION_ADAPTER_TIMEOUT_FIELDS) {
+		const value = record[field];
+		boundedTimeout(value, `runtime_requirements.adapter_timeouts.${field}`, errors);
+		if (
+			typeof value === "number" &&
+			Number.isSafeInteger(value) &&
+			value > 0 &&
+			value <= MAX_ADAPTER_TIMEOUT_SECONDS
+		) {
+			timeouts[field] = value;
+		}
+	}
+	if (
+		timeouts.command_seconds !== undefined &&
+		timeouts.wait_seconds !== undefined &&
+		timeouts.command_seconds > timeouts.wait_seconds
+	) {
+		errors.push("runtime_requirements.adapter_timeouts.command_seconds must not exceed wait_seconds");
+	}
+	if (
+		timeouts.poll_seconds !== undefined &&
+		timeouts.wait_seconds !== undefined &&
+		timeouts.poll_seconds > timeouts.wait_seconds
+	) {
+		errors.push("runtime_requirements.adapter_timeouts.poll_seconds must not exceed wait_seconds");
+	}
+	return errors.length === 0 ? { valid: true, errors: [], timeouts } : { valid: false, errors, timeouts };
+}
+
 /**
  * Parse the optional external execution route carried by a v1 request.
  * Legacy requests omit `execution_surface` and remain valid. When present,
@@ -56,7 +135,14 @@ export function parseExecutionAdapterRoute(
 	runtimeRequirements: Record<string, JsonValue>,
 ): ExecutionAdapterRouteValidation {
 	const rawSurface = runtimeRequirements.execution_surface;
-	if (rawSurface === undefined) return { valid: true, errors: [] };
+	if (rawSurface === undefined) {
+		return runtimeRequirements.executor_kind === "remote" || runtimeRequirements.executor_kind === "trusted"
+			? {
+					valid: false,
+					errors: ["external executor kind requires runtime_requirements.execution_surface"],
+				}
+			: { valid: true, errors: [] };
+	}
 	const errors: string[] = [];
 	if (typeof rawSurface !== "string" || !EXECUTION_ADAPTER_SURFACES.includes(rawSurface as ExecutionAdapterSurface)) {
 		errors.push("runtime_requirements.execution_surface must be vc, remote, or trusted");
@@ -78,6 +164,7 @@ export function parseExecutionAdapterRoute(
 		positiveInteger(runtimeRequirements.vc_memory_gb, "runtime_requirements.vc_memory_gb", errors);
 		positiveInteger(runtimeRequirements.vc_cpus, "runtime_requirements.vc_cpus", errors);
 	}
+	errors.push(...parseExecutionAdapterTimeouts(runtimeRequirements).errors);
 	return errors.length === 0 ? { valid: true, errors: [], route } : { valid: false, errors };
 }
 

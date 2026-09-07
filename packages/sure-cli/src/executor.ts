@@ -558,6 +558,9 @@ function baseReceipt(
 		...(request.policy_snapshot_digest === undefined
 			? {}
 			: { policy_snapshot_digest: request.policy_snapshot_digest }),
+		...(request.adapter_manifest_digest === undefined
+			? {}
+			: { adapter_manifest_digest: request.adapter_manifest_digest }),
 		started_at: startedAt,
 		finished_at: finishedAt,
 		...(outputContract === undefined

@@ -333,11 +333,13 @@ describe("wire schemas", () => {
 		const base = executionRequest();
 		const vcRequest = {
 			...base,
+			adapter_manifest_digest: DIGEST_C,
 			runtime_requirements: {
 				execution_surface: "vc",
 				executor_kind: "remote",
 				vc_project: "sure-test",
 				vc_partition: "gpu-test",
+				adapter_timeouts: { wait_seconds: 1800, poll_seconds: 15 },
 			},
 			capability_requirements: [
 				{ capability_id: "sure.execution.remote", capability_class: "execution_capability", required: true },
@@ -345,6 +347,8 @@ describe("wire schemas", () => {
 			],
 		};
 		expect(validateJsonSchema(schema, vcRequest).ok).toBe(true);
+		const { adapter_manifest_digest: _adapterManifestDigest, ...withoutAdapterManifest } = vcRequest;
+		expect(validateJsonSchema(schema, withoutAdapterManifest).ok).toBe(false);
 		expect(
 			validateJsonSchema(schema, {
 				...vcRequest,
@@ -355,6 +359,24 @@ describe("wire schemas", () => {
 			validateJsonSchema(schema, {
 				...vcRequest,
 				runtime_requirements: { ...vcRequest.runtime_requirements, vc_partition: undefined },
+			}).ok,
+		).toBe(false);
+		expect(
+			validateJsonSchema(schema, {
+				...vcRequest,
+				runtime_requirements: {
+					...vcRequest.runtime_requirements,
+					adapter_timeouts: { wait_seconds: 604801 },
+				},
+			}).ok,
+		).toBe(false);
+		expect(
+			validateJsonSchema(schema, {
+				...vcRequest,
+				runtime_requirements: {
+					...vcRequest.runtime_requirements,
+					adapter_timeouts: { wait_seconds: 1800, unknown_seconds: 1 },
+				},
 			}).ok,
 		).toBe(false);
 	});

@@ -6,6 +6,7 @@ import type {
 	ExecutorTrustLevel,
 	JsonValue,
 } from "../contracts/types.ts";
+import { type ExternalAdapterHostBinding, validateExternalAdapterRegistration } from "./adapter-policy.ts";
 import type { ExecutorPort } from "./types.ts";
 
 export type ExecutorImplementation = "builtin" | "external_registration_required";
@@ -121,10 +122,22 @@ const TRUST_RANK: Readonly<Record<ExecutorTrustLevel, number>> = {
 	attested: 2,
 };
 
+export interface ExternalExecutorRegistration {
+	readonly port: ExecutorPort;
+	/** Executor identity captured at registration; the live port cannot retarget it. */
+	readonly identity: ExecutorIdentity;
+	readonly binding: ExternalAdapterHostBinding;
+}
+
+function normalizeDigest(value: string): string {
+	return value.replace(/^sha256:/i, "").toLowerCase();
+}
+
 /** Runtime registry for deployment-provided executor ports. */
 export class ExecutorRegistry {
 	private readonly descriptors = new Map<ExecutorKind, ExecutorDescriptor>();
 	private readonly ports = new Map<ExecutorKind, ExecutorPort>();
+	private readonly externalPorts = new Map<string, ExternalExecutorRegistration>();
 
 	constructor(descriptors: readonly ExecutorDescriptor[] = executorDescriptors()) {
 		for (const descriptor of descriptors) {
@@ -138,11 +151,9 @@ export class ExecutorRegistry {
 		return this.descriptors.get(kind);
 	}
 
-	register(port: ExecutorPort): void {
+	private validatePort(port: ExecutorPort): ExecutorDescriptor {
 		const descriptor = this.descriptors.get(port.identity.kind);
 		if (!descriptor) throw new Error(`Executor kind ${port.identity.kind} is not declared by the registry`);
-		if (this.ports.has(port.identity.kind))
-			throw new Error(`Executor kind ${port.identity.kind} is already registered`);
 		if (!port.identity.executor_id.trim() || !port.identity.version.trim())
 			throw new Error("Executor identity requires non-empty executor_id and version");
 		if (!/^(?:sha256:)?[0-9a-f]{64}$/i.test(port.identity.digest))
@@ -152,14 +163,58 @@ export class ExecutorRegistry {
 				`Executor ${port.identity.executor_id} does not meet ${descriptor.minimum_trust_level} trust for ${descriptor.kind}`,
 			);
 		}
+		return descriptor;
+	}
+
+	register(port: ExecutorPort): void {
+		const descriptor = this.validatePort(port);
+		if (descriptor.implementation === "external_registration_required") {
+			throw new Error(`Executor kind ${descriptor.kind} must be registered with registerExternal`);
+		}
+		if (this.ports.has(port.identity.kind))
+			throw new Error(`Executor kind ${port.identity.kind} is already registered`);
 		this.ports.set(port.identity.kind, port);
+	}
+
+	registerExternal(port: ExecutorPort, binding: ExternalAdapterHostBinding): void {
+		const descriptor = this.validatePort(port);
+		if (descriptor.implementation !== "external_registration_required") {
+			throw new Error(`Executor kind ${descriptor.kind} does not accept external adapter registration`);
+		}
+		const validation = validateExternalAdapterRegistration(port.identity, binding);
+		if (!validation.valid || validation.manifest === undefined) {
+			throw new Error(`External adapter registration rejected: ${validation.errors.join("; ")}`);
+		}
+		const key = normalizeDigest(validation.manifest.manifest_digest);
+		if (this.externalPorts.has(key)) {
+			throw new Error(`External adapter manifest ${validation.manifest.manifest_digest} is already registered`);
+		}
+		this.externalPorts.set(key, {
+			port,
+			identity: structuredClone(port.identity),
+			binding: structuredClone(binding),
+		});
 	}
 
 	resolve(kind: ExecutorKind): ExecutorPort | undefined {
 		return this.ports.get(kind);
 	}
 
+	resolveExternal(kind: ExecutorKind, manifestDigest: string): ExternalExecutorRegistration | undefined {
+		const registration = this.externalPorts.get(normalizeDigest(manifestDigest));
+		return registration?.identity.kind === kind
+			? {
+					port: registration.port,
+					identity: structuredClone(registration.identity),
+					binding: structuredClone(registration.binding),
+				}
+			: undefined;
+	}
+
 	registeredIdentities(): readonly ExecutorIdentity[] {
-		return [...this.ports.values()].map((port) => port.identity);
+		return [
+			...[...this.ports.values()].map((port) => structuredClone(port.identity)),
+			...[...this.externalPorts.values()].map((registration) => structuredClone(registration.identity)),
+		];
 	}
 }

@@ -12,9 +12,15 @@ import type {
 } from "../contracts/index.ts";
 import { type CoreOutcome, createOutcome } from "../workflow/outcome.ts";
 import { executionAdapterRouteFor, parseExecutionAdapterRoute } from "./adapter.ts";
+import { admitExternalAdapterRequest, type ExternalAdapterRequestAdmission } from "./adapter-policy.ts";
 import { validateExecutionReceipt, validateExecutionRequest } from "./receipt.ts";
 import type { ExecutorDescriptor, ExecutorRegistry } from "./registry.ts";
-import type { ExecutionBoundaryOptions, ExecutionReceiptValidation, ExecutionRequestValidation } from "./types.ts";
+import type {
+	ExecutionBoundaryOptions,
+	ExecutionReceiptValidation,
+	ExecutionRequestValidation,
+	ExecutorPort,
+} from "./types.ts";
 
 /** Options shared by every host adapter dispatch. */
 export interface ExecutorDispatchOptions extends ExecutionBoundaryOptions {
@@ -33,6 +39,7 @@ export interface ExecutorDispatchResult {
 	request_validation: ExecutionRequestValidation;
 	receipt?: ExecutionReceipt;
 	receipt_validation?: ExecutionReceiptValidation;
+	adapter_admission?: ExternalAdapterRequestAdmission;
 	capability: CapabilityEvaluation;
 	outcome: CoreOutcome;
 }
@@ -98,12 +105,24 @@ function identityMismatch(expected: ExecutorIdentity, actual: ExecutorIdentity |
 	return errors;
 }
 
+function registeredPortIdentityMismatch(expected: ExecutorIdentity, actual: ExecutorIdentity | undefined): string[] {
+	if (actual === undefined || typeof actual !== "object") return ["registered port.identity is missing"];
+	const errors: string[] = [];
+	for (const field of ["executor_id", "kind", "version", "digest", "trust_level"] as const) {
+		if (actual[field] !== expected[field])
+			errors.push(`registered port.identity.${field} does not match its pinned executor identity`);
+	}
+	return errors;
+}
+
 function invalidReceiptResult(
+	descriptor: ExecutorDescriptor,
 	requestValidation: ExecutionRequestValidation,
 	capability: CapabilityEvaluation,
 	receipt: ExecutionReceipt,
 	validation: ExecutionReceiptValidation,
 	identityErrors: readonly string[],
+	adapterAdmission?: ExternalAdapterRequestAdmission,
 ): ExecutorDispatchResult {
 	const diagnostics = [...identityErrors, ...validation.errors];
 	const outcome =
@@ -111,7 +130,9 @@ function invalidReceiptResult(
 			? failure("NOT_EXECUTED", "BLOCK", "INVALID_CONTRACT", diagnostics.join("; "))
 			: validation.outcome;
 	return {
+		descriptor,
 		registered: true,
+		...(adapterAdmission === undefined ? {} : { adapter_admission: adapterAdmission }),
 		receipt,
 		receipt_validation: {
 			...validation,
@@ -132,6 +153,7 @@ function probeFailure(
 	message: string,
 	registered: boolean,
 	observedAt: string,
+	adapterAdmission?: ExternalAdapterRequestAdmission,
 ): ExecutorDispatchResult {
 	const evidence: CapabilityEvidence[] = descriptor.capability_ids.map((capabilityId) => {
 		const base = {
@@ -148,6 +170,7 @@ function probeFailure(
 	return {
 		descriptor,
 		registered,
+		...(adapterAdmission === undefined ? {} : { adapter_admission: adapterAdmission }),
 		request_validation: requestValidation,
 		capability,
 		outcome: failure("NOT_EXECUTED", "BLOCK", "CAPABILITY_MISSING", message, "NOT_STARTED"),
@@ -221,7 +244,53 @@ export async function dispatchExecutor(
 		};
 	}
 	const requirements = effectiveRequirements(request, resolvedDescriptor);
-	const port = registry.resolve(resolvedDescriptor.kind);
+	let adapterAdmission: ExternalAdapterRequestAdmission | undefined;
+	let port: ExecutorPort | undefined;
+	let expectedIdentity: ExecutorIdentity | undefined;
+	if (routeValidation.route !== undefined) {
+		const registration = registry.resolveExternal(resolvedDescriptor.kind, request.adapter_manifest_digest as string);
+		if (registration === undefined) {
+			return probeFailure(
+				resolvedDescriptor,
+				requestValidation,
+				requirements,
+				`External adapter manifest ${String(request.adapter_manifest_digest)} is not registered for executor ${resolvedDescriptor.kind}; no local fallback is permitted.`,
+				false,
+				observedAt,
+			);
+		}
+		const portIdentityErrors = registeredPortIdentityMismatch(registration.identity, registration.port.identity);
+		if (portIdentityErrors.length > 0) {
+			return {
+				descriptor: resolvedDescriptor,
+				registered: true,
+				request_validation: requestValidation,
+				capability: emptyCapability(),
+				outcome: failure("NOT_EXECUTED", "BLOCK", "INVALID_CONTRACT", portIdentityErrors.join("; ")),
+			};
+		}
+		adapterAdmission = admitExternalAdapterRequest(registration.identity, registration.binding, request);
+		if (!adapterAdmission.valid) {
+			return {
+				descriptor: resolvedDescriptor,
+				registered: true,
+				adapter_admission: adapterAdmission,
+				request_validation: requestValidation,
+				capability: emptyCapability(),
+				outcome: failure(
+					"NOT_EXECUTED",
+					"BLOCK",
+					"INVALID_CONTRACT",
+					`External adapter admission failed: ${adapterAdmission.errors.join("; ")}`,
+				),
+			};
+		}
+		port = registration.port;
+		expectedIdentity = registration.identity;
+	} else {
+		port = registry.resolve(resolvedDescriptor.kind);
+		expectedIdentity = port?.identity;
+	}
 	if (port === undefined) {
 		return probeFailure(
 			resolvedDescriptor,
@@ -230,6 +299,7 @@ export async function dispatchExecutor(
 			`Executor ${resolvedDescriptor.kind} requires a registered adapter; no local fallback is permitted.`,
 			false,
 			observedAt,
+			adapterAdmission,
 		);
 	}
 
@@ -244,6 +314,7 @@ export async function dispatchExecutor(
 			`Executor ${resolvedDescriptor.kind} capability probe failed: ${error instanceof Error ? error.message : String(error)}`,
 			true,
 			observedAt,
+			adapterAdmission,
 		);
 	}
 	const evidenceErrors = validateCapabilityEvidenceList(evidence);
@@ -251,6 +322,7 @@ export async function dispatchExecutor(
 		return {
 			descriptor: resolvedDescriptor,
 			registered: true,
+			...(adapterAdmission === undefined ? {} : { adapter_admission: adapterAdmission }),
 			request_validation: requestValidation,
 			capability: evaluateCapabilityRequirements(requirements, evidence),
 			outcome: failure(
@@ -278,6 +350,7 @@ export async function dispatchExecutor(
 		return {
 			descriptor: resolvedDescriptor,
 			registered: true,
+			...(adapterAdmission === undefined ? {} : { adapter_admission: adapterAdmission }),
 			request_validation: requestValidation,
 			capability: emptyCapability(),
 			outcome: failure(
@@ -293,6 +366,7 @@ export async function dispatchExecutor(
 		return {
 			descriptor: resolvedDescriptor,
 			registered: true,
+			...(adapterAdmission === undefined ? {} : { adapter_admission: adapterAdmission }),
 			request_validation: requestValidation,
 			capability,
 			outcome:
@@ -313,6 +387,7 @@ export async function dispatchExecutor(
 		return {
 			descriptor: resolvedDescriptor,
 			registered: true,
+			...(adapterAdmission === undefined ? {} : { adapter_admission: adapterAdmission }),
 			request_validation: requestValidation,
 			capability,
 			outcome: failure(
@@ -325,13 +400,22 @@ export async function dispatchExecutor(
 		};
 	}
 	const validation = validateExecutionReceipt(request, receipt, options);
-	const identityErrors = identityMismatch(port.identity, receipt.executor);
+	const identityErrors = identityMismatch(expectedIdentity ?? port.identity, receipt.executor);
 	if (identityErrors.length > 0 || !validation.valid) {
-		return invalidReceiptResult(requestValidation, capability, receipt, validation, identityErrors);
+		return invalidReceiptResult(
+			resolvedDescriptor,
+			requestValidation,
+			capability,
+			receipt,
+			validation,
+			identityErrors,
+			adapterAdmission,
+		);
 	}
 	return {
 		descriptor: resolvedDescriptor,
 		registered: true,
+		...(adapterAdmission === undefined ? {} : { adapter_admission: adapterAdmission }),
 		request_validation: requestValidation,
 		receipt,
 		receipt_validation: validation,

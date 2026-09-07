@@ -6961,8 +6961,8 @@
     },
     {
       "path": "sure/runtime/execution_bridge.py",
-      "size_bytes": 44409,
-      "sha256": "91de5d88e572b3a3681f430fd7d43351ce5a53162dd00c4a61c5e5c38ede1510"
+      "size_bytes": 47835,
+      "sha256": "2b2adce245aacc10e5e166d36cd07fa2cc6a8b91cbcb7a61df8a16fffa21ca8c"
     },
     {
       "path": "sure/runtime/harness/bootstrap.py",
@@ -7281,8 +7281,8 @@
     },
     {
       "path": "sure/runtime/test_execution_bridge.py",
-      "size_bytes": 17160,
-      "sha256": "e32dde9108360d753f9ed3050f4ba06895b628bc894d2d5b6956a6bbd02abdae"
+      "size_bytes": 19627,
+      "sha256": "76c45cd0aa1bf15a1682921d165721f27ee844cf4d95754bde28d251b9e75884"
     },
     {
       "path": "sure/runtime/test_repository_layout.py",
@@ -9736,5 +9736,5 @@
       ]
     }
   ],
-  "semantic_digest": "702a995deb1823de802199652df219143413eee23c9f63901d3e5db9e08e491f"
+  "semantic_digest": "c18bc9b3a5025e15c5df5f13e34edba5a13186e8c8b564d890cfa22dd15c515e"
 }

@@ -55,12 +55,17 @@
 				"working_directory": { "$ref": "#/$defs/absolutePath" }
 			}
 		},
-		"runtime_requirements": { "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } },
+		"runtime_requirements": {
+			"type": "object",
+			"properties": { "adapter_timeouts": { "$ref": "#/$defs/adapterTimeouts" } },
+			"additionalProperties": { "$ref": "#/$defs/jsonValue" }
+		},
 		"capability_requirements": { "type": "array", "items": { "$ref": "#/$defs/requirement" } },
 		"reference_snapshot_digest": { "$ref": "#/$defs/digest" },
 		"output_root": { "$ref": "#/$defs/outputRoot" },
 		"policy_digest": { "$ref": "#/$defs/digest" },
 		"policy_snapshot_digest": { "$ref": "#/$defs/digest" },
+		"adapter_manifest_digest": { "$ref": "#/$defs/digest" },
 		"created_at": { "type": "string", "format": "date-time" },
 		"output_contract": { "$ref": "#/$defs/outputContract" }
 	},
@@ -76,8 +81,21 @@
 				},
 				"required": ["runtime_requirements"]
 			},
-			"then": { "required": ["policy_snapshot_digest"] }
-		},
+				"then": { "required": ["policy_snapshot_digest", "adapter_manifest_digest"] }
+			},
+			{
+				"if": {
+					"properties": {
+						"runtime_requirements": {
+							"type": "object",
+							"required": ["executor_kind"],
+							"properties": { "executor_kind": { "enum": ["remote", "trusted"] } }
+						}
+					},
+					"required": ["runtime_requirements"]
+				},
+				"then": { "properties": { "runtime_requirements": { "required": ["execution_surface"] } } }
+			},
 		{
 			"if": {
 				"properties": { "operation": { "const": "formal_evaluation" } },
@@ -303,7 +321,18 @@
 					"if": { "properties": { "digest_kind": { "const": "tree_sha256" } }, "required": ["digest_kind"] },
 					"then": { "properties": { "kind": { "const": "directory" } }, "required": ["kind"] }
 				}
-			]
+				]
+			},
+		"adapterTimeouts": {
+			"type": "object",
+			"additionalProperties": false,
+			"properties": {
+				"submit_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+				"wait_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+				"command_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+				"cancel_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+				"poll_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 }
+			}
 		},
 		"inputBinding": {
 			"type": "object",

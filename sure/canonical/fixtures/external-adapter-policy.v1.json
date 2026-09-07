@@ -1,0 +1,53 @@
+{
+	"schema": "sure.execution.adapter_policy.fixture.v1",
+	"description": "Site-policy v1 projection cases for external adapter admission.",
+	"site_policy": {
+		"schema": "sure.site.policy.v1",
+		"site_id": "adapter-policy-test",
+		"policy_version": 1,
+		"storage": {
+			"approved_models_roots": ["/reference/models"],
+			"approved_results_roots": ["/tmp/sure-adapter/results"],
+			"forbidden_output_roots": ["/reference"],
+			"runtime_root": "/tmp/sure-adapter/runtime"
+		},
+		"datasets": {
+			"allowed_source_roots": { "default": "/reference/datasets" }
+		},
+		"execution": {
+			"surfaces": ["local", "vc"],
+			"local_runtimes": ["container"],
+			"vc_project": "sure-test",
+			"vc_partitions": ["gpu-z", "gpu-a"]
+		}
+	},
+	"expected_vc_projection": {
+		"policy_surfaces": ["vc"],
+		"policy_authorization": {
+			"allowed_projects": ["sure-test"],
+			"allowed_partitions": ["gpu-a", "gpu-z"]
+		}
+	},
+	"unsupported_surfaces": [
+		{
+			"surface": "remote",
+			"expected_errors": ["site policy v1 cannot authorize execution surface remote"]
+		},
+		{
+			"surface": "trusted",
+			"expected_errors": ["site policy v1 cannot authorize execution surface trusted"]
+		}
+	],
+	"policy_cases": [
+		{
+			"id": "vc-disabled",
+			"set": { "execution.surfaces": ["local"] },
+			"expected_errors": ["site policy does not enable execution surface vc"]
+		},
+		{
+			"id": "partitions-absent",
+			"delete": ["execution.vc_partitions"],
+			"expected_errors": ["site policy vc execution requires non-empty execution.vc_partitions"]
+		}
+	]
+}

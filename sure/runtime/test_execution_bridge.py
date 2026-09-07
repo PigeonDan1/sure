@@ -105,6 +105,32 @@ class ExecutionBridgeTests(unittest.TestCase):
             "runtime_requirements.vc_partition must be a non-empty string",
             validate_adapter_route({"execution_surface": "vc", "executor_kind": "remote", "vc_project": "sure-test"}),
         )
+        self.assertEqual(
+            validate_adapter_route({"executor_kind": "remote"}),
+            ["external executor kind requires runtime_requirements.execution_surface"],
+        )
+        self.assertIn(
+            "runtime_requirements.adapter_timeouts.wait_seconds exceeds the maximum allowed value",
+            validate_adapter_route(
+                {
+                    "execution_surface": "remote",
+                    "executor_kind": "remote",
+                    "adapter_timeouts": {"wait_seconds": 604801},
+                }
+            ),
+        )
+        self.assertEqual(
+            validate_adapter_route(
+                {
+                    "execution_surface": "remote",
+                    "executor_kind": "remote",
+                    "adapter_timeouts": {"wait_seconds": 10, "command_seconds": 604801},
+                }
+            ),
+            [
+                "runtime_requirements.adapter_timeouts.command_seconds exceeds the maximum allowed value"
+            ],
+        )
 
     def test_contract_pair_rejects_invalid_external_route(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -123,7 +149,7 @@ class ExecutionBridgeTests(unittest.TestCase):
                 errors,
             )
 
-    def test_external_contract_requires_policy_snapshot_binding(self) -> None:
+    def test_external_contract_requires_policy_and_adapter_manifest_bindings(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             request = self.request(root)
@@ -136,11 +162,13 @@ class ExecutionBridgeTests(unittest.TestCase):
             receipt = build_receipt(request, lifecycle="FAILED", executor_kind="remote", exit_code=23)
             errors = validate_contract_pair(request, receipt)
             self.assertIn("external execution requires request.policy_snapshot_digest", errors)
+            self.assertIn("external execution requires request.adapter_manifest_digest", errors)
 
-    def test_build_request_and_receipt_carry_policy_snapshot_digest(self) -> None:
+    def test_build_request_and_receipt_carry_external_binding_digests(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             snapshot = digest_json({"site": "sure-test"})
+            adapter_manifest = digest_json({"adapter": "sure-test"})
             request = build_request(
                 run_id="bridge-test",
                 unit_id="execute",
@@ -149,12 +177,15 @@ class ExecutionBridgeTests(unittest.TestCase):
                 output_root=root,
                 policy_digest=digest_json({"policy": 1}),
                 policy_snapshot_digest=snapshot,
+                adapter_manifest_digest=adapter_manifest,
                 reference_snapshot_digest=digest_json({"inputs": []}),
                 runtime_requirements={"execution_surface": "remote", "executor_kind": "remote"},
             )
             self.assertEqual(request["policy_snapshot_digest"], snapshot)
+            self.assertEqual(request["adapter_manifest_digest"], adapter_manifest)
             receipt = build_receipt(request, lifecycle="FAILED", executor_kind="remote", exit_code=23)
             self.assertEqual(receipt["policy_snapshot_digest"], snapshot)
+            self.assertEqual(receipt["adapter_manifest_digest"], adapter_manifest)
             self.assertEqual(validate_contract_pair(request, receipt), [])
 
     def test_build_request_does_not_coerce_an_invalid_policy_snapshot(self) -> None:
@@ -168,6 +199,7 @@ class ExecutionBridgeTests(unittest.TestCase):
                 output_root=root,
                 policy_digest=digest_json({"policy": 1}),
                 policy_snapshot_digest="not-a-digest",
+                adapter_manifest_digest=digest_json({"adapter": "sure-test"}),
                 reference_snapshot_digest=digest_json({"inputs": []}),
                 runtime_requirements={"execution_surface": "remote", "executor_kind": "remote"},
             )
@@ -182,6 +214,7 @@ class ExecutionBridgeTests(unittest.TestCase):
             snapshot = digest_json({"site": "sure-test"})
             request = self.request(root)
             request["policy_snapshot_digest"] = snapshot
+            request["adapter_manifest_digest"] = digest_json({"adapter": "sure-test"})
             request["runtime_requirements"] = {
                 "execution_surface": "remote",
                 "executor_kind": "remote",
@@ -190,6 +223,21 @@ class ExecutionBridgeTests(unittest.TestCase):
             receipt["policy_snapshot_digest"] = digest_json({"site": "forged"})
             errors = validate_contract_pair(request, receipt)
             self.assertIn("receipt.policy_snapshot_digest does not match request", errors)
+
+    def test_external_receipt_adapter_manifest_must_match_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            request["policy_snapshot_digest"] = digest_json({"site": "sure-test"})
+            request["adapter_manifest_digest"] = digest_json({"adapter": "sure-test"})
+            request["runtime_requirements"] = {
+                "execution_surface": "remote",
+                "executor_kind": "remote",
+            }
+            receipt = build_receipt(request, lifecycle="FAILED", executor_kind="remote", exit_code=23)
+            receipt["adapter_manifest_digest"] = digest_json({"adapter": "forged"})
+            errors = validate_contract_pair(request, receipt)
+            self.assertIn("receipt.adapter_manifest_digest does not match request", errors)
 
     def test_capability_evidence_rejects_arbitrary_authority_sources(self) -> None:
         evidence = capability_evidence("sure.execution.gpu", status="AVAILABLE")

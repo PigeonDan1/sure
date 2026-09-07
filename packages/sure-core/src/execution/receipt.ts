@@ -216,6 +216,12 @@ function validateRequestShape(request: ExecutionRequest, options: ExecutionBound
 		if (route.route !== undefined && !validDigest(request.policy_snapshot_digest)) {
 			errors.push("external execution requires request.policy_snapshot_digest");
 		}
+		if (route.route !== undefined && !validDigest(request.adapter_manifest_digest)) {
+			errors.push("external execution requires request.adapter_manifest_digest");
+		}
+		if (route.route === undefined && request.adapter_manifest_digest !== undefined) {
+			errors.push("request.adapter_manifest_digest is not allowed without an external execution surface");
+		}
 		if (request.runtime_requirements.executor_kind === "docker") {
 			const docker = parseDockerRuntimeRequirements(request.runtime_requirements);
 			errors.push(...docker.errors);
@@ -354,6 +360,9 @@ export function validateExecutionReceipt(
 		if (receipt.policy_snapshot_digest !== undefined && !validDigest(receipt.policy_snapshot_digest)) {
 			errors.push("receipt.policy_snapshot_digest must be a SHA-256 digest");
 		}
+		if (receipt.adapter_manifest_digest !== undefined && !validDigest(receipt.adapter_manifest_digest)) {
+			errors.push("receipt.adapter_manifest_digest must be a SHA-256 digest");
+		}
 		const requestRoute = object(request.runtime_requirements)
 			? parseExecutionAdapterRoute(request.runtime_requirements).route
 			: undefined;
@@ -363,6 +372,11 @@ export function validateExecutionReceipt(
 			} else if (!sameDigest(receipt.policy_snapshot_digest, request.policy_snapshot_digest ?? "")) {
 				errors.push("receipt.policy_snapshot_digest does not match request");
 			}
+			if (!validDigest(receipt.adapter_manifest_digest)) {
+				errors.push("external execution receipt requires adapter_manifest_digest");
+			} else if (!sameDigest(receipt.adapter_manifest_digest, request.adapter_manifest_digest ?? "")) {
+				errors.push("receipt.adapter_manifest_digest does not match request");
+			}
 		} else if (receipt.policy_snapshot_digest !== undefined && request.policy_snapshot_digest === undefined) {
 			errors.push("receipt.policy_snapshot_digest is not allowed without request.policy_snapshot_digest");
 		} else if (
@@ -371,6 +385,9 @@ export function validateExecutionReceipt(
 			!sameDigest(receipt.policy_snapshot_digest, request.policy_snapshot_digest)
 		) {
 			errors.push("receipt.policy_snapshot_digest does not match request");
+		}
+		if (requestRoute === undefined && receipt.adapter_manifest_digest !== undefined) {
+			errors.push("receipt.adapter_manifest_digest is not allowed without an external execution surface");
 		}
 		capabilityEvidenceErrors = validateCapabilityEvidenceList(
 			receipt.capability_evidence,

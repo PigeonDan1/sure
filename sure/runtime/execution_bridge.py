@@ -48,11 +48,20 @@ EXECUTION_ADAPTER_KINDS = {
     "remote": {"remote"},
     "trusted": {"trusted"},
 }
+MAX_ADAPTER_TIMEOUT_SECONDS = 604_800
 DIGEST_RE = re.compile(r"^(?:sha256:)?[0-9a-f]{64}$")
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 CAPABILITY_ID_RE = re.compile(r"^sure\.[a-z0-9][a-z0-9.-]*$")
 TERMINAL_LIFECYCLES = {"SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"}
 LIFECYCLES = {"NOT_STARTED", "QUEUED", "RUNNING", *TERMINAL_LIFECYCLES}
+
+
+def _valid_adapter_timeout(value: object) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and 0 < value <= MAX_ADAPTER_TIMEOUT_SECONDS
+    )
 
 
 def _utf16_sort_key(value: str) -> bytes:
@@ -390,6 +399,8 @@ def validate_adapter_route(runtime_requirements: Mapping[str, Any]) -> list[str]
 
     surface = runtime_requirements.get("execution_surface")
     if surface is None:
+        if runtime_requirements.get("executor_kind") in {"remote", "trusted"}:
+            return ["external executor kind requires runtime_requirements.execution_surface"]
         return []
     errors: list[str] = []
     if not isinstance(surface, str) or surface not in EXECUTION_ADAPTER_SURFACES:
@@ -409,6 +420,31 @@ def validate_adapter_route(runtime_requirements: Mapping[str, Any]) -> list[str]
             value = runtime_requirements.get(field)
             if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
                 errors.append(f"runtime_requirements.{field} must be a positive integer when present")
+    adapter_timeouts = runtime_requirements.get("adapter_timeouts")
+    if adapter_timeouts is not None:
+        timeout_fields = ("submit_seconds", "wait_seconds", "command_seconds", "cancel_seconds", "poll_seconds")
+        if not isinstance(adapter_timeouts, Mapping):
+            errors.append("runtime_requirements.adapter_timeouts must be an object")
+        else:
+            for field in sorted(set(adapter_timeouts) - set(timeout_fields)):
+                errors.append(f"runtime_requirements.adapter_timeouts has unknown field {field}")
+            for field in timeout_fields:
+                value = adapter_timeouts.get(field)
+                if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
+                    errors.append(f"runtime_requirements.adapter_timeouts.{field} must be a positive integer when present")
+                if (
+                    isinstance(value, int)
+                    and not isinstance(value, bool)
+                    and value > MAX_ADAPTER_TIMEOUT_SECONDS
+                ):
+                    errors.append(f"runtime_requirements.adapter_timeouts.{field} exceeds the maximum allowed value")
+            command = adapter_timeouts.get("command_seconds")
+            wait = adapter_timeouts.get("wait_seconds")
+            poll = adapter_timeouts.get("poll_seconds")
+            if _valid_adapter_timeout(command) and _valid_adapter_timeout(wait) and command > wait:
+                errors.append("runtime_requirements.adapter_timeouts.command_seconds must not exceed wait_seconds")
+            if _valid_adapter_timeout(poll) and _valid_adapter_timeout(wait) and poll > wait:
+                errors.append("runtime_requirements.adapter_timeouts.poll_seconds must not exceed wait_seconds")
     return errors
 
 
@@ -681,6 +717,7 @@ def build_request(
     attempt: int = 1,
     policy_digest: str | None = None,
     policy_snapshot_digest: str | None = None,
+    adapter_manifest_digest: str | None = None,
     reference_snapshot_digest: str | None = None,
     request_id: str | None = None,
     created_at: str | None = None,
@@ -705,6 +742,7 @@ def build_request(
         fallback={"compatibility": "legacy-unverified", "output_root": str(root)},
     )
     policy_snapshot = policy_snapshot_digest or os.environ.get("SURE_POLICY_SNAPSHOT_DIGEST")
+    adapter_manifest = adapter_manifest_digest or os.environ.get("SURE_ADAPTER_MANIFEST_DIGEST")
     snapshot = normalize_digest(reference_snapshot_digest, fallback={"inputs": list(inputs), "root": str(root)})
     output_binding = {
         "path": str(output_root.expanduser().absolute()),
@@ -737,6 +775,10 @@ def build_request(
         # can fail closed instead of silently hashing an absent/forged snapshot.
         request["policy_snapshot_digest"] = (
             policy_snapshot.lower() if valid_digest(policy_snapshot) else str(policy_snapshot)
+        )
+    if adapter_manifest:
+        request["adapter_manifest_digest"] = (
+            adapter_manifest.lower() if valid_digest(adapter_manifest) else str(adapter_manifest)
         )
     if output_contract is not None:
         request["output_contract"] = dict(output_contract)
@@ -798,6 +840,8 @@ def build_receipt(
     }
     if request_dict.get("policy_snapshot_digest") is not None:
         receipt["policy_snapshot_digest"] = str(request_dict["policy_snapshot_digest"])
+    if request_dict.get("adapter_manifest_digest") is not None:
+        receipt["adapter_manifest_digest"] = str(request_dict["adapter_manifest_digest"])
     if lifecycle in TERMINAL_LIFECYCLES:
         receipt["finished_at"] = finished_at or utc_now()
     if exit_code is not None:
@@ -850,9 +894,18 @@ def validate_contract_pair(
             errors.append("external execution requires request.policy_snapshot_digest")
         if not same_digest(receipt.get("policy_snapshot_digest"), request.get("policy_snapshot_digest")):
             errors.append("receipt.policy_snapshot_digest does not match request")
+        if not valid_digest(request.get("adapter_manifest_digest")):
+            errors.append("external execution requires request.adapter_manifest_digest")
+        if not same_digest(receipt.get("adapter_manifest_digest"), request.get("adapter_manifest_digest")):
+            errors.append("receipt.adapter_manifest_digest does not match request")
     elif receipt.get("policy_snapshot_digest") is not None:
         if not same_digest(receipt.get("policy_snapshot_digest"), request.get("policy_snapshot_digest")):
             errors.append("receipt.policy_snapshot_digest does not match request")
+    if surface not in EXECUTION_ADAPTER_SURFACES:
+        if request.get("adapter_manifest_digest") is not None:
+            errors.append("request.adapter_manifest_digest is not allowed without an external execution surface")
+        if receipt.get("adapter_manifest_digest") is not None:
+            errors.append("receipt.adapter_manifest_digest is not allowed without an external execution surface")
     lifecycle = receipt.get("lifecycle")
     if lifecycle not in LIFECYCLES:
         errors.append(f"receipt.lifecycle is invalid: {lifecycle!r}")
