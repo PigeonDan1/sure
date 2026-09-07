@@ -424,17 +424,28 @@ describe("gateDigest over an agent-writable gateInputs tree", () => {
 		writeArtifactFile(runDir, "extraction_declaration.json", declaration);
 		const dir = join(runDir, "artifacts", "memory_evidence");
 		mkdirSync(dir, { recursive: true });
-		for (let i = 0; i <= config.gate_digest_max_entries; i++) {
-			writeFileSync(join(dir, `f${String(i).padStart(6, "0")}.log`), "x", "utf-8");
+		// Keep the fixture small on network filesystems while retaining the exact
+		// boundary behavior (one file beyond the configured walk budget).
+		const entryCap = Math.min(config.gate_digest_max_entries, 8);
+		const spy = vi.spyOn(matchModule, "loadMemoryConfig").mockImplementation(() => ({
+			...config,
+			gate_digest_max_entries: entryCap,
+		}));
+		try {
+			for (let i = 0; i <= entryCap; i++) {
+				writeFileSync(join(dir, `f${String(i).padStart(6, "0")}.log`), "x", "utf-8");
+			}
+			const ctx = makeCtx("sure_onboard", runDir);
+			const capped = gateDigest(ctx, unit);
+			expect(capped).not.toBe(plainSha(runDir));
+			// Deterministic: names are sorted, so the same tree always yields the same prefix.
+			expect(gateDigest(ctx, unit)).toBe(capped);
+			// The last file is past the cap, so its content no longer moves the digest.
+			writeFileSync(join(dir, `f${String(entryCap).padStart(6, "0")}.log`), "y", "utf-8");
+			expect(gateDigest(ctx, unit)).toBe(capped);
+		} finally {
+			spy.mockRestore();
 		}
-		const ctx = makeCtx("sure_onboard", runDir);
-		const capped = gateDigest(ctx, unit);
-		expect(capped).not.toBe(plainSha(runDir));
-		// Deterministic: names are sorted, so the same tree always yields the same prefix.
-		expect(gateDigest(ctx, unit)).toBe(capped);
-		// The last file is past the cap, so its content no longer moves the digest.
-		writeFileSync(join(dir, `f${String(config.gate_digest_max_entries).padStart(6, "0")}.log`), "y", "utf-8");
-		expect(gateDigest(ctx, unit)).toBe(capped);
 	});
 
 	it("hashes the size of a file past gate_digest_max_bytes instead of reading it", () => {

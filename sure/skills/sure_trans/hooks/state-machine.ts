@@ -38,6 +38,24 @@ export function findUnit(unitId: string): Unit | undefined {
 	return TRANS_UNITS.find((unit) => unit.id === unitId);
 }
 
+/**
+ * Look up Pi-only enforcement metadata without changing the legacy unit shape.
+ * The old projection is consumed by memory and characterization tests using
+ * exact object equality, so canonical registration metadata must stay out of it.
+ */
+export function backendOperationIdFor(unitId: string): string | undefined {
+	return SURE_TRANS_CANONICAL.workflow.branches
+		.find((branch) => branch.id === "main")
+		?.units.find((unit) => unit.id === unitId)?.gate?.backend_operation_id;
+}
+
+/** Return the canonical upstream artifact used to bind an execution input. */
+export function executionInputProducesFor(unitId: string): string | undefined {
+	return SURE_TRANS_CANONICAL.workflow.branches
+		.find((branch) => branch.id === "main")
+		?.units.find((unit) => unit.id === unitId)?.gate?.execution_input_produces;
+}
+
 export function nextUnit(unitId: string): Unit | undefined {
 	const index = TRANS_UNITS.findIndex((unit) => unit.id === unitId);
 	return index < 0 ? undefined : TRANS_UNITS[index + 1];

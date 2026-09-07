@@ -150,6 +150,93 @@ def harness_model_dir(run_dir: Path) -> Path:
     return (allowed_root / model_name).resolve()
 
 
+def regular_artifact_path(raw: object, label: str) -> Path:
+    """Resolve a path recorded by a gate and require a real regular file.
+
+    These checks intentionally do not follow symlinks.  A semantic validator is
+    a read-only authority over an already-produced execution record; it must not
+    turn a path that merely exists into evidence for a different file.
+    """
+    path = Path(str(raw or "")).expanduser()
+    require(path.is_file() and not path.is_symlink(), f"{label} must be a regular file")
+    return path
+
+
+def command_value(raw: object, label: str) -> list[str] | str:
+    if isinstance(raw, list):
+        require(bool(raw) and all(isinstance(item, str) and item for item in raw), f"{label} must be a non-empty string array")
+        return [str(item) for item in raw]
+    require(isinstance(raw, str) and bool(raw.strip()), f"{label} must be a non-empty command")
+    return raw
+
+
+def validate_execution_compatibility(value: dict) -> None:
+    """Validate the immutable view emitted by run_execution_compat.py.
+
+    The executor owns probing; this function only accepts a completed probe and
+    checks the result fields that make a ``ready`` status meaningful.  In
+    particular, ``compat_ok`` alone is never sufficient for PASS.
+    """
+    require(value.get("schema") == "sure.trans.execution_compat.v1", "execution compatibility schema is incompatible")
+    require(value.get("status") == "ready", "execution compatibility is not ready")
+    require(value.get("compat_ok") is True, "execution compatibility did not pass")
+    require(value.get("execution_surface") in {"local_docker", "local_python", "vc"}, "execution surface is invalid")
+    require(value.get("selected_device") in {"cpu", "cuda"}, "selected_device is invalid")
+    require(isinstance(value.get("probe_command"), list) and value["probe_command"], "compatibility probe command is missing")
+    require(value.get("exit_code") == 0, "compatibility probe did not exit successfully")
+    regular_artifact_path(value.get("log_path"), "compatibility probe log")
+    probe = value.get("probe")
+    require(isinstance(probe, dict), "compatibility probe evidence is missing")
+    if value.get("gpu_required") is True:
+        require(value.get("selected_device") == "cuda", "GPU-required runtime was not selected on CUDA")
+        require(value.get("cuda_available") is True, "GPU-required runtime did not prove CUDA availability")
+    if value.get("bf16_required") is True:
+        require(value.get("bf16_supported") is True, "BF16-required runtime did not prove BF16 support")
+    require(value.get("incompatibilities") in (None, []), "ready compatibility evidence contains incompatibilities")
+
+
+def validate_stage_execution(value: dict, kind: str, pass_key: str) -> None:
+    """Validate a completed run_trans_validate result without executing it."""
+    require(value.get("status") == "passed", f"{kind} validation did not pass")
+    require(value.get(pass_key) is True, f"{kind} result does not prove {pass_key}=true")
+    require(value.get("executed") is True, f"{kind} result does not prove execution")
+    require(value.get("exit_code") == 0, f"{kind} command did not exit successfully")
+    command_value(value.get("run_command"), f"{kind} run_command")
+    regular_artifact_path(value.get("log_path"), f"{kind} execution log")
+
+
+def validate_original_inference_result(value: dict) -> None:
+    validate_stage_execution(value, "original_inference", "inference_passed")
+    require(isinstance(value.get("input"), str) and bool(value["input"].strip()), "original inference input is missing")
+    require(value.get("model_loaded") is True, "original inference did not prove model loading")
+
+
+def validate_mcp_result(value: dict) -> None:
+    validate_stage_execution(value, "mcp", "mcp_passed")
+    require(isinstance(value.get("tool_name"), str) and bool(value["tool_name"].strip()), "MCP tool_name is missing")
+    protocol = value.get("protocol")
+    require(isinstance(protocol, dict), "MCP protocol evidence is missing")
+    require(protocol.get("status") == "passed", "MCP protocol evidence did not pass")
+    for step in ("initialize", "tools_list", "tools_call"):
+        evidence = protocol.get(step)
+        require(isinstance(evidence, dict) and evidence.get("ok") is True, f"MCP evidence is missing a passing {step} step")
+    call = protocol.get("tools_call")
+    require(
+        isinstance(call, dict) and (call.get("output_nonempty") is True or call.get("text_nonempty") is True),
+        "MCP tools/call did not return a non-empty primary output",
+    )
+
+
+def validate_equivalence_result(value: dict) -> None:
+    validate_stage_execution(value, "equivalence", "equivalent")
+    baseline = regular_artifact_path(value.get("baseline_output"), "equivalence baseline_output")
+    adapter = regular_artifact_path(value.get("adapter_output"), "equivalence adapter_output")
+    require(baseline != adapter, "equivalence baseline and adapter outputs must be distinct files")
+    comparison = value.get("comparison_evidence")
+    if comparison is not None:
+        require(isinstance(comparison, dict) and comparison.get("match") is True, "equivalence comparison evidence did not pass")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
@@ -240,6 +327,16 @@ def main() -> int:
             require(clarification is None, "matching Transformers models must not carry a stale clarification")
     elif kind == "fixture":
         validate_fixture_manifest(value)
+    elif kind == "execution_compat":
+        validate_execution_compatibility(value)
+    elif kind == "original_inference":
+        validate_original_inference_result(value)
+    elif kind in {"import", "load", "infer", "contract"}:
+        validate_stage_execution(value, kind, f"{kind}_passed")
+    elif kind == "mcp":
+        validate_mcp_result(value)
+    elif kind == "equivalence":
+        validate_equivalence_result(value)
     elif kind == "source_image":
         require(value.get("status") == "passed", "source image materialization did not pass")
         require(value.get("source_image_policy") in {"load", "build"}, "source image policy must be load or build")
@@ -712,6 +809,8 @@ def main() -> int:
             not LEGACY_PATH.search(json.dumps(portable, ensure_ascii=False)),
             "finalized deployment sidecars contain legacy host absolute paths",
         )
+    else:
+        raise ValueError(f"unsupported artifact validation kind: {kind}")
     print(f"{kind} OK: {path}")
     return 0
 

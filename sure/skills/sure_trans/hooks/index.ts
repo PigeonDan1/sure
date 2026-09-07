@@ -2,7 +2,14 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import type { OperationExecutionEvidence } from "@earendil-works/sure-core";
 import { agentBinDir, demoteAgentBinDir } from "../../../runtime/agent-path.ts";
+import {
+	type PiRegisteredOperationResult,
+	type PiRegisteredValidatorResult,
+	runPiRegisteredOperation,
+	runPiRegisteredValidator,
+} from "../../../runtime/harness/registered-operation.ts";
 import { type HarnessRuntimeContract, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
 import {
 	gateUnavailable,
@@ -42,7 +49,15 @@ import {
 	runBackend,
 	type Unit,
 } from "./checkpoints.ts";
-import { FIRST_UNIT, findUnit, LAST_UNIT, TOTAL_UNITS, TRANS_UNITS } from "./state-machine.ts";
+import {
+	backendOperationIdFor,
+	executionInputProducesFor,
+	FIRST_UNIT,
+	findUnit,
+	LAST_UNIT,
+	TOTAL_UNITS,
+	TRANS_UNITS,
+} from "./state-machine.ts";
 import { validateProduces } from "./validate.ts";
 
 // SURE model transformation skill hooks. Mixed drive with three gates:
@@ -349,15 +364,16 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	};
 }
 
-function runGateScript(ctx: SureHookContext, unit: Unit): GateResult | undefined {
-	if (!unit.gateScript) {
+function runGateScript(ctx: SureHookContext, unit: Unit, attempt: number): GateResult | undefined {
+	const gateScript = unit.gateScript;
+	if (!gateScript) {
 		return undefined;
 	}
 	const produces = artifactPath(ctx, unit.produces);
 	// The extraction gate is stdlib-only and needs --repo-root, which runBackend does not pass;
 	// runBackend would also hand it the hour-long vc budget and SURE_TRANS_GATE_BUDGET_SECONDS,
 	// neither of which means anything to it. It goes through the memory python resolver instead.
-	if (unit.gateScript === "check_memory_extraction.py") {
+	if (gateScript === "check_memory_extraction.py") {
 		const r = runMemoryGate(memoryEnv(ctx), produces);
 		if (r.ok) {
 			return { ok: true };
@@ -372,17 +388,85 @@ function runGateScript(ctx: SureHookContext, unit: Unit): GateResult | undefined
 		}
 		return {
 			ok: false,
-			repair: r.repair ?? `Gate script scripts/${unit.gateScript} failed.`,
-			reason: r.reason ?? `gate script ${unit.gateScript} failed`,
+			repair: r.repair ?? `Gate script scripts/${gateScript} failed.`,
+			reason: r.reason ?? `gate script ${gateScript} failed`,
 		};
 	}
 	const extra = unit.gateScriptArgs ? unit.gateScriptArgs(ctx) : [];
-	const r = runBackend(ctx, unit.gateScript, ["--produces", produces, ...extra]);
-	if (r.ok) {
-		return { ok: true };
+	const execute = () => runBackend(ctx, gateScript, ["--produces", produces, ...extra]);
+	let execution: PiRegisteredOperationResult | undefined;
+	if (unit.executionOperationId) {
+		execution = runPiRegisteredOperation({
+			ctx,
+			unit_id: unit.id,
+			attempt,
+			operation_id: unit.executionOperationId,
+			script_id: gateScript,
+			artifact_input_path: artifactPath(ctx, executionInputProducesFor(unit.id) ?? unit.produces),
+			artifact_output_path: produces,
+			execute,
+		});
+		if (!execution.ok) {
+			const repair =
+				execution.stderr.trim() ||
+				execution.stdout.trim() ||
+				`Gate script scripts/${gateScript} exited ${execution.status}.`;
+			return {
+				ok: false,
+				repair,
+				reason: `gate executor ${gateScript} failed`,
+				...(execution.evidence === undefined ? {} : { executionEvidence: execution.evidence }),
+			};
+		}
 	}
-	const repair = r.stderr?.trim() || r.stdout?.trim() || `Gate script scripts/${unit.gateScript} exited ${r.status}.`;
-	return { ok: false, repair, reason: `gate script ${unit.gateScript} failed` };
+
+	const validatorScript = unit.validatorScriptId ?? (unit.executionOperationId ? "check_artifact.py" : gateScript);
+	const validatorArgs = unit.validatorScriptArgs ?? (unit.executionOperationId ? [] : extra);
+	const backendOperationId = backendOperationIdFor(unit.id);
+	if (backendOperationId && validatorScript) {
+		const validation: PiRegisteredValidatorResult = runPiRegisteredValidator({
+			ctx,
+			unit_id: unit.id,
+			attempt,
+			operation_id: backendOperationId,
+			validator_id: `sure.sure_trans.main.${unit.id}`,
+			script_id: validatorScript,
+			artifact_path: produces,
+			execute: () => runBackend(ctx, validatorScript, ["--produces", produces, ...validatorArgs]),
+		});
+		if (!validation.ok || validation.verdict !== "PASS") {
+			const repair =
+				validation.stderr.trim() ||
+				validation.stdout.trim() ||
+				`Semantic validator scripts/${validatorScript} exited ${validation.status}.`;
+			return {
+				ok: false,
+				repair,
+				reason: `semantic validator ${validatorScript} failed`,
+				...(execution?.evidence === undefined ? {} : { executionEvidence: execution.evidence }),
+			};
+		}
+		return {
+			ok: true,
+			...(execution?.evidence === undefined ? {} : { executionEvidence: execution.evidence }),
+		};
+	}
+
+	const result = execution ?? execute();
+	if (result.ok) {
+		return {
+			ok: true,
+			...(execution?.evidence === undefined ? {} : { executionEvidence: execution.evidence }),
+		};
+	}
+	const repair =
+		result.stderr.trim() || result.stdout.trim() || `Gate script scripts/${gateScript} exited ${result.status}.`;
+	return {
+		ok: false,
+		repair,
+		reason: `gate script ${gateScript} failed`,
+		...(execution?.evidence === undefined ? {} : { executionEvidence: execution.evidence }),
+	};
 }
 
 // A gate script is an executor, not just a checker: it pushes images, submits vc
@@ -564,7 +648,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 		// The python gateScript is the authoritative semantic checker; it runs
 		// independently of the in-process check (a gate may have a script, an
 		// in-process check, or both — disjoint concerns).
-		gateRun = runGateScript(ctx, currentUnit);
+		gateRun = runGateScript(ctx, currentUnit, (checkpoint.data.retries[currentUnit.id] ?? 0) + 1);
 		const afterGate = readArtifact(ctx, currentUnit.produces);
 		rewriteNotice = gateRewriteNotice(currentUnit, artifact, afterGate);
 		if (gateRun && !gateRun.ok) {
@@ -577,6 +661,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 				afterGate,
 				gateRun.repair ?? `Gate script "${currentUnit.id}" failed.`,
 				gateRun.reason ?? "gate script failed",
+				gateRun.executionEvidence,
 			);
 		}
 	}
@@ -588,7 +673,9 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 	const settled = settleOnPass(env, { unitId: currentUnit.id, memory: memoryOf(checkpoint.data) });
 	const next = advance(currentUnit, { ...checkpoint.data, memory: settled.memory });
 	if (!next) {
-		return { ok: true };
+		return gateRun?.executionEvidence === undefined
+			? { ok: true }
+			: { ok: true, state_patch: { last_execution: gateRun.executionEvidence } };
 	}
 	const diagnostics: MemoryDiagnostic[] = [...settled.diagnostics];
 	let landed = next;
@@ -618,6 +705,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 				: `Advanced to unit "${landed.data.currentUnit}".`,
 			counters: countersFor(landed.data, 0),
 			checkpoint: landed,
+			...(gateRun?.executionEvidence === undefined ? {} : { last_execution: gateRun.executionEvidence }),
 			...(diagnostics.length > 0 ? { diagnostics } : {}),
 		},
 	};
@@ -630,6 +718,7 @@ function failOrRetry(
 	artifact: unknown,
 	repair: string,
 	reason: string,
+	executionEvidence?: OperationExecutionEvidence,
 ): SureHookResult {
 	const artifactDigest = gateArtifactDigest(ctx, unit, artifact);
 	if (gateAlreadyRejected(checkpoint.data, unit.id, artifactDigest)) {
@@ -641,6 +730,7 @@ function failOrRetry(
 				message: `Gate "${unit.id}" remains blocked on unchanged artifact content; retry ${attempts} was not consumed again.`,
 				counters: countersFor(checkpoint.data, attempts),
 				checkpoint,
+				...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 				diagnostics: [{ severity: "warning", message: reason, repair }],
 			},
 		};
@@ -686,6 +776,7 @@ function failOrRetry(
 					message: `Extraction gate "${unit.id}" exhausted ${attempts} blocked attempts; extraction marked failed, advanced to unit "${landed.data.currentUnit}".`,
 					counters: countersFor(landed.data, attempts),
 					checkpoint: landed,
+					...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 					diagnostics: [
 						{ severity: "warning", message: `extraction: failed (${reason})`, repair },
 						...injected.diagnostics,
@@ -714,6 +805,7 @@ function failOrRetry(
 				message,
 				counters: countersFor(next.data, attempts),
 				checkpoint: withMemory(next, settled.memory),
+				...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 				diagnostics: [{ severity: "error", message, repair }, ...injected.diagnostics, ...settled.diagnostics],
 			},
 		};
@@ -726,6 +818,7 @@ function failOrRetry(
 			message: `Gate "${unit.id}" blocked (attempt ${attempts}): ${reason}`,
 			counters: countersFor(next.data, attempts),
 			checkpoint: next,
+			...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 			diagnostics: [{ severity: "error", message: reason, repair }, ...injected.diagnostics],
 		},
 	};
@@ -856,12 +949,14 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 	}
 	// Backstop: re-run the terminal gate so edits made after the state machine
 	// advanced cannot carry a hand-written readiness marker past sure_finish.
-	const terminalGate = runGateScript(ctx, LAST_UNIT);
+	const terminalGate = runGateScript(ctx, LAST_UNIT, (checkpoint.data.retries[LAST_UNIT.id] ?? 0) + 1);
 	if (terminalGate && !terminalGate.ok) {
 		return failure(
 			terminalGate.repair ?? "Terminal gate rejected the finished bundle.",
 			`Terminal gate "${LAST_UNIT.id}" rejected the finish.`,
 			countersFor(checkpoint.data, 1),
+			checkpoint,
+			terminalGate.executionEvidence,
 		);
 	}
 	// Count the terminal unit through the checkpoint that is actually written,
@@ -874,6 +969,7 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 			message: "SURE model transformation run validated.",
 			counters: countersFor(finished.data, 0),
 			checkpoint: finished,
+			...(terminalGate?.executionEvidence === undefined ? {} : { last_execution: terminalGate.executionEvidence }),
 			artifacts: [
 				{
 					type: "runtime_binding",

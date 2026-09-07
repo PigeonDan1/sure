@@ -508,6 +508,78 @@ export const SURE_TRANS_VALIDATOR_BACKEND: SemanticBackendBundle = {
 			deterministic: true,
 		},
 		{
+			operation_id: "sure.trans.validate_execution_compat",
+			description: "Validate source-runtime execution compatibility evidence.",
+			entrypoint: "scripts/check_artifact.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.trans.validate_original_inference",
+			description: "Validate the recorded original inference baseline.",
+			entrypoint: "scripts/check_artifact.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.trans.validate_import",
+			description: "Validate recorded adapter import execution evidence.",
+			entrypoint: "scripts/check_artifact.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.trans.validate_load",
+			description: "Validate recorded adapter persistent-load evidence.",
+			entrypoint: "scripts/check_artifact.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.trans.validate_infer",
+			description: "Validate recorded adapter inference evidence.",
+			entrypoint: "scripts/check_artifact.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.trans.validate_contract",
+			description: "Validate recorded adapter output-contract evidence.",
+			entrypoint: "scripts/check_artifact.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.trans.validate_mcp",
+			description: "Validate recorded MCP protocol evidence.",
+			entrypoint: "scripts/check_artifact.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
+			operation_id: "sure.trans.validate_equivalence",
+			description: "Validate recorded original-versus-adapter equivalence evidence.",
+			entrypoint: "scripts/check_artifact.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "validate",
+			timeout_ms: 300_000,
+			deterministic: true,
+		},
+		{
 			operation_id: "sure.trans.validate_model_payload",
 			description: "Validate the staged model payload manifest and file hashes.",
 			entrypoint: "scripts/check_artifact.py",
@@ -577,10 +649,11 @@ export const SURE_TRANS_VALIDATOR_BACKEND: SemanticBackendBundle = {
 };
 
 /**
- * TRANS execution adapters. The entrypoints remain the proven Python runners
- * for now; registering them here moves path selection and output binding into
- * SURE Core without changing their legacy workflow semantics. Gate binding is
- * deliberately a later migration step after differential traces pass.
+ * TRANS execution adapters. The entrypoints remain the proven Python runners;
+ * registering them here moves path selection and output binding into SURE Core
+ * without changing their legacy workflow semantics. Workflow gates bind these
+ * operations only together with an independent validator operation, so a
+ * successful process cannot by itself manufacture a semantic PASS.
  */
 export const SURE_TRANS_EXECUTION_BACKEND: SemanticBackendBundle = {
 	schema: "sure.semantic.backend.bundle.v1",

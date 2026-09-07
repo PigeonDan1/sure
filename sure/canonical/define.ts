@@ -41,9 +41,21 @@ function assertWorkflow(definition: CanonicalSkillDefinition): void {
 					`Execution request operation for ${workflow.workflow_id}/${unit.id} requires execution_operation_id.`,
 				);
 			}
+			if (unit.gate?.execution_input_produces !== undefined) {
+				if (unit.gate.execution_operation_id === undefined) {
+					throw new Error(
+						`Execution input artifact for ${workflow.workflow_id}/${unit.id} requires execution_operation_id.`,
+					);
+				}
+				assertRelativeResource(
+					unit.gate.execution_input_produces,
+					`execution input artifact ${workflow.workflow_id}/${unit.id}`,
+				);
+			}
 			for (const script of [
 				...(unit.helper_scripts ?? []),
 				...(unit.owned_scripts ?? []),
+				unit.gate?.validator_script_id,
 				unit.gate?.script_id,
 			].filter((value): value is string => value !== undefined)) {
 				assertRelativeResource(script, `workflow script ${workflow.workflow_id}/${unit.id}`);

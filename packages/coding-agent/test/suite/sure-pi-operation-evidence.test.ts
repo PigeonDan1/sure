@@ -4,7 +4,10 @@ import { join, resolve } from "node:path";
 import type { SureHookContext } from "@earendil-works/pi-coding-agent/hooks";
 import { canonicalJsonDigest, createPolicySnapshot, type JsonValue } from "@earendil-works/sure-core";
 import { afterEach, describe, expect, it } from "vitest";
-import { runPiRegisteredOperation } from "../../../../sure/runtime/harness/registered-operation.ts";
+import {
+	runPiRegisteredOperation,
+	runPiRegisteredValidator,
+} from "../../../../sure/runtime/harness/registered-operation.ts";
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../../..");
 const DISTRIBUTED_ENTRYPOINT = join(
@@ -25,6 +28,15 @@ const POLICY_BOUND_ENTRYPOINT = join(
 	"scripts",
 	"check_env.py",
 );
+const TRANS_VALIDATOR_ENTRYPOINT = join(
+	REPOSITORY_ROOT,
+	"sure",
+	"canonical",
+	"skills",
+	"sure-trans",
+	"scripts",
+	"check_artifact.py",
+);
 const CANONICAL_REGISTRY = join(REPOSITORY_ROOT, "sure", "canonical", "shared", "evaluation", "backend-manifest.json");
 const TEMP_ROOT = join(import.meta.dirname, "tmp-pi-operation-evidence");
 
@@ -32,6 +44,18 @@ interface Fixture {
 	ctx: SureHookContext;
 	artifactPath: string;
 	entrypointPath: string;
+}
+
+interface ValidatorFixture {
+	ctx: SureHookContext;
+	artifactPath: string;
+	entrypointPath: string;
+}
+
+interface ProducerFixture {
+	ctx: SureHookContext;
+	inputPath: string;
+	outputPath: string;
 }
 
 function fixture(name: string): Fixture {
@@ -68,6 +92,66 @@ function fixture(name: string): Fixture {
 		},
 		artifactPath,
 		entrypointPath,
+	};
+}
+
+function validatorFixture(name: string): ValidatorFixture {
+	const root = join(TEMP_ROOT, `validator-${name}`);
+	const packageDir = join(root, "sure_trans");
+	const runDir = join(root, "run");
+	const artifactPath = join(runDir, "artifacts", "import_result.json");
+	const entrypointPath = join(packageDir, "scripts", "check_artifact.py");
+	mkdirSync(join(packageDir, "scripts"), { recursive: true });
+	mkdirSync(join(runDir, "artifacts"), { recursive: true });
+	copyFileSync(TRANS_VALIDATOR_ENTRYPOINT, entrypointPath);
+	writeFileSync(artifactPath, '{"status":"ready"}\n', "utf-8");
+	const registry = JSON.parse(readFileSync(CANONICAL_REGISTRY, "utf-8")) as { registry_digest: string };
+	writeFileSync(
+		join(packageDir, "generation.lock.json"),
+		`${JSON.stringify({
+			schema: "sure.skill.generation.lock.v1",
+			host: "pi",
+			skill_id: "sure_trans",
+			semantic_backend_registry_digest: registry.registry_digest,
+		})}\n`,
+		"utf-8",
+	);
+	return {
+		ctx: {
+			point: "post_tool_result",
+			run: { runId: name, command: "/sure_trans", status: "running" } as never,
+			skill: { name: "sure_trans", command: "/sure_trans" } as never,
+			cwd: REPOSITORY_ROOT,
+			packageDir,
+			runDir,
+			args: "",
+			repoRoot: REPOSITORY_ROOT,
+		},
+		artifactPath,
+		entrypointPath,
+	};
+}
+
+function producerFixture(name: string): ProducerFixture {
+	const root = join(TEMP_ROOT, `producer-${name}`);
+	const runDir = join(root, "run");
+	const inputPath = join(runDir, "artifacts", "trans_input_resolved.json");
+	const outputPath = join(runDir, "artifacts", "source_image_result.json");
+	mkdirSync(join(runDir, "artifacts"), { recursive: true });
+	writeFileSync(inputPath, '{"source_kind":"python"}\n', "utf-8");
+	return {
+		ctx: {
+			point: "post_tool_result",
+			run: { runId: name, command: "/sure_trans", status: "running" } as never,
+			skill: { name: "sure_trans", command: "/sure_trans" } as never,
+			cwd: REPOSITORY_ROOT,
+			packageDir: join(REPOSITORY_ROOT, "sure", "generated", "pi", "skills", "sure_trans"),
+			runDir,
+			args: "",
+			repoRoot: REPOSITORY_ROOT,
+		},
+		inputPath,
+		outputPath,
 	};
 }
 
@@ -108,6 +192,36 @@ describe("Pi registered operation evidence", () => {
 		expect(result.evidence?.artifact_output_digest).not.toBe(result.evidence?.artifact_input_digest);
 		expect(result.evidence?.request_digest).toBeUndefined();
 		expect(result.evidence?.receipt_digest).toBeUndefined();
+	});
+
+	it("binds a producing operation to an upstream artifact before creating its output", () => {
+		const fx = producerFixture("producing");
+		let invoked = false;
+		const result = runPiRegisteredOperation({
+			ctx: fx.ctx,
+			unit_id: "build_source_image",
+			attempt: 1,
+			operation_id: "sure.trans.execute_source_image",
+			script_id: "run_docker_build.py",
+			artifact_input_path: fx.inputPath,
+			artifact_output_path: fx.outputPath,
+			execute: () => {
+				invoked = true;
+				writeFileSync(fx.outputPath, '{"status":"passed"}\n', "utf-8");
+				return { ok: true, stdout: "built", stderr: "", status: 0 };
+			},
+		});
+
+		expect(invoked).toBe(true);
+		expect(result.ok).toBe(true);
+		expect(result.evidence).toMatchObject({
+			operation_id: "sure.trans.execute_source_image",
+			artifact_mode: "producing",
+			verdict: "PASS",
+			reason_code: "EXECUTION_SUCCEEDED",
+		});
+		expect(result.evidence?.artifact_input_path).toBe(fx.inputPath);
+		expect(result.evidence?.artifact_output_path).toBe(fx.outputPath);
 	});
 
 	it("accepts the generated Pi facade when its copied entrypoint matches the legacy tier", () => {
@@ -282,6 +396,166 @@ describe("Pi registered operation evidence", () => {
 		expect(result.evidence).toMatchObject({
 			verdict: "NOT_EXECUTED",
 			reason_code: "INVALID_CONTRACT",
+		});
+	});
+
+	describe("registered semantic validators", () => {
+		it("emits PASS evidence without allowing the validator to rewrite its input", () => {
+			const fx = validatorFixture("pass");
+			let resolvedPath = "";
+			const before = readFileSync(fx.artifactPath, "utf-8");
+			const result = runPiRegisteredValidator({
+				ctx: fx.ctx,
+				unit_id: "validate_import",
+				attempt: 2,
+				operation_id: "sure.trans.validate_import",
+				validator_id: "sure.sure_trans.main.validate_import",
+				script_id: "check_artifact.py",
+				artifact_path: fx.artifactPath,
+				execute: (path) => {
+					resolvedPath = path;
+					return { ok: true, stdout: "valid", stderr: "", status: 0 };
+				},
+			});
+
+			expect(result.ok).toBe(true);
+			expect(result.verdict).toBe("PASS");
+			expect(resolvedPath).toContain("sure/canonical/shared/trans-validator/scripts/check_artifact.py");
+			expect(readFileSync(fx.artifactPath, "utf-8")).toBe(before);
+			expect(result.evidence).toMatchObject({
+				schema: "sure.validator.evidence.v1",
+				source: "pi_hook",
+				validators: [
+					{
+						validator_id: "sure.sure_trans.main.validate_import",
+						backend_operation_id: "sure.trans.validate_import",
+						verdict: "PASS",
+						reason_code: "VALIDATION_PASSED",
+						unit_id: "validate_import",
+						attempt: 2,
+					},
+				],
+			});
+			expect(result.evidence?.validators[0]?.artifact_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		});
+
+		it("maps a validator failure to FAIL", () => {
+			const fx = validatorFixture("fail");
+			const result = runPiRegisteredValidator({
+				ctx: fx.ctx,
+				unit_id: "validate_import",
+				attempt: 1,
+				operation_id: "sure.trans.validate_import",
+				script_id: "check_artifact.py",
+				artifact_path: fx.artifactPath,
+				execute: () => ({ ok: false, stdout: "repair", stderr: "", status: 1 }),
+			});
+
+			expect(result.ok).toBe(false);
+			expect(result.verdict).toBe("FAIL");
+			expect(result.evidence?.validators[0]).toMatchObject({
+				verdict: "FAIL",
+				reason_code: "VALIDATION_FAILED",
+				diagnostics: ["repair"],
+			});
+		});
+
+		it("keeps missing validator capability as NOT_EXECUTED", () => {
+			const fx = validatorFixture("missing-capability");
+			let invoked = false;
+			const result = runPiRegisteredValidator({
+				ctx: fx.ctx,
+				unit_id: "validate_import",
+				attempt: 1,
+				operation_id: "sure.trans.validate_import",
+				script_id: "check_artifact.py",
+				artifact_path: fx.artifactPath,
+				execute: () => {
+					invoked = true;
+					return { ok: false, stdout: "", stderr: "runtime missing", status: null };
+				},
+			});
+
+			expect(invoked).toBe(true);
+			expect(result.ok).toBe(false);
+			expect(result.verdict).toBe("NOT_EXECUTED");
+			expect(result.evidence?.validators[0]).toMatchObject({
+				verdict: "NOT_EXECUTED",
+				reason_code: "CAPABILITY_MISSING",
+				diagnostics: ["runtime missing"],
+			});
+		});
+
+		it("rejects a validator that mutates or removes its input", () => {
+			const fx = validatorFixture("mutates-input");
+			const result = runPiRegisteredValidator({
+				ctx: fx.ctx,
+				unit_id: "validate_import",
+				attempt: 1,
+				operation_id: "sure.trans.validate_import",
+				script_id: "check_artifact.py",
+				artifact_path: fx.artifactPath,
+				execute: () => {
+					writeFileSync(fx.artifactPath, '{"status":"tampered"}\n', "utf-8");
+					return { ok: true, stdout: "", stderr: "", status: 0 };
+				},
+			});
+
+			expect(result.ok).toBe(false);
+			expect(result.verdict).toBe("NOT_EXECUTED");
+			expect(result.evidence?.validators[0]).toMatchObject({
+				verdict: "NOT_EXECUTED",
+				reason_code: "INVALID_CONTRACT",
+			});
+		});
+
+		it("does not invoke a policy-bound validator without the run snapshot", () => {
+			const fx = validatorFixture("policy-missing");
+			let invoked = false;
+			const result = runPiRegisteredValidator({
+				ctx: fx.ctx,
+				unit_id: "package_container",
+				attempt: 1,
+				operation_id: "sure.trans.validate_package_container",
+				script_id: "check_artifact.py",
+				artifact_path: fx.artifactPath,
+				execute: () => {
+					invoked = true;
+					return { ok: true, stdout: "", stderr: "", status: 0 };
+				},
+			});
+
+			expect(invoked).toBe(false);
+			expect(result.verdict).toBe("NOT_EXECUTED");
+			expect(result.evidence?.validators[0]).toMatchObject({
+				verdict: "NOT_EXECUTED",
+				reason_code: "CAPABILITY_MISSING",
+			});
+		});
+
+		it("rejects tampered generated validator facades before execution", () => {
+			const fx = validatorFixture("tampered-facade");
+			writeFileSync(fx.entrypointPath, "# tampered\n", "utf-8");
+			let invoked = false;
+			const result = runPiRegisteredValidator({
+				ctx: fx.ctx,
+				unit_id: "validate_import",
+				attempt: 1,
+				operation_id: "sure.trans.validate_import",
+				script_id: "check_artifact.py",
+				artifact_path: fx.artifactPath,
+				execute: () => {
+					invoked = true;
+					return { ok: true, stdout: "", stderr: "", status: 0 };
+				},
+			});
+
+			expect(invoked).toBe(false);
+			expect(result.verdict).toBe("NOT_EXECUTED");
+			expect(result.evidence?.validators[0]).toMatchObject({
+				verdict: "NOT_EXECUTED",
+				reason_code: "INVALID_CONTRACT",
+			});
 		});
 	});
 });

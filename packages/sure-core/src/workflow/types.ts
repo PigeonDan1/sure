@@ -11,10 +11,16 @@ export interface GateDefinition {
 	 * advance. Executors only produce receipts; Core remains transition authority.
 	 */
 	execution_operation_id?: string;
+	/** Upstream run artifact whose bytes are bound as the execution input. */
+	execution_input_produces?: string;
 	/** Execution-request domain for an execution-backed gate. Defaults to validation. */
 	execution_request_operation?: ExecutionOperation;
 	/** Additional in-process or cross-artifact validators that must also pass. */
 	auxiliary_validator_ids?: readonly string[];
+	/** Explicit semantic-validator entrypoint when script_id is an executor facade. */
+	validator_script_id?: string;
+	/** Arguments passed to validator_script_id; kept separate from executor args. */
+	validator_script_args?: readonly string[];
 	script_id?: string;
 	script_args?: readonly string[];
 	gate_inputs?: readonly string[];

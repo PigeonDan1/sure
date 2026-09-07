@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import type { OperationExecutionEvidence } from "@earendil-works/sure-core";
 import {
 	advanceLegacyUnit,
 	bumpLegacyRetry,
@@ -40,6 +41,8 @@ export interface GateResult {
 	ranFailed?: boolean;
 	/** Advisory notes the gate produced; they never flip ok. */
 	diagnostics?: MemoryDiagnostic[];
+	/** Core-defined projection emitted when a registered Pi executor ran. */
+	executionEvidence?: OperationExecutionEvidence;
 }
 
 export interface CheckpointData {
@@ -78,6 +81,14 @@ export interface Unit {
 	gateCheck?: (artifact: unknown) => GateResult;
 	/** Python script under scripts/ for semantic gate checks (spawnSync). */
 	gateScript?: string;
+	/** Registered execution operation that produces or mutates this artifact. */
+	executionOperationId?: string;
+	/** Execution request domain retained for host-neutral adapters. */
+	executionRequestOperation?: string;
+	/** Semantic validator entrypoint when gateScript is an execution runner. */
+	validatorScriptId?: string;
+	/** Arguments for the independent semantic validator. */
+	validatorScriptArgs?: string[];
 	/** Extra argv passed to gateScript after --run-dir/--produces. */
 	gateScriptArgs?: (ctx: SureHookContext) => string[];
 	/** Sibling artifact directories the gate reads besides produces. A unit that
@@ -239,6 +250,7 @@ export function runBackend(
 		env: {
 			...process.env,
 			...harnessRuntimeEnv(runtime.contract),
+			SURE_REPOSITORY_ROOT: ctx.repoRoot ?? resolve(ctx.packageDir, "../../.."),
 			// The gate retries GPU OOM failures itself; tell it how long it has
 			// so it stops starting attempts this spawn cannot outlive.
 			SURE_TRANS_GATE_BUDGET_SECONDS: String(GATE_TIMEOUT_MS / 1000),
@@ -257,6 +269,7 @@ export function failure(
 	message: string,
 	counters?: Record<string, number>,
 	checkpoint?: RunCheckpoint,
+	executionEvidence?: OperationExecutionEvidence,
 ): SureHookResult {
 	return {
 		ok: false,
@@ -266,6 +279,7 @@ export function failure(
 			message,
 			counters,
 			checkpoint,
+			...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 			diagnostics: [{ severity: "error", message, repair }],
 		},
 	};

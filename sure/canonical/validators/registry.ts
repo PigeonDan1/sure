@@ -63,8 +63,8 @@ function descriptorsForSkill(skill: CanonicalSkillDefinition): ValidatorDescript
 						unit.id,
 						unit.gate.validator_id,
 						unit.gate.backend_operation_id,
-						unit.gate.script_id,
-						unit.gate.script_args,
+						unit.gate.validator_script_id ?? unit.gate.script_id,
+						unit.gate.validator_script_args ?? unit.gate.script_args,
 						unit.gate.validator_id,
 					),
 				);

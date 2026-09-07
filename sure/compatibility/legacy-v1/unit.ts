@@ -10,6 +10,8 @@ export interface LegacyProjectedUnit {
 	allowedValues?: Record<string, unknown[]>;
 	forbiddenFields?: string[];
 	gateScript?: string;
+	validatorScriptId?: string;
+	validatorScriptArgs?: string[];
 	executionOperationId?: string;
 	executionRequestOperation?: ExecutionOperation;
 	gateScriptArgs?: () => string[];
@@ -37,6 +39,10 @@ export function projectUnit(unit: WorkflowUnit): LegacyProjectedUnit {
 				}),
 		...(unit.forbidden_fields === undefined ? {} : { forbiddenFields: [...unit.forbidden_fields] }),
 		...(unit.gate?.script_id === undefined ? {} : { gateScript: unit.gate.script_id }),
+		...(unit.gate?.validator_script_id === undefined ? {} : { validatorScriptId: unit.gate.validator_script_id }),
+		...(unit.gate?.validator_script_args === undefined
+			? {}
+			: { validatorScriptArgs: [...unit.gate.validator_script_args] }),
 		...(unit.gate?.execution_operation_id === undefined
 			? {}
 			: { executionOperationId: unit.gate.execution_operation_id }),
