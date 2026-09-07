@@ -1,0 +1,281 @@
+{
+	"schema": "sure.execution.adapter_manifest.fixture.v1",
+	"description": "A complete VC adapter manifest and deterministic admission mutations.",
+	"valid": {
+		"schema": "sure.execution.adapter_manifest.v1",
+		"manifest_id": "sure-vc-mock",
+		"manifest_version": "1.0.0",
+		"surface": "vc",
+		"executor": {
+			"executor_id": "sure.external.vc.mock",
+			"kind": "remote",
+			"version": "1.0.0",
+			"digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+			"trust_level": "host_enforced"
+		},
+		"policy_snapshot_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+		"authorization": {
+			"allowed_projects": ["example-project"],
+			"allowed_partitions": ["gpu-test"]
+		},
+		"resource_limits": {
+			"max_gpus": 4,
+			"max_memory_gb": 128,
+			"max_cpus": 32
+		},
+		"timeouts": {
+			"submit_seconds": 300,
+			"wait_seconds": 1800,
+			"command_seconds": 1200,
+			"cancel_seconds": 120,
+			"poll_seconds": 15
+		},
+		"cancellation": {
+			"supported": true,
+			"strategy": "job_delete",
+			"confirmation": "best_effort",
+			"timeout_outcome": "BLOCKED"
+		},
+		"output_scope": {
+			"output_root": "artifacts",
+			"logs_root": "artifacts/vc_logs",
+			"write_policy": "declared_outputs_only",
+			"logs_retained": true
+		},
+		"runtime": {
+			"runtime_identity_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+			"container": {
+				"image": "registry.example/sure/trans:1.0.0@sha256:4444444444444444444444444444444444444444444444444444444444444444",
+				"image_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+			}
+		},
+		"attestation": {
+			"mode": "receipt_digest"
+		},
+		"manifest_digest": "sha256:290b5355ba150efdda226cda54e31619f37470c2163919ef9f6ff023ff107a1b"
+	},
+	"admission_context": {
+		"policy_snapshot_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+		"surface": "vc",
+		"policy_surfaces": ["vc"],
+		"executor": {
+			"executor_id": "sure.external.vc.mock",
+			"kind": "remote",
+			"version": "1.0.0",
+			"digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+			"trust_level": "host_enforced"
+		},
+		"policy_authorization": {
+			"allowed_projects": ["example-project"],
+			"allowed_partitions": ["gpu-test"]
+		},
+		"runtime_identity_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+		"container_image_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+		"output_scope": {
+			"output_root": "artifacts",
+			"logs_root": "artifacts/vc_logs"
+		},
+		"project": "example-project",
+		"partition": "gpu-test",
+		"resources": {
+			"gpus": 1,
+			"memory_gb": 32,
+			"cpus": 8
+		},
+		"timeouts": {
+			"submit_seconds": 300,
+			"wait_seconds": 1800,
+			"command_seconds": 1200,
+			"cancel_seconds": 120,
+			"poll_seconds": 15
+		}
+	},
+	"cases": [
+		{
+			"id": "missing-policy-snapshot",
+			"delete": ["policy_snapshot_digest"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest policy_snapshot_digest must be a SHA-256 digest"]
+		},
+		{
+			"id": "missing-project-allowlist",
+			"delete": ["authorization.allowed_projects"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest authorization.allowed_projects must be an array"]
+		},
+		{
+			"id": "empty-partition-allowlist",
+			"set": { "authorization.allowed_partitions": [] },
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest authorization.allowed_partitions must contain at least one entry"]
+		},
+		{
+			"id": "resource-limit-zero",
+			"set": { "resource_limits.max_gpus": 0 },
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest resource_limits.max_gpus must be a positive integer"]
+		},
+		{
+			"id": "command-timeout-exceeds-wait",
+			"set": { "timeouts.command_seconds": 2000 },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest timeouts.command_seconds must not exceed wait_seconds"]
+		},
+		{
+			"id": "unsupported-cancel-shape",
+			"set": { "cancellation.supported": false },
+			"schema_valid": false,
+			"expected_errors": [
+				"unsupported cancellation must use strategy=none",
+				"unsupported cancellation must use confirmation=not_applicable",
+				"vc adapter manifest requires supported cancellation"
+			]
+		},
+		{
+			"id": "logs-outside-output-root",
+			"set": { "output_scope.logs_root": "logs" },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest output_scope.logs_root must be inside output_root"]
+		},
+		{
+			"id": "missing-runtime-identity",
+			"delete": ["runtime.runtime_identity_digest"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest runtime.runtime_identity_digest must be a SHA-256 digest"]
+		},
+		{
+			"id": "container-digest-mismatch",
+			"set": { "runtime.container.image_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555" },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest runtime.container.image_digest does not match image"]
+		},
+		{
+			"id": "executor-identity-digest-invalid",
+			"set": { "executor.digest": "not-a-digest" },
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest executor.digest must be a SHA-256 digest"]
+		},
+		{
+			"id": "attestation-trust-mismatch",
+			"set": { "executor.trust_level": "attested", "attestation.mode": "none" },
+			"schema_valid": true,
+			"expected_errors": ["attested executor requires a non-none attestation mode"]
+		},
+		{
+			"id": "forged-manifest-digest",
+			"set": { "manifest_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999" },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest manifest_digest does not match its contents"]
+		},
+		{
+			"id": "missing-executor",
+			"delete": ["executor"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest executor must be an object"]
+		},
+		{
+			"id": "missing-authorization",
+			"delete": ["authorization"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest authorization must be an object"]
+		},
+		{
+			"id": "missing-resource-limits",
+			"delete": ["resource_limits"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest resource_limits must be an object"]
+		},
+		{
+			"id": "missing-timeouts",
+			"delete": ["timeouts"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest timeouts must be an object"]
+		},
+		{
+			"id": "missing-cancellation",
+			"delete": ["cancellation"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest cancellation must be an object"]
+		},
+		{
+			"id": "missing-output-scope",
+			"delete": ["output_scope"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest output_scope must be an object"]
+		},
+		{
+			"id": "missing-runtime",
+			"delete": ["runtime"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest runtime must be an object"]
+		},
+		{
+			"id": "missing-attestation",
+			"delete": ["attestation"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest attestation must be an object"]
+		},
+		{
+			"id": "missing-manifest-digest",
+			"delete": ["manifest_digest"],
+			"schema_valid": false,
+			"expected_errors": ["adapter manifest manifest_digest must be a SHA-256 digest"]
+		}
+	],
+	"admission_cases": [
+		{
+			"id": "policy-snapshot-mismatch",
+			"set": { "policy_snapshot_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest policy_snapshot_digest does not match admission context"]
+		},
+		{
+			"id": "project-not-allowed",
+			"set": { "project": "other-project" },
+			"schema_valid": true,
+			"expected_errors": ["project is not allowed by adapter manifest"]
+		},
+		{
+			"id": "resource-over-limit",
+			"set": { "resources.gpus": 5 },
+			"schema_valid": true,
+			"expected_errors": ["admission resources.gpus exceeds adapter manifest limit"]
+		},
+		{
+			"id": "timeout-over-limit",
+			"set": { "timeouts.command_seconds": 1300 },
+			"schema_valid": true,
+			"expected_errors": ["admission timeouts.command_seconds exceeds adapter manifest limit"]
+		},
+		{
+			"id": "surface-not-enabled",
+			"set": { "policy_surfaces": [] },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest surface is not enabled by policy"]
+		},
+		{
+			"id": "executor-identity-mismatch",
+			"set": { "executor.version": "2.0.0" },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest executor.version does not match admission context"]
+		},
+		{
+			"id": "runtime-identity-mismatch",
+			"set": { "runtime_identity_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest runtime_identity_digest does not match admission context"]
+		},
+		{
+			"id": "container-identity-mismatch",
+			"set": { "container_image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest container image digest does not match admission context"]
+		},
+		{
+			"id": "output-scope-mismatch",
+			"set": { "output_scope.logs_root": "artifacts/other_logs" },
+			"schema_valid": true,
+			"expected_errors": ["adapter manifest logs_root does not match admission context"]
+		}
+	]
+}

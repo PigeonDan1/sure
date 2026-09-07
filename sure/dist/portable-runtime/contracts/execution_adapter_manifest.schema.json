@@ -1,0 +1,171 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/contracts/execution-adapter-manifest.v1.schema.json",
+	"title": "SURE external execution adapter manifest",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"schema",
+		"manifest_id",
+		"manifest_version",
+		"surface",
+		"executor",
+		"policy_snapshot_digest",
+		"authorization",
+		"resource_limits",
+		"timeouts",
+		"cancellation",
+		"output_scope",
+		"runtime",
+		"attestation",
+		"manifest_digest"
+	],
+	"properties": {
+		"schema": { "const": "sure.execution.adapter_manifest.v1" },
+		"manifest_id": { "$ref": "#/$defs/id" },
+		"manifest_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+		"surface": { "enum": ["vc", "remote", "trusted"] },
+		"executor": { "$ref": "#/$defs/executor" },
+		"policy_snapshot_digest": { "$ref": "#/$defs/digest" },
+		"authorization": { "$ref": "#/$defs/authorization" },
+		"resource_limits": { "$ref": "#/$defs/resourceLimits" },
+		"timeouts": { "$ref": "#/$defs/timeouts" },
+		"cancellation": { "$ref": "#/$defs/cancellation" },
+		"output_scope": { "$ref": "#/$defs/outputScope" },
+		"runtime": { "$ref": "#/$defs/runtime" },
+		"attestation": { "$ref": "#/$defs/attestation" },
+		"manifest_digest": { "$ref": "#/$defs/digest" }
+	},
+	"allOf": [
+		{
+			"if": { "properties": { "surface": { "const": "vc" } }, "required": ["surface"] },
+			"then": {
+				"properties": {
+					"authorization": { "required": ["allowed_projects", "allowed_partitions"] },
+					"executor": { "properties": { "kind": { "enum": ["remote", "trusted"] } } },
+					"runtime": { "required": ["runtime_identity_digest", "container"] },
+					"cancellation": { "properties": { "supported": { "const": true } } }
+				}
+			}
+		},
+		{
+			"if": { "properties": { "surface": { "const": "remote" } }, "required": ["surface"] },
+			"then": { "properties": { "executor": { "properties": { "kind": { "const": "remote" } } } } }
+		},
+		{
+			"if": { "properties": { "surface": { "const": "trusted" } }, "required": ["surface"] },
+			"then": { "properties": { "executor": { "properties": { "kind": { "const": "trusted" } } } } }
+		}
+	],
+	"$defs": {
+		"id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+		"token": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+		"digest": { "type": "string", "pattern": "^(sha256:)?[a-f0-9]{64}$" },
+		"executor": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["executor_id", "kind", "version", "digest", "trust_level"],
+			"properties": {
+				"executor_id": { "$ref": "#/$defs/id" },
+				"kind": { "enum": ["local", "python", "docker", "remote", "trusted"] },
+				"version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+				"digest": { "$ref": "#/$defs/digest" },
+				"trust_level": { "enum": ["cooperative", "host_enforced", "attested"] }
+			}
+		},
+		"authorization": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["allowed_projects"],
+			"properties": {
+				"allowed_projects": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": { "$ref": "#/$defs/token" }
+				},
+				"allowed_partitions": {
+					"type": "array",
+					"minItems": 1,
+					"uniqueItems": true,
+					"items": { "$ref": "#/$defs/token" }
+				}
+			}
+		},
+		"resourceLimits": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["max_gpus", "max_memory_gb", "max_cpus"],
+			"properties": {
+				"max_gpus": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+				"max_memory_gb": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+				"max_cpus": { "type": "integer", "minimum": 1, "maximum": 1000000 }
+			}
+		},
+		"timeouts": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["submit_seconds", "wait_seconds", "command_seconds", "cancel_seconds", "poll_seconds"],
+			"properties": {
+				"submit_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+				"wait_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+				"command_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+				"cancel_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 },
+				"poll_seconds": { "type": "integer", "minimum": 1, "maximum": 604800 }
+			}
+		},
+		"cancellation": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["supported", "strategy", "confirmation", "timeout_outcome"],
+			"properties": {
+				"supported": { "type": "boolean" },
+				"strategy": { "enum": ["job_delete", "cooperative_signal", "none"] },
+				"confirmation": { "enum": ["best_effort", "confirmed", "not_applicable"] },
+				"timeout_outcome": { "enum": ["CANCELLED", "BLOCKED"] }
+			}
+		},
+		"relativePath": {
+			"type": "string",
+			"minLength": 1,
+			"pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*//)(?!.*/$)(?!.*\\\\).+"
+		},
+		"outputScope": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["output_root", "logs_root", "write_policy", "logs_retained"],
+			"properties": {
+				"output_root": { "$ref": "#/$defs/relativePath" },
+				"logs_root": { "$ref": "#/$defs/relativePath" },
+				"write_policy": { "enum": ["declared_outputs_only", "output_root"] },
+				"logs_retained": { "type": "boolean" }
+			}
+		},
+		"container": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["image", "image_digest"],
+			"properties": {
+				"image": { "type": "string", "minLength": 1, "pattern": "@sha256:[a-f0-9]{64}$" },
+				"image_digest": { "$ref": "#/$defs/digest" }
+			}
+		},
+		"runtime": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["runtime_identity_digest"],
+			"properties": {
+				"runtime_identity_digest": { "$ref": "#/$defs/digest" },
+				"container": { "$ref": "#/$defs/container" }
+			}
+		},
+		"attestation": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["mode"],
+			"properties": {
+				"mode": { "enum": ["none", "receipt_digest", "signed_receipt", "trusted_attestation"] }
+			}
+		}
+	}
+}

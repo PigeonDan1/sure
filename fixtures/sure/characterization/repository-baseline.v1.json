@@ -6930,6 +6930,11 @@
       "sha256": "aabdd6ab9e2bb74a4244d978b3f834a8d592682cbb619e20891d74e16e6e8bc5"
     },
     {
+      "path": "sure/runtime/adapter_manifest.py",
+      "size_bytes": 24701,
+      "sha256": "617db5cecce4b32aec60e39d71454a0384f562bc2898c68175fba736d85c962a"
+    },
+    {
       "path": "sure/runtime/agent-path.ts",
       "size_bytes": 1245,
       "sha256": "f32875e3a9344bae9dbc3431ed9b95c2cdd187ca15b54e9a61ad6bbecc104358"
@@ -7263,6 +7268,11 @@
       "path": "sure/runtime/semantic-backend.ts",
       "size_bytes": 135,
       "sha256": "1e7747be7c88ea2d79d702858c5aa2a2919d5499f7aefe57defeedbb075f23d0"
+    },
+    {
+      "path": "sure/runtime/test_adapter_manifest.py",
+      "size_bytes": 3978,
+      "sha256": "2440b4de0ddfc8f3923bd6606da6d2694ecab4e500476e2b474c5d6b9b7d045b"
     },
     {
       "path": "sure/runtime/test_evaluation_commit.py",
@@ -9726,5 +9736,5 @@
       ]
     }
   ],
-  "semantic_digest": "0652a703a8a7df21f6c3cedcd5e3de88d9c3b899a062342947bb3badd7e4f3c5"
+  "semantic_digest": "702a995deb1823de802199652df219143413eee23c9f63901d3e5db9e08e491f"
 }

@@ -38,6 +38,7 @@ const PORTABLE_RUNTIME_SUPPORT_FILES = [
 	"sure/runtime/resource_locator.py",
 	"sure/runtime/repository_layout.py",
 	"sure/runtime/execution_bridge.py",
+	"sure/runtime/adapter_manifest.py",
 	"sure/runtime/evaluation_commit.py",
 	"sure/runtime/model/__init__.py",
 	"sure/runtime/model/bootstrap.py",
@@ -73,6 +74,7 @@ const PORTABLE_EXECUTION_CONTRACT_SCHEMAS = [
 	"execution_input_contract.schema.json",
 	"execution_request.schema.json",
 	"execution_receipt.schema.json",
+	"execution_adapter_manifest.schema.json",
 	"execution_output_contract.schema.json",
 	"operation_execution_evidence.schema.json",
 ] as const;

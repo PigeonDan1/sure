@@ -1,4 +1,5 @@
 export * from "./adapter.ts";
+export * from "./adapter-manifest.ts";
 export * from "./dispatch.ts";
 export * from "./docker.ts";
 export * from "./evidence.ts";
