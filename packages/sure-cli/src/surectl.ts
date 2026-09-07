@@ -20,6 +20,7 @@ import {
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
 	type AssuranceProfile,
+	admitOperationExecutionEvidence,
 	applyValidation,
 	assessFormalEligibility,
 	auditCheckpointState,
@@ -30,6 +31,7 @@ import {
 	createFrozenEvaluationSubject,
 	createOutcome,
 	decodeLegacyCheckpoint,
+	decodeOperationExecutionEvidence,
 	type ExecutionReceipt,
 	type ExecutionRequest,
 	encodeLegacyCheckpoint,
@@ -1201,10 +1203,11 @@ function validateRegisteredGateExecution(
 	const operationId = unit.gate?.execution_operation_id;
 	if (operationId === undefined) return { verdict: "PASS", reason: "no execution operation required", evidence: null };
 	const rawExecution = state?.last_execution;
-	if (typeof rawExecution !== "object" || rawExecution === null || Array.isArray(rawExecution)) {
+	const decodedExecution = decodeOperationExecutionEvidence(rawExecution);
+	if (!decodedExecution.ok) {
 		return executionGateUnavailable(`registered execution ${operationId} has not run`);
 	}
-	const persisted = rawExecution as Record<string, unknown>;
+	const persisted = decodedExecution.evidence;
 	if (persisted.source !== "registered_operation" || persisted.operation_id !== operationId) {
 		return executionGateUnavailable(`current gate requires registered execution ${operationId}`, persisted);
 	}
@@ -1247,6 +1250,7 @@ function validateRegisteredGateExecution(
 			environment,
 		});
 		if (operation.kind !== "execute") throw new Error(`${operationId} is not an execute operation`);
+		if (operation.artifact_mode === undefined) throw new Error(`${operationId} does not declare an artifact_mode`);
 		if (!operation.consumer_skill_ids.includes(runtimeBinding.skill_id)) {
 			throw new Error(`${runtimeBinding.skill_id} is not an admitted consumer of ${operationId}`);
 		}
@@ -1360,6 +1364,13 @@ function validateRegisteredGateExecution(
 		typeof request.runtime_requirements === "object" && request.runtime_requirements !== null
 			? (request.runtime_requirements as Record<string, unknown>)
 			: {};
+	if (decodedExecution.compatibility === "current-v2") {
+		if (runtimeRequirements.artifact_mode !== operation.artifact_mode) {
+			diagnostics.push("execution request artifact_mode does not match the locked operation");
+		}
+	} else if (runtimeRequirements.artifact_mode !== undefined) {
+		diagnostics.push("legacy operation evidence cannot bind a current execution request projection");
+	}
 	const expectedPolicyDigest = run.policyDigest ?? canonicalJsonDigest(null);
 	const expectedReferenceDigest = validatorReferenceDigest(run, policyReferences);
 	if (
@@ -1397,6 +1408,7 @@ function validateRegisteredGateExecution(
 		["portable_runtime_digest", verification.lock.runtime_digest],
 		["workflow_digest", run.workflowDigest],
 		["branch_id", branchId],
+		["artifact_mode", decodedExecution.compatibility === "current-v2" ? operation.artifact_mode : undefined],
 		["artifact_input_digest", artifactInputDigest],
 		["artifact_input_path", operationOutputContract === undefined ? undefined : inputPath],
 		["artifact_output_path", operationOutputContract === undefined ? undefined : outputPath],
@@ -1447,6 +1459,7 @@ function validateRegisteredGateExecution(
 			attempt: expectedAttempt,
 			operation_id: operation.operation_id,
 			request_operation: requestOperation,
+			...(decodedExecution.compatibility === "current-v2" ? { artifact_mode: operation.artifact_mode } : {}),
 			artifact_input_digest: artifactInputDigest,
 			...(operationOutputContract === undefined ? {} : { artifact_input_path: inputPath }),
 			...(operationOutputContract === undefined ? {} : { artifact_output_path: outputPath }),
@@ -1481,14 +1494,12 @@ function validateRegisteredGateExecution(
 	if (output === undefined || !sameDigest(output.sha256, artifactDigest)) {
 		diagnostics.push("execution receipt does not bind the current gate artifact digest");
 	}
-	const persistedOutputDigest =
-		typeof persisted.artifact_output_digest === "string" ? persisted.artifact_output_digest : undefined;
-	if (
-		persistedOutputDigest !== undefined &&
-		(output === undefined || !sameDigest(persistedOutputDigest, output.sha256))
-	) {
-		diagnostics.push("registered execution artifact_output_digest does not match the receipt");
-	}
+	const evidenceAdmission = admitOperationExecutionEvidence(decodedExecution, {
+		expected_operation_id: operation.operation_id,
+		expected_artifact_mode: operation.artifact_mode,
+		...(output === undefined ? {} : { receipt_output_digest: output.sha256 }),
+	});
+	if (!evidenceAdmission.ok) diagnostics.push(...evidenceAdmission.errors);
 	if (run.executorDigest && (!receipt.executor || !sameDigest(receipt.executor.digest, run.executorDigest))) {
 		diagnostics.push("execution receipt executor digest does not match the run binding");
 	}
@@ -1524,7 +1535,7 @@ function validateRegisteredGateExecution(
 	return {
 		verdict: "PASS",
 		reason: "registered execution receipt passed",
-		evidence: persisted,
+		evidence: evidenceAdmission.ok ? evidenceAdmission.evidence : persisted,
 		evidence_path: receiptPath,
 		evidence_digest: digestFile(receiptPath),
 		lifecycle: receipt.lifecycle,

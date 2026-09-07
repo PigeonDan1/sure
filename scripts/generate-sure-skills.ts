@@ -68,6 +68,7 @@ const PORTABLE_EXECUTION_CONTRACT_SCHEMAS = [
 	"execution_request.schema.json",
 	"execution_receipt.schema.json",
 	"execution_output_contract.schema.json",
+	"operation_execution_evidence.schema.json",
 ] as const;
 
 interface GeneratedFile {

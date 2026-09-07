@@ -1,0 +1,26 @@
+{
+	"schema": "sure.operation_evidence.parity.v1",
+	"cases": [
+		{
+			"id": "preexisting",
+			"operation_id": "sure.onboard.execute_env_compat",
+			"artifact_mode": "preexisting",
+			"artifact_input_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"artifact_output_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		},
+		{
+			"id": "mutating",
+			"operation_id": "sure.onboard.execute_import",
+			"artifact_mode": "mutating",
+			"artifact_input_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			"artifact_output_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+		},
+		{
+			"id": "producing",
+			"operation_id": "sure.trans.execute_adapter_image",
+			"artifact_mode": "producing",
+			"artifact_input_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+			"artifact_output_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+		}
+	]
+}

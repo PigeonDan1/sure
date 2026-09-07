@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { canonicalJsonDigest } from "../contracts/canonical-json.ts";
-import type { CapabilityRequirement, ExecutionOutputContract, JsonValue } from "../contracts/types.ts";
+import type {
+	CapabilityRequirement,
+	ExecutionArtifactMode,
+	ExecutionOutputContract,
+	JsonValue,
+} from "../contracts/types.ts";
 import { validateExecutionOutputContract } from "../execution/output-contract.ts";
 
 export interface SemanticBackendOperation {
@@ -15,7 +20,7 @@ export interface SemanticBackendOperation {
 	deterministic: boolean;
 	requires_policy_snapshot?: boolean;
 	/** Relationship between an execute operation and its gate artifact. */
-	artifact_mode?: "preexisting" | "mutating" | "producing";
+	artifact_mode?: ExecutionArtifactMode;
 	/** Declarative output boundary for producer/mutating execution adapters. */
 	output_contract?: ExecutionOutputContract;
 	/** Static execution capabilities; input-dependent capabilities stay in the adapter. */

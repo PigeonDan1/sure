@@ -16,6 +16,7 @@ import {
 	type TransitionResult,
 	type WorkflowDefinition,
 } from "../../sure-core/src/index.ts";
+import { registeredOperationSemanticDigest } from "../src/registered-operation.ts";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const source = join(repositoryRoot, "packages/sure-cli/src/surectl.ts");
@@ -1153,9 +1154,12 @@ describe("surectl cooperative control plane", () => {
 		expect((state.checkpoint as { data: { currentUnit: string } }).data.currentUnit).toBe("validate_env_compat");
 		expect((state.last_execution as Record<string, unknown>).source).toBe("registered_operation");
 		const executionEvidence = state.last_execution as Record<string, unknown>;
+		expect(executionEvidence.projection_version).toBe(2);
+		expect(executionEvidence.artifact_mode).toBe("preexisting");
 		expect(executionEvidence.artifact_input_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(executionEvidence.artifact_output_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		const receiptPath = String(executionEvidence.receipt_path);
+		const requestPath = String(executionEvidence.request_path);
 		const originalArtifact = readFileSync(artifactPath, "utf8");
 		writeFileSync(artifactPath, `${originalArtifact}\n`);
 		const artifactRejected = command(root, "validate", [
@@ -1177,11 +1181,71 @@ describe("surectl cooperative control plane", () => {
 		expect((state.checkpoint as { resumable: boolean }).resumable).toBe(true);
 		writeFileSync(receiptPath, originalReceipt);
 
+		// Stripping only the current state marker cannot downgrade a new request
+		// into the legacy compatibility path.
+		const downgradedEvidence = state.last_execution as Record<string, unknown>;
+		delete downgradedEvidence.projection_version;
+		delete downgradedEvidence.artifact_mode;
+		delete downgradedEvidence.artifact_output_digest;
+		const statePath = join(runDir, "state.json");
+		writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+		const runRecordPath = join(runDir, "run.json");
+		let legacyRunRecord = JSON.parse(readFileSync(runRecordPath, "utf8")) as Record<string, unknown>;
+		delete legacyRunRecord.stateDigest;
+		writeFileSync(runRecordPath, `${JSON.stringify(legacyRunRecord)}\n`);
+		const downgradeRejected = command(root, "validate", [
+			...base,
+			"--run-id",
+			runId,
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(downgradeRejected.status).toBe(5);
+
+		// Re-materialize the exact pre-v2 request/state shape. A genuine legacy
+		// run remains readable, but its receipt-derived digest is never backfilled.
+		state = JSON.parse(readFileSync(statePath, "utf8")) as Record<string, unknown>;
+		const legacyExecutionEvidence = state.last_execution as Record<string, unknown>;
+		const legacyRequest = JSON.parse(readFileSync(requestPath, "utf8")) as ExecutionRequest;
+		const runtimeRequirements = legacyRequest.runtime_requirements;
+		delete runtimeRequirements.artifact_mode;
+		legacyRequest.semantic_request_digest = registeredOperationSemanticDigest({
+			run_id: legacyRequest.run_id,
+			branch_id: String(runtimeRequirements.branch_id),
+			unit_id: legacyRequest.unit_id,
+			attempt: legacyRequest.attempt,
+			operation_id: String(runtimeRequirements.semantic_backend_operation_id),
+			request_operation: legacyRequest.operation,
+			artifact_input_digest: String(runtimeRequirements.artifact_input_digest),
+			workflow_digest: String(runtimeRequirements.workflow_digest),
+			runtime_digest: String(runtimeRequirements.portable_runtime_digest),
+			backend_registry_digest: String(runtimeRequirements.semantic_backend_registry_digest),
+			backend_bundle_digest: String(runtimeRequirements.semantic_backend_bundle_digest),
+			backend_resource_digest: String(runtimeRequirements.semantic_backend_resource_digest),
+			reference_snapshot_digest: legacyRequest.reference_snapshot_digest,
+			script_args: runtimeRequirements.script_args as string[],
+			policy_digest: legacyRequest.policy_digest,
+		});
+		writeFileSync(requestPath, `${JSON.stringify(legacyRequest, null, 2)}\n`);
+		const legacyReceipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+		legacyReceipt.request_digest = canonicalJsonDigest(legacyRequest as unknown as JsonValue);
+		legacyReceipt.semantic_request_digest = legacyRequest.semantic_request_digest;
+		writeFileSync(receiptPath, `${JSON.stringify(legacyReceipt, null, 2)}\n`);
+		legacyExecutionEvidence.request_digest = digest(requestPath);
+		legacyExecutionEvidence.receipt_digest = digest(receiptPath);
+		const legacyReceiptBytes = readFileSync(receiptPath, "utf8");
+		writeFileSync(statePath, `${JSON.stringify(state)}\n`);
+		legacyRunRecord = JSON.parse(readFileSync(runRecordPath, "utf8")) as Record<string, unknown>;
+		delete legacyRunRecord.stateDigest;
+		writeFileSync(runRecordPath, `${JSON.stringify(legacyRunRecord)}\n`);
+
 		const validated = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
 		expect(validated.status).toBe(0);
 		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
 		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
 		expect((state.checkpoint as { resumable: boolean }).resumable).toBe(false);
+		expect(state.last_execution).not.toHaveProperty("artifact_output_digest");
+		expect(readFileSync(receiptPath, "utf8")).toBe(legacyReceiptBytes);
 	}, 30_000);
 
 	it("runs a TRANS artifact validator from the shared portable runtime", () => {
@@ -1250,6 +1314,107 @@ describe("surectl cooperative control plane", () => {
 		expect(typeof validator.request_path).toBe("string");
 		expect(typeof validator.receipt_path).toBe("string");
 		expect(JSON.parse(readFileSync(String(validator.receipt_path), "utf8")).lifecycle).toBe("SUCCEEDED");
+	}, 30_000);
+
+	it("binds a mutating operation to distinct pre- and post-execution artifact digests", () => {
+		const operationRoot = join(root, "mutating-operation");
+		const operationPackage = join(operationRoot, "skill");
+		mkdirSync(operationPackage, { recursive: true });
+		const operationWorkflow = {
+			schema: "sure.workflow.definition.v1",
+			workflow_id: "sure_onboard",
+			version: "test-v1",
+			branches: [
+				{
+					id: "main",
+					initial_unit_id: "validate_import",
+					terminal_unit_id: "validate_import",
+					units: [
+						{
+							id: "validate_import",
+							label: "Validate import",
+							kind: "gate",
+							produces: "import_result.json",
+							required_fields: ["import_passed", "run_command"],
+							gate: {
+								validator_id: "python-script",
+								execution_operation_id: "sure.onboard.execute_import",
+								execution_request_operation: "validation",
+								script_id: "run_validate.py",
+								script_args: ["--kind", "import"],
+							},
+						},
+					],
+				},
+			],
+			default_branch_id: "main",
+			retry_policy: { default_max_retries: 3 },
+		} as const;
+		const customDefinition = join(operationPackage, "canonical-definition.json");
+		writeFileSync(customDefinition, JSON.stringify({ workflow: operationWorkflow, capabilities: [] }));
+		const lock = JSON.parse(
+			readFileSync(join(repositoryRoot, "sure/dist/agent-skills/sure-onboard/generation.lock.json"), "utf8"),
+		) as Record<string, unknown>;
+		lock.workflow_digest = canonicalJsonDigest(operationWorkflow as unknown as JsonValue);
+		writeFileSync(join(operationPackage, "generation.lock.json"), JSON.stringify(lock));
+		const customRegistry = join(operationRoot, "validator-registry.json");
+		cpSync(onboardRegistryPath, customRegistry);
+		const base = [
+			"--skill",
+			"sure_onboard",
+			"--definition",
+			customDefinition,
+			"--validator-registry",
+			customRegistry,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		];
+		const runId = "run-mutating-operation";
+		const started = command(root, "start", [...base, "--run-id", runId]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifactPath = join(runDir, "artifacts", "import_result.json");
+		const mutate =
+			"require('node:fs').writeFileSync(process.argv[1], JSON.stringify({import_passed:true,module:'updated'}))";
+		writeFileSync(
+			artifactPath,
+			JSON.stringify({
+				import_passed: false,
+				run_command: [process.execPath, "-e", mutate, artifactPath],
+				cwd: runDir,
+			}),
+		);
+		const inputDigest = digest(artifactPath);
+
+		const executed = command(root, "execute", [
+			...base,
+			"--run-id",
+			runId,
+			"--operation",
+			"sure.onboard.execute_import",
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(executed.status, `${executed.stdout}\n${executed.stderr}`).toBe(5);
+		let state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		const evidence = state.last_execution as Record<string, unknown>;
+		expect(evidence.projection_version).toBe(2);
+		expect(evidence.artifact_mode).toBe("mutating");
+		expect(evidence.artifact_input_digest).toBe(inputDigest);
+		expect(evidence.artifact_output_digest).toBe(digest(artifactPath));
+		expect(evidence.artifact_output_digest).not.toBe(inputDigest);
+		const outputBytes = readFileSync(artifactPath, "utf8");
+
+		writeFileSync(artifactPath, `${outputBytes}\n`);
+		const rejected = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(rejected.status).toBe(5);
+		writeFileSync(artifactPath, outputBytes);
+		const validated = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(validated.status, `${validated.stdout}\n${validated.stderr}`).toBe(0);
+		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
+		expect((state.checkpoint as { resumable: boolean }).resumable).toBe(false);
 	}, 30_000);
 
 	it("executes a TRANS producer through its output contract before validation", () => {

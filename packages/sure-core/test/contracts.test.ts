@@ -222,6 +222,21 @@ describe("wire schemas", () => {
 			["execution_receipt", executionReceipt()],
 			["conformance", conformanceRecord()],
 			["evaluation_subject", frozenEvaluationSubject()],
+			[
+				"operation_execution_evidence",
+				{
+					schema: "sure.operation.execution.v1",
+					projection_version: 2,
+					source: "registered_operation",
+					operation_id: "sure.onboard.execute_import",
+					artifact_mode: "mutating",
+					verdict: "PASS",
+					reason_code: "EXECUTION_SUCCEEDED",
+					diagnostics: [],
+					artifact_input_digest: DIGEST_A,
+					artifact_output_digest: DIGEST_B,
+				},
+			],
 		];
 		for (const [name, value] of cases) {
 			const serialized = JSON.stringify(value);
@@ -232,6 +247,21 @@ describe("wire schemas", () => {
 			});
 			expect(canonicalJsonSha256(value as JsonValue)).toBe(canonicalJsonSha256(JSON.parse(serialized)));
 		}
+	});
+
+	it("keeps operation evidence legacy-readable but current PASS fail-closed", () => {
+		const schema = readSchema("operation_execution_evidence");
+		const legacy = {
+			schema: "sure.operation.execution.v1",
+			source: "registered_operation",
+			operation_id: "sure.onboard.execute_import",
+			verdict: "PASS",
+			reason_code: "EXECUTION_SUCCEEDED",
+			diagnostics: [],
+			artifact_input_digest: DIGEST_A,
+		};
+		expect(validateJsonSchema(schema, legacy).ok).toBe(true);
+		expect(validateJsonSchema(schema, { ...legacy, projection_version: 2 }).ok).toBe(false);
 	});
 
 	it("rejects shell strings and unbound read-only references", () => {

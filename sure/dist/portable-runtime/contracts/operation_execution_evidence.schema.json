@@ -1,0 +1,62 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/contracts/operation-execution-evidence.v1.schema.json",
+	"title": "SURE registered operation execution evidence",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"schema",
+		"source",
+		"operation_id",
+		"verdict",
+		"reason_code",
+		"diagnostics",
+		"artifact_input_digest"
+	],
+	"properties": {
+		"schema": { "const": "sure.operation.execution.v1" },
+		"projection_version": { "const": 2 },
+		"source": { "enum": ["surectl", "pi_hook", "registered_operation"] },
+		"operation_id": { "type": "string", "pattern": "^sure\\.[a-z0-9][a-z0-9._-]*$" },
+		"artifact_mode": { "enum": ["preexisting", "mutating", "producing"] },
+		"verdict": { "enum": ["PASS", "FAIL", "NOT_EXECUTED"] },
+		"reason_code": { "type": "string", "minLength": 1 },
+		"diagnostics": { "type": "array", "items": { "type": "string" } },
+		"artifact_input_digest": { "$ref": "#/$defs/digest" },
+		"artifact_input_path": { "$ref": "#/$defs/absolutePath" },
+		"artifact_output_digest": { "$ref": "#/$defs/digest" },
+		"artifact_output_path": { "$ref": "#/$defs/absolutePath" },
+		"runtime_digest": { "$ref": "#/$defs/digest" },
+		"backend_registry_digest": { "$ref": "#/$defs/digest" },
+		"backend_bundle_digest": { "$ref": "#/$defs/digest" },
+		"backend_resource_digest": { "$ref": "#/$defs/digest" },
+		"request_path": { "$ref": "#/$defs/absolutePath" },
+		"request_digest": { "$ref": "#/$defs/digest" },
+		"receipt_path": { "$ref": "#/$defs/absolutePath" },
+		"receipt_digest": { "$ref": "#/$defs/digest" },
+		"branch_id": { "type": "string", "minLength": 1 },
+		"unit_id": { "type": "string", "minLength": 1 },
+		"attempt": { "type": "integer", "minimum": 1 },
+		"outcome": { "$ref": "#/$defs/jsonValue" }
+	},
+	"allOf": [
+		{
+			"if": {
+				"properties": { "projection_version": { "const": 2 }, "verdict": { "const": "PASS" } },
+				"required": ["projection_version", "verdict"]
+			},
+			"then": { "required": ["artifact_mode", "artifact_output_digest"] }
+		}
+	],
+	"$defs": {
+		"digest": { "type": "string", "pattern": "^(sha256:)?[a-f0-9]{64}$" },
+		"absolutePath": { "type": "string", "pattern": "^/" },
+		"jsonValue": {
+			"oneOf": [
+				{ "type": ["string", "number", "boolean", "null"] },
+				{ "type": "array", "items": { "$ref": "#/$defs/jsonValue" } },
+				{ "type": "object", "additionalProperties": { "$ref": "#/$defs/jsonValue" } }
+			]
+		}
+	}
+}

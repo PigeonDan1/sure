@@ -5,12 +5,19 @@ import type {
 	CapabilityRequirement,
 	CoreOutcome,
 	CoreRunRecord,
+	ExecutionArtifactMode,
 	ExecutionOperation,
 	ExecutionReceipt,
 	ExecutionRequest,
 	JsonValue,
+	OperationExecutionEvidence,
 } from "@earendil-works/sure-core";
-import { canonicalJsonDigest, createOutcome, executionOutputContractDigest } from "@earendil-works/sure-core";
+import {
+	canonicalJsonDigest,
+	createOperationExecutionEvidence,
+	createOutcome,
+	executionOutputContractDigest,
+} from "@earendil-works/sure-core";
 import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
 import { type ExecutorRunResult, executeRequest } from "./executor.ts";
 import {
@@ -19,29 +26,8 @@ import {
 	semanticRuntimeEnvironment,
 } from "./registered-validator.ts";
 
-export interface RegisteredOperationEvidence {
-	schema: "sure.operation.execution.v1";
-	source: "surectl";
-	operation_id: string;
-	verdict: "PASS" | "FAIL" | "NOT_EXECUTED";
-	reason_code: string;
-	diagnostics: readonly string[];
-	artifact_input_digest: string;
-	/** Input anchor used by a producer operation; omitted for legacy requests. */
-	artifact_input_path?: string;
-	/** Digest observed after the executor completed, when it emitted the gate artifact. */
-	artifact_output_digest?: string;
-	/** Declared output path for a producer/mutating contract. */
-	artifact_output_path?: string;
-	runtime_digest?: string;
-	backend_registry_digest?: string;
-	backend_bundle_digest?: string;
-	backend_resource_digest?: string;
-	request_path?: string;
-	request_digest?: string;
-	receipt_path?: string;
-	receipt_digest?: string;
-}
+/** Compatibility export for callers that imported the former CLI-local type. */
+export type RegisteredOperationEvidence = OperationExecutionEvidence;
 
 export interface RegisteredOperationResult {
 	outcome: CoreOutcome;
@@ -85,6 +71,8 @@ export interface RegisteredOperationSemanticBinding {
 	attempt: number;
 	operation_id: string;
 	request_operation: ExecutionOperation;
+	/** Required for current requests; omitted only when validating legacy-v1 bytes. */
+	artifact_mode?: ExecutionArtifactMode;
 	artifact_input_digest: string;
 	artifact_input_path?: string;
 	workflow_digest?: string;
@@ -152,8 +140,7 @@ function unavailable(
 	});
 	return {
 		outcome,
-		evidence: {
-			schema: "sure.operation.execution.v1",
+		evidence: createOperationExecutionEvidence({
 			source: "surectl",
 			operation_id: options.operation_id,
 			verdict: "NOT_EXECUTED",
@@ -161,7 +148,7 @@ function unavailable(
 			diagnostics: [reason],
 			artifact_input_digest: options.artifact.sha256,
 			...(runtimeDigest === undefined ? {} : { runtime_digest: runtimeDigest }),
-		},
+		}),
 	};
 }
 
@@ -169,6 +156,8 @@ function requestFor(
 	options: RegisteredOperationOptions,
 	operation: ReturnType<typeof resolveSemanticBackendOperation>,
 ): ExecutionRequest {
+	if (operation.artifact_mode === undefined)
+		throw new Error(`${operation.operation_id} does not declare an artifact_mode`);
 	const contract = operation.output_contract;
 	if (contract !== undefined && contract.outputs.length !== 1) {
 		throw new Error(`${operation.operation_id} currently requires exactly one declared output`);
@@ -194,6 +183,7 @@ function requestFor(
 		attempt: options.attempt,
 		operation_id: operation.operation_id,
 		request_operation: options.request_operation,
+		artifact_mode: operation.artifact_mode,
 		artifact_input_digest: options.artifact.sha256,
 		workflow_digest: options.run.workflowDigest,
 		runtime_digest: options.runtime_binding.semantic_runtime_digest,
@@ -238,6 +228,7 @@ function requestFor(
 			portable_runtime_digest: options.runtime_binding.semantic_runtime_digest,
 			workflow_digest: options.run.workflowDigest ?? "",
 			branch_id: options.branch_id,
+			artifact_mode: operation.artifact_mode,
 			script_args: [...options.script_args],
 			artifact_input_digest: options.artifact.sha256,
 			...(contract === undefined ? {} : { artifact_input_path: options.artifact.path }),
@@ -289,6 +280,9 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 			throw new Error(
 				`${options.runtime_binding.skill_id} is not an admitted consumer of ${operation.operation_id}`,
 			);
+		}
+		if (operation.artifact_mode === undefined) {
+			throw new Error(`${operation.operation_id} does not declare an artifact_mode`);
 		}
 		if (operation.artifact_mode === "producing" && operation.output_contract === undefined) {
 			throw new Error(
@@ -347,11 +341,14 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 		(candidate) => resolve(candidate.path) === resolve(outputPath),
 	);
 	const validReceipt = execution.receipt !== undefined && execution.receipt_validation?.valid === true;
+	const missingSuccessfulOutput = execution.receipt?.lifecycle === "SUCCEEDED" && outputArtifact === undefined;
 	const verdict =
 		!validReceipt || !execution.capability.admitted
 			? "NOT_EXECUTED"
 			: execution.receipt?.lifecycle === "SUCCEEDED"
-				? "PASS"
+				? missingSuccessfulOutput
+					? "NOT_EXECUTED"
+					: "PASS"
 				: execution.receipt?.lifecycle === "NOT_STARTED"
 					? "NOT_EXECUTED"
 					: "FAIL";
@@ -360,14 +357,23 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 		request,
 		receipt: execution.receipt,
 		execution,
-		evidence: {
-			schema: "sure.operation.execution.v1",
+		evidence: createOperationExecutionEvidence({
 			source: "surectl",
 			operation_id: operation.operation_id,
+			artifact_mode: operation.artifact_mode,
 			verdict,
 			reason_code:
-				verdict === "PASS" ? "EXECUTION_SUCCEEDED" : verdict === "FAIL" ? "EXECUTION_FAILED" : "CAPABILITY_MISSING",
-			diagnostics: diagnostics(execution),
+				verdict === "PASS"
+					? "EXECUTION_SUCCEEDED"
+					: verdict === "FAIL"
+						? "EXECUTION_FAILED"
+						: missingSuccessfulOutput
+							? "INVALID_CONTRACT"
+							: "CAPABILITY_MISSING",
+			diagnostics: [
+				...diagnostics(execution),
+				...(missingSuccessfulOutput ? [`${operation.operation_id} did not bind the gate artifact output`] : []),
+			],
 			artifact_input_digest: options.artifact.sha256,
 			...(operation.output_contract === undefined ? {} : { artifact_input_path: options.artifact.path }),
 			...(operation.output_contract === undefined ? {} : { artifact_output_path: outputPath }),
@@ -381,6 +387,6 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 			...(persistedReceipt === undefined
 				? {}
 				: { receipt_path: persistedReceipt.path, receipt_digest: persistedReceipt.digest }),
-		},
+		}),
 	};
 }
