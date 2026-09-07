@@ -18,6 +18,9 @@ export type ExecutionArtifactMode = (typeof EXECUTION_ARTIFACT_MODES)[number];
 export const EXECUTION_OUTPUT_KINDS = ["file", "directory"] as const;
 export type ExecutionOutputKind = (typeof EXECUTION_OUTPUT_KINDS)[number];
 
+export const EXECUTION_INPUT_LOCATOR_KINDS = ["run_artifact", "run_path", "resolved_input_field"] as const;
+export type ExecutionInputLocatorKind = (typeof EXECUTION_INPUT_LOCATOR_KINDS)[number];
+
 export const EXECUTION_DIGEST_KINDS = ["file_sha256", "tree_sha256"] as const;
 export type ExecutionDigestKind = (typeof EXECUTION_DIGEST_KINDS)[number];
 
@@ -35,6 +38,28 @@ export interface ArtifactRef {
 	/** Omitted for legacy file artifacts; directory outputs use a deterministic tree digest. */
 	digest_kind?: ExecutionDigestKind;
 	reference_snapshot_digest?: string;
+}
+
+/** A resolved input-to-artifact mapping recorded in an execution request. */
+export interface ExecutionInputBindingEntry {
+	input_id: string;
+	locator_kind: ExecutionInputLocatorKind;
+	path: string;
+	artifact: ArtifactRef;
+}
+
+/**
+ * Host-neutral proof that one immutable input context selected one operation
+ * branch and that every declared input was bound before execution.
+ */
+export interface ExecutionInputBinding {
+	schema: "sure.execution_input_binding.v1";
+	contract_digest: string;
+	selector_id: string;
+	context_artifact: string;
+	context_digest: string;
+	inputs: ExecutionInputBindingEntry[];
+	binding_digest: string;
 }
 
 /** A path is relative to ExecutionRequest.output_root.resolved_path. */
@@ -155,6 +180,8 @@ export interface ExecutionRequest {
 	operation: ExecutionOperation;
 	subject: FrozenSubjectRef;
 	inputs: ArtifactRef[];
+	/** Present for operations selected through an input contract. */
+	input_binding?: ExecutionInputBinding;
 	entrypoint: ExecutionEntrypoint;
 	runtime_requirements: Record<string, JsonValue>;
 	capability_requirements: CapabilityRequirement[];
@@ -193,6 +220,8 @@ export interface ExecutionReceipt {
 	lifecycle: ExecutionLifecycle;
 	capability_evidence: CapabilityEvidence[];
 	outputs: ArtifactRef[];
+	/** Digest of request.input_binding when conditional inputs were bound. */
+	input_binding_digest?: string;
 	reference_snapshot_digest: string;
 	output_root: OutputRootBinding;
 	policy_digest: string;

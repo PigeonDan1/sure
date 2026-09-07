@@ -1621,6 +1621,141 @@ describe("surectl cooperative control plane", () => {
 		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
 	}, 30_000);
 
+	it("selects a conditional operation and binds all declared inputs", () => {
+		const operationRoot = join(root, "trans-dispatch-operation");
+		const operationPackage = join(operationRoot, "skill");
+		mkdirSync(operationPackage, { recursive: true });
+		const inputContract = {
+			schema: "sure.execution_input_contract.v1",
+			context_artifact: "trans_input_resolved.json",
+			selection: "exactly_one",
+			selectors: [
+				{
+					selector_id: "python-source",
+					match: { source_kind: "python" },
+					inputs: [
+						{
+							input_id: "trans-input",
+							locator_kind: "run_artifact",
+							path: "trans_input_resolved.json",
+							required: true,
+						},
+						{
+							input_id: "adapter-manifest",
+							locator_kind: "run_artifact",
+							path: "adapter_manifest.json",
+							required: true,
+						},
+						{ input_id: "lockfile", locator_kind: "resolved_input_field", path: "lockfile", required: true },
+					],
+				},
+			],
+		};
+		const operationWorkflow = {
+			schema: "sure.workflow.definition.v1",
+			workflow_id: "sure_trans",
+			version: "test-dispatch-v1",
+			branches: [
+				{
+					id: "main",
+					initial_unit_id: "build_adapter_image",
+					terminal_unit_id: "build_adapter_image",
+					units: [
+						{
+							id: "build_adapter_image",
+							label: "Materialize adapter runtime",
+							kind: "gate",
+							produces: "adapter_image_result.json",
+							required_fields: ["status"],
+							gate: {
+								validator_id: "python-script",
+								backend_operation_id: "sure.trans.validate_adapter_image",
+								execution_request_operation: "package",
+								execution_dispatch: [
+									{
+										case_id: "python-source",
+										match: { source_kind: "python" },
+										operation_id: "sure.trans.execute_adapter_image.python",
+										input_contract: inputContract,
+									},
+								],
+							},
+						},
+					],
+				},
+			],
+			default_branch_id: "main",
+			retry_policy: { default_max_retries: 3 },
+		} as const;
+		const customDefinition = join(operationPackage, "canonical-definition.json");
+		writeFileSync(customDefinition, JSON.stringify({ workflow: operationWorkflow, capabilities: [] }));
+		const lock = JSON.parse(
+			readFileSync(join(repositoryRoot, "sure/dist/agent-skills/sure-trans/generation.lock.json"), "utf8"),
+		) as Record<string, unknown>;
+		lock.workflow_digest = canonicalJsonDigest(operationWorkflow as unknown as JsonValue);
+		writeFileSync(join(operationPackage, "generation.lock.json"), JSON.stringify(lock));
+		const base = [
+			"--skill",
+			"sure_trans",
+			"--definition",
+			customDefinition,
+			"--validator-registry",
+			transRegistryPath,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		];
+		const runId = "run-trans-conditional-dispatch";
+		const started = command(root, "start", [...base, "--run-id", runId]);
+		expect(started.status, `${started.stdout}\n${started.stderr}`).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		const modelDir = join(root, "model-dispatch");
+		mkdirSync(modelDir, { recursive: true });
+		const lockfile = join(modelDir, "requirements.lock");
+		writeFileSync(lockfile, "# locked\n");
+		writeFileSync(
+			join(artifacts, "trans_input_resolved.json"),
+			JSON.stringify({ source_kind: "python", python_executable: process.execPath, lockfile }),
+		);
+		const adapterManifest: Record<string, unknown> = {
+			status: "ready",
+			runtime_kind: "python",
+			server_command: [process.execPath, "server.py"],
+			working_dir: ".",
+		};
+		for (const key of [
+			"model_py",
+			"init_py",
+			"validate_py",
+			"server_py",
+			"config_yaml",
+			"model_spec",
+			"mcp_smoke_py",
+		]) {
+			const path = join(modelDir, key);
+			writeFileSync(path, `${key}\n`);
+			adapterManifest[key] = path;
+		}
+		writeFileSync(join(artifacts, "adapter_manifest.json"), JSON.stringify(adapterManifest));
+		const executed = command(root, "execute", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(executed.status, `${executed.stdout}\n${executed.stderr}`).toBe(5);
+		const evidence = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")).last_execution as Record<
+			string,
+			unknown
+		>;
+		expect(evidence.operation_id).toBe("sure.trans.execute_adapter_image.python");
+		expect(evidence.input_selector_id).toBe("python-source");
+		expect(evidence.input_binding_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		const request = JSON.parse(readFileSync(String(evidence.request_path), "utf8")) as Record<string, unknown>;
+		expect(request.inputs as unknown[]).toHaveLength(3);
+		expect(request.input_binding).toMatchObject({ selector_id: "python-source" });
+		const validated = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
+		expect(validated.status).toBe(0);
+		expect((validated.value?.outcome as Record<string, unknown>).outcome).toBe("PASS");
+	}, 30_000);
+
 	it("rejects output beneath an explicit read-only reference root", () => {
 		const reference = join(root, "reference");
 		mkdirSync(reference);

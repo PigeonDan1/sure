@@ -24,6 +24,7 @@ import {
 	applyValidation,
 	assessFormalEligibility,
 	auditCheckpointState,
+	bindExecutionInputs,
 	type CapabilityEvidence,
 	type CapabilityReport,
 	type CoreRunRecord,
@@ -32,10 +33,12 @@ import {
 	createOutcome,
 	decodeLegacyCheckpoint,
 	decodeOperationExecutionEvidence,
+	type ExecutionInputBindingResolver,
 	type ExecutionReceipt,
 	type ExecutionRequest,
 	encodeLegacyCheckpoint,
 	evaluateCapabilityRequirements,
+	executionInputContractDigest,
 	executionOutputContractDigest,
 	executorDescriptor,
 	executorRegistrySnapshot,
@@ -50,6 +53,8 @@ import {
 	parseMemoryUri,
 	type StateDocument,
 	type StructuralValidationResult,
+	selectExecutionDispatch,
+	validateExecutionInputBinding,
 	validateExecutionReceipt,
 	validateExecutionRequest,
 	validateFrozenEvaluationSubject,
@@ -646,6 +651,99 @@ function admittedReadArtifactPath(
 	]).path;
 }
 
+function pathInside(pathValue: string, root: string): boolean {
+	const candidate = resolve(pathValue);
+	const boundary = resolve(root);
+	return candidate === boundary || candidate.startsWith(`${boundary}/`);
+}
+
+interface RegisteredInputContext {
+	context: Readonly<Record<string, unknown>>;
+	context_digest: string;
+	resolver: ExecutionInputBindingResolver;
+}
+
+/**
+ * Build the one CLI-side resolver for a semantic operation's conditional input
+ * contract.  Core still owns selector matching and binding digests; this
+ * adapter owns only path admission and byte inspection for the current run.
+ */
+function registeredInputContext(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	contract: NonNullable<ReturnType<typeof resolveSemanticBackendOperation>["input_contract"]>,
+	policyReferences: readonly string[],
+	loadedRoot: string,
+	referenceSnapshotDigest: string,
+): RegisteredInputContext {
+	const contextPath = admittedReadArtifactPath(
+		store,
+		run,
+		join(run.runDir, "artifacts", contract.context_artifact),
+		policyReferences,
+	);
+	assertRegularFile(contextPath, "Execution input context artifact");
+	const contextValue = recordObject(readJson(contextPath), "execution input context");
+	const contextDigest = digestFile(contextPath);
+	const makeArtifact = (
+		pathValue: string,
+		inputId: string,
+		origin: "local_staging" | "read_only_reference" | "external",
+		sourceRoot: string,
+	): ReturnType<typeof artifactRef> | undefined => {
+		try {
+			return artifactRef(pathValue, inputId, run.runDir, {
+				artifact_id: inputId,
+				origin,
+				source_root: sourceRoot,
+				...(origin === "read_only_reference" ? { reference_snapshot_digest: referenceSnapshotDigest } : {}),
+			});
+		} catch {
+			return undefined;
+		}
+	};
+	const resolver: ExecutionInputBindingResolver = {
+		resolveRunArtifact(pathValue): ReturnType<ExecutionInputBindingResolver["resolveRunArtifact"]> {
+			try {
+				const admitted = admittedReadArtifactPath(
+					store,
+					run,
+					join(run.runDir, "artifacts", pathValue),
+					policyReferences,
+				);
+				return makeArtifact(admitted, "run-artifact", "local_staging", run.runDir);
+			} catch {
+				return undefined;
+			}
+		},
+		resolveRunPath(pathValue): ReturnType<ExecutionInputBindingResolver["resolveRunPath"]> {
+			try {
+				const candidate = resolve(run.cwd, pathValue);
+				const admitted = admittedReadPath(store, run, candidate, [run.cwd, loadedRoot, ...policyReferences]);
+				return makeArtifact(admitted, "run-path", "local_staging", run.cwd);
+			} catch {
+				return undefined;
+			}
+		},
+		resolveResolvedInputField(_path, value): ReturnType<ExecutionInputBindingResolver["resolveResolvedInputField"]> {
+			if (!isAbsolute(value)) return undefined;
+			try {
+				const admitted = admittedReadPath(store, run, value, [run.cwd, loadedRoot, ...policyReferences]);
+				const reference = policyReferences.find((root) => pathInside(admitted, root));
+				return makeArtifact(
+					admitted,
+					"resolved-input",
+					reference === undefined ? "external" : "read_only_reference",
+					reference ?? dirname(admitted),
+				);
+			} catch {
+				return undefined;
+			}
+		},
+	};
+	return { context: contextValue, context_digest: contextDigest, resolver };
+}
+
 function outputRootBindingError(
 	store: NodeRunStore,
 	run: CoreRunRecord,
@@ -1214,7 +1312,24 @@ function validateRegisteredGateExecution(
 	artifactDigest: string,
 	policyReferences: readonly string[],
 ): ExecutionGateValidation {
-	const operationId = unit.gate?.execution_operation_id;
+	let operationId = unit.gate?.execution_operation_id;
+	if (operationId === undefined && unit.gate?.execution_dispatch !== undefined) {
+		try {
+			const firstCase = unit.gate.execution_dispatch[0];
+			if (firstCase === undefined) throw new Error("execution dispatch has no cases");
+			const context = registeredInputContext(
+				store,
+				run,
+				firstCase.input_contract,
+				policyReferences,
+				loaded.root,
+				validatorReferenceDigest(run, policyReferences),
+			);
+			operationId = selectExecutionDispatch(unit.gate.execution_dispatch, context.context).operation_id;
+		} catch (error) {
+			return executionGateUnavailable(error instanceof Error ? error.message : String(error));
+		}
+	}
 	if (operationId === undefined) return { verdict: "PASS", reason: "no execution operation required", evidence: null };
 	const rawExecution = state?.last_execution;
 	const decodedExecution = decodeOperationExecutionEvidence(rawExecution);
@@ -1374,6 +1489,51 @@ function validateRegisteredGateExecution(
 			diagnostics.push("execution request capability requirements do not match the registered operation");
 		}
 	}
+	const expectedPolicyDigest = run.policyDigest ?? canonicalJsonDigest(null);
+	const expectedReferenceDigest = validatorReferenceDigest(run, policyReferences);
+	let expectedInputBindingDigest: string | undefined;
+	let expectedInputContractDigest: string | undefined;
+	let expectedInputSelectorId: string | undefined;
+	let expectedInputContextDigest: string | undefined;
+	if (operation.input_contract !== undefined) {
+		expectedInputContractDigest = executionInputContractDigest(operation.input_contract);
+		if (request.input_binding === undefined) {
+			diagnostics.push("execution request is missing the registered operation input binding");
+		} else {
+			const bindingValidation = validateExecutionInputBinding(request.input_binding, request.inputs);
+			diagnostics.push(...bindingValidation.errors);
+			try {
+				const context = registeredInputContext(
+					store,
+					run,
+					operation.input_contract,
+					policyReferences,
+					loaded.root,
+					expectedReferenceDigest,
+				);
+				const rebound = bindExecutionInputs({
+					contract: operation.input_contract,
+					context: context.context,
+					context_digest: context.context_digest,
+					resolver: context.resolver,
+				});
+				expectedInputBindingDigest = rebound.binding_digest;
+				expectedInputSelectorId = rebound.selector_id;
+				expectedInputContextDigest = rebound.context_digest;
+				if (request.input_binding.binding_digest !== rebound.binding_digest) {
+					diagnostics.push("execution request input binding does not match current context/artifact bytes");
+				}
+				if (request.input_binding.selector_id !== rebound.selector_id) {
+					diagnostics.push("execution request input selector does not match current context");
+				}
+			} catch (error) {
+				diagnostics.push(error instanceof Error ? error.message : String(error));
+			}
+			if (request.input_binding.contract_digest !== expectedInputContractDigest) {
+				diagnostics.push("execution request input contract does not match the locked operation");
+			}
+		}
+	}
 	const runtimeRequirements =
 		typeof request.runtime_requirements === "object" && request.runtime_requirements !== null
 			? (request.runtime_requirements as Record<string, unknown>)
@@ -1385,8 +1545,6 @@ function validateRegisteredGateExecution(
 	} else if (runtimeRequirements.artifact_mode !== undefined) {
 		diagnostics.push("legacy operation evidence cannot bind a current execution request projection");
 	}
-	const expectedPolicyDigest = run.policyDigest ?? canonicalJsonDigest(null);
-	const expectedReferenceDigest = validatorReferenceDigest(run, policyReferences);
 	if (
 		!validDigestValue(request.reference_snapshot_digest) ||
 		!sameDigest(request.reference_snapshot_digest, expectedReferenceDigest)
@@ -1431,6 +1589,10 @@ function validateRegisteredGateExecution(
 			operationOutputContract === undefined ? undefined : executionOutputContractDigest(operationOutputContract),
 		],
 		["capability_requirements_digest", expectedCapabilityRequirementsDigest],
+		["input_contract_digest", expectedInputContractDigest],
+		["input_selector_id", expectedInputSelectorId],
+		["input_context_digest", expectedInputContextDigest],
+		["input_binding_digest", expectedInputBindingDigest],
 	] as const) {
 		if (expected !== undefined && runtimeRequirements[field] !== expected) {
 			diagnostics.push(`execution request ${field} does not match its canonical binding`);
@@ -1458,7 +1620,9 @@ function validateRegisteredGateExecution(
 	) {
 		diagnostics.push("execution request subject does not match the pre-execution artifact");
 	}
-	const input = Array.isArray(request.inputs) ? request.inputs[0] : undefined;
+	const input = Array.isArray(request.inputs)
+		? request.inputs.find((candidate) => candidate.path === inputPath && candidate.sha256 === artifactInputDigest)
+		: undefined;
 	if (
 		artifactInputDigest !== undefined &&
 		(input === undefined || input.path !== inputPath || input.sha256 !== artifactInputDigest)
@@ -1483,6 +1647,14 @@ function validateRegisteredGateExecution(
 			...(expectedCapabilityRequirementsDigest === undefined
 				? {}
 				: { capability_requirements_digest: expectedCapabilityRequirementsDigest }),
+			...(expectedInputContractDigest === undefined
+				? {}
+				: {
+						input_contract_digest: expectedInputContractDigest,
+						input_selector_id: expectedInputSelectorId,
+						input_context_digest: expectedInputContextDigest,
+						input_binding_digest: expectedInputBindingDigest,
+					}),
 			workflow_digest: run.workflowDigest,
 			runtime_digest: verification.lock.runtime_digest,
 			backend_registry_digest: operation.registry_digest,
@@ -1494,6 +1666,16 @@ function validateRegisteredGateExecution(
 		});
 		if (!sameDigest(request.semantic_request_digest, semanticDigest)) {
 			diagnostics.push("execution request semantic digest does not match the canonical operation binding");
+		}
+	}
+	for (const [field, expected] of [
+		["input_contract_digest", expectedInputContractDigest],
+		["input_selector_id", expectedInputSelectorId],
+		["input_context_digest", expectedInputContextDigest],
+		["input_binding_digest", expectedInputBindingDigest],
+	] as const) {
+		if (expected !== undefined && persisted[field] !== expected) {
+			diagnostics.push(`registered execution ${field} does not match the current input binding`);
 		}
 	}
 	const boundaryOptions = {
@@ -2365,13 +2547,36 @@ function execute(args: ParsedArgs): PublicOutcome {
 	const checkpointAudit = auditCheckpointState(loaded.definition, checkpoint);
 	if (!checkpointAudit.ok) throw new Error(checkpointAudit.reason ?? "Invalid checkpoint.");
 	const currentUnit = unitForCurrent(loaded.definition, checkpoint.data.currentUnit, checkpoint.branch_id);
-	const registeredOperationId = one(args, "operation");
-	if (registeredOperationId !== undefined) {
-		if (currentUnit.gate?.execution_operation_id !== registeredOperationId) {
+	const executionGate = currentUnit.gate;
+	let registeredOperationId = one(args, "operation");
+	let dispatchInputContext: RegisteredInputContext | undefined;
+	if (currentUnit.gate?.execution_dispatch !== undefined) {
+		const firstCase = currentUnit.gate.execution_dispatch[0];
+		if (firstCase === undefined) throw new Error(`Current unit ${currentUnit.id} has an empty execution dispatch.`);
+		dispatchInputContext = registeredInputContext(
+			store,
+			run,
+			firstCase.input_contract,
+			policyReferences,
+			loaded.root,
+			validatorReferenceDigest(run, policyReferences),
+		);
+		const selectedCase = selectExecutionDispatch(currentUnit.gate.execution_dispatch, dispatchInputContext.context);
+		if (registeredOperationId !== undefined && registeredOperationId !== selectedCase.operation_id) {
 			throw new Error(
-				`Current unit ${currentUnit.id} does not authorize registered execution operation ${registeredOperationId}.`,
+				`Requested operation ${registeredOperationId} does not match the context-selected dispatch operation ${selectedCase.operation_id}.`,
 			);
 		}
+		registeredOperationId = selectedCase.operation_id;
+	} else if (
+		registeredOperationId !== undefined &&
+		currentUnit.gate?.execution_operation_id !== registeredOperationId
+	) {
+		throw new Error(
+			`Current unit ${currentUnit.id} does not authorize registered execution operation ${registeredOperationId}.`,
+		);
+	}
+	if (registeredOperationId !== undefined) {
 		const targetArtifactPath = admittedRunArtifactPath(
 			store,
 			run,
@@ -2395,6 +2600,38 @@ function execute(args: ParsedArgs): PublicOutcome {
 		});
 		const runtimeValue = one(args, "semantic-runtime") ?? process.env.SURE_RUNTIME_SUPPORT_ROOT;
 		const runtimeRoot = runtimeValue === undefined ? undefined : absolute(runtimeValue, "--semantic-runtime");
+		let inputContext: RegisteredInputContext | undefined = dispatchInputContext;
+		if (runtimeRoot !== undefined) {
+			try {
+				const verification = verifyPortableRuntime(runtimeRoot, {
+					expected_runtime_digest: runtimeBinding.semantic_runtime_digest,
+					expected_core_package_version: runtimeBinding.core_package_version,
+					expected_semantic_backend_registry_digest: runtimeBinding.semantic_backend_registry_digest,
+					expected_executor_registry_digest: runtimeBinding.executor_registry_digest,
+				});
+				const operation = resolveSemanticBackendOperation(verification.root, registeredOperationId, {
+					manifestPath: join(verification.root, "semantic-backends.json"),
+					expectedRegistryDigest: verification.lock.semantic_backend_registry_digest,
+					environment: semanticRuntimeEnvironment(
+						{ run, workspace_root: run.cwd, policy_digest: run.policyDigest ?? canonicalJsonDigest(null) },
+						verification.root,
+					),
+				});
+				if (operation.input_contract !== undefined) {
+					inputContext = registeredInputContext(
+						store,
+						run,
+						operation.input_contract,
+						policyReferences,
+						loaded.root,
+						validatorReferenceDigest(run, policyReferences),
+					);
+				}
+			} catch {
+				// runRegisteredOperation performs the authoritative admission and
+				// returns NOT_EXECUTED when this setup is unavailable.
+			}
+		}
 		const artifactsRoot = admittedRunArtifactPath(store, run, join(run.runDir, "artifacts"));
 		const artifactsAdmission = store.admitPath(artifactsRoot, [run.runDir]);
 		const attempt = (checkpoint.data.retries[currentUnit.id] ?? 0) + 1;
@@ -2412,9 +2649,16 @@ function execute(args: ParsedArgs): PublicOutcome {
 			unit_id: currentUnit.id,
 			attempt,
 			operation_id: registeredOperationId,
-			request_operation: currentUnit.gate.execution_request_operation ?? "validation",
-			script_args: [...(currentUnit.gate.script_args ?? [])],
+			request_operation: executionGate?.execution_request_operation ?? "validation",
+			script_args: [...(executionGate?.script_args ?? [])],
 			artifact,
+			...(inputContext === undefined
+				? {}
+				: {
+						input_context: inputContext.context,
+						input_context_digest: inputContext.context_digest,
+						input_resolver: inputContext.resolver,
+					}),
 			output_path: targetArtifactPath,
 			python_executable:
 				one(args, "operation-python") ??

@@ -154,18 +154,31 @@ function sha256(path: string): string {
 	return `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
 }
 
-export function artifactRef(path: string, unitId: string, runDir: string): ArtifactRef {
+export function artifactRef(
+	path: string,
+	unitId: string,
+	runDir: string,
+	options: {
+		artifact_id?: string;
+		origin?: ArtifactRef["origin"];
+		source_root?: string;
+		reference_snapshot_digest?: string;
+	} = {},
+): ArtifactRef {
 	const stat = lstatSync(path);
 	if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Validator artifact is not a regular file: ${path}`);
 	return {
-		artifact_id: `unit-${unitId}`.slice(0, 128),
+		artifact_id: options.artifact_id ?? `unit-${unitId}`.slice(0, 128),
 		path,
 		resolved_path: realpathSync.native(path),
 		sha256: sha256(path),
 		size: stat.size,
 		media_type: "application/json",
-		origin: "local_staging",
-		source_root: runDir,
+		origin: options.origin ?? "local_staging",
+		source_root: options.source_root ?? runDir,
+		...(options.reference_snapshot_digest === undefined
+			? {}
+			: { reference_snapshot_digest: options.reference_snapshot_digest }),
 	};
 }
 

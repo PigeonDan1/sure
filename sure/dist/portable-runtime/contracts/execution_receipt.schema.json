@@ -46,6 +46,7 @@
 		"lifecycle": { "enum": ["NOT_STARTED", "QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"] },
 		"capability_evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
 		"outputs": { "type": "array", "items": { "$ref": "#/$defs/artifact" } },
+		"input_binding_digest": { "$ref": "#/$defs/digest" },
 		"reference_snapshot_digest": { "$ref": "#/$defs/digest" },
 		"output_root": { "$ref": "#/$defs/outputRoot" },
 		"policy_digest": { "$ref": "#/$defs/digest" },

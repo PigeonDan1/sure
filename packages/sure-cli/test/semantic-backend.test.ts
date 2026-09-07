@@ -282,6 +282,26 @@ describe("semantic backend registry", () => {
 		}
 	});
 
+	it("pins conditional TRANS aliases and keeps unimplemented Docker branches unavailable", () => {
+		for (const [operationId, path] of [
+			["sure.trans.execute_adapter_image.python", "materialize_adapter_runtime.py"],
+			["sure.trans.execute_package_container.python", "package_python_runtime.py"],
+		] as const) {
+			const resolved = resolveSemanticBackendOperation(packageDir, operationId, { manifestPath });
+			expect(resolved.source).toBe("canonical");
+			expect(resolved.kind).toBe("execute");
+			expect(resolved.path).toBe(join(repositoryRoot, "sure", "canonical", "skills", "sure-trans", "scripts", path));
+		}
+		for (const operationId of [
+			"sure.trans.execute_adapter_image.docker",
+			"sure.trans.execute_package_container.docker",
+		] as const) {
+			expect(() => resolveSemanticBackendOperation(packageDir, operationId, { manifestPath })).toThrow(
+				SemanticBackendResolutionError,
+			);
+		}
+	});
+
 	it("rejects artifact modes on validators and unknown artifact modes", () => {
 		const manifest = loadSemanticBackendManifest(packageDir, { manifestPath });
 		const bundle = manifest.bundles[0];

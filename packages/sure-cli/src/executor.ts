@@ -348,6 +348,7 @@ function baseReceipt(
 		lifecycle,
 		capability_evidence: evidence,
 		outputs: [],
+		...(request.input_binding === undefined ? {} : { input_binding_digest: request.input_binding.binding_digest }),
 		reference_snapshot_digest: request.reference_snapshot_digest,
 		output_root: request.output_root,
 		policy_digest: request.policy_digest,

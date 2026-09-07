@@ -813,6 +813,35 @@ export const SURE_TRANS_EXECUTION_BACKEND: SemanticBackendBundle = {
 			],
 			output_contract: transOutputContract("producing", "package-container-result", "docker_registry_result.json"),
 		},
+		{
+			operation_id: "sure.trans.execute_adapter_image.python",
+			description: "Materialize the generated Python adapter runtime evidence for the Python source profile.",
+			entrypoint: "scripts/materialize_adapter_runtime.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 3_600_000,
+			deterministic: false,
+			artifact_mode: "producing",
+			input_contract: SURE_TRANS_PYTHON_ADAPTER_INPUT_CONTRACT,
+			output_contract: transOutputContract("producing", "adapter-image-result", "adapter_image_result.json"),
+		},
+		{
+			operation_id: "sure.trans.execute_package_container.python",
+			description:
+				"Package the validated Python runtime through the uv/site-policy adapter for package_profile=none.",
+			entrypoint: "scripts/package_python_runtime.py",
+			consumer_skill_ids: ["sure_trans"],
+			kind: "execute",
+			timeout_ms: 7_200_000,
+			deterministic: false,
+			artifact_mode: "producing",
+			input_contract: SURE_TRANS_PYTHON_PACKAGE_INPUT_CONTRACT,
+			requires_policy_snapshot: true,
+			capability_requirements: [
+				{ capability_id: "sure.execution.uv", capability_class: "execution_capability", required: true },
+			],
+			output_contract: transOutputContract("producing", "package-container-result", "docker_registry_result.json"),
+		},
 	],
 };
 

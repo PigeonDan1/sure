@@ -1,9 +1,16 @@
 import { posix as posixPath } from "node:path";
 import { canonicalJsonDigest } from "../contracts/canonical-json.ts";
-import type { JsonValue } from "../contracts/types.ts";
+import {
+	type ArtifactRef,
+	EXECUTION_INPUT_LOCATOR_KINDS,
+	type ExecutionInputBinding,
+	type ExecutionInputBindingEntry,
+	type ExecutionInputLocatorKind,
+	type JsonValue,
+} from "../contracts/types.ts";
 
-export const EXECUTION_INPUT_LOCATOR_KINDS = ["run_artifact", "run_path", "resolved_input_field"] as const;
-export type ExecutionInputLocatorKind = (typeof EXECUTION_INPUT_LOCATOR_KINDS)[number];
+export type { ExecutionInputLocatorKind } from "../contracts/types.ts";
+export { EXECUTION_INPUT_LOCATOR_KINDS } from "../contracts/types.ts";
 
 export const EXECUTION_INPUT_SELECTION_MODES = ["exactly_one"] as const;
 export type ExecutionInputSelectionMode = (typeof EXECUTION_INPUT_SELECTION_MODES)[number];
@@ -43,7 +50,7 @@ export interface ExecutionInputContractValidation {
 }
 
 export class ExecutionInputContractError extends Error {
-	readonly code: "INVALID_CONTRACT" | "NO_MATCH" | "AMBIGUOUS";
+	readonly code: "INVALID_CONTRACT" | "NO_MATCH" | "AMBIGUOUS" | "INVALID_CONTEXT" | "MISSING_INPUT";
 
 	constructor(code: ExecutionInputContractError["code"], message: string) {
 		super(message);
@@ -216,4 +223,187 @@ export function selectExecutionInputSelector(
 		);
 	}
 	return matches[0];
+}
+
+export interface ExecutionInputBindingResolver {
+	/** Resolve a path relative to the run artifact root. */
+	resolveRunArtifact(path: string): ArtifactRef | undefined;
+	/** Resolve a path relative to the run/workspace root. */
+	resolveRunPath(path: string): ArtifactRef | undefined;
+	/** Resolve an absolute or site-policy-bound path carried by the context field. */
+	resolveResolvedInputField(path: string, value: string): ArtifactRef | undefined;
+}
+
+export interface BindExecutionInputsOptions {
+	contract: ExecutionInputContract;
+	context: Readonly<Record<string, unknown>>;
+	context_digest: string;
+	resolver: ExecutionInputBindingResolver;
+}
+
+function fieldValue(context: Readonly<Record<string, unknown>>, path: string): unknown {
+	let current: unknown = context;
+	for (const part of path.split(".")) {
+		if (!object(current)) return undefined;
+		current = current[part];
+	}
+	return current;
+}
+
+function bindingDigest(value: Omit<ExecutionInputBinding, "binding_digest">): string {
+	return canonicalJsonDigest(value as unknown as JsonValue);
+}
+
+/**
+ * Resolve and bind every input selected by a contract.  This function is
+ * deliberately filesystem-agnostic: the host supplies resolvers that enforce
+ * its run/site boundary, while Core owns selection, required-input semantics,
+ * ordering, and the bytes that are hashed into the binding.
+ */
+export function bindExecutionInputs(options: BindExecutionInputsOptions): ExecutionInputBinding {
+	const validation = validateExecutionInputContract(options.contract);
+	if (!validation.valid) {
+		throw new ExecutionInputContractError(
+			"INVALID_CONTRACT",
+			`input contract is invalid: ${validation.errors.join("; ")}`,
+		);
+	}
+	if (!object(options.context)) {
+		throw new ExecutionInputContractError("INVALID_CONTEXT", "input context must be a JSON object");
+	}
+	if (typeof options.context_digest !== "string" || !/^(?:sha256:)?[0-9a-f]{64}$/i.test(options.context_digest)) {
+		throw new ExecutionInputContractError("INVALID_CONTEXT", "input context digest must be a SHA-256 digest");
+	}
+	const selector = selectExecutionInputSelector(options.contract, options.context);
+	const inputs: ExecutionInputBindingEntry[] = [];
+	for (const spec of selector.inputs) {
+		let artifact: ArtifactRef | undefined;
+		if (spec.locator_kind === "run_artifact") artifact = options.resolver.resolveRunArtifact(spec.path);
+		else if (spec.locator_kind === "run_path") artifact = options.resolver.resolveRunPath(spec.path);
+		else {
+			const value = fieldValue(options.context, spec.path);
+			if (typeof value === "string" && value.trim() !== "") {
+				artifact = options.resolver.resolveResolvedInputField(spec.path, value);
+			}
+		}
+		if (artifact === undefined) {
+			if (spec.required) {
+				throw new ExecutionInputContractError(
+					"MISSING_INPUT",
+					`required execution input ${spec.input_id} could not be resolved (${spec.locator_kind}:${spec.path})`,
+				);
+			}
+			continue;
+		}
+		// The contract's logical input id is the stable wire id.  Hosts may use
+		// a different local artifact label, but must not let that label vary the
+		// cross-host request shape.
+		artifact = { ...artifact, artifact_id: spec.input_id };
+		inputs.push({
+			input_id: spec.input_id,
+			locator_kind: spec.locator_kind,
+			path: spec.path,
+			artifact,
+		});
+	}
+	const unsigned = {
+		schema: "sure.execution_input_binding.v1" as const,
+		contract_digest: executionInputContractDigest(options.contract),
+		selector_id: selector.selector_id,
+		context_artifact: options.contract.context_artifact,
+		context_digest: options.context_digest,
+		inputs,
+	};
+	return { ...unsigned, binding_digest: bindingDigest(unsigned) };
+}
+
+/** Recompute the digest of a previously serialized binding without resolving paths. */
+export function executionInputBindingDigest(binding: ExecutionInputBinding): string {
+	const { binding_digest: _ignored, ...unsigned } = binding;
+	return bindingDigest(unsigned);
+}
+
+export interface ExecutionInputBindingValidation {
+	valid: boolean;
+	errors: readonly string[];
+}
+
+function validDigest(value: unknown): value is string {
+	return typeof value === "string" && /^(?:sha256:)?[0-9a-f]{64}$/i.test(value);
+}
+
+function validId(value: unknown): value is string {
+	return typeof value === "string" && ID.test(value);
+}
+
+/** Validate a serialized binding and, when supplied, its request input list. */
+export function validateExecutionInputBinding(
+	value: unknown,
+	requestInputs?: readonly ArtifactRef[],
+): ExecutionInputBindingValidation {
+	const errors: string[] = [];
+	if (!object(value)) return { valid: false, errors: ["execution input binding must be an object"] };
+	if (value.schema !== "sure.execution_input_binding.v1") errors.push("input binding schema is unsupported");
+	if (!validDigest(value.contract_digest)) errors.push("input binding contract_digest must be a SHA-256 digest");
+	if (!validId(value.selector_id)) errors.push("input binding selector_id is invalid");
+	if (!validRelativePath(value.context_artifact)) errors.push("input binding context_artifact is invalid");
+	if (!validDigest(value.context_digest)) errors.push("input binding context_digest must be a SHA-256 digest");
+	if (!Array.isArray(value.inputs)) errors.push("input binding inputs must be an array");
+	else {
+		if (value.inputs.length === 0) errors.push("input binding inputs must not be empty");
+		const ids = new Set<string>();
+		const artifacts: ArtifactRef[] = [];
+		for (const [index, raw] of value.inputs.entries()) {
+			const prefix = `input_binding.inputs[${index}]`;
+			if (!object(raw)) {
+				errors.push(`${prefix} must be an object`);
+				continue;
+			}
+			if (!validId(raw.input_id)) errors.push(`${prefix}.input_id is invalid`);
+			else if (ids.has(raw.input_id)) errors.push(`${prefix}.input_id is duplicated`);
+			else ids.add(raw.input_id);
+			if (!EXECUTION_INPUT_LOCATOR_KINDS.includes(raw.locator_kind as ExecutionInputLocatorKind)) {
+				errors.push(`${prefix}.locator_kind is invalid`);
+			} else if (
+				raw.locator_kind === "resolved_input_field"
+					? typeof raw.path !== "string" || !FIELD.test(raw.path)
+					: !validRelativePath(raw.path)
+			) {
+				errors.push(`${prefix}.path is invalid for its locator_kind`);
+			}
+			const artifact = raw.artifact;
+			if (!object(artifact)) errors.push(`${prefix}.artifact must be an object`);
+			else {
+				if (!validId(artifact.artifact_id)) errors.push(`${prefix}.artifact.artifact_id is invalid`);
+				if (!validDigest(artifact.sha256)) errors.push(`${prefix}.artifact.sha256 is invalid`);
+				if (typeof artifact.path !== "string" || typeof artifact.resolved_path !== "string")
+					errors.push(`${prefix}.artifact paths are required`);
+				else if (!artifact.path.startsWith("/") || !artifact.resolved_path.startsWith("/"))
+					errors.push(`${prefix}.artifact paths must be absolute`);
+				artifacts.push(artifact as unknown as ArtifactRef);
+			}
+		}
+		if (requestInputs !== undefined) {
+			if (artifacts.length !== requestInputs.length) {
+				errors.push("input binding inputs must correspond one-to-one with request.inputs");
+			} else {
+				for (let index = 0; index < artifacts.length; index += 1) {
+					if (
+						canonicalJsonDigest(artifacts[index] as unknown as JsonValue) !==
+						canonicalJsonDigest(requestInputs[index] as unknown as JsonValue)
+					) {
+						errors.push(`input binding artifact ${index} does not match request.inputs[${index}]`);
+					}
+				}
+			}
+		}
+	}
+	if (!validDigest(value.binding_digest)) errors.push("input binding binding_digest must be a SHA-256 digest");
+	if (
+		errors.length === 0 &&
+		executionInputBindingDigest(value as unknown as ExecutionInputBinding) !== value.binding_digest
+	) {
+		errors.push("input binding binding_digest does not match its content");
+	}
+	return { valid: errors.length === 0, errors };
 }

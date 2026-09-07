@@ -54,7 +54,11 @@ function assertWorkflow(definition: CanonicalSkillDefinition): void {
 					`Invalid execution operation id for ${workflow.workflow_id}/${unit.id}: ${unit.gate.execution_operation_id}`,
 				);
 			}
-			if (unit.gate?.execution_request_operation !== undefined && unit.gate.execution_operation_id === undefined) {
+			if (
+				unit.gate?.execution_request_operation !== undefined &&
+				unit.gate.execution_operation_id === undefined &&
+				unit.gate.execution_dispatch === undefined
+			) {
 				throw new Error(
 					`Execution request operation for ${workflow.workflow_id}/${unit.id} requires execution_operation_id.`,
 				);
@@ -77,6 +81,7 @@ function assertWorkflow(definition: CanonicalSkillDefinition): void {
 					);
 				}
 				const caseIds = new Set<string>();
+				let contextArtifact: string | undefined;
 				for (const [index, entry] of unit.gate.execution_dispatch.entries()) {
 					if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(entry.case_id)) {
 						throw new Error(
@@ -89,6 +94,12 @@ function assertWorkflow(definition: CanonicalSkillDefinition): void {
 						);
 					}
 					caseIds.add(entry.case_id);
+					if (contextArtifact === undefined) contextArtifact = entry.input_contract.context_artifact;
+					else if (contextArtifact !== entry.input_contract.context_artifact) {
+						throw new Error(
+							`Execution dispatch cases must share one context artifact for ${workflow.workflow_id}/${unit.id}.`,
+						);
+					}
 					if (!OPERATION_PATTERN.test(entry.operation_id)) {
 						throw new Error(
 							`Invalid execution dispatch operation id for ${workflow.workflow_id}/${unit.id}: ${entry.operation_id}`,

@@ -377,6 +377,55 @@ describe("wire schemas", () => {
 		).toBe(false);
 	});
 
+	it("validates locator-specific paths in an execution input binding", () => {
+		const request = executionRequest();
+		const artifact = request.inputs[0];
+		const binding = {
+			schema: "sure.execution_input_binding.v1",
+			contract_digest: DIGEST_A,
+			selector_id: "python-source",
+			context_artifact: "context.json",
+			context_digest: DIGEST_B,
+			inputs: [
+				{
+					input_id: "dataset",
+					locator_kind: "run_artifact",
+					path: "dataset.jsonl",
+					artifact,
+				},
+			],
+			binding_digest: DIGEST_C,
+		};
+		expect(validateJsonSchema(readSchema("execution_request"), { ...request, input_binding: binding }).ok).toBe(true);
+		expect(
+			validateJsonSchema(readSchema("execution_request"), {
+				...request,
+				input_binding: {
+					...binding,
+					inputs: [{ ...binding.inputs[0], path: "../outside.json" }],
+				},
+			}).ok,
+		).toBe(false);
+		expect(
+			validateJsonSchema(readSchema("execution_request"), {
+				...request,
+				input_binding: {
+					...binding,
+					inputs: [{ ...binding.inputs[0], locator_kind: "resolved_input_field", path: "lockfile" }],
+				},
+			}).ok,
+		).toBe(true);
+		expect(
+			validateJsonSchema(readSchema("execution_request"), {
+				...request,
+				input_binding: {
+					...binding,
+					inputs: [{ ...binding.inputs[0], locator_kind: "resolved_input_field", path: "../lockfile" }],
+				},
+			}).ok,
+		).toBe(false);
+	});
+
 	it("rejects fake formal PASS and capability-missing PASS", () => {
 		const schema = readSchema("conformance");
 		const missingFreeze = conformanceRecord();

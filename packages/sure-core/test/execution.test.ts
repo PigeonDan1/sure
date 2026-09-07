@@ -3,6 +3,7 @@ import {
 	canonicalJsonDigest,
 	type ExecutionReceipt,
 	type ExecutionRequest,
+	executionInputBindingDigest,
 	type JsonValue,
 	validateExecutionReceipt,
 	validateExecutionRequest,
@@ -138,5 +139,37 @@ describe("execution boundary", () => {
 		const result = validateExecutionRequest(request(), { allowed_output_roots: ["/tmp/another-root"] });
 		expect(result.valid).toBe(false);
 		expect(result.outcome.reason_code).toBe("PATH_OUT_OF_SCOPE");
+	});
+
+	it("requires the receipt to repeat the request input binding digest", () => {
+		const input = request();
+		const artifact = {
+			artifact_id: "context",
+			path: "/tmp/sure-dev/runs/run-1/artifacts/context.json",
+			resolved_path: "/tmp/sure-dev/runs/run-1/artifacts/context.json",
+			sha256: DIGEST_A,
+			size: 1,
+			media_type: "application/json",
+			origin: "local_staging" as const,
+			source_root: "/tmp/sure-dev/runs/run-1",
+		};
+		input.inputs = [artifact];
+		input.input_binding = {
+			schema: "sure.execution_input_binding.v1",
+			contract_digest: DIGEST_B,
+			selector_id: "python-source",
+			context_artifact: "context.json",
+			context_digest: DIGEST_A,
+			inputs: [{ input_id: "context", locator_kind: "run_artifact", path: "context.json", artifact }],
+			binding_digest: "",
+		};
+		input.input_binding.binding_digest = executionInputBindingDigest(input.input_binding);
+		const missing = receipt(input);
+		delete missing.input_binding_digest;
+		expect(validateExecutionReceipt(input, missing).valid).toBe(false);
+		missing.input_binding_digest = input.input_binding.binding_digest;
+		expect(validateExecutionReceipt(input, missing).valid).toBe(true);
+		missing.input_binding_digest = DIGEST_B;
+		expect(validateExecutionReceipt(input, missing).errors.join(" ")).toMatch(/input_binding_digest/);
 	});
 });

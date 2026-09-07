@@ -10,6 +10,7 @@ import type {
 	JsonValue,
 } from "../contracts/types.ts";
 import { type CoreOutcome, createOutcome, outcomeFromExecutionLifecycle } from "../workflow/outcome.ts";
+import { validateExecutionInputBinding } from "./input-contract.ts";
 import { validateExecutionOutputBinding, validateExecutionOutputContract } from "./output-contract.ts";
 import type { ExecutionBoundaryOptions, ExecutionReceiptValidation, ExecutionRequestValidation } from "./types.ts";
 
@@ -196,6 +197,9 @@ function validateRequestShape(request: ExecutionRequest, options: ExecutionBound
 		request.inputs.forEach((artifact, index) => {
 			validateArtifactRef(artifact, `request.inputs[${index}]`, errors);
 		});
+	if (request.input_binding !== undefined) {
+		errors.push(...validateExecutionInputBinding(request.input_binding, request.inputs).errors);
+	}
 	if (!Array.isArray(request.capability_requirements)) errors.push("request.capability_requirements must be an array");
 	else {
 		for (const [index, requirement] of request.capability_requirements.entries()) {
@@ -318,6 +322,14 @@ export function validateExecutionReceipt(
 			receipt.outputs.forEach((artifact, index) => {
 				validateArtifactRef(artifact, `receipt.outputs[${index}]`, errors, true);
 			});
+		if (request.input_binding === undefined) {
+			if (receipt.input_binding_digest !== undefined)
+				errors.push("receipt.input_binding_digest is not allowed without request.input_binding");
+		} else if (!validDigest(receipt.input_binding_digest)) {
+			errors.push("receipt.input_binding_digest is required when request.input_binding is present");
+		} else if (!sameDigest(receipt.input_binding_digest, request.input_binding.binding_digest)) {
+			errors.push("receipt.input_binding_digest does not match request.input_binding");
+		}
 		if (
 			["SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"].includes(receipt.lifecycle) &&
 			typeof receipt.finished_at !== "string"

@@ -1,4 +1,5 @@
 export * from "./checkpoint.ts";
+export * from "./dispatch.ts";
 export * from "./engine.ts";
 export * from "./outcome.ts";
 export * from "./transition.ts";

@@ -6,6 +6,8 @@ import type {
 	CoreOutcome,
 	CoreRunRecord,
 	ExecutionArtifactMode,
+	ExecutionInputBinding,
+	ExecutionInputBindingResolver,
 	ExecutionOperation,
 	ExecutionReceipt,
 	ExecutionRequest,
@@ -13,6 +15,7 @@ import type {
 	OperationExecutionEvidence,
 } from "@earendil-works/sure-core";
 import {
+	bindExecutionInputs,
 	canonicalJsonDigest,
 	createOperationExecutionEvidence,
 	createOutcome,
@@ -48,6 +51,10 @@ export interface RegisteredOperationOptions {
 	request_operation: ExecutionOperation;
 	script_args: readonly string[];
 	artifact: ArtifactRef;
+	/** Resolved immutable context used by operations with conditional inputs. */
+	input_context?: Readonly<Record<string, unknown>>;
+	input_context_digest?: string;
+	input_resolver?: ExecutionInputBindingResolver;
 	/** Optional output path for a producer; defaults to the contract's first output. */
 	output_path?: string;
 	python_executable: string;
@@ -86,6 +93,10 @@ export interface RegisteredOperationSemanticBinding {
 	artifact_output_path?: string;
 	output_contract_digest?: string;
 	capability_requirements_digest?: string;
+	input_contract_digest?: string;
+	input_selector_id?: string;
+	input_context_digest?: string;
+	input_binding_digest?: string;
 }
 
 export function registeredOperationSemanticDigest(binding: RegisteredOperationSemanticBinding): string {
@@ -159,6 +170,22 @@ function requestFor(
 	if (operation.artifact_mode === undefined)
 		throw new Error(`${operation.operation_id} does not declare an artifact_mode`);
 	const contract = operation.output_contract;
+	let inputBinding: ExecutionInputBinding | undefined;
+	if (operation.input_contract !== undefined) {
+		if (
+			options.input_context === undefined ||
+			options.input_context_digest === undefined ||
+			options.input_resolver === undefined
+		) {
+			throw new Error(`${operation.operation_id} requires a resolved input context and input resolver`);
+		}
+		inputBinding = bindExecutionInputs({
+			contract: operation.input_contract,
+			context: options.input_context,
+			context_digest: options.input_context_digest,
+			resolver: options.input_resolver,
+		});
+	}
 	if (contract !== undefined && contract.outputs.length !== 1) {
 		throw new Error(`${operation.operation_id} currently requires exactly one declared output`);
 	}
@@ -198,6 +225,14 @@ function requestFor(
 		...(capabilityRequirementsDigest === undefined
 			? {}
 			: { capability_requirements_digest: capabilityRequirementsDigest }),
+		...(inputBinding === undefined
+			? {}
+			: {
+					input_contract_digest: inputBinding.contract_digest,
+					input_selector_id: inputBinding.selector_id,
+					input_context_digest: inputBinding.context_digest,
+					input_binding_digest: inputBinding.binding_digest,
+				}),
 	};
 	return {
 		schema: "sure.execution_request.v1",
@@ -212,7 +247,8 @@ function requestFor(
 			bundle_digest: options.artifact.sha256,
 			runtime_identity_digest: options.runtime_binding.semantic_runtime_digest,
 		},
-		inputs: [options.artifact],
+		inputs: inputBinding?.inputs.map((entry) => entry.artifact) ?? [options.artifact],
+		...(inputBinding === undefined ? {} : { input_binding: inputBinding }),
 		entrypoint: {
 			executable: options.python_executable,
 			argv: [operation.path, "--run-dir", options.run.runDir, "--produces", outputPath, ...options.script_args],
@@ -238,6 +274,14 @@ function requestFor(
 			...(capabilityRequirementsDigest === undefined
 				? {}
 				: { capability_requirements_digest: capabilityRequirementsDigest }),
+			...(inputBinding === undefined
+				? {}
+				: {
+						input_contract_digest: inputBinding.contract_digest,
+						input_selector_id: inputBinding.selector_id,
+						input_context_digest: inputBinding.context_digest,
+						input_binding_digest: inputBinding.binding_digest,
+					}),
 		},
 		capability_requirements: [...declaredCapabilities],
 		reference_snapshot_digest: options.reference_snapshot_digest,
@@ -382,6 +426,14 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 			backend_registry_digest: operation.registry_digest,
 			...(operation.bundle_digest === undefined ? {} : { backend_bundle_digest: operation.bundle_digest }),
 			backend_resource_digest: operation.resource_digest,
+			...(request.input_binding === undefined
+				? {}
+				: {
+						input_contract_digest: request.input_binding.contract_digest,
+						input_selector_id: request.input_binding.selector_id,
+						input_context_digest: request.input_binding.context_digest,
+						input_binding_digest: request.input_binding.binding_digest,
+					}),
 			request_path: persistedRequest.path,
 			request_digest: persistedRequest.digest,
 			...(persistedReceipt === undefined

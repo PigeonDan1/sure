@@ -48,7 +48,11 @@ function validateDefinition(value: unknown): WorkflowDefinition {
 				if (requestOperation !== undefined && !EXECUTION_OPERATIONS.has(String(requestOperation))) {
 					throw new Error(`Gate ${id}.${unitId} has an invalid execution_request_operation.`);
 				}
-				if (requestOperation !== undefined && executionOperationId === undefined) {
+				if (
+					requestOperation !== undefined &&
+					executionOperationId === undefined &&
+					!Array.isArray(unitValue.gate.execution_dispatch)
+				) {
 					throw new Error(`Gate ${id}.${unitId} declares execution_request_operation without an operation id.`);
 				}
 			}

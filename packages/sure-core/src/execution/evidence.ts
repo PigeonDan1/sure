@@ -29,6 +29,10 @@ export interface OperationExecutionEvidence {
 	backend_registry_digest?: string;
 	backend_bundle_digest?: string;
 	backend_resource_digest?: string;
+	input_contract_digest?: string;
+	input_selector_id?: string;
+	input_context_digest?: string;
+	input_binding_digest?: string;
 	request_path?: string;
 	request_digest?: string;
 	receipt_path?: string;
@@ -154,11 +158,15 @@ export function decodeOperationExecutionEvidence(value: unknown): OperationExecu
 		"backend_registry_digest",
 		"backend_bundle_digest",
 		"backend_resource_digest",
+		"input_contract_digest",
+		"input_context_digest",
+		"input_binding_digest",
 		"request_digest",
 		"receipt_digest",
 	] as const) {
 		optionalDigest(value[field], `operation evidence ${field}`, errors);
 	}
+	optionalString(value.input_selector_id, "operation evidence input_selector_id", errors);
 	if (value.attempt !== undefined && (!Number.isSafeInteger(value.attempt) || Number(value.attempt) < 1))
 		errors.push("operation evidence attempt must be a positive integer when present");
 	if (
