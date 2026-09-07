@@ -39,6 +39,9 @@ OUTPUT_SET_SCHEMA = "sure.execution.output-set.v1"
 OUTPUT_MODES = {"preexisting", "mutating", "producing"}
 OUTPUT_KINDS = {"file", "directory"}
 OUTPUT_DIGEST_KINDS = {"file_sha256", "tree_sha256"}
+CAPABILITY_CLASSES = {"agent_capability", "execution_capability"}
+CAPABILITY_STATUSES = {"AVAILABLE", "MISSING", "UNKNOWN", "DENIED"}
+CAPABILITY_SOURCES = {"agent", "host_probe", "executor", "site_policy", "trusted_attestation"}
 EXECUTION_ADAPTER_SURFACES = {"vc", "remote", "trusted"}
 EXECUTION_ADAPTER_KINDS = {
     "vc": {"remote", "trusted"},
@@ -47,6 +50,7 @@ EXECUTION_ADAPTER_KINDS = {
 }
 DIGEST_RE = re.compile(r"^(?:sha256:)?[0-9a-f]{64}$")
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+CAPABILITY_ID_RE = re.compile(r"^sure\.[a-z0-9][a-z0-9.-]*$")
 TERMINAL_LIFECYCLES = {"SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"}
 LIFECYCLES = {"NOT_STARTED", "QUEUED", "RUNNING", *TERMINAL_LIFECYCLES}
 
@@ -288,14 +292,70 @@ def capability_evidence(
     return evidence
 
 
+def validate_capability_evidence(value: object, *, field: str = "capability_evidence") -> list[str]:
+    """Validate one untrusted capability-evidence record.
+
+    Execution capability admission must never depend on an arbitrary source
+    string being merely different from ``agent``. Keep this wire check in the
+    Python bridge in lockstep with the TypeScript Core validator.
+    """
+
+    if not isinstance(value, Mapping):
+        return [f"{field} must be an object"]
+    errors: list[str] = []
+    capability_id = value.get("capability_id")
+    if not isinstance(capability_id, str) or CAPABILITY_ID_RE.fullmatch(capability_id) is None:
+        errors.append(f"{field}.capability_id is invalid")
+    capability_class = value.get("capability_class")
+    if capability_class not in CAPABILITY_CLASSES:
+        errors.append(f"{field}.capability_class is invalid")
+    status = value.get("status")
+    if status not in CAPABILITY_STATUSES:
+        errors.append(f"{field}.status is invalid")
+    source = value.get("source")
+    if source not in CAPABILITY_SOURCES:
+        errors.append(f"{field}.source is invalid")
+    if capability_class == "execution_capability" and source == "agent":
+        errors.append(f"{field}.source agent cannot satisfy an execution capability")
+    observed_at = value.get("observed_at")
+    if not isinstance(observed_at, str) or not observed_at.strip():
+        errors.append(f"{field}.observed_at must be a non-empty string")
+    evidence_digest = value.get("evidence_digest")
+    if evidence_digest is not None and not valid_digest(evidence_digest):
+        errors.append(f"{field}.evidence_digest must be a SHA-256 digest when present")
+    if status == "AVAILABLE" and not valid_digest(evidence_digest):
+        errors.append(f"{field}.evidence_digest is required for AVAILABLE evidence")
+    if value.get("details") is not None and not isinstance(value.get("details"), Mapping):
+        errors.append(f"{field}.details must be an object when present")
+    return errors
+
+
+def validate_capability_evidence_list(value: object, *, field: str = "capability_evidence") -> list[str]:
+    """Validate an evidence array received from an executor or receipt."""
+
+    if not isinstance(value, list):
+        return [f"{field} must be an array"]
+    errors: list[str] = []
+    for index, entry in enumerate(value):
+        errors.extend(validate_capability_evidence(entry, field=f"{field}[{index}]"))
+    return errors
+
+
 def capability_summary(
     requirements: Sequence[Mapping[str, Any]], evidence: Sequence[Mapping[str, Any]]
 ) -> dict[str, list[str] | bool]:
-    by_id = {str(item.get("capability_id")): item for item in evidence}
+    by_id: dict[str, Mapping[str, Any]] = {}
     missing: list[str] = []
     unknown: list[str] = []
     denied: list[str] = []
     invalid: list[str] = []
+    for item in evidence:
+        if not isinstance(item, Mapping):
+            invalid.append("")
+            continue
+        by_id[str(item.get("capability_id"))] = item
+        if validate_capability_evidence(item):
+            invalid.append(str(item.get("capability_id") or ""))
     for requirement in requirements:
         if requirement.get("required") is not True:
             continue
@@ -799,7 +859,9 @@ def validate_contract_pair(
             errors.append(f"receipt output enters forbidden root: {candidate}")
     errors.extend(validate_output_binding(request, receipt))
     requirements = request.get("capability_requirements") if isinstance(request.get("capability_requirements"), list) else []
-    evidence = receipt.get("capability_evidence") if isinstance(receipt.get("capability_evidence"), list) else []
+    raw_evidence = receipt.get("capability_evidence")
+    errors.extend(validate_capability_evidence_list(raw_evidence, field="receipt.capability_evidence"))
+    evidence = raw_evidence if isinstance(raw_evidence, list) else []
     capabilities = capability_summary(requirements, evidence)
     for key in ("missing", "unknown", "denied", "invalid"):
         errors.extend(f"required capability {item} is not admitted" for item in capabilities[key])

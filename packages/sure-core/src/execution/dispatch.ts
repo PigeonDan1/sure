@@ -1,5 +1,5 @@
 import { canonicalJsonDigest } from "../contracts/canonical-json.ts";
-import { evaluateCapabilityRequirements } from "../contracts/capability.ts";
+import { evaluateCapabilityRequirements, validateCapabilityEvidenceList } from "../contracts/capability.ts";
 import type {
 	CapabilityEvaluation,
 	CapabilityEvidence,
@@ -245,6 +245,21 @@ export async function dispatchExecutor(
 			true,
 			observedAt,
 		);
+	}
+	const evidenceErrors = validateCapabilityEvidenceList(evidence);
+	if (evidenceErrors.length > 0) {
+		return {
+			descriptor: resolvedDescriptor,
+			registered: true,
+			request_validation: requestValidation,
+			capability: evaluateCapabilityRequirements(requirements, evidence),
+			outcome: failure(
+				"NOT_EXECUTED",
+				"BLOCK",
+				"INVALID_CONTRACT",
+				`Executor ${resolvedDescriptor.kind} returned malformed capability evidence: ${evidenceErrors.join("; ")}`,
+			),
+		};
 	}
 	if (
 		!Array.isArray(evidence) ||

@@ -9,6 +9,8 @@ import {
 	evaluateCapabilityRequirements,
 	evaluatePathBoundary,
 	parseAndValidateJson,
+	validateCapabilityEvidence,
+	validateCapabilityEvidenceList,
 	validateJsonSchema,
 } from "../src/contracts/index.ts";
 import type {
@@ -651,6 +653,37 @@ describe("capability admission", () => {
 			outcome: "NOT_EXECUTED",
 			reason_code: "POLICY_DENIED",
 		});
+	});
+
+	it("rejects an unregistered evidence source instead of treating it as authoritative", () => {
+		const evidence: CapabilityEvidence = {
+			...evidenceBase,
+			capability_class: "execution_capability",
+			source: "executor",
+		};
+		const forged = { ...evidence, source: "remote_daemon" };
+		expect(validateCapabilityEvidence(forged)).toContain("capability_evidence.source is invalid");
+		expect(validateCapabilityEvidenceList([forged])).toContain("capability_evidence[0].source is invalid");
+	});
+
+	it("requires a digest for available evidence and forbids agent execution evidence", () => {
+		const available = {
+			...evidenceBase,
+			capability_class: "execution_capability",
+			source: "host_probe",
+			evidence_digest: undefined,
+		};
+		expect(validateCapabilityEvidence(available)).toContain(
+			"capability_evidence.evidence_digest is required for AVAILABLE evidence",
+		);
+		const agentExecution = {
+			...evidenceBase,
+			capability_class: "execution_capability",
+			source: "agent",
+		};
+		expect(validateCapabilityEvidence(agentExecution)).toContain(
+			"capability_evidence.source agent cannot satisfy an execution capability",
+		);
 	});
 });
 

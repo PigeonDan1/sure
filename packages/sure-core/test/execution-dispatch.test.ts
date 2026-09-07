@@ -219,6 +219,25 @@ describe("host-neutral executor dispatch", () => {
 		});
 	});
 
+	it("rejects a forged capability source before it can admit an external executor", async () => {
+		const registry = new ExecutorRegistry();
+		const port = portFor("remote", "host_enforced", {
+			probe: (requirements) =>
+				requirements.map((requirement) => ({
+					capability_id: requirement.capability_id,
+					capability_class: requirement.capability_class,
+					status: "AVAILABLE" as const,
+					source: "remote_daemon" as never,
+					observed_at: NOW,
+					evidence_digest: B,
+				})),
+		});
+		registry.register(port);
+		const result = await dispatchExecutor(registry, request("remote"));
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		expect(result.capability.admitted).toBe(false);
+	});
+
 	it("rejects a receipt that impersonates another executor", async () => {
 		const registry = new ExecutorRegistry();
 		const port = portFor("remote", "host_enforced", {

@@ -14,6 +14,8 @@ from sure.runtime.execution_bridge import (
     digest_tree,
     output_set_digest,
     validate_adapter_route,
+    validate_capability_evidence,
+    validate_capability_evidence_list,
     validate_contract_pair,
     validate_output_binding,
     validate_output_contract,
@@ -120,6 +122,43 @@ class ExecutionBridgeTests(unittest.TestCase):
                 "runtime_requirements.executor_kind must be remote or trusted for execution_surface=vc",
                 errors,
             )
+
+    def test_capability_evidence_rejects_arbitrary_authority_sources(self) -> None:
+        evidence = capability_evidence("sure.execution.gpu", status="AVAILABLE")
+        evidence["source"] = "remote_daemon"
+        self.assertIn("capability_evidence.source is invalid", validate_capability_evidence(evidence))
+        self.assertIn(
+            "receipt.capability_evidence[0].source is invalid",
+            validate_capability_evidence_list([evidence], field="receipt.capability_evidence"),
+        )
+
+    def test_contract_pair_rejects_agent_execution_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(
+                root,
+                requirements=[
+                    {
+                        "capability_id": "sure.execution.gpu",
+                        "capability_class": "execution_capability",
+                        "required": True,
+                    }
+                ],
+            )
+            receipt = build_receipt(
+                request,
+                lifecycle="SUCCEEDED",
+                executor_kind="python",
+                exit_code=0,
+                capability_evidence_values=[
+                    {
+                        **capability_evidence("sure.execution.gpu", status="AVAILABLE"),
+                        "source": "agent",
+                    }
+                ],
+            )
+            errors = validate_contract_pair(request, receipt)
+            self.assertTrue(any("source agent cannot satisfy" in error for error in errors))
 
     def test_receipt_digest_mismatch_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

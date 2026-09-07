@@ -1,5 +1,5 @@
 import { canonicalJsonDigest } from "../contracts/canonical-json.ts";
-import { evaluateCapabilityRequirements } from "../contracts/capability.ts";
+import { evaluateCapabilityRequirements, validateCapabilityEvidenceList } from "../contracts/capability.ts";
 import { evaluatePathBoundary } from "../contracts/path-boundary.ts";
 import type {
 	ArtifactRef,
@@ -320,6 +320,7 @@ export function validateExecutionReceipt(
 		};
 	}
 	const errors = [...requestValidation.errors];
+	let capabilityEvidenceErrors: string[] = [];
 	if (!object(receipt)) errors.push("execution receipt must be an object");
 	else {
 		if (receipt.schema !== "sure.execution_receipt.v1") errors.push("receipt.schema is unsupported");
@@ -347,7 +348,11 @@ export function validateExecutionReceipt(
 		if (!validDigest(receipt.reference_snapshot_digest))
 			errors.push("receipt.reference_snapshot_digest must be a SHA-256 digest");
 		if (!validDigest(receipt.policy_digest)) errors.push("receipt.policy_digest must be a SHA-256 digest");
-		if (!Array.isArray(receipt.capability_evidence)) errors.push("receipt.capability_evidence must be an array");
+		capabilityEvidenceErrors = validateCapabilityEvidenceList(
+			receipt.capability_evidence,
+			"receipt.capability_evidence",
+		);
+		errors.push(...capabilityEvidenceErrors);
 		if (!Array.isArray(receipt.outputs)) errors.push("receipt.outputs must be an array");
 		else
 			receipt.outputs.forEach((artifact, index) => {
@@ -431,6 +436,14 @@ export function validateExecutionReceipt(
 		};
 	}
 	if (capabilityResult.outcome) {
+		if (capabilityEvidenceErrors.length > 0) {
+			return {
+				valid: false,
+				errors,
+				outcome: invalidOutcome(errors, "INVALID_CONTRACT"),
+				capability: capabilityResult.capability,
+			};
+		}
 		return {
 			valid: false,
 			errors: [...errors, ...capabilityResult.outcome.diagnostics.map((diagnostic) => diagnostic.message)],

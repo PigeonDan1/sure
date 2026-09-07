@@ -107,6 +107,16 @@ describe("execution boundary", () => {
 		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
 	});
 
+	it("rejects an invalid capability source in a persisted receipt", () => {
+		const input = request();
+		const forged = receipt(input);
+		(forged.capability_evidence[0] as unknown as Record<string, unknown>).source = "remote_daemon";
+		const result = validateExecutionReceipt(input, forged);
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain("receipt.capability_evidence[0].source is invalid");
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+	});
+
 	it("keeps a failed executor distinct from a validator failure", () => {
 		const input = request();
 		const result = validateExecutionReceipt(input, receipt(input, "FAILED"));
