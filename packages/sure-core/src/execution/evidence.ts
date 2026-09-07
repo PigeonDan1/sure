@@ -1,4 +1,5 @@
 import type { ExecutionArtifactMode } from "../contracts/types.ts";
+import type { ExecutionLifecycle } from "../workflow/outcome.ts";
 
 export const OPERATION_EXECUTION_EVIDENCE_SCHEMA = "sure.operation.execution.v1" as const;
 export const OPERATION_EXECUTION_PROJECTION_VERSION = 2 as const;
@@ -82,6 +83,19 @@ export interface OperationExecutionSemanticProjection {
 	reason_code: string;
 	artifact_input_digest: string;
 	artifact_output_digest?: string;
+}
+
+export interface ExecutionEvidenceProjectionInput {
+	lifecycle?: ExecutionLifecycle;
+	receipt_valid: boolean;
+	capability_admitted: boolean;
+	missing_output?: boolean;
+	outcome_reason_code: string;
+}
+
+export interface ExecutionEvidenceProjection {
+	verdict: OperationExecutionVerdict;
+	reason_code: string;
 }
 
 const DIGEST = /^(?:sha256:)?[0-9a-f]{64}$/;
@@ -250,4 +264,28 @@ export function operationExecutionSemanticProjection(
 			? {}
 			: { artifact_output_digest: evidence.artifact_output_digest }),
 	};
+}
+
+/**
+ * Map an executor result to the registered-operation evidence vocabulary.
+ * Execution success remains PASS at this projection layer, while the Core
+ * outcome stays VALIDATION_PENDING until an independent validator runs.
+ */
+export function projectExecutionEvidence(input: ExecutionEvidenceProjectionInput): ExecutionEvidenceProjection {
+	if (input.missing_output) return { verdict: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" };
+	if (!input.receipt_valid || !input.capability_admitted) {
+		return { verdict: "NOT_EXECUTED", reason_code: input.outcome_reason_code };
+	}
+	switch (input.lifecycle) {
+		case "SUCCEEDED":
+			return { verdict: "PASS", reason_code: "EXECUTION_SUCCEEDED" };
+		case "FAILED":
+			return { verdict: "FAIL", reason_code: "EXECUTION_FAILED" };
+		case "PARTIAL":
+			return { verdict: "FAIL", reason_code: "EXECUTION_PARTIAL" };
+		case "CANCELLED":
+			return { verdict: "NOT_EXECUTED", reason_code: "EXECUTION_CANCELLED" };
+		default:
+			return { verdict: "NOT_EXECUTED", reason_code: input.outcome_reason_code };
+	}
 }

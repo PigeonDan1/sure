@@ -3,11 +3,29 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExecutionRequest, JsonValue } from "../../sure-core/src/index.ts";
+import { projectExecutionEvidence } from "../../sure-core/src/index.ts";
 import { executeRequest } from "../src/executor.ts";
 
 const A = `sha256:${"a".repeat(64)}`;
 const B = `sha256:${"b".repeat(64)}`;
 const roots: string[] = [];
+
+interface DifferentialCase {
+	id: string;
+	surectl: {
+		evidence_verdict: "PASS" | "FAIL" | "NOT_EXECUTED";
+		evidence_reason_code: string;
+		receipt_valid: boolean;
+		capability_admitted: boolean;
+	};
+}
+
+const DIFFERENTIAL_FIXTURE = JSON.parse(
+	readFileSync(
+		new URL("../../../sure/canonical/fixtures/execution-differential-traces.json", import.meta.url),
+		"utf8",
+	),
+) as { schema: string; cases: DifferentialCase[] };
 
 function request(
 	root: string,
@@ -581,5 +599,155 @@ describe("cooperative executor capability probes", () => {
 			expect.arrayContaining([expect.objectContaining({ code: "OUTPUT_RESIDUAL_REJECTED" })]),
 		);
 		expect(result.outcome.outcome).not.toBe("PASS");
+	});
+
+	it("projects Docker and local execution traces through the canonical evidence vocabulary", () => {
+		expect(DIFFERENTIAL_FIXTURE.schema).toBe("sure.execution.differential_traces.v1");
+		const expected = new Map(
+			DIFFERENTIAL_FIXTURE.cases.map((item) => [
+				item.id,
+				{ verdict: item.surectl.evidence_verdict, reason_code: item.surectl.evidence_reason_code },
+			]),
+		);
+
+		const invalidRoot = freshRoot();
+		const invalid = executeRequest(
+			request(invalidRoot, "sure.execution.docker", {
+				executor_kind: "docker",
+				docker_image: `registry.example/sure/test@sha256:${"1".repeat(64)}`,
+				docker_mounts: [{ source: join(invalidRoot, "missing"), target: "/work", read_only: false }],
+			}),
+			{
+				kind: "docker",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: invalidRoot,
+				allowed_output_roots: [join(invalidRoot, "artifacts")],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+		const invalidProjection = projectExecutionEvidence({
+			lifecycle: invalid.receipt?.lifecycle,
+			receipt_valid: invalid.receipt !== undefined && invalid.receipt_validation?.valid === true,
+			capability_admitted: invalid.capability.admitted,
+			outcome_reason_code: invalid.outcome.reason_code,
+		});
+		expect(invalid.receipt?.lifecycle).toBe("NOT_STARTED");
+		expect(invalid.receipt_validation?.valid).toBe(false);
+		expect(invalid.capability.admitted).toBe(false);
+		expect(invalidProjection).toEqual(expected.get("invalid_contract"));
+
+		const capabilityRoot = freshRoot();
+		const capability = executeRequest(
+			request(capabilityRoot, "sure.execution.docker", {
+				executor_kind: "docker",
+				docker_executable: join(capabilityRoot, "missing-docker"),
+				docker_image: `registry.example/sure/test@sha256:${"2".repeat(64)}`,
+				docker_mounts: [],
+			}),
+			{
+				kind: "docker",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: capabilityRoot,
+				allowed_output_roots: [capabilityRoot],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+		const capabilityProjection = projectExecutionEvidence({
+			lifecycle: capability.receipt?.lifecycle,
+			receipt_valid: capability.receipt !== undefined && capability.receipt_validation?.valid === true,
+			capability_admitted: capability.capability.admitted,
+			outcome_reason_code: capability.outcome.reason_code,
+		});
+		expect(capability.receipt?.lifecycle).toBe("NOT_STARTED");
+		expect(capability.receipt_validation?.valid).toBe(false);
+		expect(capability.capability.admitted).toBe(false);
+		expect(capabilityProjection).toEqual(expected.get("capability_missing"));
+
+		const failedRoot = freshRoot();
+		const failed = executeRequest(
+			request(
+				failedRoot,
+				"sure.execution.local-python",
+				{ python_executable: process.execPath },
+				{ entrypoint: { executable: process.execPath, argv: ["-e", "process.exit(7)"] } },
+			),
+			{
+				kind: "local",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: failedRoot,
+				allowed_output_roots: [failedRoot],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+		const failedProjection = projectExecutionEvidence({
+			lifecycle: failed.receipt?.lifecycle,
+			receipt_valid: failed.receipt !== undefined && failed.receipt_validation?.valid === true,
+			capability_admitted: failed.capability.admitted,
+			outcome_reason_code: failed.outcome.reason_code,
+		});
+		expect(failed.receipt?.lifecycle).toBe("FAILED");
+		expect(failed.receipt_validation?.valid).toBe(true);
+		expect(failed.capability.admitted).toBe(true);
+		expect(failedProjection).toEqual(expected.get("executor_failed"));
+
+		const partialRoot = freshRoot();
+		const partial = executeRequest(
+			request(
+				partialRoot,
+				"sure.execution.local-python",
+				{ python_executable: process.execPath },
+				{ output_contract: outputContract() },
+			),
+			{
+				kind: "local",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: partialRoot,
+				allowed_output_roots: [partialRoot],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+		const partialProjection = projectExecutionEvidence({
+			lifecycle: partial.receipt?.lifecycle,
+			receipt_valid: partial.receipt !== undefined && partial.receipt_validation?.valid === true,
+			capability_admitted: partial.capability.admitted,
+			outcome_reason_code: partial.outcome.reason_code,
+		});
+		expect(partial.receipt?.lifecycle).toBe("PARTIAL");
+		expect(partial.receipt_validation?.valid).toBe(true);
+		expect(partial.capability.admitted).toBe(true);
+		expect(partialProjection).toEqual(expected.get("partial_output"));
+
+		const successRoot = freshRoot();
+		const success = executeRequest(
+			request(successRoot, "sure.execution.local-python", { python_executable: process.execPath }),
+			{
+				kind: "local",
+				executor_digest: A,
+				executor_version: "test",
+				working_directory: successRoot,
+				allowed_output_roots: [successRoot],
+				forbidden_output_roots: [],
+				timeout_ms: 1000,
+			},
+		);
+		const successProjection = projectExecutionEvidence({
+			lifecycle: success.receipt?.lifecycle,
+			receipt_valid: success.receipt !== undefined && success.receipt_validation?.valid === true,
+			capability_admitted: success.capability.admitted,
+			outcome_reason_code: success.outcome.reason_code,
+		});
+		expect(success.receipt?.lifecycle).toBe("SUCCEEDED");
+		expect(success.receipt_validation?.valid).toBe(true);
+		expect(success.capability.admitted).toBe(true);
+		expect(success.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "VALIDATION_PENDING" });
+		expect(successProjection).toEqual(expected.get("execution_succeeded_validation_pending"));
 	});
 });

@@ -20,6 +20,7 @@ import {
 	createOperationExecutionEvidence,
 	createOutcome,
 	executionOutputContractDigest,
+	projectExecutionEvidence,
 } from "@earendil-works/sure-core";
 import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
 import { type ExecutorRunResult, executeRequest } from "./executor.ts";
@@ -386,16 +387,13 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 	);
 	const validReceipt = execution.receipt !== undefined && execution.receipt_validation?.valid === true;
 	const missingSuccessfulOutput = execution.receipt?.lifecycle === "SUCCEEDED" && outputArtifact === undefined;
-	const verdict =
-		!validReceipt || !execution.capability.admitted
-			? "NOT_EXECUTED"
-			: execution.receipt?.lifecycle === "SUCCEEDED"
-				? missingSuccessfulOutput
-					? "NOT_EXECUTED"
-					: "PASS"
-				: execution.receipt?.lifecycle === "NOT_STARTED"
-					? "NOT_EXECUTED"
-					: "FAIL";
+	const evidenceProjection = projectExecutionEvidence({
+		lifecycle: execution.receipt?.lifecycle,
+		receipt_valid: validReceipt,
+		capability_admitted: execution.capability.admitted,
+		missing_output: missingSuccessfulOutput,
+		outcome_reason_code: execution.outcome.reason_code,
+	});
 	return {
 		outcome: execution.outcome,
 		request,
@@ -405,15 +403,8 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 			source: "surectl",
 			operation_id: operation.operation_id,
 			artifact_mode: operation.artifact_mode,
-			verdict,
-			reason_code:
-				verdict === "PASS"
-					? "EXECUTION_SUCCEEDED"
-					: verdict === "FAIL"
-						? "EXECUTION_FAILED"
-						: missingSuccessfulOutput
-							? "INVALID_CONTRACT"
-							: "CAPABILITY_MISSING",
+			verdict: evidenceProjection.verdict,
+			reason_code: evidenceProjection.reason_code,
 			diagnostics: [
 				...diagnostics(execution),
 				...(missingSuccessfulOutput ? [`${operation.operation_id} did not bind the gate artifact output`] : []),

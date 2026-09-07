@@ -58,6 +58,22 @@ interface ProducerFixture {
 	outputPath: string;
 }
 
+interface DifferentialCase {
+	id: string;
+	pi: {
+		evidence_verdict: "PASS" | "FAIL" | "NOT_EXECUTED";
+		evidence_reason_code: string;
+		request_receipt: "present" | "absent";
+	};
+}
+
+const DIFFERENTIAL_FIXTURE = JSON.parse(
+	readFileSync(
+		new URL("../../../../sure/canonical/fixtures/execution-differential-traces.json", import.meta.url),
+		"utf8",
+	),
+) as { schema: string; cases: DifferentialCase[] };
+
 function fixture(name: string): Fixture {
 	const root = join(TEMP_ROOT, name);
 	const packageDir = join(root, "sure_onboard");
@@ -160,6 +176,53 @@ afterEach(() => {
 });
 
 describe("Pi registered operation evidence", () => {
+	it("follows the canonical differential trace while recording the facade assurance boundary", () => {
+		expect(DIFFERENTIAL_FIXTURE.schema).toBe("sure.execution.differential_traces.v1");
+		const expected = new Map(DIFFERENTIAL_FIXTURE.cases.map((item) => [item.id, item.pi]));
+		const run = (
+			id: string,
+			execute: (fx: Fixture) => { ok: boolean; stdout: string; stderr: string; status: number | null },
+		) => {
+			const fx = fixture(`differential-${id}`);
+			const result = runPiRegisteredOperation({
+				ctx: fx.ctx,
+				unit_id: "validate_import",
+				attempt: 1,
+				operation_id: "sure.onboard.execute_import",
+				script_id: "run_validate.py",
+				artifact_input_path: fx.artifactPath,
+				execute: () => execute(fx),
+			});
+			const evidence = result.evidence;
+			if (!evidence) throw new Error(`${id} did not emit evidence`);
+			const item = expected.get(id);
+			if (!item) throw new Error(`${id} trace is missing`);
+			expect({ evidence_verdict: evidence.verdict, evidence_reason_code: evidence.reason_code }, id).toEqual({
+				evidence_verdict: item.evidence_verdict,
+				evidence_reason_code: item.evidence_reason_code,
+			});
+			expect(item.request_receipt).toBe("absent");
+			expect(evidence.request_digest, id).toBeUndefined();
+			expect(evidence.receipt_digest, id).toBeUndefined();
+		};
+
+		run("invalid_contract", () => {
+			throw new Error("invalid registered operation contract");
+		});
+		run("capability_missing", () => ({
+			ok: false,
+			stdout: "",
+			stderr: "HARNESS_RUNTIME_NOT_READY",
+			status: null,
+		}));
+		run("executor_failed", () => ({ ok: false, stdout: "failed", stderr: "", status: 7 }));
+		run("partial_output", (fx) => {
+			rmSync(fx.artifactPath);
+			return { ok: true, stdout: "", stderr: "", status: 0 };
+		});
+		run("execution_succeeded_validation_pending", () => ({ ok: true, stdout: "ok", stderr: "", status: 0 }));
+	});
+
 	it("wraps a registered runner and hashes mutating input and output bytes", () => {
 		const fx = fixture("pass");
 		const result = runPiRegisteredOperation({
