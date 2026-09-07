@@ -6836,8 +6836,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-operation-evidence.test.ts",
-      "size_bytes": 18295,
-      "sha256": "016c47b65fce7d04600330472cecbb3708fd5c4ff3f3c92c0b5d045adfc57115"
+      "size_bytes": 20575,
+      "sha256": "0a212b9f171ee183a1a354fda7bb6a1bfeaa534922e6698f7db2e1356cfe51d1"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-run-output-dir.test.ts",
@@ -9726,5 +9726,5 @@
       ]
     }
   ],
-  "semantic_digest": "6646560f6587f01c5625cf2d002874ffc1b8ac412258116e725ea38c35b4167b"
+  "semantic_digest": "4d778bbef0f816905718a1580055a9c352af3d3665ba6c026e9094f7ba91620a"
 }
