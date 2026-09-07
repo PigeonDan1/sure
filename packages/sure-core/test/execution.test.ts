@@ -114,6 +114,35 @@ describe("execution boundary", () => {
 		expect(result.outcome).toMatchObject({ outcome: "RETRY", reason_code: "EXECUTION_FAILED" });
 	});
 
+	it("preserves an explicit preflight contract failure when a NOT_STARTED receipt is revalidated", () => {
+		const input = request();
+		const failed = receipt(input, "NOT_STARTED");
+		delete failed.exit_code;
+		failed.diagnostics = [{ code: "INVALID_CONTRACT", message: "mount source is outside the admitted boundary" }];
+		const result = validateExecutionReceipt(input, failed);
+		expect(result.valid).toBe(false);
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		expect(result.errors).toContain("mount source is outside the admitted boundary");
+	});
+
+	it("requires digest-pinned Docker identities for formal execution", () => {
+		const input = request();
+		input.operation = "formal_evaluation";
+		input.subject = {
+			...input.subject,
+			dataset_identity_digest: DIGEST_A,
+			scoring_protocol_digest: DIGEST_B,
+		};
+		input.runtime_requirements = {
+			executor_kind: "docker",
+			docker_image: "registry.example/sure/trans:latest",
+			docker_mounts: [],
+		};
+		const result = validateExecutionRequest(input);
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain("formal Docker execution requires a digest-pinned docker_image");
+	});
+
 	it("rejects tampered request identity and output escape", () => {
 		const input = request();
 		const tampered = receipt(input);

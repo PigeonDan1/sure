@@ -110,6 +110,30 @@
 					}
 				}
 			}
+		},
+		{
+			"if": {
+				"properties": {
+					"operation": { "const": "formal_evaluation" },
+					"runtime_requirements": {
+						"type": "object",
+						"properties": { "executor_kind": { "const": "docker" } },
+						"required": ["executor_kind"]
+					}
+				},
+				"required": ["operation", "runtime_requirements"]
+			},
+			"then": {
+				"properties": {
+					"runtime_requirements": {
+						"required": ["docker_image_digest"],
+						"properties": {
+							"docker_image": { "pattern": "@sha256:[a-f0-9]{64}$" },
+							"docker_image_digest": { "$ref": "#/$defs/digest" }
+						}
+					}
+				}
+			}
 		}
 	],
 	"$defs": {

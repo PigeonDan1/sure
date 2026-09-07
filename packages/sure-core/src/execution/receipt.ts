@@ -10,7 +10,7 @@ import type {
 	JsonValue,
 } from "../contracts/types.ts";
 import { type CoreOutcome, createOutcome, outcomeFromExecutionLifecycle } from "../workflow/outcome.ts";
-import { parseDockerRuntimeRequirements } from "./docker.ts";
+import { dockerImageDigest, parseDockerRuntimeRequirements } from "./docker.ts";
 import { validateExecutionInputBinding } from "./input-contract.ts";
 import { validateExecutionOutputBinding, validateExecutionOutputContract } from "./output-contract.ts";
 import type { ExecutionBoundaryOptions, ExecutionReceiptValidation, ExecutionRequestValidation } from "./types.ts";
@@ -32,6 +32,15 @@ function validId(value: unknown): value is string {
 
 function object(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function declaredContractDiagnostics(receipt: ExecutionReceipt): string[] {
+	if (receipt.lifecycle !== "NOT_STARTED" || !Array.isArray(receipt.diagnostics)) return [];
+	return receipt.diagnostics.flatMap((diagnostic) => {
+		if (!object(diagnostic) || diagnostic.code !== "INVALID_CONTRACT" || typeof diagnostic.message !== "string")
+			return [];
+		return [diagnostic.message];
+	});
 }
 
 function invalidOutcome(errors: readonly string[], code: "INVALID_CONTRACT" | "PATH_OUT_OF_SCOPE"): CoreOutcome {
@@ -201,7 +210,18 @@ function validateRequestShape(request: ExecutionRequest, options: ExecutionBound
 	if (!object(request.runtime_requirements)) {
 		errors.push("request.runtime_requirements must be an object");
 	} else if (request.runtime_requirements.executor_kind === "docker") {
-		errors.push(...parseDockerRuntimeRequirements(request.runtime_requirements).errors);
+		const docker = parseDockerRuntimeRequirements(request.runtime_requirements);
+		errors.push(...docker.errors);
+		if (request.operation === "formal_evaluation") {
+			const image = request.runtime_requirements.docker_image;
+			if (
+				typeof image !== "string" ||
+				dockerImageDigest(image) === undefined ||
+				docker.spec?.image_digest === undefined
+			) {
+				errors.push("formal Docker execution requires a digest-pinned docker_image");
+			}
+		}
 	}
 	if (request.input_binding !== undefined) {
 		errors.push(...validateExecutionInputBinding(request.input_binding, request.inputs).errors);
@@ -396,6 +416,15 @@ export function validateExecutionReceipt(
 	}
 	const evidence = Array.isArray(receipt.capability_evidence) ? receipt.capability_evidence : [];
 	const capabilityResult = capabilityOutcome(evidence, request, options);
+	const declaredContractErrors = object(receipt) ? declaredContractDiagnostics(receipt) : [];
+	if (declaredContractErrors.length > 0) {
+		return {
+			valid: false,
+			errors: [...errors, ...declaredContractErrors],
+			outcome: invalidOutcome([...errors, ...declaredContractErrors], "INVALID_CONTRACT"),
+			capability: capabilityResult.capability,
+		};
+	}
 	if (capabilityResult.outcome) {
 		return {
 			valid: false,

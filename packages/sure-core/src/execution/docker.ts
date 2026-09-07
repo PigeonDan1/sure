@@ -1,4 +1,4 @@
-import type { JsonValue } from "../contracts/types.ts";
+import type { ExecutionReceipt, ExecutionRequest, JsonValue } from "../contracts/types.ts";
 
 /**
  * The host-neutral portion of a Docker execution request.
@@ -21,6 +21,21 @@ export interface DockerRuntimeSpec {
 	working_directory?: string;
 	network?: string;
 	image_digest?: string;
+}
+
+/**
+ * Return the content digest embedded in an image reference, if one exists.
+ * Docker references may contain a registry port and arbitrary repository
+ * components, so the digest is deliberately parsed only from the terminal
+ * `@sha256:<hex>` component.
+ */
+export function dockerImageDigest(image: string): string | undefined {
+	const match = /@sha256:(?<hex>[0-9a-f]{64})$/i.exec(image);
+	return match?.groups?.hex === undefined ? undefined : `sha256:${match.groups.hex.toLowerCase()}`;
+}
+
+export function dockerImageIsDigestPinned(image: string): boolean {
+	return dockerImageDigest(image) !== undefined;
 }
 
 export interface DockerRuntimeSpecValidation {
@@ -125,6 +140,7 @@ export function parseDockerRuntimeRequirements(
 	}
 
 	let imageDigest: string | undefined;
+	const embeddedImageDigest = image === undefined ? undefined : dockerImageDigest(image);
 	if (runtimeRequirements.docker_image_digest !== undefined) {
 		imageDigest = nonEmptyString(
 			runtimeRequirements.docker_image_digest,
@@ -134,8 +150,15 @@ export function parseDockerRuntimeRequirements(
 		if (imageDigest !== undefined && !DIGEST.test(imageDigest)) {
 			errors.push("runtime_requirements.docker_image_digest must be a SHA-256 digest");
 		}
+		if (
+			imageDigest !== undefined &&
+			embeddedImageDigest !== undefined &&
+			imageDigest.replace(/^sha256:/, "").toLowerCase() !== embeddedImageDigest.replace(/^sha256:/, "")
+		) {
+			errors.push("runtime_requirements.docker_image_digest does not match the digest in docker_image");
+		}
 	}
-
+	if (imageDigest === undefined && embeddedImageDigest !== undefined) imageDigest = embeddedImageDigest;
 	if (errors.length > 0 || image === undefined) return { valid: false, errors };
 	return {
 		valid: true,
@@ -149,6 +172,43 @@ export function parseDockerRuntimeRequirements(
 			...(imageDigest === undefined ? {} : { image_digest: imageDigest }),
 		},
 	};
+}
+
+/**
+ * Formal Docker evidence must bind the declared image to an independent host
+ * probe.  The executor writes these details into the required Docker
+ * capability evidence; a receipt that merely says `SUCCEEDED` is insufficient.
+ */
+export function validateDockerRuntimeEvidence(request: ExecutionRequest, receipt: ExecutionReceipt): readonly string[] {
+	if (request.runtime_requirements.executor_kind !== "docker") return [];
+	const parsed = parseDockerRuntimeRequirements(request.runtime_requirements);
+	if (!parsed.valid || parsed.spec === undefined) return parsed.errors;
+	const evidence = receipt.capability_evidence.find(
+		(candidate) =>
+			candidate.capability_id === "sure.execution.docker" && candidate.capability_class === "execution_capability",
+	);
+	if (evidence?.status !== "AVAILABLE") {
+		return ["Docker capability evidence is missing or not AVAILABLE"];
+	}
+	const details = evidence.details;
+	if (details === undefined || details.image_verified !== true) {
+		return ["Docker capability evidence is not independently image-verified"];
+	}
+	if (details.image_ref !== parsed.spec.image) {
+		return ["Docker capability evidence image_ref does not match the execution request"];
+	}
+	const observedDigest = details.image_digest;
+	if (typeof observedDigest !== "string" || !DIGEST.test(observedDigest)) {
+		return ["Docker capability evidence is missing a valid image digest"];
+	}
+	if (
+		parsed.spec.image_digest === undefined ||
+		observedDigest.replace(/^sha256:/, "").toLowerCase() !==
+			parsed.spec.image_digest.replace(/^sha256:/, "").toLowerCase()
+	) {
+		return ["Docker capability evidence image digest does not match the execution request"];
+	}
+	return [];
 }
 
 function absoluteHostPath(value: JsonValue | undefined, field: string, errors: string[]): string | undefined {

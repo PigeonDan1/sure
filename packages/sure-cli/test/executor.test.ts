@@ -78,6 +78,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
 if (args.length === 1 && args[0] === "--version") process.exit(0);
+if (args[0] === "image" && args[1] === "inspect") {
+  const image = args.at(-1) ?? "";
+  const digest = image.split("@sha256:")[1] ?? "";
+  process.stdout.write(JSON.stringify(digest ? ["registry.example/sure/test@sha256:" + digest] : []));
+  process.exit(digest ? 0 : 1);
+}
 fs.writeFileSync(process.env.SURE_FAKE_DOCKER_ARGS, JSON.stringify(args));
 const envIndex = args.indexOf("--env");
 const outputInContainer = envIndex >= 0 ? args[envIndex + 1].split("=").slice(1).join("=") : "";

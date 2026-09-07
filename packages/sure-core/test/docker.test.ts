@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { parseDockerRuntimeRequirements } from "../src/index.ts";
+import { dockerImageDigest, dockerImageIsDigestPinned, parseDockerRuntimeRequirements } from "../src/index.ts";
 
 const IMAGE = `registry.example/sure/trans@sha256:${"a".repeat(64)}`;
 
 describe("Docker execution request contract", () => {
+	it("extracts a canonical digest only from a digest-pinned image reference", () => {
+		const digest = `sha256:${"a".repeat(64)}`;
+		expect(dockerImageDigest(`registry.example:5000/sure/trans@${digest}`)).toBe(digest);
+		expect(dockerImageIsDigestPinned(`registry.example:5000/sure/trans@${digest}`)).toBe(true);
+		expect(dockerImageDigest("registry.example/sure/trans:latest")).toBeUndefined();
+	});
+
 	it("normalizes a bounded image, mount, environment, and workdir", () => {
 		const result = parseDockerRuntimeRequirements({
 			docker_image: IMAGE,
@@ -66,5 +73,18 @@ describe("Docker execution request contract", () => {
 
 		expect(result.valid).toBe(false);
 		expect(result.errors).toContain("runtime_requirements.docker_mounts must be an array");
+	});
+
+	it("rejects a mismatched explicit image digest", () => {
+		const result = parseDockerRuntimeRequirements({
+			docker_image: IMAGE,
+			docker_image_digest: `sha256:${"b".repeat(64)}`,
+			docker_mounts: [],
+		});
+
+		expect(result.valid).toBe(false);
+		expect(result.errors).toContain(
+			"runtime_requirements.docker_image_digest does not match the digest in docker_image",
+		);
 	});
 });

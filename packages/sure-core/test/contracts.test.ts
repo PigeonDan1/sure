@@ -295,6 +295,36 @@ describe("wire schemas", () => {
 		expect(validateJsonSchema(schema, missingMounts).ok).toBe(false);
 	});
 
+	it("requires a digest-pinned Docker image for formal evaluation", () => {
+		const schema = readSchema("execution_request");
+		const base = executionRequest();
+		const formalDocker = {
+			...base,
+			operation: "formal_evaluation",
+			subject: {
+				...base.subject,
+				dataset_identity_digest: DIGEST_A,
+				scoring_protocol_digest: DIGEST_B,
+			},
+			runtime_requirements: {
+				executor_kind: "docker",
+				docker_image: `registry.example/sure/trans@sha256:${DIGEST_A}`,
+				docker_image_digest: `sha256:${DIGEST_A}`,
+				docker_mounts: [],
+			},
+		};
+		expect(validateJsonSchema(schema, formalDocker).ok).toBe(true);
+		expect(
+			validateJsonSchema(schema, {
+				...formalDocker,
+				runtime_requirements: {
+					...formalDocker.runtime_requirements,
+					docker_image: "registry.example/sure/trans:latest",
+				},
+			}).ok,
+		).toBe(false);
+	});
+
 	it("validates the shared output contract across request and receipt schemas", () => {
 		const outputContract = {
 			schema: "sure.execution_output_contract.v1",

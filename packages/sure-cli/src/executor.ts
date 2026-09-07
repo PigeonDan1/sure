@@ -16,6 +16,7 @@ import type {
 import {
 	canonicalJsonDigest,
 	createOutcome,
+	dockerImageDigest,
 	type ExecutionBoundaryOptions,
 	type ExecutionReceiptValidation,
 	type ExecutionRequestValidation,
@@ -44,6 +45,14 @@ const CAPABILITY_PROBE_IDS = new Set([
 ]);
 
 const MAX_CAPTURED_OUTPUT = 8192;
+
+interface CapabilityProbeResult {
+	executable?: string;
+	result?: ReturnType<typeof spawnSync>;
+	image_ref?: string;
+	image_digest?: string;
+	image_verified?: boolean;
+}
 
 export interface ExecutorRunOptions {
 	kind: ExecutorKind;
@@ -119,10 +128,50 @@ function probeArguments(capabilityId: string): readonly string[] {
 	return capabilityId === "sure.execution.vc" ? ["info"] : ["--version"];
 }
 
-function probeCapabilities(
+function dockerImageProbe(
+	executable: string,
 	request: ExecutionRequest,
 	options: ExecutorRunOptions,
-): Map<string, { executable?: string; result?: ReturnType<typeof spawnSync> }> {
+): Pick<CapabilityProbeResult, "image_ref" | "image_digest" | "image_verified"> {
+	const parsed = parseDockerRuntimeRequirements(request.runtime_requirements);
+	if (!parsed.valid || parsed.spec?.image_digest === undefined) return {};
+	let result: ReturnType<typeof spawnSync>;
+	try {
+		result = spawnSync(executable, ["image", "inspect", "--format", "{{json .RepoDigests}}", parsed.spec.image], {
+			cwd: options.working_directory,
+			env: options.environment,
+			encoding: "utf8",
+			timeout: Math.min(options.timeout_ms, 5000),
+			maxBuffer: MAX_CAPTURED_OUTPUT,
+		});
+	} catch {
+		return { image_ref: parsed.spec.image, image_verified: false };
+	}
+	if (result.status !== 0 || typeof result.stdout !== "string") {
+		return { image_ref: parsed.spec.image, image_verified: false };
+	}
+	try {
+		const refs = JSON.parse(result.stdout.trim()) as unknown;
+		const digests = Array.isArray(refs)
+			? refs.flatMap((value) =>
+					typeof value === "string" && dockerImageDigest(value) ? [dockerImageDigest(value)!] : [],
+				)
+			: [];
+		const imageDigest = digests.find(
+			(candidate) =>
+				candidate.replace(/^sha256:/, "") === parsed.spec?.image_digest?.replace(/^sha256:/, "").toLowerCase(),
+		);
+		return {
+			image_ref: parsed.spec.image,
+			...(imageDigest === undefined ? {} : { image_digest: imageDigest }),
+			image_verified: imageDigest !== undefined,
+		};
+	} catch {
+		return { image_ref: parsed.spec.image, image_verified: false };
+	}
+}
+
+function probeCapabilities(request: ExecutionRequest, options: ExecutorRunOptions): Map<string, CapabilityProbeResult> {
 	const targets = new Map<string, string>();
 	for (const requirement of request.capability_requirements ?? []) {
 		if (
@@ -133,18 +182,22 @@ function probeCapabilities(
 		const target = probeTarget(requirement.capability_id, request, options);
 		if (target !== undefined) targets.set(requirement.capability_id, target);
 	}
-	const results = new Map<string, { executable?: string; result?: ReturnType<typeof spawnSync> }>();
+	const results = new Map<string, CapabilityProbeResult>();
 	for (const [capabilityId, executable] of targets) {
 		try {
+			const result = spawnSync(executable, [...probeArguments(capabilityId)], {
+				cwd: options.working_directory,
+				env: options.environment,
+				encoding: "utf8",
+				timeout: Math.min(options.timeout_ms, 5000),
+				maxBuffer: MAX_CAPTURED_OUTPUT,
+			});
 			results.set(capabilityId, {
 				executable,
-				result: spawnSync(executable, [...probeArguments(capabilityId)], {
-					cwd: options.working_directory,
-					env: options.environment,
-					encoding: "utf8",
-					timeout: Math.min(options.timeout_ms, 5000),
-					maxBuffer: MAX_CAPTURED_OUTPUT,
-				}),
+				result,
+				...(capabilityId === "sure.execution.docker" && result.status === 0
+					? dockerImageProbe(executable, request, options)
+					: {}),
 			});
 		} catch {
 			results.set(capabilityId, { executable });
@@ -193,7 +246,11 @@ function capabilityEvidence(
 				requirement.capability_id === "sure.execution.gpu") &&
 			probe !== undefined;
 		const probeSupported = kindBoundProbeSupported || hostProbeSupported;
-		const available = probeSupported && probe?.result?.status === 0;
+		const imageProbeSatisfied =
+			requirement.capability_id !== "sure.execution.docker" ||
+			!parseDockerRuntimeRequirements(request.runtime_requirements).spec?.image_digest ||
+			probe?.image_verified === true;
+		const available = probeSupported && probe?.result?.status === 0 && imageProbeSatisfied;
 		const status = available ? ("AVAILABLE" as const) : ("MISSING" as const);
 		const base = {
 			capability_id: requirement.capability_id,
@@ -204,6 +261,9 @@ function capabilityEvidence(
 			details: {
 				kind: options.kind,
 				...(probe?.executable === undefined ? {} : { executable: probe.executable }),
+				...(probe?.image_ref === undefined ? {} : { image_ref: probe.image_ref }),
+				...(probe?.image_digest === undefined ? {} : { image_digest: probe.image_digest }),
+				...(probe?.image_verified === undefined ? {} : { image_verified: probe.image_verified }),
 				...(probe?.result?.status === 0
 					? { version: String(probe.result.stdout || probe.result.stderr || "").trim() }
 					: {}),

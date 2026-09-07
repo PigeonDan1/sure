@@ -1,3 +1,4 @@
+import { validateDockerRuntimeEvidence } from "../execution/docker.ts";
 import { type CoreOutcome, createOutcome } from "../workflow/outcome.ts";
 import { sameDigest as sameFrozenDigest, validateFrozenEvaluationSubject } from "./frozen.ts";
 import type { FormalEligibilityInput, FormalEligibilityResult } from "./types.ts";
@@ -104,6 +105,9 @@ export function assessFormalEligibility(input: FormalEligibilityInput): FormalEl
 		diagnostics.push("trusted assurance requires an attested executor receipt");
 	}
 	if (!input.receipt_validation.valid) diagnostics.push(...input.receipt_validation.errors);
+	if (formalOperation && input.request.runtime_requirements.executor_kind === "docker") {
+		for (const error of validateDockerRuntimeEvidence(input.request, input.receipt)) diagnostics.push(error);
+	}
 	if (input.receipt.lifecycle !== "SUCCEEDED")
 		diagnostics.push(`execution lifecycle ${input.receipt.lifecycle} is not SUCCEEDED`);
 	if (!input.receipt_validation.capability.admitted) {

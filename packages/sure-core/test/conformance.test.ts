@@ -7,6 +7,7 @@ import {
 	type ExecutionRequest,
 	type FrozenFormalSubject,
 	type JsonValue,
+	validateDockerRuntimeEvidence,
 	validateExecutionReceipt,
 } from "../src/index.ts";
 
@@ -117,6 +118,45 @@ function eligibility(overrides: Partial<Parameters<typeof assessFormalEligibilit
 }
 
 describe("formal conformance boundary", () => {
+	it("requires independently verified Docker image evidence for formal execution", () => {
+		const input = request();
+		const imageDigest = `sha256:${"e".repeat(64)}`;
+		const image = `registry.example/sure/trans@${imageDigest}`;
+		input.operation = "formal_evaluation";
+		input.subject = {
+			...input.subject,
+			dataset_identity_digest: C,
+			scoring_protocol_digest: D,
+		};
+		input.runtime_requirements = {
+			executor_kind: "docker",
+			docker_image: image,
+			docker_image_digest: imageDigest,
+			docker_mounts: [],
+		};
+		const currentReceipt = receipt(input);
+		currentReceipt.executor = { ...currentReceipt.executor, kind: "docker" };
+		currentReceipt.capability_evidence = [
+			{
+				capability_id: "sure.execution.docker",
+				capability_class: "execution_capability",
+				status: "AVAILABLE",
+				source: "executor",
+				observed_at: NOW,
+				details: { image_ref: image, image_digest: imageDigest, image_verified: true },
+			},
+		];
+		expect(validateDockerRuntimeEvidence(input, currentReceipt)).toEqual([]);
+		currentReceipt.capability_evidence[0]!.details = {
+			image_ref: image,
+			image_digest: imageDigest,
+			image_verified: false,
+		};
+		expect(validateDockerRuntimeEvidence(input, currentReceipt)).toContain(
+			"Docker capability evidence is not independently image-verified",
+		);
+	});
+
 	it("admits only a frozen, host-enforced successful subject", () => {
 		const result = eligibility();
 		expect(result.eligible).toBe(true);
