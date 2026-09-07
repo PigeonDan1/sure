@@ -11,6 +11,7 @@ from sure.runtime.execution_bridge import (
     build_request,
     capability_evidence,
     create_execution_admission_trace,
+    derive_execution_admission_trace,
     digest_json,
     digest_tree,
     output_set_digest,
@@ -68,6 +69,7 @@ class ExecutionBridgeTests(unittest.TestCase):
             self.assertEqual(validate_contract_pair(request, receipt), [])
             contract = write_contract_bundle(root, request, receipt)
             self.assertTrue(contract["contract_valid"])
+            self.assertEqual(contract["admission_instrumentation"], "legacy-uninstrumented")
             self.assertTrue((root / "execution_request.json").is_file())
             self.assertTrue((root / "execution_receipt.json").is_file())
             self.assertTrue((root / "execution_contract.json").is_file())
@@ -201,6 +203,7 @@ class ExecutionBridgeTests(unittest.TestCase):
             )
             contract = write_contract_bundle(root, request, receipt, admission_trace=trace)
             self.assertTrue(contract["contract_valid"])
+            self.assertEqual(contract["admission_instrumentation"], "admission-v1")
             self.assertEqual(json.loads((root / "execution_admission.json").read_text(encoding="utf-8")), trace)
             self.assertTrue((root / "execution_contracts" / f"{request['request_id']}.admission.json").is_file())
             self.assertEqual(contract["admission_digest"], digest_json(trace))
@@ -212,6 +215,37 @@ class ExecutionBridgeTests(unittest.TestCase):
             invalid = write_contract_bundle(invalid_root, invalid_request, receipt, admission_trace=forged)
             self.assertFalse(invalid["contract_valid"])
             self.assertIn("admission.request_digest does not match request", invalid["diagnostics"])
+
+    def test_legacy_admission_derivation_is_conservative(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            missing_receipt = build_receipt(
+                request,
+                lifecycle="NOT_STARTED",
+                executor_kind="python",
+                diagnostics=[{"code": "CAPABILITY_MISSING", "message": "python is unavailable"}],
+            )
+            missing = derive_execution_admission_trace(request, missing_receipt)
+            self.assertEqual(missing["status"], "CAPABILITY_MISSING")
+            self.assertFalse(missing["execute_invoked"])
+            self.assertTrue(missing["receipt_valid"])
+
+            success_receipt = build_receipt(request, lifecycle="SUCCEEDED", executor_kind="python", exit_code=0)
+            success = derive_execution_admission_trace(request, success_receipt)
+            self.assertEqual(success["status"], "ADMITTED")
+            self.assertTrue(success["execute_invoked"])
+            self.assertTrue(success["receipt_valid"])
+
+            spawn_failure = build_receipt(
+                request,
+                lifecycle="NOT_STARTED",
+                executor_kind="python",
+                diagnostics=[{"code": "EXECUTOR_SPAWN_FAILED", "message": "spawn failed"}],
+            )
+            attempted = derive_execution_admission_trace(request, spawn_failure)
+            self.assertEqual(attempted["status"], "ADMITTED")
+            self.assertTrue(attempted["execute_invoked"])
 
     def test_external_adapter_route_is_mirrored_and_fail_closed(self) -> None:
         self.assertEqual(

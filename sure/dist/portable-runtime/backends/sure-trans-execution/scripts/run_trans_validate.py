@@ -37,6 +37,7 @@ from sure.runtime.execution_bridge import (
     build_request,
     capability_evidence,
     digest_json,
+    derive_execution_admission_trace,
     snapshot_digest,
     write_contract_bundle,
 )
@@ -282,8 +283,13 @@ def _finish_validation_contract(
         exit_code=exit_code if lifecycle != "NOT_STARTED" else None,
         diagnostics=diagnostics or [],
     )
+    admission_trace = derive_execution_admission_trace(context["request"], receipt)
     write_contract_bundle(
-        context["artifacts"], context["request"], receipt, legacy_result=context.get("output")
+        context["artifacts"],
+        context["request"],
+        receipt,
+        admission_trace=admission_trace,
+        legacy_result=context.get("output"),
     )
     _CONTRACT_CONTEXT = None
 

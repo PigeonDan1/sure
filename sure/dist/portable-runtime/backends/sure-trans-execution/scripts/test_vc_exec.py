@@ -929,6 +929,7 @@ class ExecutionCompatVcTest(unittest.TestCase):
             ):
                 self.assertEqual(run_execution_compat.main(), 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
+            admission = json.loads((artifacts / "execution_admission.json").read_text(encoding="utf-8"))
             self.assertEqual(payload["execution_surface"], "vc")
             self.assertEqual(payload["selected_device"], "cuda")
             self.assertEqual(payload["vc_job_id"], "job-compat-123")
@@ -937,6 +938,9 @@ class ExecutionCompatVcTest(unittest.TestCase):
             source = json.loads((artifacts / "source_image_result.json").read_text(encoding="utf-8"))
             self.assertEqual(source["registry_ref"], f"{REGISTRY}/example-org/sure-asr-demo-source:0.1.0")
             self.assertEqual(source["registry_push"]["digest"], digest)
+            self.assertEqual(admission["status"], "ADMITTED")
+            self.assertTrue(admission["execute_invoked"])
+            self.assertTrue(admission["receipt_valid"])
 
     def test_non_transformer_model_does_not_require_transformers(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

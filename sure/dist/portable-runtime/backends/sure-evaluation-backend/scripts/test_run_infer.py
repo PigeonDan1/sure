@@ -201,8 +201,13 @@ class RunInferTests(unittest.TestCase):
         self.assertEqual(result["execution_path"], "local_docker")
         self.assertEqual(surface["execution"]["path_planned"], "local_docker")
         contract = json.loads((self.artifacts / "execution_contract.json").read_text(encoding="utf-8"))
+        admission = json.loads((self.artifacts / "execution_admission.json").read_text(encoding="utf-8"))
         receipt = json.loads((self.artifacts / "execution_receipt.json").read_text(encoding="utf-8"))
         self.assertTrue(contract["contract_valid"])
+        self.assertEqual(contract["admission_instrumentation"], "admission-v1")
+        self.assertEqual(admission["status"], "ADMITTED")
+        self.assertTrue(admission["execute_invoked"])
+        self.assertTrue(admission["receipt_valid"])
         self.assertEqual(receipt["lifecycle"], "SUCCEEDED")
 
     def test_missing_gpu_writes_a_not_started_receipt_without_launching(self) -> None:
@@ -212,8 +217,11 @@ class RunInferTests(unittest.TestCase):
         self.assertEqual(return_code, 125)
         self.assertEqual(result["job_status"], "failed")
         receipt = json.loads((self.artifacts / "execution_receipt.json").read_text(encoding="utf-8"))
+        admission = json.loads((self.artifacts / "execution_admission.json").read_text(encoding="utf-8"))
         self.assertEqual(receipt["lifecycle"], "NOT_STARTED")
         self.assertTrue(any(item.get("code") == "CAPABILITY_MISSING" for item in receipt.get("diagnostics", [])))
+        self.assertEqual(admission["status"], "CAPABILITY_MISSING")
+        self.assertFalse(admission["execute_invoked"])
 
     def test_missing_docker_writes_a_not_started_receipt(self) -> None:
         self.write_inputs(self.container_binding)

@@ -1075,6 +1075,76 @@ def build_receipt(
     return receipt
 
 
+def derive_execution_admission_trace(
+    request: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+    *,
+    probe_invoked: bool = False,
+    execute_invoked: bool | None = None,
+    observed_at: str | None = None,
+    forbidden_output_roots: Sequence[Path] = (),
+) -> dict[str, Any]:
+    """Derive a conservative admission trace for a legacy Python runner.
+
+    Legacy runners do not expose Core's adapter callbacks.  A terminal or
+    queued/running receipt therefore proves only that the launch boundary was
+    attempted; capability evidence by itself is not treated as a probe.  A
+    caller may explicitly override ``execute_invoked`` when it knows a spawn
+    attempt happened before a ``NOT_STARTED`` receipt was built.
+    """
+
+    lifecycle = receipt.get("lifecycle")
+    diagnostics = receipt.get("diagnostics") if isinstance(receipt.get("diagnostics"), list) else []
+    codes = {
+        str(item.get("code"))
+        for item in diagnostics
+        if isinstance(item, Mapping) and isinstance(item.get("code"), str)
+    }
+    if "CAPABILITY_MISSING" in codes:
+        reason_code = "CAPABILITY_MISSING"
+        inferred_execute = False
+    elif lifecycle == "SUCCEEDED":
+        reason_code = "VALIDATION_PENDING"
+        inferred_execute = True
+    elif lifecycle == "FAILED":
+        reason_code = "EXECUTION_FAILED"
+        inferred_execute = True
+    elif lifecycle == "PARTIAL":
+        reason_code = "EXECUTION_PARTIAL"
+        inferred_execute = True
+    elif lifecycle == "CANCELLED":
+        reason_code = "EXECUTION_CANCELLED"
+        inferred_execute = True
+    elif lifecycle in {"QUEUED", "RUNNING"}:
+        reason_code = "AWAITING_EXECUTION"
+        inferred_execute = True
+    elif "INVALID_CONTRACT" in codes:
+        reason_code = "INVALID_CONTRACT"
+        inferred_execute = False
+    elif codes.intersection({"EXECUTOR_FAILED", "EXECUTOR_SPAWN_FAILED", "EXECUTOR_TIMEOUT"}):
+        reason_code = "EXECUTION_FAILED"
+        inferred_execute = True
+    else:
+        reason_code = "AWAITING_EXECUTION"
+        inferred_execute = False
+    if execute_invoked is None:
+        execute_invoked = inferred_execute
+    receipt_errors = validate_contract_pair(
+        request,
+        receipt,
+        forbidden_output_roots=forbidden_output_roots,
+    )
+    return create_execution_admission_trace(
+        request,
+        observed_at=str(observed_at or receipt.get("finished_at") or receipt.get("started_at") or utc_now()),
+        outcome_reason_code=reason_code,
+        probe_invoked=probe_invoked,
+        execute_invoked=execute_invoked,
+        receipt=receipt,
+        receipt_valid=not receipt_errors,
+    )
+
+
 def validate_contract_pair(
     request: Mapping[str, Any],
     receipt: Mapping[str, Any],
@@ -1209,6 +1279,7 @@ def write_contract_bundle(
         "request_digest": digest_json(dict(request)),
         "receipt_digest": digest_json(dict(receipt)),
         "lifecycle": receipt.get("lifecycle"),
+        "admission_instrumentation": "admission-v1" if admission_trace is not None else "legacy-uninstrumented",
         "contract_valid": not errors and not admission_errors,
         "diagnostics": [*errors, *admission_errors],
         "legacy_views": {
