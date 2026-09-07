@@ -20,10 +20,9 @@ import {
 	createOperationExecutionEvidence,
 	createOutcome,
 	executionOutputContractDigest,
-	projectExecutionEvidence,
 } from "@earendil-works/sure-core";
 import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
-import { type ExecutorRunResult, executeRequest } from "./executor.ts";
+import { type ExecutorRunResult, executeRequest, projectSurectlExecutionEvidence } from "./executor.ts";
 import {
 	type PersistedValidatorDocument,
 	type SkillRuntimeBinding,
@@ -394,7 +393,7 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 	);
 	const validReceipt = execution.receipt !== undefined && execution.receipt_validation?.valid === true;
 	const missingSuccessfulOutput = execution.receipt?.lifecycle === "SUCCEEDED" && outputArtifact === undefined;
-	const evidenceProjection = projectExecutionEvidence({
+	const evidenceProjection = projectSurectlExecutionEvidence({
 		lifecycle: execution.receipt?.lifecycle,
 		receipt_valid: validReceipt,
 		capability_admitted: execution.capability.admitted,

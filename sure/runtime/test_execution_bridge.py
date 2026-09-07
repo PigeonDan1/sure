@@ -13,6 +13,8 @@ from sure.runtime.execution_bridge import (
     digest_json,
     digest_tree,
     output_set_digest,
+    execution_outcome_projection,
+    project_execution_evidence,
     validate_adapter_route,
     validate_capability_evidence,
     validate_capability_evidence_list,
@@ -163,6 +165,99 @@ class ExecutionBridgeTests(unittest.TestCase):
             errors = validate_contract_pair(request, receipt)
             self.assertIn("external execution requires request.policy_snapshot_digest", errors)
             self.assertIn("external execution requires request.adapter_manifest_digest", errors)
+
+    def test_external_differential_projections_match_canonical_fixture(self) -> None:
+        fixture_path = Path(__file__).resolve().parents[2] / "sure" / "canonical" / "fixtures" / "external-adapter-differential-traces.v1.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        self.assertEqual(fixture["schema"], "sure.execution.external_adapter_differential_traces.v1")
+        self.assertEqual(len(fixture["cases"]), 5)
+        for item in fixture["cases"]:
+            surectl = item["surectl"]
+            self.assertEqual(
+                project_execution_evidence(
+                    lifecycle=surectl["receipt_lifecycle"],
+                    receipt_valid=surectl["receipt_valid"],
+                    capability_admitted=surectl["capability_admitted"],
+                    outcome_reason_code=item["canonical"]["reason_code"],
+                ),
+                {
+                    "verdict": item["python"]["evidence_verdict"],
+                    "reason_code": item["python"]["evidence_reason_code"],
+                },
+            )
+            if item["id"] in {"admitted_executor_failure", "success_waits_for_validation"}:
+                self.assertEqual(
+                    execution_outcome_projection(item["canonical"]["receipt_lifecycle"]),
+                    {
+                        "validator_verdict": item["canonical"]["validator_verdict"],
+                        "workflow_disposition": item["canonical"]["workflow_disposition"],
+                        "outcome": item["canonical"]["outcome"],
+                        "reason_code": item["canonical"]["reason_code"],
+                        "execution_lifecycle": item["canonical"]["receipt_lifecycle"],
+                    },
+                )
+
+    def test_external_differential_contracts_keep_policy_and_receipt_tamper_distinct(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            snapshot = digest_json({"site": "sure-test"})
+            adapter = digest_json({"adapter": "sure-test"})
+            request = build_request(
+                run_id="external-differential",
+                unit_id="execute",
+                operation="inference",
+                entrypoint={"executable": "adapter-entrypoint", "argv": []},
+                output_root=root,
+                policy_digest=digest_json({"policy": 1}),
+                policy_snapshot_digest=snapshot,
+                adapter_manifest_digest=adapter,
+                reference_snapshot_digest=digest_json({"inputs": []}),
+                runtime_requirements={
+                    "execution_surface": "vc",
+                    "executor_kind": "remote",
+                    "vc_project": "sure-test",
+                    "vc_partition": "gpu-test",
+                },
+            )
+            failed = build_receipt(request, lifecycle="FAILED", executor_kind="remote", exit_code=7)
+            self.assertEqual(validate_contract_pair(request, failed), [])
+            self.assertEqual(
+                project_execution_evidence(
+                    lifecycle=failed["lifecycle"],
+                    receipt_valid=True,
+                    capability_admitted=True,
+                    outcome_reason_code="EXECUTION_FAILED",
+                ),
+                {"verdict": "FAIL", "reason_code": "EXECUTION_FAILED"},
+            )
+
+            tampered = build_receipt(request, lifecycle="SUCCEEDED", executor_kind="remote", exit_code=0)
+            tampered["adapter_manifest_digest"] = digest_json({"adapter": "forged"})
+            self.assertIn("receipt.adapter_manifest_digest does not match request", validate_contract_pair(request, tampered))
+            self.assertEqual(
+                project_execution_evidence(
+                    lifecycle=tampered["lifecycle"],
+                    receipt_valid=False,
+                    capability_admitted=True,
+                    outcome_reason_code="INVALID_CONTRACT",
+                ),
+                {"verdict": "NOT_EXECUTED", "reason_code": "INVALID_CONTRACT"},
+            )
+
+            drifted = dict(request)
+            drifted["runtime_requirements"] = {
+                "execution_surface": "vc",
+                "executor_kind": "python",
+                "vc_project": "sure-test",
+                "vc_partition": "gpu-test",
+            }
+            drifted_receipt = build_receipt(drifted, lifecycle="NOT_STARTED", executor_kind="python")
+            self.assertTrue(
+                any(
+                    "runtime_requirements.executor_kind must be remote or trusted" in error
+                    for error in validate_contract_pair(drifted, drifted_receipt)
+                )
+            )
 
     def test_build_request_and_receipt_carry_external_binding_digests(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

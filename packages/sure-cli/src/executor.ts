@@ -6,6 +6,7 @@ import type {
 	ArtifactRef,
 	CapabilityEvidence,
 	CoreOutcome,
+	ExecutionEvidenceProjectionInput,
 	ExecutionOutputKind,
 	ExecutionOutputResidual,
 	ExecutionReceipt,
@@ -27,6 +28,7 @@ import {
 	executorDescriptor,
 	inspectExecutionArtifact,
 	parseDockerRuntimeRequirements,
+	projectExecutionEvidence,
 	validateExecutionReceipt,
 	validateExecutionRequest,
 } from "@earendil-works/sure-core";
@@ -75,6 +77,12 @@ export interface ExecutorRunResult {
 	receipt_validation?: ExecutionReceiptValidation;
 	outcome: CoreOutcome;
 	capability: ReturnType<typeof evaluateCapabilityRequirements>;
+}
+
+/** surectl's evidence facade delegates projection to Core; it never maps a
+ * lifecycle to workflow advancement locally. */
+export function projectSurectlExecutionEvidence(input: ExecutionEvidenceProjectionInput) {
+	return projectExecutionEvidence(input);
 }
 
 function now(options: ExecutorRunOptions): string {

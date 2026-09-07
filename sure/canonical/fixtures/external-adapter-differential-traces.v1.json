@@ -1,0 +1,169 @@
+{
+  "schema": "sure.execution.external_adapter_differential_traces.v1",
+  "version": 1,
+  "description": "Canonical external-adapter traces shared by Core, the Python bridge, surectl evidence projection, and the Pi compatibility facade.",
+  "rules": {
+    "registration_is_required": true,
+    "policy_drift_blocks_before_probe": true,
+    "receipt_tamper_never_advances": true,
+    "success_requires_independent_validation": true,
+    "pi_facade_emits_request_receipt": false
+  },
+  "cases": [
+    {
+      "id": "admitted_executor_failure",
+      "class": "admitted",
+      "canonical": {
+        "receipt_lifecycle": "FAILED",
+        "validator_verdict": "FAIL",
+        "workflow_disposition": "RETRY",
+        "outcome": "RETRY",
+        "reason_code": "EXECUTION_FAILED"
+      },
+      "surectl": {
+        "evidence_verdict": "FAIL",
+        "evidence_reason_code": "EXECUTION_FAILED",
+        "receipt_lifecycle": "FAILED",
+        "receipt_valid": true,
+        "capability_admitted": true,
+        "request_receipt": "present",
+        "assurance_profile": "cooperative"
+      },
+      "python": {
+        "evidence_verdict": "FAIL",
+        "evidence_reason_code": "EXECUTION_FAILED"
+      },
+      "pi": {
+        "evidence_verdict": "FAIL",
+        "evidence_reason_code": "EXECUTION_FAILED",
+        "request_receipt": "absent",
+        "assurance_profile": "hook_enforced"
+      },
+      "relation": "semantic_equal_assurance_different"
+    },
+    {
+      "id": "missing_registration",
+      "class": "capability_absent",
+      "canonical": {
+        "receipt_lifecycle": "NOT_STARTED",
+        "validator_verdict": "NOT_EXECUTED",
+        "workflow_disposition": "BLOCK",
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "CAPABILITY_MISSING"
+      },
+      "surectl": {
+        "evidence_verdict": "NOT_EXECUTED",
+        "evidence_reason_code": "CAPABILITY_MISSING",
+        "receipt_lifecycle": "NOT_STARTED",
+        "receipt_valid": false,
+        "capability_admitted": false,
+        "request_receipt": "present",
+        "assurance_profile": "cooperative"
+      },
+      "python": {
+        "evidence_verdict": "NOT_EXECUTED",
+        "evidence_reason_code": "CAPABILITY_MISSING"
+      },
+      "pi": {
+        "evidence_verdict": "NOT_EXECUTED",
+        "evidence_reason_code": "CAPABILITY_MISSING",
+        "request_receipt": "absent",
+        "assurance_profile": "hook_enforced"
+      },
+      "relation": "semantic_equal_assurance_different"
+    },
+    {
+      "id": "policy_drift",
+      "class": "policy_mismatch",
+      "canonical": {
+        "receipt_lifecycle": "NOT_STARTED",
+        "validator_verdict": "NOT_EXECUTED",
+        "workflow_disposition": "BLOCK",
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "INVALID_CONTRACT"
+      },
+      "surectl": {
+        "evidence_verdict": "NOT_EXECUTED",
+        "evidence_reason_code": "INVALID_CONTRACT",
+        "receipt_lifecycle": "NOT_STARTED",
+        "receipt_valid": false,
+        "capability_admitted": false,
+        "request_receipt": "present",
+        "assurance_profile": "cooperative"
+      },
+      "python": {
+        "evidence_verdict": "NOT_EXECUTED",
+        "evidence_reason_code": "INVALID_CONTRACT"
+      },
+      "pi": {
+        "evidence_verdict": "NOT_EXECUTED",
+        "evidence_reason_code": "INVALID_CONTRACT",
+        "request_receipt": "absent",
+        "assurance_profile": "hook_enforced"
+      },
+      "relation": "semantic_equal_assurance_different"
+    },
+    {
+      "id": "receipt_tamper",
+      "class": "receipt_contract_error",
+      "canonical": {
+        "receipt_lifecycle": "SUCCEEDED",
+        "validator_verdict": "NOT_EXECUTED",
+        "workflow_disposition": "BLOCK",
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "INVALID_CONTRACT"
+      },
+      "surectl": {
+        "evidence_verdict": "NOT_EXECUTED",
+        "evidence_reason_code": "INVALID_CONTRACT",
+        "receipt_lifecycle": "SUCCEEDED",
+        "receipt_valid": false,
+        "capability_admitted": true,
+        "request_receipt": "present",
+        "assurance_profile": "cooperative"
+      },
+      "python": {
+        "evidence_verdict": "NOT_EXECUTED",
+        "evidence_reason_code": "INVALID_CONTRACT"
+      },
+      "pi": {
+        "evidence_verdict": "NOT_EXECUTED",
+        "evidence_reason_code": "INVALID_CONTRACT",
+        "request_receipt": "absent",
+        "assurance_profile": "hook_enforced"
+      },
+      "relation": "semantic_equal_assurance_different"
+    },
+    {
+      "id": "success_waits_for_validation",
+      "class": "successful_execution",
+      "canonical": {
+        "receipt_lifecycle": "SUCCEEDED",
+        "validator_verdict": "NOT_EXECUTED",
+        "workflow_disposition": "WAIT",
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "VALIDATION_PENDING"
+      },
+      "surectl": {
+        "evidence_verdict": "PASS",
+        "evidence_reason_code": "EXECUTION_SUCCEEDED",
+        "receipt_lifecycle": "SUCCEEDED",
+        "receipt_valid": true,
+        "capability_admitted": true,
+        "request_receipt": "present",
+        "assurance_profile": "cooperative"
+      },
+      "python": {
+        "evidence_verdict": "PASS",
+        "evidence_reason_code": "EXECUTION_SUCCEEDED"
+      },
+      "pi": {
+        "evidence_verdict": "PASS",
+        "evidence_reason_code": "EXECUTION_SUCCEEDED",
+        "request_receipt": "absent",
+        "assurance_profile": "hook_enforced"
+      },
+      "relation": "semantic_equal_assurance_different"
+    }
+  ]
+}

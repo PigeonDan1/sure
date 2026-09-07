@@ -56,6 +56,85 @@ TERMINAL_LIFECYCLES = {"SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"}
 LIFECYCLES = {"NOT_STARTED", "QUEUED", "RUNNING", *TERMINAL_LIFECYCLES}
 
 
+def execution_outcome_projection(lifecycle: str) -> dict[str, Any]:
+    """Mirror Core's lifecycle projection without advancing a workflow."""
+
+    projections: dict[str, dict[str, Any]] = {
+        "SUCCEEDED": {
+            "validator_verdict": "NOT_EXECUTED",
+            "workflow_disposition": "WAIT",
+            "outcome": "NOT_EXECUTED",
+            "reason_code": "VALIDATION_PENDING",
+        },
+        "FAILED": {
+            "validator_verdict": "FAIL",
+            "workflow_disposition": "RETRY",
+            "outcome": "RETRY",
+            "reason_code": "EXECUTION_FAILED",
+        },
+        "PARTIAL": {
+            "validator_verdict": "FAIL",
+            "workflow_disposition": "BLOCK",
+            "outcome": "BLOCKED",
+            "reason_code": "EXECUTION_PARTIAL",
+        },
+        "CANCELLED": {
+            "validator_verdict": "NOT_EXECUTED",
+            "workflow_disposition": "BLOCK",
+            "outcome": "NOT_EXECUTED",
+            "reason_code": "EXECUTION_CANCELLED",
+        },
+        "NOT_STARTED": {
+            "validator_verdict": "NOT_EXECUTED",
+            "workflow_disposition": "WAIT",
+            "outcome": "NOT_EXECUTED",
+            "reason_code": "AWAITING_EXECUTION",
+        },
+        "QUEUED": {
+            "validator_verdict": "NOT_EXECUTED",
+            "workflow_disposition": "WAIT",
+            "outcome": "NOT_EXECUTED",
+            "reason_code": "AWAITING_EXECUTION",
+        },
+        "RUNNING": {
+            "validator_verdict": "NOT_EXECUTED",
+            "workflow_disposition": "WAIT",
+            "outcome": "NOT_EXECUTED",
+            "reason_code": "AWAITING_EXECUTION",
+        },
+    }
+    try:
+        projection = projections[lifecycle]
+    except KeyError as error:
+        raise ValueError(f"invalid execution lifecycle: {lifecycle}") from error
+    return {**projection, "execution_lifecycle": lifecycle}
+
+
+def project_execution_evidence(
+    *,
+    lifecycle: str | None,
+    receipt_valid: bool,
+    capability_admitted: bool,
+    outcome_reason_code: str,
+    missing_output: bool = False,
+) -> dict[str, str]:
+    """Mirror Core's surectl operation-evidence projection."""
+
+    if missing_output:
+        return {"verdict": "NOT_EXECUTED", "reason_code": "INVALID_CONTRACT"}
+    if not receipt_valid or not capability_admitted:
+        return {"verdict": "NOT_EXECUTED", "reason_code": outcome_reason_code}
+    if lifecycle == "SUCCEEDED":
+        return {"verdict": "PASS", "reason_code": "EXECUTION_SUCCEEDED"}
+    if lifecycle == "FAILED":
+        return {"verdict": "FAIL", "reason_code": "EXECUTION_FAILED"}
+    if lifecycle == "PARTIAL":
+        return {"verdict": "FAIL", "reason_code": "EXECUTION_PARTIAL"}
+    if lifecycle == "CANCELLED":
+        return {"verdict": "NOT_EXECUTED", "reason_code": "EXECUTION_CANCELLED"}
+    return {"verdict": "NOT_EXECUTED", "reason_code": outcome_reason_code}
+
+
 def _valid_adapter_timeout(value: object) -> bool:
     return (
         isinstance(value, int)

@@ -6836,8 +6836,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-operation-evidence.test.ts",
-      "size_bytes": 20575,
-      "sha256": "0a212b9f171ee183a1a354fda7bb6a1bfeaa534922e6698f7db2e1356cfe51d1"
+      "size_bytes": 22981,
+      "sha256": "f66e6ed9b9e6dda3b899f82c4584bc631e99f58f2a4740a9930586ef3d9f9426"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-run-output-dir.test.ts",
@@ -6961,8 +6961,8 @@
     },
     {
       "path": "sure/runtime/execution_bridge.py",
-      "size_bytes": 47835,
-      "sha256": "2b2adce245aacc10e5e166d36cd07fa2cc6a8b91cbcb7a61df8a16fffa21ca8c"
+      "size_bytes": 50731,
+      "sha256": "452b248d72d0d8c7f9e63a47801bd2ec080c3b8c22e644b4f8c1b25a4463072d"
     },
     {
       "path": "sure/runtime/harness/bootstrap.py",
@@ -7281,8 +7281,8 @@
     },
     {
       "path": "sure/runtime/test_execution_bridge.py",
-      "size_bytes": 19627,
-      "sha256": "76c45cd0aa1bf15a1682921d165721f27ee844cf4d95754bde28d251b9e75884"
+      "size_bytes": 24412,
+      "sha256": "22ff96c8f6efd4ad5777ebbc0a1e4c9e81fe7ed0ea3acbc16d9682054cc29d1d"
     },
     {
       "path": "sure/runtime/test_repository_layout.py",
@@ -9736,5 +9736,5 @@
       ]
     }
   ],
-  "semantic_digest": "c18bc9b3a5025e15c5df5f13e34edba5a13186e8c8b564d890cfa22dd15c515e"
+  "semantic_digest": "1d508bb70754d6d57c749ea607f0d4d3c4a936a294d1bfb9e2d9d2531d720586"
 }

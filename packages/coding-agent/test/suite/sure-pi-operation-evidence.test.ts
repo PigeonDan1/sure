@@ -67,12 +67,29 @@ interface DifferentialCase {
 	};
 }
 
+interface ExternalDifferentialCase {
+	id: string;
+	pi: {
+		evidence_verdict: "PASS" | "FAIL" | "NOT_EXECUTED";
+		evidence_reason_code: string;
+		request_receipt: "present" | "absent";
+		assurance_profile: "cooperative" | "hook_enforced";
+	};
+}
+
 const DIFFERENTIAL_FIXTURE = JSON.parse(
 	readFileSync(
 		new URL("../../../../sure/canonical/fixtures/execution-differential-traces.json", import.meta.url),
 		"utf8",
 	),
 ) as { schema: string; cases: DifferentialCase[] };
+
+const EXTERNAL_DIFFERENTIAL_FIXTURE = JSON.parse(
+	readFileSync(
+		new URL("../../../../sure/canonical/fixtures/external-adapter-differential-traces.v1.json", import.meta.url),
+		"utf8",
+	),
+) as { schema: string; cases: ExternalDifferentialCase[] };
 
 function fixture(name: string): Fixture {
 	const root = join(TEMP_ROOT, name);
@@ -221,6 +238,48 @@ describe("Pi registered operation evidence", () => {
 			return { ok: true, stdout: "", stderr: "", status: 0 };
 		});
 		run("execution_succeeded_validation_pending", () => ({ ok: true, stdout: "ok", stderr: "", status: 0 }));
+	});
+
+	it("keeps external-adapter traces semantically aligned without fabricating request or receipt evidence", () => {
+		expect(EXTERNAL_DIFFERENTIAL_FIXTURE.schema).toBe("sure.execution.external_adapter_differential_traces.v1");
+		const expected = new Map(EXTERNAL_DIFFERENTIAL_FIXTURE.cases.map((item) => [item.id, item.pi]));
+		const run = (
+			id: string,
+			execute: (fx: Fixture) => { ok: boolean; stdout: string; stderr: string; status: number | null },
+		) => {
+			const fx = fixture(`external-differential-${id}`);
+			const result = runPiRegisteredOperation({
+				ctx: fx.ctx,
+				unit_id: "validate_import",
+				attempt: 1,
+				operation_id: "sure.onboard.execute_import",
+				script_id: "run_validate.py",
+				artifact_input_path: fx.artifactPath,
+				execute: () => execute(fx),
+			});
+			const evidence = result.evidence;
+			if (!evidence) throw new Error(`${id} did not emit evidence`);
+			const item = expected.get(id);
+			if (!item) throw new Error(`${id} trace is missing`);
+			expect({ evidence_verdict: evidence.verdict, evidence_reason_code: evidence.reason_code }, id).toEqual({
+				evidence_verdict: item.evidence_verdict,
+				evidence_reason_code: item.evidence_reason_code,
+			});
+			expect(item.request_receipt, id).toBe("absent");
+			expect(evidence.request_digest, id).toBeUndefined();
+			expect(evidence.receipt_digest, id).toBeUndefined();
+		};
+
+		run("admitted_executor_failure", () => ({ ok: false, stdout: "failed", stderr: "", status: 7 }));
+		run("missing_registration", () => ({ ok: false, stdout: "", stderr: "capability missing", status: null }));
+		run("policy_drift", () => {
+			throw new Error("external adapter policy snapshot drift");
+		});
+		run("receipt_tamper", (fx) => {
+			rmSync(fx.artifactPath);
+			return { ok: true, stdout: "", stderr: "", status: 0 };
+		});
+		run("success_waits_for_validation", () => ({ ok: true, stdout: "ok", stderr: "", status: 0 }));
 	});
 
 	it("wraps a registered runner and hashes mutating input and output bytes", () => {
