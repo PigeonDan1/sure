@@ -9,4 +9,4 @@ Validate the projection before using a host memory backend:
 
 Logical references use `memory://<skill>/<kind>/<slug>`. A backend that is not installed or cannot provide a structured receipt must be reported as `NOT_EXECUTED/CAPABILITY_MISSING`; it must not be substituted with a successful result.
 
-The portable package does not import Pi lifecycle modules. A host may provide the memory writer and its roots explicitly, while SURE Core remains authoritative for workflow transitions.
+The portable package does not import Pi lifecycle modules. The pinned runtime includes `sure/runtime/memory/launcher.py`; hosts may invoke its `publish`, `index`, or `promote` operation with explicit `--memory-root`, reference roots, and (when applicable) `--reference-root`. The launcher emits `sure.memory.writer_receipt.v1`, never writes workflow checkpoints, and treats memory failures as advisory while SURE Core remains authoritative for workflow transitions.

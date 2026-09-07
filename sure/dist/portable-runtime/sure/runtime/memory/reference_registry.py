@@ -82,6 +82,7 @@ def _admit(root: Path, candidate: Path, label: str) -> Path:
 @dataclass(frozen=True)
 class ReferenceRoots:
     repo_root: Path
+    memory_root: Path
     canonical_root: Path
     legacy_skills_root: Path
     write_root: str = "legacy"
@@ -95,6 +96,7 @@ class ReferenceRegistry:
         self,
         repo_root: Path,
         *,
+        memory_root: Path | None = None,
         canonical_root: Path | None = None,
         legacy_skills_root: Path | None = None,
         write_root: str = "legacy",
@@ -108,7 +110,8 @@ class ReferenceRegistry:
         order = tuple(read_order or ("legacy", "canonical"))
         if not order or any(item not in ("legacy", "canonical") for item in order) or len(set(order)) != len(order):
             raise ValueError("reference read_order must list legacy and/or canonical exactly once")
-        self.roots = ReferenceRoots(repo, canonical, legacy, write_root, order)
+        memory = Path(memory_root or repo / "sure" / "memory").resolve()
+        self.roots = ReferenceRoots(repo, memory, canonical, legacy, write_root, order)
 
     @property
     def repo_root(self) -> Path:
@@ -116,7 +119,7 @@ class ReferenceRegistry:
 
     @property
     def memory_root(self) -> Path:
-        return self.roots.repo_root / "sure" / "memory"
+        return self.roots.memory_root
 
     def logical_uri(self, entry_id: str, entry_type: str | None = None) -> str:
         skill, slug = _split_entry_id(entry_id)

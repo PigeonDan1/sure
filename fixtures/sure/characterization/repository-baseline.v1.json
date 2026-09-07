@@ -7065,6 +7065,11 @@
       "sha256": "166439a9546375adfcaa41aab687014a7b1ea840dc319ccd4f6676d91ccbcbbd"
     },
     {
+      "path": "sure/runtime/memory/launcher.py",
+      "size_bytes": 7745,
+      "sha256": "62fa5721df90e320e3728e08cc873f3c8072c55a7d5e25adaadff33c4fc28696"
+    },
+    {
       "path": "sure/runtime/memory/log_paths.json",
       "size_bytes": 2569,
       "sha256": "ab90cd8f0aa8dcaf1e6681c1a442687727ecaeaa9001234600c2cc1a94948211"
@@ -7076,8 +7081,8 @@
     },
     {
       "path": "sure/runtime/memory/paths.py",
-      "size_bytes": 13106,
-      "sha256": "5c5bd2d5339bd0e8bb12537153f39b908339553dc2a20e27c5c8addafe8845ca"
+      "size_bytes": 17503,
+      "sha256": "eaf4a181031cea06410968ef8c188840c7b6a453aa08a6bd8cf5eb4d45179db3"
     },
     {
       "path": "sure/runtime/memory/pi-bridge.ts",
@@ -7101,8 +7106,8 @@
     },
     {
       "path": "sure/runtime/memory/reference_registry.py",
-      "size_bytes": 12736,
-      "sha256": "cce354419d2539b159de7393b4bfaa0888fa584e7b1e37e114a805e9bc423a51"
+      "size_bytes": 12862,
+      "sha256": "c16bb850cae4ba9d81608b631a6949d1a2c939f15b022a5b50cc702b977455de"
     },
     {
       "path": "sure/runtime/memory/schemas/extraction_declaration.schema.json",
@@ -7153,6 +7158,11 @@
       "path": "sure/runtime/memory/test_index.py",
       "size_bytes": 52021,
       "sha256": "c84e570650e777283b53d9f6f44c2ea7a2e4e0eb42173596c880362b150340e4"
+    },
+    {
+      "path": "sure/runtime/memory/test_launcher.py",
+      "size_bytes": 4270,
+      "sha256": "631c0fa2c4208dd38c3527176f079f11168b85627738549b93a1983a9fdb89b3"
     },
     {
       "path": "sure/runtime/memory/test_paths.py",
@@ -9711,5 +9721,5 @@
       ]
     }
   ],
-  "semantic_digest": "e1c2f0abde038d217a7102c0bb7aca7f283411fa4fcf96df579c19f5f8ec9266"
+  "semantic_digest": "826ecd02deb5dc90f45c8f03dad6f3f09630317939248699a7924243ee96046f"
 }

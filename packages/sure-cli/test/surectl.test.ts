@@ -194,6 +194,93 @@ describe("surectl cooperative control plane", () => {
 		});
 	});
 
+	it("runs the locked portable memory writer in explicit roots without touching the repo default", () => {
+		const memoryRoot = join(root, "local-output", "memory");
+		const canonicalRoot = join(root, "local-output", "canonical");
+		const legacyRoot = join(root, "local-output", "skills");
+		const referenceRoot = join(root, "production-reference");
+		mkdirSync(referenceRoot, { recursive: true });
+		const written = command(root, "memory", [
+			"--contract",
+			portableMemoryContract,
+			"--skill",
+			"sure_feed",
+			"--operation",
+			"index",
+			"--mode",
+			"rebuild",
+			"--semantic-runtime",
+			portableRuntime,
+			"--memory-root",
+			memoryRoot,
+			"--canonical-root",
+			canonicalRoot,
+			"--legacy-skills-root",
+			legacyRoot,
+			"--reference-root",
+			referenceRoot,
+		]);
+		expect(written.status).toBe(0);
+		expect(written.value?.ok).toBe(true);
+		expect(written.value?.advisory).toBe(true);
+		expect((written.value?.writer_receipt as Record<string, unknown>)?.schema).toBe("sure.memory.writer_receipt.v1");
+		expect((written.value?.outcome as Record<string, unknown>)?.outcome).toBe("PASS");
+		expect(existsSync(join(memoryRoot, "index.json"))).toBe(true);
+		expect(existsSync(join(root, "sure", "memory"))).toBe(false);
+	});
+
+	it("refuses an unavailable portable writer without treating it as a successful memory check", () => {
+		const unavailable = command(root, "memory", [
+			"--contract",
+			portableMemoryContract,
+			"--skill",
+			"sure_feed",
+			"--operation",
+			"index",
+			"--semantic-runtime",
+			join(root, "missing-runtime"),
+			"--memory-root",
+			join(root, "memory"),
+			"--canonical-root",
+			join(root, "canonical"),
+			"--legacy-skills-root",
+			join(root, "skills"),
+		]);
+		expect(unavailable.status).toBe(5);
+		expect(unavailable.value?.ok).toBe(false);
+		expect((unavailable.value?.outcome as Record<string, unknown>)?.outcome).toBe("NOT_EXECUTED");
+		expect((unavailable.value?.outcome as Record<string, unknown>)?.reason_code).toBe("CAPABILITY_MISSING");
+	});
+
+	it("fails closed when a portable memory root is inside a declared reference root", () => {
+		const referenceRoot = join(root, "production-reference");
+		mkdirSync(referenceRoot, { recursive: true });
+		const rejected = command(root, "memory", [
+			"--contract",
+			portableMemoryContract,
+			"--skill",
+			"sure_feed",
+			"--operation",
+			"index",
+			"--mode",
+			"rebuild",
+			"--semantic-runtime",
+			portableRuntime,
+			"--memory-root",
+			join(referenceRoot, "memory"),
+			"--canonical-root",
+			join(root, "canonical"),
+			"--legacy-skills-root",
+			join(root, "skills"),
+			"--reference-root",
+			referenceRoot,
+		]);
+		expect(rejected.status).toBe(5);
+		expect((rejected.value?.outcome as Record<string, unknown>)?.outcome).toBe("NOT_EXECUTED");
+		expect((rejected.value?.outcome as Record<string, unknown>)?.reason_code).toBe("CAPABILITY_MISSING");
+		expect(existsSync(join(referenceRoot, "memory"))).toBe(false);
+	});
+
 	it("runs feed gates through the shared portable semantic backends", () => {
 		const runId = "run-automatic-feed-validators";
 		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];

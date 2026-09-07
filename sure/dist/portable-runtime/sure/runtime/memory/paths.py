@@ -26,9 +26,11 @@ import subprocess
 import tempfile
 import time
 from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 try:  # POSIX only
     import fcntl
@@ -51,6 +53,107 @@ _ENTRY_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
 _REPLACE_ATTEMPTS = 5
 
 
+@dataclass(frozen=True)
+class MemoryWorkspace:
+    """Explicit roots supplied by a host to the compatibility memory writer.
+
+    Legacy functions still accept only ``repo_root``.  A workspace context lets
+    a portable launcher supply independent writable and reference roots without
+    changing those stable function signatures.  With no context, direct calls
+    retain the historical checkout layout.
+    """
+
+    repo_root: Path
+    memory_root: Path
+    canonical_root: Path
+    legacy_skills_root: Path
+    write_root: str = "legacy"
+    read_order: tuple[str, ...] = ("legacy", "canonical")
+    reference_roots: tuple[Path, ...] = ()
+
+
+_CURRENT_WORKSPACE: ContextVar[MemoryWorkspace | None] = ContextVar(
+    "sure_memory_workspace", default=None
+)
+
+
+def _inside(root: Path, candidate: Path) -> bool:
+    try:
+        candidate.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def make_memory_workspace(
+    repo_root: Path,
+    *,
+    memory_root_override: Path | None = None,
+    canonical_root: Path | None = None,
+    legacy_skills_root: Path | None = None,
+    write_root: str = "legacy",
+    read_order: tuple[str, ...] = ("legacy", "canonical"),
+    reference_root: Path | None = None,
+    reference_roots: Iterable[Path] = (),
+) -> MemoryWorkspace:
+    """Normalize and admit host-supplied memory roots.
+
+    ``reference_root`` is an optional explicit read-only production prefix.
+    When supplied, the memory state root and selected reference write alias
+    may not be inside it.  Both lexical and resolved containment are checked
+    so an output symlink cannot redirect a writer into the reference tree.
+    """
+
+    repo = Path(repo_root).expanduser().resolve()
+    memory = Path(memory_root_override or repo / "sure" / "memory").expanduser().resolve()
+    canonical = Path(canonical_root or repo / "sure" / "canonical").expanduser().resolve()
+    legacy = Path(legacy_skills_root or repo / "sure" / "skills").expanduser().resolve()
+    forbidden = tuple(
+        dict.fromkeys(
+            Path(root).expanduser().resolve()
+            for root in ([reference_root] if reference_root is not None else []) + list(reference_roots)
+        )
+    )
+    if write_root not in ("legacy", "canonical"):
+        raise ValueError(f"memory write_root must be legacy or canonical: {write_root!r}")
+    if not read_order or any(alias not in ("legacy", "canonical") for alias in read_order):
+        raise ValueError("memory read_order must contain only legacy/canonical aliases")
+    if len(set(read_order)) != len(read_order):
+        raise ValueError("memory read_order must not contain duplicates")
+    writable_roots = (memory, canonical if write_root == "canonical" else legacy)
+    if any(_inside(reference, root) for reference in forbidden for root in writable_roots):
+        raise ValueError("memory workspace writable root is inside the read-only reference root")
+    return MemoryWorkspace(
+        repo_root=repo,
+        memory_root=memory,
+        canonical_root=canonical,
+        legacy_skills_root=legacy,
+        write_root=write_root,
+        read_order=tuple(read_order),
+        reference_roots=forbidden,
+    )
+
+
+@contextmanager
+def memory_workspace(workspace: MemoryWorkspace) -> Iterator[MemoryWorkspace]:
+    """Use an explicit workspace for all legacy memory functions in this context."""
+
+    token = _CURRENT_WORKSPACE.set(workspace)
+    try:
+        yield workspace
+    finally:
+        _CURRENT_WORKSPACE.reset(token)
+
+
+def current_memory_workspace(repo_root: Path | None = None) -> MemoryWorkspace | None:
+    workspace = _CURRENT_WORKSPACE.get()
+    if workspace is None:
+        return None
+    if repo_root is not None and Path(repo_root).resolve() != workspace.repo_root:
+        return None
+    return workspace
+
+
 # --- locations -----------------------------------------------------------------
 
 def repo_root_from_package_dir(package_dir: Path) -> Path:
@@ -59,13 +162,21 @@ def repo_root_from_package_dir(package_dir: Path) -> Path:
 
 
 def memory_root(repo_root: Path) -> Path:
-    return Path(repo_root) / "sure" / "memory"
+    workspace = current_memory_workspace(repo_root)
+    return workspace.memory_root if workspace is not None else Path(repo_root) / "sure" / "memory"
 
 
 def reference_registry(repo_root: Path, **kwargs: object):
     """Construct the shared reference alias registry without coupling callers to its module path."""
     from memory.reference_registry import ReferenceRegistry
 
+    workspace = current_memory_workspace(repo_root)
+    if workspace is not None:
+        kwargs.setdefault("memory_root", workspace.memory_root)
+        kwargs.setdefault("canonical_root", workspace.canonical_root)
+        kwargs.setdefault("legacy_skills_root", workspace.legacy_skills_root)
+        kwargs.setdefault("write_root", workspace.write_root)
+        kwargs.setdefault("read_order", workspace.read_order)
     return ReferenceRegistry(Path(repo_root), **kwargs)
 
 

@@ -2002,13 +2002,181 @@ function capabilities(args: ParsedArgs): PublicOutcome {
 	return outcome.outcome;
 }
 
-/**
- * Validate the host-neutral memory contract carried by a skill distribution.
- * This command deliberately does not run a memory writer or alter a workflow;
- * it gives portable hosts one small, Pi-free integrity/identity check. Future
- * backend operations must return NOT_EXECUTED until they provide their own
- * structured receipt.
- */
+type MemoryWriterOperation = "publish" | "index" | "promote";
+
+function memoryWriterOutcome(
+	args: ParsedArgs,
+	contractPath: string,
+	contractDigest: string,
+	contract: Record<string, unknown>,
+	projection: Record<string, unknown> | undefined,
+	operation: MemoryWriterOperation,
+): PublicOutcome {
+	const unavailable = (reason: string, diagnostics: string[] = [reason]): PublicOutcome => {
+		const outcome = createOutcome({
+			validatorVerdict: "NOT_EXECUTED",
+			workflowDisposition: "WAIT",
+			reasonCode: reason.includes("reference root") ? "READ_ONLY_REFERENCE" : "CAPABILITY_MISSING",
+			executionLifecycle: "NOT_STARTED",
+			diagnostics: diagnostics.map((message) => ({ code: "MEMORY_WRITER_UNAVAILABLE", message })),
+		});
+		output({
+			ok: false,
+			command: "memory",
+			operation,
+			advisory: true,
+			contract_path: contractPath,
+			contract_digest: contractDigest,
+			outcome,
+		});
+		return outcome.outcome;
+	};
+	if (projection?.enabled !== true) return unavailable("memory writer is disabled for this skill");
+
+	let runtime: ReturnType<typeof verifyPortableRuntime>;
+	let generation: Record<string, unknown>;
+	let launcherPath: string;
+	try {
+		const generationPath = absolute(
+			one(args, "generation-lock") ?? join(dirname(contractPath), "generation.lock.json"),
+			"--generation-lock",
+		);
+		assertRegularFile(generationPath, "Skill generation lock");
+		generation = recordObject(readJson(generationPath), "skill generation lock");
+		if (generation.schema !== "sure.skill.generation.lock.v1") throw new Error("unsupported generation lock schema");
+		if (generation.host !== "portable") throw new Error("memory writer requires a portable skill generation lock");
+		if (generation.core_package_version !== CORE_VERSION) throw new Error("generation lock Core version mismatch");
+		if (
+			typeof generation.memory_contract_digest !== "string" ||
+			!sameDigest(generation.memory_contract_digest, contractDigest)
+		) {
+			throw new Error("generation lock memory contract digest mismatch");
+		}
+		if (projection?.skill_id !== generation.skill_id) throw new Error("generation lock skill projection mismatch");
+		if (typeof generation.semantic_runtime_digest !== "string") {
+			throw new Error("generation lock has no semantic runtime digest");
+		}
+		const runtimeRoot = absolute(required(args, "semantic-runtime"), "--semantic-runtime");
+		runtime = verifyPortableRuntime(runtimeRoot, {
+			expected_runtime_digest: normalizeDigest(generation.semantic_runtime_digest, "semantic runtime digest"),
+			expected_core_package_version: CORE_VERSION,
+		});
+		launcherPath = join(runtime.root, "sure", "runtime", "memory", "launcher.py");
+		assertRegularFile(launcherPath, "Memory writer launcher");
+	} catch (error) {
+		return unavailable(error instanceof Error ? error.message : String(error));
+	}
+
+	const repoRoot = absolute(one(args, "repo-root") ?? rootFor(args), "--repo-root");
+	let memoryRoot: string;
+	let canonicalRoot: string;
+	let legacySkillsRoot: string;
+	try {
+		memoryRoot = absolute(required(args, "memory-root"), "--memory-root");
+		canonicalRoot = absolute(required(args, "canonical-root"), "--canonical-root");
+		legacySkillsRoot = absolute(required(args, "legacy-skills-root"), "--legacy-skills-root");
+	} catch (error) {
+		return unavailable(error instanceof Error ? error.message : String(error));
+	}
+	const launcherArgs = [
+		"-B",
+		"-s",
+		launcherPath,
+		"--repo-root",
+		repoRoot,
+		"--memory-root",
+		memoryRoot,
+		"--canonical-root",
+		canonicalRoot,
+		"--legacy-skills-root",
+		legacySkillsRoot,
+		"--write-root",
+		one(args, "memory-write-root") ?? "legacy",
+		"--read-order",
+		one(args, "memory-read-order") ?? "legacy,canonical",
+	];
+	for (const root of referenceRoots(args)) launcherArgs.push("--reference-root", root);
+	launcherArgs.push(operation);
+	if (operation === "publish") {
+		let runDir: string;
+		try {
+			runDir = absolute(required(args, "run-dir"), "--run-dir");
+		} catch (error) {
+			return unavailable(error instanceof Error ? error.message : String(error));
+		}
+		launcherArgs.push("--run-dir", runDir);
+		if (one(args, "no-promote") === "true") launcherArgs.push("--no-promote");
+	} else if (operation === "index") {
+		const mode = one(args, "mode") ?? "check";
+		if (mode !== "check" && mode !== "rebuild") return unavailable("memory index mode must be check or rebuild");
+		launcherArgs.push(`--${mode}`);
+	} else if (one(args, "no-rebuild-index") === "true") {
+		launcherArgs.push("--no-rebuild-index");
+	}
+
+	const python = one(args, "python") ?? one(args, "validator-python") ?? process.env.HARNESS_PYTHON_BIN ?? "python3";
+	const executed = spawnSync(python, launcherArgs, {
+		encoding: "utf8",
+		timeout: 120_000,
+		maxBuffer: 1024 * 1024,
+		env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+	});
+	let writerReceipt: Record<string, unknown> | undefined;
+	try {
+		writerReceipt = recordObject(JSON.parse((executed.stdout || "").trim()), "memory writer receipt");
+	} catch {
+		return unavailable("memory writer did not return a structured receipt");
+	}
+	const expectedWorkspace = {
+		repo_root: `sha256:${createHash("sha256").update(repoRoot).digest("hex")}`,
+		memory_root: `sha256:${createHash("sha256").update(memoryRoot).digest("hex")}`,
+		canonical_root: `sha256:${createHash("sha256").update(canonicalRoot).digest("hex")}`,
+		legacy_skills_root: `sha256:${createHash("sha256").update(legacySkillsRoot).digest("hex")}`,
+	};
+	const workspace =
+		typeof writerReceipt.workspace === "object" && writerReceipt.workspace !== null
+			? (writerReceipt.workspace as Record<string, unknown>)
+			: undefined;
+	const receiptValid =
+		writerReceipt.schema === "sure.memory.writer_receipt.v1" &&
+		writerReceipt.operation === operation &&
+		writerReceipt.advisory === true &&
+		writerReceipt.workflow_disposition === "NO_EFFECT" &&
+		workspace !== undefined &&
+		Object.entries(expectedWorkspace).every(([key, value]) => workspace[key] === value);
+	if (!receiptValid) return unavailable("memory writer receipt binding is invalid");
+	const succeeded = executed.status === 0 && writerReceipt.status === "SUCCEEDED" && writerReceipt.exit_code === 0;
+	const writerUnavailable = writerReceipt.reason_code === "CAPABILITY_MISSING";
+	const outcome = succeeded
+		? createOutcome({
+				validatorVerdict: "PASS",
+				workflowDisposition: "ADVANCE",
+				reasonCode: "VALIDATION_PASSED",
+				executionLifecycle: "SUCCEEDED",
+			})
+		: createOutcome({
+				validatorVerdict: "NOT_EXECUTED",
+				workflowDisposition: "WAIT",
+				reasonCode: writerUnavailable ? "CAPABILITY_MISSING" : "EXECUTION_FAILED",
+				executionLifecycle: writerUnavailable ? "NOT_STARTED" : "FAILED",
+				diagnostics: [{ code: "MEMORY_WRITE_FAILED", message: "advisory memory writer did not complete" }],
+			});
+	output({
+		ok: succeeded,
+		command: "memory",
+		operation,
+		advisory: true,
+		contract_path: contractPath,
+		contract_digest: contractDigest,
+		contract,
+		runtime_digest: runtime.lock.runtime_digest,
+		writer_receipt: writerReceipt,
+		outcome,
+	});
+	return outcome.outcome;
+}
+
+/** Validate the host-neutral contract and optionally run its locked advisory writer. */
 function memory(args: ParsedArgs): PublicOutcome {
 	const contractValue = one(args, "contract") ?? one(args, "memory-contract");
 	if (contractValue === undefined) throw new Error("--contract (or --memory-contract) is required.");
@@ -2063,6 +2231,29 @@ function memory(args: ParsedArgs): PublicOutcome {
 			outcome,
 		});
 		return outcome.outcome;
+	}
+	const operationValue = one(args, "operation") ?? "contract";
+	if (operationValue !== "contract") {
+		if (operationValue !== "publish" && operationValue !== "index" && operationValue !== "promote") {
+			const outcome = createOutcome({
+				validatorVerdict: "NOT_EXECUTED",
+				workflowDisposition: "BLOCK",
+				reasonCode: "INVALID_CONTRACT",
+				diagnostics: [
+					{ code: "MEMORY_OPERATION_REJECTED", message: `unknown memory operation: ${operationValue}` },
+				],
+			});
+			output({ ok: false, command: "memory", operation: operationValue, advisory: true, outcome });
+			return outcome.outcome;
+		}
+		return memoryWriterOutcome(
+			args,
+			contractPath,
+			validation.digest ?? canonicalJsonDigest(validation.contract as unknown as JsonValue),
+			validation.contract as unknown as Record<string, unknown>,
+			projection,
+			operationValue,
+		);
 	}
 	const outcome = createOutcome({
 		validatorVerdict: "PASS",
@@ -2979,7 +3170,7 @@ function help(): void {
 				"surectl execute --run-id <id> (--operation <registered-id> --semantic-runtime <path> [--artifact <path>] | --execution-request <json> [--kind local|python|docker])",
 			capabilities: "surectl capabilities [--skill <id>]",
 			memory:
-				"surectl memory --contract <memory-contract.json> [--skill <id>] [--uri memory://<skill>/<kind>/<slug>]",
+				"surectl memory --contract <memory-contract.json> [--skill <id>] [--uri memory://<skill>/<kind>/<slug>] [--operation publish|index|promote --semantic-runtime <dir> --memory-root <dir> --canonical-root <dir> --legacy-skills-root <dir>]",
 			conformance: "surectl conformance --run-id <id> --execution-request <json> --execution-receipt <json>",
 			freeze:
 				"surectl freeze --run-id <id> --execution-request <json> --execution-receipt <json> --prediction <path> --engine-digest <sha256> --route-digest <sha256> --approval-digest <sha256>",
