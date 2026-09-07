@@ -97,6 +97,12 @@ function singleQuotedString(value: string): string {
 		.replace(/\u2029/g, "\\u2029")}'`;
 }
 
+function javascriptString(value: string): string {
+	const single = singleQuotedString(value);
+	const double = JSON.stringify(value);
+	return double.length <= single.length ? double : single;
+}
+
 function workflowRegistryModule(): Buffer {
 	const ids = CANONICAL_SKILLS.map((skill) => skill.skill_id);
 	const workflows = Object.fromEntries(CANONICAL_SKILLS.map((skill) => [skill.skill_id, skill.workflow]));
@@ -114,7 +120,7 @@ function workflowRegistryModule(): Buffer {
 			"] as const;",
 			"export type SureWorkflowId = (typeof SURE_WORKFLOW_IDS)[number];",
 			"const SURE_WORKFLOW_JSON = [",
-			...chunks.map((chunk) => `\t${singleQuotedString(chunk)},`),
+			...chunks.map((chunk) => `\t${javascriptString(chunk)},`),
 			'].join("");',
 			"export const SURE_WORKFLOWS = JSON.parse(SURE_WORKFLOW_JSON) as Readonly<Record<SureWorkflowId, WorkflowDefinition>>;",
 			"const SURE_WORKFLOW_ID_SET = new Set<string>(SURE_WORKFLOW_IDS);",

@@ -202,6 +202,43 @@ describe("canonical SURE skill generation", () => {
 			validate_contract: "sure.onboard.execute_contract",
 			package_container: "sure.onboard.execute_package_container",
 		});
+		const transSkill = CANONICAL_SKILLS.find((skill) => skill.skill_id === "sure_trans");
+		const transExecutionUnits = Object.fromEntries(
+			transSkill!.workflow.branches.flatMap((branch) =>
+				branch.units
+					.filter((unit) => unit.gate?.execution_operation_id !== undefined)
+					.map((unit) => [
+						unit.id,
+						{
+							operation: unit.gate?.execution_operation_id,
+							input: unit.gate?.execution_input_produces,
+						},
+					]),
+			),
+		);
+		expect(transExecutionUnits).toEqual({
+			build_source_image: { operation: "sure.trans.execute_source_image", input: "trans_input_resolved.json" },
+			validate_env_compat: { operation: "sure.trans.execute_env_compat", input: "source_image_result.json" },
+			validate_original_inference: {
+				operation: "sure.trans.execute_original_inference",
+				input: "execution_compat.json",
+			},
+			validate_import: { operation: "sure.trans.execute_import", input: "adapter_image_result.json" },
+			validate_load: { operation: "sure.trans.execute_load", input: "import_result.json" },
+			validate_infer: { operation: "sure.trans.execute_infer", input: "load_result.json" },
+			validate_contract: { operation: "sure.trans.execute_contract", input: "infer_result.json" },
+			validate_mcp: { operation: "sure.trans.execute_mcp", input: "contract_result.json" },
+			validate_equivalence: { operation: "sure.trans.execute_equivalence", input: "mcp_result.json" },
+		});
+		expect(
+			transSkill!.workflow.branches
+				.flatMap((branch) => branch.units)
+				.find((unit) => unit.id === "build_adapter_image")?.gate?.execution_operation_id,
+		).toBeUndefined();
+		expect(
+			transSkill!.workflow.branches.flatMap((branch) => branch.units).find((unit) => unit.id === "package_container")
+				?.gate?.execution_operation_id,
+		).toBeUndefined();
 		const approveOperations = Object.fromEntries(
 			descriptors
 				.filter((descriptor) => descriptor.skill_id === "sure_approve" && descriptor.branch_id !== undefined)

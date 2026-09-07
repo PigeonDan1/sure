@@ -329,8 +329,22 @@ function producerInputArtifactPath(
 	requested: string | undefined,
 	targetPath: string,
 ): string {
-	if (requested !== undefined)
-		return admittedRunArtifactPath(store, run, absolute(requested, "registered operation artifact"));
+	const declared = currentUnit.gate?.execution_input_produces;
+	const declaredPath =
+		declared === undefined ? undefined : admittedRunArtifactPath(store, run, join(run.runDir, "artifacts", declared));
+	if (requested !== undefined) {
+		const requestedPath = admittedRunArtifactPath(store, run, absolute(requested, "registered operation artifact"));
+		if (declaredPath !== undefined && resolve(requestedPath) !== resolve(declaredPath)) {
+			throw new Error(
+				`Registered operation input must be the declared upstream artifact ${declared}; received ${requested}.`,
+			);
+		}
+		return requestedPath;
+	}
+	if (declaredPath !== undefined) {
+		assertRegularFile(declaredPath, `Declared producer input artifact for ${currentUnit.id}`);
+		return declaredPath;
+	}
 	try {
 		assertRegularFile(targetPath, "Registered operation artifact");
 		return targetPath;

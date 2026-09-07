@@ -6651,8 +6651,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
-      "size_bytes": 36675,
-      "sha256": "10fe0db8dbb5ac0b4dc81249a497e3cf44e6e1d347a49be9b41f91004cd72bc2"
+      "size_bytes": 37037,
+      "sha256": "3fe1f8f25628a96551593b2e30472845ff0ae39f802f6d3c8dc7a6e50b74c3e5"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
@@ -7202,7 +7202,7 @@
     {
       "path": "sure/runtime/memory/units.generation.lock.json",
       "size_bytes": 506,
-      "sha256": "91c6dc56d5aa1bde8b79fc23ca3b75a0b31d5eebdacd667f45d6224834503523"
+      "sha256": "f1a402fe32393a1f51a2f54fa53c167bb5ed136d4859a50371c83d0ffdbea42c"
     },
     {
       "path": "sure/runtime/memory/units.json",
@@ -9726,5 +9726,5 @@
       ]
     }
   ],
-  "semantic_digest": "608141616eae69e09d5e3b8572025daca7562e151e7e260b8cce7012419de8f8"
+  "semantic_digest": "61796fe77e059dada487b486fb157653d292ad4b30a29da8dc531a6b3ca96c97"
 }

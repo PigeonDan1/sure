@@ -1528,6 +1528,7 @@ describe("surectl cooperative control plane", () => {
 								validator_id: "python-script",
 								execution_operation_id: "sure.trans.execute_adapter_image",
 								execution_request_operation: "package",
+								execution_input_produces: "adapter_manifest.json",
 								script_id: "materialize_adapter_runtime.py",
 							},
 						},
@@ -1604,7 +1605,7 @@ describe("surectl cooperative control plane", () => {
 			string,
 			unknown
 		>;
-		expect(executionEvidence.artifact_input_path).toContain("trans_input_resolved.json");
+		expect(executionEvidence.artifact_input_path).toContain("adapter_manifest.json");
 		expect(executionEvidence.artifact_output_path).toContain("adapter_image_result.json");
 		expect(executionEvidence.artifact_input_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(executionEvidence.artifact_output_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
