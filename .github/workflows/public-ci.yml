@@ -52,6 +52,9 @@ jobs:
       - name: Materialize the Harness Runtime
         run: python sure/runtime/harness/bootstrap.py --json > /dev/null
 
+      - name: Build the host-neutral SURE Core package
+        run: npm --workspace packages/sure-core run build
+
       - name: Configure the public CI fixture
         run: |
           cp config/site.example.yaml config/site.local.yaml
@@ -73,9 +76,6 @@ jobs:
           python -m unittest discover -s sure/skills/sure_onboard/scripts -p "test_*.py"
           python -m unittest discover -s sure/skills/sure_feed/scripts -p "test_*.py"
           python -m unittest discover -s sure/site -p "test_*.py"
-
-      - name: Build the host-neutral SURE Core package
-        run: npm --workspace packages/sure-core run build
 
       - name: Run coding-agent SURE tests
         working-directory: packages/coding-agent
