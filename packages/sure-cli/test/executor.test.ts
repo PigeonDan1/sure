@@ -171,6 +171,13 @@ describe("cooperative executor capability probes", () => {
 		expect(result.receipt?.lifecycle).toBe("SUCCEEDED");
 		expect(result.receipt?.executor.kind).toBe("docker");
 		expect(result.receipt_validation?.valid).toBe(true);
+		expect(result.admission_trace).toMatchObject({
+			status: "ADMITTED",
+			probe_invoked: true,
+			execute_invoked: true,
+			receipt_present: true,
+			receipt_valid: true,
+		});
 		expect(readFileSync(outputPath, "utf8")).toBe("docker-output");
 		const argv = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
 		expect(argv).toEqual(
@@ -209,6 +216,13 @@ describe("cooperative executor capability probes", () => {
 		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
 		expect(result.receipt).toBeUndefined();
 		expect(result.request_validation.valid).toBe(false);
+		expect(result.admission_trace).toMatchObject({
+			status: "REJECTED",
+			probe_invoked: false,
+			execute_invoked: false,
+			receipt_present: false,
+			receipt_valid: false,
+		});
 		expect(result.request_validation.errors).toEqual(
 			expect.arrayContaining([
 				"runtime_requirements.docker_image must be a non-empty string",
@@ -311,6 +325,7 @@ describe("cooperative executor capability probes", () => {
 		expect(result.capability.missing).toContain("sure.execution.docker");
 		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
 		expect(result.receipt?.lifecycle).toBe("NOT_STARTED");
+		expect(result.admission_trace).toMatchObject({ status: "CAPABILITY_MISSING", execute_invoked: false });
 	});
 
 	it("reports a missing static host capability before launching the operation", () => {
@@ -390,6 +405,11 @@ describe("cooperative executor capability probes", () => {
 			expect(existsSync(sentinel)).toBe(false);
 			expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
 			expect(result.receipt?.lifecycle).toBe("NOT_STARTED");
+			expect(result.admission_trace).toMatchObject({
+				status: "CAPABILITY_MISSING",
+				probe_invoked: false,
+				execute_invoked: false,
+			});
 			expect(result.capability.missing).toContain(`sure.execution.${kind}`);
 		}
 	});

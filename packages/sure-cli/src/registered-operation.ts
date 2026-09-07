@@ -5,6 +5,7 @@ import type {
 	CapabilityRequirement,
 	CoreOutcome,
 	CoreRunRecord,
+	ExecutionAdmissionTrace,
 	ExecutionArtifactMode,
 	ExecutionInputBinding,
 	ExecutionInputBindingResolver,
@@ -37,6 +38,7 @@ export interface RegisteredOperationResult {
 	evidence: RegisteredOperationEvidence;
 	request?: ExecutionRequest;
 	receipt?: ExecutionReceipt;
+	admission_trace?: ExecutionAdmissionTrace;
 	execution?: ExecutorRunResult;
 }
 
@@ -69,6 +71,7 @@ export interface RegisteredOperationOptions {
 	base_environment?: NodeJS.ProcessEnv;
 	persist_request(request: ExecutionRequest): PersistedValidatorDocument;
 	persist_receipt(receipt: ExecutionReceipt): PersistedValidatorDocument;
+	persist_admission_trace?(trace: ExecutionAdmissionTrace): PersistedValidatorDocument;
 }
 
 export interface RegisteredOperationSemanticBinding {
@@ -384,6 +387,7 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 		],
 	});
 	const persistedReceipt = execution.receipt ? options.persist_receipt(execution.receipt) : undefined;
+	const persistedAdmission = options.persist_admission_trace?.(execution.admission_trace);
 	const outputPath =
 		operation.output_contract === undefined
 			? options.artifact.path
@@ -404,6 +408,7 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 		outcome: execution.outcome,
 		request,
 		receipt: execution.receipt,
+		admission_trace: execution.admission_trace,
 		execution,
 		evidence: createOperationExecutionEvidence({
 			source: "surectl",
@@ -433,6 +438,9 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 					}),
 			request_path: persistedRequest.path,
 			request_digest: persistedRequest.digest,
+			...(persistedAdmission === undefined
+				? {}
+				: { admission_path: persistedAdmission.path, admission_digest: persistedAdmission.digest }),
 			...(persistedReceipt === undefined
 				? {}
 				: { receipt_path: persistedReceipt.path, receipt_digest: persistedReceipt.digest }),

@@ -1968,8 +1968,19 @@ describe("surectl cooperative control plane", () => {
 		expect((executed.value?.outcome as Record<string, unknown>).outcome).toBe("NOT_EXECUTED");
 		const receiptPath = join(artifacts, "execution_receipt.json");
 		const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+		const admission = JSON.parse(readFileSync(join(artifacts, "execution_admission.json"), "utf8")) as Record<
+			string,
+			unknown
+		>;
 		expect(receipt.lifecycle).toBe("SUCCEEDED");
 		expect((receipt.executor as Record<string, unknown>).trust_level).toBe("cooperative");
+		expect(admission).toMatchObject({
+			status: "ADMITTED",
+			probe_invoked: false,
+			execute_invoked: true,
+			receipt_present: true,
+			receipt_valid: true,
+		});
 		expect(existsSync(outputFile)).toBe(true);
 		const status = command(root, "status", [...base, "--run-id", "run-local-executor"]);
 		expect((status.value?.checkpoint as { data: { currentUnit: string } }).data.currentUnit).toBe("scan_modelscope");
@@ -2019,7 +2030,12 @@ describe("surectl cooperative control plane", () => {
 			string,
 			unknown
 		>;
+		const admission = JSON.parse(readFileSync(join(artifacts, "execution_admission.json"), "utf8")) as Record<
+			string,
+			unknown
+		>;
 		expect(receipt.lifecycle).toBe("NOT_STARTED");
+		expect(admission).toMatchObject({ status: "CAPABILITY_MISSING", execute_invoked: false });
 	});
 
 	it("records missing external adapters for registered remote and trusted executors", () => {

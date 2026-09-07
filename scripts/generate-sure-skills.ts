@@ -71,6 +71,7 @@ const PORTABLE_RUNTIME_SUPPORT_FILES = [
 	"sure/site/policy.schema.json",
 ] as const;
 const PORTABLE_EXECUTION_CONTRACT_SCHEMAS = [
+	"execution_admission.schema.json",
 	"execution_input_contract.schema.json",
 	"execution_request.schema.json",
 	"execution_receipt.schema.json",

@@ -1,6 +1,7 @@
 export * from "./adapter.ts";
 export * from "./adapter-manifest.ts";
 export * from "./adapter-policy.ts";
+export * from "./admission.ts";
 export * from "./dispatch.ts";
 export * from "./docker.ts";
 export * from "./evidence.ts";

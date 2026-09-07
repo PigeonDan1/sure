@@ -29,6 +29,13 @@
         "request_receipt": "present",
         "assurance_profile": "cooperative"
       },
+      "admission": {
+        "status": "ADMITTED",
+        "probe_invoked": true,
+        "execute_invoked": true,
+        "receipt_present": true,
+        "receipt_valid": true
+      },
       "python": {
         "evidence_verdict": "FAIL",
         "evidence_reason_code": "EXECUTION_FAILED"
@@ -59,6 +66,13 @@
         "capability_admitted": false,
         "request_receipt": "present",
         "assurance_profile": "cooperative"
+      },
+      "admission": {
+        "status": "CAPABILITY_MISSING",
+        "probe_invoked": false,
+        "execute_invoked": false,
+        "receipt_present": false,
+        "receipt_valid": false
       },
       "python": {
         "evidence_verdict": "NOT_EXECUTED",
@@ -91,6 +105,13 @@
         "request_receipt": "present",
         "assurance_profile": "cooperative"
       },
+      "admission": {
+        "status": "REJECTED",
+        "probe_invoked": false,
+        "execute_invoked": false,
+        "receipt_present": false,
+        "receipt_valid": false
+      },
       "python": {
         "evidence_verdict": "NOT_EXECUTED",
         "evidence_reason_code": "INVALID_CONTRACT"
@@ -122,6 +143,13 @@
         "request_receipt": "present",
         "assurance_profile": "cooperative"
       },
+      "admission": {
+        "status": "ADMITTED",
+        "probe_invoked": true,
+        "execute_invoked": true,
+        "receipt_present": true,
+        "receipt_valid": false
+      },
       "python": {
         "evidence_verdict": "NOT_EXECUTED",
         "evidence_reason_code": "INVALID_CONTRACT"
@@ -152,6 +180,13 @@
         "capability_admitted": true,
         "request_receipt": "present",
         "assurance_profile": "cooperative"
+      },
+      "admission": {
+        "status": "ADMITTED",
+        "probe_invoked": true,
+        "execute_invoked": true,
+        "receipt_present": true,
+        "receipt_valid": true
       },
       "python": {
         "evidence_verdict": "PASS",

@@ -31,6 +31,13 @@ interface TraceCase {
 		reason_code: string;
 	};
 	surectl: TraceProjection;
+	admission: {
+		status: "ADMITTED" | "CAPABILITY_MISSING" | "REJECTED";
+		probe_invoked: boolean;
+		execute_invoked: boolean;
+		receipt_present: boolean;
+		receipt_valid: boolean;
+	};
 	python: { evidence_verdict: "PASS" | "FAIL" | "NOT_EXECUTED"; evidence_reason_code: string };
 	pi: Omit<TraceProjection, "receipt_lifecycle" | "receipt_valid" | "capability_admitted">;
 	relation: string;
@@ -90,6 +97,7 @@ describe("external adapter differential traces", () => {
 		const admittedCase = cases.get("admitted_executor_failure");
 		if (!admittedCase) throw new Error("missing admitted trace");
 		canonicalFromResult(admittedResult, admittedCase);
+		expect(admittedResult.admission_trace).toMatchObject(admittedCase.admission);
 		expect(admittedResult.receipt_validation?.valid).toBe(true);
 		expect(
 			projectExecutionEvidence({
@@ -109,6 +117,7 @@ describe("external adapter differential traces", () => {
 		const missingResult = await dispatchExecutor(new ExecutorRegistry(), missing.request, { now: () => FIXTURE_NOW });
 		canonicalFromResult(missingResult, missingCase);
 		expect(missingResult.receipt).toBeUndefined();
+		expect(missingResult.admission_trace).toMatchObject(missingCase.admission);
 		expect(
 			projectExecutionEvidence({
 				lifecycle: missingResult.receipt?.lifecycle,
@@ -129,6 +138,7 @@ describe("external adapter differential traces", () => {
 		const policyResult = await dispatchExecutor(register(policy), policyRequest, { now: () => FIXTURE_NOW });
 		canonicalFromResult(policyResult, policyCase);
 		expect(policyResult.receipt).toBeUndefined();
+		expect(policyResult.admission_trace).toMatchObject(policyCase.admission);
 		expect(policyResult.adapter_admission?.valid).toBe(false);
 		expect(policyResult.outcome.reason_code).toBe("INVALID_CONTRACT");
 
@@ -143,6 +153,7 @@ describe("external adapter differential traces", () => {
 		if (!tamperCase) throw new Error("missing receipt tamper trace");
 		const tamperResult = await dispatchExecutor(register(tamper), tamper.request, { now: () => FIXTURE_NOW });
 		canonicalFromResult(tamperResult, tamperCase);
+		expect(tamperResult.admission_trace).toMatchObject(tamperCase.admission);
 		expect(tamperResult.receipt?.lifecycle).toBe("SUCCEEDED");
 		expect(tamperResult.receipt_validation?.valid).toBe(false);
 		expect(tamperResult.outcome.reason_code).toBe("INVALID_CONTRACT");
@@ -160,6 +171,7 @@ describe("external adapter differential traces", () => {
 		if (!successCase) throw new Error("missing success trace");
 		const successResult = await dispatchExecutor(register(success), success.request, { now: () => FIXTURE_NOW });
 		canonicalFromResult(successResult, successCase);
+		expect(successResult.admission_trace).toMatchObject(successCase.admission);
 		expect(successResult.outcome).toEqual(outcomeFromExecutionLifecycle("SUCCEEDED"));
 		expect(successResult.receipt_validation?.valid).toBe(true);
 		expect(

@@ -6,6 +6,7 @@ import type {
 	ArtifactRef,
 	CapabilityEvidence,
 	CoreOutcome,
+	ExecutionAdmissionTrace,
 	ExecutionEvidenceProjectionInput,
 	ExecutionOutputKind,
 	ExecutionOutputResidual,
@@ -16,6 +17,7 @@ import type {
 } from "@earendil-works/sure-core";
 import {
 	canonicalJsonDigest,
+	createExecutionAdmissionTrace,
 	createOutcome,
 	dockerImageDigest,
 	type ExecutionBoundaryOptions,
@@ -72,11 +74,30 @@ export interface ExecutorRunOptions {
 }
 
 export interface ExecutorRunResult {
+	admission_trace: ExecutionAdmissionTrace;
 	request_validation: ExecutionRequestValidation;
 	receipt?: ExecutionReceipt;
 	receipt_validation?: ExecutionReceiptValidation;
 	outcome: CoreOutcome;
 	capability: ReturnType<typeof evaluateCapabilityRequirements>;
+}
+
+function attachAdmissionTrace(
+	result: Omit<ExecutorRunResult, "admission_trace">,
+	request: ExecutionRequest,
+	observedAt: string,
+	probeInvoked: boolean,
+	executeInvoked: boolean,
+): ExecutorRunResult {
+	return {
+		...result,
+		admission_trace: createExecutionAdmissionTrace(request, observedAt, result.outcome, {
+			probe_invoked: probeInvoked,
+			execute_invoked: executeInvoked,
+			receipt: result.receipt,
+			receipt_valid: result.receipt_validation?.valid === true,
+		}),
+	};
 }
 
 /** surectl's evidence facade delegates projection to Core; it never maps a
@@ -217,7 +238,11 @@ function probeCapabilities(request: ExecutionRequest, options: ExecutorRunOption
 function capabilityEvidence(
 	request: ExecutionRequest,
 	options: ExecutorRunOptions,
-): { evidence: CapabilityEvidence[]; evaluation: ReturnType<typeof evaluateCapabilityRequirements> } {
+): {
+	evidence: CapabilityEvidence[];
+	evaluation: ReturnType<typeof evaluateCapabilityRequirements>;
+	probe_invoked: boolean;
+} {
 	const requirements = request.capability_requirements ?? [];
 	const observedAt = now(options);
 	const evidence: CapabilityEvidence[] = [];
@@ -282,6 +307,7 @@ function capabilityEvidence(
 	return {
 		evidence,
 		evaluation: evaluateCapabilityRequirements(requirements, evidence),
+		probe_invoked: probes.size > 0,
 	};
 }
 
@@ -513,7 +539,7 @@ function contractFailure(
 	request: ExecutionRequest,
 	options: ExecutorRunOptions,
 	errors: readonly string[],
-): ExecutorRunResult {
+): Omit<ExecutorRunResult, "admission_trace"> {
 	const startedAt = now(options);
 	const outcome = createOutcome({
 		validatorVerdict: "NOT_EXECUTED",
@@ -645,17 +671,22 @@ function inspectResidual(
  * workflow checkpoint; callers must submit its receipt to `surectl validate`.
  */
 export function executeRequest(request: ExecutionRequest, options: ExecutorRunOptions): ExecutorRunResult {
+	const observedAt = now(options);
+	let probeInvoked = false;
+	let executeInvoked = false;
+	const finish = (result: Omit<ExecutorRunResult, "admission_trace">): ExecutorRunResult =>
+		attachAdmissionTrace(result, request, observedAt, probeInvoked, executeInvoked);
 	const boundary: ExecutionBoundaryOptions = {
 		allowed_output_roots: options.allowed_output_roots,
 		forbidden_output_roots: options.forbidden_output_roots,
 	};
 	const requestValidation = validateExecutionRequest(request, boundary);
 	if (!requestValidation.valid) {
-		return {
+		return finish({
 			request_validation: requestValidation,
 			outcome: requestValidation.outcome,
 			capability: evaluateCapabilityRequirements([], []),
-		};
+		});
 	}
 	let invocation: SpawnInvocation = {
 		executable: request.entrypoint.executable,
@@ -667,13 +698,15 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 	if (options.kind === "docker") {
 		const declaredKind = request.runtime_requirements.executor_kind;
 		if (declaredKind !== undefined && declaredKind !== "docker") {
-			return contractFailure(requestValidation, request, options, [
-				`runtime_requirements.executor_kind must be docker for a docker executor (received ${String(declaredKind)})`,
-			]);
+			return finish(
+				contractFailure(requestValidation, request, options, [
+					`runtime_requirements.executor_kind must be docker for a docker executor (received ${String(declaredKind)})`,
+				]),
+			);
 		}
 		const docker = dockerInvocation(request, options);
 		if (docker.errors.length > 0 || docker.invocation === undefined) {
-			return contractFailure(requestValidation, request, options, docker.errors);
+			return finish(contractFailure(requestValidation, request, options, docker.errors));
 		}
 		invocation = docker.invocation;
 	}
@@ -707,7 +740,7 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 		const receipt = baseReceipt(request, options, evidence, "NOT_STARTED", observedAt, now(options));
 		receipt.diagnostics = outcome.diagnostics.map(({ code, message }) => ({ code, message }));
 		const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
-		return {
+		return finish({
 			request_validation: requestValidation,
 			receipt,
 			receipt_validation: receiptValidation,
@@ -720,9 +753,10 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 				invalid_evidence: [],
 				blocking_outcome: outcome,
 			},
-		};
+		});
 	}
 	const capabilities = capabilityEvidence(request, options);
+	probeInvoked = capabilities.probe_invoked;
 	const startedAt = now(options);
 	if (!capabilities.evaluation.admitted) {
 		const receipt = baseReceipt(request, options, capabilities.evidence, "NOT_STARTED", startedAt, now(options));
@@ -737,17 +771,18 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 			},
 		];
 		const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
-		return {
+		return finish({
 			request_validation: requestValidation,
 			receipt,
 			receipt_validation: receiptValidation,
 			outcome: receiptValidation.outcome,
 			capability: capabilities.evaluation,
-		};
+		});
 	}
 
 	let processResult: ReturnType<typeof spawnSync>;
 	try {
+		executeInvoked = true;
 		processResult = spawnSync(invocation.executable, [...invocation.argv], {
 			cwd: invocation.working_directory ?? options.working_directory,
 			env: options.environment,
@@ -762,13 +797,13 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 			{ code: "EXECUTOR_SPAWN_FAILED", message: error instanceof Error ? error.message : String(error) },
 		];
 		const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
-		return {
+		return finish({
 			request_validation: requestValidation,
 			receipt,
 			receipt_validation: receiptValidation,
 			outcome: receiptValidation.outcome,
 			capability: capabilities.evaluation,
-		};
+		});
 	}
 
 	const timedOut =
@@ -861,11 +896,11 @@ export function executeRequest(request: ExecutionRequest, options: ExecutorRunOp
 	}
 	if (diagnostics.length > 0) receipt.diagnostics = diagnostics;
 	const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
-	return {
+	return finish({
 		request_validation: requestValidation,
 		receipt,
 		receipt_validation: receiptValidation,
 		outcome: receiptValidation.outcome,
 		capability: capabilities.evaluation,
-	};
+	});
 }

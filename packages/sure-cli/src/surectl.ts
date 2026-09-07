@@ -2704,6 +2704,11 @@ function execute(args: ParsedArgs): PublicOutcome {
 				writeJsonImmutable(path, receipt);
 				return { path, digest: digestFile(path) };
 			},
+			persist_admission_trace(trace) {
+				const path = admittedRunArtifactPath(store, run, join(invocationRoot, "execution_admission.json"));
+				writeJsonImmutable(path, trace);
+				return { path, digest: digestFile(path) };
+			},
 		});
 		const nextState = {
 			...(existingState ?? {}),
@@ -2733,6 +2738,7 @@ function execute(args: ParsedArgs): PublicOutcome {
 			evidence: result.evidence,
 			request: result.request,
 			receipt: result.receipt,
+			admission_trace: result.admission_trace,
 			outcome: result.outcome,
 		});
 		return result.outcome.outcome;
@@ -2762,6 +2768,7 @@ function execute(args: ParsedArgs): PublicOutcome {
 			? join(run.runDir, "artifacts", "execution_receipt.json")
 			: absolute(receiptValue, "--execution-receipt"),
 	);
+	const admissionPath = admittedRunArtifactPath(store, run, join(dirname(receiptPath), "execution_admission.json"));
 	const outputPaths = many(args, "output").map((value) => {
 		const candidate = absolute(value, "--output");
 		return store.admitPath(candidate, [request.output_root.path]).path;
@@ -2785,6 +2792,7 @@ function execute(args: ParsedArgs): PublicOutcome {
 		timeout_ms: timeoutMs,
 		output_paths: outputPaths,
 	});
+	writeJsonAtomic(admissionPath, result.admission_trace);
 	let updatedRun = run;
 	if (result.receipt) {
 		writeJsonAtomic(receiptPath, result.receipt);
@@ -2796,6 +2804,8 @@ function execute(args: ParsedArgs): PublicOutcome {
 				last_execution: {
 					request_path: requestPath,
 					request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+					admission_path: admissionPath,
+					admission_digest: digestFile(admissionPath),
 					receipt_path: receiptPath,
 					receipt_digest: digestFile(receiptPath),
 					outcome: result.outcome,
@@ -2811,7 +2821,9 @@ function execute(args: ParsedArgs): PublicOutcome {
 		command: "execute",
 		run: updatedRun,
 		request_path: requestPath,
+		admission_path: admissionPath,
 		receipt_path: result.receipt ? receiptPath : undefined,
+		admission_trace: result.admission_trace,
 		receipt: result.receipt,
 		receipt_validation: result.receipt_validation,
 		outcome: result.outcome,

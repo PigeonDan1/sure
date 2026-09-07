@@ -36,6 +36,8 @@
 		"input_binding_digest": { "$ref": "#/$defs/digest" },
 		"request_path": { "$ref": "#/$defs/absolutePath" },
 		"request_digest": { "$ref": "#/$defs/digest" },
+		"admission_path": { "$ref": "#/$defs/absolutePath" },
+		"admission_digest": { "$ref": "#/$defs/digest" },
 		"receipt_path": { "$ref": "#/$defs/absolutePath" },
 		"receipt_digest": { "$ref": "#/$defs/digest" },
 		"branch_id": { "type": "string", "minLength": 1 },

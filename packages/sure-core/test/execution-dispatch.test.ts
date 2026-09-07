@@ -39,6 +39,14 @@ describe("host-neutral executor dispatch", () => {
 			reason_code: "CAPABILITY_MISSING",
 			execution_lifecycle: "NOT_STARTED",
 		});
+		expect(result.admission_trace).toMatchObject({
+			status: "CAPABILITY_MISSING",
+			reason_code: "CAPABILITY_MISSING",
+			probe_invoked: false,
+			execute_invoked: false,
+			receipt_present: false,
+			receipt_valid: false,
+		});
 	});
 
 	it("admits the registered manifest before probing and keeps success validation-pending", async () => {
@@ -61,6 +69,13 @@ describe("host-neutral executor dispatch", () => {
 			outcome: "NOT_EXECUTED",
 			workflow_disposition: "WAIT",
 			reason_code: "VALIDATION_PENDING",
+		});
+		expect(result.admission_trace).toMatchObject({
+			status: "ADMITTED",
+			probe_invoked: true,
+			execute_invoked: true,
+			receipt_present: true,
+			receipt_valid: true,
 		});
 	});
 
@@ -155,6 +170,13 @@ describe("host-neutral executor dispatch", () => {
 		expect(result.adapter_admission?.errors).toContain(expected);
 		expect(probe).not.toHaveBeenCalled();
 		expect(execute).not.toHaveBeenCalled();
+		expect(result.admission_trace).toMatchObject({
+			status: "REJECTED",
+			probe_invoked: false,
+			execute_invoked: false,
+			receipt_present: false,
+			receipt_valid: false,
+		});
 	});
 
 	it("rejects post-registration executor identity drift before probe", async () => {
@@ -199,6 +221,7 @@ describe("host-neutral executor dispatch", () => {
 		expect(result.outcome.reason_code).toBe("INVALID_CONTRACT");
 		expect(probe).not.toHaveBeenCalled();
 		expect(execute).not.toHaveBeenCalled();
+		expect(result.admission_trace.status).toBe("REJECTED");
 	});
 
 	it("fails closed when site-policy v1 cannot authorize the requested external surface", async () => {
@@ -325,6 +348,13 @@ describe("host-neutral executor dispatch", () => {
 		expect(result.receipt_validation?.valid).toBe(false);
 		expect(result.receipt_validation?.errors.join(" ")).toContain(expected);
 		expect(result.outcome.reason_code).toBe("INVALID_CONTRACT");
+		expect(result.admission_trace).toMatchObject({
+			status: "ADMITTED",
+			probe_invoked: true,
+			execute_invoked: true,
+			receipt_present: true,
+			receipt_valid: false,
+		});
 	});
 
 	it("does not let an executor exception become PASS", async () => {
@@ -340,6 +370,13 @@ describe("host-neutral executor dispatch", () => {
 			workflow_disposition: "RETRY",
 			outcome: "RETRY",
 			reason_code: "EXECUTION_FAILED",
+		});
+		expect(result.admission_trace).toMatchObject({
+			status: "ADMITTED",
+			probe_invoked: true,
+			execute_invoked: true,
+			receipt_present: false,
+			receipt_valid: false,
 		});
 	});
 });

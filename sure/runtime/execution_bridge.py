@@ -33,6 +33,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 REQUEST_SCHEMA = "sure.execution_request.v1"
 RECEIPT_SCHEMA = "sure.execution_receipt.v1"
+ADMISSION_SCHEMA = "sure.execution_admission.v1"
 COMPATIBILITY_SCHEMA = "sure.execution_compatibility.v1"
 OUTPUT_CONTRACT_SCHEMA = "sure.execution_output_contract.v1"
 OUTPUT_SET_SCHEMA = "sure.execution.output-set.v1"
@@ -54,6 +55,7 @@ ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 CAPABILITY_ID_RE = re.compile(r"^sure\.[a-z0-9][a-z0-9.-]*$")
 TERMINAL_LIFECYCLES = {"SUCCEEDED", "FAILED", "PARTIAL", "CANCELLED"}
 LIFECYCLES = {"NOT_STARTED", "QUEUED", "RUNNING", *TERMINAL_LIFECYCLES}
+ADMISSION_STATUSES = {"ADMITTED", "CAPABILITY_MISSING", "REJECTED"}
 
 
 def execution_outcome_projection(lifecycle: str) -> dict[str, Any]:
@@ -133,6 +135,145 @@ def project_execution_evidence(
     if lifecycle == "CANCELLED":
         return {"verdict": "NOT_EXECUTED", "reason_code": "EXECUTION_CANCELLED"}
     return {"verdict": "NOT_EXECUTED", "reason_code": outcome_reason_code}
+
+
+def _admission_status(*, reason_code: str, probe_invoked: bool, execute_invoked: bool) -> str:
+    if reason_code == "CAPABILITY_MISSING":
+        return "CAPABILITY_MISSING"
+    if not probe_invoked and not execute_invoked:
+        return "REJECTED"
+    if reason_code == "INVALID_CONTRACT" and not execute_invoked:
+        return "REJECTED"
+    return "ADMITTED"
+
+
+def create_execution_admission_trace(
+    request: Mapping[str, Any],
+    *,
+    observed_at: str,
+    outcome_reason_code: str,
+    probe_invoked: bool,
+    execute_invoked: bool,
+    receipt: Mapping[str, Any] | None = None,
+    receipt_valid: bool = False,
+) -> dict[str, Any]:
+    """Build a preflight trace without inventing executor identity.
+
+    ``execution_receipt.v1`` remains the historical launch artifact.  This
+    separate document answers the earlier question: did the request reach an
+    admitted adapter, and was a receipt actually present/valid?
+    """
+
+    runtime = request.get("runtime_requirements") if isinstance(request.get("runtime_requirements"), Mapping) else {}
+    trace: dict[str, Any] = {
+        "schema": ADMISSION_SCHEMA,
+        "request_digest": digest_json(dict(request)),
+        "status": _admission_status(
+            reason_code=outcome_reason_code,
+            probe_invoked=probe_invoked,
+            execute_invoked=execute_invoked,
+        ),
+        "reason_code": outcome_reason_code,
+        "observed_at": observed_at,
+        "probe_invoked": bool(probe_invoked),
+        "execute_invoked": bool(execute_invoked),
+        "receipt_present": receipt is not None,
+        "receipt_valid": bool(receipt_valid),
+    }
+    request_id = request.get("request_id")
+    if isinstance(request_id, str) and ID_RE.fullmatch(request_id):
+        trace["request_id"] = request_id
+    executor_kind = runtime.get("executor_kind") if isinstance(runtime, Mapping) else None
+    if isinstance(executor_kind, str):
+        trace["requested_executor_kind"] = executor_kind
+    surface = runtime.get("execution_surface") if isinstance(runtime, Mapping) else None
+    if surface in EXECUTION_ADAPTER_SURFACES:
+        trace["execution_surface"] = surface
+    adapter_digest = request.get("adapter_manifest_digest")
+    if valid_digest(adapter_digest):
+        trace["adapter_manifest_digest"] = str(adapter_digest)
+    return trace
+
+
+def validate_execution_admission_trace(value: object) -> list[str]:
+    """Validate the host-neutral preflight trace wire shape."""
+
+    if not isinstance(value, Mapping):
+        return ["execution admission trace must be an object"]
+    errors: list[str] = []
+    if value.get("schema") != ADMISSION_SCHEMA:
+        errors.append("admission.schema is unsupported")
+    if not valid_digest(value.get("request_digest")):
+        errors.append("admission.request_digest must be a SHA-256 digest")
+    request_id = value.get("request_id")
+    if request_id is not None and (not isinstance(request_id, str) or ID_RE.fullmatch(request_id) is None):
+        errors.append("admission.request_id is invalid")
+    if value.get("requested_executor_kind") is not None and not isinstance(value.get("requested_executor_kind"), str):
+        errors.append("admission.requested_executor_kind must be a string")
+    if value.get("execution_surface") is not None and value.get("execution_surface") not in EXECUTION_ADAPTER_SURFACES:
+        errors.append("admission.execution_surface is invalid")
+    if value.get("adapter_manifest_digest") is not None and not valid_digest(value.get("adapter_manifest_digest")):
+        errors.append("admission.adapter_manifest_digest must be a SHA-256 digest")
+    if value.get("status") not in ADMISSION_STATUSES:
+        errors.append("admission.status is invalid")
+    if not isinstance(value.get("reason_code"), str) or not str(value.get("reason_code")).strip():
+        errors.append("admission.reason_code must be a non-empty string")
+    if not isinstance(value.get("observed_at"), str) or not str(value.get("observed_at")).strip():
+        errors.append("admission.observed_at must be a non-empty string")
+    for field in ("probe_invoked", "execute_invoked", "receipt_present", "receipt_valid"):
+        if not isinstance(value.get(field), bool):
+            errors.append(f"admission.{field} must be boolean")
+    if value.get("receipt_valid") is True and value.get("receipt_present") is not True:
+        errors.append("admission.receipt_valid requires receipt_present")
+    if value.get("status") == "CAPABILITY_MISSING" and value.get("reason_code") != "CAPABILITY_MISSING":
+        errors.append("CAPABILITY_MISSING admission must use reason_code CAPABILITY_MISSING")
+    if value.get("status") == "CAPABILITY_MISSING" and value.get("execute_invoked") is True:
+        errors.append("CAPABILITY_MISSING admission cannot invoke execute")
+    if value.get("status") == "REJECTED" and value.get("reason_code") == "CAPABILITY_MISSING":
+        errors.append("REJECTED admission cannot use reason_code CAPABILITY_MISSING")
+    if value.get("status") == "REJECTED" and value.get("execute_invoked") is True:
+        errors.append("REJECTED admission cannot invoke execute")
+    if value.get("status") == "ADMITTED" and value.get("probe_invoked") is not True and value.get("execute_invoked") is not True:
+        errors.append("ADMITTED admission requires probe_invoked or execute_invoked")
+    return errors
+
+
+def validate_execution_admission_binding(request: Mapping[str, Any], trace: Mapping[str, Any]) -> list[str]:
+    """Validate a persisted trace against the exact request bytes/identity."""
+
+    if not isinstance(trace, Mapping):
+        return validate_execution_admission_trace(trace)
+    errors = validate_execution_admission_trace(trace)
+    expected = digest_json(dict(request))
+    if valid_digest(trace.get("request_digest")) and not same_digest(trace.get("request_digest"), expected):
+        errors.append("admission.request_digest does not match request")
+    request_id = request.get("request_id")
+    if isinstance(request_id, str) and ID_RE.fullmatch(request_id) is not None:
+        if trace.get("request_id") is None:
+            errors.append("admission.request_id is missing from request binding")
+        elif trace.get("request_id") != request_id:
+            errors.append("admission.request_id does not match request")
+    runtime = request.get("runtime_requirements") if isinstance(request.get("runtime_requirements"), Mapping) else {}
+    executor_kind = runtime.get("executor_kind")
+    if isinstance(executor_kind, str):
+        if trace.get("requested_executor_kind") is None:
+            errors.append("admission.requested_executor_kind is missing from request binding")
+        elif trace.get("requested_executor_kind") != executor_kind:
+            errors.append("admission.requested_executor_kind does not match request")
+    surface = runtime.get("execution_surface")
+    if surface in EXECUTION_ADAPTER_SURFACES:
+        if trace.get("execution_surface") is None:
+            errors.append("admission.execution_surface is missing from request binding")
+        elif trace.get("execution_surface") != surface:
+            errors.append("admission.execution_surface does not match request")
+    request_adapter = request.get("adapter_manifest_digest")
+    trace_adapter = trace.get("adapter_manifest_digest")
+    if valid_digest(request_adapter):
+        if trace_adapter is None:
+            errors.append("admission.adapter_manifest_digest is missing from request binding")
+        elif not same_digest(trace_adapter, request_adapter):
+            errors.append("admission.adapter_manifest_digest does not match request")
+    return errors
 
 
 def _valid_adapter_timeout(value: object) -> bool:
@@ -1025,6 +1166,7 @@ def write_contract_bundle(
     request: Mapping[str, Any],
     receipt: Mapping[str, Any],
     *,
+    admission_trace: Mapping[str, Any] | None = None,
     legacy_surface: Path | None = None,
     legacy_result: Path | None = None,
     forbidden_output_roots: Sequence[Path] = (),
@@ -1033,20 +1175,29 @@ def write_contract_bundle(
 
     The fixed filenames are intentionally retained for legacy gates that read
     the latest execution.  A run can contain several trans validation units,
-    however, so those aliases cannot be the only provenance record.
+    however, so those aliases cannot be the only provenance record.  When
+    supplied, ``admission_trace`` is persisted as a separate preflight record;
+    it never substitutes for the receipt.
     """
 
     artifacts_dir = artifacts_dir.expanduser().resolve()
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     request_path = artifacts_dir / "execution_request.json"
     receipt_path = artifacts_dir / "execution_receipt.json"
+    admission_path = artifacts_dir / "execution_admission.json"
     request_id = safe_id(request.get("request_id"), "request")
     history_dir = artifacts_dir / "execution_contracts"
     history_dir.mkdir(parents=True, exist_ok=True)
     history_request_path = history_dir / f"{request_id}.request.json"
     history_receipt_path = history_dir / f"{request_id}.receipt.json"
+    history_admission_path = history_dir / f"{request_id}.admission.json"
     _write_immutable_json(history_request_path, request)
     _write_immutable_json(history_receipt_path, receipt)
+    admission_errors: list[str] = []
+    if admission_trace is not None:
+        admission_errors = validate_execution_admission_binding(request, admission_trace)
+        _write_immutable_json(history_admission_path, admission_trace)
+        write_json(admission_path, admission_trace)
     write_json(request_path, request)
     write_json(receipt_path, receipt)
     errors = validate_contract_pair(request, receipt, forbidden_output_roots=forbidden_output_roots)
@@ -1058,8 +1209,8 @@ def write_contract_bundle(
         "request_digest": digest_json(dict(request)),
         "receipt_digest": digest_json(dict(receipt)),
         "lifecycle": receipt.get("lifecycle"),
-        "contract_valid": not errors,
-        "diagnostics": errors,
+        "contract_valid": not errors and not admission_errors,
+        "diagnostics": [*errors, *admission_errors],
         "legacy_views": {
             "execution_surface": str(legacy_surface) if legacy_surface else None,
             "execution_result": str(legacy_result) if legacy_result else None,
@@ -1067,8 +1218,12 @@ def write_contract_bundle(
         "history": {
             "request_path": str(history_request_path),
             "receipt_path": str(history_receipt_path),
+            "admission_path": str(history_admission_path) if admission_trace is not None else None,
         },
     }
+    if admission_trace is not None:
+        contract["admission_path"] = str(admission_path)
+        contract["admission_digest"] = digest_json(dict(admission_trace))
     write_json(artifacts_dir / "execution_contract.json", contract)
     history_contract = {
         **contract,

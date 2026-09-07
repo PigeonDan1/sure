@@ -6,7 +6,32 @@ import type {
 	ExecutionRequest,
 	ExecutorIdentity,
 } from "../contracts/types.ts";
-import type { CoreOutcome } from "../workflow/outcome.ts";
+import type { CoreOutcome, ReasonCode } from "../workflow/outcome.ts";
+
+/** ADMITTED means the adapter boundary was reached; it does not make a receipt valid. */
+export const EXECUTION_ADMISSION_STATUSES = ["ADMITTED", "CAPABILITY_MISSING", "REJECTED"] as const;
+export type ExecutionAdmissionStatus = (typeof EXECUTION_ADMISSION_STATUSES)[number];
+
+/**
+ * A preflight trace is deliberately not an execution receipt. It records why
+ * a request did or did not reach an executor without inventing executor
+ * identity for a missing or rejected adapter.
+ */
+export interface ExecutionAdmissionTrace {
+	schema: "sure.execution_admission.v1";
+	request_digest: string;
+	request_id?: string;
+	requested_executor_kind?: string;
+	execution_surface?: "vc" | "remote" | "trusted";
+	adapter_manifest_digest?: string;
+	status: ExecutionAdmissionStatus;
+	reason_code: ReasonCode;
+	observed_at: string;
+	probe_invoked: boolean;
+	execute_invoked: boolean;
+	receipt_present: boolean;
+	receipt_valid: boolean;
+}
 
 /** Host-neutral executor port. Adapters may be synchronous or asynchronous. */
 export interface ExecutorPort {

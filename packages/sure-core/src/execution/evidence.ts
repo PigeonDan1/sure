@@ -36,6 +36,8 @@ export interface OperationExecutionEvidence {
 	input_binding_digest?: string;
 	request_path?: string;
 	request_digest?: string;
+	admission_path?: string;
+	admission_digest?: string;
 	receipt_path?: string;
 	receipt_digest?: string;
 	branch_id?: string;
@@ -161,6 +163,7 @@ export function decodeOperationExecutionEvidence(value: unknown): OperationExecu
 		"artifact_output_path",
 		"request_path",
 		"receipt_path",
+		"admission_path",
 		"branch_id",
 		"unit_id",
 	] as const) {
@@ -176,6 +179,7 @@ export function decodeOperationExecutionEvidence(value: unknown): OperationExecu
 		"input_context_digest",
 		"input_binding_digest",
 		"request_digest",
+		"admission_digest",
 		"receipt_digest",
 	] as const) {
 		optionalDigest(value[field], `operation evidence ${field}`, errors);

@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sure.example/contracts/execution-admission.v1.schema.json",
+  "title": "SURE execution admission trace",
+  "description": "Preflight provenance. This is not an execution receipt and carries no executor identity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "request_digest",
+    "status",
+    "reason_code",
+    "observed_at",
+    "probe_invoked",
+    "execute_invoked",
+    "receipt_present",
+    "receipt_valid"
+  ],
+  "properties": {
+    "schema": { "const": "sure.execution_admission.v1" },
+    "request_digest": { "$ref": "#/$defs/digest" },
+    "request_id": { "$ref": "#/$defs/id" },
+    "requested_executor_kind": { "type": "string", "minLength": 1 },
+    "execution_surface": { "enum": ["vc", "remote", "trusted"] },
+    "adapter_manifest_digest": { "$ref": "#/$defs/digest" },
+    "status": { "enum": ["ADMITTED", "CAPABILITY_MISSING", "REJECTED"] },
+    "reason_code": { "type": "string", "minLength": 1 },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "probe_invoked": { "type": "boolean" },
+    "execute_invoked": { "type": "boolean" },
+    "receipt_present": { "type": "boolean" },
+    "receipt_valid": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "CAPABILITY_MISSING" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": { "reason_code": { "const": "CAPABILITY_MISSING" } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "receipt_valid": { "const": true } },
+        "required": ["receipt_valid"]
+      },
+      "then": {
+        "properties": { "receipt_present": { "const": true } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "ADMITTED" } },
+        "required": ["status"]
+      },
+      "then": {
+        "anyOf": [
+          { "properties": { "probe_invoked": { "const": true } }, "required": ["probe_invoked"] },
+          { "properties": { "execute_invoked": { "const": true } }, "required": ["execute_invoked"] }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["CAPABILITY_MISSING", "REJECTED"] } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": { "execute_invoked": { "const": false } }
+      }
+    }
+  ],
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "digest": { "type": "string", "pattern": "^(sha256:)?[a-f0-9]{64}$" }
+  }
+}

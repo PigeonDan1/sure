@@ -10,6 +10,7 @@ from sure.runtime.execution_bridge import (
     build_receipt,
     build_request,
     capability_evidence,
+    create_execution_admission_trace,
     digest_json,
     digest_tree,
     output_set_digest,
@@ -19,6 +20,8 @@ from sure.runtime.execution_bridge import (
     validate_capability_evidence,
     validate_capability_evidence_list,
     validate_contract_pair,
+    validate_execution_admission_binding,
+    validate_execution_admission_trace,
     validate_output_binding,
     validate_output_contract,
     write_contract_bundle,
@@ -26,7 +29,14 @@ from sure.runtime.execution_bridge import (
 
 
 class ExecutionBridgeTests(unittest.TestCase):
-    def request(self, root: Path, *, requirements: list[dict] | None = None) -> dict:
+    def request(
+        self,
+        root: Path,
+        *,
+        requirements: list[dict] | None = None,
+        runtime_requirements: dict | None = None,
+        adapter_manifest_digest: str | None = None,
+    ) -> dict:
         return build_request(
             run_id="bridge-test",
             unit_id="execute_inference",
@@ -39,6 +49,8 @@ class ExecutionBridgeTests(unittest.TestCase):
                 "runtime_identity_digest": digest_json({"runtime": 1}),
             },
             capability_requirements=requirements or [],
+            runtime_requirements=runtime_requirements,
+            adapter_manifest_digest=adapter_manifest_digest,
             reference_snapshot_digest=digest_json({"inputs": []}),
             policy_digest=digest_json({"policy": 1}),
         )
@@ -85,6 +97,121 @@ class ExecutionBridgeTests(unittest.TestCase):
             errors = validate_contract_pair(request, receipt)
             self.assertTrue(any("sure.execution.gpu" in error for error in errors))
             self.assertNotEqual(receipt["lifecycle"], "SUCCEEDED")
+
+    def test_admission_trace_distinguishes_preflight_from_legacy_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            trace = create_execution_admission_trace(
+                request,
+                observed_at="2026-01-01T00:00:00Z",
+                outcome_reason_code="VALIDATION_PENDING",
+                probe_invoked=True,
+                execute_invoked=True,
+            )
+            self.assertEqual(trace["schema"], "sure.execution_admission.v1")
+            self.assertEqual(trace["status"], "ADMITTED")
+            self.assertFalse(trace["receipt_present"])
+            self.assertFalse(trace["receipt_valid"])
+            self.assertEqual(validate_execution_admission_trace(trace), [])
+            self.assertEqual(validate_execution_admission_binding(request, trace), [])
+            direct = create_execution_admission_trace(
+                request,
+                observed_at="2026-01-01T00:00:00Z",
+                outcome_reason_code="VALIDATION_PENDING",
+                probe_invoked=False,
+                execute_invoked=True,
+            )
+            self.assertEqual(direct["status"], "ADMITTED")
+
+    def test_admission_trace_rejects_forged_receipt_flag_and_rebinding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            missing = create_execution_admission_trace(
+                request,
+                observed_at="2026-01-01T00:00:00Z",
+                outcome_reason_code="CAPABILITY_MISSING",
+                probe_invoked=False,
+                execute_invoked=False,
+            )
+            rejected = create_execution_admission_trace(
+                request,
+                observed_at="2026-01-01T00:00:00Z",
+                outcome_reason_code="INVALID_CONTRACT",
+                probe_invoked=False,
+                execute_invoked=False,
+            )
+            self.assertEqual(missing["status"], "CAPABILITY_MISSING")
+            self.assertEqual(rejected["status"], "REJECTED")
+            forged = {**missing, "receipt_valid": True, "receipt_present": False}
+            self.assertIn("admission.receipt_valid requires receipt_present", validate_execution_admission_trace(forged))
+            self.assertIn(
+                "ADMITTED admission requires probe_invoked or execute_invoked",
+                validate_execution_admission_trace({**missing, "status": "ADMITTED"}),
+            )
+            self.assertIn(
+                "REJECTED admission cannot invoke execute",
+                validate_execution_admission_trace({**missing, "status": "REJECTED", "execute_invoked": True}),
+            )
+            rebound = {**missing, "request_digest": digest_json({"forged": True})}
+            self.assertIn("admission.request_digest does not match request", validate_execution_admission_binding(request, rebound))
+            bound_request = self.request(
+                root,
+                runtime_requirements={"executor_kind": "remote", "execution_surface": "remote"},
+                adapter_manifest_digest=digest_json({"manifest": True}),
+            )
+            bound = create_execution_admission_trace(
+                bound_request,
+                observed_at="2026-01-01T00:00:00Z",
+                outcome_reason_code="INVALID_CONTRACT",
+                probe_invoked=False,
+                execute_invoked=False,
+            )
+            self.assertIn(
+                "admission.request_id is missing from request binding",
+                validate_execution_admission_binding(bound_request, {**bound, "request_id": None}),
+            )
+            self.assertIn(
+                "admission.requested_executor_kind is missing from request binding",
+                validate_execution_admission_binding(bound_request, {**bound, "requested_executor_kind": None}),
+            )
+            self.assertIn(
+                "admission.execution_surface is missing from request binding",
+                validate_execution_admission_binding(bound_request, {**bound, "execution_surface": None}),
+            )
+            self.assertIn(
+                "admission.adapter_manifest_digest is missing from request binding",
+                validate_execution_admission_binding(bound_request, {**bound, "adapter_manifest_digest": None}),
+            )
+
+    def test_contract_bundle_persists_admission_trace_separately(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            receipt = build_receipt(request, lifecycle="NOT_STARTED", executor_kind="python")
+            trace = create_execution_admission_trace(
+                request,
+                observed_at="2026-01-01T00:00:00Z",
+                outcome_reason_code="CAPABILITY_MISSING",
+                probe_invoked=False,
+                execute_invoked=False,
+                receipt=receipt,
+                receipt_valid=False,
+            )
+            contract = write_contract_bundle(root, request, receipt, admission_trace=trace)
+            self.assertTrue(contract["contract_valid"])
+            self.assertEqual(json.loads((root / "execution_admission.json").read_text(encoding="utf-8")), trace)
+            self.assertTrue((root / "execution_contracts" / f"{request['request_id']}.admission.json").is_file())
+            self.assertEqual(contract["admission_digest"], digest_json(trace))
+
+            forged = {**trace, "request_digest": digest_json({"forged": True})}
+            invalid_root = root / "invalid"
+            invalid_root.mkdir()
+            invalid_request = {**request, "request_id": "bridge-test-invalid"}
+            invalid = write_contract_bundle(invalid_root, invalid_request, receipt, admission_trace=forged)
+            self.assertFalse(invalid["contract_valid"])
+            self.assertIn("admission.request_digest does not match request", invalid["diagnostics"])
 
     def test_external_adapter_route_is_mirrored_and_fail_closed(self) -> None:
         self.assertEqual(
@@ -173,6 +300,13 @@ class ExecutionBridgeTests(unittest.TestCase):
         self.assertEqual(len(fixture["cases"]), 5)
         for item in fixture["cases"]:
             surectl = item["surectl"]
+            admission = item["admission"]
+            self.assertIn(admission["status"], {"ADMITTED", "CAPABILITY_MISSING", "REJECTED"})
+            self.assertIsInstance(admission["probe_invoked"], bool)
+            self.assertIsInstance(admission["execute_invoked"], bool)
+            self.assertIsInstance(admission["receipt_present"], bool)
+            self.assertIsInstance(admission["receipt_valid"], bool)
+            self.assertFalse(admission["receipt_valid"] and not admission["receipt_present"])
             self.assertEqual(
                 project_execution_evidence(
                     lifecycle=surectl["receipt_lifecycle"],
