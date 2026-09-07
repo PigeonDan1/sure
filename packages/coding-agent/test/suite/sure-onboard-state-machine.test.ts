@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createPolicySnapshot, type JsonValue } from "@earendil-works/sure-core";
+import { createPolicySnapshot, type JsonValue, type OperationExecutionEvidence } from "@earendil-works/sure-core";
+import { resolveSitePolicy, snapshotResolvedSitePolicy } from "@earendil-works/sure-core/site";
 import { describe, expect, it } from "vitest";
 import {
 	advance,
@@ -34,6 +35,7 @@ type StatePatchForTest = {
 	diagnostics?: Array<{ message: string }>;
 	phase?: { status?: string };
 	checkpoint?: { data: CheckpointData };
+	last_execution?: OperationExecutionEvidence;
 };
 
 function statePatch(result: { state_patch?: unknown }): StatePatchForTest {
@@ -927,6 +929,21 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 	it("replays MODEL_INPUT to final sure_finish through all gates", () => {
 		const { ctx, cwd, runDir } = preStartCtx("full-replay-reference-adoption", "");
 		const sitePolicy = writePythonSitePolicy(cwd);
+		const resolvedPolicy = resolveSitePolicy({
+			repositoryRoot: cwd,
+			environment: { SURE_SITE_POLICY: sitePolicy },
+		});
+		if (!resolvedPolicy) {
+			throw new Error("test site policy did not resolve");
+		}
+		const policySnapshot = snapshotResolvedSitePolicy(resolvedPolicy);
+		const policySnapshotPath = join(runDir, "artifacts", "site_policy.resolved.json");
+		writeFileSync(policySnapshotPath, JSON.stringify(policySnapshot), "utf-8");
+		Object.assign(ctx.run, {
+			policyDigest: policySnapshot.policy_digest,
+			policySnapshotDigest: policySnapshot.snapshot_digest,
+			policySnapshotPath,
+		});
 		const modelInputPath = join(cwd, "sure", "handoffs", "rednote-hilab__dots.tts-base", "model_input.yaml");
 		writeModelInput(modelInputPath);
 		ctx.args = `model_input_path=${modelInputPath} package=none`;
@@ -1479,6 +1496,22 @@ describe("sure_onboard gate --kind routing (regression)", () => {
 		expect(result.ok).toBe(true);
 		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
 		expect(checkpoint?.data.currentUnit).toBe("generate_wrapper");
+		const execution = statePatch(result).last_execution;
+		expect(execution).toMatchObject({
+			schema: "sure.operation.execution.v1",
+			projection_version: 2,
+			source: "pi_hook",
+			operation_id: "sure.onboard.execute_env_compat",
+			artifact_mode: "preexisting",
+			verdict: "PASS",
+			reason_code: "EXECUTION_SUCCEEDED",
+			unit_id: "validate_env_compat",
+			attempt: 1,
+		});
+		expect(execution?.artifact_input_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(execution?.artifact_output_digest).toBe(execution?.artifact_input_digest);
+		expect(execution?.backend_registry_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(execution?.backend_resource_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 	});
 
 	it("fails clearly on the third consecutive blocked onboard gate attempt", () => {
@@ -1507,6 +1540,15 @@ describe("sure_onboard gate --kind routing (regression)", () => {
 		expect(result.repair).toContain("model_input_path or repo link");
 		expect(result.repair).toContain("confirm access permissions");
 		expect(patch.message).toContain("exhausted 3 blocked attempts");
+		expect(patch.last_execution).toMatchObject({
+			source: "pi_hook",
+			operation_id: "sure.onboard.execute_env_compat",
+			artifact_mode: "preexisting",
+			verdict: "FAIL",
+			reason_code: "EXECUTION_FAILED",
+			unit_id: "validate_env_compat",
+			attempt: 3,
+		});
 	});
 
 	it("puts the actual blocking reason before the generic checklist in the terminal repair message", () => {
@@ -2287,6 +2329,18 @@ describe("sure_onboard new alignment gates", () => {
 		expect(result.ok).toBe(true);
 		const checkpoint = (result.state_patch as { checkpoint?: { data: CheckpointData } }).checkpoint;
 		expect(checkpoint?.data.currentUnit).toBe("validate_load");
+		const execution = statePatch(result).last_execution;
+		expect(execution).toMatchObject({
+			source: "pi_hook",
+			operation_id: "sure.onboard.execute_import",
+			artifact_mode: "mutating",
+			verdict: "PASS",
+			reason_code: "EXECUTION_SUCCEEDED",
+			unit_id: "validate_import",
+			attempt: 1,
+		});
+		expect(execution?.artifact_input_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(execution?.artifact_output_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 	});
 
 	it("prefers model-local .venv python for validation run_command", () => {

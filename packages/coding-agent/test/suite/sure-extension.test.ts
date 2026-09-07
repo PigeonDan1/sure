@@ -567,6 +567,44 @@ describe("Sure extension", () => {
 		expect(existsSync(join(harness.tempDir, ".sure", "runs", runId, "state.json"))).toBe(false);
 	});
 
+	it("rejects operation evidence updates from sure_update_state", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			fauxAssistantMessage(
+				fauxToolCall("sure_update_state", {
+					last_execution: {
+						schema: "sure.operation.execution.v1",
+						projection_version: 2,
+						source: "pi_hook",
+						operation_id: "sure.onboard.execute_env_compat",
+						artifact_mode: "preexisting",
+						verdict: "PASS",
+						reason_code: "EXECUTION_SUCCEEDED",
+						diagnostics: [],
+						artifact_input_digest: `sha256:${"a".repeat(64)}`,
+						artifact_output_digest: `sha256:${"a".repeat(64)}`,
+					},
+				}),
+			),
+			fauxAssistantMessage("repairing"),
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
+		expect(toolResult && "isError" in toolResult ? toolResult.isError : false).toBe(true);
+		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain(
+			"cannot update operation evidence",
+		);
+		expect(existsSync(join(harness.tempDir, ".sure", "runs", runId, "state.json"))).toBe(false);
+	});
+
 	it("rejects terminal progress updates from sure_update_state during checkpoint-controlled runs", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
@@ -661,7 +699,7 @@ describe("Sure extension", () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
 		setupSkillPackage(harness.tempDir, {
-			hook: `export function preFinish() { return { ok: false, repair: "need more evidence", state_patch: { phase: { id: "validate", label: "Validating output", status: "blocked" }, counters: { collected: 3, target: 10 }, diagnostics: [{ severity: "warning", message: "Evidence below target.", repair: "Collect additional evidence." }], checkpoint: { id: "hook_gate", label: "Hook-owned checkpoint", data: { currentUnit: "validate" } } } }; }`,
+			hook: `export function preFinish() { return { ok: false, repair: "need more evidence", state_patch: { phase: { id: "validate", label: "Validating output", status: "blocked" }, counters: { collected: 3, target: 10 }, diagnostics: [{ severity: "warning", message: "Evidence below target.", repair: "Collect additional evidence." }], checkpoint: { id: "hook_gate", label: "Hook-owned checkpoint", data: { currentUnit: "validate" } }, last_execution: { schema: "sure.operation.execution.v1", projection_version: 2, source: "pi_hook", operation_id: "sure.onboard.execute_env_compat", artifact_mode: "preexisting", verdict: "PASS", reason_code: "EXECUTION_SUCCEEDED", diagnostics: [], artifact_input_digest: "sha256:${"a".repeat(64)}", artifact_output_digest: "sha256:${"a".repeat(64)}" } } }; }`,
 		});
 
 		harness.setResponses([
@@ -691,6 +729,12 @@ describe("Sure extension", () => {
 				{ severity: "warning", message: "Evidence below target.", repair: "Collect additional evidence." },
 			],
 			checkpoint: { id: "hook_gate", label: "Hook-owned checkpoint", data: { currentUnit: "validate" } },
+			last_execution: {
+				source: "pi_hook",
+				operation_id: "sure.onboard.execute_env_compat",
+				artifact_mode: "preexisting",
+				verdict: "PASS",
+			},
 		});
 	});
 

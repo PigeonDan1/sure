@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createOperationExecutionEvidence } from "@earendil-works/sure-core";
 import { describe, expect, it } from "vitest";
 import { incompleteDeploymentError } from "../../../../sure/skills/sure_onboard/hooks/index.ts";
 import { normalizeSureDisplayStatePatch } from "../../src/core/sure/state.ts";
@@ -42,5 +43,35 @@ describe("sure_onboard non-success state patch", () => {
 			});
 			expect(result.ok, `artifact status "${status}" is dropped by the state validator`).toBe(true);
 		}
+	});
+
+	it("preserves a Core-valid operation projection", () => {
+		const evidence = createOperationExecutionEvidence({
+			source: "pi_hook",
+			operation_id: "sure.onboard.execute_env_compat",
+			artifact_mode: "preexisting",
+			verdict: "PASS",
+			reason_code: "EXECUTION_SUCCEEDED",
+			diagnostics: [],
+			artifact_input_digest: `sha256:${"a".repeat(64)}`,
+			artifact_output_digest: `sha256:${"a".repeat(64)}`,
+		});
+		const result = normalizeSureDisplayStatePatch({ last_execution: evidence });
+		expect(result).toEqual({ ok: true, state: { last_execution: evidence } });
+	});
+
+	it("rejects a current PASS projection without output evidence", () => {
+		const evidence = createOperationExecutionEvidence({
+			source: "pi_hook",
+			operation_id: "sure.onboard.execute_env_compat",
+			artifact_mode: "preexisting",
+			verdict: "PASS",
+			reason_code: "EXECUTION_SUCCEEDED",
+			diagnostics: [],
+			artifact_input_digest: `sha256:${"a".repeat(64)}`,
+		});
+		const result = normalizeSureDisplayStatePatch({ last_execution: evidence });
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain("current PASS operation evidence is missing artifact_output_digest");
 	});
 });

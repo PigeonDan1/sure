@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import type { OperationExecutionEvidence } from "@earendil-works/sure-core";
 import {
 	advanceLegacyUnit,
 	bumpLegacyRetry,
@@ -33,6 +34,8 @@ export interface GateResult {
 	ranFailed?: boolean;
 	/** Advisory memory diagnostics the caller folds into its state_patch. */
 	diagnostics?: MemoryDiagnostic[];
+	/** Core-defined projection emitted when a registered Pi operation ran. */
+	executionEvidence?: OperationExecutionEvidence;
 }
 
 export interface CheckpointData {
@@ -245,6 +248,7 @@ export function failure(
 	message: string,
 	counters?: Record<string, number>,
 	checkpoint?: RunCheckpoint,
+	executionEvidence?: OperationExecutionEvidence,
 ): SureHookResult {
 	return {
 		ok: false,
@@ -254,6 +258,7 @@ export function failure(
 			message,
 			counters,
 			checkpoint,
+			...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 			diagnostics: [{ severity: "error", message, repair }],
 		},
 	};

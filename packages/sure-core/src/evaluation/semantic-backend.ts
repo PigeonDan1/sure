@@ -61,7 +61,11 @@ export interface SemanticBackendResolveOptions {
 	expectedRegistryDigest?: string;
 	/** Restrict an operation to a known bundle digest. */
 	expectedBundleDigest?: string;
+	/** Require the implementation bytes to come from one explicit resolution tier. */
+	requiredSource?: SemanticBackendSource;
 }
+
+export type SemanticBackendSource = "package" | "semantic-backend-root" | "canonical" | "legacy";
 
 export interface ResolvedSemanticBackend {
 	operation_id: string;
@@ -70,7 +74,7 @@ export interface ResolvedSemanticBackend {
 	path: string;
 	bundle_root: string;
 	integrity_root: string;
-	source: "package" | "semantic-backend-root" | "canonical" | "legacy";
+	source: SemanticBackendSource;
 	resource_digest: string;
 	bundle_digest?: string;
 	registry_digest: string;
@@ -503,6 +507,7 @@ export function resolveSemanticBackendOperation(
 		),
 	);
 	for (const candidate of candidates) {
+		if (options.requiredSource !== undefined && candidate.source !== options.requiredSource) continue;
 		let candidateExists = false;
 		try {
 			lstatSync(candidate.path);

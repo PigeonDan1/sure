@@ -137,6 +137,25 @@ describe("semantic backend registry", () => {
 		}
 	});
 
+	it("can require the legacy implementation tree that a Pi hook will execute", () => {
+		const onboardPackage = join(repositoryRoot, "sure", "skills", "sure_onboard");
+		const manifest = loadSemanticBackendManifest(onboardPackage, { manifestPath });
+		const bundle = manifest.bundles.find((candidate) => candidate.bundle_id === "sure-onboard-execution");
+		const resolved = resolveSemanticBackendOperation(onboardPackage, "sure.onboard.execute_import", {
+			manifestPath,
+			requiredSource: "legacy",
+		});
+		expect(resolved.source).toBe("legacy");
+		expect(resolved.path).toBe(join(onboardPackage, "scripts", "run_validate.py"));
+		expect(resolved.bundle_digest).toBe(bundle?.legacy_tree_digest);
+		expect(() =>
+			resolveSemanticBackendOperation(onboardPackage, "sure.onboard.execute_import", {
+				manifestPath,
+				requiredSource: "package",
+			}),
+		).toThrow(SemanticBackendResolutionError);
+	});
+
 	it("resolves TRANS artifact validators from one shared backend", () => {
 		for (const operationId of [
 			"sure.trans.validate_input",

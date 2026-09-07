@@ -197,8 +197,17 @@ function isManifestArtifact(value: unknown): value is { type?: string; path?: st
 	);
 }
 
-function hasCheckpointPatch(value: unknown): boolean {
-	return isStringRecord(value) && value.checkpoint !== undefined;
+function harnessControlledStateField(value: unknown): "checkpoints" | "operation evidence" | undefined {
+	if (!isStringRecord(value)) {
+		return undefined;
+	}
+	if (value.checkpoint !== undefined) {
+		return "checkpoints";
+	}
+	if (value.last_execution !== undefined) {
+		return "operation evidence";
+	}
+	return undefined;
 }
 
 const CHECKPOINT_COUNTER_KEYS = new Set(["completed_units", "total_units", "gate_blocks"]);
@@ -754,8 +763,9 @@ export function createSureExtension(): ExtensionFactory {
 							isError: true,
 						};
 					}
-					if (hasCheckpointPatch(params)) {
-						const repair = `${UPDATE_STATE_TOOL_NAME} cannot update checkpoints; checkpoints are controlled by Sure hooks.`;
+					const controlledField = harnessControlledStateField(params);
+					if (controlledField) {
+						const repair = `${UPDATE_STATE_TOOL_NAME} cannot update ${controlledField}; ${controlledField} is controlled by Sure hooks.`;
 						return {
 							content: toolText(repair),
 							details: {

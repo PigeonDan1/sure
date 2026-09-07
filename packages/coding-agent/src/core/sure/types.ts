@@ -1,4 +1,5 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { OperationExecutionEvidence } from "@earendil-works/sure-core";
 
 export type SureRunStatus = "pending" | "running" | "success" | "failed" | "incomplete" | "cancelled";
 
@@ -153,6 +154,7 @@ export interface SureDisplayState {
 	artifacts?: SureDisplayArtifact[];
 	checkpoint?: SureDisplayCheckpoint;
 	next_actions?: string[];
+	last_execution?: OperationExecutionEvidence;
 }
 
 export interface SureHookContext {

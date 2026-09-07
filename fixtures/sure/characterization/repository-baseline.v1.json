@@ -6646,8 +6646,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/extension.ts",
-      "size_bytes": 44712,
-      "sha256": "60545d7d31b48a1fe66d0b5a0c23a5b2f2aea23f7f6076d7d6198826e5053e1f"
+      "size_bytes": 44981,
+      "sha256": "3156f7d70f074554017c079c0125f2ffc7e38d908cf65c3e1a2069e28908a13e"
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
@@ -6656,8 +6656,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
-      "size_bytes": 3977,
-      "sha256": "43fbf63f902bdc504332619d5a83ec440901115e28433b0685be6789e1b27fdc"
+      "size_bytes": 4101,
+      "sha256": "4afff90d2926fc4e89f3dbef9b0a8afff09c03f2a90f40db3e0466c4a205b8cb"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hooks.ts",
@@ -6711,8 +6711,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/module-loader.ts",
-      "size_bytes": 4995,
-      "sha256": "ac85d074fa3556aacb36ce2182222c194c0e81140d4ffbd42b5cfd5c7b152c31"
+      "size_bytes": 5294,
+      "sha256": "0e8bebeef1606d456462211e82c10915687c198ac908715a548fda8e4ab59d18"
     },
     {
       "path": "packages/coding-agent/src/core/sure/output-dir.ts",
@@ -6726,13 +6726,13 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/state.ts",
-      "size_bytes": 9800,
-      "sha256": "94ccb7366bdbf839fa67e1bafcfc5d540389397c248095ddcbff3b0c32863550"
+      "size_bytes": 10244,
+      "sha256": "ae6805203c034d6951775939d4ff5f4799e57c7aa95647362237b822ec10052d"
     },
     {
       "path": "packages/coding-agent/src/core/sure/types.ts",
-      "size_bytes": 4649,
-      "sha256": "fbcc569e52414993c41ebd5a020ac27e3d9f5b32c94cc8f8317112bf9f47b8ff"
+      "size_bytes": 4772,
+      "sha256": "bcfe1e7fe082af71131d1c1fdb052729a0b5c892759cb85ee072bcbb3ad6d1ad"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-agent-path.test.ts",
@@ -6766,8 +6766,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-extension.test.ts",
-      "size_bytes": 63244,
-      "sha256": "48fa209efbc3f5775cea5ca5d7dd1d893bd487b54115a1bccd7e44c0947ab9c9"
+      "size_bytes": 65208,
+      "sha256": "b620752391f189c66de8ffef18d4b9c3ec25039cd83a82f66d52887db5d17586"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-feed-memory.test.ts",
@@ -6816,8 +6816,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-module-loader.test.ts",
-      "size_bytes": 653,
-      "sha256": "004a339bdf8353d692323e07eec9cd8e9383f9fc12d378982c6f88e90222929f"
+      "size_bytes": 957,
+      "sha256": "41d8e638158ff35cdb3c32e3b11b6e468a6f269c02e1e4e3e5681253df59ae56"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-memory.test.ts",
@@ -6826,13 +6826,18 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-state-machine.test.ts",
-      "size_bytes": 114571,
-      "sha256": "2e1ea12bf6bd7f7989baa1f98796e8edb632f7c6c4aea40fca519e10f4906d21"
+      "size_bytes": 116771,
+      "sha256": "f1ab4fd58d971aa97203579e12d4358d9126a3d92ea9009bdd37bfb54c54c3d9"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-onboard-terminal.test.ts",
-      "size_bytes": 1845,
-      "sha256": "859620219726dcf41b2b382a53dd12b77c4b031005ea44a4e6a85f83b1813a0e"
+      "size_bytes": 3095,
+      "sha256": "9453d603070629d78a608d78651461b5c79a867cabdbd8a4baed5496397bf68e"
+    },
+    {
+      "path": "packages/coding-agent/test/suite/sure-pi-operation-evidence.test.ts",
+      "size_bytes": 9698,
+      "sha256": "d58583121ee39ba6ad79a3a7baf17a59533e82b7ed5b3ecd191b51a7035d3a71"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-run-output-dir.test.ts",
@@ -6978,6 +6983,11 @@
       "path": "sure/runtime/harness/README.md",
       "size_bytes": 925,
       "sha256": "d3997800cfa4cc79339fdf9448566ee86e0eb18c52f2a243ea08424369924476"
+    },
+    {
+      "path": "sure/runtime/harness/registered-operation.ts",
+      "size_bytes": 15032,
+      "sha256": "3143d52cb71fef62a38564586743f1bda9194a9a6c6714d75570491a1c826ef2"
     },
     {
       "path": "sure/runtime/harness/requirements.in",
@@ -8631,13 +8641,13 @@
     },
     {
       "path": "sure/skills/sure_onboard/hooks/checkpoints.ts",
-      "size_bytes": 9800,
-      "sha256": "a28e50c3b095dea1ad3c2000f8f7c265c4813fea3924a04eeb15759e135f2450"
+      "size_bytes": 10137,
+      "sha256": "5b7c1448917a8c12bd7139e6250d9440d138dd8d354cc36fbab0a72c1af884b9"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/index.ts",
-      "size_bytes": 56209,
-      "sha256": "53194a35b9bf9404e7720ee4199c24dfc55f5e649fa1105263d27c274d1796b1"
+      "size_bytes": 57805,
+      "sha256": "b00b8f9229e1b1f4923b0db83d515c0baf9636159edd4304a3670f7f6d4a8a66"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/state-machine.ts",
@@ -9701,5 +9711,5 @@
       ]
     }
   ],
-  "semantic_digest": "94a420564396a4d4945b1f590e846ee3526d27a22fc836e888dc55c41d6c2b46"
+  "semantic_digest": "96c2d48559ded0b9bb167ac86ad9c5b27f58d7840a3e7553bb5f3534e8e9e9f9"
 }

@@ -1,6 +1,11 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import type { OperationExecutionEvidence } from "@earendil-works/sure-core";
+import {
+	type PiRegisteredOperationResult,
+	runPiRegisteredOperation,
+} from "../../../runtime/harness/registered-operation.ts";
 import { type HarnessRuntimeContract, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
 import {
 	gateUnavailable,
@@ -855,11 +860,12 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 }
 
 // Run the gate's Python script (if declared) and fold its verdict in.
-function runGateScript(ctx: SureHookContext, unit: Unit): GateResult | undefined {
-	if (!unit.gateScript) {
+function runGateScript(ctx: SureHookContext, unit: Unit, attempt: number): GateResult | undefined {
+	const gateScript = unit.gateScript;
+	if (!gateScript) {
 		return undefined;
 	}
-	if (unit.gateScript === "check_memory_extraction.py") {
+	if (gateScript === "check_memory_extraction.py") {
 		// The memory gate is stdlib-only python and runs with the memory interpreter
 		// (HARNESS_PYTHON_BIN, else the harness runtime); same --run-dir/--produces contract,
 		// stderr first. Every other gate keeps going through runBackend.
@@ -888,15 +894,31 @@ function runGateScript(ctx: SureHookContext, unit: Unit): GateResult | undefined
 	// accepts --kind; the other gate scripts (check_spec.py, check_env.py,
 	// check_weights.py, check_env_compat.py, check_verdict.py) would reject it.
 	const kindArgs: string[] =
-		unit.gateScript === "run_validate.py" && unit.id.startsWith("validate_") && !extra.includes("--kind")
+		gateScript === "run_validate.py" && unit.id.startsWith("validate_") && !extra.includes("--kind")
 			? ["--kind", unit.id.replace("validate_", "")]
 			: [];
-	const r = runBackend(ctx, unit.gateScript, ["--produces", produces, ...kindArgs, ...extra]);
+	const execute = () => runBackend(ctx, gateScript, ["--produces", produces, ...kindArgs, ...extra]);
+	const r: PiRegisteredOperationResult = unit.executionOperationId
+		? runPiRegisteredOperation({
+				ctx,
+				unit_id: unit.id,
+				attempt,
+				operation_id: unit.executionOperationId,
+				script_id: gateScript,
+				artifact_input_path: produces,
+				execute,
+			})
+		: execute();
 	if (r.ok) {
-		return { ok: true };
+		return { ok: true, ...(r.evidence === undefined ? {} : { executionEvidence: r.evidence }) };
 	}
-	const repair = r.stderr?.trim() || r.stdout?.trim() || `Gate script scripts/${unit.gateScript} exited ${r.status}.`;
-	return { ok: false, repair, reason: `gate script ${unit.gateScript} failed` };
+	const repair = r.stderr?.trim() || r.stdout?.trim() || `Gate script scripts/${gateScript} exited ${r.status}.`;
+	return {
+		ok: false,
+		repair,
+		reason: `gate script ${gateScript} failed`,
+		...(r.evidence === undefined ? {} : { executionEvidence: r.evidence }),
+	};
 }
 
 export function postToolResult(ctx: SureHookContext): SureHookResult {
@@ -979,7 +1001,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 		// The python gateScript is the authoritative semantic checker; it runs
 		// independently of the in-process check (a gate may have a script, an
 		// in-process check, or both — disjoint concerns).
-		gateRun = runGateScript(ctx, currentUnit);
+		gateRun = runGateScript(ctx, currentUnit, (checkpoint.data.retries[currentUnit.id] ?? 0) + 1);
 		if (gateRun && !gateRun.ok) {
 			return failOrRetry(
 				ctx,
@@ -987,6 +1009,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 				checkpoint,
 				gateRun.repair ?? `Gate script "${currentUnit.id}" failed.`,
 				gateRun.reason ?? "gate script failed",
+				gateRun.executionEvidence,
 			);
 		}
 	}
@@ -996,7 +1019,9 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 	const settled = settleOnPass(env, { unitId: currentUnit.id, memory: memoryOf(checkpoint.data) });
 	const next = advance(currentUnit, { ...checkpoint.data, memory: settled.memory });
 	if (!next) {
-		return { ok: true };
+		return gateRun?.executionEvidence === undefined
+			? { ok: true }
+			: { ok: true, state_patch: { last_execution: gateRun.executionEvidence } };
 	}
 	const diagnostics: MemoryDiagnostic[] = [...settled.diagnostics];
 	if (next.data.currentUnit === "extract_lessons") {
@@ -1018,6 +1043,7 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 			message: `Advanced to unit "${next.data.currentUnit}".`,
 			counters: countersFor(next.data, 0),
 			checkpoint: next,
+			...(gateRun?.executionEvidence === undefined ? {} : { last_execution: gateRun.executionEvidence }),
 			...(diagnostics.length > 0 ? { diagnostics } : {}),
 		},
 	};
@@ -1066,6 +1092,7 @@ function failOrRetry(
 	checkpoint: { data: CheckpointData },
 	repair: string,
 	reason: string,
+	executionEvidence?: OperationExecutionEvidence,
 ): SureHookResult {
 	// produces plus gateInputs: editing a candidate must re-run the extraction gate and cost a
 	// retry, exactly like editing the declaration itself (spec 4.1). undefined means the digest
@@ -1081,6 +1108,7 @@ function failOrRetry(
 				message: `Gate "${unit.id}" remains blocked on unchanged artifact content; retry ${attempts} was not consumed again.`,
 				counters: countersFor(checkpoint.data, attempts),
 				checkpoint,
+				...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 				diagnostics: [{ severity: "warning", message: reason, repair }],
 			},
 		};
@@ -1136,6 +1164,7 @@ function failOrRetry(
 					message: `Extraction gate "${unit.id}" exhausted ${attempts} blocked attempts; extraction marked failed, advanced to unit "${advanced.data.currentUnit}".`,
 					counters: countersFor(advanced.data, attempts),
 					checkpoint: advanced,
+					...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 					diagnostics: [
 						{ severity: "warning", message: `extraction: failed (${reason})`, repair },
 						...injected.diagnostics,
@@ -1167,6 +1196,7 @@ function failOrRetry(
 				message,
 				counters: countersFor(next.data, attempts),
 				checkpoint: withMemory(next, closed.memory),
+				...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 				diagnostics: [{ severity: "error", message, repair }, ...injected.diagnostics, ...closed.diagnostics],
 			},
 		};
@@ -1179,6 +1209,7 @@ function failOrRetry(
 			message: `Gate "${unit.id}" blocked (attempt ${attempts}): ${reason}`,
 			counters: countersFor(next.data, attempts),
 			checkpoint: next,
+			...(executionEvidence === undefined ? {} : { last_execution: executionEvidence }),
 			diagnostics,
 		},
 	};
@@ -1281,12 +1312,16 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 	}
 	// Final backstop: re-run the finalized-bundle gate so mutations after the
 	// normal state transition cannot bypass deployment readiness checks.
-	const gateResult = LAST_UNIT.gateScript ? runGateScript(ctx, LAST_UNIT) : { ok: true };
+	const gateResult = LAST_UNIT.gateScript
+		? runGateScript(ctx, LAST_UNIT, (checkpoint.data.retries[LAST_UNIT.id] ?? 0) + 1)
+		: { ok: true };
 	if (gateResult && !gateResult.ok) {
 		return failure(
 			gateResult.repair ?? "Final gate failed.",
 			`SURE onboard terminal gate "${LAST_UNIT.id}" rejected the finish.`,
 			countersFor(checkpoint.data, 1),
+			undefined,
+			gateResult.executionEvidence,
 		);
 	}
 	if (
@@ -1334,6 +1369,7 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 					summary: "Finalized model bundle with immutable deployment binding.",
 				},
 			],
+			...(gateResult?.executionEvidence === undefined ? {} : { last_execution: gateResult.executionEvidence }),
 		},
 	};
 }

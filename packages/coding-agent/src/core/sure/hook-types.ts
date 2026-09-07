@@ -1,3 +1,5 @@
+import type { OperationExecutionEvidence } from "@earendil-works/sure-core";
+
 export type SureRunStatus = "pending" | "running" | "success" | "failed" | "incomplete" | "cancelled";
 
 export type SureHookPoint =
@@ -137,6 +139,7 @@ export interface SureDisplayState {
 	artifacts?: SureDisplayArtifact[];
 	checkpoint?: SureDisplayCheckpoint;
 	next_actions?: string[];
+	last_execution?: OperationExecutionEvidence;
 }
 
 export interface SureHookContext {

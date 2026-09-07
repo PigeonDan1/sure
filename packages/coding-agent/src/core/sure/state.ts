@@ -1,3 +1,4 @@
+import { decodeOperationExecutionEvidence } from "@earendil-works/sure-core";
 import type {
 	SureDisplayArtifact,
 	SureDisplayCheckpoint,
@@ -262,6 +263,11 @@ export function normalizeSureDisplayStatePatch(value: unknown): SureStateValidat
 	if (nextActions.message) {
 		return { ok: false, message: nextActions.message };
 	}
+	const lastExecution =
+		value.last_execution === undefined ? undefined : decodeOperationExecutionEvidence(value.last_execution);
+	if (lastExecution !== undefined && !lastExecution.ok) {
+		return { ok: false, message: `last_execution is invalid: ${lastExecution.errors.join("; ")}` };
+	}
 
 	const state: SureDisplayState = {};
 	if (phase.value) {
@@ -293,6 +299,9 @@ export function normalizeSureDisplayStatePatch(value: unknown): SureStateValidat
 	}
 	if (nextActions.value) {
 		state.next_actions = nextActions.value;
+	}
+	if (lastExecution?.ok) {
+		state.last_execution = lastExecution.evidence;
 	}
 	return { ok: true, state };
 }
