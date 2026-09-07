@@ -123,6 +123,74 @@ class ExecutionBridgeTests(unittest.TestCase):
                 errors,
             )
 
+    def test_external_contract_requires_policy_snapshot_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            request["runtime_requirements"] = {
+                "execution_surface": "vc",
+                "executor_kind": "remote",
+                "vc_project": "sure-test",
+                "vc_partition": "gpu-test",
+            }
+            receipt = build_receipt(request, lifecycle="FAILED", executor_kind="remote", exit_code=23)
+            errors = validate_contract_pair(request, receipt)
+            self.assertIn("external execution requires request.policy_snapshot_digest", errors)
+
+    def test_build_request_and_receipt_carry_policy_snapshot_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            snapshot = digest_json({"site": "sure-test"})
+            request = build_request(
+                run_id="bridge-test",
+                unit_id="execute",
+                operation="inference",
+                entrypoint={"executable": "/usr/bin/python3", "argv": ["-c", "pass"]},
+                output_root=root,
+                policy_digest=digest_json({"policy": 1}),
+                policy_snapshot_digest=snapshot,
+                reference_snapshot_digest=digest_json({"inputs": []}),
+                runtime_requirements={"execution_surface": "remote", "executor_kind": "remote"},
+            )
+            self.assertEqual(request["policy_snapshot_digest"], snapshot)
+            receipt = build_receipt(request, lifecycle="FAILED", executor_kind="remote", exit_code=23)
+            self.assertEqual(receipt["policy_snapshot_digest"], snapshot)
+            self.assertEqual(validate_contract_pair(request, receipt), [])
+
+    def test_build_request_does_not_coerce_an_invalid_policy_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = build_request(
+                run_id="bridge-test",
+                unit_id="execute",
+                operation="inference",
+                entrypoint={"executable": "/usr/bin/python3", "argv": ["-c", "pass"]},
+                output_root=root,
+                policy_digest=digest_json({"policy": 1}),
+                policy_snapshot_digest="not-a-digest",
+                reference_snapshot_digest=digest_json({"inputs": []}),
+                runtime_requirements={"execution_surface": "remote", "executor_kind": "remote"},
+            )
+            self.assertEqual(request["policy_snapshot_digest"], "not-a-digest")
+            receipt = build_receipt(request, lifecycle="FAILED", executor_kind="remote", exit_code=23)
+            errors = validate_contract_pair(request, receipt)
+            self.assertTrue(any("policy_snapshot_digest" in error for error in errors))
+
+    def test_external_receipt_snapshot_must_match_request(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            snapshot = digest_json({"site": "sure-test"})
+            request = self.request(root)
+            request["policy_snapshot_digest"] = snapshot
+            request["runtime_requirements"] = {
+                "execution_surface": "remote",
+                "executor_kind": "remote",
+            }
+            receipt = build_receipt(request, lifecycle="FAILED", executor_kind="remote", exit_code=23)
+            receipt["policy_snapshot_digest"] = digest_json({"site": "forged"})
+            errors = validate_contract_pair(request, receipt)
+            self.assertIn("receipt.policy_snapshot_digest does not match request", errors)
+
     def test_capability_evidence_rejects_arbitrary_authority_sources(self) -> None:
         evidence = capability_evidence("sure.execution.gpu", status="AVAILABLE")
         evidence["source"] = "remote_daemon"

@@ -1554,6 +1554,17 @@ function validateRegisteredGateExecution(
 	if (!validDigestValue(request.policy_digest) || !sameDigest(request.policy_digest, expectedPolicyDigest)) {
 		diagnostics.push("execution request policy_digest does not match the run binding");
 	}
+	const requestSurface = runtimeRequirements.execution_surface;
+	if (requestSurface === "vc" || requestSurface === "remote" || requestSurface === "trusted") {
+		if (run.policySnapshotDigest === undefined) {
+			diagnostics.push("external execution requires a site-policy snapshot bound to the run");
+		} else if (
+			!validDigestValue(request.policy_snapshot_digest) ||
+			!sameDigest(request.policy_snapshot_digest, run.policySnapshotDigest)
+		) {
+			diagnostics.push("execution request policy_snapshot_digest does not match the run binding");
+		}
+	}
 	const requestOutputRoot = request.output_root;
 	if (
 		typeof requestOutputRoot !== "object" ||
@@ -1571,6 +1582,14 @@ function validateRegisteredGateExecution(
 	}
 	if (!validDigestValue(receipt.policy_digest) || !sameDigest(receipt.policy_digest, expectedPolicyDigest)) {
 		diagnostics.push("execution receipt policy_digest does not match the run binding");
+	}
+	if (requestSurface === "vc" || requestSurface === "remote" || requestSurface === "trusted") {
+		if (
+			!validDigestValue(receipt.policy_snapshot_digest) ||
+			!sameDigest(receipt.policy_snapshot_digest, run.policySnapshotDigest ?? "")
+		) {
+			diagnostics.push("execution receipt policy_snapshot_digest does not match the run binding");
+		}
 	}
 	for (const [field, expected] of [
 		["semantic_backend_operation_id", operation.operation_id],
@@ -1663,6 +1682,7 @@ function validateRegisteredGateExecution(
 			reference_snapshot_digest: expectedReferenceDigest,
 			script_args: scriptArgs,
 			policy_digest: expectedPolicyDigest,
+			...(run.policySnapshotDigest === undefined ? {} : { policy_snapshot_digest: run.policySnapshotDigest }),
 		});
 		if (!sameDigest(request.semantic_request_digest, semanticDigest)) {
 			diagnostics.push("execution request semantic digest does not match the canonical operation binding");
@@ -3379,6 +3399,21 @@ function finalize(args: ParsedArgs): void {
 		}
 		if (run.policyDigest && !sameDigest(run.policyDigest, receipt.policy_digest)) {
 			throw new Error("Success execution receipt policy digest does not match the run binding.");
+		}
+		const requestSurface =
+			typeof request.runtime_requirements === "object" && request.runtime_requirements !== null
+				? request.runtime_requirements.execution_surface
+				: undefined;
+		if (requestSurface === "vc" || requestSurface === "remote" || requestSurface === "trusted") {
+			if (
+				run.policySnapshotDigest === undefined ||
+				!validDigestValue(request.policy_snapshot_digest) ||
+				!sameDigest(request.policy_snapshot_digest, run.policySnapshotDigest) ||
+				!validDigestValue(receipt.policy_snapshot_digest) ||
+				!sameDigest(receipt.policy_snapshot_digest, run.policySnapshotDigest)
+			) {
+				throw new Error("Success external execution requires a receipt bound to the run policy snapshot.");
+			}
 		}
 		assertReceiptOutputFiles(store, run, request, receipt);
 		let loaded: LoadedDefinition | undefined;

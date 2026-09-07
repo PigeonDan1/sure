@@ -555,6 +555,9 @@ function baseReceipt(
 		reference_snapshot_digest: request.reference_snapshot_digest,
 		output_root: request.output_root,
 		policy_digest: request.policy_digest,
+		...(request.policy_snapshot_digest === undefined
+			? {}
+			: { policy_snapshot_digest: request.policy_snapshot_digest }),
 		started_at: startedAt,
 		finished_at: finishedAt,
 		...(outputContract === undefined

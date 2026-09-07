@@ -57,6 +57,7 @@ function request(kind: ExecutorKind, runtime: Record<string, JsonValue> = {}): E
 			writable: true,
 		},
 		policy_digest: A,
+		policy_snapshot_digest: B,
 		created_at: NOW,
 	};
 }
@@ -111,6 +112,9 @@ function portFor(
 				reference_snapshot_digest: input.reference_snapshot_digest,
 				output_root: input.output_root,
 				policy_digest: input.policy_digest,
+				...(input.policy_snapshot_digest === undefined
+					? {}
+					: { policy_snapshot_digest: input.policy_snapshot_digest }),
 				started_at: NOW,
 				finished_at: NOW,
 				exit_code: 0,
@@ -209,6 +213,43 @@ describe("host-neutral executor dispatch", () => {
 		});
 		const localResult = await dispatchExecutor(registry, disguised);
 		expect(localResult.outcome.reason_code).toBe("INVALID_CONTRACT");
+	});
+
+	it("requires the immutable policy snapshot before probing an external route", async () => {
+		const registry = new ExecutorRegistry();
+		const port = portFor("remote", "host_enforced");
+		const probe = vi.fn(port.probe);
+		registry.register({ ...port, probe });
+		const input = request("remote", {
+			execution_surface: "vc",
+			vc_project: "sure-test",
+			vc_partition: "gpu-test",
+		});
+		delete input.policy_snapshot_digest;
+		const result = await dispatchExecutor(registry, input);
+		expect(result.request_validation.valid).toBe(false);
+		expect(result.outcome.reason_code).toBe("INVALID_CONTRACT");
+		expect(probe).not.toHaveBeenCalled();
+	});
+
+	it("rejects an external receipt bound to a different policy snapshot", async () => {
+		const registry = new ExecutorRegistry();
+		const port = portFor("remote", "host_enforced", {
+			execute: (input) => {
+				const receipt = portFor("remote", "host_enforced").execute(input) as ExecutionReceipt;
+				return { ...receipt, policy_snapshot_digest: A };
+			},
+		});
+		registry.register(port);
+		const input = request("remote", {
+			execution_surface: "vc",
+			vc_project: "sure-test",
+			vc_partition: "gpu-test",
+		});
+		const result = await dispatchExecutor(registry, input);
+		expect(result.receipt_validation?.valid).toBe(false);
+		expect(result.outcome.reason_code).toBe("INVALID_CONTRACT");
+		expect(result.receipt_validation?.errors.join(" ")).toContain("policy_snapshot_digest");
 	});
 
 	it("rejects unknown external surface values instead of treating them as local", () => {

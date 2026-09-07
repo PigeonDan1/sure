@@ -213,6 +213,9 @@ function validateRequestShape(request: ExecutionRequest, options: ExecutionBound
 	} else {
 		const route = parseExecutionAdapterRoute(request.runtime_requirements);
 		errors.push(...route.errors);
+		if (route.route !== undefined && !validDigest(request.policy_snapshot_digest)) {
+			errors.push("external execution requires request.policy_snapshot_digest");
+		}
 		if (request.runtime_requirements.executor_kind === "docker") {
 			const docker = parseDockerRuntimeRequirements(request.runtime_requirements);
 			errors.push(...docker.errors);
@@ -348,6 +351,27 @@ export function validateExecutionReceipt(
 		if (!validDigest(receipt.reference_snapshot_digest))
 			errors.push("receipt.reference_snapshot_digest must be a SHA-256 digest");
 		if (!validDigest(receipt.policy_digest)) errors.push("receipt.policy_digest must be a SHA-256 digest");
+		if (receipt.policy_snapshot_digest !== undefined && !validDigest(receipt.policy_snapshot_digest)) {
+			errors.push("receipt.policy_snapshot_digest must be a SHA-256 digest");
+		}
+		const requestRoute = object(request.runtime_requirements)
+			? parseExecutionAdapterRoute(request.runtime_requirements).route
+			: undefined;
+		if (requestRoute !== undefined) {
+			if (!validDigest(receipt.policy_snapshot_digest)) {
+				errors.push("external execution receipt requires policy_snapshot_digest");
+			} else if (!sameDigest(receipt.policy_snapshot_digest, request.policy_snapshot_digest ?? "")) {
+				errors.push("receipt.policy_snapshot_digest does not match request");
+			}
+		} else if (receipt.policy_snapshot_digest !== undefined && request.policy_snapshot_digest === undefined) {
+			errors.push("receipt.policy_snapshot_digest is not allowed without request.policy_snapshot_digest");
+		} else if (
+			receipt.policy_snapshot_digest !== undefined &&
+			request.policy_snapshot_digest !== undefined &&
+			!sameDigest(receipt.policy_snapshot_digest, request.policy_snapshot_digest)
+		) {
+			errors.push("receipt.policy_snapshot_digest does not match request");
+		}
 		capabilityEvidenceErrors = validateCapabilityEvidenceList(
 			receipt.capability_evidence,
 			"receipt.capability_evidence",

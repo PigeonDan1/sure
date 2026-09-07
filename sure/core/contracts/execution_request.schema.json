@@ -60,10 +60,24 @@
 		"reference_snapshot_digest": { "$ref": "#/$defs/digest" },
 		"output_root": { "$ref": "#/$defs/outputRoot" },
 		"policy_digest": { "$ref": "#/$defs/digest" },
+		"policy_snapshot_digest": { "$ref": "#/$defs/digest" },
 		"created_at": { "type": "string", "format": "date-time" },
 		"output_contract": { "$ref": "#/$defs/outputContract" }
 	},
 	"allOf": [
+		{
+			"if": {
+				"properties": {
+					"runtime_requirements": {
+						"type": "object",
+						"required": ["execution_surface"],
+						"properties": { "execution_surface": { "enum": ["vc", "remote", "trusted"] } }
+					}
+				},
+				"required": ["runtime_requirements"]
+			},
+			"then": { "required": ["policy_snapshot_digest"] }
+		},
 		{
 			"if": {
 				"properties": { "operation": { "const": "formal_evaluation" } },

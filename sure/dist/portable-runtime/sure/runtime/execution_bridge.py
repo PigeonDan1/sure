@@ -680,6 +680,7 @@ def build_request(
     runtime_requirements: Mapping[str, Any] | None = None,
     attempt: int = 1,
     policy_digest: str | None = None,
+    policy_snapshot_digest: str | None = None,
     reference_snapshot_digest: str | None = None,
     request_id: str | None = None,
     created_at: str | None = None,
@@ -703,6 +704,7 @@ def build_request(
         policy_digest or os.environ.get("SURE_POLICY_DIGEST"),
         fallback={"compatibility": "legacy-unverified", "output_root": str(root)},
     )
+    policy_snapshot = policy_snapshot_digest or os.environ.get("SURE_POLICY_SNAPSHOT_DIGEST")
     snapshot = normalize_digest(reference_snapshot_digest, fallback={"inputs": list(inputs), "root": str(root)})
     output_binding = {
         "path": str(output_root.expanduser().absolute()),
@@ -729,6 +731,13 @@ def build_request(
         "policy_digest": policy,
         "created_at": created_at or utc_now(),
     }
+    if policy_snapshot:
+        # Unlike legacy compatibility digests, a supplied policy snapshot must
+        # remain auditable. Preserve malformed values so the contract validator
+        # can fail closed instead of silently hashing an absent/forged snapshot.
+        request["policy_snapshot_digest"] = (
+            policy_snapshot.lower() if valid_digest(policy_snapshot) else str(policy_snapshot)
+        )
     if output_contract is not None:
         request["output_contract"] = dict(output_contract)
     semantic = dict(request)
@@ -787,6 +796,8 @@ def build_receipt(
         "policy_digest": str(request_dict.get("policy_digest") or ""),
         "started_at": started,
     }
+    if request_dict.get("policy_snapshot_digest") is not None:
+        receipt["policy_snapshot_digest"] = str(request_dict["policy_snapshot_digest"])
     if lifecycle in TERMINAL_LIFECYCLES:
         receipt["finished_at"] = finished_at or utc_now()
     if exit_code is not None:
@@ -833,6 +844,15 @@ def validate_contract_pair(
         errors.append("receipt.reference_snapshot_digest does not match request")
     if not same_digest(receipt.get("policy_digest"), request.get("policy_digest")):
         errors.append("receipt.policy_digest does not match request")
+    surface = runtime_requirements.get("execution_surface") if isinstance(runtime_requirements, Mapping) else None
+    if surface in EXECUTION_ADAPTER_SURFACES:
+        if not valid_digest(request.get("policy_snapshot_digest")):
+            errors.append("external execution requires request.policy_snapshot_digest")
+        if not same_digest(receipt.get("policy_snapshot_digest"), request.get("policy_snapshot_digest")):
+            errors.append("receipt.policy_snapshot_digest does not match request")
+    elif receipt.get("policy_snapshot_digest") is not None:
+        if not same_digest(receipt.get("policy_snapshot_digest"), request.get("policy_snapshot_digest")):
+            errors.append("receipt.policy_snapshot_digest does not match request")
     lifecycle = receipt.get("lifecycle")
     if lifecycle not in LIFECYCLES:
         errors.append(f"receipt.lifecycle is invalid: {lifecycle!r}")

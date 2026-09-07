@@ -271,6 +271,9 @@ function requestFor(
 		backend_resource_digest: operation.resource_digest,
 		script_args: [...(validator.script_args ?? [])],
 		policy_digest: options.policy_digest,
+		...(options.run.policySnapshotDigest === undefined
+			? {}
+			: { policy_snapshot_digest: options.run.policySnapshotDigest }),
 	};
 	const semanticRequestDigest = canonicalJsonDigest(semantic as unknown as JsonValue);
 	return {
@@ -324,6 +327,9 @@ function requestFor(
 			writable: true,
 		},
 		policy_digest: options.policy_digest,
+		...(options.run.policySnapshotDigest === undefined
+			? {}
+			: { policy_snapshot_digest: options.run.policySnapshotDigest }),
 		created_at: options.created_at,
 	};
 }

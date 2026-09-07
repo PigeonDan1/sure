@@ -91,6 +91,7 @@ export interface RegisteredOperationSemanticBinding {
 	reference_snapshot_digest: string;
 	script_args: readonly string[];
 	policy_digest: string;
+	policy_snapshot_digest?: string;
 	artifact_output_path?: string;
 	output_contract_digest?: string;
 	capability_requirements_digest?: string;
@@ -221,6 +222,9 @@ function requestFor(
 		reference_snapshot_digest: options.reference_snapshot_digest,
 		script_args: [...options.script_args],
 		policy_digest: options.policy_digest,
+		...(options.run.policySnapshotDigest === undefined
+			? {}
+			: { policy_snapshot_digest: options.run.policySnapshotDigest }),
 		...(contract === undefined ? {} : { artifact_output_path: outputPath, output_contract_digest: contractDigest }),
 		...(contract === undefined ? {} : { artifact_input_path: options.artifact.path }),
 		...(capabilityRequirementsDigest === undefined
@@ -294,6 +298,9 @@ function requestFor(
 			writable: true,
 		},
 		policy_digest: options.policy_digest,
+		...(options.run.policySnapshotDigest === undefined
+			? {}
+			: { policy_snapshot_digest: options.run.policySnapshotDigest }),
 		created_at: options.created_at,
 		...(contract === undefined ? {} : { output_contract: contract }),
 	};

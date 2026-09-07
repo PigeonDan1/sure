@@ -188,6 +188,8 @@ export interface ExecutionRequest {
 	reference_snapshot_digest: string;
 	output_root: OutputRootBinding;
 	policy_digest: string;
+	/** Digest of the immutable site-policy snapshot captured for this run. */
+	policy_snapshot_digest?: string;
 	created_at: string;
 	/** Optional for backwards compatibility; required for producer operations. */
 	output_contract?: ExecutionOutputContract;
@@ -225,6 +227,8 @@ export interface ExecutionReceipt {
 	reference_snapshot_digest: string;
 	output_root: OutputRootBinding;
 	policy_digest: string;
+	/** Digest of the immutable site-policy snapshot used by the executor. */
+	policy_snapshot_digest?: string;
 	started_at: string;
 	finished_at?: string;
 	exit_code?: number;

@@ -86,6 +86,7 @@ function executionRequest(): ExecutionRequest {
 		reference_snapshot_digest: DIGEST_C,
 		output_root: outputRoot(),
 		policy_digest: DIGEST_A,
+		policy_snapshot_digest: DIGEST_B,
 		created_at: NOW,
 	};
 }
