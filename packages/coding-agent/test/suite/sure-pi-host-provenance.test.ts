@@ -12,7 +12,10 @@ import {
 	validateExecutionContractHistory,
 } from "@earendil-works/sure-core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createHarnessRequestDispatcher } from "../../../../sure/runtime/harness/backend-executor.ts";
+import {
+	createHarnessRequestDispatcher,
+	type HarnessRequestDispatcherOptions,
+} from "../../../../sure/runtime/harness/backend-executor.ts";
 import { runPiRegisteredOperation } from "../../../../sure/runtime/harness/registered-operation.ts";
 import {
 	createPiExecutionProvenanceHost,
@@ -194,6 +197,30 @@ function readHistory(fx: HostFixture): {
 	};
 }
 
+function readPreflightHistory(fx: HostFixture): {
+	request: Record<string, any>;
+	admission: Record<string, any>;
+	contract: Record<string, any>;
+	immutable: {
+		request: Record<string, any>;
+		admission: Record<string, any>;
+		contract: Record<string, any>;
+	};
+} {
+	const location = paths(fx);
+	const request = readJson(location.request);
+	return {
+		request,
+		admission: readJson(location.admission),
+		contract: readJson(location.contract),
+		immutable: {
+			request: readJson(join(location.immutable, `${request.request_id}.request.json`)),
+			admission: readJson(join(location.immutable, `${request.request_id}.admission.json`)),
+			contract: readJson(join(location.immutable, `${request.request_id}.contract.json`)),
+		},
+	};
+}
+
 function semanticExecutionProjection(history: ReturnType<typeof readHistory>): Record<string, unknown> {
 	const project = (bundle: {
 		request: Record<string, any>;
@@ -249,6 +276,106 @@ function semanticExecutionProjection(history: ReturnType<typeof readHistory>): R
 		immutable: project({
 			request: history.immutable.request,
 			receipt: history.immutable.receipt,
+			admission: history.immutable.admission,
+			contract: history.immutable.contract,
+		}),
+	};
+}
+
+function localDispatcher(
+	name: string,
+	options: {
+		resolveRuntime?: HarnessRequestDispatcherOptions["resolveRuntime"];
+		allowedOperations?: ReadonlyMap<string, string>;
+		executeBackend: NonNullable<HarnessRequestDispatcherOptions["executeBackend"]>;
+	},
+): ExecutionRequestDispatcher {
+	const root = join(TEMP_ROOT, name);
+	const packageDir = join(root, "sure_onboard");
+	const runDir = join(root, "run");
+	return createHarnessRequestDispatcher({
+		ctx: { packageDir, runDir },
+		allowedOperations: options.allowedOperations ?? new Map([["sure.onboard.execute_import", "run_validate.py"]]),
+		timeoutMs: 3_600_000,
+		resolveRuntime:
+			options.resolveRuntime ??
+			((runtimePackageDir) => ({
+				ok: true,
+				contract: {
+					runtime_id: "runtime-differential",
+					python_executable: process.execPath,
+					python_abi: "test",
+					python_version: "test",
+					lock_sha256: DIGEST,
+					harness_version: "test",
+					manifest_path: join(runtimePackageDir, "runtime-manifest.json"),
+					runtime_root: runtimePackageDir,
+				},
+			})),
+		now: () => NOW,
+		executeBackend: options.executeBackend,
+	});
+}
+
+function assertCompleteHistory(fx: HostFixture, history: ReturnType<typeof readHistory>): void {
+	expect(
+		validateExecutionContractHistory({ latest: history, immutable: history.immutable } as never, {
+			require_receipt: true,
+			require_admission: true,
+			require_contract_record: true,
+			allowed_output_roots: [fx.ctx.runDir],
+		}).valid,
+	).toBe(true);
+}
+
+function assertPreflightHistory(fx: HostFixture, history: ReturnType<typeof readPreflightHistory>): void {
+	expect(
+		validateExecutionContractHistory(
+			{
+				latest: history,
+				immutable: history.immutable,
+			} as never,
+			{
+				require_receipt: false,
+				require_admission: true,
+				require_contract_record: true,
+				allowed_output_roots: [fx.ctx.runDir],
+			},
+		).valid,
+	).toBe(true);
+}
+
+function semanticPreflightProjection(history: ReturnType<typeof readPreflightHistory>): Record<string, unknown> {
+	const project = (bundle: {
+		request: Record<string, any>;
+		admission: Record<string, any>;
+		contract: Record<string, any>;
+	}) => ({
+		request: bundle.request,
+		admission: {
+			schema: bundle.admission.schema,
+			request_digest: bundle.admission.request_digest,
+			request_id: bundle.admission.request_id,
+			status: bundle.admission.status,
+			reason_code: bundle.admission.reason_code,
+			probe_invoked: bundle.admission.probe_invoked,
+			execute_invoked: bundle.admission.execute_invoked,
+			receipt_present: bundle.admission.receipt_present,
+			receipt_valid: bundle.admission.receipt_valid,
+		},
+		contract: {
+			schema: bundle.contract.schema,
+			version: bundle.contract.version,
+			contract_valid: bundle.contract.contract_valid,
+			admission_instrumentation: bundle.contract.admission_instrumentation,
+			lifecycle: bundle.contract.lifecycle,
+			legacy_views: bundle.contract.legacy_views,
+		},
+	});
+	return {
+		latest: project(history),
+		immutable: project({
+			request: history.immutable.request,
 			admission: history.immutable.admission,
 			contract: history.immutable.contract,
 		}),
@@ -438,6 +565,198 @@ describe("Pi host-issued registered operation provenance", () => {
 			attempt: legacyResult.evidence?.attempt,
 		});
 		expect(dispatcherResult.evidence?.request_digest).toBe(legacyResult.evidence?.request_digest);
+	});
+
+	it("keeps nonzero failure projection equivalent across callback and dispatcher", () => {
+		const name = "dispatcher-differential-nonzero";
+		const legacy = fixture(name);
+		const legacyResult = operation(legacy, () => ({
+			ok: false,
+			stdout: "",
+			stderr: "validator failed",
+			status: 7,
+		}));
+		const legacyHistory = readHistory(legacy);
+		assertCompleteHistory(legacy, legacyHistory);
+
+		rmSync(join(TEMP_ROOT, name), { recursive: true, force: true });
+		const dispatcher = localDispatcher(name, {
+			executeBackend: () => ({ ok: false, stdout: "", stderr: "validator failed", status: 7 }),
+		});
+		const dispatched = fixture(name, undefined, undefined, dispatcher);
+		let callbackInvoked = false;
+		const dispatcherResult = operation(dispatched, () => {
+			callbackInvoked = true;
+			return { ok: true, stdout: "callback must not run", stderr: "", status: 0 };
+		});
+		const dispatcherHistory = readHistory(dispatched);
+		assertCompleteHistory(dispatched, dispatcherHistory);
+
+		expect(callbackInvoked).toBe(false);
+		expect(dispatcherResult).toMatchObject({ ok: false, stdout: "", stderr: "validator failed", status: 7 });
+		expect(legacyResult).toMatchObject({ ok: false, stdout: "", stderr: "validator failed", status: 7 });
+		expect(semanticExecutionProjection(dispatcherHistory)).toEqual(semanticExecutionProjection(legacyHistory));
+		expect(dispatcherResult.evidence).toMatchObject({
+			verdict: "FAIL",
+			reason_code: "EXECUTION_FAILED",
+			artifact_input_digest: legacyResult.evidence?.artifact_input_digest,
+			artifact_output_digest: legacyResult.evidence?.artifact_output_digest,
+		});
+	});
+
+	it("keeps missing-output rejection equivalent across callback and dispatcher", () => {
+		const name = "dispatcher-differential-missing-output";
+		const legacy = fixture(name);
+		const legacyResult = operation(legacy, () => {
+			rmSync(legacy.artifactPath, { force: true });
+			return { ok: true, stdout: "", stderr: "", status: 0 };
+		});
+		const legacyHistory = readHistory(legacy);
+		assertCompleteHistory(legacy, legacyHistory);
+
+		rmSync(join(TEMP_ROOT, name), { recursive: true, force: true });
+		const dispatcher = localDispatcher(name, {
+			executeBackend: ({ args }) => {
+				const producesIndex = args.indexOf("--produces");
+				const outputPath = args[producesIndex + 1];
+				if (producesIndex < 0 || outputPath === undefined) {
+					return { ok: false, stdout: "", stderr: "dispatcher received no produces path", status: null };
+				}
+				rmSync(outputPath, { force: true });
+				return { ok: true, stdout: "", stderr: "", status: 0 };
+			},
+		});
+		const dispatched = fixture(name, undefined, undefined, dispatcher);
+		let callbackInvoked = false;
+		const dispatcherResult = operation(dispatched, () => {
+			callbackInvoked = true;
+			return { ok: true, stdout: "callback must not run", stderr: "", status: 0 };
+		});
+		const dispatcherHistory = readHistory(dispatched);
+		assertCompleteHistory(dispatched, dispatcherHistory);
+
+		expect(callbackInvoked).toBe(false);
+		expect(dispatcherResult).toMatchObject({ ok: false, status: 0 });
+		expect(legacyResult).toMatchObject({ ok: false, status: 0 });
+		expect(semanticExecutionProjection(dispatcherHistory)).toEqual(semanticExecutionProjection(legacyHistory));
+		expect(dispatcherResult.evidence).toMatchObject({
+			verdict: "NOT_EXECUTED",
+			reason_code: "INVALID_CONTRACT",
+			artifact_input_digest: legacyResult.evidence?.artifact_input_digest,
+		});
+	});
+
+	it("keeps capability-missing preflight equivalent and produces no receipt", () => {
+		const name = "dispatcher-differential-capability-missing";
+		const legacy = fixture(name, undefined, (requirements) =>
+			requirements.map((requirement) => ({
+				capability_id: requirement.capability_id,
+				capability_class: requirement.capability_class,
+				status: "MISSING",
+				source: "executor",
+				observed_at: NOW,
+				details: { reason: "runtime-unavailable" },
+			})),
+		);
+		let legacyCallbackInvoked = false;
+		const legacyResult = operation(legacy, () => {
+			legacyCallbackInvoked = true;
+			return { ok: true, stdout: "callback must not run", stderr: "", status: 0 };
+		});
+		const legacyHistory = readPreflightHistory(legacy);
+		assertPreflightHistory(legacy, legacyHistory);
+
+		rmSync(join(TEMP_ROOT, name), { recursive: true, force: true });
+		let dispatcherExecuted = false;
+		const dispatcher = localDispatcher(name, {
+			resolveRuntime: () => ({ ok: false, error: "runtime-unavailable" }),
+			executeBackend: () => {
+				dispatcherExecuted = true;
+				return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+			},
+		});
+		const dispatched = fixture(name, undefined, undefined, dispatcher);
+		let dispatcherCallbackInvoked = false;
+		const dispatcherResult = operation(dispatched, () => {
+			dispatcherCallbackInvoked = true;
+			return { ok: true, stdout: "callback must not run", stderr: "", status: 0 };
+		});
+		const dispatcherHistory = readPreflightHistory(dispatched);
+		assertPreflightHistory(dispatched, dispatcherHistory);
+
+		expect(legacyCallbackInvoked).toBe(false);
+		expect(dispatcherCallbackInvoked).toBe(false);
+		expect(dispatcherExecuted).toBe(false);
+		expect(existsSync(paths(legacy).receipt)).toBe(false);
+		expect(existsSync(paths(dispatched).receipt)).toBe(false);
+		expect(semanticPreflightProjection(dispatcherHistory)).toEqual(semanticPreflightProjection(legacyHistory));
+		expect(dispatcherResult).toMatchObject({ ok: false, status: null });
+		expect(legacyResult).toMatchObject({ ok: false, status: null });
+		expect(dispatcherResult.evidence).toMatchObject({
+			verdict: "NOT_EXECUTED",
+			reason_code: "CAPABILITY_MISSING",
+			request_digest: legacyResult.evidence?.request_digest,
+		});
+		expect(legacyResult.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
+	});
+
+	it("keeps malformed-evidence and allowlist rejection fail-closed", () => {
+		const name = "dispatcher-differential-rejected";
+		const legacy = fixture(name, undefined, () => [{ malformed: true }] as unknown as CapabilityEvidence[]);
+		let legacyCallbackInvoked = false;
+		const legacyResult = operation(legacy, () => {
+			legacyCallbackInvoked = true;
+			return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+		});
+		const legacyHistory = readPreflightHistory(legacy);
+		assertPreflightHistory(legacy, legacyHistory);
+
+		rmSync(join(TEMP_ROOT, name), { recursive: true, force: true });
+		let dispatcherExecuted = false;
+		const dispatcher = localDispatcher(name, {
+			allowedOperations: new Map(),
+			executeBackend: () => {
+				dispatcherExecuted = true;
+				return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+			},
+		});
+		const dispatched = fixture(name, undefined, undefined, dispatcher);
+		let dispatcherCallbackInvoked = false;
+		const dispatcherResult = operation(dispatched, () => {
+			dispatcherCallbackInvoked = true;
+			return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+		});
+		const dispatcherHistory = readPreflightHistory(dispatched);
+		assertPreflightHistory(dispatched, dispatcherHistory);
+
+		expect(legacyCallbackInvoked).toBe(false);
+		expect(dispatcherCallbackInvoked).toBe(false);
+		expect(dispatcherExecuted).toBe(false);
+		expect(semanticPreflightProjection(dispatcherHistory)).toMatchObject({
+			latest: {
+				request: legacyHistory.request,
+				admission: {
+					status: "REJECTED",
+					reason_code: "INVALID_CONTRACT",
+					execute_invoked: false,
+					receipt_present: false,
+				},
+			},
+		});
+		expect(semanticPreflightProjection(legacyHistory)).toMatchObject({
+			latest: {
+				admission: {
+					status: "REJECTED",
+					reason_code: "INVALID_CONTRACT",
+					execute_invoked: false,
+					receipt_present: false,
+				},
+			},
+		});
+		expect(dispatcherResult).toMatchObject({ ok: false, status: null });
+		expect(legacyResult).toMatchObject({ ok: false, status: null });
+		expect(dispatcherResult.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		expect(legacyResult.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
 	});
 
 	it("uses a host-issued request dispatcher without invoking the skill callback", () => {
