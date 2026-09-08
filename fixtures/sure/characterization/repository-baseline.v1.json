@@ -9566,8 +9566,8 @@
     },
     {
       "path": "sure/skills/sure_trans/scripts/run_execution_compat.py",
-      "size_bytes": 17049,
-      "sha256": "b7527cf20b7c9da959ee0a9b1baebbed5dd711103b3f506bbc23a442df19efe6"
+      "size_bytes": 20527,
+      "sha256": "e41616ff3b39c5279c95dd76053d37274fef53a0901b1d90a8310ee5967b8899"
     },
     {
       "path": "sure/skills/sure_trans/scripts/run_trans_validate.py",
@@ -9631,8 +9631,8 @@
     },
     {
       "path": "sure/skills/sure_trans/scripts/test_vc_exec.py",
-      "size_bytes": 77312,
-      "sha256": "15e2c00498eda9dd433ea98f18e8cf0eb55ad573306c905f6cab6f85bd0da10c"
+      "size_bytes": 77868,
+      "sha256": "1234fae2d9736e741d4865ae957524e3aa4b018b4fb37888fac279f69ed2be8c"
     },
     {
       "path": "sure/skills/sure_trans/scripts/vc_exec.py",
@@ -9741,5 +9741,5 @@
       ]
     }
   ],
-  "semantic_digest": "fa0f69958916b858899921830799f4cdcde2b4315dbdda2a86dcfa114216c3b7"
+  "semantic_digest": "ab748a5a07f82b3dc2eba08282db0bfc4bd20047dd0add13a2ab46dbfd0dcb37"
 }

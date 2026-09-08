@@ -108,6 +108,86 @@ def vc_resources(resolved: dict) -> tuple[str, int, int, int]:
 _CONTRACT_CONTEXT: dict | None = None
 
 
+def _replace_capability_evidence(
+    capability_id: str,
+    *,
+    status: str,
+    source: str,
+    details: dict,
+) -> None:
+    context = _CONTRACT_CONTEXT
+    if context is None:
+        return
+    refreshed: list[dict] = []
+    for value in context["evidence"]:
+        if value.get("capability_id") != capability_id:
+            refreshed.append(value)
+            continue
+        refreshed.append(
+            capability_evidence(
+                capability_id,
+                status=status,
+                capability_class=str(value.get("capability_class") or "execution_capability"),
+                source=source,
+                details=details,
+            )
+        )
+    context["evidence"] = refreshed
+
+
+def _refresh_probe_capabilities(
+    probe: dict,
+    *,
+    execution_surface: str,
+    remote_executor_started: bool,
+) -> None:
+    """Bind capability claims to the runtime that actually ran the probe.
+
+    A VC adapter may run a Docker image on a host that has neither Docker nor
+    ``nvidia-smi`` in the harness process.  Those local binaries cannot
+    invalidate a successful remote probe.  Conversely, an absent probe stays
+    UNKNOWN/MISSING and can never become a synthetic PASS.
+    """
+
+    context = _CONTRACT_CONTEXT
+    if context is None:
+        return
+    source = "executor"
+    if execution_surface == "vc":
+        docker_status = "AVAILABLE" if remote_executor_started else "UNKNOWN"
+        docker_details = {
+            "execution_surface": execution_surface,
+            "remote_executor_started": remote_executor_started,
+        }
+    else:
+        docker_status = "AVAILABLE" if shutil.which("docker") else "MISSING"
+        docker_details = {"execution_surface": execution_surface, "executable": "docker"}
+        source = "host_probe"
+    _replace_capability_evidence(
+        "sure.execution.docker",
+        status=docker_status,
+        source=source,
+        details=docker_details,
+    )
+
+    if "sure.execution.gpu" not in {
+        value.get("capability_id") for value in context["evidence"]
+    }:
+        return
+    cuda_value = probe.get("cuda_available")
+    gpu_status = "AVAILABLE" if cuda_value is True else "MISSING" if cuda_value is False else "UNKNOWN"
+    _replace_capability_evidence(
+        "sure.execution.gpu",
+        status=gpu_status,
+        source="executor",
+        details={
+            "execution_surface": execution_surface,
+            "probe": "runtime",
+            "cuda_available": cuda_value,
+        },
+    )
+
+
 def _start_contract(run_dir: Path, artifacts: Path, resolved: dict, source_image: dict, *, requested: str, source_kind: str, gpu_required: bool) -> None:
     global _CONTRACT_CONTEXT
     input_paths = [path for path in (artifacts / "trans_input_resolved.json", artifacts / "source_image_result.json") if path.is_file()]
@@ -118,6 +198,13 @@ def _start_contract(run_dir: Path, artifacts: Path, resolved: dict, source_image
     ]
     runtime_identity = source_image.get("image_id") or source_image.get("lockfile_sha256") or resolved.get("python_executable")
     command = [str(resolved.get("python_executable") or "python3"), "-c", "SURE_TRANS_PROBE"]
+    planned_surface = (
+        "local_python"
+        if source_kind == "python"
+        else "local_docker"
+        if requested == "cpu"
+        else "vc"
+    )
     if source_kind == "docker":
         command = ["docker", "run", "--rm", str(source_image.get("image_id") or source_image.get("image") or "<missing-image>")]
     requirements = [
@@ -139,10 +226,27 @@ def _start_contract(run_dir: Path, artifacts: Path, resolved: dict, source_image
     ]
     if source_kind == "docker":
         requirements.append({"capability_id": "sure.execution.docker", "capability_class": "execution_capability", "required": True})
-        evidence.append(capability_evidence("sure.execution.docker", status="AVAILABLE" if shutil.which("docker") else "MISSING", details={"executable": "docker"}))
+        evidence.append(
+            capability_evidence(
+                "sure.execution.docker",
+                status=("AVAILABLE" if shutil.which("docker") else "MISSING") if planned_surface == "local_docker" else "UNKNOWN",
+                source="host_probe" if planned_surface == "local_docker" else "executor",
+                details={
+                    "execution_surface": planned_surface,
+                    "executable": "docker" if planned_surface == "local_docker" else None,
+                },
+            )
+        )
     if gpu_required:
         requirements.append({"capability_id": "sure.execution.gpu", "capability_class": "execution_capability", "required": True})
-        evidence.append(capability_evidence("sure.execution.gpu", status="AVAILABLE" if shutil.which("nvidia-smi") else "MISSING", details={"probe": "nvidia-smi"}))
+        evidence.append(
+            capability_evidence(
+                "sure.execution.gpu",
+                status="UNKNOWN",
+                source="executor",
+                details={"execution_surface": planned_surface, "probe": "runtime"},
+            )
+        )
     request = build_request(
         run_id=run_dir.name,
         unit_id="validate_env_compat",
@@ -170,6 +274,7 @@ def _start_contract(run_dir: Path, artifacts: Path, resolved: dict, source_image
         "output": None,
         "log": artifacts / "execution_compat.log",
         "requirements": requirements,
+        "planned_surface": planned_surface,
     }
 
 
@@ -336,7 +441,14 @@ def _main() -> int:
             f"$ {' '.join(result.submit_command)}\n$ {probe_command}\n{stdout}\n{stderr}\n",
             encoding="utf-8",
         )
+    if context is not None:
+        context["execution_surface"] = execution_surface
     probe = parse_probe(stdout)
+    _refresh_probe_capabilities(
+        probe,
+        execution_surface=execution_surface,
+        remote_executor_started=execution_surface == "vc" and bool(vc_payload.get("vc_job_id")),
+    )
     cuda_available = probe.get("cuda_available") is True
     bf16_supported = probe.get("bf16_supported") is True
     selected = "cuda" if cuda_available and requested != "cpu" else "cpu"

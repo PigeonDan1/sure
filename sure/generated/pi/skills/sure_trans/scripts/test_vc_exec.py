@@ -925,10 +925,13 @@ class ExecutionCompatVcTest(unittest.TestCase):
             with mock.patch.object(run_execution_compat, "ensure_registry_image", return_value=digest), mock.patch.object(
                 run_execution_compat, "run_vc_job", return_value=result
             ), mock.patch.object(
+                run_execution_compat.shutil, "which", return_value=None
+            ), mock.patch.object(
                 sys, "argv", ["run_execution_compat.py", "--run-dir", str(run_dir), "--produces", str(output)]
             ):
                 self.assertEqual(run_execution_compat.main(), 0)
             payload = json.loads(output.read_text(encoding="utf-8"))
+            receipt = json.loads((artifacts / "execution_receipt.json").read_text(encoding="utf-8"))
             admission = json.loads((artifacts / "execution_admission.json").read_text(encoding="utf-8"))
             self.assertEqual(payload["execution_surface"], "vc")
             self.assertEqual(payload["selected_device"], "cuda")
@@ -941,6 +944,10 @@ class ExecutionCompatVcTest(unittest.TestCase):
             self.assertEqual(admission["status"], "ADMITTED")
             self.assertTrue(admission["execute_invoked"])
             self.assertTrue(admission["receipt_valid"])
+            evidence = {item["capability_id"]: item for item in receipt["capability_evidence"]}
+            self.assertEqual(evidence["sure.execution.docker"]["source"], "executor")
+            self.assertEqual(evidence["sure.execution.gpu"]["source"], "executor")
+            self.assertEqual(evidence["sure.execution.gpu"]["status"], "AVAILABLE")
 
     def test_non_transformer_model_does_not_require_transformers(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
