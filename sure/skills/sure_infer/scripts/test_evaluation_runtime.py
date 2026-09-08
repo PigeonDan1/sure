@@ -21,6 +21,7 @@ from evaluation_runtime import (
     _engine_commit,
     _engine_has_repository,
     _expected_binding,
+    _verify,
     _sha256,
     _make_group_writable,
     _wrapper,
@@ -128,6 +129,40 @@ class EvaluationRuntimeTests(unittest.TestCase):
             }
         )
         self.assertEqual(env["LD_LIBRARY_PATH"], "/usr/local/cuda/lib64:/opt/model/lib")
+
+    def test_import_probe_runs_from_the_engine_root(self) -> None:
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            engine_root = root / "engine"
+            engine_root.mkdir()
+            python = root / "runtime" / "bin" / "python"
+            python.parent.mkdir(parents=True)
+            manifest_path = root / "runtime" / "runtime-manifest.json"
+            binding = {
+                "runtime_id": "sure-evaluation-test",
+                "runtime_type": "evaluation_python",
+                "runtime_version": "root-v1",
+                "materialization_version": 1,
+                "dynamic_loader": "/lib64/ld-linux-x86-64.so.2",
+                "python_executable": str(python),
+                "manifest_path": str(manifest_path),
+                "lock_sha256": "a" * 64,
+                "engine_root": str(engine_root),
+                "engine_commit": "b" * 40,
+                "engine_pyproject_sha256": "c" * 64,
+                "harness_runtime_id": "sure-harness-test",
+                "harness_runtime_root": str(root / "harness"),
+                "required_imports": ["sure_eval"],
+            }
+            python.write_text(_wrapper(binding), encoding="utf-8")
+            manifest_path.write_text(json.dumps(binding), encoding="utf-8")
+            completed = mock.Mock(returncode=0, stdout="", stderr="")
+
+            with mock.patch("evaluation_runtime.subprocess.run", return_value=completed) as run:
+                ok, _ = _verify(binding)
+
+        self.assertTrue(ok)
+        self.assertEqual(run.call_args.kwargs["cwd"], str(engine_root))
 
     def test_non_external_input_has_no_evaluation_runtime(self) -> None:
         self.assertIsNone(

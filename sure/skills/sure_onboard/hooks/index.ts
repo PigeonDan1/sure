@@ -1408,4 +1408,3 @@ export function onError(ctx: SureHookContext): SureHookResult {
 		},
 	};
 }
-

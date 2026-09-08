@@ -217,6 +217,43 @@ class ProtocolProvenanceTests(unittest.TestCase):
         self.assertEqual(protocol["prediction_reuse"]["source_protocol"], str((source_run / "protocol.yaml").resolve()))
         self.assertIsNone(protocol["provenance"].get("source_prediction_generation_status"))
 
+    def test_python_reuse_protocol_does_not_require_an_unstarted_model_runtime(self) -> None:
+        run_dir = self.root / "python_reuse"
+        run_dir.mkdir()
+        protocol = {
+            "schema": "sure.eval.inference_protocol.v1",
+            "run": {},
+            "model": {},
+            "protocol_selection": {},
+            "inference_environment": {
+                "runtime_kind": "python",
+                "model_runtime": {},
+                "runtime_inventory": {"schema": "sure.onboard.runtime_inventory.v2"},
+                "mount_policy": {
+                    "nfs_models_read_only": False,
+                    "model_integrity": "verify_before_after",
+                },
+            },
+            "inference_constraints": {},
+            "inference_parameters": {"source_priority": ["prediction_reuse"]},
+            "execution_surface": {},
+            "prediction_reuse": {
+                "enabled": True,
+                "generation_policy": "reused_predictions_no_inference",
+                "old_evaluation_reused": False,
+            },
+            "prediction_contract": {},
+            "provenance": {
+                "raw_response_source_of_truth": False,
+                "deployment_ready": "deployment_ready.json",
+                "package_gate": "package_gate.json",
+            },
+            "notes": [],
+        }
+        (run_dir / "protocol.yaml").write_text(yaml.safe_dump(protocol), encoding="utf-8")
+
+        self.assertEqual(check_run_report._validate_protocol(run_dir), [])
+
     def test_generation_status_upsert_preserves_initial_generated_at(self) -> None:
         status_path = self.root / "eval_run" / "prediction_generation_status.json"
         write_json(

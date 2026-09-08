@@ -266,7 +266,7 @@ def _build_surface(
     if projection.get("host_root"):
         env["SURE_EVAL_DATASETS_ROOT"] = str(projection["host_root"])
     dataset_source_key = str(
-        user_input.get("dataset_source_key") or os.environ.get("SURE_DATASET_SOURCE_ROOT") or ""
+        os.environ.get("SURE_DATASET_SOURCE_ROOT") or user_input.get("dataset_source_key") or ""
     ).strip()
     if dataset_source_key:
         env["SURE_DATASET_SOURCE_ROOT"] = dataset_source_key
