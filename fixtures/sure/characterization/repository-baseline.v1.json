@@ -6750,6 +6750,11 @@
       "sha256": "e9703f5f5793d7d7a147fd06e0028b8f463617829bc10b978d7d34ebef31feae"
     },
     {
+      "path": "packages/coding-agent/test/suite/sure-backend-executor.test.ts",
+      "size_bytes": 2611,
+      "sha256": "8639769bdfdcd98db0e8c9c4f6028cafa77704e8b6c14731355ea3a3ed7ffc7b"
+    },
+    {
       "path": "packages/coding-agent/test/suite/sure-eval-red-lines.test.ts",
       "size_bytes": 6113,
       "sha256": "21fe71d85af66b0ad20e6919e44493fd1a92a60463e1f41891e362bfa41f7235"
@@ -6978,6 +6983,11 @@
       "path": "sure/runtime/execution_bridge.py",
       "size_bytes": 88510,
       "sha256": "2e5fc964f787aa545d71199084e172f587f21a7d2434473eae81b8386f2cca4b"
+    },
+    {
+      "path": "sure/runtime/harness/backend-executor.ts",
+      "size_bytes": 3994,
+      "sha256": "5f96bc077db9eddc80f91896ff13646f54397b95589ff5036e09c1ce422f08df"
     },
     {
       "path": "sure/runtime/harness/bootstrap.py",
@@ -7551,8 +7561,8 @@
     },
     {
       "path": "sure/skills/sure_eval/hooks/checkpoints.ts",
-      "size_bytes": 8854,
-      "sha256": "98c11f9a595d5651c27687cece2293f48729b6e606ecac565d002251521f3175"
+      "size_bytes": 7284,
+      "sha256": "803426f90ebc99a6bde0dd351e92f455bd14bacb40ac622d1f338f837530155c"
     },
     {
       "path": "sure/skills/sure_eval/hooks/index.ts",
@@ -7656,8 +7666,8 @@
     },
     {
       "path": "sure/skills/sure_feed/hooks/checkpoints.ts",
-      "size_bytes": 9141,
-      "sha256": "b011eb78c6a68ff425685690cfe972b0e0211839f40a7a369ee6231223fb9d84"
+      "size_bytes": 7572,
+      "sha256": "3de5e60a072832b15a055e6be705c09f6798580a44b7abfe4cd9754c2beb26d7"
     },
     {
       "path": "sure/skills/sure_feed/hooks/index.ts",
@@ -7916,8 +7926,8 @@
     },
     {
       "path": "sure/skills/sure_infer/hooks/checkpoints.ts",
-      "size_bytes": 8854,
-      "sha256": "98c11f9a595d5651c27687cece2293f48729b6e606ecac565d002251521f3175"
+      "size_bytes": 7284,
+      "sha256": "803426f90ebc99a6bde0dd351e92f455bd14bacb40ac622d1f338f837530155c"
     },
     {
       "path": "sure/skills/sure_infer/hooks/index.ts",
@@ -8696,8 +8706,8 @@
     },
     {
       "path": "sure/skills/sure_onboard/hooks/checkpoints.ts",
-      "size_bytes": 10169,
-      "sha256": "89b012ad8dfe6272a5fc1abc0c55d4bfb3e0c9a208678ba5eea46b3db4a0334d"
+      "size_bytes": 8774,
+      "sha256": "36eccaeee4088af5e02d51a86c119fa0abb9e01381dd532f0498c04f7ac1ef65"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/index.ts",
@@ -9371,8 +9381,8 @@
     },
     {
       "path": "sure/skills/sure_trans/hooks/checkpoints.ts",
-      "size_bytes": 10977,
-      "sha256": "6621c6eb6dbd65518c6274027a3ec92de714e0744f235c90e5ebeeddfabd9c79"
+      "size_bytes": 9487,
+      "sha256": "6485ee0465237958b6d0eaab677606b22a3240e0db7d33cdbdc88e1d2c04adbd"
     },
     {
       "path": "sure/skills/sure_trans/hooks/index.ts",
@@ -9766,5 +9776,5 @@
       ]
     }
   ],
-  "semantic_digest": "dcae8434d49393a8980a8acc63531bd7c1eeb2404df71ecc69d3ce654cc6317c"
+  "semantic_digest": "88b0f3eb98378724d117595e80485f6f6e51057c58598a4448773d48eb5e7510"
 }

@@ -1,6 +1,5 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import type { ExecutionOperation, OperationExecutionEvidence } from "@earendil-works/sure-core";
 import {
@@ -10,7 +9,8 @@ import {
 	initialLegacyCheckpoint,
 	legacyRetryExhausted,
 } from "../../../compatibility/legacy-v1/checkpoint.ts";
-import { harnessRuntimeEnv, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
+import { runHarnessBackend } from "../../../runtime/harness/backend-executor.ts";
+import { type HarnessRuntimeContract, harnessRuntimeEnv } from "../../../runtime/harness/resolve.ts";
 import { type MemoryCheckpoint, type MemoryDiagnostic, readMemory } from "../../../runtime/memory/hooks.ts";
 import { WORKFLOW_DEFINITION } from "./state-machine.ts";
 
@@ -22,7 +22,7 @@ import { WORKFLOW_DEFINITION } from "./state-machine.ts";
 // Three gates guarantee correct progression:
 //   1. checkpoint lock — currentUnit pins position, advance() is one-step.
 //   2. validateProduces — every unit's produces validated (linear + gate).
-//   3. gateCheck — gate units run a Python semantic script via spawnSync.
+//   3. gateCheck — gate units run a Python semantic script via the shared backend adapter.
 
 export interface GateResult {
 	ok: boolean;
@@ -72,7 +72,7 @@ export interface Unit {
 	forbiddenFields?: string[];
 	/** In-process semantic check (over and above validateProduces). */
 	gateCheck?: (artifact: unknown) => GateResult;
-	/** Python script under scripts/ for semantic gate checks (spawnSync). */
+	/** Python script under scripts/ for semantic gate checks. */
 	gateScript?: string;
 	executionOperationId?: string;
 	executionRequestOperation?: ExecutionOperation;
@@ -84,7 +84,7 @@ export interface Unit {
 
 const DEFAULT_MAX_RETRIES = 3;
 
-function backendEnvironment(ctx: SureHookContext, runtime: Parameters<typeof harnessRuntimeEnv>[0]): NodeJS.ProcessEnv {
+function backendEnvironment(ctx: SureHookContext, runtime: HarnessRuntimeContract): NodeJS.ProcessEnv {
 	const environment: NodeJS.ProcessEnv = { ...process.env, ...harnessRuntimeEnv(runtime) };
 	const repositoryRoot = resolve(ctx.packageDir, "../../..");
 	environment.SURE_REPOSITORY_ROOT = repositoryRoot;
@@ -196,51 +196,13 @@ export function runBackend(
 	script: string,
 	args: string[],
 ): { ok: boolean; stdout: string; stderr: string; status: number | null } {
-	const py = join(ctx.packageDir, "scripts", script);
-	if (!existsSync(py)) {
-		return {
-			ok: false,
-			status: null,
-			stdout: "",
-			stderr: `Backend script not found: scripts/${script}. Bundle the Python backend into the skill package.`,
-		};
-	}
-	const produces = args.find((a) => a === "--produces");
-	const runDir = args.find((a) => a === "--run-dir");
-	// Always pass --run-dir (gate scripts declare it required). --produces is the
-	// absolute path to the artifact; the run dir lets scripts locate sibling
-	// artifacts (e.g. run_evaluation.sh next to execution_surface.json).
-	const finalArgs = runDir ? [...args] : ["--run-dir", ctx.runDir, ...args];
-	// Defensive: if a caller passed --produces without an absolute path, resolve
-	// it under the run artifacts dir so the script can read it reliably.
-	if (produces) {
-		const idx = finalArgs.indexOf("--produces");
-		const val = finalArgs[idx + 1];
-		if (typeof val === "string" && !isAbsolute(val)) {
-			finalArgs[idx + 1] = join(ctx.runDir, "artifacts", val);
-		}
-	}
-	const runtime = resolveHarnessPython(ctx.packageDir);
-	if (!runtime.ok || !runtime.contract) {
-		return {
-			ok: false,
-			status: null,
-			stdout: "",
-			stderr: runtime.error ?? "HARNESS_RUNTIME_NOT_READY",
-		};
-	}
-	const r = spawnSync(runtime.contract.python_executable, [py, ...finalArgs], {
-		cwd: ctx.packageDir,
-		encoding: "utf-8",
-		timeout: 3_600_000,
-		env: backendEnvironment(ctx, runtime.contract),
+	return runHarnessBackend({
+		ctx,
+		script,
+		args,
+		timeoutMs: 3_600_000,
+		environment: (runtime) => backendEnvironment(ctx, runtime),
 	});
-	return {
-		ok: r.status === 0,
-		stdout: r.stdout ?? "",
-		stderr: r.stderr ?? "",
-		status: r.status,
-	};
 }
 
 export function failure(
