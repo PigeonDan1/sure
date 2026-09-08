@@ -1,0 +1,110 @@
+{
+  "schema": "sure.execution.contract_bundle_differential.v1",
+  "version": 1,
+  "rules": {
+    "history_is_derived_from_validated_request_id": true,
+    "embedded_history_paths_are_authoritative": false,
+    "compatibility_record_can_advance_workflow": false,
+    "missing_history_remains_legacy_readable": true,
+    "partial_history_fails_closed": true,
+    "pi_facade_emits_contract_bundle": false
+  },
+  "cases": [
+    {
+      "id": "success",
+      "mutation": "none",
+      "expected": {
+        "history_valid": true,
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "VALIDATION_PENDING",
+        "python_errors": false,
+        "pi_bundle": "absent",
+        "formal_eligible": false
+      }
+    },
+    {
+      "id": "capability_missing",
+      "mutation": "capability_missing",
+      "expected": {
+        "history_valid": true,
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "CAPABILITY_MISSING",
+        "python_errors": false,
+        "pi_bundle": "absent",
+        "formal_eligible": false
+      }
+    },
+    {
+      "id": "policy_staging_drift",
+      "mutation": "latest_request_policy_digest",
+      "expected": {
+        "history_valid": false,
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "INVALID_CONTRACT",
+        "python_errors": true,
+        "pi_bundle": "absent",
+        "formal_eligible": false
+      }
+    },
+    {
+      "id": "timeout_cancel_unconfirmed",
+      "mutation": "cancelled_receipt",
+      "expected": {
+        "history_valid": true,
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "EXECUTION_CANCELLED",
+        "python_errors": false,
+        "pi_bundle": "absent",
+        "formal_eligible": false
+      }
+    },
+    {
+      "id": "partial_output",
+      "mutation": "partial_receipt",
+      "expected": {
+        "history_valid": true,
+        "outcome": "BLOCKED",
+        "reason_code": "EXECUTION_PARTIAL",
+        "python_errors": false,
+        "pi_bundle": "absent",
+        "formal_eligible": false
+      }
+    },
+    {
+      "id": "output_boundary_escape",
+      "mutation": "escaped_output",
+      "expected": {
+        "history_valid": false,
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "PATH_OUT_OF_SCOPE",
+        "python_errors": true,
+        "pi_bundle": "absent",
+        "formal_eligible": false
+      }
+    },
+    {
+      "id": "receipt_tamper",
+      "mutation": "latest_receipt_policy_digest",
+      "expected": {
+        "history_valid": false,
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "INVALID_CONTRACT",
+        "python_errors": true,
+        "pi_bundle": "absent",
+        "formal_eligible": false
+      }
+    },
+    {
+      "id": "contract_tamper",
+      "mutation": "latest_contract_receipt_digest",
+      "expected": {
+        "history_valid": false,
+        "outcome": "NOT_EXECUTED",
+        "reason_code": "INVALID_CONTRACT",
+        "python_errors": true,
+        "pi_bundle": "absent",
+        "formal_eligible": false
+      }
+    }
+  ]
+}

@@ -29,6 +29,7 @@ import check_execution_surface_compliance as compliance
 from execution_result_checks import validation_errors
 from sure.runtime.execution_bridge import read_json as read_execution_json
 from sure.runtime.execution_bridge import validate_contract_bundle
+from sure.runtime.execution_bridge import validate_persisted_contract_history
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -78,7 +79,8 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
     receipt_path = artifacts / "execution_receipt.json"
     admission_path = artifacts / "execution_admission.json"
     contract_path = artifacts / "execution_contract.json"
-    if request_path.exists() or receipt_path.exists():
+    history_path = artifacts / "execution_contracts"
+    if request_path.exists() or receipt_path.exists() or contract_path.exists() or history_path.exists():
         request = read_execution_json(request_path)
         receipt = read_execution_json(receipt_path)
         if not request:
@@ -89,16 +91,31 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
             forbidden = []
             if os.environ.get("SURE_REFERENCE_ROOT"):
                 forbidden.append(Path(os.environ["SURE_REFERENCE_ROOT"]).expanduser().resolve())
+            admission = read_execution_json(admission_path) if admission_path.exists() else None
+            contract = _read_json(contract_path)
             errors.extend(
                 validate_contract_bundle(
                     request,
                     receipt,
-                    read_execution_json(admission_path) if admission_path.exists() else None,
-                    _read_json(contract_path),
+                    admission,
+                    contract,
                     forbidden_output_roots=forbidden,
                     require_receipt=True,
                     require_admission=admission_path.exists(),
                     require_contract_record=contract_path.exists(),
+                    accept_legacy_uninstrumented=True,
+                )
+            )
+            errors.extend(
+                validate_persisted_contract_history(
+                    artifacts,
+                    request,
+                    receipt,
+                    admission,
+                    contract,
+                    forbidden_output_roots=forbidden,
+                    require_receipt=True,
+                    require_admission=admission_path.exists(),
                     accept_legacy_uninstrumented=True,
                 )
             )
@@ -108,6 +125,8 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
                 errors.append("failed execution_result.json conflicts with successful execution receipt")
     if admission_path.exists() and not (request_path.exists() and receipt_path.exists()):
         errors.append("execution_admission.json requires execution_request.json and execution_receipt.json")
+    if (contract_path.exists() or history_path.exists()) and not (request_path.exists() and receipt_path.exists()):
+        errors.append("execution contract history requires execution_request.json and execution_receipt.json")
 
     if result.get("job_status") != "succeeded":
         return errors

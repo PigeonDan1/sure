@@ -51,6 +51,20 @@ export interface ExecutionContractBundleValidation {
 	contract_errors: readonly string[];
 }
 
+export interface ExecutionContractHistory {
+	readonly latest: ExecutionContractBundle;
+	readonly immutable: ExecutionContractBundle;
+}
+
+export interface ExecutionContractHistoryValidation {
+	valid: boolean;
+	errors: readonly string[];
+	history_errors: readonly string[];
+	outcome: CoreOutcome;
+	latest_validation: ExecutionContractBundleValidation;
+	immutable_validation: ExecutionContractBundleValidation;
+}
+
 function invalidOutcome(errors: readonly string[]): CoreOutcome {
 	return createOutcome({
 		validatorVerdict: "NOT_EXECUTED",
@@ -94,6 +108,17 @@ function digestMatches(value: unknown, expected: string): boolean {
 		typeof value === "string" &&
 		value.replace(/^sha256:/i, "").toLowerCase() === expected.replace(/^sha256:/i, "").toLowerCase()
 	);
+}
+
+function valuesMatch(left: unknown, right: unknown): boolean {
+	if (left === undefined || right === undefined) return left === right;
+	return canonicalJsonDigest(left as JsonValue) === canonicalJsonDigest(right as JsonValue);
+}
+
+function stableContractRecord(record: ExecutionContractRecord | undefined): Record<string, unknown> | undefined {
+	if (record === undefined) return undefined;
+	const { request_path: _requestPath, receipt_path: _receiptPath, admission_path: _admissionPath, ...stable } = record;
+	return stable;
 }
 
 function contractRecordErrors(
@@ -199,8 +224,10 @@ export function validateExecutionContractBundle(
 	errors.push(...contractErrors);
 	const valid = baseValid && errors.length === 0;
 	let outcome: CoreOutcome;
-	if (admissionErrors.length > 0 || contractErrors.length > 0) outcome = invalidOutcome(errors);
+	if (contractErrors.length > 0) outcome = invalidOutcome(errors);
 	else if (!requestValidation.valid) outcome = requestValidation.outcome;
+	else if (receiptValidation !== undefined && !receiptValidation.valid) outcome = receiptValidation.outcome;
+	else if (admissionErrors.length > 0) outcome = invalidOutcome(errors);
 	else if (receiptValidation !== undefined) outcome = receiptValidation.outcome;
 	else if (bundle.admission?.status === "CAPABILITY_MISSING") outcome = capabilityMissingOutcome();
 	else if (bundle.admission?.status === "REJECTED") outcome = rejectedAdmissionOutcome(bundle.admission);
@@ -214,5 +241,49 @@ export function validateExecutionContractBundle(
 		...(receiptValidation === undefined ? {} : { receipt_validation: receiptValidation }),
 		admission_errors: admissionErrors,
 		contract_errors: contractErrors,
+	};
+}
+
+/**
+ * Bind a latest compatibility view to its immutable-by-request-id history.
+ *
+ * Callers resolve the immutable filenames from the already validated request
+ * id; paths embedded in execution_contract.json are never authority.  The
+ * contract records may differ only in their top-level latest/history aliases.
+ */
+export function validateExecutionContractHistory(
+	history: ExecutionContractHistory,
+	options: ExecutionContractBundleOptions = {},
+): ExecutionContractHistoryValidation {
+	const auditOptions = { ...options, require_contract_record: options.require_contract_record ?? true };
+	const latestValidation = validateExecutionContractBundle(history.latest, auditOptions);
+	const immutableValidation = validateExecutionContractBundle(history.immutable, auditOptions);
+	const historyErrors: string[] = [];
+	if (!valuesMatch(history.latest.request, history.immutable.request))
+		historyErrors.push("immutable execution request does not match latest execution request");
+	if (!valuesMatch(history.latest.receipt, history.immutable.receipt))
+		historyErrors.push("immutable execution receipt does not match latest execution receipt");
+	if (!valuesMatch(history.latest.admission, history.immutable.admission))
+		historyErrors.push("immutable execution admission does not match latest execution admission");
+	if (!valuesMatch(stableContractRecord(history.latest.contract), stableContractRecord(history.immutable.contract)))
+		historyErrors.push("immutable execution contract metadata does not match latest execution contract metadata");
+	if (
+		latestValidation.outcome.reason_code !== immutableValidation.outcome.reason_code ||
+		latestValidation.outcome.outcome !== immutableValidation.outcome.outcome
+	) {
+		historyErrors.push("immutable execution outcome does not match latest execution outcome");
+	}
+	const errors = [
+		...latestValidation.errors.map((error) => `latest bundle: ${error}`),
+		...immutableValidation.errors.map((error) => `immutable bundle: ${error}`),
+		...historyErrors,
+	];
+	return {
+		valid: latestValidation.valid && immutableValidation.valid && historyErrors.length === 0,
+		errors,
+		history_errors: historyErrors,
+		outcome: historyErrors.length > 0 ? invalidOutcome(errors) : latestValidation.outcome,
+		latest_validation: latestValidation,
+		immutable_validation: immutableValidation,
 	};
 }

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,8 @@ import {
 	applyValidation,
 	canonicalJsonDigest,
 	createPolicySnapshot,
+	type ExecutionAdmissionTrace,
+	type ExecutionReceipt,
 	type ExecutionRequest,
 	initialCheckpoint,
 	type JsonValue,
@@ -33,6 +35,17 @@ const transRegistryPath = join(repositoryRoot, "sure/dist/agent-skills/sure-tran
 const portableRuntime = join(repositoryRoot, "sure/dist/portable-runtime");
 const portableMemoryContract = join(repositoryRoot, "sure/dist/agent-skills/sure-feed/memory-contract.json");
 const hostParityFixturePath = join(repositoryRoot, "sure/canonical/fixtures/host-parity-traces.json");
+const bundleDifferentialFixture = JSON.parse(
+	readFileSync(join(repositoryRoot, "sure/canonical/fixtures/execution-contract-bundle-differential.v1.json"), "utf8"),
+) as {
+	schema: string;
+	rules: Record<string, boolean>;
+	cases: Array<{
+		id: string;
+		mutation: string;
+		expected: { history_valid: boolean; outcome: string; reason_code: string };
+	}>;
+};
 const DIGEST_A = "a".repeat(64);
 const DIGEST_B = "b".repeat(64);
 const DIGEST_C = "c".repeat(64);
@@ -2008,6 +2021,350 @@ describe("surectl cooperative control plane", () => {
 		expect(contractRejected.status).toBe(5);
 		expect((contractRejected.value?.outcome as Record<string, unknown>).reason_code).toBe("INVALID_CONTRACT");
 	});
+
+	it("binds latest execution aliases to request-id-derived immutable history", () => {
+		expect(bundleDifferentialFixture.schema).toBe("sure.execution.contract_bundle_differential.v1");
+		expect(bundleDifferentialFixture.rules.embedded_history_paths_are_authoritative).toBe(false);
+		const expected = new Map(bundleDifferentialFixture.cases.map((item) => [item.id, item.expected]));
+		const successExpected = expected.get("success");
+		const tamperExpected = expected.get("receipt_tamper");
+		if (!successExpected || !tamperExpected) throw new Error("bundle differential fixture is incomplete");
+
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			"run-execution-history",
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		const request = executionRequest("run-execution-history", artifacts);
+		const receipt = {
+			schema: "sure.execution_receipt.v1",
+			receipt_id: "run-execution-history-receipt",
+			request_id: request.request_id,
+			request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+			semantic_request_digest: request.semantic_request_digest,
+			run_id: request.run_id,
+			unit_id: request.unit_id,
+			attempt: request.attempt,
+			executor: {
+				executor_id: "history-executor",
+				kind: "python",
+				version: "1",
+				digest: `sha256:${DIGEST_B}`,
+				trust_level: "host_enforced",
+			},
+			lifecycle: "SUCCEEDED",
+			capability_evidence: [],
+			outputs: [],
+			reference_snapshot_digest: request.reference_snapshot_digest,
+			output_root: request.output_root,
+			policy_digest: request.policy_digest,
+			started_at: request.created_at,
+			finished_at: request.created_at,
+			exit_code: 0,
+		};
+		const requestPath = join(artifacts, "execution_request.json");
+		const receiptPath = join(artifacts, "execution_receipt.json");
+		const historyDir = join(artifacts, "execution_contracts");
+		const historyRequestPath = join(historyDir, `${request.request_id}.request.json`);
+		const historyReceiptPath = join(historyDir, `${request.request_id}.receipt.json`);
+		const historyContractPath = join(historyDir, `${request.request_id}.contract.json`);
+		mkdirSync(historyDir, { recursive: true });
+		writeFileSync(requestPath, JSON.stringify(request));
+		writeFileSync(receiptPath, JSON.stringify(receipt));
+		writeFileSync(historyRequestPath, JSON.stringify(request));
+		writeFileSync(historyReceiptPath, JSON.stringify(receipt));
+		const sharedMetadata = {
+			schema: "sure.execution_compatibility.v1",
+			version: 1,
+			request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+			receipt_digest: canonicalJsonDigest(receipt as unknown as JsonValue),
+			admission_instrumentation: "legacy-uninstrumented",
+			contract_valid: true,
+			history: {
+				request_path: join(root, "untrusted", "request.json"),
+				receipt_path: join(root, "untrusted", "receipt.json"),
+			},
+		};
+		writeFileSync(
+			join(artifacts, "execution_contract.json"),
+			JSON.stringify({ ...sharedMetadata, request_path: requestPath, receipt_path: receiptPath }),
+		);
+		writeFileSync(
+			historyContractPath,
+			JSON.stringify({
+				...sharedMetadata,
+				request_path: historyRequestPath,
+				receipt_path: historyReceiptPath,
+			}),
+		);
+
+		const validateArgs = [
+			...base,
+			"--run-id",
+			"run-execution-history",
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+		];
+		const valid = command(root, "validate", validateArgs);
+		expect(valid.status).toBe(5);
+		expect((valid.value?.outcome as Record<string, unknown>).reason_code).toBe(successExpected.reason_code);
+
+		writeFileSync(historyReceiptPath, JSON.stringify({ ...receipt, policy_digest: `sha256:${DIGEST_C}` }));
+		const tampered = command(root, "validate", validateArgs);
+		expect(tampered.status).toBe(5);
+		expect((tampered.value?.outcome as Record<string, unknown>).reason_code).toBe(tamperExpected.reason_code);
+		expect((tampered.value?.execution as { errors: string[] }).errors.join(" ")).toContain("immutable");
+
+		writeFileSync(historyReceiptPath, JSON.stringify(receipt));
+		rmSync(historyContractPath, { force: true });
+		const partial = command(root, "validate", validateArgs);
+		expect(partial.status).toBe(5);
+		expect((partial.value?.outcome as Record<string, unknown>).reason_code).toBe("INVALID_CONTRACT");
+		expect((partial.value?.execution as { errors: string[] }).errors.join(" ")).toContain(
+			"immutable execution contract is missing",
+		);
+
+		writeFileSync(
+			historyContractPath,
+			JSON.stringify({
+				...sharedMetadata,
+				request_path: historyRequestPath,
+				receipt_path: historyReceiptPath,
+			}),
+		);
+		rmSync(historyReceiptPath, { force: true });
+		const externalReceipt = join(root, "untrusted-receipt.json");
+		writeFileSync(externalReceipt, JSON.stringify(receipt));
+		symlinkSync(externalReceipt, historyReceiptPath);
+		const linked = command(root, "validate", validateArgs);
+		expect(linked.status).toBe(5);
+		expect((linked.value?.outcome as Record<string, unknown>).reason_code).toBe("INVALID_CONTRACT");
+		expect((linked.value?.execution as { errors: string[] }).errors.join(" ")).toContain(
+			"immutable execution receipt must be a regular file",
+		);
+	});
+
+	it("replays every persisted bundle differential case through surectl", () => {
+		expect(bundleDifferentialFixture.rules.history_is_derived_from_validated_request_id).toBe(true);
+		expect(bundleDifferentialFixture.rules.partial_history_fails_closed).toBe(true);
+		const baseArgs = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const receiptFor = (request: ExecutionRequest): ExecutionReceipt => ({
+			schema: "sure.execution_receipt.v1",
+			receipt_id: `${request.run_id}-receipt`,
+			request_id: request.request_id,
+			request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+			semantic_request_digest: request.semantic_request_digest,
+			run_id: request.run_id,
+			unit_id: request.unit_id,
+			attempt: request.attempt,
+			executor: {
+				executor_id: "history-fixture-executor",
+				kind: "python",
+				version: "1",
+				digest: `sha256:${DIGEST_B}`,
+				trust_level: "host_enforced",
+			},
+			lifecycle: "SUCCEEDED",
+			capability_evidence: [],
+			outputs: [],
+			reference_snapshot_digest: request.reference_snapshot_digest,
+			output_root: request.output_root,
+			policy_digest: request.policy_digest,
+			started_at: request.created_at,
+			finished_at: request.created_at,
+			exit_code: 0,
+		});
+		const admittedFor = (
+			request: ExecutionRequest,
+			reasonCode: string,
+			receiptValid: boolean,
+		): ExecutionAdmissionTrace =>
+			({
+				schema: "sure.execution_admission.v1",
+				request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+				request_id: request.request_id,
+				status: "ADMITTED",
+				reason_code: reasonCode,
+				observed_at: request.created_at,
+				probe_invoked: true,
+				execute_invoked: true,
+				receipt_present: true,
+				receipt_valid: receiptValid,
+			}) as ExecutionAdmissionTrace;
+		const missingFor = (request: ExecutionRequest): ExecutionAdmissionTrace => ({
+			schema: "sure.execution_admission.v1",
+			request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+			request_id: request.request_id,
+			status: "CAPABILITY_MISSING",
+			reason_code: "CAPABILITY_MISSING",
+			observed_at: request.created_at,
+			probe_invoked: false,
+			execute_invoked: false,
+			receipt_present: false,
+			receipt_valid: false,
+		});
+
+		for (const item of bundleDifferentialFixture.cases) {
+			const runId = `run-history-${item.id.replaceAll("_", "-")}`;
+			const started = command(root, "start", [
+				...baseArgs,
+				"--run-id",
+				runId,
+				"--policy-digest",
+				DIGEST_A,
+				"--executor-digest",
+				DIGEST_B,
+			]);
+			expect(started.status, item.id).toBe(0);
+			const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+			const artifacts = join(runDir, "artifacts");
+			const immutableRequest = executionRequest(runId, artifacts);
+			const baseReceipt = receiptFor(immutableRequest);
+			const baseAdmission = admittedFor(immutableRequest, "VALIDATION_PENDING", true);
+			let latestRequest = structuredClone(immutableRequest);
+			let latestReceipt: ExecutionReceipt | undefined = structuredClone(baseReceipt);
+			let immutableReceipt: ExecutionReceipt | undefined = structuredClone(baseReceipt);
+			let latestAdmission: ExecutionAdmissionTrace | undefined = structuredClone(baseAdmission);
+			let immutableAdmission: ExecutionAdmissionTrace | undefined = structuredClone(baseAdmission);
+			let latestContractValid = true;
+			let immutableContractValid = true;
+
+			switch (item.mutation) {
+				case "none":
+					break;
+				case "capability_missing":
+					latestReceipt = undefined;
+					immutableReceipt = undefined;
+					latestAdmission = missingFor(latestRequest);
+					immutableAdmission = structuredClone(latestAdmission);
+					break;
+				case "latest_request_policy_digest":
+					latestRequest = { ...latestRequest, policy_digest: `sha256:${"e".repeat(64)}` };
+					latestContractValid = false;
+					break;
+				case "cancelled_receipt": {
+					const cancelled = structuredClone(baseReceipt) as unknown as Record<string, unknown>;
+					cancelled.lifecycle = "CANCELLED";
+					delete cancelled.exit_code;
+					latestReceipt = cancelled as unknown as ExecutionReceipt;
+					immutableReceipt = structuredClone(latestReceipt);
+					latestAdmission = admittedFor(latestRequest, "EXECUTION_CANCELLED", true);
+					immutableAdmission = structuredClone(latestAdmission);
+					break;
+				}
+				case "partial_receipt":
+					latestReceipt = { ...baseReceipt, lifecycle: "PARTIAL", exit_code: 7 };
+					immutableReceipt = structuredClone(latestReceipt);
+					latestAdmission = admittedFor(latestRequest, "EXECUTION_PARTIAL", true);
+					immutableAdmission = structuredClone(latestAdmission);
+					break;
+				case "escaped_output":
+					latestReceipt = {
+						...baseReceipt,
+						outputs: [
+							{
+								artifact_id: "escaped",
+								path: "/outside/result.json",
+								resolved_path: "/outside/result.json",
+								sha256: `sha256:${DIGEST_A}`,
+								size: 1,
+								media_type: "application/json",
+								origin: "generated",
+								source_root: "/outside",
+							},
+						],
+					};
+					immutableReceipt = structuredClone(latestReceipt);
+					latestAdmission = admittedFor(latestRequest, "PATH_OUT_OF_SCOPE", false);
+					immutableAdmission = structuredClone(latestAdmission);
+					latestContractValid = false;
+					immutableContractValid = false;
+					break;
+				case "latest_receipt_policy_digest":
+					latestReceipt = { ...baseReceipt, policy_digest: `sha256:${DIGEST_C}` };
+					latestContractValid = false;
+					break;
+				case "latest_contract_receipt_digest":
+					break;
+				default:
+					throw new Error(`unknown bundle differential mutation: ${item.mutation}`);
+			}
+
+			const requestPath = join(artifacts, "execution_request.json");
+			const receiptPath = join(artifacts, "execution_receipt.json");
+			const admissionPath = join(artifacts, "execution_admission.json");
+			const historyDir = join(artifacts, "execution_contracts");
+			const historyRequestPath = join(historyDir, `${latestRequest.request_id}.request.json`);
+			const historyReceiptPath = join(historyDir, `${latestRequest.request_id}.receipt.json`);
+			const historyAdmissionPath = join(historyDir, `${latestRequest.request_id}.admission.json`);
+			const historyContractPath = join(historyDir, `${latestRequest.request_id}.contract.json`);
+			const contractFor = (
+				request: ExecutionRequest,
+				receipt: ExecutionReceipt | undefined,
+				admission: ExecutionAdmissionTrace | undefined,
+				immutable: boolean,
+				contractValid: boolean,
+			): Record<string, unknown> => ({
+				schema: "sure.execution_compatibility.v1",
+				version: 1,
+				request_path: immutable ? historyRequestPath : requestPath,
+				...(receipt === undefined ? {} : { receipt_path: immutable ? historyReceiptPath : receiptPath }),
+				...(admission === undefined ? {} : { admission_path: immutable ? historyAdmissionPath : admissionPath }),
+				request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+				...(receipt === undefined ? {} : { receipt_digest: canonicalJsonDigest(receipt as unknown as JsonValue) }),
+				...(admission === undefined
+					? {}
+					: { admission_digest: canonicalJsonDigest(admission as unknown as JsonValue) }),
+				admission_instrumentation: admission === undefined ? "legacy-uninstrumented" : "admission-v1",
+				contract_valid: contractValid,
+				history: {
+					request_path: join(root, "untrusted", item.id, "request.json"),
+					receipt_path: join(root, "untrusted", item.id, "receipt.json"),
+				},
+			});
+			const latestContract = contractFor(latestRequest, latestReceipt, latestAdmission, false, latestContractValid);
+			const immutableContract = contractFor(
+				immutableRequest,
+				immutableReceipt,
+				immutableAdmission,
+				true,
+				immutableContractValid,
+			);
+			if (item.mutation === "latest_contract_receipt_digest") {
+				latestContract.receipt_digest = `sha256:${DIGEST_C}`;
+			}
+
+			mkdirSync(historyDir, { recursive: true });
+			writeFileSync(requestPath, JSON.stringify(latestRequest));
+			writeFileSync(historyRequestPath, JSON.stringify(immutableRequest));
+			if (latestReceipt !== undefined) writeFileSync(receiptPath, JSON.stringify(latestReceipt));
+			if (immutableReceipt !== undefined) writeFileSync(historyReceiptPath, JSON.stringify(immutableReceipt));
+			if (latestAdmission !== undefined) writeFileSync(admissionPath, JSON.stringify(latestAdmission));
+			if (immutableAdmission !== undefined) writeFileSync(historyAdmissionPath, JSON.stringify(immutableAdmission));
+			writeFileSync(join(artifacts, "execution_contract.json"), JSON.stringify(latestContract));
+			writeFileSync(historyContractPath, JSON.stringify(immutableContract));
+
+			const args = [...baseArgs, "--run-id", runId, "--execution-request", requestPath];
+			if (latestReceipt !== undefined) args.push("--execution-receipt", receiptPath);
+			const result = command(root, "validate", args);
+			expect(result.value, item.id).toBeDefined();
+			expect((result.value?.outcome as Record<string, unknown>).outcome, item.id).toBe(item.expected.outcome);
+			expect((result.value?.outcome as Record<string, unknown>).reason_code, item.id).toBe(
+				item.expected.reason_code,
+			);
+			expect((result.value?.execution as { valid: boolean }).valid, item.id).toBe(item.expected.history_valid);
+		}
+	}, 30_000);
 
 	it("executes a local request into a receipt without advancing the checkpoint", () => {
 		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];

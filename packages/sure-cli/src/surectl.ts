@@ -34,6 +34,8 @@ import {
 	decodeLegacyCheckpoint,
 	decodeOperationExecutionEvidence,
 	type ExecutionAdmissionTrace,
+	type ExecutionContractBundle,
+	type ExecutionContractBundleOptions,
 	type ExecutionInputBindingResolver,
 	type ExecutionReceipt,
 	type ExecutionRequest,
@@ -56,6 +58,7 @@ import {
 	type StructuralValidationResult,
 	selectExecutionDispatch,
 	validateExecutionContractBundle,
+	validateExecutionContractHistory,
 	validateExecutionInputBinding,
 	validateExecutionReceipt,
 	validateExecutionRequest,
@@ -325,6 +328,114 @@ function assertRegularFile(path: string, label: string): void {
 		throw new Error(`${label} is missing: ${path}`);
 	}
 	if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`${label} must be a regular file: ${path}`);
+}
+
+function pathEntryExists(path: string): boolean {
+	try {
+		lstatSync(path);
+		return true;
+	} catch (error) {
+		return !(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT");
+	}
+}
+
+const EXECUTION_HISTORY_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+interface PersistedExecutionHistoryAudit {
+	errors: readonly string[];
+	audit?: ReturnType<typeof validateExecutionContractHistory>;
+}
+
+function persistedExecutionHistoryAudit(
+	store: NodeRunStore,
+	run: { runDir: string; outputDir?: string },
+	contractRoot: string,
+	latest: ExecutionContractBundle,
+	options: ExecutionContractBundleOptions,
+): PersistedExecutionHistoryAudit {
+	const historyDir = join(contractRoot, "execution_contracts");
+	let historyStat: ReturnType<typeof lstatSync>;
+	try {
+		historyStat = lstatSync(historyDir);
+	} catch (error) {
+		if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+			return { errors: [] };
+		}
+		return {
+			errors: [`cannot inspect execution_contracts: ${error instanceof Error ? error.message : String(error)}`],
+		};
+	}
+	if (historyStat.isSymbolicLink() || !historyStat.isDirectory()) {
+		return { errors: [`execution_contracts must be a regular directory: ${historyDir}`] };
+	}
+	const requestId = latest.request.request_id;
+	if (typeof requestId !== "string" || !EXECUTION_HISTORY_ID.test(requestId)) {
+		return { errors: ["execution history request_id is invalid"] };
+	}
+
+	const candidates = {
+		request: join(historyDir, `${requestId}.request.json`),
+		receipt: join(historyDir, `${requestId}.receipt.json`),
+		admission: join(historyDir, `${requestId}.admission.json`),
+		contract: join(historyDir, `${requestId}.contract.json`),
+	};
+	const expected = {
+		request: true,
+		receipt: latest.receipt !== undefined,
+		admission: latest.admission !== undefined,
+		contract: true,
+	};
+	const values: Partial<Record<keyof typeof candidates, Record<string, unknown>>> = {};
+	const errors: string[] = [];
+	for (const label of ["request", "receipt", "admission", "contract"] as const) {
+		const candidate = candidates[label];
+		let stat: ReturnType<typeof lstatSync> | undefined;
+		try {
+			stat = lstatSync(candidate);
+		} catch (error) {
+			if (!(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")) {
+				errors.push(
+					`cannot inspect immutable execution ${label}: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				continue;
+			}
+		}
+		const present = stat !== undefined;
+		if (present !== expected[label]) {
+			const qualifier = expected[label] ? "missing" : "present without a latest counterpart";
+			errors.push(`immutable execution ${label} is ${qualifier}: ${candidate}`);
+			continue;
+		}
+		if (stat === undefined) continue;
+		if (stat.isSymbolicLink() || !stat.isFile()) {
+			errors.push(`immutable execution ${label} must be a regular file: ${candidate}`);
+			continue;
+		}
+		try {
+			const path = admittedReadArtifactPath(store, run, candidate);
+			values[label] = recordObject(readJson(path), `immutable execution ${label}`);
+		} catch (error) {
+			errors.push(error instanceof Error ? error.message : String(error));
+		}
+	}
+	if (errors.length > 0 || values.request === undefined || values.contract === undefined) return { errors };
+	return {
+		errors: [],
+		audit: validateExecutionContractHistory(
+			{
+				latest,
+				immutable: {
+					request: values.request as unknown as ExecutionRequest,
+					...(values.receipt === undefined ? {} : { receipt: values.receipt as unknown as ExecutionReceipt }),
+					...(values.admission === undefined
+						? {}
+						: { admission: values.admission as unknown as ExecutionAdmissionTrace }),
+					contract: values.contract,
+				},
+			},
+			{ ...options, require_contract_record: true },
+		),
+	};
 }
 
 /** Pick a stable predecessor artifact when a registered producer has no output yet. */
@@ -1999,21 +2110,20 @@ function validate(args: ParsedArgs): PublicOutcome {
 				assertRegularFile(siblingContract, "Execution contract");
 				contractRecord = recordObject(readJson(siblingContract), "execution contract");
 			}
-			const bundleAudit = validateExecutionContractBundle(
-				{
-					request,
-					receipt,
-					...(admissionTrace === undefined ? {} : { admission: admissionTrace }),
-					...(contractRecord === undefined ? {} : { contract: contractRecord }),
-				},
-				{
-					allowed_output_roots: allowedOutputRoots,
-					forbidden_output_roots: policyReferences,
-					require_receipt: true,
-					require_admission: admissionPath !== undefined,
-					accept_legacy_uninstrumented: true,
-				},
-			);
+			const latestBundle: ExecutionContractBundle = {
+				request,
+				receipt,
+				...(admissionTrace === undefined ? {} : { admission: admissionTrace }),
+				...(contractRecord === undefined ? {} : { contract: contractRecord }),
+			};
+			const bundleOptions: ExecutionContractBundleOptions = {
+				allowed_output_roots: allowedOutputRoots,
+				forbidden_output_roots: policyReferences,
+				require_receipt: true,
+				require_admission: admissionPath !== undefined,
+				accept_legacy_uninstrumented: true,
+			};
+			const bundleAudit = validateExecutionContractBundle(latestBundle, bundleOptions);
 			if (!bundleAudit.valid) {
 				receiptValidation.errors = [
 					...receiptValidation.errors,
@@ -2022,7 +2132,101 @@ function validate(args: ParsedArgs): PublicOutcome {
 				receiptValidation.valid = false;
 				if (bundleAudit.contract_errors.length > 0) receiptValidation.outcome = bundleAudit.outcome;
 			}
+			const history = persistedExecutionHistoryAudit(store, run, dirname(receiptPath), latestBundle, bundleOptions);
+			const historyErrors = [...history.errors, ...(history.audit?.errors ?? [])];
+			if (historyErrors.length > 0) {
+				receiptValidation.errors = [
+					...receiptValidation.errors,
+					...historyErrors.filter((message) => !receiptValidation.errors.includes(message)),
+				];
+				receiptValidation.valid = false;
+				receiptValidation.outcome =
+					history.audit?.outcome ??
+					createOutcome({
+						validatorVerdict: "NOT_EXECUTED",
+						workflowDisposition: "BLOCK",
+						reasonCode: "INVALID_CONTRACT",
+						diagnostics: historyErrors.map((message) => ({
+							code: "EXECUTION_HISTORY_REJECTED",
+							message,
+						})),
+					});
+			}
 			execution = receiptValidation;
+		} else {
+			const contractRoot = dirname(requestPath);
+			const siblingAdmissionPath = join(contractRoot, "execution_admission.json");
+			const siblingContractPath = join(contractRoot, "execution_contract.json");
+			const historyDir = join(contractRoot, "execution_contracts");
+			const hasPersistedBundleEvidence =
+				pathEntryExists(siblingAdmissionPath) ||
+				pathEntryExists(siblingContractPath) ||
+				pathEntryExists(historyDir);
+			if (hasPersistedBundleEvidence) {
+				const evidenceErrors: string[] = [];
+				const hasAdmission = pathEntryExists(siblingAdmissionPath);
+				if (hasAdmission) {
+					try {
+						const siblingAdmission = admittedReadArtifactPath(store, run, siblingAdmissionPath);
+						admissionPath = siblingAdmission;
+						const admission = readAndValidateExecutionAdmission(siblingAdmission, request);
+						admissionTrace = admission.trace;
+						evidenceErrors.push(...admission.errors);
+					} catch (error) {
+						evidenceErrors.push(error instanceof Error ? error.message : String(error));
+					}
+				}
+				let contractRecord: Record<string, unknown> | undefined;
+				if (pathEntryExists(siblingContractPath)) {
+					try {
+						const siblingContract = admittedReadArtifactPath(store, run, siblingContractPath);
+						assertRegularFile(siblingContract, "Execution contract");
+						contractRecord = recordObject(readJson(siblingContract), "execution contract");
+					} catch (error) {
+						evidenceErrors.push(error instanceof Error ? error.message : String(error));
+					}
+				}
+				const latestBundle: ExecutionContractBundle = {
+					request,
+					...(admissionTrace === undefined ? {} : { admission: admissionTrace }),
+					...(contractRecord === undefined ? {} : { contract: contractRecord }),
+				};
+				const bundleOptions: ExecutionContractBundleOptions = {
+					allowed_output_roots: allowedOutputRoots,
+					forbidden_output_roots: policyReferences,
+					require_receipt: true,
+					require_admission: hasAdmission,
+					accept_legacy_uninstrumented: true,
+				};
+				const bundleAudit = validateExecutionContractBundle(latestBundle, bundleOptions);
+				const history = persistedExecutionHistoryAudit(store, run, contractRoot, latestBundle, bundleOptions);
+				const errors = [
+					...evidenceErrors,
+					...bundleAudit.errors,
+					...history.errors,
+					...(history.audit?.errors ?? []),
+				].filter((message, index, messages) => messages.indexOf(message) === index);
+				const invalidEvidenceOutcome = createOutcome({
+					validatorVerdict: "NOT_EXECUTED",
+					workflowDisposition: "BLOCK",
+					reasonCode: "INVALID_CONTRACT",
+					diagnostics: errors.map((message) => ({ code: "EXECUTION_HISTORY_REJECTED", message })),
+				});
+				execution = {
+					...bundleAudit,
+					valid:
+						bundleAudit.valid &&
+						evidenceErrors.length === 0 &&
+						history.errors.length === 0 &&
+						history.audit?.valid !== false,
+					errors,
+					outcome:
+						history.audit?.outcome ??
+						(evidenceErrors.length > 0 || history.errors.length > 0
+							? invalidEvidenceOutcome
+							: bundleAudit.outcome),
+				};
+			}
 		}
 		const nextState = {
 			...(state ?? {}),

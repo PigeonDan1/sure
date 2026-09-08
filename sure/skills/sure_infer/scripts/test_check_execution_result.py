@@ -128,6 +128,35 @@ class CheckExecutionResultTests(unittest.TestCase):
         receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
         self.assertTrue(any("request_digest" in error for error in self.errors()))
 
+    def test_a_tampered_execution_contract_record_is_refused(self) -> None:
+        self.write_contract()
+        contract_path = self.artifacts / "execution_contract.json"
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["receipt_digest"] = digest_json({"forged": True})
+        contract_path.write_text(json.dumps(contract), encoding="utf-8")
+        self.assertTrue(any("execution contract receipt_digest" in error for error in self.errors()))
+
+    def test_a_tampered_immutable_receipt_is_refused(self) -> None:
+        self.write_contract()
+        request = json.loads((self.artifacts / "execution_request.json").read_text(encoding="utf-8"))
+        history_receipt = self.artifacts / "execution_contracts" / f"{request['request_id']}.receipt.json"
+        receipt = json.loads(history_receipt.read_text(encoding="utf-8"))
+        receipt["policy_digest"] = digest_json({"forged": True})
+        history_receipt.write_text(json.dumps(receipt), encoding="utf-8")
+        self.assertTrue(any("immutable bundle" in error or "immutable execution receipt" in error for error in self.errors()))
+
+    def test_a_partial_immutable_history_is_refused(self) -> None:
+        self.write_contract()
+        request = json.loads((self.artifacts / "execution_request.json").read_text(encoding="utf-8"))
+        history_contract = self.artifacts / "execution_contracts" / f"{request['request_id']}.contract.json"
+        history_contract.unlink()
+        self.assertTrue(any("immutable execution contract is missing" in error for error in self.errors()))
+
+    def test_a_malformed_execution_contract_record_is_refused(self) -> None:
+        self.write_contract()
+        (self.artifacts / "execution_contract.json").write_text("not-json\n", encoding="utf-8")
+        self.assertIn("execution contract record is required", self.errors())
+
     def test_a_bound_admission_trace_is_checked_and_tampering_is_refused(self) -> None:
         request = build_request(
             run_id="bridge-run-admission",
@@ -156,6 +185,10 @@ class CheckExecutionResultTests(unittest.TestCase):
     def test_a_orphan_admission_trace_is_refused(self) -> None:
         self.write_json(self.artifacts / "execution_admission.json", {"schema": "sure.execution_admission.v1"})
         self.assertTrue(any("execution_admission.json requires" in error for error in self.errors()))
+
+    def test_an_orphan_contract_history_is_refused(self) -> None:
+        (self.artifacts / "execution_contracts").mkdir()
+        self.assertTrue(any("execution contract history requires" in error for error in self.errors()))
 
     def test_a_terminal_failure_is_a_valid_gate_outcome(self) -> None:
         self.write_result(job_status="failed", exit_code=3, failed_stage="generate", datasets=[])

@@ -77,6 +77,14 @@ interface ExternalDifferentialCase {
 	};
 }
 
+interface BundleDifferentialCase {
+	id: string;
+	expected: {
+		pi_bundle: "absent";
+		formal_eligible: false;
+	};
+}
+
 const DIFFERENTIAL_FIXTURE = JSON.parse(
 	readFileSync(
 		new URL("../../../../sure/canonical/fixtures/execution-differential-traces.json", import.meta.url),
@@ -90,6 +98,17 @@ const EXTERNAL_DIFFERENTIAL_FIXTURE = JSON.parse(
 		"utf8",
 	),
 ) as { schema: string; cases: ExternalDifferentialCase[] };
+
+const BUNDLE_DIFFERENTIAL_FIXTURE = JSON.parse(
+	readFileSync(
+		new URL("../../../../sure/canonical/fixtures/execution-contract-bundle-differential.v1.json", import.meta.url),
+		"utf8",
+	),
+) as {
+	schema: string;
+	rules: Record<string, boolean>;
+	cases: BundleDifferentialCase[];
+};
 
 function fixture(name: string): Fixture {
 	const root = join(TEMP_ROOT, name);
@@ -280,6 +299,29 @@ describe("Pi registered operation evidence", () => {
 			return { ok: true, stdout: "", stderr: "", status: 0 };
 		});
 		run("success_waits_for_validation", () => ({ ok: true, stdout: "ok", stderr: "", status: 0 }));
+	});
+
+	it("keeps persisted bundle assurance absent until the Pi facade actually issues it", () => {
+		expect(BUNDLE_DIFFERENTIAL_FIXTURE.schema).toBe("sure.execution.contract_bundle_differential.v1");
+		expect(BUNDLE_DIFFERENTIAL_FIXTURE.rules.pi_facade_emits_contract_bundle).toBe(false);
+		for (const item of BUNDLE_DIFFERENTIAL_FIXTURE.cases) {
+			expect(item.expected.pi_bundle, item.id).toBe("absent");
+			expect(item.expected.formal_eligible, item.id).toBe(false);
+		}
+
+		const fx = fixture("bundle-assurance-boundary");
+		const result = runPiRegisteredOperation({
+			ctx: fx.ctx,
+			unit_id: "validate_import",
+			attempt: 1,
+			operation_id: "sure.onboard.execute_import",
+			script_id: "run_validate.py",
+			artifact_input_path: fx.artifactPath,
+			execute: () => ({ ok: true, stdout: "ok", stderr: "", status: 0 }),
+		});
+		expect(result.evidence?.request_digest).toBeUndefined();
+		expect(result.evidence?.receipt_digest).toBeUndefined();
+		expect(result.evidence).not.toHaveProperty("contract_digest");
 	});
 
 	it("wraps a registered runner and hashes mutating input and output bytes", () => {

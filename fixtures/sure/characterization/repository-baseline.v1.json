@@ -6836,8 +6836,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-operation-evidence.test.ts",
-      "size_bytes": 22981,
-      "sha256": "f66e6ed9b9e6dda3b899f82c4584bc631e99f58f2a4740a9930586ef3d9f9426"
+      "size_bytes": 24399,
+      "sha256": "2eb0d763789bbe61d37a099fc5e366a1f18f1e1f05372ba4490535f8684a5b96"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-run-output-dir.test.ts",
@@ -6961,8 +6961,8 @@
     },
     {
       "path": "sure/runtime/execution_bridge.py",
-      "size_bytes": 82895,
-      "sha256": "0b1b625a8a65830bf01ea832a12ef2fd86e64c7d94b2e425603db8bd5406694b"
+      "size_bytes": 88510,
+      "sha256": "2e5fc964f787aa545d71199084e172f587f21a7d2434473eae81b8386f2cca4b"
     },
     {
       "path": "sure/runtime/harness/bootstrap.py",
@@ -7281,8 +7281,8 @@
     },
     {
       "path": "sure/runtime/test_execution_bridge.py",
-      "size_bytes": 50355,
-      "sha256": "ebd9b71ddd94531fa60a691102b970bd461648651cbe60a89edbcd9a3aafcc93"
+      "size_bytes": 59036,
+      "sha256": "076e32b2eb4a140036f1dbb9d88b4705f6ad92071edd90c7f535a26b2707543b"
     },
     {
       "path": "sure/runtime/test_repository_layout.py",
@@ -7591,8 +7591,8 @@
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_eval_run_report.py",
-      "size_bytes": 40219,
-      "sha256": "35bc4f9223f1e694d2f77a1c4772731f3339572284728a3d10d0dd8e4bce6093"
+      "size_bytes": 40496,
+      "sha256": "1269bf15054e8a01a82acc26e3ce38fcd8b594a3d1f0e55d0827ade9db2d25aa"
     },
     {
       "path": "sure/skills/sure_eval/scripts/check_memory_extraction.py",
@@ -7626,8 +7626,8 @@
     },
     {
       "path": "sure/skills/sure_eval/scripts/test_check_eval_run_report.py",
-      "size_bytes": 904,
-      "sha256": "835a2b4974f0c7b59a09807cb2dced277f4e617e6d10b390dc034892abc13526"
+      "size_bytes": 2631,
+      "sha256": "358d7c1ceb8a5d1e71634ed819aed156087dd4171cc16673a8cc743c878c42ed"
     },
     {
       "path": "sure/skills/sure_eval/SKILL.md",
@@ -8076,8 +8076,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/check_execution_result.py",
-      "size_bytes": 7948,
-      "sha256": "296582591d24735cc65c771b32e25a8a76bac6c0de33f81fe237ef45d0f7c425"
+      "size_bytes": 8290,
+      "sha256": "99dda948760f1ece016cbbb63b40291bf3c3945fb4a5899699787cd77bfb6e27"
     },
     {
       "path": "sure/skills/sure_infer/scripts/check_execution_surface_compliance.py",
@@ -8511,8 +8511,8 @@
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_check_execution_result.py",
-      "size_bytes": 10154,
-      "sha256": "8e9c918988160396b18aea647642c9f31b77cdb6c5e8c29c1447e74a7c1c58be"
+      "size_bytes": 12252,
+      "sha256": "a0e436d74084409b02ff633a667046d7cc1a694c7e38b5db0ed5226d8c9fd43c"
     },
     {
       "path": "sure/skills/sure_infer/scripts/test_dataset_alias.py",
@@ -9751,5 +9751,5 @@
       ]
     }
   ],
-  "semantic_digest": "998a9f0f6a26b09435bdc1bf59bf1b9f3c72d3a9137001e739a4c286216cb755"
+  "semantic_digest": "ebaae879e56e51472ff173c4896276b779b8ab676e0fbca378fc4984cd1383a1"
 }

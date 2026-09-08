@@ -41,10 +41,9 @@ os.environ.setdefault("SURE_RUNTIME_SUPPORT_ROOT", str(RUNTIME_SUPPORT_ROOT))
 sys.path.insert(0, str(RUNTIME_SUPPORT_ROOT))
 
 from sure.site.loader import load_site_policy
-from sure.runtime.execution_bridge import digest_json
 from sure.runtime.execution_bridge import read_json as read_execution_json
-from sure.runtime.execution_bridge import validate_contract_pair
-from sure.runtime.execution_bridge import validate_execution_admission_receipt_binding
+from sure.runtime.execution_bridge import validate_contract_bundle
+from sure.runtime.execution_bridge import validate_persisted_contract_history
 
 LOCAL_RESULTS_ROOT = local_results_root(HARNESS_ROOT)
 SOURCE_KINDS = {"approved_nfs_results", "local_infer_run"}
@@ -201,7 +200,9 @@ def execution_contract_errors(contract_root: Path, *, phase: str = "final") -> l
     request_path = contract_root / "execution_request.json"
     receipt_path = contract_root / "execution_receipt.json"
     admission_path = contract_root / "execution_admission.json"
-    if request_path.exists() or receipt_path.exists():
+    contract_path = contract_root / "execution_contract.json"
+    history_path = contract_root / "execution_contracts"
+    if request_path.exists() or receipt_path.exists() or contract_path.exists() or history_path.exists():
         request = read_execution_json(request_path)
         receipt = read_execution_json(receipt_path)
         if not request:
@@ -209,30 +210,38 @@ def execution_contract_errors(contract_root: Path, *, phase: str = "final") -> l
         if not receipt and not (phase == "prepare" and request):
             errors.append("execution_receipt.json is missing or invalid")
         if request and receipt:
-            contract_errors = validate_contract_pair(request, receipt)
-            errors.extend(contract_errors)
-            if admission_path.exists():
-                admission = read_execution_json(admission_path)
-                if not admission:
-                    errors.append("execution_admission.json is missing or invalid")
-                else:
-                    contract_path = contract_root / "execution_contract.json"
-                    if contract_path.is_file():
-                        contract = read_execution_json(contract_path)
-                        if contract.get("admission_digest") and digest_json(admission) != contract.get("admission_digest"):
-                            errors.append("execution admission digest differs from execution_contract.json")
-                    errors.extend(
-                        validate_execution_admission_receipt_binding(
-                            request,
-                            admission,
-                            receipt=receipt,
-                            receipt_valid=not contract_errors,
-                        )
-                    )
+            admission = read_execution_json(admission_path) if admission_path.exists() else None
+            contract = read_execution_json(contract_path) if contract_path.exists() else None
+            errors.extend(
+                validate_contract_bundle(
+                    request,
+                    receipt,
+                    admission,
+                    contract,
+                    require_receipt=True,
+                    require_admission=admission_path.exists(),
+                    require_contract_record=contract_path.exists(),
+                    accept_legacy_uninstrumented=True,
+                )
+            )
+            errors.extend(
+                validate_persisted_contract_history(
+                    contract_root,
+                    request,
+                    receipt,
+                    admission,
+                    contract,
+                    require_receipt=True,
+                    require_admission=admission_path.exists(),
+                    accept_legacy_uninstrumented=True,
+                )
+            )
             if receipt.get("lifecycle") != "SUCCEEDED":
                 errors.append("eval_run_report cannot pass with a non-success execution receipt")
     if admission_path.exists() and not (request_path.exists() and receipt_path.exists()):
         errors.append("execution_admission.json requires execution_request.json and execution_receipt.json")
+    if (contract_path.exists() or history_path.exists()) and not (request_path.exists() and receipt_path.exists()):
+        errors.append("execution contract history requires execution_request.json and execution_receipt.json")
     return errors
 
 

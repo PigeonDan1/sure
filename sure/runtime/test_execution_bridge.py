@@ -22,12 +22,14 @@ from sure.runtime.execution_bridge import (
     validate_capability_evidence,
     validate_capability_evidence_list,
     validate_contract_bundle,
+    validate_contract_history,
     validate_contract_pair,
     validate_execution_admission_binding,
     validate_execution_admission_receipt_binding,
     validate_execution_admission_trace,
     validate_output_binding,
     validate_output_contract,
+    validate_persisted_contract_history,
     write_contract_bundle,
 )
 
@@ -118,6 +120,175 @@ class ExecutionBridgeTests(unittest.TestCase):
             self.assertTrue(any("receipt.policy_digest" in error for error in tampered))
             self.assertTrue(any("admission.request_digest" in error for error in tampered))
             self.assertTrue(any("execution contract receipt_digest" in error for error in tampered))
+
+    def test_contract_history_replays_the_canonical_differential_fixture(self) -> None:
+        fixture_path = (
+            Path(__file__).resolve().parents[1]
+            / "canonical"
+            / "fixtures"
+            / "execution-contract-bundle-differential.v1.json"
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        self.assertEqual(fixture["schema"], "sure.execution.contract_bundle_differential.v1")
+        self.assertFalse(fixture["rules"]["embedded_history_paths_are_authoritative"])
+
+        def contract_for(request: dict, receipt: dict | None, admission: dict | None, alias: str) -> dict:
+            base_valid = not validate_contract_bundle(
+                request,
+                receipt,
+                admission,
+                require_receipt=True,
+                require_admission=admission is not None,
+            )
+            contract = {
+                "schema": "sure.execution_compatibility.v1",
+                "version": 1,
+                "request_path": f"/{alias}/execution_request.json",
+                "receipt_path": f"/{alias}/execution_receipt.json",
+                "request_digest": digest_json(request),
+                "admission_instrumentation": "admission-v1" if admission is not None else "legacy-uninstrumented",
+                "contract_valid": base_valid,
+            }
+            if receipt is not None:
+                contract["receipt_digest"] = digest_json(receipt)
+            if admission is not None:
+                contract["admission_path"] = f"/{alias}/execution_admission.json"
+                contract["admission_digest"] = digest_json(admission)
+            return contract
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            base_request = self.request(root)
+            base_receipt = build_receipt(base_request, lifecycle="SUCCEEDED", executor_kind="python", exit_code=0)
+            base_admission = derive_execution_admission_trace(base_request, base_receipt)
+            for case in fixture["cases"]:
+                latest_request = dict(base_request)
+                latest_receipt: dict | None = dict(base_receipt)
+                latest_admission: dict | None = dict(base_admission)
+                immutable_request = dict(base_request)
+                immutable_receipt: dict | None = dict(base_receipt)
+                immutable_admission: dict | None = dict(base_admission)
+                mutation = case["mutation"]
+                if mutation == "capability_missing":
+                    latest_receipt = None
+                    immutable_receipt = None
+                    latest_admission = create_execution_admission_trace(
+                        latest_request,
+                        observed_at="2026-01-01T00:00:00Z",
+                        outcome_reason_code="CAPABILITY_MISSING",
+                        probe_invoked=False,
+                        execute_invoked=False,
+                    )
+                    immutable_admission = dict(latest_admission)
+                elif mutation == "latest_request_policy_digest":
+                    latest_request["policy_digest"] = "sha256:" + "e" * 64
+                elif mutation == "cancelled_receipt":
+                    latest_receipt = build_receipt(
+                        latest_request,
+                        lifecycle="CANCELLED",
+                        executor_kind="python",
+                        exit_code=None,
+                    )
+                    immutable_receipt = dict(latest_receipt)
+                    latest_admission = derive_execution_admission_trace(latest_request, latest_receipt)
+                    immutable_admission = dict(latest_admission)
+                elif mutation == "partial_receipt":
+                    latest_receipt = build_receipt(
+                        latest_request,
+                        lifecycle="PARTIAL",
+                        executor_kind="python",
+                        exit_code=7,
+                    )
+                    immutable_receipt = dict(latest_receipt)
+                    latest_admission = derive_execution_admission_trace(latest_request, latest_receipt)
+                    immutable_admission = dict(latest_admission)
+                elif mutation == "escaped_output":
+                    assert latest_receipt is not None
+                    latest_receipt["outputs"] = [
+                        {
+                            "artifact_id": "escaped",
+                            "path": "/outside/result.json",
+                            "resolved_path": "/outside/result.json",
+                            "sha256": "sha256:" + "a" * 64,
+                            "size": 1,
+                            "media_type": "application/json",
+                            "origin": "generated",
+                            "source_root": "/outside",
+                        }
+                    ]
+                    immutable_receipt = json.loads(json.dumps(latest_receipt))
+                    latest_admission = derive_execution_admission_trace(latest_request, latest_receipt)
+                    immutable_admission = dict(latest_admission)
+                elif mutation == "latest_receipt_policy_digest":
+                    assert latest_receipt is not None
+                    latest_receipt["policy_digest"] = "sha256:" + "d" * 64
+
+                latest_contract = contract_for(latest_request, latest_receipt, latest_admission, "latest")
+                immutable_contract = contract_for(
+                    immutable_request,
+                    immutable_receipt,
+                    immutable_admission,
+                    "immutable",
+                )
+                if mutation == "latest_contract_receipt_digest":
+                    latest_contract["receipt_digest"] = "sha256:" + "c" * 64
+                errors = validate_contract_history(
+                    latest_request,
+                    latest_receipt,
+                    latest_admission,
+                    latest_contract,
+                    immutable_request,
+                    immutable_receipt,
+                    immutable_admission,
+                    immutable_contract,
+                    require_receipt=True,
+                    require_admission=True,
+                )
+                self.assertEqual(bool(errors), case["expected"]["python_errors"], case["id"])
+
+    def test_persisted_history_is_derived_from_request_id_and_fails_closed_when_partial(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            receipt = build_receipt(request, lifecycle="SUCCEEDED", executor_kind="python", exit_code=0)
+            admission = derive_execution_admission_trace(request, receipt)
+            contract = write_contract_bundle(root, request, receipt, admission_trace=admission)
+            self.assertEqual(
+                validate_persisted_contract_history(root, request, receipt, admission, contract, require_admission=True),
+                [],
+            )
+
+            history = root / "execution_contracts"
+            fixed_contract_path = root / "execution_contract.json"
+            immutable_contract_path = history / f"{request['request_id']}.contract.json"
+            fixed_contract = json.loads(fixed_contract_path.read_text(encoding="utf-8"))
+            immutable_contract = json.loads(immutable_contract_path.read_text(encoding="utf-8"))
+            fixed_contract["history"] = {"request_path": "/untrusted/request.json"}
+            immutable_contract["history"] = {"request_path": "/untrusted/request.json"}
+            fixed_contract_path.write_text(json.dumps(fixed_contract), encoding="utf-8")
+            immutable_contract_path.write_text(json.dumps(immutable_contract), encoding="utf-8")
+            self.assertEqual(
+                validate_persisted_contract_history(
+                    root,
+                    request,
+                    receipt,
+                    admission,
+                    fixed_contract,
+                    require_admission=True,
+                ),
+                [],
+            )
+
+            (history / f"{request['request_id']}.receipt.json").unlink()
+            errors = validate_persisted_contract_history(
+                root,
+                request,
+                receipt,
+                admission,
+                fixed_contract,
+                require_admission=True,
+            )
+            self.assertTrue(any("immutable execution receipt is missing" in error for error in errors))
 
     def test_contract_bundle_allows_explicit_missing_capability_preflight(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

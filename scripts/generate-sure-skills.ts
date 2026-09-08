@@ -80,10 +80,30 @@ const PORTABLE_EXECUTION_CONTRACT_SCHEMAS = [
 	"execution_output_contract.schema.json",
 	"operation_execution_evidence.schema.json",
 ] as const;
+const LEGACY_PI_COMPATIBILITY_MIRRORS = [
+	{ skillId: "sure_infer", canonicalSlug: "sure-infer", path: "scripts/check_execution_result.py" },
+	{ skillId: "sure_infer", canonicalSlug: "sure-infer", path: "scripts/test_check_execution_result.py" },
+	{ skillId: "sure_eval", canonicalSlug: "sure-eval", path: "scripts/check_eval_run_report.py" },
+	{ skillId: "sure_eval", canonicalSlug: "sure-eval", path: "scripts/test_check_eval_run_report.py" },
+] as const;
 
 interface GeneratedFile {
 	path: string;
 	content: Buffer;
+}
+
+function legacyPiCompatibilityMirrorFiles(): GeneratedFile[] {
+	return LEGACY_PI_COMPATIBILITY_MIRRORS.map((mirror) => ({
+		path: join(repositoryRoot, "sure", "skills", mirror.skillId, mirror.path),
+		content: readFileSync(join(canonicalSkillsRoot, mirror.canonicalSlug, mirror.path)),
+	}));
+}
+
+function writeLegacyPiCompatibilityMirrors(files: readonly GeneratedFile[]): void {
+	for (const file of files) {
+		mkdirSync(dirname(file.path), { recursive: true });
+		writeFileSync(file.path, file.content);
+	}
 }
 
 function asJson(value: unknown): JsonValue {
@@ -725,6 +745,7 @@ function buildHostFiles(
 
 function expectedFiles(): GeneratedFile[] {
 	const files: GeneratedFile[] = [];
+	files.push(...legacyPiCompatibilityMirrorFiles());
 	files.push({ path: codingAgentWorkflowRegistry, content: workflowRegistryModule() });
 	const semanticBackendManifest = materializedSemanticBackendManifest();
 	const portableRuntime = portableRuntimeFiles(semanticBackendManifest);
@@ -838,8 +859,10 @@ function checkGenerated(files: readonly GeneratedFile[]): void {
 	if (problems.length > 0) throw new Error(`Generated SURE skill outputs are stale:\n${problems.join("\n")}`);
 }
 
+const checking = process.argv.includes("--check");
+if (!checking) writeLegacyPiCompatibilityMirrors(legacyPiCompatibilityMirrorFiles());
 const files = expectedFiles();
-if (process.argv.includes("--check")) {
+if (checking) {
 	checkGenerated(files);
 	console.log(`SURE skill generation is current (${files.length} files).`);
 } else {

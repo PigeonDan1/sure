@@ -1642,6 +1642,150 @@ def validate_contract_bundle(
     return errors
 
 
+def _stable_contract_record(value: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return {
+        key: item
+        for key, item in value.items()
+        if key not in {"request_path", "receipt_path", "admission_path"}
+    }
+
+
+def validate_contract_history(
+    latest_request: Mapping[str, Any] | None,
+    latest_receipt: Mapping[str, Any] | None,
+    latest_admission: Mapping[str, Any] | None,
+    latest_contract: Mapping[str, Any] | None,
+    immutable_request: Mapping[str, Any] | None,
+    immutable_receipt: Mapping[str, Any] | None,
+    immutable_admission: Mapping[str, Any] | None,
+    immutable_contract: Mapping[str, Any] | None,
+    *,
+    forbidden_output_roots: Sequence[Path] = (),
+    require_receipt: bool = True,
+    require_admission: bool = False,
+    accept_legacy_uninstrumented: bool = True,
+) -> list[str]:
+    """Bind latest compatibility views to immutable-by-request-id values."""
+
+    latest_errors = validate_contract_bundle(
+        latest_request,
+        latest_receipt,
+        latest_admission,
+        latest_contract,
+        forbidden_output_roots=forbidden_output_roots,
+        require_receipt=require_receipt,
+        require_admission=require_admission,
+        require_contract_record=True,
+        accept_legacy_uninstrumented=accept_legacy_uninstrumented,
+    )
+    immutable_errors = validate_contract_bundle(
+        immutable_request,
+        immutable_receipt,
+        immutable_admission,
+        immutable_contract,
+        forbidden_output_roots=forbidden_output_roots,
+        require_receipt=require_receipt,
+        require_admission=require_admission,
+        require_contract_record=True,
+        accept_legacy_uninstrumented=accept_legacy_uninstrumented,
+    )
+    errors = [f"latest bundle: {error}" for error in latest_errors]
+    errors.extend(f"immutable bundle: {error}" for error in immutable_errors)
+    comparisons = (
+        (latest_request, immutable_request, "immutable execution request does not match latest execution request"),
+        (latest_receipt, immutable_receipt, "immutable execution receipt does not match latest execution receipt"),
+        (latest_admission, immutable_admission, "immutable execution admission does not match latest execution admission"),
+        (
+            _stable_contract_record(latest_contract),
+            _stable_contract_record(immutable_contract),
+            "immutable execution contract metadata does not match latest execution contract metadata",
+        ),
+    )
+    for latest, immutable, message in comparisons:
+        if canonical_json(latest) != canonical_json(immutable):
+            errors.append(message)
+    return errors
+
+
+def validate_persisted_contract_history(
+    contract_root: Path,
+    request: Mapping[str, Any],
+    receipt: Mapping[str, Any] | None,
+    admission_trace: Mapping[str, Any] | None,
+    contract: Mapping[str, Any] | None,
+    *,
+    forbidden_output_roots: Sequence[Path] = (),
+    require_receipt: bool = True,
+    require_admission: bool = False,
+    accept_legacy_uninstrumented: bool = True,
+) -> list[str]:
+    """Audit an optional immutable history without trusting contract path fields."""
+
+    contract_root = contract_root.expanduser().resolve()
+    history_dir = contract_root / "execution_contracts"
+    if not os.path.lexists(history_dir):
+        return []
+    if history_dir.is_symlink() or not history_dir.is_dir():
+        return ["execution_contracts must be a regular directory"]
+    request_id = request.get("request_id")
+    if not isinstance(request_id, str) or ID_RE.fullmatch(request_id) is None:
+        return ["execution history request_id is invalid"]
+
+    expected_paths = {
+        "request": history_dir / f"{request_id}.request.json",
+        "receipt": history_dir / f"{request_id}.receipt.json",
+        "admission": history_dir / f"{request_id}.admission.json",
+        "contract": history_dir / f"{request_id}.contract.json",
+    }
+    expected_presence = {
+        "request": True,
+        "receipt": receipt is not None,
+        "admission": admission_trace is not None,
+        "contract": True,
+    }
+    immutable: dict[str, dict[str, Any] | None] = {}
+    errors: list[str] = []
+    for label, path in expected_paths.items():
+        present = os.path.lexists(path)
+        if present != expected_presence[label]:
+            qualifier = "missing" if expected_presence[label] else "present without a latest counterpart"
+            errors.append(f"immutable execution {label} is {qualifier}: {path.name}")
+            immutable[label] = None
+            continue
+        if not present:
+            immutable[label] = None
+            continue
+        if path.is_symlink() or not path.is_file():
+            errors.append(f"immutable execution {label} must be a regular file: {path.name}")
+            immutable[label] = None
+            continue
+        value = read_json(path)
+        if not value:
+            errors.append(f"immutable execution {label} is invalid: {path.name}")
+            immutable[label] = None
+            continue
+        immutable[label] = value
+
+    if errors:
+        return errors
+    return validate_contract_history(
+        request,
+        receipt,
+        admission_trace,
+        contract,
+        immutable["request"],
+        immutable["receipt"],
+        immutable["admission"],
+        immutable["contract"],
+        forbidden_output_roots=forbidden_output_roots,
+        require_receipt=require_receipt,
+        require_admission=require_admission,
+        accept_legacy_uninstrumented=accept_legacy_uninstrumented,
+    )
+
+
 def write_contract_bundle(
     artifacts_dir: Path,
     request: Mapping[str, Any],
