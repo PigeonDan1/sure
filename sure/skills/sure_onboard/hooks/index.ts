@@ -906,6 +906,8 @@ function runGateScript(ctx: SureHookContext, unit: Unit, attempt: number): GateR
 				operation_id: unit.executionOperationId,
 				script_id: gateScript,
 				artifact_input_path: produces,
+				request_operation: unit.executionRequestOperation,
+				script_args: [...kindArgs, ...extra],
 				execute,
 			})
 		: execute();

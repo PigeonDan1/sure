@@ -155,7 +155,14 @@ export interface SureHookContext {
 	memoryRoot?: string;
 	canonicalRoot?: string;
 	legacySkillsRoot?: string;
+	/** Host-injected provenance issuer; never reconstructed from agent state. */
+	executionProvenance?: SureExecutionProvenanceHost;
 	event?: unknown;
+}
+
+/** Opaque structural type kept in the virtual hook module. */
+export interface SureExecutionProvenanceHost {
+	readonly issue: (input: { unit_id: string; attempt: number; operation_id: string }) => unknown;
 }
 
 export interface SureHookResult {

@@ -6,6 +6,25 @@ import type { SureHookContext, SureHookDeclaration, SureHookPoint, SureHookResul
 
 type HookFunction = (context: SureHookContext) => SureHookResult | Promise<SureHookResult | undefined> | undefined;
 
+/**
+ * Keep host-issued capabilities out of enumerable hook context data.  Hooks
+ * may consume the issuer, but cannot replace it through a spread, state patch,
+ * or JSON round-trip.
+ */
+function handlerContext(point: SureHookPoint, context: Omit<SureHookContext, "point">): SureHookContext {
+	const { executionProvenance, ...rest } = context;
+	const value = { ...rest, point } as SureHookContext;
+	if (executionProvenance !== undefined) {
+		Object.defineProperty(value, "executionProvenance", {
+			value: Object.freeze(executionProvenance),
+			enumerable: false,
+			writable: false,
+			configurable: false,
+		});
+	}
+	return value;
+}
+
 export interface SureGateResult {
 	ok: boolean;
 	message?: string;
@@ -104,10 +123,7 @@ export class SureHookRunner {
 				};
 			}
 
-			const value = await (handler as HookFunction)({
-				...context,
-				point,
-			});
+			const value = await (handler as HookFunction)(handlerContext(point, context));
 			return normalizeHookResult(value);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

@@ -103,6 +103,26 @@ describe("Pi/Core SURE controller boundary", () => {
 		});
 	});
 
+	it("does not accept a caller-supplied provenance issuer", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sure-controller-context-"));
+		roots.push(root);
+		let received: Omit<SureHookContext, "point"> | undefined;
+		const callerIssuer = { issue: () => ({ forged: true }) };
+		const dispatcher: SureHookDispatcher = {
+			run: async (_point, context) => {
+				received = context;
+				return { ok: true };
+			},
+		};
+		const controller = new PiSureController(skillPackage(), dispatcher);
+		await controller.run("post_tool_result", {
+			...context(root),
+			executionProvenance: callerIssuer,
+		});
+		expect(received?.executionProvenance).toBeUndefined();
+		expect(Object.keys(received ?? {})).not.toContain("executionProvenance");
+	});
+
 	it("rejects a Pi hook that jumps over a canonical unit", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sure-controller-"));
 		roots.push(root);

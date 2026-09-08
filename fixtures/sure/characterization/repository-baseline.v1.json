@@ -6636,8 +6636,8 @@
   "source_files": [
     {
       "path": "packages/coding-agent/src/core/sure/controller.ts",
-      "size_bytes": 6569,
-      "sha256": "d2c08bb5137ff6a0c94f760e9d6d155f61c3e35b74d7fc8289264f7b88abdf74"
+      "size_bytes": 7441,
+      "sha256": "0a55f15a41f56a8d317caba0fc46caec704ed0d5ba43ad598a464fe8a76cc7c0"
     },
     {
       "path": "packages/coding-agent/src/core/sure/core-run-store.ts",
@@ -6646,8 +6646,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/execution-provenance.ts",
-      "size_bytes": 1691,
-      "sha256": "0e7be6161a0c1ffbc1acc81b8f8d3bda0dc0f284e5769b8c14741cf11f541225"
+      "size_bytes": 23424,
+      "sha256": "3607a566bf5e20cce7b2842fb29feff5807327ec6c83ccb243242b7f05560c52"
     },
     {
       "path": "packages/coding-agent/src/core/sure/extension.ts",
@@ -6661,18 +6661,18 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/hook-types.ts",
-      "size_bytes": 4101,
-      "sha256": "4afff90d2926fc4e89f3dbef9b0a8afff09c03f2a90f40db3e0466c4a205b8cb"
+      "size_bytes": 4442,
+      "sha256": "4d4ac2830beb3de647059d7014e5408065a22bd1883b2c9ec0fb1b54e25efa37"
     },
     {
       "path": "packages/coding-agent/src/core/sure/hooks.ts",
-      "size_bytes": 4018,
-      "sha256": "871c9f4c64b392222111a6a8c177ec1a2cd7ce9001e8173496b320536f89e9d1"
+      "size_bytes": 4651,
+      "sha256": "4b9871851a33de9c60ef43de449c69dc275632ea1befcfae62f9093eefb72096"
     },
     {
       "path": "packages/coding-agent/src/core/sure/index.ts",
-      "size_bytes": 838,
-      "sha256": "922dae8fa865808e27a163bdc5acc50077583f7733f550e588c751ac6259f5f0"
+      "size_bytes": 1061,
+      "sha256": "21875a497bda719da42b859b8226b770fdc37af2fe1a48db7fe79041518235f2"
     },
     {
       "path": "packages/coding-agent/src/core/sure/init-apply.ts",
@@ -6736,8 +6736,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/types.ts",
-      "size_bytes": 4772,
-      "sha256": "bcfe1e7fe082af71131d1c1fdb052729a0b5c892759cb85ee072bcbb3ad6d1ad"
+      "size_bytes": 5213,
+      "sha256": "476af104afff7e3ac8bfa0ae6100e9b17e9c80e45fd60952455f00afae18ec31"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-agent-path.test.ts",
@@ -6843,6 +6843,11 @@
       "path": "packages/coding-agent/test/suite/sure-onboard-terminal.test.ts",
       "size_bytes": 3095,
       "sha256": "9453d603070629d78a608d78651461b5c79a867cabdbd8a4baed5496397bf68e"
+    },
+    {
+      "path": "packages/coding-agent/test/suite/sure-pi-host-provenance.test.ts",
+      "size_bytes": 15757,
+      "sha256": "0f191a3478cae94486b4273b67b16ec4f3b2742abd3a7d070b032c611576eb0c"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-operation-evidence.test.ts",
@@ -7001,8 +7006,8 @@
     },
     {
       "path": "sure/runtime/harness/registered-operation.ts",
-      "size_bytes": 25404,
-      "sha256": "8148c35325a140ee931322a224269f4b917fdbda20de37f38474ff8bd14b68ed"
+      "size_bytes": 48459,
+      "sha256": "3c48c288a4e020063b26f38c03b367406eaff759999f9bd5d61023db780a1497"
     },
     {
       "path": "sure/runtime/harness/requirements.in",
@@ -8691,13 +8696,13 @@
     },
     {
       "path": "sure/skills/sure_onboard/hooks/checkpoints.ts",
-      "size_bytes": 10137,
-      "sha256": "5b7c1448917a8c12bd7139e6250d9440d138dd8d354cc36fbab0a72c1af884b9"
+      "size_bytes": 10169,
+      "sha256": "89b012ad8dfe6272a5fc1abc0c55d4bfb3e0c9a208678ba5eea46b3db4a0334d"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/index.ts",
-      "size_bytes": 57805,
-      "sha256": "b00b8f9229e1b1f4923b0db83d515c0baf9636159edd4304a3670f7f6d4a8a66"
+      "size_bytes": 57902,
+      "sha256": "088cdd167969b642dceb9e6861ff64857c6a329d32635a4d06e87459c9f12f17"
     },
     {
       "path": "sure/skills/sure_onboard/hooks/state-machine.ts",
@@ -9366,13 +9371,13 @@
     },
     {
       "path": "sure/skills/sure_trans/hooks/checkpoints.ts",
-      "size_bytes": 10945,
-      "sha256": "8a09b4ca35ce72bf51d64e7d98e753a232084a800a6b5be12c68c0e995407762"
+      "size_bytes": 10977,
+      "sha256": "6621c6eb6dbd65518c6274027a3ec92de714e0744f235c90e5ebeeddfabd9c79"
     },
     {
       "path": "sure/skills/sure_trans/hooks/index.ts",
-      "size_bytes": 43371,
-      "sha256": "51e93ac75c543eff3dfb67edac01d49a7c654f9d52eacabf20ade2c08f2afe3c"
+      "size_bytes": 43453,
+      "sha256": "ed8bfa7833ae8cdc73f0aa1ebb08ec2d3eeea359fdcba43c405aca5f1661b4b7"
     },
     {
       "path": "sure/skills/sure_trans/hooks/state-machine.ts",
@@ -9761,5 +9766,5 @@
       ]
     }
   ],
-  "semantic_digest": "a2181d1b0a37724c05d0cb60656ca2cbf6de6d386c59f3689091e5f61cd6a70b"
+  "semantic_digest": "dcae8434d49393a8980a8acc63531bd7c1eeb2404df71ecc69d3ce654cc6317c"
 }

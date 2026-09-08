@@ -12,15 +12,45 @@ import {
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { SureHookContext } from "@earendil-works/pi-coding-agent/hooks";
 import {
+	canonicalJsonDigest,
+	createBoundExecutionReceipt,
+	createExecutionAdmissionTrace,
 	createOperationExecutionEvidence,
+	inspectExecutionArtifact,
+	projectExecutionEvidence,
+	createOutcome,
+	EXECUTOR_KINDS,
+	EXECUTOR_TRUST_LEVELS,
 	type OperationExecutionEvidence,
+	validateExecutionAdmissionReceiptBinding,
+	validateExecutionReceipt,
+	validateExecutionRequest,
 	validatePolicySnapshot,
 } from "@earendil-works/sure-core";
+import type {
+	ArtifactRef,
+	CapabilityEvidence,
+	CapabilityRequirement,
+	ExecutionInputBindingResolver,
+	ExecutionLifecycle,
+	ExecutionOperation,
+	ExecutionReceipt,
+	ExecutionRequest,
+	ExecutionProvenancePublisher,
+	PublishedExecutionProvenance,
+	PublishedExecutionRequest,
+	ExecutorIdentity,
+	JsonValue,
+} from "@earendil-works/sure-core";
 import {
+	createRegisteredOperationRequest,
 	loadSemanticBackendManifest,
+	registeredOperationCapabilityRequirements,
 	repositoryRootForPackage,
 	resolveSemanticBackendOperation,
+	type ResolvedSemanticBackend,
 } from "@earendil-works/sure-core/evaluation";
+import { resolveHarnessPython } from "./resolve.ts";
 
 export interface PiBackendProcessResult {
 	ok: boolean;
@@ -37,11 +67,48 @@ export interface PiRegisteredOperationOptions {
 	script_id: string;
 	artifact_input_path: string;
 	artifact_output_path?: string;
+	/** Canonical operation kind used when the host issues a provenance request. */
+	request_operation?: ExecutionOperation;
+	/** Arguments after the stable --run-dir/--produces prefix. */
+	script_args?: readonly string[];
+	/** Resolved context for operations with a conditional input contract. */
+	input_context?: Readonly<Record<string, unknown>>;
+	input_context_digest?: string;
+	input_resolver?: ExecutionInputBindingResolver;
 	execute(): PiBackendProcessResult;
 }
 
 export interface PiRegisteredOperationResult extends PiBackendProcessResult {
 	evidence?: OperationExecutionEvidence;
+}
+
+interface PiHostSession {
+	readonly invocation_id: string;
+	readonly request_id: string;
+	readonly receipt_id: string;
+	readonly started_at: string;
+	readonly run_id: string;
+	readonly run_dir: string;
+	readonly package_dir: string;
+	readonly artifacts_root: string;
+	readonly artifacts_resolved_root: string;
+	readonly branch_id: string;
+	readonly workflow_digest: string;
+	readonly validator_registry_digest: string;
+	readonly semantic_runtime_digest: string;
+	readonly semantic_backend_registry_digest: string;
+	readonly executor_registry_digest: string;
+	readonly core_package_version: string;
+	readonly reference_snapshot_digest: string;
+	readonly policy_digest: string;
+	readonly policy_snapshot_digest?: string;
+	readonly executor: ExecutorIdentity;
+	readonly forbidden_output_roots: readonly string[];
+	readonly python_executable?: string;
+	readonly publisher: ExecutionProvenancePublisher;
+	readonly capability_evidence_for?: (
+		requirements: readonly CapabilityRequirement[],
+	) => readonly CapabilityEvidence[];
 }
 
 export interface PiRegisteredValidatorOptions {
@@ -86,6 +153,7 @@ interface RegisteredImplementation {
 	registry_digest: string;
 	bundle_digest?: string;
 	resource_digest: string;
+	backend: ResolvedSemanticBackend;
 }
 
 interface RegisteredValidatorImplementation {
@@ -114,11 +182,11 @@ const MAX_DIAGNOSTIC_LENGTH = 4096;
 const SHA256_DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 class PiOperationUnavailableError extends Error {
-	readonly reasonCode: "CAPABILITY_MISSING" | "INVALID_CONTRACT";
+	readonly reasonCode: "CAPABILITY_MISSING" | "INVALID_CONTRACT" | "PATH_OUT_OF_SCOPE";
 
 	constructor(
 		message: string,
-		reasonCode: "CAPABILITY_MISSING" | "INVALID_CONTRACT",
+		reasonCode: "CAPABILITY_MISSING" | "INVALID_CONTRACT" | "PATH_OUT_OF_SCOPE",
 	) {
 		super(message);
 		this.name = "PiOperationUnavailableError";
@@ -351,6 +419,7 @@ function registeredImplementation(options: PiRegisteredOperationOptions): Regist
 		registry_digest: manifest.registry_digest,
 		...(resolved.bundle_digest === undefined ? {} : { bundle_digest: resolved.bundle_digest }),
 		resource_digest: actualDigest,
+		backend: resolved,
 	};
 }
 
@@ -483,6 +552,529 @@ function unavailable(
 	};
 }
 
+function validHostSession(value: unknown): value is PiHostSession {
+	if (!isRecord(value)) return false;
+	for (const field of [
+		"invocation_id",
+		"request_id",
+		"receipt_id",
+		"started_at",
+		"run_id",
+		"run_dir",
+		"package_dir",
+		"artifacts_root",
+		"artifacts_resolved_root",
+		"branch_id",
+		"workflow_digest",
+		"validator_registry_digest",
+		"semantic_runtime_digest",
+		"semantic_backend_registry_digest",
+		"executor_registry_digest",
+		"core_package_version",
+		"reference_snapshot_digest",
+		"policy_digest",
+	] as const) {
+		if (typeof value[field] !== "string" || value[field].trim() === "") return false;
+	}
+	if (!isRecord(value.executor) || typeof value.publisher !== "object" || value.publisher === null) return false;
+	if (
+		typeof value.executor.executor_id !== "string" ||
+		value.executor.executor_id.trim() === "" ||
+		typeof value.executor.version !== "string" ||
+		value.executor.version.trim() === "" ||
+		!SHA256_DIGEST.test(String(value.executor.digest)) ||
+		!EXECUTOR_KINDS.includes(value.executor.kind as (typeof EXECUTOR_KINDS)[number]) ||
+		!EXECUTOR_TRUST_LEVELS.includes(value.executor.trust_level as (typeof EXECUTOR_TRUST_LEVELS)[number])
+	)
+		return false;
+	if (
+		!Array.isArray(value.forbidden_output_roots) ||
+		value.forbidden_output_roots.some((root) => typeof root !== "string" || !isAbsolute(root))
+	)
+		return false;
+	if (value.python_executable !== undefined && (typeof value.python_executable !== "string" || !isAbsolute(value.python_executable)))
+		return false;
+	const publisher = value.publisher as Record<string, unknown>;
+	if (typeof publisher.publishRequest !== "function" || typeof publisher.publishCompletion !== "function") return false;
+	return true;
+}
+
+function issueHostSession(options: PiRegisteredOperationOptions): PiHostSession {
+	const issuer = options.ctx.executionProvenance;
+	if (issuer === undefined) {
+		throw new PiOperationUnavailableError(
+			"registered operation has no host-issued provenance session",
+			"CAPABILITY_MISSING",
+		);
+	}
+	const raw = issuer.issue({ unit_id: options.unit_id, attempt: options.attempt, operation_id: options.operation_id });
+	if (!validHostSession(raw)) {
+		throw new PiOperationUnavailableError(
+			"host-issued provenance session is incomplete or malformed",
+			"INVALID_CONTRACT",
+		);
+	}
+	const session = raw;
+	if (session.run_id !== options.ctx.run.runId) {
+		throw new PiOperationUnavailableError("host provenance session run_id does not match the Pi run", "INVALID_CONTRACT");
+	}
+	if (resolve(session.run_dir) !== resolve(options.ctx.runDir)) {
+		throw new PiOperationUnavailableError("host provenance session run_dir does not match the Pi run", "INVALID_CONTRACT");
+	}
+	if (resolve(session.package_dir) !== resolve(options.ctx.packageDir)) {
+		throw new PiOperationUnavailableError("host provenance session package_dir does not match the Pi skill", "INVALID_CONTRACT");
+	}
+	if (!SHA256_DIGEST.test(session.workflow_digest) || !SHA256_DIGEST.test(session.validator_registry_digest)) {
+		throw new PiOperationUnavailableError("host provenance session workflow binding is invalid", "INVALID_CONTRACT");
+	}
+	if (!SHA256_DIGEST.test(session.semantic_runtime_digest) || !SHA256_DIGEST.test(session.semantic_backend_registry_digest)) {
+		throw new PiOperationUnavailableError("host provenance session runtime binding is invalid", "INVALID_CONTRACT");
+	}
+	if (!SHA256_DIGEST.test(session.executor_registry_digest) || !SHA256_DIGEST.test(session.reference_snapshot_digest)) {
+		throw new PiOperationUnavailableError("host provenance session executor/reference binding is invalid", "INVALID_CONTRACT");
+	}
+	if (!SHA256_DIGEST.test(session.policy_digest)) {
+		throw new PiOperationUnavailableError("host provenance session policy binding is invalid", "INVALID_CONTRACT");
+	}
+	if (session.policy_snapshot_digest !== undefined && !SHA256_DIGEST.test(session.policy_snapshot_digest)) {
+		throw new PiOperationUnavailableError("host provenance session policy snapshot digest is invalid", "INVALID_CONTRACT");
+	}
+	if (!isAbsolute(session.artifacts_root) || !isAbsolute(session.artifacts_resolved_root)) {
+		throw new PiOperationUnavailableError("host provenance session artifact roots must be absolute", "INVALID_CONTRACT");
+	}
+	if (!contained(resolve(options.ctx.runDir), resolve(session.artifacts_root))) {
+		throw new PiOperationUnavailableError("host provenance artifact root escaped the Pi run", "PATH_OUT_OF_SCOPE");
+	}
+	return session;
+}
+
+function hostArtifactRef(
+	path: string,
+	root: string,
+	artifactId: string,
+	origin: ArtifactRef["origin"],
+): ArtifactRef {
+	const lexical = resolve(path);
+	const lexicalRoot = resolve(root);
+	if (!contained(lexicalRoot, lexical)) throw new Error("execution artifact is outside the host artifact root");
+	const rootStat = lstatSync(lexicalRoot);
+	if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error("host artifact root is not a regular directory");
+	const stat = lstatSync(lexical);
+	if (stat.isSymbolicLink()) throw new Error("execution artifact is a symlink");
+	const resolvedRoot = resolve(realpathSync.native(lexicalRoot));
+	const resolvedPath = resolve(realpathSync.native(lexical));
+	if (!contained(resolvedRoot, resolvedPath)) throw new Error("execution artifact resolves outside the host artifact root");
+	const inspected = inspectExecutionArtifact(lexical);
+	return {
+		artifact_id: artifactId,
+		path: lexical,
+		resolved_path: resolvedPath,
+		sha256: inspected.sha256,
+		size: inspected.size,
+		media_type: inspected.media_type,
+		origin,
+		source_root: lexicalRoot,
+		kind: inspected.kind,
+		digest_kind: inspected.digest_kind,
+	};
+}
+
+function hostCapabilityEvidence(
+	session: PiHostSession,
+	requirements: readonly CapabilityRequirement[],
+	result: PiBackendProcessResult,
+	observedAt: string,
+	pythonExecutable: string | undefined,
+): CapabilityEvidence[] {
+	if (session.capability_evidence_for !== undefined) {
+		return [...session.capability_evidence_for(requirements)].map((item) => ({ ...item }));
+	}
+	return requirements.map((requirement) => {
+		// A callback's exit code is not evidence of arbitrary hardware.  The
+		// bridge can only establish that the bound harness runtime was selected;
+		// every other execution capability needs an explicit host probe.
+		const runtimeAvailable =
+			requirement.capability_id === "sure.execution.harness-python" &&
+			pythonExecutable !== undefined &&
+			pythonExecutable.trim() !== "" &&
+			result.status !== null;
+		const status: CapabilityEvidence["status"] = runtimeAvailable ? "AVAILABLE" : "MISSING";
+		const base: CapabilityEvidence = {
+			capability_id: requirement.capability_id,
+			capability_class: requirement.capability_class,
+			status,
+			source: "executor",
+			observed_at: observedAt,
+			details: {
+				execution_surface: "pi_hook",
+				process_started: result.status !== null,
+				runtime_bound: pythonExecutable !== undefined && pythonExecutable.trim() !== "",
+			},
+		};
+		return { ...base, evidence_digest: canonicalJsonDigest(base as unknown as JsonValue) };
+	});
+}
+
+function hostLifecycle(result: PiBackendProcessResult, outputPresent: boolean): ExecutionLifecycle {
+	if (result.status === null) return "NOT_STARTED";
+	if (result.ok && result.status === 0) return outputPresent ? "SUCCEEDED" : "PARTIAL";
+	return "FAILED";
+}
+
+function hostDiagnosticRecords(messages: readonly string[]): readonly Record<string, JsonValue>[] {
+	return messages
+		.filter((message) => message.trim() !== "")
+		.map((message, index) => ({ code: index === 0 ? "PI_EXECUTION" : "PI_EXECUTION_DIAGNOSTIC", message }));
+}
+
+function hostOutputPath(
+	options: PiRegisteredOperationOptions,
+	implementation: RegisteredImplementation,
+	artifactsRoot: string,
+): string {
+	if (implementation.backend.output_contract === undefined) {
+		return resolve(options.artifact_output_path ?? options.artifact_input_path);
+	}
+	const declared = implementation.backend.output_contract.outputs[0];
+	if (declared === undefined) throw new Error(`${options.operation_id} output contract has no output`);
+	return resolve(options.artifact_output_path ?? join(artifactsRoot, declared.path));
+}
+
+function hostPublicationFailure(
+	options: PiRegisteredOperationOptions,
+	implementation: RegisteredImplementation,
+	inputDigest: string,
+	result: PiBackendProcessResult,
+	publishedRequest: PublishedExecutionRequest,
+	branchId: string,
+	runtimeDigest: string,
+	outputPath: string,
+	error: unknown,
+): PiRegisteredOperationResult {
+	const message = error instanceof Error ? error.message : String(error);
+	const diagnostics = [...diagnostic(result), message, "execution may have occurred before provenance publication failed"];
+	return {
+		...result,
+		ok: false,
+		stderr: result.stderr.trim() === "" ? diagnostics.join("; ") : result.stderr,
+		evidence: createOperationExecutionEvidence({
+			source: "pi_hook",
+			operation_id: options.operation_id,
+			artifact_mode: implementation.artifact_mode,
+			verdict: "NOT_EXECUTED",
+			reason_code: "INVALID_CONTRACT",
+			diagnostics,
+			artifact_input_digest: inputDigest,
+			artifact_input_path: resolve(options.artifact_input_path),
+			artifact_output_path: outputPath,
+			runtime_digest: runtimeDigest,
+			backend_registry_digest: implementation.registry_digest,
+			...(implementation.bundle_digest === undefined ? {} : { backend_bundle_digest: implementation.bundle_digest }),
+			backend_resource_digest: implementation.resource_digest,
+			request_path: publishedRequest.documents.latest.path,
+			request_digest: publishedRequest.documents.latest.digest,
+			branch_id: branchId,
+			unit_id: options.unit_id,
+			attempt: options.attempt,
+			outcome: {
+				validator_verdict: "NOT_EXECUTED",
+				workflow_disposition: "BLOCK",
+				outcome: "NOT_EXECUTED",
+				reason_code: "INVALID_CONTRACT",
+			},
+		}),
+	};
+}
+
+function runHostRegisteredOperation(
+	options: PiRegisteredOperationOptions,
+	inputDigest: string,
+	implementation: RegisteredImplementation,
+): PiRegisteredOperationResult {
+	if (options.request_operation === undefined) {
+		return unavailable(
+			options,
+			inputDigest,
+			new PiOperationUnavailableError(
+				"registered operation has no execution_request_operation binding",
+				"INVALID_CONTRACT",
+			),
+		);
+	}
+	let session: PiHostSession;
+	try {
+		session = issueHostSession(options);
+		if (implementation.registry_digest !== session.semantic_backend_registry_digest) {
+			throw new PiOperationUnavailableError(
+				"host provenance semantic backend registry does not match the admitted operation",
+				"INVALID_CONTRACT",
+			);
+		}
+	} catch (error) {
+		return unavailable(options, inputDigest, error);
+	}
+
+	let pythonExecutable = session.python_executable;
+	if (pythonExecutable === undefined || pythonExecutable.trim() === "") {
+		const runtime = resolveHarnessPython(options.ctx.packageDir, { activate: false });
+		if (!runtime.ok || runtime.contract === undefined) {
+			return unavailable(
+				options,
+				inputDigest,
+				new PiOperationUnavailableError(
+					runtime.error ?? "SURE harness Python runtime is unavailable",
+					"CAPABILITY_MISSING",
+				),
+			);
+		}
+		pythonExecutable = runtime.contract.python_executable;
+	}
+
+	let request: ExecutionRequest;
+	let publishedRequest: PublishedExecutionRequest;
+	let outputPath: string;
+	try {
+		outputPath = hostOutputPath(options, implementation, session.artifacts_root);
+		if (!contained(resolve(session.artifacts_root), outputPath)) {
+			throw new PiOperationUnavailableError(
+				"registered operation output path is outside the host artifact root",
+				"PATH_OUT_OF_SCOPE",
+			);
+		}
+		const inputArtifact = hostArtifactRef(
+			options.artifact_input_path,
+			session.artifacts_root,
+			"operation-input",
+			"local_staging",
+		);
+		const facadeBackend: ResolvedSemanticBackend = {
+			...implementation.backend,
+			path: resolve(join(options.ctx.packageDir, "scripts", options.script_id)),
+		};
+		request = createRegisteredOperationRequest({
+			request_id: session.request_id,
+			run_id: session.run_id,
+			run_dir: session.run_dir,
+			workflow_digest: session.workflow_digest,
+			policy_snapshot_digest: session.policy_snapshot_digest,
+			branch_id: session.branch_id,
+			unit_id: options.unit_id,
+			attempt: options.attempt,
+			request_operation: options.request_operation,
+			backend: facadeBackend,
+			script_args: options.script_args ?? [],
+			artifact: inputArtifact,
+			input_context: options.input_context,
+			input_context_digest: options.input_context_digest,
+			input_resolver: options.input_resolver,
+			output_path: outputPath,
+			python_executable: pythonExecutable,
+			package_dir: session.package_dir,
+			artifacts_root: session.artifacts_root,
+			artifacts_resolved_root: session.artifacts_resolved_root,
+			semantic_runtime_digest: session.semantic_runtime_digest,
+			reference_snapshot_digest: session.reference_snapshot_digest,
+			policy_digest: session.policy_digest,
+			created_at: session.started_at,
+		});
+		const requestValidation = validateExecutionRequest(request, {
+			allowed_output_roots: [session.run_dir],
+			forbidden_output_roots: session.forbidden_output_roots,
+		});
+		if (!requestValidation.valid) {
+			throw new PiOperationUnavailableError(
+				`host execution request failed Core validation: ${requestValidation.errors.join("; ")}`,
+				requestValidation.outcome.reason_code === "PATH_OUT_OF_SCOPE" ? "PATH_OUT_OF_SCOPE" : "INVALID_CONTRACT",
+			);
+		}
+		publishedRequest = session.publisher.publishRequest(request);
+	} catch (error) {
+		return unavailable(options, inputDigest, error);
+	}
+
+	let result: PiBackendProcessResult;
+	try {
+		result = options.execute();
+		if (!isRecord(result) || typeof result.ok !== "boolean" || typeof result.stdout !== "string" || typeof result.stderr !== "string") {
+			throw new Error("registered operation callback returned an invalid process result");
+		}
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		result = { ok: false, stdout: "", stderr: message, status: 1 };
+	}
+
+	try {
+		let outputArtifact: ArtifactRef | undefined;
+		let outputDiagnostic: string | undefined;
+		try {
+			const outputId = implementation.backend.output_contract?.outputs[0]?.artifact_id ?? "operation-output";
+			outputArtifact = hostArtifactRef(outputPath, session.artifacts_root, outputId, "generated");
+		} catch (error) {
+			outputDiagnostic = error instanceof Error ? error.message : String(error);
+		}
+		const lifecycle = hostLifecycle(result, outputArtifact !== undefined);
+		const finishedAt = new Date().toISOString();
+		const requirements = registeredOperationCapabilityRequirements(implementation.backend);
+		const capabilityEvidence = hostCapabilityEvidence(session, requirements, result, finishedAt, pythonExecutable);
+		const receiptDiagnostics = [
+			...diagnostic(result),
+			...(outputDiagnostic === undefined || outputArtifact !== undefined ? [] : [outputDiagnostic]),
+		];
+		const receipt = createBoundExecutionReceipt(request, {
+			receipt_id: session.receipt_id,
+			executor: session.executor,
+			lifecycle,
+			capability_evidence: capabilityEvidence,
+			outputs: outputArtifact === undefined ? [] : [outputArtifact],
+			started_at: session.started_at,
+			finished_at: lifecycle === "NOT_STARTED" ? undefined : finishedAt,
+			...(result.status === null ? {} : { exit_code: result.status }),
+			...(receiptDiagnostics.length === 0 ? {} : { diagnostics: hostDiagnosticRecords(receiptDiagnostics) }),
+		});
+		const boundary = {
+			allowed_output_roots: [session.run_dir],
+			forbidden_output_roots: session.forbidden_output_roots,
+		};
+		const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
+		const outcome = receiptValidation.outcome;
+		const admission = createExecutionAdmissionTrace(request, finishedAt, outcome, {
+			probe_invoked: false,
+			execute_invoked: result.status !== null,
+			receipt,
+			receipt_valid: receiptValidation.valid,
+		});
+		const admissionErrors = validateExecutionAdmissionReceiptBinding(request, admission, {
+			receipt,
+			receipt_valid: receiptValidation.valid,
+			capability_admitted: receiptValidation.capability.admitted,
+		});
+		let provenance: PublishedExecutionProvenance;
+		try {
+			provenance = session.publisher.publishCompletion({
+				request,
+				receipt,
+				admission,
+				validation_options: {
+					require_receipt: true,
+					allowed_output_roots: [session.run_dir],
+					forbidden_output_roots: session.forbidden_output_roots,
+				},
+				legacy_views: {
+					execution_surface: "pi_hook",
+					execution_result: result.stderr.trim() || result.stdout.trim() || null,
+				},
+			});
+		} catch (error) {
+			return hostPublicationFailure(
+				options,
+				implementation,
+				inputDigest,
+				result,
+				publishedRequest,
+				session.branch_id,
+				session.semantic_runtime_digest,
+				outputPath,
+				error,
+			);
+		}
+		const historyFailure =
+			!provenance.validation.valid && provenance.validation.outcome.reason_code !== "CAPABILITY_MISSING";
+		const contractErrors = [
+			...admissionErrors,
+			...(historyFailure ? provenance.validation.errors : []),
+		];
+		const validReceipt = receiptValidation.valid && provenance.validation.valid;
+		const missingSuccessfulOutput = result.ok && result.status === 0 && outputArtifact === undefined;
+		const projection =
+			contractErrors.length > 0
+				? { verdict: "NOT_EXECUTED" as const, reason_code: "INVALID_CONTRACT" as const }
+				: projectExecutionEvidence({
+						lifecycle,
+						receipt_valid: validReceipt,
+						capability_admitted: receiptValidation.capability.admitted,
+						missing_output: missingSuccessfulOutput,
+						outcome_reason_code: outcome.reason_code,
+					});
+		const finalOutcome =
+			contractErrors.length > 0
+				? createOutcome({
+						validatorVerdict: "NOT_EXECUTED",
+						workflowDisposition: "BLOCK",
+						reasonCode: "INVALID_CONTRACT",
+						diagnostics: contractErrors.map((message) => ({ code: "EXECUTION_PROVENANCE", message })),
+					})
+				: outcome;
+		const diagnostics = [
+			...diagnostic(result),
+			...(outputDiagnostic === undefined || outputArtifact !== undefined ? [] : [outputDiagnostic]),
+			...receiptValidation.errors,
+			...admissionErrors,
+			...(historyFailure ? provenance.validation.errors : []),
+			...(missingSuccessfulOutput ? [`${options.operation_id} did not bind the gate artifact output`] : []),
+		];
+		return {
+			...result,
+			ok: projection.verdict === "PASS",
+			...(missingSuccessfulOutput && result.stderr.trim() === ""
+				? { stderr: `${options.operation_id} did not bind the gate artifact output` }
+				: {}),
+			evidence: createOperationExecutionEvidence({
+				source: "pi_hook",
+				operation_id: options.operation_id,
+				artifact_mode: implementation.artifact_mode,
+				verdict: projection.verdict,
+				reason_code: projection.reason_code,
+				diagnostics,
+				artifact_input_digest: inputDigest,
+				artifact_input_path: resolve(options.artifact_input_path),
+				...(outputArtifact === undefined ? {} : { artifact_output_digest: outputArtifact.sha256 }),
+				artifact_output_path: outputPath,
+				runtime_digest: session.semantic_runtime_digest,
+				backend_registry_digest: implementation.registry_digest,
+				...(implementation.bundle_digest === undefined ? {} : { backend_bundle_digest: implementation.bundle_digest }),
+				backend_resource_digest: implementation.resource_digest,
+				...(request.input_binding === undefined
+					? {}
+					: {
+							input_contract_digest: request.input_binding.contract_digest,
+							input_selector_id: request.input_binding.selector_id,
+							input_context_digest: request.input_binding.context_digest,
+							input_binding_digest: request.input_binding.binding_digest,
+						}),
+				request_path: provenance.documents.request.latest.path,
+				request_digest: provenance.documents.request.latest.digest,
+				admission_path: provenance.documents.admission.latest.path,
+				admission_digest: provenance.documents.admission.latest.digest,
+				...(provenance.documents.receipt === undefined
+					? {}
+					: {
+							receipt_path: provenance.documents.receipt.latest.path,
+							receipt_digest: provenance.documents.receipt.latest.digest,
+					}),
+				contract_path: provenance.documents.contract.latest.path,
+				contract_digest: provenance.documents.contract.latest.digest,
+				execution_history_digest: provenance.history_digest,
+				branch_id: session.branch_id,
+				unit_id: options.unit_id,
+				attempt: options.attempt,
+				outcome: finalOutcome,
+			}),
+		};
+	} catch (error) {
+		return hostPublicationFailure(
+			options,
+			implementation,
+			inputDigest,
+			result,
+			publishedRequest,
+			session.branch_id,
+			session.semantic_runtime_digest,
+			outputPath,
+			error,
+		);
+	}
+}
+
 function validatorUnavailable(
 	options: PiRegisteredValidatorOptions,
 	artifactDigest: string | undefined,
@@ -541,6 +1133,9 @@ export function runPiRegisteredOperation(options: PiRegisteredOperationOptions):
 		const implementation = registeredImplementation(options);
 		if (implementation.requires_policy_snapshot) {
 			requireBoundPolicySnapshot(options.ctx);
+		}
+		if (options.ctx.executionProvenance !== undefined) {
+			return runHostRegisteredOperation(options, inputDigest, implementation);
 		}
 		const result = options.execute();
 		const outputPath = options.artifact_output_path ?? options.artifact_input_path;

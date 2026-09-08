@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
-import type { OperationExecutionEvidence } from "@earendil-works/sure-core";
+import type { ExecutionOperation, OperationExecutionEvidence } from "@earendil-works/sure-core";
 import {
 	advanceLegacyUnit,
 	bumpLegacyRetry,
@@ -75,7 +75,7 @@ export interface Unit {
 	/** Python script under scripts/ for semantic gate checks (spawnSync). */
 	gateScript?: string;
 	executionOperationId?: string;
-	executionRequestOperation?: string;
+	executionRequestOperation?: ExecutionOperation;
 	/** Extra argv passed to gateScript after --run-dir/--produces. */
 	gateScriptArgs?: (ctx: SureHookContext) => string[];
 	/** Files or dirs under artifacts/ hashed together with produces (gate re-runs when any of them change). */

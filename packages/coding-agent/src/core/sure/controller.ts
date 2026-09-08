@@ -7,6 +7,7 @@ import {
 	type WorkflowCheckpoint,
 	type WorkflowDefinition,
 } from "@earendil-works/sure-core";
+import { createPiExecutionProvenanceHostForContext } from "./execution-provenance.ts";
 import { isSureWorkflowId, type SureWorkflowId, workflowDefinitionForSkill } from "./generated-workflows.ts";
 import { type SureGateResult, SureHookRunner } from "./hooks.ts";
 import type { SureHookContext, SureHookPoint, SureSkillPackage } from "./types.ts";
@@ -148,10 +149,29 @@ export class PiSureController {
 
 	async run(point: SureHookPoint, context: Omit<SureHookContext, "point">): Promise<SureGateResult> {
 		const coreEvent = translatePiEvent(point, context.event);
-		const result = await this.hookRunner.run(point, {
-			...context,
+		// The caller can construct a context object, but it cannot supply the
+		// provenance issuer.  The controller derives it from the host-owned run
+		// and generated package binding on every lifecycle entry.
+		const { executionProvenance: _callerProvenance, ...callerContext } = context;
+		const baseContext: Omit<SureHookContext, "point"> = {
+			...callerContext,
+			run: Object.freeze({ ...context.run }),
+			skill: Object.freeze({ ...context.skill }),
+		};
+		const forwarded: Omit<SureHookContext, "point"> = {
+			...baseContext,
 			event: withCoreEvent(context.event, coreEvent),
-		});
+		};
+		const host = createPiExecutionProvenanceHostForContext(baseContext);
+		if (host !== undefined) {
+			Object.defineProperty(forwarded, "executionProvenance", {
+				value: host,
+				enumerable: false,
+				writable: false,
+				configurable: false,
+			});
+		}
+		const result = await this.hookRunner.run(point, forwarded);
 		if (!this.definition || !this.skillId || result.state_patch === undefined) return result;
 
 		const statePath = join(context.runDir, "state.json");

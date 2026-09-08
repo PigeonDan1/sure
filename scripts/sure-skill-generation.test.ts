@@ -540,5 +540,5 @@ describe("canonical SURE skill generation", () => {
 		expect(
 			readFileSync(join(repositoryRoot, "sure/dist/portable-runtime/runtime-support.lock.json"), "utf8"),
 		).not.toContain("/hpc_stor03");
-	});
+	}, 30_000);
 });

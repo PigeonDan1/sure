@@ -404,6 +404,8 @@ function runGateScript(ctx: SureHookContext, unit: Unit, attempt: number): GateR
 			script_id: gateScript,
 			artifact_input_path: artifactPath(ctx, executionInputProducesFor(unit.id) ?? unit.produces),
 			artifact_output_path: produces,
+			request_operation: unit.executionRequestOperation,
+			script_args: [...extra],
 			execute,
 		});
 		if (!execution.ok) {

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
-import type { OperationExecutionEvidence } from "@earendil-works/sure-core";
+import type { ExecutionOperation, OperationExecutionEvidence } from "@earendil-works/sure-core";
 import {
 	advanceLegacyUnit,
 	bumpLegacyRetry,
@@ -84,7 +84,7 @@ export interface Unit {
 	/** Registered execution operation that produces or mutates this artifact. */
 	executionOperationId?: string;
 	/** Execution request domain retained for host-neutral adapters. */
-	executionRequestOperation?: string;
+	executionRequestOperation?: ExecutionOperation;
 	/** Semantic validator entrypoint when gateScript is an execution runner. */
 	validatorScriptId?: string;
 	/** Arguments for the independent semantic validator. */
