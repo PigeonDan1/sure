@@ -6856,8 +6856,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-host-provenance.test.ts",
-      "size_bytes": 48515,
-      "sha256": "23a5302f69b0082f919f8dd655d1264d981d25aac03436e8cf861d809971d792"
+      "size_bytes": 64800,
+      "sha256": "9d492df89f6edc6fb9007bfcb98c1080d9df71c6f95b772cc46a327744bfa7ad"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-operation-evidence.test.ts",
@@ -9781,5 +9781,5 @@
       ]
     }
   ],
-  "semantic_digest": "7130d4a5969e4426e668f683d7730e50cb441ecbc3027e4b8f1f57f7d173363f"
+  "semantic_digest": "b7ff3edabf1fbfef07af4809c75a509fb7e8d9e3abc472c5e5af49af1478c00f"
 }

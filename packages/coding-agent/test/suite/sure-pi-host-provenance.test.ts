@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { SureHookContext } from "@earendil-works/pi-coding-agent/hooks";
 import {
 	type CapabilityEvidence,
 	type CapabilityRequirement,
 	canonicalJsonDigest,
+	createPolicySnapshot,
 	type ExecutionProvenancePublisher,
 	type ExecutionRequest,
 	type ExecutionRequestDispatcher,
@@ -18,12 +19,20 @@ import {
 	type HarnessRequestDispatcherOptions,
 } from "../../../../sure/runtime/harness/backend-executor.ts";
 import { runPiRegisteredOperation } from "../../../../sure/runtime/harness/registered-operation.ts";
+import { resolveHarnessPython } from "../../../../sure/runtime/harness/resolve.ts";
+import {
+	PiSureController,
+	type PiSureControllerOptions,
+	type SureHookDispatcher,
+} from "../../src/core/sure/controller.ts";
 import {
 	createPiExecutionProvenanceHost,
 	createPiExecutionProvenanceHostForContext,
 	type PiExecutionProvenanceHost,
 	type PiExecutionProvenanceSession,
 } from "../../src/core/sure/execution-provenance.ts";
+import { createPiGeneratedLocalRequestDispatcherResolver } from "../../src/core/sure/generated-dispatcher.ts";
+import type { SureSkillPackage } from "../../src/core/sure/types.ts";
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../../..");
 const ENTRYPOINT = join(
@@ -38,6 +47,9 @@ const ENTRYPOINT = join(
 const REGISTRY = join(REPOSITORY_ROOT, "sure", "canonical", "shared", "evaluation", "backend-manifest.json");
 const GENERATED_PACKAGE = join(REPOSITORY_ROOT, "sure", "generated", "pi", "skills", "sure_onboard");
 const TEMP_ROOT = join(import.meta.dirname, "tmp-pi-host-provenance");
+// The runtime resolver derives the repository root from packageDir/../../../.
+// Keep this fixture under exactly that depth while still cleaning it after the test.
+const GENERATED_TEMP_ROOT = join(REPOSITORY_ROOT, ".sure-generated-test-fixtures");
 const DIGEST = `sha256:${"a".repeat(64)}`;
 const NOW = "2026-09-08T00:00:00.000Z";
 
@@ -159,6 +171,17 @@ function pathsFor(
 	const session = fx.sessions[index];
 	if (!session) throw new Error("host did not issue a session");
 	const root = join(fx.ctx.runDir, "artifacts", "execution", unitId, session.invocation_id);
+	return pathsAtRoot(root);
+}
+
+function pathsAtRoot(root: string): {
+	root: string;
+	request: string;
+	receipt: string;
+	admission: string;
+	contract: string;
+	immutable: string;
+} {
 	return {
 		root,
 		request: join(root, "execution_request.json"),
@@ -167,6 +190,17 @@ function pathsFor(
 		contract: join(root, "execution_contract.json"),
 		immutable: join(root, "execution_contracts"),
 	};
+}
+
+function controllerPaths(ctx: SureHookContext, unitId = "validate_import"): ReturnType<typeof pathsAtRoot> {
+	const unitRoot = join(ctx.runDir, "artifacts", "execution", unitId);
+	const invocations = readdirSync(unitRoot, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
+		.map((entry) => entry.name);
+	if (invocations.length !== 1) {
+		throw new Error(`expected one controller invocation under ${unitRoot}, found ${invocations.length}`);
+	}
+	return pathsAtRoot(join(unitRoot, invocations[0]!));
 }
 
 function paths(fx: HostFixture): ReturnType<typeof pathsFor> {
@@ -193,7 +227,10 @@ function readHistory(
 		contract: Record<string, any>;
 	};
 } {
-	const location = pathsFor(fx, index, unitId);
+	return readHistoryAt(pathsFor(fx, index, unitId));
+}
+
+function readHistoryAt(location: ReturnType<typeof pathsAtRoot>): ReturnType<typeof readHistory> {
 	const request = readJson(location.request);
 	const receipt = readJson(location.receipt);
 	const admission = readJson(location.admission);
@@ -226,7 +263,10 @@ function readPreflightHistory(
 		contract: Record<string, any>;
 	};
 } {
-	const location = pathsFor(fx, index, unitId);
+	return readPreflightHistoryAt(pathsFor(fx, index, unitId));
+}
+
+function readPreflightHistoryAt(location: ReturnType<typeof pathsAtRoot>): ReturnType<typeof readPreflightHistory> {
 	const request = readJson(location.request);
 	return {
 		request,
@@ -364,6 +404,19 @@ function assertPreflightHistory(fx: HostFixture, history: ReturnType<typeof read
 	).toBe(true);
 }
 
+function assertControllerPreflightHistory(
+	ctx: SureHookContext,
+	history: ReturnType<typeof readPreflightHistory>,
+): void {
+	const validation = validateExecutionContractHistory({ latest: history, immutable: history.immutable } as never, {
+		require_receipt: false,
+		require_admission: true,
+		require_contract_record: true,
+		allowed_output_roots: [ctx.runDir],
+	});
+	expect(validation.valid, validation.errors.join("; ")).toBe(true);
+}
+
 function semanticPreflightProjection(history: ReturnType<typeof readPreflightHistory>): Record<string, unknown> {
 	const project = (bundle: {
 		request: Record<string, any>;
@@ -402,11 +455,13 @@ function semanticPreflightProjection(history: ReturnType<typeof readPreflightHis
 }
 
 function generatedContext(name: string, mutate?: (files: Record<string, any>) => void): SureHookContext {
-	const root = join(TEMP_ROOT, name);
+	const root = join(GENERATED_TEMP_ROOT, name);
 	const packageDir = join(root, "sure_onboard");
 	const runDir = join(root, "run");
 	mkdirSync(packageDir, { recursive: true });
 	mkdirSync(join(runDir, "artifacts"), { recursive: true });
+	mkdirSync(join(packageDir, "scripts"), { recursive: true });
+	copyFileSync(join(GENERATED_PACKAGE, "scripts", "run_validate.py"), join(packageDir, "scripts", "run_validate.py"));
 	const files: Record<string, any> = {};
 	for (const file of [
 		"generation.lock.json",
@@ -421,31 +476,192 @@ function generatedContext(name: string, mutate?: (files: Record<string, any>) =>
 	mutate?.(files);
 	for (const file of Object.keys(files))
 		writeFileSync(join(packageDir, file), `${JSON.stringify(files[file])}\n`, "utf8");
-	const lock = files["generation.lock.json"];
+	const lock = files["generation.lock.json"] as Record<string, string>;
+	const policySnapshot = createPolicySnapshot({
+		site_id: "controller-test",
+		policy_version: 1,
+		policy: { execution: { surfaces: ["local"] } },
+		source: { kind: "test", raw_sha256: "a".repeat(64) },
+		path_bindings: [
+			{
+				root_id: "generated-package",
+				role: "read_only_reference",
+				path: resolve(GENERATED_PACKAGE),
+				resolved_path: resolve(GENERATED_PACKAGE),
+			},
+		],
+	});
+	const policySnapshotPath = join(runDir, "artifacts", "site_policy.resolved.json");
+	writeFileSync(policySnapshotPath, `${JSON.stringify(policySnapshot)}\n`, "utf8");
 	return {
 		point: "pre_start",
 		run: {
 			runId: name,
+			skillName: "sure_onboard",
 			command: "/sure_onboard",
 			status: "running",
+			cwd: REPOSITORY_ROOT,
+			packageDir,
 			runDir,
 			outputDir: runDir,
+			args: "",
+			startedAt: NOW,
+			updatedAt: NOW,
 			workflowDigest: lock.workflow_digest,
 			validatorDigest: lock.validator_registry_digest,
 			executorDigest: lock.executor_registry_digest,
 			coreVersion: lock.core_package_version,
-			policyDigest: DIGEST,
-		} as never,
-		skill: { name: "sure_onboard", command: "/sure_onboard" } as never,
+			policyDigest: policySnapshot.policy_digest,
+			policySnapshotDigest: policySnapshot.snapshot_digest,
+			policySnapshotPath,
+		},
+		skill: { name: "sure_onboard", command: "/sure_onboard", prompt: "test" },
 		cwd: REPOSITORY_ROOT,
 		packageDir,
 		runDir,
 		args: "",
 		repoRoot: REPOSITORY_ROOT,
+		event: { toolName: "bash", toolCallId: "controller-call" },
 	};
 }
 
-afterEach(() => rmSync(TEMP_ROOT, { recursive: true, force: true }));
+function generatedSkillPackage(ctx: SureHookContext): SureSkillPackage {
+	return {
+		manifest: { name: "sure_onboard", command: "/sure_onboard", prompt: "test" },
+		manifestPath: join(ctx.packageDir, "sure.skill.json"),
+		packageDir: ctx.packageDir,
+		promptPath: join(ctx.packageDir, "SKILL.md"),
+		prompt: "test",
+		source: "repository",
+		sourceRoot: REPOSITORY_ROOT,
+	};
+}
+
+function hookContextWithPoint(point: "post_tool_result", context: Record<string, unknown>): SureHookContext {
+	const value = Object.defineProperties({}, Object.getOwnPropertyDescriptors(context)) as SureHookContext;
+	Object.defineProperty(value, "point", {
+		value: point,
+		enumerable: true,
+		writable: false,
+		configurable: false,
+	});
+	return value;
+}
+
+interface ControllerOperationOptions {
+	ctx: SureHookContext;
+	artifactPath: string;
+	unitId?: string;
+	operationId?: string;
+	scriptArgs?: readonly string[];
+	hostOptions?: PiSureControllerOptions;
+	execute: () => { ok: boolean; stdout: string; stderr: string; status: number | null };
+}
+
+async function runControllerOperation(options: ControllerOperationOptions) {
+	let operationResult: ReturnType<typeof runPiRegisteredOperation> | undefined;
+	const hookDispatcher: SureHookDispatcher = {
+		run: async (point, context) => {
+			operationResult = runPiRegisteredOperation({
+				ctx: hookContextWithPoint(point as "post_tool_result", context as unknown as Record<string, unknown>),
+				unit_id: options.unitId ?? "validate_import",
+				attempt: 1,
+				operation_id: options.operationId ?? "sure.onboard.execute_import",
+				script_id: "run_validate.py",
+				artifact_input_path: options.artifactPath,
+				request_operation: "validation",
+				script_args: options.scriptArgs ?? ["--kind", "import"],
+				execute: options.execute,
+			});
+			return {
+				ok: operationResult.ok,
+				...(operationResult.stderr.trim() === "" ? {} : { message: operationResult.stderr }),
+				...(operationResult.ok ? {} : { repair: operationResult.stderr || "registered operation rejected" }),
+				...(operationResult.evidence === undefined ? {} : { diagnostics: operationResult.evidence }),
+			};
+		},
+	};
+	const controller = new PiSureController(generatedSkillPackage(options.ctx), hookDispatcher, options.hostOptions);
+	const { point: _point, ...context } = options.ctx;
+	const gate = await controller.run("post_tool_result", context);
+	if (operationResult === undefined) throw new Error("controller hook did not execute the registered operation");
+	return { gate, result: operationResult };
+}
+
+function generatedRuntime(ctx: SureHookContext) {
+	const runtime = resolveHarnessPython(ctx.packageDir, { activate: false });
+	if (!runtime.ok || runtime.contract === undefined) {
+		throw new Error(runtime.error ?? "generated controller test runtime is unavailable");
+	}
+	return {
+		ok: true,
+		contract: {
+			runtime_id: runtime.contract.runtime_id,
+			executable: runtime.contract.python_executable,
+			details: {
+				python_abi: runtime.contract.python_abi,
+				python_version: runtime.contract.python_version,
+				lock_sha256: runtime.contract.lock_sha256,
+			},
+		},
+	};
+}
+
+function controllerSemanticProjection(history: ReturnType<typeof readHistory>): Record<string, unknown> {
+	const volatileKeys = new Set([
+		"request_id",
+		"receipt_id",
+		"request_digest",
+		"receipt_digest",
+		"admission_digest",
+		"contract_digest",
+		"created_at",
+		"started_at",
+		"finished_at",
+		"observed_at",
+	]);
+	const normalize = (value: unknown, key?: string): unknown => {
+		if (key !== undefined && volatileKeys.has(key)) return `<${key}>`;
+		if (Array.isArray(value)) return value.map((item) => normalize(item));
+		if (typeof value !== "object" || value === null) return value;
+		return Object.fromEntries(
+			Object.entries(value).map(([entryKey, entryValue]) => [entryKey, normalize(entryValue, entryKey)]),
+		);
+	};
+	return normalize(semanticExecutionProjection(history)) as Record<string, unknown>;
+}
+
+function controllerEvidenceProjection(value: Record<string, any> | undefined): unknown {
+	if (value === undefined) return undefined;
+	const {
+		request_path: _requestPath,
+		request_digest: _requestDigest,
+		admission_path: _admissionPath,
+		admission_digest: _admissionDigest,
+		receipt_path: _receiptPath,
+		receipt_digest: _receiptDigest,
+		contract_path: _contractPath,
+		contract_digest: _contractDigest,
+		execution_history_digest: _historyDigest,
+		...semantic
+	} = value;
+	return semantic;
+}
+
+function assertControllerHistory(ctx: SureHookContext, history: ReturnType<typeof readHistory>): void {
+	const validation = validateExecutionContractHistory({ latest: history, immutable: history.immutable } as never, {
+		require_receipt: true,
+		require_admission: true,
+		require_contract_record: true,
+		allowed_output_roots: [ctx.runDir],
+	});
+	expect(validation.valid, validation.errors.join("; ")).toBe(true);
+}
+
+afterEach(() => {
+	rmSync(TEMP_ROOT, { recursive: true, force: true });
+	rmSync(GENERATED_TEMP_ROOT, { recursive: true, force: true });
+});
 
 describe("Pi host-issued registered operation provenance", () => {
 	it("publishes and rereads the request before callback execution, then produces a Core-valid history", () => {
@@ -1285,5 +1501,210 @@ describe("Pi host-issued registered operation provenance", () => {
 		expect(() =>
 			host?.issue({ unit_id: "load_model_input", attempt: 1, operation_id: "sure.onboard.execute_import" }),
 		).toThrow(/canonical definition digest/);
+	});
+
+	it("keeps controller opt-in callback and generated dispatcher products semantically equivalent", async () => {
+		const name = "generated-controller-differential";
+		const legacyContext = generatedContext(name);
+		const legacyArtifact = join(legacyContext.runDir, "artifacts", "import_result.json");
+		writeFileSync(legacyArtifact, '{"stage":"before"}\n', "utf8");
+		let legacyCallbackInvoked = 0;
+		const legacy = await runControllerOperation({
+			ctx: legacyContext,
+			artifactPath: legacyArtifact,
+			execute: () => {
+				legacyCallbackInvoked += 1;
+				writeFileSync(legacyArtifact, '{"stage":"after"}\n', "utf8");
+				return { ok: true, stdout: "validated", stderr: "", status: 0 };
+			},
+		});
+		const legacyHistory = readHistoryAt(controllerPaths(legacyContext));
+		assertControllerHistory(legacyContext, legacyHistory);
+
+		rmSync(join(GENERATED_TEMP_ROOT, name), { recursive: true, force: true });
+		const dispatchedContext = generatedContext(name);
+		const dispatchedArtifact = join(dispatchedContext.runDir, "artifacts", "import_result.json");
+		writeFileSync(dispatchedArtifact, '{"stage":"before"}\n', "utf8");
+		const runtime = generatedRuntime(dispatchedContext);
+		let dispatcherCallbackInvoked = 0;
+		let dispatcherExecuted = 0;
+		const hostOptions: PiSureControllerOptions = {
+			executionDispatcherForRequestForContext: (context) =>
+				createPiGeneratedLocalRequestDispatcherResolver(context, {
+					resolveRuntime: () => runtime,
+					executeBackend: ({ args }) => {
+						dispatcherExecuted += 1;
+						const producesIndex = args.indexOf("--produces");
+						const outputPath = producesIndex < 0 ? undefined : args[producesIndex + 1];
+						if (outputPath === undefined) {
+							return { ok: false, stdout: "", stderr: "dispatcher received no produces path", status: null };
+						}
+						writeFileSync(outputPath, '{"stage":"after"}\n', "utf8");
+						return { ok: true, stdout: "validated", stderr: "", status: 0 };
+					},
+				}),
+		};
+		const dispatched = await runControllerOperation({
+			ctx: dispatchedContext,
+			artifactPath: dispatchedArtifact,
+			hostOptions,
+			execute: () => {
+				dispatcherCallbackInvoked += 1;
+				return { ok: false, stdout: "callback must not run", stderr: "", status: 1 };
+			},
+		});
+		const dispatchedHistory = readHistoryAt(controllerPaths(dispatchedContext));
+		assertControllerHistory(dispatchedContext, dispatchedHistory);
+
+		expect(legacyCallbackInvoked).toBe(1);
+		expect(dispatcherCallbackInvoked).toBe(0);
+		expect(dispatcherExecuted).toBe(1);
+		expect(legacy.gate.ok).toBe(true);
+		expect(dispatched.gate.ok).toBe(true);
+		expect(legacy.result).toMatchObject({ ok: true, stdout: "validated", status: 0 });
+		expect(dispatched.result).toMatchObject({ ok: true, stdout: "validated", status: 0 });
+		expect(controllerSemanticProjection(dispatchedHistory)).toEqual(controllerSemanticProjection(legacyHistory));
+		expect(dispatchedHistory.request.semantic_request_digest).toBe(legacyHistory.request.semantic_request_digest);
+		expect(controllerEvidenceProjection(dispatched.result.evidence as Record<string, any> | undefined)).toEqual(
+			controllerEvidenceProjection(legacy.result.evidence as Record<string, any> | undefined),
+		);
+		expect(readFileSync(dispatchedArtifact, "utf8")).toBe(readFileSync(legacyArtifact, "utf8"));
+	});
+
+	it("keeps an unallowlisted controller operation on the legacy callback path", async () => {
+		const ctx = generatedContext("generated-controller-fallback");
+		const artifactPath = join(ctx.runDir, "artifacts", "import_result.json");
+		writeFileSync(artifactPath, '{"stage":"before"}\n', "utf8");
+		const runtime = generatedRuntime(ctx);
+		let callbackInvoked = 0;
+		let dispatcherExecuted = 0;
+		const result = await runControllerOperation({
+			ctx,
+			artifactPath,
+			hostOptions: {
+				executionDispatcherForRequestForContext: (context) =>
+					createPiGeneratedLocalRequestDispatcherResolver(context, {
+						resolveRuntime: () => runtime,
+						executeBackend: () => {
+							dispatcherExecuted += 1;
+							return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+						},
+					}),
+			},
+			unitId: "validate_load",
+			operationId: "sure.onboard.execute_load",
+			scriptArgs: ["--kind", "load"],
+			execute: () => {
+				callbackInvoked += 1;
+				writeFileSync(artifactPath, '{"stage":"callback"}\n', "utf8");
+				return { ok: true, stdout: "callback load", stderr: "", status: 0 };
+			},
+		});
+		const history = readHistoryAt(controllerPaths(ctx, "validate_load"));
+		assertControllerHistory(ctx, history);
+		expect(callbackInvoked).toBe(1);
+		expect(dispatcherExecuted).toBe(0);
+		expect(result.gate.ok).toBe(true);
+		expect(result.result).toMatchObject({ ok: true, stdout: "callback load", status: 0 });
+	});
+
+	it("rejects missing or tampered site snapshots and run binding before callback or executor", async () => {
+		const scenarios = [
+			{
+				name: "missing-snapshot",
+				mutate: (ctx: SureHookContext) => rmSync(ctx.run.policySnapshotPath!, { force: true }),
+			},
+			{
+				name: "tampered-snapshot",
+				mutate: (ctx: SureHookContext) => {
+					const path = ctx.run.policySnapshotPath!;
+					const snapshot = readJson(path);
+					writeFileSync(path, `${JSON.stringify({ ...snapshot, site_id: "tampered-site" })}\n`, "utf8");
+				},
+			},
+			{
+				name: "run-binding-drift",
+				mutate: (ctx: SureHookContext) => {
+					ctx.run.workflowDigest = DIGEST;
+				},
+			},
+		] as const;
+
+		for (const scenario of scenarios) {
+			const ctx = generatedContext(`generated-controller-${scenario.name}`);
+			const artifactPath = join(ctx.runDir, "artifacts", "import_result.json");
+			writeFileSync(artifactPath, '{"stage":"before"}\n', "utf8");
+			scenario.mutate(ctx);
+			const runtime = generatedRuntime(ctx);
+			let callbackInvoked = 0;
+			let dispatcherExecuted = 0;
+			const result = await runControllerOperation({
+				ctx,
+				artifactPath,
+				hostOptions: {
+					executionDispatcherForRequestForContext: (context) =>
+						createPiGeneratedLocalRequestDispatcherResolver(context, {
+							resolveRuntime: () => runtime,
+							executeBackend: () => {
+								dispatcherExecuted += 1;
+								return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+							},
+						}),
+				},
+				execute: () => {
+					callbackInvoked += 1;
+					return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+				},
+			});
+			expect(result.gate.ok, scenario.name).toBe(false);
+			expect(callbackInvoked, scenario.name).toBe(0);
+			expect(dispatcherExecuted, scenario.name).toBe(0);
+			expect(result.result.status, scenario.name).toBeNull();
+			expect(result.result.evidence, scenario.name).toMatchObject({
+				verdict: "NOT_EXECUTED",
+				reason_code: "INVALID_CONTRACT",
+			});
+		}
+	});
+
+	it("rejects a dispatcher runtime identity mismatch before callback or executor", async () => {
+		const ctx = generatedContext("generated-controller-runtime-drift");
+		const artifactPath = join(ctx.runDir, "artifacts", "import_result.json");
+		writeFileSync(artifactPath, '{"stage":"before"}\n', "utf8");
+		let callbackInvoked = 0;
+		let dispatcherExecuted = 0;
+		const result = await runControllerOperation({
+			ctx,
+			artifactPath,
+			hostOptions: {
+				executionDispatcherForRequestForContext: (context) =>
+					createPiGeneratedLocalRequestDispatcherResolver(context, {
+						resolveRuntime: () => ({
+							ok: true,
+							contract: {
+								runtime_id: "tampered-runtime",
+								executable: resolve(REPOSITORY_ROOT, "missing-runtime-python"),
+							},
+						}),
+						executeBackend: () => {
+							dispatcherExecuted += 1;
+							return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+						},
+					}),
+			},
+			execute: () => {
+				callbackInvoked += 1;
+				return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+			},
+		});
+		const location = controllerPaths(ctx);
+		const history = readPreflightHistoryAt(location);
+		assertControllerPreflightHistory(ctx, history);
+		expect(result.gate.ok).toBe(false);
+		expect(callbackInvoked).toBe(0);
+		expect(dispatcherExecuted).toBe(0);
+		expect(result.result.status).toBeNull();
+		expect(result.result.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		expect(existsSync(location.receipt)).toBe(false);
 	});
 });
