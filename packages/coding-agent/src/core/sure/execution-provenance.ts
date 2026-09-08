@@ -31,6 +31,13 @@ export interface PiExecutionProvenancePublisher {
 	publisher: ExecutionProvenancePublisher;
 }
 
+/** Host-only startup metadata; it is deliberately outside Core request/receipt contracts. */
+export interface PiHostConfigurationProvenance {
+	readonly schema: "sure.pi.host-configuration.v1";
+	readonly configuration_id: string;
+	readonly configuration_digest: string;
+}
+
 /**
  * The binding carried by a host-issued Pi session.  It is deliberately more
  * complete than the legacy operation evidence: a request cannot be created
@@ -64,6 +71,7 @@ export interface PiExecutionProvenanceSession extends PiExecutionProvenanceBindi
 	readonly artifacts_root: string;
 	readonly artifacts_resolved_root: string;
 	readonly python_executable?: string;
+	readonly host_configuration?: PiHostConfigurationProvenance;
 	readonly publisher: ExecutionProvenancePublisher;
 	readonly execution_dispatcher?: ExecutionRequestDispatcher;
 	readonly execution_dispatcher_for_request?: (request: ExecutionRequest) => ExecutionRequestDispatcher | undefined;
@@ -91,6 +99,7 @@ export interface PiExecutionProvenanceHostOptions {
 	branch_id?: string;
 	forbidden_output_roots?: readonly string[];
 	python_executable?: string;
+	host_configuration?: PiHostConfigurationProvenance;
 	executor?: ExecutorIdentity;
 	now?: () => string;
 	new_id?: () => string;
@@ -103,6 +112,7 @@ export interface PiExecutionProvenanceHostOptions {
 export interface PiExecutionProvenanceContextOptions {
 	readonly execution_dispatcher?: ExecutionRequestDispatcher;
 	readonly execution_dispatcher_for_request?: (request: ExecutionRequest) => ExecutionRequestDispatcher | undefined;
+	readonly host_configuration?: PiHostConfigurationProvenance;
 }
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
@@ -153,6 +163,19 @@ function assertExecutorIdentity(value: unknown): asserts value is ExecutorIdenti
 	}
 	if (typeof value.digest !== "string" || !validDigest(value.digest)) {
 		throw new Error("Pi execution provenance executor digest is invalid");
+	}
+}
+
+function assertHostConfiguration(value: unknown): asserts value is PiHostConfigurationProvenance {
+	if (!isRecord(value) || value.schema !== "sure.pi.host-configuration.v1") {
+		throw new Error("Pi execution provenance host configuration schema is invalid");
+	}
+	if (typeof value.configuration_id !== "string") {
+		throw new Error("Pi execution provenance host configuration id is invalid");
+	}
+	safeId(value.configuration_id, "host_configuration.configuration_id");
+	if (typeof value.configuration_digest !== "string" || !validDigest(value.configuration_digest)) {
+		throw new Error("Pi execution provenance host configuration digest is invalid");
 	}
 }
 
@@ -240,6 +263,15 @@ export function createPiExecutionProvenanceHost(options: PiExecutionProvenanceHo
 	const forbiddenRoots = uniqueAbsolute(options.forbidden_output_roots ?? []);
 	const executor = options.executor ?? defaultExecutor(options.executor_registry_digest, options.core_package_version);
 	assertExecutorIdentity(executor);
+	if (options.host_configuration !== undefined) assertHostConfiguration(options.host_configuration);
+	const hostConfiguration =
+		options.host_configuration === undefined
+			? undefined
+			: Object.freeze({
+					schema: options.host_configuration.schema,
+					configuration_id: options.host_configuration.configuration_id,
+					configuration_digest: options.host_configuration.configuration_digest,
+				});
 	if (options.run.outputDir !== undefined && !isAbsolute(options.run.outputDir)) {
 		throw new Error("Pi execution provenance outputDir must be absolute");
 	}
@@ -311,6 +343,7 @@ export function createPiExecutionProvenanceHost(options: PiExecutionProvenanceHo
 				artifacts_resolved_root: artifactsResolvedRoot,
 				publisher,
 				...(options.python_executable === undefined ? {} : { python_executable: options.python_executable }),
+				...(hostConfiguration === undefined ? {} : { host_configuration: hostConfiguration }),
 				...(options.execution_dispatcher === undefined
 					? {}
 					: { execution_dispatcher: Object.freeze(options.execution_dispatcher) }),
@@ -573,6 +606,9 @@ export function createPiExecutionProvenanceHostForContext(
 				? {}
 				: { policy_snapshot_digest: snapshot.policy_snapshot_digest }),
 			forbidden_output_roots: snapshot.forbidden_output_roots,
+			...(contextOptions.host_configuration === undefined
+				? {}
+				: { host_configuration: contextOptions.host_configuration }),
 			...(contextOptions.execution_dispatcher === undefined
 				? {}
 				: { execution_dispatcher: contextOptions.execution_dispatcher }),

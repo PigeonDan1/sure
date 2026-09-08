@@ -9,7 +9,7 @@ import {
 	type NodeRequestDispatcherBackendOptions,
 	type NodeRequestDispatcherOptions,
 } from "@earendil-works/sure-core/node";
-import { verifyPiGeneratedPackageBinding } from "./execution-provenance.ts";
+import { type PiHostConfigurationProvenance, verifyPiGeneratedPackageBinding } from "./execution-provenance.ts";
 import type { SureHookContext } from "./types.ts";
 
 export interface PiGeneratedDispatcherOptions {
@@ -50,6 +50,7 @@ export interface PiGeneratedDispatcherOptInBinding {
 	readonly schema: "sure.pi.generated-dispatcher.opt-in.v1";
 	readonly configuration_id: string;
 	readonly configuration_digest: string;
+	readonly configuration_provenance: PiHostConfigurationProvenance;
 	readonly operation_ids: readonly string[];
 	readonly resolverForContext: (context: Omit<SureHookContext, "point">) => PiGeneratedDispatcherResolver;
 }
@@ -92,10 +93,16 @@ export function createPiGeneratedDispatcherOptIn(
 		enabled: true,
 		operation_ids: operationIds,
 	} as unknown as JsonValue);
+	const configurationProvenance: PiHostConfigurationProvenance = Object.freeze({
+		schema: "sure.pi.host-configuration.v1",
+		configuration_id: configurationId,
+		configuration_digest: configurationDigest,
+	});
 	const binding: PiGeneratedDispatcherOptInBinding = {
 		schema: "sure.pi.generated-dispatcher.opt-in.v1",
 		configuration_id: configurationId,
 		configuration_digest: configurationDigest,
+		configuration_provenance: configurationProvenance,
 		operation_ids: Object.freeze(operationIds),
 		resolverForContext(context) {
 			return createPiGeneratedLocalRequestDispatcherResolver(context, {

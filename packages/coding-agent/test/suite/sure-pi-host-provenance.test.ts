@@ -31,7 +31,10 @@ import {
 	type PiExecutionProvenanceHost,
 	type PiExecutionProvenanceSession,
 } from "../../src/core/sure/execution-provenance.ts";
-import { createPiGeneratedLocalRequestDispatcherResolver } from "../../src/core/sure/generated-dispatcher.ts";
+import {
+	createPiGeneratedDispatcherOptIn,
+	createPiGeneratedLocalRequestDispatcherResolver,
+} from "../../src/core/sure/generated-dispatcher.ts";
 import type { SureSkillPackage } from "../../src/core/sure/types.ts";
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "../../../..");
@@ -586,6 +589,29 @@ async function runControllerOperation(options: ControllerOperationOptions) {
 	const gate = await controller.run("post_tool_result", context);
 	if (operationResult === undefined) throw new Error("controller hook did not execute the registered operation");
 	return { gate, result: operationResult };
+}
+
+async function runControllerLifecycleProbe(
+	ctx: SureHookContext,
+	hostOptions: PiSureControllerOptions,
+): Promise<{ gate: { ok: boolean }; session: PiExecutionProvenanceSession }> {
+	let session: PiExecutionProvenanceSession | undefined;
+	const hookDispatcher: SureHookDispatcher = {
+		run: async (_point, context) => {
+			if (context.executionProvenance === undefined) throw new Error("controller did not issue provenance host");
+			session = context.executionProvenance.issue({
+				unit_id: "configuration_probe",
+				attempt: 1,
+				operation_id: "sure.onboard.execute_import",
+			}) as PiExecutionProvenanceSession;
+			return { ok: true };
+		},
+	};
+	const controller = new PiSureController(generatedSkillPackage(ctx), hookDispatcher, hostOptions);
+	const { point: _point, ...context } = ctx;
+	const gate = await controller.run("pre_start", context);
+	if (session === undefined) throw new Error("controller lifecycle probe did not issue a session");
+	return { gate, session };
 }
 
 function generatedRuntime(ctx: SureHookContext) {
@@ -1492,6 +1518,88 @@ describe("Pi host-issued registered operation provenance", () => {
 		expect(session.execution_dispatcher).toBe(dispatcher);
 	});
 
+	it("carries explicit configuration provenance across lifecycle and keeps legacy sessions unannotated", async () => {
+		const ctx = generatedContext("generated-controller-configuration");
+		const runtime = generatedRuntime(ctx);
+		const binding = createPiGeneratedDispatcherOptIn({
+			enabled: true,
+			configuration_id: "lifecycle-import",
+			operation_ids: ["sure.onboard.execute_import"],
+			resolveRuntime: () => runtime,
+			executeBackend: () => ({ ok: true, stdout: "unused", stderr: "", status: 0 }),
+		});
+		if (binding === undefined) throw new Error("expected explicit generated dispatcher binding");
+		const hostOptions: PiSureControllerOptions = {
+			executionDispatcherForRequestForContext: (context) => binding.resolverForContext(context),
+			executionConfigurationForContext: () => binding.configuration_provenance,
+		};
+		const first = await runControllerLifecycleProbe(ctx, hostOptions);
+		const second = await runControllerLifecycleProbe(ctx, hostOptions);
+		const legacy = await runControllerLifecycleProbe(generatedContext("generated-controller-legacy"), {});
+
+		expect(first.gate.ok).toBe(true);
+		expect(second.gate.ok).toBe(true);
+		expect(first.session.host_configuration).toEqual(binding.configuration_provenance);
+		expect(second.session.host_configuration).toEqual(binding.configuration_provenance);
+		expect(first.session.host_configuration?.configuration_digest).toBe(
+			second.session.host_configuration?.configuration_digest,
+		);
+		expect(legacy.gate.ok).toBe(true);
+		expect(legacy.session.host_configuration).toBeUndefined();
+
+		const drift = createPiGeneratedDispatcherOptIn({
+			enabled: true,
+			configuration_id: "lifecycle-import-drift",
+			operation_ids: ["sure.onboard.execute_import"],
+			resolveRuntime: () => runtime,
+			executeBackend: () => ({ ok: true, stdout: "unused", stderr: "", status: 0 }),
+		});
+		expect(drift?.configuration_provenance.configuration_digest).not.toBe(
+			binding.configuration_provenance.configuration_digest,
+		);
+	});
+
+	it("rejects malformed host configuration metadata before issuing a session", () => {
+		const ctx = generatedContext("generated-controller-invalid-configuration");
+		const cases = [
+			{
+				name: "schema",
+				value: {
+					schema: "tampered.schema",
+					configuration_id: "valid-id",
+					configuration_digest: DIGEST,
+				},
+			},
+			{
+				name: "id",
+				value: {
+					schema: "sure.pi.host-configuration.v1",
+					configuration_id: "../unsafe",
+					configuration_digest: DIGEST,
+				},
+			},
+			{
+				name: "digest",
+				value: {
+					schema: "sure.pi.host-configuration.v1",
+					configuration_id: "valid-id",
+					configuration_digest: "sha256:tampered",
+				},
+			},
+		] as const;
+		for (const scenario of cases) {
+			const host = createPiExecutionProvenanceHostForContext(ctx as Omit<SureHookContext, "point">, {
+				host_configuration: scenario.value as never,
+			});
+			expect(host, scenario.name).toBeDefined();
+			expect(
+				() =>
+					host?.issue({ unit_id: "configuration_probe", attempt: 1, operation_id: "sure.onboard.execute_import" }),
+				scenario.name,
+			).toThrow(/host[_ ]configuration/);
+		}
+	});
+
 	it("rejects a generated package whose canonical definition was changed beside the lock", () => {
 		const ctx = generatedContext("generated-definition-drift", (files) => {
 			files["canonical-definition.json"].description = "agent supplied definition";
@@ -1528,21 +1636,26 @@ describe("Pi host-issued registered operation provenance", () => {
 		const runtime = generatedRuntime(dispatchedContext);
 		let dispatcherCallbackInvoked = 0;
 		let dispatcherExecuted = 0;
+		const binding = createPiGeneratedDispatcherOptIn({
+			enabled: true,
+			configuration_id: "differential-import",
+			operation_ids: ["sure.onboard.execute_import"],
+			resolveRuntime: () => runtime,
+			executeBackend: ({ args }) => {
+				dispatcherExecuted += 1;
+				const producesIndex = args.indexOf("--produces");
+				const outputPath = producesIndex < 0 ? undefined : args[producesIndex + 1];
+				if (outputPath === undefined) {
+					return { ok: false, stdout: "", stderr: "dispatcher received no produces path", status: null };
+				}
+				writeFileSync(outputPath, '{"stage":"after"}\n', "utf8");
+				return { ok: true, stdout: "validated", stderr: "", status: 0 };
+			},
+		});
+		if (binding === undefined) throw new Error("expected explicit generated dispatcher binding");
 		const hostOptions: PiSureControllerOptions = {
-			executionDispatcherForRequestForContext: (context) =>
-				createPiGeneratedLocalRequestDispatcherResolver(context, {
-					resolveRuntime: () => runtime,
-					executeBackend: ({ args }) => {
-						dispatcherExecuted += 1;
-						const producesIndex = args.indexOf("--produces");
-						const outputPath = producesIndex < 0 ? undefined : args[producesIndex + 1];
-						if (outputPath === undefined) {
-							return { ok: false, stdout: "", stderr: "dispatcher received no produces path", status: null };
-						}
-						writeFileSync(outputPath, '{"stage":"after"}\n', "utf8");
-						return { ok: true, stdout: "validated", stderr: "", status: 0 };
-					},
-				}),
+			executionDispatcherForRequestForContext: (context) => binding.resolverForContext(context),
+			executionConfigurationForContext: () => binding.configuration_provenance,
 		};
 		const dispatched = await runControllerOperation({
 			ctx: dispatchedContext,

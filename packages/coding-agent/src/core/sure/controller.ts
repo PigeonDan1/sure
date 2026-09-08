@@ -12,6 +12,7 @@ import {
 import {
 	createPiExecutionProvenanceHostForContext,
 	type PiExecutionProvenanceContextOptions,
+	type PiHostConfigurationProvenance,
 } from "./execution-provenance.ts";
 import { isSureWorkflowId, type SureWorkflowId, workflowDefinitionForSkill } from "./generated-workflows.ts";
 import { type SureGateResult, SureHookRunner } from "./hooks.ts";
@@ -34,6 +35,9 @@ export interface SureHookDispatcher {
 
 /** Host-only extensions; omitted callers retain the legacy cooperative path. */
 export interface PiSureControllerOptions {
+	readonly executionConfigurationForContext?: (
+		context: Omit<SureHookContext, "point">,
+	) => PiHostConfigurationProvenance | undefined;
 	readonly executionDispatcherForContext?: (
 		context: Omit<SureHookContext, "point">,
 	) => ExecutionRequestDispatcher | undefined;
@@ -185,7 +189,9 @@ export class PiSureController {
 		};
 		const executionDispatcher = this.hostOptions.executionDispatcherForContext?.(baseContext);
 		const executionDispatcherForRequest = this.hostOptions.executionDispatcherForRequestForContext?.(baseContext);
+		const executionConfiguration = this.hostOptions.executionConfigurationForContext?.(baseContext);
 		const provenanceOptions: PiExecutionProvenanceContextOptions = {
+			...(executionConfiguration === undefined ? {} : { host_configuration: executionConfiguration }),
 			...(executionDispatcher === undefined ? {} : { execution_dispatcher: executionDispatcher }),
 			...(executionDispatcherForRequest === undefined
 				? {}

@@ -104,9 +104,14 @@ describe("verified generated Pi dispatcher resolver", () => {
 		expect(binding).toMatchObject({
 			schema: "sure.pi.generated-dispatcher.opt-in.v1",
 			configuration_id: "test-import",
+			configuration_provenance: {
+				schema: "sure.pi.host-configuration.v1",
+				configuration_id: "test-import",
+			},
 			operation_ids: ["sure.onboard.execute_import"],
 		});
 		expect(binding?.configuration_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(binding?.configuration_provenance.configuration_digest).toBe(binding?.configuration_digest);
 		expect(equivalent?.configuration_digest).toBe(binding?.configuration_digest);
 		if (binding === undefined) throw new Error("expected explicit opt-in binding");
 		const resolver = binding.resolverForContext(ctx);

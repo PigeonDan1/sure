@@ -20,6 +20,7 @@ export {
 	type PiExecutionProvenancePublisherOptions,
 	type PiExecutionProvenanceSession,
 	type PiGenerationBinding,
+	type PiHostConfigurationProvenance,
 	verifyPiGeneratedPackageBinding,
 } from "./execution-provenance.ts";
 export { createSureExtension, sureExtension } from "./extension.ts";

@@ -6636,8 +6636,8 @@
   "source_files": [
     {
       "path": "packages/coding-agent/src/core/sure/controller.ts",
-      "size_bytes": 8736,
-      "sha256": "7e1755912a9da8b44aec430782b317eb3a24f82bef31ca3bfe05ee533ca579cc"
+      "size_bytes": 9111,
+      "sha256": "1e19af8de3543a3ee129ca2603a08f808f847d3fef8f41f8e9964fb868633c1e"
     },
     {
       "path": "packages/coding-agent/src/core/sure/core-run-store.ts",
@@ -6646,8 +6646,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/execution-provenance.ts",
-      "size_bytes": 25014,
-      "sha256": "0724ba6530dabe0dc546bb6ab7811adbd789de0d73fc1ec94dfa3088d383d9e8"
+      "size_bytes": 26746,
+      "sha256": "e25e7605593a159136766018998d45da5ec2930f7e93a88f350204064baeaa03"
     },
     {
       "path": "packages/coding-agent/src/core/sure/extension.ts",
@@ -6656,8 +6656,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-dispatcher.ts",
-      "size_bytes": 12886,
-      "sha256": "233d7c3490b8535491926ca8ed318d426e09d74d48ab9a3e09381b55fa34831a"
+      "size_bytes": 13252,
+      "sha256": "592fc05d9780e85fd53cd173098a5ea933ad2aa82f7abb595883407b8ad94954"
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
@@ -6676,8 +6676,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/index.ts",
-      "size_bytes": 1515,
-      "sha256": "6143b3fd310d125d5bf218820ba87ec1e706a35e9d65773261f08c65126f09a2"
+      "size_bytes": 1552,
+      "sha256": "9422a6f1816cae155474c2d19902aba3975bf03b31a21128ddc20847933c1c0f"
     },
     {
       "path": "packages/coding-agent/src/core/sure/init-apply.ts",
@@ -6856,8 +6856,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-host-provenance.test.ts",
-      "size_bytes": 64800,
-      "sha256": "9d492df89f6edc6fb9007bfcb98c1080d9df71c6f95b772cc46a327744bfa7ad"
+      "size_bytes": 69230,
+      "sha256": "3eb0276e4e27202d7738f60852c280ddfba52c7417a9c7fa2a107fb85bee96d0"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-operation-evidence.test.ts",
@@ -9781,5 +9781,5 @@
       ]
     }
   ],
-  "semantic_digest": "8c677bf6287784dd5495344f20fd0f517f932e091df603a4f13f22e4f7bfa469"
+  "semantic_digest": "52ea404810b96af29c380d1336256577d08d1d0f52c7af65f1f8a934ed89e2d0"
 }
