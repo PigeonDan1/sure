@@ -12,6 +12,7 @@ import {
 	validateExecutionContractHistory,
 } from "@earendil-works/sure-core";
 import { afterEach, describe, expect, it } from "vitest";
+import { createHarnessRequestDispatcher } from "../../../../sure/runtime/harness/backend-executor.ts";
 import { runPiRegisteredOperation } from "../../../../sure/runtime/harness/registered-operation.ts";
 import {
 	createPiExecutionProvenanceHost,
@@ -162,6 +163,98 @@ function readJson(path: string): Record<string, any> {
 	return JSON.parse(readFileSync(path, "utf8")) as Record<string, any>;
 }
 
+function readHistory(fx: HostFixture): {
+	request: Record<string, any>;
+	receipt: Record<string, any>;
+	admission: Record<string, any>;
+	contract: Record<string, any>;
+	immutable: {
+		request: Record<string, any>;
+		receipt: Record<string, any>;
+		admission: Record<string, any>;
+		contract: Record<string, any>;
+	};
+} {
+	const location = paths(fx);
+	const request = readJson(location.request);
+	const receipt = readJson(location.receipt);
+	const admission = readJson(location.admission);
+	const contract = readJson(location.contract);
+	return {
+		request,
+		receipt,
+		admission,
+		contract,
+		immutable: {
+			request: readJson(join(location.immutable, `${request.request_id}.request.json`)),
+			receipt: readJson(join(location.immutable, `${request.request_id}.receipt.json`)),
+			admission: readJson(join(location.immutable, `${request.request_id}.admission.json`)),
+			contract: readJson(join(location.immutable, `${request.request_id}.contract.json`)),
+		},
+	};
+}
+
+function semanticExecutionProjection(history: ReturnType<typeof readHistory>): Record<string, unknown> {
+	const project = (bundle: {
+		request: Record<string, any>;
+		receipt: Record<string, any>;
+		admission: Record<string, any>;
+		contract: Record<string, any>;
+	}) => ({
+		request: bundle.request,
+		receipt: {
+			schema: bundle.receipt.schema,
+			receipt_id: bundle.receipt.receipt_id,
+			request_id: bundle.receipt.request_id,
+			request_digest: bundle.receipt.request_digest,
+			semantic_request_digest: bundle.receipt.semantic_request_digest,
+			run_id: bundle.receipt.run_id,
+			unit_id: bundle.receipt.unit_id,
+			attempt: bundle.receipt.attempt,
+			executor: bundle.receipt.executor,
+			lifecycle: bundle.receipt.lifecycle,
+			exit_code: bundle.receipt.exit_code,
+			outputs: bundle.receipt.outputs,
+			output_contract_digest: bundle.receipt.output_contract_digest,
+			output_set_digest: bundle.receipt.output_set_digest,
+			capability_statuses: (bundle.receipt.capability_evidence ?? []).map((item: Record<string, any>) => ({
+				capability_id: item.capability_id,
+				capability_class: item.capability_class,
+				status: item.status,
+			})),
+		},
+		admission: {
+			schema: bundle.admission.schema,
+			request_digest: bundle.admission.request_digest,
+			request_id: bundle.admission.request_id,
+			status: bundle.admission.status,
+			reason_code: bundle.admission.reason_code,
+			probe_invoked: bundle.admission.probe_invoked,
+			execute_invoked: bundle.admission.execute_invoked,
+			receipt_present: bundle.admission.receipt_present,
+			receipt_valid: bundle.admission.receipt_valid,
+		},
+		contract: {
+			schema: bundle.contract.schema,
+			version: bundle.contract.version,
+			contract_valid: bundle.contract.contract_valid,
+			admission_instrumentation: bundle.contract.admission_instrumentation,
+			lifecycle: bundle.contract.lifecycle,
+			diagnostics: bundle.contract.diagnostics,
+			legacy_views: bundle.contract.legacy_views,
+		},
+	});
+	return {
+		latest: project(history),
+		immutable: project({
+			request: history.immutable.request,
+			receipt: history.immutable.receipt,
+			admission: history.immutable.admission,
+			contract: history.immutable.contract,
+		}),
+	};
+}
+
 function generatedContext(name: string, mutate?: (files: Record<string, any>) => void): SureHookContext {
 	const root = join(TEMP_ROOT, name);
 	const packageDir = join(root, "sure_onboard");
@@ -259,6 +352,92 @@ describe("Pi host-issued registered operation provenance", () => {
 		);
 		expect(result.evidence?.receipt_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(result.evidence?.execution_history_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+	});
+
+	it("keeps legacy callback and allowlisted dispatcher products semantically equivalent", () => {
+		const name = "dispatcher-differential";
+		const legacy = fixture(name);
+		const legacyResult = operation(legacy, () => {
+			writeFileSync(legacy.artifactPath, '{"stage":"after"}\n', "utf8");
+			return { ok: true, stdout: "validated", stderr: "", status: 0 };
+		});
+		const legacyHistory = readHistory(legacy);
+		const legacyValidation = validateExecutionContractHistory(
+			{ latest: legacyHistory, immutable: legacyHistory.immutable } as never,
+			{
+				require_receipt: true,
+				require_admission: true,
+				require_contract_record: true,
+				allowed_output_roots: [legacy.ctx.runDir],
+			},
+		);
+		expect(legacyValidation.valid).toBe(true);
+
+		// Recreate the exact run root so the host allocator starts from the same
+		// deterministic IDs and the request bytes can be compared directly.
+		rmSync(join(TEMP_ROOT, name), { recursive: true, force: true });
+		const root = join(TEMP_ROOT, name);
+		const packageDir = join(root, "sure_onboard");
+		const runDir = join(root, "run");
+		const dispatcher = createHarnessRequestDispatcher({
+			ctx: { packageDir, runDir },
+			allowedOperations: new Map([["sure.onboard.execute_import", "run_validate.py"]]),
+			timeoutMs: 3_600_000,
+			resolveRuntime: () => ({
+				ok: true,
+				contract: {
+					runtime_id: "runtime-differential",
+					python_executable: process.execPath,
+					python_abi: "test",
+					python_version: "test",
+					lock_sha256: DIGEST,
+					harness_version: "test",
+					manifest_path: join(packageDir, "runtime-manifest.json"),
+					runtime_root: packageDir,
+				},
+			}),
+			now: () => NOW,
+			executeBackend: ({ args }) => {
+				const producesIndex = args.indexOf("--produces");
+				const outputPath = args[producesIndex + 1];
+				if (producesIndex < 0 || outputPath === undefined) {
+					return { ok: false, stdout: "", stderr: "dispatcher received no produces path", status: null };
+				}
+				writeFileSync(outputPath, '{"stage":"after"}\n', "utf8");
+				return { ok: true, stdout: "validated", stderr: "", status: 0 };
+			},
+		});
+		const dispatched = fixture(name, undefined, undefined, dispatcher);
+		let callbackInvoked = false;
+		const dispatcherResult = operation(dispatched, () => {
+			callbackInvoked = true;
+			return { ok: false, stdout: "callback must not run", stderr: "", status: 1 };
+		});
+		const dispatcherHistory = readHistory(dispatched);
+		const dispatcherValidation = validateExecutionContractHistory(
+			{ latest: dispatcherHistory, immutable: dispatcherHistory.immutable } as never,
+			{
+				require_receipt: true,
+				require_admission: true,
+				require_contract_record: true,
+				allowed_output_roots: [dispatched.ctx.runDir],
+			},
+		);
+
+		expect(callbackInvoked).toBe(false);
+		expect(dispatcherResult).toMatchObject({ ok: true, stdout: "validated", stderr: "", status: 0 });
+		expect(legacyResult).toMatchObject({ ok: true, stdout: "validated", stderr: "", status: 0 });
+		expect(dispatcherValidation.valid).toBe(true);
+		expect(semanticExecutionProjection(dispatcherHistory)).toEqual(semanticExecutionProjection(legacyHistory));
+		expect(dispatcherResult.evidence).toMatchObject({
+			verdict: legacyResult.evidence?.verdict,
+			reason_code: legacyResult.evidence?.reason_code,
+			artifact_input_digest: legacyResult.evidence?.artifact_input_digest,
+			artifact_output_digest: legacyResult.evidence?.artifact_output_digest,
+			unit_id: legacyResult.evidence?.unit_id,
+			attempt: legacyResult.evidence?.attempt,
+		});
+		expect(dispatcherResult.evidence?.request_digest).toBe(legacyResult.evidence?.request_digest);
 	});
 
 	it("uses a host-issued request dispatcher without invoking the skill callback", () => {
