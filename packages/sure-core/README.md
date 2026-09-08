@@ -15,6 +15,13 @@ trust levels without claiming that an adapter is installed. Deployments inject
 or trusted executor therefore remains unavailable instead of falling back to a
 local process.
 
+The `@earendil-works/sure-core/evaluation` entry point exposes
+`createRegisteredOperationRequest`, the canonical request planner shared by
+portable and Pi hosts. `createBoundExecutionReceipt` copies the immutable
+request bindings into executor receipts. Hosts still allocate ids and time,
+admit paths, execute processes, and provide capability evidence; neither
+constructor grants executor trust or workflow advancement.
+
 `ExecutionProvenancePublisher` owns the two-phase request/completion publication
 protocol and revalidates the persisted latest/immutable history. A deployment
 injects its storage port; the shared Node adapter supplies durable filesystem

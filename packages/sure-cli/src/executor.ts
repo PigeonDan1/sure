@@ -17,6 +17,7 @@ import type {
 } from "@earendil-works/sure-core";
 import {
 	canonicalJsonDigest,
+	createBoundExecutionReceipt,
 	createExecutionAdmissionTrace,
 	createOutcome,
 	dockerImageDigest,
@@ -25,7 +26,6 @@ import {
 	type ExecutionRequestValidation,
 	evaluateCapabilityRequirements,
 	evaluatePathBoundary,
-	executionOutputContractDigest,
 	executionOutputSetDigest,
 	executorDescriptor,
 	inspectExecutionArtifact,
@@ -571,40 +571,14 @@ function baseReceipt(
 	startedAt: string,
 	finishedAt: string,
 ): ExecutionReceipt {
-	const outputContract = request.output_contract;
-	return {
-		schema: "sure.execution_receipt.v1",
+	return createBoundExecutionReceipt(request, {
 		receipt_id: options.receipt_id ?? `receipt-${randomUUID().slice(0, 12)}`,
-		request_id: request.request_id,
-		request_digest: canonicalJsonDigest(request as unknown as JsonValue),
-		semantic_request_digest: request.semantic_request_digest,
-		run_id: request.run_id,
-		unit_id: request.unit_id,
-		attempt: request.attempt,
 		executor: executorIdentity(options),
 		lifecycle,
 		capability_evidence: evidence,
-		outputs: [],
-		...(request.input_binding === undefined ? {} : { input_binding_digest: request.input_binding.binding_digest }),
-		reference_snapshot_digest: request.reference_snapshot_digest,
-		output_root: request.output_root,
-		policy_digest: request.policy_digest,
-		...(request.policy_snapshot_digest === undefined
-			? {}
-			: { policy_snapshot_digest: request.policy_snapshot_digest }),
-		...(request.adapter_manifest_digest === undefined
-			? {}
-			: { adapter_manifest_digest: request.adapter_manifest_digest }),
 		started_at: startedAt,
 		finished_at: finishedAt,
-		...(outputContract === undefined
-			? {}
-			: {
-					output_contract_digest: executionOutputContractDigest(outputContract),
-					output_set_digest: executionOutputSetDigest([], []),
-					residuals: [],
-				}),
-	};
+	});
 }
 
 function contractOutputDefinitions(

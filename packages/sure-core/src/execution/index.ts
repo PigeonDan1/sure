@@ -10,5 +10,6 @@ export * from "./input-contract.ts";
 export * from "./output-contract.ts";
 export * from "./provenance.ts";
 export * from "./receipt.ts";
+export * from "./receipt-builder.ts";
 export * from "./registry.ts";
 export * from "./types.ts";
