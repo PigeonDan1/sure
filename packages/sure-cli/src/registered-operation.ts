@@ -10,10 +10,12 @@ import type {
 	ExecutionInputBinding,
 	ExecutionInputBindingResolver,
 	ExecutionOperation,
+	ExecutionProvenancePublisher,
 	ExecutionReceipt,
 	ExecutionRequest,
 	JsonValue,
 	OperationExecutionEvidence,
+	PublishedExecutionProvenance,
 } from "@earendil-works/sure-core";
 import {
 	bindExecutionInputs,
@@ -25,11 +27,7 @@ import {
 } from "@earendil-works/sure-core";
 import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
 import { type ExecutorRunResult, executeRequest, projectSurectlExecutionEvidence } from "./executor.ts";
-import {
-	type PersistedValidatorDocument,
-	type SkillRuntimeBinding,
-	semanticRuntimeEnvironment,
-} from "./registered-validator.ts";
+import { type SkillRuntimeBinding, semanticRuntimeEnvironment } from "./registered-validator.ts";
 
 /** Compatibility export for callers that imported the former CLI-local type. */
 export type RegisteredOperationEvidence = OperationExecutionEvidence;
@@ -41,6 +39,7 @@ export interface RegisteredOperationResult {
 	receipt?: ExecutionReceipt;
 	admission_trace?: ExecutionAdmissionTrace;
 	execution?: ExecutorRunResult;
+	provenance?: PublishedExecutionProvenance;
 }
 
 export interface RegisteredOperationOptions {
@@ -70,9 +69,7 @@ export interface RegisteredOperationOptions {
 	forbidden_output_roots: readonly string[];
 	created_at: string;
 	base_environment?: NodeJS.ProcessEnv;
-	persist_request(request: ExecutionRequest): PersistedValidatorDocument;
-	persist_receipt(receipt: ExecutionReceipt): PersistedValidatorDocument;
-	persist_admission_trace?(trace: ExecutionAdmissionTrace): PersistedValidatorDocument;
+	provenance: ExecutionProvenancePublisher;
 }
 
 export interface RegisteredOperationSemanticBinding {
@@ -371,7 +368,7 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 			verification.lock.runtime_digest,
 		);
 	}
-	const persistedRequest = options.persist_request(request);
+	options.provenance.publishRequest(request);
 	const execution = executeRequest(request, {
 		kind: "python",
 		executor_digest: options.run.executorDigest ?? options.runtime_binding.executor_registry_digest,
@@ -387,8 +384,16 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 				: (options.output_path ?? join(options.artifacts_root, operation.output_contract.outputs[0]?.path ?? "")),
 		],
 	});
-	const persistedReceipt = execution.receipt ? options.persist_receipt(execution.receipt) : undefined;
-	const persistedAdmission = options.persist_admission_trace?.(execution.admission_trace);
+	const provenance = options.provenance.publishCompletion({
+		request,
+		...(execution.receipt === undefined ? {} : { receipt: execution.receipt }),
+		admission: execution.admission_trace,
+		validation_options: {
+			require_receipt: true,
+			allowed_output_roots: [options.run.runDir, ...(options.run.outputDir ? [options.run.outputDir] : [])],
+			forbidden_output_roots: options.forbidden_output_roots,
+		},
+	});
 	const admissionErrors = validateExecutionAdmissionReceiptBinding(request, execution.admission_trace, {
 		receipt: execution.receipt,
 		receipt_valid: execution.receipt_validation?.valid,
@@ -431,6 +436,7 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 		receipt: execution.receipt,
 		admission_trace: execution.admission_trace,
 		execution,
+		provenance,
 		evidence: createOperationExecutionEvidence({
 			source: "surectl",
 			operation_id: operation.operation_id,
@@ -458,14 +464,19 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 						input_context_digest: request.input_binding.context_digest,
 						input_binding_digest: request.input_binding.binding_digest,
 					}),
-			request_path: persistedRequest.path,
-			request_digest: persistedRequest.digest,
-			...(persistedAdmission === undefined
+			request_path: provenance.documents.request.latest.path,
+			request_digest: provenance.documents.request.latest.digest,
+			admission_path: provenance.documents.admission.latest.path,
+			admission_digest: provenance.documents.admission.latest.digest,
+			...(provenance.documents.receipt === undefined
 				? {}
-				: { admission_path: persistedAdmission.path, admission_digest: persistedAdmission.digest }),
-			...(persistedReceipt === undefined
-				? {}
-				: { receipt_path: persistedReceipt.path, receipt_digest: persistedReceipt.digest }),
+				: {
+						receipt_path: provenance.documents.receipt.latest.path,
+						receipt_digest: provenance.documents.receipt.latest.digest,
+					}),
+			contract_path: provenance.documents.contract.latest.path,
+			contract_digest: provenance.documents.contract.latest.digest,
+			execution_history_digest: provenance.history_digest,
 		}),
 	};
 }

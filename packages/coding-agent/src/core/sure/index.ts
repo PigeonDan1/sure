@@ -7,6 +7,11 @@ export {
 	translatePiEvent,
 } from "./controller.ts";
 export { createNodeCoreRunStore, NodeCoreRunStore } from "./core-run-store.ts";
+export {
+	createPiExecutionProvenancePublisher,
+	type PiExecutionProvenancePublisher,
+	type PiExecutionProvenancePublisherOptions,
+} from "./execution-provenance.ts";
 export { createSureExtension, sureExtension } from "./extension.ts";
 export type {
 	SureDisplayArtifact,

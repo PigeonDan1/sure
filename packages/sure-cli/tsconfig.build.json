@@ -5,6 +5,7 @@
 		"rootDir": "./src",
 		"paths": {
 			"@earendil-works/sure-core": ["../sure-core/dist/index.d.ts"],
+			"@earendil-works/sure-core/node": ["../sure-core/dist/node/index.d.ts"],
 			"@earendil-works/sure-core/*": [
 				"../sure-core/dist/*.d.ts",
 				"../sure-core/dist/conformance/*.d.ts",

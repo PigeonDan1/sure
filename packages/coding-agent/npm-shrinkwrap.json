@@ -529,6 +529,7 @@
 			"resolved": "https://registry.npmjs.org/@earendil-works/sure-core/-/sure-core-0.80.3.tgz",
 			"license": "MIT",
 			"dependencies": {
+				"proper-lockfile": "4.1.2",
 				"typebox": "1.1.38",
 				"yaml": "2.9.0"
 			},

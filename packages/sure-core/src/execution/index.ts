@@ -8,6 +8,7 @@ export * from "./docker.ts";
 export * from "./evidence.ts";
 export * from "./input-contract.ts";
 export * from "./output-contract.ts";
+export * from "./provenance.ts";
 export * from "./receipt.ts";
 export * from "./registry.ts";
 export * from "./types.ts";

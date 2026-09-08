@@ -37,6 +37,7 @@ import {
 	type ExecutionContractBundle,
 	type ExecutionContractBundleOptions,
 	type ExecutionInputBindingResolver,
+	ExecutionProvenancePublisher,
 	type ExecutionReceipt,
 	type ExecutionRequest,
 	encodeLegacyCheckpoint,
@@ -73,6 +74,7 @@ import {
 	type WorkflowUnit,
 } from "@earendil-works/sure-core";
 import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
+import { NodeExecutionProvenancePublicationPort } from "@earendil-works/sure-core/node";
 import { type LoadedDefinition, loadDefinition, unitForCurrent } from "./definition.ts";
 import { readAndValidateExecutionAdmission } from "./execution-admission.ts";
 import { executeRequest } from "./executor.ts";
@@ -3177,21 +3179,13 @@ function execute(args: ParsedArgs): PublicOutcome {
 			policy_digest: run.policyDigest ?? canonicalJsonDigest(null),
 			forbidden_output_roots: policyReferences,
 			created_at: new Date().toISOString(),
-			persist_request(request) {
-				const path = admittedRunArtifactPath(store, run, join(invocationRoot, "execution_request.json"));
-				writeJsonImmutable(path, request);
-				return { path, digest: digestFile(path) };
-			},
-			persist_receipt(receipt) {
-				const path = admittedRunArtifactPath(store, run, join(invocationRoot, "execution_receipt.json"));
-				writeJsonImmutable(path, receipt);
-				return { path, digest: digestFile(path) };
-			},
-			persist_admission_trace(trace) {
-				const path = admittedRunArtifactPath(store, run, join(invocationRoot, "execution_admission.json"));
-				writeJsonImmutable(path, trace);
-				return { path, digest: digestFile(path) };
-			},
+			provenance: new ExecutionProvenancePublisher(
+				new NodeExecutionProvenancePublicationPort({
+					root: invocationRoot,
+					allowed_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
+					forbidden_roots: policyReferences,
+				}),
+			),
 		});
 		const nextState = {
 			...(existingState ?? {}),

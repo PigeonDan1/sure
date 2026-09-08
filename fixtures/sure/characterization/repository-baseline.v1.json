@@ -6645,6 +6645,11 @@
       "sha256": "ee0de7d470596266d0acf318f330330ca18152d66e1f3d09abe19dc96c91eccc"
     },
     {
+      "path": "packages/coding-agent/src/core/sure/execution-provenance.ts",
+      "size_bytes": 1691,
+      "sha256": "0e7be6161a0c1ffbc1acc81b8f8d3bda0dc0f284e5769b8c14741cf11f541225"
+    },
+    {
       "path": "packages/coding-agent/src/core/sure/extension.ts",
       "size_bytes": 44981,
       "sha256": "3156f7d70f074554017c079c0125f2ffc7e38d908cf65c3e1a2069e28908a13e"
@@ -6666,8 +6671,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/index.ts",
-      "size_bytes": 671,
-      "sha256": "f4a5338faa0bec3ff18a7f1f7b00580a12eaf7ad03aa63a4f00a4c1d08c1781a"
+      "size_bytes": 838,
+      "sha256": "922dae8fa865808e27a163bdc5acc50077583f7733f550e588c751ac6259f5f0"
     },
     {
       "path": "packages/coding-agent/src/core/sure/init-apply.ts",
@@ -6763,6 +6768,11 @@
       "path": "packages/coding-agent/test/suite/sure-eval-terminal.test.ts",
       "size_bytes": 3439,
       "sha256": "b6c39257f8a6144c6406eace80f29da73135bcdfa419a08a8ffdeb8e3c8b41fd"
+    },
+    {
+      "path": "packages/coding-agent/test/suite/sure-execution-provenance-adapter.test.ts",
+      "size_bytes": 3683,
+      "sha256": "5ecbab8f54afc3ced5790487b327dff592c5580a131a62695f1bb247bcaa3887"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-extension.test.ts",
@@ -9751,5 +9761,5 @@
       ]
     }
   ],
-  "semantic_digest": "16a1162294f91dcea170fce42717e3e4e9918d3b9e3c9b4324674fd241aaa5a2"
+  "semantic_digest": "a2181d1b0a37724c05d0cb60656ca2cbf6de6d386c59f3689091e5f61cd6a70b"
 }

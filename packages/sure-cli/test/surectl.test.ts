@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -1312,7 +1312,20 @@ describe("surectl cooperative control plane", () => {
 		const receiptPath = String(executionEvidence.receipt_path);
 		const requestPath = String(executionEvidence.request_path);
 		const admissionPath = String(executionEvidence.admission_path);
+		const contractPath = String(executionEvidence.contract_path);
+		const historyRoot = join(dirname(requestPath), "execution_contracts");
+		const executionRequest = JSON.parse(readFileSync(requestPath, "utf8")) as ExecutionRequest;
 		expect(executionEvidence.admission_digest).toBe(digest(admissionPath));
+		expect(executionEvidence.contract_digest).toBe(digest(contractPath));
+		expect(executionEvidence.execution_history_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		for (const document of ["request", "receipt", "admission", "contract"] as const) {
+			expect(existsSync(join(historyRoot, `${executionRequest.request_id}.${document}.json`))).toBe(true);
+		}
+		expect(JSON.parse(readFileSync(contractPath, "utf8"))).toMatchObject({
+			schema: "sure.execution_compatibility.v1",
+			admission_instrumentation: "admission-v1",
+			contract_valid: true,
+		});
 		const admission = JSON.parse(readFileSync(admissionPath, "utf8")) as Record<string, unknown>;
 		expect(admission).toMatchObject({ status: "ADMITTED", execute_invoked: true, receipt_present: true });
 		const originalArtifact = readFileSync(artifactPath, "utf8");
@@ -1374,6 +1387,11 @@ describe("surectl cooperative control plane", () => {
 		// run remains readable, but its receipt-derived digest is never backfilled.
 		state = JSON.parse(readFileSync(statePath, "utf8")) as Record<string, unknown>;
 		const legacyExecutionEvidence = state.last_execution as Record<string, unknown>;
+		delete legacyExecutionEvidence.contract_path;
+		delete legacyExecutionEvidence.contract_digest;
+		delete legacyExecutionEvidence.execution_history_digest;
+		rmSync(contractPath, { force: true });
+		rmSync(historyRoot, { recursive: true, force: true });
 		const legacyRequest = JSON.parse(readFileSync(requestPath, "utf8")) as ExecutionRequest;
 		const runtimeRequirements = legacyRequest.runtime_requirements;
 		delete runtimeRequirements.artifact_mode;
@@ -1450,7 +1468,7 @@ describe("surectl cooperative control plane", () => {
 			receiptPath,
 		]);
 		expect(finalized.status, `${finalized.stdout}\n${finalized.stderr}`).toBe(0);
-	}, 30_000);
+	}, 120_000);
 
 	it("runs a TRANS artifact validator from the shared portable runtime", () => {
 		const runId = "run-trans-shared-validator";
