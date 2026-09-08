@@ -26,6 +26,8 @@ export interface NodeExecutionProvenancePortOptions {
 	root: string;
 	allowed_roots: readonly string[];
 	forbidden_roots?: readonly string[];
+	/** Optional compatibility receipt filename inside root; all other latest names remain canonical. */
+	latest_receipt_path?: string;
 }
 
 function contained(root: string, candidate: string): boolean {
@@ -110,6 +112,7 @@ function regularFileBytes(path: string): Buffer | undefined {
 export class NodeExecutionProvenancePublicationPort implements ExecutionProvenancePublicationPort {
 	readonly root: string;
 	private readonly resolvedRoot: string;
+	private readonly latestReceiptPath: string | undefined;
 	readonly lock = {
 		withLock: <T>(key: string, operation: () => T): T => {
 			const lockTarget = join(this.root, `.sure-provenance-${createHash("sha256").update(key).digest("hex")}`);
@@ -171,11 +174,25 @@ export class NodeExecutionProvenancePublicationPort implements ExecutionProvenan
 		}
 		this.root = lexicalRoot;
 		this.resolvedRoot = resolve(realpathSync.native(lexicalRoot));
+		this.latestReceiptPath = (() => {
+			if (options.latest_receipt_path === undefined) return undefined;
+			if (!isAbsolute(options.latest_receipt_path)) {
+				throw new Error("execution provenance latest receipt location must be absolute");
+			}
+			const location = resolve(options.latest_receipt_path);
+			if (dirname(location) !== this.root) {
+				throw new Error("execution provenance latest receipt location must be inside its publication root");
+			}
+			this.assertPublicationParent(location);
+			return location;
+		})();
 		mkdirSync(join(this.root, "execution_contracts"), { recursive: true });
 		this.assertPublicationParent(join(this.root, "execution_contracts", "placeholder"));
 	}
 
 	location(key: ExecutionProvenanceDocumentKey): string {
+		if (key.view === "latest" && key.document === "receipt" && this.latestReceiptPath !== undefined)
+			return this.latestReceiptPath;
 		if (key.view === "latest") return join(this.root, `execution_${key.document}.json`);
 		return join(this.root, "execution_contracts", `${key.request_id}.${key.document}.json`);
 	}

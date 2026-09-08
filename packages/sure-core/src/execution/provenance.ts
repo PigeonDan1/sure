@@ -212,6 +212,21 @@ function assertLatestRequestSlot(
 	}
 	const content = port.read(documentKey);
 	if (content === json(request)) return;
+	if (content !== undefined) {
+		try {
+			const existing = JSON.parse(content) as unknown;
+			if (
+				typeof existing === "object" &&
+				existing !== null &&
+				!Array.isArray(existing) &&
+				sameJson(existing, request)
+			) {
+				return;
+			}
+		} catch {
+			// The stable refusal below covers malformed and semantically different slots.
+		}
+	}
 	throw new ExecutionProvenancePublicationError(
 		`refusing to replace an execution provenance request already published at ${location}`,
 	);

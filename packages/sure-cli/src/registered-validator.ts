@@ -490,7 +490,11 @@ export function runRegisteredValidators(options: RegisteredValidationOptions): R
 				forbidden_output_roots: options.forbidden_output_roots,
 			},
 		});
-		const publicationErrors = provenance.validation.valid ? [] : [...provenance.validation.errors];
+		const publicationErrors = ["INVALID_CONTRACT", "PATH_OUT_OF_SCOPE", "DIGEST_MISMATCH"].includes(
+			provenance.validation.outcome.reason_code,
+		)
+			? [...provenance.validation.errors]
+			: [];
 		const contractErrors = [...admissionErrors, ...publicationErrors];
 		const verdict = executionVerdict(result, contractErrors);
 		const reasonCode =

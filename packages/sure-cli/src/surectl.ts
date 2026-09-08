@@ -3218,6 +3218,7 @@ function execute(args: ParsedArgs): PublicOutcome {
 	const requestValue = one(args, "execution-request") ?? one(args, "request");
 	if (!requestValue) throw new Error("--execution-request (or --request) is required.");
 	const requestPath = admittedRunArtifactPath(store, run, absolute(requestValue, "--execution-request"));
+	assertRegularFile(requestPath, "Execution request");
 	const request = recordObject(readJson(requestPath), "execution request") as unknown as ExecutionRequest;
 	if (request.run_id !== runId) throw new Error("Execution request run_id does not match the selected run.");
 	if (request.unit_id !== currentUnit.id)
@@ -3240,7 +3241,6 @@ function execute(args: ParsedArgs): PublicOutcome {
 			? join(run.runDir, "artifacts", "execution_receipt.json")
 			: absolute(receiptValue, "--execution-receipt"),
 	);
-	const admissionPath = admittedRunArtifactPath(store, run, join(dirname(receiptPath), "execution_admission.json"));
 	const outputPaths = many(args, "output").map((value) => {
 		const candidate = absolute(value, "--output");
 		return store.admitPath(candidate, [request.output_root.path]).path;
@@ -3254,8 +3254,18 @@ function execute(args: ParsedArgs): PublicOutcome {
 			requiredValue(args, "executor-digest", "SURE_EXECUTOR_DIGEST"),
 		"--executor-digest",
 	);
+	const executorKind = executionKind(args, request);
+	const provenancePublisher = new ExecutionProvenancePublisher(
+		new NodeExecutionProvenancePublicationPort({
+			root: dirname(receiptPath),
+			allowed_roots: allowedOutputRoots,
+			forbidden_roots: policyReferences,
+			latest_receipt_path: receiptPath,
+		}),
+	);
+	const publishedRequest = provenancePublisher.publishRequest(request);
 	const result = executeRequest(request, {
-		kind: executionKind(args, request),
+		kind: executorKind,
 		executor_digest: executorDigest,
 		executor_version: CORE_VERSION,
 		working_directory: run.cwd,
@@ -3264,10 +3274,23 @@ function execute(args: ParsedArgs): PublicOutcome {
 		timeout_ms: timeoutMs,
 		output_paths: outputPaths,
 	});
-	writeJsonAtomic(admissionPath, result.admission_trace);
+	const provenance = provenancePublisher.publishCompletion({
+		request,
+		...(result.receipt === undefined ? {} : { receipt: result.receipt }),
+		admission: result.admission_trace,
+		validation_options: {
+			require_receipt: true,
+			allowed_output_roots: allowedOutputRoots,
+			forbidden_output_roots: policyReferences,
+		},
+	});
+	const executionOutcome = provenance.validation.valid ? result.outcome : provenance.validation.outcome;
 	let updatedRun = run;
 	if (result.receipt) {
-		writeJsonAtomic(receiptPath, result.receipt);
+		const publishedReceipt = provenance.documents.receipt;
+		if (publishedReceipt === undefined) {
+			throw new Error("Execution provenance omitted a receipt that the executor returned.");
+		}
 		const state = store.readState(run) ?? {};
 		updatedRun = store.writeState(
 			runId,
@@ -3275,32 +3298,43 @@ function execute(args: ParsedArgs): PublicOutcome {
 				...state,
 				last_execution: {
 					request_path: requestPath,
-					request_digest: canonicalJsonDigest(request as unknown as JsonValue),
-					admission_path: admissionPath,
-					admission_digest: digestFile(admissionPath),
-					receipt_path: receiptPath,
-					receipt_digest: digestFile(receiptPath),
-					outcome: result.outcome,
+					request_digest: publishedRequest.request_digest,
+					provenance_request_path: provenance.documents.request.latest.path,
+					provenance_request_digest: provenance.documents.request.latest.digest,
+					admission_path: provenance.documents.admission.latest.path,
+					admission_digest: provenance.documents.admission.latest.digest,
+					receipt_path: publishedReceipt.latest.path,
+					receipt_digest: publishedReceipt.latest.digest,
+					contract_path: provenance.documents.contract.latest.path,
+					contract_digest: provenance.documents.contract.latest.digest,
+					execution_history_digest: provenance.history_digest,
+					outcome: executionOutcome,
 				},
 			},
 			"execution_recorded",
-			{ unit_id: request.unit_id, outcome: result.outcome },
+			{ unit_id: request.unit_id, outcome: executionOutcome },
 			run.revision,
 		);
 	}
 	output({
-		ok: result.outcome.outcome === "PASS",
+		ok: executionOutcome.outcome === "PASS",
 		command: "execute",
 		run: updatedRun,
 		request_path: requestPath,
-		admission_path: admissionPath,
-		receipt_path: result.receipt ? receiptPath : undefined,
+		provenance_request_path: provenance.documents.request.latest.path,
+		provenance_request_digest: provenance.documents.request.latest.digest,
+		admission_path: provenance.documents.admission.latest.path,
+		receipt_path: provenance.documents.receipt?.latest.path,
+		contract_path: provenance.documents.contract.latest.path,
+		contract_digest: provenance.documents.contract.latest.digest,
+		execution_history_digest: provenance.history_digest,
 		admission_trace: result.admission_trace,
 		receipt: result.receipt,
 		receipt_validation: result.receipt_validation,
-		outcome: result.outcome,
+		provenance_validation: provenance.validation,
+		outcome: executionOutcome,
 	});
-	return result.outcome.outcome;
+	return executionOutcome.outcome;
 }
 
 function digestOrUndefined(value: unknown): string | undefined {

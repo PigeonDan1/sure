@@ -842,6 +842,34 @@ describe("surectl cooperative control plane", () => {
 				.data.currentUnit,
 		).toBe("assessment");
 
+		const missingExecutor = command(root, "validate", [
+			...base,
+			"--run-id",
+			runId,
+			"--semantic-runtime",
+			portableRuntime,
+			"--validator-python",
+			join(root, "missing-validator-python"),
+		]);
+		expect(missingExecutor.status).toBe(5);
+		expect((missingExecutor.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
+		const missingExecutorState = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<
+			string,
+			unknown
+		>;
+		const missingExecutorValidation = missingExecutorState.last_validation as Record<string, unknown>;
+		const missingExecutorEvidence = JSON.parse(
+			readFileSync(String(missingExecutorValidation.evidence_path), "utf8"),
+		) as { validators: Array<Record<string, unknown>> };
+		expect(missingExecutorEvidence.validators[0]).toMatchObject({
+			verdict: "NOT_EXECUTED",
+			reason_code: "CAPABILITY_MISSING",
+		});
+		expect(missingExecutorEvidence.validators[0]?.contract_digest).toBe(
+			digest(String(missingExecutorEvidence.validators[0]?.contract_path)),
+		);
+		expect(missingExecutorEvidence.validators[0]?.execution_history_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+
 		writeFileSync(assessment, JSON.stringify({ anomaly_detected: true, user_confirmed: false, status: "ok" }));
 		const rejected = command(root, "validate", [...base, "--run-id", runId, "--semantic-runtime", portableRuntime]);
 		expect(rejected.status).toBe(4);
@@ -2469,13 +2497,17 @@ describe("surectl cooperative control plane", () => {
 			},
 		});
 		const requestPath = join(artifacts, "local-request.json");
-		writeFileSync(requestPath, JSON.stringify(request));
+		const receiptPath = join(artifacts, "local-execution-receipt.json");
+		const requestBytes = JSON.stringify(request);
+		writeFileSync(requestPath, requestBytes);
 		const executed = command(root, "execute", [
 			...base,
 			"--run-id",
 			"run-local-executor",
 			"--execution-request",
 			requestPath,
+			"--execution-receipt",
+			receiptPath,
 			"--kind",
 			"local",
 			"--output",
@@ -2483,12 +2515,27 @@ describe("surectl cooperative control plane", () => {
 		]);
 		expect(executed.status).toBe(5);
 		expect((executed.value?.outcome as Record<string, unknown>).outcome).toBe("NOT_EXECUTED");
-		const receiptPath = join(artifacts, "execution_receipt.json");
 		const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
-		const admission = JSON.parse(readFileSync(join(artifacts, "execution_admission.json"), "utf8")) as Record<
-			string,
-			unknown
-		>;
+		const admissionPath = join(artifacts, "execution_admission.json");
+		const contractPath = join(artifacts, "execution_contract.json");
+		const admission = JSON.parse(readFileSync(admissionPath, "utf8")) as Record<string, unknown>;
+		const contract = JSON.parse(readFileSync(contractPath, "utf8")) as Record<string, unknown>;
+		const historyRoot = join(artifacts, "execution_contracts");
+		const provenanceRequestPath = join(artifacts, "execution_request.json");
+		expect(executed.value?.request_path).toBe(requestPath);
+		expect(executed.value?.provenance_request_path).toBe(provenanceRequestPath);
+		expect(executed.value?.receipt_path).toBe(receiptPath);
+		expect(executed.value?.contract_path).toBe(contractPath);
+		expect(executed.value?.contract_digest).toBe(digest(contractPath));
+		expect(executed.value?.execution_history_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		const executionState = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as {
+			last_execution: Record<string, unknown>;
+		};
+		expect(readFileSync(requestPath, "utf8")).toBe(requestBytes);
+		expect(executionState.last_execution.request_path).toBe(requestPath);
+		expect(executionState.last_execution.provenance_request_path).toBe(provenanceRequestPath);
+		expect(executionState.last_execution.provenance_request_digest).toBe(digest(provenanceRequestPath));
+		expect(executionState.last_execution.request_digest).toBe(canonicalJsonDigest(request as unknown as JsonValue));
 		expect(receipt.lifecycle).toBe("SUCCEEDED");
 		expect((receipt.executor as Record<string, unknown>).trust_level).toBe("cooperative");
 		expect(admission).toMatchObject({
@@ -2498,9 +2545,70 @@ describe("surectl cooperative control plane", () => {
 			receipt_present: true,
 			receipt_valid: true,
 		});
+		expect(contract).toMatchObject({
+			schema: "sure.execution_compatibility.v1",
+			request_path: provenanceRequestPath,
+			receipt_path: receiptPath,
+			admission_path: admissionPath,
+			contract_valid: true,
+		});
+		for (const document of ["request", "receipt", "admission", "contract"]) {
+			expect(existsSync(join(historyRoot, `${request.request_id}.${document}.json`))).toBe(true);
+		}
 		expect(existsSync(outputFile)).toBe(true);
 		const status = command(root, "status", [...base, "--run-id", "run-local-executor"]);
 		expect((status.value?.checkpoint as { data: { currentUnit: string } }).data.currentUnit).toBe("scan_modelscope");
+	});
+
+	it("rejects a conflicting contract-root request before invoking the executor", () => {
+		const runId = "run-conflicting-execution-request";
+		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
+		const started = command(root, "start", [
+			...base,
+			"--run-id",
+			runId,
+			"--policy-digest",
+			DIGEST_A,
+			"--executor-digest",
+			DIGEST_B,
+		]);
+		expect(started.status).toBe(0);
+		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const artifacts = join(runDir, "artifacts");
+		const outputPath = join(artifacts, "must-not-execute.txt");
+		const request = executionRequest(runId, artifacts, {
+			entrypoint: {
+				executable: process.execPath,
+				argv: ["-e", `require('node:fs').writeFileSync(${JSON.stringify(outputPath)}, 'executed')`],
+			},
+		});
+		const requestPath = join(artifacts, "caller-request.json");
+		const requestBytes = JSON.stringify(request);
+		writeFileSync(requestPath, requestBytes);
+		writeFileSync(
+			join(artifacts, "execution_request.json"),
+			JSON.stringify({ ...request, request_id: `${request.request_id}-conflict` }),
+		);
+
+		const executed = command(root, "execute", [
+			...base,
+			"--run-id",
+			runId,
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			join(artifacts, "custom-receipt.json"),
+			"--kind",
+			"local",
+			"--output",
+			outputPath,
+		]);
+
+		expect(executed.status).not.toBe(0);
+		expect(executed.stderr).toMatch(/refusing to replace an execution provenance request/);
+		expect(readFileSync(requestPath, "utf8")).toBe(requestBytes);
+		expect(existsSync(outputPath)).toBe(false);
+		expect(existsSync(join(artifacts, "custom-receipt.json"))).toBe(false);
 	});
 
 	it("turns missing executor capability into a non-executed receipt", () => {

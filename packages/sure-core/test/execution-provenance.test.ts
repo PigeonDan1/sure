@@ -140,6 +140,19 @@ describe("ExecutionProvenancePublisher", () => {
 		);
 	});
 
+	it("normalizes a semantically identical caller-authored latest request", () => {
+		const { fixture } = registryFixture();
+		const port = new MemoryProvenancePort();
+		port.files.set("memory://latest/request", JSON.stringify(fixture.request));
+		const publisher = new ExecutionProvenancePublisher(port);
+
+		const published = publisher.publishRequest(fixture.request);
+
+		expect(port.files.get("memory://latest/request")).toBe(`${JSON.stringify(fixture.request, null, 2)}\n`);
+		expect(published.documents.latest.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(port.files.has(`memory://immutable/${fixture.request.request_id}/request`)).toBe(true);
+	});
+
 	it("refuses to reuse one latest view for a different request id", () => {
 		const { fixture } = registryFixture();
 		const port = new MemoryProvenancePort();

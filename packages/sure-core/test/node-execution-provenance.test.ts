@@ -51,6 +51,54 @@ describe("NodeExecutionProvenancePublicationPort", () => {
 		expect(published.validation.valid).toBe(true);
 	});
 
+	it("supports a custom latest receipt filename inside the publication root", async () => {
+		const workspace = temporaryRoot("sure-provenance-custom-");
+		const publicationRoot = join(workspace, "run", "contracts");
+		const fixture = vcAdapterFixture();
+		const receiptPath = join(publicationRoot, "caller-receipt.json");
+		const registry = new ExecutorRegistry();
+		registry.registerExternal(fixture.port, fixture.binding);
+		const publisher = new ExecutionProvenancePublisher(
+			new NodeExecutionProvenancePublicationPort({
+				root: publicationRoot,
+				allowed_roots: [workspace],
+				latest_receipt_path: receiptPath,
+			}),
+		);
+
+		publisher.publishRequest(fixture.request);
+		const execution = await dispatchExecutor(registry, fixture.request, { now: () => FIXTURE_NOW });
+		if (execution.receipt === undefined) throw new Error("fixture did not produce a receipt");
+		const published = publisher.publishCompletion({
+			request: fixture.request,
+			receipt: execution.receipt,
+			admission: execution.admission_trace,
+		});
+
+		expect(published.documents.request.latest.path).toBe(join(publicationRoot, "execution_request.json"));
+		expect(published.documents.receipt?.latest.path).toBe(receiptPath);
+		expect(published.documents.admission.latest.path).toBe(join(publicationRoot, "execution_admission.json"));
+		expect(
+			existsSync(join(publicationRoot, "execution_contracts", `${fixture.request.request_id}.request.json`)),
+		).toBe(true);
+		expect(published.validation.valid).toBe(true);
+	});
+
+	it("rejects a custom latest location outside the publication root", () => {
+		const workspace = temporaryRoot("sure-provenance-custom-scope-");
+		const target = join(workspace, "outside", "caller-receipt.json");
+
+		expect(
+			() =>
+				new NodeExecutionProvenancePublicationPort({
+					root: join(workspace, "publication"),
+					allowed_roots: [workspace],
+					latest_receipt_path: target,
+				}),
+		).toThrow(/inside its publication root/);
+		expect(existsSync(join(workspace, "outside"))).toBe(false);
+	});
+
 	it("rejects a read-only reference target before creating it", () => {
 		const workspace = temporaryRoot("sure-provenance-policy-");
 		const reference = join(workspace, "reference");

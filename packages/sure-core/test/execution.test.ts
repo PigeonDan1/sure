@@ -107,6 +107,53 @@ describe("execution boundary", () => {
 		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
 	});
 
+	it("replays an unavailable external executor as capability missing for a legacy request", () => {
+		const input = request();
+		input.capability_requirements = [];
+		const failed = receipt(input, "NOT_STARTED");
+		delete failed.exit_code;
+		failed.executor = {
+			executor_id: "sure.external.remote",
+			kind: "remote",
+			version: "1.0.0",
+			digest: DIGEST_A,
+			trust_level: "cooperative",
+		};
+		failed.capability_evidence = [
+			{
+				capability_id: "sure.execution.remote",
+				capability_class: "execution_capability",
+				status: "MISSING",
+				source: "executor",
+				observed_at: NOW,
+				evidence_digest: DIGEST_B,
+			},
+		];
+		failed.diagnostics = [{ code: "CAPABILITY_MISSING", message: "remote adapter is not installed" }];
+
+		const result = validateExecutionReceipt(input, failed);
+
+		expect(result.valid).toBe(false);
+		expect(result.capability.admitted).toBe(false);
+		expect(result.capability.missing).toEqual(["sure.execution.remote"]);
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
+	});
+
+	it("does not let capability absence mask a malformed receipt", () => {
+		const input = request();
+		const failed = receipt(input, "NOT_STARTED");
+		delete failed.exit_code;
+		failed.run_id = "another-run";
+		failed.capability_evidence = [];
+
+		const result = validateExecutionReceipt(input, failed);
+
+		expect(result.valid).toBe(false);
+		expect(result.capability.missing).toEqual(["sure.execution.local-python"]);
+		expect(result.errors).toContain("receipt.run_id does not match request");
+		expect(result.outcome).toMatchObject({ outcome: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+	});
+
 	it("rejects an invalid capability source in a persisted receipt", () => {
 		const input = request();
 		const forged = receipt(input);

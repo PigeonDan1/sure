@@ -4,6 +4,7 @@ import { evaluatePathBoundary } from "../contracts/path-boundary.ts";
 import type {
 	ArtifactRef,
 	CapabilityEvidence,
+	CapabilityRequirement,
 	ExecutionReceipt,
 	ExecutionRequest,
 	ExecutorIdentity,
@@ -14,6 +15,7 @@ import { parseExecutionAdapterRoute } from "./adapter.ts";
 import { dockerImageDigest, parseDockerRuntimeRequirements } from "./docker.ts";
 import { validateExecutionInputBinding } from "./input-contract.ts";
 import { validateExecutionOutputBinding, validateExecutionOutputContract } from "./output-contract.ts";
+import { executorDescriptor } from "./registry.ts";
 import type { ExecutionBoundaryOptions, ExecutionReceiptValidation, ExecutionRequestValidation } from "./types.ts";
 
 const DIGEST = /^(?:sha256:)?[0-9a-f]{64}$/;
@@ -302,9 +304,26 @@ function capabilityOutcome(
 	evidence: readonly CapabilityEvidence[],
 	request: ExecutionRequest,
 	options: ExecutionBoundaryOptions,
+	receipt: ExecutionReceipt,
 ): { capability: ReturnType<typeof evaluateCapabilityRequirements>; outcome?: CoreOutcome } {
+	const requirements = new Map<string, CapabilityRequirement>(
+		(Array.isArray(request.capability_requirements) ? request.capability_requirements : []).map((requirement) => [
+			`${requirement.capability_class}:${requirement.capability_id}`,
+			requirement,
+		]),
+	);
+	const descriptor = object(receipt.executor) ? executorDescriptor(receipt.executor.kind) : undefined;
+	if (receipt.lifecycle === "NOT_STARTED" && descriptor?.implementation === "external_registration_required") {
+		for (const capabilityId of descriptor.capability_ids) {
+			requirements.set(`execution_capability:${capabilityId}`, {
+				capability_id: capabilityId,
+				capability_class: "execution_capability",
+				required: true,
+			});
+		}
+	}
 	const capability = evaluateCapabilityRequirements(
-		Array.isArray(request.capability_requirements) ? request.capability_requirements : [],
+		[...requirements.values()],
 		evidence,
 		options.known_capability_ids,
 	);
@@ -466,29 +485,13 @@ export function validateExecutionReceipt(
 		}
 	}
 	const evidence = Array.isArray(receipt.capability_evidence) ? receipt.capability_evidence : [];
-	const capabilityResult = capabilityOutcome(evidence, request, options);
+	const capabilityResult = capabilityOutcome(evidence, request, options, receipt);
 	const declaredContractErrors = object(receipt) ? declaredContractDiagnostics(receipt) : [];
 	if (declaredContractErrors.length > 0) {
 		return {
 			valid: false,
 			errors: [...errors, ...declaredContractErrors],
 			outcome: invalidOutcome([...errors, ...declaredContractErrors], "INVALID_CONTRACT"),
-			capability: capabilityResult.capability,
-		};
-	}
-	if (capabilityResult.outcome) {
-		if (capabilityEvidenceErrors.length > 0) {
-			return {
-				valid: false,
-				errors,
-				outcome: invalidOutcome(errors, "INVALID_CONTRACT"),
-				capability: capabilityResult.capability,
-			};
-		}
-		return {
-			valid: false,
-			errors: [...errors, ...capabilityResult.outcome.diagnostics.map((diagnostic) => diagnostic.message)],
-			outcome: capabilityResult.outcome,
 			capability: capabilityResult.capability,
 		};
 	}
@@ -502,6 +505,14 @@ export function validateExecutionReceipt(
 					? "PATH_OUT_OF_SCOPE"
 					: "INVALID_CONTRACT",
 			),
+			capability: capabilityResult.capability,
+		};
+	}
+	if (capabilityResult.outcome) {
+		return {
+			valid: false,
+			errors: capabilityResult.outcome.diagnostics.map((diagnostic) => diagnostic.message),
+			outcome: capabilityResult.outcome,
 			capability: capabilityResult.capability,
 		};
 	}
