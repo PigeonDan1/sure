@@ -123,6 +123,25 @@ describe("Pi/Core SURE controller boundary", () => {
 		expect(Object.keys(received ?? {})).not.toContain("executionProvenance");
 	});
 
+	it("derives optional dispatcher configuration from the host, not the caller context", async () => {
+		const root = mkdtempSync(join(tmpdir(), "sure-controller-dispatcher-"));
+		roots.push(root);
+		let resolverContext: Omit<SureHookContext, "point"> | undefined;
+		const callerIssuer = { issue: () => ({ forged: true }) };
+		const controller = new PiSureController(skillPackage(), dispatcher({}), {
+			executionDispatcherForContext: (value) => {
+				resolverContext = value;
+				return undefined;
+			},
+		});
+		await controller.run("post_tool_result", {
+			...context(root),
+			executionProvenance: callerIssuer,
+		});
+		expect(resolverContext?.executionProvenance).toBeUndefined();
+		expect(resolverContext?.run.runId).toBe("controller-run");
+	});
+
 	it("rejects a Pi hook that jumps over a canonical unit", async () => {
 		const root = mkdtempSync(join(tmpdir(), "sure-controller-"));
 		roots.push(root);

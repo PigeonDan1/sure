@@ -96,6 +96,11 @@ export interface PiExecutionProvenanceHostOptions {
 	capability_evidence_for?: (requirements: readonly CapabilityRequirement[]) => readonly CapabilityEvidence[];
 }
 
+/** Optional host-only additions for a generated Pi provenance context. */
+export interface PiExecutionProvenanceContextOptions {
+	readonly execution_dispatcher?: ExecutionRequestDispatcher;
+}
+
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 function validDigest(value: string): boolean {
@@ -494,6 +499,7 @@ function snapshotBinding(
  */
 export function createPiExecutionProvenanceHostForContext(
 	context: Omit<SureHookContext, "point">,
+	contextOptions: PiExecutionProvenanceContextOptions = {},
 ): PiExecutionProvenanceHost | undefined {
 	let generationRead: GenerationBindingRead;
 	try {
@@ -556,6 +562,9 @@ export function createPiExecutionProvenanceHostForContext(
 				? {}
 				: { policy_snapshot_digest: snapshot.policy_snapshot_digest }),
 			forbidden_output_roots: snapshot.forbidden_output_roots,
+			...(contextOptions.execution_dispatcher === undefined
+				? {}
+				: { execution_dispatcher: contextOptions.execution_dispatcher }),
 		});
 	} catch (error) {
 		return rejectingProvenanceHost(error instanceof Error ? error.message : String(error));

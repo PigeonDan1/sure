@@ -3,11 +3,15 @@ import { join } from "node:path";
 import {
 	auditCheckpointTransition,
 	decodeLegacyCheckpoint,
+	type ExecutionRequestDispatcher,
 	initialCheckpoint,
 	type WorkflowCheckpoint,
 	type WorkflowDefinition,
 } from "@earendil-works/sure-core";
-import { createPiExecutionProvenanceHostForContext } from "./execution-provenance.ts";
+import {
+	createPiExecutionProvenanceHostForContext,
+	type PiExecutionProvenanceContextOptions,
+} from "./execution-provenance.ts";
 import { isSureWorkflowId, type SureWorkflowId, workflowDefinitionForSkill } from "./generated-workflows.ts";
 import { type SureGateResult, SureHookRunner } from "./hooks.ts";
 import type { SureHookContext, SureHookPoint, SureSkillPackage } from "./types.ts";
@@ -25,6 +29,13 @@ export interface CoreHookEvent {
 
 export interface SureHookDispatcher {
 	run(point: SureHookPoint, context: Omit<SureHookContext, "point">): Promise<SureGateResult>;
+}
+
+/** Host-only extensions; omitted callers retain the legacy cooperative path. */
+export interface PiSureControllerOptions {
+	readonly executionDispatcherForContext?: (
+		context: Omit<SureHookContext, "point">,
+	) => ExecutionRequestDispatcher | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -140,9 +151,15 @@ export class PiSureController {
 	private readonly definition?: WorkflowDefinition;
 	private readonly skillId?: SureWorkflowId;
 	private readonly hookRunner: SureHookDispatcher;
+	private readonly hostOptions: PiSureControllerOptions;
 
-	constructor(skillPackage: SureSkillPackage, hookRunner?: SureHookDispatcher) {
+	constructor(
+		skillPackage: SureSkillPackage,
+		hookRunner?: SureHookDispatcher,
+		hostOptions: PiSureControllerOptions = {},
+	) {
 		this.hookRunner = hookRunner ?? new SureHookRunner(skillPackage);
+		this.hostOptions = hostOptions;
 		this.skillId = skillIdForPackage(skillPackage);
 		this.definition = this.skillId ? workflowDefinitionForSkill(this.skillId) : undefined;
 	}
@@ -162,7 +179,10 @@ export class PiSureController {
 			...baseContext,
 			event: withCoreEvent(context.event, coreEvent),
 		};
-		const host = createPiExecutionProvenanceHostForContext(baseContext);
+		const executionDispatcher = this.hostOptions.executionDispatcherForContext?.(baseContext);
+		const provenanceOptions: PiExecutionProvenanceContextOptions =
+			executionDispatcher === undefined ? {} : { execution_dispatcher: executionDispatcher };
+		const host = createPiExecutionProvenanceHostForContext(baseContext, provenanceOptions);
 		if (host !== undefined) {
 			Object.defineProperty(forwarded, "executionProvenance", {
 				value: host,
@@ -190,6 +210,9 @@ export class PiSureController {
 	}
 }
 
-export function createPiSureController(skillPackage: SureSkillPackage): PiSureController {
-	return new PiSureController(skillPackage);
+export function createPiSureController(
+	skillPackage: SureSkillPackage,
+	hostOptions: PiSureControllerOptions = {},
+): PiSureController {
+	return new PiSureController(skillPackage, undefined, hostOptions);
 }

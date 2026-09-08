@@ -3,6 +3,7 @@ export {
 	createPiSureController,
 	type PiHookEventKind,
 	PiSureController,
+	type PiSureControllerOptions,
 	type SureHookDispatcher,
 	translatePiEvent,
 } from "./controller.ts";
@@ -12,6 +13,7 @@ export {
 	createPiExecutionProvenanceHostForContext,
 	createPiExecutionProvenancePublisher,
 	type PiExecutionProvenanceBinding,
+	type PiExecutionProvenanceContextOptions,
 	type PiExecutionProvenanceHost,
 	type PiExecutionProvenanceHostOptions,
 	type PiExecutionProvenancePublisher,

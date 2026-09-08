@@ -640,6 +640,25 @@ describe("Pi host-issued registered operation provenance", () => {
 		);
 	});
 
+	it("forwards an explicitly host-supplied dispatcher through a generated binding", () => {
+		const ctx = generatedContext("generated-dispatcher");
+		const dispatcher: ExecutionRequestDispatcher = {
+			probe: () => [],
+			execute: () => ({ ok: false, stdout: "", stderr: "not used", status: null }),
+		};
+		const host = createPiExecutionProvenanceHostForContext(ctx as Omit<SureHookContext, "point">, {
+			execution_dispatcher: dispatcher,
+		});
+		expect(host).toBeDefined();
+		if (host === undefined) throw new Error("expected a generated Pi provenance host");
+		const session = host.issue({
+			unit_id: "load_model_input",
+			attempt: 1,
+			operation_id: "sure.onboard.execute_import",
+		});
+		expect(session.execution_dispatcher).toBe(dispatcher);
+	});
+
 	it("rejects a generated package whose canonical definition was changed beside the lock", () => {
 		const ctx = generatedContext("generated-definition-drift", (files) => {
 			files["canonical-definition.json"].description = "agent supplied definition";
