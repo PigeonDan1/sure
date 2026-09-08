@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { SureHookContext } from "@earendil-works/pi-coding-agent/hooks";
-import { type ExecutionProvenancePublisher, validateExecutionContractHistory } from "@earendil-works/sure-core";
+import {
+	type CapabilityEvidence,
+	type CapabilityRequirement,
+	type ExecutionProvenancePublisher,
+	validateExecutionContractHistory,
+} from "@earendil-works/sure-core";
 import { afterEach, describe, expect, it } from "vitest";
 import { runPiRegisteredOperation } from "../../../../sure/runtime/harness/registered-operation.ts";
 import {
@@ -38,6 +43,7 @@ interface HostFixture {
 function fixture(
 	name: string,
 	publisherFactory?: (session: Record<string, any>) => ExecutionProvenancePublisher,
+	capabilityEvidenceFor?: (requirements: readonly CapabilityRequirement[]) => readonly CapabilityEvidence[],
 ): HostFixture {
 	const root = join(TEMP_ROOT, name);
 	const packageDir = join(root, "sure_onboard");
@@ -75,6 +81,7 @@ function fixture(
 		python_executable: process.execPath,
 		now: () => NOW,
 		new_id: () => `id-${++id}`,
+		capability_evidence_for: capabilityEvidenceFor,
 	});
 	const host: PiExecutionProvenanceHost = {
 		issue(input) {
@@ -296,6 +303,117 @@ describe("Pi host-issued registered operation provenance", () => {
 		const location = paths(fx);
 		expect(readJson(location.receipt).lifecycle).toBe("NOT_STARTED");
 		expect(readJson(location.admission).status).toBe("CAPABILITY_MISSING");
+	});
+
+	it("blocks before the callback when the host reports a required capability missing", () => {
+		const fx = fixture("preflight-capability-missing", undefined, (requirements) =>
+			requirements.map((requirement) => ({
+				capability_id: requirement.capability_id,
+				capability_class: requirement.capability_class,
+				status: "MISSING",
+				source: "executor",
+				observed_at: NOW,
+				details: { probe: "test" },
+			})),
+		);
+		let invoked = false;
+		const result = operation(fx, () => {
+			invoked = true;
+			return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+		});
+
+		expect(invoked).toBe(false);
+		expect(result.ok).toBe(false);
+		expect(result.status).toBeNull();
+		expect(result.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
+		const location = paths(fx);
+		expect(existsSync(location.request)).toBe(true);
+		expect(existsSync(location.admission)).toBe(true);
+		expect(existsSync(location.contract)).toBe(true);
+		expect(existsSync(location.receipt)).toBe(false);
+		expect(readJson(location.admission)).toMatchObject({
+			status: "CAPABILITY_MISSING",
+			probe_invoked: true,
+			execute_invoked: false,
+			receipt_present: false,
+			receipt_valid: false,
+		});
+		const request = readJson(location.request);
+		const admission = readJson(location.admission);
+		const contract = readJson(location.contract);
+		expect(
+			validateExecutionContractHistory(
+				{
+					latest: { request, admission, contract },
+					immutable: {
+						request: readJson(join(location.immutable, `${request.request_id}.request.json`)),
+						admission: readJson(join(location.immutable, `${request.request_id}.admission.json`)),
+						contract: readJson(join(location.immutable, `${request.request_id}.contract.json`)),
+					},
+				} as never,
+				{
+					require_receipt: false,
+					require_admission: true,
+					require_contract_record: true,
+					allowed_output_roots: [fx.ctx.runDir],
+				},
+			).valid,
+		).toBe(true);
+	});
+
+	it("preserves an authoritative capability denial without invoking the callback", () => {
+		const fx = fixture("preflight-capability-denied", undefined, (requirements) =>
+			requirements.map((requirement) => ({
+				capability_id: requirement.capability_id,
+				capability_class: requirement.capability_class,
+				status: "DENIED",
+				source: "executor",
+				observed_at: NOW,
+				details: { policy: "test-deny" },
+			})),
+		);
+		let invoked = false;
+		const result = operation(fx, () => {
+			invoked = true;
+			return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+		});
+
+		expect(invoked).toBe(false);
+		expect(result.ok).toBe(false);
+		expect(result.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "POLICY_DENIED" });
+		const location = paths(fx);
+		expect(existsSync(location.receipt)).toBe(false);
+		expect(readJson(location.admission)).toMatchObject({ execute_invoked: false, receipt_present: false });
+	});
+
+	it("rejects malformed host capability evidence before invoking the callback", () => {
+		const fx = fixture(
+			"preflight-capability-invalid",
+			undefined,
+			() => [{ malformed: true }] as unknown as CapabilityEvidence[],
+		);
+		let invoked = false;
+		const result = operation(fx, () => {
+			invoked = true;
+			return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+		});
+
+		expect(invoked).toBe(false);
+		expect(result.ok).toBe(false);
+		expect(result.status).toBeNull();
+		expect(result.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		const location = paths(fx);
+		expect(existsSync(location.request)).toBe(true);
+		expect(existsSync(location.admission)).toBe(true);
+		expect(existsSync(location.contract)).toBe(true);
+		expect(existsSync(location.receipt)).toBe(false);
+		expect(readJson(location.admission)).toMatchObject({
+			status: "REJECTED",
+			probe_invoked: true,
+			execute_invoked: false,
+			receipt_present: false,
+			receipt_valid: false,
+		});
 	});
 
 	it("maps a nonzero process exit to FAIL without advancing it to PASS", () => {

@@ -17,11 +17,13 @@ import {
 	createExecutionAdmissionTrace,
 	createOperationExecutionEvidence,
 	inspectExecutionArtifact,
+	evaluateCapabilityRequirements,
 	projectExecutionEvidence,
 	createOutcome,
 	EXECUTOR_KINDS,
 	EXECUTOR_TRUST_LEVELS,
 	type OperationExecutionEvidence,
+	validateCapabilityEvidenceList,
 	validateExecutionAdmissionReceiptBinding,
 	validateExecutionReceipt,
 	validateExecutionRequest,
@@ -682,13 +684,14 @@ function hostArtifactRef(
 function hostCapabilityEvidence(
 	session: PiHostSession,
 	requirements: readonly CapabilityRequirement[],
-	result: PiBackendProcessResult,
+	result: PiBackendProcessResult | undefined,
 	observedAt: string,
 	pythonExecutable: string | undefined,
 ): CapabilityEvidence[] {
 	if (session.capability_evidence_for !== undefined) {
 		return [...session.capability_evidence_for(requirements)].map((item) => ({ ...item }));
 	}
+	const processStarted = result?.status !== undefined && result.status !== null;
 	return requirements.map((requirement) => {
 		// A callback's exit code is not evidence of arbitrary hardware.  The
 		// bridge can only establish that the bound harness runtime was selected;
@@ -697,7 +700,8 @@ function hostCapabilityEvidence(
 			requirement.capability_id === "sure.execution.harness-python" &&
 			pythonExecutable !== undefined &&
 			pythonExecutable.trim() !== "" &&
-			result.status !== null;
+			existsSync(pythonExecutable) &&
+			(result === undefined || processStarted);
 		const status: CapabilityEvidence["status"] = runtimeAvailable ? "AVAILABLE" : "MISSING";
 		const base: CapabilityEvidence = {
 			capability_id: requirement.capability_id,
@@ -707,12 +711,79 @@ function hostCapabilityEvidence(
 			observed_at: observedAt,
 			details: {
 				execution_surface: "pi_hook",
-				process_started: result.status !== null,
+				process_started: processStarted,
 				runtime_bound: pythonExecutable !== undefined && pythonExecutable.trim() !== "",
 			},
 		};
 		return { ...base, evidence_digest: canonicalJsonDigest(base as unknown as JsonValue) };
 	});
+}
+
+interface HostCapabilityEvaluation {
+	evidence: readonly CapabilityEvidence[];
+	evaluation: ReturnType<typeof evaluateCapabilityRequirements>;
+	errors: readonly string[];
+}
+
+function hostCapabilityEvaluation(
+	session: PiHostSession,
+	requirements: readonly CapabilityRequirement[],
+	result: PiBackendProcessResult | undefined,
+	observedAt: string,
+	pythonExecutable: string | undefined,
+): HostCapabilityEvaluation {
+	let evidence: readonly CapabilityEvidence[];
+	try {
+		evidence = hostCapabilityEvidence(session, requirements, result, observedAt, pythonExecutable);
+	} catch (error) {
+		return {
+			evidence: [],
+			evaluation: {
+				admitted: false,
+				unknown: [],
+				missing: [],
+				denied: [],
+				invalid_evidence: [],
+				blocking_outcome: createOutcome({
+					validatorVerdict: "NOT_EXECUTED",
+					workflowDisposition: "BLOCK",
+					reasonCode: "INVALID_CONTRACT",
+					diagnostics: [
+						{
+							code: "INVALID_CONTRACT",
+							message: `host capability probe failed: ${error instanceof Error ? error.message : String(error)}`,
+						},
+					],
+				}),
+			},
+			errors: [error instanceof Error ? error.message : String(error)],
+		};
+	}
+	const evidenceErrors = validateCapabilityEvidenceList(evidence);
+	if (evidenceErrors.length > 0) {
+		return {
+			evidence,
+			evaluation: {
+				admitted: false,
+				unknown: [],
+				missing: [],
+				denied: [],
+				invalid_evidence: evidenceErrors,
+				blocking_outcome: createOutcome({
+					validatorVerdict: "NOT_EXECUTED",
+					workflowDisposition: "BLOCK",
+					reasonCode: "INVALID_CONTRACT",
+					diagnostics: evidenceErrors.map((message) => ({ code: "INVALID_CONTRACT", message })),
+				}),
+			},
+			errors: evidenceErrors,
+		};
+	}
+	return {
+		evidence,
+		evaluation: evaluateCapabilityRequirements(requirements, evidence),
+		errors: [],
+	};
 }
 
 function hostLifecycle(result: PiBackendProcessResult, outputPresent: boolean): ExecutionLifecycle {
@@ -750,9 +821,16 @@ function hostPublicationFailure(
 	runtimeDigest: string,
 	outputPath: string,
 	error: unknown,
+	executionMayHaveOccurred = true,
 ): PiRegisteredOperationResult {
 	const message = error instanceof Error ? error.message : String(error);
-	const diagnostics = [...diagnostic(result), message, "execution may have occurred before provenance publication failed"];
+	const diagnostics = [
+		...diagnostic(result),
+		message,
+		...(executionMayHaveOccurred
+			? ["execution may have occurred before provenance publication failed"]
+			: ["capability preflight failed before the execution callback was invoked"]),
+	];
 	return {
 		...result,
 		ok: false,
@@ -782,6 +860,120 @@ function hostPublicationFailure(
 				outcome: "NOT_EXECUTED",
 				reason_code: "INVALID_CONTRACT",
 			},
+		}),
+	};
+}
+
+function hostCapabilityPreflightFailure(
+	options: PiRegisteredOperationOptions,
+	implementation: RegisteredImplementation,
+	session: PiHostSession,
+	request: ExecutionRequest,
+	publishedRequest: PublishedExecutionRequest,
+	inputDigest: string,
+	outputPath: string,
+	requirements: readonly CapabilityRequirement[],
+	preflight: HostCapabilityEvaluation,
+): PiRegisteredOperationResult {
+	const observedAt = new Date().toISOString();
+	const outcome =
+		preflight.evaluation.blocking_outcome ??
+		createOutcome({
+			validatorVerdict: "NOT_EXECUTED",
+			workflowDisposition: "BLOCK",
+			reasonCode: "CAPABILITY_MISSING",
+			diagnostics: [
+				{
+					code: "CAPABILITY_MISSING",
+					message: `required capabilities for ${options.operation_id} were not admitted`,
+				},
+			],
+		});
+	const diagnostics = [
+		...preflight.errors,
+		...preflight.evaluation.missing.map((id) => `Required capability ${id} is unavailable`),
+		...preflight.evaluation.unknown.map((id) => `Capability ${id} is not registered`),
+		...preflight.evaluation.denied.map((id) => `Capability ${id} was denied`),
+		...outcome.diagnostics.map((entry) => entry.message),
+	];
+	const admission = createExecutionAdmissionTrace(request, observedAt, outcome, {
+		probe_invoked: true,
+		execute_invoked: false,
+		receipt_valid: false,
+	});
+	let provenance: PublishedExecutionProvenance;
+	try {
+		provenance = session.publisher.publishCompletion({
+			request,
+			admission,
+			validation_options: {
+				require_receipt: false,
+				allowed_output_roots: [session.run_dir],
+				forbidden_output_roots: session.forbidden_output_roots,
+			},
+			legacy_views: {
+				execution_surface: "pi_hook",
+				execution_result: null,
+			},
+		});
+	} catch (error) {
+		return hostPublicationFailure(
+			options,
+			implementation,
+			inputDigest,
+			{ ok: false, stdout: "", stderr: "", status: null },
+			publishedRequest,
+			session.branch_id,
+			session.semantic_runtime_digest,
+			outputPath,
+			error,
+			false,
+		);
+	}
+	const historyFailure = !provenance.validation.valid;
+	const finalOutcome = historyFailure
+		? createOutcome({
+				validatorVerdict: "NOT_EXECUTED",
+				workflowDisposition: "BLOCK",
+				reasonCode: "INVALID_CONTRACT",
+				diagnostics: provenance.validation.errors.map((message) => ({ code: "EXECUTION_PROVENANCE", message })),
+			})
+		: outcome;
+	const finalDiagnostics = [
+		...diagnostics,
+		...(historyFailure ? provenance.validation.errors : []),
+		`capability requirements evaluated before callback: ${requirements.map((requirement) => requirement.capability_id).join(", ")}`,
+	];
+	return {
+		ok: false,
+		stdout: "",
+		stderr: finalDiagnostics.join("; "),
+		status: null,
+		evidence: createOperationExecutionEvidence({
+			source: "pi_hook",
+			operation_id: options.operation_id,
+			artifact_mode: implementation.artifact_mode,
+			verdict: "NOT_EXECUTED",
+			reason_code: finalOutcome.reason_code,
+			diagnostics: finalDiagnostics,
+			artifact_input_digest: inputDigest,
+			artifact_input_path: resolve(options.artifact_input_path),
+			artifact_output_path: outputPath,
+			runtime_digest: session.semantic_runtime_digest,
+			backend_registry_digest: implementation.registry_digest,
+			...(implementation.bundle_digest === undefined ? {} : { backend_bundle_digest: implementation.bundle_digest }),
+			backend_resource_digest: implementation.resource_digest,
+			request_path: provenance.documents.request.latest.path,
+			request_digest: provenance.documents.request.latest.digest,
+			admission_path: provenance.documents.admission.latest.path,
+			admission_digest: provenance.documents.admission.latest.digest,
+			contract_path: provenance.documents.contract.latest.path,
+			contract_digest: provenance.documents.contract.latest.digest,
+			execution_history_digest: provenance.history_digest,
+			branch_id: session.branch_id,
+			unit_id: options.unit_id,
+			attempt: options.attempt,
+			outcome: finalOutcome,
 		}),
 	};
 }
@@ -892,6 +1084,22 @@ function runHostRegisteredOperation(
 		return unavailable(options, inputDigest, error);
 	}
 
+	const requirements = registeredOperationCapabilityRequirements(implementation.backend);
+	const preflight = hostCapabilityEvaluation(session, requirements, undefined, new Date().toISOString(), pythonExecutable);
+	if (!preflight.evaluation.admitted) {
+		return hostCapabilityPreflightFailure(
+			options,
+			implementation,
+			session,
+			request,
+			publishedRequest,
+			inputDigest,
+			outputPath,
+			requirements,
+			preflight,
+		);
+	}
+
 	let result: PiBackendProcessResult;
 	try {
 		result = options.execute();
@@ -914,7 +1122,6 @@ function runHostRegisteredOperation(
 		}
 		const lifecycle = hostLifecycle(result, outputArtifact !== undefined);
 		const finishedAt = new Date().toISOString();
-		const requirements = registeredOperationCapabilityRequirements(implementation.backend);
 		const capabilityEvidence = hostCapabilityEvidence(session, requirements, result, finishedAt, pythonExecutable);
 		const receiptDiagnostics = [
 			...diagnostic(result),

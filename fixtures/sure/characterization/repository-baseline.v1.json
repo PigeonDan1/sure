@@ -6851,8 +6851,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-host-provenance.test.ts",
-      "size_bytes": 15757,
-      "sha256": "0f191a3478cae94486b4273b67b16ec4f3b2742abd3a7d070b032c611576eb0c"
+      "size_bytes": 19907,
+      "sha256": "97038f1498dc6e62083457c47b52b8f4bb82adbc3432eb3a75be6794d745af1d"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-operation-evidence.test.ts",
@@ -7016,8 +7016,8 @@
     },
     {
       "path": "sure/runtime/harness/registered-operation.ts",
-      "size_bytes": 48459,
-      "sha256": "3c48c288a4e020063b26f38c03b367406eaff759999f9bd5d61023db780a1497"
+      "size_bytes": 54870,
+      "sha256": "d1309c0095242a46550b2d463cf2182295a9dd2c0a38ab56c1c22f70c6422153"
     },
     {
       "path": "sure/runtime/harness/requirements.in",
@@ -9776,5 +9776,5 @@
       ]
     }
   ],
-  "semantic_digest": "88b0f3eb98378724d117595e80485f6f6e51057c58598a4448773d48eb5e7510"
+  "semantic_digest": "fba95e30bbbdacd1b4247bba25345f471989443e099cb6baabcca80597c74251"
 }
