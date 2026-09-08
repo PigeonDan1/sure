@@ -4,11 +4,12 @@ import { join } from "node:path";
 import type {
 	ArtifactRef,
 	CoreRunRecord,
+	ExecutionAdmissionTrace,
 	ExecutionReceipt,
 	ExecutionRequest,
 	JsonValue,
 } from "@earendil-works/sure-core";
-import { canonicalJsonDigest } from "@earendil-works/sure-core";
+import { canonicalJsonDigest, validateExecutionAdmissionReceiptBinding } from "@earendil-works/sure-core";
 import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
 import { type ExecutorRunResult, executeRequest } from "./executor.ts";
 
@@ -52,6 +53,8 @@ export interface ValidatorEvidenceEntry {
 	backend_resource_digest?: string;
 	request_path?: string;
 	request_digest?: string;
+	admission_path?: string;
+	admission_digest?: string;
 	receipt_path?: string;
 	receipt_digest?: string;
 }
@@ -93,6 +96,7 @@ export interface RegisteredValidationOptions {
 	base_environment?: NodeJS.ProcessEnv;
 	persist_request(key: string, request: ExecutionRequest): PersistedValidatorDocument;
 	persist_receipt(key: string, receipt: ExecutionReceipt): PersistedValidatorDocument;
+	persist_admission_trace?(key: string, trace: ExecutionAdmissionTrace): PersistedValidatorDocument;
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -237,7 +241,11 @@ function diagnostics(result: ExecutorRunResult): string[] {
 	return [...new Set(messages.filter((message) => message.trim() !== ""))];
 }
 
-function executionVerdict(result: ExecutorRunResult): ValidatorEvidenceEntry["verdict"] {
+function executionVerdict(
+	result: ExecutorRunResult,
+	admissionErrors: readonly string[] = [],
+): ValidatorEvidenceEntry["verdict"] {
+	if (admissionErrors.length > 0) return "NOT_EXECUTED";
 	if (!result.receipt || !result.receipt_validation?.valid || !result.capability.admitted) return "NOT_EXECUTED";
 	if (result.receipt.lifecycle === "SUCCEEDED") return "PASS";
 	if (["FAILED", "PARTIAL", "CANCELLED"].includes(result.receipt.lifecycle)) return "FAIL";
@@ -471,21 +479,37 @@ export function runRegisteredValidators(options: RegisteredValidationOptions): R
 			environment,
 		});
 		const persistedReceipt = result.receipt ? options.persist_receipt(key, result.receipt) : undefined;
-		const verdict = executionVerdict(result);
+		const persistedAdmission = options.persist_admission_trace?.(key, result.admission_trace);
+		const admissionErrors = validateExecutionAdmissionReceiptBinding(request, result.admission_trace, {
+			receipt: result.receipt,
+			receipt_valid: result.receipt_validation?.valid,
+			capability_admitted: result.capability.admitted,
+		});
+		const verdict = executionVerdict(result, admissionErrors);
+		const reasonCode =
+			admissionErrors.length > 0
+				? "INVALID_CONTRACT"
+				: verdict === "PASS"
+					? "VALIDATION_PASSED"
+					: verdict === "FAIL"
+						? "VALIDATION_FAILED"
+						: result.outcome.reason_code;
 		entries.push({
 			validator_id: validator.id,
 			backend_operation_id: operation.operation_id,
 			verdict,
 			artifact_digest: options.artifact.sha256,
-			reason_code:
-				verdict === "PASS" ? "VALIDATION_PASSED" : verdict === "FAIL" ? "VALIDATION_FAILED" : "CAPABILITY_MISSING",
-			diagnostics: diagnostics(result),
+			reason_code: reasonCode,
+			diagnostics: [...diagnostics(result), ...admissionErrors],
 			runtime_digest: verification.lock.runtime_digest,
 			backend_registry_digest: operation.registry_digest,
 			...(operation.bundle_digest === undefined ? {} : { backend_bundle_digest: operation.bundle_digest }),
 			backend_resource_digest: operation.resource_digest,
 			request_path: persistedRequest.path,
 			request_digest: persistedRequest.digest,
+			...(persistedAdmission === undefined
+				? {}
+				: { admission_path: persistedAdmission.path, admission_digest: persistedAdmission.digest }),
 			...(persistedReceipt === undefined
 				? {}
 				: { receipt_path: persistedReceipt.path, receipt_digest: persistedReceipt.digest }),

@@ -41,8 +41,10 @@ os.environ.setdefault("SURE_RUNTIME_SUPPORT_ROOT", str(RUNTIME_SUPPORT_ROOT))
 sys.path.insert(0, str(RUNTIME_SUPPORT_ROOT))
 
 from sure.site.loader import load_site_policy
+from sure.runtime.execution_bridge import digest_json
 from sure.runtime.execution_bridge import read_json as read_execution_json
 from sure.runtime.execution_bridge import validate_contract_pair
+from sure.runtime.execution_bridge import validate_execution_admission_receipt_binding
 
 LOCAL_RESULTS_ROOT = local_results_root(HARNESS_ROOT)
 SOURCE_KINDS = {"approved_nfs_results", "local_infer_run"}
@@ -192,6 +194,48 @@ def _engine_commit(root: Path) -> str:
     return completed.stdout.strip()
 
 
+def execution_contract_errors(contract_root: Path, *, phase: str = "final") -> list[str]:
+    """Validate the optional request/receipt/admission bundle beside a report."""
+
+    errors: list[str] = []
+    request_path = contract_root / "execution_request.json"
+    receipt_path = contract_root / "execution_receipt.json"
+    admission_path = contract_root / "execution_admission.json"
+    if request_path.exists() or receipt_path.exists():
+        request = read_execution_json(request_path)
+        receipt = read_execution_json(receipt_path)
+        if not request:
+            errors.append("execution_request.json is missing or invalid")
+        if not receipt and not (phase == "prepare" and request):
+            errors.append("execution_receipt.json is missing or invalid")
+        if request and receipt:
+            contract_errors = validate_contract_pair(request, receipt)
+            errors.extend(contract_errors)
+            if admission_path.exists():
+                admission = read_execution_json(admission_path)
+                if not admission:
+                    errors.append("execution_admission.json is missing or invalid")
+                else:
+                    contract_path = contract_root / "execution_contract.json"
+                    if contract_path.is_file():
+                        contract = read_execution_json(contract_path)
+                        if contract.get("admission_digest") and digest_json(admission) != contract.get("admission_digest"):
+                            errors.append("execution admission digest differs from execution_contract.json")
+                    errors.extend(
+                        validate_execution_admission_receipt_binding(
+                            request,
+                            admission,
+                            receipt=receipt,
+                            receipt_valid=not contract_errors,
+                        )
+                    )
+            if receipt.get("lifecycle") != "SUCCEEDED":
+                errors.append("eval_run_report cannot pass with a non-success execution receipt")
+    if admission_path.exists() and not (request_path.exists() and receipt_path.exists()):
+        errors.append("execution_admission.json requires execution_request.json and execution_receipt.json")
+    return errors
+
+
 def validate(path: Path, *, phase: str = "final") -> list[str]:
     errors: list[str] = []
     try:
@@ -231,22 +275,9 @@ def validate(path: Path, *, phase: str = "final") -> list[str]:
     # New runners publish the neutral request/receipt beside the invocation
     # report.  Legacy bundles without these files remain readable during the
     # migration, but a partial or mismatched pair can never silently pass.
-    contract_root = path.resolve().parent
-    request_path = contract_root / "execution_request.json"
-    receipt_path = contract_root / "execution_receipt.json"
-    if request_path.exists() or receipt_path.exists():
-        request = read_execution_json(request_path)
-        receipt = read_execution_json(receipt_path)
-        if not request:
-            errors.append("execution_request.json is missing or invalid")
-        if not receipt and not (phase == "prepare" and request):
-            errors.append("execution_receipt.json is missing or invalid")
-        if request and receipt:
-            errors.extend(validate_contract_pair(request, receipt))
-            if receipt.get("lifecycle") != "SUCCEEDED":
-                errors.append("eval_run_report cannot pass with a non-success execution receipt")
-        if errors:
-            return errors
+    errors.extend(execution_contract_errors(path.resolve().parent, phase=phase))
+    if errors:
+        return errors
 
     source = _read_json(artifact_paths["prediction_source_resolved"])
     if source.get("schema") != "sure.reval.approved_prediction_source.v2":

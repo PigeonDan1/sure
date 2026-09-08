@@ -47,6 +47,7 @@ from sure.runtime.execution_bridge import (
     build_request,
     capability_evidence,
     digest_json,
+    derive_execution_admission_trace,
     snapshot_digest,
     write_contract_bundle,
 )
@@ -684,10 +685,18 @@ def main() -> int:
         exit_code=returncode if lifecycle != "NOT_STARTED" else None,
         diagnostics=diagnostics,
     )
+    admission_trace = derive_execution_admission_trace(
+        request,
+        receipt,
+        forbidden_output_roots=(Path(os.environ["SURE_REFERENCE_ROOT"]).expanduser().resolve(),)
+        if os.environ.get("SURE_REFERENCE_ROOT")
+        else (),
+    )
     write_contract_bundle(
         artifacts_dir,
         request,
         receipt,
+        admission_trace=admission_trace,
         legacy_surface=surface_path,
         legacy_result=execution_output,
         forbidden_output_roots=(Path(os.environ["SURE_REFERENCE_ROOT"]).expanduser().resolve(),)

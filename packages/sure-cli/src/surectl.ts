@@ -67,6 +67,7 @@ import {
 } from "@earendil-works/sure-core";
 import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
 import { type LoadedDefinition, loadDefinition, unitForCurrent } from "./definition.ts";
+import { readAndValidateExecutionAdmission } from "./execution-admission.ts";
 import { executeRequest } from "./executor.ts";
 import { NodeRunStore } from "./node-run-store.ts";
 import {
@@ -828,6 +829,58 @@ function assertReceiptOutputFiles(
 	if (errors.length > 0) throw new Error(errors.join("; "));
 }
 
+interface ExecutionAdmissionArtifactCheck {
+	path?: string;
+	digest?: string;
+	errors: string[];
+}
+
+/**
+ * Read an optional sibling admission trace from the same admitted artifact
+ * root as a receipt.  The trace is supplementary provenance: old bundles may
+ * omit it, but a present trace must be structurally valid, digest-bound, and
+ * consistent with both the receipt and its independently computed validation.
+ */
+function checkExecutionAdmissionArtifact(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	request: ExecutionRequest,
+	receiptPath: string,
+	receipt: ExecutionReceipt,
+	receiptValidation: ReturnType<typeof validateExecutionReceipt>,
+	options: { explicit_path?: string; expected_digest?: string; required?: boolean } = {},
+): ExecutionAdmissionArtifactCheck {
+	const errors: string[] = [];
+	let path: string;
+	try {
+		path = admittedReadArtifactPath(
+			store,
+			run,
+			options.explicit_path ?? join(dirname(receiptPath), "execution_admission.json"),
+		);
+	} catch (error) {
+		return { errors: [error instanceof Error ? error.message : String(error)] };
+	}
+	if (!existsSync(path)) {
+		if (options.required) errors.push("execution admission trace is missing");
+		return { path, errors };
+	}
+	try {
+		assertRegularFile(path, "Execution admission");
+		const admission = readAndValidateExecutionAdmission(path, request, {
+			expected_digest: options.expected_digest,
+			receipt,
+			receipt_valid: receiptValidation.valid,
+			capability_admitted: receiptValidation.capability.admitted,
+		});
+		errors.push(...admission.errors);
+		return { path, ...(admission.digest === undefined ? {} : { digest: admission.digest }), errors };
+	} catch (error) {
+		errors.push(error instanceof Error ? error.message : String(error));
+		return { path, errors };
+	}
+}
+
 function frozenSubjectFileErrors(
 	store: NodeRunStore,
 	run: CoreRunRecord,
@@ -876,6 +929,8 @@ function formalValidationBinding(
 	run: CoreRunRecord,
 	state: StateDocument | undefined,
 	request: ExecutionRequest,
+	receipt: ExecutionReceipt,
+	receiptValidation: ReturnType<typeof validateExecutionReceipt>,
 	receiptPath: string,
 	policyReferences: readonly string[],
 ): FormalValidationBinding {
@@ -948,6 +1003,19 @@ function formalValidationBinding(
 					if (validatorReceipt.executor.trust_level === "cooperative") {
 						diagnostics.push("formal conformance requires host-enforced validator execution");
 					}
+					if (typeof validator.admission_path !== "string" || typeof validator.admission_digest !== "string") {
+						diagnostics.push("persisted validator evidence is missing admission path/digest");
+					} else {
+						const validatorAdmissionPath = admittedReadArtifactPath(store, run, validator.admission_path);
+						assertRegularFile(validatorAdmissionPath, "Validator execution admission");
+						const admission = readAndValidateExecutionAdmission(validatorAdmissionPath, validatorRequest, {
+							expected_digest: validator.admission_digest,
+							receipt: validatorReceipt,
+							receipt_valid: receiptValidation.valid,
+							capability_admitted: receiptValidation.capability.admitted,
+						});
+						diagnostics.push(...admission.errors);
+					}
 				} catch (error) {
 					diagnostics.push(error instanceof Error ? error.message : String(error));
 				}
@@ -998,6 +1066,16 @@ function formalValidationBinding(
 			diagnostics.push("persisted execution receipt digest does not match the supplied receipt");
 		}
 	}
+	const admissionPath =
+		execution && typeof execution.admission_path === "string" ? execution.admission_path : undefined;
+	const admissionDigest =
+		execution && typeof execution.admission_digest === "string" ? execution.admission_digest : undefined;
+	const admission = checkExecutionAdmissionArtifact(store, run, request, receiptPath, receipt, receiptValidation, {
+		explicit_path: admissionPath,
+		expected_digest: admissionDigest,
+		required: admissionPath !== undefined,
+	});
+	diagnostics.push(...admission.errors);
 	if (diagnostics.length > 0) {
 		return { validatorVerdict: "NOT_EXECUTED", workflowDisposition: "WAIT", diagnostics };
 	}
@@ -1268,6 +1346,11 @@ function automaticGateValidation(
 			persist_receipt(key, receipt) {
 				const path = admittedRunArtifactPath(store, run, join(invocationRoot, `${key}.receipt.json`));
 				writeJsonImmutable(path, receipt);
+				return { path, digest: digestFile(path) };
+			},
+			persist_admission_trace(key, trace) {
+				const path = admittedRunArtifactPath(store, run, join(invocationRoot, `${key}.admission.json`));
+				writeJsonImmutable(path, trace);
 				return { path, digest: digestFile(path) };
 			},
 		});
@@ -1704,6 +1787,25 @@ function validateRegisteredGateExecution(
 	};
 	const receiptValidation = validateExecutionReceipt(request, receipt, boundaryOptions);
 	diagnostics.push(...receiptValidation.errors);
+	if (decodedExecution.compatibility === "current-v2") {
+		if (typeof persisted.admission_path !== "string" || typeof persisted.admission_digest !== "string") {
+			diagnostics.push("current registered execution is missing admission path/digest");
+		} else {
+			try {
+				const admissionPath = admittedReadArtifactPath(store, run, persisted.admission_path);
+				assertRegularFile(admissionPath, "Registered execution admission");
+				const admission = readAndValidateExecutionAdmission(admissionPath, request, {
+					expected_digest: persisted.admission_digest,
+					receipt,
+					receipt_valid: receiptValidation.valid,
+					capability_admitted: receiptValidation.capability.admitted,
+				});
+				diagnostics.push(...admission.errors);
+			} catch (error) {
+				diagnostics.push(error instanceof Error ? error.message : String(error));
+			}
+		}
+	}
 	const output = (Array.isArray(receipt.outputs) ? receipt.outputs : []).find(
 		(candidate) => resolve(candidate.path) === resolve(outputPath),
 	);
@@ -1811,6 +1913,7 @@ function validate(args: ParsedArgs): PublicOutcome {
 		const requestValidation = validateExecutionRequest(request, boundaryOptions);
 		let execution = requestValidation;
 		let receiptPath: string | undefined;
+		let admissionPath: string | undefined;
 		let receipt: ExecutionReceipt | undefined;
 		if (executionReceiptPath) {
 			receiptPath = admittedRunArtifactPath(store, run, absolute(executionReceiptPath, "--execution-receipt"));
@@ -1852,6 +1955,32 @@ function validate(args: ParsedArgs): PublicOutcome {
 				];
 				receiptValidation.valid = false;
 			}
+			const siblingAdmission = admittedReadArtifactPath(
+				store,
+				run,
+				join(dirname(receiptPath), "execution_admission.json"),
+			);
+			if (existsSync(siblingAdmission)) {
+				admissionPath = siblingAdmission;
+				const admission = readAndValidateExecutionAdmission(siblingAdmission, request, {
+					receipt,
+					receipt_valid: receiptValidation.valid,
+					capability_admitted: receiptValidation.capability.admitted,
+				});
+				if (admission.errors.length > 0) {
+					receiptValidation.errors = [...receiptValidation.errors, ...admission.errors];
+					receiptValidation.valid = false;
+					receiptValidation.outcome = createOutcome({
+						validatorVerdict: "NOT_EXECUTED",
+						workflowDisposition: "BLOCK",
+						reasonCode: "INVALID_CONTRACT",
+						diagnostics: admission.errors.map((message) => ({
+							code: "EXECUTION_ADMISSION_REJECTED",
+							message,
+						})),
+					});
+				}
+			}
 			execution = receiptValidation;
 		}
 		const nextState = {
@@ -1859,6 +1988,9 @@ function validate(args: ParsedArgs): PublicOutcome {
 			last_execution: {
 				request_path: requestPath,
 				request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+				...(admissionPath === undefined
+					? {}
+					: { admission_path: admissionPath, admission_digest: digestFile(admissionPath) }),
 				...(receiptPath === undefined
 					? {}
 					: { receipt_path: receiptPath, receipt_digest: digestFile(receiptPath) }),
@@ -2881,8 +3013,17 @@ function freeze(args: ParsedArgs): PublicOutcome {
 	const requestValidation = validateExecutionRequest(request, boundary);
 	const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
 	const missing: string[] = [];
+	const rawExecution = state?.last_execution;
+	const execution =
+		typeof rawExecution === "object" && rawExecution !== null ? (rawExecution as Record<string, unknown>) : undefined;
+	const admission = checkExecutionAdmissionArtifact(store, run, request, receiptPath, receipt, receiptValidation, {
+		explicit_path: typeof execution?.admission_path === "string" ? execution.admission_path : undefined,
+		expected_digest: typeof execution?.admission_digest === "string" ? execution.admission_digest : undefined,
+		required: typeof execution?.admission_path === "string",
+	});
 	if (!requestValidation.valid) missing.push("valid execution request");
 	if (!receiptValidation.valid) missing.push("valid execution receipt");
+	if (admission.errors.length > 0) missing.push("valid execution admission");
 	if (
 		outputRootBindingError(store, run, request, policyReferences) !== undefined ||
 		receiptOutputErrors(store, run, request, receipt).length > 0
@@ -3104,9 +3245,22 @@ function conformance(args: ParsedArgs): PublicOutcome {
 			? (lastValidation.outcome as Record<string, unknown>)
 			: {};
 	const formalDiagnostics: string[] = [];
+	if (request.operation !== "formal_evaluation") {
+		const admission = checkExecutionAdmissionArtifact(store, run, request, receiptPath, receipt, receiptValidation);
+		formalDiagnostics.push(...admission.errors);
+	}
 	const formalBinding =
 		request.operation === "formal_evaluation"
-			? formalValidationBinding(store, run, state, request, receiptPath, policyReferences)
+			? formalValidationBinding(
+					store,
+					run,
+					state,
+					request,
+					receipt,
+					receiptValidation,
+					receiptPath,
+					policyReferences,
+				)
 			: undefined;
 	if (formalBinding !== undefined && formalBinding.diagnostics.length === 0) {
 		const suppliedVerdict = one(args, "validator-verdict");
@@ -3428,6 +3582,19 @@ function finalize(args: ParsedArgs): void {
 			}
 		}
 		assertReceiptOutputFiles(store, run, request, receipt);
+		const rawExecution = state?.last_execution;
+		const execution =
+			typeof rawExecution === "object" && rawExecution !== null
+				? (rawExecution as Record<string, unknown>)
+				: undefined;
+		const admission = checkExecutionAdmissionArtifact(store, run, request, receiptPath, receipt, validation, {
+			explicit_path: typeof execution?.admission_path === "string" ? execution.admission_path : undefined,
+			expected_digest: typeof execution?.admission_digest === "string" ? execution.admission_digest : undefined,
+			required: typeof execution?.admission_path === "string",
+		});
+		if (admission.errors.length > 0) {
+			throw new Error(`Success execution admission is not admissible: ${admission.errors.join("; ")}.`);
+		}
 		let loaded: LoadedDefinition | undefined;
 		try {
 			loaded = currentDefinition(args, root, run.skillName);
@@ -3452,6 +3619,7 @@ function finalize(args: ParsedArgs): void {
 		successReceipt = true;
 		successReceiptDigest = digestFile(receiptPath);
 		artifacts.push(receiptPath);
+		if (admission.path !== undefined && existsSync(admission.path)) artifacts.push(admission.path);
 	}
 	const finalized = store.finalizeRun(runId, status as "success" | "incomplete" | "failed" | "cancelled", {
 		terminalCheckpoint: true,

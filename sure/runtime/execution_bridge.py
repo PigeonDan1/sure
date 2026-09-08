@@ -276,6 +276,57 @@ def validate_execution_admission_binding(request: Mapping[str, Any], trace: Mapp
     return errors
 
 
+def validate_execution_admission_receipt_binding(
+    request: Mapping[str, Any],
+    trace: Mapping[str, Any],
+    *,
+    receipt: Mapping[str, Any] | None = None,
+    receipt_valid: bool | None = None,
+    capability_admitted: bool | None = None,
+) -> list[str]:
+    """Bind admission provenance to the receipt and its validation result.
+
+    Admission is an audit record, not an execution receipt.  This check keeps
+    the two records from making contradictory claims while leaving lifecycle
+    and output validation to :func:`validate_contract_pair`.
+    """
+
+    errors = validate_execution_admission_binding(request, trace)
+    receipt_present = receipt is not None
+    if trace.get("receipt_present") != receipt_present:
+        errors.append("admission.receipt_present does not match the persisted receipt")
+    if receipt_valid is not None and trace.get("receipt_valid") is not receipt_valid:
+        errors.append("admission.receipt_valid does not match receipt validation")
+    if capability_admitted is False and trace.get("status") == "ADMITTED":
+        errors.append("admission.status ADMITTED conflicts with a non-admitted capability result")
+    if capability_admitted is True and trace.get("status") == "CAPABILITY_MISSING":
+        errors.append("admission.status CAPABILITY_MISSING conflicts with an admitted capability result")
+    if trace.get("receipt_valid") is True and not receipt_present:
+        errors.append("admission.receipt_valid requires a persisted receipt")
+    if receipt is None:
+        return errors
+
+    lifecycle = receipt.get("lifecycle")
+    if lifecycle == "SUCCEEDED":
+        if trace.get("status") != "ADMITTED":
+            errors.append("successful receipt requires ADMITTED admission status")
+        if trace.get("execute_invoked") is not True:
+            errors.append("successful receipt requires admission.execute_invoked")
+        if trace.get("receipt_valid") is not True:
+            errors.append("successful receipt requires admission.receipt_valid")
+        if receipt_valid is False:
+            errors.append("successful receipt cannot have invalid receipt validation")
+        if capability_admitted is False:
+            errors.append("successful receipt cannot have missing capability")
+    if trace.get("status") == "CAPABILITY_MISSING" and lifecycle != "NOT_STARTED":
+        errors.append("CAPABILITY_MISSING admission cannot carry an executing receipt")
+    if trace.get("status") == "REJECTED" and lifecycle != "NOT_STARTED":
+        errors.append("REJECTED admission cannot carry an executing receipt")
+    if lifecycle != "NOT_STARTED" and trace.get("execute_invoked") is not True:
+        errors.append("an executing receipt requires admission.execute_invoked")
+    return errors
+
+
 def _valid_adapter_timeout(value: object) -> bool:
     return (
         isinstance(value, int)
@@ -1075,6 +1126,153 @@ def build_receipt(
     return receipt
 
 
+def map_vc_job_result_to_receipt(
+    request: Mapping[str, Any],
+    result: Mapping[str, Any],
+    *,
+    executor_id: str | None = None,
+    executor_version: str = "sure-vc-adapter.v1",
+    executor_digest_value: str | None = None,
+    executor_trust_level: str = "cooperative",
+    capability_evidence_values: Sequence[Mapping[str, Any]] = (),
+    outputs: Sequence[Mapping[str, Any]] = (),
+    submitted: bool = True,
+    capability_available: bool = True,
+    cancellation_confirmed: bool | None = None,
+    observed_at: str | None = None,
+    receipt_id: str | None = None,
+) -> dict[str, Any]:
+    """Map a normalized VC job result into the neutral receipt contract.
+
+    This is deliberately a pure adapter boundary: it does not submit, poll, or
+    cancel a job, and it never changes workflow state.  A timeout is reported
+    as ``CANCELLED`` with explicit cancellation uncertainty; a submit failure
+    or missing capability is ``NOT_STARTED``.  Neither case can become a
+    successful receipt merely because a job id or capability claim is present.
+    """
+
+    runtime = request.get("runtime_requirements")
+    if not isinstance(runtime, Mapping) or runtime.get("execution_surface") != "vc":
+        raise ValueError("VC receipt mapping requires runtime_requirements.execution_surface=vc")
+    executor_kind = runtime.get("executor_kind")
+    if executor_kind not in {"remote", "trusted"}:
+        raise ValueError("VC receipt mapping requires a remote or trusted executor kind")
+    if executor_trust_level not in {"cooperative", "host_enforced", "attested"}:
+        raise ValueError("executor_trust_level is invalid")
+
+    job_id_value = result.get("job_id")
+    partition_value = result.get("partition")
+    for field, value in (("job_id", job_id_value), ("partition", partition_value)):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ValueError(f"VC result {field} must be a non-empty string when present")
+    job_id = str(job_id_value).strip() if isinstance(job_id_value, str) else None
+    partition = str(partition_value).strip() if isinstance(partition_value, str) else None
+    if capability_available and submitted and (job_id is None or partition is None):
+        raise ValueError("submitted VC result requires job_id and partition")
+    timed_out = result.get("timed_out") is True
+    exit_code = result.get("exit_code")
+    if exit_code is not None and (isinstance(exit_code, bool) or not isinstance(exit_code, int)):
+        raise ValueError("VC result exit_code must be an integer or null")
+
+    diagnostics: list[dict[str, Any]] = []
+    lifecycle: str
+    receipt_exit_code: int | None = None
+    if not capability_available:
+        lifecycle = "NOT_STARTED"
+        diagnostics.append({"code": "CAPABILITY_MISSING", "message": "VC capability was not available"})
+    elif not submitted:
+        lifecycle = "NOT_STARTED"
+        diagnostics.append({"code": "EXECUTOR_SPAWN_FAILED", "message": "VC job submission did not start"})
+    elif timed_out or exit_code is None:
+        lifecycle = "CANCELLED"
+        diagnostics.append(
+            {
+                "code": "EXECUTOR_TIMEOUT" if timed_out else "EXECUTOR_NO_EXIT_CODE",
+                "message": "VC job did not produce a terminal exit code before the adapter deadline",
+            }
+        )
+        if cancellation_confirmed is True:
+            diagnostics.append({"code": "CANCEL_CONFIRMED", "message": "VC cancellation was confirmed"})
+        else:
+            diagnostics.append(
+                {
+                    "code": "CANCEL_UNCONFIRMED",
+                    "message": "VC cancellation was best-effort and was not authoritatively confirmed",
+                }
+            )
+    elif exit_code == 0:
+        lifecycle = "SUCCEEDED"
+        receipt_exit_code = 0
+    else:
+        lifecycle = "FAILED"
+        receipt_exit_code = exit_code
+        diagnostics.append(
+            {"code": "EXECUTION_FAILED", "message": f"VC job exited with code {exit_code}"}
+        )
+
+    metadata: dict[str, Any] = {}
+    if job_id is not None:
+        metadata["job_id"] = job_id
+    if partition is not None:
+        metadata["partition"] = partition
+    for field in ("duration_ms", "log_dir", "submit_command"):
+        if result.get(field) is not None:
+            metadata[field] = result[field]
+    if isinstance(result.get("vc_diagnostics"), str) and result["vc_diagnostics"].strip():
+        metadata["vc_diagnostics"] = result["vc_diagnostics"]
+    for key in ("stdout", "stderr"):
+        value = result.get(key)
+        if isinstance(value, str) and value:
+            metadata[key] = value[-8192:]
+    diagnostics.append({"code": "VC_JOB_METADATA", "message": "normalized VC job metadata", "details": metadata})
+
+    evidence = [dict(item) for item in capability_evidence_values]
+    if not evidence:
+        observed = str(observed_at or utc_now())
+        for requirement in request.get("capability_requirements") or []:
+            if not isinstance(requirement, Mapping):
+                continue
+            capability_id = requirement.get("capability_id")
+            capability_class = requirement.get("capability_class")
+            if not isinstance(capability_id, str) or not isinstance(capability_class, str):
+                continue
+            evidence.append(
+                {
+                    "capability_id": capability_id,
+                    "capability_class": capability_class,
+                    "status": "AVAILABLE" if capability_available else "MISSING",
+                    "source": "executor",
+                    "observed_at": observed,
+                    "evidence_digest": digest_json(
+                        {
+                            "capability_id": capability_id,
+                            "job_id": job_id,
+                            "available": capability_available,
+                        }
+                    ),
+                }
+            )
+
+    receipt = build_receipt(
+        request,
+        lifecycle=lifecycle,
+        executor_kind=str(executor_kind),
+        executor_version=executor_version,
+        executor_digest_value=executor_digest_value,
+        capability_evidence_values=evidence,
+        outputs=outputs,
+        started_at=str(observed_at or utc_now()),
+        finished_at=str(observed_at or utc_now()) if lifecycle in TERMINAL_LIFECYCLES else None,
+        exit_code=receipt_exit_code,
+        diagnostics=diagnostics,
+        receipt_id=receipt_id or f"vc-{safe_id(job_id or request.get('request_id'), 'job')}",
+    )
+    executor = receipt["executor"]
+    executor["executor_id"] = safe_id(executor_id or f"sure-vc-{executor_kind}", f"sure-vc-{executor_kind}")
+    executor["trust_level"] = executor_trust_level
+    return receipt
+
+
 def derive_execution_admission_trace(
     request: Mapping[str, Any],
     receipt: Mapping[str, Any],
@@ -1263,14 +1461,19 @@ def write_contract_bundle(
     history_admission_path = history_dir / f"{request_id}.admission.json"
     _write_immutable_json(history_request_path, request)
     _write_immutable_json(history_receipt_path, receipt)
-    admission_errors: list[str] = []
-    if admission_trace is not None:
-        admission_errors = validate_execution_admission_binding(request, admission_trace)
-        _write_immutable_json(history_admission_path, admission_trace)
-        write_json(admission_path, admission_trace)
     write_json(request_path, request)
     write_json(receipt_path, receipt)
     errors = validate_contract_pair(request, receipt, forbidden_output_roots=forbidden_output_roots)
+    admission_errors: list[str] = []
+    if admission_trace is not None:
+        admission_errors = validate_execution_admission_receipt_binding(
+            request,
+            admission_trace,
+            receipt=receipt,
+            receipt_valid=not errors,
+        )
+        _write_immutable_json(history_admission_path, admission_trace)
+        write_json(admission_path, admission_trace)
     contract = {
         "schema": COMPATIBILITY_SCHEMA,
         "version": 1,

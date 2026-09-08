@@ -1,0 +1,129 @@
+{
+  "schema": "sure.external_adapter.receipt_mapping.v1",
+  "version": 1,
+  "request_profile": {
+    "execution_surface": "vc",
+    "executor_kind": "remote",
+    "policy_snapshot_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "adapter_manifest_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "capability_ids": [
+      "sure.execution.remote",
+      "sure.execution.vc"
+    ]
+  },
+  "cases": [
+    {
+      "id": "success",
+      "result": {
+        "job_id": "job-success",
+        "partition": "gpu-test",
+        "exit_code": 0,
+        "timed_out": false,
+        "duration_ms": 1000,
+        "log_dir": "/tmp/sure-mapping/logs/success",
+        "submit_command": ["vc", "submit"]
+      },
+      "expected": {
+        "lifecycle": "SUCCEEDED",
+        "contract_valid": true,
+        "diagnostic_codes": ["VC_JOB_METADATA"]
+      }
+    },
+    {
+      "id": "executor-failure",
+      "result": {
+        "job_id": "job-failed",
+        "partition": "gpu-test",
+        "exit_code": 17,
+        "timed_out": false,
+        "duration_ms": 1000,
+        "log_dir": "/tmp/sure-mapping/logs/failed",
+        "submit_command": ["vc", "submit"]
+      },
+      "expected": {
+        "lifecycle": "FAILED",
+        "contract_valid": true,
+        "diagnostic_codes": ["EXECUTION_FAILED", "VC_JOB_METADATA"]
+      }
+    },
+    {
+      "id": "timeout-cancel-unconfirmed",
+      "result": {
+        "job_id": "job-timeout",
+        "partition": "gpu-test",
+        "exit_code": null,
+        "timed_out": true,
+        "duration_ms": 1800000,
+        "log_dir": "/tmp/sure-mapping/logs/timeout",
+        "submit_command": ["vc", "submit"]
+      },
+      "cancellation_confirmed": false,
+      "expected": {
+        "lifecycle": "CANCELLED",
+        "contract_valid": true,
+        "diagnostic_codes": ["EXECUTOR_TIMEOUT", "CANCEL_UNCONFIRMED", "VC_JOB_METADATA"]
+      }
+    },
+    {
+      "id": "capability-missing",
+      "result": {
+        "job_id": "job-not-started",
+        "partition": "gpu-test",
+        "exit_code": 0,
+        "timed_out": false,
+        "duration_ms": 0,
+        "log_dir": "/tmp/sure-mapping/logs/missing",
+        "submit_command": ["vc", "submit"]
+      },
+      "capability_available": false,
+      "expected": {
+        "lifecycle": "NOT_STARTED",
+        "contract_valid": false,
+        "diagnostic_codes": ["CAPABILITY_MISSING", "VC_JOB_METADATA"]
+      }
+    },
+    {
+      "id": "capability-missing-before-submit",
+      "result": {
+        "exit_code": null,
+        "timed_out": false
+      },
+      "capability_available": false,
+      "submitted": false,
+      "expected": {
+        "lifecycle": "NOT_STARTED",
+        "contract_valid": false,
+        "diagnostic_codes": ["CAPABILITY_MISSING", "VC_JOB_METADATA"]
+      }
+    },
+    {
+      "id": "output-boundary-escape",
+      "result": {
+        "job_id": "job-output-escape",
+        "partition": "gpu-test",
+        "exit_code": 0,
+        "timed_out": false,
+        "duration_ms": 1000,
+        "log_dir": "/tmp/sure-mapping/logs/escape",
+        "submit_command": ["vc", "submit"]
+      },
+      "outputs": [
+        {
+          "artifact_id": "escaped",
+          "path": "/outside/result.json",
+          "resolved_path": "/outside/result.json",
+          "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "size": 1,
+          "media_type": "application/json",
+          "origin": "generated",
+          "source_root": "/outside"
+        }
+      ],
+      "expected": {
+        "lifecycle": "SUCCEEDED",
+        "contract_valid": false,
+        "diagnostic_codes": ["VC_JOB_METADATA"]
+      }
+    }
+  ]
+}

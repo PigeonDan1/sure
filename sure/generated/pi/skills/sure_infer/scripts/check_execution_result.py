@@ -27,8 +27,10 @@ for _parent in Path(__file__).resolve().parents:
 
 import check_execution_surface_compliance as compliance
 from execution_result_checks import validation_errors
+from sure.runtime.execution_bridge import digest_json
 from sure.runtime.execution_bridge import read_json as read_execution_json
 from sure.runtime.execution_bridge import validate_contract_pair
+from sure.runtime.execution_bridge import validate_execution_admission_receipt_binding
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -76,6 +78,8 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
 
     request_path = artifacts / "execution_request.json"
     receipt_path = artifacts / "execution_receipt.json"
+    admission_path = artifacts / "execution_admission.json"
+    contract_path = artifacts / "execution_contract.json"
     if request_path.exists() or receipt_path.exists():
         request = read_execution_json(request_path)
         receipt = read_execution_json(receipt_path)
@@ -87,11 +91,31 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
             forbidden = []
             if os.environ.get("SURE_REFERENCE_ROOT"):
                 forbidden.append(Path(os.environ["SURE_REFERENCE_ROOT"]).expanduser().resolve())
-            errors.extend(validate_contract_pair(request, receipt, forbidden_output_roots=forbidden))
+            contract_errors = validate_contract_pair(request, receipt, forbidden_output_roots=forbidden)
+            errors.extend(contract_errors)
+            if admission_path.exists():
+                admission = read_execution_json(admission_path)
+                if not admission:
+                    errors.append("execution_admission.json is missing or invalid")
+                else:
+                    contract = _read_json(contract_path)
+                    if contract and contract.get("admission_digest"):
+                        if digest_json(admission) != contract.get("admission_digest"):
+                            errors.append("execution admission digest differs from execution_contract.json")
+                    errors.extend(
+                        validate_execution_admission_receipt_binding(
+                            request,
+                            admission,
+                            receipt=receipt,
+                            receipt_valid=not contract_errors,
+                        )
+                    )
             if result.get("job_status") == "succeeded" and receipt.get("lifecycle") != "SUCCEEDED":
                 errors.append("successful execution_result.json conflicts with execution receipt lifecycle")
             if result.get("job_status") != "succeeded" and receipt.get("lifecycle") == "SUCCEEDED":
                 errors.append("failed execution_result.json conflicts with successful execution receipt")
+    if admission_path.exists() and not (request_path.exists() and receipt_path.exists()):
+        errors.append("execution_admission.json requires execution_request.json and execution_receipt.json")
 
     if result.get("job_status") != "succeeded":
         return errors

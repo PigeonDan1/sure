@@ -16,12 +16,14 @@ from sure.runtime.execution_bridge import (
     digest_tree,
     output_set_digest,
     execution_outcome_projection,
+    map_vc_job_result_to_receipt,
     project_execution_evidence,
     validate_adapter_route,
     validate_capability_evidence,
     validate_capability_evidence_list,
     validate_contract_pair,
     validate_execution_admission_binding,
+    validate_execution_admission_receipt_binding,
     validate_execution_admission_trace,
     validate_output_binding,
     validate_output_contract,
@@ -37,6 +39,7 @@ class ExecutionBridgeTests(unittest.TestCase):
         requirements: list[dict] | None = None,
         runtime_requirements: dict | None = None,
         adapter_manifest_digest: str | None = None,
+        policy_snapshot_digest: str | None = None,
     ) -> dict:
         return build_request(
             run_id="bridge-test",
@@ -52,6 +55,7 @@ class ExecutionBridgeTests(unittest.TestCase):
             capability_requirements=requirements or [],
             runtime_requirements=runtime_requirements,
             adapter_manifest_digest=adapter_manifest_digest,
+            policy_snapshot_digest=policy_snapshot_digest,
             reference_snapshot_digest=digest_json({"inputs": []}),
             policy_digest=digest_json({"policy": 1}),
         )
@@ -187,6 +191,52 @@ class ExecutionBridgeTests(unittest.TestCase):
                 validate_execution_admission_binding(bound_request, {**bound, "adapter_manifest_digest": None}),
             )
 
+    def test_admission_trace_binds_receipt_lifecycle_and_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            receipt = build_receipt(request, lifecycle="SUCCEEDED", executor_kind="python", exit_code=0)
+            trace = create_execution_admission_trace(
+                request,
+                observed_at="2026-01-01T00:00:00Z",
+                outcome_reason_code="VALIDATION_PENDING",
+                probe_invoked=True,
+                execute_invoked=True,
+                receipt=receipt,
+                receipt_valid=True,
+            )
+            self.assertEqual(
+                validate_execution_admission_receipt_binding(
+                    request,
+                    trace,
+                    receipt=receipt,
+                    receipt_valid=True,
+                    capability_admitted=True,
+                ),
+                [],
+            )
+            forged = {**trace, "status": "CAPABILITY_MISSING"}
+            errors = validate_execution_admission_receipt_binding(
+                request,
+                forged,
+                receipt=receipt,
+                receipt_valid=True,
+                capability_admitted=False,
+            )
+            self.assertIn("CAPABILITY_MISSING admission cannot invoke execute", errors)
+            self.assertIn("successful receipt requires ADMITTED admission status", errors)
+            self.assertIn("successful receipt cannot have missing capability", errors)
+            self.assertIn(
+                "admission.status CAPABILITY_MISSING conflicts with an admitted capability result",
+                validate_execution_admission_receipt_binding(
+                    request,
+                    forged,
+                    receipt=receipt,
+                    receipt_valid=True,
+                    capability_admitted=True,
+                ),
+            )
+
     def test_contract_bundle_persists_admission_trace_separately(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -199,7 +249,7 @@ class ExecutionBridgeTests(unittest.TestCase):
                 probe_invoked=False,
                 execute_invoked=False,
                 receipt=receipt,
-                receipt_valid=False,
+                receipt_valid=True,
             )
             contract = write_contract_bundle(root, request, receipt, admission_trace=trace)
             self.assertTrue(contract["contract_valid"])
@@ -215,6 +265,20 @@ class ExecutionBridgeTests(unittest.TestCase):
             invalid = write_contract_bundle(invalid_root, invalid_request, receipt, admission_trace=forged)
             self.assertFalse(invalid["contract_valid"])
             self.assertIn("admission.request_digest does not match request", invalid["diagnostics"])
+
+            success_receipt = build_receipt(request, lifecycle="SUCCEEDED", executor_kind="python", exit_code=0)
+            success_trace = derive_execution_admission_trace(request, success_receipt)
+            forged_success = {**success_trace, "status": "CAPABILITY_MISSING"}
+            invalid_success_root = root / "invalid-success"
+            invalid_success_root.mkdir()
+            invalid_success = write_contract_bundle(
+                invalid_success_root,
+                request,
+                success_receipt,
+                admission_trace=forged_success,
+            )
+            self.assertFalse(invalid_success["contract_valid"])
+            self.assertIn("successful receipt requires ADMITTED admission status", invalid_success["diagnostics"])
 
     def test_legacy_admission_derivation_is_conservative(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -585,6 +649,124 @@ class ExecutionBridgeTests(unittest.TestCase):
             self.assertEqual(len(list(history.glob("*.receipt.json"))), 2)
             latest = json.loads((root / "execution_request.json").read_text(encoding="utf-8"))
             self.assertEqual(latest["request_id"], "bridge-test-second")
+
+    def test_vc_job_result_mapping_is_fail_closed_for_timeout_capability_and_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(
+                root,
+                requirements=[
+                    {"capability_id": "sure.execution.remote", "capability_class": "execution_capability", "required": True},
+                    {"capability_id": "sure.execution.vc", "capability_class": "execution_capability", "required": True},
+                ],
+                runtime_requirements={
+                    "execution_surface": "vc",
+                    "executor_kind": "remote",
+                    "vc_project": "project",
+                    "vc_partition": "gpu-test",
+                },
+                adapter_manifest_digest=digest_json({"manifest": "vc"}),
+                policy_snapshot_digest=digest_json({"snapshot": "site"}),
+            )
+            base = {
+                "job_id": "job-123",
+                "partition": "gpu-test",
+                "submit_command": ["vc", "submit"],
+                "duration_ms": 12.5,
+                "timed_out": False,
+                "log_dir": str(root / "logs"),
+                "vc_diagnostics": "info",
+                "exit_code": 0,
+            }
+            success = map_vc_job_result_to_receipt(request, base, observed_at="2026-01-01T00:00:00Z")
+            self.assertEqual(success["lifecycle"], "SUCCEEDED")
+            self.assertEqual(validate_contract_pair(request, success), [])
+
+            failed = map_vc_job_result_to_receipt(request, {**base, "exit_code": 17})
+            self.assertEqual(failed["lifecycle"], "FAILED")
+            self.assertEqual(validate_contract_pair(request, failed), [])
+
+            timeout = map_vc_job_result_to_receipt(
+                request,
+                {**base, "exit_code": None, "timed_out": True},
+                cancellation_confirmed=False,
+            )
+            self.assertEqual(timeout["lifecycle"], "CANCELLED")
+            timeout_codes = {item["code"] for item in timeout["diagnostics"]}
+            self.assertIn("EXECUTOR_TIMEOUT", timeout_codes)
+            self.assertIn("CANCEL_UNCONFIRMED", timeout_codes)
+            self.assertEqual(validate_contract_pair(request, timeout), [])
+
+            missing = map_vc_job_result_to_receipt(request, base, capability_available=False)
+            self.assertEqual(missing["lifecycle"], "NOT_STARTED")
+            self.assertIn("CAPABILITY_MISSING", {item["code"] for item in missing["diagnostics"]})
+            self.assertTrue(any("required capability" in error for error in validate_contract_pair(request, missing)))
+
+            missing_before_submit = map_vc_job_result_to_receipt(
+                request,
+                {"exit_code": None, "timed_out": False},
+                capability_available=False,
+                submitted=False,
+            )
+            self.assertEqual(missing_before_submit["lifecycle"], "NOT_STARTED")
+            self.assertNotIn("job_id", next(item for item in missing_before_submit["diagnostics"] if item["code"] == "VC_JOB_METADATA")["details"])
+            with self.assertRaises(ValueError):
+                map_vc_job_result_to_receipt(request, {"exit_code": 0, "timed_out": False})
+
+            escaped = map_vc_job_result_to_receipt(
+                request,
+                base,
+                outputs=[
+                    {
+                        "artifact_id": "escaped",
+                        "path": "/outside/result.json",
+                        "resolved_path": "/outside/result.json",
+                        "sha256": "sha256:" + "a" * 64,
+                        "size": 1,
+                        "media_type": "application/json",
+                        "origin": "generated",
+                        "source_root": "/outside",
+                    }
+                ],
+            )
+            self.assertTrue(any("escapes output root" in error for error in validate_contract_pair(request, escaped)))
+
+    def test_vc_mapping_fixture_is_replayed_without_semantic_drift(self) -> None:
+        fixture_path = Path(__file__).resolve().parents[1] / "canonical" / "fixtures" / "external-adapter-receipt-mapping.v1.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            profile = fixture["request_profile"]
+            request = self.request(
+                root,
+                requirements=[
+                    {"capability_id": capability_id, "capability_class": "execution_capability", "required": True}
+                    for capability_id in profile["capability_ids"]
+                ],
+                runtime_requirements={
+                    "execution_surface": profile["execution_surface"],
+                    "executor_kind": profile["executor_kind"],
+                    "vc_project": "project",
+                    "vc_partition": "gpu-test",
+                },
+                adapter_manifest_digest=profile["adapter_manifest_digest"],
+                policy_snapshot_digest=profile["policy_snapshot_digest"],
+            )
+            for case in fixture["cases"]:
+                result = map_vc_job_result_to_receipt(
+                    request,
+                    case["result"],
+                    capability_available=case.get("capability_available", True),
+                    submitted=case.get("submitted", True),
+                    cancellation_confirmed=case.get("cancellation_confirmed"),
+                    outputs=case.get("outputs", []),
+                )
+                expected = case["expected"]
+                self.assertEqual(result["lifecycle"], expected["lifecycle"], case["id"])
+                codes = {item["code"] for item in result.get("diagnostics", [])}
+                self.assertTrue(set(expected["diagnostic_codes"]).issubset(codes), case["id"])
+                contract_valid = not validate_contract_pair(request, result)
+                self.assertEqual(contract_valid, expected["contract_valid"], case["id"])
 
     def output_contract(self, mode: str = "producing") -> dict:
         return {

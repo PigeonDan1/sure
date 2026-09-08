@@ -818,14 +818,18 @@ describe("surectl cooperative control plane", () => {
 		expect(evidence.validators).toHaveLength(1);
 		expect(evidence.validators[0]?.verdict).toBe("PASS");
 		const requestPath = String(evidence.validators[0]?.request_path);
+		const admissionPath = String(evidence.validators[0]?.admission_path);
 		const receiptPath = String(evidence.validators[0]?.receipt_path);
+		expect(evidence.validators[0]?.admission_digest).toBe(digest(admissionPath));
 		const request = JSON.parse(readFileSync(requestPath, "utf8")) as Record<string, unknown>;
 		const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
+		const admission = JSON.parse(readFileSync(admissionPath, "utf8")) as Record<string, unknown>;
 		const runtimeLock = JSON.parse(
 			readFileSync(join(portableRuntime, "runtime-support.lock.json"), "utf8"),
 		) as Record<string, unknown>;
 		expect((request.subject as Record<string, unknown>).runtime_identity_digest).toBe(runtimeLock.runtime_digest);
 		expect(receipt.lifecycle).toBe("SUCCEEDED");
+		expect(admission).toMatchObject({ status: "ADMITTED", execute_invoked: true, receipt_valid: true });
 		expect(receipt.request_digest).toBe(canonicalJsonDigest(request as unknown as JsonValue));
 	}, 15_000);
 
@@ -1247,6 +1251,10 @@ describe("surectl cooperative control plane", () => {
 		expect(executionEvidence.artifact_output_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		const receiptPath = String(executionEvidence.receipt_path);
 		const requestPath = String(executionEvidence.request_path);
+		const admissionPath = String(executionEvidence.admission_path);
+		expect(executionEvidence.admission_digest).toBe(digest(admissionPath));
+		const admission = JSON.parse(readFileSync(admissionPath, "utf8")) as Record<string, unknown>;
+		expect(admission).toMatchObject({ status: "ADMITTED", execute_invoked: true, receipt_present: true });
 		const originalArtifact = readFileSync(artifactPath, "utf8");
 		writeFileSync(artifactPath, `${originalArtifact}\n`);
 		const artifactRejected = command(root, "validate", [
@@ -1267,6 +1275,19 @@ describe("surectl cooperative control plane", () => {
 		state = JSON.parse(readFileSync(join(runDir, "state.json"), "utf8")) as Record<string, unknown>;
 		expect((state.checkpoint as { resumable: boolean }).resumable).toBe(true);
 		writeFileSync(receiptPath, originalReceipt);
+		const originalAdmission = readFileSync(admissionPath, "utf8");
+		const tamperedAdmission = JSON.parse(originalAdmission) as Record<string, unknown>;
+		tamperedAdmission.request_digest = DIGEST_C;
+		writeFileSync(admissionPath, `${JSON.stringify(tamperedAdmission)}\n`);
+		const admissionRejected = command(root, "validate", [
+			...base,
+			"--run-id",
+			runId,
+			"--semantic-runtime",
+			portableRuntime,
+		]);
+		expect(admissionRejected.status).toBe(5);
+		writeFileSync(admissionPath, originalAdmission);
 
 		// Stripping only the current state marker cannot downgrade a new request
 		// into the legacy compatibility path.
@@ -1318,8 +1339,12 @@ describe("surectl cooperative control plane", () => {
 		legacyReceipt.request_digest = canonicalJsonDigest(legacyRequest as unknown as JsonValue);
 		legacyReceipt.semantic_request_digest = legacyRequest.semantic_request_digest;
 		writeFileSync(receiptPath, `${JSON.stringify(legacyReceipt, null, 2)}\n`);
+		const legacyAdmission = JSON.parse(readFileSync(admissionPath, "utf8")) as Record<string, unknown>;
+		legacyAdmission.request_digest = canonicalJsonDigest(legacyRequest as unknown as JsonValue);
+		writeFileSync(admissionPath, `${JSON.stringify(legacyAdmission, null, 2)}\n`);
 		legacyExecutionEvidence.request_digest = digest(requestPath);
 		legacyExecutionEvidence.receipt_digest = digest(receiptPath);
+		legacyExecutionEvidence.admission_digest = digest(admissionPath);
 		const legacyReceiptBytes = readFileSync(receiptPath, "utf8");
 		writeFileSync(statePath, `${JSON.stringify(state)}\n`);
 		legacyRunRecord = JSON.parse(readFileSync(runRecordPath, "utf8")) as Record<string, unknown>;
@@ -1333,6 +1358,38 @@ describe("surectl cooperative control plane", () => {
 		expect((state.checkpoint as { resumable: boolean }).resumable).toBe(false);
 		expect(state.last_execution).not.toHaveProperty("artifact_output_digest");
 		expect(readFileSync(receiptPath, "utf8")).toBe(legacyReceiptBytes);
+		const finalAdmissionOriginal = readFileSync(admissionPath, "utf8");
+		const finalAdmissionTampered = JSON.parse(finalAdmissionOriginal) as Record<string, unknown>;
+		finalAdmissionTampered.request_digest = `sha256:${DIGEST_C}`;
+		writeFileSync(admissionPath, `${JSON.stringify(finalAdmissionTampered)}\n`);
+		const rejectedFinalize = command(root, "finalize", [
+			"--run-id",
+			runId,
+			"--definition",
+			customDefinition,
+			"--status",
+			"success",
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+		]);
+		expect(rejectedFinalize.status).toBe(1);
+		expect(rejectedFinalize.stderr).toContain("Success execution admission is not admissible");
+		writeFileSync(admissionPath, finalAdmissionOriginal);
+		const finalized = command(root, "finalize", [
+			"--run-id",
+			runId,
+			"--definition",
+			customDefinition,
+			"--status",
+			"success",
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+		]);
+		expect(finalized.status, `${finalized.stdout}\n${finalized.stderr}`).toBe(0);
 	}, 30_000);
 
 	it("runs a TRANS artifact validator from the shared portable runtime", () => {

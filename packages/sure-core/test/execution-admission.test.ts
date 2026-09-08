@@ -4,6 +4,7 @@ import { validateJsonSchema } from "../src/contracts/schema.ts";
 import {
 	createExecutionAdmissionTrace,
 	validateExecutionAdmissionBinding,
+	validateExecutionAdmissionReceiptBinding,
 	validateExecutionAdmissionTrace,
 } from "../src/execution/admission.ts";
 import { createOutcome } from "../src/workflow/outcome.ts";
@@ -134,5 +135,53 @@ describe("execution admission trace", () => {
 		expect(
 			validateExecutionAdmissionBinding(fixture.request, { ...trace, adapter_manifest_digest: undefined }),
 		).toContain("admission.adapter_manifest_digest is missing from request binding");
+	});
+
+	it("binds receipt lifecycle and validation to the admission trace", async () => {
+		const fixture = vcAdapterFixture();
+		const receipt = await fixture.port.execute(fixture.request);
+		const trace = createExecutionAdmissionTrace(
+			fixture.request,
+			FIXTURE_NOW,
+			createOutcome({
+				validatorVerdict: "NOT_EXECUTED",
+				workflowDisposition: "WAIT",
+				reasonCode: "VALIDATION_PENDING",
+			}),
+			{
+				probe_invoked: true,
+				execute_invoked: true,
+				receipt,
+				receipt_valid: true,
+			},
+		);
+		expect(
+			validateExecutionAdmissionReceiptBinding(fixture.request, trace, {
+				receipt,
+				receipt_valid: true,
+				capability_admitted: true,
+			}),
+		).toEqual([]);
+		const forged = { ...trace, status: "CAPABILITY_MISSING" as const };
+		expect(
+			validateExecutionAdmissionReceiptBinding(fixture.request, forged, {
+				receipt,
+				receipt_valid: true,
+				capability_admitted: false,
+			}),
+		).toEqual(
+			expect.arrayContaining([
+				"CAPABILITY_MISSING admission cannot invoke execute",
+				"successful receipt requires ADMITTED admission status",
+				"successful receipt cannot have missing capability",
+			]),
+		);
+		expect(
+			validateExecutionAdmissionReceiptBinding(fixture.request, forged, {
+				receipt,
+				receipt_valid: true,
+				capability_admitted: true,
+			}),
+		).toContain("admission.status CAPABILITY_MISSING conflicts with an admitted capability result");
 	});
 });

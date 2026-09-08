@@ -147,3 +147,58 @@ export function validateExecutionAdmissionBinding(request: ExecutionRequest, tra
 	}
 	return errors;
 }
+
+/**
+ * Bind a persisted admission trace to the receipt that the host actually
+ * produced.  The trace is a preflight record, so it never replaces receipt
+ * validation; this helper only prevents the two records from making
+ * contradictory claims.
+ */
+export function validateExecutionAdmissionReceiptBinding(
+	request: ExecutionRequest,
+	trace: ExecutionAdmissionTrace,
+	options: {
+		receipt?: ExecutionReceipt;
+		receipt_valid?: boolean;
+		capability_admitted?: boolean;
+	} = {},
+): string[] {
+	const errors = validateExecutionAdmissionBinding(request, trace);
+	const receipt = options.receipt;
+	const receiptPresent = receipt !== undefined;
+	if (trace.receipt_present !== receiptPresent) {
+		errors.push("admission.receipt_present does not match the persisted receipt");
+	}
+	if (options.receipt_valid !== undefined && trace.receipt_valid !== options.receipt_valid) {
+		errors.push("admission.receipt_valid does not match receipt validation");
+	}
+	if (options.capability_admitted === false && trace.status === "ADMITTED") {
+		errors.push("admission.status ADMITTED conflicts with a non-admitted capability result");
+	}
+	if (options.capability_admitted === true && trace.status === "CAPABILITY_MISSING") {
+		errors.push("admission.status CAPABILITY_MISSING conflicts with an admitted capability result");
+	}
+	if (trace.receipt_valid && !receiptPresent) {
+		errors.push("admission.receipt_valid requires a persisted receipt");
+	}
+	if (receipt === undefined) return errors;
+
+	const lifecycle = receipt.lifecycle;
+	if (lifecycle === "SUCCEEDED") {
+		if (trace.status !== "ADMITTED") errors.push("successful receipt requires ADMITTED admission status");
+		if (!trace.execute_invoked) errors.push("successful receipt requires admission.execute_invoked");
+		if (!trace.receipt_valid) errors.push("successful receipt requires admission.receipt_valid");
+		if (options.receipt_valid === false) errors.push("successful receipt cannot have invalid receipt validation");
+		if (options.capability_admitted === false) errors.push("successful receipt cannot have missing capability");
+	}
+	if (trace.status === "CAPABILITY_MISSING" && lifecycle !== "NOT_STARTED") {
+		errors.push("CAPABILITY_MISSING admission cannot carry an executing receipt");
+	}
+	if (trace.status === "REJECTED" && lifecycle !== "NOT_STARTED") {
+		errors.push("REJECTED admission cannot carry an executing receipt");
+	}
+	if (lifecycle !== "NOT_STARTED" && !trace.execute_invoked) {
+		errors.push("an executing receipt requires admission.execute_invoked");
+	}
+	return errors;
+}

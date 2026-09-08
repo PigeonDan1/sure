@@ -16,7 +16,13 @@ for _parent in Path(__file__).resolve().parents:
 
 import check_execution_result as gate
 import check_execution_surface_compliance as compliance
-from sure.runtime.execution_bridge import build_receipt, build_request, digest_json, write_contract_bundle
+from sure.runtime.execution_bridge import (
+    build_receipt,
+    build_request,
+    derive_execution_admission_trace,
+    digest_json,
+    write_contract_bundle,
+)
 
 IMAGE_REF = "registry.example.com/sure/demo@sha256:" + "a" * 64
 DATASET = "demo_ds__v1.0.2"
@@ -121,6 +127,35 @@ class CheckExecutionResultTests(unittest.TestCase):
         receipt["request_digest"] = digest_json({"forged": True})
         receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
         self.assertTrue(any("request_digest" in error for error in self.errors()))
+
+    def test_a_bound_admission_trace_is_checked_and_tampering_is_refused(self) -> None:
+        request = build_request(
+            run_id="bridge-run-admission",
+            unit_id="execute_inference",
+            operation="inference",
+            entrypoint={"executable": "/usr/bin/python3", "argv": ["-c", "pass"]},
+            output_root=self.run_dir,
+            subject={
+                "bundle_manifest_path": str(self.run_dir / "bundle.json"),
+                "bundle_digest": digest_json({"bundle": 1}),
+                "runtime_identity_digest": digest_json({"runtime": 1}),
+            },
+            policy_digest=digest_json({"policy": 1}),
+            reference_snapshot_digest=digest_json({"snapshot": 1}),
+        )
+        receipt = build_receipt(request, lifecycle="SUCCEEDED", executor_kind="docker", exit_code=0)
+        trace = derive_execution_admission_trace(request, receipt)
+        write_contract_bundle(self.artifacts, request, receipt, admission_trace=trace)
+        self.assertEqual(self.errors(), [])
+        admission_path = self.artifacts / "execution_admission.json"
+        admission = json.loads(admission_path.read_text(encoding="utf-8"))
+        admission["request_digest"] = digest_json({"forged": True})
+        admission_path.write_text(json.dumps(admission), encoding="utf-8")
+        self.assertTrue(any("admission.request_digest" in error for error in self.errors()))
+
+    def test_a_orphan_admission_trace_is_refused(self) -> None:
+        self.write_json(self.artifacts / "execution_admission.json", {"schema": "sure.execution_admission.v1"})
+        self.assertTrue(any("execution_admission.json requires" in error for error in self.errors()))
 
     def test_a_terminal_failure_is_a_valid_gate_outcome(self) -> None:
         self.write_result(job_status="failed", exit_code=3, failed_stage="generate", datasets=[])

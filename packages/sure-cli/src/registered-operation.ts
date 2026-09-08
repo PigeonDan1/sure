@@ -21,6 +21,7 @@ import {
 	createOperationExecutionEvidence,
 	createOutcome,
 	executionOutputContractDigest,
+	validateExecutionAdmissionReceiptBinding,
 } from "@earendil-works/sure-core";
 import { resolveSemanticBackendOperation, verifyPortableRuntime } from "@earendil-works/sure-core/evaluation";
 import { type ExecutorRunResult, executeRequest, projectSurectlExecutionEvidence } from "./executor.ts";
@@ -388,6 +389,11 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 	});
 	const persistedReceipt = execution.receipt ? options.persist_receipt(execution.receipt) : undefined;
 	const persistedAdmission = options.persist_admission_trace?.(execution.admission_trace);
+	const admissionErrors = validateExecutionAdmissionReceiptBinding(request, execution.admission_trace, {
+		receipt: execution.receipt,
+		receipt_valid: execution.receipt_validation?.valid,
+		capability_admitted: execution.capability.admitted,
+	});
 	const outputPath =
 		operation.output_contract === undefined
 			? options.artifact.path
@@ -397,15 +403,30 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 	);
 	const validReceipt = execution.receipt !== undefined && execution.receipt_validation?.valid === true;
 	const missingSuccessfulOutput = execution.receipt?.lifecycle === "SUCCEEDED" && outputArtifact === undefined;
-	const evidenceProjection = projectSurectlExecutionEvidence({
-		lifecycle: execution.receipt?.lifecycle,
-		receipt_valid: validReceipt,
-		capability_admitted: execution.capability.admitted,
-		missing_output: missingSuccessfulOutput,
-		outcome_reason_code: execution.outcome.reason_code,
-	});
+	const evidenceProjection =
+		admissionErrors.length > 0
+			? { verdict: "NOT_EXECUTED" as const, reason_code: "INVALID_CONTRACT" as const }
+			: projectSurectlExecutionEvidence({
+					lifecycle: execution.receipt?.lifecycle,
+					receipt_valid: validReceipt,
+					capability_admitted: execution.capability.admitted,
+					missing_output: missingSuccessfulOutput,
+					outcome_reason_code: execution.outcome.reason_code,
+				});
+	const outcome =
+		admissionErrors.length > 0
+			? createOutcome({
+					validatorVerdict: "NOT_EXECUTED",
+					workflowDisposition: "BLOCK",
+					reasonCode: "INVALID_CONTRACT",
+					diagnostics: admissionErrors.map((message) => ({
+						code: "EXECUTION_ADMISSION_REJECTED",
+						message,
+					})),
+				})
+			: execution.outcome;
 	return {
-		outcome: execution.outcome,
+		outcome,
 		request,
 		receipt: execution.receipt,
 		admission_trace: execution.admission_trace,
@@ -418,6 +439,7 @@ export function runRegisteredOperation(options: RegisteredOperationOptions): Reg
 			reason_code: evidenceProjection.reason_code,
 			diagnostics: [
 				...diagnostics(execution),
+				...admissionErrors,
 				...(missingSuccessfulOutput ? [`${operation.operation_id} did not bind the gate artifact output`] : []),
 			],
 			artifact_input_digest: options.artifact.sha256,
