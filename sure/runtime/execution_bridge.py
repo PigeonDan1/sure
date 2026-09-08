@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import posixpath
 import re
@@ -1136,6 +1137,7 @@ def map_vc_job_result_to_receipt(
     executor_trust_level: str = "cooperative",
     capability_evidence_values: Sequence[Mapping[str, Any]] = (),
     outputs: Sequence[Mapping[str, Any]] = (),
+    residuals: Sequence[Mapping[str, Any]] = (),
     submitted: bool = True,
     capability_available: bool = True,
     cancellation_confirmed: bool | None = None,
@@ -1151,14 +1153,49 @@ def map_vc_job_result_to_receipt(
     successful receipt merely because a job id or capability claim is present.
     """
 
+    if not isinstance(request, Mapping):
+        raise ValueError("VC receipt mapping requires an object request")
+    if not isinstance(result, Mapping):
+        raise ValueError("VC result must be an object")
+
     runtime = request.get("runtime_requirements")
     if not isinstance(runtime, Mapping) or runtime.get("execution_surface") != "vc":
         raise ValueError("VC receipt mapping requires runtime_requirements.execution_surface=vc")
     executor_kind = runtime.get("executor_kind")
     if executor_kind not in {"remote", "trusted"}:
         raise ValueError("VC receipt mapping requires a remote or trusted executor kind")
+    if not valid_digest(request.get("policy_snapshot_digest")):
+        raise ValueError("VC receipt mapping requires request.policy_snapshot_digest")
+    if not valid_digest(request.get("adapter_manifest_digest")):
+        raise ValueError("VC receipt mapping requires request.adapter_manifest_digest")
+    if not isinstance(executor_id, str) or ID_RE.fullmatch(executor_id) is None:
+        raise ValueError("VC receipt mapping requires an explicit executor_id")
+    if not isinstance(executor_version, str) or not executor_version.strip():
+        raise ValueError("VC receipt mapping requires a non-empty executor_version")
+    if not valid_digest(executor_digest_value):
+        raise ValueError("VC receipt mapping requires an explicit executor digest")
     if executor_trust_level not in {"cooperative", "host_enforced", "attested"}:
         raise ValueError("executor_trust_level is invalid")
+    if executor_kind == "trusted" and executor_trust_level != "attested":
+        raise ValueError("trusted VC receipt mapping requires an attested executor")
+    if not isinstance(submitted, bool):
+        raise ValueError("submitted must be boolean")
+    if not isinstance(capability_available, bool):
+        raise ValueError("capability_available must be boolean")
+    if cancellation_confirmed is not None and not isinstance(cancellation_confirmed, bool):
+        raise ValueError("cancellation_confirmed must be boolean or null")
+
+    timed_out_value = result.get("timed_out")
+    if not isinstance(timed_out_value, bool):
+        raise ValueError("VC result timed_out must be boolean")
+    timed_out = timed_out_value
+    partial_value = result.get("partial", False)
+    if not isinstance(partial_value, bool):
+        raise ValueError("VC result partial must be boolean when present")
+    partial = partial_value
+    partial_reason = result.get("partial_reason")
+    if partial_reason is not None and (not isinstance(partial_reason, str) or not partial_reason.strip()):
+        raise ValueError("VC result partial_reason must be a non-empty string when present")
 
     job_id_value = result.get("job_id")
     partition_value = result.get("partition")
@@ -1169,10 +1206,45 @@ def map_vc_job_result_to_receipt(
     partition = str(partition_value).strip() if isinstance(partition_value, str) else None
     if capability_available and submitted and (job_id is None or partition is None):
         raise ValueError("submitted VC result requires job_id and partition")
-    timed_out = result.get("timed_out") is True
+    expected_partition = runtime.get("vc_partition")
+    if partition is not None and isinstance(expected_partition, str) and partition != expected_partition:
+        raise ValueError("VC result partition does not match request")
+    project_value = result.get("project")
+    if project_value is not None and (not isinstance(project_value, str) or not project_value.strip()):
+        raise ValueError("VC result project must be a non-empty string when present")
+    expected_project = runtime.get("vc_project")
+    if isinstance(project_value, str) and isinstance(expected_project, str) and project_value.strip() != expected_project:
+        raise ValueError("VC result project does not match request")
     exit_code = result.get("exit_code")
     if exit_code is not None and (isinstance(exit_code, bool) or not isinstance(exit_code, int)):
         raise ValueError("VC result exit_code must be an integer or null")
+    if partial and not timed_out and exit_code is None:
+        raise ValueError("partial VC result requires a terminal exit_code")
+
+    duration_ms = result.get("duration_ms")
+    if duration_ms is not None and (
+        isinstance(duration_ms, bool)
+        or not isinstance(duration_ms, (int, float))
+        or not math.isfinite(float(duration_ms))
+        or duration_ms < 0
+    ):
+        raise ValueError("VC result duration_ms must be a finite non-negative number")
+    for field in ("log_dir", "stdout", "stderr", "vc_diagnostics"):
+        value = result.get(field)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"VC result {field} must be a string when present")
+    submit_command = result.get("submit_command")
+    if submit_command is not None and (
+        not isinstance(submit_command, list) or any(not isinstance(item, str) for item in submit_command)
+    ):
+        raise ValueError("VC result submit_command must be a string array when present")
+    for field, value in (("outputs", outputs), ("residuals", residuals)):
+        if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+            raise ValueError(f"{field} must be a sequence of objects")
+        if any(not isinstance(item, Mapping) for item in value):
+            raise ValueError(f"{field} must be a sequence of objects")
+    if residuals and not isinstance(request.get("output_contract"), Mapping):
+        raise ValueError("VC residuals require request.output_contract")
 
     diagnostics: list[dict[str, Any]] = []
     lifecycle: str
@@ -1200,6 +1272,15 @@ def map_vc_job_result_to_receipt(
                     "message": "VC cancellation was best-effort and was not authoritatively confirmed",
                 }
             )
+    elif partial:
+        lifecycle = "PARTIAL"
+        receipt_exit_code = exit_code
+        diagnostics.append(
+            {
+                "code": "EXECUTION_PARTIAL",
+                "message": partial_reason or "VC job produced partial output",
+            }
+        )
     elif exit_code == 0:
         lifecycle = "SUCCEEDED"
         receipt_exit_code = 0
@@ -1215,9 +1296,21 @@ def map_vc_job_result_to_receipt(
         metadata["job_id"] = job_id
     if partition is not None:
         metadata["partition"] = partition
+    if isinstance(project_value, str):
+        metadata["project"] = project_value.strip()
+    metadata["request_runtime_digest"] = digest_json(dict(runtime))
+    subject = request.get("subject")
+    if isinstance(subject, Mapping) and valid_digest(subject.get("runtime_identity_digest")):
+        metadata["runtime_identity_digest"] = str(subject["runtime_identity_digest"])
     for field in ("duration_ms", "log_dir", "submit_command"):
         if result.get(field) is not None:
             metadata[field] = result[field]
+    metadata["partial"] = partial
+    if partial_reason is not None:
+        metadata["partial_reason"] = partial_reason
+    if timed_out:
+        metadata["cancellation_confirmed"] = cancellation_confirmed
+    metadata["result_digest"] = digest_json(dict(result))
     if isinstance(result.get("vc_diagnostics"), str) and result["vc_diagnostics"].strip():
         metadata["vc_diagnostics"] = result["vc_diagnostics"]
     for key in ("stdout", "stderr"):
@@ -1261,6 +1354,7 @@ def map_vc_job_result_to_receipt(
         executor_digest_value=executor_digest_value,
         capability_evidence_values=evidence,
         outputs=outputs,
+        residuals=residuals,
         started_at=str(observed_at or utc_now()),
         finished_at=str(observed_at or utc_now()) if lifecycle in TERMINAL_LIFECYCLES else None,
         exit_code=receipt_exit_code,
@@ -1268,7 +1362,7 @@ def map_vc_job_result_to_receipt(
         receipt_id=receipt_id or f"vc-{safe_id(job_id or request.get('request_id'), 'job')}",
     )
     executor = receipt["executor"]
-    executor["executor_id"] = safe_id(executor_id or f"sure-vc-{executor_kind}", f"sure-vc-{executor_kind}")
+    executor["executor_id"] = executor_id
     executor["trust_level"] = executor_trust_level
     return receipt
 

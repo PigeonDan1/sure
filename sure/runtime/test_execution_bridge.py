@@ -32,6 +32,13 @@ from sure.runtime.execution_bridge import (
 
 
 class ExecutionBridgeTests(unittest.TestCase):
+    VC_EXECUTOR = {
+        "executor_id": "sure.external.vc.mock",
+        "executor_version": "1.0.0",
+        "executor_digest_value": "sha256:" + "1" * 64,
+        "executor_trust_level": "host_enforced",
+    }
+
     def request(
         self,
         root: Path,
@@ -40,6 +47,7 @@ class ExecutionBridgeTests(unittest.TestCase):
         runtime_requirements: dict | None = None,
         adapter_manifest_digest: str | None = None,
         policy_snapshot_digest: str | None = None,
+        output_contract: dict | None = None,
     ) -> dict:
         return build_request(
             run_id="bridge-test",
@@ -56,6 +64,7 @@ class ExecutionBridgeTests(unittest.TestCase):
             runtime_requirements=runtime_requirements,
             adapter_manifest_digest=adapter_manifest_digest,
             policy_snapshot_digest=policy_snapshot_digest,
+            output_contract=output_contract,
             reference_snapshot_digest=digest_json({"inputs": []}),
             policy_digest=digest_json({"policy": 1}),
         )
@@ -678,11 +687,13 @@ class ExecutionBridgeTests(unittest.TestCase):
                 "vc_diagnostics": "info",
                 "exit_code": 0,
             }
-            success = map_vc_job_result_to_receipt(request, base, observed_at="2026-01-01T00:00:00Z")
+            success = map_vc_job_result_to_receipt(
+                request, base, observed_at="2026-01-01T00:00:00Z", **self.VC_EXECUTOR
+            )
             self.assertEqual(success["lifecycle"], "SUCCEEDED")
             self.assertEqual(validate_contract_pair(request, success), [])
 
-            failed = map_vc_job_result_to_receipt(request, {**base, "exit_code": 17})
+            failed = map_vc_job_result_to_receipt(request, {**base, "exit_code": 17}, **self.VC_EXECUTOR)
             self.assertEqual(failed["lifecycle"], "FAILED")
             self.assertEqual(validate_contract_pair(request, failed), [])
 
@@ -690,6 +701,7 @@ class ExecutionBridgeTests(unittest.TestCase):
                 request,
                 {**base, "exit_code": None, "timed_out": True},
                 cancellation_confirmed=False,
+                **self.VC_EXECUTOR,
             )
             self.assertEqual(timeout["lifecycle"], "CANCELLED")
             timeout_codes = {item["code"] for item in timeout["diagnostics"]}
@@ -697,7 +709,9 @@ class ExecutionBridgeTests(unittest.TestCase):
             self.assertIn("CANCEL_UNCONFIRMED", timeout_codes)
             self.assertEqual(validate_contract_pair(request, timeout), [])
 
-            missing = map_vc_job_result_to_receipt(request, base, capability_available=False)
+            missing = map_vc_job_result_to_receipt(
+                request, base, capability_available=False, **self.VC_EXECUTOR
+            )
             self.assertEqual(missing["lifecycle"], "NOT_STARTED")
             self.assertIn("CAPABILITY_MISSING", {item["code"] for item in missing["diagnostics"]})
             self.assertTrue(any("required capability" in error for error in validate_contract_pair(request, missing)))
@@ -707,15 +721,19 @@ class ExecutionBridgeTests(unittest.TestCase):
                 {"exit_code": None, "timed_out": False},
                 capability_available=False,
                 submitted=False,
+                **self.VC_EXECUTOR,
             )
             self.assertEqual(missing_before_submit["lifecycle"], "NOT_STARTED")
             self.assertNotIn("job_id", next(item for item in missing_before_submit["diagnostics"] if item["code"] == "VC_JOB_METADATA")["details"])
             with self.assertRaises(ValueError):
-                map_vc_job_result_to_receipt(request, {"exit_code": 0, "timed_out": False})
+                map_vc_job_result_to_receipt(
+                    request, {"exit_code": 0, "timed_out": False}, **self.VC_EXECUTOR
+                )
 
             escaped = map_vc_job_result_to_receipt(
                 request,
                 base,
+                **self.VC_EXECUTOR,
                 outputs=[
                     {
                         "artifact_id": "escaped",
@@ -735,7 +753,7 @@ class ExecutionBridgeTests(unittest.TestCase):
         fixture_path = Path(__file__).resolve().parents[1] / "canonical" / "fixtures" / "external-adapter-receipt-mapping.v1.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path("/tmp/sure-mapping")
             profile = fixture["request_profile"]
             request = self.request(
                 root,
@@ -751,15 +769,21 @@ class ExecutionBridgeTests(unittest.TestCase):
                 },
                 adapter_manifest_digest=profile["adapter_manifest_digest"],
                 policy_snapshot_digest=profile["policy_snapshot_digest"],
+                output_contract=profile["output_contract"],
             )
             for case in fixture["cases"]:
                 result = map_vc_job_result_to_receipt(
                     request,
                     case["result"],
+                    executor_id=profile["executor"]["executor_id"],
+                    executor_version=profile["executor"]["version"],
+                    executor_digest_value=profile["executor"]["digest"],
+                    executor_trust_level=profile["executor"]["trust_level"],
                     capability_available=case.get("capability_available", True),
                     submitted=case.get("submitted", True),
                     cancellation_confirmed=case.get("cancellation_confirmed"),
                     outputs=case.get("outputs", []),
+                    residuals=case.get("residuals", []),
                 )
                 expected = case["expected"]
                 self.assertEqual(result["lifecycle"], expected["lifecycle"], case["id"])
@@ -767,6 +791,61 @@ class ExecutionBridgeTests(unittest.TestCase):
                 self.assertTrue(set(expected["diagnostic_codes"]).issubset(codes), case["id"])
                 contract_valid = not validate_contract_pair(request, result)
                 self.assertEqual(contract_valid, expected["contract_valid"], case["id"])
+                metadata = next(item for item in result["diagnostics"] if item["code"] == "VC_JOB_METADATA")
+                self.assertTrue(str(metadata["details"]["result_digest"]).startswith("sha256:"), case["id"])
+                self.assertTrue(str(metadata["details"]["request_runtime_digest"]).startswith("sha256:"), case["id"])
+                self.assertTrue(str(metadata["details"]["runtime_identity_digest"]).startswith("sha256:"), case["id"])
+                if case["id"] == "timeout-cancel-unconfirmed":
+                    self.assertIs(metadata["details"]["cancellation_confirmed"], False)
+
+    def test_vc_mapping_requires_external_identity_and_normalized_result_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(
+                root,
+                runtime_requirements={
+                    "execution_surface": "vc",
+                    "executor_kind": "remote",
+                    "vc_project": "project",
+                    "vc_partition": "gpu-test",
+                },
+                adapter_manifest_digest=digest_json({"manifest": "vc"}),
+                policy_snapshot_digest=digest_json({"snapshot": "site"}),
+            )
+            result = {"job_id": "job", "partition": "gpu-test", "exit_code": 0, "timed_out": False}
+            with self.assertRaisesRegex(ValueError, "explicit executor_id"):
+                map_vc_job_result_to_receipt(request, result, executor_digest_value=digest_json({"e": 1}))
+            with self.assertRaisesRegex(ValueError, "timed_out must be boolean"):
+                map_vc_job_result_to_receipt(
+                    request,
+                    {**result, "timed_out": "false"},
+                    **self.VC_EXECUTOR,
+                )
+            with self.assertRaisesRegex(ValueError, "partial VC result requires"):
+                map_vc_job_result_to_receipt(
+                    request,
+                    {**result, "partial": True, "exit_code": None},
+                    **self.VC_EXECUTOR,
+                )
+            with self.assertRaisesRegex(ValueError, "residuals require request.output_contract"):
+                map_vc_job_result_to_receipt(
+                    request,
+                    result,
+                    residuals=[{"path": "partial.bin"}],
+                    **self.VC_EXECUTOR,
+                )
+            with self.assertRaisesRegex(ValueError, "partition does not match"):
+                map_vc_job_result_to_receipt(
+                    request,
+                    {**result, "partition": "other-queue"},
+                    **self.VC_EXECUTOR,
+                )
+            with self.assertRaisesRegex(ValueError, "project does not match"):
+                map_vc_job_result_to_receipt(
+                    request,
+                    {**result, "project": "other-project"},
+                    **self.VC_EXECUTOR,
+                )
 
     def output_contract(self, mode: str = "producing") -> dict:
         return {

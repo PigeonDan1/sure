@@ -1492,6 +1492,27 @@ class VcExecCliTest(unittest.TestCase):
                 self.assertEqual(vc_exec.main(), 1)
 
 
+class VcManifestDefaultAuditTest(unittest.TestCase):
+    def test_runner_defaults_are_bounded_by_the_host_neutral_manifest(self) -> None:
+        fixture_path = next(
+            parent / "sure" / "canonical" / "fixtures" / "external-adapter-manifest.v1.json"
+            for parent in Path(__file__).resolve().parents
+            if (parent / "sure" / "canonical" / "fixtures" / "external-adapter-manifest.v1.json").is_file()
+        )
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        context = fixture["admission_context"]
+        resources = context["resources"]
+        timeouts = context["timeouts"]
+        self.assertEqual(vc_exec.DEFAULT_GPUS, resources["gpus"])
+        self.assertEqual(vc_exec.DEFAULT_MEMORY_GB, resources["memory_gb"])
+        self.assertEqual(vc_exec.DEFAULT_CPUS, resources["cpus"])
+        self.assertEqual(vc_exec.DEFAULT_SUBMIT_TIMEOUT_SECONDS, timeouts["submit_seconds"])
+        self.assertEqual(vc_exec.DEFAULT_TIMEOUT_SECONDS, timeouts["wait_seconds"])
+        self.assertEqual(vc_exec.DEFAULT_COMMAND_TIMEOUT_SECONDS, timeouts["command_seconds"])
+        self.assertLessEqual(vc_exec.DEFAULT_CANCEL_TIMEOUT_SECONDS, timeouts["cancel_seconds"])
+        self.assertEqual(vc_exec.DEFAULT_POLL_INTERVAL_SECONDS, timeouts["poll_seconds"])
+
+
 
 class SitePolicySourcedDefaultsTest(unittest.TestCase):
     """The partition name and registry host are site data, not public core constants."""

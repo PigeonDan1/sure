@@ -44,8 +44,10 @@ from sure.site.loader import load_site_policy
 DEFAULT_GPUS = 1
 DEFAULT_MEMORY_GB = 32
 DEFAULT_CPUS = 8
+DEFAULT_SUBMIT_TIMEOUT_SECONDS = 300.0
 DEFAULT_TIMEOUT_SECONDS = 1800.0
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 1200.0
+DEFAULT_CANCEL_TIMEOUT_SECONDS = 60.0
 DEFAULT_POLL_INTERVAL_SECONDS = 15.0
 DONE_MARKER = "SURE_TRANS_JOB_DONE"
 
@@ -280,7 +282,7 @@ def cancel_vc_job(job_id: str) -> str:
     try:
         result = run_command(
             ["vc", "delete", "--job", job_id],
-            timeout=60,
+            timeout=DEFAULT_CANCEL_TIMEOUT_SECONDS,
             env=proxy_cleared_env(),
         )
     except (OSError, subprocess.SubprocessError) as error:
@@ -806,7 +808,7 @@ def run_vc_job(
         "--cmd", inner_script_command(log_dir),
     ]
     started = time.monotonic()
-    submitted = run_command(submit_command, timeout=300, env=proxy_cleared_env())
+    submitted = run_command(submit_command, timeout=DEFAULT_SUBMIT_TIMEOUT_SECONDS, env=proxy_cleared_env())
     if submitted.returncode != 0:
         raise ValueError(
             f"vc submit failed ({submitted.returncode}): "

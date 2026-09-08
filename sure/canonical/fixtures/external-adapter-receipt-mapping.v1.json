@@ -4,12 +4,33 @@
   "request_profile": {
     "execution_surface": "vc",
     "executor_kind": "remote",
+    "executor": {
+      "executor_id": "sure.external.vc.mock",
+      "version": "1.0.0",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "trust_level": "host_enforced"
+    },
     "policy_snapshot_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "adapter_manifest_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "capability_ids": [
       "sure.execution.remote",
       "sure.execution.vc"
-    ]
+    ],
+    "output_contract": {
+      "schema": "sure.execution_output_contract.v1",
+      "mode": "mutating",
+      "outputs": [
+        {
+          "artifact_id": "result",
+          "path": "result.json",
+          "kind": "file",
+          "required": false
+        }
+      ],
+      "temporary_paths": [".staging"],
+      "allow_missing_on_failure": true,
+      "retain_failed_outputs": true
+    }
   },
   "cases": [
     {
@@ -44,6 +65,52 @@
         "lifecycle": "FAILED",
         "contract_valid": true,
         "diagnostic_codes": ["EXECUTION_FAILED", "VC_JOB_METADATA"]
+      }
+    },
+    {
+      "id": "partial-output",
+      "result": {
+        "job_id": "job-partial",
+        "partition": "gpu-test",
+        "exit_code": 17,
+        "timed_out": false,
+        "partial": true,
+        "partial_reason": "adapter emitted a bounded partial artifact",
+        "duration_ms": 1000,
+        "log_dir": "/tmp/sure-mapping/logs/partial",
+        "submit_command": ["vc", "submit"]
+      },
+      "residuals": [
+        {
+          "path": "/tmp/sure-mapping/.staging/partial.bin",
+          "resolved_path": "/tmp/sure-mapping/.staging/partial.bin",
+          "kind": "file",
+          "status": "present",
+          "sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "digest_kind": "file_sha256",
+          "size": 1
+        }
+      ],
+      "expected": {
+        "lifecycle": "PARTIAL",
+        "contract_valid": true,
+        "diagnostic_codes": ["EXECUTION_PARTIAL", "VC_JOB_METADATA"]
+      }
+    },
+    {
+      "id": "submission-failure",
+      "result": {
+        "exit_code": null,
+        "timed_out": false,
+        "duration_ms": 12,
+        "submit_command": ["vc", "submit"]
+      },
+      "capability_available": true,
+      "submitted": false,
+      "expected": {
+        "lifecycle": "NOT_STARTED",
+        "contract_valid": true,
+        "diagnostic_codes": ["EXECUTOR_SPAWN_FAILED", "VC_JOB_METADATA"]
       }
     },
     {
