@@ -65,6 +65,36 @@ export interface ExecutionContractHistoryValidation {
 	immutable_validation: ExecutionContractBundleValidation;
 }
 
+function digestableBundle(bundle: ExecutionContractBundle): JsonValue {
+	return {
+		request: bundle.request as unknown as JsonValue,
+		receipt: (bundle.receipt ?? null) as unknown as JsonValue,
+		admission: (bundle.admission ?? null) as unknown as JsonValue,
+		contract: (bundle.contract ?? null) as unknown as JsonValue,
+	};
+}
+
+/** Stable content identity for one persisted execution contract bundle. */
+export function executionContractBundleDigest(bundle: ExecutionContractBundle): string {
+	return canonicalJsonDigest({
+		schema: "sure.execution_contract_bundle.digest.v1",
+		bundle: digestableBundle(bundle),
+	});
+}
+
+/**
+ * Content identity over both the latest compatibility view and the immutable
+ * request-id view. Embedded paths remain evidence only, but their exact bytes
+ * are covered so a verified host attestation cannot be replayed over edits.
+ */
+export function executionContractHistoryDigest(history: ExecutionContractHistory): string {
+	return canonicalJsonDigest({
+		schema: "sure.execution_contract_history.digest.v1",
+		latest: digestableBundle(history.latest),
+		immutable: digestableBundle(history.immutable),
+	});
+}
+
 function invalidOutcome(errors: readonly string[]): CoreOutcome {
 	return createOutcome({
 		validatorVerdict: "NOT_EXECUTED",

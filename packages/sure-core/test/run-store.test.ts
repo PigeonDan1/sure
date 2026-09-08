@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { runBindingDigest } from "../src/run/binding.ts";
 import { CoreRunStore, RunStoreConflictError, RunStoreError } from "../src/run/store.ts";
 import type { ResumeBinding, RunStoreFileSystem, RunStoreLock, StateDocument } from "../src/run/types.ts";
 
@@ -149,6 +150,10 @@ function checkpointState(resumable: boolean): StateDocument {
 }
 
 describe("CoreRunStore", () => {
+	it("keeps the existing Pi run-binding digest canonical for every host", () => {
+		expect(runBindingDigest(BINDING)).toBe("sha256:9b916ac73b93755c25fc5f279d0a42183a240450b97bb586d225d60dd2fa4c98");
+	});
+
 	it("creates legacy-compatible files and monotonically revises mutations", () => {
 		const { store, filesystem } = makeStore();
 		const created = store.createRun(createInput());

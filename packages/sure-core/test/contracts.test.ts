@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { createAssuranceAttestation } from "../src/conformance/assurance.ts";
 import { createFrozenEvaluationSubject } from "../src/conformance/frozen.ts";
 import {
 	canonicalJson,
@@ -144,6 +145,12 @@ function conformanceRecord(): ConformanceRecord {
 		evaluator_engine_digest: DIGEST_C,
 		evaluator_route_digest: DIGEST_A,
 		approval_event_digest: DIGEST_B,
+		core_version: "0.80.3",
+		admission_digest: DIGEST_C,
+		validation_evidence_digest: DIGEST_A,
+		run_binding_digest: DIGEST_B,
+		assurance_attestation_digest: DIGEST_A,
+		execution_history_digest: DIGEST_B,
 		legacy_unverified: false,
 		runtime_identity_digest: DIGEST_A,
 		inference_protocol_digest: DIGEST_B,
@@ -153,6 +160,7 @@ function conformanceRecord(): ConformanceRecord {
 		validator_digest: DIGEST_C,
 		executor_digest: DIGEST_A,
 		policy_digest: DIGEST_B,
+		policy_snapshot_digest: DIGEST_C,
 		reference_snapshot_digest: DIGEST_C,
 		output_root: outputRoot(),
 		validator_verdict: "PASS",
@@ -193,6 +201,35 @@ function frozenEvaluationSubject() {
 	});
 }
 
+function assuranceAttestation() {
+	return createAssuranceAttestation({
+		attestation_id: "attestation-1",
+		issuer: { issuer_id: "pi-host", kind: "pi_harness", version: "1", digest: DIGEST_A },
+		assurance_profile: "pi_enforced",
+		core_version: "0.80.3",
+		run_id: "run-1",
+		unit_id: "formal-evaluation",
+		attempt: 1,
+		request_digest: DIGEST_A,
+		admission_digest: DIGEST_B,
+		receipt_digest: DIGEST_C,
+		execution_history_digest: DIGEST_A,
+		validation_evidence_digest: DIGEST_B,
+		subject_digest: DIGEST_C,
+		approval_event_digest: DIGEST_A,
+		workflow_digest: DIGEST_B,
+		validator_digest: DIGEST_C,
+		executor_digest: DIGEST_A,
+		policy_digest: DIGEST_B,
+		policy_snapshot_digest: DIGEST_C,
+		reference_snapshot_digest: DIGEST_C,
+		run_binding_digest: DIGEST_A,
+		event_sequence: 1,
+		issued_at: NOW,
+		proof: { kind: "host_store", verification_material_id: "pi-store", value: "proof" },
+	});
+}
+
 describe("canonical JSON", () => {
 	it("sorts object keys recursively and produces a stable SHA-256", () => {
 		const left: JsonValue = { b: 2, a: { z: true, y: [3, "x"] } };
@@ -225,6 +262,7 @@ describe("wire schemas", () => {
 			["execution_receipt", executionReceipt()],
 			["conformance", conformanceRecord()],
 			["evaluation_subject", frozenEvaluationSubject()],
+			["assurance_attestation", assuranceAttestation()],
 			[
 				"operation_execution_evidence",
 				{
@@ -538,6 +576,24 @@ describe("wire schemas", () => {
 		const missingFreeze = conformanceRecord();
 		delete missingFreeze.dataset_identity_digest;
 		expect(validateJsonSchema(schema, missingFreeze).ok).toBe(false);
+		const missingAssurance = conformanceRecord();
+		delete missingAssurance.assurance_attestation_digest;
+		expect(validateJsonSchema(schema, missingAssurance).ok).toBe(false);
+		const missingHistory = conformanceRecord();
+		delete missingHistory.execution_history_digest;
+		expect(validateJsonSchema(schema, missingHistory).ok).toBe(false);
+		for (const field of [
+			"core_version",
+			"admission_digest",
+			"validation_evidence_digest",
+			"run_binding_digest",
+			"policy_snapshot_digest",
+		] as const) {
+			const incomplete = conformanceRecord();
+			delete incomplete[field];
+			expect(validateJsonSchema(schema, incomplete).ok, field).toBe(false);
+		}
+		expect(validateJsonSchema(schema, { ...conformanceRecord(), assurance_profile: "cooperative" }).ok).toBe(false);
 
 		const fakePass = { ...conformanceRecord(), reason_code: "CAPABILITY_MISSING" };
 		expect(validateJsonSchema(schema, fakePass).ok).toBe(false);

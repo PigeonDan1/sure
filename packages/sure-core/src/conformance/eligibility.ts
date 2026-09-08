@@ -1,5 +1,9 @@
+import { canonicalJsonDigest } from "../contracts/canonical-json.ts";
+import type { JsonValue } from "../contracts/types.ts";
 import { validateDockerRuntimeEvidence } from "../execution/docker.ts";
+import { runBindingDigest } from "../run/binding.ts";
 import { type CoreOutcome, createOutcome } from "../workflow/outcome.ts";
+import { isVerifiedAssurance } from "./assurance.ts";
 import { sameDigest as sameFrozenDigest, validateFrozenEvaluationSubject } from "./frozen.ts";
 import type { FormalEligibilityInput, FormalEligibilityResult } from "./types.ts";
 
@@ -25,7 +29,8 @@ function blocked(
 		| "VALIDATION_PENDING"
 		| "CAPABILITY_MISSING"
 		| "UNKNOWN_CAPABILITY"
-		| "POLICY_DENIED",
+		| "POLICY_DENIED"
+		| "INVALID_CONTRACT",
 	messages: readonly string[],
 ): CoreOutcome {
 	return createOutcome({
@@ -36,6 +41,43 @@ function blocked(
 	});
 }
 
+function verifiedAssuranceDiagnostics(input: FormalEligibilityInput): string[] {
+	const verified = input.verified_assurance;
+	if (!isVerifiedAssurance(verified)) return ["formal evaluation requires host-verified assurance"];
+	const attestation = verified.attestation;
+	const diagnostics: string[] = [];
+	if (verified.profile !== input.assurance_profile || attestation.assurance_profile !== input.assurance_profile) {
+		diagnostics.push("verified assurance profile does not match the requested profile");
+	}
+	for (const [name, actual, expected] of [
+		["core version", attestation.core_version, input.core_version],
+		["run id", attestation.run_id, input.request.run_id],
+		["unit id", attestation.unit_id, input.request.unit_id],
+		["attempt", attestation.attempt, input.request.attempt],
+	] as const) {
+		if (actual !== expected) diagnostics.push(`verified assurance ${name} does not match the request`);
+	}
+	for (const [name, actual, expected] of [
+		["request", attestation.request_digest, canonicalJsonDigest(input.request as unknown as JsonValue)],
+		["admission", attestation.admission_digest, input.admission_digest],
+		["receipt", attestation.receipt_digest, input.receipt_digest],
+		["execution history", attestation.execution_history_digest, input.execution_history_digest],
+		["validation evidence", attestation.validation_evidence_digest, input.validation_evidence_digest],
+		["frozen subject", attestation.subject_digest, input.frozen_subject?.subject_digest],
+		["approval event", attestation.approval_event_digest, input.frozen_subject?.approval_event_digest],
+		["workflow", attestation.workflow_digest, input.workflow_digest],
+		["validator", attestation.validator_digest, input.validator_digest],
+		["executor", attestation.executor_digest, input.executor_digest],
+		["policy", attestation.policy_digest, input.policy_digest],
+		["policy snapshot", attestation.policy_snapshot_digest, input.policy_snapshot_digest],
+		["reference snapshot", attestation.reference_snapshot_digest, input.reference_snapshot_digest],
+		["run binding", attestation.run_binding_digest, input.run_binding_digest],
+	] as const) {
+		if (!sameDigest(actual, expected)) diagnostics.push(`verified assurance ${name} digest does not match`);
+	}
+	return diagnostics;
+}
+
 /**
  * Formal evaluation is a second boundary after execution and artifact
  * validation. A cooperative host may produce useful evidence, but it cannot
@@ -44,7 +86,19 @@ function blocked(
 export function assessFormalEligibility(input: FormalEligibilityInput): FormalEligibilityResult {
 	const diagnostics: string[] = [];
 	const formalOperation = input.request.operation === "formal_evaluation";
-	if (formalOperation) {
+	const executionHistoryInvalid = input.execution_history_validation?.valid !== true;
+	if (typeof input.core_version !== "string" || input.core_version.length === 0)
+		diagnostics.push("formal evaluation requires a bound Core version");
+	if (!validDigest(input.policy_snapshot_digest))
+		diagnostics.push("formal evaluation requires a bound site-policy snapshot digest");
+	if (!formalOperation) {
+		diagnostics.push("formal eligibility requires a formal_evaluation execution request");
+	} else {
+		if (input.execution_history_validation === undefined) {
+			diagnostics.push("formal evaluation requires a complete execution history audit");
+		} else if (!input.execution_history_validation.valid) {
+			diagnostics.push(...input.execution_history_validation.errors);
+		}
 		if (input.frozen_subject === undefined) {
 			diagnostics.push("formal evaluation requires an immutable evaluation subject");
 		} else {
@@ -95,6 +149,7 @@ export function assessFormalEligibility(input: FormalEligibilityInput): FormalEl
 			}
 		}
 	}
+	diagnostics.push(...verifiedAssuranceDiagnostics(input));
 	if (input.assurance_profile === "cooperative") {
 		diagnostics.push("cooperative host enforcement is insufficient for formal evaluation");
 	}
@@ -138,6 +193,7 @@ export function assessFormalEligibility(input: FormalEligibilityInput): FormalEl
 		["validator_digest", input.validator_digest],
 		["executor_digest", input.executor_digest],
 		["policy_digest", input.policy_digest],
+		["policy_snapshot_digest", input.policy_snapshot_digest],
 		["reference_snapshot_digest", input.reference_snapshot_digest],
 	];
 	for (const [name, value] of requiredDigests)
@@ -163,24 +219,40 @@ export function assessFormalEligibility(input: FormalEligibilityInput): FormalEl
 		diagnostics.push("request policy digest does not match conformance policy digest");
 	if (!sameDigest(input.receipt.policy_digest, input.policy_digest))
 		diagnostics.push("receipt policy digest does not match conformance policy digest");
+	if (!sameDigest(input.request.policy_snapshot_digest, input.policy_snapshot_digest))
+		diagnostics.push("request policy snapshot does not match conformance policy snapshot");
+	if (!sameDigest(input.receipt.policy_snapshot_digest, input.policy_snapshot_digest))
+		diagnostics.push("receipt policy snapshot does not match conformance policy snapshot");
+	const expectedRunBindingDigest = runBindingDigest({
+		workflowDigest: input.workflow_digest,
+		validatorDigest: input.validator_digest,
+		executorDigest: input.executor_digest,
+		policyDigest: input.policy_digest,
+		policySnapshotDigest: input.policy_snapshot_digest,
+	});
+	if (!sameDigest(input.run_binding_digest, expectedRunBindingDigest))
+		diagnostics.push("run binding digest does not match the canonical binding components");
 	if (!sameDigest(input.request.reference_snapshot_digest, input.reference_snapshot_digest))
 		diagnostics.push("request reference snapshot does not match conformance snapshot");
-	const reasonCode =
-		input.receipt_validation.capability.unknown.length > 0
-			? "UNKNOWN_CAPABILITY"
-			: input.receipt_validation.capability.denied.length > 0
-				? "POLICY_DENIED"
-				: diagnostics.some((message) => message.includes("capability"))
-					? "CAPABILITY_MISSING"
-					: diagnostics.some((message) => message.includes("digest") || message.includes("SHA-256"))
-						? "DIGEST_MISMATCH"
-						: input.validator_verdict === "FAIL"
-							? "VALIDATION_FAILED"
-							: input.validator_verdict === "NOT_EXECUTED" || input.receipt.lifecycle !== "SUCCEEDED"
-								? "VALIDATION_PENDING"
-								: input.assurance_profile === "cooperative"
-									? "UPGRADE_REQUIRED"
-									: "VALIDATION_FAILED";
+	const reasonCode = !formalOperation
+		? "INVALID_CONTRACT"
+		: executionHistoryInvalid
+			? "INVALID_CONTRACT"
+			: input.receipt_validation.capability.unknown.length > 0
+				? "UNKNOWN_CAPABILITY"
+				: input.receipt_validation.capability.denied.length > 0
+					? "POLICY_DENIED"
+					: diagnostics.some((message) => message.includes("capability"))
+						? "CAPABILITY_MISSING"
+						: diagnostics.some((message) => message.includes("digest") || message.includes("SHA-256"))
+							? "DIGEST_MISMATCH"
+							: input.validator_verdict === "FAIL"
+								? "VALIDATION_FAILED"
+								: input.validator_verdict === "NOT_EXECUTED" || input.receipt.lifecycle !== "SUCCEEDED"
+									? "VALIDATION_PENDING"
+									: input.assurance_profile === "cooperative" || !isVerifiedAssurance(input.verified_assurance)
+										? "UPGRADE_REQUIRED"
+										: "VALIDATION_FAILED";
 	if (diagnostics.length > 0) {
 		return {
 			eligible: false,

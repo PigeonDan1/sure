@@ -41,6 +41,7 @@ import {
 	type ExecutionRequest,
 	encodeLegacyCheckpoint,
 	evaluateCapabilityRequirements,
+	executionContractHistoryDigest,
 	executionInputContractDigest,
 	executionOutputContractDigest,
 	executorDescriptor,
@@ -54,6 +55,7 @@ import {
 	type PolicySnapshot,
 	type PublicOutcome,
 	parseMemoryUri,
+	runBindingDigest,
 	type StateDocument,
 	type StructuralValidationResult,
 	selectExecutionDispatch,
@@ -344,6 +346,8 @@ const EXECUTION_HISTORY_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 interface PersistedExecutionHistoryAudit {
 	errors: readonly string[];
 	audit?: ReturnType<typeof validateExecutionContractHistory>;
+	history?: Parameters<typeof validateExecutionContractHistory>[0];
+	history_digest?: string;
 }
 
 function persistedExecutionHistoryAudit(
@@ -352,6 +356,7 @@ function persistedExecutionHistoryAudit(
 	contractRoot: string,
 	latest: ExecutionContractBundle,
 	options: ExecutionContractBundleOptions,
+	requireHistory = false,
 ): PersistedExecutionHistoryAudit {
 	const historyDir = join(contractRoot, "execution_contracts");
 	let historyStat: ReturnType<typeof lstatSync>;
@@ -359,7 +364,7 @@ function persistedExecutionHistoryAudit(
 		historyStat = lstatSync(historyDir);
 	} catch (error) {
 		if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
-			return { errors: [] };
+			return requireHistory ? { errors: [`formal execution history is required: ${historyDir}`] } : { errors: [] };
 		}
 		return {
 			errors: [`cannot inspect execution_contracts: ${error instanceof Error ? error.message : String(error)}`],
@@ -419,22 +424,22 @@ function persistedExecutionHistoryAudit(
 		}
 	}
 	if (errors.length > 0 || values.request === undefined || values.contract === undefined) return { errors };
+	const history = {
+		latest,
+		immutable: {
+			request: values.request as unknown as ExecutionRequest,
+			...(values.receipt === undefined ? {} : { receipt: values.receipt as unknown as ExecutionReceipt }),
+			...(values.admission === undefined
+				? {}
+				: { admission: values.admission as unknown as ExecutionAdmissionTrace }),
+			contract: values.contract,
+		},
+	};
 	return {
 		errors: [],
-		audit: validateExecutionContractHistory(
-			{
-				latest,
-				immutable: {
-					request: values.request as unknown as ExecutionRequest,
-					...(values.receipt === undefined ? {} : { receipt: values.receipt as unknown as ExecutionReceipt }),
-					...(values.admission === undefined
-						? {}
-						: { admission: values.admission as unknown as ExecutionAdmissionTrace }),
-					contract: values.contract,
-				},
-			},
-			{ ...options, require_contract_record: true },
-		),
+		history,
+		history_digest: executionContractHistoryDigest(history),
+		audit: validateExecutionContractHistory(history, { ...options, require_contract_record: true }),
 	};
 }
 
@@ -994,6 +999,79 @@ function checkExecutionAdmissionArtifact(
 	}
 }
 
+interface FormalExecutionHistoryAudit {
+	errors: readonly string[];
+	admission_path?: string;
+	admission_digest?: string;
+	execution_history_digest?: string;
+	validation?: ReturnType<typeof validateExecutionContractHistory>;
+}
+
+/** Formal consumers require the complete admission-v1 latest/history pair. */
+function auditFormalExecutionHistory(
+	store: NodeRunStore,
+	run: CoreRunRecord,
+	request: ExecutionRequest,
+	receipt: ExecutionReceipt,
+	receiptPath: string,
+	receiptValidation: ReturnType<typeof validateExecutionReceipt>,
+	policyReferences: readonly string[],
+): FormalExecutionHistoryAudit {
+	const root = dirname(receiptPath);
+	const errors: string[] = [];
+	const admissionPath = join(root, "execution_admission.json");
+	const contractPath = join(root, "execution_contract.json");
+	let admissionTrace: ExecutionAdmissionTrace | undefined;
+	let admissionDigest: string | undefined;
+	let contract: Record<string, unknown> | undefined;
+	try {
+		const admittedPath = admittedReadArtifactPath(store, run, admissionPath);
+		assertRegularFile(admittedPath, "Formal execution admission");
+		const admission = readAndValidateExecutionAdmission(admittedPath, request, {
+			receipt,
+			receipt_valid: receiptValidation.valid,
+			capability_admitted: receiptValidation.capability.admitted,
+		});
+		errors.push(...admission.errors);
+		admissionTrace = admission.trace;
+		admissionDigest = admission.digest;
+	} catch (error) {
+		errors.push(error instanceof Error ? error.message : String(error));
+	}
+	try {
+		const admittedPath = admittedReadArtifactPath(store, run, contractPath);
+		assertRegularFile(admittedPath, "Formal execution contract");
+		contract = recordObject(readJson(admittedPath), "formal execution contract");
+	} catch (error) {
+		errors.push(error instanceof Error ? error.message : String(error));
+	}
+	const latest: ExecutionContractBundle = {
+		request,
+		receipt,
+		...(admissionTrace === undefined ? {} : { admission: admissionTrace }),
+		...(contract === undefined ? {} : { contract }),
+	};
+	const options: ExecutionContractBundleOptions = {
+		allowed_output_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
+		forbidden_output_roots: policyReferences,
+		require_receipt: true,
+		require_admission: true,
+		require_contract_record: true,
+		accept_legacy_uninstrumented: false,
+	};
+	const bundleAudit = validateExecutionContractBundle(latest, options);
+	errors.push(...bundleAudit.errors);
+	const history = persistedExecutionHistoryAudit(store, run, root, latest, options, true);
+	errors.push(...history.errors, ...(history.audit?.errors ?? []));
+	return {
+		errors: errors.filter((message, index, messages) => messages.indexOf(message) === index),
+		admission_path: admissionPath,
+		...(admissionDigest === undefined ? {} : { admission_digest: admissionDigest }),
+		...(history.history_digest === undefined ? {} : { execution_history_digest: history.history_digest }),
+		...(history.audit === undefined ? {} : { validation: history.audit }),
+	};
+}
+
 function frozenSubjectFileErrors(
 	store: NodeRunStore,
 	run: CoreRunRecord,
@@ -1030,6 +1108,7 @@ interface FormalValidationBinding {
 	validatorVerdict: "PASS" | "FAIL" | "NOT_EXECUTED";
 	workflowDisposition: "ADVANCE" | "RETRY" | "BLOCK" | "TERMINATE" | "WAIT";
 	diagnostics: string[];
+	validationEvidenceDigest?: string;
 }
 
 /**
@@ -1189,10 +1268,26 @@ function formalValidationBinding(
 		required: admissionPath !== undefined,
 	});
 	diagnostics.push(...admission.errors);
+	const validationEvidenceDigest =
+		validation === undefined
+			? undefined
+			: typeof validation.evidence_digest === "string" && validDigestValue(validation.evidence_digest)
+				? normalizeDigest(validation.evidence_digest, "persisted validation evidence digest")
+				: canonicalJsonDigest(validation as unknown as JsonValue);
 	if (diagnostics.length > 0) {
-		return { validatorVerdict: "NOT_EXECUTED", workflowDisposition: "WAIT", diagnostics };
+		return {
+			validatorVerdict: "NOT_EXECUTED",
+			workflowDisposition: "WAIT",
+			diagnostics,
+			...(validationEvidenceDigest === undefined ? {} : { validationEvidenceDigest }),
+		};
 	}
-	return { validatorVerdict: "PASS", workflowDisposition: "ADVANCE", diagnostics };
+	return {
+		validatorVerdict: "PASS",
+		workflowDisposition: "ADVANCE",
+		diagnostics,
+		...(validationEvidenceDigest === undefined ? {} : { validationEvidenceDigest }),
+	};
 }
 
 function start(args: ParsedArgs): void {
@@ -1209,7 +1304,18 @@ function start(args: ParsedArgs): void {
 		requiredValue(args, "executor-digest", "SURE_EXECUTOR_DIGEST"),
 		"--executor-digest",
 	);
-	const bindingDigest = one(args, "binding-digest");
+	const workflowBindingDigest = workflowDigest(loaded.definition);
+	const suppliedBindingDigest = one(args, "binding-digest");
+	const bindingDigest =
+		suppliedBindingDigest === undefined
+			? runBindingDigest({
+					workflowDigest: workflowBindingDigest,
+					validatorDigest: registry.digest,
+					executorDigest,
+					policyDigest,
+					policySnapshotDigest: suppliedPolicy?.snapshot.snapshot_digest,
+				})
+			: normalizeDigest(suppliedBindingDigest, "--binding-digest");
 	const store = storeFor(args, root, {}, suppliedPolicy?.snapshot);
 	const outputDir = outputRootFor(args);
 	const branchId = one(args, "branch") ?? loaded.definition.default_branch_id;
@@ -1224,7 +1330,7 @@ function start(args: ParsedArgs): void {
 		args: one(args, "args") ?? "",
 		...(outputDir === undefined ? {} : { outputDir }),
 		coreVersion: CORE_VERSION,
-		workflowDigest: workflowDigest(loaded.definition),
+		workflowDigest: workflowBindingDigest,
 		validatorDigest: registry.digest,
 		executorDigest,
 		policyDigest,
@@ -1234,7 +1340,7 @@ function start(args: ParsedArgs): void {
 					policySnapshotDigest: suppliedPolicy.snapshot.snapshot_digest,
 					policySnapshotPath: join(store.runsRoot, runId, "artifacts", "site_policy.resolved.json"),
 				}),
-		...(bindingDigest === undefined ? {} : { bindingDigest: normalizeDigest(bindingDigest, "--binding-digest") }),
+		bindingDigest,
 	});
 	if (suppliedPolicy !== undefined) {
 		const snapshotPath = join(store.runsRoot, runId, "artifacts", "site_policy.resolved.json");
@@ -1247,7 +1353,7 @@ function start(args: ParsedArgs): void {
 	store.writeState(
 		runId,
 		stateWithCheckpoint(undefined, checkpoint, {
-			workflow_digest: workflowDigest(loaded.definition),
+			workflow_digest: workflowBindingDigest,
 			validator_digest: registry.digest,
 			definition_path: loaded.path,
 		}),
@@ -3258,6 +3364,7 @@ function freeze(args: ParsedArgs): PublicOutcome {
 	const requestValidation = validateExecutionRequest(request, boundary);
 	const receiptValidation = validateExecutionReceipt(request, receipt, boundary);
 	const missing: string[] = [];
+	if (request.operation !== "formal_evaluation") missing.push("formal_evaluation execution request");
 	const rawExecution = state?.last_execution;
 	const execution =
 		typeof rawExecution === "object" && rawExecution !== null ? (rawExecution as Record<string, unknown>) : undefined;
@@ -3269,6 +3376,13 @@ function freeze(args: ParsedArgs): PublicOutcome {
 	if (!requestValidation.valid) missing.push("valid execution request");
 	if (!receiptValidation.valid) missing.push("valid execution receipt");
 	if (admission.errors.length > 0) missing.push("valid execution admission");
+	const formalHistory =
+		request.operation === "formal_evaluation"
+			? auditFormalExecutionHistory(store, run, request, receipt, receiptPath, receiptValidation, policyReferences)
+			: undefined;
+	if (formalHistory !== undefined && formalHistory.errors.length > 0) {
+		missing.push(...formalHistory.errors.map((message) => `execution history: ${message}`));
+	}
 	if (
 		outputRootBindingError(store, run, request, policyReferences) !== undefined ||
 		receiptOutputErrors(store, run, request, receipt).length > 0
@@ -3377,6 +3491,10 @@ function freeze(args: ParsedArgs): PublicOutcome {
 		missing.push("approval_event_digest");
 	}
 	const explicitLegacy = one(args, "legacy-unverified") === "true" || one(args, "legacy-unverified") === "1";
+	const claimedAssurance = one(args, "assurance-profile") ?? "cooperative";
+	if (claimedAssurance !== "cooperative") {
+		missing.push(`host-verified assurance profile ${claimedAssurance}`);
+	}
 	const subject = createFrozenEvaluationSubject({
 		subject_id: one(args, "subject-id") ?? `subject-${runId}-${request.unit_id}`,
 		bundle_manifest_path: requestSubject.bundle_manifest_path,
@@ -3395,7 +3513,9 @@ function freeze(args: ParsedArgs): PublicOutcome {
 		executor_digest: executor,
 		policy_digest: policy,
 		reference_snapshot_digest: snapshot,
-		assurance_profile: (one(args, "assurance-profile") ?? "cooperative") as AssuranceProfile,
+		// Standalone surectl has no host trust root. A CLI flag is a claim, not
+		// authority, so this projection can never self-upgrade above cooperative.
+		assurance_profile: "cooperative",
 		legacy_unverified: explicitLegacy || missing.length > 0,
 		...(approvalEventDigest === undefined ? {} : { approval_event_digest: approvalEventDigest }),
 		frozen_at: one(args, "frozen-at") ?? new Date().toISOString(),
@@ -3480,6 +3600,10 @@ function conformance(args: ParsedArgs): PublicOutcome {
 						})),
 					}),
 				};
+	const formalOperation = request.operation === "formal_evaluation";
+	const formalHistory = formalOperation
+		? auditFormalExecutionHistory(store, run, request, receipt, receiptPath, receiptValidation, policyReferences)
+		: undefined;
 	const state = store.readState(run) ?? {};
 	const lastValidation =
 		typeof state.last_validation === "object" && state.last_validation !== null
@@ -3489,7 +3613,11 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		typeof lastValidation.outcome === "object" && lastValidation.outcome !== null
 			? (lastValidation.outcome as Record<string, unknown>)
 			: {};
-	const formalDiagnostics: string[] = [];
+	const formalDiagnostics: string[] = [...(formalHistory?.errors ?? [])];
+	const coreVersion = run.coreVersion ?? CORE_VERSION;
+	if (formalOperation && run.coreVersion === undefined) {
+		formalDiagnostics.push("formal conformance requires a Core version persisted in the run binding");
+	}
 	if (request.operation !== "formal_evaluation") {
 		const admission = checkExecutionAdmissionArtifact(store, run, request, receiptPath, receipt, receiptValidation);
 		formalDiagnostics.push(...admission.errors);
@@ -3553,12 +3681,17 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		subjectInput.schema === "sure.evaluation_subject.v1"
 			? (subjectInput as unknown as FrozenEvaluationSubject)
 			: undefined;
-	const formalOperation = request.operation === "formal_evaluation";
-	const profileValue = formalOperation && frozenSubject ? frozenSubject.assurance_profile : requestedProfileValue;
+	const claimedProfile = formalOperation && frozenSubject ? frozenSubject.assurance_profile : requestedProfileValue;
+	const profileValue: AssuranceProfile = "cooperative";
+	if (claimedProfile !== "cooperative") {
+		formalDiagnostics.push(
+			`standalone surectl cannot verify the claimed assurance profile ${claimedProfile}; host assurance is required`,
+		);
+	}
 	if (formalOperation && frozenSubject) {
 		formalDiagnostics.push(...frozenSubjectFileErrors(store, run, frozenSubject, policyReferences));
 	}
-	if (formalOperation && frozenSubject && profileArgument !== undefined && profileArgument !== profileValue) {
+	if (formalOperation && frozenSubject && profileArgument !== undefined && profileArgument !== claimedProfile) {
 		formalDiagnostics.push("assurance profile argument does not match the frozen evaluation subject");
 	}
 	if (formalOperation && frozenSubject) {
@@ -3662,11 +3795,28 @@ function conformance(args: ParsedArgs): PublicOutcome {
 	const referenceSnapshotDigest = formalOperation
 		? boundReferenceSnapshotDigest
 		: (digestOrUndefined(one(args, "reference-snapshot-digest")) ?? boundReferenceSnapshotDigest);
+	const policySnapshotDigest = digestOrUndefined(run.policySnapshotDigest);
+	if (formalOperation) {
+		if (policySnapshotDigest === undefined) {
+			formalDiagnostics.push("formal conformance requires a bound site-policy snapshot digest");
+		}
+		const expectedRunBindingDigest = runBindingDigest({
+			workflowDigest,
+			validatorDigest,
+			executorDigest,
+			policyDigest,
+			policySnapshotDigest,
+		});
+		if (run.bindingDigest === undefined || !sameDigest(run.bindingDigest, expectedRunBindingDigest)) {
+			formalDiagnostics.push("persisted run binding digest does not match the canonical binding components");
+		}
+	}
 	const eligibility = assessFormalEligibility({
 		request,
 		receipt,
 		receipt_validation: receiptValidation,
 		assurance_profile: profileValue as AssuranceProfile,
+		core_version: coreVersion,
 		validator_verdict: validatorVerdict,
 		workflow_disposition: workflowDisposition,
 		subject,
@@ -3674,9 +3824,19 @@ function conformance(args: ParsedArgs): PublicOutcome {
 		validator_digest: validatorDigest,
 		executor_digest: executorDigest,
 		policy_digest: policyDigest,
+		...(policySnapshotDigest === undefined ? {} : { policy_snapshot_digest: policySnapshotDigest }),
 		reference_snapshot_digest: referenceSnapshotDigest,
 		...(frozenSubject === undefined ? {} : { frozen_subject: frozenSubject }),
 		receipt_digest: digestFile(receiptPath),
+		...(formalHistory?.admission_digest === undefined ? {} : { admission_digest: formalHistory.admission_digest }),
+		...(formalHistory?.execution_history_digest === undefined
+			? {}
+			: { execution_history_digest: formalHistory.execution_history_digest }),
+		...(formalHistory?.validation === undefined ? {} : { execution_history_validation: formalHistory.validation }),
+		...(formalBinding?.validationEvidenceDigest === undefined
+			? {}
+			: { validation_evidence_digest: formalBinding.validationEvidenceDigest }),
+		...(run.bindingDigest === undefined ? {} : { run_binding_digest: run.bindingDigest }),
 	});
 	const authoritativeDiagnostics = [
 		...formalDiagnostics,
@@ -3693,11 +3853,15 @@ function conformance(args: ParsedArgs): PublicOutcome {
 						workflowDisposition: authoritativeDiagnostics.some((message) => /requires|not PASS/i.test(message))
 							? "WAIT"
 							: "BLOCK",
-						reasonCode: authoritativeDiagnostics.some((message) =>
-							/digest|definition|registry|profile|match/i.test(message),
-						)
-							? "DIGEST_MISMATCH"
-							: "VALIDATION_PENDING",
+						reasonCode: authoritativeDiagnostics.some((message) => /history|admission|contract/i.test(message))
+							? "INVALID_CONTRACT"
+							: authoritativeDiagnostics.some((message) => /assurance|issuer|trust root/i.test(message))
+								? "UPGRADE_REQUIRED"
+								: authoritativeDiagnostics.some((message) =>
+											/digest|definition|registry|profile|match/i.test(message),
+										)
+									? "DIGEST_MISMATCH"
+									: "VALIDATION_PENDING",
 						diagnostics: authoritativeDiagnostics.map((message) => ({
 							code: "FORMAL_EVIDENCE_REJECTED",
 							message,
@@ -3726,6 +3890,16 @@ function conformance(args: ParsedArgs): PublicOutcome {
 						: { approval_event_digest: frozenSubject.approval_event_digest }),
 					legacy_unverified: frozenSubject.legacy_unverified,
 				}),
+		...(formalHistory?.execution_history_digest === undefined
+			? {}
+			: { execution_history_digest: formalHistory.execution_history_digest }),
+		core_version: coreVersion,
+		...(formalHistory?.admission_digest === undefined ? {} : { admission_digest: formalHistory.admission_digest }),
+		...(formalBinding?.validationEvidenceDigest === undefined
+			? {}
+			: { validation_evidence_digest: formalBinding.validationEvidenceDigest }),
+		...(run.bindingDigest === undefined ? {} : { run_binding_digest: run.bindingDigest }),
+		...(policySnapshotDigest === undefined ? {} : { policy_snapshot_digest: policySnapshotDigest }),
 		runtime_identity_digest: subject.runtime_identity_digest,
 		inference_protocol_digest: subject.inference_protocol_digest,
 		dataset_identity_digest: subject.dataset_identity_digest,
@@ -3803,6 +3977,23 @@ function finalize(args: ParsedArgs): void {
 		if (!validation.valid || receipt.run_id !== runId || receipt.lifecycle !== "SUCCEEDED") {
 			throw new Error(
 				`Success execution receipt is not admissible: ${validation.errors.join("; ") || validation.outcome.reason_code}.`,
+			);
+		}
+		if (request.operation === "formal_evaluation") {
+			const history = auditFormalExecutionHistory(
+				store,
+				run,
+				request,
+				receipt,
+				receiptPath,
+				validation,
+				policyReferences,
+			);
+			if (history.errors.length > 0) {
+				throw new Error(`Formal success requires a complete execution history: ${history.errors.join("; ")}.`);
+			}
+			throw new Error(
+				"Formal success requires host-verified assurance; standalone surectl has no trusted assurance verifier.",
 			);
 		}
 		if (run.executorDigest && !sameDigest(run.executorDigest, receipt.executor.digest)) {
@@ -3891,12 +4082,14 @@ function help(): void {
 				"surectl memory --contract <memory-contract.json> [--skill <id>] [--uri memory://<skill>/<kind>/<slug>] [--operation publish|index|promote --semantic-runtime <dir> --memory-root <dir> --canonical-root <dir> --legacy-skills-root <dir>]",
 			conformance: "surectl conformance --run-id <id> --execution-request <json> --execution-receipt <json>",
 			freeze:
-				"surectl freeze --run-id <id> --execution-request <json> --execution-receipt <json> --prediction <path> --engine-digest <sha256> --route-digest <sha256> --approval-digest <sha256>",
+				"surectl freeze --run-id <id> --execution-request <formal-evaluation.json> --execution-receipt <json> --prediction <path> --engine-digest <sha256> --route-digest <sha256> --approval-digest <sha256>",
 			finalize: "surectl finalize --run-id <id> --status <success|incomplete|failed|cancelled>",
 		},
 		exit_codes: SURECTL_EXIT_CODES,
 		invariant:
 			"Only Core validation results advance checkpoints; execute writes receipts only; missing capability is NOT_EXECUTED.",
+		formal_invariant:
+			"Standalone surectl emits cooperative evidence only; formal success requires a host-verified assurance attestation.",
 	});
 }
 

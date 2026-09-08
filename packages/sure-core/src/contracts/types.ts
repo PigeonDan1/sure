@@ -262,6 +262,16 @@ export interface ConformanceRecord {
 	evaluator_engine_digest?: string;
 	evaluator_route_digest?: string;
 	approval_event_digest?: string;
+	/** Host-neutral Core implementation version used for the conformance decision. */
+	core_version?: string;
+	admission_digest?: string;
+	validation_evidence_digest?: string;
+	run_binding_digest?: string;
+	policy_snapshot_digest?: string;
+	/** Digest of a host-verified assurance attestation; required for formal eligibility. */
+	assurance_attestation_digest?: string;
+	/** Digest over the re-audited latest and immutable execution contract bundles. */
+	execution_history_digest?: string;
 	legacy_unverified?: boolean;
 	runtime_identity_digest?: string;
 	inference_protocol_digest?: string;

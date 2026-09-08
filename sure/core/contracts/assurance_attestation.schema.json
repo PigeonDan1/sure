@@ -1,0 +1,104 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://sure.example/contracts/assurance-attestation.v1.schema.json",
+	"title": "SURE host assurance attestation",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"schema",
+		"attestation_id",
+		"issuer",
+		"assurance_profile",
+		"core_version",
+		"run_id",
+		"unit_id",
+		"attempt",
+		"request_digest",
+		"admission_digest",
+		"receipt_digest",
+		"execution_history_digest",
+		"validation_evidence_digest",
+		"subject_digest",
+		"approval_event_digest",
+		"workflow_digest",
+		"validator_digest",
+		"executor_digest",
+		"policy_digest",
+		"policy_snapshot_digest",
+		"reference_snapshot_digest",
+		"run_binding_digest",
+		"event_sequence",
+		"issued_at",
+		"statement_digest",
+		"proof",
+		"attestation_digest"
+	],
+	"properties": {
+		"schema": { "const": "sure.assurance_attestation.v1" },
+		"attestation_id": { "$ref": "#/$defs/id" },
+		"issuer": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["issuer_id", "kind", "version", "digest"],
+			"properties": {
+				"issuer_id": { "$ref": "#/$defs/id" },
+				"kind": { "enum": ["portable_host", "pi_harness", "trusted_service"] },
+				"version": { "type": "string", "minLength": 1 },
+				"digest": { "$ref": "#/$defs/digest" }
+			}
+		},
+		"assurance_profile": { "enum": ["cooperative", "pi_enforced", "trusted"] },
+		"core_version": { "type": "string", "minLength": 1 },
+		"run_id": { "$ref": "#/$defs/id" },
+		"unit_id": { "$ref": "#/$defs/id" },
+		"attempt": { "type": "integer", "minimum": 1 },
+		"request_digest": { "$ref": "#/$defs/digest" },
+		"admission_digest": { "$ref": "#/$defs/digest" },
+		"receipt_digest": { "$ref": "#/$defs/digest" },
+		"execution_history_digest": { "$ref": "#/$defs/digest" },
+		"validation_evidence_digest": { "$ref": "#/$defs/digest" },
+		"subject_digest": { "$ref": "#/$defs/digest" },
+		"approval_event_digest": { "$ref": "#/$defs/digest" },
+		"workflow_digest": { "$ref": "#/$defs/digest" },
+		"validator_digest": { "$ref": "#/$defs/digest" },
+		"executor_digest": { "$ref": "#/$defs/digest" },
+		"policy_digest": { "$ref": "#/$defs/digest" },
+		"policy_snapshot_digest": { "$ref": "#/$defs/digest" },
+		"reference_snapshot_digest": { "$ref": "#/$defs/digest" },
+		"run_binding_digest": { "$ref": "#/$defs/digest" },
+		"event_sequence": { "type": "integer", "minimum": 1 },
+		"previous_event_digest": { "$ref": "#/$defs/digest" },
+		"issued_at": { "type": "string", "format": "date-time" },
+		"statement_digest": { "$ref": "#/$defs/digest" },
+		"proof": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["kind", "verification_material_id", "value"],
+			"properties": {
+				"kind": { "enum": ["host_store", "signature", "trusted_attestation"] },
+				"verification_material_id": { "$ref": "#/$defs/id" },
+				"value": { "type": "string", "minLength": 1 }
+			}
+		},
+		"attestation_digest": { "$ref": "#/$defs/digest" }
+	},
+	"allOf": [
+		{
+			"if": { "properties": { "event_sequence": { "const": 1 } }, "required": ["event_sequence"] },
+			"then": { "not": { "required": ["previous_event_digest"] } },
+			"else": { "required": ["previous_event_digest"] }
+		},
+		{
+			"if": { "properties": { "issuer": { "properties": { "kind": { "const": "portable_host" } } } } },
+			"then": { "properties": { "assurance_profile": { "const": "cooperative" } } }
+		},
+		{
+			"if": { "properties": { "issuer": { "properties": { "kind": { "const": "pi_harness" } } } } },
+			"then": { "properties": { "assurance_profile": { "enum": ["cooperative", "pi_enforced"] } } }
+		}
+	],
+	"$defs": {
+		"id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+		"digest": { "type": "string", "pattern": "^(sha256:)?[a-f0-9]{64}$" }
+	}
+}

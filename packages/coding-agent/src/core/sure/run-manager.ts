@@ -9,6 +9,7 @@ import {
 	type ResumeBinding,
 	RUN_ID_PATTERN,
 	RunStoreError,
+	runBindingDigest,
 } from "@earendil-works/sure-core";
 import { resolveSitePolicy, snapshotResolvedSitePolicy } from "@earendil-works/sure-core/site";
 import { createNodeCoreRunStore, type NodeCoreRunStore } from "./core-run-store.ts";
@@ -209,13 +210,7 @@ export class SureRunManager {
 			...(policySnapshotDigest === undefined ? {} : { policySnapshotDigest }),
 			bindingDigest:
 				this.options.bindingDigest ??
-				canonicalJsonDigest({
-					workflowDigest,
-					validatorDigest,
-					executorDigest,
-					policyDigest,
-					policySnapshotDigest: policySnapshotDigest ?? null,
-				} as unknown as JsonValue),
+				runBindingDigest({ workflowDigest, validatorDigest, executorDigest, policyDigest, policySnapshotDigest }),
 		};
 	}
 

@@ -15,6 +15,7 @@ import {
 	initialCheckpoint,
 	type JsonValue,
 	type PolicySnapshot,
+	runBindingDigest,
 	type TransitionResult,
 	type WorkflowDefinition,
 } from "../../sure-core/src/index.ts";
@@ -175,6 +176,52 @@ function executionRequest(runId: string, artifacts: string, overrides: Record<st
 		created_at: "2026-09-06T00:00:00.000Z",
 		...overrides,
 	} as unknown as ExecutionRequest;
+}
+
+function writeCompleteExecutionHistory(
+	artifacts: string,
+	requestPath: string,
+	receiptPath: string,
+	request: ExecutionRequest,
+	receipt: ExecutionReceipt,
+): void {
+	const admission: ExecutionAdmissionTrace = {
+		schema: "sure.execution_admission.v1",
+		request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+		request_id: request.request_id,
+		status: "ADMITTED",
+		reason_code: "VALIDATION_PENDING",
+		observed_at: request.created_at,
+		probe_invoked: true,
+		execute_invoked: true,
+		receipt_present: true,
+		receipt_valid: true,
+	};
+	const admissionPath = join(artifacts, "execution_admission.json");
+	const historyDir = join(artifacts, "execution_contracts");
+	const historyRequestPath = join(historyDir, `${request.request_id}.request.json`);
+	const historyReceiptPath = join(historyDir, `${request.request_id}.receipt.json`);
+	const historyAdmissionPath = join(historyDir, `${request.request_id}.admission.json`);
+	const historyContractPath = join(historyDir, `${request.request_id}.contract.json`);
+	const contract = (immutable: boolean): Record<string, unknown> => ({
+		schema: "sure.execution_compatibility.v1",
+		version: 1,
+		request_path: immutable ? historyRequestPath : requestPath,
+		receipt_path: immutable ? historyReceiptPath : receiptPath,
+		admission_path: immutable ? historyAdmissionPath : admissionPath,
+		request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+		receipt_digest: canonicalJsonDigest(receipt as unknown as JsonValue),
+		admission_digest: canonicalJsonDigest(admission as unknown as JsonValue),
+		admission_instrumentation: "admission-v1",
+		contract_valid: true,
+	});
+	mkdirSync(historyDir, { recursive: true });
+	writeFileSync(admissionPath, JSON.stringify(admission));
+	writeFileSync(join(artifacts, "execution_contract.json"), JSON.stringify(contract(false)));
+	writeFileSync(historyRequestPath, JSON.stringify(request));
+	writeFileSync(historyReceiptPath, JSON.stringify(receipt));
+	writeFileSync(historyAdmissionPath, JSON.stringify(admission));
+	writeFileSync(historyContractPath, JSON.stringify(contract(true)));
 }
 
 describe("surectl cooperative control plane", () => {
@@ -2746,7 +2793,7 @@ describe("surectl cooperative control plane", () => {
 		]);
 		expect(result.status).toBe(5);
 		expect((result.value?.eligibility as Record<string, unknown>).eligible).toBe(false);
-		expect((result.value?.conformance as Record<string, unknown>).reason_code).toBe("UPGRADE_REQUIRED");
+		expect((result.value?.conformance as Record<string, unknown>).reason_code).toBe("INVALID_CONTRACT");
 		writeFileSync(outputPath, "tampered\n");
 		const tamperedReceipt = command(root, "conformance", [
 			"--run-id",
@@ -2771,8 +2818,11 @@ describe("surectl cooperative control plane", () => {
 			"TERMINATE",
 		]);
 		expect(tamperedReceipt.status).toBe(5);
-		expect((tamperedReceipt.value?.conformance as Record<string, unknown>).reason_code).toBe("DIGEST_MISMATCH");
-	});
+		expect((tamperedReceipt.value?.conformance as Record<string, unknown>).reason_code).toBe("INVALID_CONTRACT");
+		expect((tamperedReceipt.value?.eligibility as { diagnostics: string[] }).diagnostics.join(" ")).toMatch(
+			/digest/i,
+		);
+	}, 30_000);
 
 	it("does not promote caller-supplied gate evidence to formal conformance", () => {
 		const runId = "run-external-validator-evidence";
@@ -2879,22 +2929,47 @@ describe("surectl cooperative control plane", () => {
 		);
 	});
 
-	it("freezes a fully bound evaluation subject and refuses tampered subjects", () => {
-		const base = ["--skill", "sure_feed", "--definition", definition, "--validator-registry", registryPath];
-		const started = command(root, "start", [
-			...base,
-			"--run-id",
-			"run-freeze",
-			"--policy-digest",
-			DIGEST_A,
-			"--executor-digest",
-			DIGEST_B,
-		]);
+	it("freezes complete cooperative evidence but requires host assurance and rejects tampering", () => {
+		const snapshotPath = join(root, "formal-site-policy.snapshot.json");
+		const snapshot = policySnapshot(root);
+		mkdirSync(join(root, "policy-reference"));
+		mkdirSync(join(root, "policy-publication"));
+		writeFileSync(snapshotPath, JSON.stringify(snapshot));
+		const base = [
+			"--skill",
+			"sure_feed",
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+			"--policy-snapshot",
+			snapshotPath,
+		];
+		const started = command(root, "start", [...base, "--run-id", "run-freeze", "--executor-digest", DIGEST_B]);
 		expect(started.status).toBe(0);
-		const runDir = String((started.value?.run as Record<string, unknown>).runDir);
+		const run = started.value?.run as Record<string, unknown>;
+		const runDir = String(run.runDir);
+		expect(run.bindingDigest).toBe(
+			runBindingDigest({
+				workflowDigest: String(run.workflowDigest),
+				validatorDigest: String(run.validatorDigest),
+				executorDigest: String(run.executorDigest),
+				policyDigest: String(run.policyDigest),
+				policySnapshotDigest: String(run.policySnapshotDigest),
+			}),
+		);
 		const artifacts = join(runDir, "artifacts");
 		const request = executionRequest("run-freeze", artifacts, {
 			operation: "formal_evaluation",
+			policy_digest: snapshot.policy_digest,
+			policy_snapshot_digest: snapshot.snapshot_digest,
+			output_root: {
+				path: artifacts,
+				resolved_path: artifacts,
+				scope_id: "run-freeze",
+				policy_digest: snapshot.policy_digest,
+				writable: true,
+			},
 			subject: {
 				bundle_manifest_path: join(artifacts, "bundle.json"),
 				bundle_digest: `sha256:${DIGEST_A}`,
@@ -2906,7 +2981,7 @@ describe("surectl cooperative control plane", () => {
 		});
 		const requestPath = join(artifacts, "freeze-request.json");
 		writeFileSync(requestPath, JSON.stringify(request));
-		const receipt = {
+		const receipt: ExecutionReceipt = {
 			schema: "sure.execution_receipt.v1",
 			receipt_id: "freeze-receipt",
 			request_id: request.request_id,
@@ -2928,6 +3003,7 @@ describe("surectl cooperative control plane", () => {
 			reference_snapshot_digest: request.reference_snapshot_digest,
 			output_root: request.output_root,
 			policy_digest: request.policy_digest,
+			policy_snapshot_digest: request.policy_snapshot_digest,
 			started_at: request.created_at,
 			finished_at: request.created_at,
 			exit_code: 0,
@@ -2953,8 +3029,29 @@ describe("surectl cooperative control plane", () => {
 			"TERMINATE",
 		]);
 		expect(prematureConformance.status).toBe(5);
-		expect((prematureConformance.value?.conformance as Record<string, unknown>).reason_code).toBe(
-			"VALIDATION_PENDING",
+		expect((prematureConformance.value?.conformance as Record<string, unknown>).reason_code).toBe("INVALID_CONTRACT");
+		writeCompleteExecutionHistory(artifacts, requestPath, receiptPath, request, receipt);
+		const completeButUnverified = command(root, "conformance", [
+			"--run-id",
+			"run-freeze",
+			"--definition",
+			definition,
+			"--validator-registry",
+			registryPath,
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+			"--assurance-profile",
+			"pi_enforced",
+			"--validator-verdict",
+			"PASS",
+			"--workflow-disposition",
+			"TERMINATE",
+		]);
+		expect(completeButUnverified.status).toBe(5);
+		expect((completeButUnverified.value?.conformance as Record<string, unknown>).reason_code).toBe(
+			"UPGRADE_REQUIRED",
 		);
 		const executionRecorded = command(root, "validate", [
 			...base,
@@ -2991,13 +3088,12 @@ describe("surectl cooperative control plane", () => {
 			"asr.zh.cer.v1",
 			"--approval-digest",
 			DIGEST_C,
-			"--assurance-profile",
-			"pi_enforced",
 		]);
 		expect(frozen.status).toBe(0);
 		const subjectPath = join(artifacts, "evaluation_subject.json");
 		const subject = JSON.parse(readFileSync(subjectPath, "utf8")) as Record<string, unknown>;
 		expect(subject.legacy_unverified).toBe(false);
+		expect(subject.assurance_profile).toBe("cooperative");
 		expect(typeof subject.subject_digest).toBe("string");
 
 		const conformance = command(root, "conformance", [
@@ -3013,15 +3109,29 @@ describe("surectl cooperative control plane", () => {
 			receiptPath,
 			"--subject",
 			subjectPath,
-			"--assurance-profile",
-			"pi_enforced",
 			"--validator-verdict",
 			"PASS",
 			"--workflow-disposition",
 			"TERMINATE",
 		]);
-		expect(conformance.status).toBe(0);
-		expect((conformance.value?.eligibility as Record<string, unknown>).eligible).toBe(true);
+		expect(conformance.status).toBe(5);
+		expect((conformance.value?.eligibility as Record<string, unknown>).eligible).toBe(false);
+		expect((conformance.value?.conformance as Record<string, unknown>).reason_code).toBe("UPGRADE_REQUIRED");
+		expect((conformance.value?.eligibility as { diagnostics: string[] }).diagnostics).toContain(
+			"formal evaluation requires host-verified assurance",
+		);
+		const finalized = command(root, "finalize", [
+			"--run-id",
+			"run-freeze",
+			"--status",
+			"success",
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+		]);
+		expect(finalized.status).not.toBe(0);
+		expect(finalized.stderr).toContain("Formal success requires host-verified assurance");
 
 		subject.prediction_digest = `sha256:${DIGEST_C}`;
 		writeFileSync(subjectPath, JSON.stringify(subject));
@@ -3038,8 +3148,6 @@ describe("surectl cooperative control plane", () => {
 			receiptPath,
 			"--subject",
 			subjectPath,
-			"--assurance-profile",
-			"pi_enforced",
 			"--validator-verdict",
 			"PASS",
 			"--workflow-disposition",
@@ -3048,7 +3156,7 @@ describe("surectl cooperative control plane", () => {
 		expect(tampered.status).toBe(5);
 		expect((tampered.value?.eligibility as Record<string, unknown>).eligible).toBe(false);
 		expect((tampered.value?.conformance as Record<string, unknown>).reason_code).toBe("DIGEST_MISMATCH");
-	}, 15_000);
+	}, 60_000);
 
 	it("reports capability absence as a non-passing status", () => {
 		const result = command(root, "capabilities", ["--skill", "sure_eval", "--definition", evalDefinition]);

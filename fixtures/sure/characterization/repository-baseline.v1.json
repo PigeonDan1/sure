@@ -6721,8 +6721,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/run-manager.ts",
-      "size_bytes": 15752,
-      "sha256": "eb3b9ad8a8d32e5966b623fbcb1bbcc52a9247326a42ec707c08b5dda769d046"
+      "size_bytes": 15684,
+      "sha256": "c61ad19f044e9f4c8246c4fd95d50f577a45d84ee4a5ffeb6bbe1b6d1cfc7ab4"
     },
     {
       "path": "packages/coding-agent/src/core/sure/state.ts",
@@ -9751,5 +9751,5 @@
       ]
     }
   ],
-  "semantic_digest": "ebaae879e56e51472ff173c4896276b779b8ab676e0fbca378fc4984cd1383a1"
+  "semantic_digest": "16a1162294f91dcea170fce42717e3e4e9918d3b9e3c9b4324674fd241aaa5a2"
 }
