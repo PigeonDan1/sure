@@ -247,6 +247,10 @@ def _localize_batch_paths(value: Any, *, scratch_root: Path, batch_relative: Pat
             if relative.is_absolute() or ".." in relative.parts:
                 raise ValueError(f"scratch artifact reference escapes its run: {value}")
             return (batch_relative / relative).as_posix()
+        relative = Path(value)
+        if not relative.is_absolute() and relative.parts and ".." not in relative.parts:
+            if (scratch_root / relative).exists():
+                return (batch_relative / relative).as_posix()
     return value
 
 

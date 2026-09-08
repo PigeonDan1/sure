@@ -727,6 +727,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "max_samples": args.max_samples,
             "execution": execution["requested"],
             "execution_path": args.execution_path or "auto",
+            "dataset_source_key": args.dataset_source_key,
             "user_goal": args.user_goal,
             "datasets_root": getattr(args, "datasets_root", None),
         },

@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 
-from run_eval import _approved_reference_datasets_root, append_staging_bundle
+from run_eval import _approved_reference_datasets_root, _localize_batch_paths, append_staging_bundle
 
 
 def _write(path: Path, value: str) -> None:
@@ -281,6 +282,74 @@ class InPlaceAppendTests(unittest.TestCase):
         self.assertEqual(second["batch_id"], first["batch_id"])
         self.assertEqual(second["staging_report_sha256"], first["staging_report_sha256"])
         self.assertEqual(second["staging_snapshot_sha256"], first["staging_snapshot_sha256"])
+
+
+class LocalizeBatchPathsTest(unittest.TestCase):
+    """Locks the relative-path fallback added for python-engine scratch references."""
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.scratch = (Path(self.temporary.name) / "scratch").resolve()
+        (self.scratch / "metrics").mkdir(parents=True)
+        (self.scratch / "metrics" / "report.json").write_text("{}\n", encoding="utf-8")
+        (self.scratch / "predictions").mkdir()
+        (self.scratch / "predictions" / "ds.txt").write_text("a\tb\n", encoding="utf-8")
+        self.batch = Path("evaluation_runs") / "sure_eval_abc"
+
+    def _localize(self, value: object) -> object:
+        return _localize_batch_paths(value, scratch_root=self.scratch, batch_relative=self.batch)
+
+    def test_absolute_scratch_reference_is_rewritten(self) -> None:
+        value = str(self.scratch / "metrics" / "report.json")
+        self.assertEqual(self._localize(value), f"evaluation_runs/sure_eval_abc/metrics/report.json")
+
+    def test_scratch_root_itself_is_rewritten(self) -> None:
+        self.assertEqual(self._localize(str(self.scratch)), "evaluation_runs/sure_eval_abc")
+
+    def test_relative_existing_under_scratch_is_rewritten(self) -> None:
+        self.assertEqual(self._localize("metrics/report.json"), "evaluation_runs/sure_eval_abc/metrics/report.json")
+        self.assertEqual(
+            self._localize("metrics" + os.sep + "report.json"),
+            "evaluation_runs/sure_eval_abc/metrics/report.json",
+        )
+        self.assertEqual(
+            self._localize("predictions/ds.txt"),
+            "evaluation_runs/sure_eval_abc/predictions/ds.txt",
+        )
+
+    def test_relative_missing_under_scratch_stays_unchanged(self) -> None:
+        value = "metrics/not_present.json"
+        self.assertEqual(self._localize(value), value)
+
+    def test_escaping_relative_stays_unchanged(self) -> None:
+        for value in ("../outside.txt", "metrics/../metrics/report.json"):
+            with self.subTest(value=value):
+                self.assertEqual(self._localize(value), value)
+
+    def test_non_path_strings_and_empty_are_untouched(self) -> None:
+        for value in ("dataset__v1", "", "wer__new_pipeline"):
+            with self.subTest(value=value):
+                self.assertEqual(self._localize(value), value)
+
+    def test_absolute_path_outside_scratch_stays_unchanged(self) -> None:
+        outside = (Path(self.temporary.name) / "elsewhere" / "f.txt").resolve()
+        self.assertEqual(self._localize(str(outside)), str(outside))
+
+    def test_recursion_rewrites_only_scratch_born_values(self) -> None:
+        value = {
+            "report": str(self.scratch / "metrics" / "report.json"),
+            "name": "dataset__v1",
+            "list": ["metrics/report.json", "metrics/not_present.json"],
+        }
+        self.assertEqual(
+            self._localize(value),
+            {
+                "report": "evaluation_runs/sure_eval_abc/metrics/report.json",
+                "name": "dataset__v1",
+                "list": ["evaluation_runs/sure_eval_abc/metrics/report.json", "metrics/not_present.json"],
+            },
+        )
 
 
 if __name__ == "__main__":

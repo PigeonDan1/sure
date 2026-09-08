@@ -205,6 +205,31 @@ class RunInferTests(unittest.TestCase):
         self.assertEqual(surface["source_provenance"]["template_file"], str(run_infer.ENTRYPOINT))
         self.assertEqual(surface["source_provenance"]["template_sha256"], run_infer._sha256_file(run_infer.ENTRYPOINT))
 
+    def test_surface_forwards_the_resolved_dataset_source_key(self) -> None:
+        self.write_inputs(self.container_binding)
+        input_path = self.artifacts / "eval_input_resolved.json"
+        eval_input = json.loads(input_path.read_text(encoding="utf-8"))
+        eval_input["user_input"]["dataset_source_key"] = "archive"
+        input_path.write_text(json.dumps(eval_input), encoding="utf-8")
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SURE_DATASET_SOURCE_ROOT", None)
+            _, _, _, surface = self.run_container([sys.executable, "-c", "pass"])
+
+        self.assertEqual(surface["env"]["SURE_DATASET_SOURCE_ROOT"], "archive")
+
+    def test_surface_preserves_the_source_override_used_during_resolution(self) -> None:
+        self.write_inputs(self.container_binding)
+        input_path = self.artifacts / "eval_input_resolved.json"
+        eval_input = json.loads(input_path.read_text(encoding="utf-8"))
+        eval_input["user_input"]["dataset_source_key"] = "default"
+        input_path.write_text(json.dumps(eval_input), encoding="utf-8")
+
+        with patch.dict(os.environ, {"SURE_DATASET_SOURCE_ROOT": "archive"}):
+            _, _, _, surface = self.run_container([sys.executable, "-c", "pass"])
+
+        self.assertEqual(surface["env"]["SURE_DATASET_SOURCE_ROOT"], "archive")
+
     def test_surface_matches_the_v2_schema(self) -> None:
         self.write_inputs(self.container_binding)
         _, _, _, surface = self.run_container([sys.executable, "-c", "pass"])

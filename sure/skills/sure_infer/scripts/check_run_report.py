@@ -201,7 +201,7 @@ def _validate_protocol(root: Path) -> list[str]:
             errors.append("protocol.yaml container.execution_mode must be container_only")
         if container.get("host_python_fallback") is not False:
             errors.append("protocol.yaml must disable container host_python_fallback")
-    elif runtime_kind == "python":
+    elif runtime_kind == "python" and not prediction_reuse.get("enabled"):
         for key in ("runtime_id", "python_executable", "lock_sha256", "manifest_sha256"):
             if not model_runtime.get(key):
                 errors.append(f"protocol.yaml model_runtime.{key} is required for Python inference")
@@ -209,7 +209,7 @@ def _validate_protocol(root: Path) -> list[str]:
             errors.append("protocol.yaml model_runtime.execution_mode must be python")
         if model_runtime.get("host_python_fallback") is not False:
             errors.append("protocol.yaml must disable Python host fallback")
-    else:
+    elif runtime_kind != "python":
         errors.append(f"protocol.yaml inference_environment.runtime_kind is unsupported: {runtime_kind}")
     if runtime_inventory.get("schema") != "sure.onboard.runtime_inventory.v2":
         errors.append("protocol.yaml must record runtime_inventory schema v2")
