@@ -93,7 +93,12 @@ describe("shared SURE backend executor adapter", () => {
 				working_directory: "/package",
 			},
 		} as unknown as ExecutionRequest;
-		const calls: Array<{ script: string; args: readonly string[]; timeoutMs?: number }> = [];
+		const calls: Array<{
+			script: string;
+			args: readonly string[];
+			timeoutMs?: number;
+			environment?: NodeJS.ProcessEnv;
+		}> = [];
 		const legacyInvocation = prepareHarnessBackendInvocation(
 			{ packageDir: "/package", runDir: "/run" },
 			"run_validate.py",
@@ -104,8 +109,17 @@ describe("shared SURE backend executor adapter", () => {
 			allowedOperations: new Map([["sure.test.execute", "run_validate.py"]]),
 			timeoutMs: 3_600_000,
 			resolveRuntime: () => ({ ok: true, contract: runtime }),
+			environment: (resolvedRuntime, resolvedRequest) => ({
+				SURE_TEST_RUNTIME: resolvedRuntime.runtime_id,
+				SURE_TEST_OPERATION: String(resolvedRequest.runtime_requirements.semantic_backend_operation_id),
+			}),
 			executeBackend: (options) => {
-				calls.push({ script: options.script, args: options.args, timeoutMs: options.timeoutMs });
+				calls.push({
+					script: options.script,
+					args: options.args,
+					timeoutMs: options.timeoutMs,
+					environment: options.environment?.(runtime),
+				});
 				return { ok: true, stdout: "ok", stderr: "", status: 0 };
 			},
 			now: () => "2026-01-01T00:00:00.000Z",
@@ -133,6 +147,10 @@ describe("shared SURE backend executor adapter", () => {
 				script: "run_validate.py",
 				args: legacyInvocation.args,
 				timeoutMs: 3_600_000,
+				environment: {
+					SURE_TEST_RUNTIME: "runtime-test",
+					SURE_TEST_OPERATION: "sure.test.execute",
+				},
 			},
 		]);
 		expect(join("/package", "scripts", calls[0]?.script ?? "")).toBe(legacyInvocation.scriptPath);

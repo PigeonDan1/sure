@@ -8,6 +8,7 @@ import * as _bundledPiAiOauth from "@earendil-works/pi-ai/oauth";
 import * as _bundledPiTui from "@earendil-works/pi-tui";
 import * as _bundledSureCore from "@earendil-works/sure-core";
 import * as _bundledSureCoreEvaluation from "@earendil-works/sure-core/evaluation";
+import * as _bundledSureCoreNode from "@earendil-works/sure-core/node";
 import * as _bundledTypebox from "typebox";
 import * as _bundledTypeboxCompile from "typebox/compile";
 import * as _bundledTypeboxValue from "typebox/value";
@@ -59,6 +60,10 @@ export function getSureHookAliases(): Record<string, string> {
 		["sure-core/dist/evaluation/index.js", "sure-core/src/evaluation/index.ts"],
 		"@earendil-works/sure-core/evaluation",
 	);
+	const sureCoreNodeEntry = resolveWorkspaceOrImport(
+		["sure-core/dist/node/index.js", "sure-core/src/node/index.ts"],
+		"@earendil-works/sure-core/node",
+	);
 	const sureCoreEntry = resolveWorkspaceOrImport(
 		["sure-core/dist/index.js", "sure-core/src/index.ts"],
 		"@earendil-works/sure-core",
@@ -74,6 +79,7 @@ export function getSureHookAliases(): Record<string, string> {
 		"@earendil-works/pi-coding-agent/hooks": piCodingAgentHooksEntry,
 		"@earendil-works/sure-core": sureCoreEntry,
 		"@earendil-works/sure-core/evaluation": sureCoreEvaluationEntry,
+		"@earendil-works/sure-core/node": sureCoreNodeEntry,
 		"@mariozechner/pi-agent-core": piAgentCoreEntry,
 		"@mariozechner/pi-tui": piTuiEntry,
 		"@mariozechner/pi-ai": piAiCompatEntry,
@@ -109,6 +115,7 @@ export function getSureHookVirtualModules(): Record<string, unknown> {
 		"@earendil-works/pi-coding-agent/hooks": _bundledPiCodingAgentHooks,
 		"@earendil-works/sure-core": _bundledSureCore,
 		"@earendil-works/sure-core/evaluation": _bundledSureCoreEvaluation,
+		"@earendil-works/sure-core/node": _bundledSureCoreNode,
 		"@mariozechner/pi-agent-core": _bundledPiAgentCore,
 		"@mariozechner/pi-tui": _bundledPiTui,
 		"@mariozechner/pi-ai": _bundledPiAiCompat,

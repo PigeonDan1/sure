@@ -19,8 +19,14 @@ export {
 	type PiExecutionProvenancePublisher,
 	type PiExecutionProvenancePublisherOptions,
 	type PiExecutionProvenanceSession,
+	type PiGenerationBinding,
+	verifyPiGeneratedPackageBinding,
 } from "./execution-provenance.ts";
 export { createSureExtension, sureExtension } from "./extension.ts";
+export {
+	createPiGeneratedLocalRequestDispatcherResolver,
+	type PiGeneratedDispatcherOptions,
+} from "./generated-dispatcher.ts";
 export type {
 	SureDisplayArtifact,
 	SureDisplayCheckpoint,

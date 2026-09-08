@@ -6646,13 +6646,18 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/execution-provenance.ts",
-      "size_bytes": 24796,
-      "sha256": "80e4c71582cf95e2754cdf0305dcc5e8195e7eac5436ce8d0a624f9c796229ce"
+      "size_bytes": 25014,
+      "sha256": "0724ba6530dabe0dc546bb6ab7811adbd789de0d73fc1ec94dfa3088d383d9e8"
     },
     {
       "path": "packages/coding-agent/src/core/sure/extension.ts",
       "size_bytes": 44981,
       "sha256": "3156f7d70f074554017c079c0125f2ffc7e38d908cf65c3e1a2069e28908a13e"
+    },
+    {
+      "path": "packages/coding-agent/src/core/sure/generated-dispatcher.ts",
+      "size_bytes": 8803,
+      "sha256": "3b52f3636d824366cd00b0814ab599eb866299328869f9ad3c0ab564ed67c354"
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
@@ -6671,8 +6676,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/index.ts",
-      "size_bytes": 1135,
-      "sha256": "1b8319489d2ceb1febdc153f3a72d5b6842745493bd3b718c41e9f5bd12f99ff"
+      "size_bytes": 1327,
+      "sha256": "28cf8cab8fe18cb7fddf157c82960dbc06b7fd945313569a18e38568b677b893"
     },
     {
       "path": "packages/coding-agent/src/core/sure/init-apply.ts",
@@ -6716,8 +6721,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/module-loader.ts",
-      "size_bytes": 5294,
-      "sha256": "0e8bebeef1606d456462211e82c10915687c198ac908715a548fda8e4ab59d18"
+      "size_bytes": 5639,
+      "sha256": "f31afc22b0ed4b978f8b6a42acad637c228ef7fdfc068f55c87b28a26be713cc"
     },
     {
       "path": "packages/coding-agent/src/core/sure/output-dir.ts",
@@ -6751,8 +6756,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-backend-executor.test.ts",
-      "size_bytes": 7439,
-      "sha256": "c9c9343132687212de9be00fb849efa4607028b8b0028b6aa8f855cf3b1e436f"
+      "size_bytes": 7886,
+      "sha256": "f34f9fb7ca490443c455b980f3bd3b3359249a248c99e36bdcd97a1b1dacd20d"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-eval-red-lines.test.ts",
@@ -6986,8 +6991,8 @@
     },
     {
       "path": "sure/runtime/harness/backend-executor.ts",
-      "size_bytes": 10674,
-      "sha256": "4a37907d70d4123e79c5fcb0c866de30082c4dc293bf054e636d118eb563faec"
+      "size_bytes": 7487,
+      "sha256": "b27fd0738319035d61631cda16699aab212077babf072ed6b3b19283dd71e9eb"
     },
     {
       "path": "sure/runtime/harness/bootstrap.py",
@@ -9776,5 +9781,5 @@
       ]
     }
   ],
-  "semantic_digest": "24814677d485f904168620317fe85df17f9c8d3a070fe11c7f25bbdea26d22a1"
+  "semantic_digest": "7130d4a5969e4426e668f683d7730e50cb441ecbc3027e4b8f1f57f7d173363f"
 }

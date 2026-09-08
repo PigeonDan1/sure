@@ -326,7 +326,7 @@ export function createPiExecutionProvenanceHost(options: PiExecutionProvenanceHo
 	});
 }
 
-interface GenerationBinding {
+export interface PiGenerationBinding {
 	skill_id: string;
 	definition_digest: string;
 	workflow_digest: string;
@@ -339,7 +339,7 @@ interface GenerationBinding {
 
 interface GenerationBindingRead {
 	present: boolean;
-	binding?: GenerationBinding;
+	binding?: PiGenerationBinding;
 }
 
 function readGenerationBinding(context: Omit<SureHookContext, "point">): GenerationBindingRead {
@@ -399,7 +399,7 @@ function readPackageJson(packageDir: string, name: string): Record<string, unkno
  * its local definition and registries are the objects the lock describes.
  * This is an integrity/consistency check, not a cryptographic trust root.
  */
-function verifyGeneratedPackageBinding(context: Omit<SureHookContext, "point">, generation: GenerationBinding): void {
+function verifyGeneratedPackageBinding(context: Omit<SureHookContext, "point">, generation: PiGenerationBinding): void {
 	const definition = readPackageJson(context.packageDir, "canonical-definition.json");
 	if (definition.schema !== "sure.canonical.skill.v1" || definition.skill_id !== generation.skill_id) {
 		throw new Error("generated Pi canonical definition is invalid");
@@ -435,6 +435,17 @@ function verifyGeneratedPackageBinding(context: Omit<SureHookContext, "point">, 
 	) {
 		throw new Error("generated Pi executor registry does not match its generation lock");
 	}
+}
+
+/** Verify generated Pi lock and registry bytes before constructing a host adapter. */
+export function verifyPiGeneratedPackageBinding(
+	context: Omit<SureHookContext, "point">,
+): PiGenerationBinding | undefined {
+	const generation = readGenerationBinding(context);
+	if (!generation.present) return undefined;
+	if (generation.binding === undefined) throw new Error("generated Pi generation lock is malformed or mismatched");
+	verifyGeneratedPackageBinding(context, generation.binding);
+	return generation.binding;
 }
 
 function rejectingProvenanceHost(message: string): PiExecutionProvenanceHost {
@@ -508,20 +519,13 @@ export function createPiExecutionProvenanceHostForContext(
 	context: Omit<SureHookContext, "point">,
 	contextOptions: PiExecutionProvenanceContextOptions = {},
 ): PiExecutionProvenanceHost | undefined {
-	let generationRead: GenerationBindingRead;
+	let generation: PiGenerationBinding | undefined;
 	try {
-		generationRead = readGenerationBinding(context);
+		generation = verifyPiGeneratedPackageBinding(context);
 	} catch (error) {
 		return rejectingProvenanceHost(error instanceof Error ? error.message : String(error));
 	}
-	if (!generationRead.present) return undefined;
-	const generation = generationRead.binding;
-	if (generation === undefined) return rejectingProvenanceHost("generation lock is malformed or mismatched");
-	try {
-		verifyGeneratedPackageBinding(context, generation);
-	} catch (error) {
-		return rejectingProvenanceHost(error instanceof Error ? error.message : String(error));
-	}
+	if (generation === undefined) return undefined;
 	const run = context.run;
 	for (const [actual, expected] of [
 		[run.workflowDigest, generation.workflow_digest],

@@ -1,14 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import {
-	canonicalJsonDigest,
-	type CapabilityEvidence,
-	type CapabilityRequirement,
-	type ExecutionRequest,
-	type ExecutionRequestDispatcher,
-	type JsonValue,
-} from "@earendil-works/sure-core";
+import { createNodeRequestDispatcher } from "@earendil-works/sure-core/node";
+import type { ExecutionRequest, ExecutionRequestDispatcher } from "@earendil-works/sure-core";
 import {
 	harnessRuntimeEnv,
 	resolveHarnessPython,
@@ -142,69 +136,6 @@ export interface HarnessRequestDispatcherOptions {
 	readonly executeBackend?: (options: HarnessBackendExecutionOptions) => HarnessBackendResult;
 }
 
-interface BoundHarnessRequest {
-	operationId: string;
-	script: string;
-	args: string[];
-}
-
-function requestOperationId(request: ExecutionRequest): string {
-	const operationId = request.runtime_requirements.semantic_backend_operation_id;
-	if (typeof operationId !== "string" || operationId.trim() === "") {
-		throw new Error("execution request has no semantic backend operation id");
-	}
-	return operationId;
-}
-
-function bindHarnessRequest(
-	request: ExecutionRequest,
-	options: HarnessRequestDispatcherOptions,
-	runtime: HarnessRuntimeContract,
-): BoundHarnessRequest {
-	const operationId = requestOperationId(request);
-	const script = options.allowedOperations.get(operationId);
-	if (script === undefined || script.trim() === "" || isAbsolute(script) || script.includes("..")) {
-		throw new Error(`host dispatcher operation is not allowlisted: ${operationId}`);
-	}
-	const argvScript = request.entrypoint.argv[0];
-	const expectedScript = resolve(options.ctx.packageDir, "scripts", script);
-	if (argvScript === undefined || resolve(argvScript) !== expectedScript) {
-		throw new Error(`execution request entrypoint does not match the allowlisted script for ${operationId}`);
-	}
-	const runDirIndex = request.entrypoint.argv.indexOf("--run-dir");
-	if (runDirIndex < 0 || request.entrypoint.argv[runDirIndex + 1] !== options.ctx.runDir) {
-		throw new Error("execution request must bind the host run directory explicitly");
-	}
-	const producesIndex = request.entrypoint.argv.indexOf("--produces");
-	if (producesIndex >= 0 && request.entrypoint.argv[producesIndex + 1] !== undefined && !isAbsolute(request.entrypoint.argv[producesIndex + 1])) {
-		throw new Error("execution request must bind an absolute produces path");
-	}
-	if (request.entrypoint.working_directory !== undefined && resolve(request.entrypoint.working_directory) !== resolve(options.ctx.packageDir)) {
-		throw new Error("execution request working directory is outside the host package root");
-	}
-	if (resolve(request.entrypoint.executable) !== resolve(runtime.python_executable)) {
-		throw new Error("execution request executable does not match the locked harness runtime");
-	}
-	return { operationId, script, args: request.entrypoint.argv.slice(1) };
-}
-
-function capabilityEvidence(
-	requirement: CapabilityRequirement,
-	status: CapabilityEvidence["status"],
-	observedAt: string,
-	details: Record<string, JsonValue>,
-): CapabilityEvidence {
-	const base: CapabilityEvidence = {
-		capability_id: requirement.capability_id,
-		capability_class: requirement.capability_class,
-		status,
-		source: "host_probe",
-		observed_at: observedAt,
-		details,
-	};
-	return { ...base, evidence_digest: canonicalJsonDigest(base as unknown as JsonValue) };
-}
-
 /**
  * Build an opt-in dispatcher for one host-allowlisted local Python operation.
  * It consumes the already planned request and delegates process behavior to the
@@ -213,67 +144,52 @@ function capabilityEvidence(
 export function createHarnessRequestDispatcher(options: HarnessRequestDispatcherOptions): ExecutionRequestDispatcher {
 	const resolveRuntime = options.resolveRuntime ?? ((packageDir) => resolveHarnessPython(packageDir, { activate: false }));
 	const executeBackend = options.executeBackend ?? runHarnessBackend;
-	const now = options.now ?? (() => new Date().toISOString());
-	const allowedOperations = new Map(options.allowedOperations);
-	const boundOptions = { ...options, allowedOperations };
-
-	return {
-		probe(request, requirements) {
-			const runtime = resolveRuntime(options.ctx.packageDir);
+	return createNodeRequestDispatcher({
+		ctx: options.ctx,
+		allowedOperations: options.allowedOperations,
+		timeoutMs: options.timeoutMs,
+		availableCapabilityIds: new Set(["sure.execution.harness-python"]),
+		now: options.now,
+		resolveRuntime: (context) => {
+			const runtime = resolveRuntime(context.packageDir);
 			if (!runtime.ok || runtime.contract === undefined) {
-				return requirements.map((requirement) =>
-					capabilityEvidence(requirement, requirement.capability_id === "sure.execution.harness-python" ? "MISSING" : "UNKNOWN", now(), {
-						reason: runtime.error ?? "HARNESS_RUNTIME_NOT_READY",
-					}),
-				);
+				return { ok: false, error: runtime.error ?? "HARNESS_RUNTIME_NOT_READY" };
 			}
 			const contract = runtime.contract;
-			const bound = bindHarnessRequest(request, boundOptions, contract);
-			return requirements.map((requirement) =>
-				capabilityEvidence(
-					requirement,
-					requirement.capability_id === "sure.execution.harness-python" ? "AVAILABLE" : "UNKNOWN",
-					now(),
-					{
-						runtime_id: contract.runtime_id,
+			return {
+				ok: true,
+				contract: {
+					runtime_id: contract.runtime_id,
+					executable: contract.python_executable,
+					details: {
 						python_executable: contract.python_executable,
-						semantic_backend_operation_id: bound.operationId,
+						python_abi: contract.python_abi,
+						python_version: contract.python_version,
+						lock_sha256: contract.lock_sha256,
+						harness_version: contract.harness_version,
+						manifest_path: contract.manifest_path,
+						runtime_root: contract.runtime_root,
 					},
-				),
-			);
+					host: contract,
+				},
+			};
 		},
-		execute(request) {
-			const runtime = resolveRuntime(options.ctx.packageDir);
-			if (!runtime.ok || runtime.contract === undefined) {
-				return {
-					ok: false,
-					stdout: "",
-					stderr: runtime.error ?? "HARNESS_RUNTIME_NOT_READY",
-					status: null,
-				};
-			}
-			try {
-				const bound = bindHarnessRequest(request, boundOptions, runtime.contract);
-				const result = executeBackend({
-					ctx: options.ctx,
-					script: bound.script,
-					args: bound.args,
-					timeoutMs: typeof options.timeoutMs === "function" ? options.timeoutMs(request) : options.timeoutMs,
-					environment:
-						options.environment === undefined
-							? undefined
-							: (resolvedRuntime) => options.environment?.(resolvedRuntime, request) ?? harnessRuntimeEnv(resolvedRuntime),
-					includeSpawnErrorInStderr: options.includeSpawnErrorInStderr,
-				});
-				return result;
-			} catch (error) {
-				return {
-					ok: false,
-					stdout: "",
-					stderr: error instanceof Error ? error.message : String(error),
-					status: null,
-				};
-			}
+		environment:
+			options.environment === undefined
+				? undefined
+				: (runtime, request) =>
+						options.environment?.(runtime.host as HarnessRuntimeContract, request) ??
+						harnessRuntimeEnv(runtime.host as HarnessRuntimeContract),
+		executeBackend: (backend) => {
+			return executeBackend({
+				ctx: backend.ctx,
+				script: backend.script,
+				args: backend.args,
+				timeoutMs: backend.timeoutMs,
+				environment: backend.environment === undefined ? undefined : () => backend.environment ?? {},
+				includeSpawnErrorInStderr: backend.includeSpawnErrorInStderr,
+			});
 		},
-	};
+		includeSpawnErrorInStderr: options.includeSpawnErrorInStderr,
+	});
 }
