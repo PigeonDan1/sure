@@ -20,6 +20,7 @@ def respond(payload: dict) -> None:
 
 def main() -> int:
     wrapper = ModelWrapper()
+    loaded = False
     for line in sys.stdin:
         if not line.strip():
             continue
@@ -40,8 +41,9 @@ def main() -> int:
                     if params.get("name") == "healthcheck":
                         result = wrapper.healthcheck()
                     else:
-                        if wrapper.model is None:
+                        if not loaded:
                             wrapper.load()
+                            loaded = True
                         arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
                         result = wrapper.predict(arguments)
                 respond({"jsonrpc": "2.0", "id": request_id, "result": {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]}})
