@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
 	auditCheckpointTransition,
 	decodeLegacyCheckpoint,
+	type ExecutionRequest,
 	type ExecutionRequestDispatcher,
 	initialCheckpoint,
 	type WorkflowCheckpoint,
@@ -36,6 +37,9 @@ export interface PiSureControllerOptions {
 	readonly executionDispatcherForContext?: (
 		context: Omit<SureHookContext, "point">,
 	) => ExecutionRequestDispatcher | undefined;
+	readonly executionDispatcherForRequestForContext?: (
+		context: Omit<SureHookContext, "point">,
+	) => ((request: ExecutionRequest) => ExecutionRequestDispatcher | undefined) | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -180,8 +184,13 @@ export class PiSureController {
 			event: withCoreEvent(context.event, coreEvent),
 		};
 		const executionDispatcher = this.hostOptions.executionDispatcherForContext?.(baseContext);
-		const provenanceOptions: PiExecutionProvenanceContextOptions =
-			executionDispatcher === undefined ? {} : { execution_dispatcher: executionDispatcher };
+		const executionDispatcherForRequest = this.hostOptions.executionDispatcherForRequestForContext?.(baseContext);
+		const provenanceOptions: PiExecutionProvenanceContextOptions = {
+			...(executionDispatcher === undefined ? {} : { execution_dispatcher: executionDispatcher }),
+			...(executionDispatcherForRequest === undefined
+				? {}
+				: { execution_dispatcher_for_request: executionDispatcherForRequest }),
+		};
 		const host = createPiExecutionProvenanceHostForContext(baseContext, provenanceOptions);
 		if (host !== undefined) {
 			Object.defineProperty(forwarded, "executionProvenance", {

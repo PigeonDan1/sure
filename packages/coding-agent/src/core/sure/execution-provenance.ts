@@ -8,6 +8,7 @@ import {
 	EXECUTOR_KINDS,
 	EXECUTOR_TRUST_LEVELS,
 	ExecutionProvenancePublisher,
+	type ExecutionRequest,
 	type ExecutionRequestDispatcher,
 	type ExecutorIdentity,
 	type JsonValue,
@@ -65,6 +66,7 @@ export interface PiExecutionProvenanceSession extends PiExecutionProvenanceBindi
 	readonly python_executable?: string;
 	readonly publisher: ExecutionProvenancePublisher;
 	readonly execution_dispatcher?: ExecutionRequestDispatcher;
+	readonly execution_dispatcher_for_request?: (request: ExecutionRequest) => ExecutionRequestDispatcher | undefined;
 	readonly capability_evidence_for?: (requirements: readonly CapabilityRequirement[]) => readonly CapabilityEvidence[];
 }
 
@@ -93,12 +95,14 @@ export interface PiExecutionProvenanceHostOptions {
 	now?: () => string;
 	new_id?: () => string;
 	execution_dispatcher?: ExecutionRequestDispatcher;
+	execution_dispatcher_for_request?: (request: ExecutionRequest) => ExecutionRequestDispatcher | undefined;
 	capability_evidence_for?: (requirements: readonly CapabilityRequirement[]) => readonly CapabilityEvidence[];
 }
 
 /** Optional host-only additions for a generated Pi provenance context. */
 export interface PiExecutionProvenanceContextOptions {
 	readonly execution_dispatcher?: ExecutionRequestDispatcher;
+	readonly execution_dispatcher_for_request?: (request: ExecutionRequest) => ExecutionRequestDispatcher | undefined;
 }
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
@@ -310,6 +314,9 @@ export function createPiExecutionProvenanceHost(options: PiExecutionProvenanceHo
 				...(options.execution_dispatcher === undefined
 					? {}
 					: { execution_dispatcher: Object.freeze(options.execution_dispatcher) }),
+				...(options.execution_dispatcher_for_request === undefined
+					? {}
+					: { execution_dispatcher_for_request: options.execution_dispatcher_for_request }),
 				...(options.capability_evidence_for === undefined
 					? {}
 					: { capability_evidence_for: options.capability_evidence_for }),
@@ -565,6 +572,9 @@ export function createPiExecutionProvenanceHostForContext(
 			...(contextOptions.execution_dispatcher === undefined
 				? {}
 				: { execution_dispatcher: contextOptions.execution_dispatcher }),
+			...(contextOptions.execution_dispatcher_for_request === undefined
+				? {}
+				: { execution_dispatcher_for_request: contextOptions.execution_dispatcher_for_request }),
 		});
 	} catch (error) {
 		return rejectingProvenanceHost(error instanceof Error ? error.message : String(error));

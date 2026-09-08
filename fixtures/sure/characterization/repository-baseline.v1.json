@@ -6636,8 +6636,8 @@
   "source_files": [
     {
       "path": "packages/coding-agent/src/core/sure/controller.ts",
-      "size_bytes": 8263,
-      "sha256": "d62b4f6c6f5f353eb81bd7f99310ba95704a0284dd519a1adb99692dea770dba"
+      "size_bytes": 8736,
+      "sha256": "7e1755912a9da8b44aec430782b317eb3a24f82bef31ca3bfe05ee533ca579cc"
     },
     {
       "path": "packages/coding-agent/src/core/sure/core-run-store.ts",
@@ -6646,8 +6646,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/execution-provenance.ts",
-      "size_bytes": 24100,
-      "sha256": "f6023e00361c92e9c76fcfa868cd25efaf1b88627aa5dbfeb31c85296a78df8f"
+      "size_bytes": 24796,
+      "sha256": "80e4c71582cf95e2754cdf0305dcc5e8195e7eac5436ce8d0a624f9c796229ce"
     },
     {
       "path": "packages/coding-agent/src/core/sure/extension.ts",
@@ -6851,8 +6851,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-host-provenance.test.ts",
-      "size_bytes": 43922,
-      "sha256": "b510dc7e17f611a49cdb95966433c81ae49661df6c8880db7f4c4f7a303182c1"
+      "size_bytes": 48515,
+      "sha256": "23a5302f69b0082f919f8dd655d1264d981d25aac03436e8cf861d809971d792"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-pi-operation-evidence.test.ts",
@@ -7016,8 +7016,8 @@
     },
     {
       "path": "sure/runtime/harness/registered-operation.ts",
-      "size_bytes": 55331,
-      "sha256": "2aebb10ae70e5c07f5191c97c80f03ac8608b7bda9802b9454d4ac3c064d882d"
+      "size_bytes": 57583,
+      "sha256": "cf94d06c238d4d1ac6d43f9b8eab2a2495073887b09444efddbf2ae46c744225"
     },
     {
       "path": "sure/runtime/harness/requirements.in",
@@ -9776,5 +9776,5 @@
       ]
     }
   ],
-  "semantic_digest": "daf8264e6d5dee22c612124118439b9fb629951a818ee4a62bf384505734582b"
+  "semantic_digest": "24814677d485f904168620317fe85df17f9c8d3a070fe11c7f25bbdea26d22a1"
 }

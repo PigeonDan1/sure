@@ -110,6 +110,9 @@ interface PiHostSession {
 	readonly python_executable?: string;
 	readonly publisher: ExecutionProvenancePublisher;
 	readonly execution_dispatcher?: ExecutionRequestDispatcher;
+	readonly execution_dispatcher_for_request?: (
+		request: ExecutionRequest,
+	) => ExecutionRequestDispatcher | undefined;
 	readonly capability_evidence_for?: (
 		requirements: readonly CapabilityRequirement[],
 	) => readonly CapabilityEvidence[];
@@ -598,9 +601,39 @@ function validHostSession(value: unknown): value is PiHostSession {
 		return false;
 	if (value.python_executable !== undefined && (typeof value.python_executable !== "string" || !isAbsolute(value.python_executable)))
 		return false;
+	if (value.execution_dispatcher !== undefined) {
+		const dispatcher = value.execution_dispatcher as Record<string, unknown>;
+		if (typeof dispatcher.probe !== "function" || typeof dispatcher.execute !== "function") return false;
+	}
+	if (value.execution_dispatcher_for_request !== undefined && typeof value.execution_dispatcher_for_request !== "function") {
+		return false;
+	}
 	const publisher = value.publisher as Record<string, unknown>;
 	if (typeof publisher.publishRequest !== "function" || typeof publisher.publishCompletion !== "function") return false;
 	return true;
+}
+
+function validExecutionDispatcher(value: unknown): value is ExecutionRequestDispatcher {
+	if (!isRecord(value)) return false;
+	return typeof value.probe === "function" && typeof value.execute === "function";
+}
+
+function selectExecutionDispatcher(
+	session: PiHostSession,
+	request: ExecutionRequest,
+): ExecutionRequestDispatcher | undefined {
+	if (session.execution_dispatcher_for_request !== undefined) {
+		const selected = session.execution_dispatcher_for_request(request);
+		if (selected === undefined) return undefined;
+		if (!validExecutionDispatcher(selected)) {
+			throw new PiOperationUnavailableError(
+				"host request dispatcher resolver returned a malformed dispatcher",
+				"INVALID_CONTRACT",
+			);
+		}
+		return selected;
+	}
+	return session.execution_dispatcher;
 }
 
 function issueHostSession(options: PiRegisteredOperationOptions): PiHostSession {
@@ -685,14 +718,15 @@ function hostArtifactRef(
 
 function hostCapabilityEvidence(
 	session: PiHostSession,
+	dispatcher: ExecutionRequestDispatcher | undefined,
 	requirements: readonly CapabilityRequirement[],
 	result: PiBackendProcessResult | undefined,
 	observedAt: string,
 	pythonExecutable: string | undefined,
 	request: ExecutionRequest,
 ): CapabilityEvidence[] {
-	if (session.execution_dispatcher !== undefined) {
-		return [...session.execution_dispatcher.probe(request, requirements)].map((item) => ({ ...item }));
+	if (dispatcher !== undefined) {
+		return [...dispatcher.probe(request, requirements)].map((item) => ({ ...item }));
 	}
 	if (session.capability_evidence_for !== undefined) {
 		return [...session.capability_evidence_for(requirements)].map((item) => ({ ...item }));
@@ -733,6 +767,7 @@ interface HostCapabilityEvaluation {
 
 function hostCapabilityEvaluation(
 	session: PiHostSession,
+	dispatcher: ExecutionRequestDispatcher | undefined,
 	requirements: readonly CapabilityRequirement[],
 	result: PiBackendProcessResult | undefined,
 	observedAt: string,
@@ -741,7 +776,7 @@ function hostCapabilityEvaluation(
 ): HostCapabilityEvaluation {
 	let evidence: readonly CapabilityEvidence[];
 	try {
-		evidence = hostCapabilityEvidence(session, requirements, result, observedAt, pythonExecutable, request);
+		evidence = hostCapabilityEvidence(session, dispatcher, requirements, result, observedAt, pythonExecutable, request);
 	} catch (error) {
 		return {
 			evidence: [],
@@ -881,6 +916,7 @@ function hostCapabilityPreflightFailure(
 	outputPath: string,
 	requirements: readonly CapabilityRequirement[],
 	preflight: HostCapabilityEvaluation,
+	probeInvoked = true,
 ): PiRegisteredOperationResult {
 	const observedAt = new Date().toISOString();
 	const outcome =
@@ -904,7 +940,7 @@ function hostCapabilityPreflightFailure(
 		...outcome.diagnostics.map((entry) => entry.message),
 	];
 	const admission = createExecutionAdmissionTrace(request, observedAt, outcome, {
-		probe_invoked: true,
+		probe_invoked: probeInvoked,
 		execute_invoked: false,
 		receipt_valid: false,
 	});
@@ -1092,8 +1128,45 @@ function runHostRegisteredOperation(
 	}
 
 	const requirements = registeredOperationCapabilityRequirements(implementation.backend);
+	let executionDispatcher: ExecutionRequestDispatcher | undefined;
+	try {
+		executionDispatcher = selectExecutionDispatcher(session, request);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		const outcome = createOutcome({
+			validatorVerdict: "NOT_EXECUTED",
+			workflowDisposition: "BLOCK",
+			reasonCode: "INVALID_CONTRACT",
+			diagnostics: [{ code: "INVALID_CONTRACT", message }],
+		});
+		return hostCapabilityPreflightFailure(
+			options,
+			implementation,
+			session,
+			request,
+			publishedRequest,
+			inputDigest,
+			outputPath,
+			requirements,
+			{
+				evidence: [],
+				evaluation: {
+					admitted: false,
+					unknown: [],
+					missing: [],
+					denied: [],
+					invalid_evidence: [],
+					blocking_outcome: outcome,
+				},
+				errors: [message],
+			},
+			false,
+		);
+	}
+
 	const preflight = hostCapabilityEvaluation(
 		session,
+		executionDispatcher,
 		requirements,
 		undefined,
 		new Date().toISOString(),
@@ -1116,7 +1189,7 @@ function runHostRegisteredOperation(
 
 	let result: PiBackendProcessResult;
 	try {
-		result = session.execution_dispatcher === undefined ? options.execute() : session.execution_dispatcher.execute(request);
+		result = executionDispatcher === undefined ? options.execute() : executionDispatcher.execute(request);
 		if (!isRecord(result) || typeof result.ok !== "boolean" || typeof result.stdout !== "string" || typeof result.stderr !== "string") {
 			throw new Error("registered operation callback returned an invalid process result");
 		}
@@ -1138,6 +1211,7 @@ function runHostRegisteredOperation(
 		const finishedAt = new Date().toISOString();
 		const capabilityEvidence = hostCapabilityEvidence(
 			session,
+			executionDispatcher,
 			requirements,
 			result,
 			finishedAt,

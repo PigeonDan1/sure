@@ -7,6 +7,7 @@ import {
 	type CapabilityRequirement,
 	canonicalJsonDigest,
 	type ExecutionProvenancePublisher,
+	type ExecutionRequest,
 	type ExecutionRequestDispatcher,
 	type JsonValue,
 	validateExecutionContractHistory,
@@ -52,6 +53,7 @@ function fixture(
 	publisherFactory?: (session: Record<string, any>) => ExecutionProvenancePublisher,
 	capabilityEvidenceFor?: (requirements: readonly CapabilityRequirement[]) => readonly CapabilityEvidence[],
 	executionDispatcher?: ExecutionRequestDispatcher,
+	executionDispatcherForRequest?: (request: ExecutionRequest) => ExecutionRequestDispatcher | undefined,
 ): HostFixture {
 	const root = join(TEMP_ROOT, name);
 	const packageDir = join(root, "sure_onboard");
@@ -90,6 +92,7 @@ function fixture(
 		now: () => NOW,
 		new_id: () => `id-${++id}`,
 		execution_dispatcher: executionDispatcher,
+		execution_dispatcher_for_request: executionDispatcherForRequest,
 		capability_evidence_for: capabilityEvidenceFor,
 	});
 	const host: PiExecutionProvenanceHost = {
@@ -141,7 +144,11 @@ function operation(
 	});
 }
 
-function paths(fx: HostFixture): {
+function pathsFor(
+	fx: HostFixture,
+	index = 0,
+	unitId = "validate_import",
+): {
 	root: string;
 	request: string;
 	receipt: string;
@@ -149,9 +156,9 @@ function paths(fx: HostFixture): {
 	contract: string;
 	immutable: string;
 } {
-	const session = fx.sessions[0];
+	const session = fx.sessions[index];
 	if (!session) throw new Error("host did not issue a session");
-	const root = join(fx.ctx.runDir, "artifacts", "execution", "validate_import", session.invocation_id);
+	const root = join(fx.ctx.runDir, "artifacts", "execution", unitId, session.invocation_id);
 	return {
 		root,
 		request: join(root, "execution_request.json"),
@@ -162,11 +169,19 @@ function paths(fx: HostFixture): {
 	};
 }
 
+function paths(fx: HostFixture): ReturnType<typeof pathsFor> {
+	return pathsFor(fx);
+}
+
 function readJson(path: string): Record<string, any> {
 	return JSON.parse(readFileSync(path, "utf8")) as Record<string, any>;
 }
 
-function readHistory(fx: HostFixture): {
+function readHistory(
+	fx: HostFixture,
+	index = 0,
+	unitId = "validate_import",
+): {
 	request: Record<string, any>;
 	receipt: Record<string, any>;
 	admission: Record<string, any>;
@@ -178,7 +193,7 @@ function readHistory(fx: HostFixture): {
 		contract: Record<string, any>;
 	};
 } {
-	const location = paths(fx);
+	const location = pathsFor(fx, index, unitId);
 	const request = readJson(location.request);
 	const receipt = readJson(location.receipt);
 	const admission = readJson(location.admission);
@@ -197,7 +212,11 @@ function readHistory(fx: HostFixture): {
 	};
 }
 
-function readPreflightHistory(fx: HostFixture): {
+function readPreflightHistory(
+	fx: HostFixture,
+	index = 0,
+	unitId = "validate_import",
+): {
 	request: Record<string, any>;
 	admission: Record<string, any>;
 	contract: Record<string, any>;
@@ -207,7 +226,7 @@ function readPreflightHistory(fx: HostFixture): {
 		contract: Record<string, any>;
 	};
 } {
-	const location = paths(fx);
+	const location = pathsFor(fx, index, unitId);
 	const request = readJson(location.request);
 	return {
 		request,
@@ -565,6 +584,106 @@ describe("Pi host-issued registered operation provenance", () => {
 			attempt: legacyResult.evidence?.attempt,
 		});
 		expect(dispatcherResult.evidence?.request_digest).toBe(legacyResult.evidence?.request_digest);
+	});
+
+	it("selects a dispatcher per canonical request without blocking other operations", () => {
+		const resolvedOperationIds: string[] = [];
+		const dispatcher: ExecutionRequestDispatcher = {
+			probe(request, requirements) {
+				return requirements.map((requirement) => {
+					const base: CapabilityEvidence = {
+						capability_id: requirement.capability_id,
+						capability_class: requirement.capability_class,
+						status: "AVAILABLE",
+						source: "host_probe",
+						observed_at: NOW,
+						details: {
+							adapter: "request-selector",
+							operation_id: request.runtime_requirements.semantic_backend_operation_id,
+						},
+					};
+					return { ...base, evidence_digest: canonicalJsonDigest(base as unknown as JsonValue) };
+				});
+			},
+			execute(request) {
+				const producesIndex = request.entrypoint.argv.indexOf("--produces");
+				const outputPath = request.entrypoint.argv[producesIndex + 1];
+				if (producesIndex < 0 || outputPath === undefined) {
+					return { ok: false, stdout: "", stderr: "missing produces path", status: null };
+				}
+				writeFileSync(outputPath, '{"stage":"import-dispatcher"}\n', "utf8");
+				return { ok: true, stdout: "dispatcher import", stderr: "", status: 0 };
+			},
+		};
+		const fx = fixture("request-dispatcher-selector", undefined, undefined, undefined, (request) => {
+			const operationId = request.runtime_requirements.semantic_backend_operation_id;
+			resolvedOperationIds.push(String(operationId));
+			return operationId === "sure.onboard.execute_import" ? dispatcher : undefined;
+		});
+		let importCallbackInvoked = false;
+		const importResult = operation(fx, () => {
+			importCallbackInvoked = true;
+			return { ok: false, stdout: "import callback must not run", stderr: "", status: 1 };
+		});
+		let loadCallbackInvoked = false;
+		const loadResult = runPiRegisteredOperation({
+			ctx: fx.ctx,
+			unit_id: "validate_load",
+			attempt: 1,
+			operation_id: "sure.onboard.execute_load",
+			script_id: "run_validate.py",
+			artifact_input_path: fx.artifactPath,
+			request_operation: "validation",
+			script_args: ["--kind", "load"],
+			execute: () => {
+				loadCallbackInvoked = true;
+				writeFileSync(fx.artifactPath, '{"stage":"load-callback"}\n', "utf8");
+				return { ok: true, stdout: "callback load", stderr: "", status: 0 };
+			},
+		});
+		const importHistory = readHistory(fx, 0, "validate_import");
+		const loadHistory = readHistory(fx, 1, "validate_load");
+		assertCompleteHistory(fx, importHistory);
+		assertCompleteHistory(fx, loadHistory);
+
+		expect(resolvedOperationIds).toEqual(["sure.onboard.execute_import", "sure.onboard.execute_load"]);
+		expect(importCallbackInvoked).toBe(false);
+		expect(loadCallbackInvoked).toBe(true);
+		expect(importResult).toMatchObject({ ok: true, status: 0 });
+		expect(loadResult).toMatchObject({ ok: true, status: 0 });
+		expect(importResult.evidence).toMatchObject({ verdict: "PASS", reason_code: "EXECUTION_SUCCEEDED" });
+		expect(loadResult.evidence).toMatchObject({ verdict: "PASS", reason_code: "EXECUTION_SUCCEEDED" });
+		expect(readJson(pathsFor(fx, 0, "validate_import").receipt).executor).toEqual(
+			readJson(pathsFor(fx, 1, "validate_load").receipt).executor,
+		);
+	});
+
+	it("rejects a malformed request dispatcher selection before callback execution", () => {
+		const fx = fixture(
+			"request-dispatcher-malformed-selection",
+			undefined,
+			undefined,
+			undefined,
+			() => ({ malformed: true }) as unknown as ExecutionRequestDispatcher,
+		);
+		let callbackInvoked = false;
+		const result = operation(fx, () => {
+			callbackInvoked = true;
+			return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+		});
+
+		expect(callbackInvoked).toBe(false);
+		expect(result).toMatchObject({ ok: false, status: null });
+		expect(result.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		const location = paths(fx);
+		expect(existsSync(location.receipt)).toBe(false);
+		expect(readJson(location.admission)).toMatchObject({
+			status: "REJECTED",
+			probe_invoked: false,
+			execute_invoked: false,
+			receipt_present: false,
+		});
+		assertPreflightHistory(fx, readPreflightHistory(fx));
 	});
 
 	it("keeps nonzero failure projection equivalent across callback and dispatcher", () => {
