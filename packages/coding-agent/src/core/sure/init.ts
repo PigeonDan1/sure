@@ -76,6 +76,14 @@ export const SURE_INIT_PROVIDER_OPTIONS: SureInitProviderOption[] = [
 		description: "Standard OpenAI API",
 	},
 	{
+		id: "deepseek",
+		name: "DeepSeek",
+		provider: "deepseek",
+		defaultModel: "deepseek-v4-flash",
+		authType: "api_key",
+		description: "Standard DeepSeek API",
+	},
+	{
 		id: "azure-openai",
 		name: "Azure OpenAI (Responses)",
 		provider: "azure-openai-responses",

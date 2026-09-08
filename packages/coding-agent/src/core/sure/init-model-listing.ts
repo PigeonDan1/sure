@@ -105,6 +105,7 @@ export async function listBuiltInProviderModels(
 ): Promise<ModelListing> {
 	try {
 		switch (option.provider) {
+			case "deepseek":
 			case "openai":
 			case "kimi-coding": {
 				const apiKey = await modelRegistry.getApiKeyForProvider(option.provider);
