@@ -38,6 +38,7 @@ const PORTABLE_RUNTIME_SUPPORT_FILES = [
 	"sure/runtime/resource_locator.py",
 	"sure/runtime/repository_layout.py",
 	"sure/runtime/execution_bridge.py",
+	"sure/runtime/vc_adapter.py",
 	"sure/runtime/adapter_manifest.py",
 	"sure/runtime/evaluation_commit.py",
 	"sure/runtime/model/__init__.py",

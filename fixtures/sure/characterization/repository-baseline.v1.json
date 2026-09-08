@@ -7300,9 +7300,19 @@
       "sha256": "acd1f443a7211cae89474f9692a7cf7ff67857cd8225e216a7dd82b3192265ff"
     },
     {
+      "path": "sure/runtime/test_vc_adapter.py",
+      "size_bytes": 16644,
+      "sha256": "5937f4fbaa4fb6116c9b121fcf8ca14c68a6179daabf3d5708fb3ccafd17077d"
+    },
+    {
       "path": "sure/runtime/usage.ts",
       "size_bytes": 6139,
       "sha256": "9cb9e29ed67d56e29198909704c539c814a94f53832efa48c320b603fee5c9e5"
+    },
+    {
+      "path": "sure/runtime/vc_adapter.py",
+      "size_bytes": 30204,
+      "sha256": "c3c2d09cb0dd841dc12ee2b3d5e851ca95422f4bb4cdcdfd739877397b8da5a4"
     },
     {
       "path": "sure/site/container_delivery.py",
@@ -9741,5 +9751,5 @@
       ]
     }
   ],
-  "semantic_digest": "31f6a65c03c8d58b8b13f0d496009a9543a01fbeb538f23bf185ae575804e98f"
+  "semantic_digest": "bab5e521c45d4fccf8acb27d8f32ea1216d7f175c2488271fe2302b4442b81de"
 }
