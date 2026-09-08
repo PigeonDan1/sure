@@ -128,6 +128,19 @@ class CheckExecutionResultTests(unittest.TestCase):
         receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
         self.assertTrue(any("request_digest" in error for error in self.errors()))
 
+    def test_a_tampered_execution_contract_record_is_refused(self) -> None:
+        self.write_contract()
+        contract_path = self.artifacts / "execution_contract.json"
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["receipt_digest"] = digest_json({"forged": True})
+        contract_path.write_text(json.dumps(contract), encoding="utf-8")
+        self.assertTrue(any("execution contract receipt_digest" in error for error in self.errors()))
+
+    def test_a_malformed_execution_contract_record_is_refused(self) -> None:
+        self.write_contract()
+        (self.artifacts / "execution_contract.json").write_text("not-json\n", encoding="utf-8")
+        self.assertIn("execution contract record is required", self.errors())
+
     def test_a_bound_admission_trace_is_checked_and_tampering_is_refused(self) -> None:
         request = build_request(
             run_id="bridge-run-admission",

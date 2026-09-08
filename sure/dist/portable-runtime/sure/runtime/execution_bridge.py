@@ -1523,6 +1523,125 @@ def validate_contract_pair(
     return errors
 
 
+def validate_contract_bundle(
+    request: Mapping[str, Any] | None,
+    receipt: Mapping[str, Any] | None = None,
+    admission_trace: Mapping[str, Any] | None = None,
+    contract: Mapping[str, Any] | None = None,
+    *,
+    forbidden_output_roots: Sequence[Path] = (),
+    require_receipt: bool = True,
+    require_admission: bool = False,
+    require_contract_record: bool = False,
+    accept_legacy_uninstrumented: bool = True,
+) -> list[str]:
+    """Re-audit a persisted request/receipt/admission bundle at consumption.
+
+    This is intentionally a composition of the existing Python contract and
+    admission validators.  It does not infer workflow transitions and it does
+    not make a missing executor look successful.  A rejected or capability-
+    missing preflight may be represented without a receipt; every final
+    executing bundle still requires one.
+    """
+
+    errors: list[str] = []
+    if not isinstance(request, Mapping):
+        errors.append("execution request is missing or invalid")
+        return errors
+
+    receipt_errors: list[str] = []
+    if receipt is not None:
+        receipt_errors = validate_contract_pair(
+            request,
+            receipt,
+            forbidden_output_roots=forbidden_output_roots,
+        )
+        errors.extend(receipt_errors)
+
+    admission_errors: list[str] = []
+    if admission_trace is not None:
+        admission_errors = validate_execution_admission_trace(admission_trace)
+        if not admission_errors:
+            capability_admitted: bool | None = None
+            if receipt is not None:
+                requirements = request.get("capability_requirements")
+                evidence = receipt.get("capability_evidence")
+                if isinstance(requirements, list) and isinstance(evidence, list):
+                    capability_admitted = bool(capability_summary(requirements, evidence)["admitted"])
+            admission_errors.extend(
+                validate_execution_admission_receipt_binding(
+                    request,
+                    admission_trace,
+                    receipt=receipt,
+                    receipt_valid=not receipt_errors if receipt is not None else None,
+                    capability_admitted=capability_admitted,
+                )
+            )
+        errors.extend(admission_errors)
+    elif require_admission:
+        admission_errors.append("execution admission trace is required")
+        errors.extend(admission_errors)
+
+    if receipt is None and require_receipt:
+        preflight_without_receipt = admission_trace is not None and admission_trace.get("status") in {
+            "CAPABILITY_MISSING",
+            "REJECTED",
+        }
+        if not preflight_without_receipt:
+            errors.append("execution receipt is required for final bundle validation")
+
+    base_valid = (
+        not receipt_errors
+        and not admission_errors
+        and (
+            receipt is not None
+            or not require_receipt
+            or (
+                admission_trace is not None
+                and admission_trace.get("status") in {"CAPABILITY_MISSING", "REJECTED"}
+            )
+        )
+    )
+    contract_errors: list[str] = []
+    if contract is None:
+        if require_contract_record:
+            contract_errors.append("execution contract record is required")
+    else:
+        if contract.get("schema") != COMPATIBILITY_SCHEMA:
+            contract_errors.append("execution contract schema is unsupported")
+        if contract.get("version") != 1:
+            contract_errors.append("execution contract version is unsupported")
+        if contract.get("admission_instrumentation") not in {
+            "admission-v1",
+            "legacy-uninstrumented",
+        }:
+            contract_errors.append("execution contract admission_instrumentation is invalid")
+        request_digest = digest_json(dict(request))
+        if not same_digest(contract.get("request_digest"), request_digest):
+            contract_errors.append("execution contract request_digest does not match request bytes")
+        if receipt is not None:
+            if not same_digest(contract.get("receipt_digest"), digest_json(dict(receipt))):
+                contract_errors.append("execution contract receipt_digest does not match receipt bytes")
+        elif contract.get("receipt_digest") is not None:
+            contract_errors.append("execution contract receipt_digest is present without a receipt")
+        if admission_trace is not None:
+            if not same_digest(contract.get("admission_digest"), digest_json(dict(admission_trace))):
+                contract_errors.append("execution contract admission_digest does not match admission bytes")
+            if contract.get("admission_instrumentation") != "admission-v1":
+                contract_errors.append("execution contract admission_instrumentation must be admission-v1")
+        elif contract.get("admission_digest") is not None or contract.get("admission_instrumentation") == "admission-v1":
+            contract_errors.append("execution contract declares admission-v1 without an admission trace")
+        instrumentation = contract.get("admission_instrumentation")
+        if instrumentation == "legacy-uninstrumented" and not accept_legacy_uninstrumented:
+            contract_errors.append("legacy-uninstrumented execution contract is not accepted by this consumer")
+        if "contract_valid" in contract and not isinstance(contract.get("contract_valid"), bool):
+            contract_errors.append("execution contract contract_valid must be boolean")
+        elif "contract_valid" in contract and contract.get("contract_valid") is not base_valid:
+            contract_errors.append("execution contract contract_valid does not match current validation")
+    errors.extend(contract_errors)
+    return errors
+
+
 def write_contract_bundle(
     artifacts_dir: Path,
     request: Mapping[str, Any],

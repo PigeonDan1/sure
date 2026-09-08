@@ -214,7 +214,7 @@ class VcAdapterPortTests(unittest.TestCase):
             capability_evidence("sure.execution.vc", status=status, details={"mock": True}),
         ]
 
-    def _mock_submitter(self, *, timed_out: bool = False):
+    def _mock_submitter(self, *, timed_out: bool = False, partial: bool = False):
         seen: list[bool] = []
         mock_vc = self.run_root.parent / "mock-vc"
         mock_vc.write_text("#!/usr/bin/env python3\nprint('mock vc submit')\n", encoding="utf-8")
@@ -227,7 +227,7 @@ class VcAdapterPortTests(unittest.TestCase):
             log_dir = Path(payload["log_dir"])
             log_dir.mkdir(parents=True, exist_ok=True)
             (log_dir / "stdout.log").write_text(process.stdout, encoding="utf-8")
-            if not timed_out:
+            if not timed_out and not partial:
                 (self.run_root / "result.json").write_text('{"ok":true}\n', encoding="utf-8")
             return {
                 "job_id": "mock-job",
@@ -235,6 +235,7 @@ class VcAdapterPortTests(unittest.TestCase):
                 "project": payload["project"],
                 "exit_code": None if timed_out else 0,
                 "timed_out": timed_out,
+                "partial": partial,
                 "duration_ms": 1,
                 "log_dir": str(log_dir),
                 "submit_command": [str(mock_vc), "submit"],
@@ -383,6 +384,20 @@ class VcAdapterPortTests(unittest.TestCase):
         self.assertEqual(run.receipt["lifecycle"], "CANCELLED")
         codes = {item["code"] for item in run.receipt["diagnostics"]}
         self.assertIn("CANCEL_UNCONFIRMED", codes)
+        self.assertTrue(run.contract["contract_valid"])
+
+    def test_partial_result_stays_partial_and_never_becomes_success(self) -> None:
+        submitter, _ = self._mock_submitter(partial=True)
+        run = run_vc_adapter(
+            self.preparation,
+            staging_root=self.run_root,
+            submitter=submitter,
+            allow_submit=True,
+            capability_evidence_values=self._evidence(),
+            capability_available=True,
+        )
+        self.assertEqual(run.receipt["lifecycle"], "PARTIAL")
+        self.assertEqual(run.admission["status"], "ADMITTED")
         self.assertTrue(run.contract["contract_valid"])
 
     def test_policy_or_staging_drift_is_rejected_before_any_write(self) -> None:

@@ -21,6 +21,7 @@ from sure.runtime.execution_bridge import (
     validate_adapter_route,
     validate_capability_evidence,
     validate_capability_evidence_list,
+    validate_contract_bundle,
     validate_contract_pair,
     validate_execution_admission_binding,
     validate_execution_admission_receipt_binding,
@@ -86,6 +87,101 @@ class ExecutionBridgeTests(unittest.TestCase):
             self.assertTrue((root / "execution_request.json").is_file())
             self.assertTrue((root / "execution_receipt.json").is_file())
             self.assertTrue((root / "execution_contract.json").is_file())
+
+    def test_contract_bundle_consumer_rechecks_all_persisted_digests(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            receipt = build_receipt(request, lifecycle="SUCCEEDED", executor_kind="python", exit_code=0)
+            trace = derive_execution_admission_trace(request, receipt)
+            contract = write_contract_bundle(root, request, receipt, admission_trace=trace)
+            self.assertEqual(
+                validate_contract_bundle(
+                    request,
+                    receipt,
+                    trace,
+                    contract,
+                    require_receipt=True,
+                    require_admission=True,
+                ),
+                [],
+            )
+
+            tampered = validate_contract_bundle(
+                request,
+                {**receipt, "policy_digest": digest_json({"tampered": True})},
+                {**trace, "request_digest": digest_json({"tampered": True})},
+                {**contract, "receipt_digest": digest_json({"tampered": True})},
+                require_receipt=True,
+                require_admission=True,
+            )
+            self.assertTrue(any("receipt.policy_digest" in error for error in tampered))
+            self.assertTrue(any("admission.request_digest" in error for error in tampered))
+            self.assertTrue(any("execution contract receipt_digest" in error for error in tampered))
+
+    def test_contract_bundle_allows_explicit_missing_capability_preflight(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            trace = create_execution_admission_trace(
+                request,
+                observed_at="2026-01-01T00:00:00Z",
+                outcome_reason_code="CAPABILITY_MISSING",
+                probe_invoked=False,
+                execute_invoked=False,
+            )
+            self.assertEqual(
+                validate_contract_bundle(request, None, trace, require_receipt=True),
+                [],
+            )
+
+    def test_contract_bundle_can_reject_legacy_instrumentation_for_formal_consumers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            receipt = build_receipt(request, lifecycle="SUCCEEDED", executor_kind="python", exit_code=0)
+            contract = write_contract_bundle(root, request, receipt)
+            errors = validate_contract_bundle(
+                request,
+                receipt,
+                None,
+                contract,
+                require_receipt=True,
+                accept_legacy_uninstrumented=False,
+            )
+            self.assertIn("legacy-uninstrumented execution contract is not accepted by this consumer", errors)
+
+    def test_contract_bundle_preserves_non_success_lifecycles(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = self.request(root)
+            for lifecycle, exit_code in (("FAILED", 7), ("PARTIAL", 7), ("CANCELLED", None)):
+                receipt = build_receipt(
+                    request,
+                    lifecycle=lifecycle,
+                    executor_kind="python",
+                    exit_code=exit_code,
+                )
+                trace = derive_execution_admission_trace(request, receipt)
+                contract_root = root / lifecycle.lower()
+                contract = write_contract_bundle(
+                    contract_root,
+                    request,
+                    receipt,
+                    admission_trace=trace,
+                )
+                self.assertEqual(
+                    validate_contract_bundle(
+                        request,
+                        receipt,
+                        trace,
+                        contract,
+                        require_receipt=True,
+                        require_admission=True,
+                    ),
+                    [],
+                    lifecycle,
+                )
 
     def test_missing_capability_is_not_a_success(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

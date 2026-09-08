@@ -33,6 +33,7 @@ import {
 	createOutcome,
 	decodeLegacyCheckpoint,
 	decodeOperationExecutionEvidence,
+	type ExecutionAdmissionTrace,
 	type ExecutionInputBindingResolver,
 	type ExecutionReceipt,
 	type ExecutionRequest,
@@ -54,6 +55,7 @@ import {
 	type StateDocument,
 	type StructuralValidationResult,
 	selectExecutionDispatch,
+	validateExecutionContractBundle,
 	validateExecutionInputBinding,
 	validateExecutionReceipt,
 	validateExecutionRequest,
@@ -1914,6 +1916,7 @@ function validate(args: ParsedArgs): PublicOutcome {
 		let execution = requestValidation;
 		let receiptPath: string | undefined;
 		let admissionPath: string | undefined;
+		let admissionTrace: ExecutionAdmissionTrace | undefined;
 		let receipt: ExecutionReceipt | undefined;
 		if (executionReceiptPath) {
 			receiptPath = admittedRunArtifactPath(store, run, absolute(executionReceiptPath, "--execution-receipt"));
@@ -1967,6 +1970,7 @@ function validate(args: ParsedArgs): PublicOutcome {
 					receipt_valid: receiptValidation.valid,
 					capability_admitted: receiptValidation.capability.admitted,
 				});
+				admissionTrace = admission.trace;
 				if (admission.errors.length > 0) {
 					receiptValidation.errors = [...receiptValidation.errors, ...admission.errors];
 					receiptValidation.valid = false;
@@ -1980,6 +1984,43 @@ function validate(args: ParsedArgs): PublicOutcome {
 						})),
 					});
 				}
+			}
+			// Re-audit the complete persisted bundle at the consumer boundary. The
+			// older checks above remain for compatibility and diagnostics; this
+			// composed Core audit additionally binds request/receipt/admission
+			// bytes and rejects a stale execution_contract.json metadata record.
+			const siblingContract = admittedReadArtifactPath(
+				store,
+				run,
+				join(dirname(receiptPath), "execution_contract.json"),
+			);
+			let contractRecord: Record<string, unknown> | undefined;
+			if (existsSync(siblingContract)) {
+				assertRegularFile(siblingContract, "Execution contract");
+				contractRecord = recordObject(readJson(siblingContract), "execution contract");
+			}
+			const bundleAudit = validateExecutionContractBundle(
+				{
+					request,
+					receipt,
+					...(admissionTrace === undefined ? {} : { admission: admissionTrace }),
+					...(contractRecord === undefined ? {} : { contract: contractRecord }),
+				},
+				{
+					allowed_output_roots: allowedOutputRoots,
+					forbidden_output_roots: policyReferences,
+					require_receipt: true,
+					require_admission: admissionPath !== undefined,
+					accept_legacy_uninstrumented: true,
+				},
+			);
+			if (!bundleAudit.valid) {
+				receiptValidation.errors = [
+					...receiptValidation.errors,
+					...bundleAudit.errors.filter((message) => !receiptValidation.errors.includes(message)),
+				];
+				receiptValidation.valid = false;
+				if (bundleAudit.contract_errors.length > 0) receiptValidation.outcome = bundleAudit.outcome;
 			}
 			execution = receiptValidation;
 		}

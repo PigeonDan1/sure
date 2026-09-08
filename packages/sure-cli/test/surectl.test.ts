@@ -1984,6 +1984,29 @@ describe("surectl cooperative control plane", () => {
 		]);
 		expect(receiptResult.status).toBe(5);
 		expect((receiptResult.value?.outcome as Record<string, unknown>).reason_code).toBe("VALIDATION_PENDING");
+
+		writeFileSync(
+			join(artifacts, "execution_contract.json"),
+			JSON.stringify({
+				schema: "sure.execution_compatibility.v1",
+				version: 1,
+				request_digest: canonicalJsonDigest(request as unknown as JsonValue),
+				receipt_digest: `sha256:${DIGEST_C}`,
+				admission_instrumentation: "legacy-uninstrumented",
+				contract_valid: true,
+			}),
+		);
+		const contractRejected = command(root, "validate", [
+			...base,
+			"--run-id",
+			"run-execution",
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			receiptPath,
+		]);
+		expect(contractRejected.status).toBe(5);
+		expect((contractRejected.value?.outcome as Record<string, unknown>).reason_code).toBe("INVALID_CONTRACT");
 	});
 
 	it("executes a local request into a receipt without advancing the checkpoint", () => {
@@ -2093,6 +2116,17 @@ describe("surectl cooperative control plane", () => {
 		>;
 		expect(receipt.lifecycle).toBe("NOT_STARTED");
 		expect(admission).toMatchObject({ status: "CAPABILITY_MISSING", execute_invoked: false });
+		const validated = command(root, "validate", [
+			...base,
+			"--run-id",
+			"run-missing-capability",
+			"--execution-request",
+			requestPath,
+			"--execution-receipt",
+			join(artifacts, "execution_receipt.json"),
+		]);
+		expect(validated.status).toBe(5);
+		expect((validated.value?.outcome as Record<string, unknown>).reason_code).toBe("CAPABILITY_MISSING");
 	});
 
 	it("records missing external adapters for registered remote and trusted executors", () => {
