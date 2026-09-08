@@ -271,6 +271,7 @@ def _verify(binding: dict[str, Any]) -> tuple[bool, str]:
     env["PYTHONPATH"] = str(Path(str(binding["engine_root"])) / "src")
     completed = subprocess.run(
         [str(python), "-s", "-c", code],
+        cwd=str(binding["engine_root"]),
         capture_output=True,
         text=True,
         check=False,
