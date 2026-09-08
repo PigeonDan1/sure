@@ -24,8 +24,13 @@ export {
 } from "./execution-provenance.ts";
 export { createSureExtension, sureExtension } from "./extension.ts";
 export {
+	createPiGeneratedDispatcherOptIn,
 	createPiGeneratedLocalRequestDispatcherResolver,
+	type PiGeneratedDispatcherEnabledOptIn,
+	type PiGeneratedDispatcherOptIn,
+	type PiGeneratedDispatcherOptInBinding,
 	type PiGeneratedDispatcherOptions,
+	type PiGeneratedDispatcherResolver,
 } from "./generated-dispatcher.ts";
 export type {
 	SureDisplayArtifact,

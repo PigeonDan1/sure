@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { ExecutionRequest, ExecutionRequestDispatcher } from "@earendil-works/sure-core";
+import type { ExecutionRequest, ExecutionRequestDispatcher, JsonValue } from "@earendil-works/sure-core";
+import { canonicalJsonDigest } from "@earendil-works/sure-core";
 import { loadSemanticBackendManifest } from "@earendil-works/sure-core/evaluation";
 import {
 	createNodeRequestDispatcher,
@@ -20,6 +21,95 @@ export interface PiGeneratedDispatcherOptions {
 	readonly executeBackend?: NodeRequestDispatcherOptions["executeBackend"];
 	readonly environment?: NodeRequestDispatcherOptions["environment"];
 	readonly includeSpawnErrorInStderr?: NodeRequestDispatcherOptions["includeSpawnErrorInStderr"];
+}
+
+export interface PiGeneratedDispatcherEnabledOptIn {
+	readonly enabled: true;
+	/** Host-owned label used to identify this explicit configuration in logs. */
+	readonly configuration_id: string;
+	/** The only operation ids this host is willing to dispatch. */
+	readonly operation_ids: readonly string[];
+	/** Required host adapters; omission is not a valid production opt-in. */
+	readonly resolveRuntime: NonNullable<PiGeneratedDispatcherOptions["resolveRuntime"]>;
+	readonly executeBackend: NonNullable<PiGeneratedDispatcherOptions["executeBackend"]>;
+	readonly environment?: PiGeneratedDispatcherOptions["environment"];
+	readonly includeSpawnErrorInStderr?: PiGeneratedDispatcherOptions["includeSpawnErrorInStderr"];
+}
+
+export type PiGeneratedDispatcherOptIn = { readonly enabled: false } | PiGeneratedDispatcherEnabledOptIn;
+
+export type PiGeneratedDispatcherResolver = (request: ExecutionRequest) => ExecutionRequestDispatcher | undefined;
+
+/**
+ * Host-owned, explicit opt-in binding.  The digest covers configuration
+ * intent (id and sorted allowlist), while generated package/runtime digests
+ * remain the execution trust boundary.  This helper never reads environment
+ * variables or agent state and returns undefined for the disabled state.
+ */
+export interface PiGeneratedDispatcherOptInBinding {
+	readonly schema: "sure.pi.generated-dispatcher.opt-in.v1";
+	readonly configuration_id: string;
+	readonly configuration_digest: string;
+	readonly operation_ids: readonly string[];
+	readonly resolverForContext: (context: Omit<SureHookContext, "point">) => PiGeneratedDispatcherResolver;
+}
+
+const SAFE_OPT_IN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+function requireSafeOptInId(value: unknown, field: string): string {
+	if (typeof value !== "string" || !SAFE_OPT_IN_ID.test(value)) {
+		throw new Error(`generated dispatcher opt-in ${field} must be a safe non-empty identifier`);
+	}
+	return value;
+}
+
+/**
+ * Construct a host configuration that can be passed to
+ * `executionDispatcherForRequestForContext`.  It is deliberately separate
+ * from the default extension: callers must opt in in code with `enabled: true`.
+ */
+export function createPiGeneratedDispatcherOptIn(
+	config: PiGeneratedDispatcherOptIn,
+): PiGeneratedDispatcherOptInBinding | undefined {
+	if (config.enabled === false) return undefined;
+	const configurationId = requireSafeOptInId(config.configuration_id, "configuration_id");
+	if (!Array.isArray(config.operation_ids) || config.operation_ids.length === 0) {
+		throw new Error("generated dispatcher opt-in operation_ids must be a non-empty array");
+	}
+	const operationIds = [...config.operation_ids].map((value) => requireSafeOptInId(value, "operation_id")).sort();
+	if (new Set(operationIds).size !== operationIds.length) {
+		throw new Error("generated dispatcher opt-in operation_ids must be unique");
+	}
+	if (typeof config.resolveRuntime !== "function") {
+		throw new Error("generated dispatcher opt-in requires a host runtime resolver");
+	}
+	if (typeof config.executeBackend !== "function") {
+		throw new Error("generated dispatcher opt-in requires a host executor");
+	}
+	const configurationDigest = canonicalJsonDigest({
+		schema: "sure.pi.generated-dispatcher.opt-in.v1",
+		configuration_id: configurationId,
+		enabled: true,
+		operation_ids: operationIds,
+	} as unknown as JsonValue);
+	const binding: PiGeneratedDispatcherOptInBinding = {
+		schema: "sure.pi.generated-dispatcher.opt-in.v1",
+		configuration_id: configurationId,
+		configuration_digest: configurationDigest,
+		operation_ids: Object.freeze(operationIds),
+		resolverForContext(context) {
+			return createPiGeneratedLocalRequestDispatcherResolver(context, {
+				operation_ids: operationIds,
+				resolveRuntime: config.resolveRuntime,
+				executeBackend: config.executeBackend,
+				...(config.environment === undefined ? {} : { environment: config.environment }),
+				...(config.includeSpawnErrorInStderr === undefined
+					? {}
+					: { includeSpawnErrorInStderr: config.includeSpawnErrorInStderr }),
+			});
+		},
+	};
+	return Object.freeze(binding);
 }
 
 interface LockedOperation {
@@ -123,7 +213,7 @@ function lockedOperations(
 export function createPiGeneratedLocalRequestDispatcherResolver(
 	context: Omit<SureHookContext, "point">,
 	options: PiGeneratedDispatcherOptions = {},
-): (request: ExecutionRequest) => ExecutionRequestDispatcher | undefined {
+): PiGeneratedDispatcherResolver {
 	const lockedPackage = lockedOperations(context, options);
 	const locked = lockedPackage.operations;
 	const resolveRuntime =

@@ -6656,8 +6656,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-dispatcher.ts",
-      "size_bytes": 8803,
-      "sha256": "3b52f3636d824366cd00b0814ab599eb866299328869f9ad3c0ab564ed67c354"
+      "size_bytes": 12886,
+      "sha256": "233d7c3490b8535491926ca8ed318d426e09d74d48ab9a3e09381b55fa34831a"
     },
     {
       "path": "packages/coding-agent/src/core/sure/generated-workflows.ts",
@@ -6676,8 +6676,8 @@
     },
     {
       "path": "packages/coding-agent/src/core/sure/index.ts",
-      "size_bytes": 1327,
-      "sha256": "28cf8cab8fe18cb7fddf157c82960dbc06b7fd945313569a18e38568b677b893"
+      "size_bytes": 1515,
+      "sha256": "6143b3fd310d125d5bf218820ba87ec1e706a35e9d65773261f08c65126f09a2"
     },
     {
       "path": "packages/coding-agent/src/core/sure/init-apply.ts",
@@ -9781,5 +9781,5 @@
       ]
     }
   ],
-  "semantic_digest": "b7ff3edabf1fbfef07af4809c75a509fb7e8d9e3abc472c5e5af49af1478c00f"
+  "semantic_digest": "8c677bf6287784dd5495344f20fd0f517f932e091df603a4f13f22e4f7bfa469"
 }

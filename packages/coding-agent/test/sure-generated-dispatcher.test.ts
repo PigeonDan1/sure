@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import type { CapabilityRequirement, ExecutionRequest } from "@earendil-works/sure-core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	createPiGeneratedDispatcherOptIn,
 	createPiGeneratedLocalRequestDispatcherResolver,
 	type PiGeneratedDispatcherOptions,
 } from "../src/core/sure/generated-dispatcher.ts";
@@ -84,6 +85,54 @@ afterEach(() => {
 });
 
 describe("verified generated Pi dispatcher resolver", () => {
+	it("keeps the default path disabled until a host explicitly opts in", () => {
+		expect(createPiGeneratedDispatcherOptIn({ enabled: false })).toBeUndefined();
+	});
+
+	it("binds an explicit configuration to a stable allowlist digest", () => {
+		const ctx = context();
+		const hostOptions = options(ctx);
+		const config = {
+			enabled: true as const,
+			configuration_id: "test-import",
+			operation_ids: ["sure.onboard.execute_import"],
+			resolveRuntime: hostOptions.resolveRuntime!,
+			executeBackend: hostOptions.executeBackend!,
+		};
+		const binding = createPiGeneratedDispatcherOptIn(config);
+		const equivalent = createPiGeneratedDispatcherOptIn({ ...config, operation_ids: [...config.operation_ids] });
+		expect(binding).toMatchObject({
+			schema: "sure.pi.generated-dispatcher.opt-in.v1",
+			configuration_id: "test-import",
+			operation_ids: ["sure.onboard.execute_import"],
+		});
+		expect(binding?.configuration_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+		expect(equivalent?.configuration_digest).toBe(binding?.configuration_digest);
+		if (binding === undefined) throw new Error("expected explicit opt-in binding");
+		const resolver = binding.resolverForContext(ctx);
+		expect(resolver(request(ctx))).toBeDefined();
+	});
+
+	it("rejects an ambiguous or incomplete enabled configuration", () => {
+		const ctx = context();
+		const hostOptions = options(ctx);
+		const base = {
+			enabled: true as const,
+			configuration_id: "test-import",
+			operation_ids: ["sure.onboard.execute_import"],
+			resolveRuntime: hostOptions.resolveRuntime!,
+			executeBackend: hostOptions.executeBackend!,
+		};
+		expect(() => createPiGeneratedDispatcherOptIn({ ...base, configuration_id: "" })).toThrow(/configuration_id/);
+		expect(() => createPiGeneratedDispatcherOptIn({ ...base, operation_ids: [] })).toThrow(/operation_ids/);
+		expect(() =>
+			createPiGeneratedDispatcherOptIn({
+				...base,
+				operation_ids: ["sure.onboard.execute_import", "sure.onboard.execute_import"],
+			}),
+		).toThrow(/unique/);
+	});
+
 	it("binds only the explicitly selected generated operation", () => {
 		const ctx = context();
 		const resolver = createPiGeneratedLocalRequestDispatcherResolver(ctx, options(ctx));
