@@ -4,8 +4,7 @@ import { join } from "node:path";
 import type {
 	ArtifactRef,
 	CoreRunRecord,
-	ExecutionAdmissionTrace,
-	ExecutionReceipt,
+	ExecutionProvenancePublisher,
 	ExecutionRequest,
 	JsonValue,
 } from "@earendil-works/sure-core";
@@ -35,11 +34,6 @@ export interface RegisteredValidatorDescriptor {
 	script_args?: readonly string[];
 }
 
-export interface PersistedValidatorDocument {
-	path: string;
-	digest: string;
-}
-
 export interface ValidatorEvidenceEntry {
 	validator_id: string;
 	backend_operation_id?: string;
@@ -57,6 +51,9 @@ export interface ValidatorEvidenceEntry {
 	admission_digest?: string;
 	receipt_path?: string;
 	receipt_digest?: string;
+	contract_path?: string;
+	contract_digest?: string;
+	execution_history_digest?: string;
 }
 
 export interface RegisteredValidationEvidence {
@@ -94,9 +91,8 @@ export interface RegisteredValidationOptions {
 	invocation_id: string;
 	created_at: string;
 	base_environment?: NodeJS.ProcessEnv;
-	persist_request(key: string, request: ExecutionRequest): PersistedValidatorDocument;
-	persist_receipt(key: string, receipt: ExecutionReceipt): PersistedValidatorDocument;
-	persist_admission_trace?(key: string, trace: ExecutionAdmissionTrace): PersistedValidatorDocument;
+	/** Host adapter factory; each validator gets an isolated latest view. */
+	provenance_for(key: string): ExecutionProvenancePublisher;
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -467,7 +463,8 @@ export function runRegisteredValidators(options: RegisteredValidationOptions): R
 		}
 		const request = requestFor(options, validator, operation, index);
 		const key = `${index + 1}-${safeKey(validator.id)}`;
-		const persistedRequest = options.persist_request(key, request);
+		const provenancePublisher = options.provenance_for(key);
+		provenancePublisher.publishRequest(request);
 		const result = executeRequest(request, {
 			kind: "python",
 			executor_digest: options.run.executorDigest ?? options.runtime_binding.executor_registry_digest,
@@ -478,16 +475,26 @@ export function runRegisteredValidators(options: RegisteredValidationOptions): R
 			timeout_ms: operation.timeout_ms,
 			environment,
 		});
-		const persistedReceipt = result.receipt ? options.persist_receipt(key, result.receipt) : undefined;
-		const persistedAdmission = options.persist_admission_trace?.(key, result.admission_trace);
 		const admissionErrors = validateExecutionAdmissionReceiptBinding(request, result.admission_trace, {
 			receipt: result.receipt,
 			receipt_valid: result.receipt_validation?.valid,
 			capability_admitted: result.capability.admitted,
 		});
-		const verdict = executionVerdict(result, admissionErrors);
+		const provenance = provenancePublisher.publishCompletion({
+			request,
+			...(result.receipt === undefined ? {} : { receipt: result.receipt }),
+			admission: result.admission_trace,
+			validation_options: {
+				require_receipt: true,
+				allowed_output_roots: [options.run.runDir, ...(options.run.outputDir ? [options.run.outputDir] : [])],
+				forbidden_output_roots: options.forbidden_output_roots,
+			},
+		});
+		const publicationErrors = provenance.validation.valid ? [] : [...provenance.validation.errors];
+		const contractErrors = [...admissionErrors, ...publicationErrors];
+		const verdict = executionVerdict(result, contractErrors);
 		const reasonCode =
-			admissionErrors.length > 0
+			contractErrors.length > 0
 				? "INVALID_CONTRACT"
 				: verdict === "PASS"
 					? "VALIDATION_PASSED"
@@ -500,19 +507,24 @@ export function runRegisteredValidators(options: RegisteredValidationOptions): R
 			verdict,
 			artifact_digest: options.artifact.sha256,
 			reason_code: reasonCode,
-			diagnostics: [...diagnostics(result), ...admissionErrors],
+			diagnostics: [...diagnostics(result), ...contractErrors],
 			runtime_digest: verification.lock.runtime_digest,
 			backend_registry_digest: operation.registry_digest,
 			...(operation.bundle_digest === undefined ? {} : { backend_bundle_digest: operation.bundle_digest }),
 			backend_resource_digest: operation.resource_digest,
-			request_path: persistedRequest.path,
-			request_digest: persistedRequest.digest,
-			...(persistedAdmission === undefined
+			request_path: provenance.documents.request.latest.path,
+			request_digest: provenance.documents.request.latest.digest,
+			admission_path: provenance.documents.admission.latest.path,
+			admission_digest: provenance.documents.admission.latest.digest,
+			...(provenance.documents.receipt === undefined
 				? {}
-				: { admission_path: persistedAdmission.path, admission_digest: persistedAdmission.digest }),
-			...(persistedReceipt === undefined
-				? {}
-				: { receipt_path: persistedReceipt.path, receipt_digest: persistedReceipt.digest }),
+				: {
+						receipt_path: provenance.documents.receipt.latest.path,
+						receipt_digest: provenance.documents.receipt.latest.digest,
+					}),
+			contract_path: provenance.documents.contract.latest.path,
+			contract_digest: provenance.documents.contract.latest.digest,
+			execution_history_digest: provenance.history_digest,
 		});
 	}
 	try {

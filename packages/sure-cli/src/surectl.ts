@@ -1559,20 +1559,15 @@ function automaticGateValidation(
 			forbidden_output_roots: policyReferences,
 			invocation_id: invocationId,
 			created_at: new Date().toISOString(),
-			persist_request(key, request) {
-				const path = admittedRunArtifactPath(store, run, join(invocationRoot, `${key}.request.json`));
-				writeJsonImmutable(path, request);
-				return { path, digest: digestFile(path) };
-			},
-			persist_receipt(key, receipt) {
-				const path = admittedRunArtifactPath(store, run, join(invocationRoot, `${key}.receipt.json`));
-				writeJsonImmutable(path, receipt);
-				return { path, digest: digestFile(path) };
-			},
-			persist_admission_trace(key, trace) {
-				const path = admittedRunArtifactPath(store, run, join(invocationRoot, `${key}.admission.json`));
-				writeJsonImmutable(path, trace);
-				return { path, digest: digestFile(path) };
+			provenance_for(key) {
+				const provenanceRoot = admittedRunArtifactPath(store, run, join(invocationRoot, key));
+				return new ExecutionProvenancePublisher(
+					new NodeExecutionProvenancePublicationPort({
+						root: provenanceRoot,
+						allowed_roots: [run.runDir, ...(run.outputDir ? [run.outputDir] : [])],
+						forbidden_roots: policyReferences,
+					}),
+				);
 			},
 		});
 	}

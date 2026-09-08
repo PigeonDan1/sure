@@ -880,10 +880,20 @@ describe("surectl cooperative control plane", () => {
 		const requestPath = String(evidence.validators[0]?.request_path);
 		const admissionPath = String(evidence.validators[0]?.admission_path);
 		const receiptPath = String(evidence.validators[0]?.receipt_path);
+		const contractPath = String(evidence.validators[0]?.contract_path);
 		expect(evidence.validators[0]?.admission_digest).toBe(digest(admissionPath));
+		expect(evidence.validators[0]?.contract_digest).toBe(digest(contractPath));
+		expect(typeof evidence.validators[0]?.execution_history_digest).toBe("string");
 		const request = JSON.parse(readFileSync(requestPath, "utf8")) as Record<string, unknown>;
 		const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Record<string, unknown>;
 		const admission = JSON.parse(readFileSync(admissionPath, "utf8")) as Record<string, unknown>;
+		const contract = JSON.parse(readFileSync(contractPath, "utf8")) as Record<string, unknown>;
+		const requestId = String(request.request_id);
+		const historyRoot = join(dirname(contractPath), "execution_contracts");
+		expect(existsSync(join(historyRoot, `${requestId}.request.json`))).toBe(true);
+		expect(existsSync(join(historyRoot, `${requestId}.receipt.json`))).toBe(true);
+		expect(existsSync(join(historyRoot, `${requestId}.admission.json`))).toBe(true);
+		expect(existsSync(join(historyRoot, `${requestId}.contract.json`))).toBe(true);
 		const runtimeLock = JSON.parse(
 			readFileSync(join(portableRuntime, "runtime-support.lock.json"), "utf8"),
 		) as Record<string, unknown>;
@@ -891,6 +901,11 @@ describe("surectl cooperative control plane", () => {
 		expect(receipt.lifecycle).toBe("SUCCEEDED");
 		expect(admission).toMatchObject({ status: "ADMITTED", execute_invoked: true, receipt_valid: true });
 		expect(receipt.request_digest).toBe(canonicalJsonDigest(request as unknown as JsonValue));
+		expect(contract).toMatchObject({
+			schema: "sure.execution_compatibility.v1",
+			admission_instrumentation: "admission-v1",
+			contract_valid: true,
+		});
 	}, 15_000);
 
 	it("runs registered inference result and report validators through the same runtime", () => {
