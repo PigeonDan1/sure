@@ -40,6 +40,22 @@ export interface ExecutorPort {
 	execute(request: ExecutionRequest): ExecutionReceipt | Promise<ExecutionReceipt>;
 }
 
+/**
+ * Host-owned process seam for adapters that already have a canonical request
+ * but still need to preserve a synchronous legacy process-result contract.
+ * This is deliberately below receipt construction: callers must bind the
+ * result through the Core receipt/admission validators before advancing a run.
+ */
+export interface ExecutionRequestDispatcher {
+	probe(request: ExecutionRequest, requirements: readonly CapabilityRequirement[]): readonly CapabilityEvidence[];
+	execute(request: ExecutionRequest): {
+		ok: boolean;
+		stdout: string;
+		stderr: string;
+		status: number | null;
+	};
+}
+
 export interface ExecutionBoundaryOptions {
 	/** Additional registered capability ids accepted by this deployment. */
 	known_capability_ids?: ReadonlySet<string>;

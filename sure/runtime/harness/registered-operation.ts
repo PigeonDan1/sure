@@ -38,6 +38,7 @@ import type {
 	ExecutionOperation,
 	ExecutionReceipt,
 	ExecutionRequest,
+	ExecutionRequestDispatcher,
 	ExecutionProvenancePublisher,
 	PublishedExecutionProvenance,
 	PublishedExecutionRequest,
@@ -108,6 +109,7 @@ interface PiHostSession {
 	readonly forbidden_output_roots: readonly string[];
 	readonly python_executable?: string;
 	readonly publisher: ExecutionProvenancePublisher;
+	readonly execution_dispatcher?: ExecutionRequestDispatcher;
 	readonly capability_evidence_for?: (
 		requirements: readonly CapabilityRequirement[],
 	) => readonly CapabilityEvidence[];
@@ -687,7 +689,11 @@ function hostCapabilityEvidence(
 	result: PiBackendProcessResult | undefined,
 	observedAt: string,
 	pythonExecutable: string | undefined,
+	request: ExecutionRequest,
 ): CapabilityEvidence[] {
+	if (session.execution_dispatcher !== undefined) {
+		return [...session.execution_dispatcher.probe(request, requirements)].map((item) => ({ ...item }));
+	}
 	if (session.capability_evidence_for !== undefined) {
 		return [...session.capability_evidence_for(requirements)].map((item) => ({ ...item }));
 	}
@@ -731,10 +737,11 @@ function hostCapabilityEvaluation(
 	result: PiBackendProcessResult | undefined,
 	observedAt: string,
 	pythonExecutable: string | undefined,
+	request: ExecutionRequest,
 ): HostCapabilityEvaluation {
 	let evidence: readonly CapabilityEvidence[];
 	try {
-		evidence = hostCapabilityEvidence(session, requirements, result, observedAt, pythonExecutable);
+		evidence = hostCapabilityEvidence(session, requirements, result, observedAt, pythonExecutable, request);
 	} catch (error) {
 		return {
 			evidence: [],
@@ -1085,7 +1092,14 @@ function runHostRegisteredOperation(
 	}
 
 	const requirements = registeredOperationCapabilityRequirements(implementation.backend);
-	const preflight = hostCapabilityEvaluation(session, requirements, undefined, new Date().toISOString(), pythonExecutable);
+	const preflight = hostCapabilityEvaluation(
+		session,
+		requirements,
+		undefined,
+		new Date().toISOString(),
+		pythonExecutable,
+		request,
+	);
 	if (!preflight.evaluation.admitted) {
 		return hostCapabilityPreflightFailure(
 			options,
@@ -1102,7 +1116,7 @@ function runHostRegisteredOperation(
 
 	let result: PiBackendProcessResult;
 	try {
-		result = options.execute();
+		result = session.execution_dispatcher === undefined ? options.execute() : session.execution_dispatcher.execute(request);
 		if (!isRecord(result) || typeof result.ok !== "boolean" || typeof result.stdout !== "string" || typeof result.stderr !== "string") {
 			throw new Error("registered operation callback returned an invalid process result");
 		}
@@ -1122,7 +1136,14 @@ function runHostRegisteredOperation(
 		}
 		const lifecycle = hostLifecycle(result, outputArtifact !== undefined);
 		const finishedAt = new Date().toISOString();
-		const capabilityEvidence = hostCapabilityEvidence(session, requirements, result, finishedAt, pythonExecutable);
+		const capabilityEvidence = hostCapabilityEvidence(
+			session,
+			requirements,
+			result,
+			finishedAt,
+			pythonExecutable,
+			request,
+		);
 		const receiptDiagnostics = [
 			...diagnostic(result),
 			...(outputDiagnostic === undefined || outputArtifact !== undefined ? [] : [outputDiagnostic]),

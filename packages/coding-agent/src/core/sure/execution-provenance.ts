@@ -8,6 +8,7 @@ import {
 	EXECUTOR_KINDS,
 	EXECUTOR_TRUST_LEVELS,
 	ExecutionProvenancePublisher,
+	type ExecutionRequestDispatcher,
 	type ExecutorIdentity,
 	type JsonValue,
 	validatePolicySnapshot,
@@ -63,6 +64,7 @@ export interface PiExecutionProvenanceSession extends PiExecutionProvenanceBindi
 	readonly artifacts_resolved_root: string;
 	readonly python_executable?: string;
 	readonly publisher: ExecutionProvenancePublisher;
+	readonly execution_dispatcher?: ExecutionRequestDispatcher;
 	readonly capability_evidence_for?: (requirements: readonly CapabilityRequirement[]) => readonly CapabilityEvidence[];
 }
 
@@ -90,6 +92,7 @@ export interface PiExecutionProvenanceHostOptions {
 	executor?: ExecutorIdentity;
 	now?: () => string;
 	new_id?: () => string;
+	execution_dispatcher?: ExecutionRequestDispatcher;
 	capability_evidence_for?: (requirements: readonly CapabilityRequirement[]) => readonly CapabilityEvidence[];
 }
 
@@ -299,6 +302,9 @@ export function createPiExecutionProvenanceHost(options: PiExecutionProvenanceHo
 				artifacts_resolved_root: artifactsResolvedRoot,
 				publisher,
 				...(options.python_executable === undefined ? {} : { python_executable: options.python_executable }),
+				...(options.execution_dispatcher === undefined
+					? {}
+					: { execution_dispatcher: Object.freeze(options.execution_dispatcher) }),
 				...(options.capability_evidence_for === undefined
 					? {}
 					: { capability_evidence_for: options.capability_evidence_for }),

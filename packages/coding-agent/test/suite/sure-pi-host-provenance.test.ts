@@ -5,7 +5,10 @@ import type { SureHookContext } from "@earendil-works/pi-coding-agent/hooks";
 import {
 	type CapabilityEvidence,
 	type CapabilityRequirement,
+	canonicalJsonDigest,
 	type ExecutionProvenancePublisher,
+	type ExecutionRequestDispatcher,
+	type JsonValue,
 	validateExecutionContractHistory,
 } from "@earendil-works/sure-core";
 import { afterEach, describe, expect, it } from "vitest";
@@ -44,6 +47,7 @@ function fixture(
 	name: string,
 	publisherFactory?: (session: Record<string, any>) => ExecutionProvenancePublisher,
 	capabilityEvidenceFor?: (requirements: readonly CapabilityRequirement[]) => readonly CapabilityEvidence[],
+	executionDispatcher?: ExecutionRequestDispatcher,
 ): HostFixture {
 	const root = join(TEMP_ROOT, name);
 	const packageDir = join(root, "sure_onboard");
@@ -81,6 +85,7 @@ function fixture(
 		python_executable: process.execPath,
 		now: () => NOW,
 		new_id: () => `id-${++id}`,
+		execution_dispatcher: executionDispatcher,
 		capability_evidence_for: capabilityEvidenceFor,
 	});
 	const host: PiExecutionProvenanceHost = {
@@ -254,6 +259,115 @@ describe("Pi host-issued registered operation provenance", () => {
 		);
 		expect(result.evidence?.receipt_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
 		expect(result.evidence?.execution_history_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+	});
+
+	it("uses a host-issued request dispatcher without invoking the skill callback", () => {
+		const events: string[] = [];
+		let dispatchedRequestId: string | undefined;
+		const dispatcher: ExecutionRequestDispatcher = {
+			probe(request, requirements) {
+				events.push("probe");
+				dispatchedRequestId = request.request_id;
+				return requirements.map((requirement) => {
+					const base: CapabilityEvidence = {
+						capability_id: requirement.capability_id,
+						capability_class: requirement.capability_class,
+						status: "AVAILABLE",
+						source: "host_probe",
+						observed_at: NOW,
+						details: { adapter: "test-host-dispatcher" },
+					};
+					return { ...base, evidence_digest: canonicalJsonDigest(base as unknown as JsonValue) };
+				});
+			},
+			execute(request) {
+				events.push("execute");
+				const producesIndex = request.entrypoint.argv.indexOf("--produces");
+				const outputPath = request.entrypoint.argv[producesIndex + 1];
+				if (producesIndex < 0 || outputPath === undefined) throw new Error("dispatcher received no produces path");
+				writeFileSync(outputPath, '{"stage":"dispatcher"}\n', "utf8");
+				return { ok: true, stdout: "dispatched", stderr: "", status: 0 };
+			},
+		};
+		const fx = fixture("host-dispatcher", undefined, undefined, dispatcher);
+		let callbackInvoked = false;
+		const result = operation(fx, () => {
+			callbackInvoked = true;
+			return { ok: true, stdout: "callback", stderr: "", status: 0 };
+		});
+
+		expect(callbackInvoked).toBe(false);
+		expect(result.ok).toBe(true);
+		expect(result.evidence).toMatchObject({ verdict: "PASS", reason_code: "EXECUTION_SUCCEEDED" });
+		expect(dispatchedRequestId).toBe(fx.sessions[0]?.request_id);
+		expect(events[0]).toBe("probe");
+		expect(events).toContain("execute");
+		expect(events.indexOf("execute")).toBeGreaterThan(events.indexOf("probe"));
+	});
+
+	it("blocks dispatcher execution when its host probe reports a missing capability", () => {
+		const events: string[] = [];
+		const dispatcher: ExecutionRequestDispatcher = {
+			probe(request, requirements) {
+				events.push(`probe:${request.request_id}`);
+				return requirements.map((requirement) => {
+					const base: CapabilityEvidence = {
+						capability_id: requirement.capability_id,
+						capability_class: requirement.capability_class,
+						status: "MISSING",
+						source: "host_probe",
+						observed_at: NOW,
+						details: { adapter: "test-host-dispatcher", reason: "hardware-unavailable" },
+					};
+					return { ...base, evidence_digest: canonicalJsonDigest(base as unknown as JsonValue) };
+				});
+			},
+			execute() {
+				events.push("execute");
+				return { ok: true, stdout: "unexpected", stderr: "unexpected", status: 0 };
+			},
+		};
+		const fx = fixture("host-dispatcher-missing", undefined, undefined, dispatcher);
+		let callbackInvoked = false;
+		const result = operation(fx, () => {
+			callbackInvoked = true;
+			return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+		});
+
+		expect(callbackInvoked).toBe(false);
+		expect(events).toHaveLength(1);
+		expect(events[0]).toMatch(/^probe:/);
+		expect(result.ok).toBe(false);
+		expect(result.status).toBeNull();
+		expect(result.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "CAPABILITY_MISSING" });
+		expect(existsSync(paths(fx).receipt)).toBe(false);
+	});
+
+	it("rejects malformed dispatcher evidence before execution", () => {
+		const events: string[] = [];
+		const dispatcher: ExecutionRequestDispatcher = {
+			probe() {
+				events.push("probe");
+				return [{ malformed: true }] as unknown as CapabilityEvidence[];
+			},
+			execute() {
+				events.push("execute");
+				return { ok: true, stdout: "unexpected", stderr: "unexpected", status: 0 };
+			},
+		};
+		const fx = fixture("host-dispatcher-malformed", undefined, undefined, dispatcher);
+		let callbackInvoked = false;
+		const result = operation(fx, () => {
+			callbackInvoked = true;
+			return { ok: true, stdout: "unexpected", stderr: "", status: 0 };
+		});
+
+		expect(callbackInvoked).toBe(false);
+		expect(events).toEqual(["probe"]);
+		expect(result.ok).toBe(false);
+		expect(result.status).toBeNull();
+		expect(result.evidence).toMatchObject({ verdict: "NOT_EXECUTED", reason_code: "INVALID_CONTRACT" });
+		expect(existsSync(paths(fx).receipt)).toBe(false);
 	});
 
 	it("does not invoke the callback when request publication fails", () => {
