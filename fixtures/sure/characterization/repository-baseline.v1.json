@@ -6751,8 +6751,8 @@
     },
     {
       "path": "packages/coding-agent/test/suite/sure-backend-executor.test.ts",
-      "size_bytes": 2611,
-      "sha256": "8639769bdfdcd98db0e8c9c4f6028cafa77704e8b6c14731355ea3a3ed7ffc7b"
+      "size_bytes": 7439,
+      "sha256": "c9c9343132687212de9be00fb849efa4607028b8b0028b6aa8f855cf3b1e436f"
     },
     {
       "path": "packages/coding-agent/test/suite/sure-eval-red-lines.test.ts",
@@ -6986,8 +6986,8 @@
     },
     {
       "path": "sure/runtime/harness/backend-executor.ts",
-      "size_bytes": 3994,
-      "sha256": "5f96bc077db9eddc80f91896ff13646f54397b95589ff5036e09c1ce422f08df"
+      "size_bytes": 10674,
+      "sha256": "4a37907d70d4123e79c5fcb0c866de30082c4dc293bf054e636d118eb563faec"
     },
     {
       "path": "sure/runtime/harness/bootstrap.py",
@@ -9776,5 +9776,5 @@
       ]
     }
   ],
-  "semantic_digest": "ea2daf4b4412c9d20bd6e53727c5d4e2f437d3e3529b3e041f9c89741f4354d7"
+  "semantic_digest": "669f6b2619916c0f65cd10a29a23806bb523fe81c630a265afd32e3b1129932a"
 }
