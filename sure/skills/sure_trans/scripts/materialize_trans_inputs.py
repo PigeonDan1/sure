@@ -222,13 +222,13 @@ def main() -> int:
         if source_kind == "python" or not gpu_surface
         else args.execution or "vc"
     )
-    if execution_request == "local" and source_kind == "docker":
+    if args.execution == "local" and source_kind == "docker" and gpu_surface:
         execution_policy = policy.get("execution") if isinstance(policy, dict) else {}
         if "local" not in execution_policy.get("surfaces", []):
             raise ValueError("execution=local requires local in site policy execution.surfaces")
         if "container" not in execution_policy.get("local_runtimes", []):
             raise ValueError("execution=local requires container in site policy execution.local_runtimes")
-    if execution_request == "local" and any(
+    if args.execution == "local" and any(
         value is not None for value in (args.vc_partition, args.vc_memory_gb, args.vc_gpus)
     ):
         raise ValueError("vc_partition, vc_memory_gb and vc_gpus cannot be used with execution=local")

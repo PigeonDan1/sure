@@ -217,13 +217,13 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (dockerfile && device === "cpu" && execution === "vc") {
 		return failure("execution=vc requires device=auto or cuda for Docker input", "TRANS_INPUT_INVALID");
 	}
-	if (execution === "local" && dockerfile) {
+	if (args.execution === "local" && dockerfile && device !== "cpu") {
 		const policy = requireSitePolicy().policy.execution;
 		if (!policy.surfaces.includes("local") || !policy.local_runtimes.includes("container")) {
 			return failure("execution=local requires local + container in the active site policy", "TRANS_INPUT_INVALID");
 		}
 	}
-	if (execution === "local" && [vcPartition, vcMemoryGb, vcGpus].some((value) => value !== undefined)) {
+	if (args.execution === "local" && [vcPartition, vcMemoryGb, vcGpus].some((value) => value !== undefined)) {
 		return failure(
 			"vc_partition, vc_memory_gb and vc_gpus cannot be used with execution=local",
 			"TRANS_INPUT_INVALID",
