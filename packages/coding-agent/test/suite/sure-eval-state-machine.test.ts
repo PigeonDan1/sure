@@ -1,6 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { preToolCall } from "../../../../sure/skills/sure_eval/hooks/index.ts";
 import { findUnit, MAIN_FLOW_UNITS, TOTAL_UNITS } from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
 import { MAIN_FLOW_UNITS as INFER_UNITS } from "../../../../sure/skills/sure_infer/hooks/state-machine.ts";
 import type { SureHookContext } from "../../src/core/sure/types.ts";
@@ -17,6 +19,37 @@ const GATE_SCRIPTS: Array<[string, string]> = [
 	["extract_lessons", "check_memory_extraction.py"],
 	["run_report", "check_run_report.py"],
 ];
+
+function backendGuard(command: string, currentUnit: string): ReturnType<typeof preToolCall> {
+	const runDir = mkdtempSync(join(tmpdir(), "sure-eval-backend-guard-"));
+	writeFileSync(
+		join(runDir, "state.json"),
+		JSON.stringify({
+			checkpoint: {
+				data: {
+					currentUnit,
+					completedUnits: currentUnit === "execute_evaluation" ? ["dataset_scope"] : [],
+					retries: {},
+					failedArtifactDigests: {},
+				},
+			},
+		}),
+	);
+	try {
+		return preToolCall({
+			point: "pre_tool_call",
+			run: { runId: "test-eval-backend", status: "running" },
+			skill: { name: "sure_eval", command: "/sure_eval" },
+			cwd: PACKAGE_DIR,
+			packageDir: PACKAGE_DIR,
+			runDir,
+			args: "",
+			event: { toolName: "bash", input: { command } },
+		} as SureHookContext);
+	} finally {
+		rmSync(runDir, { recursive: true, force: true });
+	}
+}
 
 describe("sure_eval state machine shape", () => {
 	it("has exactly five units in order", () => {
@@ -68,5 +101,32 @@ describe("sure_eval state machine shape", () => {
 
 	it("shares the extract_lessons unit with sure_infer", () => {
 		expect(findUnit("extract_lessons")).toEqual(INFER_UNITS.find((unit) => unit.id === "extract_lessons"));
+	});
+});
+
+describe("sure_eval backend script guard", () => {
+	const backend = resolve(PACKAGE_DIR, "..", "sure_infer", "scripts");
+
+	it("allows the cross-package run_eval.py backend from execute_evaluation", () => {
+		const result = backendGuard(
+			`python3 ${join(backend, "run_eval.py")} --invocation-run-dir /tmp/run`,
+			"execute_evaluation",
+		);
+		expect(result.ok).toBe(true);
+	});
+
+	it("rejects run_eval.py before execute_evaluation", () => {
+		const result = backendGuard(
+			`python3 ${join(backend, "run_eval.py")} --invocation-run-dir /tmp/run`,
+			"dataset_scope",
+		);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain('only permitted from unit "execute_evaluation"');
+	});
+
+	it("still rejects a model-capable cross-package backend", () => {
+		const result = backendGuard(`python3 ${join(backend, "evaluate_predictions.py")}`, "execute_evaluation");
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("direct call");
 	});
 });

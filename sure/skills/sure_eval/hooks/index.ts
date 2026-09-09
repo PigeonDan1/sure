@@ -373,9 +373,8 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	}
 	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
-	const forbiddenBackend = invokedSkillScripts(command, "sure_infer/scripts").find(
-		(script) => !ALLOWED_BACKEND.has(script),
-	);
+	const backendScripts = invokedSkillScripts(command, "sure_infer/scripts");
+	const forbiddenBackend = backendScripts.find((script) => !ALLOWED_BACKEND.has(script));
 	if (forbiddenBackend) {
 		return failure(
 			`/sure_eval must use the run_eval.py backend; direct call to ${forbiddenBackend} is forbidden.`,
@@ -389,13 +388,24 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 			"Inference surface forbidden.",
 		);
 	}
-	const invokedScripts = invokedSkillScripts(command).filter((script) => !UNIT_AGNOSTIC_SCRIPTS.has(script));
-	if (invokedScripts.length === 0) {
+	const backendAliases = new Set(backendScripts.map((script) => script.slice("sure_infer/".length)));
+	const invokedScripts = invokedSkillScripts(command).filter(
+		(script) => !UNIT_AGNOSTIC_SCRIPTS.has(script) && !backendAliases.has(script),
+	);
+	if (backendScripts.length === 0 && invokedScripts.length === 0) {
 		return { ok: true };
 	}
 	const checkpoint = readCheckpoint(ctx);
 	const currentUnit = findUnit(checkpoint.data.currentUnit);
-	if (!currentUnit) {
+	if (backendScripts.includes("sure_infer/scripts/run_eval.py") && currentUnit?.id !== "execute_evaluation") {
+		return failure(
+			`The run_eval.py backend is only permitted from unit "execute_evaluation", not "${checkpoint.data.currentUnit}".`,
+			"Evaluation backend called out of order.",
+			countersFor(checkpoint.data, 1),
+			checkpoint,
+		);
+	}
+	if (invokedScripts.length === 0 || !currentUnit) {
 		return { ok: true };
 	}
 	// extract_lessons never sits in an exhausted state: its gate exhaustion

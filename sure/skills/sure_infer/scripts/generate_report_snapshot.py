@@ -362,9 +362,36 @@ def _build_failed_or_skipped(rows: list[dict[str, Any]]) -> str:
     return "\n".join(table) if table else "| N/A | N/A | N/A | N/A | N/A |"
 
 
+def _report_artifact_paths(rows: list[dict[str, Any]], run_dir: Path, name: str) -> list[Path]:
+    paths: list[Path] = []
+    for row in rows:
+        reval = row.get("reval") if isinstance(row.get("reval"), dict) else {}
+        bundle = Path(str(reval.get("artifact_bundle") or ""))
+        if bundle.is_absolute() or len(bundle.parts) < 2 or bundle.parts[0] != "evaluation_runs" or ".." in bundle.parts:
+            continue
+        candidate = run_dir / bundle / name
+        if candidate not in paths:
+            paths.append(candidate)
+    if paths:
+        return paths
+    run_local = run_dir / name
+    return [run_local] if run_local.exists() else []
+
+
+def _format_artifact_paths(paths: list[Path]) -> str:
+    return ", ".join(_bt(path) for path in paths) if paths else _bt("N/A")
+
+
 def _build_output_artifacts(rows: list[dict[str, Any]], run_dir: Path) -> str:
     table = [
-        f"| evaluation_payload | all | all | {_bt(run_dir / 'evaluation_payload.json')} |",
+        *(
+            f"| evaluation_payload | all | all | {_bt(path)} |"
+            for path in _report_artifact_paths(rows, run_dir, "evaluation_payload.json")
+        ),
+        *(
+            f"| validation_payload | all | all | {_bt(path)} |"
+            for path in _report_artifact_paths(rows, run_dir, "validation_payload.json")
+        ),
         f"| report_jsonl | all | all | {_bt(run_dir / 'report.jsonl')} |",
         f"| report_snapshot | all | all | {_bt(run_dir / 'report_snapshot.md')} |",
         f"| protocol | all | all | {_bt(run_dir / 'protocol.yaml')} |",
@@ -398,6 +425,10 @@ def build_snapshot(run_dir: Path) -> str:
     report_rows = _read_jsonl(report_path)
     protocol = _read_yaml(protocol_path)
     rows = _rows_for_snapshot(payload, report_rows)
+    payload_paths = _report_artifact_paths(rows, run_dir, "evaluation_payload.json")
+    validation_paths = _report_artifact_paths(rows, run_dir, "validation_payload.json")
+    if not payload and payload_paths:
+        payload = _read_json(payload_paths[0])
 
     datasets = sorted({str(_dataset(row).get("name") or "") for row in rows if _dataset(row).get("name")})
     metrics = sorted({str(_metric(row).get("name") or "") for row in rows if _metric(row).get("name")})
@@ -432,8 +463,8 @@ def build_snapshot(run_dir: Path) -> str:
         f"| Output directory | {_bt(run_dir)} |",
         f"| Standard results mirror | {_bt('N/A')} |",
         f"| Report JSONL | {_bt(report_path)} |",
-        f"| Evaluation payload | {_bt(payload_path)} |",
-        f"| Validation payload | {_bt(validation_path if validation_path.exists() else 'N/A')} |",
+        f"| Evaluation payload | {_format_artifact_paths(payload_paths)} |",
+        f"| Validation payload | {_format_artifact_paths(validation_paths)} |",
         f"| Status | {_escape(status)} |",
         "",
         "## Formatting Policy",
@@ -584,7 +615,7 @@ def build_snapshot(run_dir: Path) -> str:
         "",
         "| Group | Contents |",
         "|---|---|",
-        "| Report artifacts | `report.jsonl`, `evaluation_payload.json`, `report_snapshot.md` |",
+        "| Report artifacts | aggregate `report.jsonl`/`report_snapshot.md`; batch-scoped `evaluation_payload.json` |",
         "| Validation artifacts | `validation_payload.json`, prediction validation summaries |",
         "| Prediction artifacts | `predictions/<dataset>.txt`, `predictions/<dataset>.jsonl`, `predictions/manifest.json`, `predictions/conversion_manifest.json` |",
         "| Metric artifacts | Route-backed per-dataset metric reports under `metrics/<dataset>/<metric_slug>/` |",
