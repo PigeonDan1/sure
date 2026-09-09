@@ -323,9 +323,13 @@ def _localize_sample_audio_path(value: Any, dataset_jsonl_path: Path) -> str:
 
 def _sample_reference_text(sample: dict[str, Any]) -> str:
     return str(
-        sample.get("reference_text")
-        or sample.get("target")
+        sample.get("target")
         or sample.get("target_text")
+        or sample.get("ground_truth")
+        or sample.get("label")
+        or sample.get("answer")
+        or sample.get("intent")
+        or sample.get("reference_text")
         or sample.get("text")
         or ""
     )
@@ -401,6 +405,36 @@ def _write_external_audio_samples_jsonl(
                     "task": "VC",
                     "source_key": key,
                 },
+            }
+        elif task_upper == "SE":
+            row = {
+                "sample_id": key,
+                "enhanced_audio": generated_audio,
+                "reference_audio": _localize_sample_audio_path(
+                    sample.get("reference_audio"), dataset_jsonl_path
+                ),
+                "noisy_audio": _localize_sample_audio_path(
+                    sample.get("noisy_audio") or sample.get("path"), dataset_jsonl_path
+                ),
+                "language": language,
+                "metadata": {"dataset": structured.get("dataset"), "task": "SE", "source_key": key},
+            }
+        elif task_upper == "TSE":
+            row = {
+                "sample_id": key,
+                "prediction_audio": generated_audio,
+                "reference_audio": _localize_sample_audio_path(
+                    sample.get("reference_audio"), dataset_jsonl_path
+                ),
+                "mixed_audio": _localize_sample_audio_path(
+                    sample.get("mixed_audio") or sample.get("path"), dataset_jsonl_path
+                ),
+                "enrollment_audio": _localize_sample_audio_path(
+                    sample.get("enrollment_audio"), dataset_jsonl_path
+                ),
+                "reference_text": _sample_reference_text(sample),
+                "language": language,
+                "metadata": {"dataset": structured.get("dataset"), "task": "TSE", "source_key": key},
             }
         else:
             raise ExternalEvaluationUnsupported(f"task {task!r} does not use samples_jsonl audio bridge")
@@ -528,6 +562,70 @@ def _pipeline_audio_row_required_roles(pipeline: dict[str, Any]) -> set[str]:
     return {str(role) for role in run_args if role not in ignored}
 
 
+def _write_meeteval_annotations(
+    *,
+    task: str,
+    samples: list[dict[str, Any]],
+    structured_predictions: dict[str, dict[str, Any]],
+    structured_prediction_path: Path,
+) -> tuple[str, str]:
+    task_name = task.upper().replace("_", "-")
+    suffix = ".rttm" if task_name == "SD" else ".stm"
+    reference_rows: list[str] = []
+    prediction_rows: list[str] = []
+
+    def rows_for_segments(key: str, segments: Any) -> list[str]:
+        if not isinstance(segments, list) or not segments:
+            raise ValueError(f"{task_name} sample {key} requires non-empty segments")
+        rows: list[str] = []
+        for index, segment in enumerate(segments):
+            if not isinstance(segment, dict):
+                raise TypeError(f"{task_name} sample {key} segment {index} must be an object")
+            speaker = str(segment.get("speaker") or segment.get("speaker_id") or segment.get("label") or f"spk{index + 1}")
+            start = float(segment.get("start", 0.0))
+            if segment.get("end") is not None:
+                end = float(segment["end"])
+            else:
+                end = start + float(segment.get("duration", 0.0))
+            if end <= start:
+                raise ValueError(f"{task_name} sample {key} segment {index} has invalid timing")
+            if task_name == "SD":
+                rows.append(f"SPEAKER {key} 1 {start:.3f} {end - start:.3f} <NA> <NA> {speaker} <NA> <NA>")
+            else:
+                text = str(segment.get("text") or segment.get("transcript") or "").strip()
+                if not text:
+                    raise ValueError(f"SA-ASR sample {key} segment {index} requires text")
+                rows.append(f"{key} 1 {speaker} {start:.3f} {end:.3f} {text}")
+        return rows
+
+    for sample in samples:
+        key = str(sample.get("key", ""))
+        reference_rows.extend(rows_for_segments(key, sample.get("segments")))
+        structured = structured_predictions.get(key) or {}
+        prediction = structured.get("prediction") if isinstance(structured.get("prediction"), dict) else {}
+        segments = prediction.get("segments")
+        if isinstance(segments, list):
+            prediction_rows.extend(rows_for_segments(key, segments))
+            continue
+        annotation = prediction.get("annotation") or prediction.get("annotation_path")
+        if not annotation:
+            raise ValueError(f"{task_name} sample {key} requires segments or an annotation path")
+        annotation_path = Path(str(annotation)).expanduser()
+        if not annotation_path.is_absolute():
+            annotation_path = structured_prediction_path.parent / annotation_path
+        if not annotation_path.is_file():
+            raise FileNotFoundError(f"{task_name} annotation does not exist: {annotation_path}")
+        prediction_rows.extend(line for line in annotation_path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+    reference = tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, encoding="utf-8")
+    hypothesis = tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, encoding="utf-8")
+    reference.write("\n".join(reference_rows) + "\n")
+    hypothesis.write("\n".join(prediction_rows) + "\n")
+    reference.close()
+    hypothesis.close()
+    return reference.name, hypothesis.name
+
+
 def _run_external_pipeline(
     *,
     engine_root: Path,
@@ -570,6 +668,7 @@ summary = run_pipeline_spec(
     label_spec=request.get("label_spec"),
     reference_jsonl=request.get("reference_jsonl"),
     sample_output=request.get("sample_output"),
+    trial_manifest=request.get("trial_manifest"),
     samples_jsonl=request.get("samples_jsonl"),
     device=request.get("device") or "cuda",
     cache_dir=request.get("cache_dir"),
@@ -664,8 +763,23 @@ def evaluate_prediction_file_external(
             "external route requires input roles that the text-pair bridge cannot materialize: "
             f"{sorted(_pipeline_required_roles(pipeline))}"
         )
-    ref_file = _write_eval_file([f"{sample.get('key', '')}\t{sample.get('target', '')}" for sample in samples])
-    hyp_file = _write_eval_file([f"{sample.get('key', '')}\t{predictions.get(sample.get('key', ''), '')}" for sample in samples])
+    structured_prediction_path = prediction_path.with_suffix(".jsonl")
+    normalized_task = task.upper().replace("_", "-")
+    if normalized_task in {"SD", "SA-ASR"}:
+        structured_predictions = load_structured_prediction_map(structured_prediction_path)
+        ref_file, hyp_file = _write_meeteval_annotations(
+            task=normalized_task,
+            samples=samples,
+            structured_predictions=structured_predictions,
+            structured_prediction_path=structured_prediction_path,
+        )
+    else:
+        ref_file = _write_eval_file(
+            [f"{sample.get('key', '')}\t{_sample_reference_text(sample)}" for sample in samples]
+        )
+        hyp_file = _write_eval_file(
+            [f"{sample.get('key', '')}\t{predictions.get(sample.get('key', ''), '')}" for sample in samples]
+        )
     src_file = _write_optional_source_file(samples) if task == "S2TT" else None
 
     metric_dir_name = _safe_path_component(str(pipeline_id_override or requested_metric or "default"))
@@ -883,6 +997,186 @@ def evaluate_audio_prediction_file_external(
             "report": report,
             "pipeline": pipeline,
         },
+    }
+
+
+def evaluate_structured_prediction_file_external(
+    dataset_manager: DatasetManager,
+    sota_manager: SOTAManager,
+    dataset_name: str,
+    prediction_path: Path,
+    *,
+    engine_source: str,
+    engine_root: Path,
+    external_runs_dir: Path,
+    device: str,
+    cache_dir: str | None,
+    timeout: int,
+    metric_override: str | None,
+    pipeline_id_override: str | None = None,
+    task_override: str | None = None,
+) -> dict[str, Any]:
+    """Bridge structured KWS, VAD, and SV predictions to engine-owned routes."""
+
+    canonical_name = dataset_manager.normalize_dataset_name(dataset_name)
+    jsonl_path = dataset_manager.get_jsonl_path(canonical_name)
+    if not jsonl_path.exists():
+        jsonl_path = dataset_manager.download_and_convert(canonical_name)
+    all_samples = load_jsonl(jsonl_path)
+    if not all_samples:
+        raise ValueError(f"Dataset has no samples: {canonical_name}")
+    dataset_task = str(all_samples[0].get("task", "")).upper()
+    task = str(task_override or dataset_task).upper()
+    language = str(all_samples[0].get("language") or "any")
+    requested_metric = metric_override or _metric_from_sota(
+        sota_manager, canonical_name, fallback_names=_source_fallback_names(jsonl_path)
+    )
+    pipeline = _describe_external_pipeline(
+        engine_root=engine_root,
+        task=task,
+        language=language,
+        metric=None if pipeline_id_override else requested_metric,
+        pipeline_id=pipeline_id_override,
+        timeout=timeout,
+    )
+    required_roles = _pipeline_required_roles(pipeline)
+    supported_roles = {"reference_jsonl", "sample_output", "trial_manifest"}
+    if not required_roles or not required_roles.issubset(supported_roles):
+        raise ExternalEvaluationUnsupported(
+            f"structured bridge cannot materialize roles: {sorted(required_roles)}"
+        )
+
+    structured_prediction_path = prediction_path.with_suffix(".jsonl")
+    structured_predictions = load_structured_prediction_map(structured_prediction_path)
+    if not structured_predictions:
+        raise ValueError(f"{task} evaluation requires structured predictions: {structured_prediction_path}")
+    samples = _samples_with_predictions(
+        all_samples,
+        set(structured_predictions),
+        dataset_name=canonical_name,
+    )
+
+    metric_dir_name = _safe_path_component(str(pipeline_id_override or requested_metric or "default"))
+    run_dir = external_runs_dir / _safe_path_component(canonical_name) / metric_dir_name
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    task_upper = task.upper().replace("-", "_")
+    output_rows: list[dict[str, Any]] = []
+    for sample in samples:
+        key = str(sample.get("key", ""))
+        wrapper_row = structured_predictions[key]
+        prediction = wrapper_row.get("prediction")
+        if not isinstance(prediction, dict):
+            prediction = {}
+        if task_upper == "KWS":
+            output_rows.append({"key": key, "result": prediction})
+        elif task_upper == "VAD":
+            output_rows.append(
+                {"key": key, **{field: prediction[field] for field in ("speech_segments", "frame_scores") if field in prediction}}
+            )
+        elif task_upper == "SV":
+            embedding = prediction.get("embedding")
+            if not isinstance(embedding, list) or not embedding:
+                raise ValueError(f"SV sample {key} is missing a non-empty embedding")
+            output_rows.append(
+                {"key": key, "result": {"embedding": embedding, "dimension": len(embedding)}}
+            )
+        else:
+            raise ExternalEvaluationUnsupported(f"task {task!r} has no structured evaluation bridge")
+
+    sample_output = run_dir / ("sample_output.json" if task_upper == "KWS" else "sample_output.jsonl")
+    if task_upper == "KWS":
+        sample_output.write_text(json.dumps(output_rows, ensure_ascii=False) + "\n", encoding="utf-8")
+    else:
+        sample_output.write_text(
+            "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in output_rows),
+            encoding="utf-8",
+        )
+
+    reference_jsonl = jsonl_path
+    if task_upper == "VAD":
+        reference_jsonl = run_dir / "reference.jsonl"
+        reference_jsonl.write_text(
+            "".join(
+                json.dumps(
+                    {
+                        "key": str(sample.get("key", "")),
+                        "duration": sample.get("duration"),
+                        "speech_segments": sample.get("speech_segments"),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+                for sample in samples
+            ),
+            encoding="utf-8",
+        )
+
+    request: dict[str, Any] = {
+        "task": task,
+        "language": None if language in {"any", "n/a", "auto"} else language,
+        "metric": None if pipeline_id_override else requested_metric,
+        "pipeline_id": pipeline_id_override,
+        "output_dir": str(run_dir.resolve()),
+        "reference_jsonl": str(reference_jsonl.resolve()) if "reference_jsonl" in required_roles else None,
+        "sample_output": str(sample_output.resolve()),
+        "device": device,
+        "cache_dir": cache_dir,
+        "pipeline": pipeline,
+    }
+    if "trial_manifest" in required_roles:
+        raw_manifest = all_samples[0].get("trial_manifest")
+        candidates = [] if not raw_manifest else [Path(str(raw_manifest))]
+        if raw_manifest and not candidates[0].is_absolute():
+            candidates = [jsonl_path.parent / candidates[0], Path(str(raw_manifest))]
+        trial_manifest = next((path for path in candidates if path.is_file()), None)
+        if trial_manifest is None:
+            raise ValueError("SV dataset rows must reference an existing trial_manifest")
+        request["trial_manifest"] = str(trial_manifest.resolve())
+
+    external_payload = _run_external_pipeline(
+        engine_root=engine_root,
+        request=request,
+        timeout=timeout,
+    )
+    summary = external_payload["summary"]
+    report = external_payload.get("report") or {}
+    metric = str(summary.get("metric") or pipeline.get("metric") or requested_metric or "")
+    score = summary.get("score", report.get("score", 0.0))
+    rps = sota_manager.calculate_rps(
+        canonical_name, score, fallback_names=_source_fallback_names(jsonl_path)
+    )
+    return {
+        "dataset": canonical_name,
+        "jsonl_path": str(jsonl_path),
+        "prediction_path": str(prediction_path),
+        "prediction_jsonl_path": str(structured_prediction_path),
+        "task": task,
+        "language": str(summary.get("language") or language),
+        "metric": metric,
+        "score": score,
+        "rps": rps,
+        "rps_is_unbounded": isinstance(rps, float) and not math.isfinite(rps),
+        "num_samples": len(samples),
+        "expected_samples": len(all_samples),
+        "provided_predictions": len(samples),
+        "evaluation_backend": "external",
+        "evaluator_version": "sure-evaluation",
+        "pipeline_id": summary.get("pipeline_id") or pipeline.get("pipeline_id"),
+        "evaluation_context": {
+            "backend": "sure-evaluation",
+            "engine_source": engine_source,
+            "engine_root": str(engine_root),
+            "evaluation_runtime": _evaluation_runtime_binding(engine_root),
+            "dataset_task": dataset_task,
+            "pipeline_id": summary.get("pipeline_id") or pipeline.get("pipeline_id"),
+            "nodes": [node.get("node_id") for node in pipeline.get("nodes", [])],
+            "external_output_dir": summary.get("output_dir"),
+            "input_roles": sorted(required_roles),
+            "requested_pipeline_id": pipeline_id_override,
+        },
+        "details": {"summary": summary, "report": report, "pipeline": pipeline},
     }
 
 
@@ -2162,8 +2456,24 @@ def main() -> int:
                             pipeline_id_override=pipeline_id_override,
                             task_override=effective_task,
                         )
-                    else:
+                    elif _pipeline_uses_text_pair(pipeline):
                         result = evaluate_prediction_file_external(
+                            dataset_manager,
+                            sota_manager,
+                            canonical_name,
+                            prediction_path,
+                            engine_source=engine_source,
+                            engine_root=engine_root,
+                            external_runs_dir=external_runs_dir,
+                            device=args.evaluation_device,
+                            cache_dir=args.evaluation_cache_dir,
+                            timeout=args.evaluation_timeout,
+                            metric_override=metric_override,
+                            pipeline_id_override=pipeline_id_override,
+                            task_override=effective_task,
+                        )
+                    else:
+                        result = evaluate_structured_prediction_file_external(
                             dataset_manager,
                             sota_manager,
                             canonical_name,

@@ -4,7 +4,7 @@
 `asr_kimi_audio` / Kimi-Audio-7B-Instruct 的接入经验。适用任务：
 
 ```text
-ASR, S2TT, SER, SLU, GR, SD, SA-ASR
+ASR, Classification, GR, KWS, S2TT, SA-ASR, SD, SE, SER, SLU, SV, TSE, TTS, VAD, VC
 ```
 
 这类模型不是单一 ASR wrapper，而是统一音频理解模型。新 agent 接入同类模型时，
@@ -12,8 +12,10 @@ ASR, S2TT, SER, SLU, GR, SD, SA-ASR
 
 ## 1. 任务边界
 
-多任务语音理解的核心是“一套模型，多套 task-specific wrapper 方法和 fixture”。
-不要把所有任务退化成 ASR 文本转写。
+`speech_understanding` 在 harness 中是由 `sure-evaluation` 驱动的完整任务套件。
+它必须展开为生成能力文件中的全部公开任务，不能按模型 README 或搜索标签缩减。
+每个原子任务仍使用独立 wrapper 契约、fixture 和 metric route；不要把它们退化成
+ASR 文本转写。
 
 推荐任务定义：
 
@@ -89,21 +91,31 @@ Kimi-Audio 权重经验：
 
 ## 3. Fixture 规则
 
-共享 fixture 库中的多任务语音理解样例已经拆成原子任务 fixture。组合模型按
-实际支持任务选择：
+共享 fixture 库中的多任务语音理解样例已经拆成原子任务 fixture。若顶层任务是
+`speech_understanding`，必须选择 `fixtures/tasks/speech_understanding/README.md`
+列出的完整生成套件；普通多任务模型仍按其显式原子任务选择：
 
 ```text
 fixtures/tasks/asr/qwen3_asr_smoke/
 fixtures/tasks/s2tt/kimi_audio_s2tt_smoke/
-fixtures/tasks/ser/kimi_audio_ser_smoke/
-fixtures/tasks/slu/kimi_audio_slu_smoke/
-fixtures/tasks/gr/kimi_audio_gr_smoke/
+fixtures/tasks/classification/librispeech_speaker_smoke/
+fixtures/tasks/gr/librispeech_gender_smoke/
+fixtures/tasks/kws/librispeech_keyword_smoke/
+fixtures/tasks/ser/crema_d_smoke/
+fixtures/tasks/slu/fluent_speech_commands_smoke/
 fixtures/tasks/sd/README.md
 fixtures/tasks/sa_asr/README.md
+fixtures/tasks/se/README.md
+fixtures/tasks/sv/README.md
+fixtures/tasks/tse/README.md
+fixtures/tasks/tts/README.md
+fixtures/tasks/vad/README.md
+fixtures/tasks/vc/README.md
 ```
 
-组合索引见 `fixtures/tasks/speech_understanding/README.md`。接入新模型时，按
-子任务打开原子 fixture index，不要默认读取或复制所有子任务。
+组合索引见 `fixtures/tasks/speech_understanding/README.md`。只有顶层任务是
+`speech_understanding` 时默认读取并复制所有成员；其他原子或普通多任务接入仍只
+读取其声明的任务。
 
 多任务 fixture 必须按任务分目录。不能用一个 ASR 样本假装覆盖全部任务。
 

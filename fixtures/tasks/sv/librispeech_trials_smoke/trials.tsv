@@ -1,0 +1,5 @@
+enroll_key test_key label condition
+sv_1580_a sv_1580_b target clean
+sv_1089_a sv_1089_b target clean
+sv_1580_a sv_1089_a nontarget clean
+sv_1580_b sv_1089_b nontarget clean

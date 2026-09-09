@@ -1,5 +1,9 @@
 # SER Fixture Index
 
+Approved harness fixture: `fixtures/tasks/ser/crema_d_smoke/`, containing
+redistributable CREMA-D samples with source URLs and hashes in `provenance.json`.
+The older fixture below remains available for existing integrations.
+
 Representative fixture:
 
 ```text

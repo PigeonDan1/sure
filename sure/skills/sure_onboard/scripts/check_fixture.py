@@ -9,13 +9,42 @@ import sys
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import normalize_task, speech_understanding_tasks
+
+AUDIO_FIELDS = (
+    "audio",
+    "wav",
+    "audio_path",
+    "source_audio",
+    "reference_audio",
+    "noisy_audio",
+    "mixed_audio",
+    "enrollment_audio",
+    "prompt_audio",
+)
+ANNOTATION_FIELDS = (
+    "ground_truth",
+    "target_text",
+    "reference_text",
+    "text",
+    "segments",
+    "speech_segments",
+    "label",
+    "intent",
+    "speaker_id",
+)
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def canonical_task(task: str) -> str:
-    return task.replace("-", "_").lower()
+    return normalize_task(task)
 
 
 def is_relative_child(path: Path, parent: Path) -> bool:
@@ -71,7 +100,7 @@ def main() -> int:
     if not is_relative_child(staged_dir, expected_root):
         return fail(f"staged_dir must be under model_dir/fixture: {staged_dir}")
     expected_task_root = expected_root / task
-    if not is_relative_child(staged_dir, expected_task_root):
+    if task != "speech_understanding" and not is_relative_child(staged_dir, expected_task_root):
         return fail(f"staged_dir must be under model_dir/fixture/{task}: {staged_dir}")
     if not staged_dir.exists() or not staged_dir.is_dir():
         return fail(f"staged_dir does not exist or is not a directory: {staged_dir}")
@@ -98,7 +127,7 @@ def main() -> int:
             return fail(f"{gt_jsonl}:{line_no} is not valid JSON: {exc}")
         if not isinstance(row, dict):
             return fail(f"{gt_jsonl}:{line_no} must be a JSON object")
-        audio = row.get("audio") or row.get("wav") or row.get("prompt_audio") or row.get("reference_audio")
+        audio = next((row.get(field) for field in AUDIO_FIELDS if row.get(field)), None)
         if not isinstance(audio, str) or not audio:
             return fail(f"{gt_jsonl}:{line_no} must contain a non-empty audio/wav field")
         audio_path = Path(audio)
@@ -110,21 +139,56 @@ def main() -> int:
         if not resolved_audio.exists():
             return fail(f"{gt_jsonl}:{line_no} referenced audio does not exist: {audio}")
         annotation_fields = [
-            field
-            for field in ("ground_truth", "target_text", "text", "segments", "label", "intent")
-            if field in row and annotation_is_nonempty(row[field])
+            field for field in ANNOTATION_FIELDS if field in row and annotation_is_nonempty(row[field])
         ]
         if not annotation_fields:
             return fail(
                 f"{gt_jsonl}:{line_no} must contain at least one annotation field "
-                "(ground_truth, target_text, text, segments, label, or intent)"
+                f"({', '.join(ANNOTATION_FIELDS)})"
             )
+        for field in AUDIO_FIELDS:
+            value = row.get(field)
+            if not isinstance(value, str) or not value:
+                continue
+            role_path = Path(value)
+            if role_path.is_absolute() or ".." in role_path.parts:
+                return fail(f"{gt_jsonl}:{line_no} {field} must stay inside staged_dir")
+            if not (staged_dir / role_path).is_file():
+                return fail(f"{gt_jsonl}:{line_no} referenced {field} does not exist: {value}")
         if task == "sa_asr" and "segments" not in row:
             return fail(f"{gt_jsonl}:{line_no} task sa_asr requires speaker-attributed segments")
         parsed_rows.append(row)
 
     if len(parsed_rows) != len(samples):
         return fail("samples array must mirror non-empty gt.jsonl rows")
+
+    if task == "speech_understanding":
+        expected_members = list(speech_understanding_tasks())
+        if data.get("suite_members") != expected_members:
+            return fail("speech_understanding suite_members must match the generated engine registry")
+        entries = data.get("subtask_fixtures")
+        if not isinstance(entries, list) or len(entries) != len(expected_members):
+            return fail("speech_understanding subtask_fixtures must cover every suite member")
+        entries_by_task = {
+            str(entry.get("task_type")): entry
+            for entry in entries
+            if isinstance(entry, dict)
+        }
+        if set(entries_by_task) != set(expected_members):
+            return fail("speech_understanding subtask_fixtures task set is incomplete")
+        for member in expected_members:
+            entry = entries_by_task[member]
+            member_dir = Path(str(entry.get("staged_dir", ""))).resolve()
+            member_gt = Path(str(entry.get("gt_jsonl", ""))).resolve()
+            member_samples = entry.get("samples")
+            if not is_relative_child(member_dir, expected_root / member):
+                return fail(f"suite fixture for {member} must be under model_dir/fixture/{member}")
+            if not member_dir.is_dir() or not member_gt.is_file() or member_gt.parent != member_dir:
+                return fail(f"suite fixture paths are missing or inconsistent for {member}")
+            if not isinstance(member_samples, list) or entry.get("sample_count") != len(member_samples):
+                return fail(f"suite fixture sample_count mismatch for {member}")
+            if not (1 <= len(member_samples) <= 5):
+                return fail(f"suite fixture sample_count must be between 1 and 5 for {member}")
 
     discoverable = list((model_dir / "fixture").glob("**/gt.jsonl"))
     if not discoverable:

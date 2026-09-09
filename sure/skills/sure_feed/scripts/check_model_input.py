@@ -14,21 +14,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
 
-TASK_TYPES = {
-    "asr",
-    "s2tt",
-    "sd",
-    "ser",
-    "tts",
-    "vc",
-    "kws",
-    "slu",
-    "gr",
-    "speech_understanding",
-    "sa-asr",
-    "sa_asr",
-}
+from sure.runtime.evaluation.task_registry import accepted_tasks
+
+TASK_TYPES = set(accepted_tasks())
 DEPLOYMENT_TYPES = {"local", "api"}
 WEIGHT_SOURCES = {
     "huggingface",

@@ -14,24 +14,14 @@ import json
 import sys
 from pathlib import Path
 
-# Verbatim copy of TASK_TYPES from
-# sure/skills/sure_onboard/scripts/check_model_input.py:16-29. Keep in sync:
-# this gate and check_model_input.py must agree on what task_type values are
-# legal, since this gate exists to catch the same illegal value earlier.
-TASK_TYPES = {
-    "asr",
-    "s2tt",
-    "sd",
-    "ser",
-    "tts",
-    "vc",
-    "kws",
-    "slu",
-    "gr",
-    "speech_understanding",
-    "sa-asr",
-    "sa_asr",
-}
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import accepted_tasks
+
+TASK_TYPES = set(accepted_tasks())
 
 
 def main() -> int:

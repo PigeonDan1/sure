@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from sure_feed.fixture_registry import select_fixture_for_task
+from sure.runtime.evaluation.task_registry import (
+    io_contract_for_task,
+    normalize_task,
+    task_profile,
+)
 
 
 NETWORK_ERROR_TYPES = (TimeoutError, socket.timeout, urllib.error.URLError)
@@ -67,8 +72,17 @@ def canonical_task(task: str) -> str:
         "speech-emotion-recognition": "ser",
         "speaker-diarization": "sd",
         "gender-recognition": "gr",
+        "audio-classification": "classification",
+        "speech-enhancement": "se",
+        "speaker-verification": "sv",
+        "target-speaker-extraction": "tse",
+        "voice-activity-detection": "vad",
     }
-    return aliases.get(value, value.replace("-", "_") if value == "sa-asr" else value)
+    mapped = aliases.get(value, value)
+    try:
+        return normalize_task(mapped)
+    except (OSError, ValueError):
+        return mapped.replace("-", "_") if mapped == "sa-asr" else mapped
 
 
 TASK_KEYWORDS: dict[str, tuple[str, ...]] = {
@@ -106,6 +120,11 @@ TASK_KEYWORDS: dict[str, tuple[str, ...]] = {
     "tts": ("tts", "text-to-speech", "text to speech", "speech synthesis"),
     "vc": ("voice conversion", "voice-conversion", "timbre conversion", "speech conversion"),
     "kws": ("kws", "keyword spotting", "wake word", "wake-word"),
+    "classification": ("audio classification", "speech classification", "audio-classification"),
+    "se": ("speech enhancement", "speech-enhancement", "denoising", "noise suppression"),
+    "sv": ("speaker verification", "speaker-verification", "speaker embedding"),
+    "tse": ("target speaker extraction", "target-speaker-extraction", "speaker extraction"),
+    "vad": ("voice activity detection", "voice-activity-detection", "vad"),
 }
 
 
@@ -116,6 +135,8 @@ PIPELINE_TO_TASK = {
     "text-to-speech": "tts",
     "text-to-audio": "tts",
     "audio-to-audio": "vc",
+    "audio-classification": "classification",
+    "voice-activity-detection": "vad",
 }
 
 BROAD_PIPELINE_TASKS = {"speech_understanding"}
@@ -342,44 +363,21 @@ def infer_task(candidate: dict[str, Any], requested_task: str) -> tuple[bool, st
 
 def task_defaults(task: str) -> dict[str, Any]:
     normalized = canonical_task(task)
-    if normalized == "tts":
-        return {
-            "io_contract": {
-                "input_type": "text",
-                "output_type": "json",
-                "primary_field": "audio_path",
-                "required_fields": ["audio_path"],
-                "nonempty_fields": ["audio_path"],
-                "json_serializable": True,
-            },
-            "infer_test": "model.synthesize('Hello, this is a short SURE smoke test.')",
-        }
-    if normalized == "vc":
-        return {
-            "io_contract": {
-                "input_type": "audio_pair",
-                "output_type": "json",
-                "primary_field": "audio_path",
-                "required_fields": ["audio_path"],
-                "nonempty_fields": ["audio_path"],
-                "json_serializable": True,
-            },
-            "infer_test": (
-                "model.convert("
-                "'fixtures/tasks/vc/seed_vc_zh_smoke/zh/ZH_B00001_S00000_W000000.mp3', "
-                "'fixtures/tasks/vc/seed_vc_zh_smoke/zh/ZH_B00000_S00000_W000002.mp3')"
-            ),
-        }
+    if normalized == "speech_understanding":
+        normalized = "asr"
+    profile = task_profile(normalized)
+    contract = io_contract_for_task(normalized)
+    tool_name = str(profile["tool_name"])
+    fixture_root = str(profile["fixture_root"])
+    if contract["input_type"] == "text_with_reference_audio":
+        infer_test = f"model.{tool_name}('Hello from the SURE smoke fixture.')"
+    elif contract["input_type"] == "audio_pair":
+        infer_test = f"model.{tool_name}('<source-audio>', '<reference-audio>')"
+    else:
+        infer_test = f"model.{tool_name}('<audio from {fixture_root}>')"
     return {
-        "io_contract": {
-            "input_type": "audio_path",
-            "output_type": "json",
-            "primary_field": "text",
-            "required_fields": ["text"],
-            "nonempty_fields": ["text"],
-            "json_serializable": True,
-        },
-        "infer_test": "model.transcribe('fixtures/tasks/asr/qwen3_asr_smoke/asr_en/sample_1_367-130732-0006.wav')",
+        "io_contract": contract,
+        "infer_test": infer_test,
     }
 
 
@@ -707,9 +705,6 @@ def _derive_fixture_and_contract(
     )
     prompt_text = _regex_value(text_source, (r'prompt_text\s*=\s*"([^"]+)"', r"prompt_text\s*=\s*'([^']+)'", r"--prompt-text\s+\"([^\"]+)\""))
     has_reference_audio = bool(re.search(r"prompt[_-]audio|reference[_-]audio|prompt_audio_path|/path/to/reference", text_source))
-    outputs_audio = bool(re.search(r"sf\.write|soundfile\.write|output\.wav|clone\.wav|result\[['\"]audio['\"]\]", text_source))
-    outputs_text = bool(re.search(r"transcrib|result\[['\"]text['\"]|\"text\"", text_source.lower()))
-
     provider_fixture_hint: dict[str, Any] = {}
     if audio_value:
         provider_fixture_hint["audio"] = audio_value
@@ -745,35 +740,7 @@ def _derive_fixture_and_contract(
         if provider_fixture_hint:
             fixture["provider_fixture_hint"] = provider_fixture_hint
 
-    normalized_task = canonical_task(task_type)
-    if normalized_task in {"sd", "sa_asr"}:
-        io_contract = registry_contract
-    elif outputs_audio or normalized_task in {"tts", "vc"}:
-        input_type = "text_with_reference_audio" if fixture.get("text") and fixture.get("reference_audio") else "text"
-        if normalized_task == "vc":
-            input_type = "audio_pair"
-        io_contract = {
-            "input_type": input_type,
-            "output_type": "json",
-            "primary_field": "audio_path",
-            "required_fields": ["audio_path"],
-            "nonempty_fields": ["audio_path"],
-            "json_serializable": True,
-        }
-    elif outputs_text or normalized_task == "asr":
-        io_contract = {
-            "input_type": "audio_path",
-            "output_type": "json",
-            "primary_field": "text",
-            "required_fields": ["text"],
-            "nonempty_fields": ["text"],
-            "json_serializable": True,
-        }
-    else:
-        io_contract = registry_contract
-        if not registry_contract:
-            io_contract = task_defaults(task_type)["io_contract"]
-            missing_or_weak.append("missing:io_contract")
+    io_contract = registry_contract
     field_evidence.append(
         _field_evidence(
             source,

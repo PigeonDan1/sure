@@ -1,0 +1,57 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "tts",
+  "dataset": {
+    "repository": "OpenSLR SLR12",
+    "revision": "LibriSpeech ASR corpus release",
+    "configuration": "test-clean or test-other",
+    "split": "test",
+    "license": "CC-BY-4.0",
+    "license_url": "https://www.openslr.org/resources/12/LICENSE.TXT",
+    "source_url": "https://www.openslr.org/12",
+    "citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf",
+    "source_id": "librispeech",
+    "metadata_sha256": "aa0a1ceb995bb76682ffb7e09e2bf0c3ace116e4ef9cd152fedc8a39501236b7",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "tts_en_1580",
+      "tts_en_1089"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "3f84274f6ac43adf1f558b30f1ad5d38f93d9338f00e3a92d7e2afcee6074377"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "prompt_1089.wav",
+      "roles": [
+        "audio",
+        "reference_audio"
+      ],
+      "sha256": "8dd3a119fa980b10e35a1f2e9f1378ef9deccaac5486c82ffc575c9baa69f2e2",
+      "transform_id": "source_media_copy",
+      "source_sha256": "8dd3a119fa980b10e35a1f2e9f1378ef9deccaac5486c82ffc575c9baa69f2e2"
+    },
+    {
+      "path": "prompt_1580.wav",
+      "roles": [
+        "audio",
+        "reference_audio"
+      ],
+      "sha256": "01ce40104cd4f80a5ec13db6d929c24c5cc3d5fee9c3d9ef219887f1425bf88e",
+      "transform_id": "source_media_copy",
+      "source_sha256": "01ce40104cd4f80a5ec13db6d929c24c5cc3d5fee9c3d9ef219887f1425bf88e"
+    }
+  ]
+}

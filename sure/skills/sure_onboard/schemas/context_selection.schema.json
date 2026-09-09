@@ -11,7 +11,7 @@
 		"model_name": { "type": "string" },
 		"task_type": {
 			"type": "string",
-			"enum": ["asr", "s2tt", "sd", "ser", "tts", "vc", "kws", "slu", "gr", "speech_understanding", "sa-asr", "sa_asr"]
+			"enum": ["asr", "classification", "gr", "kws", "s2tt", "sa_asr", "sd", "se", "ser", "slu", "sv", "tse", "tts", "vad", "vc", "sa-asr", "saasr", "speech-enhancement", "speech_enhancement", "speech_understanding"]
 		},
 		"preferred_backend": { "type": "string" },
 		"selected_references": {

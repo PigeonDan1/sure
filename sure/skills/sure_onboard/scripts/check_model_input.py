@@ -20,21 +20,9 @@ for _parent in Path(__file__).resolve().parents:
 
 from sure.site.container_delivery import resolve_container_image, resolve_container_repository
 from sure.site.loader import load_site_policy
+from sure.runtime.evaluation.task_registry import accepted_tasks
 
-TASK_TYPES = {
-    "asr",
-    "s2tt",
-    "sd",
-    "ser",
-    "tts",
-    "vc",
-    "kws",
-    "slu",
-    "gr",
-    "speech_understanding",
-    "sa-asr",
-    "sa_asr",
-}
+TASK_TYPES = set(accepted_tasks())
 DEPLOYMENT_TYPES = {"local", "api"}
 PACKAGE_PROFILES = {"none", "docker-local", "docker-registry"}
 

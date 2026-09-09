@@ -25,6 +25,9 @@ from sure_eval.reports import SOTAManager
 configure_logging(level="INFO")
 logger = get_logger(__name__)
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+CAPABILITY_PATH = REPO_ROOT / "sure" / "runtime" / "evaluation" / "engine-capabilities.generated.json"
+
 
 def _load_samples(jsonl_path: Path) -> list[dict[str, Any]]:
     """Load canonical dataset samples from JSONL."""
@@ -39,23 +42,21 @@ def _load_samples(jsonl_path: Path) -> list[dict[str, Any]]:
 
 
 def _default_metric(task: str | None, language: str | None) -> str:
-    task_name = (task or "").upper()
-    language_name = (language or "").lower()
-    if task_name in {"SER", "GR", "SLU"}:
-        return "accuracy"
-    if task_name == "S2TT":
-        return "bleu"
-    if task_name == "SD":
-        return "der"
-    if task_name == "SA-ASR":
-        return "cpwer"
-    if task_name == "TTS":
-        return "tts_cer" if language_name.startswith(("zh", "cmn", "yue")) else "tts_wer"
-    if task_name == "ASR" and language_name == "cs":
-        return "mer"
-    if task_name == "ASR" and language_name == "en":
-        return "wer"
-    return "cer"
+    capabilities = json.loads(CAPABILITY_PATH.read_text(encoding="utf-8"))
+    task_name = str(task or "").strip().lower().replace("-", "_")
+    task_name = str(capabilities.get("aliases", {}).get(task_name, task_name)).replace("-", "_")
+    profile = capabilities.get("tasks", {}).get(task_name)
+    if not isinstance(profile, dict):
+        raise ValueError(f"No evaluation capability for task: {task!r}")
+
+    routes = profile.get("routes") or []
+    language_name = str(language or "").strip().lower().replace("_", "-")
+    matching = [route for route in routes if str(route.get("language") or "").lower() == language_name]
+    selected = (matching or routes)[0] if routes else {}
+    metric = str(selected.get("metric") or "")
+    if not metric:
+        raise ValueError(f"No engine metric route for task={task!r}, language={language!r}")
+    return metric
 
 
 def _materialize_one(

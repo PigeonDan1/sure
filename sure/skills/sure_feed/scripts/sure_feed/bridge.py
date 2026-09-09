@@ -7,6 +7,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import (
+    io_contract_for_task as registry_io_contract_for_task,
+    normalize_task,
+    task_profile,
+)
+
 
 class BridgeError(ValueError):
     """Raised when an XForge-to-SURE bridge manifest is invalid."""
@@ -166,47 +177,23 @@ def _modelscope_model_url(source: dict[str, Any]) -> str:
 
 
 def _sure_task_name(task_type: str) -> str:
-    mapping = {
-        "asr": "ASR",
-        "s2tt": "S2TT",
-        "slu": "SLU",
-        "gr": "GR",
-        "ser": "SER",
-        "tts": "TTS",
-    }
-    return mapping.get(task_type.lower(), task_type.upper())
+    return normalize_task(task_type).replace("_", "-").upper()
 
 
 def _default_tool_name(task_type: str) -> str:
-    mapping = {
-        "asr": "asr_transcribe",
-        "s2tt": "s2tt_translate",
-        "slu": "slu_understand",
-        "gr": "gender_recognize",
-        "ser": "emotion_recognize",
-        "tts": "tts_synthesize",
-    }
-    return mapping.get(task_type.lower(), f"{task_type.lower()}_predict")
+    normalized = normalize_task(task_type)
+    if normalized == "speech_understanding":
+        return "speech_understanding"
+    return str(task_profile(normalized)["tool_name"])
 
 
 def _io_contract_for_task(task_type: str) -> dict[str, Any]:
-    if task_type.lower() == "tts":
-        return {
-            "input_field": "text",
-            "input_type": "text",
-            "output_type": "audio_path",
-            "primary_field": "audio_path",
-            "required_fields": ["audio_path"],
-            "nonempty_fields": ["audio_path"],
-        }
-    return {
-        "input_field": "audio_path",
-        "input_type": "audio_path",
-        "output_type": "text",
-        "primary_field": "text",
-        "required_fields": ["text"],
-        "nonempty_fields": ["text"],
-    }
+    normalized = normalize_task(task_type)
+    if normalized == "speech_understanding":
+        normalized = "asr"
+    contract = registry_io_contract_for_task(normalized)
+    input_field = "text" if contract["input_type"] == "text_with_reference_audio" else "audio_path"
+    return {**contract, "input_field": input_field}
 
 
 def _docker_image_tag(model_name: str) -> str:

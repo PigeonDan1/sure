@@ -13,6 +13,13 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+
 
 def _load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
@@ -96,13 +103,13 @@ def _tool_names(config: dict[str, Any]) -> list[str]:
             names.append(str(tool["name"]))
     if names:
         return names
-    defaults = {
-        "ASR": "transcribe_audio",
-        "S2TT": "translate_audio",
-        "TTS": "synthesize_speech",
-        "VC": "convert_voice",
-    }
-    return [defaults.get(_model_task(config), "predict")]
+    task = normalize_task(_model_task(config))
+    if task == "speech_understanding":
+        return ["speech_understanding"]
+    try:
+        return [str(task_profile(task)["tool_name"])]
+    except ValueError:
+        return ["predict"]
 
 
 def _respond(payload: dict[str, Any]) -> None:
@@ -111,14 +118,22 @@ def _respond(payload: dict[str, Any]) -> None:
 
 
 def _tool_schema(task: str) -> dict[str, Any]:
-    if task == "VC":
+    normalized = normalize_task(task)
+    if normalized == "vc":
         required = ["source_audio_path", "reference_audio_path"]
         properties = {
             "source_audio_path": {"type": "string"},
             "reference_audio_path": {"type": "string"},
             "output_path": {"type": "string"},
         }
-    elif task == "TTS":
+    elif normalized == "tse":
+        required = ["mixed_audio_path", "enrollment_audio_path"]
+        properties = {
+            "mixed_audio_path": {"type": "string"},
+            "enrollment_audio_path": {"type": "string"},
+            "output_path": {"type": "string"},
+        }
+    elif normalized == "tts":
         required = ["text"]
         properties = {
             "text": {"type": "string"},

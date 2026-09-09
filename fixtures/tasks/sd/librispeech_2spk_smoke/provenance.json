@@ -1,0 +1,86 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "sd",
+  "dataset": {
+    "repository": "OpenSLR SLR12",
+    "revision": "LibriSpeech ASR corpus release",
+    "configuration": "test-clean or test-other",
+    "split": "test",
+    "license": "CC-BY-4.0",
+    "license_url": "https://www.openslr.org/resources/12/LICENSE.TXT",
+    "source_url": "https://www.openslr.org/12",
+    "citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf",
+    "source_id": "librispeech",
+    "metadata_sha256": "f1f01fd69593e1939a49aeeb30aa36319fbc974089903434ae6100ddc7140a75",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "librispeech_2spk_001",
+      "librispeech_2spk_002",
+      "librispeech_2spk_003"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "6c986896dcffc5e23894b7eaf212e8e387ba8b4d505c5bf95d38ed3907aabcb3"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    },
+    {
+      "id": "legacy_concat_001",
+      "command": "ffmpeg concat 1089-134686-0001.wav + 0.4s silence + 1188-133604-0010.wav"
+    },
+    {
+      "id": "legacy_concat_002",
+      "command": "ffmpeg concat 121-121726-0001.wav + 0.4s silence + 1221-135766-0002.wav"
+    },
+    {
+      "id": "legacy_concat_003",
+      "command": "ffmpeg concat 1284-1180-0001.wav + 0.4s silence + 1320-122612-0002.wav"
+    }
+  ],
+  "files": [
+    {
+      "path": "librispeech_2spk_001.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "d4de0fb2f1fb562649fb0faa000e07fd34080fe0362374364acaed2d3de40ddb",
+      "transform_id": "legacy_concat_001",
+      "source_sha256": [
+        "6b0b24796a1017a65007d392b9f8d6e64e030cdafbf82d8ffa4235fe4b371443",
+        "f0ba1d597a718a89e2906bd2173cf77d968efe5deee9248bd7cd71debafc3194"
+      ]
+    },
+    {
+      "path": "librispeech_2spk_002.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "b365c18de362766985b3e17344cc87265a6bbcdd49b78c56204d5d150f9c4b99",
+      "transform_id": "legacy_concat_002",
+      "source_sha256": [
+        "b1657235d4fbcfb2d8468b738e3c77b8bf171dc90ad6c1ca7cd7f57fb994059b",
+        "65b222837919ccbb924a4e1077413ea7cc6af3e68b663b012a9539d5c05850f0"
+      ]
+    },
+    {
+      "path": "librispeech_2spk_003.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "53131e621ab6cce4228399772ba302aa1082d4044a2ed4d28b434bc171adb780",
+      "transform_id": "legacy_concat_003",
+      "source_sha256": [
+        "7d6d027a1d7f75e8704ee7d3ffc9a7c18f37d4c26049f00794d042551c7fa2e0",
+        "096812d54a8d3c4c5723a98bae12c783e087c98a407bc8094dcf2be1eb0cc3ad"
+      ]
+    }
+  ]
+}

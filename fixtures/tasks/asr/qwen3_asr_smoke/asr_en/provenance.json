@@ -1,0 +1,65 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "asr",
+  "dataset": {
+    "repository": "OpenSLR SLR12",
+    "revision": "LibriSpeech ASR corpus release",
+    "configuration": "test-clean or test-other",
+    "split": "test",
+    "license": "CC-BY-4.0",
+    "license_url": "https://www.openslr.org/resources/12/LICENSE.TXT",
+    "source_url": "https://www.openslr.org/12",
+    "citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf",
+    "source_id": "librispeech",
+    "metadata_sha256": "262f0de0671583e7c2fcc5f609e267e08ea3aeea87cfd796e23e4699b4446046",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "367-130732-0006",
+      "4198-12281-0009",
+      "3005-163389-0016"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "4b4b66f7706fc243b6c867d402fb7a54ae3b1d9c9f4daefe1e479e0ae7b0ed20"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "sample_1_367-130732-0006.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d",
+      "transform_id": "source_media_copy",
+      "source_sha256": "8acca801d5380560525c8573f1454c61697cffc50b081e47919ba60eb80c9d7d"
+    },
+    {
+      "path": "sample_2_4198-12281-0009.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "638af42c138c0bb5e54b1fd9a77217667f28b4a13eb265d9e96b764c6fade106",
+      "transform_id": "source_media_copy",
+      "source_sha256": "638af42c138c0bb5e54b1fd9a77217667f28b4a13eb265d9e96b764c6fade106"
+    },
+    {
+      "path": "sample_3_3005-163389-0016.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "63fdccf41c29968e7140e9b01ed22e5b3f3fbc05fc0c92f453a22a8244691495",
+      "transform_id": "source_media_copy",
+      "source_sha256": "63fdccf41c29968e7140e9b01ed22e5b3f3fbc05fc0c92f453a22a8244691495"
+    }
+  ]
+}

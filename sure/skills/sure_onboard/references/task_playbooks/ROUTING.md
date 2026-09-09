@@ -12,8 +12,8 @@ Route from the normalized task fields in `MODEL_INPUT` and `model.spec.yaml`:
 - `allowed_tasks`
 - model README or upstream claim, only when the structured fields are missing
 
-Use uppercase task names in routing decisions: `ASR`, `SPEECH_UNDERSTANDING`,
-`TTS`, `VC`, `KWS`.
+Normalize task names through the generated evaluation capability registry before
+routing. The registry, rather than this document, defines the accepted set.
 
 ## Default Rule
 
@@ -32,14 +32,17 @@ fallback to reading all task playbooks.
 | Task signal | Read | Do not read by default |
 |-------------|------|------------------------|
 | `ASR`, `asr`, automatic speech recognition, speech-to-text only | `task_playbooks/ASR.md` | `TTS.md`, `VC.md`, `KWS.md`, `SPEECH_UNDERSTANDING.md` |
-| `S2TT`, `SER`, `SLU`, `GR`, or multi-task speech understanding | `task_playbooks/SPEECH_UNDERSTANDING.md` | `TTS.md`, `VC.md`, `KWS.md` unless the model also supports those tasks |
+| `Classification`, `S2TT`, `SER`, `SLU`, `GR`, `SD`, `SA-ASR`, `SE`, `SV`, `TSE`, or `VAD` | `task_playbooks/SPEECH_UNDERSTANDING.md` | Other atomic playbooks unless the model also supports those tasks |
+| `SPEECH_UNDERSTANDING` | `task_playbooks/SPEECH_UNDERSTANDING.md` plus every atomic playbook present for generated suite members | None of the generated suite members |
 | `TTS`, text-to-speech, speech synthesis | `task_playbooks/TTS.md` | `ASR.md`, `VC.md`, `KWS.md` |
 | `VC`, voice conversion, timbre conversion, speech conversion | `task_playbooks/VC.md` | `ASR.md`, `TTS.md`, `KWS.md` |
 | `KWS`, keyword spotting, wake word detection | `task_playbooks/KWS.md` | `ASR.md`, `TTS.md`, `VC.md` |
 
 ## Multi-Task Models
 
-Read one playbook per supported task. Keep the selected set explicit.
+Read one playbook per supported atomic task. Keep the selected set explicit.
+`speech_understanding` is the exception to selective routing: it expands to all
+public tasks in `engine-capabilities.generated.json`.
 
 Example:
 
@@ -50,10 +53,9 @@ read:
   - task_playbooks/ASR.md
 ```
 
-For multi-task speech understanding models, `SPEECH_UNDERSTANDING.md` is the
-composite playbook. Add `ASR.md` when ASR is part of the validation plan. For
-S2TT/SER/SLU/GR, use the atomic fixture indexes listed by the composite
-playbook.
+For `speech_understanding`, the composite playbook and fixture index enumerate
+the full engine-bound suite. Do not infer or remove suite members from model
+README keywords.
 
 ## Fixture Linkage
 

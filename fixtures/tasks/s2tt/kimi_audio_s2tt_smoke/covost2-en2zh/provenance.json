@@ -1,0 +1,65 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "s2tt",
+  "dataset": {
+    "repository": "facebookresearch/covost",
+    "revision": "CoVoST 2 release",
+    "configuration": "en-zh",
+    "split": "test",
+    "license": "CC0-1.0",
+    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source_url": "https://github.com/facebookresearch/covost",
+    "citation_url": "https://aclanthology.org/2020.findings-emnlp.304/",
+    "source_id": "covost2",
+    "metadata_sha256": "d8e5cc6531b2911762b68362478573cf833791782eae67803ad83b1aa63b5c58",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "common_voice_en_670098",
+      "common_voice_en_19555521",
+      "common_voice_en_19589217"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "4f47dbe60e99fa09583987053476bfe31383a17e6197c9bf98fed3917e08a185"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "sample_1_common_voice_en_670098.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "b3994bfd54730cf4a44b29ef0d746921cb3f51a192ca7b432c37908dabb2d7dd",
+      "transform_id": "source_media_copy",
+      "source_sha256": "b3994bfd54730cf4a44b29ef0d746921cb3f51a192ca7b432c37908dabb2d7dd"
+    },
+    {
+      "path": "sample_2_common_voice_en_19555521.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "7dd1678df62ea1b3e0bb823c59391c1378f7b94257015b73023b3a21bd644277",
+      "transform_id": "source_media_copy",
+      "source_sha256": "7dd1678df62ea1b3e0bb823c59391c1378f7b94257015b73023b3a21bd644277"
+    },
+    {
+      "path": "sample_3_common_voice_en_19589217.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "5bb7d2862dacde00b5ff3400e748632e5d60f305a9cedd7402e50baf7969a81a",
+      "transform_id": "source_media_copy",
+      "source_sha256": "5bb7d2862dacde00b5ff3400e748632e5d60f305a9cedd7402e50baf7969a81a"
+    }
+  ]
+}

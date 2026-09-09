@@ -1,0 +1,85 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "vad",
+  "dataset": {
+    "repository": "OpenSLR SLR12",
+    "revision": "LibriSpeech ASR corpus release",
+    "configuration": "test-clean or test-other",
+    "split": "test",
+    "license": "CC-BY-4.0",
+    "license_url": "https://www.openslr.org/resources/12/LICENSE.TXT",
+    "source_url": "https://www.openslr.org/12",
+    "citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf",
+    "source_id": "librispeech",
+    "metadata_sha256": "a5fa46c7c9cd7661bc405cf53957095408de54f8b2efa1143ade41085355292e",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "vad_1580",
+      "vad_1089"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "57a67f30538d1e70cbbebb6329288f3a581c224f58d5875a48866cb93d5432f7"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    },
+    {
+      "id": "pad_vad_1580",
+      "command": "ffmpeg -i 1580-141083-0040.wav -af 'adelay=500,apad=pad_dur=0.5' -ar 16000 -ac 1 -c:a pcm_s16le padded_1580.wav"
+    },
+    {
+      "id": "pad_vad_1089",
+      "command": "ffmpeg -i 1089-134691-0001.wav -af 'adelay=500,apad=pad_dur=0.5' -ar 16000 -ac 1 -c:a pcm_s16le padded_1089.wav"
+    }
+  ],
+  "files": [
+    {
+      "path": "padded_1089.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "066bc8ed3cfa67d321b803210a2447bcc813ae152f870c6517781805ad7a6303",
+      "transform_id": "pad_vad_1089",
+      "source_sha256": [
+        "8dd3a119fa980b10e35a1f2e9f1378ef9deccaac5486c82ffc575c9baa69f2e2"
+      ]
+    },
+    {
+      "path": "padded_1580.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "e7222ecc78a1a73749cfce5745c7966859ffb47608b6adbb50a63d87be7d45fc",
+      "transform_id": "pad_vad_1580",
+      "source_sha256": [
+        "01ce40104cd4f80a5ec13db6d929c24c5cc3d5fee9c3d9ef219887f1425bf88e"
+      ]
+    },
+    {
+      "path": "source_1089.wav",
+      "roles": [
+        "transform_source"
+      ],
+      "sha256": "8dd3a119fa980b10e35a1f2e9f1378ef9deccaac5486c82ffc575c9baa69f2e2",
+      "transform_id": "source_media_copy",
+      "source_sha256": "8dd3a119fa980b10e35a1f2e9f1378ef9deccaac5486c82ffc575c9baa69f2e2"
+    },
+    {
+      "path": "source_1580.wav",
+      "roles": [
+        "transform_source"
+      ],
+      "sha256": "01ce40104cd4f80a5ec13db6d929c24c5cc3d5fee9c3d9ef219887f1425bf88e",
+      "transform_id": "source_media_copy",
+      "source_sha256": "01ce40104cd4f80a5ec13db6d929c24c5cc3d5fee9c3d9ef219887f1425bf88e"
+    }
+  ]
+}

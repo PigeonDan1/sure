@@ -1,0 +1,2 @@
+{"key":"speaker_1580","task":"CLASSIFICATION","language":"en","dataset":"librispeech_test_clean_speaker_classification","audio":"1580-141083-0040.wav","label":"speaker_1580","ground_truth":"speaker_1580","speaker_id":"1580"}
+{"key":"speaker_1089","task":"CLASSIFICATION","language":"en","dataset":"librispeech_test_clean_speaker_classification","audio":"1089-134691-0001.wav","label":"speaker_1089","ground_truth":"speaker_1089","speaker_id":"1089"}

@@ -30,6 +30,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+
 STAGES: tuple[str, ...] = (
     "guards",
     "tool_name",
@@ -44,12 +51,6 @@ STAGES: tuple[str, ...] = (
     "finalize",
 )
 PROTOCOL_IDS = ("standard_system", "strict_core")
-TASK_TOOL_DEFAULTS = {
-    "ASR": "transcribe_audio",
-    "S2TT": "translate_audio",
-    "TTS": "synthesize_speech",
-    "VC": "convert_voice",
-}
 DEFAULT_TOOL_NAME = "transcribe_audio"
 DEFAULT_SMOKE_SAMPLES = 10
 STAGE_MARKER = "INFER_STAGE_FAILED"
@@ -243,8 +244,11 @@ def stage_tool_name(ctx: Ctx) -> None:
                     break
             if not tool_name:
                 model = config.get("model") if isinstance(config.get("model"), dict) else {}
-                task = str(model.get("task") or config.get("task") or config.get("task_type") or "").strip().upper()
-                tool_name = TASK_TOOL_DEFAULTS.get(task, "")
+                task = str(model.get("task") or config.get("task") or config.get("task_type") or "").strip()
+                if task:
+                    normalized = normalize_task(task)
+                    if normalized != "speech_understanding":
+                        tool_name = str(task_profile(normalized)["tool_name"])
     ctx.tool_name = tool_name or DEFAULT_TOOL_NAME
     ctx.child_env["TOOL_NAME"] = ctx.tool_name
 

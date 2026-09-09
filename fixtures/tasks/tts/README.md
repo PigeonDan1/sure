@@ -1,5 +1,9 @@
 # TTS Fixture Index
 
+Approved harness fixture: `fixtures/tasks/tts/librispeech_prompt_smoke/`, using
+traceable LibriSpeech prompts and reference audio. The older fixture below
+remains available.
+
 Use this index for text-to-speech models. Copy selected prompts and references
 into:
 

@@ -1,5 +1,9 @@
 # GR Fixture Index
 
+Approved harness fixture: `fixtures/tasks/gr/librispeech_gender_smoke/`, with
+labels derived from LibriSpeech speaker metadata and recorded in
+`provenance.json`. The older fixture below remains available.
+
 Representative fixture:
 
 ```text
