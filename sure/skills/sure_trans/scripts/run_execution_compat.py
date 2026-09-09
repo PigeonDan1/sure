@@ -28,6 +28,10 @@ PROBE = """import json
 try:
  import torch
  result={'python_ok':True,'torch':torch.__version__,'cuda_available':torch.cuda.is_available(),'bf16_supported':bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())}
+ if result['cuda_available']:
+  result['gpu_count']=torch.cuda.device_count()
+  result['gpu_name']=torch.cuda.get_device_name(0)
+  result['compute_capability']=list(torch.cuda.get_device_capability(0))
 except Exception as error:
  result={'python_ok':True,'torch_error':str(error),'cuda_available':False,'bf16_supported':False}
 try:
@@ -105,6 +109,7 @@ def main() -> int:
     model_framework = str(resolved["model_framework"]).strip().lower()
     transformers_required = model_framework == "transformers"
     requested = str(resolved.get("device") or "auto")
+    resolved_surface = str(resolved.get("execution_surface") or "")
     gpu_required = resolved.get("gpu_required") is True or requested == "cuda"
     bf16_required = resolved.get("bf16_required") is True
     version = str(resolved.get("image_version") or "0.1.0")
@@ -123,15 +128,33 @@ def main() -> int:
         log_path.write_text(
             f"$ {' '.join(command[:-1])} <probe>\n{stdout}\n{stderr}", encoding="utf-8"
         )
-    elif requested == "cpu":
-        command, process, duration_ms = run_probe(image, False)
+    elif requested == "cpu" or resolved_surface == "local_docker":
+        use_gpu = requested != "cpu"
+        command, process, duration_ms = run_probe(image, use_gpu)
         probe_command: list[str] = command
         exit_code: int | None = process.returncode
         stdout, stderr = process.stdout, process.stderr
         fallback = None
         execution_surface = "local_docker"
+        if requested == "auto" and process.returncode != 0 and not gpu_required:
+            gpu_command = command
+            gpu_exit_code = process.returncode
+            gpu_stderr = process.stderr.strip()
+            command, process, cpu_duration_ms = run_probe(image, False)
+            duration_ms += cpu_duration_ms
+            probe_command = command
+            exit_code = process.returncode
+            stdout, stderr = process.stdout, process.stderr
+            fallback = {
+                "reason": "Local CUDA probe failed; model does not require CUDA, so auto retried on CPU locally.",
+                "gpu_command": gpu_command,
+                "gpu_exit_code": gpu_exit_code,
+                "gpu_stderr": gpu_stderr[:4000],
+                "cpu_command": command,
+                "cpu_exit_code": process.returncode,
+            }
         log_path.write_text(
-            f"$ {' '.join(command[:-1])} <probe>\n{stdout}\n{stderr}", encoding="utf-8"
+            f"$ {' '.join(probe_command[:-1])} <probe>\n{stdout}\n{stderr}", encoding="utf-8"
         )
     else:
         registry_ref = (
@@ -227,6 +250,8 @@ def main() -> int:
         incompatibilities.append("model requires BF16 but the selected GPU does not report BF16 support")
     if transformers_required and "transformers" not in probe:
         incompatibilities.append("Transformers import failed in the source runtime")
+    if execution_surface == "local_docker" and selected == "cuda" and "--gpus" not in probe_command:
+        incompatibilities.append("local CUDA probe did not run through Docker with --gpus")
     payload = {
         "schema": "sure.trans.execution_compat.v1",
         "status": "ready" if not incompatibilities else "blocked",
