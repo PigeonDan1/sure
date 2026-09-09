@@ -113,16 +113,24 @@ tests/fixtures/
 Task-level fixture indexes:
 
 - ASR: `fixtures/tasks/asr/README.md`
+- Classification: `fixtures/tasks/classification/README.md`
+- GR: `fixtures/tasks/gr/README.md`
+- KWS: `fixtures/tasks/kws/README.md`
 - SD: `fixtures/tasks/sd/README.md`
 - SA-ASR: `fixtures/tasks/sa_asr/README.md`
 - S2TT: `fixtures/tasks/s2tt/README.md`
+- SE: `fixtures/tasks/se/README.md`
 - SER: `fixtures/tasks/ser/README.md`
 - SLU: `fixtures/tasks/slu/README.md`
-- GR: `fixtures/tasks/gr/README.md`
+- SV: `fixtures/tasks/sv/README.md`
+- TSE: `fixtures/tasks/tse/README.md`
 - Speech understanding composite: `fixtures/tasks/speech_understanding/README.md`
 - TTS: `fixtures/tasks/tts/README.md`
+- VAD: `fixtures/tasks/vad/README.md`
 - VC: `fixtures/tasks/vc/README.md`
-- KWS: `fixtures/tasks/kws/README.md`
+
+The `speech_understanding` composite always includes the full generated engine
+suite. All other task values select only their own atomic fixture.
 
 ### ASR (Automatic Speech Recognition)
 

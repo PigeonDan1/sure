@@ -1,5 +1,10 @@
 # SLU Fixture Index
 
+Approved harness fixture: `fixtures/tasks/slu/fluent_speech_commands_smoke/`,
+containing real Fluent Speech Commands test rows with source URLs and hashes in
+`provenance.json`. The older fixture below remains available for existing
+integrations.
+
 Representative fixture:
 
 ```text

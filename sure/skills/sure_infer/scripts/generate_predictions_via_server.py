@@ -21,6 +21,13 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
@@ -206,7 +213,10 @@ def _normalize_tts_language(language: str | None) -> str:
 
 
 def _normalize_task(value: Any) -> str:
-    return str(value or "").strip().upper().replace("-", "_")
+    value_text = str(value or "").strip()
+    if not value_text:
+        return ""
+    return normalize_task(value_text).upper()
 
 
 def _split_metrics(value: str | None) -> list[str]:
@@ -289,7 +299,7 @@ def _build_tool_arguments(
     tool_args: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     task_name = task.upper()
-    if task_name in {"TTS", "VC"}:
+    if task_name in {"TTS", "VC", "SE", "TSE"}:
         key = str(sample.get("key", "sample"))
         prompt_audio_path = _sample_reference_audio_path(repo_root, sample, audio_path)
 
@@ -300,12 +310,29 @@ def _build_tool_arguments(
             or sample.get("target_text")
             or ""
         )
-        if not target_text:
+        if task_name in {"TTS", "VC"} and not target_text:
             raise ValueError(f"TTS/VC sample has no target text: {key}")
 
         output_audio_dir.mkdir(parents=True, exist_ok=True)
         output_audio_path = str(output_audio_dir / f"{_safe_filename(key)}.wav")
-        if task_name == "VC":
+        if task_name == "SE":
+            arguments = {
+                "audio_path": str(audio_path),
+                "noisy_audio_path": str(audio_path),
+                "output_path": output_audio_path,
+            }
+        elif task_name == "TSE":
+            enrollment = _resolve_audio_field_path(
+                repo_root,
+                sample.get("enrollment_audio") or sample.get("reference_audio"),
+            ) or prompt_audio_path
+            arguments = {
+                "audio_path": str(audio_path),
+                "mixed_audio_path": str(audio_path),
+                "enrollment_audio_path": str(enrollment),
+                "output_path": output_audio_path,
+            }
+        elif task_name == "VC":
             arguments = {
                 "source_audio_path": str(audio_path),
                 "source": str(audio_path),
@@ -678,8 +705,9 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
                 # str() on the list would write the Python literal, brackets and
                 # quotes included, straight into the prediction file.
                 value = value[0]
-            return str(value), {"text": str(value)}
-        if task_name in {"TTS", "VC"}:
+            field = "translation" if task_name == "S2TT" else "text"
+            return str(value), {field: str(value), "text": str(value)}
+        if task_name in {"TTS", "VC", "SE", "TSE"}:
             value = (
                 prediction.get("audio_path")
                 or prediction.get("path")
@@ -695,42 +723,64 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
                 for key in ("source_audio_path", "reference_audio_path"):
                     if prediction.get(key) is not None:
                         normalized[key] = prediction[key]
+            elif task_name == "SE":
+                normalized["enhanced_audio"] = str(value)
+            elif task_name == "TSE":
+                normalized["prediction_audio"] = str(value)
             for key in ("sample_rate", "duration_ms"):
                 if prediction.get(key) is not None:
                     normalized[key] = prediction[key]
             return str(value), normalized
-        if task_name in {"SER", "GR"}:
+        if task_name in {"CLASSIFICATION", "SER", "GR"}:
             value = prediction.get("label") or payload.get("label") or payload.get("text") or ""
             return str(value), {"label": str(value)}
         if task_name == "SLU":
             value = prediction.get("text") or prediction.get("label") or payload.get("text") or payload.get("label") or ""
-            normalized = {"text": str(value)}
+            normalized = {"answer": str(value), "text": str(value)}
             if prediction.get("label") is not None:
                 normalized["label"] = prediction["label"]
             return str(value), normalized
-        if task_name in {"SD", "SA-ASR"}:
+        if task_name in {"SD", "SA-ASR", "SA_ASR"}:
             if prediction.get("segments") is not None:
                 return json.dumps(prediction["segments"], ensure_ascii=False), {"segments": prediction["segments"]}
             value = prediction.get("annotation_path") or prediction.get("annotation") or payload.get("text") or ""
             return str(value), {"annotation": value}
         if task_name == "KWS":
             value = prediction.get("score") if prediction.get("score") is not None else payload.get("score", "")
-            normalized = {"score": value}
+            normalized = {
+                "detected": bool(prediction.get("detected", payload.get("detected", False))),
+                "score": value,
+            }
+            if prediction.get("keyword") is not None:
+                normalized["keyword"] = prediction["keyword"]
             if prediction.get("events") is not None:
                 normalized["events"] = prediction["events"]
             return str(value), normalized
+        if task_name == "VAD":
+            normalized = {}
+            for field in ("speech_segments", "frame_scores"):
+                if prediction.get(field) is not None:
+                    normalized[field] = prediction[field]
+            return json.dumps(normalized, ensure_ascii=False), normalized
+        if task_name == "SV":
+            embedding = prediction.get("embedding") or payload.get("embedding") or []
+            return json.dumps(embedding), {"embedding": embedding}
         value = payload.get("text", "")
         return str(value), {"text": str(value)}
 
     value = str(payload)
-    if task_name in {"TTS", "VC"}:
+    if task_name in {"TTS", "VC", "SE", "TSE"}:
         normalized = {"audio_path": value}
         if task_name == "VC":
             normalized["converted_audio"] = value
+        elif task_name == "SE":
+            normalized["enhanced_audio"] = value
+        elif task_name == "TSE":
+            normalized["prediction_audio"] = value
         return value, normalized
-    if task_name in {"SER", "GR"}:
+    if task_name in {"CLASSIFICATION", "SER", "GR"}:
         return value, {"label": value}
-    if task_name in {"SD", "SA-ASR"}:
+    if task_name in {"SD", "SA-ASR", "SA_ASR"}:
         return value, {"annotation": value}
     if task_name == "KWS":
         return value, {"score": value}

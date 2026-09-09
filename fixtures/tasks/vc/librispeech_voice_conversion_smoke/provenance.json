@@ -1,0 +1,75 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "vc",
+  "dataset": {
+    "repository": "OpenSLR SLR12",
+    "revision": "LibriSpeech ASR corpus release",
+    "configuration": "test-clean or test-other",
+    "split": "test",
+    "license": "CC-BY-4.0",
+    "license_url": "https://www.openslr.org/resources/12/LICENSE.TXT",
+    "source_url": "https://www.openslr.org/12",
+    "citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf",
+    "source_id": "librispeech",
+    "metadata_sha256": "12af85883f0726cd1f09ee68dfc1fa1025cc3457f48f82331eebef0842dbdcc6",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "vc_1089_to_1580",
+      "vc_1580_to_1089"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "da57398352f8b181766d0cbd194f6666fcaba5805ae80f92d2243ded5c885b49"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "reference_1089.wav",
+      "roles": [
+        "reference_audio"
+      ],
+      "sha256": "b2b3f9df4e88a51a0086aa71973917355774decba3e89abbe9b1d5b2bef19182",
+      "transform_id": "source_media_copy",
+      "source_sha256": "b2b3f9df4e88a51a0086aa71973917355774decba3e89abbe9b1d5b2bef19182"
+    },
+    {
+      "path": "reference_1580.wav",
+      "roles": [
+        "reference_audio"
+      ],
+      "sha256": "2807ec57c18bd3deb0f838990f60643508f37c5138be1c7b9da4a9721b859668",
+      "transform_id": "source_media_copy",
+      "source_sha256": "2807ec57c18bd3deb0f838990f60643508f37c5138be1c7b9da4a9721b859668"
+    },
+    {
+      "path": "source_1089.wav",
+      "roles": [
+        "audio",
+        "source_audio"
+      ],
+      "sha256": "8dd3a119fa980b10e35a1f2e9f1378ef9deccaac5486c82ffc575c9baa69f2e2",
+      "transform_id": "source_media_copy",
+      "source_sha256": "8dd3a119fa980b10e35a1f2e9f1378ef9deccaac5486c82ffc575c9baa69f2e2"
+    },
+    {
+      "path": "source_1580.wav",
+      "roles": [
+        "audio",
+        "source_audio"
+      ],
+      "sha256": "01ce40104cd4f80a5ec13db6d929c24c5cc3d5fee9c3d9ef219887f1425bf88e",
+      "transform_id": "source_media_copy",
+      "source_sha256": "01ce40104cd4f80a5ec13db6d929c24c5cc3d5fee9c3d9ef219887f1425bf88e"
+    }
+  ]
+}

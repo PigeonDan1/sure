@@ -16,6 +16,39 @@ import sys
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import (
+    normalize_task,
+    speech_understanding_tasks,
+    task_profile,
+)
+
+AUDIO_FIELDS = (
+    "audio",
+    "wav",
+    "audio_path",
+    "source_audio",
+    "reference_audio",
+    "noisy_audio",
+    "mixed_audio",
+    "enrollment_audio",
+    "prompt_audio",
+)
+ANNOTATION_FIELDS = (
+    "ground_truth",
+    "target_text",
+    "reference_text",
+    "text",
+    "segments",
+    "speech_segments",
+    "label",
+    "intent",
+    "speaker_id",
+)
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -27,7 +60,7 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def canonical_task(task: str) -> str:
-    return task.replace("-", "_").lower()
+    return normalize_task(task)
 
 
 def infer_repo_root(model_dir: Path) -> Path:
@@ -60,13 +93,11 @@ def candidate_from_spec(run_dir: Path, repo_root: Path, task: str) -> Path | Non
 
 
 def default_fixture_dir(repo_root: Path, task: str) -> Path | None:
-    task_dir = repo_root / "fixtures" / "tasks" / canonical_task(task)
-    if not task_dir.exists():
+    normalized = canonical_task(task)
+    configured = repo_root / str(task_profile(normalized)["fixture_root"])
+    if not configured.exists():
         return None
-    if (task_dir / "gt.jsonl").exists():
-        return task_dir
-    options = sorted(path.parent for path in task_dir.glob("*/gt.jsonl"))
-    return options[0] if options else None
+    return configured if (configured / "gt.jsonl").is_file() else None
 
 
 def load_samples(source_dir: Path) -> list[dict[str, Any]]:
@@ -81,7 +112,7 @@ def load_samples(source_dir: Path) -> list[dict[str, Any]]:
             raise ValueError(f"{gt}:{line_no} is not valid JSON: {exc}") from exc
         if not isinstance(row, dict):
             raise ValueError(f"{gt}:{line_no} must be a JSON object")
-        audio = row.get("audio") or row.get("wav") or row.get("prompt_audio") or row.get("reference_audio")
+        audio = next((row.get(field) for field in AUDIO_FIELDS if row.get(field)), None)
         if not isinstance(audio, str) or not audio:
             raise ValueError(f"{gt}:{line_no} must contain a non-empty relative audio/wav field")
         audio_path = Path(audio)
@@ -90,21 +121,29 @@ def load_samples(source_dir: Path) -> list[dict[str, Any]]:
         if not (source_dir / audio_path).exists():
             raise FileNotFoundError(f"Fixture audio referenced by {gt}:{line_no} does not exist: {audio}")
         key = row.get("key") or row.get("id") or audio_path.stem
-        annotation_fields = [
-            field
-            for field in ("ground_truth", "target_text", "text", "segments", "label", "intent")
-            if field in row
-        ]
+        annotation_fields = [field for field in ANNOTATION_FIELDS if field in row]
         if not annotation_fields:
             raise ValueError(
                 f"{gt}:{line_no} must contain at least one annotation field "
-                "(ground_truth, target_text, text, segments, label, or intent)"
+                f"({', '.join(ANNOTATION_FIELDS)})"
             )
+        audio_roles: dict[str, str] = {}
+        for field in AUDIO_FIELDS:
+            value = row.get(field)
+            if not isinstance(value, str) or not value:
+                continue
+            role_path = Path(value)
+            if role_path.is_absolute() or ".." in role_path.parts:
+                raise ValueError(f"{gt}:{line_no} {field} must stay inside the fixture directory")
+            if not (source_dir / role_path).is_file():
+                raise FileNotFoundError(f"Fixture {field} referenced by {gt}:{line_no} does not exist: {value}")
+            audio_roles[field] = str((source_dir / role_path).resolve())
         sample = {
             "key": str(key),
             "audio": audio,
             "audio_path": str((source_dir / audio_path).resolve()),
             "annotation_fields": annotation_fields,
+            "audio_roles": audio_roles,
         }
         if isinstance(row.get("duration_sec"), (int, float)):
             sample["duration_sec"] = row["duration_sec"]
@@ -126,6 +165,25 @@ def replace_tree(source_dir: Path, staged_dir: Path) -> None:
             shutil.rmtree(staged_dir)
     staged_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_dir, staged_dir)
+
+
+def stage_fixture(repo_root: Path, model_dir: Path, task: str) -> dict[str, Any]:
+    source_dir = default_fixture_dir(repo_root, task)
+    if source_dir is None:
+        raise FileNotFoundError(f"No fixture source found for task {task}")
+    source_samples = load_samples(source_dir)
+    staged_dir = model_dir / "fixture" / task / source_dir.name
+    replace_tree(source_dir, staged_dir)
+    staged_samples = load_samples(staged_dir)
+    return {
+        "task_type": task,
+        "source_dir": str(source_dir),
+        "staged_dir": str(staged_dir),
+        "gt_jsonl": str(staged_dir / "gt.jsonl"),
+        "sample_count": len(staged_samples),
+        "samples": staged_samples,
+        "source_sample_count": len(source_samples),
+    }
 
 
 def main() -> int:
@@ -150,6 +208,46 @@ def main() -> int:
     model_dir = Path(model_dir_raw).resolve()
     task = canonical_task(task_raw)
     repo_root = infer_repo_root(model_dir)
+
+    if task == "speech_understanding":
+        if args.source_dir:
+            print(
+                "--source-dir cannot represent the complete speech_understanding suite; "
+                "use the generated task registry fixtures",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            subtask_fixtures = [
+                stage_fixture(repo_root, model_dir, subtask)
+                for subtask in speech_understanding_tasks()
+            ]
+        except (FileNotFoundError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        primary = subtask_fixtures[0]
+        manifest = {
+            "model_id": resolved.get("model_id", ""),
+            "model_name": resolved.get("model_name", ""),
+            "model_dir": str(model_dir),
+            "task_type": task,
+            "source_dir": primary["source_dir"],
+            "staged_dir": primary["staged_dir"],
+            "gt_jsonl": primary["gt_jsonl"],
+            "sample_count": primary["sample_count"],
+            "link_policy": args.link_policy,
+            "samples": primary["samples"],
+            "suite_members": list(speech_understanding_tasks()),
+            "subtask_fixtures": subtask_fixtures,
+            "validation_payload_env": "SURE_VALIDATE_INPUT_JSON",
+            "notes": "All engine-bound speech_understanding fixtures were staged; the ASR fixture remains the primary bounded infer payload.",
+        }
+        write_json(Path(args.produces), manifest)
+        print(
+            f"Prepared speech_understanding suite: {len(subtask_fixtures)} task fixtures, "
+            f"primary={primary['staged_dir']}"
+        )
+        return 0
 
     if args.source_dir:
         source_dir = Path(args.source_dir)

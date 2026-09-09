@@ -1,0 +1,134 @@
+{
+	"schema": "sure.harness_task_profiles.v1",
+	"aliases": {
+		"sa-asr": "sa_asr",
+		"saasr": "sa_asr",
+		"speech-enhancement": "se",
+		"speech_enhancement": "se"
+	},
+	"tasks": {
+		"asr": {
+			"engine_task": "asr",
+			"default_language": "en",
+			"fixture_root": "fixtures/tasks/asr/qwen3_asr_smoke/asr_en",
+			"evaluation_bridge": "text_pair",
+			"tool_name": "transcribe_audio",
+			"io_contract": { "input_type": "audio_path", "primary_field": "text" }
+		},
+		"classification": {
+			"engine_task": "classification",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/classification/librispeech_speaker_smoke",
+			"evaluation_bridge": "text_pair",
+			"tool_name": "classify_audio",
+			"io_contract": { "input_type": "audio_path", "primary_field": "label" }
+		},
+		"gr": {
+			"engine_task": "classification",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/gr/librispeech_gender_smoke",
+			"evaluation_bridge": "text_pair",
+			"tool_name": "classify_gender",
+			"io_contract": { "input_type": "audio_path", "primary_field": "label" }
+		},
+		"kws": {
+			"engine_task": "kws",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/kws/librispeech_keyword_smoke",
+			"evaluation_bridge": "sure_json",
+			"tool_name": "detect_keyword",
+			"io_contract": { "input_type": "audio_path", "primary_field": "detected" }
+		},
+		"s2tt": {
+			"engine_task": "s2tt",
+			"default_language": "en",
+			"fixture_root": "fixtures/tasks/s2tt/kimi_audio_s2tt_smoke/covost2-en2zh",
+			"evaluation_bridge": "text_pair",
+			"tool_name": "translate_audio",
+			"io_contract": { "input_type": "audio_path", "primary_field": "translation" }
+		},
+		"sa_asr": {
+			"engine_task": "sa_asr",
+			"default_language": "en",
+			"fixture_root": "fixtures/tasks/sa_asr/librispeech_2spk_smoke",
+			"evaluation_bridge": "text_pair",
+			"tool_name": "diarize_and_transcribe",
+			"io_contract": { "input_type": "audio_path", "primary_field": "segments" }
+		},
+		"sd": {
+			"engine_task": "sd",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/sd/librispeech_2spk_smoke",
+			"evaluation_bridge": "text_pair",
+			"tool_name": "diarize_audio",
+			"io_contract": { "input_type": "audio_path", "primary_field": "segments" }
+		},
+		"se": {
+			"engine_task": "se",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/se/librispeech_noise_smoke",
+			"evaluation_bridge": "samples_jsonl",
+			"tool_name": "enhance_speech",
+			"io_contract": { "input_type": "audio_path", "primary_field": "audio_path" }
+		},
+		"ser": {
+			"engine_task": "classification",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/ser/crema_d_smoke",
+			"evaluation_bridge": "text_pair",
+			"tool_name": "classify_emotion",
+			"io_contract": { "input_type": "audio_path", "primary_field": "label" }
+		},
+		"slu": {
+			"engine_task": "slu",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/slu/fluent_speech_commands_smoke",
+			"evaluation_bridge": "text_pair_prompt",
+			"tool_name": "understand_speech",
+			"io_contract": { "input_type": "audio_path", "primary_field": "answer" }
+		},
+		"sv": {
+			"engine_task": "sv",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/sv/librispeech_trials_smoke",
+			"evaluation_bridge": "sv_trials",
+			"tool_name": "embed_speaker",
+			"io_contract": { "input_type": "audio_path", "primary_field": "embedding" }
+		},
+		"tse": {
+			"engine_task": "tse",
+			"default_language": "en",
+			"fixture_root": "fixtures/tasks/tse/librispeech_mix_smoke",
+			"evaluation_bridge": "samples_jsonl",
+			"tool_name": "extract_speaker",
+			"io_contract": { "input_type": "audio_pair", "primary_field": "audio_path" }
+		},
+		"tts": {
+			"engine_task": "tts",
+			"default_language": "en",
+			"fixture_root": "fixtures/tasks/tts/librispeech_prompt_smoke",
+			"evaluation_bridge": "samples_jsonl",
+			"tool_name": "synthesize_speech",
+			"io_contract": { "input_type": "text_with_reference_audio", "primary_field": "audio_path" }
+		},
+		"vad": {
+			"engine_task": "vad",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/vad/librispeech_silence_smoke",
+			"evaluation_bridge": "sure_json",
+			"tool_name": "detect_voice_activity",
+			"io_contract": { "input_type": "audio_path", "primary_field": "speech_segments" }
+		},
+		"vc": {
+			"engine_task": "vc",
+			"default_language": "en",
+			"fixture_root": "fixtures/tasks/vc/librispeech_voice_conversion_smoke",
+			"evaluation_bridge": "samples_jsonl",
+			"tool_name": "convert_voice",
+			"io_contract": { "input_type": "audio_pair", "primary_field": "audio_path" }
+		}
+	},
+	"suites": {
+		"speech_understanding": { "membership": "all_engine_tasks" }
+	}
+}

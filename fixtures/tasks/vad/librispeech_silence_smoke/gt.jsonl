@@ -1,0 +1,2 @@
+{"key":"vad_1580","task":"VAD","language":"en","dataset":"librispeech_test_clean_derived_vad","audio":"padded_1580.wav","duration":4.75,"speech_segments":[{"start":0.5,"end":4.25}]}
+{"key":"vad_1089","task":"VAD","language":"en","dataset":"librispeech_test_clean_derived_vad","audio":"padded_1089.wav","duration":6.415,"speech_segments":[{"start":0.5,"end":5.915}]}

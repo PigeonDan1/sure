@@ -28,6 +28,7 @@ for _parent in Path(__file__).resolve().parents:
 from sure.site.container_delivery import resolve_container_image, resolve_container_repository
 from sure.site.container_registry import resolve_image_version
 from sure.site.loader import load_site_policy
+from sure.runtime.evaluation.task_registry import accepted_tasks, normalize_task
 
 try:
     import yaml
@@ -38,20 +39,7 @@ else:
     YAML_IMPORT_ERROR = None
 
 
-TASK_TYPES = {
-    "asr",
-    "s2tt",
-    "sd",
-    "ser",
-    "tts",
-    "vc",
-    "kws",
-    "slu",
-    "gr",
-    "speech_understanding",
-    "sa-asr",
-    "sa_asr",
-}
+TASK_TYPES = set(accepted_tasks())
 DEPLOYMENT_TYPES = {"local", "api"}
 PACKAGE_PROFILES = {"none", "docker-local", "docker-registry"}
 WEIGHTS_LINK_POLICIES = {"auto", "copy", "symlink", "reuse-existing", "no-reuse"}
@@ -237,15 +225,23 @@ def normalize_required_string(value: Any, field: str) -> str:
 
 
 def task_playbooks_for(task_type: str) -> list[str]:
-    task = task_type.lower()
+    task = normalize_task(task_type)
+    if task == "speech_understanding":
+        return [
+            "references/task_playbooks/SPEECH_UNDERSTANDING.md",
+            "references/task_playbooks/ASR.md",
+            "references/task_playbooks/KWS.md",
+            "references/task_playbooks/TTS.md",
+            "references/task_playbooks/VC.md",
+        ]
     if task == "asr":
         return ["references/task_playbooks/ASR.md"]
-    if task in {"sa-asr", "sa_asr"}:
+    if task == "sa_asr":
         return [
             "references/task_playbooks/SPEECH_UNDERSTANDING.md",
             "references/task_playbooks/ASR.md",
         ]
-    if task in {"s2tt", "sd", "ser", "slu", "gr", "speech_understanding"}:
+    if task in {"classification", "s2tt", "sd", "se", "ser", "slu", "sv", "tse", "vad"}:
         return ["references/task_playbooks/SPEECH_UNDERSTANDING.md"]
     if task == "tts":
         return ["references/task_playbooks/TTS.md"]

@@ -1,0 +1,65 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "slu",
+  "dataset": {
+    "repository": "GrindstoneLZX/FluentSpeechCommandsDataset",
+    "revision": "f8cdd495d08d4d1e101af714a18475c8d67ddeb0",
+    "configuration": "spoken intent triples",
+    "split": "test",
+    "license": "Fluent-Speech-Commands-Public-License",
+    "license_url": "https://github.com/GrindstoneLZX/FluentSpeechCommandsDataset/blob/f8cdd495d08d4d1e101af714a18475c8d67ddeb0/Fluent%20Speech%20Commands%20Public%20License.pdf",
+    "source_url": "https://github.com/GrindstoneLZX/FluentSpeechCommandsDataset",
+    "citation_url": "https://arxiv.org/abs/1904.03670",
+    "source_id": "fluent_speech_commands",
+    "metadata_sha256": "3179c5d569e4f0bd9af2fbc1bfa1bca8a4c60d1b4cc9a6882c755c22ce3ce600",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "fsc_activate_lights",
+      "fsc_deactivate_lights",
+      "fsc_change_language"
+    ]
+  },
+  "annotations": {
+    "source": "dataset-published labels",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "143e36c04dff8e7eea7d414372b08836676c858fb26f17b49ea6cbfbfd0ff6e1"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "cbdf5700-452c-11e9-b1e4-e5985dca719e.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "ad5228f9b266f096ea6952a05636ba0347cc10fc79b8294dc0ce5d1758667eb0",
+      "transform_id": "source_media_copy",
+      "source_sha256": "ad5228f9b266f096ea6952a05636ba0347cc10fc79b8294dc0ce5d1758667eb0"
+    },
+    {
+      "path": "cff92500-452c-11e9-b1e4-e5985dca719e.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "5596e2666220bbfc8e87dad4226a443dab9fc8302bec30416e1650c08284e5ca",
+      "transform_id": "source_media_copy",
+      "source_sha256": "5596e2666220bbfc8e87dad4226a443dab9fc8302bec30416e1650c08284e5ca"
+    },
+    {
+      "path": "d36722a0-452c-11e9-b1e4-e5985dca719e.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "947e8c61388ae38eb02d75cdcdea555521ba382565c399074af080f8383804ed",
+      "transform_id": "source_media_copy",
+      "source_sha256": "947e8c61388ae38eb02d75cdcdea555521ba382565c399074af080f8383804ed"
+    }
+  ]
+}

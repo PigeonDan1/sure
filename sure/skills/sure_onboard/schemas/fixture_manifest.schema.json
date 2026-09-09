@@ -31,6 +31,24 @@
 				"additionalProperties": true
 			}
 		},
+		"suite_members": { "type": "array", "items": { "type": "string" } },
+		"subtask_fixtures": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["task_type", "source_dir", "staged_dir", "gt_jsonl", "samples", "sample_count"],
+				"properties": {
+					"task_type": { "type": "string" },
+					"source_dir": { "type": "string" },
+					"staged_dir": { "type": "string" },
+					"gt_jsonl": { "type": "string" },
+					"samples": { "type": "array" },
+					"sample_count": { "type": "number" },
+					"source_sample_count": { "type": "number" }
+				},
+				"additionalProperties": false
+			}
+		},
 		"validation_payload_env": { "type": "string" },
 		"notes": { "type": "string" }
 	},

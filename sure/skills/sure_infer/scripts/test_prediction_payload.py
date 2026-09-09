@@ -21,7 +21,7 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
     def test_single_element_text_tuple_is_unwrapped(self) -> None:
         prediction, normalized = gp._normalize_prediction_payload({"text": ("hello",)}, task="S2TT")
         self.assertEqual(prediction, "hello")
-        self.assertEqual(normalized, {"text": "hello"})
+        self.assertEqual(normalized, {"translation": "hello", "text": "hello"})
 
     def test_nested_prediction_text_list_is_unwrapped(self) -> None:
         prediction, _ = gp._normalize_prediction_payload(
@@ -38,6 +38,32 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
         prediction, normalized = gp._normalize_prediction_payload({"text": []}, task="ASR")
         self.assertEqual(prediction, "")
         self.assertEqual(normalized, {"text": ""})
+
+    def test_structured_task_payloads_keep_engine_fields(self) -> None:
+        cases = [
+            ({"label": "happy"}, "SER", {"label": "happy"}),
+            ({"text": "activate_lights"}, "SLU", {"answer": "activate_lights", "text": "activate_lights"}),
+            ({"detected": False, "score": 0.1}, "KWS", {"detected": False, "score": 0.1}),
+            ({"speech_segments": [{"start": 0.5, "end": 1.0}]}, "VAD", {"speech_segments": [{"start": 0.5, "end": 1.0}]}),
+            ({"embedding": [0.1, 0.2]}, "SV", {"embedding": [0.1, 0.2]}),
+        ]
+        for payload, task, expected in cases:
+            with self.subTest(task=task):
+                _projection, normalized = gp._normalize_prediction_payload(payload, task=task)
+                self.assertEqual(normalized, expected)
+
+    def test_audio_task_payloads_use_task_specific_engine_fields(self) -> None:
+        cases = [
+            ("SE", "enhanced_audio"),
+            ("TSE", "prediction_audio"),
+            ("VC", "converted_audio"),
+        ]
+        for task, field in cases:
+            with self.subTest(task=task):
+                prediction, normalized = gp._normalize_prediction_payload("generated.wav", task=task)
+                self.assertEqual(prediction, "generated.wav")
+                self.assertEqual(normalized["audio_path"], "generated.wav")
+                self.assertEqual(normalized[field], "generated.wav")
 
 
 if __name__ == "__main__":

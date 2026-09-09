@@ -1,0 +1,93 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "sv",
+  "dataset": {
+    "repository": "OpenSLR SLR12",
+    "revision": "LibriSpeech ASR corpus release",
+    "configuration": "test-clean or test-other",
+    "split": "test",
+    "license": "CC-BY-4.0",
+    "license_url": "https://www.openslr.org/resources/12/LICENSE.TXT",
+    "source_url": "https://www.openslr.org/12",
+    "citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf",
+    "source_id": "librispeech",
+    "metadata_sha256": "1762abe66aec75529de648fbfbdf9565f42ecbdf9b2e79be88a09b940e2ffbd6",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "sv_1580_a",
+      "sv_1580_b",
+      "sv_1089_a",
+      "sv_1089_b"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "fe9db77aafd1b2ccd5341e082f0935b5fa52bb4a56a67f53c0a008687e7f5cc2"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "1089-134691-0001.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "8dd3a119fa980b10e35a1f2e9f1378ef9deccaac5486c82ffc575c9baa69f2e2",
+      "transform_id": "source_media_copy",
+      "source_sha256": "8dd3a119fa980b10e35a1f2e9f1378ef9deccaac5486c82ffc575c9baa69f2e2"
+    },
+    {
+      "path": "1089-134691-0002.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "b2b3f9df4e88a51a0086aa71973917355774decba3e89abbe9b1d5b2bef19182",
+      "transform_id": "source_media_copy",
+      "source_sha256": "b2b3f9df4e88a51a0086aa71973917355774decba3e89abbe9b1d5b2bef19182"
+    },
+    {
+      "path": "1580-141083-0040.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "01ce40104cd4f80a5ec13db6d929c24c5cc3d5fee9c3d9ef219887f1425bf88e",
+      "transform_id": "source_media_copy",
+      "source_sha256": "01ce40104cd4f80a5ec13db6d929c24c5cc3d5fee9c3d9ef219887f1425bf88e"
+    },
+    {
+      "path": "1580-141083-0042.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "2807ec57c18bd3deb0f838990f60643508f37c5138be1c7b9da4a9721b859668",
+      "transform_id": "source_media_copy",
+      "source_sha256": "2807ec57c18bd3deb0f838990f60643508f37c5138be1c7b9da4a9721b859668"
+    },
+    {
+      "path": "trial_manifest.json",
+      "roles": [
+        "trial_manifest"
+      ],
+      "sha256": "9ac8879964e0a6308973e5739c428c804d13cd0e8083ff3284b3cf10e2c4f1ab",
+      "source_sha256": "9ac8879964e0a6308973e5739c428c804d13cd0e8083ff3284b3cf10e2c4f1ab",
+      "transform_id": "source_media_copy"
+    },
+    {
+      "path": "trials.tsv",
+      "roles": [
+        "trials"
+      ],
+      "sha256": "219ca62932ecebd1140196ffd4b37e2f355d16eb3b03105e9619d04b5071eac4",
+      "source_sha256": "219ca62932ecebd1140196ffd4b37e2f355d16eb3b03105e9619d04b5071eac4",
+      "transform_id": "source_media_copy"
+    }
+  ]
+}

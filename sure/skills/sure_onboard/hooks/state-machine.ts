@@ -1,4 +1,5 @@
 import type { SureHookContext } from "@earendil-works/pi-coding-agent/hooks";
+import { TASK_TYPES } from "../../../runtime/evaluation/task-types.generated.ts";
 import type { GateResult } from "./checkpoints.ts";
 
 // SURE-EVAL model-tool agent state machine, ported from the upstream
@@ -41,20 +42,6 @@ export interface Unit {
 	gateInputs?: string[];
 }
 
-const TASK_TYPES = [
-	"asr",
-	"s2tt",
-	"sd",
-	"ser",
-	"tts",
-	"vc",
-	"kws",
-	"slu",
-	"gr",
-	"speech_understanding",
-	"sa-asr",
-	"sa_asr",
-];
 const DEPLOYMENT_TYPES = ["local", "api"];
 const BACKENDS = ["uv", "pip", "conda", "pixi", "docker", "api"];
 const PACKAGE_PROFILES = ["none", "docker-local", "docker-registry"];

@@ -1,20 +1,38 @@
 from __future__ import annotations
 
 import json
-import re
+import sys
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import (
+    io_contract_for_task as registry_io_contract_for_task,
+    normalize_task as registry_normalize_task,
+    speech_understanding_tasks,
+    task_profile,
+)
 
 AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".m4a", ".ogg"}
-SPEECH_UNDERSTANDING_SUBTASK_ORDER = ("asr", "s2tt", "slu", "ser", "gr", "sd", "sa_asr")
+PATH_FIELDS = (
+    "audio",
+    "wav",
+    "audio_path",
+    "source_audio",
+    "reference_audio",
+    "noisy_audio",
+    "mixed_audio",
+    "enrollment_audio",
+    "prompt_audio",
+)
 
 
 def normalize_task(task: str) -> str:
-    value = str(task or "").strip().lower().replace("-", "_")
-    if value in {"sa_asr", "saasr"}:
-        return "sa_asr"
-    return value
+    return registry_normalize_task(task)
 
 
 def find_repo_root(start: Path | None = None) -> Path:
@@ -81,10 +99,20 @@ def _path_from_row(row: dict[str, Any], sample_dir: Path, repo_root: Path) -> st
     return _rel(path, repo_root)
 
 
+def _resolved_row_path(value: Any, sample_dir: Path, repo_root: Path) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    path = Path(value)
+    if not path.is_absolute():
+        path = sample_dir / path
+    return _rel(path, repo_root)
+
+
 def _compact_sample(row: dict[str, Any], sample_dir: Path, repo_root: Path) -> dict[str, Any]:
     sample: dict[str, Any] = {}
     for key in (
         "id",
+        "sample_id",
         "key",
         "task",
         "language",
@@ -105,12 +133,26 @@ def _compact_sample(row: dict[str, Any], sample_dir: Path, repo_root: Path) -> d
         "stm",
         "uem",
         "description",
+        "reference_text",
+        "source_text",
+        "speaker_id",
+        "duration",
+        "speech_segments",
+        "intent",
+        "scenario",
+        "action",
+        "entities",
     ):
         if key in row:
             sample[key] = row[key]
-    audio = _path_from_row(row, sample_dir, repo_root)
-    if audio:
-        sample["audio"] = audio
+    for key in PATH_FIELDS:
+        path = _resolved_row_path(row.get(key), sample_dir, repo_root)
+        if path:
+            sample[key] = path
+    if "audio" not in sample:
+        audio = _path_from_row(row, sample_dir, repo_root)
+        if audio:
+            sample["audio"] = audio
     return sample
 
 
@@ -150,33 +192,9 @@ def _prefer_gt_files(task: str, gt_files: list[Path], candidate_text: str) -> li
 
 def io_contract_for_task(task: str) -> dict[str, Any]:
     normalized = normalize_task(task)
-    if normalized in {"tts", "vc"}:
-        return {
-            "input_type": "text_with_reference_audio" if normalized == "tts" else "audio_pair",
-            "output_type": "json",
-            "primary_field": "audio_path",
-            "required_fields": ["audio_path"],
-            "nonempty_fields": ["audio_path"],
-            "json_serializable": True,
-        }
-    if normalized == "s2tt":
-        primary = "translation"
-    elif normalized in {"ser", "gr", "kws"}:
-        primary = "label"
-    elif normalized == "slu":
-        primary = "answer"
-    elif normalized in {"sd", "sa_asr"}:
-        primary = "segments"
-    else:
-        primary = "text"
-    return {
-        "input_type": "audio_path",
-        "output_type": "json",
-        "primary_field": primary,
-        "required_fields": [primary],
-        "nonempty_fields": [primary],
-        "json_serializable": True,
-    }
+    if normalized == "speech_understanding":
+        normalized = speech_understanding_tasks()[0]
+    return registry_io_contract_for_task(normalized)
 
 
 def _apply_task_specific_fields(task: str, fixture: dict[str, Any], samples: list[dict[str, Any]]) -> None:
@@ -192,14 +210,8 @@ def _apply_task_specific_fields(task: str, fixture: dict[str, Any], samples: lis
         if isinstance(first_audio, str):
             fixture["reference_audio"] = first_audio
     elif task == "vc":
-        audios = [sample.get("audio") for sample in samples if isinstance(sample.get("audio"), str)]
-        if audios:
-            fixture["audio"] = audios[0]
-            fixture["source_audio"] = audios[0]
-        if len(audios) > 1:
-            fixture["reference_audio"] = audios[1]
-        elif audios:
-            fixture["reference_audio"] = audios[0]
+        fixture["source_audio"] = first.get("source_audio") or first_audio
+        fixture["reference_audio"] = first.get("reference_audio") or first_audio
     elif task == "kws":
         positives = [sample for sample in samples if str(sample.get("label") or sample.get("expected") or "").lower() in {"positive", "detect"}]
         negatives = [sample for sample in samples if str(sample.get("label") or sample.get("expected") or "").lower() in {"negative", "reject"}]
@@ -212,6 +224,19 @@ def _apply_task_specific_fields(task: str, fixture: dict[str, Any], samples: lis
             fixture["keywords"] = first["keywords"]
     elif task == "slu" and first.get("prompt"):
         fixture["prompt"] = first["prompt"]
+    elif task == "tse":
+        fixture["audio"] = first.get("mixed_audio") or first_audio
+        fixture["source_audio"] = fixture.get("audio")
+        fixture["reference_audio"] = first.get("enrollment_audio") or first.get("reference_audio")
+    elif task == "se":
+        fixture["audio"] = first.get("noisy_audio") or first_audio
+        fixture["source_audio"] = fixture.get("audio")
+        fixture["reference_audio"] = first.get("reference_audio")
+    elif task == "sv":
+        fixture["audio"] = first_audio
+    elif task == "vad":
+        fixture["duration"] = first.get("duration")
+        fixture["speech_segments"] = first.get("speech_segments")
     if first.get("language"):
         fixture["language"] = first["language"]
     if first.get("target_language"):
@@ -226,15 +251,19 @@ def select_atomic_fixture(
 ) -> tuple[dict[str, Any] | None, dict[str, Any], list[str]]:
     normalized = normalize_task(task)
     root = repo_root or find_repo_root()
+    profile = task_profile(normalized)
     task_dir = root / "fixtures" / "tasks" / normalized
     index_path = task_dir / "README.md"
     issues: list[str] = []
     if not index_path.exists():
         return None, io_contract_for_task(normalized), [f"missing:fixture.index.{normalized}"]
 
+    fixture_root_config = root / str(profile["fixture_root"])
     text = _candidate_text(candidate)
-    gt_files = _prefer_gt_files(normalized, sorted(task_dir.glob("**/gt.jsonl")), text)
-    manifest_files = sorted(task_dir.glob("**/manifest.json"))
+    gt_files = _prefer_gt_files(normalized, [fixture_root_config / "gt.jsonl"], text)
+    gt_files = [path for path in gt_files if path.is_file()]
+    manifest_files = [fixture_root_config / "manifest.json"]
+    manifest_files = [path for path in manifest_files if path.is_file()]
     samples: list[dict[str, Any]] = []
     fixture_root: Path | None = None
     gt_path: Path | None = None
@@ -275,26 +304,16 @@ def select_atomic_fixture(
         fixture["manifest"] = _rel(manifest_path, root)
         if normalized in {"sd", "sa_asr"}:
             fixture["requires_meeteval_annotation"] = True
+    trials_path = fixture_root / "trial_manifest.json"
+    if trials_path.is_file():
+        fixture["trial_manifest"] = _rel(trials_path, root)
     _apply_task_specific_fields(normalized, fixture, samples)
     return fixture, io_contract_for_task(normalized), issues
 
 
 def infer_speech_understanding_subtasks(candidate: dict[str, Any] | None) -> list[str]:
-    text = _candidate_text(candidate)
-    subtasks: list[str] = []
-
-    def add(task: str, patterns: tuple[str, ...]) -> None:
-        if task not in subtasks and any(re.search(pattern, text) for pattern in patterns):
-            subtasks.append(task)
-
-    add("asr", (r"\basr\b", r"automatic speech recognition", r"speech[- ]to[- ]text", r"transcrib", r"transcription"))
-    add("s2tt", (r"\bs2tt\b", r"speech translation", r"speech[- ]to[- ]text translation", r"translate"))
-    add("slu", (r"\bslu\b", r"spoken language understanding", r"speech understanding", r"reasoning", r"question answering"))
-    add("ser", (r"\bser\b", r"speech emotion", r"emotion recognition"))
-    add("gr", (r"gender recognition", r"speaker gender"))
-    add("sd", (r"speaker diarization", r"\bdiari[sz]ation\b", r"\bdiari[sz]e\b"))
-    add("sa_asr", (r"speaker[- ]attributed", r"speaker[- ]aware asr", r"\bsa[-_ ]asr\b"))
-    return [task for task in SPEECH_UNDERSTANDING_SUBTASK_ORDER if task in subtasks]
+    del candidate
+    return list(speech_understanding_tasks())
 
 
 def select_fixture_for_task(
@@ -316,22 +335,6 @@ def select_fixture_for_task(
     if not composite_index.exists():
         return None, io_contract_for_task("asr"), ["missing:fixture.index.speech_understanding"], evidence
     subtasks = infer_speech_understanding_subtasks(candidate)
-    if not subtasks:
-        return (
-            None,
-            io_contract_for_task("asr"),
-            ["missing:fixture.speech_understanding_subtask"],
-            [
-                {
-                    "source": "local",
-                    "field": "fixture_registry.composite_index",
-                    "value": _rel(composite_index, root),
-                    "strength": "medium",
-                    "model_input_field": "fixture",
-                }
-            ],
-        )
-
     selected: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
     issues: list[str] = []
     for subtask in subtasks:
@@ -360,6 +363,9 @@ def select_fixture_for_task(
         }
         for subtask, sub_fixture, _sub_contract in selected
     ]
+    fixture["subtask_io_contracts"] = {
+        subtask: sub_contract for subtask, _sub_fixture, sub_contract in selected
+    }
     evidence.append(
         {
             "source": "local",

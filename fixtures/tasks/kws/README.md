@@ -1,5 +1,9 @@
 # KWS Fixture Index
 
+Approved harness fixture: `fixtures/tasks/kws/librispeech_keyword_smoke/`, with
+positive and negative examples derived from traceable LibriSpeech transcripts.
+The older wake-word fixture below remains available.
+
 Use this index for keyword spotting and wake-word detection models. Copy selected
 positive and negative samples into:
 

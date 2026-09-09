@@ -1,0 +1,11 @@
+{
+	"schema_version": "sure.sv.trial_manifest.v1",
+	"dataset_id": "librispeech-test-clean-sv-smoke-v1",
+	"testset_id": "librispeech-trials-smoke",
+	"source_dataset_id": "openslr-slr12-test-clean",
+	"trials_file": "trials.tsv",
+	"trials_sha256": "219ca62932ecebd1140196ffd4b37e2f355d16eb3b03105e9619d04b5071eac4",
+	"trial_count": 4,
+	"target_count": 2,
+	"nontarget_count": 2
+}

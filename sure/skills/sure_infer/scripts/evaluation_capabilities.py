@@ -8,31 +8,25 @@ import sys
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
 
-TASK_TO_ENGINE_TASK = {
-    "ASR": "asr",
-    "S2TT": "s2tt",
-    "SD": "sd",
-    "SA-ASR": "sa-asr",
-    "SA_ASR": "sa-asr",
-    "KWS": "kws",
-    "SER": "ser",
-    "GR": "gr",
-    "CLASSIFICATION": "classification",
-    "SLU": "slu",
-    "SPEECH_UNDERSTANDING": "slu",
-    "TTS": "tts",
-    "VC": "vc",
-}
+from sure.runtime.evaluation.task_registry import normalize_task, task_profile
 
 
 def normalize_engine_task(task: str) -> str:
     """Map harness task labels to the engine task id."""
 
-    normalized = task.strip().upper().replace(" ", "_")
-    if normalized not in TASK_TO_ENGINE_TASK:
-        raise ValueError(f"Unsupported evaluation task for sure-evaluation: {task!r}")
-    return TASK_TO_ENGINE_TASK[normalized]
+    normalized = normalize_task(task)
+    if normalized == "speech_understanding":
+        raise ValueError("speech_understanding is a suite; evaluate its atomic tasks separately")
+    try:
+        task_profile(normalized)
+    except ValueError as exc:
+        raise ValueError(f"Unsupported evaluation task for sure-evaluation: {task!r}") from exc
+    return "sa-asr" if normalized == "sa_asr" else normalized
 
 
 def _dedupe(values: list[str]) -> list[str]:

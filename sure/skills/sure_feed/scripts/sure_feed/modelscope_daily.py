@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import urllib.parse
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
 
-SUPPORTED_TASKS = ("asr", "s2tt", "slu", "gr", "ser")
+from sure.runtime.evaluation.task_registry import canonical_tasks
+
+SUPPORTED_TASKS = canonical_tasks()
 
 TASK_KEYWORDS = {
     "asr": (
@@ -32,6 +39,16 @@ TASK_KEYWORDS = {
         "speech emotion recognition",
         "speech-emotion-recognition",
     ),
+    "classification": ("audio classification", "speech classification", "audio-classification"),
+    "kws": ("keyword spotting", "keyword-spotting", "wake word", "wake-word"),
+    "sa_asr": ("speaker attributed asr", "speaker-attributed-asr", "speaker aware asr"),
+    "sd": ("speaker diarization", "speaker-diarization", "diarization"),
+    "se": ("speech enhancement", "speech-enhancement", "noise suppression"),
+    "sv": ("speaker verification", "speaker-verification", "speaker embedding"),
+    "tse": ("target speaker extraction", "target-speaker-extraction"),
+    "tts": ("text to speech", "text-to-speech", "speech synthesis"),
+    "vad": ("voice activity detection", "voice-activity-detection", "vad"),
+    "vc": ("voice conversion", "voice-conversion", "speech conversion"),
 }
 
 SHORT_TASK_ABBREVIATION_GATES = {

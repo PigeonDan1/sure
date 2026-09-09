@@ -1,0 +1,3 @@
+{"key":"1001_DFA_ANG_XX","task":"SER","language":"en","dataset":"CREMA-D","audio":"1001_DFA_ANG_XX.wav","label":"angry","ground_truth":"angry","speaker_id":"1001"}
+{"key":"1001_DFA_HAP_XX","task":"SER","language":"en","dataset":"CREMA-D","audio":"1001_DFA_HAP_XX.wav","label":"happy","ground_truth":"happy","speaker_id":"1001"}
+{"key":"1001_DFA_NEU_XX","task":"SER","language":"en","dataset":"CREMA-D","audio":"1001_DFA_NEU_XX.wav","label":"neutral","ground_truth":"neutral","speaker_id":"1001"}

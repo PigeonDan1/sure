@@ -1,0 +1,1572 @@
+{
+  "aliases": {
+    "sa-asr": "sa_asr",
+    "saasr": "sa_asr",
+    "speech-enhancement": "se",
+    "speech_enhancement": "se"
+  },
+  "engine": {
+    "commit": "b28ad34d048895a469acd87e5f44741d0ede8d10",
+    "path": "sure/external/sure-evaluation"
+  },
+  "schema": "sure.engine_capabilities.v1",
+  "suites": {
+    "speech_understanding": {
+      "membership": [
+        "asr",
+        "classification",
+        "gr",
+        "kws",
+        "s2tt",
+        "sa_asr",
+        "sd",
+        "se",
+        "ser",
+        "slu",
+        "sv",
+        "tse",
+        "tts",
+        "vad",
+        "vc"
+      ],
+      "ready": true
+    }
+  },
+  "tasks": {
+    "asr": {
+      "default_language": "en",
+      "engine_task": "asr",
+      "evaluation_bridge": "text_pair",
+      "fixture_root": "fixtures/tasks/asr/qwen3_asr_smoke/asr_en",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "text"
+      },
+      "language_sensitive": true,
+      "metrics": [
+        "cer",
+        "mer",
+        "wer"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "hyp",
+        "ref"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/wenet_cer",
+          "language": "ar",
+          "metric": "cer",
+          "optional_roles": [],
+          "pipeline_id": "asr.ar.cer.nemo_norm_ar_tn_v1.wenet_cer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_cer",
+          "language": "zh",
+          "metric": "cer",
+          "optional_roles": [],
+          "pipeline_id": "asr.zh.cer.wetext_norm_zh_itn_v1.wenet_cer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_cer",
+          "language": "zh",
+          "metric": "cer",
+          "optional_roles": [],
+          "pipeline_id": "asr.zh.cer.aispeech_norm_zh_v1.wenet_cer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "en",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.en.wer.whisper_norm_english_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "en",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.en.wer.aispeech_norm_en_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/token_cer",
+          "language": "zh",
+          "metric": "cer",
+          "optional_roles": [],
+          "pipeline_id": "asr.zh.cer.canonical_itn_zh_v1.token_cer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_mer",
+          "language": "cs",
+          "metric": "mer",
+          "optional_roles": [],
+          "pipeline_id": "asr.cs.mer.aispeech_norm_cs_v1.wenet_mer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/token_mer",
+          "language": "cs",
+          "metric": "mer",
+          "optional_roles": [],
+          "pipeline_id": "asr.cs.mer.canonical_itn_cs_v1.token_mer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/token_mer",
+          "language": "en",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.en.wer.canonical_itn_en_v1.token_mer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_cer",
+          "language": "ja",
+          "metric": "cer",
+          "optional_roles": [],
+          "pipeline_id": "asr.ja.cer.funasr_itn_ja_v1.wenet_cer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "es",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.es.wer.funasr_itn_es_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "fr",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.fr.wer.funasr_itn_fr_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "de",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.de.wer.funasr_itn_de_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_cer",
+          "language": "ko",
+          "metric": "cer",
+          "optional_roles": [],
+          "pipeline_id": "asr.ko.cer.funasr_itn_ko_v1.wenet_cer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "ru",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.ru.wer.funasr_itn_ru_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "pt",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.pt.wer.funasr_itn_pt_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "vi",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.vi.wer.funasr_itn_vi_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "id",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.id.wer.funasr_itn_id_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/wenet_wer",
+          "language": "tl",
+          "metric": "wer",
+          "optional_roles": [],
+          "pipeline_id": "asr.tl.wer.funasr_itn_tl_v1.wenet_wer_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        }
+      ],
+      "tool_name": "transcribe_audio"
+    },
+    "classification": {
+      "default_language": "any",
+      "engine_task": "classification",
+      "evaluation_bridge": "text_pair",
+      "fixture_root": "fixtures/tasks/classification/librispeech_speaker_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "label"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "accuracy"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "hyp",
+        "ref"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/classify",
+          "language": "any",
+          "metric": "accuracy",
+          "optional_roles": [
+            "label_spec"
+          ],
+          "pipeline_id": "classification.any.accuracy.classify_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        }
+      ],
+      "tool_name": "classify_audio"
+    },
+    "gr": {
+      "default_language": "any",
+      "engine_task": "classification",
+      "evaluation_bridge": "text_pair",
+      "fixture_root": "fixtures/tasks/gr/librispeech_gender_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "label"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "accuracy"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "hyp",
+        "ref"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/classify",
+          "language": "any",
+          "metric": "accuracy",
+          "optional_roles": [
+            "label_spec"
+          ],
+          "pipeline_id": "gr.any.accuracy.classify_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        }
+      ],
+      "tool_name": "classify_gender"
+    },
+    "kws": {
+      "default_language": "any",
+      "engine_task": "kws",
+      "evaluation_bridge": "sure_json",
+      "fixture_root": "fixtures/tasks/kws/librispeech_keyword_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "detected"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "accuracy",
+        "macro_recall"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "keyword",
+        "reference_jsonl",
+        "sample_output",
+        "wekws_frame_score_file",
+        "wekws_label_file",
+        "wekws_score_file"
+      ],
+      "routes": [
+        {
+          "input_contract": "sure_json",
+          "language": "any",
+          "metric": "accuracy",
+          "optional_roles": [],
+          "pipeline_id": "kws.any.accuracy.conversion_kws_sure_json_to_samples_v1.wekws_det_v1",
+          "required_roles": [
+            "reference_jsonl",
+            "sample_output"
+          ]
+        },
+        {
+          "input_contract": "sure_json",
+          "language": "any",
+          "metric": "macro_recall",
+          "optional_roles": [],
+          "pipeline_id": "kws.any.macro_recall.conversion_kws_sure_json_to_samples_v1.wekws_det_v1",
+          "required_roles": [
+            "reference_jsonl",
+            "sample_output"
+          ]
+        },
+        {
+          "input_contract": "wekws_score_ctc",
+          "language": "any",
+          "metric": "accuracy",
+          "optional_roles": [],
+          "pipeline_id": "kws.any.accuracy.conversion_kws_wekws_score_ctc_to_samples_v1.wekws_det_v1",
+          "required_roles": [
+            "wekws_label_file",
+            "wekws_score_file",
+            "keyword"
+          ]
+        },
+        {
+          "input_contract": "wekws_score_ctc",
+          "language": "any",
+          "metric": "macro_recall",
+          "optional_roles": [],
+          "pipeline_id": "kws.any.macro_recall.conversion_kws_wekws_score_ctc_to_samples_v1.wekws_det_v1",
+          "required_roles": [
+            "wekws_label_file",
+            "wekws_score_file",
+            "keyword"
+          ]
+        },
+        {
+          "input_contract": "wekws_frame_score",
+          "language": "any",
+          "metric": "accuracy",
+          "optional_roles": [],
+          "pipeline_id": "kws.any.accuracy.conversion_kws_wekws_frame_score_to_samples_v1.wekws_det_v1",
+          "required_roles": [
+            "wekws_label_file",
+            "wekws_frame_score_file",
+            "keyword"
+          ]
+        },
+        {
+          "input_contract": "wekws_frame_score",
+          "language": "any",
+          "metric": "macro_recall",
+          "optional_roles": [],
+          "pipeline_id": "kws.any.macro_recall.conversion_kws_wekws_frame_score_to_samples_v1.wekws_det_v1",
+          "required_roles": [
+            "wekws_label_file",
+            "wekws_frame_score_file",
+            "keyword"
+          ]
+        }
+      ],
+      "tool_name": "detect_keyword"
+    },
+    "s2tt": {
+      "default_language": "en",
+      "engine_task": "s2tt",
+      "evaluation_bridge": "text_pair",
+      "fixture_root": "fixtures/tasks/s2tt/kimi_audio_s2tt_smoke/covost2-en2zh",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "translation"
+      },
+      "language_sensitive": true,
+      "metrics": [
+        "bleu",
+        "bleu_char",
+        "bleurt_20",
+        "chrf",
+        "xcomet_xl"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "hyp",
+        "ref",
+        "src"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/sacrebleu",
+          "language": "zh",
+          "metric": "bleu",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.zh.bleu.sacrebleu_zh_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/sacrebleu",
+          "language": "en",
+          "metric": "bleu",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.en.bleu.sacrebleu_en_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/sacrebleu",
+          "language": "zh",
+          "metric": "bleu_char",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.zh.bleu_char.sacrebleu_zh_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/sacrebleu",
+          "language": "en",
+          "metric": "bleu_char",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.en.bleu_char.sacrebleu_en_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/sacrebleu",
+          "language": "zh",
+          "metric": "chrf",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.zh.chrf.sacrebleu_zh_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/sacrebleu",
+          "language": "en",
+          "metric": "chrf",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.en.chrf.sacrebleu_en_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/xcomet_xl",
+          "language": "zh",
+          "metric": "xcomet_xl",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.zh.xcomet_xl.xcomet_xl_v1",
+          "required_roles": [
+            "src",
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/xcomet_xl",
+          "language": "en",
+          "metric": "xcomet_xl",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.en.xcomet_xl.xcomet_xl_v1",
+          "required_roles": [
+            "src",
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/bleurt_20",
+          "language": "zh",
+          "metric": "bleurt_20",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.zh.bleurt_20.bleurt_20_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/bleurt_20",
+          "language": "en",
+          "metric": "bleurt_20",
+          "optional_roles": [],
+          "pipeline_id": "s2tt.en.bleurt_20.bleurt_20_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        }
+      ],
+      "tool_name": "translate_audio"
+    },
+    "sa_asr": {
+      "default_language": "en",
+      "engine_task": "sa_asr",
+      "evaluation_bridge": "text_pair",
+      "fixture_root": "fixtures/tasks/sa_asr/librispeech_2spk_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "segments"
+      },
+      "language_sensitive": true,
+      "metrics": [
+        "cpwer"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "hyp",
+        "ref"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/meeteval",
+          "language": "zh",
+          "metric": "cpwer",
+          "optional_roles": [],
+          "pipeline_id": "sa_asr.zh.cpwer.conversion_sa_asr_cpwer_v1.gstar_norm_v1.meeteval_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        },
+        {
+          "input_contract": "scoring/meeteval",
+          "language": "en",
+          "metric": "cpwer",
+          "optional_roles": [],
+          "pipeline_id": "sa_asr.en.cpwer.conversion_sa_asr_cpwer_v1.whisper_norm_english_v1.meeteval_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        }
+      ],
+      "tool_name": "diarize_and_transcribe"
+    },
+    "sd": {
+      "default_language": "any",
+      "engine_task": "sd",
+      "evaluation_bridge": "text_pair",
+      "fixture_root": "fixtures/tasks/sd/librispeech_2spk_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "segments"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "der"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "hyp",
+        "ref"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/meeteval",
+          "language": "any",
+          "metric": "der",
+          "optional_roles": [],
+          "pipeline_id": "sd.any.der.meeteval_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        }
+      ],
+      "tool_name": "diarize_audio"
+    },
+    "se": {
+      "default_language": "any",
+      "engine_task": "se",
+      "evaluation_bridge": "samples_jsonl",
+      "fixture_root": "fixtures/tasks/se/librispeech_noise_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "audio_path"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "dnsmos",
+        "pesq",
+        "si_sdr",
+        "stoi",
+        "utmos",
+        "wv_mos"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "enhanced_audio",
+        "reference_audio"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/si_sdr",
+          "language": "any",
+          "metric": "si_sdr",
+          "optional_roles": [
+            "noisy_audio"
+          ],
+          "pipeline_id": "se.any.si_sdr.si_sdr_v1",
+          "required_roles": [
+            "enhanced_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/stoi",
+          "language": "any",
+          "metric": "stoi",
+          "optional_roles": [
+            "noisy_audio"
+          ],
+          "pipeline_id": "se.any.stoi.stoi_v1",
+          "required_roles": [
+            "enhanced_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/pesq",
+          "language": "any",
+          "metric": "pesq",
+          "optional_roles": [
+            "noisy_audio"
+          ],
+          "pipeline_id": "se.any.pesq.pesq_v1",
+          "required_roles": [
+            "enhanced_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/dnsmos",
+          "language": "any",
+          "metric": "dnsmos",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.dnsmos.dnsmos_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/wv_mos",
+          "language": "any",
+          "metric": "wv_mos",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.wv_mos.wv_mos_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/utmos",
+          "language": "any",
+          "metric": "utmos",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.utmos.utmos_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        }
+      ],
+      "tool_name": "enhance_speech"
+    },
+    "ser": {
+      "default_language": "any",
+      "engine_task": "classification",
+      "evaluation_bridge": "text_pair",
+      "fixture_root": "fixtures/tasks/ser/crema_d_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "label"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "accuracy"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "hyp",
+        "ref"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/classify",
+          "language": "any",
+          "metric": "accuracy",
+          "optional_roles": [
+            "label_spec"
+          ],
+          "pipeline_id": "ser.any.accuracy.classify_v1",
+          "required_roles": [
+            "hyp",
+            "ref"
+          ]
+        }
+      ],
+      "tool_name": "classify_emotion"
+    },
+    "slu": {
+      "default_language": "any",
+      "engine_task": "slu",
+      "evaluation_bridge": "text_pair_prompt",
+      "fixture_root": "fixtures/tasks/slu/fluent_speech_commands_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "answer"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "accuracy"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "hyp",
+        "prompt_jsonl",
+        "ref"
+      ],
+      "routes": [
+        {
+          "input_contract": "prompt_norm_classify",
+          "language": "any",
+          "metric": "accuracy",
+          "optional_roles": [
+            "label_spec"
+          ],
+          "pipeline_id": "slu.any.accuracy.prompt_norm_choice_id_v1.classify_v1",
+          "required_roles": [
+            "hyp",
+            "ref",
+            "prompt_jsonl"
+          ]
+        },
+        {
+          "input_contract": "prompt_norm_classify",
+          "language": "any",
+          "metric": "accuracy",
+          "optional_roles": [
+            "label_spec"
+          ],
+          "pipeline_id": "slu.any.accuracy.prompt_norm_choice_text_v1.classify_v1",
+          "required_roles": [
+            "hyp",
+            "ref",
+            "prompt_jsonl"
+          ]
+        }
+      ],
+      "tool_name": "understand_speech"
+    },
+    "sv": {
+      "default_language": "any",
+      "engine_task": "sv",
+      "evaluation_bridge": "sv_trials",
+      "fixture_root": "fixtures/tasks/sv/librispeech_trials_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "embedding"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "eer",
+        "min_dcf"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "sample_output",
+        "trial_manifest"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/sv_trials",
+          "language": "any",
+          "metric": "eer",
+          "optional_roles": [],
+          "pipeline_id": "sv.any.eer.cosine_trial_scores_v1.det_eer_v1",
+          "required_roles": [
+            "sample_output",
+            "trial_manifest"
+          ]
+        },
+        {
+          "input_contract": "scoring/sv_trials",
+          "language": "any",
+          "metric": "min_dcf",
+          "optional_roles": [],
+          "pipeline_id": "sv.any.min_dcf.cosine_trial_scores_v1.min_dcf_p005_v1",
+          "required_roles": [
+            "sample_output",
+            "trial_manifest"
+          ]
+        }
+      ],
+      "tool_name": "embed_speaker"
+    },
+    "tse": {
+      "default_language": "en",
+      "engine_task": "tse",
+      "evaluation_bridge": "samples_jsonl",
+      "fixture_root": "fixtures/tasks/tse/librispeech_mix_smoke",
+      "io_contract": {
+        "input_type": "audio_pair",
+        "primary_field": "audio_path"
+      },
+      "language_sensitive": true,
+      "metrics": [
+        "cer",
+        "dnsmos",
+        "si_sdr",
+        "spk_sim",
+        "utmos",
+        "wer",
+        "wv_mos"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "prediction_audio",
+        "reference_audio",
+        "reference_text"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/si_sdr",
+          "language": "template",
+          "metric": "si_sdr",
+          "optional_roles": [
+            "mixed_audio",
+            "enrollment_audio"
+          ],
+          "pipeline_id": "tse.{language}.si_sdr.si_sdr_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/wavlm_large_sim",
+          "language": "template",
+          "metric": "spk_sim",
+          "optional_roles": [
+            "mixed_audio",
+            "enrollment_audio"
+          ],
+          "pipeline_id": "tse.{language}.spk_sim.wavlm_large_sim_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/ecapa_tdnn_sim",
+          "language": "template",
+          "metric": "spk_sim",
+          "optional_roles": [
+            "mixed_audio",
+            "enrollment_audio"
+          ],
+          "pipeline_id": "tse.{language}.spk_sim.ecapa_tdnn_sim_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/eres2net_sim",
+          "language": "template",
+          "metric": "spk_sim",
+          "optional_roles": [
+            "mixed_audio",
+            "enrollment_audio"
+          ],
+          "pipeline_id": "tse.{language}.spk_sim.eres2net_sim_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/dnsmos",
+          "language": "template",
+          "metric": "dnsmos",
+          "optional_roles": [
+            "mixed_audio",
+            "enrollment_audio"
+          ],
+          "pipeline_id": "tse.{language}.dnsmos.dnsmos_v1",
+          "required_roles": [
+            "prediction_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/wv_mos",
+          "language": "template",
+          "metric": "wv_mos",
+          "optional_roles": [
+            "mixed_audio",
+            "enrollment_audio"
+          ],
+          "pipeline_id": "tse.{language}.wv_mos.wv_mos_v1",
+          "required_roles": [
+            "prediction_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/utmos",
+          "language": "template",
+          "metric": "utmos",
+          "optional_roles": [
+            "mixed_audio",
+            "enrollment_audio"
+          ],
+          "pipeline_id": "tse.{language}.utmos.utmos_v1",
+          "required_roles": [
+            "prediction_audio"
+          ]
+        },
+        {
+          "input_contract": "semantic/asr_error_rate",
+          "language": "zh",
+          "metric": "cer",
+          "optional_roles": [
+            "reference_audio",
+            "mixed_audio",
+            "enrollment_audio"
+          ],
+          "pipeline_id": "tse.{language}.cer.funasr_loader_16k_mono_v1.paraformer_zh_v1.punctuation_strip_norm_v1.wenet_cer_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_text"
+          ]
+        },
+        {
+          "input_contract": "semantic/asr_error_rate",
+          "language": "en",
+          "metric": "wer",
+          "optional_roles": [
+            "reference_audio",
+            "mixed_audio",
+            "enrollment_audio"
+          ],
+          "pipeline_id": "tse.{language}.wer.whisper_large_v3_v1.whisper_norm_english_v1.wenet_wer_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_text"
+          ]
+        }
+      ],
+      "tool_name": "extract_speaker"
+    },
+    "tts": {
+      "default_language": "en",
+      "engine_task": "tts",
+      "evaluation_bridge": "samples_jsonl",
+      "fixture_root": "fixtures/tasks/tts/librispeech_prompt_smoke",
+      "io_contract": {
+        "input_type": "text_with_reference_audio",
+        "primary_field": "audio_path"
+      },
+      "language_sensitive": true,
+      "metrics": [
+        "cer",
+        "dnsmos",
+        "spk_sim",
+        "utmos",
+        "wer",
+        "wv_mos"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "prediction_audio",
+        "reference_audio",
+        "reference_text"
+      ],
+      "routes": [
+        {
+          "input_contract": "semantic/asr_error_rate",
+          "language": "zh",
+          "metric": "cer",
+          "optional_roles": [
+            "reference_audio"
+          ],
+          "pipeline_id": "tts.{language}.cer.funasr_loader_16k_mono_v1.paraformer_zh_v1.punctuation_strip_norm_v1.wenet_cer_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_text"
+          ]
+        },
+        {
+          "input_contract": "semantic/asr_error_rate",
+          "language": "zh",
+          "metric": "cer",
+          "optional_roles": [
+            "reference_audio"
+          ],
+          "pipeline_id": "tts.{language}.cer.qwen3_asr_1_7b_v1.punctuation_strip_norm_v1.wenet_cer_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_text"
+          ]
+        },
+        {
+          "input_contract": "semantic/asr_error_rate",
+          "language": "en",
+          "metric": "wer",
+          "optional_roles": [
+            "reference_audio"
+          ],
+          "pipeline_id": "tts.{language}.wer.whisper_large_v3_v1.whisper_norm_english_v1.wenet_wer_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_text"
+          ]
+        },
+        {
+          "input_contract": "semantic/asr_error_rate",
+          "language": "en",
+          "metric": "wer",
+          "optional_roles": [
+            "reference_audio"
+          ],
+          "pipeline_id": "tts.{language}.wer.qwen3_asr_1_7b_v1.whisper_norm_english_v1.wenet_wer_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_text"
+          ]
+        },
+        {
+          "input_contract": "semantic/asr_error_rate",
+          "language": "ar",
+          "metric": "cer",
+          "optional_roles": [
+            "reference_audio"
+          ],
+          "pipeline_id": "tts.{language}.cer.cohere_transcribe_arabic_07_2026_v1.nemo_norm_ar_tn_v1.wenet_cer_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_text"
+          ]
+        },
+        {
+          "input_contract": "scoring/wavlm_large_sim",
+          "language": "template",
+          "metric": "spk_sim",
+          "optional_roles": [],
+          "pipeline_id": "tts.{language}.spk_sim.wavlm_large_sim_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/ecapa_tdnn_sim",
+          "language": "template",
+          "metric": "spk_sim",
+          "optional_roles": [],
+          "pipeline_id": "tts.{language}.spk_sim.ecapa_tdnn_sim_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/eres2net_sim",
+          "language": "template",
+          "metric": "spk_sim",
+          "optional_roles": [],
+          "pipeline_id": "tts.{language}.spk_sim.eres2net_sim_v1",
+          "required_roles": [
+            "prediction_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/dnsmos",
+          "language": "template",
+          "metric": "dnsmos",
+          "optional_roles": [],
+          "pipeline_id": "tts.{language}.dnsmos.dnsmos_v1",
+          "required_roles": [
+            "prediction_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/wv_mos",
+          "language": "template",
+          "metric": "wv_mos",
+          "optional_roles": [],
+          "pipeline_id": "tts.{language}.wv_mos.wv_mos_v1",
+          "required_roles": [
+            "prediction_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/utmos",
+          "language": "template",
+          "metric": "utmos",
+          "optional_roles": [],
+          "pipeline_id": "tts.{language}.utmos.utmos_v1",
+          "required_roles": [
+            "prediction_audio"
+          ]
+        }
+      ],
+      "tool_name": "synthesize_speech"
+    },
+    "vad": {
+      "default_language": "any",
+      "engine_task": "vad",
+      "evaluation_bridge": "sure_json",
+      "fixture_root": "fixtures/tasks/vad/librispeech_silence_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "speech_segments"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "auc_roc",
+        "dcf_nist",
+        "f1",
+        "p_fa",
+        "p_miss"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "reference_jsonl",
+        "sample_output"
+      ],
+      "routes": [
+        {
+          "input_contract": "vad_jsonl",
+          "language": "any",
+          "metric": "f1",
+          "optional_roles": [],
+          "pipeline_id": "vad.any.f1.vad_contract_v1.vad_timebase_strict_v1.vad_detection_duration_v1",
+          "required_roles": [
+            "reference_jsonl",
+            "sample_output"
+          ]
+        },
+        {
+          "input_contract": "vad_jsonl",
+          "language": "any",
+          "metric": "p_fa",
+          "optional_roles": [],
+          "pipeline_id": "vad.any.p_fa.vad_contract_v1.vad_timebase_strict_v1.vad_detection_duration_v1",
+          "required_roles": [
+            "reference_jsonl",
+            "sample_output"
+          ]
+        },
+        {
+          "input_contract": "vad_jsonl",
+          "language": "any",
+          "metric": "p_miss",
+          "optional_roles": [],
+          "pipeline_id": "vad.any.p_miss.vad_contract_v1.vad_timebase_strict_v1.vad_detection_duration_v1",
+          "required_roles": [
+            "reference_jsonl",
+            "sample_output"
+          ]
+        },
+        {
+          "input_contract": "vad_jsonl",
+          "language": "any",
+          "metric": "dcf_nist",
+          "optional_roles": [],
+          "pipeline_id": "vad.any.dcf_nist.vad_contract_v1.vad_timebase_strict_v1.vad_detection_duration_v1",
+          "required_roles": [
+            "reference_jsonl",
+            "sample_output"
+          ]
+        },
+        {
+          "input_contract": "vad_jsonl",
+          "language": "any",
+          "metric": "auc_roc",
+          "optional_roles": [],
+          "pipeline_id": "vad.any.auc_roc.vad_contract_v1.vad_timebase_strict_v1.vad_auc_roc_v1",
+          "required_roles": [
+            "reference_jsonl",
+            "sample_output"
+          ]
+        }
+      ],
+      "tool_name": "detect_voice_activity"
+    },
+    "vc": {
+      "default_language": "en",
+      "engine_task": "vc",
+      "evaluation_bridge": "samples_jsonl",
+      "fixture_root": "fixtures/tasks/vc/librispeech_voice_conversion_smoke",
+      "io_contract": {
+        "input_type": "audio_pair",
+        "primary_field": "audio_path"
+      },
+      "language_sensitive": true,
+      "metrics": [
+        "cer",
+        "dnsmos",
+        "spk_sim",
+        "utmos",
+        "wer",
+        "wv_mos"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "converted_audio",
+        "reference_audio",
+        "reference_text"
+      ],
+      "routes": [
+        {
+          "input_contract": "semantic/asr_error_rate_with_text",
+          "language": "zh",
+          "metric": "cer",
+          "optional_roles": [
+            "reference_audio",
+            "source_audio"
+          ],
+          "pipeline_id": "vc.zh.cer.funasr_loader_16k_mono_v1.paraformer_zh_v1.punctuation_strip_norm_v1.wenet_cer_v1",
+          "required_roles": [
+            "converted_audio",
+            "reference_text"
+          ]
+        },
+        {
+          "input_contract": "semantic/asr_error_rate_with_audio_reference",
+          "language": "zh",
+          "metric": "cer",
+          "optional_roles": [
+            "source_audio"
+          ],
+          "pipeline_id": "vc.zh.cer.funasr_loader_16k_mono_v1.paraformer_zh_v1.funasr_loader_16k_mono_v1.paraformer_zh_v1.punctuation_strip_norm_v1.wenet_cer_v1",
+          "required_roles": [
+            "converted_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "semantic/asr_error_rate_with_text",
+          "language": "en",
+          "metric": "wer",
+          "optional_roles": [
+            "reference_audio",
+            "source_audio"
+          ],
+          "pipeline_id": "vc.en.wer.whisper_large_v3_v1.whisper_norm_english_v1.wenet_wer_v1",
+          "required_roles": [
+            "converted_audio",
+            "reference_text"
+          ]
+        },
+        {
+          "input_contract": "semantic/asr_error_rate_with_audio_reference",
+          "language": "en",
+          "metric": "wer",
+          "optional_roles": [
+            "source_audio"
+          ],
+          "pipeline_id": "vc.en.wer.whisper_large_v3_v1.whisper_large_v3_v1.whisper_norm_english_v1.wenet_wer_v1",
+          "required_roles": [
+            "converted_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/wavlm_large_sim",
+          "language": "template",
+          "metric": "spk_sim",
+          "optional_roles": [
+            "source_audio"
+          ],
+          "pipeline_id": "vc.{language}.spk_sim.wavlm_large_sim_v1",
+          "required_roles": [
+            "converted_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/ecapa_tdnn_sim",
+          "language": "template",
+          "metric": "spk_sim",
+          "optional_roles": [
+            "source_audio"
+          ],
+          "pipeline_id": "vc.{language}.spk_sim.ecapa_tdnn_sim_v1",
+          "required_roles": [
+            "converted_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/eres2net_sim",
+          "language": "template",
+          "metric": "spk_sim",
+          "optional_roles": [
+            "source_audio"
+          ],
+          "pipeline_id": "vc.{language}.spk_sim.eres2net_sim_v1",
+          "required_roles": [
+            "converted_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/dnsmos",
+          "language": "template",
+          "metric": "dnsmos",
+          "optional_roles": [
+            "source_audio"
+          ],
+          "pipeline_id": "vc.{language}.dnsmos.dnsmos_v1",
+          "required_roles": [
+            "converted_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/wv_mos",
+          "language": "template",
+          "metric": "wv_mos",
+          "optional_roles": [
+            "source_audio"
+          ],
+          "pipeline_id": "vc.{language}.wv_mos.wv_mos_v1",
+          "required_roles": [
+            "converted_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/utmos",
+          "language": "template",
+          "metric": "utmos",
+          "optional_roles": [
+            "source_audio"
+          ],
+          "pipeline_id": "vc.{language}.utmos.utmos_v1",
+          "required_roles": [
+            "converted_audio"
+          ]
+        }
+      ],
+      "tool_name": "convert_voice"
+    }
+  }
+}

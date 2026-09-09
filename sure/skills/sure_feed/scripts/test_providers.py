@@ -12,6 +12,7 @@ from sure_feed.fixture_registry import select_fixture_for_task  # noqa: E402
 from sure_feed.providers.base import ProviderNetworkError, ProviderRequest, infer_task, synthesize_model_input, to_yaml  # noqa: E402
 from sure_feed.providers.huggingface import HuggingFaceProvider  # noqa: E402
 from sure_feed_online_discover import parse_model_url  # noqa: E402
+from sure.runtime.evaluation.task_registry import canonical_tasks  # noqa: E402
 
 
 class ProviderTests(unittest.TestCase):
@@ -259,8 +260,36 @@ pip install sherpa-onnx
         assert fixture is not None
         self.assertEqual(fixture["fixture_source"], "task_registry")
         self.assertEqual(fixture["fixture_index"], "fixtures/tasks/speech_understanding/README.md")
-        self.assertEqual(fixture["selected_subtasks"], ["asr", "sd"])
+        self.assertEqual(fixture["selected_subtasks"], list(canonical_tasks()))
+        self.assertEqual(len(fixture["subtask_fixtures"]), 15)
+        self.assertEqual(set(fixture["subtask_io_contracts"]), set(canonical_tasks()))
         self.assertEqual(io_contract["primary_field"], "text")
+
+    def test_fixture_registry_selects_every_engine_task(self) -> None:
+        for task in canonical_tasks():
+            with self.subTest(task=task):
+                fixture, contract, issues, _evidence = select_fixture_for_task(task)
+                self.assertEqual(issues, [])
+                self.assertIsNotNone(fixture)
+                assert fixture is not None
+                self.assertEqual(fixture["fixture_source"], "task_registry")
+                self.assertTrue(fixture["fixture_root"].startswith(f"fixtures/tasks/{task}/"))
+                self.assertTrue(contract["primary_field"])
+
+    def test_sv_fixture_includes_engine_trial_manifest(self) -> None:
+        fixture, contract, issues, _evidence = select_fixture_for_task("sv")
+        self.assertEqual(issues, [])
+        assert fixture is not None
+        self.assertEqual(
+            fixture["trial_manifest"],
+            "fixtures/tasks/sv/librispeech_trials_smoke/trial_manifest.json",
+        )
+        self.assertEqual(contract["primary_field"], "embedding")
+
+    def test_kws_contract_uses_wrapper_prediction_not_reference_label(self) -> None:
+        _fixture, contract, issues, _evidence = select_fixture_for_task("kws")
+        self.assertEqual(issues, [])
+        self.assertEqual(contract["primary_field"], "detected")
 
     def test_fixture_registry_selects_sd_and_sa_asr_jsonl_fixtures(self) -> None:
         sd_fixture, sd_contract, sd_issues, _sd_evidence = select_fixture_for_task("sd", {"description": "speaker diarization"})

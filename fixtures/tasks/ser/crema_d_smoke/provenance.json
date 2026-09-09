@@ -1,0 +1,65 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "ser",
+  "dataset": {
+    "repository": "CheyneyComputerScience/CREMA-D",
+    "revision": "1658cd342dff90010aa843eaeebd53610a08b1dc",
+    "configuration": "AudioWAV",
+    "split": "published corpus",
+    "license": "ODbL-1.0/DbCL-1.0",
+    "license_url": "https://github.com/CheyneyComputerScience/CREMA-D/blob/1658cd342dff90010aa843eaeebd53610a08b1dc/LICENSE.txt",
+    "source_url": "https://github.com/CheyneyComputerScience/CREMA-D",
+    "citation_url": "https://doi.org/10.1109/TAFFC.2014.2336244",
+    "source_id": "crema_d",
+    "metadata_sha256": "871fe2ead8fb103e3cf1fabe20e00cd3474b455e789264389ccb6c9b1f49cf06",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "1001_DFA_ANG_XX",
+      "1001_DFA_HAP_XX",
+      "1001_DFA_NEU_XX"
+    ]
+  },
+  "annotations": {
+    "source": "dataset-published labels",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "27b7c9b0123c1ae9b2378ec9d1e64ef120b71ac85bcd2b11a3bbca569be6cba5"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "1001_DFA_ANG_XX.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "c6f94b2592487c7556bd86df7df6e8f4420d1b9c11414aeec9d8e5e640b51495",
+      "transform_id": "source_media_copy",
+      "source_sha256": "c6f94b2592487c7556bd86df7df6e8f4420d1b9c11414aeec9d8e5e640b51495"
+    },
+    {
+      "path": "1001_DFA_HAP_XX.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "91d63d7a792a37b2ff8ac6267d3e5364bc1b10d5b0e0be288c0af0534d4fdae5",
+      "transform_id": "source_media_copy",
+      "source_sha256": "91d63d7a792a37b2ff8ac6267d3e5364bc1b10d5b0e0be288c0af0534d4fdae5"
+    },
+    {
+      "path": "1001_DFA_NEU_XX.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "95e32bd83c449d26afb653c5451fa0389a83b1245c24385778cd02a18cb50cb6",
+      "transform_id": "source_media_copy",
+      "source_sha256": "95e32bd83c449d26afb653c5451fa0389a83b1245c24385778cd02a18cb50cb6"
+    }
+  ]
+}

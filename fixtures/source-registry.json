@@ -1,0 +1,45 @@
+{
+	"schema": "sure.fixture_source_registry.v1",
+	"sources": {
+		"covost2": {
+			"repository": "facebookresearch/covost",
+			"revision": "CoVoST 2 release",
+			"configuration": "en-zh",
+			"split": "test",
+			"license": "CC0-1.0",
+			"license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+			"source_url": "https://github.com/facebookresearch/covost",
+			"citation_url": "https://aclanthology.org/2020.findings-emnlp.304/"
+		},
+		"crema_d": {
+			"repository": "CheyneyComputerScience/CREMA-D",
+			"revision": "1658cd342dff90010aa843eaeebd53610a08b1dc",
+			"configuration": "AudioWAV",
+			"split": "published corpus",
+			"license": "ODbL-1.0/DbCL-1.0",
+			"license_url": "https://github.com/CheyneyComputerScience/CREMA-D/blob/1658cd342dff90010aa843eaeebd53610a08b1dc/LICENSE.txt",
+			"source_url": "https://github.com/CheyneyComputerScience/CREMA-D",
+			"citation_url": "https://doi.org/10.1109/TAFFC.2014.2336244"
+		},
+		"fluent_speech_commands": {
+			"repository": "GrindstoneLZX/FluentSpeechCommandsDataset",
+			"revision": "f8cdd495d08d4d1e101af714a18475c8d67ddeb0",
+			"configuration": "spoken intent triples",
+			"split": "test",
+			"license": "Fluent-Speech-Commands-Public-License",
+			"license_url": "https://github.com/GrindstoneLZX/FluentSpeechCommandsDataset/blob/f8cdd495d08d4d1e101af714a18475c8d67ddeb0/Fluent%20Speech%20Commands%20Public%20License.pdf",
+			"source_url": "https://github.com/GrindstoneLZX/FluentSpeechCommandsDataset",
+			"citation_url": "https://arxiv.org/abs/1904.03670"
+		},
+		"librispeech": {
+			"repository": "OpenSLR SLR12",
+			"revision": "LibriSpeech ASR corpus release",
+			"configuration": "test-clean or test-other",
+			"split": "test",
+			"license": "CC-BY-4.0",
+			"license_url": "https://www.openslr.org/resources/12/LICENSE.TXT",
+			"source_url": "https://www.openslr.org/12",
+			"citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf"
+		}
+	}
+}

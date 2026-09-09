@@ -1,5 +1,9 @@
 # Voice Conversion Fixture Index
 
+Approved harness fixture:
+`fixtures/tasks/vc/librispeech_voice_conversion_smoke/`, with traceable source
+and target voices. The older fixture below remains available.
+
 Use this index for voice conversion models. Copy selected source/reference
 samples into:
 

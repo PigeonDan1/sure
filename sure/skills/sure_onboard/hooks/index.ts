@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { agentBinDir, demoteAgentBinDir } from "../../../runtime/agent-path.ts";
+import { TASK_TYPES } from "../../../runtime/evaluation/task-types.generated.ts";
 import { type HarnessRuntimeContract, resolveHarnessPython } from "../../../runtime/harness/resolve.ts";
 import {
 	gateUnavailable,
@@ -70,20 +71,6 @@ export function countersFor(completed: CheckpointData, gateBlocks?: number) {
 
 // Resolve the model artifacts dir. sure_onboard binds model entity products to
 // the repo-level sure/models/<model_name>/ directory (product layout decision).
-const TASK_TYPES = [
-	"asr",
-	"s2tt",
-	"sd",
-	"ser",
-	"tts",
-	"vc",
-	"kws",
-	"slu",
-	"gr",
-	"speech_understanding",
-	"sa-asr",
-	"sa_asr",
-];
 const DEPLOYMENT_TYPES = ["local", "api"];
 const PACKAGE_PROFILES = ["none", "docker-local", "docker-registry"];
 

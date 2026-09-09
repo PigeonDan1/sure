@@ -24,6 +24,13 @@ from sure_eval.core.config import Config
 from sure_eval.core.logging import configure_logging, get_logger
 from sure_eval.datasets import DatasetManager
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+
 configure_logging(level="INFO")
 logger = get_logger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -115,22 +122,26 @@ def _task_contract_violations(
     sample_by_key = {str(sample.get("key", "")): sample for sample in samples}
     for key, row in structured.items():
         sample = sample_by_key.get(key, {})
-        task = str(row.get("task") or sample.get("task") or "").upper()
+        task = normalize_task(str(row.get("task") or sample.get("task") or ""))
         prediction = row.get("prediction") if isinstance(row.get("prediction"), dict) else {}
         normalized = str(row.get("normalized_prediction") or "")
-        if task in {"ASR", "S2TT"} and not (prediction.get("text") or normalized):
+        try:
+            primary_field = str(task_profile(task)["io_contract"]["primary_field"])
+        except ValueError:
             violations.append(key)
-        elif task in {"TTS", "VC"}:
-            audio_path = prediction.get("audio_path") or normalized
+            continue
+        value = prediction.get(primary_field)
+        if primary_field == "translation":
+            value = value or prediction.get("text")
+        elif primary_field == "answer":
+            value = value or prediction.get("text") or prediction.get("label")
+        elif primary_field == "segments":
+            value = value or prediction.get("annotation")
+        if primary_field == "audio_path":
+            audio_path = value or normalized
             if not audio_path or not _resolve_audio_path(audio_path, base_dir).exists():
                 violations.append(key)
-        elif task in {"SER", "GR"} and not (prediction.get("label") or normalized):
-            violations.append(key)
-        elif task == "SLU" and not (prediction.get("text") or prediction.get("label") or normalized):
-            violations.append(key)
-        elif task in {"SD", "SA-ASR"} and not (prediction.get("segments") or prediction.get("annotation") or normalized):
-            violations.append(key)
-        elif task == "KWS" and not (prediction.get("score") is not None or prediction.get("events") or normalized):
+        elif value in (None, "", [], {}) and not normalized:
             violations.append(key)
     return sorted(set(violations))
 

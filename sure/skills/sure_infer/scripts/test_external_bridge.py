@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -148,6 +150,59 @@ class UnsupportedMessageTests(unittest.TestCase):
         )
         self.assertIn("legacy evaluator", message)
         self.assertNotIn("rejected", message)
+
+
+class MeetEvalProjectionTests(unittest.TestCase):
+    def test_sd_segments_are_projected_to_rttm(self) -> None:
+        samples = [
+            {
+                "key": "session-1",
+                "segments": [
+                    {"speaker": "spk1", "start": 0.0, "end": 1.25},
+                    {"speaker": "spk2", "start": 1.5, "duration": 0.75},
+                ],
+            }
+        ]
+        predictions = {
+            "session-1": {
+                "prediction": {
+                    "segments": [{"speaker": "speaker-a", "start": 0.0, "end": 2.0}]
+                }
+            }
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            structured = Path(directory) / "predictions.jsonl"
+            structured.write_text("", encoding="utf-8")
+            reference, hypothesis = ep._write_meeteval_annotations(
+                task="SD",
+                samples=samples,
+                structured_predictions=predictions,
+                structured_prediction_path=structured,
+            )
+            self.addCleanup(Path(reference).unlink, missing_ok=True)
+            self.addCleanup(Path(hypothesis).unlink, missing_ok=True)
+            reference_rows = Path(reference).read_text(encoding="utf-8").splitlines()
+            hypothesis_rows = Path(hypothesis).read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(reference_rows), 2)
+            self.assertEqual(reference_rows[0], "SPEAKER session-1 1 0.000 1.250 <NA> <NA> spk1 <NA> <NA>")
+            self.assertEqual(hypothesis_rows[0], "SPEAKER session-1 1 0.000 2.000 <NA> <NA> speaker-a <NA> <NA>")
+
+    def test_sa_asr_segments_are_projected_to_stm(self) -> None:
+        segment = {"speaker": "spk1", "start": 0.25, "end": 1.5, "text": "hello world"}
+        with tempfile.TemporaryDirectory() as directory:
+            structured = Path(directory) / "predictions.jsonl"
+            structured.write_text(json.dumps({"key": "session-1"}), encoding="utf-8")
+            reference, hypothesis = ep._write_meeteval_annotations(
+                task="SA_ASR",
+                samples=[{"key": "session-1", "segments": [segment]}],
+                structured_predictions={"session-1": {"prediction": {"segments": [segment]}}},
+                structured_prediction_path=structured,
+            )
+            self.addCleanup(Path(reference).unlink, missing_ok=True)
+            self.addCleanup(Path(hypothesis).unlink, missing_ok=True)
+            expected = "session-1 1 spk1 0.250 1.500 hello world\n"
+            self.assertEqual(Path(reference).read_text(encoding="utf-8"), expected)
+            self.assertEqual(Path(hypothesis).read_text(encoding="utf-8"), expected)
 
 
 if __name__ == "__main__":

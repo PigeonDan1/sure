@@ -1,0 +1,2 @@
+{"key":"se_1580","task":"SE","language":"en","dataset":"librispeech_test_clean_derived_se","audio":"noisy_1580.wav","noisy_audio":"noisy_1580.wav","reference_audio":"reference_1580.wav","reference_text":"one hardly likes to throw suspicion where there are no proofs"}
+{"key":"se_1089","task":"SE","language":"en","dataset":"librispeech_test_clean_derived_se","audio":"noisy_1089.wav","noisy_audio":"noisy_1089.wav","reference_audio":"reference_1089.wav","reference_text":"for a full hour he had paced up and down waiting but he could wait no longer"}

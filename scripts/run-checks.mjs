@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 const checks = [
 	["biome", ["check", "--error-on-warnings", "."]],
 	["npm", ["run", "check:fixture-provenance"]],
+	["npm", ["run", "check:task-capabilities"]],
 	["npm", ["run", "check:repository-hygiene"]],
 	["npm", ["run", "check:site-boundary"]],
 	["npm", ["run", "test:public-export"]],

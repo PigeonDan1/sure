@@ -1,0 +1,2 @@
+{"key":"gender_1580","task":"GR","language":"en","dataset":"librispeech_test_clean_gender","audio":"1580-141083-0040.wav","label":"female","ground_truth":"female","speaker_id":"1580"}
+{"key":"gender_1089","task":"GR","language":"en","dataset":"librispeech_test_clean_gender","audio":"1089-134691-0001.wav","label":"male","ground_truth":"male","speaker_id":"1089"}
