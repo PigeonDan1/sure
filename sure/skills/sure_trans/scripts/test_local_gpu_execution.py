@@ -201,7 +201,13 @@ class LocalGpuExecutionTests(unittest.TestCase):
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
             output = artifacts / "import_result.json"
-            command = ["docker", "run", "--rm", "--gpus", "all", "image", "true"]
+            validation_dir = artifacts / "adapter_validation"
+            command = [
+                "docker", "run", "--rm", "--gpus", "all",
+                "-v", f"{validation_dir}:/validation:rw",
+                "-e", "SURE_VALIDATE_ARTIFACTS_DIR=/validation",
+                "image", "true",
+            ]
             write_json(output, {"status": "pending", "run_command": command})
             write_json(
                 artifacts / "execution_compat.json",
@@ -209,13 +215,24 @@ class LocalGpuExecutionTests(unittest.TestCase):
             )
             write_json(artifacts / "trans_input_resolved.json", {"source_kind": "docker"})
             completed = subprocess.CompletedProcess(command, 0, stdout="ok\n", stderr="")
+
+            def run_local(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+                validation_dir.mkdir(parents=True, exist_ok=True)
+                write_json(validation_dir / "import_result.json", {"import_passed": True})
+                return completed
+
             with (
                 mock.patch.object(
                     run_trans_validate,
                     "docker_run_to_vc",
-                    return_value=VcSpec(image="image", mounts=[], command=["true"], env={}),
+                    return_value=VcSpec(
+                        image="image",
+                        mounts=[f"{validation_dir}:/validation:rw"],
+                        command=["true"],
+                        env={"SURE_VALIDATE_ARTIFACTS_DIR": "/validation"},
+                    ),
                 ),
-                mock.patch.object(run_trans_validate.subprocess, "run", return_value=completed) as run,
+                mock.patch.object(run_trans_validate.subprocess, "run", side_effect=run_local) as run,
                 mock.patch.object(run_trans_validate, "run_vc_validation", side_effect=AssertionError("VC called")),
                 mock.patch.object(
                     sys,
@@ -237,6 +254,96 @@ class LocalGpuExecutionTests(unittest.TestCase):
             self.assertEqual(payload["status"], "passed")
             self.assertEqual(payload["execution_surface"], "local_docker")
             self.assertNotIn("vc_job_id", payload)
+
+    def test_validation_rejects_local_gpu_without_adapter_artifact_mount(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            output = artifacts / "import_result.json"
+            command = ["docker", "run", "--rm", "--gpus", "all", "image", "true"]
+            write_json(output, {"status": "pending", "run_command": command})
+            write_json(
+                artifacts / "execution_compat.json",
+                {"selected_device": "cuda", "execution_surface": "local_docker"},
+            )
+            write_json(artifacts / "trans_input_resolved.json", {"source_kind": "docker"})
+            with (
+                mock.patch.object(
+                    run_trans_validate,
+                    "docker_run_to_vc",
+                    return_value=VcSpec(image="image", mounts=[], command=["true"], env={}),
+                ),
+                mock.patch.object(run_trans_validate.subprocess, "run") as run,
+                mock.patch.object(run_trans_validate, "run_vc_validation", side_effect=AssertionError("VC called")),
+                mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "run_trans_validate.py",
+                        "--run-dir",
+                        str(run_dir),
+                        "--produces",
+                        str(output),
+                        "--kind",
+                        "import",
+                    ],
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "must set SURE_VALIDATE_ARTIFACTS_DIR"):
+                    run_trans_validate.main()
+            run.assert_not_called()
+
+    def test_validation_rejects_local_gpu_without_stage_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            validation_dir = artifacts / "adapter_validation"
+            output = artifacts / "import_result.json"
+            command = [
+                "docker", "run", "--rm", "--gpus", "all",
+                "-v", f"{validation_dir}:/validation:rw",
+                "-e", "SURE_VALIDATE_ARTIFACTS_DIR=/validation",
+                "image", "true",
+            ]
+            write_json(output, {"status": "pending", "run_command": command})
+            write_json(
+                artifacts / "execution_compat.json",
+                {"selected_device": "cuda", "execution_surface": "local_docker"},
+            )
+            write_json(artifacts / "trans_input_resolved.json", {"source_kind": "docker"})
+            completed = subprocess.CompletedProcess(command, 0, stdout="ok\n", stderr="")
+            with (
+                mock.patch.object(
+                    run_trans_validate,
+                    "docker_run_to_vc",
+                    return_value=VcSpec(
+                        image="image",
+                        mounts=[f"{validation_dir}:/validation:rw"],
+                        command=["true"],
+                        env={"SURE_VALIDATE_ARTIFACTS_DIR": "/validation"},
+                    ),
+                ),
+                mock.patch.object(run_trans_validate.subprocess, "run", return_value=completed) as run,
+                mock.patch.object(run_trans_validate, "run_vc_validation", side_effect=AssertionError("VC called")),
+                mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "run_trans_validate.py",
+                        "--run-dir",
+                        str(run_dir),
+                        "--produces",
+                        str(output),
+                        "--kind",
+                        "import",
+                    ],
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "evidence is missing or invalid"):
+                    run_trans_validate.main()
+            run.assert_called_once()
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "failed")
 
     def test_original_inference_rejects_missing_declared_output(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

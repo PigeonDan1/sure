@@ -39,6 +39,7 @@ PASS_KEYS = {
     "mcp": "mcp_passed",
     "equivalence": "equivalent",
 }
+ADAPTER_VALIDATION_STAGES = frozenset({"import", "load", "infer", "contract"})
 
 
 def read_object(path: Path) -> dict:
@@ -61,7 +62,7 @@ def require_local_gpu_command(
     shell: bool,
     run_dir: Path,
     kind: str,
-) -> None:
+) -> Path | None:
     if shell or not isinstance(command, list) or command[:2] != ["docker", "run"]:
         raise ValueError("local CUDA validation run_command must be a docker run argument list")
     if "--gpus" not in command:
@@ -69,7 +70,9 @@ def require_local_gpu_command(
     spec = docker_run_to_vc(command)
     target = str(spec.env.get("SURE_VALIDATE_ARTIFACTS_DIR", "") or "")
     if not target:
-        return
+        if kind in ADAPTER_VALIDATION_STAGES:
+            raise ValueError("local CUDA adapter validation must set SURE_VALIDATE_ARTIFACTS_DIR")
+        return None
     root = run_dir.resolve()
     for mount in spec.mounts:
         parts = mount.split(":")
@@ -84,7 +87,10 @@ def require_local_gpu_command(
         for path in stale:
             if path.exists():
                 path.unlink()
-        return
+        return output_dir
+    if kind in ADAPTER_VALIDATION_STAGES:
+        raise ValueError("local CUDA adapter validation must mount SURE_VALIDATE_ARTIFACTS_DIR")
+    return None
 
 
 def vc_resources(resolved: dict) -> tuple[str, int, int, int]:
@@ -519,6 +525,7 @@ def main() -> int:
     started = time.monotonic()
     extra: dict = {}
     local_cuda = selected_device == "cuda" and execution_surface == "local_docker" and not python_source
+    local_validation_dir: Path | None = None
     if selected_device == "cuda" and not local_cuda and not (python_source and args.kind == "original_inference"):
         exit_code, extra, rendered = run_vc_validation(
             run_dir, resolved, data, args.kind, run_dir / "artifacts", timeout
@@ -527,7 +534,7 @@ def main() -> int:
         duration_ms = round((time.monotonic() - started) * 1000, 3)
     else:
         if local_cuda:
-            require_local_gpu_command(command, shell, run_dir, args.kind)
+            local_validation_dir = require_local_gpu_command(command, shell, run_dir, args.kind)
         process = subprocess.run(command, shell=shell, cwd=cwd, env=env, check=False, capture_output=True, text=True, timeout=timeout)
         duration_ms = round((time.monotonic() - started) * 1000, 3)
         exit_code = process.returncode
@@ -536,6 +543,18 @@ def main() -> int:
         if local_cuda:
             extra = {"execution_surface": "local_docker"}
     passed = exit_code == 0
+    local_evidence_error = ""
+    if passed and local_validation_dir is not None:
+        stage_result = local_validation_dir / f"{args.kind}_result.json"
+        try:
+            stage_evidence = read_object(stage_result)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            passed = False
+            local_evidence_error = f"local CUDA validation evidence is missing or invalid: {stage_result} ({error})"
+        else:
+            if stage_evidence.get(PASS_KEYS[args.kind]) is not True:
+                passed = False
+                local_evidence_error = f"local CUDA validation evidence did not pass: {stage_result}"
     recorded_output_error = ""
     if args.kind == "original_inference" and passed:
         recorded_output = data.get("output")
@@ -549,7 +568,7 @@ def main() -> int:
                     "original inference declared an output file but did not create a non-empty "
                     f"artifact: {recorded_output_path}"
                 )
-    stage_error = "" if passed else container_stage_error(data.get("run_command"), args.kind)
+    stage_error = "" if passed else (local_evidence_error or container_stage_error(data.get("run_command"), args.kind))
     evidence = f"{rendered}\n{extra.get('vc_diagnostics', '')}\n{stage_error}"
     hint = "" if passed else (recorded_output_error or diagnose_oom(exit_code, evidence) or "")
     if not passed and not hint and "permission denied" in evidence.lower():
