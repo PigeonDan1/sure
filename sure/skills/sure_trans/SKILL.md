@@ -25,7 +25,8 @@ Convert an existing model delivery into the same Eval-ready contract produced by
 | `model_name` | yes | Must use `<organization>__<model-name>`; all bundle and image names use this value. |
 | `task_type` | no | Infer from evidence; require an explicit value when ambiguous. |
 | `fixture` | no | Absolute smoke input path. A same-stem `.expected.json` with a non-empty reference annotation is required; otherwise select an unambiguous `examples/smoke.*` file from the build context. |
-| `device` | no | `auto` (default), `cuda`, or `cpu`. `cpu` validates with local Docker only; `cuda` and GPU-capable `auto` submit VC jobs to the dedicated partition `<vc_default_partition>`. |
+| `device` | no | `auto` (default), `cuda`, or `cpu`. `cpu` validates with local Docker. CUDA defaults to VC unless `execution=local` is explicit. |
+| `execution` | no | `vc` (default for Docker CUDA) or `local`. `local` requires `local` in site `execution.surfaces` and `container` in `execution.local_runtimes`, and runs every CUDA gate through Docker `--gpus`. |
 | `model_mount_target` | no | Default to `/models/<model_name>`. |
 | `model_stage_policy` | no | `auto` (default), `copy`, or `hardlink`; materialize the model payload into the final bundle. |
 | `vc_partition` | no | VC partition for GPU validation; default and site requirement `<vc_default_partition>`. |
@@ -63,7 +64,7 @@ For `import`, `load`, `infer`, and `contract`, use `[<python_executable>, <adapt
 - Do not scan filesystem roots or silently adopt same-named files from shared storage.
 - Do not modify the supplied Dockerfile, model, or inference source in place.
 - Keep model data outside the image, materialize it into `sure/models/<model_name>/`, and mount that approved bundle read-only.
-- Treat MCP as the model invocation protocol. CPU validation runs in local Docker; GPU-touching validation submits VC jobs to `<vc_default_partition>`.
+- Treat MCP as the model invocation protocol. CPU validation runs in local Docker. CUDA validation uses VC by default; explicit `execution=local` uses the site-approved local NVIDIA Docker runtime.
 - Require the primary computation framework to be PyTorch. Auxiliary preprocessing may use native binaries or ONNX Runtime when recorded as a support dependency.
 - Prefer Transformers as the model framework, but do not block a custom or other declared PyTorch model framework. Record the declaration, detected category, architecture signals, and clarification in `framework_detection.json`; rely on original inference, adapter inference, and equivalence gates for behavioral proof.
 
@@ -119,6 +120,7 @@ Resolve the inputs first:
   --model-framework transformers \
   --task-type <task> \
   --device <auto|cuda|cpu> \
+  --execution <vc|local> \
   --vc-partition <partition> \
   --vc-memory-gb <gib> \
   --vc-gpus <count> \
@@ -128,7 +130,7 @@ Resolve the inputs first:
 
 For Python input, replace `--dockerfile` with `--python-executable <absolute-python>` and `--lockfile <absolute-lockfile>`, and forward `--package <docker-registry|none>`.
 
-Forward every user-provided optional parameter from the slash command into this invocation. Omitted `--vc-*` flags resolve to `<vc_default_partition>`, 32 GiB, and 1 GPU. Forward `--image-version` only when the user supplied it; otherwise input materialization reads the authenticated Registry V2 tag lists for both `<model_name>-source` and `<model_name>`, selects the next patch version, and records the repositories and observed tags in `trans_input_resolved.json.image_version_resolution`. Registry lookup failure blocks instead of guessing a possibly occupied tag.
+Forward every user-provided optional parameter from the slash command into this invocation. Omit `--execution` to preserve the VC default for Docker CUDA. With `--execution local`, do not pass any `--vc-*` option. Omitted `--vc-*` flags on the VC path resolve to `<vc_default_partition>`, 32 GiB, and 1 GPU. Forward `--image-version` only when the user supplied it; otherwise input materialization reads the authenticated Registry V2 tag lists for both `<model_name>-source` and `<model_name>`, selects the next patch version, and records the repositories and observed tags in `trans_input_resolved.json.image_version_resolution`. Registry lookup failure blocks instead of guessing a possibly occupied tag.
 
 Inspect the static dependency closure:
 
@@ -161,7 +163,8 @@ Static analysis is evidence, not proof. Materialize the source runtime, create `
 Execution surfaces split by device:
 
 - `device=cpu`: the probe runs in local Docker without `--gpus`; `execution_surface=local_docker`.
-- `device=cuda` or GPU-capable `auto`: the gate pushes the source image to `trans_input_resolved.json.container_delivery.source_image` and submits the probe through `vc submit` on `<vc_default_partition>`; `execution_surface=vc` with `vc_partition`, `vc_job_id`, `vc_memory_gb`, `vc_gpus`, and `vc_submit_command` recorded.
+- `device=cuda execution=local`: the probe runs in local Docker with `--gpus all`; `execution_surface=local_docker`, and the probe records the GPU name and compute capability. The site policy must allow local container execution.
+- `device=cuda execution=vc`, or CUDA with omitted `execution`: the gate pushes the source image to `trans_input_resolved.json.container_delivery.source_image` and submits the probe through `vc submit` on `<vc_default_partition>`; `execution_surface=vc` with `vc_partition`, `vc_job_id`, `vc_memory_gb`, `vc_gpus`, and `vc_submit_command` recorded.
 - `auto` with a model that does not require CUDA falls back to a local CPU probe only after the VC CUDA probe fails or times out; the fallback evidence is recorded in `fallback` and `execution_surface` stays `vc`. When `vc` is unavailable or the partition is not permitted, the gate blocks with a clear repair instead of silently falling back.
 
 For original and adapter smoke units, write the stage artifact with a real `run_command`. The original inference and adapter inference artifacts also need `input`, the staged fixture the command consumes (`staged_path` from `fixture_manifest.json`), and the MCP artifact needs `tool_name`, the tool the adapter exposes. The gate executes the command through `run_trans_validate.py`, captures stdout/stderr and exit status, and only then writes the matching pass field. A manually written `status=passed` is not sufficient. A required field the artifact omits blocks the unit and spends a retry before the command ever runs, so write them all in one go.
@@ -174,7 +177,7 @@ The four adapter stages share one validation directory. `validate.py` reads `SUR
 
 Giving each stage its own directory makes the contract stage fail with `Missing sample output` every time, however well inference went, and each attempt spends a gate retry.
 
-When the model is validated on GPU, `run_command` must be a `docker run ...` list (with `-v`/`-e`/`--entrypoint`/`-w` flags); the gate translates it into a VC job with the same mounts, environment, and command. `--mount` and unknown flags are rejected. On `device=cpu` a plain list or shell string also works.
+When the model is validated on GPU, `run_command` must be a `docker run ...` list (with `-v`/`-e`/`--entrypoint`/`-w` flags). On the VC surface the gate translates it into a job with the same mounts, environment, and command; on the local surface the list must include `--gpus` and is executed directly. `--mount` and unknown flags are rejected. On `device=cpu` a plain list or shell string also works.
 
 When `--entrypoint` is omitted, the translation resolves the image ENTRYPOINT/CMD from the local Docker daemon via `docker image inspect` and applies the same docker semantics (entrypoint + positional args, or entrypoint + image CMD when no args are given). An explicit `--entrypoint` always wins. If the image is not present locally, the gate blocks with a repair telling the agent to add `--entrypoint` explicitly or load the image.
 
@@ -217,7 +220,7 @@ Equivalence is decided by the gate, not by the command. Write `equivalence_resul
 2. Use `adapter/Dockerfile.sure` to layer `/opt/sure_trans/model.py`, `server.py`, `config.yaml`, `model.spec.yaml`, `__init__.py`, `validate.py`, and `mcp_smoke.py` onto the source image. The generated Dockerfile also copies the locked Harness Runtime into `/opt/sure-harness/<runtime_id>/`. If `SURE_HARNESS_RUNTIME_IMAGE` is set to a digest-pinned runtime image, build with `--build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>`; otherwise use `--build-context sure_harness_runtime=<SURE_HARNESS_RUNTIME_ROOT>`.
 3. Mount the staged `sure/models/<model_name>/` bundle read-only at `model_mount_target` for load, infer, MCP, and pull-verification tests.
 4. Validate import, persistent load, real inference, output contract, MCP initialize/list/call, and equivalence with original inference as separate gates.
-5. Push the adapter image to `trans_input_resolved.json.container_delivery.target_image`, resolve `sha256:...`, pull the exact `repository@sha256:...` reference, and repeat the MCP smoke test. Registry transport and authentication are deployment concerns; use the Docker daemon configuration for the active site. When the model was validated on GPU, the post-pull MCP smoke must itself run on VC through `mcp_smoke.py`; submit the **tag** with `--expect-digest` (see the VC section below — `vc submit` rejects digest-pinned references) and record its `vc_job_id`, `vc_partition=<vc_default_partition>`, `exit_code=0`, `image_ref`, the `resolved_digest` the submission proved, and the log path as `post_pull_smoke` in `docker_registry_result.json`, keeping `mcp_smoke.json` evidence next to that log path (the registry gate checks `resolved_digest` against `target_image_digest` and the initialize/tools/list/tools/call evidence).
+5. Push the adapter image to `trans_input_resolved.json.container_delivery.target_image`, resolve `sha256:...`, pull the exact `repository@sha256:...` reference, and repeat the MCP smoke test. Registry transport and authentication are deployment concerns; use the Docker daemon configuration for the active site. A GPU model must repeat the smoke on the same execution surface used by validation. VC records the job and partition evidence described below. Local Docker runs the exact digest-pinned `target_image_ref` with `--gpus` and records `execution_surface=local_docker`, `image_ref`, `resolved_digest`, `exit_code=0`, and `log_path` under `post_pull_smoke`. Both paths keep passing `mcp_smoke.json` beside that log path.
 
 The source image is pushed before unit 6 and the adapter image before unit 11 by the gate scripts; both record `registry_ref` and `registry_push` evidence into `source_image_result.json` and `adapter_image_result.json` respectively. The unit 17 post-pull smoke reuses the same registry name without repushing. These image and registry steps apply only to `package=docker-registry`.
 
@@ -233,11 +236,15 @@ Naming, image boundary, tag increment, and push-failure recovery conventions liv
 
 Automatic selection is advisory until the immutable push succeeds: another run can claim the selected tag after input resolution. The registry's no-overwrite policy remains the final concurrency guard. On that race, rerun input materialization to select the next free version, or pass an explicit unused `image_version`; never overwrite the existing tag.
 
-## VC Execution
+## GPU Execution
+
+With explicit `execution=local`, every GPU validation command runs on the current host through Docker and must include `--gpus`. The compatibility probe must identify a CUDA-capable GPU and satisfy any BF16 requirement. The final post-pull smoke runs the digest-pinned image reference, not a mutable tag, and stores its protocol evidence under `artifacts/local_gpu/post_pull_smoke/`. Local GPU execution is rejected unless the active site policy enables `local` and the `container` runtime.
+
+With `execution=vc` or an omitted execution choice, use the VC flow below.
 
 `<vc_default_partition>`, `execution.vc_project`, and the source/target image repositories are site policy values, not constants. Repositories are resolved from `network.container_registry` plus `container_delivery.repository_template` in `config/site.bundled.yaml` (or `config/site.local.yaml`) and persisted in `trans_input_resolved.json`. Read policy with `npm run sure:site-info`; never hardcode a site value in this skill.
 
-GPU-touching work never runs `docker run --gpus all` on the login node. Gates submit to `<vc_default_partition>` through `scripts/vc_exec.py`; the same CLI drives the unit 17 post-pull MCP smoke:
+VC-selected GPU work never runs `docker run --gpus all` on the login node. Gates submit to `<vc_default_partition>` through `scripts/vc_exec.py`; the same CLI drives the unit 17 post-pull MCP smoke:
 
 ```bash
 "$HARNESS_PYTHON_BIN" scripts/vc_exec.py \
@@ -355,7 +362,7 @@ what you recorded.
 - Block when MCP output differs from original inference on the fixture: the equivalence gate compares the two recorded output files itself and fails on a mismatch even when the command exited 0.
 - Block when the MCP gate has no `mcp_smoke.json` protocol evidence (initialize/tools/list/tools/call all passed with a non-empty task primary output; a `*_path` output must name a file the smoke can stat); placeholder `run_command` values such as `/bin/true` or `print(...)` are rejected.
 - Block when registry push, digest resolution, exact pull, or post-pull MCP validation fails.
-- Block when `vc submit` fails, the partition is not permitted, the GPU probe cannot complete, or the post-pull smoke does not exit 0.
+- Block when the selected GPU surface cannot start, CUDA/BF16 probing fails, or the post-pull smoke does not exit 0. On VC, also block when submission or partition authorization fails.
 - Block when the model payload exceeds the RAM budget (2x headroom) of `vc_memory_gb`; raise `vc_gpus`/`vc_memory_gb` instead of trimming validation.
 - Stop after `max_retries` changed-artifact failures; unchanged artifacts do not consume another retry.
 - `extract_lessons` is the one unit that never stops the run: `check_memory_extraction.py` checks the declaration and every candidate directory (shape, evidence paths, triggers, duplicates, digest sha), and after two consecutive failures the hook advances by itself and records `extraction: failed`. Changing a candidate re-runs that gate even when `extraction_declaration.json` did not change.

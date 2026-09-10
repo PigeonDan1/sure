@@ -226,6 +226,7 @@ class InPlaceAppendTests(unittest.TestCase):
             self.bundle / "prediction_generation_status.json",
             {"datasets": [{"dataset": "dataset__v1", "status": "completed"}]},
         )
+        _json(self.bundle / "validation_payload.json", {"scope": "inference"})
 
     def _append(self, scratch_name: str) -> dict[str, object]:
         scratch, artifacts, rows = _scratch_fixture(self.root, scratch_name, self.bundle)
@@ -264,7 +265,12 @@ class InPlaceAppendTests(unittest.TestCase):
             f"evaluation_runs/{first['batch_id']}/metrics/dataset__v1/wer__new_pipeline/report.json",
         )
         self.assertTrue((self.bundle / rows[0]["pipeline"]["report_path"]).is_file())
-        self.assertTrue((self.bundle / "report_snapshot.md").is_file())
+        snapshot = (self.bundle / "report_snapshot.md").read_text(encoding="utf-8")
+        batch_relative = f"evaluation_runs/{first['batch_id']}"
+        self.assertIn(f"{batch_relative}/evaluation_payload.json", snapshot)
+        self.assertIn(f"{batch_relative}/validation_payload.json", snapshot)
+        self.assertNotIn(f"`{self.bundle / 'evaluation_payload.json'}`", snapshot)
+        self.assertNotIn(f"`{self.bundle / 'validation_payload.json'}`", snapshot)
         manifest = json.loads((Path(str(first["batch_dir"])) / "artifact_manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["source_report_sha256"], self.SOURCE_HASH)
         # The bundle's own inference files are untouched.

@@ -1,3 +1,5 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import type { SureHookContext } from "@earendil-works/pi-coding-agent/hooks";
 import { describe, expect, it } from "vitest";
@@ -82,5 +84,27 @@ describe("sure_trans preStart", () => {
 
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("framework must be pytorch");
+	});
+
+	it("rejects VC execution for a CPU Docker input", () => {
+		const root = mkdtempSync(join(tmpdir(), "sure-trans-cpu-vc-"));
+		const model = join(root, "model");
+		const dockerfile = join(root, "Dockerfile");
+		const entrypoint = join(root, "infer.py");
+		mkdirSync(model);
+		writeFileSync(dockerfile, "FROM scratch\n");
+		writeFileSync(entrypoint, "print('ok')\n");
+		try {
+			const result = preStart({
+				args:
+					`dockerfile=${dockerfile} model=${model} inference_entrypoint=${entrypoint} ` +
+					"framework=pytorch model_framework=transformers model_name=organization__model " +
+					"device=cpu execution=vc",
+			} as SureHookContext);
+			expect(result.ok).toBe(false);
+			expect(result.repair).toContain("execution=vc requires device=auto or cuda");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });

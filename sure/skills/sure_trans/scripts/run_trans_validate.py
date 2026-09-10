@@ -39,6 +39,7 @@ PASS_KEYS = {
     "mcp": "mcp_passed",
     "equivalence": "equivalent",
 }
+ADAPTER_VALIDATION_STAGES = frozenset({"import", "load", "infer", "contract"})
 
 
 def read_object(path: Path) -> dict:
@@ -54,6 +55,42 @@ def command_for(value: object) -> tuple[list[str] | str, bool]:
     if isinstance(value, str) and value.strip():
         return value, True
     raise ValueError("validation artifact must contain a non-empty run_command")
+
+
+def require_local_gpu_command(
+    command: list[str] | str,
+    shell: bool,
+    run_dir: Path,
+    kind: str,
+) -> Path | None:
+    if shell or not isinstance(command, list) or command[:2] != ["docker", "run"]:
+        raise ValueError("local CUDA validation run_command must be a docker run argument list")
+    if "--gpus" not in command:
+        raise ValueError("local CUDA validation run_command must pass Docker --gpus")
+    spec = docker_run_to_vc(command)
+    target = str(spec.env.get("SURE_VALIDATE_ARTIFACTS_DIR", "") or "")
+    if not target:
+        if kind in ADAPTER_VALIDATION_STAGES:
+            raise ValueError("local CUDA adapter validation must set SURE_VALIDATE_ARTIFACTS_DIR")
+        return None
+    root = run_dir.resolve()
+    for mount in spec.mounts:
+        parts = mount.split(":")
+        if len(parts) < 2 or parts[1] != target:
+            continue
+        output_dir = Path(parts[0]).expanduser().resolve()
+        if root not in output_dir.parents or output_dir == root / "artifacts":
+            raise ValueError(f"validation output mount must stay in a run subdirectory: {mount!r}")
+        stale = [output_dir / f"{kind}_result.json"]
+        if kind == "infer":
+            stale.append(output_dir / "sample_output.json")
+        for path in stale:
+            if path.exists():
+                path.unlink()
+        return output_dir
+    if kind in ADAPTER_VALIDATION_STAGES:
+        raise ValueError("local CUDA adapter validation must mount SURE_VALIDATE_ARTIFACTS_DIR")
+    return None
 
 
 def vc_resources(resolved: dict) -> tuple[str, int, int, int]:
@@ -470,6 +507,10 @@ def main() -> int:
             )
     env = os.environ.copy()
     selected_device = str(compat.get("selected_device") or "")
+    execution_surface = str(
+        compat.get("execution_surface")
+        or ("vc" if selected_device == "cuda" and not python_source else "local_python" if python_source else "local_docker")
+    )
     if selected_device:
         env["SURE_DEVICE"] = selected_device
         env["DEVICE"] = selected_device
@@ -483,22 +524,53 @@ def main() -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     extra: dict = {}
-    if selected_device == "cuda" and not (python_source and args.kind == "original_inference"):
+    local_cuda = selected_device == "cuda" and execution_surface == "local_docker" and not python_source
+    local_validation_dir: Path | None = None
+    if selected_device == "cuda" and not local_cuda and not (python_source and args.kind == "original_inference"):
         exit_code, extra, rendered = run_vc_validation(
             run_dir, resolved, data, args.kind, run_dir / "artifacts", timeout
         )
         log_path.write_text(rendered, encoding="utf-8")
         duration_ms = round((time.monotonic() - started) * 1000, 3)
     else:
+        if local_cuda:
+            local_validation_dir = require_local_gpu_command(command, shell, run_dir, args.kind)
         process = subprocess.run(command, shell=shell, cwd=cwd, env=env, check=False, capture_output=True, text=True, timeout=timeout)
         duration_ms = round((time.monotonic() - started) * 1000, 3)
         exit_code = process.returncode
         rendered = command if isinstance(command, str) else " ".join(command)
         log_path.write_text(f"$ {rendered}\n{process.stdout}\n{process.stderr}", encoding="utf-8")
+        if local_cuda:
+            extra = {"execution_surface": "local_docker"}
     passed = exit_code == 0
-    stage_error = "" if passed else container_stage_error(data.get("run_command"), args.kind)
+    local_evidence_error = ""
+    if passed and local_validation_dir is not None:
+        stage_result = local_validation_dir / f"{args.kind}_result.json"
+        try:
+            stage_evidence = read_object(stage_result)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            passed = False
+            local_evidence_error = f"local CUDA validation evidence is missing or invalid: {stage_result} ({error})"
+        else:
+            if stage_evidence.get(PASS_KEYS[args.kind]) is not True:
+                passed = False
+                local_evidence_error = f"local CUDA validation evidence did not pass: {stage_result}"
+    recorded_output_error = ""
+    if args.kind == "original_inference" and passed:
+        recorded_output = data.get("output")
+        if isinstance(recorded_output, str) and recorded_output:
+            recorded_output_path = Path(recorded_output)
+            if not recorded_output_path.is_absolute():
+                recorded_output_path = run_dir / recorded_output_path
+            if not recorded_output_path.is_file() or recorded_output_path.stat().st_size == 0:
+                passed = False
+                recorded_output_error = (
+                    "original inference declared an output file but did not create a non-empty "
+                    f"artifact: {recorded_output_path}"
+                )
+    stage_error = "" if passed else (local_evidence_error or container_stage_error(data.get("run_command"), args.kind))
     evidence = f"{rendered}\n{extra.get('vc_diagnostics', '')}\n{stage_error}"
-    hint = "" if passed else (diagnose_oom(exit_code, evidence) or "")
+    hint = "" if passed else (recorded_output_error or diagnose_oom(exit_code, evidence) or "")
     if not passed and not hint and "permission denied" in evidence.lower():
         hint = (
             "container hit Permission denied writing to a mounted path; the host mount "
@@ -512,7 +584,7 @@ def main() -> int:
             "raise the command timeout, then rerun the gate."
         )
     if args.kind == "mcp":
-        if selected_device == "cuda" and not python_source:
+        if selected_device == "cuda" and execution_surface == "vc" and not python_source:
             evidence_path = run_dir / "artifacts" / "vc_logs" / "mcp" / "mcp_smoke.json"
         else:
             evidence_path = Path(str(data.get("protocol_path") or run_dir / "artifacts" / "mcp_smoke.json"))
@@ -535,7 +607,7 @@ def main() -> int:
     # command exited 0 and pointing the agent at the job log sends it to the
     # wrong place.
     failure_text = (
-        f"vc job failed or timed out; inspect {log_path}"
+        f"validation command failed or timed out; inspect {log_path}"
         if exit_code != 0
         else f"the command succeeded but the gate rejected its evidence; inspect {log_path}"
     )

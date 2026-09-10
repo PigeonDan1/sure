@@ -294,20 +294,35 @@ def main() -> int:
         require(str(value.get("target_image_digest", "")).startswith("sha256:"), "registry target_image_digest must be a sha256 digest")
         compat_path = Path(run_dir) / "artifacts" / "execution_compat.json"
         selected_device = "cpu"
+        execution_surface = "vc"
         if compat_path.is_file():
-            selected_device = str(read_object(compat_path).get("selected_device") or "cpu")
+            compat = read_object(compat_path)
+            selected_device = str(compat.get("selected_device") or "cpu")
+            execution_surface = str(compat.get("execution_surface") or "vc")
         if selected_device == "cuda":
             smoke = value.get("post_pull_smoke")
             require(
                 isinstance(smoke, dict),
-                "GPU-validated models must repeat the MCP smoke test on VC after the exact digest pull and record post_pull_smoke evidence",
+                "GPU-validated models must repeat the MCP smoke test after the exact digest pull and record post_pull_smoke evidence",
             )
-            require(smoke.get("vc_job_id"), "post_pull_smoke must record the vc job id")
-            expected_partition = default_partition()
-            require(
-                smoke.get("vc_partition") == expected_partition,
-                f"post-pull MCP smoke must run on the site's dedicated partition {expected_partition}",
-            )
+            if execution_surface == "vc":
+                require(smoke.get("vc_job_id"), "post_pull_smoke must record the vc job id")
+                expected_partition = default_partition()
+                require(
+                    smoke.get("vc_partition") == expected_partition,
+                    f"post-pull MCP smoke must run on the site's dedicated partition {expected_partition}",
+                )
+            else:
+                require(
+                    execution_surface == "local_docker"
+                    and smoke.get("execution_surface") == "local_docker",
+                    "local GPU post-pull MCP smoke must record execution_surface=local_docker",
+                )
+                require(not smoke.get("vc_job_id"), "local GPU post-pull MCP smoke cannot claim a VC job")
+                require(
+                    smoke.get("image_ref") == value.get("target_image_ref"),
+                    "local GPU post-pull MCP smoke must run the exact digest-pinned target_image_ref",
+                )
             # vc submit takes repo:tag only and answers 镜像不存在 to any
             # repo@sha256:... reference, so the job cannot carry the pin in the
             # reference it runs. Requiring that made this unit unsatisfiable on
@@ -315,9 +330,7 @@ def main() -> int:
             # what the tag serves and refuses to submit on a mismatch.
             require(
                 str(smoke.get("resolved_digest", "")) == str(value.get("target_image_digest", "")),
-                "post_pull_smoke.resolved_digest must be the digest the submitted tag resolved to "
-                "and must equal target_image_digest; submit through vc_exec.py --expect-digest so "
-                "the pin is proven rather than asserted",
+                "post_pull_smoke.resolved_digest must equal target_image_digest",
             )
             require(smoke.get("exit_code") == 0, "post-pull MCP smoke must exit 0")
             smoke_log = Path(str(smoke.get("log_path") or "")).expanduser()

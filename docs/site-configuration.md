@@ -65,6 +65,8 @@ Policy v1 accepts exactly one path in each storage root list. The `datasets.allo
 
 `execution.local_runtimes` is a permission boundary, not a package-manager choice. Enabling `python` permits an explicitly sealed Model Python runtime; it does not make host execution the default and does not permit Python execution on VC.
 
+For Docker-backed `/sure_trans`, `device=cuda execution=local` is allowed only when `execution.surfaces` contains `local` and `execution.local_runtimes` contains `container`. The gates then require Docker `--gpus` and record the actual CUDA device evidence. Omitting `execution` preserves the VC default for CUDA transformations.
+
 ## Path Semantics
 
 - Every configured root is absolute.

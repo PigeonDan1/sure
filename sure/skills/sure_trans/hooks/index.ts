@@ -203,10 +203,32 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		}
 	}
 	const device = args.device ?? "auto";
+	const execution = args.execution ?? (device === "cpu" || pythonExecutable ? "local" : "vc");
 	const vcPartition = args.vc_partition;
 	const vcMemoryGb = args.vc_memory_gb;
 	const vcGpus = args.vc_gpus;
 	const imageVersion = args.image_version;
+	if (!new Set(["local", "vc"]).has(execution)) {
+		return failure("execution must be local or vc", "TRANS_INPUT_INVALID");
+	}
+	if (pythonExecutable && execution === "vc") {
+		return failure("execution=vc is not supported for Python input", "TRANS_INPUT_INVALID");
+	}
+	if (dockerfile && device === "cpu" && execution === "vc") {
+		return failure("execution=vc requires device=auto or cuda for Docker input", "TRANS_INPUT_INVALID");
+	}
+	if (args.execution === "local" && dockerfile && device !== "cpu") {
+		const policy = requireSitePolicy().policy.execution;
+		if (!policy.surfaces.includes("local") || !policy.local_runtimes.includes("container")) {
+			return failure("execution=local requires local + container in the active site policy", "TRANS_INPUT_INVALID");
+		}
+	}
+	if (args.execution === "local" && [vcPartition, vcMemoryGb, vcGpus].some((value) => value !== undefined)) {
+		return failure(
+			"vc_partition, vc_memory_gb and vc_gpus cannot be used with execution=local",
+			"TRANS_INPUT_INVALID",
+		);
+	}
 	if (!/^[A-Za-z0-9][A-Za-z0-9.-]*__[A-Za-z0-9][A-Za-z0-9._-]*$/.test(args.model_name ?? "")) {
 		return failure("model_name must use <organization>__<model_name>", "TRANS_INPUT_INVALID");
 	}
@@ -276,7 +298,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 				`SURE model transformation skill loaded with Harness Runtime ${runtime.contract.runtime_id}.` +
 				(device === "cpu" || pythonExecutable
 					? ""
-					: ` GPU validation submits VC jobs to ${vcPartition ?? requireSitePolicy().policy.execution.vc_default_partition ?? "the configured VC partition"}.`),
+					: execution === "local"
+						? " GPU validation runs in local Docker through the site-approved NVIDIA runtime."
+						: ` GPU validation submits VC jobs to ${vcPartition ?? requireSitePolicy().policy.execution.vc_default_partition ?? "the configured VC partition"}.`),
 			counters: countersFor(checkpoint.data, 0),
 			diagnostics,
 			artifacts: [

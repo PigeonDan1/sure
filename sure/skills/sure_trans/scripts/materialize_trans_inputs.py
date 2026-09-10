@@ -118,6 +118,7 @@ def main() -> int:
     parser.add_argument("--task-type")
     parser.add_argument("--fixture")
     parser.add_argument("--device", choices=("auto", "cuda", "cpu"), default="auto")
+    parser.add_argument("--execution", choices=("vc", "local"))
     parser.add_argument("--source-image-policy", choices=("auto", "build", "load"), default="auto")
     parser.add_argument("--image-tar")
     parser.add_argument("--model-mount-target")
@@ -211,15 +212,40 @@ def main() -> int:
         raise ValueError("model mount target must be absolute inside the container")
     if args.max_retries < 1:
         raise ValueError("max retries must be positive")
-    vc_partition = args.vc_partition or (default_partition() if source_kind == "docker" else None)
+    gpu_surface = source_kind == "docker" and args.device != "cpu"
+    if source_kind == "python" and args.execution == "vc":
+        raise ValueError("execution=vc is not supported for Python input")
+    if source_kind == "docker" and args.device == "cpu" and args.execution == "vc":
+        raise ValueError("execution=vc requires device=auto or cuda for Docker input")
+    execution_request = (
+        "local"
+        if source_kind == "python" or not gpu_surface
+        else args.execution or "vc"
+    )
+    if args.execution == "local" and source_kind == "docker" and gpu_surface:
+        execution_policy = policy.get("execution") if isinstance(policy, dict) else {}
+        if "local" not in execution_policy.get("surfaces", []):
+            raise ValueError("execution=local requires local in site policy execution.surfaces")
+        if "container" not in execution_policy.get("local_runtimes", []):
+            raise ValueError("execution=local requires container in site policy execution.local_runtimes")
+    if args.execution == "local" and any(
+        value is not None for value in (args.vc_partition, args.vc_memory_gb, args.vc_gpus)
+    ):
+        raise ValueError("vc_partition, vc_memory_gb and vc_gpus cannot be used with execution=local")
+    vc_partition = (
+        args.vc_partition or default_partition()
+        if gpu_surface and execution_request == "vc"
+        else None
+    )
     if vc_partition is not None and not SAFE_TAG.fullmatch(vc_partition):
         raise ValueError(f"invalid vc partition: {vc_partition!r}")
     vc_gpus = args.vc_gpus if args.vc_gpus is not None else DEFAULT_GPUS
     vc_memory_gb = args.vc_memory_gb if args.vc_memory_gb is not None else DEFAULT_MEMORY_GB
-    if vc_gpus < 1:
-        raise ValueError("vc gpus must be positive")
-    if vc_memory_gb < 1:
-        raise ValueError("vc memory must be positive")
+    if execution_request == "vc":
+        if vc_gpus < 1:
+            raise ValueError("vc gpus must be positive")
+        if vc_memory_gb < 1:
+            raise ValueError("vc memory must be positive")
     image_version = None
     image_version_resolution = None
     container_delivery = None
@@ -246,8 +272,6 @@ def main() -> int:
                     version=image_version, stage="source",
                 ),
             })
-    gpu_surface = source_kind == "docker" and args.device != "cpu"
-
     payload = {
         "schema": "sure.trans.input.v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -265,7 +289,14 @@ def main() -> int:
         "task_type": task_type,
         "fixture_path": str(fixture_path) if fixture_path else None,
         "device": args.device,
-        "execution_surface": "local_python" if source_kind == "python" else "vc" if gpu_surface else "local_docker",
+        "execution_request": execution_request,
+        "execution_surface": (
+            "local_python"
+            if source_kind == "python"
+            else "vc"
+            if gpu_surface and execution_request == "vc"
+            else "local_docker"
+        ),
         "gpu_required": gpu_required,
         "bf16_required": bf16_required,
         "source_image_policy": args.source_image_policy,
@@ -284,7 +315,7 @@ def main() -> int:
             "generated_files_root": str(Path(args.run_dir).resolve() / "adapter"),
         },
     }
-    if gpu_surface:
+    if gpu_surface and execution_request == "vc":
         payload["vc_partition"] = vc_partition
         payload["vc_memory_gb"] = vc_memory_gb
         payload["vc_gpus"] = vc_gpus
