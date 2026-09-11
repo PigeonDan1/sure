@@ -24,6 +24,7 @@ from sure_eval.core.logging import get_logger
 from .source_resolver import (
     DatasetSourceRef,
     is_source_entry,
+    read_source_metadata,
     resolve_site_source_entry,
 )
 
@@ -482,6 +483,23 @@ class DatasetManager:
                 return text.strip()
         return ""
 
+    def _extract_oref_translation_text(self, record: dict[str, Any]) -> str:
+        annotations = record.get("annotation") or []
+        for annotation in annotations:
+            if not isinstance(annotation, dict):
+                continue
+            translation = annotation.get("translation") or {}
+            if not isinstance(translation, dict):
+                continue
+            text = translation.get("text")
+            if isinstance(text, list):
+                joined = " ".join(str(item).strip() for item in text if str(item).strip())
+                if joined:
+                    return joined
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        return ""
+
     def _resolve_oref_audio_path(self, raw_value: str, raw_dir: Path) -> Path:
         audio_path = Path(raw_value).expanduser()
         if audio_path.is_absolute():
@@ -502,6 +520,7 @@ class DatasetManager:
         metadata_base: dict[str, Any],
         require_audio_exists: bool = True,
         check_size: bool = True,
+        collect_translation: bool = False,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
         rows: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
@@ -538,10 +557,16 @@ class DatasetManager:
                         })
                         continue
 
-                text = self._extract_oref_transcription_text(record)
-                if not text:
-                    skipped.append({"line": line_no, "reason": "missing transcription text"})
-                    continue
+                if collect_translation:
+                    text = self._extract_oref_translation_text(record)
+                    if not text:
+                        skipped.append({"line": line_no, "reason": "missing translation text"})
+                        continue
+                else:
+                    text = self._extract_oref_transcription_text(record)
+                    if not text:
+                        skipped.append({"line": line_no, "reason": "missing transcription text"})
+                        continue
 
                 key = str(record.get("sample_id") or audio_path.stem)
                 if key in seen_keys:
@@ -549,7 +574,7 @@ class DatasetManager:
                     continue
                 seen_keys.add(key)
 
-                rows.append({
+                row = {
                     "key": key,
                     "path": str(audio_path),
                     "target": text,
@@ -567,7 +592,12 @@ class DatasetManager:
                         "size": attr.get("size"),
                         "channels": attr.get("channels"),
                     },
-                })
+                }
+                if collect_translation:
+                    # S2TT reference rows keep the source-language transcription
+                    # so triangle metrics (xcomet_xl) can build their src file.
+                    row["source"] = self._extract_oref_transcription_text(record)
+                rows.append(row)
         return rows, skipped, source_records
 
     def _copy_source_files(
@@ -607,13 +637,17 @@ class DatasetManager:
             raise FileNotFoundError(f"source sample.jsonl not found: {sample_jsonl_path}")
         if not raw_dir.exists():
             raise FileNotFoundError(f"source raw_dir not found: {raw_dir}")
-        task = "ASR"
-        ds_meta = self._load_single_json_object(ds_jsonl_path)
-        language = str(
-            (((ds_meta.get("audio") or {}).get("speech") or {}).get("language")) or "auto"
-        )
+        # Dataset metadata, not a caller flag, decides the projection: a ds.jsonl
+        # with a top-level task (or audio.speech.translation_language) projects as
+        # S2TT (target = translation text, source-language transcription kept for
+        # triangle metrics); anything else keeps the ASR projection unchanged.
+        source_meta = read_source_metadata(ref)
+        task = source_meta["task"]
+        language = source_meta["language"] or "auto"
+        translation_language = source_meta["translation_language"]
+        projector = "s2tt_translation_v1" if task == "S2TT" else "asr_transcription_v1"
         package_dir = self.sure_dir / ref.source_dataset_name
-        projection_dir = package_dir / "projections" / "asr_transcription_v1"
+        projection_dir = package_dir / "projections" / projector
         projection_dir.mkdir(parents=True, exist_ok=True)
 
         rows, skipped, source_records = self._project_sample_rows(
@@ -628,6 +662,7 @@ class DatasetManager:
                 "source_dataset_name": ref.source_dataset_name,
                 "version_id": ref.version_id,
             },
+            collect_translation=(task == "S2TT"),
         )
         if skipped:
             reasons = ", ".join(f"line {item['line']}: {item['reason']}" for item in skipped[:5])
@@ -663,19 +698,25 @@ class DatasetManager:
             source_payload=source_payload,
         )
 
+        mapping_fields = {
+            "key": "sample_id",
+            "path": "attribute.path",
+            "target": (
+                "annotation[0].translation.text[0]" if task == "S2TT" else "annotation[0].transcription.text[0]"
+            ),
+            "task": f"constant:{task}",
+            "language": "ds.audio.speech.language",
+            "sample_rate": "attribute.sample_rate",
+            "duration_ms": "attribute.duration",
+        }
+        if task == "S2TT":
+            mapping_fields["source"] = "annotation[0].transcription.text[0]"
+            mapping_fields["translation_language"] = "ds.audio.speech.translation_language"
         mapping = {
-            "projector": "asr_transcription_v1",
+            "projector": projector,
             "source_format": f"{SITE_DATASET_POOL_SOURCE}_sample_jsonl",
             "target_format": "sure_eval_jsonl_v1",
-            "fields": {
-                "key": "sample_id",
-                "path": "attribute.path",
-                "target": "annotation[0].transcription.text[0]",
-                "task": f"constant:{task}",
-                "language": "ds.audio.speech.language",
-                "sample_rate": "attribute.sample_rate",
-                "duration_ms": "attribute.duration",
-            },
+            "fields": mapping_fields,
         }
         try:
             import yaml
@@ -685,11 +726,14 @@ class DatasetManager:
             mapping_text = json.dumps(mapping, indent=2, ensure_ascii=False) + "\n"
         (projection_dir / "mapping.yaml").write_text(mapping_text, encoding="utf-8")
 
+        reference_contract: dict[str, Any] = {"primary_field": "target", "type": "text"}
+        if task == "S2TT":
+            reference_contract["optional_source_field"] = "source"
         io_contract = {
             "task": task,
             "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
             "output": {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"},
-            "reference": {"primary_field": "target", "type": "text"},
+            "reference": reference_contract,
         }
         (projection_dir / "io_contract.json").write_text(
             json.dumps(io_contract, indent=2, ensure_ascii=False) + "\n",
@@ -708,6 +752,7 @@ class DatasetManager:
             "package_sure_jsonl": str(sure_jsonl),
             "task": task,
             "language": language,
+            "translation_language": translation_language,
             "num_input_records": source_records,
             "num_output_records": len(rows),
             "num_skipped": len(skipped),
@@ -727,17 +772,17 @@ class DatasetManager:
 
         manifest = {
             "dataset": ref.source_dataset_name,
-            "default_projection": "asr_transcription_v1",
+            "default_projection": projector,
             "source": SITE_DATASET_POOL_SOURCE,
             "source_dataset_root": ref.source_root,
             "version_id": ref.version_id,
             "projections": {
-                "asr_transcription_v1": {
+                projector: {
                     "dataset": ref.dataset_id,
                     "sure_jsonl": sure_jsonl.relative_to(package_dir).as_posix(),
-                    "mapping": "projections/asr_transcription_v1/mapping.yaml",
-                    "io_contract": "projections/asr_transcription_v1/io_contract.json",
-                    "conversion_report": "projections/asr_transcription_v1/conversion_report.json",
+                    "mapping": f"projections/{projector}/mapping.yaml",
+                    "io_contract": f"projections/{projector}/io_contract.json",
+                    "conversion_report": f"projections/{projector}/conversion_report.json",
                 }
             },
         }

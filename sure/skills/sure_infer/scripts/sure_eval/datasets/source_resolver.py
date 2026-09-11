@@ -199,14 +199,29 @@ def resolve_site_source_entry(entry: str, explicit_version: str | None = None, d
     )
 
 
-def read_source_language(ref: DatasetSourceRef) -> str:
-    """Best-effort language from the version's ds.jsonl (audio.speech.language)."""
+def read_source_metadata(ref: DatasetSourceRef) -> dict[str, str]:
+    """Best-effort task/language metadata from the version's ds.jsonl.
+
+    ``audio.speech.language`` is the speech (source) language. A source declares
+    a speech-translation dataset either explicitly (top-level ``task``, e.g.
+    ``"S2TT"``) or implicitly via ``audio.speech.translation_language``; with no
+    declaration the task stays ``ASR`` so existing sources keep their behaviour.
+    """
     try:
         text = Path(ref.ds_jsonl).read_text(encoding="utf-8").strip()
         payload = json.loads(text) if text else {}
     except (OSError, json.JSONDecodeError):
-        return ""
+        return {"task": "ASR", "language": "", "translation_language": ""}
     if not isinstance(payload, dict):
-        return ""
+        return {"task": "ASR", "language": "", "translation_language": ""}
     speech = (payload.get("audio") or {}).get("speech") or {}
-    return str(speech.get("language") or "")
+    language = str(speech.get("language") or "")
+    translation_language = str(speech.get("translation_language") or "")
+    declared = str(payload.get("task") or "").strip().upper()
+    task = declared or ("S2TT" if translation_language else "ASR")
+    return {"task": task, "language": language, "translation_language": translation_language}
+
+
+def read_source_language(ref: DatasetSourceRef) -> str:
+    """Best-effort language from the version's ds.jsonl (audio.speech.language)."""
+    return read_source_metadata(ref)["language"]
