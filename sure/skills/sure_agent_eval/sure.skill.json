@@ -1,0 +1,45 @@
+{
+	"name": "sure_agent_eval",
+	"command": "/sure_agent_eval",
+	"description": "Evaluate an Agent (an ordered chain of approved models, e.g. ASR -> LLM translator) over speech datasets: run the chain to produce a /sure_infer-compatible prediction bundle, then score it with the pinned sure-evaluation engine.",
+	"prompt": "SKILL.md",
+	"hooks": {
+		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
+		"pre_tool_call": [{ "module": "hooks/index.ts", "handler": "preToolCall" }],
+		"post_tool_result": [{ "module": "hooks/index.ts", "handler": "postToolResult" }],
+		"pre_finish": [{ "module": "hooks/index.ts", "handler": "preFinish" }],
+		"post_finish": [{ "module": "hooks/index.ts", "handler": "postFinish" }],
+		"on_error": [{ "module": "hooks/index.ts", "handler": "onError" }]
+	},
+	"artifacts": [
+		{
+			"type": "agent_spec_resolved",
+			"path": "artifacts/agent_spec_resolved.json",
+			"required": true,
+			"description": "The validated agent spec with every stage resolved to its approved model binding, the resolved dataset set, and the requested metrics. Carries no credential values."
+		},
+		{
+			"type": "execution_result",
+			"path": "artifacts/execution_result.json",
+			"required": true,
+			"description": "Terminal record of the chained agent execution (job_status, per-dataset counts, product directory holding the /sure_infer-compatible bundle)."
+		},
+		{
+			"type": "eval_run_report",
+			"path": "artifacts/eval_run_report.json",
+			"required": true,
+			"description": "Evaluation report proving source identity, the resolved pipelines, per-dataset metric scores, and the batch appended into the bundle's evaluation_runs/."
+		},
+		{
+			"type": "run_report",
+			"path": "artifacts/main_agent_run_report.json",
+			"required": true,
+			"description": "Closing run report (profile agent_eval)."
+		}
+	],
+	"ui": {
+		"primaryCounters": ["completed_units", "total_units", "gate_blocks"],
+		"artifactTypes": ["agent_spec_resolved", "execution_result", "eval_run_report", "run_report"],
+		"defaultExpandedSections": ["diagnostics", "artifacts"]
+	}
+}

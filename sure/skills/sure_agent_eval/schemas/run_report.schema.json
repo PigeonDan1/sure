@@ -1,0 +1,57 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "run_report.schema.json",
+	"title": "SURE-AGENT-EVAL main-flow run report",
+	"description": "Structured output of the RUN_REPORT unit. Same closing contract as the other SURE skills: the agent previews the report, the user confirms, then it is persisted.",
+	"type": "object",
+	"required": [
+		"run_id",
+		"timestamp",
+		"task_type",
+		"goal",
+		"agent_name",
+		"selected_datasets",
+		"executed_steps",
+		"status",
+		"report_persisted",
+		"execution_path_actual",
+		"run_dir"
+	],
+	"properties": {
+		"run_id": { "type": "string" },
+		"timestamp": { "type": "string" },
+		"task_type": {
+			"type": "string",
+			"description": "evaluate_agent"
+		},
+		"goal": { "type": "string" },
+		"agent_name": { "type": "string" },
+		"selected_datasets": { "type": "array", "items": { "type": "string" } },
+		"executed_steps": { "type": "array", "items": { "type": "string" } },
+		"status": {
+			"type": "string",
+			"description": "Final run state: success | failed | incomplete."
+		},
+		"metrics": { "type": "array", "items": { "type": "string" } },
+		"batch_id": { "type": "string" },
+		"run_dir": {
+			"type": "string",
+			"description": "Agent product directory holding predictions/, protocol.yaml, prediction_generation_status.json and evaluation_runs/."
+		},
+		"next_action": { "type": "string" },
+		"report_persisted": {
+			"type": "boolean",
+			"description": "RUN_REPORT_UNIT gate: the report must be previewed and user-confirmed before persistence."
+		},
+		"execution_path_actual": {
+			"type": "string",
+			"description": "Actual execution path used: local."
+		},
+		"evaluation_only": {
+			"type": "boolean",
+			"description": "True when the evaluate unit ran but run_agent did not (re-scored an existing bundle)."
+		},
+		"notes": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}
