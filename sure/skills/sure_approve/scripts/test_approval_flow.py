@@ -61,11 +61,11 @@ class ApprovalFlowTests(unittest.TestCase):
 
         self.addCleanup(restore)
 
-    def build_python_bundle(self) -> None:
+    def build_python_bundle(self, validate_content: str = "print('validation passed')\n") -> None:
         for name, content in {
             "model.py": "VALUE = 1\n",
             "server.py": "print('server')\n",
-            "validate.py": "print('validation passed')\n",
+            "validate.py": validate_content,
             "__init__.py": "\n",
             "model.spec.yaml": "task: asr\n",
             "config.yaml": "task: asr\n",
@@ -229,6 +229,24 @@ class ApprovalFlowTests(unittest.TestCase):
         self.assertEqual(Path(ready["destination"]), self.approved / "demo-model")
         source_after, _, _ = approval_core.tree_digest(self.source)
         self.assertEqual(source_before, source_after)
+
+    def test_runtime_smoke_tolerates_self_persisting_validate_py(self) -> None:
+        # The producer contract requires validate.py to persist artifacts/<stage>_result.json
+        # on every run. The smoke must prove the runtime works without dirtying the sealed
+        # candidate, so it executes against a throwaway copy.
+        mutating_validate = (
+            "import json\n"
+            "from pathlib import Path\n"
+            "Path('artifacts/import_result.json').write_text(json.dumps({'import_passed': True}) + '\\n')\n"
+            "print('validation passed')\n"
+        )
+        self.build_python_bundle(validate_content=mutating_validate)
+        audit_run = self.root / "runs" / "mutating-audit"
+        review = self.audit(audit_run)
+        self.assertEqual(review["status"], "awaiting_approval")
+        self.assertEqual(review["runtime_verification"]["status"], "passed")
+        candidate = Path(review["candidate_dir"])
+        self.assertFalse((candidate / "artifacts" / "import_result.json").exists())
 
     def test_incomplete_onboard_product_is_rejected(self) -> None:
         write_json(self.source / "artifacts" / "model_input_resolved.json", {"model_name": "demo-model"})
