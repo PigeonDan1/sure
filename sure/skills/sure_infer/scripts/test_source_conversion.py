@@ -96,6 +96,48 @@ def make_flat_source_tree(root: Path, name: str) -> Path:
     return dataset_root
 
 
+def make_vad_source_tree(root: Path, name: str, version: str) -> Path:
+    dataset_root = root / "g001" / "store002" / "ds_pool" / name
+    version_dir = dataset_root / "sample_files" / version
+    version_dir.mkdir(parents=True)
+    raw_dir = dataset_root / "raws" / "sample"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    audio = raw_dir / "utt1.wav"
+    audio.write_bytes(b"RIFFxxxx")
+    (version_dir / "sample.jsonl").write_text(
+        json.dumps(
+            {
+                "sample_id": "utt1",
+                "attribute": {
+                    "path": str(audio),
+                    "size": audio.stat().st_size,
+                    "sample_rate": 16000,
+                    "duration": 1500,
+                    "raw_data_format": "wav",
+                    "channels": 1,
+                },
+                "annotation": [
+                    {"seg_id": "0", "timestamp": {"begin_time": 0.1, "end_time": 0.4}},
+                    {"seg_id": "1", "timestamp": {"begin_time": 0.8, "end_time": 1.2}},
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (version_dir / "ds.jsonl").write_text(
+        json.dumps(
+            {
+                "supported_tasks": ["other"],
+                "audio": {"speech": {"language": "zh"}},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return dataset_root
+
+
 class SourceConversionTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -185,6 +227,48 @@ class SourceConversionTests(unittest.TestCase):
         self.assertTrue(Path(row["path"]).is_absolute())
         self.assertEqual(row["metadata"]["version_id"], "unversioned")
         self.assertEqual(row["metadata"]["source_dataset_root"], str(flat_root))
+
+    def test_converts_timestamp_annotations_to_vad_projection(self) -> None:
+        vad_root = make_vad_source_tree(self.source_root, "vad_ds", "v0.0.1")
+        ref = source_resolver.resolve_site_source_entry(str(vad_root))
+        self.assertEqual(source_resolver.read_source_task(ref), "VAD")
+
+        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
+
+        self.assertEqual(jsonl_path.name, "vad_ds__v0.0.1.jsonl")
+        self.assertEqual(row["task"], "VAD")
+        self.assertEqual(row["duration"], 1.5)
+        self.assertEqual(
+            row["speech_segments"],
+            [{"start": 0.1, "end": 0.4}, {"start": 0.8, "end": 1.2}],
+        )
+        self.assertNotIn("target", row)
+
+        projection_dir = self.manager.sure_dir / "vad_ds" / "projections" / "vad_segments_v1"
+        contract = json.loads((projection_dir / "io_contract.json").read_text(encoding="utf-8"))
+        self.assertEqual(contract["task"], "VAD")
+        self.assertEqual(contract["reference"]["primary_field"], "speech_segments")
+        manifest = json.loads(
+            (self.manager.sure_dir / "vad_ds" / "dataset_manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["default_projection"], "vad_segments_v1")
+
+    def test_rebuilds_stale_asr_projection_for_vad_source(self) -> None:
+        vad_root = make_vad_source_tree(self.source_root, "vad_ds", "v0.0.1")
+        stale_path = self.manager.jsonl_dir / "vad_ds__v0.0.1.jsonl"
+        stale_path.write_text(
+            json.dumps({"key": "utt1", "task": "ASR", "target": "stale"}) + "\n",
+            encoding="utf-8",
+        )
+
+        ref = source_resolver.resolve_site_source_entry(str(vad_root))
+        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
+
+        self.assertEqual(row["task"], "VAD")
+        self.assertIn("speech_segments", row)
+        self.assertNotIn("target", row)
 
 
 if __name__ == "__main__":

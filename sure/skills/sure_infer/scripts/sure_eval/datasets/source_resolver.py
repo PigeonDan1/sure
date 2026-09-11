@@ -31,6 +31,25 @@ DEFAULT_SOURCE_ROOTS = (
 )
 SOURCE_ROOT_ENV = "SURE_DATASET_SOURCE_ROOT"
 _SOURCE_KEY_RE = re.compile(r"[a-z0-9][a-z0-9._-]*")  # the allowed_source_roots key grammar (sure.site.loader)
+_SOURCE_TASK_ALIASES = {
+    "asr": "ASR",
+    "classification": "CLASSIFICATION",
+    "gr": "GR",
+    "kws": "KWS",
+    "s2tt": "S2TT",
+    "sa-asr": "SA-ASR",
+    "sa_asr": "SA-ASR",
+    "sd": "SD",
+    "se": "SE",
+    "ser": "SER",
+    "slu": "SLU",
+    "sv": "SV",
+    "tse": "TSE",
+    "tts": "TTS",
+    "vad": "VAD",
+    "voice_activity_detection": "VAD",
+    "vc": "VC",
+}
 
 
 class SourceResolutionError(ValueError):
@@ -210,3 +229,79 @@ def read_source_language(ref: DatasetSourceRef) -> str:
         return ""
     speech = (payload.get("audio") or {}).get("speech") or {}
     return str(speech.get("language") or "")
+
+
+def _normalize_source_task(value: object) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return _SOURCE_TASK_ALIASES.get(normalized, "")
+
+
+def _read_first_sample(path: Path) -> dict[str, object]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.strip():
+                    payload = json.loads(line)
+                    return payload if isinstance(payload, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {}
+
+
+def _sample_annotation_task(sample: dict[str, object]) -> str:
+    sample_task = _normalize_source_task(sample.get("task"))
+    if sample_task:
+        return sample_task
+
+    annotations = sample.get("annotation")
+    if not isinstance(annotations, list):
+        return ""
+    for annotation in annotations:
+        if not isinstance(annotation, dict):
+            continue
+        timestamp = annotation.get("timestamp")
+        if isinstance(timestamp, dict) and (
+            timestamp.get("begin_time") is not None or timestamp.get("end_time") is not None
+        ):
+            return "VAD"
+        transcription = annotation.get("transcription")
+        if isinstance(transcription, dict) and transcription.get("text") not in (None, "", []):
+            return "ASR"
+    return ""
+
+
+def read_source_task(ref: DatasetSourceRef) -> str:
+    """Resolve a source-root task without changing the source dataset.
+
+    Explicit task metadata wins. If the pool only declares a generic task such
+    as ``other``, the first sample's annotation shape identifies structured VAD
+    timestamp annotations before falling back to ``supported_tasks``.
+    """
+    metadata: dict[str, object] = {}
+    try:
+        text = Path(ref.ds_jsonl).read_text(encoding="utf-8").strip()
+        payload = json.loads(text) if text else {}
+        if isinstance(payload, dict):
+            metadata = payload
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    for field in ("task", "task_type"):
+        task = _normalize_source_task(metadata.get(field))
+        if task:
+            return task
+
+    sample = _read_first_sample(Path(ref.sample_jsonl))
+    sample_task = _sample_annotation_task(sample)
+    if sample_task:
+        return sample_task
+
+    supported_tasks = metadata.get("supported_tasks")
+    if isinstance(supported_tasks, str):
+        supported_tasks = [supported_tasks]
+    if isinstance(supported_tasks, list):
+        tasks = [_normalize_source_task(item) for item in supported_tasks]
+        for task in tasks:
+            if task:
+                return task
+    return ""
