@@ -176,6 +176,25 @@ class SourceResolverTests(unittest.TestCase):
         ref = source_resolver.resolve_site_source_entry(str(dataset_root))
         self.assertEqual(source_resolver.read_source_language(ref), "zh")
 
+    def test_read_source_task_from_timestamp_annotations(self) -> None:
+        dataset_root = make_source_tree(self.root, "vad_ds", ["v1.0.1"])
+        version_dir = dataset_root / "sample_files" / "v1.0.1"
+        (version_dir / "sample.jsonl").write_text(
+            '{"sample_id":"s1","annotation":[{"timestamp":{"begin_time":0.1,"end_time":0.2}}]}\n',
+            encoding="utf-8",
+        )
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        self.assertEqual(source_resolver.read_source_task(ref), "VAD")
+
+    def test_read_source_task_prefers_known_supported_task_over_other(self) -> None:
+        dataset_root = make_source_tree(self.root, "vad_ds", ["v1.0.1"])
+        version_dir = dataset_root / "sample_files" / "v1.0.1"
+        (version_dir / "ds.jsonl").write_text(
+            '{"supported_tasks":["other","vad"]}\n', encoding="utf-8"
+        )
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        self.assertEqual(source_resolver.read_source_task(ref), "VAD")
+
     def test_at_suffix_selects_among_multiple_versions(self) -> None:
         dataset_root = make_source_tree(self.root, "demo_ds", ["v1.0.1", "v1.0.2"])
         ref = source_resolver.resolve_site_source_entry(f"{dataset_root}@v1.0.1")

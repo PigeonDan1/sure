@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ from sure_eval.core.logging import get_logger
 from .source_resolver import (
     DatasetSourceRef,
     is_source_entry,
+    read_source_task,
     resolve_site_source_entry,
 )
 
@@ -482,6 +484,35 @@ class DatasetManager:
                 return text.strip()
         return ""
 
+    def _extract_oref_speech_segments(
+        self, record: dict[str, Any]
+    ) -> tuple[list[dict[str, float]], str | None]:
+        annotations = record.get("annotation")
+        if not isinstance(annotations, list):
+            return [], "missing annotation list"
+
+        segments: list[dict[str, float]] = []
+        for annotation in annotations:
+            if not isinstance(annotation, dict):
+                continue
+            timestamp = annotation.get("timestamp")
+            if not isinstance(timestamp, dict):
+                continue
+            begin = timestamp.get("begin_time")
+            end = timestamp.get("end_time")
+            if begin is None or end is None:
+                continue
+            try:
+                start = float(begin)
+                finish = float(end)
+            except (TypeError, ValueError):
+                return [], "invalid VAD timestamp"
+            if not math.isfinite(start) or not math.isfinite(finish) or finish <= start:
+                return [], "invalid VAD timestamp interval"
+            segments.append({"start": start, "end": finish})
+
+        return segments, None
+
     def _resolve_oref_audio_path(self, raw_value: str, raw_dir: Path) -> Path:
         audio_path = Path(raw_value).expanduser()
         if audio_path.is_absolute():
@@ -538,10 +569,17 @@ class DatasetManager:
                         })
                         continue
 
-                text = self._extract_oref_transcription_text(record)
-                if not text:
-                    skipped.append({"line": line_no, "reason": "missing transcription text"})
-                    continue
+                speech_segments: list[dict[str, float]] | None = None
+                if task == "VAD":
+                    speech_segments, segment_error = self._extract_oref_speech_segments(record)
+                    if segment_error:
+                        skipped.append({"line": line_no, "reason": segment_error})
+                        continue
+                else:
+                    text = self._extract_oref_transcription_text(record)
+                    if not text:
+                        skipped.append({"line": line_no, "reason": "missing transcription text"})
+                        continue
 
                 key = str(record.get("sample_id") or audio_path.stem)
                 if key in seen_keys:
@@ -549,10 +587,9 @@ class DatasetManager:
                     continue
                 seen_keys.add(key)
 
-                rows.append({
+                row: dict[str, Any] = {
                     "key": key,
                     "path": str(audio_path),
-                    "target": text,
                     "task": task,
                     "language": language,
                     "dataset": dataset_label,
@@ -567,7 +604,22 @@ class DatasetManager:
                         "size": attr.get("size"),
                         "channels": attr.get("channels"),
                     },
-                })
+                }
+                if task == "VAD":
+                    duration_ms = attr.get("duration", 0)
+                    try:
+                        duration = float(duration_ms) / 1000.0
+                    except (TypeError, ValueError):
+                        skipped.append({"line": line_no, "reason": "invalid audio duration"})
+                        continue
+                    if not math.isfinite(duration) or duration <= 0:
+                        skipped.append({"line": line_no, "reason": "invalid audio duration"})
+                        continue
+                    row["duration"] = duration
+                    row["speech_segments"] = speech_segments or []
+                else:
+                    row["target"] = text
+                rows.append(row)
         return rows, skipped, source_records
 
     def _copy_source_files(
@@ -592,13 +644,33 @@ class DatasetManager:
     def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef) -> Path:
         """Project a site dataset-pool source root into SURE-EVAL JSONL."""
         jsonl_path = self.jsonl_dir / f"{ref.dataset_id}.jsonl"
+        source_task = read_source_task(ref)
         if jsonl_path.exists():
+            existing_task = ""
+            try:
+                with jsonl_path.open("r", encoding="utf-8") as handle:
+                    for line in handle:
+                        if line.strip():
+                            payload = json.loads(line)
+                            if isinstance(payload, dict):
+                                existing_task = str(payload.get("task") or "").strip().upper()
+                            break
+            except (OSError, json.JSONDecodeError):
+                pass
+            if not source_task or existing_task == source_task:
+                logger.info(
+                    "Using existing source-root projection",
+                    dataset=ref.dataset_id,
+                    jsonl=str(jsonl_path),
+                )
+                return jsonl_path
             logger.info(
-                "Using existing source-root projection",
+                "Rebuilding stale source-root projection",
                 dataset=ref.dataset_id,
+                existing_task=existing_task or "unknown",
+                source_task=source_task,
                 jsonl=str(jsonl_path),
             )
-            return jsonl_path
 
         sample_jsonl_path = Path(ref.sample_jsonl)
         ds_jsonl_path = Path(ref.ds_jsonl)
@@ -607,13 +679,14 @@ class DatasetManager:
             raise FileNotFoundError(f"source sample.jsonl not found: {sample_jsonl_path}")
         if not raw_dir.exists():
             raise FileNotFoundError(f"source raw_dir not found: {raw_dir}")
-        task = "ASR"
+        task = source_task or "ASR"
         ds_meta = self._load_single_json_object(ds_jsonl_path)
         language = str(
             (((ds_meta.get("audio") or {}).get("speech") or {}).get("language")) or "auto"
         )
         package_dir = self.sure_dir / ref.source_dataset_name
-        projection_dir = package_dir / "projections" / "asr_transcription_v1"
+        projection_name = "vad_segments_v1" if task == "VAD" else "asr_transcription_v1"
+        projection_dir = package_dir / "projections" / projection_name
         projection_dir.mkdir(parents=True, exist_ok=True)
 
         rows, skipped, source_records = self._project_sample_rows(
@@ -663,19 +736,32 @@ class DatasetManager:
             source_payload=source_payload,
         )
 
+        fields = {
+            "key": "sample_id",
+            "path": "attribute.path",
+            "task": f"constant:{task}",
+            "language": "ds.audio.speech.language",
+            "sample_rate": "attribute.sample_rate",
+        }
+        if task == "VAD":
+            fields.update(
+                {
+                    "duration": "attribute.duration / 1000",
+                    "speech_segments": "annotation[].timestamp.{begin_time,end_time}",
+                }
+            )
+        else:
+            fields.update(
+                {
+                    "target": "annotation[0].transcription.text[0]",
+                    "duration_ms": "attribute.duration",
+                }
+            )
         mapping = {
-            "projector": "asr_transcription_v1",
+            "projector": projection_name,
             "source_format": f"{SITE_DATASET_POOL_SOURCE}_sample_jsonl",
             "target_format": "sure_eval_jsonl_v1",
-            "fields": {
-                "key": "sample_id",
-                "path": "attribute.path",
-                "target": "annotation[0].transcription.text[0]",
-                "task": f"constant:{task}",
-                "language": "ds.audio.speech.language",
-                "sample_rate": "attribute.sample_rate",
-                "duration_ms": "attribute.duration",
-            },
+            "fields": fields,
         }
         try:
             import yaml
@@ -688,8 +774,16 @@ class DatasetManager:
         io_contract = {
             "task": task,
             "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
-            "output": {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"},
-            "reference": {"primary_field": "target", "type": "text"},
+            "output": (
+                {"prediction_format": "jsonl", "columns": ["key", "speech_segments"], "type": "json"}
+                if task == "VAD"
+                else {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"}
+            ),
+            "reference": (
+                {"primary_field": "speech_segments", "type": "segments"}
+                if task == "VAD"
+                else {"primary_field": "target", "type": "text"}
+            ),
         }
         (projection_dir / "io_contract.json").write_text(
             json.dumps(io_contract, indent=2, ensure_ascii=False) + "\n",
@@ -727,17 +821,17 @@ class DatasetManager:
 
         manifest = {
             "dataset": ref.source_dataset_name,
-            "default_projection": "asr_transcription_v1",
+            "default_projection": projection_name,
             "source": SITE_DATASET_POOL_SOURCE,
             "source_dataset_root": ref.source_root,
             "version_id": ref.version_id,
             "projections": {
-                "asr_transcription_v1": {
+                projection_name: {
                     "dataset": ref.dataset_id,
                     "sure_jsonl": sure_jsonl.relative_to(package_dir).as_posix(),
-                    "mapping": "projections/asr_transcription_v1/mapping.yaml",
-                    "io_contract": "projections/asr_transcription_v1/io_contract.json",
-                    "conversion_report": "projections/asr_transcription_v1/conversion_report.json",
+                    "mapping": f"projections/{projection_name}/mapping.yaml",
+                    "io_contract": f"projections/{projection_name}/io_contract.json",
+                    "conversion_report": f"projections/{projection_name}/conversion_report.json",
                 }
             },
         }
