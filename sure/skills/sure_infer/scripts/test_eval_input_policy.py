@@ -87,6 +87,13 @@ class ExecutionSurfacePolicyTests(unittest.TestCase):
         self.assertEqual(device["execution_device_source"], "local_nvidia_smi")
         self.assertEqual(device["notes"], [])
 
+    def test_unexecutable_nvidia_smi_counts_as_unavailable(self) -> None:
+        with (
+            mock.patch.object(resolve_eval_input.shutil, "which", return_value="/usr/bin/nvidia-smi"),
+            mock.patch.object(resolve_eval_input.subprocess, "run", side_effect=OSError(8, "Exec format error")),
+        ):
+            self.assertFalse(resolve_eval_input._nvidia_smi_available())
+
 
 class OutputDirPolicyTests(unittest.TestCase):
     def setUp(self) -> None:
