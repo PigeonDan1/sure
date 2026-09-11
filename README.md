@@ -88,6 +88,15 @@ Then select the Python profile during onboarding and local execution during infe
 /sure_eval model=<approved-model> datasets=<dataset> metrics=<metric>
 ```
 
+For keyword spotting, the dataset source declares `task: KWS` plus per-sample
+keywords and positive/negative references. Run inference normally, then select
+the canonical wake-word route with `metrics=accuracy` or
+`metrics=macro_recall`; the resulting metric report includes FAR, FRR, false
+alarms per hour, and the DET curve. The current SURE JSON route counts a
+sample positive only when `detected` is true and its score reaches the scanned
+threshold; complete WekWS-style DET/FAR requires threshold-independent
+candidate scores from the model wrapper.
+
 The two approval calls are intentionally separate: the first creates an immutable candidate and review packet; the second requires an explicit human decision and publishes the verified package. This path currently requires the `uv` backend and a hash-locked requirements file. SURE materializes a content-addressed Model Runtime below the configured `storage.runtime_root`, seals its portable manifest into the approved model bundle, and verifies the runtime plus model-core hashes before inference. A model-local `.venv` or arbitrary host Python is never accepted as an Eval runtime. Omitting `package` keeps the Docker registry default.
 
 ## Site Configuration

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added end-to-end SURE KWS wake-word dataset projection, inference contracts, prediction validation, and canonical DET evaluation routing.
 - Added public SDK exports for CLI-equivalent model and scoped-model resolution ([#6201](https://github.com/earendil-works/pi/issues/6201)).
 - Added extension entry renderers for persisted display-only session entries that are rendered in interactive mode without being sent to the model context.
 
