@@ -159,7 +159,7 @@ Attribution:
 
 ## SURE Harness
 
-This fork adds the SURE evaluation control plane: six skill commands (`/sure_feed`, `/sure_onboard`, `/sure_trans`, `/sure_approve`, `/sure_infer`, `/sure_eval`) plus the built-in `/sure_init` and `/sure_resume` commands. The common user entry point is `README.md`; bundled company distributions also carry `private/site/docs/handbook.md`. This section is the maintainer side.
+This fork adds the SURE evaluation control plane: seven skill commands (`/sure_feed`, `/sure_onboard`, `/sure_trans`, `/sure_approve`, `/sure_infer`, `/sure_eval`, `/sure_agent_eval`) plus the built-in `/sure_init` and `/sure_resume` commands. The common user entry point is `README.md`; bundled company distributions also carry `private/site/docs/handbook.md`. This section is the maintainer side.
 
 ### Skill Package Layout
 
@@ -186,6 +186,7 @@ sure/memory/              # instance data, git-ignored, group-writable in a shar
 ```bash
 npm run check:sure-hooks
 python3 -m py_compile sure/skills/sure_infer/scripts/*.py
+python3 -m py_compile sure/skills/sure_agent_eval/scripts/*.py
 cd sure/skills/sure_onboard/scripts && python3 -m unittest test_runtime_inventory.py
 python3 -m unittest discover -s sure/runtime/memory -p "test_*.py"
 ```
@@ -195,7 +196,7 @@ python3 -m unittest discover -s sure/runtime/memory -p "test_*.py"
 - Run `npm run sure:doctor` after changes that affect setup, skill discovery, or external engine detection.
 - `npm run check` covers repo checks only and never runs tests; it is non-mutating, so use `npm run format` when Biome should rewrite files.
 
-SURE test files live in `packages/coding-agent/test/suite/` (`sure-extension`, `sure-feed`, `sure-onboard-state-machine`, `sure-onboard-terminal`, `sure-infer-state-machine`, `sure-eval-runbackend`, `sure-eval-red-lines`, `sure-eval-terminal`, `sure-run-output-dir`, `sure-runtime-binding`, `sure-skill-output-dir`, `sure-memory-match`, `sure-memory-hooks`) plus the init suites under `packages/coding-agent/test/sure/`. Run them from `packages/coding-agent` per the vitest rule in Commands.
+SURE test files live in `packages/coding-agent/test/suite/` (`sure-extension`, `sure-feed`, `sure-onboard-state-machine`, `sure-onboard-terminal`, `sure-infer-state-machine`, `sure-eval-runbackend`, `sure-eval-red-lines`, `sure-eval-terminal`, `sure-agent-eval-state-machine`, `sure-run-output-dir`, `sure-runtime-binding`, `sure-skill-output-dir`, `sure-memory-match`, `sure-memory-hooks`) plus the init suites under `packages/coding-agent/test/sure/`. Run them from `packages/coding-agent` per the vitest rule in Commands.
 
 ### Credential-Free Launchers
 

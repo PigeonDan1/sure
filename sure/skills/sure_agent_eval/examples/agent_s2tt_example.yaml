@@ -1,0 +1,19 @@
+# Example Agent spec for /sure_agent_eval: a two-stage S2TT (speech-to-text
+# translation) agent. Stage 1 transcribes Chinese speech with an approved ASR
+# model; stage 2 translates the transcript to English with an approved LLM
+# (API mode) using a prompt template.
+#
+# Stage `model` values must be exact directory names below
+# storage.approved_models_roots[0] (see config/site.local.yaml). Replace them
+# with the model bundles approved on your site before running.
+agent:
+  name: example_s2tt_agent
+  task: s2tt
+  input: speech
+  output: text
+stages:
+  - id: asr
+    model: qwen3_asr
+  - id: translate
+    model: qwen_llm_mt
+    prompt_template: "Translate to {target_language}: {text}"
