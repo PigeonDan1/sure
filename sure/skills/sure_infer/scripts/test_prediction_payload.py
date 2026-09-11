@@ -43,7 +43,7 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
         cases = [
             ({"label": "happy"}, "SER", {"label": "happy"}),
             ({"text": "activate_lights"}, "SLU", {"answer": "activate_lights", "text": "activate_lights"}),
-            ({"detected": False, "score": 0.1}, "KWS", {"detected": False, "score": 0.1}),
+            ({"detected": False, "score": 0.1}, "KWS", {"detected": False, "keyword": None, "score": 0.1}),
             ({"speech_segments": [{"start": 0.5, "end": 1.0}]}, "VAD", {"speech_segments": [{"start": 0.5, "end": 1.0}]}),
             ({"embedding": [0.1, 0.2]}, "SV", {"embedding": [0.1, 0.2]}),
         ]

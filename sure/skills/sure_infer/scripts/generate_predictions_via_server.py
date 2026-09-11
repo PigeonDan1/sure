@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import socket
 import subprocess
@@ -287,6 +288,19 @@ def _sample_reference_audio_path(repo_root: Path, sample: dict[str, Any], fallba
     return _resolve_audio_field_path(repo_root, value) or fallback
 
 
+def _kws_keywords(value: Any) -> str:
+    if isinstance(value, str):
+        items = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        items = value
+    else:
+        items = []
+    keywords = [str(item).strip() for item in items if str(item).strip()]
+    if not keywords:
+        raise ValueError("KWS sample requires non-empty keywords")
+    return ",".join(dict.fromkeys(keywords))
+
+
 def _build_tool_arguments(
     *,
     repo_root: Path,
@@ -299,6 +313,29 @@ def _build_tool_arguments(
     tool_args: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     task_name = task.upper()
+    if task_name == "KWS":
+        arguments: dict[str, Any] = {
+            argument_name: str(audio_path),
+            "keywords": _kws_keywords(sample.get("keywords") or sample.get("keyword")),
+        }
+        if sample.get("threshold") is not None:
+            threshold = float(sample["threshold"])
+            if not math.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+                raise ValueError("KWS threshold must be a finite number in [0, 1]")
+            arguments["threshold"] = threshold
+        if tool_args:
+            conflicts = {
+                key: {"sample": arguments[key], "configured": tool_args[key]}
+                for key in ("keywords", "threshold")
+                if key in arguments and key in tool_args and arguments[key] != tool_args[key]
+            }
+            if conflicts:
+                raise ValueError(
+                    "KWS per-sample arguments conflict with configured tool arguments: "
+                    + json.dumps(conflicts, ensure_ascii=False, sort_keys=True)
+                )
+            arguments.update(tool_args)
+        return arguments
     if task_name in {"TTS", "VC", "SE", "TSE"}:
         key = str(sample.get("key", "sample"))
         prompt_audio_path = _sample_reference_audio_path(repo_root, sample, audio_path)
@@ -445,6 +482,7 @@ SAFE_ENV_VALUE_KEYS = {
 }
 PATH_ARGUMENT_HINTS = ("audio", "path", "file", "dir", "jsonl")
 TEXT_ARGUMENT_HINTS = ("text", "prompt", "reference", "target")
+KWS_ARGUMENT_HINTS = ("keyword", "threshold")
 
 
 def _is_sensitive_key(key: str) -> bool:
@@ -612,7 +650,11 @@ def _declared_tool_args(model_cfg: dict[str, Any], tool_name: str) -> set[str]:
 
 def _is_dynamic_argument_key(key: str) -> bool:
     lower = key.lower()
-    return any(hint in lower for hint in PATH_ARGUMENT_HINTS) or any(hint in lower for hint in TEXT_ARGUMENT_HINTS)
+    return (
+        any(hint in lower for hint in PATH_ARGUMENT_HINTS)
+        or any(hint in lower for hint in TEXT_ARGUMENT_HINTS)
+        or any(hint in lower for hint in KWS_ARGUMENT_HINTS)
+    )
 
 
 def _update_generation_observations(
@@ -746,16 +788,48 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
             value = prediction.get("annotation_path") or prediction.get("annotation") or payload.get("text") or ""
             return str(value), {"annotation": value}
         if task_name == "KWS":
-            value = prediction.get("score") if prediction.get("score") is not None else payload.get("score", "")
+            if "detected" not in prediction and "detected" not in payload:
+                raise ValueError("KWS prediction is missing detected")
+            detected_value = prediction.get("detected", payload.get("detected"))
+            if isinstance(detected_value, bool):
+                detected = detected_value
+            elif isinstance(detected_value, int) and detected_value in {0, 1}:
+                detected = bool(detected_value)
+            elif isinstance(detected_value, str) and detected_value.strip().lower() in {"true", "1", "yes", "detected"}:
+                detected = True
+            elif isinstance(detected_value, str) and detected_value.strip().lower() in {"false", "0", "no", "rejected"}:
+                detected = False
+            else:
+                raise ValueError("KWS detected must be a boolean or an unambiguous boolean token")
+            score_value = prediction.get("score") if "score" in prediction else payload.get("score")
+            if score_value is None or score_value == "":
+                raise ValueError("KWS score is required and must be a finite number in [0, 1]")
+            elif isinstance(score_value, bool):
+                raise ValueError("KWS score must be numeric")
+            else:
+                score = float(score_value)
+                if not math.isfinite(score) or not 0.0 <= score <= 1.0:
+                    raise ValueError("KWS score must be a finite number in [0, 1]")
+            keyword_value = prediction.get("keyword", payload.get("keyword"))
+            if keyword_value in (None, ""):
+                keyword = None
+            elif isinstance(keyword_value, str):
+                keyword = keyword_value.strip() or None
+            else:
+                raise ValueError("KWS keyword must be a string or null")
+            if detected and keyword is None:
+                raise ValueError("KWS detected=true requires a non-empty keyword")
             normalized = {
-                "detected": bool(prediction.get("detected", payload.get("detected", False))),
-                "score": value,
+                "detected": detected,
+                "keyword": keyword,
+                "score": score,
             }
-            if prediction.get("keyword") is not None:
-                normalized["keyword"] = prediction["keyword"]
             if prediction.get("events") is not None:
+                if not isinstance(prediction["events"], list):
+                    raise ValueError("KWS events must be a list when present")
                 normalized["events"] = prediction["events"]
-            return str(value), normalized
+            projection = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            return projection, normalized
         if task_name == "VAD":
             normalized = {}
             for field in ("speech_segments", "frame_scores"):
@@ -783,7 +857,7 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
     if task_name in {"SD", "SA-ASR", "SA_ASR"}:
         return value, {"annotation": value}
     if task_name == "KWS":
-        return value, {"score": value}
+        raise ValueError("KWS prediction must be a JSON object with detected, keyword, and score")
     return value, {"text": value}
 
 

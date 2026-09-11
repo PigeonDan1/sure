@@ -270,13 +270,28 @@ def _sample_annotation_task(sample: dict[str, object]) -> str:
     return ""
 
 
-def read_source_task(ref: DatasetSourceRef) -> str:
-    """Resolve a source-root task without changing the source dataset.
+def _explicit_task(payload: dict[str, object]) -> str:
+    speech = payload.get("audio") if isinstance(payload.get("audio"), dict) else {}
+    speech = speech.get("speech") if isinstance(speech, dict) and isinstance(speech.get("speech"), dict) else speech
+    for value in (
+        payload.get("task"),
+        payload.get("task_type"),
+        speech.get("task") if isinstance(speech, dict) else None,
+        speech.get("task_type") if isinstance(speech, dict) else None,
+    ):
+        task = _normalize_source_task(value)
+        if task:
+            return task
+    return ""
 
-    Explicit task metadata wins. If the pool only declares a generic task such
-    as ``other``, the first sample's annotation shape identifies structured VAD
-    timestamp annotations before falling back to ``supported_tasks``.
-    """
+
+def read_source_task(ref: DatasetSourceRef) -> str:
+    """Resolve a source-root task without guessing from its directory name."""
+    sample = _read_first_sample(Path(ref.sample_jsonl))
+    sample_task = _explicit_task(sample) or _sample_annotation_task(sample)
+    if sample_task:
+        return sample_task
+
     metadata: dict[str, object] = {}
     try:
         text = Path(ref.ds_jsonl).read_text(encoding="utf-8").strip()
@@ -286,22 +301,15 @@ def read_source_task(ref: DatasetSourceRef) -> str:
     except (OSError, json.JSONDecodeError):
         pass
 
-    for field in ("task", "task_type"):
-        task = _normalize_source_task(metadata.get(field))
-        if task:
-            return task
-
-    sample = _read_first_sample(Path(ref.sample_jsonl))
-    sample_task = _sample_annotation_task(sample)
-    if sample_task:
-        return sample_task
+    metadata_task = _explicit_task(metadata)
+    if metadata_task:
+        return metadata_task
 
     supported_tasks = metadata.get("supported_tasks")
     if isinstance(supported_tasks, str):
         supported_tasks = [supported_tasks]
     if isinstance(supported_tasks, list):
-        tasks = [_normalize_source_task(item) for item in supported_tasks]
-        for task in tasks:
+        for task in (_normalize_source_task(item) for item in supported_tasks):
             if task:
                 return task
     return ""

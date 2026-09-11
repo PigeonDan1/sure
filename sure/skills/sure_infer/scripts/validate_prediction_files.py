@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -112,6 +113,63 @@ def _resolve_audio_path(value: Any, base_dir: Path | None) -> Path:
     return path
 
 
+def _valid_kws_reference(sample: dict[str, Any]) -> bool:
+    keywords_value = sample.get("keywords") or sample.get("keyword")
+    if isinstance(keywords_value, str):
+        keywords = [item.strip() for item in keywords_value.split(",") if item.strip()]
+    elif isinstance(keywords_value, list):
+        keywords = [str(item).strip() for item in keywords_value if str(item).strip()]
+    else:
+        keywords = []
+    expected = sample.get("expected_detected")
+    if not isinstance(expected, bool):
+        label = str(sample.get("expected", sample.get("label", ""))).strip().lower()
+        if label in {"detect", "detected", "positive", "true", "1", "yes"}:
+            expected = True
+        elif label in {"reject", "rejected", "negative", "false", "0", "no"}:
+            expected = False
+    duration = sample.get("duration")
+    expected_keyword = sample.get("expected_keyword")
+    normalized_keywords = {"".join(keyword.upper().split()) for keyword in keywords}
+    expected_keyword_valid = (
+        not expected
+        or (
+            isinstance(expected_keyword, str)
+            and bool(expected_keyword.strip())
+            and "".join(expected_keyword.upper().split()) in normalized_keywords
+        )
+    )
+    return (
+        bool(keywords)
+        and isinstance(expected, bool)
+        and expected_keyword_valid
+        and isinstance(duration, (int, float))
+        and not isinstance(duration, bool)
+        and math.isfinite(float(duration))
+        and float(duration) > 0
+    )
+
+
+def _valid_kws_prediction(prediction: dict[str, Any]) -> bool:
+    detected = prediction.get("detected")
+    keyword = prediction.get("keyword")
+    score = prediction.get("score")
+    if not isinstance(detected, bool):
+        return False
+    if keyword is not None and (not isinstance(keyword, str) or not keyword.strip()):
+        return False
+    if detected and keyword is None:
+        return False
+    if (
+        not isinstance(score, (int, float))
+        or isinstance(score, bool)
+        or not math.isfinite(float(score))
+        or not 0.0 <= float(score) <= 1.0
+    ):
+        return False
+    return isinstance(prediction.get("events", []), list)
+
+
 def _task_contract_violations(
     samples: list[dict[str, Any]],
     structured: dict[str, dict[str, Any]],
@@ -125,6 +183,10 @@ def _task_contract_violations(
         task = normalize_task(str(row.get("task") or sample.get("task") or ""))
         prediction = row.get("prediction") if isinstance(row.get("prediction"), dict) else {}
         normalized = str(row.get("normalized_prediction") or "")
+        if task == "kws":
+            if not _valid_kws_reference(sample) or not _valid_kws_prediction(prediction):
+                violations.append(key)
+            continue
         try:
             primary_field = str(task_profile(task)["io_contract"]["primary_field"])
         except ValueError:
@@ -187,7 +249,10 @@ def validate_prediction_file(
         key for key, prediction in predictions.items() if key in expected_key_set and prediction.strip() == ""
     )
     structured_key_set = set(structured_predictions.keys())
-    structured_missing_keys = sorted(expected_key_set - structured_key_set) if structured_path.exists() else []
+    structured_required = any(normalize_task(str(sample.get("task") or "")) == "kws" for sample in samples)
+    structured_missing_keys = (
+        sorted(expected_key_set - structured_key_set) if structured_path.exists() or structured_required else []
+    )
     structured_extra_keys = sorted(structured_key_set - expected_key_set) if structured_path.exists() else []
     contract_violation_keys = (
         _task_contract_violations(samples, structured_predictions, base_dir=structured_path.parent)
@@ -203,7 +268,7 @@ def validate_prediction_file(
     is_valid = not missing_keys and not extra_keys and not duplicate_keys
     if require_nonempty and empty_prediction_keys:
         is_valid = False
-    if structured_path.exists() and (
+    if (structured_path.exists() or structured_required) and (
         structured_missing_keys
         or structured_extra_keys
         or structured_duplicate_keys

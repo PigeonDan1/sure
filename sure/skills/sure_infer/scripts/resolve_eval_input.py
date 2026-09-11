@@ -122,6 +122,7 @@ def _effective_dataset_task(dataset_task: str, model_task: str, metrics: list[st
 
 
 SYNTH_TASKS = {"TTS", "VC"}
+EXACT_TASKS = {"KWS"}
 TASK_CHECK_EXEMPT = {"OMNI", "API"}
 TASK_WORDS = {"ASR": "speech recognition", "TTS": "speech synthesis", "VC": "voice conversion"}
 
@@ -191,7 +192,9 @@ def _check_task_compatibility(model: dict[str, Any], datasets: list[dict[str, An
     mismatched = []
     for item in datasets:
         task = _normalize_task(item.get("task"))
-        if task and task != "UNKNOWN" and (task in SYNTH_TASKS) != model_synth:
+        exact_mismatch = (model_task in EXACT_TASKS or task in EXACT_TASKS) and task != model_task
+        family_mismatch = (task in SYNTH_TASKS) != model_synth
+        if task and task != "UNKNOWN" and (exact_mismatch or family_mismatch):
             mismatched.append(f"dataset '{item.get('name')}' has task {_task_label(task)}")
     if not mismatched:
         return
