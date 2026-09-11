@@ -19,7 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import resolve_eval_input  # noqa: E402
 from sure_eval.datasets import source_resolver  # noqa: E402
-from test_source_conversion import make_flat_source_tree, make_manager, make_source_tree  # noqa: E402
+from test_source_conversion import (  # noqa: E402
+    make_flat_source_tree,
+    make_manager,
+    make_source_tree,
+    make_vad_source_tree,
+)
 
 
 class MainFlowRemovalTests(unittest.TestCase):
@@ -221,6 +226,16 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         self.assertEqual(detail["source_root"], str(flat_root))
         self.assertEqual(detail["source_dataset_name"], "flat_ds")
         self.assertEqual(detail["version_id"], "unversioned")
+
+    def test_unconverted_vad_source_entry_yields_vad_detail(self) -> None:
+        vad_root = make_vad_source_tree(self.source_root, "vad_ds", "v0.0.1")
+        details = resolve_eval_input._dataset_details(self.manager, [str(vad_root)], [], None)
+        self.assertEqual(len(details), 1)
+        detail = details[0]
+        self.assertEqual(detail["name"], "vad_ds__v0.0.1")
+        self.assertEqual(detail["task"], "VAD")
+        self.assertEqual(detail["language"], "zh")
+        self.assertEqual(detail["default_metrics"], ["f1"])
 
 
 class MainErrorHandlingTests(unittest.TestCase):

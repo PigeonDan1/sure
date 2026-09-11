@@ -29,6 +29,7 @@ from sure_eval.datasets.source_resolver import (
     SourceResolutionError,
     is_source_entry,
     read_source_language,
+    read_source_task,
     resolve_site_source_entry,
 )
 
@@ -492,6 +493,8 @@ def _fallback_default_metrics(task: str, language: str) -> list[str]:
         return ["wer"] if language_lower == "en" else ["cer"]
     if task_upper in {"TTS", "VC"}:
         return []
+    if task_upper == "VAD":
+        return ["f1"]
     return [TEXT_DEFAULT_METRICS.get(task_upper, "accuracy")]
 
 
@@ -540,7 +543,7 @@ def _dataset_details(
             source_root = source_root or ref.source_root
             source_name = source_name or ref.source_dataset_name
             version_id = version_id or ref.version_id
-            dataset_task = dataset_task or "ASR"
+            dataset_task = dataset_task or read_source_task(ref) or "ASR"
             language = language or (read_source_language(ref) or "auto").lower()
         task = _effective_dataset_task(dataset_task, model_task, requested_metrics)
         if not task:
