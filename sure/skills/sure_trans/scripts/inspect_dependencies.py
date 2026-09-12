@@ -94,6 +94,11 @@ def main() -> int:
     source_kind = str(resolved.get("source_kind") or "docker")
     entrypoint = Path(resolved["inference_entrypoint"])
     model_path = Path(resolved["model_path"])
+    dependency_file = (
+        Path(str(resolved["dependency_file"])).resolve()
+        if resolved.get("dependency_file")
+        else None
+    )
 
     sources: list[str] = []
     if source_kind == "docker":
@@ -120,8 +125,28 @@ def main() -> int:
         support_paths.add(str(entrypoint.parent.resolve()))
     else:
         external_paths.append(str(entrypoint))
-    if source_kind == "python":
-        support_paths.add(str(Path(resolved["lockfile"]).resolve()))
+    if source_kind == "python" and dependency_file is not None:
+        support_paths.add(str(dependency_file))
+
+    uv_files = [
+        str((build_context / name).resolve())
+        for name in ("uv.lock", "requirements.lock.txt", "requirements.lock", "requirements.txt", "pyproject.toml")
+        if (build_context / name).is_file()
+    ]
+    conda_files = [
+        str((build_context / name).resolve())
+        for name in ("conda-lock.yml", "conda-lock.yaml", "environment.yml", "environment.yaml")
+        if (build_context / name).is_file()
+    ]
+    python_executable = resolved.get("python_executable")
+    conda_prefix = None
+    if isinstance(python_executable, str) and python_executable:
+        executable = Path(python_executable).resolve()
+        conda_root = next(
+            (parent for parent in executable.parents if (parent / "conda-meta" / "history").is_file()),
+            None,
+        )
+        conda_prefix = str(conda_root) if conda_root else None
 
     payload = {
         "schema": "sure.trans.dependencies.v1",
@@ -129,6 +154,14 @@ def main() -> int:
         "build_context": str(build_context),
         "docker_copy_sources": sources,
         "python_imports": sorted(visitor.imports),
+        "backend_signals": {
+            "dockerfile": str(resolved.get("dockerfile") or "") or None,
+            "uv_files": uv_files,
+            "conda_files": conda_files,
+            "python_executable": python_executable,
+            "conda_prefix": conda_prefix,
+        },
+        "dependency_file": str(dependency_file) if dependency_file else None,
         "literal_file_references": sorted(visitor.string_paths),
         "subprocess_references": sorted(visitor.commands),
         "support_paths": sorted(support_paths),

@@ -30,8 +30,9 @@ def main() -> int:
     run_dir = Path(args.run_dir).resolve()
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
-    if resolved.get("source_kind") != "python":
-        raise ValueError("materialize_adapter_runtime.py is only for Python input")
+    if resolved.get("source_kind") != "python" or resolved.get("package_profile", "none") != "none":
+        raise ValueError("materialize_adapter_runtime.py is only for Python input with package=none")
+    source_runtime = read_object(artifacts / "source_image_result.json")
     manifest = read_object(artifacts / "adapter_manifest.json")
     if manifest.get("status") != "ready" or manifest.get("runtime_kind") != "python":
         raise ValueError("Python adapter manifest must be ready")
@@ -41,8 +42,8 @@ def main() -> int:
         if not path.is_file():
             raise ValueError(f"adapter file is missing: {key}")
         files[key] = sha256_file(path)
-    python_executable = Path(str(resolved["python_executable"])).resolve()
-    lockfile = Path(str(resolved["lockfile"])).resolve()
+    python_executable = Path(str(source_runtime["python_executable"])).resolve()
+    lockfile = Path(str(source_runtime["lockfile"])).resolve()
     payload = {
         "schema": "sure.trans.adapter_runtime_result.v1",
         "status": "passed",

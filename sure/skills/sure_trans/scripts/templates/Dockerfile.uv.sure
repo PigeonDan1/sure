@@ -1,0 +1,13 @@
+# SURE_TRANS_TODO: pin the base image and uv version, then remove this marker.
+FROM python:3.11-slim
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+COPY --from=model_source . /opt/model-source
+COPY __SOURCE_RUNTIME_FILE__ /opt/sure_trans/__SOURCE_RUNTIME_FILE__
+RUN python -m venv /opt/sure-model \
+    && /opt/sure-model/bin/pip install uv \
+    && /opt/sure-model/bin/uv pip sync --python /opt/sure-model/bin/python --require-hashes /opt/sure_trans/__SOURCE_RUNTIME_FILE__
+__HARNESS_RUNTIME_COPY__
+COPY model.py server.py config.yaml model.spec.yaml __init__.py validate.py mcp_smoke.py /opt/sure_trans/
+WORKDIR /opt/sure_trans
+ENTRYPOINT ["__PYTHON_EXECUTABLE__", "/opt/sure_trans/server.py"]

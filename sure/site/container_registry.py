@@ -187,6 +187,16 @@ def registry_tags(repository: str) -> list[str]:
         try:
             return _collect_registry_tags(endpoint, authenticated_headers)
         except HTTPError as authenticated_error:
+            if authenticated_error.code == 404:
+                # Registry V2: an authenticated 404 with NAME_UNKNOWN means the
+                # repository does not exist yet, i.e. it is empty. That is the
+                # documented "empty repository" case and starts at 0.1.0.
+                try:
+                    error_body = authenticated_error.read().decode("utf-8", "replace")
+                except Exception:
+                    error_body = ""
+                if "NAME_UNKNOWN" in error_body:
+                    return []
             raise ValueError(
                 f"registry tag query remained unauthorized for {repository} "
                 f"(HTTP {authenticated_error.code})"

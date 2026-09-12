@@ -14,7 +14,15 @@ from vc_exec import default_partition
 
 
 LEGACY_PATH = re.compile(r"/(?:mnt/cloudstorfs|hpc_stor\d+|hpc_\d+)/")
-ANNOTATION_FIELDS = ("ground_truth", "target_text", "text", "segments", "label", "intent")
+ANNOTATION_FIELDS = (
+    "ground_truth",
+    "target_text",
+    "text",
+    "segments",
+    "label",
+    "intent",
+    "speaker_id",
+)
 TRANS_RESERVED_ROOTS = {
     "model.py",
     "server.py",
@@ -65,8 +73,117 @@ def has_annotation_value(value: object) -> bool:
     return value is not None
 
 
+def validate_sv_fixture_manifest(value: dict) -> None:
+    for key in (
+        "model_dir",
+        "staged_dir",
+        "staged_path",
+        "gt_jsonl",
+        "samples",
+        "trial_manifest",
+        "trials_file",
+        "provenance",
+        "annotation_source",
+    ):
+        require(key in value, f"SV fixture manifest is missing {key}")
+    model_dir = Path(str(value["model_dir"])).resolve()
+    staged_dir = Path(str(value["staged_dir"])).resolve()
+    gt_jsonl = Path(str(value["gt_jsonl"])).resolve()
+    staged = Path(str(value["staged_path"])).resolve()
+    require(model_dir.is_dir(), "SV fixture model_dir is missing")
+    require(staged_dir.is_dir(), "SV fixture staged_dir is missing")
+    require(
+        staged_dir.is_relative_to(model_dir / "fixture"),
+        "SV fixture staged_dir must stay under model_dir/fixture",
+    )
+    require(gt_jsonl.is_file() and gt_jsonl.parent == staged_dir, "SV gt_jsonl is missing")
+    require(value.get("gt_sha256") == sha256_file(gt_jsonl), "SV gt_jsonl checksum changed")
+
+    rows: list[dict] = []
+    for line_no, line in enumerate(gt_jsonl.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"SV fixture gt_jsonl line {line_no} is invalid JSON: {error}") from error
+        require(isinstance(row, dict), f"SV fixture gt_jsonl line {line_no} must be an object")
+        require(str(row.get("task") or row.get("task_type") or "").upper() == "SV", f"SV fixture row {line_no} must declare task SV")
+        require(bool(str(row.get("speaker_id") or "").strip()), f"SV fixture row {line_no} must declare speaker_id")
+        audio = Path(str(row.get("audio") or ""))
+        require(not audio.is_absolute() and ".." not in audio.parts, f"SV fixture row {line_no} audio path is invalid")
+        require((staged_dir / audio).is_file(), f"SV fixture row {line_no} audio is missing")
+        rows.append(row)
+
+    samples = value.get("samples")
+    require(isinstance(samples, list) and 1 <= len(samples) <= 5, "SV fixture must declare 1-5 samples")
+    require(value.get("sample_count") == len(samples) == len(rows), "SV fixture sample count must match gt_jsonl")
+    for index, (sample, row) in enumerate(zip(samples, rows), 1):
+        require(isinstance(sample, dict), f"SV fixture sample {index} must be an object")
+        audio = str(row["audio"])
+        require(sample.get("audio") == audio, f"SV fixture sample {index} audio does not match gt_jsonl")
+        require(
+            Path(str(sample.get("audio_path") or "")).resolve() == (staged_dir / audio).resolve(),
+            f"SV fixture sample {index} audio_path does not match gt_jsonl",
+        )
+        require(sample.get("speaker_id") == row.get("speaker_id"), f"SV fixture sample {index} speaker_id changed")
+        require(sample.get("annotation_fields") == ["speaker_id"], f"SV fixture sample {index} annotation_fields are invalid")
+
+    first_audio = (staged_dir / str(rows[0]["audio"])).resolve()
+    require(staged == first_audio and staged.is_file(), "SV staged_path must select the first fixture audio")
+    require(value.get("sha256") == sha256_file(staged), "SV staged audio checksum changed")
+    require(value.get("size_bytes") == staged.stat().st_size, "SV staged audio size changed")
+
+    trial_manifest_path = Path(str(value["trial_manifest"])).resolve()
+    trials_path = Path(str(value["trials_file"])).resolve()
+    provenance_path = Path(str(value["provenance"])).resolve()
+    for path, label, hash_key in (
+        (trial_manifest_path, "trial_manifest", "trial_manifest_sha256"),
+        (trials_path, "trials_file", "trials_sha256"),
+        (provenance_path, "provenance", "provenance_sha256"),
+    ):
+        require(path.is_file() and path.parent == staged_dir, f"SV {label} must be inside staged_dir")
+        require(value.get(hash_key) == sha256_file(path), f"SV {label} checksum changed")
+
+    trial_manifest = read_object(trial_manifest_path)
+    require(trial_manifest.get("schema_version") == "sure.sv.trial_manifest.v1", "SV trial manifest schema is invalid")
+    require(trial_manifest.get("trials_file") == trials_path.name, "SV trial manifest points to another trials file")
+    require(trial_manifest.get("trials_sha256") == sha256_file(trials_path), "SV trial manifest trials checksum changed")
+    for index, row in enumerate(rows, 1):
+        require(row.get("trial_manifest") == trial_manifest_path.name, f"SV fixture row {index} trial_manifest changed")
+        require(samples[index - 1].get("trial_manifest") == trial_manifest_path.name, f"SV fixture sample {index} trial_manifest changed")
+
+    trial_lines = [line.split() for line in trials_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    require(trial_lines and trial_lines[0] == ["enroll_key", "test_key", "label", "condition"], "SV trials header is invalid")
+    trials = trial_lines[1:]
+    require(trial_manifest.get("trial_count") == len(trials), "SV trial_count does not match trials file")
+    sample_keys = {str(sample.get("key") or "") for sample in samples}
+    require(all(len(trial) == 4 for trial in trials), "SV trial rows must have four columns")
+    require(all(trial[0] in sample_keys and trial[1] in sample_keys for trial in trials), "SV trials reference unknown sample keys")
+    labels = [trial[2] for trial in trials]
+    require(set(labels).issubset({"target", "nontarget"}), "SV trials contain an invalid label")
+    require(trial_manifest.get("target_count") == labels.count("target"), "SV target_count is invalid")
+    require(trial_manifest.get("nontarget_count") == labels.count("nontarget"), "SV nontarget_count is invalid")
+
+    annotation_source = value.get("annotation_source")
+    require(isinstance(annotation_source, dict), "SV annotation_source must be an object")
+    require(
+        annotation_source.get("type") == "task_registry_fixture"
+        and annotation_source.get("fallback") is False,
+        "SV ground truth must come from a task-registry fixture",
+    )
+    require(
+        Path(str(annotation_source.get("staged_path") or "")).resolve() == gt_jsonl,
+        "SV annotation source must point to the staged gt_jsonl",
+    )
+
+
 def validate_fixture_manifest(value: dict) -> None:
     require(value.get("status") == "ready", "fixture manifest is not ready")
+    task = str(value.get("task_type") or "").replace("-", "_").lower()
+    if task == "sv":
+        validate_sv_fixture_manifest(value)
+        return
     for key in ("model_dir", "staged_dir", "gt_jsonl", "samples", "annotation_source"):
         require(key in value, f"fixture manifest is missing {key}")
     model_dir = Path(str(value["model_dir"])).resolve()
@@ -97,7 +214,6 @@ def validate_fixture_manifest(value: dict) -> None:
     except json.JSONDecodeError as error:
         raise ValueError(f"fixture gt_jsonl is invalid JSON: {error}") from error
     require(isinstance(row, dict), "fixture gt_jsonl row must be an object")
-    task = str(value.get("task_type") or "").replace("-", "_").lower()
     audio_field = "reference_audio" if task in {"tts", "vc"} else "audio"
     require(row.get(audio_field) == staged.name, f"fixture gt_jsonl {audio_field} must mirror staged_path")
     declared_annotations = sample.get("annotation_fields")
@@ -164,6 +280,12 @@ def main() -> int:
     if kind == "input":
         source_kind = value.get("source_kind")
         require(source_kind in {"docker", "python"}, "source_kind must be docker or python")
+        preferred_backend = value.get("preferred_backend")
+        backend_hint = value.get("backend_hint")
+        require(preferred_backend in {None, "uv", "conda", "docker"}, "preferred_backend is invalid")
+        require(backend_hint in {"uv", "conda", "docker"}, "backend_hint is invalid")
+        if preferred_backend is not None:
+            require(backend_hint == preferred_backend, "backend_hint must honor preferred_backend")
         package_profile = value.get("package_profile")
         require(package_profile in {"docker-registry", "none"}, "package_profile is invalid")
         for key in ("build_context", "model_path", "inference_entrypoint"):
@@ -171,12 +293,21 @@ def main() -> int:
             require(candidate.is_absolute() and candidate.exists(), f"{key} must exist and be absolute")
         if source_kind == "docker":
             require(package_profile == "docker-registry", "Docker input requires package_profile=docker-registry")
+            require(backend_hint == "docker", "Docker input requires backend_hint=docker")
             source_paths = ("dockerfile",)
         else:
-            source_paths = ("python_executable", "lockfile")
+            require(backend_hint in {"uv", "conda"}, "Python input requires uv or conda backend_hint")
+            require(package_profile != "none" or backend_hint == "uv", "package=none requires uv")
+            source_paths = ("dependency_file",)
         for key in source_paths:
             candidate = Path(str(value.get(key, "")))
             require(candidate.is_absolute() and candidate.is_file(), f"{key} must be an existing absolute file")
+        if source_kind == "python" and value.get("python_executable") is not None:
+            python_executable = Path(str(value["python_executable"]))
+            require(
+                python_executable.is_absolute() and python_executable.is_file(),
+                "python_executable must be null or an existing absolute file",
+            )
         require(value.get("framework") == "pytorch", "framework must normalize to pytorch")
         require(
             isinstance(value.get("model_framework"), str) and bool(value["model_framework"].strip()),
@@ -193,6 +324,24 @@ def main() -> int:
         require(
             declared_model_dir == expected_model_dir,
             f"model_dir must be the harness-owned bundle {expected_model_dir}; got {declared_model_dir}",
+        )
+    elif kind == "backend_choice":
+        resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+        backend = value.get("backend")
+        require(backend in {"uv", "conda", "docker"}, "backend choice is invalid")
+        require(value.get("package_profile") == resolved.get("package_profile"), "backend package_profile changed")
+        preferred = resolved.get("preferred_backend")
+        if preferred is not None:
+            require(backend == preferred, "backend choice must honor preferred_backend")
+        require(backend == resolved.get("backend_hint"), "backend choice disagrees with resolved backend evidence")
+        require(
+            isinstance(value.get("choice_reason"), str) and bool(value["choice_reason"].strip()),
+            "backend choice requires a reason",
+        )
+        evidence = value.get("evidence")
+        require(
+            isinstance(evidence, list) and bool(evidence) and all(isinstance(item, str) and item.strip() for item in evidence),
+            "backend choice requires non-empty evidence strings",
         )
     elif kind == "dependencies":
         require(value.get("status") == "ready", "dependency inspection is blocked")
@@ -242,31 +391,57 @@ def main() -> int:
         validate_fixture_manifest(value)
     elif kind == "source_image":
         require(value.get("status") == "passed", "source image materialization did not pass")
-        require(value.get("source_image_policy") in {"load", "build"}, "source image policy must be load or build")
-        require(value.get("source_image_policy") == value.get("requested_source_image_policy", value.get("source_image_policy")) or value.get("requested_source_image_policy") == "auto", "source image policy violates requested policy")
         require(Path(str(value.get("source_image_log_path", ""))).is_file(), "source image log is missing")
-        require(value.get("image_id", "").startswith("sha256:"), "source image image_id must be a live sha256 ID")
-        if value.get("source_image_policy") == "build":
-            require(value.get("build_executed") is True, "source image build was not executed")
-            require(value.get("build_exit_code") == 0, "docker build did not exit successfully")
-            require(isinstance(value.get("build_command"), list) and value["build_command"][0:2] == ["docker", "build"], "source image must record docker build command")
-            require(Path(str(value.get("build_log_path", ""))).is_file(), "source image build log is missing")
+        if value.get("source_kind") == "python":
+            resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+            expected_backend = str(resolved.get("backend_hint") or "")
+            choice_path = run_dir / "artifacts" / "backend_choice.json"
+            if choice_path.is_file():
+                expected_backend = str(read_object(choice_path).get("backend") or expected_backend)
+            require(value.get("backend") == expected_backend, "source runtime backend changed after planning")
+            require(value.get("backend") in {"uv", "conda"}, "Python source runtime backend must be uv or conda")
+            require(value.get("runtime_mode") in {"existing-python", "materialize"}, "invalid source runtime mode")
+            for key in ("python_executable", "dependency_file", "lockfile"):
+                candidate = Path(str(value.get(key) or "")).resolve()
+                require(candidate.is_file(), f"source runtime {key} is missing")
+                require(value.get(f"{key}_sha256") == sha256_file(candidate), f"source runtime {key} hash changed")
+            if value.get("runtime_mode") == "materialize":
+                environment_dir = Path(str(value.get("environment_dir") or "")).resolve()
+                require(
+                    environment_dir.is_dir() and environment_dir.is_relative_to(run_dir.resolve()),
+                    "materialized source environment must stay inside the run directory",
+                )
+            commands = value.get("materialization_commands")
+            require(isinstance(commands, list), "source runtime materialization_commands must be a list")
+            require(
+                all(isinstance(command, dict) and command.get("exit_code") == 0 for command in commands),
+                "source runtime materialization recorded a failed command",
+            )
         else:
-            require(value.get("load_executed") is True, "source image load was not executed")
-            require(value.get("load_exit_code") == 0, "docker load did not exit successfully")
-            require(isinstance(value.get("load_command"), list) and value["load_command"][0:2] == ["docker", "load"], "source image must record docker load command")
-            image_tar = Path(str(value.get("image_tar", ""))).resolve()
-            build_context = Path(str(value.get("build_context", ""))).resolve()
-            require(image_tar.is_file() and image_tar.is_relative_to(build_context), "loaded image tar must be inside build context")
-            require(value.get("tar_sha256") == sha256_file(image_tar), "loaded image tar checksum changed")
-            require(value.get("load_verified") is True, "loaded image was not verified")
+            require(value.get("source_image_policy") in {"load", "build"}, "source image policy must be load or build")
+            require(value.get("source_image_policy") == value.get("requested_source_image_policy", value.get("source_image_policy")) or value.get("requested_source_image_policy") == "auto", "source image policy violates requested policy")
+            require(value.get("image_id", "").startswith("sha256:"), "source image image_id must be a live sha256 ID")
+            if value.get("source_image_policy") == "build":
+                require(value.get("build_executed") is True, "source image build was not executed")
+                require(value.get("build_exit_code") == 0, "docker build did not exit successfully")
+                require(isinstance(value.get("build_command"), list) and value["build_command"][0:2] == ["docker", "build"], "source image must record docker build command")
+                require(Path(str(value.get("build_log_path", ""))).is_file(), "source image build log is missing")
+            else:
+                require(value.get("load_executed") is True, "source image load was not executed")
+                require(value.get("load_exit_code") == 0, "docker load did not exit successfully")
+                require(isinstance(value.get("load_command"), list) and value["load_command"][0:2] == ["docker", "load"], "source image must record docker load command")
+                image_tar = Path(str(value.get("image_tar", ""))).resolve()
+                build_context = Path(str(value.get("build_context", ""))).resolve()
+                require(image_tar.is_file() and image_tar.is_relative_to(build_context), "loaded image tar must be inside build context")
+                require(value.get("tar_sha256") == sha256_file(image_tar), "loaded image tar checksum changed")
+                require(value.get("load_verified") is True, "loaded image was not verified")
     elif kind == "adapter_image":
         require(value.get("status") == "passed", "adapter runtime materialization must pass")
         if value.get("runtime_kind") == "python":
-            resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+            source_runtime = read_object(run_dir / "artifacts" / "source_image_result.json")
             for key in ("python_executable", "lockfile"):
                 path = Path(str(value.get(key) or "")).resolve()
-                require(path == Path(str(resolved.get(key) or "")).resolve(), f"adapter runtime {key} changed")
+                require(path == Path(str(source_runtime.get(key) or "")).resolve(), f"adapter runtime {key} changed")
                 require(path.is_file(), f"adapter runtime {key} is missing")
                 require(value.get(f"{key}_sha256") == sha256_file(path), f"adapter runtime {key} hash changed")
             manifest = read_object(run_dir / "artifacts" / "adapter_manifest.json")
@@ -277,6 +452,29 @@ def main() -> int:
             for key, digest in files.items():
                 path = Path(str(manifest.get(key) or ""))
                 require(path.is_file() and digest == sha256_file(path), f"adapter runtime file hash changed: {key}")
+        else:
+            manifest = read_object(run_dir / "artifacts" / "adapter_manifest.json")
+            resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+            target_image = str(value.get("target_image") or "")
+            delivery = resolved.get("container_delivery") if isinstance(resolved.get("container_delivery"), dict) else {}
+            require(target_image == delivery.get("target_image"), "adapter target_image must match the resolved delivery target")
+            require(str(value.get("image_id") or "").startswith("sha256:"), "adapter image_id must be a live sha256 ID")
+            source_backend = str(manifest.get("source_backend") or "docker")
+            if source_backend == "docker":
+                source_image = str(value.get("source_image") or "")
+                require(source_image == manifest.get("source_image_reference"), "adapter source_image must match the verified source image")
+            else:
+                require(source_backend in {"uv", "conda"}, "container adapter source_backend must be uv, conda, or docker")
+                base_image = str(value.get("base_image") or "")
+                require(base_image, "uv/conda adapter image must record its base_image")
+                dockerfile = Path(str(manifest.get("dockerfile") or ""))
+                require(dockerfile.is_file(), "adapter Dockerfile is missing")
+                from_images = [
+                    line.split()[1]
+                    for line in dockerfile.read_text(encoding="utf-8").splitlines()
+                    if line.strip().upper().startswith("FROM ") and len(line.split()) >= 2
+                ]
+                require(base_image in from_images, "adapter base_image must match a Dockerfile FROM image")
     elif kind == "registry":
         require(value.get("status") == "passed", "registry package must pass")
         if value.get("package_profile") == "none":
@@ -405,10 +603,10 @@ def main() -> int:
         require(actual_payload == set(verified_hashes), "model payload manifest must exactly cover staged payload files")
     elif kind == "adapter" and value.get("runtime_kind") == "python":
         require(value.get("status") == "ready", "adapter manifest must be ready")
-        resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+        source_runtime = read_object(run_dir / "artifacts" / "source_image_result.json")
         python_executable = Path(str(value.get("python_executable") or "")).resolve()
         require(
-            python_executable == Path(str(resolved.get("python_executable") or "")).resolve()
+            python_executable == Path(str(source_runtime.get("python_executable") or "")).resolve()
             and python_executable.is_file(),
             "adapter python_executable must match the resolved Python runtime",
         )
@@ -463,34 +661,59 @@ def main() -> int:
             "adapter manifest working_dir must be absolute",
         )
         source_reference = str(value.get("source_image_reference") or "")
-        require(source_reference, "adapter manifest source_image_reference is required")
         source_image = read_object(run_dir / "artifacts" / "source_image_result.json")
-        require(
-            value.get("source_image_id") == source_image.get("image_id"),
-            "adapter manifest source_image_id must match source image evidence",
-        )
-        source_local = str(source_image.get("image") or "")
-        source_push = source_image.get("registry_push") if isinstance(source_image.get("registry_push"), dict) else {}
-        source_registry = str(source_image.get("registry_ref") or "")
-        source_digest = str(source_push.get("digest") or "")
-        if source_registry and source_digest:
-            repository = source_registry.rsplit(":", 1)[0]
+        source_backend = str(value.get("source_backend") or "docker")
+        if source_backend == "docker":
+            require(source_reference, "Docker-source adapter manifest requires source_image_reference")
             require(
-                source_reference == f"{repository}@{source_digest}",
-                "adapter source_image_reference must pin the source registry digest",
+                value.get("source_image_id") == source_image.get("image_id"),
+                "adapter manifest source_image_id must match source image evidence",
             )
+            source_local = str(source_image.get("image") or "")
+            source_push = source_image.get("registry_push") if isinstance(source_image.get("registry_push"), dict) else {}
+            source_registry = str(source_image.get("registry_ref") or "")
+            source_digest = str(source_push.get("digest") or "")
+            if source_registry and source_digest:
+                repository = source_registry.rsplit(":", 1)[0]
+                require(
+                    source_reference == f"{repository}@{source_digest}",
+                    "adapter source_image_reference must pin the source registry digest",
+                )
+            else:
+                require(source_reference == source_local, "adapter source_image_reference must match the verified local source image")
         else:
-            require(source_reference == source_local, "adapter source_image_reference must match the verified local source image")
+            require(source_backend in {"uv", "conda"}, "container adapter source_backend must be uv, conda, or docker")
+            require(not source_reference, "uv/conda source runtime must not be represented as a source image")
+            require(value.get("source_image_id") is None, "uv/conda source runtime must not declare source_image_id")
+            require(source_image.get("backend") == source_backend, "adapter source backend changed")
+            resolved = read_object(run_dir / "artifacts" / "trans_input_resolved.json")
+            require(
+                Path(str(value.get("model_source_build_context") or "")).resolve()
+                == Path(str(resolved.get("build_context") or "")).resolve(),
+                "adapter model_source_build_context must match the resolved build context",
+            )
+            source_runtime_file = Path(str(value.get("source_runtime_file") or "")).resolve()
+            require(source_runtime_file.is_file(), "adapter source runtime file is missing")
+            require(
+                sha256_file(source_runtime_file) == source_image.get("lockfile_sha256"),
+                "adapter source runtime file must copy the validated source runtime lock",
+            )
         for key in ("model_py", "init_py", "validate_py", "server_py", "config_yaml", "model_spec", "dockerfile", "mcp_smoke_py"):
             candidate = Path(str(value.get(key, "")))
             require(candidate.is_file(), f"adapter file missing: {key}")
         dockerfile = Path(str(value.get("dockerfile", "")))
         require(dockerfile.is_file(), "adapter Dockerfile is missing")
         dockerfile_text = dockerfile.read_text(encoding="utf-8")
-        require(
-            dockerfile_text.splitlines()[0] == f"FROM {source_reference}",
-            "adapter Dockerfile base image must match source_image_reference",
-        )
+        if source_backend == "docker":
+            require(
+                dockerfile_text.splitlines()[0] == f"FROM {source_reference}",
+                "adapter Dockerfile base image must match source_image_reference",
+            )
+        else:
+            require("SURE_TRANS_TODO" not in dockerfile_text, "adapter Dockerfile is still a draft")
+            require("COPY --from=model_source" in dockerfile_text, "uv/conda adapter Dockerfile must copy the model source build context")
+            require(Path(str(value["source_runtime_file"])).name in dockerfile_text, "adapter Dockerfile must copy its source runtime file")
+            require(re.search(rf"\b{re.escape(source_backend)}\b", dockerfile_text, re.IGNORECASE) is not None, f"adapter Dockerfile must materialize the {source_backend} runtime")
         require(
             f"ENTRYPOINT {json.dumps(server_command)}" in dockerfile_text,
             "adapter Dockerfile ENTRYPOINT must match server_command",

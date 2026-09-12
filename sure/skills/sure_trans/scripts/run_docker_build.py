@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,11 +101,17 @@ def inside(path: Path, root: Path) -> bool:
     return True
 
 
-def execute(command: list[str], timeout: float) -> dict:
+def execute(command: list[str], timeout: float, cwd: Path | None = None) -> dict:
     started = time.monotonic()
     try:
         process = subprocess.run(
-            command, capture_output=True, text=True, timeout=timeout, check=False, env=agent_bin_cleared_env()
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            cwd=cwd,
+            env=agent_bin_cleared_env(),
         )
         return {
             "command": command,
@@ -127,6 +136,200 @@ def execute(command: list[str], timeout: float) -> dict:
             "stderr": str(error),
             "duration_ms": round((time.monotonic() - started) * 1000, 3),
         }
+
+
+def runtime_tool(name: str, environment_variable: str) -> str:
+    explicit = os.environ.get(environment_variable, "").strip()
+    if explicit:
+        path = Path(explicit).expanduser().resolve()
+        if not path.is_file():
+            raise ValueError(f"{environment_variable} does not point to a file: {path}")
+        return str(path)
+    environment = agent_bin_cleared_env()
+    executable = shutil.which(name, path=environment.get("PATH"))
+    if not executable:
+        raise ValueError(f"{name} is required to materialize the selected source runtime")
+    return executable
+
+
+def environment_python(environment_dir: Path) -> Path:
+    return environment_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def require_run_path(path: Path, run_dir: Path, label: str) -> Path:
+    resolved = path.expanduser().resolve()
+    if resolved != run_dir and run_dir not in resolved.parents:
+        raise ValueError(f"{label} must stay inside the run directory: {resolved}")
+    return resolved
+
+
+def command_error(result: dict) -> str:
+    return (result["stderr"] or result["stdout"]).strip() or f"command exited {result['exit_code']}"
+
+
+def materialize_python_runtime(
+    run_dir: Path,
+    artifacts: Path,
+    resolved: dict,
+    timeout_seconds: float,
+) -> dict:
+    choice_path = artifacts / "backend_choice.json"
+    plan_path = artifacts / "build_plan.json"
+    choice = read_object(choice_path) if choice_path.is_file() else {}
+    plan = read_object(plan_path) if plan_path.is_file() else {}
+    backend = str(choice.get("backend") or plan.get("backend") or resolved.get("backend_hint") or "uv")
+    if backend not in {"uv", "conda"}:
+        raise ValueError("Python source runtime requires backend=uv or backend=conda")
+    source_runtime = plan.get("source_runtime") if isinstance(plan.get("source_runtime"), dict) else {}
+    requested_mode = str(source_runtime.get("mode") or ("existing-python" if resolved.get("python_executable") else "materialize"))
+    dependency_file = Path(
+        str(source_runtime.get("dependency_file") or resolved.get("dependency_file") or resolved.get("lockfile") or "")
+    ).expanduser().resolve()
+    if not dependency_file.is_file():
+        raise ValueError("Python source runtime dependency_file is missing")
+    build_context = Path(str(resolved.get("build_context") or dependency_file.parent)).resolve()
+    if not build_context.is_dir():
+        raise ValueError(f"Python source build_context does not exist: {build_context}")
+
+    commands: list[dict] = []
+    lockfile = dependency_file
+    environment_dir: Path | None = None
+    if requested_mode == "existing-python":
+        python_executable = Path(
+            str(source_runtime.get("python_executable") or resolved.get("python_executable") or "")
+        ).expanduser().resolve()
+        if not python_executable.is_file():
+            raise ValueError("source_runtime.mode=existing-python requires an existing python_executable")
+    elif requested_mode == "materialize":
+        environment_dir = require_run_path(
+            Path(str(source_runtime.get("environment_dir") or run_dir / "source-runtime" / backend)),
+            run_dir,
+            "source runtime environment_dir",
+        )
+        python_executable = environment_python(environment_dir)
+        environment_dir.parent.mkdir(parents=True, exist_ok=True)
+        if backend == "uv":
+            lockfile = require_run_path(
+                Path(str(source_runtime.get("lockfile_output") or artifacts / "source-requirements.lock")),
+                run_dir,
+                "uv lockfile_output",
+            )
+            lockfile.parent.mkdir(parents=True, exist_ok=True)
+            uv = runtime_tool("uv", "SURE_UV_BIN")
+            dependency_text = dependency_file.read_text(encoding="utf-8", errors="replace")
+            if dependency_file.name in {"requirements.lock", "requirements.lock.txt"} and "--hash=sha256:" in dependency_text:
+                if dependency_file != lockfile:
+                    shutil.copy2(dependency_file, lockfile)
+            else:
+                if dependency_file.name == "uv.lock":
+                    lock_command = [
+                        uv,
+                        "export",
+                        "--frozen",
+                        "--no-dev",
+                        "--format",
+                        "requirements-txt",
+                        "--output-file",
+                        str(lockfile),
+                    ]
+                else:
+                    lock_command = [
+                        uv,
+                        "pip",
+                        "compile",
+                        str(dependency_file),
+                        "--generate-hashes",
+                        "--output-file",
+                        str(lockfile),
+                    ]
+                lock_result = execute(lock_command, timeout_seconds, cwd=build_context)
+                commands.append(lock_result)
+                if lock_result["exit_code"] != 0:
+                    raise RuntimeError(f"uv dependency locking failed: {command_error(lock_result)}")
+            if not python_executable.is_file():
+                venv_command = [uv, "venv", str(environment_dir)]
+                base_python = str(source_runtime.get("python_executable") or resolved.get("python_executable") or sys.executable)
+                if base_python:
+                    venv_command.extend(["--python", base_python])
+                venv_result = execute(venv_command, timeout_seconds, cwd=build_context)
+                commands.append(venv_result)
+                if venv_result["exit_code"] != 0:
+                    raise RuntimeError(f"uv environment creation failed: {command_error(venv_result)}")
+            sync_command = [
+                uv,
+                "pip",
+                "sync",
+                "--python",
+                str(python_executable),
+                "--require-hashes",
+                str(lockfile),
+            ]
+            sync_result = execute(sync_command, timeout_seconds, cwd=build_context)
+            commands.append(sync_result)
+            if sync_result["exit_code"] != 0:
+                raise RuntimeError(f"uv environment synchronization failed: {command_error(sync_result)}")
+        else:
+            if not python_executable.is_file():
+                if dependency_file.name in {"conda-lock.yml", "conda-lock.yaml"}:
+                    conda_lock = runtime_tool("conda-lock", "SURE_CONDA_LOCK_BIN")
+                    create_command = [conda_lock, "install", "--prefix", str(environment_dir), str(dependency_file)]
+                else:
+                    conda = runtime_tool("conda", "SURE_CONDA_BIN")
+                    create_command = [
+                        conda,
+                        "env",
+                        "create",
+                        "--prefix",
+                        str(environment_dir),
+                        "--file",
+                        str(dependency_file),
+                        "--yes",
+                    ]
+                create_result = execute(create_command, timeout_seconds, cwd=build_context)
+                commands.append(create_result)
+                if create_result["exit_code"] != 0:
+                    raise RuntimeError(f"conda environment creation failed: {command_error(create_result)}")
+    else:
+        raise ValueError("source_runtime.mode must be existing-python or materialize for uv/conda")
+
+    if not python_executable.is_file():
+        raise ValueError(f"materialized Python executable is missing: {python_executable}")
+    if not lockfile.is_file():
+        raise ValueError(f"source runtime lock or environment file is missing: {lockfile}")
+    log_path = artifacts / "source_runtime.log"
+    log_lines = [
+        f"backend={backend}",
+        f"runtime_mode={requested_mode}",
+        f"python_executable={python_executable}",
+        f"dependency_file={dependency_file}",
+        f"lockfile={lockfile}",
+    ]
+    for result in commands:
+        log_lines.extend(
+            [
+                f"$ {' '.join(result['command'])}",
+                f"exit_code={result['exit_code']}",
+                result["stdout"],
+                result["stderr"],
+            ]
+        )
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    return {
+        "schema": "sure.trans.source_image_result.v1",
+        "status": "passed",
+        "source_kind": "python",
+        "backend": backend,
+        "runtime_mode": requested_mode,
+        "environment_dir": str(environment_dir) if environment_dir else None,
+        "python_executable": str(python_executable),
+        "python_executable_sha256": sha256_file(python_executable),
+        "dependency_file": str(dependency_file),
+        "dependency_file_sha256": sha256_file(dependency_file),
+        "lockfile": str(lockfile),
+        "lockfile_sha256": sha256_file(lockfile),
+        "materialization_commands": commands,
+        "source_image_log_path": str(log_path),
+    }
 
 
 def inspect_image(image: str, timeout: float) -> tuple[dict | None, dict]:
@@ -273,25 +476,7 @@ def main() -> int:
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
     if resolved.get("source_kind") == "python":
-        python_executable = Path(str(resolved.get("python_executable") or "")).resolve()
-        lockfile = Path(str(resolved.get("lockfile") or "")).resolve()
-        if not python_executable.is_file() or not lockfile.is_file():
-            raise ValueError("Python source runtime requires an existing python_executable and lockfile")
-        log_path = artifacts / "source_runtime.log"
-        log_path.write_text(
-            f"python_executable={python_executable}\nlockfile={lockfile}\n",
-            encoding="utf-8",
-        )
-        payload = {
-            "schema": "sure.trans.source_image_result.v1",
-            "status": "passed",
-            "source_kind": "python",
-            "python_executable": str(python_executable),
-            "python_executable_sha256": sha256_file(python_executable),
-            "lockfile": str(lockfile),
-            "lockfile_sha256": sha256_file(lockfile),
-            "source_image_log_path": str(log_path),
-        }
+        payload = materialize_python_runtime(run_dir, artifacts, resolved, args.timeout_seconds)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(output)

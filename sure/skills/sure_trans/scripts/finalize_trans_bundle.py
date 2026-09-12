@@ -32,6 +32,8 @@ REQUIRED_ARTIFACTS = [
     "trans_input_resolved.json",
     "inference_dependency_report.json",
     "framework_detection.json",
+    "backend_choice.json",
+    "build_plan.json",
     "fixture_manifest.json",
     "execution_compat.json",
     "original_inference_result.json",
@@ -130,6 +132,9 @@ def ensure_safe_bundle_parent(model_dir: Path, destination: Path) -> None:
 
 def stage_wrapper(adapter_dir: Path, model_dir: Path, resolved: dict) -> None:
     names = (*WRAPPER_FILES, "Dockerfile.sure") if resolved.get("package_profile") == "docker-registry" else WRAPPER_FILES
+    if resolved.get("package_profile") == "docker-registry" and resolved.get("source_kind") == "python":
+        runtime_file = "source-requirements.lock" if resolved.get("backend_hint") == "uv" else "source-environment.yml"
+        names = (*names, runtime_file)
     if resolved.get("package_profile") == "none":
         missing = [name for name in names if not (model_dir / name).is_file()]
         if missing:
@@ -163,6 +168,99 @@ def clear_directory(path: Path, controlled_root: Path) -> None:
             raise ValueError(f"bundle fixture contains unsupported entry: {child}")
 
 
+def fixture_samples_at(samples: list[dict], fixture_dir: Path) -> list[dict]:
+    rewritten = []
+    for sample in samples:
+        audio = Path(str(sample.get("audio") or ""))
+        if audio.is_absolute() or ".." in audio.parts or not (fixture_dir / audio).is_file():
+            raise ValueError(f"fixture sample audio is invalid or missing: {audio}")
+        rewritten.append({**sample, "audio": str(audio), "audio_path": str((fixture_dir / audio).resolve())})
+    return rewritten
+
+
+def stage_sv_fixture(run_dir: Path, model_dir: Path, fixture_manifest: dict) -> None:
+    samples = fixture_manifest.get("samples")
+    if not isinstance(samples, list) or not samples or not all(isinstance(sample, dict) for sample in samples):
+        raise ValueError("SV fixture manifest must declare samples")
+    declared_staged_dir = Path(str(fixture_manifest["staged_dir"])).resolve()
+    source_candidates = (run_dir / "fixture" / "sv", declared_staged_dir)
+    staged_dir = next(
+        (
+            candidate.resolve()
+            for candidate in source_candidates
+            if all((candidate / name).is_file() for name in ("gt.jsonl", "trial_manifest.json", "trials.tsv", "provenance.json"))
+        ),
+        None,
+    )
+    if staged_dir is None:
+        raise ValueError("prepared SV fixture and trial metadata are missing")
+
+    source_samples = fixture_samples_at(samples, staged_dir)
+    source_manifest = {
+        **fixture_manifest,
+        "model_dir": str(run_dir if staged_dir.is_relative_to(run_dir) else model_dir),
+        "staged_dir": str(staged_dir),
+        "gt_jsonl": str(staged_dir / "gt.jsonl"),
+        "samples": source_samples,
+        "staged_path": source_samples[0]["audio_path"],
+        "trial_manifest": str(staged_dir / "trial_manifest.json"),
+        "trials_file": str(staged_dir / "trials.tsv"),
+        "provenance": str(staged_dir / "provenance.json"),
+        "annotation_source": {
+            **fixture_manifest["annotation_source"],
+            "staged_path": str(staged_dir / "gt.jsonl"),
+        },
+    }
+    validate_fixture_manifest(source_manifest)
+
+    fixture_dir = model_dir / "fixture" / "sv"
+    clear_directory(fixture_dir, model_dir / "fixture")
+    for source in sorted(staged_dir.iterdir()):
+        if source.is_symlink() or not source.is_file():
+            raise ValueError(f"SV fixture staged directory may contain regular files only: {source}")
+        destination = fixture_dir / source.name
+        ensure_safe_bundle_parent(model_dir, destination)
+        shutil.copy2(source, destination)
+
+    finalized_samples = fixture_samples_at(samples, fixture_dir)
+    primary = Path(finalized_samples[0]["audio_path"])
+    gt_jsonl = fixture_dir / "gt.jsonl"
+    trial_manifest = fixture_dir / "trial_manifest.json"
+    trials_file = fixture_dir / "trials.tsv"
+    provenance = fixture_dir / "provenance.json"
+    annotation_source = {
+        **fixture_manifest["annotation_source"],
+        "staged_path": str(gt_jsonl),
+        "bundled_path": str(gt_jsonl),
+    }
+    finalized_manifest = {
+        **fixture_manifest,
+        "model_id": fixture_manifest.get("model_name"),
+        "model_dir": str(model_dir),
+        "task_type": "sv",
+        "staged_dir": str(fixture_dir),
+        "gt_jsonl": str(gt_jsonl),
+        "samples": finalized_samples,
+        "staged_path": str(primary),
+        "sample_count": len(finalized_samples),
+        "annotation_source": annotation_source,
+        "sha256": sha256(primary),
+        "gt_sha256": sha256(gt_jsonl),
+        "trial_manifest": str(trial_manifest),
+        "trial_manifest_sha256": sha256(trial_manifest),
+        "trials_file": str(trials_file),
+        "trials_sha256": sha256(trials_file),
+        "provenance": str(provenance),
+        "provenance_sha256": sha256(provenance),
+        "size_bytes": primary.stat().st_size,
+    }
+    write_identical(
+        run_dir / "artifacts" / "fixture_manifest.json",
+        json_bytes(finalized_manifest),
+    )
+    validate_fixture_manifest(finalized_manifest)
+
+
 def stage_fixture(run_dir: Path, model_dir: Path, resolved: dict) -> None:
     fixture_manifest = read_object(run_dir / "artifacts" / "fixture_manifest.json")
     annotation_source_value = fixture_manifest.get("annotation_source")
@@ -172,6 +270,9 @@ def stage_fixture(run_dir: Path, model_dir: Path, resolved: dict) -> None:
     if not isinstance(samples_value, list) or not samples_value or not isinstance(samples_value[0], dict):
         raise ValueError("fixture manifest must declare at least one sample")
     task = str(resolved.get("task_type") or "asr").lower()
+    if task == "sv":
+        stage_sv_fixture(run_dir, model_dir, fixture_manifest)
+        return
     declared_staged_dir = Path(str(fixture_manifest["staged_dir"])).resolve()
     staged_name = Path(str(fixture_manifest["staged_path"])).name
     expected_name = Path(str(annotation_source_value.get("staged_path") or "")).name
@@ -400,7 +501,7 @@ def write_package_gate(run_dir: Path, model_dir: Path, registry: dict) -> dict:
         package["docker"] = {
             "dockerfile_path": "Dockerfile.sure",
             "dockerfile_sha256": sha256(model_dir / "Dockerfile.sure"),
-            "base_image": adapter_image.get("source_image"),
+            "base_image": adapter_image.get("source_image") or adapter_image.get("base_image"),
             "target_image": registry.get("target_image"),
             "target_image_digest": registry.get("target_image_digest"),
             "target_image_ref": registry.get("target_image_ref"),
@@ -418,6 +519,9 @@ def write_package_gate(run_dir: Path, model_dir: Path, registry: dict) -> dict:
 
 def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict) -> dict:
     core_files = (*WRAPPER_FILES, "Dockerfile.sure") if resolved.get("package_profile") == "docker-registry" else (*WRAPPER_FILES, "requirements.lock")
+    if resolved.get("package_profile") == "docker-registry" and resolved.get("source_kind") == "python":
+        runtime_file = "source-requirements.lock" if resolved.get("backend_hint") == "uv" else "source-environment.yml"
+        core_files = (*core_files, runtime_file)
     artifact_files = list(REQUIRED_ARTIFACTS)
     if resolved.get("package_profile") == "none":
         artifact_files.append("model_runtime_manifest.json")

@@ -17,6 +17,7 @@ try:
     from sure.site.container_delivery import resolve_container_image, resolve_container_repository
     from sure.site.container_registry import resolve_image_version
     from sure.site.loader import load_site_policy
+    from sure.runtime.evaluation.task_registry import normalize_task, task_profile
 except ImportError as error:
     raise RuntimeError(
         "the SURE site resolver is not bundled; run materialize_trans_inputs.py "
@@ -37,11 +38,13 @@ MODEL_FRAMEWORK_ALIASES = {
     "pytorch_transformers": "transformers",
 }
 MODEL_FRAMEWORK = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+BACKENDS = {"uv", "conda", "docker"}
 
-TASK_TYPES = {"asr", "s2tt", "tts", "vc"}
+TASK_TYPES = {"asr", "s2tt", "sv", "tts", "vc"}
 TASK_MARKERS = {
     "asr": ("asr", "transcribe", "speech recognition", "speech_recognition"),
     "s2tt": ("s2tt", "speech translation", "translate_audio", "speech_to_text_translation"),
+    "sv": ("speaker verification", "speaker_verification", "embed_speaker"),
     "tts": ("tts", "text to speech", "text-to-speech", "synthesize_speech"),
     "vc": ("voice conversion", "voice_conversion", "convert_voice", "reference_audio_path"),
 }
@@ -77,11 +80,27 @@ def existing_absolute(value: str, label: str) -> Path:
     return path
 
 
+def discover_dependency_file(build_context: Path, backend: str | None) -> Path | None:
+    conda_names = ("conda-lock.yml", "conda-lock.yaml", "environment.yml", "environment.yaml")
+    uv_names = ("uv.lock", "requirements.lock.txt", "requirements.lock", "requirements.txt", "pyproject.toml")
+    names = conda_names if backend == "conda" else uv_names if backend == "uv" else (*uv_names, *conda_names)
+    matches = [build_context / name for name in names if (build_context / name).is_file()]
+    return matches[0].resolve() if matches else None
+
+
+def python_belongs_to_conda(python_executable: Path | None) -> bool:
+    if python_executable is None:
+        return False
+    return any((parent / "conda-meta" / "history").is_file() for parent in python_executable.parents)
+
+
 def resolve_task_type(explicit: str | None, inference_entrypoint: Path, model_path: Path) -> str:
     if explicit:
-        task_type = explicit.strip().lower()
+        task_type = normalize_task(explicit)
         if task_type not in TASK_TYPES:
             raise ValueError(f"unsupported task type {explicit!r}; expected one of {sorted(TASK_TYPES)}")
+        if task_profile(task_type).get("ready") is not True:
+            raise ValueError(f"task type {task_type!r} is not ready in the evaluation capability registry")
         return task_type
     source = inference_entrypoint.read_text(encoding="utf-8", errors="replace")[:2_000_000].lower()
     corpus = f"{inference_entrypoint} {model_path} {source}"
@@ -93,9 +112,12 @@ def resolve_task_type(explicit: str | None, inference_entrypoint: Path, model_pa
     winners = [task_type for task_type, score in scores.items() if score == highest and score > 0]
     if len(winners) != 1:
         raise ValueError(
-            "task_type could not be inferred unambiguously; pass task_type=asr|s2tt|tts|vc"
+            "task_type could not be inferred unambiguously; pass task_type=asr|s2tt|sv|tts|vc"
         )
-    return winners[0]
+    task_type = winners[0]
+    if task_profile(task_type).get("ready") is not True:
+        raise ValueError(f"task type {task_type!r} is not ready in the evaluation capability registry")
+    return task_type
 
 
 def main() -> int:
@@ -103,6 +125,9 @@ def main() -> int:
     parser.add_argument("--dockerfile")
     parser.add_argument("--python-executable")
     parser.add_argument("--lockfile")
+    parser.add_argument("--dependency-file")
+    parser.add_argument("--environment-file")
+    parser.add_argument("--preferred-backend", choices=tuple(sorted(BACKENDS)))
     parser.add_argument(
         "--package", "--package-profile", dest="package_profile",
         choices=("docker-registry", "none"), default="docker-registry",
@@ -130,9 +155,8 @@ def main() -> int:
     parser.add_argument("--image-version")
     args = parser.parse_args()
 
-    if bool(args.dockerfile) == bool(args.python_executable):
-        raise ValueError("provide exactly one of --dockerfile or --python-executable")
-    source_kind = "docker" if args.dockerfile else "python"
+    if args.dockerfile and args.python_executable:
+        raise ValueError("provide at most one of --dockerfile or --python-executable")
     dockerfile = existing_absolute(args.dockerfile, "dockerfile") if args.dockerfile else None
     if dockerfile is not None and not dockerfile.is_file():
         raise ValueError(f"dockerfile must be a file: {dockerfile}")
@@ -142,13 +166,6 @@ def main() -> int:
     )
     if python_executable is not None and not python_executable.is_file():
         raise ValueError(f"python executable must be a file: {python_executable}")
-    lockfile = existing_absolute(args.lockfile, "lockfile") if args.lockfile else None
-    if source_kind == "python" and lockfile is None:
-        raise ValueError("Python input requires --lockfile")
-    if lockfile is not None and not lockfile.is_file():
-        raise ValueError(f"lockfile must be a file: {lockfile}")
-    if source_kind == "docker" and args.package_profile == "none":
-        raise ValueError("package=none requires Python input")
     model_path = existing_absolute(args.model, "model")
     inference_entrypoint = existing_absolute(args.inference_entrypoint, "inference entrypoint")
     if not inference_entrypoint.is_file():
@@ -165,6 +182,59 @@ def main() -> int:
             dockerfile.relative_to(build_context)
     except ValueError as error:
         raise ValueError("dockerfile must be inside build context") from error
+
+    dependency_values = [value for value in (args.lockfile, args.dependency_file, args.environment_file) if value]
+    if len(dependency_values) > 1:
+        raise ValueError("use only one of --lockfile, --dependency-file, or --environment-file")
+    dependency_file = (
+        existing_absolute(dependency_values[0], "dependency file")
+        if dependency_values
+        else discover_dependency_file(build_context, args.preferred_backend)
+    )
+    if dependency_file is not None and not dependency_file.is_file():
+        raise ValueError(f"dependency file must be a file: {dependency_file}")
+    dependency_name = dependency_file.name if dependency_file is not None else ""
+    dependency_backend = (
+        "conda"
+        if dependency_name in {"conda-lock.yml", "conda-lock.yaml", "environment.yml", "environment.yaml"}
+        else "uv"
+        if dependency_file is not None
+        else None
+    )
+    if dockerfile is not None:
+        inferred_backend = "docker"
+    elif args.preferred_backend:
+        inferred_backend = args.preferred_backend
+    elif dependency_backend:
+        inferred_backend = dependency_backend
+    elif python_belongs_to_conda(python_executable):
+        inferred_backend = "conda"
+    else:
+        raise ValueError(
+            "cannot infer backend; pass preferred_backend=uv|conda|docker and provide its environment evidence"
+        )
+    if args.preferred_backend and inferred_backend != args.preferred_backend:
+        raise ValueError(
+            f"preferred_backend={args.preferred_backend} conflicts with detected backend={inferred_backend}"
+        )
+    if inferred_backend == "docker" and dockerfile is None:
+        raise ValueError("preferred_backend=docker requires --dockerfile")
+    if inferred_backend != "docker" and dockerfile is not None:
+        raise ValueError("a Dockerfile input requires preferred_backend=docker")
+    if inferred_backend != "docker" and dependency_file is None:
+        raise ValueError(f"preferred_backend={inferred_backend} requires a dependency file in build_context")
+    if inferred_backend != "docker" and dependency_backend != inferred_backend:
+        raise ValueError(
+            f"preferred_backend={inferred_backend} conflicts with dependency file {dependency_file.name}"
+        )
+    if inferred_backend != "docker" and args.package_profile == "docker-registry":
+        try:
+            dependency_file.relative_to(build_context)
+        except ValueError as error:
+            raise ValueError("dependency file must be inside build_context for container delivery") from error
+    if args.package_profile == "none" and inferred_backend != "uv":
+        raise ValueError("package=none requires preferred_backend=uv")
+    source_kind = "docker" if inferred_backend == "docker" else "python"
 
     framework = FRAMEWORK_ALIASES.get(args.framework.strip().lower())
     if framework is None:
@@ -212,17 +282,17 @@ def main() -> int:
         raise ValueError("model mount target must be absolute inside the container")
     if args.max_retries < 1:
         raise ValueError("max retries must be positive")
-    gpu_surface = source_kind == "docker" and args.device != "cpu"
-    if source_kind == "python" and args.execution == "vc":
-        raise ValueError("execution=vc is not supported for Python input")
-    if source_kind == "docker" and args.device == "cpu" and args.execution == "vc":
-        raise ValueError("execution=vc requires device=auto or cuda for Docker input")
+    gpu_surface = args.package_profile == "docker-registry" and args.device != "cpu"
+    if args.package_profile == "none" and args.execution == "vc":
+        raise ValueError("execution=vc requires package=docker-registry")
+    if args.device == "cpu" and args.execution == "vc":
+        raise ValueError("execution=vc requires device=auto or cuda")
     execution_request = (
         "local"
-        if source_kind == "python" or not gpu_surface
+        if not gpu_surface
         else args.execution or "vc"
     )
-    if args.execution == "local" and source_kind == "docker" and gpu_surface:
+    if args.execution == "local" and args.package_profile == "docker-registry" and gpu_surface:
         execution_policy = policy.get("execution") if isinstance(policy, dict) else {}
         if "local" not in execution_policy.get("surfaces", []):
             raise ValueError("execution=local requires local in site policy execution.surfaces")
@@ -276,9 +346,12 @@ def main() -> int:
         "schema": "sure.trans.input.v2",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "source_kind": source_kind,
+        "preferred_backend": args.preferred_backend,
+        "backend_hint": inferred_backend,
         "dockerfile": str(dockerfile) if dockerfile else None,
         "python_executable": str(python_executable) if python_executable else None,
-        "lockfile": str(lockfile) if lockfile else None,
+        "lockfile": str(dependency_file) if dependency_file else None,
+        "dependency_file": str(dependency_file) if dependency_file else None,
         "build_context": str(build_context),
         "model_path": str(model_path),
         "inference_entrypoint": str(inference_entrypoint),
@@ -292,7 +365,7 @@ def main() -> int:
         "execution_request": execution_request,
         "execution_surface": (
             "local_python"
-            if source_kind == "python"
+            if args.package_profile == "none"
             else "vc"
             if gpu_surface and execution_request == "vc"
             else "local_docker"

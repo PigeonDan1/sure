@@ -22,6 +22,8 @@ const UNITS_BEFORE_VERDICT = [
 	"load_trans_input",
 	"inspect_dependencies",
 	"detect_framework",
+	"plan",
+	"build_plan",
 	"prepare_fixture",
 	"build_source_image",
 	"validate_env_compat",

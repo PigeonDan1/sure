@@ -1,0 +1,53 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "build_plan.schema.json",
+	"title": "SURE transformation build plan",
+	"type": "object",
+	"required": ["model_name", "model_dir", "backend", "package_profile", "source_runtime", "steps"],
+	"properties": {
+		"model_name": { "type": "string" },
+		"model_dir": { "type": "string" },
+		"backend": { "enum": ["uv", "conda", "docker"] },
+		"package_profile": { "enum": ["docker-registry", "none"] },
+		"source_runtime": {
+			"type": "object",
+			"required": ["mode"],
+			"properties": {
+				"mode": { "enum": ["container", "existing-python", "materialize"] },
+				"python_executable": { "type": ["string", "null"] },
+				"dependency_file": { "type": ["string", "null"] },
+				"environment_dir": { "type": ["string", "null"] },
+				"lockfile_output": { "type": ["string", "null"] }
+			},
+			"additionalProperties": false
+		},
+		"container_delivery": {
+			"type": ["object", "null"],
+			"properties": {
+				"dockerfile_path": { "type": "string" },
+				"target_image": { "type": "string" },
+				"registry_required": { "type": "boolean" },
+				"model_mount_read_only": { "type": "boolean" },
+				"result_mount_separate": { "type": "boolean" }
+			},
+			"additionalProperties": false
+		},
+		"steps": {
+			"type": "array",
+			"minItems": 1,
+			"items": {
+				"type": "object",
+				"required": ["state", "action"],
+				"properties": {
+					"state": { "type": "string" },
+					"action": { "type": "string" },
+					"command": { "type": ["string", "array", "null"] },
+					"evidence": { "type": ["string", "array", "null"] }
+				},
+				"additionalProperties": false
+			}
+		},
+		"blockers": { "type": "array", "items": { "type": "string" } }
+	},
+	"additionalProperties": false
+}
