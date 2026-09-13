@@ -88,6 +88,59 @@ class TaskRegistryFixtureTests(unittest.TestCase):
             )
             self.assertEqual(checked.returncode, 0, msg=checked.stderr)
 
+    def test_custom_fixture_resolution_is_preserved_with_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_dir = root / "run"
+            artifacts = run_dir / "artifacts"
+            model_dir = root / "model"
+            source_dir = root / "custom-fixture"
+            artifacts.mkdir(parents=True)
+            model_dir.mkdir()
+            source_dir.mkdir()
+            (source_dir / "sample.wav").write_bytes(b"RIFF-custom")
+            (source_dir / "gt.jsonl").write_text(
+                json.dumps({"audio": "sample.wav", "text": "custom"}) + "\n",
+                encoding="utf-8",
+            )
+            resolved = {
+                "model_id": "test/custom",
+                "model_name": "test__custom",
+                "model_dir": str(model_dir),
+                "task_type": "asr",
+                "normalized_model_input": {
+                    "fixture": {
+                        "fixture_status": "needs_input",
+                        "fixture_source": "unresolved",
+                    }
+                },
+            }
+            (artifacts / "model_input_resolved.json").write_text(json.dumps(resolved), encoding="utf-8")
+            manifest_path = artifacts / "fixture_manifest.json"
+            prepared = subprocess.run(
+                [
+                    sys.executable,
+                    str(PREPARE),
+                    "--run-dir", str(run_dir),
+                    "--produces", str(manifest_path),
+                    "--source-dir", str(source_dir),
+                    "--fixture-source", "model_specific",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(prepared.returncode, 0, msg=prepared.stderr)
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["fixture_source"], "model_specific")
+            self.assertFalse(manifest["official"])
+            self.assertEqual(manifest["provenance"]["source_sha256"], manifest["fixture_sha256"])
+            checked = subprocess.run(
+                [sys.executable, str(CHECK), "--run-dir", str(run_dir), "--produces", str(manifest_path)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(checked.returncode, 0, msg=checked.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

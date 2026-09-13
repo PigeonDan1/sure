@@ -160,7 +160,7 @@ After reading those reports, write and pass `backend_choice.json` and `build_pla
 
 `detect_framework.py` blocks only when static evidence cannot establish PyTorch as the primary computation framework. A non-Transformers PyTorch model remains `status=ready`; the script writes `architecture_clarification` and any detected architecture signals, and the final verdict carries the same review information.
 
-For ASR, S2TT, TTS, and VC, `prepare_fixture.py` copies the selected audio and its same-stem `.expected.json`, writes `gt.jsonl` before the fixture gate runs, and records SHA256 for all three. For SV, it stages the bounded task-registry trial fixture: 1-5 labeled utterances plus `trial_manifest.json`, `trials.tsv`, and `provenance.json`, and verifies every hash and trial reference. Model predictions and equivalence baselines are never accepted as ground truth.
+For ASR, S2TT, TTS, and VC, `prepare_fixture.py` copies the selected model-specific audio and its same-stem `.expected.json`, writes `gt.jsonl` before the fixture gate runs, and records SHA256 for all three. SV also requires an explicitly supplied fixture directory (or its `gt.jsonl`); it stages 1-5 labeled utterances plus `trial_manifest.json`, `trials.tsv`, and `provenance.json`, and verifies every hash and trial reference. The trans skill does not fall back to an official task-registry fixture. Model predictions and equivalence baselines are never accepted as ground truth.
 
 Materialize the source runtime with the resolved policy:
 

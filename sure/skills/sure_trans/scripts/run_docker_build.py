@@ -167,6 +167,55 @@ def command_error(result: dict) -> str:
     return (result["stderr"] or result["stdout"]).strip() or f"command exited {result['exit_code']}"
 
 
+def normalize_uv_lockfile(
+    dependency_file: Path,
+    lockfile: Path,
+    build_context: Path,
+    timeout_seconds: float,
+    commands: list[dict],
+) -> None:
+    """Produce the requirements file consumed by every uv delivery path."""
+    lockfile.parent.mkdir(parents=True, exist_ok=True)
+    dependency_text = dependency_file.read_text(encoding="utf-8", errors="replace")
+    requirement_lines = [
+        line.strip()
+        for line in dependency_text.splitlines()
+        if line.strip() and not line.lstrip().startswith(("#", "-c ", "--constraint "))
+    ]
+    already_hashed = bool(requirement_lines) and all("--hash=" in line for line in requirement_lines)
+    if dependency_file.name not in {"uv.lock", "pyproject.toml"} and already_hashed:
+        if dependency_file != lockfile:
+            shutil.copy2(dependency_file, lockfile)
+        return
+
+    uv = runtime_tool("uv", "SURE_UV_BIN")
+    if dependency_file.name == "uv.lock":
+        lock_command = [
+            uv,
+            "export",
+            "--frozen",
+            "--no-dev",
+            "--format",
+            "requirements-txt",
+            "--output-file",
+            str(lockfile),
+        ]
+    else:
+        lock_command = [
+            uv,
+            "pip",
+            "compile",
+            str(dependency_file),
+            "--generate-hashes",
+            "--output-file",
+            str(lockfile),
+        ]
+    lock_result = execute(lock_command, timeout_seconds, cwd=build_context)
+    commands.append(lock_result)
+    if lock_result["exit_code"] != 0:
+        raise RuntimeError(f"uv dependency locking failed: {command_error(lock_result)}")
+
+
 def materialize_python_runtime(
     run_dir: Path,
     artifacts: Path,
@@ -194,6 +243,13 @@ def materialize_python_runtime(
     commands: list[dict] = []
     lockfile = dependency_file
     environment_dir: Path | None = None
+    if backend == "uv":
+        lockfile = require_run_path(
+            Path(str(source_runtime.get("lockfile_output") or artifacts / "source-requirements.lock")),
+            run_dir,
+            "uv lockfile_output",
+        )
+        normalize_uv_lockfile(dependency_file, lockfile, build_context, timeout_seconds, commands)
     if requested_mode == "existing-python":
         python_executable = Path(
             str(source_runtime.get("python_executable") or resolved.get("python_executable") or "")
@@ -209,43 +265,7 @@ def materialize_python_runtime(
         python_executable = environment_python(environment_dir)
         environment_dir.parent.mkdir(parents=True, exist_ok=True)
         if backend == "uv":
-            lockfile = require_run_path(
-                Path(str(source_runtime.get("lockfile_output") or artifacts / "source-requirements.lock")),
-                run_dir,
-                "uv lockfile_output",
-            )
-            lockfile.parent.mkdir(parents=True, exist_ok=True)
             uv = runtime_tool("uv", "SURE_UV_BIN")
-            dependency_text = dependency_file.read_text(encoding="utf-8", errors="replace")
-            if dependency_file.name in {"requirements.lock", "requirements.lock.txt"} and "--hash=sha256:" in dependency_text:
-                if dependency_file != lockfile:
-                    shutil.copy2(dependency_file, lockfile)
-            else:
-                if dependency_file.name == "uv.lock":
-                    lock_command = [
-                        uv,
-                        "export",
-                        "--frozen",
-                        "--no-dev",
-                        "--format",
-                        "requirements-txt",
-                        "--output-file",
-                        str(lockfile),
-                    ]
-                else:
-                    lock_command = [
-                        uv,
-                        "pip",
-                        "compile",
-                        str(dependency_file),
-                        "--generate-hashes",
-                        "--output-file",
-                        str(lockfile),
-                    ]
-                lock_result = execute(lock_command, timeout_seconds, cwd=build_context)
-                commands.append(lock_result)
-                if lock_result["exit_code"] != 0:
-                    raise RuntimeError(f"uv dependency locking failed: {command_error(lock_result)}")
             if not python_executable.is_file():
                 venv_command = [uv, "venv", str(environment_dir)]
                 base_python = str(source_runtime.get("python_executable") or resolved.get("python_executable") or sys.executable)
@@ -314,6 +334,13 @@ def materialize_python_runtime(
             ]
         )
     log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    conda_spec_kind = None
+    if backend == "conda":
+        conda_spec_kind = (
+            "conda-lock"
+            if dependency_file.name in {"conda-lock.yml", "conda-lock.yaml"}
+            else "environment-yml"
+        )
     return {
         "schema": "sure.trans.source_image_result.v1",
         "status": "passed",
@@ -327,6 +354,7 @@ def materialize_python_runtime(
         "dependency_file_sha256": sha256_file(dependency_file),
         "lockfile": str(lockfile),
         "lockfile_sha256": sha256_file(lockfile),
+        "conda_spec_kind": conda_spec_kind,
         "materialization_commands": commands,
         "source_image_log_path": str(log_path),
     }

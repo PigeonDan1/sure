@@ -291,6 +291,8 @@ def select_atomic_fixture(
     fixture: dict[str, Any] = {
         "fixture_id": f"{normalized}/{_rel(fixture_root, root).removeprefix(f'fixtures/tasks/{normalized}/')}",
         "fixture_source": "task_registry",
+        "fixture_status": "ready",
+        "official": True,
         "fixture_index": _rel(index_path, root),
         "fixture_root": _rel(fixture_root, root),
         "task_specific": True,
@@ -342,6 +344,8 @@ def select_fixture_for_task(
         if sub_fixture:
             selected.append((subtask, sub_fixture, sub_contract))
         issues.extend(sub_issues)
+    if issues:
+        return None, io_contract_for_task("asr"), issues, evidence
     if not selected:
         return None, io_contract_for_task("asr"), issues or ["missing:fixture.samples.speech_understanding"], evidence
 

@@ -10,6 +10,7 @@ fixture_manifest.json for the PREPARE_FIXTURE gate.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import sys
@@ -59,6 +60,16 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 
+def tree_sha256(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def canonical_task(task: str) -> str:
     return normalize_task(task)
 
@@ -84,6 +95,24 @@ def candidate_from_spec(run_dir: Path, repo_root: Path, task: str) -> Path | Non
         return None
     raw = Path(fixture)
     candidates = [raw] if raw.is_absolute() else [repo_root / raw, repo_root / "fixtures" / "tasks" / canonical_task(task) / raw]
+    for candidate in candidates:
+        if candidate.is_file() and candidate.name == "gt.jsonl":
+            return candidate.parent
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def candidate_from_model_input(resolved: dict[str, Any], repo_root: Path) -> Path | None:
+    normalized = resolved.get("normalized_model_input")
+    fixture = normalized.get("fixture") if isinstance(normalized, dict) else None
+    if not isinstance(fixture, dict):
+        return None
+    raw = fixture.get("fixture_path") or fixture.get("fixture_root")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    path = Path(raw).expanduser()
+    candidates = [path] if path.is_absolute() else [repo_root / path]
     for candidate in candidates:
         if candidate.is_file() and candidate.name == "gt.jsonl":
             return candidate.parent
@@ -192,6 +221,9 @@ def main() -> int:
     parser.add_argument("--produces", required=True)
     parser.add_argument("--source-dir")
     parser.add_argument("--link-policy", choices=["copy"], default="copy")
+    parser.add_argument("--fixture-source", choices=["task_registry", "model_specific", "web_temporary"])
+    parser.add_argument("--fixture-url")
+    parser.add_argument("--fixture-license")
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir).resolve()
@@ -249,13 +281,22 @@ def main() -> int:
         )
         return 0
 
+    normalized_input = resolved.get("normalized_model_input") if isinstance(resolved.get("normalized_model_input"), dict) else {}
+    fixture_config = normalized_input.get("fixture") if isinstance(normalized_input.get("fixture"), dict) else {}
     if args.source_dir:
         source_dir = Path(args.source_dir)
         if not source_dir.is_absolute():
             source_dir = repo_root / source_dir
         source_dir = source_dir.resolve()
     else:
-        source_dir = candidate_from_spec(run_dir, repo_root, task_raw) or default_fixture_dir(repo_root, task_raw)
+        source_dir = candidate_from_model_input(resolved, repo_root) or candidate_from_spec(run_dir, repo_root, task_raw)
+        if source_dir is None and fixture_config.get("fixture_status") == "needs_input":
+            print(
+                "Fixture resolution is required: provide --source-dir with a custom or temporary fixture",
+                file=sys.stderr,
+            )
+            return 2
+        source_dir = source_dir or default_fixture_dir(repo_root, task_raw)
     if source_dir is None or not source_dir.exists():
         print(f"No fixture source found for task {task}. Expected fixtures/tasks/{task}/<fixture>/gt.jsonl", file=sys.stderr)
         return 1
@@ -273,6 +314,27 @@ def main() -> int:
     for sample in load_samples(staged_dir):
         staged_samples.append(sample)
 
+    registry_root = (repo_root / "fixtures" / "tasks" / task).resolve()
+    try:
+        source_dir.relative_to(registry_root)
+        is_registry_fixture = True
+    except ValueError:
+        is_registry_fixture = False
+    fixture_source = args.fixture_source or fixture_config.get("fixture_source")
+    if fixture_source == "task_registry" and not is_registry_fixture:
+        print("task_registry fixtures must come from fixtures/tasks/<task>", file=sys.stderr)
+        return 1
+    if fixture_source in {None, "unresolved"}:
+        fixture_source = "task_registry" if is_registry_fixture else "model_specific"
+    provenance = dict(fixture_config.get("provenance") or {}) if isinstance(fixture_config.get("provenance"), dict) else {}
+    if args.fixture_url:
+        provenance["url"] = args.fixture_url
+    if args.fixture_license:
+        provenance["license"] = args.fixture_license
+    if fixture_source == "web_temporary" and (not provenance.get("url") or not provenance.get("license")):
+        print("web_temporary fixtures require --fixture-url and --fixture-license", file=sys.stderr)
+        return 1
+    provenance["source_sha256"] = tree_sha256(source_dir)
     manifest = {
         "model_id": resolved.get("model_id", ""),
         "model_name": resolved.get("model_name", ""),
@@ -284,6 +346,10 @@ def main() -> int:
         "sample_count": len(staged_samples),
         "link_policy": args.link_policy,
         "samples": staged_samples,
+        "fixture_source": fixture_source,
+        "official": fixture_source == "task_registry",
+        "fixture_sha256": tree_sha256(staged_dir),
+        "provenance": provenance,
         "validation_payload_env": "SURE_VALIDATE_INPUT_JSON",
         "notes": "Fixture staged into model-local fixture directory for validate.py discovery.",
     }

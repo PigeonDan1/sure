@@ -28,6 +28,8 @@
 		"model_name": { "type": "string" },
 		"model_dir": { "type": "string" },
 		"task_type": { "enum": ["asr", "s2tt", "sv", "tts", "vc"] },
+		"fixture_source": { "const": "model_specific" },
+		"official": { "const": false },
 		"source_dir": { "type": "string" },
 		"staged_dir": { "type": "string" },
 		"gt_jsonl": { "type": "string" },
@@ -71,7 +73,7 @@
 			"type": "object",
 			"required": ["type", "source_path", "staged_path", "fallback"],
 			"properties": {
-				"type": { "enum": ["fixture_expected_sidecar", "task_registry_fixture"] },
+				"type": { "enum": ["fixture_expected_sidecar", "task_registry_fixture", "explicit_fixture"] },
 				"source_path": { "type": "string" },
 				"staged_path": { "type": "string" },
 				"bundled_path": { "type": "string" },
@@ -85,6 +87,8 @@
 			"if": { "properties": { "task_type": { "const": "sv" } }, "required": ["task_type"] },
 			"then": {
 				"required": [
+					"fixture_source",
+					"official",
 					"trial_manifest",
 					"trial_manifest_sha256",
 					"trials_file",
@@ -94,7 +98,7 @@
 				],
 				"properties": {
 					"annotation_source": {
-						"properties": { "type": { "const": "task_registry_fixture" } }
+						"properties": { "type": { "const": "explicit_fixture" } }
 					}
 				}
 			},
