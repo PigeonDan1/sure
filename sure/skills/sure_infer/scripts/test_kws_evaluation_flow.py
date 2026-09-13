@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -101,6 +102,43 @@ class KwsSourceProjectionTests(unittest.TestCase):
             (manager.sure_dir / "wake_words" / "dataset_manifest.json").read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["default_projection"], "kws_wakeword_v1")
+
+    def test_projects_kws_source_with_wav_header_duration(self) -> None:
+        source = self.source_root / "wake_words_from_header"
+        source.mkdir()
+        for name, frames in (("positive.wav", 8000), ("negative.wav", 16000)):
+            with wave.open(str(source / name), "wb") as handle:
+                handle.setnchannels(1)
+                handle.setsampwidth(2)
+                handle.setframerate(16000)
+                handle.writeframes(b"\0\0" * frames)
+        rows = [
+            {
+                "key": "positive",
+                "audio": "positive.wav",
+                "task": "KWS",
+                "keywords": ["hello"],
+                "expected": "detect",
+                "expected_keyword": "hello",
+            },
+            {
+                "key": "negative",
+                "audio": "negative.wav",
+                "task": "KWS",
+                "keywords": ["hello"],
+                "expected": "reject",
+            },
+        ]
+        (source / "sample.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows),
+            encoding="utf-8",
+        )
+
+        ref = source_resolver.resolve_site_source_entry(str(source))
+        output = _manager(self.root)._convert_source_root_to_jsonl(ref)
+        projected = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual([row["duration"] for row in projected], [0.5, 1.0])
 
     def test_sample_manifest_task_precedes_dataset_metadata_task_type(self) -> None:
         source = _write_kws_source(self.source_root)
