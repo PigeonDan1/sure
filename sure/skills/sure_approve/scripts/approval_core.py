@@ -23,8 +23,10 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 EVAL_SCRIPTS = REPO_ROOT / "sure" / "skills" / "sure_infer" / "scripts"
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(EVAL_SCRIPTS))
+sys.path.insert(0, str(REPO_ROOT / "sure" / "runtime" / "harness"))
 
 from deployment_binding import DeploymentBindingError, load_deployment_binding
+from model_child_env import model_child_env
 from sure.site.loader import SitePolicyError, load_site_policy
 
 
@@ -146,12 +148,56 @@ def _resolved_model_name(source: Path) -> str:
 
 def resolve_input(args: argparse.Namespace) -> dict[str, Any]:
     invocation_cwd = Path(args.invocation_cwd or os.environ.get("SURE_INVOCATION_CWD") or os.getcwd()).resolve()
-    supplied, source = _relative_supplied(args.model_dir, invocation_cwd)
-    if not source.is_dir() or not os.access(source, os.R_OK | os.X_OK):
-        raise ApprovalError(f"model_dir is not a readable directory: {source}")
     configured = load_active_policy()
     policy = configured["policy"]
     configured_root = Path(policy["storage"]["approved_models_roots"][0]).resolve()
+    if args.mode == "approve":
+        if not args.review_manifest or args.decision not in {"approve", "reject"}:
+            raise ApprovalError("approve mode requires review_manifest and an explicit approve/reject decision")
+        _, review_path = _relative_supplied(args.review_manifest, invocation_cwd)
+        packet = read_json(review_path)
+        if (
+            packet.get("schema") != "sure.approve.review_packet.v1"
+            or packet.get("status") != "awaiting_approval"
+            or packet.get("packet_digest") != _packet_digest(packet)
+        ):
+            raise ApprovalError("review packet is invalid or changed")
+        if packet.get("site_policy_sha256") != configured["sha256"]:
+            raise ApprovalError("active site policy differs from the review packet")
+        approval = packet.get("approval") if isinstance(packet.get("approval"), dict) else {}
+        destination = Path(str(approval.get("destination") or "")).resolve()
+        if (
+            Path(str(approval.get("root") or "")).resolve() != configured_root
+            or Path(str(approval.get("configured_root") or "")).resolve() != configured_root
+            or destination.parent != configured_root
+            or destination.name != packet.get("model_name")
+            or approval.get("eval_visible") is not True
+        ):
+            raise ApprovalError("review packet contains an invalid publication destination")
+        source = packet.get("source") if isinstance(packet.get("source"), dict) else {}
+        if not isinstance(source.get("canonical"), str) or not Path(source["canonical"]).is_dir():
+            raise ApprovalError("review packet source is missing")
+        return {
+            "schema": "sure.approve.input_resolved.v1",
+            "status": "passed",
+            "mode": "approve",
+            "repair": args.repair,
+            "source": source,
+            "approval": approval,
+            "review_manifest": str(review_path),
+            "decision": args.decision,
+            "site_policy": {
+                "path": configured["path"],
+                "sha256": configured["sha256"],
+                "site_id": policy["site_id"],
+                "execution": policy["execution"],
+                "runtime_root": policy["storage"]["runtime_root"],
+            },
+        }
+
+    supplied, source = _relative_supplied(args.model_dir, invocation_cwd)
+    if not source.is_dir() or not os.access(source, os.R_OK | os.X_OK):
+        raise ApprovalError(f"model_dir is not a readable directory: {source}")
     model_name = _resolved_model_name(source)
     destination = configured_root / model_name
     if paths_overlap(source, destination):
@@ -606,15 +652,24 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
         validate = candidate / "validate.py"
         if not validate.is_file():
             raise ApprovalError("Python candidate has no validate.py runtime smoke entrypoint")
-        completed = subprocess.run(
-            [python, str(validate)],
-            cwd=candidate,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-            env={**os.environ, "MODEL_DIR": str(candidate), "PYTHONDONTWRITEBYTECODE": "1"},
-        )
+        child_env = model_child_env(os.environ)
+        with tempfile.TemporaryDirectory(prefix="sure-approval-validation-") as validation_output:
+            child_env.update(
+                {
+                    "MODEL_DIR": str(candidate),
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "SURE_VALIDATION_OUTPUT_DIR": validation_output,
+                }
+            )
+            completed = subprocess.run(
+                [python, str(validate)],
+                cwd=candidate,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+                env=child_env,
+            )
         smoke = {"command": [python, "validate.py"], "exit_code": completed.returncode, "stdout_sha256": sha256_bytes(completed.stdout.encode()), "stderr": completed.stderr[-2000:]}
     else:
         image_ref = str(binding.get("target_image_ref") or "")
@@ -901,8 +956,10 @@ def main_resolve() -> int:
     args = parser.parse_args()
     if args.check:
         return _checked(args.produces, {"passed"}, "sure.approve.input_resolved.v1")
-    if not args.model_dir:
+    if args.mode == "audit" and not args.model_dir:
         parser.error("--model-dir is required in audit mode")
+    if args.mode == "approve" and (not args.review_manifest or not args.decision):
+        parser.error("--review-manifest and --decision are required in approve mode")
     return _write_result(args.produces, lambda: resolve_input(args))
 
 

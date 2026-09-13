@@ -373,6 +373,8 @@ def task_defaults(task: str) -> dict[str, Any]:
         infer_test = f"model.{tool_name}('Hello from the SURE smoke fixture.')"
     elif contract["input_type"] == "audio_pair":
         infer_test = f"model.{tool_name}('<source-audio>', '<reference-audio>')"
+    elif contract["input_type"] == "audio_path_with_keywords":
+        infer_test = f"model.{tool_name}('<audio from {fixture_root}>', '<keywords from fixture>')"
     else:
         infer_test = f"model.{tool_name}('<audio from {fixture_root}>')"
     return {

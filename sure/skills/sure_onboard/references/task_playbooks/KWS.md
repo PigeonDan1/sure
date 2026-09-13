@@ -30,7 +30,7 @@ KWS / keyword spotting 是“音频 -> 是否触发关键词”。最小输入�
 ```yaml
 task_type: "kws"
 io_contract:
-  input_type: "audio_path"
+  input_type: "audio_path_with_keywords"
   output_type: "keyword_detection"
   primary_field: "detected"
   required_fields: ["detected", "keyword", "score"]
@@ -127,7 +127,9 @@ pipeline_id, input_contract, input_files, pipeline_trace
 `false_reject_rate`、`false_alarm_rate`、`false_alarm_per_hour` 和 `det_curve`。
 DET 阈值扫描语义对齐 WekWS `compute_det.py` / `compute_det_ctc.py`：正例低于阈值
 或关键词错误计为 false reject，负例高于阈值计为 false alarm，并按负例音频时长
-换算 false alarm per hour。
+换算 false alarm per hour。当前 SURE JSON route 还要求模型先给出
+`detected=true`；模型内部已经抑制的候选不会被阈值扫描恢复。完整 WekWS 式
+DET/FAR 需要 wrapper 暴露不依赖内部阈值的候选分数。
 
 KWS metric uv project 经验：
 
