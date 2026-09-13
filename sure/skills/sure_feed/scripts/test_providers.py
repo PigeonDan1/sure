@@ -4,10 +4,14 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import sure_feed.providers.huggingface as hf_module  # noqa: E402
+import sure_feed.providers.base as base_module  # noqa: E402
+import sure_feed.fixture_registry as fixture_registry_module  # noqa: E402
+import check_model_input as check_model_input_module  # noqa: E402
 from sure_feed.fixture_registry import select_fixture_for_task  # noqa: E402
 from sure_feed.providers.base import ProviderNetworkError, ProviderRequest, infer_task, synthesize_model_input, task_defaults, to_yaml  # noqa: E402
 from sure_feed.providers.huggingface import HuggingFaceProvider  # noqa: E402
@@ -256,6 +260,40 @@ pip install sherpa-onnx
         self.assertEqual(io_contract["primary_field"], "text")
         self.assertIn("fixture", {item.get("model_input_field") for item in evidence})
 
+    def test_missing_official_fixture_is_a_resumable_resolution_request(self) -> None:
+        contract = {
+            "input_type": "audio_path",
+            "output_type": "text",
+            "primary_field": "text",
+            "required_fields": ["text"],
+            "nonempty_fields": ["text"],
+            "json_serializable": True,
+        }
+        with mock.patch.object(
+            base_module,
+            "select_fixture_for_task",
+            return_value=(None, contract, ["missing:fixture.samples.demo"], []),
+        ):
+            model_input, weak_fields, evidence = synthesize_model_input(
+                {
+                    "source": "huggingface",
+                    "model_id": "owner/demo-tts",
+                    "repo": "https://huggingface.co/owner/demo-tts",
+                    "model_card_text": self.sample_readme(),
+                },
+                "tts",
+            )
+        self.assertEqual(model_input["fixture"]["fixture_source"], "unresolved")
+        self.assertEqual(model_input["fixture"]["fixture_status"], "needs_input")
+        self.assertEqual(model_input["fixture"]["resolution_options"], ["model_specific", "web_temporary"])
+        self.assertIn("pending:fixture", weak_fields)
+        self.assertNotIn("missing:fixture", weak_fields)
+        self.assertIn("fixture", {item.get("model_input_field") for item in evidence})
+        self.assertEqual(
+            check_model_input_module.validate_model_input(model_input, model_input["model_id"], "item"),
+            [],
+        )
+
     def test_fixture_registry_routes_speech_understanding_to_atomic_fixtures(self) -> None:
         fixture, io_contract, issues, _evidence = select_fixture_for_task(
             "speech_understanding",
@@ -270,6 +308,19 @@ pip install sherpa-onnx
         self.assertEqual(len(fixture["subtask_fixtures"]), 15)
         self.assertEqual(set(fixture["subtask_io_contracts"]), set(canonical_tasks()))
         self.assertEqual(io_contract["primary_field"], "text")
+
+    def test_speech_understanding_does_not_hide_a_missing_subtask_fixture(self) -> None:
+        original = fixture_registry_module.select_atomic_fixture
+
+        def missing_vad(task, *args, **kwargs):
+            if task == "vad":
+                return None, original(task, *args, **kwargs)[1], ["missing:fixture.samples.vad"]
+            return original(task, *args, **kwargs)
+
+        with mock.patch.object(fixture_registry_module, "select_atomic_fixture", side_effect=missing_vad):
+            fixture, _contract, issues, _evidence = select_fixture_for_task("speech_understanding")
+        self.assertIsNone(fixture)
+        self.assertIn("missing:fixture.samples.vad", issues)
 
     def test_fixture_registry_selects_every_engine_task(self) -> None:
         for task in canonical_tasks():

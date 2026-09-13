@@ -269,6 +269,7 @@ def main() -> int:
         "__IO_CONTRACT_JSON__": json.dumps(io_contract, ensure_ascii=False, separators=(",", ":")),
         "__IO_CONTRACT_INPUT__": json.dumps(io_contract.get("input", {}), ensure_ascii=False, separators=(",", ":")),
         "__IO_CONTRACT_OUTPUT__": json.dumps(io_contract.get("output", {}), ensure_ascii=False, separators=(",", ":")),
+        "__CONDA_INSTALL_COMMAND__": "",
     }
     render(templates / "server.py", adapter_dir / "server.py", replacements)
     render(templates / "config.yaml", adapter_dir / "config.yaml", replacements)
@@ -277,11 +278,25 @@ def main() -> int:
     source_runtime_file = None
     if python_source and container_runtime:
         backend = str(source_image.get("backend") or resolved.get("backend_hint") or "")
-        source_runtime_file = adapter_dir / (
-            "source-requirements.lock" if backend == "uv" else "source-environment.yml"
-        )
+        conda_spec_kind = str(source_image.get("conda_spec_kind") or "")
+        if backend == "uv":
+            source_runtime_file = adapter_dir / "source-requirements.lock"
+        elif conda_spec_kind == "conda-lock" or Path(str(source_image.get("dependency_file") or "")).name in {"conda-lock.yml", "conda-lock.yaml"}:
+            source_runtime_file = adapter_dir / "source-conda-lock.yml"
+        else:
+            source_runtime_file = adapter_dir / "source-environment.yml"
         shutil.copy2(Path(str(source_image["lockfile"])), source_runtime_file)
         replacements["__SOURCE_RUNTIME_FILE__"] = source_runtime_file.name
+        if backend == "conda":
+            if source_runtime_file.name == "source-conda-lock.yml":
+                replacements["__CONDA_INSTALL_COMMAND__"] = (
+                    "conda install -n base -c conda-forge conda-lock --yes"
+                    f" && conda-lock install --prefix /opt/sure-model /opt/sure_trans/{source_runtime_file.name}"
+                )
+            else:
+                replacements["__CONDA_INSTALL_COMMAND__"] = (
+                    f"conda env create --prefix /opt/sure-model --file /opt/sure_trans/{source_runtime_file.name}"
+                )
         if not dockerfile.exists():
             render(templates / f"Dockerfile.{backend}.sure", dockerfile, replacements)
     elif not python_source:

@@ -2,7 +2,7 @@
 FROM continuumio/miniconda3:latest
 COPY --from=model_source . /opt/model-source
 COPY __SOURCE_RUNTIME_FILE__ /opt/sure_trans/__SOURCE_RUNTIME_FILE__
-RUN conda env create --prefix /opt/sure-model --file /opt/sure_trans/__SOURCE_RUNTIME_FILE__ \
+RUN __CONDA_INSTALL_COMMAND__ \
     && conda clean --all --yes
 __HARNESS_RUNTIME_COPY__
 COPY model.py server.py config.yaml model.spec.yaml __init__.py validate.py mcp_smoke.py /opt/sure_trans/

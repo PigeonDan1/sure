@@ -239,7 +239,11 @@ class TransScriptsTest(unittest.TestCase):
             artifacts = run_dir / "artifacts"
             artifacts.mkdir(parents=True)
             (artifacts / "trans_input_resolved.json").write_text(
-                json.dumps({"model_name": "example__sv", "task_type": "sv"}) + "\n",
+                json.dumps({
+                    "model_name": "example__sv",
+                    "task_type": "sv",
+                    "fixture_path": str(SCRIPTS_DIR.parents[3] / "fixtures" / "tasks" / "sv" / "librispeech_trials_smoke"),
+                }) + "\n",
                 encoding="utf-8",
             )
             subprocess.run(
@@ -250,7 +254,7 @@ class TransScriptsTest(unittest.TestCase):
             )
             prepared = json.loads((artifacts / "fixture_manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(prepared["sample_count"], 4)
-            self.assertEqual(prepared["annotation_source"]["type"], "task_registry_fixture")
+            self.assertEqual(prepared["annotation_source"]["type"], "explicit_fixture")
             self.assertEqual({sample["speaker_id"] for sample in prepared["samples"]}, {"1089", "1580"})
             for name in ("gt.jsonl", "trial_manifest.json", "trials.tsv", "provenance.json"):
                 self.assertTrue((run_dir / "fixture" / "sv" / name).is_file())
@@ -938,6 +942,71 @@ class TransScriptsTest(unittest.TestCase):
                     self.assertTrue(Path(result["lockfile"]).is_file())
                     self.assertTrue(Path(result["source_image_log_path"]).is_file())
 
+    def test_existing_python_normalizes_every_uv_dependency_format(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            python_executable = Path(sys.executable).resolve()
+            cases = (
+                ("uv.lock", "version = 1\n", True),
+                ("pyproject.toml", "[project]\nname='demo'\nversion='0.1.0'\ndependencies=[]\n", True),
+                ("requirements.txt", "demo==1.0\n", True),
+                ("requirements.txt", "demo==1.0 --hash=sha256:" + "a" * 64 + "\n", False),
+            )
+            for index, (name, content, should_compile) in enumerate(cases):
+                with self.subTest(name=name, index=index):
+                    run_dir = root / f"run-{index}"
+                    artifacts = run_dir / "artifacts"
+                    artifacts.mkdir(parents=True)
+                    dependency = source / name
+                    dependency.write_text(content, encoding="utf-8")
+                    (artifacts / "backend_choice.json").write_text(json.dumps({"backend": "uv"}) + "\n", encoding="utf-8")
+                    (artifacts / "build_plan.json").write_text(
+                        json.dumps({
+                            "backend": "uv",
+                            "source_runtime": {
+                                "mode": "existing-python",
+                                "python_executable": str(python_executable),
+                                "dependency_file": str(dependency),
+                            },
+                        }) + "\n",
+                        encoding="utf-8",
+                    )
+                    calls: list[list[str]] = []
+
+                    def execute(command: list[str], _timeout: float, cwd: Path | None = None) -> dict:
+                        calls.append(command)
+                        self.assertEqual(cwd, source)
+                        output = Path(command[command.index("--output-file") + 1])
+                        output.write_text("demo==1.0 --hash=sha256:" + "b" * 64 + "\n", encoding="utf-8")
+                        return {"command": command, "exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1}
+
+                    with mock.patch.object(run_docker_build, "runtime_tool", return_value="uv"), mock.patch.object(
+                        run_docker_build, "execute", side_effect=execute
+                    ):
+                        result = run_docker_build.materialize_python_runtime(
+                            run_dir,
+                            artifacts,
+                            {
+                                "source_kind": "python",
+                                "backend_hint": "uv",
+                                "build_context": str(source),
+                                "dependency_file": str(dependency),
+                                "python_executable": str(python_executable),
+                            },
+                            30,
+                        )
+                    self.assertTrue(Path(result["lockfile"]).is_file())
+                    self.assertTrue(calls if should_compile else not calls)
+                    if should_compile:
+                        if name == "uv.lock":
+                            self.assertIn("export", calls[0])
+                        else:
+                            self.assertIn("--generate-hashes", calls[0])
+                    else:
+                        self.assertEqual(Path(result["lockfile"]).read_text(encoding="utf-8"), content)
+
     def test_uv_and_conda_registry_scaffolds_preserve_agent_dockerfile_edits(self) -> None:
         harness = {
             "runtime_id": "sure-harness-test",
@@ -951,12 +1020,14 @@ class TransScriptsTest(unittest.TestCase):
             for backend, dependency_name, dependency_content, base_image in (
                 ("uv", "source-requirements.lock", "demo==1.0 --hash=sha256:" + "a" * 64 + "\n", "python:3.11.10-slim"),
                 ("conda", "source-environment.yml", "name: source\ndependencies:\n  - python=3.11\n", "continuumio/miniconda3:24.9.2-0"),
+                ("conda", "source-conda-lock.yml", "version: 1\npackages: []\n", "continuumio/miniconda3:24.9.2-0"),
             ):
                 with self.subTest(backend=backend):
-                    run_dir = root / f"run-{backend}"
+                    run_dir = root / f"run-{backend}-{dependency_name.replace('.', '-') }"
                     artifacts = run_dir / "artifacts"
-                    source = root / f"source-{backend}"
-                    model_dir = root / "models" / f"example__{backend}"
+                    case_name = dependency_name.replace(".", "-")
+                    source = root / f"source-{backend}-{case_name}"
+                    model_dir = root / "models" / f"example__{backend}-{case_name}"
                     artifacts.mkdir(parents=True)
                     source.mkdir()
                     dependency = source / dependency_name
@@ -987,6 +1058,8 @@ class TransScriptsTest(unittest.TestCase):
                             "source_kind": "python",
                             "backend": backend,
                             "python_executable": str(Path(sys.executable).resolve()),
+                            "dependency_file": str(dependency),
+                            "conda_spec_kind": "conda-lock" if dependency_name == "source-conda-lock.yml" else None,
                             "lockfile": str(dependency),
                             "lockfile_sha256": hashlib.sha256(dependency.read_bytes()).hexdigest(),
                         }) + "\n",
@@ -1002,6 +1075,9 @@ class TransScriptsTest(unittest.TestCase):
                     adapter = run_dir / "adapter"
                     dockerfile = adapter / "Dockerfile.sure"
                     draft = dockerfile.read_text(encoding="utf-8")
+                    if dependency_name == "source-conda-lock.yml":
+                        self.assertIn("conda-lock install", draft)
+                        self.assertIn("source-conda-lock.yml", draft)
                     self.assertIn("SURE_TRANS_TODO", draft)
                     self.assertEqual(
                         json.loads((artifacts / "adapter_manifest.json").read_text(encoding="utf-8"))["status"],

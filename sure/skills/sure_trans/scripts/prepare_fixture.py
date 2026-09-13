@@ -14,7 +14,6 @@ for _parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(_parent))
         break
 
-from sure.runtime.evaluation.task_registry import task_profile
 
 
 AUDIO_SUFFIXES = {".wav", ".flac", ".mp3", ".ogg", ".m4a"}
@@ -92,10 +91,6 @@ def clear_directory(path: Path, controlled_root: Path) -> None:
             raise ValueError(f"fixture staging contains unsupported entry: {child}")
 
 
-def repository_root() -> Path:
-    return Path(__file__).resolve().parents[4]
-
-
 def relative_file(root: Path, raw: object, label: str) -> Path:
     relative = Path(str(raw or ""))
     if not str(relative) or relative.is_absolute() or ".." in relative.parts:
@@ -115,10 +110,7 @@ def choose_sv_fixture_dir(resolved: dict) -> Path:
         if not path.is_dir():
             raise ValueError("SV fixture must be a directory or gt.jsonl containing trial metadata")
         return path
-    path = repository_root() / str(task_profile("sv")["fixture_root"])
-    if not path.is_dir():
-        raise ValueError(f"registered SV fixture is missing: {path}")
-    return path
+    raise ValueError("SV trans fixture is required; pass fixture=/absolute/path/to/fixture or fixture=/absolute/path/to/gt.jsonl")
 
 
 def copy_fixture_files(source_dir: Path, staged_dir: Path) -> None:
@@ -198,6 +190,8 @@ def prepare_sv_fixture(resolved: dict, run_dir: Path) -> dict[str, Any]:
         "model_name": resolved["model_name"],
         "model_dir": str(run_dir),
         "task_type": "sv",
+        "fixture_source": "model_specific",
+        "official": False,
         "source_dir": str(source_dir),
         "staged_dir": str(staged_dir),
         "gt_jsonl": str(gt_jsonl),
@@ -216,7 +210,7 @@ def prepare_sv_fixture(resolved: dict, run_dir: Path) -> dict[str, Any]:
         "sample_count": len(samples),
         "link_policy": "copy",
         "annotation_source": {
-            "type": "task_registry_fixture",
+            "type": "explicit_fixture",
             "source_path": str(source_dir / "gt.jsonl"),
             "staged_path": str(gt_jsonl),
             "fallback": False,
@@ -282,6 +276,8 @@ def main() -> int:
         "model_name": resolved["model_name"],
         "model_dir": str(run_dir),
         "task_type": task,
+        "fixture_source": "model_specific",
+        "official": False,
         "source_dir": str(source.parent),
         "staged_dir": str(staged_dir),
         "gt_jsonl": str(gt_jsonl),

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -68,6 +69,16 @@ def annotation_is_nonempty(value: Any) -> bool:
     return value is not None
 
 
+def tree_sha256(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
@@ -108,6 +119,22 @@ def main() -> int:
         return fail(f"gt_jsonl does not exist: {gt_jsonl}")
     if gt_jsonl.parent.resolve() != staged_dir.resolve():
         return fail("gt_jsonl must be located directly inside staged_dir")
+
+    fixture_source = data.get("fixture_source")
+    if fixture_source is not None:
+        if fixture_source not in {"task_registry", "model_specific", "web_temporary"}:
+            return fail(f"unsupported fixture_source: {fixture_source!r}")
+        if not isinstance(data.get("official"), bool):
+            return fail("fixture manifest official must be boolean when fixture_source is present")
+        if data["official"] != (fixture_source == "task_registry"):
+            return fail("fixture manifest official disagrees with fixture_source")
+        fixture_hash = data.get("fixture_sha256")
+        if fixture_hash is not None and fixture_hash != tree_sha256(staged_dir):
+            return fail("fixture_sha256 does not match staged fixture contents")
+        provenance = data.get("provenance")
+        if fixture_source == "web_temporary":
+            if not isinstance(provenance, dict) or not provenance.get("url") or not provenance.get("license"):
+                return fail("web_temporary fixtures require provenance.url and provenance.license")
 
     samples = data.get("samples")
     if not isinstance(samples, list):

@@ -74,6 +74,8 @@ def has_annotation_value(value: object) -> bool:
 
 
 def validate_sv_fixture_manifest(value: dict) -> None:
+    require(value.get("fixture_source") == "model_specific", "SV trans fixture_source must be model_specific")
+    require(value.get("official") is False, "SV trans fixtures must not be marked official")
     for key in (
         "model_dir",
         "staged_dir",
@@ -168,9 +170,9 @@ def validate_sv_fixture_manifest(value: dict) -> None:
     annotation_source = value.get("annotation_source")
     require(isinstance(annotation_source, dict), "SV annotation_source must be an object")
     require(
-        annotation_source.get("type") == "task_registry_fixture"
+        annotation_source.get("type") == "explicit_fixture"
         and annotation_source.get("fallback") is False,
-        "SV ground truth must come from a task-registry fixture",
+        "SV ground truth must come from an explicit fixture",
     )
     require(
         Path(str(annotation_source.get("staged_path") or "")).resolve() == gt_jsonl,
@@ -180,6 +182,9 @@ def validate_sv_fixture_manifest(value: dict) -> None:
 
 def validate_fixture_manifest(value: dict) -> None:
     require(value.get("status") == "ready", "fixture manifest is not ready")
+    if "fixture_source" in value:
+        require(value.get("fixture_source") == "model_specific", "trans fixture_source must be model_specific")
+        require(value.get("official") is False, "trans fixtures must not be marked official")
     task = str(value.get("task_type") or "").replace("-", "_").lower()
     if task == "sv":
         validate_sv_fixture_manifest(value)
