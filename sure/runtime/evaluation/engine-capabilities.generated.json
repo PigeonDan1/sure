@@ -369,8 +369,16 @@
       "evaluation_bridge": "sure_json",
       "fixture_root": "fixtures/tasks/kws/librispeech_keyword_smoke",
       "io_contract": {
-        "input_type": "audio_path",
-        "primary_field": "detected"
+        "input_type": "audio_path_with_keywords",
+        "nonempty_fields": [
+          "detected"
+        ],
+        "primary_field": "detected",
+        "required_fields": [
+          "detected",
+          "keyword",
+          "score"
+        ]
       },
       "language_sensitive": false,
       "metrics": [

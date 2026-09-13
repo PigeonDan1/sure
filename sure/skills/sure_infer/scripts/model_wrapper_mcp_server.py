@@ -140,6 +140,13 @@ def _tool_schema(task: str) -> dict[str, Any]:
             "prompt_audio_path": {"type": "string"},
             "output_path": {"type": "string"},
         }
+    elif normalized == "kws":
+        required = ["audio_path", "keywords"]
+        properties = {
+            "audio_path": {"type": "string"},
+            "keywords": {"type": "string", "description": "Comma-separated wake words"},
+            "threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+        }
     else:
         required = ["audio_path"]
         properties = {"audio_path": {"type": "string"}}

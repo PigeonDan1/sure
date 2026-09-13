@@ -65,7 +65,14 @@ class ApprovalFlowTests(unittest.TestCase):
         for name, content in {
             "model.py": "VALUE = 1\n",
             "server.py": "print('server')\n",
-            "validate.py": "print('validation passed')\n",
+            "validate.py": (
+                "import os\n"
+                "from pathlib import Path\n"
+                "output = os.environ.get('SURE_VALIDATION_OUTPUT_DIR')\n"
+                "assert output\n"
+                "Path(output, 'smoke.json').write_text('{}')\n"
+                "print('validation passed')\n"
+            ),
             "__init__.py": "\n",
             "model.spec.yaml": "task: asr\n",
             "config.yaml": "task: asr\n",
@@ -208,6 +215,16 @@ class ApprovalFlowTests(unittest.TestCase):
 
     def test_full_python_audit_approval_and_eval_binding(self) -> None:
         self.build_python_bundle()
+        previous_pythonhome = os.environ.get("PYTHONHOME")
+        os.environ["PYTHONHOME"] = str(self.root / "wrong-harness-python-home")
+
+        def restore_pythonhome() -> None:
+            if previous_pythonhome is None:
+                os.environ.pop("PYTHONHOME", None)
+            else:
+                os.environ["PYTHONHOME"] = previous_pythonhome
+
+        self.addCleanup(restore_pythonhome)
         source_before, _, _ = approval_core.tree_digest(self.source)
         audit_run = self.root / "runs" / "audit"
         review = self.audit(audit_run)
@@ -229,6 +246,29 @@ class ApprovalFlowTests(unittest.TestCase):
         self.assertEqual(Path(ready["destination"]), self.approved / "demo-model")
         source_after, _, _ = approval_core.tree_digest(self.source)
         self.assertEqual(source_before, source_after)
+
+    def test_approve_input_resolves_from_review_without_model_dir(self) -> None:
+        self.build_python_bundle()
+        audit_run = self.root / "runs" / "resolve-approve-audit"
+        review = self.audit(audit_run)
+        review_path = audit_run / "artifacts" / "review_packet.json"
+        args = argparse.Namespace(
+            invocation_cwd=str(self.root),
+            model_dir=None,
+            mode="approve",
+            repair="safe",
+            review_manifest=str(review_path),
+            decision="approve",
+            replace=False,
+        )
+
+        resolved = approval_core.resolve_input(args)
+
+        self.assertEqual(resolved["status"], "passed")
+        self.assertEqual(resolved["mode"], "approve")
+        self.assertEqual(resolved["review_manifest"], str(review_path.resolve()))
+        self.assertEqual(resolved["source"], review["source"])
+        self.assertEqual(resolved["approval"], review["approval"])
 
     def test_incomplete_onboard_product_is_rejected(self) -> None:
         write_json(self.source / "artifacts" / "model_input_resolved.json", {"model_name": "demo-model"})

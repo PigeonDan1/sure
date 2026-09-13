@@ -122,10 +122,28 @@ pipeline_id=<id1>,<id2>
 | 任务 | 链路形态 |
 | --- | --- |
 | ASR 中文 CER | `normalization/wetext_norm -> scoring/wenet_cer` |
+| KWS 唤醒 | `conversion/kws_sure_json_to_samples -> scoring/wekws_det` |
 | TTS/VC 中文 CER | `frontend/funasr_loader_16k_mono -> transcription/paraformer_zh -> normalization/punctuation_strip_norm -> scoring/wenet_cer` |
 | TTS 英文 WER | `transcription/whisper_large_v3 -> normalization/whisper_norm -> scoring/wenet_wer` |
 
 这张表只是大致形态。实际走哪条链路,以本次运行用的那个本地 `sure-evaluation` 引擎为准。
+
+### KWS 唤醒评估
+
+KWS 数据源必须在 `sample.jsonl` 或 `ds.jsonl` 中明确声明 `task: KWS`。
+每条样本包含音频、`keywords`、明确的正负标签和音频时长，正例还要有唯一的
+`expected_keyword`。`/sure_infer` 将其投影成 `kws_wakeword_v1`，逐样本把关键词
+和可选 `threshold` 传给模型，并保存结构化的 `detected`、`keyword`、`score`。
+数据集必须同时有正例和负例，否则无法形成完整的漏唤醒和误唤醒评估。
+
+`/sure_eval ... metrics=accuracy` 和 `metrics=macro_recall` 分别选择两条正式 route。
+两条 route 的 `report.json` 都包含 `accuracy`、`precision`、`recall`、`f1`、
+`false_reject_rate`、`false_alarm_rate`、`false_alarm_per_hour` 和 `det_curve`；
+`macro_recall` 取满足误唤醒数量预算的最佳召回率。当前 SURE JSON route
+在每个阈值上使用 `detected AND score >= threshold`，所以它不会把模型内部
+已经抑制为 `detected=false` 的候选重新纳入误唤醒扫描。若要声称完整的
+WekWS 式 DET/FAR，需要模型 wrapper 暴露不依赖内部阈值的候选分数。评估只
+复用结构化预测，不会重新运行唤醒模型。
 
 ## 输出证据
 

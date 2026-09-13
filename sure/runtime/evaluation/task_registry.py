@@ -56,7 +56,7 @@ def io_contract_for_task(task: str) -> dict[str, Any]:
     return {
         **contract,
         "output_type": "json",
-        "required_fields": [primary],
-        "nonempty_fields": [primary],
+        "required_fields": list(contract.get("required_fields") or [primary]),
+        "nonempty_fields": list(contract.get("nonempty_fields") or [primary]),
         "json_serializable": True,
     }

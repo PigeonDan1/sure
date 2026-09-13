@@ -15,6 +15,7 @@ import json
 import math
 import shutil
 import subprocess
+import wave
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -680,28 +681,44 @@ class DatasetManager:
         if not raw_dir.exists():
             raise FileNotFoundError(f"source raw_dir not found: {raw_dir}")
         task = source_task or "ASR"
+        if task not in {"ASR", "KWS", "VAD"}:
+            raise ValueError(
+                f"source-root projection for task {task!r} is not implemented; supported tasks: ASR, KWS, VAD"
+            )
         ds_meta = self._load_single_json_object(ds_jsonl_path)
         language = str(
             (((ds_meta.get("audio") or {}).get("speech") or {}).get("language")) or "auto"
         )
+        if task == "KWS" and language == "auto":
+            language = "any"
         package_dir = self.sure_dir / ref.source_dataset_name
-        projection_name = "vad_segments_v1" if task == "VAD" else "asr_transcription_v1"
+        projection_name = "kws_wakeword_v1" if task == "KWS" else ("vad_segments_v1" if task == "VAD" else "asr_transcription_v1")
         projection_dir = package_dir / "projections" / projection_name
         projection_dir.mkdir(parents=True, exist_ok=True)
 
-        rows, skipped, source_records = self._project_sample_rows(
-            sample_jsonl_path=sample_jsonl_path,
-            raw_dir=raw_dir,
-            task=task,
-            language=language,
-            dataset_label=ref.dataset_id,
-            metadata_base={
-                "source": SITE_DATASET_POOL_SOURCE,
-                "source_dataset_root": ref.source_root,
-                "source_dataset_name": ref.source_dataset_name,
-                "version_id": ref.version_id,
-            },
-        )
+        metadata_base = {
+            "source": SITE_DATASET_POOL_SOURCE,
+            "source_dataset_root": ref.source_root,
+            "source_dataset_name": ref.source_dataset_name,
+            "version_id": ref.version_id,
+        }
+        if task == "KWS":
+            rows, skipped, source_records = self._project_kws_sample_rows(
+                sample_jsonl_path=sample_jsonl_path,
+                raw_dir=raw_dir,
+                language=language,
+                dataset_label=ref.dataset_id,
+                metadata_base=metadata_base,
+            )
+        else:
+            rows, skipped, source_records = self._project_sample_rows(
+                sample_jsonl_path=sample_jsonl_path,
+                raw_dir=raw_dir,
+                task=task,
+                language=language,
+                dataset_label=ref.dataset_id,
+                metadata_base=metadata_base,
+            )
         if skipped:
             reasons = ", ".join(f"line {item['line']}: {item['reason']}" for item in skipped[:5])
             raise ValueError(
@@ -710,6 +727,8 @@ class DatasetManager:
             )
         if not rows:
             raise ValueError(f"source-root conversion produced no samples for {ref.source_root}")
+        if task == "KWS" and {row["expected_detected"] for row in rows} != {False, True}:
+            raise ValueError("KWS evaluation requires at least one positive and one negative sample")
 
         jsonl_path.parent.mkdir(parents=True, exist_ok=True)
         with jsonl_path.open("w", encoding="utf-8") as handle:
@@ -721,6 +740,8 @@ class DatasetManager:
 
         source_payload = {
             "source": SITE_DATASET_POOL_SOURCE,
+            "task": task,
+            "projector": projection_name,
             "source_dataset_name": ref.source_dataset_name,
             "version_id": ref.version_id,
             "dataset_root": ref.source_root,
@@ -736,27 +757,39 @@ class DatasetManager:
             source_payload=source_payload,
         )
 
-        fields = {
-            "key": "sample_id",
-            "path": "attribute.path",
-            "task": f"constant:{task}",
-            "language": "ds.audio.speech.language",
-            "sample_rate": "attribute.sample_rate",
-        }
-        if task == "VAD":
-            fields.update(
-                {
-                    "duration": "attribute.duration / 1000",
-                    "speech_segments": "annotation[].timestamp.{begin_time,end_time}",
-                }
-            )
+        if task == "KWS":
+            fields = {
+                "key": "key|sample_id",
+                "path": "attribute.path|path|audio|wav",
+                "keywords": "keywords|keyword",
+                "expected_detected": "expected_detected|expected|label|keyword_id",
+                "expected_keyword": "expected_keyword|unambiguous keyword match",
+                "duration": "duration|duration_ms|attribute.duration|wav header",
+                "task": "constant:KWS",
+                "language": "row.language|ds.audio.speech.language|any",
+            }
         else:
-            fields.update(
-                {
-                    "target": "annotation[0].transcription.text[0]",
-                    "duration_ms": "attribute.duration",
-                }
-            )
+            fields = {
+                "key": "sample_id",
+                "path": "attribute.path",
+                "task": f"constant:{task}",
+                "language": "ds.audio.speech.language",
+                "sample_rate": "attribute.sample_rate",
+            }
+            if task == "VAD":
+                fields.update(
+                    {
+                        "duration": "attribute.duration / 1000",
+                        "speech_segments": "annotation[].timestamp.{begin_time,end_time}",
+                    }
+                )
+            else:
+                fields.update(
+                    {
+                        "target": "annotation[0].transcription.text[0]",
+                        "duration_ms": "attribute.duration",
+                    }
+                )
         mapping = {
             "projector": projection_name,
             "source_format": f"{SITE_DATASET_POOL_SOURCE}_sample_jsonl",
@@ -771,20 +804,40 @@ class DatasetManager:
             mapping_text = json.dumps(mapping, indent=2, ensure_ascii=False) + "\n"
         (projection_dir / "mapping.yaml").write_text(mapping_text, encoding="utf-8")
 
-        io_contract = {
-            "task": task,
-            "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
-            "output": (
-                {"prediction_format": "jsonl", "columns": ["key", "speech_segments"], "type": "json"}
-                if task == "VAD"
-                else {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"}
-            ),
-            "reference": (
-                {"primary_field": "speech_segments", "type": "segments"}
-                if task == "VAD"
-                else {"primary_field": "target", "type": "text"}
-            ),
-        }
+        io_contract = (
+            {
+                "task": "KWS",
+                "input": {
+                    "primary_field": "path",
+                    "type": "audio_path_with_keywords",
+                    "required_fields": ["key", "path", "keywords"],
+                },
+                "output": {
+                    "prediction_format": "jsonl+tsv_projection",
+                    "required_fields": ["detected", "keyword", "score"],
+                    "type": "keyword_detection",
+                },
+                "reference": {
+                    "required_fields": ["expected_detected", "expected_keyword", "duration"],
+                    "type": "keyword_detection",
+                },
+            }
+            if task == "KWS"
+            else {
+                "task": task,
+                "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
+                "output": (
+                    {"prediction_format": "jsonl", "columns": ["key", "speech_segments"], "type": "json"}
+                    if task == "VAD"
+                    else {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"}
+                ),
+                "reference": (
+                    {"primary_field": "speech_segments", "type": "segments"}
+                    if task == "VAD"
+                    else {"primary_field": "target", "type": "text"}
+                ),
+            }
+        )
         (projection_dir / "io_contract.json").write_text(
             json.dumps(io_contract, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -1126,3 +1179,162 @@ class DatasetManager:
             }
         
         return None
+    @staticmethod
+    def _kws_keywords(value: Any) -> list[str]:
+        if isinstance(value, str):
+            items = value.split(",")
+        elif isinstance(value, (list, tuple)):
+            items = value
+        else:
+            items = []
+        keywords: list[str] = []
+        for item in items:
+            keyword = str(item).strip()
+            if keyword and keyword not in keywords:
+                keywords.append(keyword)
+        return keywords
+
+    @staticmethod
+    def _kws_expected(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in {0, 1}:
+            return bool(value)
+        normalized = str(value or "").strip().lower()
+        if normalized in {"detect", "detected", "positive", "true", "1", "yes"}:
+            return True
+        if normalized in {"reject", "rejected", "negative", "false", "0", "no"}:
+            return False
+        raise ValueError("expected/label must explicitly identify a positive or negative KWS sample")
+
+    @staticmethod
+    def _wav_duration(path: Path) -> float | None:
+        try:
+            with wave.open(str(path), "rb") as handle:
+                rate = handle.getframerate()
+                return handle.getnframes() / rate if rate > 0 else None
+        except (OSError, EOFError, wave.Error):
+            return None
+
+    def _project_kws_sample_rows(
+        self,
+        *,
+        sample_jsonl_path: Path,
+        raw_dir: Path,
+        language: str,
+        dataset_label: str,
+        metadata_base: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+        rows: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        source_records = 0
+        seen_keys: set[str] = set()
+
+        with sample_jsonl_path.open("r", encoding="utf-8") as handle:
+            for line_no, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                source_records += 1
+                try:
+                    record = json.loads(line)
+                    if not isinstance(record, dict):
+                        raise ValueError("row is not an object")
+                    attr = record.get("attribute") if isinstance(record.get("attribute"), dict) else {}
+                    raw_path = attr.get("path") or record.get("path") or record.get("audio") or record.get("wav")
+                    if not raw_path:
+                        raise ValueError("missing audio path (attribute.path, path, audio, or wav)")
+                    audio_path = self._resolve_oref_audio_path(str(raw_path), raw_dir)
+                    if not audio_path.is_file():
+                        raise ValueError(f"audio_not_found: {audio_path}")
+                    if attr.get("size") is not None and int(attr["size"]) != audio_path.stat().st_size:
+                        raise ValueError(
+                            f"audio_size_mismatch: expected {attr['size']} got {audio_path.stat().st_size}"
+                        )
+
+                    key = str(record.get("key") or record.get("sample_id") or audio_path.stem).strip()
+                    if not key:
+                        raise ValueError("missing key/sample_id")
+                    if key in seen_keys:
+                        raise ValueError(f"duplicate sample key: {key}")
+
+                    keywords = self._kws_keywords(record.get("keywords") or record.get("keyword"))
+                    if not keywords:
+                        raise ValueError("missing non-empty keywords")
+                    expected_value = record.get("expected_detected")
+                    if expected_value is None:
+                        expected_value = record.get("expected", record.get("label"))
+                    if expected_value is None and record.get("keyword_id") is not None:
+                        expected_value = int(record["keyword_id"]) >= 0
+                    expected_detected = self._kws_expected(expected_value)
+
+                    expected_keyword = record.get("expected_keyword")
+                    text = str(
+                        record.get("text")
+                        or record.get("target")
+                        or record.get("txt")
+                        or self._extract_oref_transcription_text(record)
+                        or ""
+                    ).strip()
+                    if expected_detected and expected_keyword is None:
+                        compact_text = "".join(text.upper().split())
+                        matches = [keyword for keyword in keywords if "".join(keyword.upper().split()) in compact_text]
+                        if len(matches) == 1:
+                            expected_keyword = matches[0]
+                        elif len(keywords) == 1:
+                            expected_keyword = keywords[0]
+                    if expected_detected and not str(expected_keyword or "").strip():
+                        raise ValueError("positive KWS sample is missing an unambiguous expected_keyword")
+                    if expected_keyword is not None:
+                        normalized_expected = "".join(str(expected_keyword).upper().split())
+                        normalized_keywords = {"".join(keyword.upper().split()) for keyword in keywords}
+                        if normalized_expected not in normalized_keywords:
+                            raise ValueError("expected_keyword is not present in keywords")
+
+                    duration_value = record.get("duration")
+                    if duration_value is None and record.get("duration_ms") is not None:
+                        duration_value = float(record["duration_ms"]) / 1000.0
+                    if duration_value is None and attr.get("duration") is not None:
+                        duration_value = float(attr["duration"]) / 1000.0
+                    duration = float(duration_value) if duration_value is not None else self._wav_duration(audio_path)
+                    if duration is None or not math.isfinite(duration) or duration <= 0:
+                        raise ValueError("missing positive audio duration required for false_alarm_per_hour")
+
+                    threshold = record.get("threshold")
+                    if threshold is not None:
+                        threshold = float(threshold)
+                        if not math.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+                            raise ValueError("threshold must be a finite number in [0, 1]")
+                except (TypeError, ValueError) as exc:
+                    skipped.append({"line": line_no, "reason": str(exc)})
+                    continue
+
+                seen_keys.add(key)
+                row = {
+                    "key": key,
+                    "path": str(audio_path),
+                    "audio": str(audio_path),
+                    "target": "detect" if expected_detected else "reject",
+                    "task": "KWS",
+                    "language": str(record.get("language") or language or "any"),
+                    "dataset": dataset_label,
+                    "keywords": keywords,
+                    "expected": "detect" if expected_detected else "reject",
+                    "expected_detected": expected_detected,
+                    "expected_keyword": str(expected_keyword) if expected_detected else None,
+                    "duration": duration,
+                    "duration_ms": round(duration * 1000.0, 3),
+                    "sample_rate": attr.get("sample_rate") or record.get("sample_rate"),
+                    "metadata": {
+                        **metadata_base,
+                        "sample_id": record.get("sample_id") or key,
+                        "parent_sample_id": record.get("parent_sample_id"),
+                        "raw_data_md5": attr.get("raw_data_md5"),
+                        "raw_data_format": attr.get("raw_data_format"),
+                        "size": attr.get("size") or audio_path.stat().st_size,
+                        "channels": attr.get("channels"),
+                    },
+                }
+                if threshold is not None:
+                    row["threshold"] = threshold
+                rows.append(row)
+        return rows, skipped, source_records

@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import sure_feed.providers.huggingface as hf_module  # noqa: E402
 from sure_feed.fixture_registry import select_fixture_for_task  # noqa: E402
-from sure_feed.providers.base import ProviderNetworkError, ProviderRequest, infer_task, synthesize_model_input, to_yaml  # noqa: E402
+from sure_feed.providers.base import ProviderNetworkError, ProviderRequest, infer_task, synthesize_model_input, task_defaults, to_yaml  # noqa: E402
 from sure_feed.providers.huggingface import HuggingFaceProvider  # noqa: E402
 from sure_feed_online_discover import parse_model_url  # noqa: E402
 from sure.runtime.evaluation.task_registry import canonical_tasks  # noqa: E402
@@ -41,7 +41,13 @@ result = runtime.generate(
 
 sf.write("output.wav", result["audio"].float().cpu().numpy(), result["sample_rate"])
 ```
-"""
+        """
+
+    def test_kws_task_defaults_include_keywords_in_infer_test(self) -> None:
+        defaults = task_defaults("kws")
+
+        self.assertEqual(defaults["io_contract"]["input_type"], "audio_path_with_keywords")
+        self.assertIn("<keywords from fixture>", defaults["infer_test"])
 
     def test_huggingface_auto_falls_back_to_mirror_and_keeps_canonical_repo(self) -> None:
         original = hf_module.http_get_json
