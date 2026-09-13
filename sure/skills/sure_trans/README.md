@@ -1,37 +1,38 @@
 # /sure_trans 技能介绍
 
-`/sure_trans` 把已有模型交付转换成 SURE Eval 可消费的模型包。输入环境可以是 Dockerfile，也可以是本地 Python 可执行文件与锁文件；当前 Docker 流程保持不变，Python 已接通依赖扫描、环境探测、原始推理以及 adapter 的 import/load/infer/contract/MCP/等价性验证，`package=none` 最终交付在后续改造组接通。
+`/sure_trans` 把已有模型交付转换成 SURE Eval 可消费的模型包。输入环境支持 Dockerfile、uv 和 conda；源环境完成依赖扫描、环境探测和原始推理后，按 `package=docker-registry|none` 生成容器或本地 uv 交付。
 
 ## 核心概念
 
 | 概念 | 说明 |
 | --- | --- |
-| Source image | 由交付物还原出的原版运行镜像:优先 `docker load` build context 内的镜像 tar,失败则回退 `docker build` 原 Dockerfile。 |
-| Adapter image | 在 source image 之上叠加 `/opt/sure_trans/`(`model.py` + `server.py` + `config.yaml` + `model.spec.yaml` + `__init__.py` + `validate.py`)生成的新镜像,实现 `ModelWrapper` 与 MCP 协议,并携带模型本地验证入口 `validate.py`。 |
+| Source runtime | Docker 输入还原原版镜像；uv/conda 输入使用已有解释器或在 run 目录内物化本地环境。原始推理只在该源运行时执行。 |
+| Adapter image | Docker 源在 source image 上叠加 adapter；uv/conda 源由 agent 完成后端专用 `Dockerfile.sure`，把依赖环境与 `/opt/sure_trans/` 一起构建为新镜像。 |
 | Digest 固定 | 所有交接引用使用 `image@sha256:...`,禁止可变 tag;registry push 后必须按 digest 精确 pull 并复验。 |
-| 站点解析交付 | source/adapter 仓库由活动站点策略统一解析,agent 不拼接 namespace;解析结果和策略身份写入 `trans_input_resolved.json`。 |
+| 站点解析交付 | adapter 仓库由活动站点策略统一解析；仅 Docker 输入需要 source 仓库。agent 不拼接 namespace，解析结果和策略身份写入 `trans_input_resolved.json`。 |
 | Container-only | Eval 运行时完全在容器内:`host_python_fallback=false`、`image_override_allowed=false`,模型 payload 以只读方式挂载。 |
-| IO contract | `input_type=audio_path` 到 `output_type=json`,`primary_field=text`,`required_fields=["text"]`、`nonempty_fields=["text"]`、`json_serializable=true`,由 `validate.py --stage contract` 对 `sample_output.json` 校验。 |
+| IO contract | 输入统一为音频路径，输出为 JSON。ASR/S2TT 使用非空 `text`，SV 使用非空有限数值数组 `embedding`，TTS/VC 使用实际存在的 `audio_path`；由 `validate.py --stage contract` 对 `sample_output.json` 校验。 |
 | 模型 bundle | 最终交接目录 `sure/models/<model_name>/`:wrapper 五件套 + `Dockerfile.sure` + 模型 payload + `fixture/<task>/` + `artifacts/` terminal sidecar。`/sure_infer` 只挂载该目录,外部绝对路径不是可执行交接。 |
 
 ## 参数
 
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
-| `dockerfile` | 条件必填 | Docker 输入的既有 Dockerfile 绝对路径；与 `python_executable` 二选一。 |
-| `python_executable` | 条件必填 | Python 输入的可执行文件绝对路径；与 `dockerfile` 二选一。 |
-| `lockfile` | Python 必填 | Python 输入的可复现依赖锁文件绝对路径。 |
-| `package` / `package_profile` | 否 | `docker-registry`（默认）或 `none`；`none` 仅接受 Python 输入。 |
+| `dockerfile` | 条件必填 | `preferred_backend=docker` 必须提供；uv/conda 不提供。 |
+| `python_executable` | 否 | 已有 uv/conda 环境的 Python；省略时按 build plan 在 run 目录内物化。 |
+| `lockfile` / `dependency_file` / `environment_file` | 条件必填 | 三者最多一个。uv 接受 `uv.lock`、requirements 或 `pyproject.toml`；conda 接受 environment 或 conda-lock；省略时在 `build_context` 自动发现。 |
+| `preferred_backend` | 否 | `uv`、`conda`、`docker`；省略时根据 Dockerfile、依赖文件和解释器证据选择。 |
+| `package` / `package_profile` | 否 | `docker-registry`（默认）或 `none`；`none` 只支持 uv，uv/conda 均可交付 registry 镜像。 |
 | `model` | 是 | 既有模型文件或目录绝对路径。 |
 | `inference_entrypoint` | 是 | 既有推理入口绝对路径,别名 `inference_code`。 |
 | `framework` | 是 | 计算框架，必须为 `pytorch`；接受 `torch` 别名。 |
 | `model_framework` | 是 | 模型实现框架，推荐 `transformers`，也可填写 `wenet`、`funasr`、`custom` 等安全标识符。非 Transformers 不会单独阻断。 |
-| `task_type` | 否 | 默认从证据推断,歧义时强制显式给出,例如 `asr`。 |
+| `task_type` | 否 | 支持 `asr`、`s2tt`、`sv`、`tts`、`vc`；默认从证据推断，歧义时强制显式给出。 |
 | `source_image_policy` | 否 | `auto`(默认)/`load`/`build`。`auto` 先找 build context 下的镜像 tar,失败回退 build。 |
-| `build_context` | 否 | 默认取 Dockerfile 父目录。 |
+| `build_context` | 否 | 默认取 Dockerfile 父目录，否则取推理入口父目录。uv/conda 容器交付要求依赖文件位于该目录内。 |
 | `image_tar` | 否 | 显式指定镜像 tar,必须位于 `build_context` 内。 |
 | `model_name` | 是 | 必须使用 `<组织>__<模型名称>` 格式；后续 bundle、镜像和 registry 命名均使用此值。 |
-| `fixture` | 否 | 冒烟输入绝对路径,否则自动选择 build context 下无歧义的 `examples/smoke.*`。 |
+| `fixture` | 否 | 冒烟输入绝对路径。SV 接受 trial fixture 目录或其中的 `gt.jsonl`，省略时使用任务注册表 fixture；其他任务自动选择 build context 下无歧义的 `examples/smoke.*`。 |
 | `device` | 否 | `auto`(默认)/`cuda`/`cpu`。`cpu` 只用本地 Docker;`cuda` 和 `auto` 先通过 VC 做 GPU 验证,符合条件的 `auto` 才可回退本地 CPU。 |
 | `vc_partition` | 否 | GPU 验证分区;默认取活动站点策略的 `execution.vc_default_partition`。 |
 | `vc_memory_gb` / `vc_gpus` | 否 | GPU 验证资源覆盖;默认 32 GiB、1 GPU。 |
@@ -49,24 +50,32 @@
 Python 输入示例:
 
 ```text
-/sure_trans python_executable=C:\path\.venv\Scripts\python.exe lockfile=C:\path\requirements.lock.txt model=C:\path\model inference_entrypoint=C:\path\infer.py framework=pytorch model_framework=transformers model_name=organization__model task_type=asr package=none
+/sure_trans model=/path/to/model inference_entrypoint=/path/to/infer.py build_context=/path/to/project framework=pytorch model_framework=custom model_name=organization__model task_type=asr preferred_backend=uv package=docker-registry device=cpu
 ```
 
-Python 输入的原始推理命令必须使用 `python_executable` 指向的解释器。环境探测和原始推理直接在本机运行，不调用 Docker 或 VC。
+SV 示例:
 
-Python adapter 复用同一个已验证解释器与 lockfile。`materialize_adapter_runtime.py` 固定解释器、lockfile 和 adapter 文件哈希；本组不复制平台专用虚拟环境，最终 uv runtime 的物化和便携交付由 `package=none` 终态流程完成。
+```text
+/sure_trans dockerfile=/path/to/Dockerfile model=/path/to/model inference_entrypoint=/path/to/embed.py framework=pytorch model_framework=custom model_name=organization__speaker-model task_type=sv
+```
+
+SV adapter 必须暴露 `embed_speaker(audio_path)`，返回 `{"embedding": [number, ...]}`。流程使用 1-5 条带 `speaker_id` 的试验音频，保留并校验 `trial_manifest.json`、`trials.tsv` 和 `provenance.json`，原始输出与 adapter 输出默认按 `vector_allclose`（`rtol=1e-5`、`atol=1e-8`）比较。
+
+uv/conda 输入的原始推理命令必须使用 `source_image_result.json.python_executable`。环境探测和原始推理直接在本机源环境运行，不调用 Docker 或 VC。
+
+`package=none` 的 adapter 复用同一个已验证 uv 解释器与哈希锁文件。`package=docker-registry` 的 adapter 改走容器：脚手架生成带 `SURE_TRANS_TODO` 的 uv/conda Dockerfile，agent 固定基础镜像和工具版本、补齐安装逻辑、移除标记后再构建。
 
 `examples/minimal-input.json` 是同一组参数的 JSON 形式。
 
 框架检测只把 PyTorch 作为硬门槛。`model_framework=transformers` 是推荐路径；若申报其他模型框架，或静态分析发现 PyTorch 实现未使用 Transformers，流程继续运行，并在 `framework_detection.json` 和最终 `verdict.json.framework` 中记录申报值、检测分类、架构线索与澄清。后续原始推理、adapter 推理和等价性 gate 仍必须全部通过。
 
-source/adapter 仓库分别由 `network.container_registry` 和 `container_delivery.repository_template` 解析;source 仓库在目标仓库名后追加 `-source`。自动版本解析结果记录在 `trans_input_resolved.json.image_version_resolution`。查询复用 Docker 登录凭据但不把凭据写入 artifact；registry 查询失败会阻断，不会猜测可能重复的版本。并发运行仍可能同时选中同一版本，最终由 registry 的不可覆盖策略阻止冲突，失败的一方重新解析版本后再提交。
+adapter 仓库由 `network.container_registry` 和 `container_delivery.repository_template` 解析；Docker 输入的 source 仓库在目标仓库名后追加 `-source`，uv/conda 不生成或推送 source 镜像。自动版本解析结果记录在 `trans_input_resolved.json.image_version_resolution`。查询复用 Docker 登录凭据但不把凭据写入 artifact；registry 查询失败会阻断，不会猜测可能重复的版本。并发运行仍可能同时选中同一版本，最终由 registry 的不可覆盖策略阻止冲突，失败的一方重新解析版本后再提交。
 
 source 镜像构建会自动追加一层：若基础镜像没有 `git`，按镜像内可用的 apt/apk/dnf/yum/microdnf 安装 `git` 和 `ca-certificates`；原始 Dockerfile 不会被改写，最终 `USER` 会恢复。这样 adapter 镜像继承该工具，避免 `/sure_infer` 运行时缺少 `git`。
 
 adapter 镜像同时复制当前锁定的 Harness Runtime。默认从 `SURE_HARNESS_RUNTIME_ROOT` 目录复制；配置 digest 固定的 runtime image 后，设置 `SURE_HARNESS_RUNTIME_IMAGE=<repository>@sha256:<digest>`，并传入 `--build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>`。最终 `/sure_infer` 使用镜像内的 Model Python 和 Harness Python 两个独立运行时，不再把仓库 Harness Runtime 挂载进模型容器。
 
-## 工作流(20 个单元)
+## 工作流(23 个单元)
 
 状态机逐个单元推进,当前单元产出其声明 artifact 后才进入下一单元。gate 单元有两类确定性脚本:`check_artifact.py` 做语义校验(路径归属、digest 固定、哈希复验、readiness 布尔),`run_trans_validate.py` 真实执行 artifact 里声明的 `run_command` 并记录退出码与日志;手工写的 `status=passed` 不被认可。
 
@@ -75,23 +84,26 @@ adapter 镜像同时复制当前锁定的 Harness Runtime。默认从 `SURE_HARN
 | 1 | `load_trans_input` | `trans_input_resolved.json` | 输入解析 |
 | 2 | `inspect_dependencies` | `inference_dependency_report.json` | 静态分析 |
 | 3 | `detect_framework` | `framework_detection.json` | 静态分析 |
-| 4 | `prepare_fixture` | `fixture_manifest.json` | 静态分析 |
-| 5 | `build_source_image` | `source_image_result.json` | 原版验证 |
-| 6 | `validate_env_compat` | `execution_compat.json` | 原版验证 |
-| 7 | `validate_original_inference` | `original_inference_result.json` | 原版验证 |
-| 8 | `stage_model_payload` | `model_payload_manifest.json` | 打包 |
-| 9 | `generate_adapter` | `adapter_manifest.json` | 打包 |
-| 10 | `build_adapter_image` | `adapter_image_result.json` | 打包 |
-| 11 | `validate_import` | `import_result.json` | adapter 验证 |
-| 12 | `validate_load` | `load_result.json` | adapter 验证 |
-| 13 | `validate_infer` | `infer_result.json` | adapter 验证 |
-| 14 | `validate_contract` | `contract_result.json` | adapter 验证 |
-| 15 | `validate_mcp` | `mcp_result.json` | adapter 验证 |
-| 16 | `validate_equivalence` | `equivalence_result.json` | 等价性验证 |
-| 17 | `package_container` | `docker_registry_result.json` | 发布 |
-| 18 | `write_runtime_inventory` | `runtime_inventory.json` | 发布 |
-| 19 | `verdict` | `verdict.json` | 发布 |
-| 20 | `finalize_model_bundle` | `deployment_ready.json` | 交接 |
+| 4 | `plan` | `backend_choice.json` | 后端选择 |
+| 5 | `build_plan` | `build_plan.json` | 构建计划 |
+| 6 | `prepare_fixture` | `fixture_manifest.json` | 静态分析 |
+| 7 | `build_source_image` | `source_image_result.json` | 原版验证 |
+| 8 | `validate_env_compat` | `execution_compat.json` | 原版验证 |
+| 9 | `validate_original_inference` | `original_inference_result.json` | 原版验证 |
+| 10 | `stage_model_payload` | `model_payload_manifest.json` | 打包 |
+| 11 | `generate_adapter` | `adapter_manifest.json` | 打包 |
+| 12 | `build_adapter_image` | `adapter_image_result.json` | 打包 |
+| 13 | `validate_import` | `import_result.json` | adapter 验证 |
+| 14 | `validate_load` | `load_result.json` | adapter 验证 |
+| 15 | `validate_infer` | `infer_result.json` | adapter 验证 |
+| 16 | `validate_contract` | `contract_result.json` | adapter 验证 |
+| 17 | `validate_mcp` | `mcp_result.json` | adapter 验证 |
+| 18 | `validate_equivalence` | `equivalence_result.json` | 等价性验证 |
+| 19 | `package_container` | `docker_registry_result.json` | 发布 |
+| 20 | `write_runtime_inventory` | `runtime_inventory.json` | 发布 |
+| 21 | `verdict` | `verdict.json` | 发布 |
+| 22 | `extract_lessons` | `extraction_declaration.json` | 经验提取 |
+| 23 | `finalize_model_bundle` | `deployment_ready.json` | 交接 |
 
 ## 日志与产物位置
 
@@ -132,7 +144,7 @@ sure/models/<model_name>/
 - `deployment_ready.json` 使用 `sure.onboard.deployment_ready.v1`,与 run 目录逐字节一致;ready bundle 必须声明 `integrity_profile=manifest-complete-v1`,`required_artifact_sha256` 覆盖 wrapper、Dockerfile、fixture、sample output、全部模型 payload 与 required sidecar,`bundle_identity_sha256` 为哈希表的摘要,四个 portable sidecar 不允许残留宿主机共享存储的绝对路径。
 - `check_artifact.py --kind deployment_ready` 与 `/sure_onboard` 的 `check_finalized_bundle.py` 执行同一组校验:bundle 与 run 双写一致、哈希复验、bundle identity 重算、portable manifest、Dockerfile 哈希、执行策略与 digest 固定引用。
 
-模型 payload(权重等文件)落在 bundle 根目录,与 `model.py`、`model.spec.yaml` 同级;`fixture/<task>/` 下是冒烟音频与 `gt.jsonl`,每行 `{audio, task_type, text}`。
+模型 payload(权重等文件)落在 bundle 根目录,与 `model.py`、`model.spec.yaml` 同级;`fixture/<task>/` 下是冒烟音频与 `gt.jsonl`。SV 行包含 `audio`、`task`、`speaker_id` 和 `trial_manifest`，并随附 trial 与 provenance 文件；其他任务保留对应的文本或音频参考标注。
 
 ### Gate 校验点
 

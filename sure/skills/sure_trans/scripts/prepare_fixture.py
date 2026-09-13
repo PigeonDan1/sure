@@ -5,11 +5,28 @@ import argparse
 import hashlib
 import json
 import shutil
+import sys
 from pathlib import Path
+from typing import Any
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.evaluation.task_registry import task_profile
 
 
 AUDIO_SUFFIXES = {".wav", ".flac", ".mp3", ".ogg", ".m4a"}
-ANNOTATION_FIELDS = ("ground_truth", "target_text", "text", "segments", "label", "intent")
+ANNOTATION_FIELDS = (
+    "ground_truth",
+    "target_text",
+    "text",
+    "segments",
+    "label",
+    "intent",
+    "speaker_id",
+)
 
 
 def read_object(path: Path) -> dict:
@@ -75,6 +92,138 @@ def clear_directory(path: Path, controlled_root: Path) -> None:
             raise ValueError(f"fixture staging contains unsupported entry: {child}")
 
 
+def repository_root() -> Path:
+    return Path(__file__).resolve().parents[4]
+
+
+def relative_file(root: Path, raw: object, label: str) -> Path:
+    relative = Path(str(raw or ""))
+    if not str(relative) or relative.is_absolute() or ".." in relative.parts:
+        raise ValueError(f"{label} must be a relative path inside {root}: {raw!r}")
+    path = (root / relative).resolve()
+    if not path.is_relative_to(root.resolve()) or not path.is_file():
+        raise ValueError(f"{label} does not resolve to a fixture file: {raw!r}")
+    return path
+
+
+def choose_sv_fixture_dir(resolved: dict) -> Path:
+    explicit = resolved.get("fixture_path")
+    if explicit:
+        path = Path(str(explicit)).resolve()
+        if path.is_file() and path.name == "gt.jsonl":
+            path = path.parent
+        if not path.is_dir():
+            raise ValueError("SV fixture must be a directory or gt.jsonl containing trial metadata")
+        return path
+    path = repository_root() / str(task_profile("sv")["fixture_root"])
+    if not path.is_dir():
+        raise ValueError(f"registered SV fixture is missing: {path}")
+    return path
+
+
+def copy_fixture_files(source_dir: Path, staged_dir: Path) -> None:
+    for source in sorted(source_dir.iterdir()):
+        if source.is_symlink() or not source.is_file():
+            raise ValueError(f"SV fixture may contain regular files only: {source}")
+        shutil.copy2(source, staged_dir / source.name)
+
+
+def load_sv_samples(fixture_dir: Path) -> list[dict[str, Any]]:
+    gt_jsonl = fixture_dir / "gt.jsonl"
+    if not gt_jsonl.is_file():
+        raise ValueError(f"SV fixture must contain gt.jsonl: {fixture_dir}")
+    samples: list[dict[str, Any]] = []
+    for line_no, line in enumerate(gt_jsonl.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{gt_jsonl}:{line_no} is invalid JSON: {error}") from error
+        if not isinstance(row, dict):
+            raise ValueError(f"{gt_jsonl}:{line_no} must be an object")
+        audio = relative_file(fixture_dir, row.get("audio"), f"{gt_jsonl}:{line_no} audio")
+        speaker_id = str(row.get("speaker_id") or "").strip()
+        if not speaker_id:
+            raise ValueError(f"{gt_jsonl}:{line_no} must contain speaker_id")
+        trial_manifest = relative_file(
+            fixture_dir,
+            row.get("trial_manifest"),
+            f"{gt_jsonl}:{line_no} trial_manifest",
+        )
+        samples.append(
+            {
+                "key": str(row.get("key") or audio.stem),
+                "audio": audio.name,
+                "audio_path": str(audio),
+                "annotation_fields": ["speaker_id"],
+                "speaker_id": speaker_id,
+                "trial_manifest": trial_manifest.name,
+            }
+        )
+    if not 1 <= len(samples) <= 5:
+        raise ValueError(f"SV fixture must contain between 1 and 5 samples: {gt_jsonl}")
+    return samples
+
+
+def prepare_sv_fixture(resolved: dict, run_dir: Path) -> dict[str, Any]:
+    source_dir = choose_sv_fixture_dir(resolved)
+    source_samples = load_sv_samples(source_dir)
+    staged_dir = run_dir / "fixture" / "sv"
+    clear_directory(staged_dir, run_dir / "fixture")
+    copy_fixture_files(source_dir, staged_dir)
+    samples = load_sv_samples(staged_dir)
+    gt_jsonl = staged_dir / "gt.jsonl"
+    trial_manifest_path = staged_dir / samples[0]["trial_manifest"]
+    trial_manifest = read_object(trial_manifest_path)
+    provenance_path = staged_dir / "provenance.json"
+    if not provenance_path.is_file():
+        raise ValueError(f"SV fixture must contain provenance.json: {staged_dir}")
+    trials_file = relative_file(
+        staged_dir,
+        trial_manifest.get("trials_file"),
+        "SV trial manifest trials_file",
+    )
+    if trial_manifest.get("trials_sha256") != sha256(trials_file):
+        raise ValueError("SV trial manifest trials_sha256 does not match the staged trials file")
+    trial_lines = [line for line in trials_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if int(trial_manifest.get("trial_count") or -1) != max(0, len(trial_lines) - 1):
+        raise ValueError("SV trial manifest trial_count does not match the staged trials file")
+    primary_source = Path(source_samples[0]["audio_path"])
+    primary_staged = Path(samples[0]["audio_path"])
+    return {
+        "schema": "sure.trans.fixture_manifest.v1",
+        "status": "ready",
+        "model_id": resolved["model_name"],
+        "model_name": resolved["model_name"],
+        "model_dir": str(run_dir),
+        "task_type": "sv",
+        "source_dir": str(source_dir),
+        "staged_dir": str(staged_dir),
+        "gt_jsonl": str(gt_jsonl),
+        "samples": samples,
+        "source_path": str(primary_source),
+        "staged_path": str(primary_staged),
+        "sha256": sha256(primary_staged),
+        "gt_sha256": sha256(gt_jsonl),
+        "trial_manifest": str(trial_manifest_path),
+        "trial_manifest_sha256": sha256(trial_manifest_path),
+        "trials_file": str(trials_file),
+        "trials_sha256": sha256(trials_file),
+        "provenance": str(provenance_path),
+        "provenance_sha256": sha256(provenance_path),
+        "size_bytes": primary_staged.stat().st_size,
+        "sample_count": len(samples),
+        "link_policy": "copy",
+        "annotation_source": {
+            "type": "task_registry_fixture",
+            "source_path": str(source_dir / "gt.jsonl"),
+            "staged_path": str(gt_jsonl),
+            "fallback": False,
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
@@ -82,8 +231,14 @@ def main() -> int:
     run_dir = Path(args.run_dir).resolve()
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
-    source = choose_fixture(resolved).resolve()
     task = str(resolved["task_type"]).replace("-", "_").lower()
+    if task == "sv":
+        payload = prepare_sv_fixture(resolved, run_dir)
+        output = artifacts / "fixture_manifest.json"
+        output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(output)
+        return 0
+    source = choose_fixture(resolved).resolve()
     staged_dir = run_dir / "fixture" / task
     clear_directory(staged_dir, run_dir / "fixture")
     destination = staged_dir / source.name

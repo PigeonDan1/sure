@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import run_docker_build  # noqa: E402
 import run_trans_validate  # noqa: E402
 import mcp_smoke  # noqa: E402
+import materialize_trans_inputs  # noqa: E402
 import package_python_runtime  # noqa: E402
 import prepare_fixture  # noqa: E402
 import scaffold_adapter  # noqa: E402
@@ -220,6 +221,66 @@ class TransScriptsTest(unittest.TestCase):
             )
             self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
 
+    def test_sv_task_contract_comes_from_the_shared_registry(self) -> None:
+        task = materialize_trans_inputs.resolve_task_type("SV", Path("unused.py"), Path("unused"))
+        tool_name, input_schema = scaffold_adapter.tool_contract(task)
+        io_contract = scaffold_adapter.io_contract_for(task)
+
+        self.assertEqual(task, "sv")
+        self.assertEqual(tool_name, "embed_speaker")
+        self.assertEqual(input_schema["required"], ["audio_path"])
+        self.assertEqual(io_contract["primary_field"], "embedding")
+        self.assertEqual(io_contract["output"], {"embedding": "number[]"})
+
+    def test_sv_fixture_preserves_trials_through_bundle_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = root / "run"
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir(parents=True)
+            (artifacts / "trans_input_resolved.json").write_text(
+                json.dumps({"model_name": "example__sv", "task_type": "sv"}) + "\n",
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "prepare_fixture.py"), "--run-dir", str(run_dir)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            prepared = json.loads((artifacts / "fixture_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(prepared["sample_count"], 4)
+            self.assertEqual(prepared["annotation_source"]["type"], "task_registry_fixture")
+            self.assertEqual({sample["speaker_id"] for sample in prepared["samples"]}, {"1089", "1580"})
+            for name in ("gt.jsonl", "trial_manifest.json", "trials.tsv", "provenance.json"):
+                self.assertTrue((run_dir / "fixture" / "sv" / name).is_file())
+
+            accepted = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS_DIR / "check_artifact.py"),
+                    "--run-dir",
+                    str(run_dir),
+                    "--produces",
+                    str(artifacts / "fixture_manifest.json"),
+                    "--kind",
+                    "fixture",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+
+            model_dir = root / "models" / "example__sv"
+            model_dir.mkdir(parents=True)
+            finalize_trans_bundle.stage_fixture(run_dir, model_dir, {"task_type": "sv"})
+            finalized = json.loads((artifacts / "fixture_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(finalized["sample_count"], 4)
+            self.assertEqual(Path(finalized["staged_dir"]), model_dir / "fixture" / "sv")
+            self.assertEqual(Path(finalized["trial_manifest"]), model_dir / "fixture" / "sv" / "trial_manifest.json")
+            self.assertTrue((model_dir / "fixture" / "sv" / "trials.tsv").is_file())
+            finalize_trans_bundle.validate_fixture_manifest(finalized)
+
     def test_ground_truth_requires_a_reference_sidecar(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -279,6 +340,7 @@ class TransScriptsTest(unittest.TestCase):
         self.assertEqual(mcp_smoke.primary_output_field("transcribe_audio"), "text")
         self.assertEqual(mcp_smoke.primary_output_field("synthesize_speech"), "audio_path")
         self.assertEqual(mcp_smoke.primary_output_field("convert_voice"), "audio_path")
+        self.assertEqual(mcp_smoke.primary_output_field("embed_speaker"), "embedding")
 
     def test_generated_audio_output_must_name_a_real_non_empty_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -293,6 +355,10 @@ class TransScriptsTest(unittest.TestCase):
             self.assertTrue(mcp_smoke.output_is_nonempty("audio_path", str(filled)))
             self.assertFalse(mcp_smoke.output_is_nonempty("audio_path", str(empty)))
             self.assertFalse(mcp_smoke.output_is_nonempty("audio_path", str(root / "absent.wav")))
+            self.assertTrue(mcp_smoke.output_is_nonempty("embedding", [0.1, -0.2]))
+            self.assertFalse(mcp_smoke.output_is_nonempty("embedding", []))
+            self.assertFalse(mcp_smoke.output_is_nonempty("embedding", [float("nan")]))
+            self.assertFalse(mcp_smoke.output_is_nonempty("embedding", [True]))
 
     def test_bundle_writes_reject_symlinked_destination_parents(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -700,6 +766,302 @@ class TransScriptsTest(unittest.TestCase):
                 text=True,
             )
 
+    def test_uv_and_conda_registry_inputs_produce_valid_build_plans(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            model = root / "model"
+            model.mkdir()
+            for backend, dependency_name, dependency_content in (
+                ("uv", "requirements.txt", "torch==2.7.0\n"),
+                ("conda", "environment.yml", "name: source\ndependencies:\n  - python=3.11\n  - pytorch\n"),
+            ):
+                with self.subTest(backend=backend):
+                    source = root / backend
+                    run_dir = root / f"run-{backend}"
+                    source.mkdir()
+                    entrypoint = source / "infer.py"
+                    dependency = source / dependency_name
+                    entrypoint.write_text("import torch\n", encoding="utf-8")
+                    dependency.write_text(dependency_content, encoding="utf-8")
+                    dependency_flag = "--environment-file" if backend == "conda" else "--dependency-file"
+                    subprocess.run(
+                        [
+                            sys.executable,
+                            str(SCRIPTS_DIR / "materialize_trans_inputs.py"),
+                            "--preferred-backend", backend,
+                            dependency_flag, str(dependency),
+                            "--package", "docker-registry",
+                            "--model", str(model),
+                            "--inference-entrypoint", str(entrypoint),
+                            "--build-context", str(source),
+                            "--framework", "pytorch",
+                            "--model-framework", "custom",
+                            "--model-name", f"example__{backend}-registry",
+                            "--task-type", "asr",
+                            "--device", "cpu",
+                            "--image-version", "0.1.0",
+                            "--run-dir", str(run_dir),
+                            "--repo-root", str(root),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    artifacts = run_dir / "artifacts"
+                    resolved_path = artifacts / "trans_input_resolved.json"
+                    resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+                    self.assertEqual(resolved["source_kind"], "python")
+                    self.assertEqual(resolved["backend_hint"], backend)
+                    self.assertEqual(resolved["execution_surface"], "local_docker")
+                    self.assertIsNone(resolved["python_executable"])
+                    self.assertNotIn("source_image", resolved["container_delivery"])
+                    subprocess.run(
+                        [
+                            sys.executable, str(SCRIPTS_DIR / "check_artifact.py"),
+                            "--run-dir", str(run_dir), "--produces", str(resolved_path), "--kind", "input",
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    choice = {
+                        "backend": backend,
+                        "preferred_backend": backend,
+                        "choice_reason": "explicit preferred_backend",
+                        "evidence": [str(dependency)],
+                        "package_profile": "docker-registry",
+                    }
+                    (artifacts / "backend_choice.json").write_text(
+                        json.dumps(choice) + "\n", encoding="utf-8"
+                    )
+                    source_runtime = {
+                        "mode": "materialize",
+                        "python_executable": None,
+                        "dependency_file": str(dependency),
+                        "environment_dir": str(run_dir / "source-runtime" / backend),
+                        "lockfile_output": str(artifacts / "source-requirements.lock") if backend == "uv" else None,
+                    }
+                    plan = {
+                        "model_name": resolved["model_name"],
+                        "model_dir": resolved["model_dir"],
+                        "backend": backend,
+                        "package_profile": "docker-registry",
+                        "source_runtime": source_runtime,
+                        "container_delivery": {
+                            "dockerfile_path": str(run_dir / "adapter" / "Dockerfile.sure"),
+                            "target_image": resolved["container_delivery"]["target_image"],
+                            "registry_required": True,
+                            "model_mount_read_only": True,
+                            "result_mount_separate": True,
+                        },
+                        "steps": [
+                            {"state": "source", "action": f"materialize and validate {backend} runtime"},
+                            {"state": "adapter", "action": "complete adapter Dockerfile"},
+                            {"state": "image", "action": "docker build adapter image"},
+                            {"state": "registry", "action": "docker push to registry"},
+                            {"state": "verify", "action": "pull sha256 digest and verify"},
+                        ],
+                        "blockers": [],
+                    }
+                    plan_path = artifacts / "build_plan.json"
+                    plan_path.write_text(json.dumps(plan) + "\n", encoding="utf-8")
+                    subprocess.run(
+                        [
+                            sys.executable, str(SCRIPTS_DIR / "check_build_plan.py"),
+                            "--run-dir", str(run_dir), "--produces", str(plan_path),
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+
+    def test_uv_and_conda_materialization_stays_under_the_run_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for backend, dependency_name, dependency_content in (
+                ("uv", "pyproject.toml", "[project]\nname='demo'\nversion='0.1.0'\ndependencies=[]\n"),
+                ("conda", "environment.yml", "name: source\ndependencies:\n  - python=3.11\n"),
+            ):
+                with self.subTest(backend=backend):
+                    run_dir = root / f"run-{backend}"
+                    artifacts = run_dir / "artifacts"
+                    source = root / f"source-{backend}"
+                    artifacts.mkdir(parents=True)
+                    source.mkdir()
+                    dependency = source / dependency_name
+                    dependency.write_text(dependency_content, encoding="utf-8")
+                    environment_dir = run_dir / "source-runtime" / backend
+                    lockfile_output = artifacts / "source-requirements.lock"
+                    resolved = {
+                        "source_kind": "python",
+                        "backend_hint": backend,
+                        "build_context": str(source),
+                        "dependency_file": str(dependency),
+                    }
+                    (artifacts / "backend_choice.json").write_text(
+                        json.dumps({"backend": backend}) + "\n", encoding="utf-8"
+                    )
+                    (artifacts / "build_plan.json").write_text(
+                        json.dumps({
+                            "backend": backend,
+                            "source_runtime": {
+                                "mode": "materialize",
+                                "dependency_file": str(dependency),
+                                "environment_dir": str(environment_dir),
+                                "lockfile_output": str(lockfile_output) if backend == "uv" else None,
+                            },
+                        }) + "\n",
+                        encoding="utf-8",
+                    )
+
+                    def execute(command: list[str], _timeout: float, cwd: Path | None = None) -> dict:
+                        self.assertEqual(cwd, source)
+                        if "--output-file" in command:
+                            output = Path(command[command.index("--output-file") + 1])
+                            output.write_text("demo==1.0 --hash=sha256:" + "a" * 64 + "\n", encoding="utf-8")
+                        if command[1:2] == ["venv"] or command[1:4] == ["env", "create", "--prefix"]:
+                            python_path = run_docker_build.environment_python(environment_dir)
+                            python_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(sys.executable, python_path)
+                        return {"command": command, "exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1}
+
+                    with mock.patch.object(run_docker_build, "runtime_tool", return_value=backend), mock.patch.object(
+                        run_docker_build, "execute", side_effect=execute
+                    ):
+                        result = run_docker_build.materialize_python_runtime(
+                            run_dir, artifacts, resolved, 30
+                        )
+                    self.assertEqual(result["backend"], backend)
+                    self.assertEqual(result["runtime_mode"], "materialize")
+                    self.assertTrue(Path(result["python_executable"]).is_relative_to(run_dir))
+                    self.assertTrue(Path(result["lockfile"]).is_file())
+                    self.assertTrue(Path(result["source_image_log_path"]).is_file())
+
+    def test_uv_and_conda_registry_scaffolds_preserve_agent_dockerfile_edits(self) -> None:
+        harness = {
+            "runtime_id": "sure-harness-test",
+            "lock_sha256": "e" * 64,
+            "python_executable": "/opt/sure-harness/sure-harness-test/bin/python",
+            "manifest_path": "/opt/sure-harness/sure-harness-test/runtime-manifest.json",
+            "runtime_root": "/opt/sure-harness/sure-harness-test",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for backend, dependency_name, dependency_content, base_image in (
+                ("uv", "source-requirements.lock", "demo==1.0 --hash=sha256:" + "a" * 64 + "\n", "python:3.11.10-slim"),
+                ("conda", "source-environment.yml", "name: source\ndependencies:\n  - python=3.11\n", "continuumio/miniconda3:24.9.2-0"),
+            ):
+                with self.subTest(backend=backend):
+                    run_dir = root / f"run-{backend}"
+                    artifacts = run_dir / "artifacts"
+                    source = root / f"source-{backend}"
+                    model_dir = root / "models" / f"example__{backend}"
+                    artifacts.mkdir(parents=True)
+                    source.mkdir()
+                    dependency = source / dependency_name
+                    entrypoint = source / "infer.py"
+                    dependency.write_text(dependency_content, encoding="utf-8")
+                    entrypoint.write_text("import torch\n", encoding="utf-8")
+                    target_image = f"registry.example/example/{backend}:0.1.0"
+                    (artifacts / "trans_input_resolved.json").write_text(
+                        json.dumps({
+                            "source_kind": "python",
+                            "backend_hint": backend,
+                            "package_profile": "docker-registry",
+                            "build_context": str(source),
+                            "model_name": f"example__{backend}",
+                            "model_dir": str(model_dir),
+                            "model_mount_target": f"/models/example__{backend}",
+                            "task_type": "asr",
+                            "framework": "pytorch",
+                            "model_framework": "custom",
+                            "inference_entrypoint": str(entrypoint),
+                            "container_delivery": {"target_image": target_image},
+                        }) + "\n",
+                        encoding="utf-8",
+                    )
+                    (artifacts / "source_image_result.json").write_text(
+                        json.dumps({
+                            "status": "passed",
+                            "source_kind": "python",
+                            "backend": backend,
+                            "python_executable": str(Path(sys.executable).resolve()),
+                            "lockfile": str(dependency),
+                            "lockfile_sha256": hashlib.sha256(dependency.read_bytes()).hexdigest(),
+                        }) + "\n",
+                        encoding="utf-8",
+                    )
+                    argv = ["scaffold_adapter.py", "--run-dir", str(run_dir)]
+                    with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                        scaffold_adapter, "harness_image_binding", return_value=harness
+                    ), mock.patch.object(
+                        scaffold_adapter, "harness_runtime_build_context", return_value="directory"
+                    ):
+                        self.assertEqual(scaffold_adapter.main(), 0)
+                    adapter = run_dir / "adapter"
+                    dockerfile = adapter / "Dockerfile.sure"
+                    draft = dockerfile.read_text(encoding="utf-8")
+                    self.assertIn("SURE_TRANS_TODO", draft)
+                    self.assertEqual(
+                        json.loads((artifacts / "adapter_manifest.json").read_text(encoding="utf-8"))["status"],
+                        "draft",
+                    )
+                    completed = "\n".join(
+                        line for line in draft.replace(draft.splitlines()[1], f"FROM {base_image}").splitlines()
+                        if "SURE_TRANS_TODO" not in line
+                    ) + "\n# agent-completed\n"
+                    dockerfile.write_text(completed, encoding="utf-8")
+                    (adapter / "model.py").write_text(
+                        "class ModelWrapper:\n"
+                        "    def __init__(self, config=None): self.model = None\n"
+                        "    def load(self): self.model = object()\n"
+                        "    def predict(self, input_data): return {'text': 'ok'}\n"
+                        "    def healthcheck(self): return {'status': 'ready'}\n",
+                        encoding="utf-8",
+                    )
+                    with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                        scaffold_adapter, "harness_image_binding", return_value=harness
+                    ), mock.patch.object(
+                        scaffold_adapter, "harness_runtime_build_context", return_value="directory"
+                    ):
+                        self.assertEqual(scaffold_adapter.main(), 0)
+                    self.assertIn("# agent-completed", dockerfile.read_text(encoding="utf-8"))
+                    manifest_path = artifacts / "adapter_manifest.json"
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    self.assertEqual(manifest["status"], "ready")
+                    subprocess.run(
+                        [
+                            sys.executable, str(SCRIPTS_DIR / "check_artifact.py"),
+                            "--run-dir", str(run_dir), "--produces", str(manifest_path), "--kind", "adapter",
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    adapter_image = artifacts / "adapter_image_result.json"
+                    adapter_image.write_text(
+                        json.dumps({
+                            "status": "passed",
+                            "runtime_kind": "container",
+                            "base_image": base_image,
+                            "target_image": target_image,
+                            "image_id": "sha256:" + "b" * 64,
+                            "server_command": manifest["server_command"],
+                            "working_dir": manifest["working_dir"],
+                        }) + "\n",
+                        encoding="utf-8",
+                    )
+                    subprocess.run(
+                        [
+                            sys.executable, str(SCRIPTS_DIR / "check_artifact.py"),
+                            "--run-dir", str(run_dir), "--produces", str(adapter_image), "--kind", "adapter_image",
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+
     def test_python_package_materializes_a_portable_runtime_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -718,6 +1080,13 @@ class TransScriptsTest(unittest.TestCase):
                 "lockfile": str(lockfile),
                 "model_dir": str(model_dir),
             }) + "\n", encoding="utf-8")
+            (artifacts / "backend_choice.json").write_text(
+                json.dumps({"backend": "uv"}) + "\n", encoding="utf-8"
+            )
+            (artifacts / "source_image_result.json").write_text(
+                json.dumps({"python_executable": sys.executable, "lockfile": str(lockfile)}) + "\n",
+                encoding="utf-8",
+            )
             adapter_files = {}
             for key, name in {
                 "model_py": "model.py", "init_py": "__init__.py",
@@ -941,6 +1310,8 @@ class TransScriptsTest(unittest.TestCase):
             }) + "\n", encoding="utf-8")
             (artifacts / "source_image_result.json").write_text(json.dumps({
                 "status": "passed", "source_kind": "python",
+                "python_executable": str(Path(sys.executable).resolve()),
+                "lockfile": str(lockfile),
             }) + "\n", encoding="utf-8")
             (artifacts / "execution_compat.json").write_text(json.dumps({
                 "status": "ready", "compat_ok": True, "selected_device": "cpu",
@@ -1298,6 +1669,41 @@ class TransScriptsTest(unittest.TestCase):
             process = self._run_equivalence(run_dir, result)
             self.assertNotEqual(process.returncode, 0)
             self.assertIn("baseline_output", (process.stdout + process.stderr))
+
+    def test_sv_equivalence_uses_numeric_tolerance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir, result = self._equivalence_run_dir(
+                Path(temporary),
+                {"embedding": [0.1, 0.2, -0.3]},
+                {"embedding": [0.10000001, 0.19999999, -0.3]},
+            )
+            (run_dir / "artifacts" / "adapter_manifest.json").write_text(
+                json.dumps({"io_contract": {"primary_field": "embedding"}}) + "\n",
+                encoding="utf-8",
+            )
+            process = self._run_equivalence(run_dir, result)
+            self.assertEqual(process.returncode, 0, process.stderr)
+            payload = json.loads(result.read_text(encoding="utf-8"))
+            self.assertTrue(payload["equivalent"])
+            self.assertEqual(payload["comparison_evidence"]["policy"], "vector_allclose")
+            self.assertEqual(payload["comparison_evidence"]["dimension"], 3)
+
+    def test_sv_equivalence_rejects_dimension_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir, result = self._equivalence_run_dir(
+                Path(temporary),
+                {"embedding": [0.1, 0.2]},
+                {"embedding": [0.1]},
+            )
+            (run_dir / "artifacts" / "adapter_manifest.json").write_text(
+                json.dumps({"io_contract": {"primary_field": "embedding"}}) + "\n",
+                encoding="utf-8",
+            )
+            process = self._run_equivalence(run_dir, result)
+            self.assertNotEqual(process.returncode, 0)
+            payload = json.loads(result.read_text(encoding="utf-8"))
+            self.assertFalse(payload["equivalent"])
+            self.assertIn("dimensions differ", payload["error"])
 
     def test_execution_compat_cpu_device_stays_local(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1887,6 +2293,8 @@ class TransScriptsTest(unittest.TestCase):
             image = "registry.example/demo:latest"
             image_ref = f"registry.example/demo@{digest}"
             values = {
+                "backend_choice.json": {"backend": "docker", "package_profile": "docker-registry"},
+                "build_plan.json": {"model_name": "demo", "model_dir": str(root / "sure" / "models" / "demo"), "backend": "docker", "package_profile": "docker-registry", "source_runtime": {"mode": "container"}, "steps": [{"state": "build", "action": "docker build"}]},
                 "source_image_result.json": {"schema": "sure.trans.source_image_result.v1", "status": "passed", "image": "demo-source", "image_id": "sha256:" + "b" * 64, "dockerfile": str(delivery / "Dockerfile"), "dockerfile_sha256": "c" * 64, "build_context": str(delivery), "build_command": ["docker", "build"], "build_executed": True, "build_exit_code": 0, "build_log_path": str(artifacts / "source_image_build.log"), "source_image_policy": "build"},
                 "original_inference_result.json": {"status": "passed", "input": "sample.wav", "output": {"text": "ok"}, "model_loaded": True, "inference_passed": True},
                 "execution_compat.json": {"schema": "sure.trans.execution_compat.v1", "status": "ready", "compat_ok": True, "selected_device": "cpu"},

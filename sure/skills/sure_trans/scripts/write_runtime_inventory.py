@@ -29,6 +29,23 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def portable_source_python(path: object) -> str:
+    """Record the source interpreter without leaking host paths into bundles.
+
+    The uv/conda source interpreter is always a host path (a user-supplied
+    python or a run-materialized venv whose bin/python symlinks outside the
+    run directory), and sealed bundle sidecars must stay host-independent —
+    the deployment gate rejects legacy absolute paths. Describe it portably
+    and keep the exact executable in the run's own source_image_result.json.
+    """
+    raw = str(path or "")
+    if not raw:
+        return raw
+    if PurePosixPath(raw).is_absolute():
+        return "run-workspace source interpreter; host path recorded in run artifacts/source_image_result.json"
+    return raw
+
+
 def identity_evidence(build_context: str) -> dict:
     """What the inventory can honestly claim about the embedded Harness Runtime.
 
@@ -66,6 +83,8 @@ def main() -> int:
     registry = read_object(artifacts / "docker_registry_result.json")
     adapter_manifest = read_object(artifacts / "adapter_manifest.json")
     runtime_binding = read_object_optional(artifacts / "runtime_binding.json")
+    source_runtime = read_object(artifacts / "source_image_result.json")
+    source_backend = str(source_runtime.get("backend") or resolved.get("backend_hint") or "docker")
     validation_files = {
         "import": "import_result.json",
         "load": "load_result.json",
@@ -78,9 +97,12 @@ def main() -> int:
     if registry.get("status") != "passed" or any(value.get("status") != "passed" for value in validations.values()):
         raise ValueError("packaging and every adapter validation stage must pass before writing runtime inventory")
     mount_target = str(resolved["model_mount_target"])
-    task_type = str(resolved.get("task_type") or "asr").lower()
-    default_tools = {"tts": "synthesize_speech", "vc": "convert_voice", "s2tt": "translate_audio"}
-    tool_name = args.tool_name or default_tools.get(task_type, "transcribe_audio")
+    manifest_tool_name = str(adapter_manifest.get("tool_name") or "")
+    tool_name = args.tool_name or manifest_tool_name
+    if not tool_name:
+        raise ValueError("adapter manifest must declare its task tool name")
+    if args.tool_name and manifest_tool_name and args.tool_name != manifest_tool_name:
+        raise ValueError("--tool-name must match the adapter manifest tool_name")
     if resolved.get("package_profile") == "none":
         manifest = read_object(artifacts / "model_runtime_manifest.json")
         execution = read_object(artifacts / "execution_compat.json")
@@ -109,6 +131,8 @@ def main() -> int:
             },
             "local_runtime": {
                 "purpose": "source_validation_evidence_only", "eligible_for_eval": False,
+                "backend": source_backend,
+                "python_executable": portable_source_python(source_runtime.get("python_executable")),
                 "probe": execution.get("probe", {}),
             },
             "model_runtime": {
@@ -231,8 +255,10 @@ def main() -> int:
         "local_runtime": {
             "purpose": "sure_trans validation workspace only; not an Eval execution surface.",
             "eligible_for_eval": False,
+            "backend": source_backend,
+            "python_executable": portable_source_python(source_runtime.get("python_executable")),
         },
-        "model_runtime": {"required": True, "runtime_type": "container", "python_executable": python_executable, "checks": {name: True for name in validation_files}},
+        "model_runtime": {"required": True, "runtime_type": "container", "backend": source_backend, "python_executable": python_executable, "checks": {name: True for name in validation_files}},
         "harness_runtime": harness_runtime,
         "container_runtime": {
             "required": True,

@@ -1,0 +1,16 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "backend_choice.schema.json",
+	"title": "SURE transformation backend choice",
+	"type": "object",
+	"required": ["backend", "choice_reason", "evidence", "package_profile"],
+	"properties": {
+		"model_name": { "type": "string" },
+		"backend": { "enum": ["uv", "conda", "docker"] },
+		"preferred_backend": { "type": ["string", "null"], "enum": ["uv", "conda", "docker", null] },
+		"choice_reason": { "type": "string", "minLength": 1 },
+		"evidence": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+		"package_profile": { "enum": ["docker-registry", "none"] }
+	},
+	"additionalProperties": false
+}

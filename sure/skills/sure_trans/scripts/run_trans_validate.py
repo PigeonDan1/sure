@@ -239,27 +239,35 @@ def validate_mcp_evidence(evidence_path: Path, tool_name: str) -> str | None:
     return None
 
 
-EQUIVALENCE_POLICIES = ("exact", "normalized_whitespace")
+EQUIVALENCE_POLICIES = ("exact", "normalized_whitespace", "vector_allclose")
 
 
-def output_text(path: Path, primary_field: str) -> str:
-    """Pull the comparable text out of a recorded inference output."""
+def output_value(path: Path, primary_field: str) -> object:
+    """Pull the comparable primary value out of a recorded inference output."""
     raw = path.read_text(encoding="utf-8")
     try:
         value = json.loads(raw)
     except json.JSONDecodeError:
         return raw
-    if isinstance(value, str):
-        return value
     if isinstance(value, dict):
-        field = value.get(primary_field)
-        if isinstance(field, str):
-            return field
-        raise ValueError(
-            f"{path} carries no string {primary_field!r} field to compare; write the adapter "
-            f"io_contract primary field into both recorded outputs"
-        )
-    raise ValueError(f"{path} is neither a string nor an object holding {primary_field!r}")
+        if primary_field not in value:
+            raise ValueError(
+                f"{path} carries no {primary_field!r} field to compare; write the adapter "
+                f"io_contract primary field into both recorded outputs"
+            )
+        return value[primary_field]
+    return value
+
+
+def embedding_vector(value: object, label: str) -> list[float]:
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{label} embedding must be a non-empty numeric array")
+    if any(isinstance(item, bool) or not isinstance(item, (int, float)) for item in value):
+        raise ValueError(f"{label} embedding must contain only numbers")
+    vector = [float(item) for item in value]
+    if not all(math.isfinite(item) for item in vector):
+        raise ValueError(f"{label} embedding must contain only finite numbers")
+    return vector
 
 
 def adapter_primary_field(run_dir: Path) -> str:
@@ -280,13 +288,14 @@ def compare_equivalence_outputs(run_dir: Path, data: dict) -> tuple[dict | None,
     comparison happens here so the verdict rests on the recorded evidence
     rather than on an exit code the agent chooses.
     """
-    policy = str(data.get("comparison_policy") or "normalized_whitespace")
+    primary_field = adapter_primary_field(run_dir)
+    default_policy = "vector_allclose" if primary_field == "embedding" else "normalized_whitespace"
+    policy = str(data.get("comparison_policy") or default_policy)
     if policy not in EQUIVALENCE_POLICIES:
         return None, (
             f"comparison_policy must be one of {list(EQUIVALENCE_POLICIES)}; got {policy!r}"
         )
-    primary_field = adapter_primary_field(run_dir)
-    texts: dict[str, str] = {}
+    values: dict[str, object] = {}
     for key in ("baseline_output", "adapter_output"):
         raw = str(data.get(key) or "")
         path = Path(raw)
@@ -296,22 +305,50 @@ def compare_equivalence_outputs(run_dir: Path, data: dict) -> tuple[dict | None,
                 f"got {raw!r}. Point it at the JSON or text file the run wrote."
             )
         try:
-            texts[key] = output_text(path, primary_field)
+            values[key] = output_value(path, primary_field)
         except ValueError as error:
             return None, str(error)
 
-    def normalized(text: str) -> str:
-        return text if policy == "exact" else " ".join(text.split())
-
-    baseline, adapter = texts["baseline_output"], texts["adapter_output"]
-    match = normalized(baseline) == normalized(adapter)
-    evidence = {
-        "policy": policy,
-        "primary_field": primary_field,
-        "baseline_text": baseline,
-        "adapter_text": adapter,
-        "match": match,
-    }
+    baseline = values["baseline_output"]
+    adapter = values["adapter_output"]
+    evidence: dict = {"policy": policy, "primary_field": primary_field}
+    if policy == "vector_allclose":
+        try:
+            baseline_vector = embedding_vector(baseline, "baseline_output")
+            adapter_vector = embedding_vector(adapter, "adapter_output")
+        except ValueError as error:
+            return None, str(error)
+        if len(baseline_vector) != len(adapter_vector):
+            return None, (
+                "baseline and adapter embedding dimensions differ: "
+                f"{len(baseline_vector)} vs {len(adapter_vector)}"
+            )
+        rtol = float(data.get("rtol", 1e-5))
+        atol = float(data.get("atol", 1e-8))
+        if rtol < 0 or atol < 0 or not math.isfinite(rtol) or not math.isfinite(atol):
+            return None, "vector_allclose rtol and atol must be finite non-negative numbers"
+        differences = [abs(left - right) for left, right in zip(baseline_vector, adapter_vector)]
+        match = all(
+            math.isclose(left, right, rel_tol=rtol, abs_tol=atol)
+            for left, right in zip(baseline_vector, adapter_vector)
+        )
+        evidence.update(
+            {
+                "dimension": len(baseline_vector),
+                "rtol": rtol,
+                "atol": atol,
+                "max_absolute_error": max(differences, default=0.0),
+                "match": match,
+            }
+        )
+    elif policy == "normalized_whitespace":
+        if not isinstance(baseline, str) or not isinstance(adapter, str):
+            return None, "normalized_whitespace equivalence requires string primary outputs"
+        match = " ".join(baseline.split()) == " ".join(adapter.split())
+        evidence.update({"baseline_text": baseline, "adapter_text": adapter, "match": match})
+    else:
+        match = baseline == adapter
+        evidence.update({"baseline_value": baseline, "adapter_value": adapter, "match": match})
     if not match:
         return evidence, (
             f"baseline and adapter outputs differ under {policy}: {baseline!r} vs {adapter!r}"
@@ -497,19 +534,29 @@ def main() -> int:
     resolved_path = run_dir / "artifacts" / "trans_input_resolved.json"
     resolved = read_object(resolved_path) if resolved_path.is_file() else {}
     python_source = resolved.get("source_kind") == "python"
-    if python_source:
+    package_profile = str(resolved.get("package_profile") or ("none" if python_source else "docker-registry"))
+    local_python_validation = python_source and (
+        args.kind == "original_inference" or package_profile == "none"
+    )
+    if local_python_validation:
         if not isinstance(command, list) or not command:
             raise ValueError("Python validation run_command must be an argument list")
-        expected_python = Path(str(resolved.get("python_executable") or "")).resolve()
+        if args.kind == "original_inference":
+            source_runtime = read_object(run_dir / "artifacts" / "source_image_result.json")
+            expected_python = Path(str(source_runtime.get("python_executable") or "")).resolve()
+        else:
+            adapter_manifest = read_object(run_dir / "artifacts" / "adapter_manifest.json")
+            expected_python = Path(str(adapter_manifest.get("python_executable") or "")).resolve()
         if Path(command[0]).resolve() != expected_python:
             raise ValueError(
                 f"Python validation must use the resolved python_executable: {expected_python}"
             )
     env = os.environ.copy()
     selected_device = str(compat.get("selected_device") or "")
-    execution_surface = str(
-        compat.get("execution_surface")
-        or ("vc" if selected_device == "cuda" and not python_source else "local_python" if python_source else "local_docker")
+    execution_surface = (
+        "local_python"
+        if local_python_validation
+        else str(resolved.get("execution_surface") or compat.get("execution_surface") or "local_docker")
     )
     if selected_device:
         env["SURE_DEVICE"] = selected_device
@@ -524,9 +571,9 @@ def main() -> int:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     extra: dict = {}
-    local_cuda = selected_device == "cuda" and execution_surface == "local_docker" and not python_source
+    local_cuda = selected_device == "cuda" and execution_surface == "local_docker" and not local_python_validation
     local_validation_dir: Path | None = None
-    if selected_device == "cuda" and not local_cuda and not (python_source and args.kind == "original_inference"):
+    if selected_device == "cuda" and not local_cuda and not local_python_validation:
         exit_code, extra, rendered = run_vc_validation(
             run_dir, resolved, data, args.kind, run_dir / "artifacts", timeout
         )
@@ -584,7 +631,7 @@ def main() -> int:
             "raise the command timeout, then rerun the gate."
         )
     if args.kind == "mcp":
-        if selected_device == "cuda" and execution_surface == "vc" and not python_source:
+        if selected_device == "cuda" and execution_surface == "vc" and not local_python_validation:
             evidence_path = run_dir / "artifacts" / "vc_logs" / "mcp" / "mcp_smoke.json"
         else:
             evidence_path = Path(str(data.get("protocol_path") or run_dir / "artifacts" / "mcp_smoke.json"))

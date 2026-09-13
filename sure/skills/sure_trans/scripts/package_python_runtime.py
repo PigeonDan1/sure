@@ -86,9 +86,13 @@ def main() -> int:
     resolved = read_object(artifacts / "trans_input_resolved.json")
     if resolved.get("source_kind") != "python" or resolved.get("package_profile") != "none":
         raise ValueError("package_python_runtime.py requires Python input with package=none")
+    backend_choice = read_object(artifacts / "backend_choice.json")
+    if backend_choice.get("backend") != "uv":
+        raise ValueError("package=none requires backend_choice.json backend=uv")
+    source_runtime = read_object(artifacts / "source_image_result.json")
     model_dir = Path(str(resolved["model_dir"])).resolve()
     model_dir.mkdir(parents=True, exist_ok=True)
-    source_lock = Path(str(resolved["lockfile"])).resolve()
+    source_lock = Path(str(source_runtime["lockfile"])).resolve()
     promoted_lock, local_distributions = promote_lockfile(source_lock, model_dir)
     site = load_site_policy(required=True)
     assert site is not None
@@ -97,7 +101,7 @@ def main() -> int:
         raise ValueError("site policy does not allow local Python runtimes")
     contract = materialize_runtime(
         runtime_root=Path(site["policy"]["storage"]["runtime_root"]) / "models",
-        source_python=Path(str(resolved["python_executable"])),
+        source_python=Path(str(source_runtime["python_executable"])),
         lock_path=promoted_lock,
     )
     manifest = {

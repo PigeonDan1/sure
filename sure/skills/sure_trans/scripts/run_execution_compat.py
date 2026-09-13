@@ -119,7 +119,10 @@ def main() -> int:
     vc_payload: dict = {}
     log_path = artifacts / "execution_compat.log"
     if source_kind == "python":
-        command, process, duration_ms = run_python_probe(str(resolved["python_executable"]))
+        python_executable = str(source_image.get("python_executable") or "")
+        if not python_executable:
+            raise ValueError("source runtime Python executable is missing")
+        command, process, duration_ms = run_python_probe(python_executable)
         probe_command = command
         exit_code = process.returncode
         stdout, stderr = process.stdout, process.stderr
@@ -257,6 +260,7 @@ def main() -> int:
         "status": "ready" if not incompatibilities else "blocked",
         "compat_ok": not incompatibilities,
         "execution_surface": execution_surface,
+        "backend": source_image.get("backend") or resolved.get("backend_hint"),
         "requested_device": requested,
         "model_framework": model_framework,
         "transformers_required": transformers_required,
