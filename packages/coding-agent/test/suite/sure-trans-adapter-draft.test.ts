@@ -10,6 +10,8 @@ const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_trans");
 type StatePatchForTest = {
 	message?: string;
 	checkpoint?: { data: CheckpointData };
+	phase?: { status?: string };
+	diagnostics?: Array<{ message?: string; repair?: string }>;
 };
 
 function statePatch(result: { state_patch?: unknown }): StatePatchForTest {
@@ -46,6 +48,7 @@ function ctxWithManifest(name: string, status: string): SureHookContext {
 				source_image_id: `sha256:${"b".repeat(64)}`,
 				container_python_executable: "/usr/local/bin/python",
 				python_executable: "/usr/local/bin/python",
+				tool_name: "embed_speaker",
 				server_command: ["/usr/local/bin/python", "/opt/sure_trans/server.py"],
 				working_dir: "/opt/sure_trans",
 			},
@@ -79,12 +82,15 @@ describe("the adapter manifest the scaffold writes before model.py is implemente
 		expect(patch.checkpoint?.data.retries.generate_adapter ?? 0).toBe(0);
 	});
 
-	it("tells the agent to implement the wrapper", () => {
+	it("keeps tool results visible while telling the agent to implement the wrapper", () => {
 		const ctx = ctxWithManifest("draft-repair", "draft");
 
 		const result = postToolResult(ctx);
+		const patch = statePatch(result);
 
-		expect(result.ok).toBe(false);
-		expect(result.repair).toContain("model.py");
+		expect(result.ok).toBe(true);
+		expect(result.repair).toBeUndefined();
+		expect(patch.phase?.status).toBe("running");
+		expect(patch.diagnostics?.[0]?.repair).toContain("model.py");
 	});
 });

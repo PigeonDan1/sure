@@ -373,6 +373,8 @@ def task_defaults(task: str) -> dict[str, Any]:
         infer_test = f"model.{tool_name}('Hello from the SURE smoke fixture.')"
     elif contract["input_type"] == "audio_pair":
         infer_test = f"model.{tool_name}('<source-audio>', '<reference-audio>')"
+    elif contract["input_type"] == "audio_path_with_keywords":
+        infer_test = f"model.{tool_name}('<audio from {fixture_root}>', '<keywords from fixture>')"
     else:
         infer_test = f"model.{tool_name}('<audio from {fixture_root}>')"
     return {
@@ -731,14 +733,30 @@ def _derive_fixture_and_contract(
                 )
             )
     else:
-        missing_or_weak.extend(fixture_issues or ["missing:fixture"])
+        # Fixture data is prepared by /sure_onboard. Keep feed usable when the
+        # task contract is known but the local registry has no sample yet.
+        missing_or_weak.append("pending:fixture")
         fixture = {
             "fixture_source": "unresolved",
+            "fixture_status": "needs_input",
+            "fixture_contract": {"task_type": task_type, "io_contract": registry_contract},
             "task_specific": True,
             "fallback_allowed": False,
+            "resolution_options": ["model_specific", "web_temporary"],
+            "resolution_reason": "; ".join(fixture_issues or ["official fixture is not registered"]),
         }
         if provider_fixture_hint:
             fixture["provider_fixture_hint"] = provider_fixture_hint
+        field_evidence.append(
+            _field_evidence(
+                "local",
+                "fixture",
+                {"task_type": task_type, "io_contract": registry_contract},
+                "strong",
+                None,
+                "fixture_contract",
+            )
+        )
 
     io_contract = registry_contract
     field_evidence.append(

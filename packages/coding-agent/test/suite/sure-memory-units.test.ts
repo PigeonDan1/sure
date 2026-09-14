@@ -111,10 +111,10 @@ describe("extract_lessons unit (spec §4.1)", () => {
 
 	it("sits between verdict and finalize_model_bundle in sure_trans", () => {
 		const ids = TRANS_UNITS.map((unit) => unit.id);
-		expect(ids.length).toBe(21);
-		expect(ids.indexOf("extract_lessons")).toBe(19);
-		expect(ids[18]).toBe("verdict");
-		expect(ids[20]).toBe("finalize_model_bundle");
+		expect(ids.length).toBe(23);
+		expect(ids.indexOf("extract_lessons")).toBe(21);
+		expect(ids[20]).toBe("verdict");
+		expect(ids[22]).toBe("finalize_model_bundle");
 	});
 
 	it("is defined identically in sure_onboard, sure_infer and sure_eval", () => {

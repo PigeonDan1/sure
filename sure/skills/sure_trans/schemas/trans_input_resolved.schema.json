@@ -4,6 +4,8 @@
 	"required": [
 		"schema",
 		"source_kind",
+		"preferred_backend",
+		"backend_hint",
 		"build_context",
 		"model_path",
 		"inference_entrypoint",
@@ -22,9 +24,12 @@
 	"properties": {
 		"schema": { "const": "sure.trans.input.v2" },
 		"source_kind": { "enum": ["docker", "python"] },
+		"preferred_backend": { "type": ["string", "null"], "enum": ["uv", "conda", "docker", null] },
+		"backend_hint": { "enum": ["uv", "conda", "docker"] },
 		"dockerfile": { "type": ["string", "null"] },
 		"python_executable": { "type": ["string", "null"] },
 		"lockfile": { "type": ["string", "null"] },
+		"dependency_file": { "type": ["string", "null"] },
 		"build_context": { "type": "string" },
 		"model_path": { "type": "string" },
 		"inference_entrypoint": { "type": "string" },
@@ -35,7 +40,7 @@
 		},
 		"model_name": { "type": "string" },
 		"model_dir": { "type": "string" },
-		"task_type": { "enum": ["asr", "s2tt", "tts", "vc"] },
+		"task_type": { "enum": ["asr", "s2tt", "sv", "tts", "vc"] },
 		"fixture_path": { "type": ["string", "null"] },
 		"device": { "enum": ["auto", "cuda", "cpu"] },
 		"execution_request": { "enum": ["local", "vc"] },
@@ -90,10 +95,10 @@
 				}
 			},
 			"else": {
-				"required": ["python_executable", "lockfile"],
+				"required": ["python_executable", "dependency_file"],
 				"properties": {
-					"python_executable": { "type": "string" },
-					"lockfile": { "type": "string" }
+					"python_executable": { "type": ["string", "null"] },
+					"dependency_file": { "type": "string" }
 				}
 			}
 		},
@@ -107,6 +112,10 @@
 					"container_delivery": { "type": "object" }
 				}
 			}
+		},
+		{
+			"if": { "properties": { "package_profile": { "const": "none" } } },
+			"then": { "properties": { "backend_hint": { "const": "uv" } } }
 		}
 	],
 	"additionalProperties": true

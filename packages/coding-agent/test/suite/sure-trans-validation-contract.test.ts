@@ -32,3 +32,32 @@ describe("the validation artifacts SKILL.md asks the agent to write", () => {
 		}
 	}
 });
+
+describe("sure_trans SV state-machine contract", () => {
+	it("accepts SV as a transformation task", () => {
+		const unit = TRANS_UNITS.find((candidate) => candidate.id === "load_trans_input");
+		expect(unit?.allowedValues?.task_type).toContain("sv");
+	});
+
+	it("leaves task-specific fixture fields to the fixture schema", () => {
+		const unit = TRANS_UNITS.find((candidate) => candidate.id === "prepare_fixture");
+		expect(unit?.requiredFields).not.toContain("expected_sha256");
+	});
+});
+
+describe("sure_trans backend planning contract", () => {
+	it("mirrors the onboard plan and build_plan node shape", () => {
+		const plan = TRANS_UNITS.find((candidate) => candidate.id === "plan");
+		const buildPlan = TRANS_UNITS.find((candidate) => candidate.id === "build_plan");
+		expect(TRANS_UNITS).toHaveLength(23);
+		expect(plan?.kind).toBe("linear");
+		expect(plan?.allowedValues?.backend).toEqual(["uv", "conda", "docker"]);
+		expect(buildPlan?.kind).toBe("gate");
+		expect(buildPlan?.gateScript).toBe("check_build_plan.py");
+	});
+
+	it("accepts an optional preferred_backend on the resolved input", () => {
+		const unit = TRANS_UNITS.find((candidate) => candidate.id === "load_trans_input");
+		expect(unit?.allowedValues?.preferred_backend).toEqual(["uv", "conda", "docker", null]);
+	});
+});

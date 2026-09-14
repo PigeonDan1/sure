@@ -140,13 +140,16 @@ function gateArtifactDigest(ctx: SureHookContext, unit: Unit, artifact: unknown)
 }
 
 export function preStart(ctx: SureHookContext): SureHookResult {
-	// Seven of the twenty-one units drive docker straight from bash, so the shadowing
+	// Several units drive docker straight from bash, so the shadowing
 	// has to be cleared on the environment itself, not just in the skill scripts.
 	demoteAgentBinDir(process.env, agentBinDir());
 	const args = parseArgs(ctx.args);
 	const dockerfile = args.dockerfile;
 	const pythonExecutable = args.python_executable;
-	const lockfile = args.lockfile;
+	const dependencyFiles = [args.lockfile, args.dependency_file, args.environment_file].filter(
+		(value): value is string => value !== undefined,
+	);
+	const preferredBackend = args.preferred_backend;
 	const packageProfile = args.package ?? args.package_profile ?? "docker-registry";
 	const modelPath = args.model ?? args.model_path;
 	const inferenceEntrypoint = args.inference_entrypoint ?? args.inference_code;
@@ -168,17 +171,26 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 			"TRANS_INPUT_MISSING",
 		);
 	}
-	if (Boolean(dockerfile) === Boolean(pythonExecutable)) {
-		return failure("Provide exactly one of dockerfile or python_executable", "TRANS_INPUT_INVALID");
+	if (dockerfile && pythonExecutable) {
+		return failure("Provide at most one of dockerfile or python_executable", "TRANS_INPUT_INVALID");
 	}
-	if (pythonExecutable && !lockfile) {
-		return failure("Python input requires lockfile", "TRANS_INPUT_MISSING");
+	if (dependencyFiles.length > 1) {
+		return failure("Use only one of lockfile, dependency_file, or environment_file", "TRANS_INPUT_INVALID");
+	}
+	if (preferredBackend && !new Set(["uv", "conda", "docker"]).has(preferredBackend)) {
+		return failure("preferred_backend must be uv, conda, or docker", "TRANS_INPUT_INVALID");
+	}
+	if (dockerfile && preferredBackend && preferredBackend !== "docker") {
+		return failure("A Dockerfile input requires preferred_backend=docker", "TRANS_INPUT_INVALID");
+	}
+	if (preferredBackend === "docker" && !dockerfile) {
+		return failure("preferred_backend=docker requires dockerfile", "TRANS_INPUT_MISSING");
 	}
 	if (!new Set(["docker-registry", "none"]).has(packageProfile)) {
 		return failure("package must be docker-registry or none", "TRANS_INPUT_INVALID");
 	}
-	if (dockerfile && packageProfile === "none") {
-		return failure("package=none requires Python input", "TRANS_INPUT_INVALID");
+	if (packageProfile === "none" && preferredBackend && preferredBackend !== "uv") {
+		return failure("package=none requires preferred_backend=uv", "TRANS_INPUT_INVALID");
 	}
 	if (!new Set(["pytorch", "torch"]).has(args.framework?.toLowerCase() ?? "")) {
 		return failure("framework must be pytorch (torch is accepted as an alias)", "TRANS_INPUT_INVALID");
@@ -190,12 +202,20 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		);
 	}
 	const inputPaths: Array<readonly [string, string | undefined]> = [
-		[dockerfile ? "dockerfile" : "python_executable", dockerfile ?? pythonExecutable],
 		["model", modelPath],
 		["inference_entrypoint", inferenceEntrypoint],
 	];
+	if (dockerfile) {
+		inputPaths.push(["dockerfile", dockerfile]);
+	}
 	if (pythonExecutable) {
-		inputPaths.push(["lockfile", lockfile]);
+		inputPaths.push(["python_executable", pythonExecutable]);
+	}
+	if (dependencyFiles[0]) {
+		inputPaths.push(["dependency_file", dependencyFiles[0]]);
+	}
+	if (args.build_context) {
+		inputPaths.push(["build_context", args.build_context]);
 	}
 	for (const [name, value] of inputPaths) {
 		if (!value || !isAbsolute(value) || !existsSync(value)) {
@@ -203,7 +223,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		}
 	}
 	const device = args.device ?? "auto";
-	const execution = args.execution ?? (device === "cpu" || pythonExecutable ? "local" : "vc");
+	const execution = args.execution ?? (device === "cpu" || packageProfile === "none" ? "local" : "vc");
 	const vcPartition = args.vc_partition;
 	const vcMemoryGb = args.vc_memory_gb;
 	const vcGpus = args.vc_gpus;
@@ -211,13 +231,13 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (!new Set(["local", "vc"]).has(execution)) {
 		return failure("execution must be local or vc", "TRANS_INPUT_INVALID");
 	}
-	if (pythonExecutable && execution === "vc") {
-		return failure("execution=vc is not supported for Python input", "TRANS_INPUT_INVALID");
+	if (packageProfile === "none" && execution === "vc") {
+		return failure("execution=vc requires package=docker-registry", "TRANS_INPUT_INVALID");
 	}
-	if (dockerfile && device === "cpu" && execution === "vc") {
-		return failure("execution=vc requires device=auto or cuda for Docker input", "TRANS_INPUT_INVALID");
+	if (device === "cpu" && execution === "vc") {
+		return failure("execution=vc requires device=auto or cuda", "TRANS_INPUT_INVALID");
 	}
-	if (args.execution === "local" && dockerfile && device !== "cpu") {
+	if (args.execution === "local" && packageProfile === "docker-registry" && device !== "cpu") {
 		const policy = requireSitePolicy().policy.execution;
 		if (!policy.surfaces.includes("local") || !policy.local_runtimes.includes("container")) {
 			return failure("execution=local requires local + container in the active site policy", "TRANS_INPUT_INVALID");
@@ -261,7 +281,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 			harnessRole: "Input materialization, dependency inspection, artifact validation, and state-machine gates.",
 			modelRuntimeReason: dockerfile
 				? "Model inference runs in the source and adapter containers built from the supplied Dockerfile."
-				: "Model inference starts from the supplied local Python runtime and locked dependencies.",
+				: "Model inference starts from a supplied or materialized uv/conda Python runtime.",
 			evaluationRuntime: { reason: "sure_trans performs no evaluation." },
 		});
 	} catch (error) {
@@ -296,7 +316,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 			phase: phaseFor(findUnit(checkpoint.data.currentUnit) ?? FIRST_UNIT, "running"),
 			message:
 				`SURE model transformation skill loaded with Harness Runtime ${runtime.contract.runtime_id}.` +
-				(device === "cpu" || pythonExecutable
+				(device === "cpu" || packageProfile === "none"
 					? ""
 					: execution === "local"
 						? " GPU validation runs in local Docker through the site-approved NVIDIA runtime."
@@ -309,7 +329,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 					name: "Skill runtime binding",
 					path: runtimeBindingPath,
 					status: "ready",
-					summary: `Harness Runtime controls gates; source execution is ${dockerfile ? "container" : "local Python"}.`,
+					summary: `Harness Runtime controls gates; source execution is ${dockerfile ? "container" : "uv/conda Python"}.`,
 				},
 			],
 			checkpoint,
@@ -475,8 +495,10 @@ function stayOnUnit(unit: Unit, checkpoint: RunCheckpoint, result: GateResult): 
 	const reason = result.reason ?? "artifact is still in progress";
 	const repair = result.repair ?? `Unit "${unit.id}" has not finished ${unit.produces} yet.`;
 	return {
-		ok: false,
-		repair,
+		// A draft is a documented intermediate state, not a failed tool call. Keep
+		// the warning in the state patch while allowing the agent to inspect and
+		// edit the scaffold using the original tool result.
+		ok: true,
 		state_patch: {
 			phase: phaseFor(unit, "running"),
 			message: `Unit "${unit.id}" is not finished yet: ${reason}`,

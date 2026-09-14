@@ -1076,7 +1076,10 @@ class TransValidateVcTest(unittest.TestCase):
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
             digest = "sha256:" + "e" * 64
-            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cuda", "execution_surface": "vc"},
+            )
             write_artifact(
                 artifacts / "trans_input_resolved.json",
                 {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test"},
@@ -1125,7 +1128,10 @@ class TransValidateVcTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
-            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cuda", "execution_surface": "vc"},
+            )
             write_artifact(
                 artifacts / "trans_input_resolved.json",
                 {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test"},
@@ -1166,7 +1172,10 @@ class TransValidateVcTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
-            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cuda", "execution_surface": "vc"},
+            )
             write_artifact(
                 artifacts / "trans_input_resolved.json",
                 {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test"},
@@ -1209,7 +1218,10 @@ class TransValidateVcTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
-            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cuda", "execution_surface": "vc"},
+            )
             write_artifact(
                 artifacts / "trans_input_resolved.json",
                 {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test"},
@@ -1253,7 +1265,10 @@ class TransValidateVcTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
-            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cuda", "execution_surface": "vc"},
+            )
             write_artifact(
                 artifacts / "trans_input_resolved.json",
                 {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test"},
@@ -1296,7 +1311,10 @@ class TransValidateVcTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
-            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cuda", "execution_surface": "vc"},
+            )
             write_artifact(
                 artifacts / "trans_input_resolved.json",
                 {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test", "vc_memory_gb": 64},
@@ -1335,7 +1353,10 @@ class TransValidateVcTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
-            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cuda", "execution_surface": "vc"},
+            )
             write_artifact(
                 artifacts / "trans_input_resolved.json",
                 {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test", "vc_memory_gb": 64},
@@ -1365,7 +1386,10 @@ class TransValidateVcTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
-            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cuda", "execution_surface": "vc"},
+            )
             write_artifact(
                 artifacts / "trans_input_resolved.json",
                 {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test", "vc_memory_gb": 64},
@@ -1410,7 +1434,10 @@ class TransValidateVcTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
             artifacts = run_dir / "artifacts"
-            write_artifact(artifacts / "execution_compat.json", {"status": "ready", "compat_ok": True, "selected_device": "cuda"})
+            write_artifact(
+                artifacts / "execution_compat.json",
+                {"status": "ready", "compat_ok": True, "selected_device": "cuda", "execution_surface": "vc"},
+            )
             write_artifact(
                 artifacts / "trans_input_resolved.json",
                 {"device": "cuda", "model_name": "demo", "image_version": "0.1.0", "vc_partition": "gpu-test", "vc_memory_gb": 32},

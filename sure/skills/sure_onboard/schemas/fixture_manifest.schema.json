@@ -15,6 +15,10 @@
 		"gt_jsonl": { "type": "string" },
 		"sample_count": { "type": "number" },
 		"link_policy": { "type": "string", "enum": ["copy"] },
+		"fixture_source": { "type": "string", "enum": ["task_registry", "model_specific", "web_temporary"] },
+		"official": { "type": "boolean" },
+		"fixture_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+		"provenance": { "type": "object" },
 		"samples": {
 			"type": "array",
 			"items": {

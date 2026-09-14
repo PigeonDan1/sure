@@ -16,7 +16,7 @@ Control principle: **agent decides scope, scripts execute.** You (the agent) con
 | Parameter | Required | Meaning |
 |-----------|----------|---------|
 | `model` | ✅ | Exact approved directory name below a configured `approved_models_roots` entry. No path, alias, environment-root, or local-model fallback is accepted. |
-| `datasets` | ✅ | Comma-separated source paths below a configured `allowed_source_roots` entry, e.g. `datasets=/srv/sure/datasets/group/store/ds_pool/example@v1.0.2`. A source directory may carry the pool layout (`sample_files/<version>/sample.jsonl`, `raws/sample/`) or a flat layout (`sample.jsonl` next to the audio); multi-version sources require the trailing `@<version_id>`. Legacy dataset names and short aliases are rejected. Dataset metadata, not a user-supplied task flag, determines ASR/TTS/VC/etc. |
+| `datasets` | ✅ | Comma-separated source paths below a configured `allowed_source_roots` entry, e.g. `datasets=/srv/sure/datasets/group/store/ds_pool/example@v1.0.2`. A source directory may carry the pool layout (`sample_files/<version>/sample.jsonl`, `raws/sample/`) or a flat layout (`sample.jsonl` next to the audio); multi-version sources require the trailing `@<version_id>`. Legacy dataset names and short aliases are rejected. Dataset metadata, not a user-supplied task flag, determines ASR/TTS/VC/etc. KWS sources explicitly declare `task: KWS` and carry per-row keywords, positive/negative labels, expected keywords, and durations. |
 | `dataset_source_key` | when needed | Key in site policy `datasets.allowed_source_roots` that authorizes the supplied source paths. The resolved key is persisted and passed into the inference container's dataset preparation stage. |
 | `datasets_root` | — | Absolute writable projection root for generated JSONL indexes and metadata. Resolution precedence is this parameter, `SURE_EVAL_DATASETS_ROOT`, `datasets.projection_root` in site policy, an explicit config's `data.datasets`, then the repository development default. It must stay outside forbidden output roots and must not overlap a source root. Raw data is referenced in place and is never copied or moved. |
 | `protocol` | — | `standard_system` (default) follows the approved model's upstream configuration. `strict_core` requires every conservative parameter to be mapped to an MCP argument or explicitly proven not applicable. |
@@ -117,6 +117,14 @@ to infer model hyperparameters.
 `references/sure_benchmark/jsonl/<dataset>.jsonl` is a copy of each selected
 dataset's projection, so `/sure_eval` can score the bundle without the
 projection root.
+
+For KWS, the projection is `kws_wakeword_v1`. Generation passes each sample's
+comma-separated `keywords` and optional `threshold` to the model tool. The
+structured prediction contract is `{detected: bool, keyword: string|null,
+score: number}` with finite scores in `[0,1]`; the TSV file is a canonical
+non-empty JSON projection, including for rejected samples with `score: 0.0`.
+KWS validation requires the structured JSONL and both positive and negative
+reference rows before `/sure_eval` can consume the bundle.
 
 Only `standard_system` and `strict_core` are valid protocol IDs. `standard_system`
 is the default and applies no harness generation override; its resolution records

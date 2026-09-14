@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -204,7 +205,18 @@ def validate_contract(sample: dict[str, Any], contract: dict[str, Any]) -> list[
         if field in sample and not is_nonempty(sample.get(field)):
             violations.append(f"field must be non-empty: {field}")
     primary = contract.get("primary_field")
-    if isinstance(primary, str) and not is_nonempty(sample.get(primary)):
+    if primary == "embedding":
+        embedding = sample.get(primary)
+        if not isinstance(embedding, list) or not embedding:
+            violations.append("primary output field must be a non-empty numeric array: embedding")
+        elif any(
+            isinstance(item, bool)
+            or not isinstance(item, (int, float))
+            or not math.isfinite(float(item))
+            for item in embedding
+        ):
+            violations.append("embedding must contain only finite numbers")
+    elif isinstance(primary, str) and not is_nonempty(sample.get(primary)):
         violations.append(f"primary output field must be non-empty: {primary}")
     if contract.get("json_serializable") is True:
         try:

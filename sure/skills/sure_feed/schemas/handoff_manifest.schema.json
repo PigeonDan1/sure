@@ -25,6 +25,7 @@
 				"additionalProperties": true
 			}
 		},
+		"status": { "type": "string", "enum": ["ready_for_onboard", "indexed_pending_fixture"] },
 		"next_action": { "type": "string" }
 	},
 	"additionalProperties": false

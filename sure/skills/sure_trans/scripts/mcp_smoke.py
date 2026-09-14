@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import queue
 import subprocess
@@ -19,6 +20,7 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
+from typing import Any
 
 SCHEMA = "sure.trans.mcp_smoke.v1"
 STDERR_TAIL_LINES = 200
@@ -39,17 +41,32 @@ def tool_arguments(tool: str, audio: Path) -> dict[str, str]:
 
 
 def primary_output_field(tool: str) -> str:
-    return "audio_path" if tool in {"synthesize_speech", "convert_voice"} else "text"
+    if tool in {"synthesize_speech", "convert_voice"}:
+        return "audio_path"
+    if tool == "embed_speaker":
+        return "embedding"
+    return "text"
 
 
-def output_is_nonempty(primary_field: str, value: str) -> bool:
+def output_is_nonempty(primary_field: str, value: Any) -> bool:
     """Whether the tool really produced its primary output.
 
     A path-valued field only proves an output exists if the file is there and
     holds bytes; the server runs as this script's child, so the path it
     returns is one this process can stat.
     """
-    if not value:
+    if primary_field == "embedding":
+        return (
+            isinstance(value, list)
+            and bool(value)
+            and all(
+                isinstance(item, (int, float))
+                and not isinstance(item, bool)
+                and math.isfinite(float(item))
+                for item in value
+            )
+        )
+    if not isinstance(value, str) or not value:
         return False
     if primary_field.endswith("_path"):
         candidate = Path(value)
@@ -200,17 +217,20 @@ def main() -> int:
             except (IndexError, KeyError, TypeError, json.JSONDecodeError):
                 text = ""
         primary_field = primary_output_field(args.tool)
-        primary_value = ""
+        primary_value: Any = None
         if isinstance(text, dict):
-            primary_value = str(text.get(primary_field) or "")
+            primary_value = text.get(primary_field)
         output_nonempty = output_is_nonempty(primary_field, primary_value)
+        recorded_value = primary_value[:32] if isinstance(primary_value, list) else str(primary_value or "")[:500]
         steps["tools_call"] = {
             "ok": ok and output_nonempty,
             "primary_field": primary_field,
             "output_nonempty": output_nonempty,
             "text_nonempty": output_nonempty if primary_field == "text" else False,
-            primary_field: primary_value[:500],
+            primary_field: recorded_value,
         }
+        if primary_field == "embedding" and isinstance(primary_value, list):
+            steps["tools_call"]["embedding_dimension"] = len(primary_value)
         if not steps["tools_call"]["ok"]:
             raise RuntimeError(f"tools/call step failed: {json.dumps(payload, ensure_ascii=False)[:500]}")
 

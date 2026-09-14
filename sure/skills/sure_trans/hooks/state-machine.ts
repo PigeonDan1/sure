@@ -3,6 +3,7 @@ import type { GateResult, Unit } from "./checkpoints.ts";
 const FRAMEWORKS = ["pytorch"];
 const DETECTED_FRAMEWORKS = ["pytorch", "tensorflow", "jax_flax", "unknown"];
 const DETECTED_MODEL_FRAMEWORKS = ["transformers", "custom", "unknown"];
+const BACKENDS = ["uv", "conda", "docker"];
 
 function checked(kind: string): Pick<Unit, "gateScript" | "gateScriptArgs"> {
 	return { gateScript: "check_artifact.py", gateScriptArgs: () => ["--kind", kind] };
@@ -12,11 +13,9 @@ function validated(kind: string): Pick<Unit, "gateScript" | "gateScriptArgs"> {
 	return { gateScript: "run_trans_validate.py", gateScriptArgs: () => ["--kind", kind] };
 }
 
-// scaffold_adapter.py copies a model.py template that still raises
-// NotImplementedError, so the manifest it writes is always draft, and SKILL.md
-// has the agent run the scaffold before implementing the wrapper. That
-// intermediate state is the documented order, not a failed attempt, so it must
-// not cost a retry.
+// scaffold_adapter.py starts with a model.py stub and, for uv/conda container
+// delivery, a Dockerfile marked SURE_TRANS_TODO. This documented intermediate
+// state must not cost a retry.
 function adapterStillDraft(artifact: unknown): GateResult {
 	const status =
 		typeof artifact === "object" && artifact !== null ? (artifact as Record<string, unknown>).status : undefined;
@@ -26,10 +25,11 @@ function adapterStillDraft(artifact: unknown): GateResult {
 	return {
 		ok: false,
 		missing: true,
-		reason: "adapter wrapper is still the scaffold",
+		reason: "adapter wrapper or Dockerfile is still the scaffold",
 		repair:
-			"adapter/model.py still raises NotImplementedError. Replace it with the model-specific wrapper, " +
-			"then rerun scripts/scaffold_adapter.py so the manifest turns ready.",
+			"Replace adapter/model.py with the model-specific wrapper. For uv/conda container delivery, " +
+			"also complete adapter/Dockerfile.sure and remove SURE_TRANS_TODO. Then rerun " +
+			"scripts/scaffold_adapter.py so the manifest turns ready.",
 	};
 }
 
@@ -56,9 +56,10 @@ export const TRANS_UNITS: Unit[] = [
 		allowedValues: {
 			source_kind: ["docker", "python"],
 			framework: FRAMEWORKS,
-			task_type: ["asr", "s2tt", "tts", "vc"],
+			task_type: ["asr", "s2tt", "tts", "vc", "sv"],
 			device: ["auto", "cuda", "cpu"],
 			package_profile: ["docker-registry", "none"],
+			preferred_backend: [...BACKENDS, null],
 		},
 		ownedScripts: ["materialize_trans_inputs.py"],
 		...checked("input"),
@@ -74,6 +75,8 @@ export const TRANS_UNITS: Unit[] = [
 			"build_context",
 			"docker_copy_sources",
 			"python_imports",
+			"backend_signals",
+			"dependency_file",
 			"support_paths",
 			"unresolved",
 			"external_paths",
@@ -111,6 +114,25 @@ export const TRANS_UNITS: Unit[] = [
 		...checked("framework"),
 	},
 	{
+		id: "plan",
+		label: "Select backend",
+		kind: "linear",
+		produces: "backend_choice.json",
+		schemaRef: "backend_choice.schema.json",
+		requiredFields: ["backend", "choice_reason", "evidence", "package_profile"],
+		allowedValues: { backend: BACKENDS, package_profile: ["docker-registry", "none"] },
+	},
+	{
+		id: "build_plan",
+		label: "Build plan",
+		kind: "gate",
+		produces: "build_plan.json",
+		schemaRef: "build_plan.schema.json",
+		requiredFields: ["model_name", "model_dir", "backend", "package_profile", "source_runtime", "steps"],
+		allowedValues: { backend: BACKENDS, package_profile: ["docker-registry", "none"] },
+		gateScript: "check_build_plan.py",
+	},
+	{
 		id: "prepare_fixture",
 		label: "Prepare bounded smoke fixture",
 		kind: "gate",
@@ -130,7 +152,6 @@ export const TRANS_UNITS: Unit[] = [
 			"staged_path",
 			"sha256",
 			"gt_sha256",
-			"expected_sha256",
 			"sample_count",
 			"annotation_source",
 		],

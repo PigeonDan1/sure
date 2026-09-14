@@ -32,7 +32,8 @@ WEIGHT_SOURCES = {
     "release_or_pypi",
 }
 EVIDENCE_SOURCES = {"modelscope", "huggingface", "github", "manual", "local"}
-FIXTURE_SOURCES = {"task_registry", "model_specific"}
+FIXTURE_SOURCES = {"task_registry", "model_specific", "web_temporary", "unresolved"}
+FIXTURE_STATUSES = {"ready", "needs_input"}
 REQUIRED_MODEL_INPUT_EVIDENCE_FIELDS = {
     "repo.url",
     "weights.source",
@@ -233,7 +234,23 @@ def validate_model_input(model_input: Any, envelope_model_id: str, prefix: str) 
                 f"{sorted(FIXTURE_SOURCES)} (got {fixture_source!r}); "
                 "read fixtures/tasks/<task>/README.md and select a task fixture instead of using an ad hoc path"
             )
-        if fixture_source == "task_registry":
+        fixture_status = fixture.get("fixture_status")
+        if fixture_status is not None and fixture_status not in FIXTURE_STATUSES:
+            errors.append(
+                f"{prefix}.model_input.fixture.fixture_status must be one of "
+                f"{sorted(FIXTURE_STATUSES)} (got {fixture_status!r})"
+            )
+        if fixture_source == "unresolved":
+            if fixture_status != "needs_input":
+                errors.append(
+                    f"{prefix}.model_input.fixture unresolved source requires fixture_status=needs_input"
+                )
+            options = fixture.get("resolution_options")
+            if not isinstance(options, list) or not options:
+                errors.append(
+                    f"{prefix}.model_input.fixture unresolved source requires resolution_options"
+                )
+        elif fixture_source == "task_registry":
             require_nonempty(model_input, "fixture.fixture_id", errors)
             require_nonempty(model_input, "fixture.fixture_index", errors)
             require_nonempty(model_input, "fixture.fixture_root", errors)
@@ -243,7 +260,9 @@ def validate_model_input(model_input: Any, envelope_model_id: str, prefix: str) 
                 errors.append(f"{prefix}.model_input.fixture.fixture_index must be under fixtures/tasks/")
             if nonempty_string(fixture_root) and not str(fixture_root).startswith("fixtures/tasks/"):
                 errors.append(f"{prefix}.model_input.fixture.fixture_root must be under fixtures/tasks/")
-        if not any(nonempty_string(fixture.get(field)) for field in ("audio", "text", "reference_audio")):
+        if fixture_source != "unresolved" and not any(
+            nonempty_string(fixture.get(field)) for field in ("audio", "text", "reference_audio")
+        ):
             errors.append(
                 f"{prefix}.model_input.fixture must include at least one concrete "
                 "fixture pointer: audio, text, or reference_audio"

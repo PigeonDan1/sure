@@ -45,6 +45,21 @@ Example:
 /sure_eval model=Qwen__Qwen3-ASR-1.7B datasets=aishell1__v1.0.2 source=sure_infer_20260903_101500 metrics=cer
 ```
 
+KWS wake-word example:
+
+```text
+/sure_eval model=<approved-kws-model> datasets=<wake-dataset>__<version> source=<sure_infer_run> metrics=accuracy
+```
+
+For KWS, `metrics=accuracy` or `metrics=macro_recall` selects the pinned
+`conversion/kws_sure_json_to_samples -> scoring/wekws_det` route. Its metric
+artifact also reports precision, recall, F1, false reject rate, false alarm
+rate, false alarms per hour, and the DET curve. The current SURE JSON route
+counts a sample positive only when `detected` is true and `score` reaches the
+scanned threshold; it cannot recover candidates suppressed by the model's
+internal threshold. Full WekWS-style DET/FAR requires threshold-independent
+candidate scores from the model wrapper.
+
 ## State Machine
 
 Advance happens **only** when the current unit's `produces` artifact is compliant (location + format + value domain; no forbidden fields). Linear units are agent self-driven; gate units additionally run a Python semantic check. Produce the current unit's artifact, then call `sure_update_state`.

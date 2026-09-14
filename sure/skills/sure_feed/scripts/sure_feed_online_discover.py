@@ -618,8 +618,14 @@ def handoff_manifest(
         else str(run_dir / "artifacts" / "model_input.yaml")
     )
     handoff_model = Path(handoff["handoff_dir"]).name if handoff and handoff.get("handoff_dir") else None
+    selected_model = (rank_result.get("selected") or [None])[0]
+    selected_input = selected_model.get("model_input") if isinstance(selected_model, dict) else None
+    selected_fixture = selected_input.get("fixture") if isinstance(selected_input, dict) else None
+    fixture_pending = isinstance(selected_fixture, dict) and selected_fixture.get("fixture_status") == "needs_input"
     next_action = (
-        f"run /sure_onboard model={handoff_model}"
+        "resolve fixture via model_specific or web_temporary before /sure_onboard"
+        if fixture_pending
+        else f"run /sure_onboard model={handoff_model}"
         if handoff_model
         else f"run /sure_onboard model_input_path={model_input_path}"
     )
@@ -627,6 +633,7 @@ def handoff_manifest(
         "manifest_path": str(manifest_path),
         "source": getattr(args, "effective_source", args.source),
         "models": rank_result.get("selected", []),
+        "status": "indexed_pending_fixture" if fixture_pending else "ready_for_onboard",
         "next_action": next_action,
     }
 
@@ -642,7 +649,10 @@ def publish_handoff(
     if not selected:
         return None
     entry = (model_inputs.get("model_inputs") or [None])[0]
-    if not isinstance(entry, dict) or entry.get("missing_or_weak_fields"):
+    if not isinstance(entry, dict) or any(
+        isinstance(field, str) and field.startswith(("missing:", "weak:"))
+        for field in entry.get("missing_or_weak_fields") or []
+    ):
         return None
     model_input = entry.get("model_input")
     if not isinstance(model_input, dict):
@@ -697,7 +707,13 @@ def feed_report(
     confidence = model_input_entry.get("confidence") if isinstance(model_input_entry, dict) else None
     missing_or_weak = model_input_entry.get("missing_or_weak_fields") if isinstance(model_input_entry, dict) else None
     evidence = model_input_entry.get("evidence") if isinstance(model_input_entry, dict) else None
-    ready = bool(selected_model and model_input and not missing_or_weak)
+    blocking_fields = [
+        field for field in missing_or_weak or []
+        if isinstance(field, str) and field.startswith(("missing:", "weak:"))
+    ]
+    fixture = model_input.get("fixture") if isinstance(model_input, dict) else {}
+    fixture_pending = isinstance(fixture, dict) and fixture.get("fixture_status") == "needs_input"
+    ready = bool(selected_model and model_input and not blocking_fields)
     resolved_model_input_path = (
         handoff.get("handoff_model_input_path")
         if ready and handoff
@@ -707,7 +723,9 @@ def feed_report(
     )
     handoff_model = Path(handoff["handoff_dir"]).name if ready and handoff and handoff.get("handoff_dir") else None
     next_action = (
-        f"/sure_onboard model={handoff_model}"
+        "resolve fixture via model_specific or web_temporary before /sure_onboard"
+        if fixture_pending and ready
+        else f"/sure_onboard model={handoff_model}"
         if handoff_model
         else f"/sure_onboard model_input_path={resolved_model_input_path}"
         if ready
@@ -730,7 +748,15 @@ def feed_report(
             "handoff": handoff,
         }
     return {
-        "status": "ready_for_onboard" if ready else "blocked_needs_research" if selected_model else "no_selection",
+        "status": (
+            "indexed_pending_fixture"
+            if fixture_pending and ready
+            else "ready_for_onboard"
+            if ready
+            else "blocked_needs_research"
+            if selected_model
+            else "no_selection"
+        ),
         "model_input_path": resolved_model_input_path if ready else None,
         "resolved_model_input_path": resolved_model_input_path,
         "next_action": next_action,

@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import shutil
 import subprocess
+import wave
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,7 @@ from .source_resolver import (
     DatasetSourceRef,
     is_source_entry,
     read_source_metadata,
+    read_source_task,
     resolve_site_source_entry,
 )
 
@@ -500,6 +503,35 @@ class DatasetManager:
                 return text.strip()
         return ""
 
+    def _extract_oref_speech_segments(
+        self, record: dict[str, Any]
+    ) -> tuple[list[dict[str, float]], str | None]:
+        annotations = record.get("annotation")
+        if not isinstance(annotations, list):
+            return [], "missing annotation list"
+
+        segments: list[dict[str, float]] = []
+        for annotation in annotations:
+            if not isinstance(annotation, dict):
+                continue
+            timestamp = annotation.get("timestamp")
+            if not isinstance(timestamp, dict):
+                continue
+            begin = timestamp.get("begin_time")
+            end = timestamp.get("end_time")
+            if begin is None or end is None:
+                continue
+            try:
+                start = float(begin)
+                finish = float(end)
+            except (TypeError, ValueError):
+                return [], "invalid VAD timestamp"
+            if not math.isfinite(start) or not math.isfinite(finish) or finish <= start:
+                return [], "invalid VAD timestamp interval"
+            segments.append({"start": start, "end": finish})
+
+        return segments, None
+
     def _resolve_oref_audio_path(self, raw_value: str, raw_dir: Path) -> Path:
         audio_path = Path(raw_value).expanduser()
         if audio_path.is_absolute():
@@ -557,7 +589,13 @@ class DatasetManager:
                         })
                         continue
 
-                if collect_translation:
+                speech_segments: list[dict[str, float]] | None = None
+                if task == "VAD":
+                    speech_segments, segment_error = self._extract_oref_speech_segments(record)
+                    if segment_error:
+                        skipped.append({"line": line_no, "reason": segment_error})
+                        continue
+                elif collect_translation:
                     text = self._extract_oref_translation_text(record)
                     if not text:
                         skipped.append({"line": line_no, "reason": "missing translation text"})
@@ -574,10 +612,9 @@ class DatasetManager:
                     continue
                 seen_keys.add(key)
 
-                row = {
+                row: dict[str, Any] = {
                     "key": key,
                     "path": str(audio_path),
-                    "target": text,
                     "task": task,
                     "language": language,
                     "dataset": dataset_label,
@@ -593,6 +630,20 @@ class DatasetManager:
                         "channels": attr.get("channels"),
                     },
                 }
+                if task == "VAD":
+                    duration_ms = attr.get("duration", 0)
+                    try:
+                        duration = float(duration_ms) / 1000.0
+                    except (TypeError, ValueError):
+                        skipped.append({"line": line_no, "reason": "invalid audio duration"})
+                        continue
+                    if not math.isfinite(duration) or duration <= 0:
+                        skipped.append({"line": line_no, "reason": "invalid audio duration"})
+                        continue
+                    row["duration"] = duration
+                    row["speech_segments"] = speech_segments or []
+                else:
+                    row["target"] = text
                 if collect_translation:
                     # S2TT reference rows keep the source-language transcription
                     # so triangle metrics (xcomet_xl) can build their src file.
@@ -622,13 +673,40 @@ class DatasetManager:
     def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef) -> Path:
         """Project a site dataset-pool source root into SURE-EVAL JSONL."""
         jsonl_path = self.jsonl_dir / f"{ref.dataset_id}.jsonl"
+        source_task = read_source_task(ref)
+        source_meta = read_source_metadata(ref)
+        # A speech-translation declaration in ds.jsonl (explicit top-level task
+        # or audio.speech.translation_language) wins over the sample-based task
+        # guess; otherwise the sample/metadata resolution (KWS, VAD, ...) decides,
+        # falling back to the metadata default (ASR).
+        task = "S2TT" if source_meta["task"] == "S2TT" else (source_task or source_meta["task"])
+        detected_task = source_task or ("S2TT" if source_meta["task"] == "S2TT" else "")
         if jsonl_path.exists():
+            existing_task = ""
+            try:
+                with jsonl_path.open("r", encoding="utf-8") as handle:
+                    for line in handle:
+                        if line.strip():
+                            payload = json.loads(line)
+                            if isinstance(payload, dict):
+                                existing_task = str(payload.get("task") or "").strip().upper()
+                            break
+            except (OSError, json.JSONDecodeError):
+                pass
+            if not detected_task or existing_task == task:
+                logger.info(
+                    "Using existing source-root projection",
+                    dataset=ref.dataset_id,
+                    jsonl=str(jsonl_path),
+                )
+                return jsonl_path
             logger.info(
-                "Using existing source-root projection",
+                "Rebuilding stale source-root projection",
                 dataset=ref.dataset_id,
+                existing_task=existing_task or "unknown",
+                source_task=task,
                 jsonl=str(jsonl_path),
             )
-            return jsonl_path
 
         sample_jsonl_path = Path(ref.sample_jsonl)
         ds_jsonl_path = Path(ref.ds_jsonl)
@@ -640,30 +718,56 @@ class DatasetManager:
         # Dataset metadata, not a caller flag, decides the projection: a ds.jsonl
         # with a top-level task (or audio.speech.translation_language) projects as
         # S2TT (target = translation text, source-language transcription kept for
-        # triangle metrics); anything else keeps the ASR projection unchanged.
-        source_meta = read_source_metadata(ref)
-        task = source_meta["task"]
-        language = source_meta["language"] or "auto"
+        # triangle metrics); KWS and VAD sources project through their own
+        # projectors; anything else keeps the ASR projection unchanged.
+        if task not in {"ASR", "KWS", "VAD", "S2TT"}:
+            raise ValueError(
+                f"source-root projection for task {task!r} is not implemented; supported tasks: ASR, KWS, VAD, S2TT"
+            )
+        ds_meta = self._load_single_json_object(ds_jsonl_path)
+        language = str(
+            (((ds_meta.get("audio") or {}).get("speech") or {}).get("language")) or "auto"
+        )
         translation_language = source_meta["translation_language"]
-        projector = "s2tt_translation_v1" if task == "S2TT" else "asr_transcription_v1"
+        if task == "KWS" and language == "auto":
+            language = "any"
         package_dir = self.sure_dir / ref.source_dataset_name
-        projection_dir = package_dir / "projections" / projector
+        projection_name = (
+            "kws_wakeword_v1"
+            if task == "KWS"
+            else (
+                "vad_segments_v1"
+                if task == "VAD"
+                else ("s2tt_translation_v1" if task == "S2TT" else "asr_transcription_v1")
+            )
+        )
+        projection_dir = package_dir / "projections" / projection_name
         projection_dir.mkdir(parents=True, exist_ok=True)
 
-        rows, skipped, source_records = self._project_sample_rows(
-            sample_jsonl_path=sample_jsonl_path,
-            raw_dir=raw_dir,
-            task=task,
-            language=language,
-            dataset_label=ref.dataset_id,
-            metadata_base={
-                "source": SITE_DATASET_POOL_SOURCE,
-                "source_dataset_root": ref.source_root,
-                "source_dataset_name": ref.source_dataset_name,
-                "version_id": ref.version_id,
-            },
-            collect_translation=(task == "S2TT"),
-        )
+        metadata_base = {
+            "source": SITE_DATASET_POOL_SOURCE,
+            "source_dataset_root": ref.source_root,
+            "source_dataset_name": ref.source_dataset_name,
+            "version_id": ref.version_id,
+        }
+        if task == "KWS":
+            rows, skipped, source_records = self._project_kws_sample_rows(
+                sample_jsonl_path=sample_jsonl_path,
+                raw_dir=raw_dir,
+                language=language,
+                dataset_label=ref.dataset_id,
+                metadata_base=metadata_base,
+            )
+        else:
+            rows, skipped, source_records = self._project_sample_rows(
+                sample_jsonl_path=sample_jsonl_path,
+                raw_dir=raw_dir,
+                task=task,
+                language=language,
+                dataset_label=ref.dataset_id,
+                metadata_base=metadata_base,
+                collect_translation=(task == "S2TT"),
+            )
         if skipped:
             reasons = ", ".join(f"line {item['line']}: {item['reason']}" for item in skipped[:5])
             raise ValueError(
@@ -672,6 +776,8 @@ class DatasetManager:
             )
         if not rows:
             raise ValueError(f"source-root conversion produced no samples for {ref.source_root}")
+        if task == "KWS" and {row["expected_detected"] for row in rows} != {False, True}:
+            raise ValueError("KWS evaluation requires at least one positive and one negative sample")
 
         jsonl_path.parent.mkdir(parents=True, exist_ok=True)
         with jsonl_path.open("w", encoding="utf-8") as handle:
@@ -683,6 +789,8 @@ class DatasetManager:
 
         source_payload = {
             "source": SITE_DATASET_POOL_SOURCE,
+            "task": task,
+            "projector": projection_name,
             "source_dataset_name": ref.source_dataset_name,
             "version_id": ref.version_id,
             "dataset_root": ref.source_root,
@@ -698,25 +806,53 @@ class DatasetManager:
             source_payload=source_payload,
         )
 
-        mapping_fields = {
-            "key": "sample_id",
-            "path": "attribute.path",
-            "target": (
-                "annotation[0].translation.text[0]" if task == "S2TT" else "annotation[0].transcription.text[0]"
-            ),
-            "task": f"constant:{task}",
-            "language": "ds.audio.speech.language",
-            "sample_rate": "attribute.sample_rate",
-            "duration_ms": "attribute.duration",
-        }
-        if task == "S2TT":
-            mapping_fields["source"] = "annotation[0].transcription.text[0]"
-            mapping_fields["translation_language"] = "ds.audio.speech.translation_language"
+        if task == "KWS":
+            fields = {
+                "key": "key|sample_id",
+                "path": "attribute.path|path|audio|wav",
+                "keywords": "keywords|keyword",
+                "expected_detected": "expected_detected|expected|label|keyword_id",
+                "expected_keyword": "expected_keyword|unambiguous keyword match",
+                "duration": "duration|duration_ms|attribute.duration|wav header",
+                "task": "constant:KWS",
+                "language": "row.language|ds.audio.speech.language|any",
+            }
+        else:
+            fields = {
+                "key": "sample_id",
+                "path": "attribute.path",
+                "task": f"constant:{task}",
+                "language": "ds.audio.speech.language",
+                "sample_rate": "attribute.sample_rate",
+            }
+            if task == "VAD":
+                fields.update(
+                    {
+                        "duration": "attribute.duration / 1000",
+                        "speech_segments": "annotation[].timestamp.{begin_time,end_time}",
+                    }
+                )
+            elif task == "S2TT":
+                fields.update(
+                    {
+                        "target": "annotation[0].translation.text[0]",
+                        "source": "annotation[0].transcription.text[0]",
+                        "translation_language": "ds.audio.speech.translation_language",
+                        "duration_ms": "attribute.duration",
+                    }
+                )
+            else:
+                fields.update(
+                    {
+                        "target": "annotation[0].transcription.text[0]",
+                        "duration_ms": "attribute.duration",
+                    }
+                )
         mapping = {
-            "projector": projector,
+            "projector": projection_name,
             "source_format": f"{SITE_DATASET_POOL_SOURCE}_sample_jsonl",
             "target_format": "sure_eval_jsonl_v1",
-            "fields": mapping_fields,
+            "fields": fields,
         }
         try:
             import yaml
@@ -726,15 +862,42 @@ class DatasetManager:
             mapping_text = json.dumps(mapping, indent=2, ensure_ascii=False) + "\n"
         (projection_dir / "mapping.yaml").write_text(mapping_text, encoding="utf-8")
 
-        reference_contract: dict[str, Any] = {"primary_field": "target", "type": "text"}
-        if task == "S2TT":
-            reference_contract["optional_source_field"] = "source"
-        io_contract = {
-            "task": task,
-            "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
-            "output": {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"},
-            "reference": reference_contract,
-        }
+        if task == "KWS":
+            io_contract = {
+                "task": "KWS",
+                "input": {
+                    "primary_field": "path",
+                    "type": "audio_path_with_keywords",
+                    "required_fields": ["key", "path", "keywords"],
+                },
+                "output": {
+                    "prediction_format": "jsonl+tsv_projection",
+                    "required_fields": ["detected", "keyword", "score"],
+                    "type": "keyword_detection",
+                },
+                "reference": {
+                    "required_fields": ["expected_detected", "expected_keyword", "duration"],
+                    "type": "keyword_detection",
+                },
+            }
+        else:
+            reference_contract: dict[str, Any] = (
+                {"primary_field": "speech_segments", "type": "segments"}
+                if task == "VAD"
+                else {"primary_field": "target", "type": "text"}
+            )
+            if task == "S2TT":
+                reference_contract["optional_source_field"] = "source"
+            io_contract = {
+                "task": task,
+                "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
+                "output": (
+                    {"prediction_format": "jsonl", "columns": ["key", "speech_segments"], "type": "json"}
+                    if task == "VAD"
+                    else {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"}
+                ),
+                "reference": reference_contract,
+            }
         (projection_dir / "io_contract.json").write_text(
             json.dumps(io_contract, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -772,17 +935,17 @@ class DatasetManager:
 
         manifest = {
             "dataset": ref.source_dataset_name,
-            "default_projection": projector,
+            "default_projection": projection_name,
             "source": SITE_DATASET_POOL_SOURCE,
             "source_dataset_root": ref.source_root,
             "version_id": ref.version_id,
             "projections": {
-                projector: {
+                projection_name: {
                     "dataset": ref.dataset_id,
                     "sure_jsonl": sure_jsonl.relative_to(package_dir).as_posix(),
-                    "mapping": f"projections/{projector}/mapping.yaml",
-                    "io_contract": f"projections/{projector}/io_contract.json",
-                    "conversion_report": f"projections/{projector}/conversion_report.json",
+                    "mapping": f"projections/{projection_name}/mapping.yaml",
+                    "io_contract": f"projections/{projection_name}/io_contract.json",
+                    "conversion_report": f"projections/{projection_name}/conversion_report.json",
                 }
             },
         }
@@ -1077,3 +1240,162 @@ class DatasetManager:
             }
         
         return None
+    @staticmethod
+    def _kws_keywords(value: Any) -> list[str]:
+        if isinstance(value, str):
+            items = value.split(",")
+        elif isinstance(value, (list, tuple)):
+            items = value
+        else:
+            items = []
+        keywords: list[str] = []
+        for item in items:
+            keyword = str(item).strip()
+            if keyword and keyword not in keywords:
+                keywords.append(keyword)
+        return keywords
+
+    @staticmethod
+    def _kws_expected(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int) and value in {0, 1}:
+            return bool(value)
+        normalized = str(value or "").strip().lower()
+        if normalized in {"detect", "detected", "positive", "true", "1", "yes"}:
+            return True
+        if normalized in {"reject", "rejected", "negative", "false", "0", "no"}:
+            return False
+        raise ValueError("expected/label must explicitly identify a positive or negative KWS sample")
+
+    @staticmethod
+    def _wav_duration(path: Path) -> float | None:
+        try:
+            with wave.open(str(path), "rb") as handle:
+                rate = handle.getframerate()
+                return handle.getnframes() / rate if rate > 0 else None
+        except (OSError, EOFError, wave.Error):
+            return None
+
+    def _project_kws_sample_rows(
+        self,
+        *,
+        sample_jsonl_path: Path,
+        raw_dir: Path,
+        language: str,
+        dataset_label: str,
+        metadata_base: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+        rows: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        source_records = 0
+        seen_keys: set[str] = set()
+
+        with sample_jsonl_path.open("r", encoding="utf-8") as handle:
+            for line_no, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                source_records += 1
+                try:
+                    record = json.loads(line)
+                    if not isinstance(record, dict):
+                        raise ValueError("row is not an object")
+                    attr = record.get("attribute") if isinstance(record.get("attribute"), dict) else {}
+                    raw_path = attr.get("path") or record.get("path") or record.get("audio") or record.get("wav")
+                    if not raw_path:
+                        raise ValueError("missing audio path (attribute.path, path, audio, or wav)")
+                    audio_path = self._resolve_oref_audio_path(str(raw_path), raw_dir)
+                    if not audio_path.is_file():
+                        raise ValueError(f"audio_not_found: {audio_path}")
+                    if attr.get("size") is not None and int(attr["size"]) != audio_path.stat().st_size:
+                        raise ValueError(
+                            f"audio_size_mismatch: expected {attr['size']} got {audio_path.stat().st_size}"
+                        )
+
+                    key = str(record.get("key") or record.get("sample_id") or audio_path.stem).strip()
+                    if not key:
+                        raise ValueError("missing key/sample_id")
+                    if key in seen_keys:
+                        raise ValueError(f"duplicate sample key: {key}")
+
+                    keywords = self._kws_keywords(record.get("keywords") or record.get("keyword"))
+                    if not keywords:
+                        raise ValueError("missing non-empty keywords")
+                    expected_value = record.get("expected_detected")
+                    if expected_value is None:
+                        expected_value = record.get("expected", record.get("label"))
+                    if expected_value is None and record.get("keyword_id") is not None:
+                        expected_value = int(record["keyword_id"]) >= 0
+                    expected_detected = self._kws_expected(expected_value)
+
+                    expected_keyword = record.get("expected_keyword")
+                    text = str(
+                        record.get("text")
+                        or record.get("target")
+                        or record.get("txt")
+                        or self._extract_oref_transcription_text(record)
+                        or ""
+                    ).strip()
+                    if expected_detected and expected_keyword is None:
+                        compact_text = "".join(text.upper().split())
+                        matches = [keyword for keyword in keywords if "".join(keyword.upper().split()) in compact_text]
+                        if len(matches) == 1:
+                            expected_keyword = matches[0]
+                        elif len(keywords) == 1:
+                            expected_keyword = keywords[0]
+                    if expected_detected and not str(expected_keyword or "").strip():
+                        raise ValueError("positive KWS sample is missing an unambiguous expected_keyword")
+                    if expected_keyword is not None:
+                        normalized_expected = "".join(str(expected_keyword).upper().split())
+                        normalized_keywords = {"".join(keyword.upper().split()) for keyword in keywords}
+                        if normalized_expected not in normalized_keywords:
+                            raise ValueError("expected_keyword is not present in keywords")
+
+                    duration_value = record.get("duration")
+                    if duration_value is None and record.get("duration_ms") is not None:
+                        duration_value = float(record["duration_ms"]) / 1000.0
+                    if duration_value is None and attr.get("duration") is not None:
+                        duration_value = float(attr["duration"]) / 1000.0
+                    duration = float(duration_value) if duration_value is not None else self._wav_duration(audio_path)
+                    if duration is None or not math.isfinite(duration) or duration <= 0:
+                        raise ValueError("missing positive audio duration required for false_alarm_per_hour")
+
+                    threshold = record.get("threshold")
+                    if threshold is not None:
+                        threshold = float(threshold)
+                        if not math.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+                            raise ValueError("threshold must be a finite number in [0, 1]")
+                except (TypeError, ValueError) as exc:
+                    skipped.append({"line": line_no, "reason": str(exc)})
+                    continue
+
+                seen_keys.add(key)
+                row = {
+                    "key": key,
+                    "path": str(audio_path),
+                    "audio": str(audio_path),
+                    "target": "detect" if expected_detected else "reject",
+                    "task": "KWS",
+                    "language": str(record.get("language") or language or "any"),
+                    "dataset": dataset_label,
+                    "keywords": keywords,
+                    "expected": "detect" if expected_detected else "reject",
+                    "expected_detected": expected_detected,
+                    "expected_keyword": str(expected_keyword) if expected_detected else None,
+                    "duration": duration,
+                    "duration_ms": round(duration * 1000.0, 3),
+                    "sample_rate": attr.get("sample_rate") or record.get("sample_rate"),
+                    "metadata": {
+                        **metadata_base,
+                        "sample_id": record.get("sample_id") or key,
+                        "parent_sample_id": record.get("parent_sample_id"),
+                        "raw_data_md5": attr.get("raw_data_md5"),
+                        "raw_data_format": attr.get("raw_data_format"),
+                        "size": attr.get("size") or audio_path.stat().st_size,
+                        "channels": attr.get("channels"),
+                    },
+                }
+                if threshold is not None:
+                    row["threshold"] = threshold
+                rows.append(row)
+        return rows, skipped, source_records

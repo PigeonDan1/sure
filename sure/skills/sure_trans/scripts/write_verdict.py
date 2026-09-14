@@ -34,6 +34,7 @@ def main() -> int:
     registry = read_object(artifacts / "docker_registry_result.json")
     runtime = read_object(artifacts / "runtime_inventory.json")
     source_image = read_object(artifacts / "source_image_result.json")
+    backend_choice = read_object(artifacts / "backend_choice.json")
     framework = read_object(artifacts / "framework_detection.json")
     if execution.get("compat_ok") is not True or original.get("status") != "passed":
         raise ValueError("execution compatibility and original inference must pass")
@@ -62,7 +63,11 @@ def main() -> int:
         "instance_id": artifacts.parent.name,
         "model_id": resolved["model_name"],
         "model_name": resolved["model_name"],
-        "package": {"profile": package_profile},
+        "package": {
+            "backend": backend_choice.get("backend"),
+            "profile": package_profile,
+            "source_runtime": source_image.get("runtime_mode") or "container",
+        },
         "framework": {
             "computation": {
                 "declared": framework.get("declared_framework"),
@@ -106,6 +111,8 @@ def main() -> int:
             "digest_pull": registry.get("pull_verified") is True if package_profile == "docker-registry" else None,
         },
         "artifacts": {
+            "backend_choice": "artifacts/backend_choice.json",
+            "build_plan": "artifacts/build_plan.json",
             "runtime_inventory": "artifacts/runtime_inventory.json",
             "framework_detection": "artifacts/framework_detection.json",
             "registry": "artifacts/docker_registry_result.json",
