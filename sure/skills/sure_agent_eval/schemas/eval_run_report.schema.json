@@ -1,0 +1,79 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "eval_run_report.schema.json",
+	"title": "SURE-AGENT-EVAL evaluation run report",
+	"description": "Structured output of the EVALUATE unit, written by scripts/run_agent_eval.py after scoring the agent bundle with the pinned sure-evaluation engine.",
+	"type": "object",
+	"required": [
+		"schema",
+		"run_id",
+		"status",
+		"error_code",
+		"agent",
+		"evaluation_only",
+		"batch_id",
+		"product_dir",
+		"evaluation_runs_dir",
+		"datasets",
+		"created_at"
+	],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.agent_eval.eval_run_report.v1"] },
+		"run_id": { "type": "string" },
+		"status": { "type": "string", "enum": ["success", "failed"] },
+		"error_code": { "type": ["string", "null"] },
+		"agent": {
+			"type": "object",
+			"required": ["name", "spec_sha256"],
+			"properties": {
+				"name": { "type": "string" },
+				"spec_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+			},
+			"additionalProperties": false
+		},
+		"evaluation_only": {
+			"type": "boolean",
+			"description": "Always true: this unit scores existing predictions and never runs the agent."
+		},
+		"batch_id": { "type": "string", "pattern": "^agent_eval_[a-f0-9]{24}$" },
+		"product_dir": { "type": "string" },
+		"evaluation_runs_dir": { "type": "string" },
+		"datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["dataset", "task", "language", "num_samples", "metrics"],
+				"properties": {
+					"dataset": { "type": "string" },
+					"task": { "type": "string" },
+					"language": { "type": "string" },
+					"num_samples": { "type": "integer", "minimum": 0 },
+					"metrics": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"required": ["metric", "pipeline_id", "score"],
+							"properties": {
+								"metric": { "type": "string" },
+								"pipeline_id": { "type": "string" },
+								"score": { "type": ["number", "null"] }
+							},
+							"additionalProperties": false
+						}
+					}
+				},
+				"additionalProperties": false
+			}
+		},
+		"engine": {
+			"type": ["object", "null"],
+			"properties": {
+				"engine_root": { "type": "string" },
+				"commit": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"created_at": { "type": "string" }
+	},
+	"additionalProperties": false
+}

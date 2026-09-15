@@ -1,0 +1,61 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "agent_spec.schema.json",
+	"title": "SURE agent spec (agent.yaml)",
+	"description": "Declarative definition of an Agent under evaluation: an input->output contract plus an ordered chain of stages, each stage naming an approved model. YAML, validated by scripts/agent_spec.py.",
+	"type": "object",
+	"required": ["agent", "stages"],
+	"properties": {
+		"agent": {
+			"type": "object",
+			"required": ["name", "task", "input", "output"],
+			"properties": {
+				"name": {
+					"type": "string",
+					"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+					"description": "Agent identifier; used in the product directory name."
+				},
+				"task": {
+					"type": "string",
+					"description": "Agent task id, e.g. s2tt (speech-to-text translation). AST is S2TT."
+				},
+				"input": {
+					"type": "string",
+					"description": "Agent input modality, e.g. speech."
+				},
+				"output": {
+					"type": "string",
+					"description": "Agent output modality, e.g. text."
+				}
+			},
+			"additionalProperties": false
+		},
+		"stages": {
+			"type": "array",
+			"minItems": 1,
+			"description": "Stages run in declaration order; the previous stage's text output feeds the next stage.",
+			"items": {
+				"type": "object",
+				"required": ["id", "model"],
+				"properties": {
+					"id": {
+						"type": "string",
+						"pattern": "^[a-z0-9][a-z0-9._-]*$",
+						"description": "Stage identifier, unique within the spec."
+					},
+					"model": {
+						"type": "string",
+						"pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+						"description": "Exact approved model directory name below storage.approved_models_roots[0]. No aliases or paths."
+					},
+					"prompt_template": {
+						"type": "string",
+						"description": "Optional prompt template for LLM (API-mode) stages. Placeholders: {text}, {target_language}, {source_language}, {dataset}, {key}."
+					}
+				},
+				"additionalProperties": false
+			}
+		}
+	},
+	"additionalProperties": false
+}

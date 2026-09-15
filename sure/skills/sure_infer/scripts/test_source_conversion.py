@@ -271,5 +271,116 @@ class SourceConversionTests(unittest.TestCase):
         self.assertNotIn("target", row)
 
 
+def make_s2tt_source_tree(root: Path, name: str, ds_jsonl_text: str) -> Path:
+    """A flat speech-translation source: one utterance, transcription + translation."""
+    dataset_root = root / name
+    dataset_root.mkdir(parents=True)
+    audio = dataset_root / "utt1.wav"
+    audio.write_bytes(b"RIFFxxxx")
+    (dataset_root / "sample.jsonl").write_text(
+        json.dumps(
+            {
+                "sample_id": "utt1",
+                "attribute": {
+                    "path": "utt1.wav",
+                    "size": audio.stat().st_size,
+                    "sample_rate": 16000,
+                    "duration": 1000,
+                    "raw_data_format": "wav",
+                    "channels": 1,
+                },
+                "annotation": [
+                    {"transcription": {"text": ["在此次申办冬奥会的过程中"]}},
+                    {"translation": {"text": ["In the process of bidding for the Winter Olympics"]}},
+                ],
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dataset_root / "ds.jsonl").write_text(ds_jsonl_text + "\n", encoding="utf-8")
+    return dataset_root
+
+
+class SourceConversionS2TTTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.source_root = self.tmp / "src"
+        self._env = mock.patch.dict(
+            os.environ, {source_resolver.SOURCE_ROOT_ENV: str(self.source_root)}
+        )
+        self._env.start()
+        self.manager = make_manager(self.tmp)
+
+    def tearDown(self) -> None:
+        self._env.stop()
+        self._tmp.cleanup()
+
+    def test_translation_language_declares_s2tt(self) -> None:
+        dataset_root = make_s2tt_source_tree(
+            self.source_root,
+            "mini_s2tt",
+            '{"audio": {"speech": {"language": "zh", "translation_language": "en"}}}',
+        )
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(row["task"], "S2TT")
+        self.assertEqual(row["language"], "zh")
+        self.assertEqual(row["target"], "In the process of bidding for the Winter Olympics")
+        self.assertEqual(row["source"], "在此次申办冬奥会的过程中")
+        manifest = json.loads(
+            (self.manager.sure_dir / "mini_s2tt" / "dataset_manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["default_projection"], "s2tt_translation_v1")
+        self.assertIn("s2tt_translation_v1", manifest["projections"])
+        report = json.loads(
+            (self.manager.sure_dir / "mini_s2tt" / "projections" / "s2tt_translation_v1" / "conversion_report.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(report["task"], "S2TT")
+        self.assertEqual(report["translation_language"], "en")
+        self.assertEqual(report["field_mapping"]["target"], "annotation[0].translation.text[0]")
+        self.assertEqual(report["field_mapping"]["source"], "annotation[0].transcription.text[0]")
+
+    def test_explicit_task_declares_s2tt_without_translation_language(self) -> None:
+        dataset_root = make_s2tt_source_tree(
+            self.source_root,
+            "explicit_s2tt",
+            '{"task": "S2TT", "audio": {"speech": {"language": "zh"}}}',
+        )
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(row["task"], "S2TT")
+        self.assertEqual(row["target"], "In the process of bidding for the Winter Olympics")
+
+    def test_missing_translation_text_skips_the_record(self) -> None:
+        dataset_root = make_s2tt_source_tree(
+            self.source_root,
+            "no_translation",
+            '{"audio": {"speech": {"language": "zh", "translation_language": "en"}}}',
+        )
+        (dataset_root / "sample.jsonl").write_text(
+            json.dumps(
+                {
+                    "sample_id": "utt1",
+                    "attribute": {"path": "utt1.wav"},
+                    "annotation": [{"transcription": {"text": ["你好"]}}],
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        with self.assertRaises(ValueError) as ctx:
+            self.manager._convert_source_root_to_jsonl(ref)
+        self.assertIn("missing translation text", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

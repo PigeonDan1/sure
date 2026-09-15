@@ -652,24 +652,35 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
         validate = candidate / "validate.py"
         if not validate.is_file():
             raise ApprovalError("Python candidate has no validate.py runtime smoke entrypoint")
+        # The producer contract requires validate.py to persist artifacts/<stage>_result.json
+        # on every run, so smoking the sealed candidate in place would dirty the tree the
+        # digest check below protects. Run the smoke on a throwaway full copy instead; the
+        # sealed candidate itself is never executed against.
         child_env = model_child_env(os.environ)
-        with tempfile.TemporaryDirectory(prefix="sure-approval-validation-") as validation_output:
+        with tempfile.TemporaryDirectory(prefix="sure-approve-smoke-") as smoke_root:
+            smoke_candidate = Path(smoke_root) / candidate.name
+            shutil.copytree(candidate, smoke_candidate)
+            validation_output = Path(smoke_root) / "validation-output"
+            validation_output.mkdir()
             child_env.update(
                 {
-                    "MODEL_DIR": str(candidate),
+                    "MODEL_DIR": str(smoke_candidate),
                     "PYTHONDONTWRITEBYTECODE": "1",
-                    "SURE_VALIDATION_OUTPUT_DIR": validation_output,
+                    "SURE_VALIDATION_OUTPUT_DIR": str(validation_output),
                 }
             )
-            completed = subprocess.run(
-                [python, str(validate)],
-                cwd=candidate,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                check=False,
-                env=child_env,
-            )
+            try:
+                completed = subprocess.run(
+                    [python, str(smoke_candidate / "validate.py")],
+                    cwd=smoke_candidate,
+                    capture_output=True,
+                    text=True,
+                    timeout=1800,
+                    check=False,
+                    env=child_env,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise ApprovalError("candidate runtime smoke timed out after 1800s") from exc
         smoke = {"command": [python, "validate.py"], "exit_code": completed.returncode, "stdout_sha256": sha256_bytes(completed.stdout.encode()), "stderr": completed.stderr[-2000:]}
     else:
         image_ref = str(binding.get("target_image_ref") or "")

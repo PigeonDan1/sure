@@ -373,7 +373,10 @@ def _nvidia_smi_available() -> bool:
         return False
     if not shutil.which("nvidia-smi"):
         return False
-    completed = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, check=False, timeout=10)
+    try:
+        completed = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, check=False, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
     return completed.returncode == 0 and bool(completed.stdout.strip())
 
 

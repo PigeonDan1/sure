@@ -1,0 +1,43 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "execution_result.schema.json",
+	"title": "SURE-AGENT-EVAL agent execution result",
+	"description": "Structured output of the RUN_AGENT unit, written by scripts/agent_runner.py. A terminal failure (job_status=failed) is a valid outcome; the run report must then say so.",
+	"type": "object",
+	"required": ["schema", "job_status", "exit_code", "product_dir", "agent", "datasets", "created_at"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.agent_eval.execution_result.v1"] },
+		"job_status": { "type": "string", "enum": ["succeeded", "failed"] },
+		"exit_code": { "type": "number" },
+		"failed_stage": { "type": ["string", "null"] },
+		"failed_dataset": { "type": ["string", "null"] },
+		"error": { "type": ["string", "null"] },
+		"product_dir": { "type": "string" },
+		"agent": {
+			"type": "object",
+			"required": ["name", "task"],
+			"properties": {
+				"name": { "type": "string" },
+				"task": { "type": "string" }
+			},
+			"additionalProperties": false
+		},
+		"datasets": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": ["dataset", "expected", "generated"],
+				"properties": {
+					"dataset": { "type": "string" },
+					"expected": { "type": "integer", "minimum": 0 },
+					"generated": { "type": "integer", "minimum": 0 }
+				},
+				"additionalProperties": false
+			}
+		},
+		"stdout_log": { "type": "string" },
+		"stderr_log": { "type": "string" },
+		"created_at": { "type": "string" }
+	},
+	"additionalProperties": false
+}

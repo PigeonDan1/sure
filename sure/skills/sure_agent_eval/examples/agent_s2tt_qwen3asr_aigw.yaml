@@ -1,0 +1,15 @@
+# S2TT Agent under evaluation: Qwen3-ASR-1.7B (speech -> zh text, MCP-tool
+# model) chained into the AIGW-hosted Kimi K3 LLM (zh -> en translation, API
+# model). Both stage models are approved bundles below
+# storage.approved_models_roots[0] (sure-data/models).
+agent:
+  name: s2tt_qwen3asr_kimi
+  task: s2tt
+  input: speech
+  output: text
+stages:
+  - id: asr
+    model: qwen3_asr_1_7b
+  - id: translate
+    model: aigw_kimi_k3
+    prompt_template: "Translate the following Chinese text to English. Output only the English translation, no explanations.\nChinese: {text}"

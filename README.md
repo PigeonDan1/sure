@@ -130,7 +130,7 @@ npm run check
 - `sure:doctor` checks the local harness installation and runtime prerequisites.
 - `npm run check` runs repository-wide static checks.
 
-## Six SURE Commands
+## Seven SURE Commands
 
 | Command | Purpose | Main product |
 | --- | --- | --- |
@@ -140,6 +140,7 @@ npm run check
 | `/sure_approve` | Audit a completed model package, bind an explicit human decision, and publish it atomically | review packet, approval decision, and `approval_ready.json` |
 | `/sure_infer` | Run an approved model over the selected datasets | an inference bundle: predictions, `protocol.yaml`, generation status, and reference projections |
 | `/sure_eval` | Score an inference bundle with the evaluation engine, without running the model | an appended `evaluation_runs/<batch>/` with metric artifacts and `eval_run_report.json` |
+| `/sure_agent_eval` | Run an Agent (an ordered chain of approved models, e.g. ASR -> LLM translator) over speech datasets and score its answers | an agent product bundle (predictions, protocol, references) plus `evaluation_runs/<batch>/` and `eval_run_report.json` |
 
 When a run's turn ends without `sure_finish`, because the model service failed or the session went away, `/sure_resume` picks that run back up from its checkpoint in the same run directory instead of starting over. It takes the most recent resumable run in the project, or `/sure_resume <run-id>` for a specific one.
 

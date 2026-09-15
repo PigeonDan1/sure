@@ -26,6 +26,7 @@ from sure_eval.core.logging import get_logger
 from .source_resolver import (
     DatasetSourceRef,
     is_source_entry,
+    read_source_metadata,
     read_source_task,
     resolve_site_source_entry,
 )
@@ -485,6 +486,23 @@ class DatasetManager:
                 return text.strip()
         return ""
 
+    def _extract_oref_translation_text(self, record: dict[str, Any]) -> str:
+        annotations = record.get("annotation") or []
+        for annotation in annotations:
+            if not isinstance(annotation, dict):
+                continue
+            translation = annotation.get("translation") or {}
+            if not isinstance(translation, dict):
+                continue
+            text = translation.get("text")
+            if isinstance(text, list):
+                joined = " ".join(str(item).strip() for item in text if str(item).strip())
+                if joined:
+                    return joined
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        return ""
+
     def _extract_oref_speech_segments(
         self, record: dict[str, Any]
     ) -> tuple[list[dict[str, float]], str | None]:
@@ -534,6 +552,7 @@ class DatasetManager:
         metadata_base: dict[str, Any],
         require_audio_exists: bool = True,
         check_size: bool = True,
+        collect_translation: bool = False,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
         rows: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
@@ -575,6 +594,11 @@ class DatasetManager:
                     speech_segments, segment_error = self._extract_oref_speech_segments(record)
                     if segment_error:
                         skipped.append({"line": line_no, "reason": segment_error})
+                        continue
+                elif collect_translation:
+                    text = self._extract_oref_translation_text(record)
+                    if not text:
+                        skipped.append({"line": line_no, "reason": "missing translation text"})
                         continue
                 else:
                     text = self._extract_oref_transcription_text(record)
@@ -620,6 +644,10 @@ class DatasetManager:
                     row["speech_segments"] = speech_segments or []
                 else:
                     row["target"] = text
+                if collect_translation:
+                    # S2TT reference rows keep the source-language transcription
+                    # so triangle metrics (xcomet_xl) can build their src file.
+                    row["source"] = self._extract_oref_transcription_text(record)
                 rows.append(row)
         return rows, skipped, source_records
 
@@ -646,6 +674,13 @@ class DatasetManager:
         """Project a site dataset-pool source root into SURE-EVAL JSONL."""
         jsonl_path = self.jsonl_dir / f"{ref.dataset_id}.jsonl"
         source_task = read_source_task(ref)
+        source_meta = read_source_metadata(ref)
+        # A speech-translation declaration in ds.jsonl (explicit top-level task
+        # or audio.speech.translation_language) wins over the sample-based task
+        # guess; otherwise the sample/metadata resolution (KWS, VAD, ...) decides,
+        # falling back to the metadata default (ASR).
+        task = "S2TT" if source_meta["task"] == "S2TT" else (source_task or source_meta["task"])
+        detected_task = source_task or ("S2TT" if source_meta["task"] == "S2TT" else "")
         if jsonl_path.exists():
             existing_task = ""
             try:
@@ -658,7 +693,7 @@ class DatasetManager:
                             break
             except (OSError, json.JSONDecodeError):
                 pass
-            if not source_task or existing_task == source_task:
+            if not detected_task or existing_task == task:
                 logger.info(
                     "Using existing source-root projection",
                     dataset=ref.dataset_id,
@@ -669,7 +704,7 @@ class DatasetManager:
                 "Rebuilding stale source-root projection",
                 dataset=ref.dataset_id,
                 existing_task=existing_task or "unknown",
-                source_task=source_task,
+                source_task=task,
                 jsonl=str(jsonl_path),
             )
 
@@ -680,19 +715,32 @@ class DatasetManager:
             raise FileNotFoundError(f"source sample.jsonl not found: {sample_jsonl_path}")
         if not raw_dir.exists():
             raise FileNotFoundError(f"source raw_dir not found: {raw_dir}")
-        task = source_task or "ASR"
-        if task not in {"ASR", "KWS", "VAD"}:
+        # Dataset metadata, not a caller flag, decides the projection: a ds.jsonl
+        # with a top-level task (or audio.speech.translation_language) projects as
+        # S2TT (target = translation text, source-language transcription kept for
+        # triangle metrics); KWS and VAD sources project through their own
+        # projectors; anything else keeps the ASR projection unchanged.
+        if task not in {"ASR", "KWS", "VAD", "S2TT"}:
             raise ValueError(
-                f"source-root projection for task {task!r} is not implemented; supported tasks: ASR, KWS, VAD"
+                f"source-root projection for task {task!r} is not implemented; supported tasks: ASR, KWS, VAD, S2TT"
             )
         ds_meta = self._load_single_json_object(ds_jsonl_path)
         language = str(
             (((ds_meta.get("audio") or {}).get("speech") or {}).get("language")) or "auto"
         )
+        translation_language = source_meta["translation_language"]
         if task == "KWS" and language == "auto":
             language = "any"
         package_dir = self.sure_dir / ref.source_dataset_name
-        projection_name = "kws_wakeword_v1" if task == "KWS" else ("vad_segments_v1" if task == "VAD" else "asr_transcription_v1")
+        projection_name = (
+            "kws_wakeword_v1"
+            if task == "KWS"
+            else (
+                "vad_segments_v1"
+                if task == "VAD"
+                else ("s2tt_translation_v1" if task == "S2TT" else "asr_transcription_v1")
+            )
+        )
         projection_dir = package_dir / "projections" / projection_name
         projection_dir.mkdir(parents=True, exist_ok=True)
 
@@ -718,6 +766,7 @@ class DatasetManager:
                 language=language,
                 dataset_label=ref.dataset_id,
                 metadata_base=metadata_base,
+                collect_translation=(task == "S2TT"),
             )
         if skipped:
             reasons = ", ".join(f"line {item['line']}: {item['reason']}" for item in skipped[:5])
@@ -783,6 +832,15 @@ class DatasetManager:
                         "speech_segments": "annotation[].timestamp.{begin_time,end_time}",
                     }
                 )
+            elif task == "S2TT":
+                fields.update(
+                    {
+                        "target": "annotation[0].translation.text[0]",
+                        "source": "annotation[0].transcription.text[0]",
+                        "translation_language": "ds.audio.speech.translation_language",
+                        "duration_ms": "attribute.duration",
+                    }
+                )
             else:
                 fields.update(
                     {
@@ -804,8 +862,8 @@ class DatasetManager:
             mapping_text = json.dumps(mapping, indent=2, ensure_ascii=False) + "\n"
         (projection_dir / "mapping.yaml").write_text(mapping_text, encoding="utf-8")
 
-        io_contract = (
-            {
+        if task == "KWS":
+            io_contract = {
                 "task": "KWS",
                 "input": {
                     "primary_field": "path",
@@ -822,8 +880,15 @@ class DatasetManager:
                     "type": "keyword_detection",
                 },
             }
-            if task == "KWS"
-            else {
+        else:
+            reference_contract: dict[str, Any] = (
+                {"primary_field": "speech_segments", "type": "segments"}
+                if task == "VAD"
+                else {"primary_field": "target", "type": "text"}
+            )
+            if task == "S2TT":
+                reference_contract["optional_source_field"] = "source"
+            io_contract = {
                 "task": task,
                 "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
                 "output": (
@@ -831,13 +896,8 @@ class DatasetManager:
                     if task == "VAD"
                     else {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"}
                 ),
-                "reference": (
-                    {"primary_field": "speech_segments", "type": "segments"}
-                    if task == "VAD"
-                    else {"primary_field": "target", "type": "text"}
-                ),
+                "reference": reference_contract,
             }
-        )
         (projection_dir / "io_contract.json").write_text(
             json.dumps(io_contract, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
@@ -855,6 +915,7 @@ class DatasetManager:
             "package_sure_jsonl": str(sure_jsonl),
             "task": task,
             "language": language,
+            "translation_language": translation_language,
             "num_input_records": source_records,
             "num_output_records": len(rows),
             "num_skipped": len(skipped),
