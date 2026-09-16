@@ -27,16 +27,12 @@
 		"sure:site-info": "node --import tsx scripts/sure-site-info.ts",
 		"sure:site-check": "node --import tsx scripts/sure-site-check.ts",
 		"check:pinned-deps": "node scripts/check-pinned-deps.mjs",
-		"check:shrinkwrap": "node scripts/generate-coding-agent-shrinkwrap.mjs --check",
-		"check:install-lock:coding-agent": "node scripts/generate-coding-agent-install-lock.mjs --check",
 		"check:sure-hooks": "tsgo --noEmit -p tsconfig.sure-hooks.json",
 		"check:ts-imports": "node scripts/check-ts-relative-imports.mjs",
 		"check:credential-env": "node scripts/check-credential-env.mjs",
 		"sure:doctor": "node scripts/sure-doctor.mjs",
 		"sure:tasks": "python3 scripts/sure-task-capabilities.py --json",
 		"test": "npm run test --workspaces --if-present",
-		"shrinkwrap:coding-agent": "node scripts/generate-coding-agent-shrinkwrap.mjs",
-		"install-lock:coding-agent": "node scripts/generate-coding-agent-install-lock.mjs",
 		"prepare": "husky"
 	},
 	"devDependencies": {

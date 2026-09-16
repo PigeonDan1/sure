@@ -18,8 +18,6 @@ const checks = [
 	["npm", ["run", "check:ts-imports"]],
 	["npm", ["run", "check:sure-hooks"]],
 	["npm", ["run", "check:credential-env"]],
-	["npm", ["run", "check:shrinkwrap"]],
-	["npm", ["run", "check:install-lock:coding-agent"]],
 	["tsgo", ["--noEmit"]],
 	["npm", ["run", "check:browser-smoke"]],
 ];
