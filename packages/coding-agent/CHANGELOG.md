@@ -15,7 +15,6 @@
 ### Changed
 
 - Changed `/sure_init` login to run through pi's `AuthInteraction`. The prompts are unchanged; an API key entered there takes effect in the current session immediately, and keys are trimmed before storage.
-- Changed `/sure_init` to leave a saved global default thinking level alone when it resolves the level to `off`, which the 0.85.1 settings type cannot represent. Use `/thinking` to change the default.
 - Changed the Azure default model to `gpt-5.5`.
 - Changed the model catalog to committed data: `packages/ai/src/providers/data/` holds the catalog published inside `@earendil-works/pi-ai@0.85.1`, and pi-ai builds with `npm run build:offline`, which validates it without network access.
 - Changed coding-agent's vitest to run offline by default (`PI_OFFLINE=1` in its own vitest config); tests that need the network opt in with `allowNetwork()`.

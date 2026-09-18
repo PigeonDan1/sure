@@ -728,7 +728,7 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 
 	const settings = options.settingsManager ?? SettingsManager.create(ctx.cwd);
 	settings.setDefaultModelAndProvider(providerKey, modelId);
-	if (thinkingLevel && thinkingLevel !== "off") {
+	if (thinkingLevel) {
 		settings.setDefaultThinkingLevel(thinkingLevel);
 	}
 

@@ -9,7 +9,6 @@ SURE command syntax, state-machine order, artifact schemas, site policy resoluti
 - `/sure_init` logs in through pi's `AuthInteraction`. The prompts are the same. An API key entered there now takes effect in the current session immediately instead of only after a restart.
 - The model selector is pi's current one: it opens on a synchronous snapshot and refreshes in the background, it is searchable, and `Ctrl+S` saves the highlighted model as the default (the key is `app.models.save` and is rebindable). SURE's three-tier provider scope is kept: the selected provider, all providers, or the scoped model list.
 - `/thinking` gained a `max` level, and `/sure_init` probes it along with the others.
-- When `/sure_init` resolves the thinking level to `off`, it no longer overwrites a previously saved global default thinking level: the 0.85.1 settings type has no `off`, so writing one would corrupt the setting. Use `/thinking` to change the default.
 - Custom gateways named `radius`, `baseten`, or `qwen-token-plan*` are rejected, because those are built-in provider ids in 0.85.1. Rename the gateway.
 - Five built-in providers arrived with 0.85.1: `baseten`, `qwen-token-plan`, `qwen-token-plan-cn`, `qwen-token-plan-individual`, and the dynamic `radius`. None were removed.
 - Azure's default model is `gpt-5.5`.
