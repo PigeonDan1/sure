@@ -64,26 +64,76 @@ describe("normalizeProviderError", () => {
 		expect(norm.messageCarriesBody).toBe(false);
 	});
 
-	it("reads a status that the SDK stored as a numeric string", () => {
-		const error = Object.assign(new Error("upstream exploded"), {
-			code: "503",
-			error: { message: "upstream exploded" },
-		});
+	it("ignores a Bedrock response stream instead of serializing its internals", () => {
+		const error = Object.assign(
+			new Error("Invocation of model ID anthropic.claude-opus-5 with on-demand throughput isn't supported."),
+			{
+				name: "ValidationException",
+				$metadata: { httpStatusCode: 400 },
+				$response: {
+					statusCode: 400,
+					body: { pipe: () => undefined, _events: { close: [null, null] } },
+				},
+			},
+		);
 
 		const norm = normalizeProviderError(error);
 
-		expect(norm.status).toBe(503);
+		expect(norm.status).toBe(400);
+		expect(norm.body).toBeUndefined();
+		expect(norm.message).toContain("on-demand throughput isn't supported");
+		expect(norm.messageCarriesBody).toBe(true);
 	});
 
-	it("ignores a non-numeric error code", () => {
-		const error = Object.assign(new Error("blocked"), {
-			code: "content_filter",
-			error: { message: "blocked" },
+	it("ignores a class-instance response body without a pipe method instead of serializing it", () => {
+		// Not every SDK response wrapper is a node stream: web ReadableStreams
+		// and SDK-specific wrapper classes have no `pipe`, but serializing them
+		// still yields internals-noise that would replace the real message.
+		class SdkHttpResponseBody {
+			locked = false;
+			state = { storedError: undefined };
+		}
+		const error = Object.assign(new Error("Input is too long for requested model."), {
+			name: "ValidationException",
+			$metadata: { httpStatusCode: 400 },
+			$response: { statusCode: 400, body: new SdkHttpResponseBody() },
 		});
 
 		const norm = normalizeProviderError(error);
 
-		expect(norm.status).toBeUndefined();
+		expect(norm.status).toBe(400);
+		expect(norm.body).toBeUndefined();
+		expect(norm.message).toContain("Input is too long");
+		expect(norm.messageCarriesBody).toBe(true);
+	});
+
+	it("ignores a class-instance `error` field instead of serializing it", () => {
+		class SdkInnerError {
+			code = "EPROTO";
+			internalState = {};
+		}
+		const error = Object.assign(new Error("TLS handshake failed"), {
+			status: 502,
+			error: new SdkInnerError(),
+		});
+
+		const norm = normalizeProviderError(error);
+
+		expect(norm.body).toBeUndefined();
+		expect(norm.message).toBe("TLS handshake failed");
+		expect(norm.messageCarriesBody).toBe(true);
+	});
+
+	it("still surfaces a plain parsed JSON body object", () => {
+		const error = Object.assign(new Error("400 status code (no body)"), {
+			status: 400,
+			error: { message: "schema validation failed", field: "tools[0]" },
+		});
+
+		const norm = normalizeProviderError(error);
+
+		expect(norm.body).toBe('{"message":"schema validation failed","field":"tools[0]"}');
+		expect(norm.messageCarriesBody).toBe(false);
 	});
 
 	it("JSON-stringifies a non-Error thrown value", () => {
@@ -166,20 +216,6 @@ describe("formatProviderError", () => {
 		const norm = normalizeProviderError(Object.assign(new Error(body), { status: 403 }));
 
 		expect(formatProviderError(norm, "OpenAI API error")).toBe(`OpenAI API error (403): ${body}`);
-	});
-
-	it("surfaces the body when the error carries no status", () => {
-		// A mid-stream SSE failure: the response already returned 200, so the SDK
-		// error has no status, but the parsed body still names the failure.
-		const norm = normalizeProviderError(
-			Object.assign(new Error("The model produced invalid content."), {
-				error: { type: "model_error", code: null, message: "The model produced invalid content." },
-			}),
-		);
-
-		expect(formatProviderError(norm, "Azure OpenAI API error")).toBe(
-			'Azure OpenAI API error: {"type":"model_error","code":null,"message":"The model produced invalid content."}',
-		);
 	});
 
 	it("returns the bare message for a non-Error value", () => {

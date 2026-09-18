@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { anthropicOAuth } from "../src/auth/oauth/anthropic.ts";
 import type { AuthEvent, AuthPrompt } from "../src/auth/types.ts";
-import { anthropicOAuth, loginAnthropic, refreshAnthropicToken } from "../src/utils/oauth/anthropic.ts";
-import { CALLBACK_TIMEOUT_MS } from "../src/utils/oauth/types.ts";
+
+const neverAbortedSignal = new AbortController().signal;
 
 function jsonResponse(body: unknown, status: number = 200): Response {
 	return new Response(JSON.stringify(body), {
@@ -54,18 +55,17 @@ describe.sequential("Anthropic OAuth", () => {
 		});
 		vi.stubGlobal("fetch", fetchMock);
 
-		const credentials = await loginAnthropic({
-			onAuth: (info) => {
-				authUrl = info.url;
+		const credentials = await anthropicOAuth.login({
+			signal: neverAbortedSignal,
+			notify: (event) => {
+				if (event.type === "auth_url") authUrl = event.url;
 			},
-			onPrompt: async () => "",
-			onManualCodeInput: async () => {
+			prompt: async (prompt) => {
+				if (prompt.type !== "manual_code") throw new Error(`Unexpected prompt: ${prompt.type}`);
 				const url = new URL(authUrl);
 				const state = url.searchParams.get("state");
 				const redirectUri = url.searchParams.get("redirect_uri");
-				if (!state || !redirectUri) {
-					throw new Error("Missing OAuth state or redirect_uri in auth URL");
-				}
+				if (!state || !redirectUri) throw new Error("Missing OAuth state or redirect_uri in auth URL");
 				return `${redirectUri}?code=manual-code&state=${state}`;
 			},
 		});
@@ -92,77 +92,20 @@ describe.sequential("Anthropic OAuth", () => {
 		});
 		vi.stubGlobal("fetch", fetchMock);
 
-		const credentials = await refreshAnthropicToken("refresh-token");
+		const credentials = await anthropicOAuth.refresh(
+			{
+				type: "oauth",
+				access: "old-access-token",
+				refresh: "refresh-token",
+				expires: 0,
+			},
+			neverAbortedSignal,
+		);
 
 		expect(credentials.access).toBe("new-access-token");
 		expect(credentials.refresh).toBe("new-refresh-token");
 		expect(fetchMock).toHaveBeenCalledOnce();
 	});
-
-	it(
-		"times out and releases the port when neither a callback nor manual code arrives",
-		{ timeout: 2000 },
-		async () => {
-			// Bug: with no onManualCodeInput supplied, loginAnthropic awaits the
-			// callback server forever. That holds the fixed callback port
-			// (53692) open indefinitely if the browser callback never arrives.
-			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-
-			// onAuth only fires once the callback server is listening and its
-			// timeout timer is already scheduled, so awaiting it here (before
-			// advancing the fake clock) avoids racing the real socket-listen
-			// I/O against the fake-timer registration.
-			let resolveAuthCalled: () => void;
-			const authCalled = new Promise<void>((resolve) => {
-				resolveAuthCalled = resolve;
-			});
-
-			const loginPromise = loginAnthropic({
-				onAuth: () => resolveAuthCalled(),
-				onPrompt: async () => {
-					throw new Error("onPrompt should not run before the callback timeout fires");
-				},
-			});
-			const rejection = loginPromise.then(
-				() => new Error("expected loginAnthropic to time out and reject"),
-				(error: unknown) => error,
-			);
-
-			await authCalled;
-			await vi.advanceTimersByTimeAsync(CALLBACK_TIMEOUT_MS);
-
-			const result = await rejection;
-			expect(result).toBeInstanceOf(Error);
-			expect((result as Error).message).toMatch(/timed out/i);
-
-			vi.useRealTimers();
-
-			// The port must be released: a second callback server should be
-			// able to bind to the same fixed port right after the timeout.
-			const fetchMock = vi.fn(async () =>
-				jsonResponse({ access_token: "access-token", refresh_token: "refresh-token", expires_in: 3600 }),
-			);
-			vi.stubGlobal("fetch", fetchMock);
-
-			let authUrl = "";
-			const credentials = await loginAnthropic({
-				onAuth: (info) => {
-					authUrl = info.url;
-				},
-				onPrompt: async () => "",
-				onManualCodeInput: async () => {
-					const url = new URL(authUrl);
-					const state = url.searchParams.get("state");
-					const redirectUri = url.searchParams.get("redirect_uri");
-					if (!state || !redirectUri) {
-						throw new Error("Missing OAuth state or redirect_uri in auth URL");
-					}
-					return `${redirectUri}?code=manual-code&state=${state}`;
-				},
-			});
-			expect(credentials.access).toBe("access-token");
-		},
-	);
 
 	it("anthropicOAuth.login resolves through the manual_code prompt and aborts it after settling", async () => {
 		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
@@ -179,6 +122,7 @@ describe.sequential("Anthropic OAuth", () => {
 		let manualSignal: AbortSignal | undefined;
 
 		const credential = await anthropicOAuth.login({
+			signal: neverAbortedSignal,
 			notify: (event) => events.push(event),
 			prompt: async (prompt) => {
 				prompts.push(prompt);

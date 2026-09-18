@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-	loginOpenAICodex,
-	loginOpenAICodexDeviceCode,
-	openaiCodexOAuthProvider,
-	refreshOpenAICodexToken,
-} from "../src/utils/oauth/openai-codex.ts";
-import { CALLBACK_TIMEOUT_MS } from "../src/utils/oauth/types.ts";
+import { openaiCodexOAuth } from "../src/auth/oauth/openai-codex.ts";
+
+const neverAbortedSignal = new AbortController().signal;
 
 function jsonResponse(body: unknown, status: number = 200): Response {
 	return new Response(JSON.stringify(body), {
@@ -45,6 +41,30 @@ function deviceAuthPendingResponse(): Response {
 		},
 		403,
 	);
+}
+
+function loginOpenAICodexDeviceCodeForTest(options: {
+	onDeviceCode(info: {
+		userCode: string;
+		verificationUri: string;
+		intervalSeconds?: number;
+		expiresInSeconds?: number;
+	}): void;
+	signal?: AbortSignal;
+}) {
+	return openaiCodexOAuth.login({
+		signal: options.signal ?? neverAbortedSignal,
+		prompt: async (prompt) => {
+			if (prompt.type !== "select") throw new Error(`Unexpected prompt: ${prompt.type}`);
+			return "device_code";
+		},
+		notify: (event) => {
+			if (event.type === "device_code") {
+				const { type: _, ...info } = event;
+				options.onDeviceCode(info);
+			}
+		},
+	});
 }
 
 describe("OpenAI Codex OAuth", () => {
@@ -127,7 +147,7 @@ describe("OpenAI Codex OAuth", () => {
 
 		vi.stubGlobal("fetch", fetchMock);
 
-		const credentialsPromise = loginOpenAICodexDeviceCode({
+		const credentialsPromise = loginOpenAICodexDeviceCodeForTest({
 			onDeviceCode: (info) => deviceInfos.push(info),
 		});
 
@@ -161,7 +181,7 @@ describe("OpenAI Codex OAuth", () => {
 		const accessToken = createAccessToken("account-456");
 		const selectPrompts: Array<{
 			message: string;
-			options: Array<{ id: string; label: string }>;
+			options: readonly { id: string; label: string }[];
 		}> = [];
 		const deviceInfos: Array<{
 			userCode: string;
@@ -201,20 +221,23 @@ describe("OpenAI Codex OAuth", () => {
 		);
 
 		await expect(
-			openaiCodexOAuthProvider.login({
-				onAuth: () => {
-					throw new Error("Browser login should not start");
-				},
-				onDeviceCode: (info) => deviceInfos.push(info),
-				onPrompt: async () => {
-					throw new Error("Prompt should not be used");
-				},
-				onSelect: async (prompt) => {
+			openaiCodexOAuth.login({
+				signal: neverAbortedSignal,
+				prompt: async (prompt) => {
+					if (prompt.type !== "select") throw new Error("Text prompt should not be used");
 					selectPrompts.push(prompt);
 					return "device_code";
 				},
+				notify: (event) => {
+					if (event.type === "auth_url") throw new Error("Browser login should not start");
+					if (event.type === "device_code") {
+						const { type: _, ...info } = event;
+						deviceInfos.push(info);
+					}
+				},
 			}),
 		).resolves.toMatchObject({
+			type: "oauth",
 			access: accessToken,
 			refresh: "refresh-token",
 			accountId: "account-456",
@@ -222,6 +245,7 @@ describe("OpenAI Codex OAuth", () => {
 
 		expect(selectPrompts).toEqual([
 			{
+				type: "select",
 				message: "Select OpenAI Codex login method:",
 				options: [
 					{ id: "browser", label: "Browser login (default)" },
@@ -241,11 +265,12 @@ describe("OpenAI Codex OAuth", () => {
 
 	it("cancels when OpenAI Codex login method selection is cancelled", async () => {
 		await expect(
-			openaiCodexOAuthProvider.login({
-				onAuth: () => {},
-				onDeviceCode: () => {},
-				onPrompt: async () => "",
-				onSelect: async () => undefined,
+			openaiCodexOAuth.login({
+				signal: neverAbortedSignal,
+				prompt: async () => {
+					throw new Error("Login cancelled");
+				},
+				notify: () => {},
 			}),
 		).rejects.toThrow("Login cancelled");
 	});
@@ -275,7 +300,7 @@ describe("OpenAI Codex OAuth", () => {
 			}),
 		);
 
-		const credentialsPromise = loginOpenAICodexDeviceCode({
+		const credentialsPromise = loginOpenAICodexDeviceCodeForTest({
 			onDeviceCode: () => {},
 			signal: controller.signal,
 		});
@@ -319,7 +344,7 @@ describe("OpenAI Codex OAuth", () => {
 			}),
 		);
 
-		const credentialsPromise = loginOpenAICodexDeviceCode({
+		const credentialsPromise = loginOpenAICodexDeviceCodeForTest({
 			onDeviceCode: () => {},
 		});
 		const rejectionPromise = credentialsPromise.then(
@@ -337,76 +362,6 @@ describe("OpenAI Codex OAuth", () => {
 		expect(rejection).toBeInstanceOf(Error);
 		expect((rejection as Error).message).toBe("Device flow timed out");
 	});
-
-	it(
-		"browser flow times out and releases the port when neither a callback nor manual code arrives",
-		{ timeout: 2000 },
-		async () => {
-			// Bug: with no onManualCodeInput supplied, loginOpenAICodex awaits the
-			// callback server forever. That holds the fixed callback port (1455)
-			// open indefinitely if the browser callback never arrives.
-			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-
-			// onAuth only fires once the callback server is listening and its
-			// timeout timer is already scheduled, so awaiting it here (before
-			// advancing the fake clock) avoids racing the real socket-listen
-			// I/O against the fake-timer registration.
-			let resolveAuthCalled: () => void;
-			const authCalled = new Promise<void>((resolve) => {
-				resolveAuthCalled = resolve;
-			});
-
-			const loginPromise = loginOpenAICodex({
-				onAuth: () => resolveAuthCalled(),
-				onPrompt: async () => {
-					throw new Error("onPrompt should not run before the callback timeout fires");
-				},
-			});
-			const rejection = loginPromise.then(
-				() => new Error("expected loginOpenAICodex to time out and reject"),
-				(error: unknown) => error,
-			);
-
-			await authCalled;
-			await vi.advanceTimersByTimeAsync(CALLBACK_TIMEOUT_MS);
-
-			const result = await rejection;
-			expect(result).toBeInstanceOf(Error);
-			expect((result as Error).message).toMatch(/timed out/i);
-
-			vi.useRealTimers();
-
-			// The port must be released: a second callback server should be
-			// able to bind to the same fixed port right after the timeout.
-			const accessToken = createAccessToken("account-timeout");
-			const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
-				const url = getUrl(input);
-				if (url === "https://auth.openai.com/oauth/token") {
-					return jsonResponse({ access_token: accessToken, refresh_token: "refresh-token", expires_in: 3600 });
-				}
-				throw new Error(`Unexpected fetch URL: ${url}`);
-			});
-			vi.stubGlobal("fetch", fetchMock);
-
-			let authUrl = "";
-			const credentials = await loginOpenAICodex({
-				onAuth: (info) => {
-					authUrl = info.url;
-				},
-				onPrompt: async () => "",
-				onManualCodeInput: async () => {
-					const url = new URL(authUrl);
-					const state = url.searchParams.get("state");
-					const redirectUri = url.searchParams.get("redirect_uri");
-					if (!state || !redirectUri) {
-						throw new Error("Missing OAuth state or redirect_uri in auth URL");
-					}
-					return `${redirectUri}?code=manual-code&state=${state}`;
-				},
-			});
-			expect(credentials.access).toBe(accessToken);
-		},
-	);
 
 	it("treats OpenAI Codex device auth 403 and 404 responses as pending", async () => {
 		vi.useFakeTimers();
@@ -452,7 +407,7 @@ describe("OpenAI Codex OAuth", () => {
 			}),
 		);
 
-		const credentialsPromise = loginOpenAICodexDeviceCode({
+		const credentialsPromise = loginOpenAICodexDeviceCodeForTest({
 			onDeviceCode: () => {},
 		});
 
@@ -490,7 +445,7 @@ describe("OpenAI Codex OAuth", () => {
 		);
 
 		await expect(
-			loginOpenAICodexDeviceCode({
+			loginOpenAICodexDeviceCodeForTest({
 				onDeviceCode: () => {},
 			}),
 		).rejects.toThrow(
@@ -515,9 +470,17 @@ describe("OpenAI Codex OAuth", () => {
 			}),
 		);
 
-		await expect(refreshOpenAICodexToken("invalid-refresh-token")).rejects.toThrow(
-			/OpenAI Codex token refresh failed \(401\).*Could not validate your token/,
-		);
+		await expect(
+			openaiCodexOAuth.refresh(
+				{
+					type: "oauth",
+					access: "invalid-access-token",
+					refresh: "invalid-refresh-token",
+					expires: 0,
+				},
+				neverAbortedSignal,
+			),
+		).rejects.toThrow(/OpenAI Codex token refresh failed \(401\).*Could not validate your token/);
 		expect(consoleError).not.toHaveBeenCalled();
 	});
 });

@@ -29,7 +29,6 @@ export interface NormalizedProviderError {
 type SdkErrorShape = Error & {
 	statusCode?: unknown;
 	status?: unknown;
-	code?: unknown;
 	body?: unknown;
 	error?: unknown;
 	$metadata?: { httpStatusCode?: unknown };
@@ -57,26 +56,22 @@ export function normalizeProviderError(error: unknown): NormalizedProviderError 
 /**
  * Probe the HTTP status, first numeric hit wins, in SDK-field order:
  * `statusCode` (Mistral) → `status` (`openai`, `@google/genai`) →
- * `$metadata.httpStatusCode` (Bedrock) → `$response.statusCode` (Bedrock) →
- * `code` (`openai`, where a gateway may have stringified the status).
+ * `$metadata.httpStatusCode` (Bedrock) → `$response.statusCode` (Bedrock).
  */
 function extractStatus(error: SdkErrorShape): number | undefined {
 	if (typeof error.statusCode === "number") return error.statusCode;
 	if (typeof error.status === "number") return error.status;
 	if (typeof error.$metadata?.httpStatusCode === "number") return error.$metadata.httpStatusCode;
 	if (typeof error.$response?.statusCode === "number") return error.$response.statusCode;
-	// `code` also carries non-status values such as `content_filter`, so only a
-	// bare three-digit string counts.
-	if (typeof error.code === "string" && /^\d{3}$/.test(error.code)) return Number(error.code);
 	return undefined;
 }
 
 /**
  * Probe the raw body reason, first usable hit wins, in SDK-field order:
  * `body` string (Mistral) → `error` parsed JSON body object (`openai` SDK's
- * `this.error`) → `$response.body` (Bedrock). Empty objects are treated as no
- * body so an empty parsed body does not surface as `"{}"`. The chosen body is
- * truncated to the cap.
+ * `this.error`) → `$response.body` (Bedrock). Empty objects and unread response
+ * streams are treated as no body so they do not surface as `"{}"` or serialized
+ * stream internals. The chosen body is truncated to the cap.
  */
 function extractBody(error: SdkErrorShape): string | undefined {
 	const bodyText = pickBodyText(error);
@@ -88,37 +83,53 @@ function extractBody(error: SdkErrorShape): string | undefined {
 
 function pickBodyText(error: SdkErrorShape): string | undefined {
 	if (typeof error.body === "string") return error.body;
-	if (isNonEmptyObject(error.error)) return safeJsonStringify(error.error);
+	if (isPlainNonEmptyObject(error.error)) return safeJsonStringify(error.error);
 	const responseBody = error.$response?.body;
 	if (typeof responseBody === "string") return responseBody;
-	if (isNonEmptyObject(responseBody)) return safeJsonStringify(responseBody);
+	if (isReadableStreamLike(responseBody)) return undefined;
+	if (isPlainNonEmptyObject(responseBody)) return safeJsonStringify(responseBody);
 	return undefined;
 }
 
-function isNonEmptyObject(value: unknown): boolean {
-	return typeof value === "object" && value !== null && Object.keys(value).length > 0;
+function isReadableStreamLike(value: unknown): boolean {
+	return typeof value === "object" && value !== null && "pipe" in value && typeof value.pipe === "function";
+}
+
+/**
+ * Only a PLAIN object counts as an HTTP body. SDK error fields can hold class
+ * instances instead of parsed bodies — AWS SDK v3's `$response.body` is an
+ * HTTP stream/response wrapper object, and stringifying one produced garbage
+ * like `{"_events":...}` as the "body", which then REPLACED `error.message`
+ * in the composed display string. `error.message` is where the SDK puts the
+ * real deserialized exception text ("Input is too long...", schema validation
+ * details, ...), so the one useful string was discarded for noise. A class
+ * instance yields no body, `messageCarriesBody` stays true, and the real
+ * message survives. Complements the `pipe` sniffing above: web
+ * ReadableStreams (pipeTo/pipeThrough, no `pipe`) and non-stream SDK wrapper
+ * classes fail the prototype check, while parsed JSON bodies (plain objects
+ * by construction) still pass.
+ */
+function isPlainNonEmptyObject(value: unknown): boolean {
+	if (typeof value !== "object" || value === null) return false;
+	const proto = Object.getPrototypeOf(value);
+	if (proto !== Object.prototype && proto !== null) return false;
+	return Object.keys(value).length > 0;
 }
 
 /**
  * Compose a display string from a normalized error. When the message already
- * carries the body (Anthropic / `@google/genai` happy path) or no body was
- * extracted, the message is returned unchanged. Otherwise the body is surfaced,
- * with the status and an optional provider prefix when those are available.
+ * carries the body (Anthropic / `@google/genai` happy path) or no body/status
+ * was extracted, the message is returned unchanged. Otherwise the status and
+ * body are surfaced, with an optional provider prefix.
  *
- * A mid-stream failure has no status, because the response returned 200 before
- * the provider gave up, so the body is the only place the failure is named.
- *
- * - no prefix: `"<status>: <body>"`, or `"<body>"` without a status
- * - prefix:    `"<prefix> (<status>): <body>"`, or `"<prefix>: <body>"` without a status
+ * - no prefix: `"<status>: <body>"`
+ * - prefix:    `"<prefix> (<status>): <body>"`
  */
 export function formatProviderError(norm: NormalizedProviderError, prefix?: string): string {
-	if (norm.messageCarriesBody || norm.body === undefined) {
+	if (norm.messageCarriesBody || norm.status === undefined || norm.body === undefined) {
 		return prefix !== undefined && norm.status !== undefined
 			? `${prefix} (${norm.status}): ${norm.message}`
 			: norm.message;
-	}
-	if (norm.status === undefined) {
-		return prefix !== undefined ? `${prefix}: ${norm.body}` : norm.body;
 	}
 	return prefix !== undefined ? `${prefix} (${norm.status}): ${norm.body}` : `${norm.status}: ${norm.body}`;
 }
