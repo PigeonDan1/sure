@@ -11,6 +11,8 @@ try {
 	await build({
 		entryPoints: ["scripts/browser-smoke-entry.ts"],
 		bundle: true,
+		// agent-core's dist imports @earendil-works/pi-ai; CI has no packages/ai/dist.
+		alias: { "@earendil-works/pi-ai": "./packages/ai/src" },
 		platform: "browser",
 		format: "esm",
 		logLevel: "silent",
