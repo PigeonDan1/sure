@@ -681,7 +681,7 @@ export async function switchToInitializedModel(
 	manifest: SureInitManifest,
 ): Promise<string | undefined> {
 	const { defaultProvider, defaultModel } = manifest;
-	ctx.modelRegistry.refresh();
+	await ctx.modelRegistry.refresh();
 	const model = ctx.modelRegistry.find(defaultProvider, defaultModel);
 	const switched = model ? await pi.setModel(model) : false;
 	if (!switched) {

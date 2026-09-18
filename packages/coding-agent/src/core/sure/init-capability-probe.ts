@@ -184,7 +184,7 @@ export async function probeProtocol(target: ProbeTarget, options?: ProbeOptions)
 }
 
 /** Every level /sure_init asks upstream about, lowest to highest. */
-export const PROBE_LEVELS: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+export const PROBE_LEVELS: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /** Wire value sent for each internal level. "off" maps to the OpenAI "none" effort. */
 const UPSTREAM_EFFORT: Record<ModelThinkingLevel, string> = {
@@ -194,6 +194,7 @@ const UPSTREAM_EFFORT: Record<ModelThinkingLevel, string> = {
 	medium: "medium",
 	high: "high",
 	xhigh: "xhigh",
+	max: "max",
 };
 
 export type EffortApi = "openai-completions" | "openai-responses";

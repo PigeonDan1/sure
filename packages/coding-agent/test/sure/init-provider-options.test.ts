@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
-import { ModelRegistry } from "../../src/core/model-registry.ts";
 import { needsCapabilityProbe, SURE_INIT_PROVIDER_OPTIONS } from "../../src/core/sure/init.ts";
 import { listBuiltInProviderModels } from "../../src/core/sure/init-model-listing.ts";
+import { createInMemoryModelRegistry } from "../model-runtime-test-utils.ts";
 
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -24,7 +24,8 @@ describe("SURE init provider options", () => {
 	it("queries the official DeepSeek model list when auth is configured", async () => {
 		const option = SURE_INIT_PROVIDER_OPTIONS.find((entry) => entry.id === "deepseek");
 		if (!option) throw new Error("missing DeepSeek option");
-		const registry = ModelRegistry.inMemory(AuthStorage.inMemory({ deepseek: { type: "api_key", key: "sk-live" } }));
+		const authStorage = AuthStorage.inMemory({ deepseek: { type: "api_key", key: "sk-live" } });
+		const registry = await createInMemoryModelRegistry(authStorage);
 		const fetchMock = vi.fn(async () => Response.json({ data: [{ id: "deepseek-v4-flash" }] }));
 		vi.stubGlobal("fetch", fetchMock);
 

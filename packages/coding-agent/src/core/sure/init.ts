@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { KnownProvider, ModelThinkingLevel, OAuthLoginCallbacks, OAuthProviderId } from "@earendil-works/pi-ai";
+import type { ModelThinkingLevel, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 import { getModels } from "@earendil-works/pi-ai/compat";
 import { getModelsPath } from "../../config.ts";
 import type { ExtensionCommandContext } from "../extensions/types.ts";
@@ -96,7 +96,7 @@ export const SURE_INIT_PROVIDER_OPTIONS: SureInitProviderOption[] = [
 /** True when models.json has to carry this model's protocol because pi-ai's catalog does not. */
 export function needsCapabilityProbe(provider: string, modelId: string): boolean {
 	try {
-		return !getModels(provider as KnownProvider).some((model) => model.id === modelId);
+		return !getModels(provider as Parameters<typeof getModels>[0]).some((model) => model.id === modelId);
 	} catch {
 		return true;
 	}
@@ -200,7 +200,7 @@ async function runOAuthLogin(
 	};
 
 	try {
-		await modelRegistry.authStorage.login(option.provider as OAuthProviderId, callbacks);
+		await modelRegistry.authStorage.login(option.provider, callbacks);
 		modelRegistry.refresh();
 		return { ok: true };
 	} catch (error) {
@@ -636,7 +636,7 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 	}
 
 	if (refreshRegistry) {
-		ctx.modelRegistry.refresh();
+		await ctx.modelRegistry.refresh();
 	}
 
 	let probedApi: string | undefined;
@@ -715,7 +715,7 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 			if (!retreat) break;
 			tried.add(retreat.field);
 			mergeProviderCompat(providerKey, { [retreat.field]: retreat.value }, modelsJsonPath);
-			ctx.modelRegistry.refresh();
+			await ctx.modelRegistry.refresh();
 			settled.push(retreat.why);
 		}
 		const settledNotes = settled.map((why) => `兼容位已记进 models.json:${why}`);
@@ -753,7 +753,7 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 				modelsJsonPath,
 				probe: options.probe,
 			});
-			ctx.modelRegistry.refresh();
+			await ctx.modelRegistry.refresh();
 			if (!all.ok) {
 				probeAllLines.push(`整表探测中止:${all.message ?? "整表探测失败。"}`);
 			}
@@ -775,7 +775,7 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 
 	const settings = options.settingsManager ?? SettingsManager.create(ctx.cwd);
 	settings.setDefaultModelAndProvider(providerKey, modelId);
-	if (thinkingLevel) {
+	if (thinkingLevel && thinkingLevel !== "off") {
 		settings.setDefaultThinkingLevel(thinkingLevel);
 	}
 
