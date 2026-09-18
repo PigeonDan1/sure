@@ -154,6 +154,13 @@ async function* createFailedEvents(): AsyncIterable<ResponseStreamEvent> {
 	} as ResponseStreamEvent;
 }
 
+async function* createErrorEvents(): AsyncIterable<ResponseStreamEvent> {
+	yield {
+		type: "error",
+		sequence_number: 0,
+	} as unknown as ResponseStreamEvent;
+}
+
 async function* createPhasedMessageEvents(
 	phases: readonly ["commentary" | "final_answer", "commentary" | "final_answer"],
 	terminalStatus: "completed" | "incomplete" = "completed",
@@ -341,6 +348,16 @@ describe("OpenAI Responses terminal event handling", () => {
 		expect(output.stopReason).toBe("error");
 		expect(output.rawStopReason).toBe("incomplete.max_time_limit");
 		expect(output.errorMessage).toBe("Response incomplete: max_time_limit");
+	});
+
+	it("names an error event that carries neither a code nor a message", async () => {
+		const model = createModel();
+		const output = createOutput(model);
+		const stream = new AssistantMessageEventStream();
+
+		await expect(processResponsesStream(createErrorEvents(), output, stream, model)).rejects.toThrow(
+			"Error Code unknown: no message",
+		);
 	});
 
 	it("rejects failed terminal events with the provider error", async () => {

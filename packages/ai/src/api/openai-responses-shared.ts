@@ -741,7 +741,9 @@ export async function processResponsesStream<TApi extends Api>(
 		} else if (event.type === "response.completed" || event.type === "response.incomplete") {
 			finalizeResponse(event.response);
 		} else if (event.type === "error") {
-			throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
+			// A template literal is never falsy, so the `|| "Unknown error"` that
+			// used to sit here could not fire; fall back per field instead.
+			throw new Error(`Error Code ${event.code || "unknown"}: ${event.message || "no message"}`);
 		} else if (event.type === "response.failed") {
 			sawTerminalResponseEvent = true;
 			output.rawStopReason = event.response?.status;
