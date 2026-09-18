@@ -3,16 +3,12 @@
 	"private": true,
 	"type": "module",
 	"workspaces": [
-		"packages/*",
-		"packages/coding-agent/examples/extensions/with-deps",
-		"packages/coding-agent/examples/extensions/custom-provider-anthropic",
-		"packages/coding-agent/examples/extensions/custom-provider-gitlab-duo",
-		"packages/coding-agent/examples/extensions/sandbox",
-		"packages/coding-agent/examples/extensions/gondolin"
+		"packages/ai",
+		"packages/coding-agent"
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces",
-		"build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build && cd ../orchestrator && npm run build",
+		"build": "cd packages/ai && npm run build:offline && cd ../coding-agent && npm run build",
 		"check": "node scripts/run-checks.mjs",
 		"format": "biome check --write --error-on-warnings .",
 		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
