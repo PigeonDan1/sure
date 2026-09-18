@@ -18,12 +18,12 @@
 - Changed `/sure_init` to leave a saved global default thinking level alone when it resolves the level to `off`, which the 0.85.1 settings type cannot represent. Use `/thinking` to change the default.
 - Changed the Azure default model to `gpt-5.5`.
 - Changed the model catalog to committed data: `packages/ai/src/providers/data/` holds the catalog published inside `@earendil-works/pi-ai@0.85.1`, and pi-ai builds with `npm run build:offline`, which validates it without network access.
-- Changed vitest to run offline by default (`PI_OFFLINE=1`); tests that need the network opt in with `allowNetwork()`.
+- Changed coding-agent's vitest to run offline by default (`PI_OFFLINE=1` in its own vitest config); tests that need the network opt in with `allowNetwork()`.
 - Changed `test.sh` to pi's `env -i` allowlist sandbox, and `pi-test.sh` / `pi-test.ps1` to run the CLI from source through `node --import test/source-resolver.ts`. `--no-env` now only moves `auth.json` aside.
 
 ### Removed
 
-- Removed the vendored `packages/agent`, `packages/tui`, and `packages/orchestrator` in favour of the pinned npm packages.
+- Removed the vendored `packages/agent` and `packages/tui` in favour of the pinned npm `@earendil-works/pi-agent-core` and `@earendil-works/pi-tui`, and removed the vendored `packages/orchestrator`, which has no counterpart. `@earendil-works/chord` and `@earendil-works/pi-telemetry` are new 0.85.1 dependencies, not replacements.
 - Removed pi's experimental remote runtime (`src/experimental`, `src/cli/experimental`, `src/client`, their 18 test files, and the example plugin). Its Node source-resolution hook survives as `test/source-resolver.ts`.
 - Removed three tests that reached into the removed tui package's own sources and helpers.
 - Removed `scripts/credential-env.txt` and its `check:credential-env` script, replaced by the `env -i` allowlist in `test.sh`.

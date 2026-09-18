@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+Vendored pi is frozen at 0.85.1; this package is edited directly from here on. See [docs/pi-0.85.1-upgrade.md](../../docs/pi-0.85.1-upgrade.md).
+
+### Added
+
+- Added a `PROVIDER_MIDSTREAM_ERROR` assistant-message diagnostic for `openai-responses` and `azure-openai-responses` streams that drop after a 200, and made it retryable in `retry.ts`, so a silently truncated stream is reported and retried instead of surfacing as an empty turn.
+
+### Fixed
+
+- Fixed the Responses error template to drop a dead `|| "Unknown error"` short-circuit that could never be reached.
+- Fixed `error-body.ts` to read a bare three-digit numeric-string `code` as an HTTP status, for gateways that stringify it there, and to surface a parsed body when no status could be extracted at all, which is the case for a mid-stream failure that returned 200 before the provider gave up.
+- Fixed Gemini stop reasons to compose the provider's `finishMessage` into `rawStopReason`, so the user-visible string is `Provider stopped with: REASON (message)` instead of the bare reason.
+- Fixed Responses `cancelled` and `failed` results to carry `errorMessage: "Response <status>"`, since the status is the only record of why the response ended.
+- Fixed the Anthropic and OpenAI Codex OAuth logins to give up after five minutes (`LOGIN_TIMEOUT_MS`, the deadline openrouter already used) when the browser never redirects back, instead of hanging with the fixed callback port bound.
+- Fixed retry classification: de-duplicated `isTerminalRateLimitError` and made "produced invalid content" retryable.
+
 ## [0.85.1] - 2026-09-05
 
 ### Added
