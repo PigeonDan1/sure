@@ -469,13 +469,13 @@ async function loginOpenAICodex(interaction: ProviderAuthInteraction): Promise<O
 	let manualCode: string | undefined;
 	let manualError: Error | undefined;
 
-	interaction.notify({
-		type: "auth_url",
-		url,
-		instructions: "A browser window should open. Complete login to finish.",
-	});
-
 	try {
+		interaction.notify({
+			type: "auth_url",
+			url,
+			instructions: "A browser window should open. Complete login to finish.",
+		});
+
 		const manualPromise = interaction
 			.prompt({
 				type: "manual_code",
