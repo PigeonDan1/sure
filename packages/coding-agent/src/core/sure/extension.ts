@@ -3,6 +3,7 @@ import { basename, isAbsolute, relative, resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
+	type AgentEndEvent,
 	defineTool,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
@@ -92,6 +93,8 @@ interface ActiveRun {
 	finishMissing?: boolean;
 	/** Headless continuation prompts sent for this run. */
 	finishNudges?: number;
+	/** Messages from the latest agent_end, read once the run settles. */
+	lastAgentMessages?: AgentEndEvent["messages"];
 }
 
 /** Cap on automatic continuation prompts for headless (print/json) runs. */
@@ -1061,7 +1064,7 @@ export function createSureExtension(): ExtensionFactory {
 			return undefined;
 		});
 
-		pi.on("agent_end", async (event, ctx) => {
+		pi.on("agent_end", async (event) => {
 			const active = activeRun;
 			if (!active) {
 				return;
@@ -1069,12 +1072,27 @@ export function createSureExtension(): ExtensionFactory {
 			if (active.record.status !== "running") {
 				return;
 			}
-			if (event.willRetry) {
-				// The session restarts this same turn, so the run is not abandoned yet.
+			// A retry, a compaction or a queued message can still continue this run, so
+			// judge it abandoned only on agent_settled. That event carries no payload.
+			active.lastAgentMessages = event.messages;
+		});
+
+		pi.on("agent_settled", async (_event, ctx) => {
+			const active = activeRun;
+			if (!active) {
+				return;
+			}
+			if (active.record.status !== "running") {
+				return;
+			}
+			const messages = active.lastAgentMessages;
+			active.lastAgentMessages = undefined;
+			if (!messages) {
+				// Nothing ran since the last settle; there is no turn to call abandoned.
 				return;
 			}
 			const runManager = new SureRunManager(active.record.cwd);
-			const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+			const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
 			// A provider that gave up leaves its reason only on the assistant message.
 			// Recording the reminder over it makes the run read as agent negligence.
 			const providerError =
