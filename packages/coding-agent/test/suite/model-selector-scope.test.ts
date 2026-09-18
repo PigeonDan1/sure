@@ -35,8 +35,8 @@ function testModel(provider: string, id: string): Model<Api> {
 
 /**
  * The slice of ModelRuntime the selector actually reads while it builds its list. refresh()
- * is deliberately missing: only the background refreshModels() wants it, that call is fired
- * with void and catches its own failure, and scope selection is settled before it runs.
+ * resolves empty so the background refreshModels() takes its success path instead of its
+ * catch branch; scope selection is settled before it runs either way.
  */
 function createFakeRuntime(models: readonly Model<Api>[]): ModelRuntime {
 	return {
@@ -44,6 +44,7 @@ function createFakeRuntime(models: readonly Model<Api>[]): ModelRuntime {
 		getModel: (provider: string, id: string) =>
 			models.find((model) => model.provider === provider && model.id === id),
 		getError: () => undefined,
+		refresh: async () => ({ aborted: false, errors: new Map<string, Error>() }),
 	} as unknown as ModelRuntime;
 }
 
