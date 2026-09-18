@@ -32,7 +32,7 @@ interface DefaultModelReference {
 	id: string;
 }
 
-type ModelScope = "all" | "scoped";
+type ModelScope = "provider" | "all" | "scoped";
 
 /**
  * Component that renders a model selector with search
@@ -66,7 +66,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	private tui: TUI;
 	private scopedModels: ReadonlyArray<ScopedModelItem>;
 	private defaultModel?: DefaultModelReference;
-	private scope: ModelScope = "all";
+	private scope: ModelScope;
 	private scopeText?: Text;
 	private scopeHintText?: Text;
 	private readonly refreshAbortController = new AbortController();
@@ -91,7 +91,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		this.modelRuntime = modelRuntime;
 		this.scopedModels = scopedModels;
 		this.defaultModel = defaultModel;
-		this.scope = scopedModels.length > 0 ? "scoped" : "all";
+		this.scope = this.computeInitialScope(initialSearchInput);
 		this.onSelectCallback = onSelect;
 		this.onSelectAsDefaultCallback = onSelectAsDefault;
 		this.onCancelCallback = onCancel;
@@ -100,16 +100,15 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
 
-		// Add hint about model filtering
-		if (scopedModels.length > 0) {
-			this.scopeText = new Text(this.getScopeText(), 0, 0);
-			this.addChild(this.scopeText);
-			this.scopeHintText = new Text(this.getScopeHintText(), 0, 0);
-			this.addChild(this.scopeHintText);
-		} else {
-			const hintText = "Only showing models from configured providers. Use /login to add providers.";
-			this.addChild(new Text(theme.fg("warning", hintText), 0, 0));
-		}
+		// Scope indicator: always shown, since "all" plus at least one other scope
+		// ("provider" and/or "scoped") is always applicable.
+		this.scopeText = new Text(this.getScopeText(), 0, 0);
+		this.addChild(this.scopeText);
+		this.scopeHintText = new Text(this.getScopeHintText(), 0, 0);
+		this.addChild(this.scopeHintText);
+
+		const hintText = "Only showing models from configured providers. Use /login to add providers.";
+		this.addChild(new Text(theme.fg("warning", hintText), 0, 0));
 		this.addChild(new Spacer(1));
 
 		// Create search input
@@ -174,11 +173,65 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			id: scoped.model.id,
 			model: scoped.model,
 		}));
-		this.activeModels = this.scope === "scoped" ? this.scopedModelItems : this.allModels;
+		this.resolveProviderScopeFallback();
+		this.activeModels = this.computeActiveModels();
 		this.filteredModels = this.activeModels;
 		const currentIndex = this.filteredModels.findIndex((item) => modelsAreEqual(this.currentModel, item.model));
 		this.selectedIndex =
 			currentIndex >= 0 ? currentIndex : Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
+		this.refreshScopeIndicator();
+	}
+
+	/** The initial scope choice, before knowing which models are actually available. */
+	private computeInitialScope(initialSearchInput?: string): ModelScope {
+		// A pre-filled search term means the user typed something specific -
+		// don't hide cross-provider matches from them.
+		if (initialSearchInput) return "all";
+		// Existing behavior: an explicit scoped subset stays the default.
+		if (this.scopedModels.length > 0) return "scoped";
+		if (!this.currentModel) return "all";
+		return "provider";
+	}
+
+	/** Falls back from "provider" to "all" once we know the current provider has no models available. */
+	private resolveProviderScopeFallback(): void {
+		if (this.scope === "provider" && !this.hasProviderModels()) {
+			this.scope = "all";
+		}
+	}
+
+	private hasProviderModels(): boolean {
+		return this.getProviderModels().length > 0;
+	}
+
+	private getProviderModels(): ModelItem[] {
+		if (!this.currentModel) return [];
+		const provider = this.currentModel.provider;
+		return this.allModels.filter((item) => item.provider === provider);
+	}
+
+	private computeActiveModels(): ModelItem[] {
+		if (this.scope === "provider") return this.getProviderModels();
+		if (this.scope === "scoped") return this.scopedModelItems;
+		return this.allModels;
+	}
+
+	/** Scopes applicable given the current models and configuration, in Tab-cycle order. */
+	private getApplicableScopes(): ModelScope[] {
+		const scopes: ModelScope[] = [];
+		if (this.hasProviderModels()) scopes.push("provider");
+		scopes.push("all");
+		if (this.scopedModelItems.length > 0) scopes.push("scoped");
+		return scopes;
+	}
+
+	private refreshScopeIndicator(): void {
+		if (this.scopeText) {
+			this.scopeText.setText(this.getScopeText());
+		}
+		if (this.scopeHintText) {
+			this.scopeHintText.setText(this.getScopeHintText());
+		}
 	}
 
 	private async refreshModels(): Promise<void> {
@@ -214,6 +267,8 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			this.errorMessage = timedOut
 				? "Model refresh timed out; showing cached models."
 				: `Could not refresh model catalogs: ${error instanceof Error ? error.message : String(error)}`;
+			this.resolveProviderScopeFallback();
+			this.refreshScopeIndicator();
 			this.updateList();
 			this.tui.requestRender();
 		} finally {
@@ -246,13 +301,16 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	}
 
 	private getScopeText(): string {
-		const allText = this.scope === "all" ? theme.fg("accent", "all") : theme.fg("muted", "all");
-		const scopedText = this.scope === "scoped" ? theme.fg("accent", "scoped") : theme.fg("muted", "scoped");
-		return `${theme.fg("muted", "Scope: ")}${allText}${theme.fg("muted", " | ")}${scopedText}`;
+		const scopes = this.getApplicableScopes();
+		const rendered = scopes.map((scope) =>
+			scope === this.scope ? theme.fg("accent", scope) : theme.fg("muted", scope),
+		);
+		return `${theme.fg("muted", "Scope: ")}${rendered.join(theme.fg("muted", " | "))}`;
 	}
 
 	private getScopeHintText(): string {
-		return keyHint("tui.input.tab", "scope") + theme.fg("muted", " (all/scoped)");
+		const scopes = this.getApplicableScopes();
+		return keyHint("tui.input.tab", "scope") + theme.fg("muted", ` (${scopes.join("/")})`);
 	}
 
 	private isDefaultModel(model: Model<any>): boolean {
@@ -267,13 +325,11 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	private setScope(scope: ModelScope): void {
 		if (this.scope === scope) return;
 		this.scope = scope;
-		this.activeModels = this.scope === "scoped" ? this.scopedModelItems : this.allModels;
+		this.activeModels = this.computeActiveModels();
 		const currentIndex = this.activeModels.findIndex((item) => modelsAreEqual(this.currentModel, item.model));
 		this.selectedIndex = currentIndex >= 0 ? currentIndex : 0;
 		this.filterModels(this.searchInput.getValue());
-		if (this.scopeText) {
-			this.scopeText.setText(this.getScopeText());
-		}
+		this.refreshScopeIndicator();
 	}
 
 	private filterModels(query: string): void {
@@ -362,11 +418,12 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	handleInput(keyData: string): void {
 		const kb = getKeybindings();
 		if (kb.matches(keyData, "tui.input.tab")) {
-			if (this.scopedModelItems.length > 0) {
-				const nextScope: ModelScope = this.scope === "all" ? "scoped" : "all";
-				this.setScope(nextScope);
-				if (this.scopeHintText) {
-					this.scopeHintText.setText(this.getScopeHintText());
+			const scopes = this.getApplicableScopes();
+			if (scopes.length > 1) {
+				const currentIndex = scopes.indexOf(this.scope);
+				const nextScope = scopes[(currentIndex + 1) % scopes.length];
+				if (nextScope) {
+					this.setScope(nextScope);
 				}
 			}
 			return;

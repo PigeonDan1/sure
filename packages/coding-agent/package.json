@@ -19,6 +19,10 @@
 		"./rpc-entry": {
 			"import": "./dist/bundle/rpc-entry.js"
 		},
+		"./hooks": {
+			"types": "./dist/core/sure/hook-types.d.ts",
+			"import": "./dist/core/sure/hook-types.js"
+		},
 		"./client": {
 			"source": "./src/client/index.ts"
 		},

@@ -2582,13 +2582,15 @@ export class AgentSession {
 					});
 				},
 				sendUserMessage: (content, options) => {
-					this.sendUserMessage(content, options).catch((err) => {
+					const pending = this.sendUserMessage(content, options);
+					pending.catch((err) => {
 						runner.emitError({
 							extensionPath: "<runtime>",
 							event: "send_user_message",
 							error: err instanceof Error ? err.message : String(err),
 						});
 					});
+					return pending;
 				},
 				appendEntry: (customType, data) => {
 					const entryId = this.sessionManager.appendCustomEntry(customType, data);
@@ -2748,11 +2750,16 @@ export class AgentSession {
 			}
 		} else if (options?.includeAllExtensionTools) {
 			for (const tool of wrappedExtensionTools) {
-				nextActiveToolNames.push(tool.name);
+				if (this._toolDefinitions.get(tool.name)?.definition.activeByDefault !== false) {
+					nextActiveToolNames.push(tool.name);
+				}
 			}
 		} else if (!options?.activeToolNames) {
 			for (const toolName of this._toolRegistry.keys()) {
-				if (!previousRegistryNames.has(toolName)) {
+				if (
+					!previousRegistryNames.has(toolName) &&
+					this._toolDefinitions.get(toolName)?.definition.activeByDefault !== false
+				) {
 					nextActiveToolNames.push(toolName);
 				}
 			}

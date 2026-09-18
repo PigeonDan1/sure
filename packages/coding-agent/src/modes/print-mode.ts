@@ -8,6 +8,7 @@
 
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
+import { noOpUIContext } from "../core/extensions/index.ts";
 import { flushRawStdout, waitForRawStdoutBackpressure, writeRawStdout } from "../core/output-guard.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
 import { toJsonEvent } from "./json-event.ts";
@@ -48,16 +49,19 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	};
 
 	const registerSignalHandlers = (): void => {
-		const signals: NodeJS.Signals[] = ["SIGTERM"];
+		const signals: Array<[NodeJS.Signals, number]> = [
+			["SIGTERM", 143],
+			["SIGINT", 130],
+		];
 		if (process.platform !== "win32") {
-			signals.push("SIGHUP");
+			signals.push(["SIGHUP", 129]);
 		}
 
-		for (const signal of signals) {
+		for (const [signal, code] of signals) {
 			const handler = () => {
 				killTrackedDetachedChildren();
 				void disposeRuntime().finally(() => {
-					process.exit(signal === "SIGHUP" ? 129 : 143);
+					process.exit(code);
 				});
 			};
 			process.on(signal, handler);
@@ -74,6 +78,16 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
 		await session.bindExtensions({
+			uiContext: {
+				...noOpUIContext,
+				notify: (message: string) => {
+					if (mode === "json") {
+						writeRawStdout(`${JSON.stringify({ type: "extension_notify", message })}\n`);
+					} else {
+						writeRawStdout(`${message}\n`);
+					}
+				},
+			},
 			mode: mode === "json" ? "json" : "print",
 			commandContextActions: {
 				waitForIdle: () => session.waitForIdle(),

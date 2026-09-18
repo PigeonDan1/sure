@@ -277,6 +277,18 @@ export {
 	type SkillFrontmatter,
 } from "./core/skills.ts";
 export { createSyntheticSourceInfo } from "./core/source-info.ts";
+export type {
+	SureFinishDetails,
+	SureFinishParams,
+	SureHookContext,
+	SureHookPoint,
+	SureHookResult,
+	SureRunRecord,
+	SureRunStatus,
+	SureSkillManifest,
+	SureSkillPackage,
+} from "./core/sure/index.ts";
+export { createSureExtension, sureExtension } from "./core/sure/index.ts";
 export { type EditDiffResult, generateDiffString, generateUnifiedPatch } from "./core/tools/edit-diff.ts";
 // Tools
 export {

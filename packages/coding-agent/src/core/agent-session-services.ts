@@ -3,6 +3,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
+import { withDefaultExtensionFactories } from "./default-extensions.ts";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { ModelRuntime } from "./model-runtime.ts";
 import {
@@ -145,8 +146,13 @@ export async function createAgentSessionServices(
 			signal: options.modelRuntimeSignal,
 		}));
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
+	const includeDefaultExtensions = options.resourceLoaderOptions?.noExtensions !== true;
+	const extensionFactories = withDefaultExtensionFactories(options.resourceLoaderOptions?.extensionFactories, {
+		includeDefaults: includeDefaultExtensions,
+	});
 	const resourceLoader = new DefaultResourceLoader({
 		...(options.resourceLoaderOptions ?? {}),
+		extensionFactories,
 		cwd,
 		agentDir,
 		settingsManager,

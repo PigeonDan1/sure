@@ -78,3 +78,15 @@ export {
 	type WorkingIndicatorOptions,
 } from "./extensions/index.ts";
 export { createSyntheticSourceInfo } from "./source-info.ts";
+export type {
+	SureFinishDetails,
+	SureFinishParams,
+	SureHookContext,
+	SureHookPoint,
+	SureHookResult,
+	SureRunRecord,
+	SureRunStatus,
+	SureSkillManifest,
+	SureSkillPackage,
+} from "./sure/index.ts";
+export { createSureExtension, sureExtension } from "./sure/index.ts";
