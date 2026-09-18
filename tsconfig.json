@@ -17,10 +17,5 @@
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*"],
-	"exclude": [
-		"**/dist/**",
-		"packages/coding-agent/src/client/**",
-		"packages/coding-agent/src/experimental/**",
-		"packages/coding-agent/src/cli/experimental/**"
-	]
+	"exclude": ["**/dist/**"]
 }

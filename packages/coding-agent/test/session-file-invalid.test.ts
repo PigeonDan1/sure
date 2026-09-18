@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 
 const cliPath = resolve(__dirname, "../src/cli.ts");
-const sourceResolverPath = resolve(__dirname, "../src/experimental/source-resolver.ts");
+const sourceResolverPath = resolve(__dirname, "./source-resolver.ts");
 const tempDirs: string[] = [];
 
 afterEach(() => {

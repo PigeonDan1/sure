@@ -20,7 +20,7 @@ interface SourceAlias {
 	readonly replacements: readonly string[];
 }
 
-const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
+const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const tsconfigPath = resolve(repositoryRoot, "tsconfig.json");
 const tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8")) as TsConfig;
 const paths = tsconfig.compilerOptions?.paths;
