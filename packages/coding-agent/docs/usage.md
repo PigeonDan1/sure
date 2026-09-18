@@ -64,6 +64,8 @@ You can submit messages while the agent is still working:
 - **Escape** aborts and restores queued messages to the editor.
 - **Alt+Up** retrieves queued messages back to the editor.
 
+On Windows Terminal, Alt+Enter is fullscreen by default.
+
 Configure delivery in [Settings](settings.md) with `steeringMode` and `followUpMode`.
 
 ## Sessions
