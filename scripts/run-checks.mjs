@@ -17,7 +17,6 @@ const checks = [
 	["npm", ["run", "check:pinned-deps"]],
 	["npm", ["run", "check:ts-imports"]],
 	["npm", ["run", "check:sure-hooks"]],
-	["npm", ["run", "check:credential-env"]],
 	["tsgo", ["--noEmit"]],
 	["npm", ["run", "check:browser-smoke"]],
 ];

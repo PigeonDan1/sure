@@ -34,12 +34,7 @@ if [[ "$NO_ENV" == "true" ]]; then
     echo "Moved auth.json to backup"
   fi
 
-  # Unset API keys (see packages/ai/src/env-api-keys.ts).
-  while read -r var; do
-    case "$var" in ''|'#'*) continue;; esac
-    unset "$var"
-  done < "$SCRIPT_DIR/scripts/credential-env.txt"
-  echo "Running without API keys..."
+  echo "Running without stored credentials..."
 fi
 
 if [[ ! -x "$SCRIPT_DIR/node_modules/.bin/tsx" ]]; then

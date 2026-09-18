@@ -29,15 +29,7 @@ try {
 			Write-Host "Moved auth.json to backup"
 		}
 
-		$credentialEnvFile = Join-Path $scriptDir "scripts/credential-env.txt"
-		Get-Content -LiteralPath $credentialEnvFile | ForEach-Object {
-			$name = $_.Trim()
-			if ($name -and -not $name.StartsWith('#')) {
-				Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
-			}
-		}
-
-		Write-Host "Running without API keys..."
+		Write-Host "Running without stored credentials..."
 	}
 
 	$tsxBin = Join-Path $scriptDir "node_modules/.bin/tsx.cmd"

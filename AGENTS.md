@@ -158,13 +158,7 @@ SURE test files live in `packages/coding-agent/test/suite/` (`sure-extension`, `
 
 ### Credential-Free Launchers
 
-The variable names live in one shared file:
-
-```text
-scripts/credential-env.txt
-```
-
-Add new credential variable names there, sorted alphabetically, names only, never secret values. `pi-test.sh --no-env` and `pi-test.ps1 --no-env` temporarily move `auth.json` out of the agent config directory for that run and restore it on exit; `test.sh` always runs credential-free and takes no flags.
+`test.sh` starts the suite from an empty environment with `env -i` and passes through only an allowlist of platform and test variables, so no credential in your shell reaches a test. `pi-test.sh --no-env` and `pi-test.ps1 --no-env` temporarily move `auth.json` out of the agent config directory for that run and restore it on exit; `test.sh` takes no flags.
 
 ### Runtime Provenance Lifecycle
 
