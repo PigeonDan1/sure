@@ -1140,7 +1140,7 @@ export function createSureExtension(): ExtensionFactory {
 			active.finishMissing = true;
 			if (headless && (active.finishNudges ?? 0) < MAX_FINISH_NUDGES) {
 				active.finishNudges = (active.finishNudges ?? 0) + 1;
-				await pi.sendUserMessage(buildFinishNudge(active.record), { deliverAs: "followUp" });
+				await pi.sendUserMessage(buildFinishNudge(active.record));
 			}
 		});
 
