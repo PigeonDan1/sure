@@ -5,11 +5,12 @@ import type { Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
 import type { ExtensionCommandContext } from "../../src/core/extensions/types.ts";
-import { ModelRegistry } from "../../src/core/model-registry.ts";
+import { CredentialSynchronizationError } from "../../src/core/model-runtime.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
 import { parseInitArgs, runSureInit, SURE_INIT_PROVIDER_OPTIONS } from "../../src/core/sure/init.ts";
 import { menuEntryLabel } from "../../src/core/sure/init-menu.ts";
 import type { SureInitManifest } from "../../src/core/sure/init-types.ts";
+import { createInMemoryModelRegistry, createModelRegistry, getModelRuntime } from "../model-runtime-test-utils.ts";
 
 vi.mock("../../src/core/sure/manifest.ts", () => ({
 	discoverSureSkillPackages: vi.fn(() => ({
@@ -28,7 +29,7 @@ vi.mock("../../src/core/sure/manifest.ts", () => ({
 }));
 
 /** Build a fake command context. Returns the ui dialog mocks separately for per-test overrides. */
-function makeContext(options?: {
+async function makeContext(options?: {
 	trusted?: boolean;
 	hasUI?: boolean;
 	selectedIndex?: number;
@@ -38,13 +39,13 @@ function makeContext(options?: {
 	modelsJsonPath?: string;
 }) {
 	const cwd = options?.cwd ?? join(tmpdir(), `pi-sure-init-${Date.now()}`);
-	const authStorage = AuthStorage.inMemory();
-	if (options?.configuredAuth) {
-		authStorage.set("kimi-coding", { type: "api_key", key: "fake-key" });
-	}
+	// Seed before the registry: ModelRuntime.create snapshots credentials once.
+	const authStorage = AuthStorage.inMemory(
+		options?.configuredAuth ? { "kimi-coding": { type: "api_key", key: "fake-key" } } : {},
+	);
 	const modelRegistry = options?.modelsJsonPath
-		? ModelRegistry.create(authStorage, options.modelsJsonPath)
-		: ModelRegistry.inMemory(authStorage);
+		? await createModelRegistry(authStorage, options.modelsJsonPath)
+		: await createInMemoryModelRegistry(authStorage);
 	const settingsManager = SettingsManager.inMemory();
 
 	const select = vi.fn(async (_title: string, _choices: string[]) => undefined as string | undefined);
@@ -93,6 +94,7 @@ function makeContext(options?: {
 		hasUI: options?.hasUI ?? true,
 		sessionManager: {} as any,
 		modelRegistry,
+		scopedModels: [],
 		model: { provider: "kimi-coding", id: "kimi-for-coding" } as Model<any>,
 		isIdle: vi.fn(() => true),
 		isProjectTrusted: vi.fn(() => options?.trusted ?? true),
@@ -112,7 +114,7 @@ function makeContext(options?: {
 		reload: vi.fn(),
 	};
 
-	return { ctx, settingsManager, ui };
+	return { ctx, settingsManager, ui, authStorage };
 }
 
 /** What the probe reports for a reasoning model on the responses protocol. */
@@ -227,7 +229,7 @@ describe("runSureInit", () => {
 	});
 
 	it("fails when project is not trusted", async () => {
-		const { ctx } = makeContext({ trusted: false, cwd: tempDir });
+		const { ctx } = await makeContext({ trusted: false, cwd: tempDir });
 		const result = await runSureInit({ ctx, modelsJsonPath: join(tempDir, "models.json") });
 		expect(result.success).toBe(false);
 		expect(result.message).toContain("not trusted");
@@ -235,7 +237,7 @@ describe("runSureInit", () => {
 	});
 
 	it("fails when no option is selected in non-UI mode", async () => {
-		const { ctx } = makeContext({ hasUI: false, cwd: tempDir });
+		const { ctx } = await makeContext({ hasUI: false, cwd: tempDir });
 		const result = await runSureInit({ ctx, modelsJsonPath: join(tempDir, "models.json") });
 		expect(result.success).toBe(false);
 		expect(result.message).toContain("No agent selected");
@@ -246,7 +248,7 @@ describe("runSureInit", () => {
 			"fetch",
 			vi.fn(async () => Response.json({ data: [{ id: "kimi-for-coding" }] })),
 		);
-		const { ctx, settingsManager, ui } = makeContext({
+		const { ctx, settingsManager, ui, authStorage } = await makeContext({
 			selectedIndex: 1, // kimi-code
 			apiKey: "test-kimi-api-key",
 			cwd: tempDir,
@@ -260,7 +262,7 @@ describe("runSureInit", () => {
 		expect(result.manifest?.defaultModel).toBe("kimi-for-coding");
 		expect(result.manifest?.availableSkills).toContain("/sure_feed");
 
-		const stored = ctx.modelRegistry.authStorage.get("kimi-coding");
+		const stored = await authStorage.read("kimi-coding");
 		expect(stored?.type).toBe("api_key");
 		if (stored?.type === "api_key") {
 			expect(stored.key).toBe("test-kimi-api-key");
@@ -277,7 +279,7 @@ describe("runSureInit", () => {
 	});
 
 	it("uses pre-provided API key from args", async () => {
-		const { ctx, settingsManager } = makeContext({ cwd: tempDir });
+		const { ctx, settingsManager, authStorage } = await makeContext({ cwd: tempDir });
 		const result = await runSureInit({
 			ctx,
 			args: "--option kimi-code --api-key sk-arg --model kimi-for-coding",
@@ -289,7 +291,7 @@ describe("runSureInit", () => {
 		expect(ctx.ui.select).not.toHaveBeenCalled();
 		expect(ctx.ui.input).not.toHaveBeenCalled();
 
-		const stored = ctx.modelRegistry.authStorage.get("kimi-coding");
+		const stored = await authStorage.read("kimi-coding");
 		expect(stored?.type).toBe("api_key");
 		if (stored?.type === "api_key") {
 			expect(stored.key).toBe("sk-arg");
@@ -298,8 +300,25 @@ describe("runSureInit", () => {
 		expect(settingsManager.getGlobalSettings().defaultModel).toBe("kimi-for-coding");
 	});
 
+	it("trims the API key typed into the prompt before storing it", async () => {
+		const { ctx, settingsManager, authStorage } = await makeContext({ apiKey: "sk-x \n", cwd: tempDir });
+		const result = await runSureInit({
+			ctx,
+			args: "--option kimi-code --model kimi-for-coding",
+			settingsManager,
+			modelsJsonPath: join(tempDir, "models.json"),
+		});
+
+		expect(result.success).toBe(true);
+		const stored = await authStorage.read("kimi-coding");
+		expect(stored?.type).toBe("api_key");
+		if (stored?.type === "api_key") {
+			expect(stored.key).toBe("sk-x");
+		}
+	});
+
 	it("leaves the model switch to the caller instead of telling the user to run /model manually", async () => {
-		const { ctx, settingsManager } = makeContext({ cwd: tempDir });
+		const { ctx, settingsManager } = await makeContext({ cwd: tempDir });
 		const result = await runSureInit({
 			ctx,
 			args: "--option kimi-code --api-key sk-arg --model kimi-for-coding",
@@ -313,43 +332,34 @@ describe("runSureInit", () => {
 	});
 
 	it("runs OAuth login flow when provider is available", async () => {
-		const { ctx, settingsManager, ui } = makeContext({
+		const { ctx, settingsManager, ui } = await makeContext({
 			selectedIndex: 0, // codex (oauth)
 			cwd: tempDir,
 		});
 
-		vi.spyOn(ctx.modelRegistry.authStorage, "getOAuthProviders").mockReturnValue([
-			{ id: "openai-codex", name: "OpenAI Codex" },
-		] as any);
-
-		vi.spyOn(ctx.modelRegistry.authStorage, "login").mockImplementation(async (providerId) => {
-			ctx.modelRegistry.authStorage.set(providerId, {
-				type: "oauth",
-				refresh: "refresh-token",
-				access: "access-token",
-				expires: Date.now() + 3600000,
-			});
+		const login = vi.spyOn(getModelRuntime(ctx.modelRegistry), "login").mockResolvedValue({
+			type: "oauth",
+			refresh: "refresh-token",
+			access: "access-token",
+			expires: Date.now() + 3600000,
 		});
-
-		const refreshSpy = vi.spyOn(ctx.modelRegistry, "refresh");
 
 		ui.select.mockResolvedValueOnce("gpt-5.5 — GPT-5.5");
 
 		const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: join(tempDir, "models.json") });
 
 		expect(result.success).toBe(true);
-		expect(ctx.modelRegistry.authStorage.login).toHaveBeenCalledWith("openai-codex", expect.any(Object));
-		expect(refreshSpy).toHaveBeenCalled();
+		expect(login).toHaveBeenCalledWith("openai-codex", "oauth", expect.any(Object));
 		expect(settingsManager.getGlobalSettings().defaultProvider).toBe("openai-codex");
 		expect(settingsManager.getGlobalSettings().defaultModel).toBe("gpt-5.5");
 	});
 
 	it("falls back to /login message when OAuth provider is not registered", async () => {
-		const { ctx, settingsManager } = makeContext({
+		const { ctx, settingsManager } = await makeContext({
 			selectedIndex: 0, // codex (oauth)
 			cwd: tempDir,
 		});
-		vi.spyOn(ctx.modelRegistry.authStorage, "getOAuthProviders").mockReturnValue([]);
+		vi.spyOn(getModelRuntime(ctx.modelRegistry), "getProvider").mockReturnValue(undefined);
 
 		const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: join(tempDir, "models.json") });
 
@@ -358,7 +368,7 @@ describe("runSureInit", () => {
 	});
 
 	it("falls back to /login message in non-UI mode for OAuth provider", async () => {
-		const { ctx, settingsManager } = makeContext({
+		const { ctx, settingsManager } = await makeContext({
 			hasUI: false,
 			cwd: tempDir,
 		});
@@ -374,14 +384,11 @@ describe("runSureInit", () => {
 	});
 
 	it("reports OAuth login cancellation", async () => {
-		const { ctx, settingsManager } = makeContext({
+		const { ctx, settingsManager } = await makeContext({
 			selectedIndex: 0, // codex (oauth)
 			cwd: tempDir,
 		});
-		vi.spyOn(ctx.modelRegistry.authStorage, "getOAuthProviders").mockReturnValue([
-			{ id: "openai-codex", name: "OpenAI Codex" },
-		] as any);
-		vi.spyOn(ctx.modelRegistry.authStorage, "login").mockRejectedValue(new Error("Login cancelled"));
+		vi.spyOn(getModelRuntime(ctx.modelRegistry), "login").mockRejectedValue(new Error("Login cancelled"));
 
 		const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: join(tempDir, "models.json") });
 
@@ -389,12 +396,27 @@ describe("runSureInit", () => {
 		expect(result.message).toContain("cancelled");
 	});
 
+	it("reports a synchronization failure after the credential was committed", async () => {
+		const { ctx, settingsManager } = await makeContext({
+			selectedIndex: 0, // codex (oauth)
+			cwd: tempDir,
+		});
+		vi.spyOn(getModelRuntime(ctx.modelRegistry), "login").mockRejectedValue(
+			new CredentialSynchronizationError("openai-codex", "login", undefined, { cause: new Error("offline") }),
+		);
+
+		const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: join(tempDir, "models.json") });
+
+		expect(result.success).toBe(false);
+		expect(result.message).toContain("offline");
+	});
+
 	it("skips auth setup when already configured", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async () => Response.json({ data: [{ id: "kimi-for-coding" }] })),
 		);
-		const { ctx, settingsManager, ui } = makeContext({
+		const { ctx, settingsManager, ui } = await makeContext({
 			selectedIndex: 1, // kimi-code
 			configuredAuth: true,
 			cwd: tempDir,
@@ -410,7 +432,7 @@ describe("runSureInit", () => {
 
 	describe("runSureInit new flow", () => {
 		it("fails non-interactively without --model", async () => {
-			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option claude --api-key sk-1",
@@ -427,9 +449,13 @@ describe("runSureInit", () => {
 				vi.fn(async () => Response.json({ data: [{ id: "claude-live" }] })),
 			);
 			const modelsPath = join(tempDir, "models.json");
-			// Needs the file-backed registry (not ModelRegistry.inMemory) so that ctx.modelRegistry.refresh()
+			// Needs the file-backed registry (not createInMemoryModelRegistry) so that ctx.modelRegistry.refresh()
 			// after the probe actually re-reads what applyProbedModel just wrote to modelsPath.
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			ui.select
 				.mockResolvedValueOnce("Anthropic Claude: Standard Anthropic API → anthropic")
 				.mockResolvedValueOnce("claude-live");
@@ -465,7 +491,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "gpt-5.6-terra" }, { id: "gpt-5.6-sol" }] })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({ hasUI: true, cwd: tempDir });
 			ui.select
 				.mockResolvedValueOnce("OpenAI GPT: Standard OpenAI API → openai")
 				.mockImplementationOnce(async (_title: string, choices: string[]) => choices[0]);
@@ -486,7 +512,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => new Response("down", { status: 503 })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({ hasUI: true, cwd: tempDir });
 			ui.select
 				.mockResolvedValueOnce("Anthropic Claude: Standard Anthropic API → anthropic")
 				.mockImplementationOnce(async (_title: string, choices: string[]) => choices[0]);
@@ -520,7 +546,11 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "g1" }, { id: "g2" }] })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			ui.select
 				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
 				.mockResolvedValueOnce("g2");
@@ -561,7 +591,11 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => new Response("down", { status: 502 })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			ui.select
 				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
 				.mockResolvedValueOnce("cached-1");
@@ -602,7 +636,11 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "g1" }, { id: "g2" }] })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			const refreshSpy = vi.spyOn(ctx.modelRegistry, "refresh");
 			ui.select
 				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
@@ -624,7 +662,11 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "g1" }] })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			ui.select
 				.mockResolvedValueOnce("relay (custom): https://gw.example.com/v1, 1 models")
 				.mockImplementationOnce(async (_title: string, choices: string[]) => choices[0]);
@@ -655,7 +697,7 @@ describe("runSureInit", () => {
 			);
 			const fetchMock = vi.fn();
 			vi.stubGlobal("fetch", fetchMock);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option relay --model g9",
@@ -691,7 +733,7 @@ describe("runSureInit", () => {
 			);
 			const fetchMock = vi.fn();
 			vi.stubGlobal("fetch", fetchMock);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const refreshSpy = vi.spyOn(ctx.modelRegistry, "refresh");
 			const result = await runSureInit({
 				ctx,
@@ -716,7 +758,7 @@ describe("runSureInit", () => {
 		});
 
 		it("lists every missing flag for a non-interactive gateway creation", async () => {
-			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option custom --name relay",
@@ -730,7 +772,7 @@ describe("runSureInit", () => {
 		});
 
 		it("rejects reserved names for a new gateway", async () => {
-			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option custom --name openai --base-url https://gw.example.com/v1 --api-key sk-1 --model m",
@@ -747,7 +789,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "a" }] })),
 			);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option custom --name relay --base-url https://gw.example.com/v1 --api-key sk-1 --model b",
@@ -772,7 +814,7 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "a" }] })),
 			);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option custom --name relay --base-url https://gw.example.com/v1 --api-key sk-1 --model a",
@@ -789,7 +831,11 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => new Response("down", { status: 500 })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			ui.select
 				.mockResolvedValueOnce("Custom provider: add an OpenAI-compatible gateway")
 				.mockResolvedValueOnce("Enter a model id manually");
@@ -842,7 +888,11 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => Response.json({ data: [{ id: "gpt-5.6-sol", display_name: "GPT-5.6 Sol" }] })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			ui.select
 				.mockResolvedValueOnce("apifusion (custom): https://gw.example.com/v1, 1 models")
 				.mockResolvedValueOnce("gpt-5.6-sol — GPT-5.6 Sol")
@@ -900,7 +950,7 @@ describe("runSureInit", () => {
 		it("fails when the gateway rejects the client", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option apifusion --api-key sk-1 --model gpt-5.6-luna",
@@ -922,7 +972,7 @@ describe("runSureInit", () => {
 		it("does not probe a model the built-in catalog already knows", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			const probe = vi.fn();
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option claude --api-key sk-1 --model claude-opus-4-8",
@@ -939,7 +989,7 @@ describe("runSureInit", () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
 			const probe = solProbe();
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol",
@@ -964,7 +1014,7 @@ describe("runSureInit", () => {
 		it("refuses to run without a key it can probe with", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option apifusion --model gpt-5.6-sol",
@@ -984,7 +1034,11 @@ describe("runSureInit", () => {
 				"fetch",
 				vi.fn(async () => new Response("down", { status: 502 })),
 			);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			ui.input.mockResolvedValueOnce("sk-typed");
 			ui.select
 				.mockResolvedValueOnce("apifusion (custom): https://gw.example.com/v1, 1 models")
@@ -1025,7 +1079,7 @@ describe("runSureInit", () => {
 				)}\n`,
 				"utf-8",
 			);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const probe = solProbe();
 			const result = await runSureInit({
 				ctx,
@@ -1051,7 +1105,11 @@ describe("runSureInit", () => {
 			);
 			// print/json mode reports hasUI true and answers every dialog with undefined, so the
 			// effort question is asked and nobody picks. That must clamp, not leave the level unset.
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			ui.input.mockResolvedValueOnce("sk-1");
 			ui.select
 				.mockResolvedValueOnce("apifusion (custom): https://gw.example.com/v1, 1 models")
@@ -1072,7 +1130,7 @@ describe("runSureInit", () => {
 		it("rejects an effort upstream never confirmed", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol --effort medium",
@@ -1088,7 +1146,7 @@ describe("runSureInit", () => {
 		it("settles what the relay refused and gets the round trip through", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const verify = vi
 				.fn()
 				.mockResolvedValueOnce({
@@ -1116,7 +1174,7 @@ describe("runSureInit", () => {
 		it("writes no setting for a failure that names none", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const verify = vi.fn(async () => ({ ok: false, detail: "HTTP 502" }));
 			const result = await runSureInit({
 				ctx,
@@ -1136,7 +1194,7 @@ describe("runSureInit", () => {
 		it("stops instead of retrying a setting it already tried", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const verify = vi.fn(async () => ({
 				ok: false,
 				detail: "400 messages[0].role: unknown variant `developer`",
@@ -1157,7 +1215,7 @@ describe("runSureInit", () => {
 		it("fails init when the real round trip does not come back", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol",
@@ -1178,7 +1236,7 @@ describe("runSureInit", () => {
 		it("reports a thrown round trip as a failure", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol",
@@ -1202,7 +1260,7 @@ describe("runSureInit", () => {
 				probed.push(target.modelId);
 				return target.modelId === "gpt-5.6-sol" ? SOL_PROBE_OUTCOME : PLAIN_PROBE_OUTCOME;
 			});
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol --probe-all",
@@ -1232,7 +1290,7 @@ describe("runSureInit", () => {
 					? SOL_PROBE_OUTCOME
 					: { ok: false as const, error: { kind: "bad-key" as const, detail: "Invalid token", steps: [] } },
 			);
-			const { ctx, settingsManager } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol --probe-all",
@@ -1248,7 +1306,7 @@ describe("runSureInit", () => {
 		});
 
 		it("--probe-all is refused for a built-in provider", async () => {
-			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option claude --api-key sk-1 --model claude-opus-4-8 --probe-all",
@@ -1266,7 +1324,11 @@ describe("runSureInit", () => {
 				vi.fn(async () => Response.json({ data: [{ id: "claude-live" }] })),
 			);
 			const modelsPath = join(tempDir, "models.json");
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: true, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: true,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			ui.select
 				.mockResolvedValueOnce("Anthropic Claude: Standard Anthropic API → anthropic")
 				.mockResolvedValueOnce("claude-live");
@@ -1284,7 +1346,7 @@ describe("runSureInit", () => {
 		});
 
 		it("refuses --effort for a model the built-in catalog already knows", async () => {
-			const { ctx, settingsManager } = makeContext({ hasUI: false, cwd: tempDir });
+			const { ctx, settingsManager } = await makeContext({ hasUI: false, cwd: tempDir });
 			const result = await runSureInit({
 				ctx,
 				args: "--option claude --api-key sk-1 --model claude-opus-4-8 --effort high",
@@ -1299,7 +1361,11 @@ describe("runSureInit", () => {
 		it("passes --effort through to the probe layer and records it", async () => {
 			const modelsPath = join(tempDir, "models.json");
 			writeGatewayFile(modelsPath);
-			const { ctx, settingsManager, ui } = makeContext({ hasUI: false, modelsJsonPath: modelsPath, cwd: tempDir });
+			const { ctx, settingsManager, ui } = await makeContext({
+				hasUI: false,
+				modelsJsonPath: modelsPath,
+				cwd: tempDir,
+			});
 			const result = await runSureInit({
 				ctx,
 				args: "--option apifusion --api-key sk-1 --model gpt-5.6-sol --effort xhigh",

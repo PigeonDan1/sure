@@ -1,8 +1,11 @@
 import type {
 	Api,
 	AssistantMessage,
+	AuthInteraction,
 	AuthResult,
+	AuthType,
 	Context,
+	Credential,
 	Model,
 	ModelsApiStreamOptions,
 	ModelsRefreshOptions,
@@ -26,7 +29,7 @@ export type ResolvedRequestAuth =
 export { clearApiKeyCache } from "./provider-composer.ts";
 
 /**
- * Synchronous compatibility facade exposed to extensions.
+ * Facade exposed to extensions; refresh/login are async.
  * Coding-agent internals use ModelRuntime directly.
  */
 export class ModelRegistry {
@@ -39,6 +42,15 @@ export class ModelRegistry {
 	/** Reload models.json asynchronously. Await before making synchronous registry reads. */
 	refresh(options?: ModelsRefreshOptions): Promise<ModelsRefreshResult> {
 		return this.runtime.refresh(options);
+	}
+
+	/**
+	 * Interactive login for a provider. Prompts are driven through `interaction`;
+	 * credential state is synchronized before this resolves. Rejects with
+	 * CredentialSynchronizationError when the login committed but the local refresh failed.
+	 */
+	login(providerId: string, type: AuthType, interaction: AuthInteraction): Promise<Credential> {
+		return this.runtime.login(providerId, type, interaction);
 	}
 
 	getError(): string | undefined {

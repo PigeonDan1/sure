@@ -1,12 +1,14 @@
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ModelThinkingLevel, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { getModels } from "@earendil-works/pi-ai/compat";
 import { getModelsPath } from "../../config.ts";
 import type { ExtensionCommandContext } from "../extensions/types.ts";
 import type { ModelRegistry } from "../model-registry.ts";
+import { CredentialSynchronizationError } from "../model-runtime.ts";
 import { SettingsManager } from "../settings-manager.ts";
+import { LoginCancelled, uiAuthInteraction } from "./auth.ts";
 import { applyProbedModel, compatRetreatFor, probeWholeGateway, verifyModelRoundTrip } from "./init-apply.ts";
 import type { probeModelCapability } from "./init-capability-probe.ts";
 import type { GatewayProviderSummary } from "./init-gateway-store.ts";
@@ -127,126 +129,77 @@ export function parseInitArgs(raw: string): SureInitArgs {
 	return result;
 }
 
-async function runOAuthLogin(
-	option: SureInitProviderOption,
-	modelRegistry: ModelRegistry,
-	ctx: ExtensionCommandContext,
-): Promise<{ ok: boolean; message?: string }> {
-	if (!ctx.hasUI) {
-		return {
-			ok: false,
-			message: `Please run /login ${option.provider} to authenticate with ${option.name}, then run /sure_init again.`,
-		};
-	}
-
-	const providerInfo = modelRegistry.authStorage.getOAuthProviders().find((p) => p.id === option.provider);
-	if (!providerInfo) {
-		return {
-			ok: false,
-			message: `OAuth provider ${option.name} is not registered. Run /login ${option.provider} manually, then run /sure_init again.`,
-		};
-	}
-
-	let manualCodePromise: Promise<string> | undefined;
-	let authUrl: string | undefined;
-
-	const callbacks: OAuthLoginCallbacks = {
-		onAuth: (info) => {
-			authUrl = info.url;
-			const lines = [`Open this URL in your browser to authenticate ${option.name}:`, info.url];
-			if (info.instructions) {
-				lines.push(info.instructions);
-			}
-			ctx.ui.notify(lines.join("\n"), "info");
-		},
-		onDeviceCode: (info) => {
-			ctx.ui.notify(`Device code for ${option.name}: ${info.userCode}\nVisit: ${info.verificationUri}`, "info");
-		},
-		onPrompt: async (prompt) => {
-			const value = await ctx.ui.input(prompt.message, prompt.placeholder);
-			if (value === undefined) {
-				throw new Error("Login cancelled");
-			}
-			return value;
-		},
-		onSelect: async (prompt) => {
-			const labels = prompt.options.map((o) => o.label);
-			const selected = await ctx.ui.select(prompt.message, labels);
-			if (selected === undefined) {
-				return undefined;
-			}
-			return prompt.options.find((o) => o.label === selected)?.id;
-		},
-		onProgress: (message) => {
-			ctx.ui.notify(message, "info");
-		},
-		onManualCodeInput: () => {
-			if (!manualCodePromise) {
-				manualCodePromise = new Promise<string>((resolve, reject) => {
-					const prompt = authUrl
-						? `Open ${authUrl}\nPaste the redirect URL here when done:`
-						: "Paste the redirect URL here when done:";
-					ctx.ui.input(prompt).then((value) => {
-						if (value) {
-							resolve(value);
-						} else {
-							reject(new Error("Login cancelled"));
-						}
-					});
-				});
-			}
-			return manualCodePromise;
-		},
-	};
-
-	try {
-		await modelRegistry.authStorage.login(option.provider, callbacks);
-		modelRegistry.refresh();
-		return { ok: true };
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (message === "Login cancelled") {
-			return { ok: false, message: `OAuth login for ${option.name} was cancelled.` };
-		}
-		return { ok: false, message: `OAuth login failed for ${option.name}: ${message}` };
-	}
-}
-
 async function ensureAuth(
 	option: SureInitProviderOption,
 	modelRegistry: ModelRegistry,
 	ctx: ExtensionCommandContext,
 	args: SureInitArgs,
 ): Promise<{ ok: boolean; message?: string }> {
+	const argKey = args.apiKey?.trim();
 	const hasConfiguredAuth = modelRegistry.hasConfiguredAuth({
 		provider: option.provider,
 		id: option.defaultModel,
 	} as any);
-	if (!args.apiKey?.trim() && hasConfiguredAuth) {
-		return { ok: true };
-	}
+	if (!argKey && hasConfiguredAuth) return { ok: true };
 
-	if (option.authType === "oauth") {
-		return runOAuthLogin(option, modelRegistry, ctx);
-	}
+	const oauth = option.authType === "oauth";
+	let presetSecret: string | undefined;
 
-	let apiKey = args.apiKey?.trim();
-	if (!apiKey) {
+	if (oauth) {
 		if (!ctx.hasUI) {
 			return {
 				ok: false,
-				message: `No API key configured for ${option.name}. Run /sure_init --option ${option.id} --api-key <key>.`,
+				message: `Please run /login ${option.provider} to authenticate with ${option.name}, then run /sure_init again.`,
 			};
 		}
-		apiKey = await ctx.ui.input(`Enter your ${option.name} API key:`);
+		if (!modelRegistry.getProvider(option.provider)?.auth.oauth) {
+			return {
+				ok: false,
+				message: `OAuth provider ${option.name} is not registered. Run /login ${option.provider} manually, then run /sure_init again.`,
+			};
+		}
+	} else {
+		let apiKey = argKey;
+		if (!apiKey) {
+			if (!ctx.hasUI) {
+				return {
+					ok: false,
+					message: `No API key configured for ${option.name}. Run /sure_init --option ${option.id} --api-key <key>.`,
+				};
+			}
+			apiKey = (await ctx.ui.input(`Enter your ${option.name} API key:`))?.trim();
+		}
+		if (!apiKey) return { ok: false, message: "API key is required." };
+		presetSecret = apiKey;
 	}
 
-	if (!apiKey?.trim()) {
-		return { ok: false, message: "API key is required." };
+	try {
+		await modelRegistry.login(
+			option.provider,
+			option.authType,
+			uiAuthInteraction(ctx, option.name, { presetSecret, loginHint: `/login ${option.provider}` }),
+		);
+		return { ok: true }; // no refresh(): runtime.login already synchronized
+	} catch (error) {
+		if (error instanceof CredentialSynchronizationError) {
+			const detail = error.cause instanceof Error ? error.cause.message : undefined;
+			return {
+				ok: false,
+				message: `${option.name} credentials were saved, but local model state could not be synchronized${
+					detail ? `: ${detail}` : "."
+				} Run /sure_init again.`,
+			};
+		}
+		const message = error instanceof Error ? error.message : String(error);
+		if (error instanceof LoginCancelled || message === "Login cancelled") {
+			return oauth
+				? { ok: false, message: `OAuth login for ${option.name} was cancelled.` }
+				: { ok: false, message: "API key is required." };
+		}
+		return oauth
+			? { ok: false, message: `OAuth login failed for ${option.name}: ${message}` }
+			: { ok: false, message: `Failed to configure the ${option.name} API key: ${message}` };
 	}
-
-	modelRegistry.authStorage.set(option.provider, { type: "api_key", key: apiKey.trim() });
-	return { ok: true };
 }
 
 function checkPythonEnvironment(): { ok: boolean; details: string[] } {
