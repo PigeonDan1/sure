@@ -8,10 +8,6 @@
           "path": "index.md"
         },
         {
-          "title": "Quickstart",
-          "path": "quickstart.md"
-        },
-        {
           "title": "Using Pi",
           "path": "usage.md"
         },
@@ -22,10 +18,6 @@
         {
           "title": "Security",
           "path": "security.md"
-        },
-        {
-          "title": "Containerization",
-          "path": "containerization.md"
         },
         {
           "title": "Settings",
@@ -91,10 +83,6 @@
       "title": "Programmatic Usage",
       "items": [
         {
-          "title": "SDK",
-          "path": "sdk.md"
-        },
-        {
           "title": "RPC Mode",
           "path": "rpc.md"
         },
@@ -105,31 +93,6 @@
         {
           "title": "TUI Components",
           "path": "tui.md"
-        }
-      ]
-    },
-    {
-      "title": "Platform Setup",
-      "items": [
-        {
-          "title": "Windows",
-          "path": "windows.md"
-        },
-        {
-          "title": "Termux on Android",
-          "path": "termux.md"
-        },
-        {
-          "title": "tmux",
-          "path": "tmux.md"
-        },
-        {
-          "title": "Terminal Setup",
-          "path": "terminal-setup.md"
-        },
-        {
-          "title": "Shell Aliases",
-          "path": "shell-aliases.md"
         }
       ]
     },

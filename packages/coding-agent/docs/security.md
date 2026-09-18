@@ -40,7 +40,7 @@ Project trust is only an input-loading guard. It prevents a repository from sile
 
 For untrusted repositories, generated code you do not intend to monitor closely, or unattended automation, run pi in a contained environment. Use a container, VM, micro-VM, remote sandbox, or policy-controlled sandbox with only the files and credentials required for the task.
 
-Common patterns are documented in [Containerization](containerization.md):
+Common patterns:
 
 - run the whole `pi` process inside a container/sandbox
 - run host pi while routing built-in tool execution into a Gondolin micro-VM
