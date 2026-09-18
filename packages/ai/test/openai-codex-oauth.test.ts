@@ -1,7 +1,18 @@
+import { createServer } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openaiCodexOAuth } from "../src/auth/oauth/openai-codex.ts";
 
 const neverAbortedSignal = new AbortController().signal;
+
+/** Binds the fixed callback port for a moment; throws EADDRINUSE if a stale login still holds it. */
+async function bindCallbackPort(port: number): Promise<void> {
+	const probe = createServer();
+	await new Promise<void>((resolve, reject) => {
+		probe.once("error", reject);
+		probe.listen(port, "127.0.0.1", resolve);
+	});
+	await new Promise<void>((resolve) => probe.close(() => resolve()));
+}
 
 function jsonResponse(body: unknown, status: number = 200): Response {
 	return new Response(JSON.stringify(body), {
@@ -482,5 +493,47 @@ describe("OpenAI Codex OAuth", () => {
 			),
 		).rejects.toThrow(/OpenAI Codex token refresh failed \(401\).*Could not validate your token/);
 		expect(consoleError).not.toHaveBeenCalled();
+	});
+
+	it("times out the browser flow and releases the callback port when no code arrives", async () => {
+		// Without the timeout the login waits on the callback server forever,
+		// holding the fixed port 1455 open.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+		// auth_url is only notified once the callback server listens and its timer
+		// is armed, so waiting for it keeps the real listen I/O off the fake clock.
+		let resolveListening: () => void = () => {};
+		const listening = new Promise<void>((resolve) => {
+			resolveListening = resolve;
+		});
+		let manualSignal: AbortSignal | undefined;
+
+		const login = openaiCodexOAuth.login({
+			signal: neverAbortedSignal,
+			notify: (event) => {
+				if (event.type === "auth_url") resolveListening();
+			},
+			prompt: (prompt) => {
+				if (prompt.type === "select") return Promise.resolve("browser");
+				manualSignal = prompt.signal;
+				return new Promise<string>(() => {});
+			},
+		});
+		const rejection = login.then(
+			() => new Error("expected the OpenAI Codex login to time out"),
+			(error: unknown) => error,
+		);
+
+		await listening;
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+		const result = await rejection;
+		expect(result).toBeInstanceOf(Error);
+		expect((result as Error).message).toBe("OpenAI Codex OAuth login timed out");
+		// the pending manual_code prompt is dismissed rather than left hanging
+		expect(manualSignal?.aborted).toBe(true);
+
+		vi.useRealTimers();
+		await bindCallbackPort(1455);
 	});
 });

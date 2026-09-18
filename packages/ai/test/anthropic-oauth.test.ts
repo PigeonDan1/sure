@@ -1,8 +1,19 @@
+import { createServer } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { anthropicOAuth } from "../src/auth/oauth/anthropic.ts";
 import type { AuthEvent, AuthPrompt } from "../src/auth/types.ts";
 
 const neverAbortedSignal = new AbortController().signal;
+
+/** Binds the fixed callback port for a moment; throws EADDRINUSE if a stale login still holds it. */
+async function bindCallbackPort(port: number): Promise<void> {
+	const probe = createServer();
+	await new Promise<void>((resolve, reject) => {
+		probe.once("error", reject);
+		probe.listen(port, "127.0.0.1", resolve);
+	});
+	await new Promise<void>((resolve) => probe.close(() => resolve()));
+}
 
 function jsonResponse(body: unknown, status: number = 200): Response {
 	return new Response(JSON.stringify(body), {
@@ -36,6 +47,7 @@ function getJsonBody(init?: RequestInit): Record<string, string> {
 describe.sequential("Anthropic OAuth", () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		vi.useRealTimers();
 	});
 
 	it("keeps the localhost redirect_uri for manual callback login", async () => {
@@ -140,5 +152,46 @@ describe.sequential("Anthropic OAuth", () => {
 		expect(prompts.some((p) => p.type === "manual_code")).toBe(true);
 		// the prompt's signal is aborted once login settles, so UIs can dismiss it
 		expect(manualSignal?.aborted).toBe(true);
+	});
+
+	it("times out and releases the callback port when neither a callback nor a manual code arrives", async () => {
+		// Without the timeout the login waits on the callback server forever,
+		// holding the fixed port 53692 open.
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+		// auth_url is only notified once the callback server listens and its timer
+		// is armed, so waiting for it keeps the real listen I/O off the fake clock.
+		let resolveListening: () => void = () => {};
+		const listening = new Promise<void>((resolve) => {
+			resolveListening = resolve;
+		});
+		let manualSignal: AbortSignal | undefined;
+
+		const login = anthropicOAuth.login({
+			signal: neverAbortedSignal,
+			notify: (event) => {
+				if (event.type === "auth_url") resolveListening();
+			},
+			prompt: (prompt) => {
+				manualSignal = prompt.signal;
+				return new Promise<string>(() => {});
+			},
+		});
+		const rejection = login.then(
+			() => new Error("expected the Anthropic login to time out"),
+			(error: unknown) => error,
+		);
+
+		await listening;
+		await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+		const result = await rejection;
+		expect(result).toBeInstanceOf(Error);
+		expect((result as Error).message).toBe("Anthropic OAuth login timed out");
+		// the pending manual_code prompt is dismissed rather than left hanging
+		expect(manualSignal?.aborted).toBe(true);
+
+		vi.useRealTimers();
+		await bindCallbackPort(53692);
 	});
 });

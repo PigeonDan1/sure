@@ -5,16 +5,17 @@
  * It is only intended for CLI use, not browser environments.
  */
 
-import type { Server } from "node:http";
 import { getProviderEnvValue } from "../../utils/provider-env.ts";
 import type { OAuthAuth, OAuthCredential, ProviderAuthInteraction } from "../types.ts";
 import { oauthErrorHtml, oauthSuccessHtml } from "./oauth-page.ts";
 import { generatePKCE } from "./pkce.ts";
 
 type CallbackServerInfo = {
-	server: Server;
+	/** Stop listening and release the login timeout without settling `waitForCode`. */
+	close: () => void;
 	redirectUri: string;
 	cancelWait: () => void;
+	/** Resolves with the callback code, or null once `cancelWait` hands over to manual entry. Rejects on timeout. */
 	waitForCode: () => Promise<{ code: string; state: string } | null>;
 };
 
@@ -33,6 +34,7 @@ const CALLBACK_HOST = getProviderEnvValue("PI_OAUTH_CALLBACK_HOST") || "127.0.0.
 const CALLBACK_PORT = 53692;
 const CALLBACK_PATH = "/callback";
 const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
+const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 const SCOPES =
 	"org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
 async function getNodeApis(): Promise<NodeApis> {
@@ -101,12 +103,21 @@ async function startCallbackServer(expectedState: string): Promise<CallbackServe
 
 	return new Promise((resolve, reject) => {
 		let settleWait: ((value: { code: string; state: string } | null) => void) | undefined;
-		const waitForCodePromise = new Promise<{ code: string; state: string } | null>((resolveWait) => {
+		let failWait: ((error: Error) => void) | undefined;
+		let timeout: ReturnType<typeof setTimeout> | undefined;
+		const waitForCodePromise = new Promise<{ code: string; state: string } | null>((resolveWait, rejectWait) => {
 			let settled = false;
 			settleWait = (value) => {
 				if (settled) return;
 				settled = true;
+				if (timeout) clearTimeout(timeout);
 				resolveWait(value);
+			};
+			failWait = (error) => {
+				if (settled) return;
+				settled = true;
+				if (timeout) clearTimeout(timeout);
+				rejectWait(error);
 			};
 		});
 
@@ -155,8 +166,12 @@ async function startCallbackServer(expectedState: string): Promise<CallbackServe
 		});
 
 		server.listen(CALLBACK_PORT, CALLBACK_HOST, () => {
+			timeout = setTimeout(() => failWait?.(new Error("Anthropic OAuth login timed out")), LOGIN_TIMEOUT_MS);
 			resolve({
-				server,
+				close: () => {
+					if (timeout) clearTimeout(timeout);
+					server.close();
+				},
 				redirectUri: REDIRECT_URI,
 				cancelWait: () => {
 					settleWait?.(null);
@@ -307,7 +322,7 @@ async function loginAnthropic(interaction: ProviderAuthInteraction): Promise<OAu
 	} finally {
 		interaction.signal.removeEventListener("abort", onAbort);
 		manualAbort.abort();
-		server.server.close();
+		server.close();
 	}
 }
 

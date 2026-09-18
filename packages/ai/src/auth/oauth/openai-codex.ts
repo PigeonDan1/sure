@@ -33,6 +33,7 @@ const DEVICE_TOKEN_URL = `${AUTH_BASE_URL}/api/accounts/deviceauth/token`;
 const DEVICE_VERIFICATION_URI = `${AUTH_BASE_URL}/codex/device`;
 const DEVICE_REDIRECT_URI = `${AUTH_BASE_URL}/deviceauth/callback`;
 const DEVICE_CODE_TIMEOUT_SECONDS = 15 * 60;
+const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 const OPENAI_CODEX_BROWSER_LOGIN_METHOD = "browser";
 const OPENAI_CODEX_DEVICE_CODE_LOGIN_METHOD = "device_code";
 const SCOPE = "openid profile email offline_access";
@@ -312,8 +313,10 @@ async function createAuthorizationFlow(
 }
 
 type OAuthServerInfo = {
+	/** Stop listening and release the login timeout without settling `waitForCode`. */
 	close: () => void;
 	cancelWait: () => void;
+	/** Resolves with the callback code, or null once `cancelWait` hands over to manual entry. Rejects on timeout. */
 	waitForCode: () => Promise<{ code: string } | null>;
 };
 
@@ -323,12 +326,21 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 	}
 
 	let settleWait: ((value: { code: string } | null) => void) | undefined;
-	const waitForCodePromise = new Promise<{ code: string } | null>((resolve) => {
+	let failWait: ((error: Error) => void) | undefined;
+	let timeout: ReturnType<typeof setTimeout> | undefined;
+	const waitForCodePromise = new Promise<{ code: string } | null>((resolve, reject) => {
 		let settled = false;
 		settleWait = (value) => {
 			if (settled) return;
 			settled = true;
+			if (timeout) clearTimeout(timeout);
 			resolve(value);
+		};
+		failWait = (error) => {
+			if (settled) return;
+			settled = true;
+			if (timeout) clearTimeout(timeout);
+			reject(error);
 		};
 	});
 
@@ -368,8 +380,12 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 	return new Promise((resolve) => {
 		server
 			.listen(1455, getCallbackHost(), () => {
+				timeout = setTimeout(() => failWait?.(new Error("OpenAI Codex OAuth login timed out")), LOGIN_TIMEOUT_MS);
 				resolve({
-					close: () => server.close(),
+					close: () => {
+						if (timeout) clearTimeout(timeout);
+						server.close();
+					},
 					cancelWait: () => {
 						settleWait?.(null);
 					},
