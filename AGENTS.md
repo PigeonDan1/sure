@@ -17,7 +17,7 @@
 - Check node_modules for external API types; don't guess.
 - **No inline imports** (`await import()`, `import("pkg").Type`, dynamic type imports). Top-level imports only.
 - Never remove or downgrade code to fix type errors from outdated deps; upgrade the dep instead.
-- Use only erasable TypeScript syntax (Node strip-only mode) in code checked by the root config (`packages/*/src`, `packages/*/test`, `packages/coding-agent/examples`): no parameter properties, `enum`, `namespace`/`module`, `import =`, `export =`, or other constructs needing JS emit. Use explicit fields with constructor assignments.
+- Use only erasable TypeScript syntax (Node strip-only mode) in code checked by the root config (`packages/*/src`, `packages/*/test`): no parameter properties, `enum`, `namespace`/`module`, `import =`, `export =`, or other constructs needing JS emit. Use explicit fields with constructor assignments.
 - Always ask before removing functionality or code that appears intentional.
 - Do not preserve backward compatibility unless the user asks for it.
 - Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
@@ -27,7 +27,7 @@
 
 - After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
 - Never run `npm run build` or `npm test` unless requested by the user.
-- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root (it takes no arguments: it runs `npm test` under `env -i` and passes through only an explicit allowlist, being `PATH`, `PWD`, a throwaway `HOME` and temp directory, locale and timezone, neutralised git and npm configuration, `PI_NO_LOCAL_LLM=1`, the Windows variables needed to spawn processes, and CI detection; credentials are not on the list). Otherwise run specific tests from the package root: `node node_modules/vitest/dist/cli.js --run test/specific.test.ts` (vitest is installed per-package, not hoisted to the repo root; `npx vitest --run <file>` works too).
+- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root (it takes no arguments: it runs `npm test` under `env -i` and passes through only an explicit allowlist, being `PATH`, `PWD`, a throwaway `HOME` and temp directory, locale and timezone, neutralised git and npm configuration, `PI_NO_LOCAL_LLM=1`, the Windows variables needed to spawn processes, and CI detection; credentials are not on the list). Otherwise run specific tests from the package root: `npx vitest --run test/specific.test.ts` (vitest is hoisted to the repo root, not installed per-package; `node ../../node_modules/vitest/dist/cli.js --run <file>` works too).
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
@@ -136,6 +136,7 @@ Our pi is pi 0.85.1 plus the patches below. This list is the record; keep it cur
 - Azure default model `gpt-5.5`.
 - A `ModelRegistry.login()` facade over the SURE auth adapter `src/core/sure/auth.ts`.
 - SURE run settlement on `agent_settled` instead of `agent_end` / `willRetry`.
+- `callContextHandlerAbortable` in `src/core/extensions/runner.ts`, so `context` event handlers abort with `ctx.signal` instead of running to completion after a cancelled run.
 
 `packages/ai`:
 
