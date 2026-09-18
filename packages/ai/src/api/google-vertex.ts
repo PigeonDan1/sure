@@ -31,6 +31,7 @@ import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import type { GoogleApiThinkingLevel, ResolvedGoogleThinkingLevel } from "./google-shared.ts";
 import {
+	composeRawStopReason,
 	convertMessages,
 	convertTools,
 	isThinkingPart,
@@ -231,7 +232,7 @@ export const stream: StreamFunction<"google-vertex", GoogleVertexOptions> = (
 				}
 
 				if (candidate?.finishReason) {
-					output.rawStopReason = candidate.finishReason;
+					output.rawStopReason = composeRawStopReason(candidate.finishReason, candidate.finishMessage);
 					output.stopReason = mapStopReason(candidate.finishReason);
 					if (output.content.some((b) => b.type === "toolCall") && output.stopReason === "stop") {
 						output.stopReason = "toolUse";

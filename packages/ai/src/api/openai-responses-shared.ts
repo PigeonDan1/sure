@@ -782,7 +782,9 @@ function mapStopReason(
 			};
 		case "failed":
 		case "cancelled":
-			return { stopReason: "error" };
+			// The status is the only record of why the response ended, so name it
+			// rather than leave the caller with an unexplained error.
+			return { stopReason: "error", errorMessage: `Response ${status}` };
 		// These two are wonky ...
 		case "in_progress":
 		case "queued":

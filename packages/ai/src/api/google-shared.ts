@@ -406,6 +406,17 @@ export function mapStopReason(reason: FinishReason): StopReason {
 }
 
 /**
+ * Compose the raw stop reason Gemini reported. The finish reason names only the
+ * class of failure — safety, recitation, a malformed function call — while the
+ * optional `finishMessage` is the one place the provider says which rule fired,
+ * so keep both. The stream throws straight after mapping the finish reason, so
+ * whatever is missing here never reaches the caller.
+ */
+export function composeRawStopReason(reason: FinishReason, finishMessage?: string): string {
+	return finishMessage ? `${reason} (${finishMessage})` : reason;
+}
+
+/**
  * Map string finish reason to our StopReason (for raw API responses).
  */
 export function mapStopReasonString(reason: string): StopReason {
