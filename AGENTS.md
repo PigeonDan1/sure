@@ -27,7 +27,7 @@
 
 - After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
 - Never run `npm run build` or `npm test` unless requested by the user.
-- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root (it takes no arguments: it always hides `auth.json`, unsets the credential variables, then runs `npm test`). Otherwise run specific tests from the package root: `node node_modules/vitest/dist/cli.js --run test/specific.test.ts` (vitest is installed per-package, not hoisted to the repo root; `npx vitest --run <file>` works too).
+- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root (it takes no arguments: it runs `npm test` under `env -i` with an explicit allowlist, pointing `HOME` and the git and npm configuration at a throwaway directory and setting `PI_NO_LOCAL_LLM=1`, so nothing from your environment, credentials included, reaches the tests). Otherwise run specific tests from the package root: `node node_modules/vitest/dist/cli.js --run test/specific.test.ts` (vitest is installed per-package, not hoisted to the repo root; `npx vitest --run <file>` works too).
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
