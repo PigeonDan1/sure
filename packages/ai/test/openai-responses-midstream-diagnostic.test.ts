@@ -4,6 +4,7 @@
 
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, it, vi } from "vitest";
+import { stream as streamAzureOpenAIResponses } from "../src/api/azure-openai-responses.ts";
 import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts";
 import type { Context, Model } from "../src/types.ts";
 import { PROVIDER_MIDSTREAM_ERROR } from "../src/utils/diagnostics.ts";
@@ -48,7 +49,9 @@ vi.mock("openai", () => {
 		};
 	}
 
-	return { default: FakeOpenAI };
+	// Azure reaches the same SDK through the named export, over the same
+	// `responses.create(...).withResponse()` shape.
+	return { default: FakeOpenAI, AzureOpenAI: FakeOpenAI };
 });
 
 function createModel(): Model<"openai-responses"> {
@@ -66,18 +69,46 @@ function createModel(): Model<"openai-responses"> {
 	};
 }
 
-async function runStream() {
-	const context: Context = {
-		systemPrompt: "",
-		messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 0 }],
-		tools: [],
+function createAzureModel(): Model<"azure-openai-responses"> {
+	return {
+		id: "gpt-5-mini",
+		name: "GPT-5 Mini",
+		api: "azure-openai-responses",
+		provider: "azure-openai-responses",
+		baseUrl: "https://example.invalid",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 400000,
+		maxTokens: 128000,
 	};
-	const stream = streamOpenAIResponses(createModel(), context, { apiKey: "test" });
+}
 
+const context: Context = {
+	systemPrompt: "",
+	messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 0 }],
+	tools: [],
+};
+
+async function drain(stream: ReturnType<typeof streamOpenAIResponses>) {
 	for await (const _event of stream) {
 		// The result carries the failure; the events are not under test here.
 	}
 	return await stream.result();
+}
+
+function runStream() {
+	return drain(streamOpenAIResponses(createModel(), context, { apiKey: "test" }));
+}
+
+function runAzureStream() {
+	return drain(
+		streamAzureOpenAIResponses(createAzureModel(), context, {
+			apiKey: "test",
+			azureBaseUrl: "https://example.invalid/openai/v1",
+			azureDeploymentName: "gpt-5-mini",
+		}),
+	);
 }
 
 describe("mid-stream provider diagnostic", () => {
@@ -92,6 +123,29 @@ describe("mid-stream provider diagnostic", () => {
 	it("is attached when the response had started before the stream broke", async () => {
 		transport.mode = "break-midstream";
 		const result = await runStream();
+
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toBe(MIDSTREAM_FAILURE_MESSAGE);
+		expect(result.diagnostics?.map((diagnostic) => diagnostic.type)).toContain(PROVIDER_MIDSTREAM_ERROR);
+		// Unmatched wording, so only the diagnostic can make this retryable.
+		expect(isRetryableAssistantError(result)).toBe(true);
+	});
+});
+
+// Azure is where this matters most: it reports a failed generation as an SSE
+// error event after the response has already returned 200.
+describe("mid-stream provider diagnostic (Azure)", () => {
+	it("is absent when the request was rejected before the response started", async () => {
+		transport.mode = "reject-before-start";
+		const result = await runAzureStream();
+
+		expect(result.stopReason).toBe("error");
+		expect(result.diagnostics?.map((diagnostic) => diagnostic.type) ?? []).not.toContain(PROVIDER_MIDSTREAM_ERROR);
+	});
+
+	it("is attached when the response had started before the stream broke", async () => {
+		transport.mode = "break-midstream";
+		const result = await runAzureStream();
 
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toBe(MIDSTREAM_FAILURE_MESSAGE);
