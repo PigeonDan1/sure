@@ -267,8 +267,6 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			this.errorMessage = timedOut
 				? "Model refresh timed out; showing cached models."
 				: `Could not refresh model catalogs: ${error instanceof Error ? error.message : String(error)}`;
-			this.resolveProviderScopeFallback();
-			this.refreshScopeIndicator();
 			this.updateList();
 			this.tui.requestRender();
 		} finally {
