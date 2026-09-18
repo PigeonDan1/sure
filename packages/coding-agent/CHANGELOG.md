@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased]
+
+### Breaking Changes
+
+- Vendored pi moved from 0.80.3+18 to 0.85.1 and is frozen there. `packages/coding-agent` and `packages/ai` no longer follow pi releases and are edited directly; `@earendil-works/pi-agent-core`, `@earendil-works/pi-tui`, `@earendil-works/chord`, and `@earendil-works/pi-telemetry` are pinned to exactly `0.85.1`. See [docs/pi-0.85.1-upgrade.md](../../docs/pi-0.85.1-upgrade.md).
+- Custom gateways named `radius`, `baseten`, or `qwen-token-plan*` are now rejected by `/sure_init`, because those are built-in provider ids in 0.85.1.
+
+### Added
+
+- Added a `max` thinking level to `/thinking`, probed by `/sure_init` along with the other levels.
+- Added a three-tier provider scope (`provider | all | scoped`) to pi's model selector, which is now a synchronous snapshot with background refresh and a rebindable save-as-default key (`Ctrl+S`).
+
+### Changed
+
+- Changed `/sure_init` login to run through pi's `AuthInteraction`. The prompts are unchanged; an API key entered there takes effect in the current session immediately, and keys are trimmed before storage.
+- Changed `/sure_init` to leave a saved global default thinking level alone when it resolves the level to `off`, which the 0.85.1 settings type cannot represent. Use `/thinking` to change the default.
+- Changed the Azure default model to `gpt-5.5`.
+- Changed the model catalog to committed data: `packages/ai/src/providers/data/` holds the catalog published inside `@earendil-works/pi-ai@0.85.1`, and pi-ai builds with `npm run build:offline`, which validates it without network access.
+- Changed vitest to run offline by default (`PI_OFFLINE=1`); tests that need the network opt in with `allowNetwork()`.
+- Changed `test.sh` to pi's `env -i` allowlist sandbox, and `pi-test.sh` / `pi-test.ps1` to run the CLI from source through `node --import test/source-resolver.ts`. `--no-env` now only moves `auth.json` aside.
+
+### Removed
+
+- Removed the vendored `packages/agent`, `packages/tui`, and `packages/orchestrator` in favour of the pinned npm packages.
+- Removed pi's experimental remote runtime (`src/experimental`, `src/cli/experimental`, `src/client`, their 18 test files, and the example plugin). Its Node source-resolution hook survives as `test/source-resolver.ts`.
+- Removed three tests that reached into the removed tui package's own sources and helpers.
+- Removed `scripts/credential-env.txt` and its `check:credential-env` script, replaced by the `env -i` allowlist in `test.sh`.
+
 ## [0.85.1] - 2026-09-05
 
 ### New Features

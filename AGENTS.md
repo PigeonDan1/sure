@@ -21,7 +21,7 @@
 - Always ask before removing functionality or code that appears intentional.
 - Do not preserve backward compatibility unless the user asks for it.
 - Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
-- Never modify `packages/ai/src/models.generated.ts` directly; update `packages/ai/scripts/generate-models.ts` instead, then regenerate. Including the resulting `models.generated.ts` diff is always OK, even if regeneration includes unrelated upstream model metadata changes.
+- The pi model catalog is frozen and committed (see Vendored pi). Never hand-edit the generated catalog files under `packages/ai/src/`, and never run `npm run generate-models` or `npm run hydrate-model-data`: both fetch from models.dev.
 
 ## Commands
 
@@ -50,7 +50,6 @@ Committing:
 - Only commit files YOU changed in THIS session.
 - Stage explicit paths (`git add <path1> <path2>`); never `git add -A` / `git add .`.
 - Before committing, run `git status` and verify you are only staging your files.
-- `packages/ai/src/models.generated.ts` may always be included alongside your files.
 - Message format: `{feat,fix,docs}[(ai,tui,agent,coding-agent)]: <commit message> (optionally multiple lines)`. Message is informative and concise.
 
 Never run (destroys other agents' work or bypasses checks):
@@ -115,6 +114,39 @@ Attribution:
 
 - Internal (from issues): `Fixed foo bar ([#123](https://github.com/earendil-works/pi-mono/issues/123))`
 - External contributions: `Added feature X ([#456](https://github.com/earendil-works/pi-mono/pull/456) by [@username](https://github.com/username))`
+
+## Vendored pi
+
+`packages/coding-agent` and `packages/ai` are a vendored copy of pi 0.85.1 and stay there. This fork does not follow pi releases and does not keep its patches mergeable back into pi: edit the vendored code directly, like any other code in this repository. `@earendil-works/pi-agent-core`, `@earendil-works/pi-tui`, `@earendil-works/chord`, and `@earendil-works/pi-telemetry` are npm dependencies pinned to exactly `0.85.1` and are not bumped. The vendored copy no longer carries `packages/agent`, `packages/tui`, or `packages/orchestrator` (those are the npm packages above), nor pi's experimental remote runtime.
+
+The model catalog is frozen with it. `packages/ai/src/providers/data/` is committed, together with the provider catalog modules built from it. The JSON is the catalog published inside `@earendil-works/pi-ai@0.85.1`, generated 2026-09-05. Build pi-ai with `npm run build:offline`, which validates the committed catalog through `check:model-data` without network access.
+
+Our pi is pi 0.85.1 plus the patches below. This list is the record; keep it current when you patch vendored pi.
+
+`packages/coding-agent`:
+
+- The SURE control plane under `src/core/sure/` and its suites (see SURE Harness).
+- `ToolDefinition.activeByDefault`, so SURE's two run-control tools stay out of the default tool table.
+- `noOpUIContext`, `notify` in print mode, and exit code 130 on SIGINT.
+- `sendUserMessage` returns `Promise<void>`.
+- Default extension injection: `src/core/default-extensions.ts` and its `InlineExtension` entries, suppressed by `--no-extensions`.
+- A three-tier provider scope (`provider | all | scoped`) in the model selector.
+- The `./hooks` package export (`dist/core/sure/hook-types.js`).
+- First-time-setup privacy text pointing at the bundled `settings.md`, and the `/sure_init` compat note in `docs/models.md`.
+- Azure default model `gpt-5.5`.
+- A `ModelRegistry.login()` facade over the SURE auth adapter `src/core/sure/auth.ts`.
+- SURE run settlement on `agent_settled` instead of `agent_end` / `willRetry`.
+
+`packages/ai`:
+
+- Dropped the dead `|| "Unknown error"` short-circuit in the Responses error template.
+- `error-body.ts` reads a three-digit numeric-string `code` as a status and exposes bodies that carry no status.
+- Gemini `finishMessage` is composed into `rawStopReason`, so the user-visible string is `Provider stopped with: REASON (message)`.
+- Responses `cancelled` and `failed` carry `errorMessage: "Response <status>"`.
+- The Anthropic and OpenAI Codex OAuth callback servers time out after five minutes (`LOGIN_TIMEOUT_MS`), matching openrouter.
+- A `PROVIDER_MIDSTREAM_ERROR` diagnostic on `openai-responses` and `azure-openai-responses` streams that drop after a 200, retryable in `retry.ts`, plus `isTerminalRateLimitError` de-duplication and a retry on "produced invalid content".
+
+What the 0.85.1 move changed for users and maintainers is written up in `docs/pi-0.85.1-upgrade.md`.
 
 ## SURE Harness
 
