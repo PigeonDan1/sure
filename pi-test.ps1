@@ -29,24 +29,18 @@ try {
 			Write-Host "Moved auth.json to backup"
 		}
 
-		$credentialEnvFile = Join-Path $scriptDir "scripts/credential-env.txt"
-		Get-Content -LiteralPath $credentialEnvFile | ForEach-Object {
-			$name = $_.Trim()
-			if ($name -and -not $name.StartsWith('#')) {
-				Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
-			}
-		}
-
-		Write-Host "Running without API keys..."
+		Write-Host "Running without stored credentials..."
 	}
 
-	$tsxBin = Join-Path $scriptDir "node_modules/.bin/tsx.cmd"
-	if (-not (Test-Path -LiteralPath $tsxBin)) {
-		throw "tsx not found at $tsxBin. Run npm install from the repo root first."
+	$resolverPath = Join-Path $scriptDir "packages/coding-agent/test/source-resolver.ts"
+	if (-not (Test-Path -LiteralPath $resolverPath)) {
+		throw "Source resolver not found at $resolverPath."
 	}
 
+	# Node resolves --import as a URL, so a Windows path needs a file:// URL.
+	$resolverUrl = ([System.Uri]$resolverPath).AbsoluteUri
 	$cliPath = Join-Path $scriptDir "packages/coding-agent/src/cli.ts"
-	& $tsxBin $cliPath @forwardArgs
+	& node --import $resolverUrl $cliPath @forwardArgs
 	$exitCode = $LASTEXITCODE
 	if ($exitCode -ne 0) {
 		exit $exitCode

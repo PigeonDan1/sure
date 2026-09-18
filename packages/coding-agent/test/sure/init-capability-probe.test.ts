@@ -229,8 +229,9 @@ describe("probeEffortSupport", () => {
 			medium: null,
 			high: "high",
 			xhigh: "xhigh",
+			max: null,
 		});
-		expect(fetchMock).toHaveBeenCalledTimes(6);
+		expect(fetchMock).toHaveBeenCalledTimes(7);
 		expect(outcome.effortNote).toContain("xhigh");
 	});
 
@@ -286,7 +287,7 @@ describe("probeEffortSupport", () => {
 		});
 		expect(outcome.supportedLevels).toContain("high");
 		expect(outcome.failure).toBeUndefined();
-		expect(fetchMock).toHaveBeenCalledTimes(7);
+		expect(fetchMock).toHaveBeenCalledTimes(8);
 	});
 
 	it("gives up on a level after two retries and reports the model as flaky", async () => {
@@ -344,7 +345,7 @@ describe("probeEffortSupport", () => {
 			fetch: fetchMock as unknown as typeof fetch,
 			retryDelayMs: 0,
 		});
-		expect(fetchMock).toHaveBeenCalledTimes(6);
+		expect(fetchMock).toHaveBeenCalledTimes(7);
 		expect(peak).toBeLessThanOrEqual(3);
 	});
 

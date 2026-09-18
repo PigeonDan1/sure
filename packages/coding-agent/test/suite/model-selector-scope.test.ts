@@ -1,10 +1,8 @@
 import type { Api, Model } from "@earendil-works/pi-ai/compat";
 import { setKeybindings, type TUI } from "@earendil-works/pi-tui";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../../src/core/auth-storage.ts";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { KeybindingsManager } from "../../src/core/keybindings.ts";
-import { ModelRegistry } from "../../src/core/model-registry.ts";
-import { SettingsManager } from "../../src/core/settings-manager.ts";
+import type { ModelRuntime } from "../../src/core/model-runtime.ts";
 import { ModelSelectorComponent } from "../../src/modes/interactive/components/model-selector.ts";
 import { initTheme } from "../../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../../src/utils/ansi.ts";
@@ -19,22 +17,35 @@ async function waitForAsyncRender(): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** Registers a provider with the given model ids using real ModelRegistry auth plumbing. */
-function registerTestProvider(registry: ModelRegistry, providerId: string, modelIds: string[]): void {
-	registry.registerProvider(providerId, {
-		baseUrl: `https://${providerId}.test/v1`,
-		apiKey: `${providerId}-key`,
+/** A model the selector can list. Only the fields the component reads carry meaning here. */
+function testModel(provider: string, id: string): Model<Api> {
+	return {
+		id,
+		name: id,
 		api: "openai-completions" as Api,
-		models: modelIds.map((id) => ({
-			id,
-			name: id,
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 100000,
-			maxTokens: 8000,
-		})),
-	});
+		provider,
+		baseUrl: `https://${provider}.test/v1`,
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 100000,
+		maxTokens: 8000,
+	};
+}
+
+/**
+ * The slice of ModelRuntime the selector actually reads while it builds its list. refresh()
+ * resolves empty so the background refreshModels() takes its success path instead of its
+ * catch branch; scope selection is settled before it runs either way.
+ */
+function createFakeRuntime(models: readonly Model<Api>[]): ModelRuntime {
+	return {
+		getAvailableSnapshot: () => models,
+		getModel: (provider: string, id: string) =>
+			models.find((model) => model.provider === provider && model.id === id),
+		getError: () => undefined,
+		refresh: async () => ({ aborted: false, errors: new Map<string, Error>() }),
+	} as unknown as ModelRuntime;
 }
 
 function renderLines(selector: ModelSelectorComponent): string[] {
@@ -47,8 +58,10 @@ function findScopeLine(lines: string[]): string | undefined {
 }
 
 describe("ModelSelectorComponent default scope", () => {
-	let registry: ModelRegistry;
-	const settingsManager = SettingsManager.inMemory();
+	const a1 = testModel("provider-a", "a1");
+	const a2 = testModel("provider-a", "a2");
+	const b1 = testModel("provider-b", "b1");
+	let runtime: ModelRuntime;
 
 	beforeAll(() => {
 		initTheme("dark");
@@ -57,22 +70,14 @@ describe("ModelSelectorComponent default scope", () => {
 	beforeEach(() => {
 		// Keybindings are a global singleton; reset between tests for isolation.
 		setKeybindings(new KeybindingsManager());
-		registry = ModelRegistry.inMemory(AuthStorage.inMemory());
-		registerTestProvider(registry, "provider-a", ["a1", "a2"]);
-		registerTestProvider(registry, "provider-b", ["b1"]);
-	});
-
-	afterEach(() => {
-		registry.refresh();
+		runtime = createFakeRuntime([a1, a2, b1]);
 	});
 
 	it("defaults to showing only the current provider's models", async () => {
-		const currentModel = registry.find("provider-a", "a1") as Model<Api>;
 		const selector = new ModelSelectorComponent(
 			createFakeTui(),
-			currentModel,
-			settingsManager,
-			registry,
+			a1,
+			runtime,
 			[],
 			() => {},
 			() => {},
@@ -93,8 +98,7 @@ describe("ModelSelectorComponent default scope", () => {
 		const selector = new ModelSelectorComponent(
 			createFakeTui(),
 			undefined,
-			settingsManager,
-			registry,
+			runtime,
 			[],
 			() => {},
 			() => {},
@@ -112,25 +116,13 @@ describe("ModelSelectorComponent default scope", () => {
 	});
 
 	it("falls back to all-provider scope when the current provider contributes zero available models", async () => {
-		// A model whose provider isn't registered in this registry at all.
-		const orphanModel: Model<Api> = {
-			id: "orphan-1",
-			name: "Orphan",
-			api: "openai-completions" as Api,
-			provider: "orphan-provider",
-			baseUrl: "https://orphan.test/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 100000,
-			maxTokens: 8000,
-		};
+		// A model whose provider the runtime knows nothing about.
+		const orphanModel = testModel("orphan-provider", "orphan-1");
 
 		const selector = new ModelSelectorComponent(
 			createFakeTui(),
 			orphanModel,
-			settingsManager,
-			registry,
+			runtime,
 			[],
 			() => {},
 			() => {},
@@ -145,15 +137,10 @@ describe("ModelSelectorComponent default scope", () => {
 	});
 
 	it("keeps the scoped default when scoped models are configured, and Tab cycles provider -> all -> scoped", async () => {
-		const a1 = registry.find("provider-a", "a1") as Model<Api>;
-		const a2 = registry.find("provider-a", "a2") as Model<Api>;
-		const b1 = registry.find("provider-b", "b1") as Model<Api>;
-
 		const selector = new ModelSelectorComponent(
 			createFakeTui(),
 			a1,
-			settingsManager,
-			registry,
+			runtime,
 			[{ model: a2 }, { model: b1 }],
 			() => {},
 			() => {},
@@ -191,13 +178,10 @@ describe("ModelSelectorComponent default scope", () => {
 	});
 
 	it("Tab cycles provider -> all -> provider when no scoped models are configured", async () => {
-		const a1 = registry.find("provider-a", "a1") as Model<Api>;
-
 		const selector = new ModelSelectorComponent(
 			createFakeTui(),
 			a1,
-			settingsManager,
-			registry,
+			runtime,
 			[],
 			() => {},
 			() => {},
@@ -219,14 +203,10 @@ describe("ModelSelectorComponent default scope", () => {
 	});
 
 	it("defaults to all-provider scope when opened pre-filled from a failed exact match, even with scoped models configured", async () => {
-		const a1 = registry.find("provider-a", "a1") as Model<Api>;
-		const b1 = registry.find("provider-b", "b1") as Model<Api>;
-
 		const selector = new ModelSelectorComponent(
 			createFakeTui(),
 			a1,
-			settingsManager,
-			registry,
+			runtime,
 			[{ model: a1 }],
 			() => {},
 			() => {},

@@ -4,7 +4,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as _bundledPiAgentCore from "@earendil-works/pi-agent-core";
 import * as _bundledPiAiCompat from "@earendil-works/pi-ai/compat";
-import * as _bundledPiAiOauth from "@earendil-works/pi-ai/oauth";
 import * as _bundledPiTui from "@earendil-works/pi-tui";
 import * as _bundledTypebox from "typebox";
 import * as _bundledTypeboxCompile from "typebox/compile";
@@ -92,14 +91,12 @@ export function getSureHookVirtualModules(): Record<string, unknown> {
 		"@earendil-works/pi-tui": _bundledPiTui,
 		"@earendil-works/pi-ai": _bundledPiAiCompat,
 		"@earendil-works/pi-ai/compat": _bundledPiAiCompat,
-		"@earendil-works/pi-ai/oauth": _bundledPiAiOauth,
 		"@earendil-works/pi-coding-agent": _bundledPiCodingAgent,
 		"@earendil-works/pi-coding-agent/hooks": _bundledPiCodingAgentHooks,
 		"@mariozechner/pi-agent-core": _bundledPiAgentCore,
 		"@mariozechner/pi-tui": _bundledPiTui,
 		"@mariozechner/pi-ai": _bundledPiAiCompat,
 		"@mariozechner/pi-ai/compat": _bundledPiAiCompat,
-		"@mariozechner/pi-ai/oauth": _bundledPiAiOauth,
 		"@mariozechner/pi-coding-agent": _bundledPiCodingAgent,
 		"@mariozechner/pi-coding-agent/hooks": _bundledPiCodingAgentHooks,
 	};

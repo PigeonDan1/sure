@@ -1378,7 +1378,7 @@ describe("Sure extension", () => {
 		expect(inMemorySettings.getGlobalSettings().defaultProvider).toBe("kimi-coding");
 		expect(inMemorySettings.getGlobalSettings().defaultModel).toBe("kimi-for-coding");
 
-		const stored = harness.authStorage.get("kimi-coding");
+		const stored = await harness.authStorage.read("kimi-coding");
 		expect(stored?.type).toBe("api_key");
 		if (stored?.type === "api_key") {
 			expect(stored.key).toBe("sk-test-123");

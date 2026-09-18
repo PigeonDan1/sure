@@ -4,7 +4,7 @@ import type { CapabilityProbeError, ProbeApi, ProbeStep } from "./init-capabilit
 import { probeModelCapability } from "./init-capability-probe.ts";
 import { upsertProviderModel } from "./init-gateway-store.ts";
 
-const LEVEL_ORDER: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+const LEVEL_ORDER: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const BASE_LEVEL: ModelThinkingLevel = "medium";
 
 /**
@@ -50,7 +50,7 @@ export interface ApplyContext {
 		select(title: string, choices: string[]): Promise<string | undefined>;
 		notify(message: string, type?: "info" | "warning" | "error"): void;
 	};
-	modelRegistry: { refresh(): void };
+	modelRegistry: { refresh(): Promise<unknown> };
 }
 
 export interface ApplyProbedModelInput {
@@ -143,7 +143,7 @@ export async function applyProbedModel(input: ApplyProbedModelInput): Promise<Ap
 			},
 			input.modelsJsonPath,
 		);
-		input.ctx.modelRegistry.refresh();
+		await input.ctx.modelRegistry.refresh();
 	} catch (error) {
 		return {
 			ok: false,
@@ -189,7 +189,7 @@ export interface VerifyRoundTripInput {
 		getApiKeyAndHeaders(model: Model<Api>): Promise<{
 			ok: boolean;
 			apiKey?: string;
-			headers?: Record<string, string>;
+			headers?: Record<string, string | null>;
 			env?: Record<string, string>;
 			error?: string;
 		}>;

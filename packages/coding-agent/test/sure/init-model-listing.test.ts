@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
-import { ModelRegistry } from "../../src/core/model-registry.ts";
 import { SURE_INIT_PROVIDER_OPTIONS } from "../../src/core/sure/init.ts";
 import {
 	describeListingSource,
@@ -10,6 +9,7 @@ import {
 	openAICompatibleModelsUrl,
 	openAICompatibleUrl,
 } from "../../src/core/sure/init-model-listing.ts";
+import { createInMemoryModelRegistry } from "../model-runtime-test-utils.ts";
 
 function optionById(id: string) {
 	const option = SURE_INIT_PROVIDER_OPTIONS.find((entry) => entry.id === id);
@@ -104,7 +104,7 @@ describe("fetchAnthropicModels", () => {
 describe("listBuiltInProviderModels", () => {
 	it("goes live for openai when a key is configured", async () => {
 		const authStorage = AuthStorage.inMemory({ openai: { type: "api_key", key: "sk-live" } });
-		const registry = ModelRegistry.inMemory(authStorage);
+		const registry = await createInMemoryModelRegistry(authStorage);
 		const fetchMock = vi.fn(async () => Response.json({ data: [{ id: "gpt-fresh" }] }));
 		vi.stubGlobal("fetch", fetchMock);
 		const listing = await listBuiltInProviderModels(optionById("openai"), registry);
@@ -115,7 +115,7 @@ describe("listBuiltInProviderModels", () => {
 
 	it("falls back to the built-in catalog with an error note when the live query fails", async () => {
 		const authStorage = AuthStorage.inMemory({ openai: { type: "api_key", key: "sk-live" } });
-		const registry = ModelRegistry.inMemory(authStorage);
+		const registry = await createInMemoryModelRegistry(authStorage);
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async () => new Response("boom", { status: 500 })),
@@ -128,7 +128,7 @@ describe("listBuiltInProviderModels", () => {
 	});
 
 	it("uses the built-in catalog for codex without touching the network", async () => {
-		const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+		const registry = await createInMemoryModelRegistry(AuthStorage.inMemory());
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 		const listing = await listBuiltInProviderModels(optionById("codex"), registry);
@@ -138,7 +138,7 @@ describe("listBuiltInProviderModels", () => {
 	});
 
 	it("labels copilot's registry list as live (account-filtered at login)", async () => {
-		const registry = ModelRegistry.inMemory(AuthStorage.inMemory());
+		const registry = await createInMemoryModelRegistry(AuthStorage.inMemory());
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 		const listing = await listBuiltInProviderModels(optionById("copilot"), registry);

@@ -6,9 +6,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../../src/core/auth-storage.ts";
 import type { ExtensionCommandContext } from "../../src/core/extensions/types.ts";
-import { ModelRegistry } from "../../src/core/model-registry.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
 import { runSureInit } from "../../src/core/sure/init.ts";
+import { createModelRegistry } from "../model-runtime-test-utils.ts";
+import { allowNetwork } from "../test-network-env.ts";
 
 let tempDir: string;
 let modelsPath: string;
@@ -46,6 +47,7 @@ const STREAMED_OK = [
 ];
 
 beforeEach(async () => {
+	allowNetwork();
 	tempDir = join(tmpdir(), `pi-sure-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 	mkdirSync(tempDir, { recursive: true });
 	modelsPath = join(tempDir, "models.json");
@@ -131,9 +133,9 @@ afterEach(async () => {
 	if (existsSync(tempDir)) rmSync(tempDir, { recursive: true, force: true });
 });
 
-function makeContext(hasUI: boolean) {
+async function makeContext(hasUI: boolean) {
 	const authStorage = AuthStorage.inMemory();
-	const modelRegistry = ModelRegistry.create(authStorage, modelsPath);
+	const modelRegistry = await createModelRegistry(authStorage, modelsPath);
 	const settingsManager = SettingsManager.inMemory();
 	const ui = { select: vi.fn(), input: vi.fn(), confirm: vi.fn(), notify: vi.fn() };
 	const ctx = {
@@ -148,7 +150,7 @@ function makeContext(hasUI: boolean) {
 
 describe("init gateway E2E over real HTTP", () => {
 	it("creates a gateway one-shot: fetches live models, writes models.json, sets defaults, writes the manifest", async () => {
-		const { ctx, settingsManager } = makeContext(false);
+		const { ctx, settingsManager } = await makeContext(false);
 		const result = await runSureInit({
 			ctx,
 			args: `--option custom --name e2egw --base-url ${baseUrl} --api-key sk-e2e --model alpha`,
@@ -188,7 +190,7 @@ describe("init gateway E2E over real HTTP", () => {
 		// Everything above stubs the round trip; this one lets it go out for real, so it is the
 		// only test that can show the recorded setting reaching the wire.
 		gateway = { reasoning: true, refuseDeveloperRole: true };
-		const { ctx, settingsManager } = makeContext(false);
+		const { ctx, settingsManager } = await makeContext(false);
 		const result = await runSureInit({
 			ctx,
 			args: `--option custom --name e2egw --base-url ${baseUrl} --api-key sk-e2e --model alpha`,
@@ -211,7 +213,7 @@ describe("init gateway E2E over real HTTP", () => {
 	});
 
 	it("surfaces the HTTP status when the key is wrong", async () => {
-		const { ctx, settingsManager } = makeContext(false);
+		const { ctx, settingsManager } = await makeContext(false);
 		const result = await runSureInit({
 			ctx,
 			args: `--option custom --name e2egw --base-url ${baseUrl} --api-key sk-wrong --model alpha`,
@@ -237,7 +239,7 @@ describe("init gateway E2E over real HTTP", () => {
 			)}\n`,
 			"utf-8",
 		);
-		const { ctx, settingsManager, ui } = makeContext(true);
+		const { ctx, settingsManager, ui } = await makeContext(true);
 		ui.select.mockResolvedValueOnce(`e2egw (custom): ${baseUrl}, 1 models`).mockResolvedValueOnce("beta");
 		const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: modelsPath });
 		expect(result.success).toBe(true);

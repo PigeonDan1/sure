@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseArgs } from "../src/cli/args.ts";
+import { normalizeSessionName, parseArgs } from "../src/cli/args.ts";
 
 describe("parseArgs", () => {
 	describe("--version flag", () => {
@@ -173,6 +173,11 @@ describe("parseArgs", () => {
 			expect(result.name).toBe("");
 		});
 
+		test("normalizes display names and rejects whitespace-only values", () => {
+			expect(normalizeSessionName("  named session  ")).toBe("named session");
+			expect(normalizeSessionName("   ")).toBeUndefined();
+		});
+
 		test("reports missing value", () => {
 			const result = parseArgs(["--name"]);
 			expect(result.diagnostics).toEqual([{ type: "error", message: "--name requires a value" }]);
@@ -191,6 +196,21 @@ describe("parseArgs", () => {
 		test("parses --no-session flag", () => {
 			const result = parseArgs(["--no-session"]);
 			expect(result.noSession).toBe(true);
+		});
+
+		test("preserves custom session IDs for non-persisting commands", () => {
+			expect(parseArgs(["--session-id", "ephemeral-id", "--help"])).toMatchObject({
+				sessionId: "ephemeral-id",
+				help: true,
+			});
+			expect(parseArgs(["--session-id", "ephemeral-id", "--list-models"])).toMatchObject({
+				sessionId: "ephemeral-id",
+				listModels: true,
+			});
+			expect(parseArgs(["--session-id", "ephemeral-id", "--no-session"])).toMatchObject({
+				sessionId: "ephemeral-id",
+				noSession: true,
+			});
 		});
 	});
 
@@ -260,6 +280,20 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--use-theme flag", () => {
+		test("parses --use-theme", () => {
+			const result = parseArgs(["--use-theme", "light"]);
+			expect(result.useTheme).toBe("light");
+		});
+
+		test("reports when the theme name value is missing", () => {
+			const result = parseArgs(["--use-theme", "--print"]);
+			expect(result.useTheme).toBeUndefined();
+			expect(result.print).toBe(true);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "--use-theme requires a theme name" }]);
+		});
+	});
+
 	describe("--no-skills flag", () => {
 		test("parses --no-skills flag", () => {
 			const result = parseArgs(["--no-skills"]);
@@ -326,6 +360,31 @@ describe("parseArgs", () => {
 		test("parses --offline flag", () => {
 			const result = parseArgs(["--offline"]);
 			expect(result.offline).toBe(true);
+		});
+	});
+
+	describe("--tui-mode flag", () => {
+		test.each(["regular", "fullscreen"] as const)("parses %s mode", (mode) => {
+			const result = parseArgs(["--tui-mode", mode]);
+			expect(result.tuiMode).toBe(mode);
+		});
+
+		test("rejects invalid modes", () => {
+			const result = parseArgs(["--tui-mode", "other"]);
+			expect(result.diagnostics).toEqual([
+				{ type: "error", message: 'Invalid TUI mode "other". Valid values: regular, fullscreen' },
+			]);
+		});
+
+		test("requires a mode", () => {
+			const result = parseArgs(["--tui-mode"]);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "--tui-mode requires regular or fullscreen" }]);
+		});
+
+		test("does not recognize the old --ui-mode flag", () => {
+			const result = parseArgs(["--ui-mode", "fullscreen"]);
+			expect(result.tuiMode).toBeUndefined();
+			expect(result.unknownFlags.get("ui-mode")).toBe("fullscreen");
 		});
 	});
 

@@ -60,6 +60,12 @@ npm test                          # Run all tests
 npm test -- test/specific.test.ts # Run specific test
 ```
 
+### Published package smoke test
+
+After building, run `npm run check:package-install`. It packs the public packages and installs only coding-agent as a direct dependency in a temporary directory outside the repository. Local tarball overrides select declared transitive dependencies without installing development-only packages. The check verifies SDK imports and CLI startup without credentials or model requests.
+
+`npm run check` also checks runtime dependency declarations and rejects excluded development sources pulled into a package's build through imports.
+
 ## Project Structure
 
 ```

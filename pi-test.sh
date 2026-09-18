@@ -34,16 +34,11 @@ if [[ "$NO_ENV" == "true" ]]; then
     echo "Moved auth.json to backup"
   fi
 
-  # Unset API keys (see packages/ai/src/env-api-keys.ts).
-  while read -r var; do
-    case "$var" in ''|'#'*) continue;; esac
-    unset "$var"
-  done < "$SCRIPT_DIR/scripts/credential-env.txt"
-  echo "Running without API keys..."
+  echo "Running without stored credentials..."
 fi
 
-if [[ ! -x "$SCRIPT_DIR/node_modules/.bin/tsx" ]]; then
-  echo "Missing node_modules/.bin/tsx."
+if [[ ! -d "$SCRIPT_DIR/node_modules/@earendil-works/pi-agent-core" ]]; then
+  echo "Missing node_modules/@earendil-works/pi-agent-core."
   echo "Run from the repository root:"
   echo "  npm install --ignore-scripts"
   echo "  npm run sure:doctor"
@@ -58,4 +53,10 @@ if ! node -e "const base = '$SCRIPT_DIR/packages/coding-agent/src/core/sure'; fo
   exit 1
 fi
 
-"$SCRIPT_DIR/node_modules/.bin/tsx" --tsconfig "$SCRIPT_DIR/tsconfig.json" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
+# Node resolves --import as a URL, so a Windows drive letter needs a file:// URL.
+RESOLVER="$SCRIPT_DIR/packages/coding-agent/test/source-resolver.ts"
+if command -v cygpath >/dev/null 2>&1; then
+  RESOLVER="$(cygpath -m "$RESOLVER")"
+fi
+
+node --import "file:///${RESOLVER#/}" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}

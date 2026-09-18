@@ -161,6 +161,7 @@ Source code, skills, schemas, documentation, and small fixtures belong in Git. C
 
 - [docs/site-configuration.md](./docs/site-configuration.md): full site policy schema, source precedence, and diagnostics
 - [docs/evaluation_engine.md](./docs/evaluation_engine.md): evaluation engine boundary, routes, and runtime locking
+- [docs/pi-0.85.1-upgrade.md](./docs/pi-0.85.1-upgrade.md): what the pi 0.85.1 upgrade changed, and what the vendored pi copy is frozen at
 - [AGENTS.md](./AGENTS.md): maintainer-facing development and hygiene guide
 - Distributions with a bundled site policy may also carry additional site-specific documentation under a private directory that is not part of the public export.
 

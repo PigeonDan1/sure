@@ -1,40 +1,16 @@
-// A provider that gives up names its reason in the finish reason it sends.
-// Every provider maps that reason onto our `StopReason`, and several distinct
-// reasons collapse onto "error" — Gemini alone folds fourteen of them, safety
-// blocks and malformed function calls included. Nothing records which one
-// arrived, so the throw that follows the stream loop has nothing to carry and
-// the user reads the literal "An unknown error occurred".
-//
-// These tests pin the reason to the resulting `errorMessage`.
+// A provider that gives up names its reason in the terminal event it sends, and
+// the stream throws right after mapping that reason. Whatever the mapping drops
+// is gone by then: Gemini's `finishMessage`, which is the only place the rule
+// that fired is named, and the Responses status behind a `failed` / `cancelled`
+// response, which otherwise reaches the user as an unexplained error.
 
-import { FinishReason } from "@google/genai";
+import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, it, vi } from "vitest";
-import { stream as streamBedrock } from "../src/api/bedrock-converse-stream.ts";
-import { stream as streamGoogle } from "../src/api/google-generative-ai.ts";
-import { stream as streamGoogleVertex } from "../src/api/google-vertex.ts";
-import { getModel } from "../src/compat.ts";
-import type { Context, Model } from "../src/types.ts";
 
-const googleChunks: unknown[] = [];
-const bedrockItems: unknown[] = [];
-
-vi.mock("@aws-sdk/client-bedrock-runtime", async (importOriginal) => {
-	const actual = await importOriginal<Record<string, unknown>>();
-	class BedrockRuntimeClient {
-		middlewareStack = { add: () => undefined };
-		async send() {
-			return {
-				$metadata: {},
-				stream: (async function* () {
-					for (const item of bedrockItems) {
-						yield item;
-					}
-				})(),
-			};
-		}
-	}
-	return { ...actual, BedrockRuntimeClient };
-});
+const googleMock = vi.hoisted(() => ({
+	finishReason: "SAFETY" as string,
+	finishMessage: undefined as string | undefined,
+}));
 
 vi.mock("@google/genai", async (importOriginal) => {
 	const actual = await importOriginal<Record<string, unknown>>();
@@ -42,120 +18,121 @@ vi.mock("@google/genai", async (importOriginal) => {
 		models = {
 			generateContentStream: async () =>
 				(async function* () {
-					for (const chunk of googleChunks) {
-						yield chunk;
-					}
+					yield {
+						candidates: [
+							{
+								finishReason: googleMock.finishReason,
+								finishMessage: googleMock.finishMessage,
+								content: { parts: [] },
+							},
+						],
+					};
 				})(),
 		};
 	}
 	return { ...actual, GoogleGenAI: FakeGoogleGenAI };
 });
 
-function googleModel(): Model<"google-generative-ai"> {
+import { stream as streamGoogleGenerativeAi } from "../src/api/google-generative-ai.ts";
+import { stream as streamGoogleVertex } from "../src/api/google-vertex.ts";
+import { processResponsesStream } from "../src/api/openai-responses-shared.ts";
+import { getModel } from "../src/compat.ts";
+import type { AssistantMessage, Context, Model } from "../src/types.ts";
+import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+
+const context: Context = {
+	messages: [{ role: "user", content: "hello", timestamp: Date.now() }],
+};
+
+function createResponsesModel(): Model<"openai-responses"> {
 	return {
-		id: "gemini-3-pro",
-		name: "Gemini 3 Pro",
-		api: "google-generative-ai",
-		provider: "google",
-		baseUrl: "https://generativelanguage.googleapis.com",
+		id: "gpt-5-mini",
+		name: "GPT-5 Mini",
+		api: "openai-responses",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
 		reasoning: true,
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 1000000,
-		maxTokens: 64000,
+		contextWindow: 400000,
+		maxTokens: 128000,
 	};
 }
 
-function vertexModel(): Model<"google-vertex"> {
+function createResponsesOutput(model: Model<"openai-responses">): AssistantMessage {
 	return {
-		id: "gemini-3-pro",
-		name: "Gemini 3 Pro",
-		api: "google-vertex",
-		provider: "google-vertex",
-		baseUrl: "",
-		reasoning: true,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 1000000,
-		maxTokens: 64000,
+		role: "assistant",
+		content: [],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "pending",
+		timestamp: Date.now(),
 	};
 }
 
-function textContext(): Context {
-	return {
-		systemPrompt: "",
-		messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 0 }],
-		tools: [],
-	};
-}
-
-async function drain(assistantStream: ReturnType<typeof streamGoogle>) {
-	for await (const _event of assistantStream) {
-		// The result carries the failure; the events are not under test here.
-	}
-	return assistantStream.result();
+async function* createTerminalEvents(status: "cancelled" | "failed"): AsyncIterable<ResponseStreamEvent> {
+	yield {
+		type: "response.completed",
+		sequence_number: 0,
+		response: { id: "resp_terminal", status },
+	} as unknown as ResponseStreamEvent;
 }
 
 describe("provider stop reason messages", () => {
-	it("names the Gemini finish reason that stopped the generation", async () => {
-		googleChunks.length = 0;
-		googleChunks.push({ candidates: [{ finishReason: FinishReason.SAFETY, content: { parts: [] } }] });
-
-		const result = await drain(streamGoogle(googleModel(), textContext(), { apiKey: "test" }));
-
-		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toContain("SAFETY");
-	});
-
 	it("keeps the message Gemini attached to the finish reason", async () => {
-		googleChunks.length = 0;
-		googleChunks.push({
-			candidates: [
-				{
-					finishReason: FinishReason.PROHIBITED_CONTENT,
-					finishMessage: "blocked by policy",
-					content: { parts: [] },
-				},
-			],
-		});
+		googleMock.finishReason = "PROHIBITED_CONTENT";
+		googleMock.finishMessage = "blocked by policy";
 
-		const result = await drain(streamGoogle(googleModel(), textContext(), { apiKey: "test" }));
-
-		expect(result.errorMessage).toContain("PROHIBITED_CONTENT");
-		expect(result.errorMessage).toContain("blocked by policy");
-	});
-
-	it("names the finish reason on the Vertex path too", async () => {
-		googleChunks.length = 0;
-		googleChunks.push({
-			candidates: [{ finishReason: FinishReason.MALFORMED_FUNCTION_CALL, content: { parts: [] } }],
-		});
-
-		const result = await drain(
-			streamGoogleVertex(vertexModel(), textContext(), {
-				apiKey: "test",
-				project: "test-project",
-				location: "us-central1",
-			}),
-		);
-
-		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toContain("MALFORMED_FUNCTION_CALL");
-	});
-
-	it("names the Bedrock stop reason it does not map", async () => {
-		bedrockItems.length = 0;
-		bedrockItems.push(
-			{ messageStart: { role: "assistant" } },
-			{ messageStop: { stopReason: "guardrail_intervened" } },
-		);
-
-		const result = await streamBedrock(getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8"), textContext(), {
-			cacheRetention: "none",
-			region: "us-east-1",
+		const message = await streamGoogleGenerativeAi(getModel("google", "gemini-2.5-flash"), context, {
+			apiKey: "test-api-key",
 		}).result();
 
-		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toContain("guardrail_intervened");
+		expect(message.stopReason).toBe("error");
+		expect(message.rawStopReason).toBe("PROHIBITED_CONTENT (blocked by policy)");
+		expect(message.errorMessage).toBe("Provider stopped with: PROHIBITED_CONTENT (blocked by policy)");
+	});
+
+	it("keeps the finish message on the Vertex path too", async () => {
+		googleMock.finishReason = "MALFORMED_FUNCTION_CALL";
+		googleMock.finishMessage = "unparseable function call";
+
+		const message = await streamGoogleVertex(getModel("google-vertex", "gemini-3-flash-preview"), context, {
+			project: "test-project",
+			location: "us-central1",
+		}).result();
+
+		expect(message.stopReason).toBe("error");
+		expect(message.rawStopReason).toBe("MALFORMED_FUNCTION_CALL (unparseable function call)");
+		expect(message.errorMessage).toBe("Provider stopped with: MALFORMED_FUNCTION_CALL (unparseable function call)");
+	});
+
+	it("leaves the raw finish reason alone when Gemini attaches no message", async () => {
+		googleMock.finishReason = "SAFETY";
+		googleMock.finishMessage = undefined;
+
+		const message = await streamGoogleGenerativeAi(getModel("google", "gemini-2.5-flash"), context, {
+			apiKey: "test-api-key",
+		}).result();
+
+		expect(message.rawStopReason).toBe("SAFETY");
+	});
+
+	it.each(["cancelled", "failed"] as const)("names a Responses status of %s", async (status) => {
+		const model = createResponsesModel();
+		const output = createResponsesOutput(model);
+
+		await processResponsesStream(createTerminalEvents(status), output, new AssistantMessageEventStream(), model);
+
+		expect(output.stopReason).toBe("error");
+		expect(output.errorMessage).toBe(`Response ${status}`);
 	});
 });
