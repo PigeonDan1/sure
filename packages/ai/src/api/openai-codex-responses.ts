@@ -32,6 +32,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
 import { getPiUserAgent } from "../utils/pi-user-agent.ts";
+import { isTerminalRateLimitError } from "../utils/retry.ts";
 import { uuidv7 } from "../utils/uuid.ts";
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
@@ -112,12 +113,6 @@ function assertSuccessfulOutput(output: AssistantMessage): asserts output is Suc
 // ============================================================================
 // Retry Helpers
 // ============================================================================
-
-function isTerminalRateLimitError(errorText: string): boolean {
-	return /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|available balance|insufficient_quota|out of budget|quota exceeded|billing/i.test(
-		errorText,
-	);
-}
 
 function isRetryableError(status: number, errorText: string): boolean {
 	if (status === 429 && isTerminalRateLimitError(errorText)) {

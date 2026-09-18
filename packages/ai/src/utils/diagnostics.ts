@@ -1,3 +1,14 @@
+/**
+ * Diagnostic type for a failure the provider reported after it had already
+ * returned a 2xx and begun the response. The failure text of one of these is
+ * whatever the gateway happened to write, so the fact that the request was
+ * accepted before it failed is the more durable signal than its wording.
+ *
+ * The proxy transport rebuilds messages from its own event shape and does not
+ * carry diagnostics, so a proxied provider falls back to matching the text.
+ */
+export const PROVIDER_MIDSTREAM_ERROR = "provider_midstream_error";
+
 export interface DiagnosticErrorInfo {
 	name?: string;
 	message: string;
