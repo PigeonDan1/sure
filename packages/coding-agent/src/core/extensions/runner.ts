@@ -3,17 +3,19 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ImageContent, Model } from "@earendil-works/pi-ai";
+import type { ImageContent, Model, Provider, ProviderHeaders } from "@earendil-works/pi-ai";
 import type { KeyId } from "@earendil-works/pi-tui";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { KeybindingsConfig } from "../keybindings.ts";
 import type { ModelRegistry } from "../model-registry.ts";
+import type { ScopedModel } from "../model-resolver.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { BuildSystemPromptOptions } from "../system-prompt.ts";
 import type {
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeProviderHeadersEvent,
 	BeforeProviderRequestEvent,
 	CompactOptions,
 	ContextEvent,
@@ -37,6 +39,7 @@ import type {
 	InputEventResult,
 	InputSource,
 	LoadExtensionsResult,
+	MarkdownTransformer,
 	MessageEndEvent,
 	MessageEndEventResult,
 	MessageRenderer,
@@ -59,6 +62,7 @@ import type {
 	ToolCallEventResult,
 	ToolResultEvent,
 	ToolResultEventResult,
+	UIPromptKind,
 	UserBashEvent,
 	UserBashEventResult,
 } from "./types.ts";
@@ -77,6 +81,7 @@ const RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS = [
 	"app.tools.expand",
 	"app.thinking.toggle",
 	"app.editor.external",
+	"app.message.copy",
 	"app.message.followUp",
 	"tui.input.submit",
 	"tui.select.confirm",
@@ -114,25 +119,6 @@ interface BeforeAgentStartCombinedResult {
 	systemPrompt?: string;
 }
 
-async function callContextHandlerAbortable<T>(fn: () => Promise<T> | T, signal: AbortSignal): Promise<T> {
-	if (signal.aborted) {
-		throw new Error("Agent run aborted");
-	}
-
-	let cleanup = () => {};
-	const abortPromise = new Promise<never>((_resolve, reject) => {
-		const onAbort = () => reject(new Error("Agent run aborted"));
-		signal.addEventListener("abort", onAbort, { once: true });
-		cleanup = () => signal.removeEventListener("abort", onAbort);
-	});
-
-	try {
-		return await Promise.race([Promise.resolve().then(fn), abortPromise]);
-	} finally {
-		cleanup();
-	}
-}
-
 /**
  * Events handled by the generic emit() method.
  * Events with dedicated emitXxx() methods are excluded for stronger type safety.
@@ -145,6 +131,7 @@ type RunnerEmitEvent = Exclude<
 	| UserBashEvent
 	| ContextEvent
 	| BeforeProviderRequestEvent
+	| BeforeProviderHeadersEvent
 	| BeforeAgentStartEvent
 	| MessageEndEvent
 	| ResourcesDiscoverEvent
@@ -246,7 +233,7 @@ export async function emitProjectTrustEvent(
 	return { errors };
 }
 
-export const noOpUIContext: ExtensionUIContext = {
+const noOpUIContext: ExtensionUIContext = {
 	select: async () => undefined,
 	confirm: async () => false,
 	input: async () => undefined,
@@ -289,6 +276,7 @@ export class ExtensionRunner {
 	private modelRegistry: ModelRegistry;
 	private errorListeners: Set<ExtensionErrorListener> = new Set();
 	private getModel: () => Model<any> | undefined = () => undefined;
+	private getScopedModels: () => readonly ScopedModel[] = () => [];
 	private isIdleFn: () => boolean = () => true;
 	private isProjectTrustedFn: () => boolean = () => true;
 	private getSignalFn: () => AbortSignal | undefined = () => undefined;
@@ -308,6 +296,8 @@ export class ExtensionRunner {
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 	private commandDiagnostics: ResourceDiagnostic[] = [];
 	private staleMessage: string | undefined;
+	private uiPromptDepth = 0;
+	private activeUIPrompt: { kind: UIPromptKind; title?: string } | undefined;
 
 	constructor(
 		extensions: Extension[],
@@ -329,6 +319,7 @@ export class ExtensionRunner {
 		contextActions: ExtensionContextActions,
 		providerActions?: {
 			registerProvider?: (name: string, config: ProviderConfig) => void;
+			registerNativeProvider?: (provider: Provider) => void;
 			unregisterProvider?: (name: string) => void;
 		},
 	): void {
@@ -350,6 +341,7 @@ export class ExtensionRunner {
 
 		// Context actions (required)
 		this.getModel = contextActions.getModel;
+		this.getScopedModels = contextActions.getScopedModels;
 		this.isIdleFn = contextActions.isIdle;
 		this.isProjectTrustedFn = contextActions.isProjectTrusted;
 		this.getSignalFn = contextActions.getSignal;
@@ -379,6 +371,23 @@ export class ExtensionRunner {
 			}
 		}
 		this.runtime.pendingProviderRegistrations = [];
+		for (const { provider, extensionPath } of this.runtime.pendingNativeProviderRegistrations) {
+			try {
+				if (providerActions?.registerNativeProvider) {
+					providerActions.registerNativeProvider(provider);
+				} else {
+					this.modelRegistry.registerProvider(provider);
+				}
+			} catch (err) {
+				this.emitError({
+					extensionPath,
+					event: "register_provider",
+					error: err instanceof Error ? err.message : String(err),
+					stack: err instanceof Error ? err.stack : undefined,
+				});
+			}
+		}
+		this.runtime.pendingNativeProviderRegistrations = [];
 
 		// From this point on, provider registration/unregistration takes effect immediately
 		// without requiring a /reload.
@@ -388,6 +397,13 @@ export class ExtensionRunner {
 				return;
 			}
 			this.modelRegistry.registerProvider(name, config);
+		};
+		this.runtime.registerNativeProvider = (provider) => {
+			if (providerActions?.registerNativeProvider) {
+				providerActions.registerNativeProvider(provider);
+				return;
+			}
+			this.modelRegistry.registerProvider(provider);
 		};
 		this.runtime.unregisterProvider = (name) => {
 			if (providerActions?.unregisterProvider) {
@@ -418,8 +434,55 @@ export class ExtensionRunner {
 	}
 
 	setUIContext(uiContext?: ExtensionUIContext, mode: ExtensionMode = "print"): void {
-		this.uiContext = uiContext ?? noOpUIContext;
+		this.uiContext = uiContext ? this.wrapUIPromptContext(uiContext) : noOpUIContext;
 		this.mode = mode;
+	}
+
+	private wrapUIPromptContext(ui: ExtensionUIContext): ExtensionUIContext {
+		return {
+			...ui,
+			select: (title, options, opts) => this.withUIPrompt("select", title, () => ui.select(title, options, opts)),
+			confirm: (title, message, opts) => this.withUIPrompt("confirm", title, () => ui.confirm(title, message, opts)),
+			input: (title, placeholder, opts) =>
+				this.withUIPrompt("input", title, () => ui.input(title, placeholder, opts)),
+			editor: (title, prefill) => this.withUIPrompt("editor", title, () => ui.editor(title, prefill)),
+			custom: (factory, options) => this.withUIPrompt("custom", undefined, () => ui.custom(factory, options)),
+		};
+	}
+
+	private withUIPrompt<T>(kind: UIPromptKind, title: string | undefined, run: () => Promise<T>): Promise<T> {
+		const outerPrompt = this.uiPromptDepth++ === 0;
+		if (outerPrompt) {
+			this.activeUIPrompt = { kind, title };
+			this.emitUIPromptEvent({ type: "ui_prompt_start", reason: "ui_prompt", kind, ...(title ? { title } : {}) });
+		}
+
+		const finish = () => {
+			if (--this.uiPromptDepth > 0) return;
+			this.uiPromptDepth = 0;
+
+			const prompt = this.activeUIPrompt ?? { kind, title };
+			this.activeUIPrompt = undefined;
+			this.emitUIPromptEvent({
+				type: "ui_prompt_end",
+				reason: "ui_prompt",
+				kind: prompt.kind,
+				...(prompt.title ? { title: prompt.title } : {}),
+			});
+		};
+
+		try {
+			return run().finally(finish);
+		} catch (err) {
+			finish();
+			throw err;
+		}
+	}
+
+	private emitUIPromptEvent(event: Extract<RunnerEmitEvent, { type: "ui_prompt_start" | "ui_prompt_end" }>): void {
+		queueMicrotask(() => {
+			void this.emit(event);
+		});
 	}
 
 	getUIContext(): ExtensionUIContext {
@@ -573,6 +636,10 @@ export class ExtensionRunner {
 		return undefined;
 	}
 
+	getMarkdownTransformers(): MarkdownTransformer[] {
+		return this.extensions.flatMap((ext) => (ext.markdownTransformer ? [ext.markdownTransformer] : []));
+	}
+
 	getEntryRenderer(customType: string): EntryRenderer | undefined {
 		for (const ext of this.extensions) {
 			const renderer = ext.entryRenderers?.get(customType);
@@ -619,6 +686,10 @@ export class ExtensionRunner {
 		});
 	}
 
+	getModelRegistry(): ModelRegistry {
+		return this.modelRegistry;
+	}
+
 	getRegisteredCommands(): ResolvedCommand[] {
 		this.commandDiagnostics = [];
 		return this.resolveRegisteredCommands();
@@ -640,6 +711,11 @@ export class ExtensionRunner {
 		this.shutdownHandler();
 	}
 
+	getActiveTools(): string[] {
+		this.assertActive();
+		return this.runtime.getActiveTools();
+	}
+
 	/**
 	 * Create an ExtensionContext for use in event handlers and tool execution.
 	 * Context values are resolved at call time, so changes via bindCore/bindUI are reflected.
@@ -647,6 +723,7 @@ export class ExtensionRunner {
 	createContext(): ExtensionContext {
 		const runner = this;
 		const getModel = this.getModel;
+		const getScopedModels = this.getScopedModels;
 		return {
 			get ui() {
 				runner.assertActive();
@@ -675,6 +752,14 @@ export class ExtensionRunner {
 			get model() {
 				runner.assertActive();
 				return getModel();
+			},
+			get scopedModels() {
+				runner.assertActive();
+				return getScopedModels();
+			},
+			get thinkingLevel() {
+				runner.assertActive();
+				return runner.runtime.getThinkingLevel();
 			},
 			isIdle: () => {
 				runner.assertActive();
@@ -865,6 +950,10 @@ export class ExtensionRunner {
 						currentEvent.isError = handlerResult.isError;
 						modified = true;
 					}
+					if (handlerResult.usage !== undefined) {
+						currentEvent.usage = handlerResult.usage;
+						modified = true;
+					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
 					const stack = err instanceof Error ? err.stack : undefined;
@@ -886,6 +975,7 @@ export class ExtensionRunner {
 			content: currentEvent.content,
 			details: currentEvent.details,
 			isError: currentEvent.isError,
+			usage: currentEvent.usage,
 		};
 	}
 
@@ -943,7 +1033,6 @@ export class ExtensionRunner {
 
 	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		const ctx = this.createContext();
-		const signal = ctx.signal;
 		let currentMessages = structuredClone(messages);
 
 		for (const ext of this.extensions) {
@@ -953,17 +1042,12 @@ export class ExtensionRunner {
 			for (const handler of handlers) {
 				try {
 					const event: ContextEvent = { type: "context", messages: currentMessages };
-					const handlerResult = signal
-						? await callContextHandlerAbortable(() => handler(event, ctx), signal)
-						: await handler(event, ctx);
+					const handlerResult = await handler(event, ctx);
 
 					if (handlerResult && (handlerResult as ContextEventResult).messages) {
 						currentMessages = (handlerResult as ContextEventResult).messages!;
 					}
 				} catch (err) {
-					if (signal?.aborted) {
-						throw err;
-					}
 					const message = err instanceof Error ? err.message : String(err);
 					const stack = err instanceof Error ? err.stack : undefined;
 					this.emitError({
@@ -1011,6 +1095,37 @@ export class ExtensionRunner {
 		}
 
 		return currentPayload;
+	}
+
+	async emitBeforeProviderHeaders(headers: ProviderHeaders): Promise<ProviderHeaders> {
+		const ctx = this.createContext();
+
+		for (const ext of this.extensions) {
+			const handlers = ext.handlers.get("before_provider_headers");
+			if (!handlers || handlers.length === 0) continue;
+
+			for (const handler of handlers) {
+				try {
+					// Handlers mutate `headers` in place; the return value is ignored.
+					const event: BeforeProviderHeadersEvent = {
+						type: "before_provider_headers",
+						headers,
+					};
+					await handler(event, ctx);
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					const stack = err instanceof Error ? err.stack : undefined;
+					this.emitError({
+						extensionPath: ext.path,
+						event: "before_provider_headers",
+						error: message,
+						stack,
+					});
+				}
+			}
+		}
+
+		return headers;
 	}
 
 	async emitBeforeAgentStart(

@@ -34,7 +34,7 @@
 		},
 		"colors": {
 			"type": "object",
-			"description": "Theme color definitions (all required)",
+			"description": "Theme color definitions (scrollbar, thinkingMax, and search highlight colors are optional and use compatible fallbacks)",
 			"required": [
 				"accent",
 				"border",
@@ -136,6 +136,22 @@
 				"selectedBg": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Selected item background"
+				},
+				"scrollbarTrack": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Fullscreen scrollbar track foreground (falls back to muted when omitted)"
+				},
+				"scrollbarThumb": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Fullscreen scrollbar thumb foreground (falls back to text when omitted)"
+				},
+				"searchMatchBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Transcript search match background and current-match text (falls back to selectedBg when omitted)"
+				},
+				"searchMatchText": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Transcript search match text and current-match background (falls back to text when omitted)"
 				},
 				"userMessageBg": {
 					"$ref": "#/$defs/colorValue",
@@ -287,7 +303,11 @@
 				},
 				"thinkingXhigh": {
 					"$ref": "#/$defs/colorValue",
-					"description": "Thinking level border: xhigh (OpenAI codex-max only)"
+					"description": "Thinking level border: xhigh"
+				},
+				"thinkingMax": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Thinking level border: max (falls back to thinkingXhigh when omitted)"
 				},
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",

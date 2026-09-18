@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { canonicalizePath, resolvePath } from "../utils/paths.ts";
+import { stripBom } from "../utils/text.ts";
 
 export type ProjectTrustDecision = boolean | null;
 
@@ -101,13 +102,10 @@ function readTrustFile(path: string): TrustFile {
 
 	let parsed: unknown;
 	try {
-		const raw = readFileSync(path, "utf-8");
-		parsed = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
+		parsed = JSON.parse(stripBom(readFileSync(path, "utf-8")));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(
-			`Failed to read trust store ${path}: ${message}. The file must be valid UTF-8 JSON without a byte order mark (BOM).`,
-		);
+		throw new Error(`Failed to read trust store ${path}: ${message}`);
 	}
 
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {

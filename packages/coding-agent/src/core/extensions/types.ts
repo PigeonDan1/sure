@@ -19,14 +19,19 @@ import type {
 	Api,
 	AssistantMessageEvent,
 	AssistantMessageEventStream,
+	ConstrainedSamplingConfig,
 	Context,
 	ImageContent,
 	Model,
 	OAuthCredentials,
 	OAuthLoginCallbacks,
+	Provider,
+	ProviderHeaders,
+	RefreshModelsContext,
 	SimpleStreamOptions,
 	TextContent,
 	ToolResultMessage,
+	Usage,
 } from "@earendil-works/pi-ai";
 import type {
 	AutocompleteItem,
@@ -49,6 +54,7 @@ import type { ReadonlyFooterDataProvider } from "../footer-data-provider.ts";
 import type { KeybindingsManager } from "../keybindings.ts";
 import type { CustomMessage } from "../messages.ts";
 import type { ModelRegistry } from "../model-registry.ts";
+import type { ScopedModel } from "../model-resolver.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -72,6 +78,8 @@ import type {
 	GrepToolInput,
 	LsToolDetails,
 	LsToolInput,
+	PowerShellToolDetails,
+	PowerShellToolInput,
 	ReadToolDetails,
 	ReadToolInput,
 	WriteToolInput,
@@ -171,8 +179,8 @@ export interface ExtensionUIContext {
 	/** Set a custom footer component, or undefined to restore the built-in footer.
 	 *
 	 * The factory receives a FooterDataProvider for data not otherwise accessible:
-	 * git branch and extension statuses from setStatus(). Token stats, model info,
-	 * etc. are available via ctx.sessionManager and ctx.model.
+	 * git branch and extension statuses from setStatus(). Context usage is on
+	 * ctx.getContextUsage(), token stats on ctx.sessionManager.getEntries(), model info on ctx.model.
 	 */
 	setFooter(
 		factory:
@@ -313,6 +321,13 @@ export interface ExtensionContext {
 	modelRegistry: ModelRegistry;
 	/** Current model (may be undefined) */
 	model: Model<any> | undefined;
+	/** Models scoped to this session (resolved from `--models` /
+	 *  `enabledModels` settings against the available catalogue). Same set
+	 *  the `/scoped-models` command shows. Empty when no scoping is
+	 *  configured (all available models are usable). Read-only snapshot. */
+	scopedModels: readonly ScopedModel[];
+	/** Current thinking level, when provided by the session runtime. */
+	thinkingLevel?: ThinkingLevel;
 	/** Whether the agent is idle (not streaming) */
 	isIdle(): boolean;
 	/** Whether project-local trust is active for this context. */
@@ -369,7 +384,7 @@ export interface ExtensionCommandContext extends ExtensionContext {
 		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
 	): Promise<{ cancelled: boolean }>;
 
-	/** Reload extensions, skills, prompts, and themes. */
+	/** Reload extensions, skills, prompts, themes, and context files. */
 	reload(): Promise<void>;
 }
 
@@ -386,7 +401,7 @@ export interface ReplacedSessionContext extends ExtensionCommandContext {
 
 	sendUserMessage(
 		content: string | (TextContent | ImageContent)[],
-		options?: { deliverAs?: "steer" | "followUp" },
+		options?: { deliverAs?: "steer" | "followUp"; expandPromptTemplates?: boolean },
 	): Promise<void>;
 }
 
@@ -444,10 +459,10 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	promptSnippet?: string;
 	/** Optional guideline bullets appended to the default system prompt Guidelines section when this tool is active. */
 	promptGuidelines?: string[];
-	/** Whether this extension tool is activated automatically when the session starts. Defaults to true. */
-	activeByDefault?: boolean;
 	/** Parameter schema (TypeBox) */
 	parameters: TParams;
+	/** Optional provider-side constrained sampling request for this tool. Set false to explicitly disable it, equivalent to leaving it undefined. */
+	constrainedSampling?: false | ConstrainedSamplingConfig;
 	/** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
 	renderShell?: "default" | "self";
 
@@ -588,7 +603,7 @@ export interface SessionBeforeCompactEvent {
 	signal: AbortSignal;
 }
 
-/** Fired after context compaction */
+/** Fired after context compaction succeeds */
 export interface SessionCompactEvent {
 	type: "session_compact";
 	compactionEntry: CompactionEntry;
@@ -597,6 +612,21 @@ export interface SessionCompactEvent {
 	reason: "manual" | "threshold" | "overflow";
 	/** True when the aborted turn is retried after this compaction (overflow recovery) */
 	willRetry: boolean;
+}
+
+/** Fired after context compaction fails or is aborted */
+export interface SessionCompactFailedEvent {
+	type: "session_compact_failed";
+	/** What triggered the compaction: manual /compact, the context threshold, or context overflow recovery */
+	reason: "manual" | "threshold" | "overflow";
+	/** Error text when compaction failed for a non-abort reason. */
+	errorMessage?: string;
+	/** True when compaction was cancelled or aborted. */
+	aborted: boolean;
+	/** True when the aborted turn would have been retried after this compaction (overflow recovery) */
+	willRetry: boolean;
+	/** True when the failing compaction content came from a session_before_compact handler. */
+	fromExtension: boolean;
 }
 
 /** Fired before an extension runtime is torn down due to quit, reload, or session replacement. */
@@ -645,6 +675,7 @@ export type SessionEvent =
 	| SessionBeforeForkEvent
 	| SessionBeforeCompactEvent
 	| SessionCompactEvent
+	| SessionCompactFailedEvent
 	| SessionShutdownEvent
 	| SessionBeforeTreeEvent
 	| SessionTreeEvent;
@@ -663,6 +694,16 @@ export interface ContextEvent {
 export interface BeforeProviderRequestEvent {
 	type: "before_provider_request";
 	payload: unknown;
+}
+
+/**
+ * Fired after request headers are assembled, before the provider HTTP call.
+ * Handlers mutate `headers` in place (e.g. to inject tracing/session headers);
+ * the return value is ignored. A `null` value deletes that header.
+ */
+export interface BeforeProviderHeadersEvent {
+	type: "before_provider_headers";
+	headers: ProviderHeaders;
 }
 
 /** Fired after a provider response is received and before the response stream is consumed. */
@@ -694,8 +735,29 @@ export interface AgentStartEvent {
 export interface AgentEndEvent {
 	type: "agent_end";
 	messages: AgentMessage[];
-	/** True when the session is about to restart this turn after a provider error. */
-	willRetry: boolean;
+}
+
+/** Fired after an agent run has fully settled and no automatic retry, compaction, or queued continuation will run. */
+export interface AgentSettledEvent {
+	type: "agent_settled";
+}
+
+export type UIPromptKind = "select" | "confirm" | "input" | "editor" | "custom";
+
+/** Fired when Pi starts waiting on a blocking user-facing extension UI prompt. */
+export interface UIPromptStartEvent {
+	type: "ui_prompt_start";
+	reason: "ui_prompt";
+	kind: UIPromptKind;
+	title?: string;
+}
+
+/** Fired when Pi is no longer waiting on a blocking user-facing extension UI prompt. */
+export interface UIPromptEndEvent {
+	type: "ui_prompt_end";
+	reason: "ui_prompt";
+	kind: UIPromptKind;
+	title?: string;
 }
 
 /** Fired at the start of each turn */
@@ -834,6 +896,11 @@ export interface BashToolCallEvent extends ToolCallEventBase {
 	input: BashToolInput;
 }
 
+export interface PowerShellToolCallEvent extends ToolCallEventBase {
+	toolName: "powershell";
+	input: PowerShellToolInput;
+}
+
 export interface ReadToolCallEvent extends ToolCallEventBase {
 	toolName: "read";
 	input: ReadToolInput;
@@ -877,6 +944,7 @@ export interface CustomToolCallEvent extends ToolCallEventBase {
  */
 export type ToolCallEvent =
 	| BashToolCallEvent
+	| PowerShellToolCallEvent
 	| ReadToolCallEvent
 	| EditToolCallEvent
 	| WriteToolCallEvent
@@ -891,11 +959,18 @@ interface ToolResultEventBase {
 	input: Record<string, unknown>;
 	content: (TextContent | ImageContent)[];
 	isError: boolean;
+	/** Usage from the tool execution itself, if available. */
+	usage?: Usage;
 }
 
 export interface BashToolResultEvent extends ToolResultEventBase {
 	toolName: "bash";
 	details: BashToolDetails | undefined;
+}
+
+export interface PowerShellToolResultEvent extends ToolResultEventBase {
+	toolName: "powershell";
+	details: PowerShellToolDetails | undefined;
 }
 
 export interface ReadToolResultEvent extends ToolResultEventBase {
@@ -936,6 +1011,7 @@ export interface CustomToolResultEvent extends ToolResultEventBase {
 /** Fired after a tool executes. Can modify result. */
 export type ToolResultEvent =
 	| BashToolResultEvent
+	| PowerShellToolResultEvent
 	| ReadToolResultEvent
 	| EditToolResultEvent
 	| WriteToolResultEvent
@@ -947,6 +1023,9 @@ export type ToolResultEvent =
 // Type guards for ToolResultEvent
 export function isBashToolResult(e: ToolResultEvent): e is BashToolResultEvent {
 	return e.toolName === "bash";
+}
+export function isPowerShellToolResult(e: ToolResultEvent): e is PowerShellToolResultEvent {
+	return e.toolName === "powershell";
 }
 export function isReadToolResult(e: ToolResultEvent): e is ReadToolResultEvent {
 	return e.toolName === "read";
@@ -988,6 +1067,7 @@ export function isLsToolResult(e: ToolResultEvent): e is LsToolResultEvent {
  * CustomToolCallEvent.toolName is `string` which overlaps with all literals.
  */
 export function isToolCallEventType(toolName: "bash", event: ToolCallEvent): event is BashToolCallEvent;
+export function isToolCallEventType(toolName: "powershell", event: ToolCallEvent): event is PowerShellToolCallEvent;
 export function isToolCallEventType(toolName: "read", event: ToolCallEvent): event is ReadToolCallEvent;
 export function isToolCallEventType(toolName: "edit", event: ToolCallEvent): event is EditToolCallEvent;
 export function isToolCallEventType(toolName: "write", event: ToolCallEvent): event is WriteToolCallEvent;
@@ -1009,10 +1089,14 @@ export type ExtensionEvent =
 	| SessionEvent
 	| ContextEvent
 	| BeforeProviderRequestEvent
+	| BeforeProviderHeadersEvent
 	| AfterProviderResponseEvent
 	| BeforeAgentStartEvent
 	| AgentStartEvent
 	| AgentEndEvent
+	| AgentSettledEvent
+	| UIPromptStartEvent
+	| UIPromptEndEvent
 	| TurnStartEvent
 	| TurnEndEvent
 	| MessageStartEvent
@@ -1042,6 +1126,11 @@ export interface ToolCallEventResult {
 	/** Block tool execution. To modify arguments, mutate `event.input` in place instead. */
 	block?: boolean;
 	reason?: string;
+	/**
+	 * Hint that the agent should stop after the current tool batch when this call is blocked.
+	 * Early termination only happens when every finalized tool result in the batch sets this to true.
+	 */
+	terminate?: boolean;
 }
 
 /** Result from user_bash event handler */
@@ -1056,6 +1145,7 @@ export interface ToolResultEventResult {
 	content?: (TextContent | ImageContent)[];
 	details?: unknown;
 	isError?: boolean;
+	usage?: Usage;
 }
 
 export interface MessageEndEventResult {
@@ -1088,6 +1178,7 @@ export interface SessionBeforeTreeResult {
 	summary?: {
 		summary: string;
 		details?: unknown;
+		usage?: Usage;
 	};
 	/** Override custom instructions for summarization */
 	customInstructions?: string;
@@ -1103,7 +1194,17 @@ export interface SessionBeforeTreeResult {
 
 export interface MessageRenderOptions {
 	expanded: boolean;
+	/** Horizontal padding configured by the outputPad setting. */
+	outputPad: number;
 }
+
+export interface MarkdownTransformContext {
+	messageType: "user" | "assistant" | "assistant-thinking";
+	isStreaming: boolean;
+	availableWidth: number;
+}
+
+export type MarkdownTransformer = (markdown: string, context: MarkdownTransformContext) => string;
 
 export interface EntryRenderOptions {
 	expanded: boolean;
@@ -1167,6 +1268,7 @@ export interface ExtensionAPI {
 		handler: ExtensionHandler<SessionBeforeCompactEvent, SessionBeforeCompactResult>,
 	): void;
 	on(event: "session_compact", handler: ExtensionHandler<SessionCompactEvent>): void;
+	on(event: "session_compact_failed", handler: ExtensionHandler<SessionCompactFailedEvent>): void;
 	on(event: "session_shutdown", handler: ExtensionHandler<SessionShutdownEvent>): void;
 	on(event: "session_before_tree", handler: ExtensionHandler<SessionBeforeTreeEvent, SessionBeforeTreeResult>): void;
 	on(event: "session_tree", handler: ExtensionHandler<SessionTreeEvent>): void;
@@ -1175,10 +1277,14 @@ export interface ExtensionAPI {
 		event: "before_provider_request",
 		handler: ExtensionHandler<BeforeProviderRequestEvent, BeforeProviderRequestEventResult>,
 	): void;
+	on(event: "before_provider_headers", handler: ExtensionHandler<BeforeProviderHeadersEvent>): void;
 	on(event: "after_provider_response", handler: ExtensionHandler<AfterProviderResponseEvent>): void;
 	on(event: "before_agent_start", handler: ExtensionHandler<BeforeAgentStartEvent, BeforeAgentStartEventResult>): void;
 	on(event: "agent_start", handler: ExtensionHandler<AgentStartEvent>): void;
 	on(event: "agent_end", handler: ExtensionHandler<AgentEndEvent>): void;
+	on(event: "agent_settled", handler: ExtensionHandler<AgentSettledEvent>): void;
+	on(event: "ui_prompt_start", handler: ExtensionHandler<UIPromptStartEvent>): void;
+	on(event: "ui_prompt_end", handler: ExtensionHandler<UIPromptEndEvent>): void;
 	on(event: "turn_start", handler: ExtensionHandler<TurnStartEvent>): void;
 	on(event: "turn_end", handler: ExtensionHandler<TurnEndEvent>): void;
 	on(event: "message_start", handler: ExtensionHandler<MessageStartEvent>): void;
@@ -1222,11 +1328,17 @@ export interface ExtensionAPI {
 	/** Register a CLI flag. */
 	registerFlag(
 		name: string,
-		options: {
-			description?: string;
-			type: "boolean" | "string";
-			default?: boolean | string;
-		},
+		options:
+			| {
+					description?: string;
+					type: "boolean";
+					default?: boolean;
+			  }
+			| {
+					description?: string;
+					type: "string";
+					default?: string;
+			  },
 	): void;
 
 	/** Get the value of a registered CLI flag. */
@@ -1238,6 +1350,9 @@ export interface ExtensionAPI {
 
 	/** Register a custom renderer for CustomMessageEntry. */
 	registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void;
+
+	/** Register a transformer for user and assistant Markdown before Pi renders it in the interactive transcript. */
+	registerMarkdownTransformer(transformer: MarkdownTransformer): void;
 
 	/** Register a custom renderer for CustomEntry. Custom entries do not participate in LLM context. */
 	registerEntryRenderer<T = unknown>(customType: string, renderer: EntryRenderer<T>): void;
@@ -1255,11 +1370,12 @@ export interface ExtensionAPI {
 	/**
 	 * Send a user message to the agent. Always triggers a turn.
 	 * When the agent is streaming, use deliverAs to specify how to queue the message.
+	 * Set expandPromptTemplates to dispatch extension commands and expand skill commands and prompt templates.
 	 */
 	sendUserMessage(
 		content: string | (TextContent | ImageContent)[],
-		options?: { deliverAs?: "steer" | "followUp" },
-	): Promise<void>;
+		options?: { deliverAs?: "steer" | "followUp"; expandPromptTemplates?: boolean },
+	): void;
 
 	/** Append a custom entry to the session for state persistence (not sent to LLM). */
 	appendEntry<T = unknown>(customType: string, data?: T): void;
@@ -1296,13 +1412,19 @@ export interface ExtensionAPI {
 	// Model and Thinking Level
 	// =========================================================================
 
-	/** Set the current model. Returns false if no API key available. */
+	/**
+	 * Set the model for the current session without changing the configured default for new sessions.
+	 * Returns false if authentication is not configured for the model's provider.
+	 */
 	setModel(model: Model<any>): Promise<boolean>;
 
 	/** Get current thinking level. */
 	getThinkingLevel(): ThinkingLevel;
 
-	/** Set thinking level (clamped to model capabilities). */
+	/**
+	 * Set the thinking level (clamped to model capabilities) for the current session without changing the configured default
+	 * for new sessions.
+	 */
 	setThinkingLevel(level: ThinkingLevel): void;
 
 	// =========================================================================
@@ -1361,6 +1483,7 @@ export interface ExtensionAPI {
 	 *   }
 	 * });
 	 */
+	registerProvider(provider: Provider): void;
 	registerProvider(name: string, config: ProviderConfig): void;
 
 	/**
@@ -1396,7 +1519,12 @@ export interface ProviderConfig {
 	apiKey?: string;
 	/** API type. Required at provider or model level when defining models. */
 	api?: Api;
-	/** Optional streamSimple handler for custom APIs. */
+	/**
+	 * Optional streamSimple handler for custom APIs.
+	 * Implementations must invoke `options.onPayload` before sending the provider request and use any
+	 * returned replacement payload. They must invoke `options.onResponse` after receiving the response
+	 * and before consuming its body, matching built-in providers.
+	 */
 	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	/** Custom headers to include in requests. */
 	headers?: Record<string, string>;
@@ -1404,17 +1532,26 @@ export interface ProviderConfig {
 	authHeader?: boolean;
 	/** Models to register. If provided, replaces all existing models for this provider. */
 	models?: ProviderModelConfig[];
+	/**
+	 * Refresh this provider's model list. The returned list replaces extension-provided models.
+	 * Use context.publish({ persist: entry }) when the catalog should persist across sessions.
+	 */
+	refreshModels?(context: RefreshModelsContext): Promise<ProviderModelConfig[]>;
 	/** OAuth provider for /login support. The `id` is set automatically from the provider name. */
 	oauth?: {
 		/** Display name for the provider in login UI. */
 		name: string;
+		/** Whether access through this auth method is backed by a provider subscription. */
+		isSubscription?: boolean;
+		/** @deprecated Retained for source compatibility; canonical auth flows ignore it. */
+		usesCallbackServer?: boolean;
 		/** Run the login flow, return credentials to persist. */
 		login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials>;
 		/** Refresh expired credentials, return updated credentials to persist. */
-		refreshToken(credentials: OAuthCredentials): Promise<OAuthCredentials>;
+		refreshToken(credentials: OAuthCredentials, signal: AbortSignal): Promise<OAuthCredentials>;
 		/** Convert credentials to API key string for the provider. */
 		getApiKey(credentials: OAuthCredentials): string;
-		/** Optional: modify models for this provider (e.g., update baseUrl based on credentials). */
+		/** Legacy synchronous credential-dependent model projection. */
 		modifyModels?(models: Model<Api>[], credentials: OAuthCredentials): Model<Api>[];
 	};
 }
@@ -1435,8 +1572,8 @@ export interface ProviderModelConfig {
 	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 	/** Supported input types. */
 	input: ("text" | "image")[];
-	/** Cost per token (for tracking, can be 0). */
-	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	/** Per-million-token cost rates and optional request-wide input pricing tiers. */
+	cost: Model<Api>["cost"];
 	/** Maximum context window size in tokens. */
 	contextWindow: number;
 	/** Maximum output tokens. */
@@ -1449,6 +1586,16 @@ export interface ProviderModelConfig {
 
 /** Extension factory function type. Supports both sync and async initialization. */
 export type ExtensionFactory = (pi: ExtensionAPI) => void | Promise<void>;
+
+export type InlineExtension =
+	| ExtensionFactory
+	| {
+			/** Display name shown as `<inline:name>` in the startup Extensions list. */
+			name: string;
+			factory: ExtensionFactory;
+			/** Omit this extension from the startup Extensions list. */
+			hidden?: boolean;
+	  };
 
 // ============================================================================
 // Loaded Extension Types
@@ -1483,8 +1630,8 @@ export type SendMessageHandler = <T = unknown>(
 
 export type SendUserMessageHandler = (
 	content: string | (TextContent | ImageContent)[],
-	options?: { deliverAs?: "steer" | "followUp" },
-) => Promise<void>;
+	options?: { deliverAs?: "steer" | "followUp"; expandPromptTemplates?: boolean },
+) => void;
 
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
@@ -1521,12 +1668,16 @@ export type SetLabelHandler = (entryId: string, label: string | undefined) => vo
  */
 export interface ExtensionRuntimeState {
 	flagValues: Map<string, boolean | string>;
-	/** Provider registrations queued during extension loading, processed when runner binds */
+	/** Legacy provider-config registrations queued during extension loading, processed when runner binds. */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; extensionPath: string }>;
+	/** Native pi-ai provider registrations queued during extension loading, processed when runner binds. */
+	pendingNativeProviderRegistrations: Array<{ provider: Provider; extensionPath: string }>;
 	/** Throws when this extension instance is stale after runtime replacement. */
 	assertActive: () => void;
 	/** Marks this extension instance as stale after runtime replacement or reload. */
 	invalidate: (message?: string) => void;
+	/** Retain an event-bus subscription until this runtime is invalidated. */
+	trackEventBusSubscription: (unsubscribe: () => void) => () => void;
 	/**
 	 * Register or unregister a provider.
 	 *
@@ -1534,6 +1685,7 @@ export interface ExtensionRuntimeState {
 	 * After bindCore(): calls ModelRegistry directly for immediate effect.
 	 */
 	registerProvider: (name: string, config: ProviderConfig, extensionPath?: string) => void;
+	registerNativeProvider: (provider: Provider, extensionPath?: string) => void;
 	unregisterProvider: (name: string, extensionPath?: string) => void;
 }
 
@@ -1564,6 +1716,7 @@ export interface ExtensionActions {
  */
 export interface ExtensionContextActions {
 	getModel: () => Model<any> | undefined;
+	getScopedModels: () => readonly ScopedModel[];
 	isIdle: () => boolean;
 	isProjectTrusted: () => boolean;
 	getSignal: () => AbortSignal | undefined;
@@ -1612,10 +1765,12 @@ export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionAction
 export interface Extension {
 	path: string;
 	resolvedPath: string;
+	hidden?: boolean;
 	sourceInfo: SourceInfo;
 	handlers: Map<string, HandlerFn[]>;
 	tools: Map<string, RegisteredTool>;
 	messageRenderers: Map<string, MessageRenderer>;
+	markdownTransformer?: MarkdownTransformer;
 	entryRenderers?: Map<string, EntryRenderer>;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;

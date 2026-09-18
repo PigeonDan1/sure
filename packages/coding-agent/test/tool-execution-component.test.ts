@@ -1,14 +1,15 @@
 import { join, resolve } from "node:path";
-import { Text, type TUI } from "@earendil-works/pi-tui";
+import { Text, type TUI, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { beforeAll, describe, expect, test } from "vitest";
 import { getReadmePath } from "../src/config.ts";
 import type { ToolDefinition } from "../src/core/extensions/types.ts";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.ts";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.ts";
+import { withBuiltInRenderers } from "../src/core/tools/renderers/index.ts";
 import { createWriteToolDefinition } from "../src/core/tools/write.ts";
 import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
-import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 function createBaseToolDefinition(name = "custom_tool"): ToolDefinition {
@@ -108,7 +109,7 @@ describe("ToolExecutionComponent parity", () => {
 			"tool-2",
 			{ path: "README.md", oldText: "before", newText: "after" },
 			{},
-			overrideDefinition,
+			withBuiltInRenderers("edit", overrideDefinition),
 			createFakeTui(),
 			process.cwd(),
 		);
@@ -142,7 +143,7 @@ describe("ToolExecutionComponent parity", () => {
 				return { exitCode: 0 };
 			},
 		};
-		const tool = createBashToolDefinition(process.cwd(), { operations });
+		const tool = createBashToolDefinition(process.cwd(), { operations, exposeSessionEnvironment: false });
 		const promise = tool.execute(
 			"tool-bash-1",
 			{ command: "sleep 10" },
@@ -163,7 +164,7 @@ describe("ToolExecutionComponent parity", () => {
 				return { exitCode: 0 };
 			},
 		};
-		const tool = createBashToolDefinition(process.cwd(), { operations });
+		const tool = createBashToolDefinition(process.cwd(), { operations, exposeSessionEnvironment: false });
 		const result = await tool.execute(
 			"tool-bash-1b",
 			{ command: "generate output" },
@@ -217,7 +218,7 @@ describe("ToolExecutionComponent parity", () => {
 			"tool-4b",
 			{ path: "notes.txt" },
 			{},
-			overrideDefinition,
+			withBuiltInRenderers("read", overrideDefinition),
 			createFakeTui(),
 			process.cwd(),
 		);
@@ -239,7 +240,7 @@ describe("ToolExecutionComponent parity", () => {
 			"tool-4c",
 			{ path: "README.md" },
 			{},
-			overrideDefinition,
+			withBuiltInRenderers("read", overrideDefinition),
 			createFakeTui(),
 			process.cwd(),
 		);
@@ -344,7 +345,7 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).toContain("arg:bar");
 	});
 
-	test("falls back when custom renderers are absent", () => {
+	test("collapses fallback results until expanded", () => {
 		const toolDefinition: ToolDefinition = {
 			...createBaseToolDefinition(),
 		};
@@ -358,10 +359,20 @@ describe("ToolExecutionComponent parity", () => {
 			createFakeTui(),
 			process.cwd(),
 		);
-		component.updateResult({ content: [{ type: "text", text: "done" }], details: {}, isError: false }, false);
-		const rendered = stripAnsi(component.render(120).join("\n"));
-		expect(rendered).toContain("custom_tool");
-		expect(rendered).toContain("done");
+		const output = Array.from({ length: 15 }, (_, index) => `line-${index + 1}`).join("\n");
+		component.updateResult({ content: [{ type: "text", text: output }], details: {}, isError: false }, false);
+
+		const collapsed = stripAnsi(component.render(120).join("\n"));
+		expect(collapsed).toContain("custom_tool");
+		expect(collapsed).toContain("line-10");
+		expect(collapsed).not.toContain("line-11");
+		expect(collapsed).toContain("5 more lines");
+		expect(collapsed).toContain("to expand");
+
+		component.setExpanded(true);
+		const expanded = stripAnsi(component.render(120).join("\n"));
+		expect(expanded).toContain("line-15");
+		expect(expanded).not.toContain("more lines");
 	});
 
 	test("trims trailing blank display lines from write previews", () => {
@@ -399,6 +410,60 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).toContain("one");
 		expect(rendered).toContain("two");
 		expect(rendered).not.toContain("two\n\n");
+	});
+
+	test("does not syntax-highlight read errors based on the requested file path", () => {
+		const component = new ToolExecutionComponent(
+			"read",
+			"tool-read-error-highlighting",
+			{ path: "config.exs", offset: 120, limit: 130 },
+			{},
+			createReadToolDefinition(process.cwd()),
+			createFakeTui(),
+			process.cwd(),
+		);
+		const error = "Offset 120 is beyond end of file (96 lines total)";
+		component.updateResult({ content: [{ type: "text", text: error }], details: undefined, isError: true }, false);
+
+		const rendered = component.render(120).join("\n");
+		expect(stripAnsi(rendered)).toContain(error);
+		expect(rendered).toContain(theme.fg("toolOutput", error));
+	});
+
+	test("expands a collapsed tool result when clicked", () => {
+		const component = new ToolExecutionComponent(
+			"read",
+			"tool-click-expand",
+			{ path: "notes.txt" },
+			{},
+			createReadToolDefinition(process.cwd()),
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult(
+			{ content: [{ type: "text", text: "hidden content" }], details: undefined, isError: false },
+			false,
+		);
+		const width = 120;
+		const lines = component.render(width);
+		const resultRow = lines.findIndex((line) => stripAnsi(line).includes("notes.txt"));
+		expect(resultRow).toBeGreaterThanOrEqual(0);
+		const event: TuiMouseEvent = {
+			type: "click",
+			button: "left",
+			x: 2,
+			y: resultRow,
+			screenX: 2,
+			screenY: resultRow,
+			width,
+			height: lines.length,
+			shift: false,
+			alt: false,
+			ctrl: false,
+			clickCount: 1,
+		};
+		expect(component.handleMouse(event)?.handled).toBe(true);
+		expect(stripAnsi(component.render(width).join("\n"))).toContain("hidden content");
 	});
 
 	test("collapses ordinary read results until expanded", () => {
@@ -441,6 +506,14 @@ describe("ToolExecutionComponent parity", () => {
 			content: "Hidden resource instructions",
 			compact: "read resource .pi/AGENTS.md",
 			hidden: "Hidden resource instructions",
+			absent: undefined,
+		},
+		{
+			title: "AGENTS.override.md",
+			path: join(process.cwd(), ".pi", "AGENTS.override.md"),
+			content: "Hidden override instructions",
+			compact: "read resource .pi/AGENTS.override.md",
+			hidden: "Hidden override instructions",
 			absent: undefined,
 		},
 		{

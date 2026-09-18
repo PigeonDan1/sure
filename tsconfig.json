@@ -2,6 +2,8 @@
 	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
 		"noEmit": true,
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
 		"paths": {
 			"*": ["./*"],
 			"@earendil-works/pi-ai": ["./packages/ai/src/index.ts"],
@@ -15,5 +17,10 @@
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*"],
-	"exclude": ["**/dist/**"]
+	"exclude": [
+		"**/dist/**",
+		"packages/coding-agent/src/client/**",
+		"packages/coding-agent/src/experimental/**",
+		"packages/coding-agent/src/cli/experimental/**"
+	]
 }

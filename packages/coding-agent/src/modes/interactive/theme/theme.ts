@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import {
 	type EditorTheme,
 	getCapabilities,
@@ -9,100 +10,33 @@ import {
 	type SettingsListTheme,
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
-import { type Static, Type } from "typebox";
-import { Compile } from "typebox/compile";
 import { getCustomThemesDir, getThemesDir } from "../../../config.ts";
 import type { SourceInfo } from "../../../core/source-info.ts";
 import { closeWatcher, watchWithErrorHandler } from "../../../utils/fs-watch.ts";
 import { highlight, supportsLanguage } from "../../../utils/syntax-highlight.ts";
+import { stripBom } from "../../../utils/text.ts";
 
 // ============================================================================
 // Types & Schema
 // ============================================================================
 
-const ColorValueSchema = Type.Union([
-	Type.String(), // hex "#ff0000", var ref "primary", or empty ""
-	Type.Integer({ minimum: 0, maximum: 255 }), // 256-color index
-]);
+/** The schema that validates this shape lives in `theme-json.ts`; importing the type is free. */
+import type { ThemeColorValue as ColorValue, ValidatedThemeJson as ThemeJson } from "./theme-json.ts";
 
-type ColorValue = Static<typeof ColorValueSchema>;
+export type { ValidatedThemeJson as ThemeJson } from "./theme-json.ts";
 
-const ThemeJsonSchema = Type.Object({
-	$schema: Type.Optional(Type.String()),
-	name: Type.String(),
-	vars: Type.Optional(Type.Record(Type.String(), ColorValueSchema)),
-	colors: Type.Object({
-		// Core UI (10 colors)
-		accent: ColorValueSchema,
-		border: ColorValueSchema,
-		borderAccent: ColorValueSchema,
-		borderMuted: ColorValueSchema,
-		success: ColorValueSchema,
-		error: ColorValueSchema,
-		warning: ColorValueSchema,
-		muted: ColorValueSchema,
-		dim: ColorValueSchema,
-		text: ColorValueSchema,
-		thinkingText: ColorValueSchema,
-		// Backgrounds & Content Text (11 colors)
-		selectedBg: ColorValueSchema,
-		userMessageBg: ColorValueSchema,
-		userMessageText: ColorValueSchema,
-		customMessageBg: ColorValueSchema,
-		customMessageText: ColorValueSchema,
-		customMessageLabel: ColorValueSchema,
-		toolPendingBg: ColorValueSchema,
-		toolSuccessBg: ColorValueSchema,
-		toolErrorBg: ColorValueSchema,
-		toolTitle: ColorValueSchema,
-		toolOutput: ColorValueSchema,
-		// Markdown (10 colors)
-		mdHeading: ColorValueSchema,
-		mdLink: ColorValueSchema,
-		mdLinkUrl: ColorValueSchema,
-		mdCode: ColorValueSchema,
-		mdCodeBlock: ColorValueSchema,
-		mdCodeBlockBorder: ColorValueSchema,
-		mdQuote: ColorValueSchema,
-		mdQuoteBorder: ColorValueSchema,
-		mdHr: ColorValueSchema,
-		mdListBullet: ColorValueSchema,
-		// Tool Diffs (3 colors)
-		toolDiffAdded: ColorValueSchema,
-		toolDiffRemoved: ColorValueSchema,
-		toolDiffContext: ColorValueSchema,
-		// Syntax Highlighting (9 colors)
-		syntaxComment: ColorValueSchema,
-		syntaxKeyword: ColorValueSchema,
-		syntaxFunction: ColorValueSchema,
-		syntaxVariable: ColorValueSchema,
-		syntaxString: ColorValueSchema,
-		syntaxNumber: ColorValueSchema,
-		syntaxType: ColorValueSchema,
-		syntaxOperator: ColorValueSchema,
-		syntaxPunctuation: ColorValueSchema,
-		// Thinking Level Borders (6 colors)
-		thinkingOff: ColorValueSchema,
-		thinkingMinimal: ColorValueSchema,
-		thinkingLow: ColorValueSchema,
-		thinkingMedium: ColorValueSchema,
-		thinkingHigh: ColorValueSchema,
-		thinkingXhigh: ColorValueSchema,
-		// Bash Mode (1 color)
-		bashMode: ColorValueSchema,
-	}),
-	export: Type.Optional(
-		Type.Object({
-			pageBg: Type.Optional(ColorValueSchema),
-			cardBg: Type.Optional(ColorValueSchema),
-			infoBg: Type.Optional(ColorValueSchema),
-		}),
-	),
-});
+export type ThemeJsonValidator = (label: string, json: unknown) => ThemeJson;
 
-type ThemeJson = Static<typeof ThemeJsonSchema>;
+let themeJsonValidator: ThemeJsonValidator | undefined;
 
-const validateThemeJson = Compile(ThemeJsonSchema);
+/**
+ * Install full theme validation. Without it, documents are accepted as-is, which is what built-in
+ * themes already do: validating user-authored JSON needs typebox, and a presentation that only uses
+ * built-in themes should not pay ~17 MB of module graph for it.
+ */
+export function setThemeJsonValidator(validator: ThemeJsonValidator): void {
+	themeJsonValidator = validator;
+}
 
 export type ThemeColor =
 	| "accent"
@@ -116,6 +50,9 @@ export type ThemeColor =
 	| "dim"
 	| "text"
 	| "thinkingText"
+	| "scrollbarTrack"
+	| "scrollbarThumb"
+	| "searchMatchText"
 	| "userMessageText"
 	| "customMessageText"
 	| "customMessageLabel"
@@ -149,15 +86,20 @@ export type ThemeColor =
 	| "thinkingMedium"
 	| "thinkingHigh"
 	| "thinkingXhigh"
+	| "thinkingMax"
 	| "bashMode";
 
 export type ThemeBg =
 	| "selectedBg"
+	| "searchMatchBg"
 	| "userMessageBg"
 	| "customMessageBg"
 	| "toolPendingBg"
 	| "toolSuccessBg"
 	| "toolErrorBg";
+
+type OptionalThemeColor = "scrollbarTrack" | "scrollbarThumb" | "thinkingMax" | "searchMatchText";
+type OptionalThemeBg = "searchMatchBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -316,6 +258,23 @@ function resolveThemeColors<T extends Record<string, ColorValue>>(
 	return resolved as Record<keyof T, string | number>;
 }
 
+function withThemeColorFallbacks(colors: ThemeJson["colors"]): ThemeJson["colors"] & {
+	scrollbarTrack: ColorValue;
+	scrollbarThumb: ColorValue;
+	thinkingMax: ColorValue;
+	searchMatchBg: ColorValue;
+	searchMatchText: ColorValue;
+} {
+	return {
+		...colors,
+		scrollbarTrack: colors.scrollbarTrack ?? colors.muted,
+		scrollbarThumb: colors.scrollbarThumb ?? colors.text,
+		thinkingMax: colors.thinkingMax ?? colors.thinkingXhigh,
+		searchMatchBg: colors.searchMatchBg ?? colors.selectedBg,
+		searchMatchText: colors.searchMatchText ?? colors.text,
+	};
+}
+
 // ============================================================================
 // Theme Class
 // ============================================================================
@@ -329,8 +288,10 @@ export class Theme {
 	private mode: ColorMode;
 
 	constructor(
-		fgColors: Record<ThemeColor, string | number>,
-		bgColors: Record<ThemeBg, string | number>,
+		fgColors: Record<Exclude<ThemeColor, OptionalThemeColor>, string | number> &
+			Partial<Record<OptionalThemeColor, string | number>>,
+		bgColors: Record<Exclude<ThemeBg, OptionalThemeBg>, string | number> &
+			Partial<Record<OptionalThemeBg, string | number>>,
 		mode: ColorMode,
 		options: { name?: string; sourcePath?: string; sourceInfo?: SourceInfo } = {},
 	) {
@@ -339,11 +300,22 @@ export class Theme {
 		this.sourceInfo = options.sourceInfo;
 		this.mode = mode;
 		this.fgColors = new Map();
-		for (const [key, value] of Object.entries(fgColors) as [ThemeColor, string | number][]) {
+		const colors = {
+			...fgColors,
+			scrollbarTrack: fgColors.scrollbarTrack ?? fgColors.muted,
+			scrollbarThumb: fgColors.scrollbarThumb ?? fgColors.text,
+			thinkingMax: fgColors.thinkingMax ?? fgColors.thinkingXhigh,
+			searchMatchText: fgColors.searchMatchText ?? fgColors.text,
+		};
+		for (const [key, value] of Object.entries(colors) as [ThemeColor, string | number][]) {
 			this.fgColors.set(key, fgAnsi(value, mode));
 		}
 		this.bgColors = new Map();
-		for (const [key, value] of Object.entries(bgColors) as [ThemeBg, string | number][]) {
+		const backgrounds = {
+			...bgColors,
+			searchMatchBg: bgColors.searchMatchBg ?? bgColors.selectedBg,
+		};
+		for (const [key, value] of Object.entries(backgrounds) as [ThemeBg, string | number][]) {
 			this.bgColors.set(key, bgAnsi(value, mode));
 		}
 	}
@@ -396,7 +368,7 @@ export class Theme {
 		return this.mode;
 	}
 
-	getThinkingBorderColor(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): (str: string) => string {
+	getThinkingBorderColor(level: ThinkingLevel): (str: string) => string {
 		// Map thinking levels to dedicated theme colors
 		switch (level) {
 			case "off":
@@ -411,6 +383,8 @@ export class Theme {
 				return (str: string) => this.fg("thinkingHigh", str);
 			case "xhigh":
 				return (str: string) => this.fg("thinkingXhigh", str);
+			case "max":
+				return (str: string) => this.fg("thinkingMax", str);
 			default:
 				return (str: string) => this.fg("thinkingOff", str);
 		}
@@ -433,8 +407,8 @@ function getBuiltinThemes(): Record<string, ThemeJson> {
 		const darkPath = path.join(themesDir, "dark.json");
 		const lightPath = path.join(themesDir, "light.json");
 		BUILTIN_THEMES = {
-			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
-			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,
+			dark: JSON.parse(stripBom(fs.readFileSync(darkPath, "utf-8"))) as ThemeJson,
+			light: JSON.parse(stripBom(fs.readFileSync(lightPath, "utf-8"))) as ThemeJson,
 		};
 	}
 	return BUILTIN_THEMES;
@@ -512,50 +486,17 @@ function assertThemeNameIsValid(name: string): void {
 }
 
 function parseThemeJson(label: string, json: unknown): ThemeJson {
-	if (!validateThemeJson.Check(json)) {
-		const errors = Array.from(validateThemeJson.Errors(json));
-		const missingColors = new Set<string>();
-		const otherErrors: string[] = [];
-
-		for (const error of errors) {
-			if (error.keyword === "required" && error.instancePath === "/colors") {
-				const requiredProperties = (error.params as { requiredProperties?: string[] }).requiredProperties;
-				for (const requiredProperty of requiredProperties ?? []) {
-					missingColors.add(requiredProperty);
-				}
-				continue;
-			}
-
-			const path = error.instancePath || "/";
-			otherErrors.push(`  - ${path}: ${error.message}`);
-		}
-
-		let errorMessage = `Invalid theme "${label}":\n`;
-		if (missingColors.size > 0) {
-			errorMessage += "\nMissing required color tokens:\n";
-			errorMessage += Array.from(missingColors)
-				.sort()
-				.map((color) => `  - ${color}`)
-				.join("\n");
-			errorMessage += '\n\nPlease add these colors to your theme\'s "colors" object.';
-			errorMessage += "\nSee the built-in themes (dark.json, light.json) for reference values.";
-		}
-		if (otherErrors.length > 0) {
-			errorMessage += `\n\nOther errors:\n${otherErrors.join("\n")}`;
-		}
-
-		throw new Error(errorMessage);
+	if (themeJsonValidator) return themeJsonValidator(label, json);
+	if (typeof json !== "object" || json === null || !("colors" in json)) {
+		throw new Error(`Invalid theme "${label}": expected an object with a "colors" map.`);
 	}
-
-	const themeJson = json as ThemeJson;
-	assertThemeNameIsValid(themeJson.name);
-	return themeJson;
+	return json as ThemeJson;
 }
 
 function parseThemeJsonContent(label: string, content: string): ThemeJson {
 	let json: unknown;
 	try {
-		json = JSON.parse(content);
+		json = JSON.parse(stripBom(content));
 	} catch (error) {
 		throw new Error(`Failed to parse theme ${label}: ${error}`);
 	}
@@ -586,11 +527,12 @@ function loadThemeJson(name: string): ThemeJson {
 
 function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string): Theme {
 	const colorMode = mode ?? (getCapabilities().trueColor ? "truecolor" : "256color");
-	const resolvedColors = resolveThemeColors(themeJson.colors, themeJson.vars);
+	const resolvedColors = resolveThemeColors(withThemeColorFallbacks(themeJson.colors), themeJson.vars);
 	const fgColors: Record<ThemeColor, string | number> = {} as Record<ThemeColor, string | number>;
 	const bgColors: Record<ThemeBg, string | number> = {} as Record<ThemeBg, string | number>;
 	const bgColorKeys: Set<string> = new Set([
 		"selectedBg",
+		"searchMatchBg",
 		"userMessageBg",
 		"customMessageBg",
 		"toolPendingBg",
@@ -769,13 +711,21 @@ export async function detectTerminalThemeForAuto({
 	timeoutMs,
 	env,
 }: TerminalAutoThemeDetectionOptions): Promise<TerminalTheme> {
+	let colorSchemePromise: Promise<TerminalTheme | undefined> | undefined;
 	try {
-		const colorScheme = await ui.queryTerminalColorScheme?.({ timeoutMs });
+		colorSchemePromise = ui.queryTerminalColorScheme?.({ timeoutMs });
+	} catch {
+		// Fall back to OSC 11 / COLORFGBG detection when starting the color-scheme query fails.
+	}
+	const backgroundThemePromise = detectTerminalBackgroundTheme({ ui, timeoutMs, env });
+
+	try {
+		const colorScheme = await colorSchemePromise;
 		if (colorScheme) return colorScheme;
 	} catch {
-		// Fall back to OSC 11 / COLORFGBG detection when color-scheme DSR is unsupported.
+		// Fall back to the concurrently queried OSC 11 / COLORFGBG detection.
 	}
-	return (await detectTerminalBackgroundTheme({ ui, timeoutMs, env })).theme;
+	return (await backgroundThemePromise).theme;
 }
 
 export function getDefaultTheme(): string {
@@ -1013,7 +963,7 @@ export function getResolvedThemeColors(themeName?: string): Record<string, strin
 	const name = themeName ?? currentThemeName ?? getDefaultTheme();
 	const isLight = name === "light";
 	const themeJson = loadThemeJson(name);
-	const resolved = resolveThemeColors(themeJson.colors, themeJson.vars);
+	const resolved = resolveThemeColors(withThemeColorFallbacks(themeJson.colors), themeJson.vars);
 
 	// Default text color for empty values (terminal uses default fg color)
 	const defaultText = isLight ? "#000000" : "#e5e5e7";

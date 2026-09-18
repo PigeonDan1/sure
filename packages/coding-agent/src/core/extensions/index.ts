@@ -18,10 +18,11 @@ export type {
 	ShutdownHandler,
 	SwitchSessionHandler,
 } from "./runner.ts";
-export { ExtensionRunner, noOpUIContext } from "./runner.ts";
+export { ExtensionRunner } from "./runner.ts";
 export type {
 	AfterProviderResponseEvent,
 	AgentEndEvent,
+	AgentSettledEvent,
 	AgentStartEvent,
 	// Re-exports
 	AgentToolResult,
@@ -35,6 +36,7 @@ export type {
 	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
+	BeforeProviderHeadersEvent,
 	BeforeProviderRequestEvent,
 	BeforeProviderRequestEventResult,
 	BuildSystemPromptOptions,
@@ -84,6 +86,7 @@ export type {
 	GetThinkingLevelHandler,
 	GrepToolCallEvent,
 	GrepToolResultEvent,
+	InlineExtension,
 	// Events - Input
 	InputEvent,
 	InputEventResult,
@@ -92,6 +95,8 @@ export type {
 	LoadExtensionsResult,
 	LsToolCallEvent,
 	LsToolResultEvent,
+	MarkdownTransformContext,
+	MarkdownTransformer,
 	// Events - Message
 	MessageEndEvent,
 	MessageRenderer,
@@ -100,6 +105,8 @@ export type {
 	MessageUpdateEvent,
 	ModelSelectEvent,
 	ModelSelectSource,
+	PowerShellToolCallEvent,
+	PowerShellToolResultEvent,
 	ProjectTrustContext,
 	ProjectTrustEvent,
 	ProjectTrustEventDecision,
@@ -129,6 +136,7 @@ export type {
 	SessionBeforeTreeEvent,
 	SessionBeforeTreeResult,
 	SessionCompactEvent,
+	SessionCompactFailedEvent,
 	SessionEvent,
 	SessionInfoChangedEvent,
 	SessionShutdownEvent,
@@ -158,6 +166,9 @@ export type {
 	TreePreparation,
 	TurnEndEvent,
 	TurnStartEvent,
+	UIPromptEndEvent,
+	UIPromptKind,
+	UIPromptStartEvent,
 	// Events - User Bash
 	UserBashEvent,
 	UserBashEventResult,
@@ -174,6 +185,7 @@ export {
 	isFindToolResult,
 	isGrepToolResult,
 	isLsToolResult,
+	isPowerShellToolResult,
 	isReadToolResult,
 	isToolCallEventType,
 	isWriteToolResult,

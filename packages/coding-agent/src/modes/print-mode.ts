@@ -8,9 +8,9 @@
 
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
-import { noOpUIContext } from "../core/extensions/index.ts";
-import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
+import { flushRawStdout, waitForRawStdoutBackpressure, writeRawStdout } from "../core/output-guard.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
+import { toJsonEvent } from "./json-event.ts";
 
 /**
  * Options for print mode.
@@ -35,6 +35,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	let exitCode = 0;
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
+	let unsubscribeBackpressure: (() => void) | undefined;
 	let disposed = false;
 	const signalCleanupHandlers: Array<() => void> = [];
 
@@ -42,23 +43,21 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		if (disposed) return;
 		disposed = true;
 		unsubscribe?.();
+		unsubscribeBackpressure?.();
 		await runtimeHost.dispose();
 	};
 
 	const registerSignalHandlers = (): void => {
-		const signals: Array<[NodeJS.Signals, number]> = [
-			["SIGTERM", 143],
-			["SIGINT", 130],
-		];
+		const signals: NodeJS.Signals[] = ["SIGTERM"];
 		if (process.platform !== "win32") {
-			signals.push(["SIGHUP", 129]);
+			signals.push("SIGHUP");
 		}
 
-		for (const [signal, code] of signals) {
+		for (const signal of signals) {
 			const handler = () => {
 				killTrackedDetachedChildren();
 				void disposeRuntime().finally(() => {
-					process.exit(code);
+					process.exit(signal === "SIGHUP" ? 129 : 143);
 				});
 			};
 			process.on(signal, handler);
@@ -75,19 +74,9 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
 		await session.bindExtensions({
-			uiContext: {
-				...noOpUIContext,
-				notify: (message: string) => {
-					if (mode === "json") {
-						writeRawStdout(`${JSON.stringify({ type: "extension_notify", message })}\n`);
-					} else {
-						writeRawStdout(`${message}\n`);
-					}
-				},
-			},
 			mode: mode === "json" ? "json" : "print",
 			commandContextActions: {
-				waitForIdle: () => session.agent.waitForIdle(),
+				waitForIdle: () => session.waitForIdle(),
 				newSession: async (newSessionOptions) => runtimeHost.newSession(newSessionOptions),
 				fork: async (entryId, forkOptions) => {
 					const result = await runtimeHost.fork(entryId, forkOptions);
@@ -115,11 +104,18 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		});
 
 		unsubscribe?.();
+		unsubscribeBackpressure?.();
 		unsubscribe = session.subscribe((event) => {
 			if (mode === "json") {
-				writeRawStdout(`${JSON.stringify(event)}\n`);
+				writeRawStdout(`${JSON.stringify(toJsonEvent(event))}\n`);
 			}
 		});
+		unsubscribeBackpressure =
+			mode === "json"
+				? session.agent.subscribe(async () => {
+						await waitForRawStdoutBackpressure();
+					})
+				: undefined;
 	};
 
 	try {

@@ -9,6 +9,7 @@ import {
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getAgentDir } from "../config.ts";
+import { stripBom } from "../utils/text.ts";
 
 export interface AppKeybindings {
 	"app.interrupt": true;
@@ -16,6 +17,7 @@ export interface AppKeybindings {
 	"app.exit": true;
 	"app.suspend": true;
 	"app.thinking.cycle": true;
+	"app.thinking.save": true;
 	"app.model.cycleForward": true;
 	"app.model.cycleBackward": true;
 	"app.model.select": true;
@@ -23,6 +25,7 @@ export interface AppKeybindings {
 	"app.thinking.toggle": true;
 	"app.session.toggleNamedFilter": true;
 	"app.editor.external": true;
+	"app.message.copy": true;
 	"app.message.followUp": true;
 	"app.message.dequeue": true;
 	"app.clipboard.pasteImage": true;
@@ -56,12 +59,37 @@ export interface AppKeybindings {
 
 export type AppKeybinding = keyof AppKeybindings;
 
+export function useWindowsKeybindings(
+	platform: NodeJS.Platform = process.platform,
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	return platform === "win32" || (platform === "linux" && Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP));
+}
+
 declare module "@earendil-works/pi-tui" {
 	interface Keybindings extends AppKeybindings {}
 }
 
+const windowsKeybindings = useWindowsKeybindings();
+
 export const KEYBINDINGS = {
 	...TUI_KEYBINDINGS,
+	"tui.editor.undo": {
+		...TUI_KEYBINDINGS["tui.editor.undo"],
+		defaultKeys: process.platform === "win32" ? "ctrl+z" : windowsKeybindings ? "alt+z" : "ctrl+-",
+	},
+	"tui.altScreen.previousPrompt": {
+		...TUI_KEYBINDINGS["tui.altScreen.previousPrompt"],
+		defaultKeys: windowsKeybindings ? "ctrl+up" : ["ctrl+shift+up", "ctrl+up"],
+	},
+	"tui.altScreen.nextPrompt": {
+		...TUI_KEYBINDINGS["tui.altScreen.nextPrompt"],
+		defaultKeys: windowsKeybindings ? "ctrl+down" : ["ctrl+shift+down", "ctrl+down"],
+	},
+	"tui.altScreen.search": {
+		...TUI_KEYBINDINGS["tui.altScreen.search"],
+		defaultKeys: windowsKeybindings ? "ctrl+f" : "ctrl+shift+f",
+	},
 	"app.interrupt": { defaultKeys: "escape", description: "Cancel or abort" },
 	"app.clear": { defaultKeys: "ctrl+c", description: "Clear editor" },
 	"app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },
@@ -73,12 +101,16 @@ export const KEYBINDINGS = {
 		defaultKeys: "shift+tab",
 		description: "Cycle thinking level",
 	},
+	"app.thinking.save": {
+		defaultKeys: "ctrl+s",
+		description: "Save thinking level",
+	},
 	"app.model.cycleForward": {
 		defaultKeys: "ctrl+p",
 		description: "Cycle to next model",
 	},
 	"app.model.cycleBackward": {
-		defaultKeys: "shift+ctrl+p",
+		defaultKeys: windowsKeybindings ? "alt+p" : "shift+ctrl+p",
 		description: "Cycle to previous model",
 	},
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
@@ -95,28 +127,32 @@ export const KEYBINDINGS = {
 		defaultKeys: "ctrl+g",
 		description: "Open external editor",
 	},
+	"app.message.copy": {
+		defaultKeys: "ctrl+x",
+		description: "Copy message to clipboard",
+	},
 	"app.message.followUp": {
-		defaultKeys: "alt+enter",
+		defaultKeys: windowsKeybindings ? "ctrl+q" : "alt+enter",
 		description: "Queue follow-up message",
 	},
 	"app.message.dequeue": {
-		defaultKeys: "alt+up",
+		defaultKeys: windowsKeybindings ? "alt+q" : "alt+up",
 		description: "Restore queued messages",
 	},
 	"app.clipboard.pasteImage": {
-		defaultKeys: process.platform === "win32" ? "alt+v" : "ctrl+v",
-		description: "Paste image from clipboard",
+		defaultKeys: windowsKeybindings ? "alt+v" : "ctrl+v",
+		description: "Paste image from clipboard (text fallback)",
 	},
 	"app.session.new": { defaultKeys: [], description: "Start a new session" },
 	"app.session.tree": { defaultKeys: [], description: "Open session tree" },
 	"app.session.fork": { defaultKeys: [], description: "Fork current session" },
 	"app.session.resume": { defaultKeys: [], description: "Resume a session" },
 	"app.tree.foldOrUp": {
-		defaultKeys: ["ctrl+left", "alt+left"],
+		defaultKeys: process.platform === "darwin" ? ["alt+left", "ctrl+left"] : ["ctrl+left", "alt+left"],
 		description: "Fold tree branch or move up",
 	},
 	"app.tree.unfoldOrDown": {
-		defaultKeys: ["ctrl+right", "alt+right"],
+		defaultKeys: process.platform === "darwin" ? ["alt+right", "ctrl+right"] : ["ctrl+right", "alt+right"],
 		description: "Unfold tree branch or move down",
 	},
 	"app.tree.editLabel": {
@@ -263,17 +299,11 @@ const KEYBINDING_NAME_MIGRATIONS = {
 	deleteSessionNoninvasive: "app.session.deleteNoninvasive",
 } as const satisfies Record<string, Keybinding>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function isLegacyKeybindingName(key: string): key is keyof typeof KEYBINDING_NAME_MIGRATIONS {
 	return key in KEYBINDING_NAME_MIGRATIONS;
 }
 
-function toKeybindingsConfig(value: unknown): KeybindingsConfig {
-	if (!isRecord(value)) return {};
-
+function toKeybindingsConfig(value: Record<string, unknown>): KeybindingsConfig {
 	const config: KeybindingsConfig = {};
 	for (const [key, binding] of Object.entries(value)) {
 		if (typeof binding === "string") {
@@ -330,8 +360,9 @@ function orderKeybindingsConfig(config: Record<string, unknown>): Record<string,
 function loadRawConfig(path: string): Record<string, unknown> | undefined {
 	if (!existsSync(path)) return undefined;
 	try {
-		const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
-		return isRecord(parsed) ? parsed : undefined;
+		const parsed = JSON.parse(stripBom(readFileSync(path, "utf-8"))) as unknown;
+		if (typeof parsed !== "object" || parsed === null) return undefined;
+		return parsed as Record<string, unknown>;
 	} catch {
 		return undefined;
 	}
