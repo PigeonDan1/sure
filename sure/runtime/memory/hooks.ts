@@ -56,7 +56,7 @@ import {
 // skills read it back with readMemory() and carry it through advance/bumpRetry.
 //
 // hooks/index.ts of each skill calls these functions at the points listed in
-// docs/superpowers/specs/2026-08-18-memory-system-design.md: digest at unit
+// the 2026-08-18 memory-system design (sections cited below): digest at unit
 // entry (4.2), gate exhaustion and non-success finish (4.5), injection on a
 // gate block (7.2), settlement (8.1), publish (6.2). The only python this file
 // runs are the thin wrappers under <packageDir>/scripts/: hooks may never

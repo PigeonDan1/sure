@@ -99,22 +99,6 @@ tmux send-keys -t pi-test Escape               # special keys (also C-o for ctrl
 tmux kill-session -t pi-test
 ```
 
-## Changelog
-
-Location: `packages/*/CHANGELOG.md` (one per package).
-
-Sections under `## [Unreleased]`: `### Breaking Changes` (API changes requiring migration), `### Added`, `### Changed`, `### Fixed`, `### Removed`.
-
-Rules:
-
-- All new entries go under `## [Unreleased]`. Read the full section first and append to existing subsections; never duplicate them.
-- Released version sections (e.g. `## [0.12.2]`) are immutable; never modify them.
-
-Attribution:
-
-- Internal (from issues): `Fixed foo bar ([#123](https://github.com/earendil-works/pi-mono/issues/123))`
-- External contributions: `Added feature X ([#456](https://github.com/earendil-works/pi-mono/pull/456) by [@username](https://github.com/username))`
-
 ## Vendored pi
 
 `packages/coding-agent` and `packages/ai` are a vendored copy of pi 0.85.1 and stay there. This fork does not follow pi releases and does not keep its patches mergeable back into pi: edit the vendored code directly, like any other code in this repository. `@earendil-works/pi-agent-core`, `@earendil-works/pi-tui`, `@earendil-works/chord`, and `@earendil-works/pi-telemetry` are npm dependencies pinned to exactly `0.85.1` and are not bumped. The vendored copy no longer carries `packages/agent` or `packages/tui`, which are the first two of those, nor `packages/orchestrator`, which has no counterpart, nor pi's experimental remote runtime. chord and pi-telemetry are new 0.85.1 dependencies, not replacements.
@@ -132,7 +116,7 @@ Our pi is pi 0.85.1 plus the patches below. This list is the record; keep it cur
 - Default extension injection: `src/core/default-extensions.ts` and its `InlineExtension` entries, suppressed by `--no-extensions`.
 - A three-tier provider scope (`provider | all | scoped`) in the model selector.
 - The `./hooks` package export (`dist/core/sure/hook-types.js`).
-- First-time-setup privacy text pointing at the bundled `settings.md`, and the `/sure_init` compat note in `docs/models.md`.
+- The `/sure_init` compat note in `docs/models.md`.
 - Azure default model `gpt-5.5`.
 - A `ModelRegistry.login()` facade over the SURE auth adapter `src/core/sure/auth.ts`.
 - SURE run settlement on `agent_settled` instead of `agent_end` / `willRetry`.
@@ -148,6 +132,25 @@ Our pi is pi 0.85.1 plus the patches below. This list is the record; keep it cur
 - A `PROVIDER_MIDSTREAM_ERROR` diagnostic on `openai-responses` and `azure-openai-responses` streams that drop after a 200, retryable in `retry.ts`, plus `isTerminalRateLimitError` de-duplication and a retry on "produced invalid content".
 
 What the 0.85.1 move changed for users and maintainers is written up in `docs/pi-0.85.1-upgrade.md`.
+
+### Removed from pi
+
+Upstream features this fork no longer carries:
+
+- The easter eggs `/arminsayshi` and `/dementedelves`.
+- `/share`.
+- Mermaid rendering.
+- The bun single-file binary build (`npm run build:binary`).
+- Changelog display (`/changelog`) and the startup version check.
+- `pi update --self` and installer-managed installs.
+- Install telemetry and provider attribution headers.
+- The first-time setup wizard and its analytics settings.
+- `PI_EXPERIMENTAL`.
+- The pi.dev model catalog overlay.
+- The llama.cpp extension.
+- The pre-0.80 migrations and deprecation warnings.
+
+Restore by reverting the commit that removed it; see git log.
 
 ## SURE Harness
 

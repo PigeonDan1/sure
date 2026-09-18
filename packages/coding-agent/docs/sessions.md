@@ -32,7 +32,6 @@ For the JSONL file format and SessionManager API, see [Session Format](session-f
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Summarize older context; see [Compaction](compaction.md) |
 | `/export [file]` | Export session to HTML |
-| `/share` | Upload as private GitHub gist with shareable HTML link |
 
 ## Resuming and Deleting Sessions
 
@@ -69,8 +68,6 @@ Named sessions are easier to find in `/resume` and `pi -r`.
 ## Branching with `/tree`
 
 Sessions are stored as trees. Every entry has an `id` and `parentId`, and the current position is the active leaf. `/tree` lets you jump to any previous point and continue from there without creating a new file.
-
-<p align="center"><img src="images/tree-view.png" alt="Tree View" width="600"></p>
 
 Example shape:
 
