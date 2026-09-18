@@ -1,5 +1,4 @@
 // UI Components for extensions
-export { ArminComponent } from "./armin.ts";
 export { AssistantMessageComponent } from "./assistant-message.ts";
 export { BashExecutionComponent } from "./bash-execution.ts";
 export { BorderedLoader } from "./bordered-loader.ts";
@@ -7,7 +6,6 @@ export { BranchSummaryMessageComponent } from "./branch-summary-message.ts";
 export { CompactionSummaryMessageComponent } from "./compaction-summary-message.ts";
 export { CustomEditor, type CustomEditorOptions } from "./custom-editor.ts";
 export { CustomMessageComponent } from "./custom-message.ts";
-export { DaxnutsComponent } from "./daxnuts.ts";
 export { type RenderDiffOptions, renderDiff } from "./diff.ts";
 export { DynamicBorder } from "./dynamic-border.ts";
 export { ExtensionEditorComponent } from "./extension-editor.ts";
