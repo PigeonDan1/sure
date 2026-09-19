@@ -109,7 +109,7 @@ try {
 const sparseCheckoutPath = join(root, ".git", "info", "sparse-checkout");
 if (existsSync(sparseCheckoutPath)) {
 	const sparseCheckout = readFileSync(sparseCheckoutPath, "utf8");
-	for (const relPath of ["scripts", "fixtures", "packages/coding-agent/examples"]) {
+	for (const relPath of ["scripts", "fixtures"]) {
 		if (existsSync(join(root, relPath))) {
 			pass(`sparse path ${relPath}`, "present");
 		} else {

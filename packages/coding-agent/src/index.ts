@@ -7,7 +7,6 @@ export {
 	CONFIG_DIR_NAME,
 	getAgentDir,
 	getDocsPath,
-	getExamplesPath,
 	getPackageDir,
 	getReadmePath,
 	VERSION,

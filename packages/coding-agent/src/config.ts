@@ -95,11 +95,6 @@ export function getDocsPath(): string {
 	return resolve(join(getPackageDir(), "docs"));
 }
 
-/** Get path to examples directory */
-export function getExamplesPath(): string {
-	return resolve(join(getPackageDir(), "examples"));
-}
-
 // =============================================================================
 // App Config (from package.json piConfig)
 // =============================================================================
