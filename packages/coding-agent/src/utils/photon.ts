@@ -10,7 +10,7 @@
  *
  * Solution:
  * 1. Patch fs.readFileSync to redirect missing photon_rs_bg.wasm reads
- * 2. Copy photon_rs_bg.wasm next to the executable in build:binary
+ * 2. Place photon_rs_bg.wasm next to the executable for Bun binaries
  */
 
 import type { PathOrFileDescriptor } from "fs";
