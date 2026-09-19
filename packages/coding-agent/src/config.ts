@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
-import { basename, dirname, join, resolve } from "path";
+import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { normalizePath } from "./utils/paths.ts";
 import { stripBom } from "./utils/text.ts";
@@ -31,18 +31,11 @@ export const isBundledNode = typeof PI_BUNDLED_NODE !== "undefined" && PI_BUNDLE
  * Get the base directory for resolving package assets (themes, package.json, README.md).
  * - For Bun binary: returns the directory containing the executable
  * - For Node.js and tsx: returns the package root containing package.json
- * - Ignores Bun binary metadata copied into dist/ when the package root is available
  */
 export function findNodePackageDir(startDir: string): string {
 	let dir = startDir;
 	while (dir !== dirname(dir)) {
 		if (existsSync(join(dir, "package.json"))) {
-			const parent = dirname(dir);
-			// build:binary places Bun's metadata inside dist/. Node still needs the
-			// package root so its dist-relative asset paths do not become dist/dist/.
-			if (basename(dir) === "dist" && existsSync(join(parent, "package.json"))) {
-				return parent;
-			}
 			return dir;
 		}
 		dir = dirname(dir);
