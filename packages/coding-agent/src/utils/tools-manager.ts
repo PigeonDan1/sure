@@ -8,7 +8,7 @@ const TOOLS_DIR = getBinDir();
 
 interface ToolConfig {
 	name: string;
-	binaryName: string; // Name of the binary inside the archive
+	binaryName: string; // Name of the binary file
 	systemBinaryNames?: string[]; // Alternative system command names to try
 	missingImpact: string; // What breaks when the tool can't be found, for the warning message
 }
