@@ -14,7 +14,7 @@ describe("regression #5661: uppercase models.json header values", () => {
 		}
 	});
 
-	it("keeps uppercase header strings as literals during startup migrations", async () => {
+	it("keeps uppercase header strings as literals even when they match env var names", async () => {
 		const harness = await createHarness({ withConfiguredAuth: false });
 		cleanups.push(harness.cleanup);
 
