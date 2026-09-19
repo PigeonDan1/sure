@@ -72,7 +72,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		return prompt;
 	}
 
-	// Get absolute paths to documentation and examples
+	// Get absolute paths to documentation
 	const readmePath = getReadmePath();
 	const docsPath = getDocsPath();
 

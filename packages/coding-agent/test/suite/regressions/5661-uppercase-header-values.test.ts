@@ -55,11 +55,11 @@ describe("regression #5661: uppercase models.json header values", () => {
 			"utf-8",
 		);
 
-		const migrated = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
+		const written = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
 			providers: Record<string, { apiKey?: string; headers?: Record<string, string> }>;
 		};
-		expect(migrated.providers["my-provider"]?.apiKey).toBe("CUSTOM_API_KEY");
-		expect(migrated.providers["my-provider"]?.headers?.Authorization).toBe("BEARER");
+		expect(written.providers["my-provider"]?.apiKey).toBe("CUSTOM_API_KEY");
+		expect(written.providers["my-provider"]?.headers?.Authorization).toBe("BEARER");
 
 		const registry = await createModelRegistry(AuthStorage.create(join(harness.tempDir, "auth.json")), modelsPath);
 		const model = registry.find("my-provider", "my-model");
