@@ -89,7 +89,7 @@ describe("Input Event", () => {
 		const r = await createRunner(
 			`export default p => p.on("input", async e => { globalThis.testVar = e.source; return { action: "continue" }; });`,
 		);
-		for (const source of ["interactive", "rpc", "extension"] as const) {
+		for (const source of ["interactive", "extension"] as const) {
 			await r.emitInput("x", undefined, source);
 			expect((globalThis as any).testVar).toBe(source);
 		}

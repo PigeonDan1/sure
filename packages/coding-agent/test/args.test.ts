@@ -120,11 +120,6 @@ describe("parseArgs", () => {
 			expect(result.mode).toBe("json");
 		});
 
-		test("parses --mode rpc", () => {
-			const result = parseArgs(["--mode", "rpc"]);
-			expect(result.mode).toBe("rpc");
-		});
-
 		test("parses --session", () => {
 			const result = parseArgs(["--session", "/path/to/session.jsonl"]);
 			expect(result.session).toBe("/path/to/session.jsonl");
@@ -139,11 +134,6 @@ describe("parseArgs", () => {
 			const result = parseArgs(["--fork", "1234abcd"]);
 			expect(result.fork).toBe("1234abcd");
 			expect(result.messages).toEqual([]);
-		});
-
-		test("parses --export", () => {
-			const result = parseArgs(["--export", "session.jsonl"]);
-			expect(result.export).toBe("session.jsonl");
 		});
 
 		test("parses --thinking", () => {

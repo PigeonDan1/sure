@@ -83,10 +83,6 @@
       "title": "Programmatic Usage",
       "items": [
         {
-          "title": "RPC Mode",
-          "path": "rpc.md"
-        },
-        {
           "title": "JSON Event Stream Mode",
           "path": "json.md"
         },

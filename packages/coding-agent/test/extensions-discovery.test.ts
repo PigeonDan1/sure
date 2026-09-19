@@ -358,19 +358,6 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].path).toContain("my-ext.ts");
 	});
 
-	it("resolves dependencies from extension's own node_modules", async () => {
-		// Load extension that has its own package.json and node_modules with 'ms' package
-		const extPath = path.resolve(__dirname, "../examples/extensions/with-deps");
-
-		const result = await discoverAndLoadExtensions([extPath], tempDir, tempDir);
-
-		expect(result.errors).toHaveLength(0);
-		expect(result.extensions).toHaveLength(1);
-		expect(result.extensions[0].path).toContain("with-deps");
-		// The extension registers a 'parse_duration' tool
-		expect(result.extensions[0].tools.has("parse_duration")).toBe(true);
-	});
-
 	it("registers message and entry renderers", async () => {
 		const extCode = `
 			export default function(pi) {

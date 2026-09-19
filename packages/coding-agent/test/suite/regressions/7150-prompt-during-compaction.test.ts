@@ -2,7 +2,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getMessageText, getUserTexts, type Harness } from "../harness.ts";
 
-describe("issue #7150: RPC prompt during manual compaction", () => {
+describe("issue #7150: prompt during manual compaction", () => {
 	const harnesses: Harness[] = [];
 
 	afterEach(() => {
@@ -11,7 +11,7 @@ describe("issue #7150: RPC prompt during manual compaction", () => {
 		}
 	});
 
-	it("rejects an RPC prompt while manual compaction is in progress", async () => {
+	it("rejects a prompt while manual compaction is in progress", async () => {
 		let markCompactionStarted = () => {};
 		const compactionStarted = new Promise<void>((resolve) => {
 			markCompactionStarted = resolve;
@@ -61,7 +61,7 @@ describe("issue #7150: RPC prompt during manual compaction", () => {
 		let promptError: unknown;
 		try {
 			await harness.session.prompt("PROBE-7150", {
-				source: "rpc",
+				source: "extension",
 				preflightResult: (success) => {
 					preflightResult = success;
 				},

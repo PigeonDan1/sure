@@ -2,7 +2,7 @@
  * Bash command execution with streaming support and cancellation.
  *
  * This module provides a unified bash execution implementation used by:
- * - AgentSession.executeBash() for interactive and RPC modes
+ * - AgentSession.executeBash() for interactive mode
  * - Direct calls from modes that need bash execution
  */
 

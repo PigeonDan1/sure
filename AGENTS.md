@@ -149,6 +149,10 @@ Upstream features this fork no longer carries:
 - The pi.dev model catalog overlay.
 - The llama.cpp extension.
 - The pre-0.80 migrations and deprecation warnings.
+- The `fd` and `ripgrep` auto-download; pi now uses `~/.pi/agent/bin` or PATH.
+- The `examples/` directory of sample extensions and SDK snippets.
+- RPC mode (`--mode rpc`, `rpc-entry`, `RpcClient`).
+- HTML export (`--export`, HTML `/export`, the theme `export` colors).
 
 Restore by reverting the commit that removed it; see git log.
 

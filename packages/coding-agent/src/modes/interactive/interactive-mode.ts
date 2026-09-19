@@ -912,8 +912,8 @@ export class InteractiveMode {
 		}
 		this.ui.requestRender();
 
-		// Ensure fd and rg are available after mounting the TUI (downloads if missing, adds to PATH via getBinDir)
-		// so slow downloads do not make startup appear frozen.
+		// Check fd and rg are available after mounting the TUI so a missing-tool
+		// warning doesn't get lost before the chat is visible.
 		// Both are needed: fd for autocomplete, rg for grep tool and bash commands.
 		const [fdPath] = await Promise.all([
 			ensureTool("fd", (status) => this.showManagedToolStatus(status)),
@@ -5837,15 +5837,8 @@ export class InteractiveMode {
 		const outputPath = this.getPathCommandArgument(text, "/export");
 
 		try {
-			if (outputPath?.endsWith(".jsonl")) {
-				const filePath = this.session.exportToJsonl(outputPath);
-				this.showStatus(`Session exported to: ${filePath}`);
-			} else {
-				const filePath = await this.session.exportToHtml(outputPath, {
-					themeName: theme.name,
-				});
-				this.showStatus(`Session exported to: ${filePath}`);
-			}
+			const filePath = this.session.exportToJsonl(outputPath);
+			this.showStatus(`Session exported to: ${filePath}`);
 		} catch (error: unknown) {
 			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
 		}

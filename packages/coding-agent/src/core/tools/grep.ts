@@ -118,7 +118,9 @@ export function createGrepToolDefinition(
 					try {
 						const rgPath = await ensureTool("rg");
 						if (!rgPath) {
-							settle(() => reject(new Error("ripgrep (rg) is not available and could not be downloaded")));
+							settle(() =>
+								reject(new Error("ripgrep (rg) is not available. Install it and make sure it is on PATH.")),
+							);
 							return;
 						}
 

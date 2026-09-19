@@ -19,8 +19,6 @@ describe("package commands", () => {
 	let packageDir: string;
 	let originalCwd: string;
 	let originalAgentDir: string | undefined;
-	let originalPiPackageDir: string | undefined;
-	let originalPath: string | undefined;
 	let originalExitCode: typeof process.exitCode;
 	let originalExecPath: string;
 
@@ -58,8 +56,6 @@ describe("package commands", () => {
 
 		originalCwd = process.cwd();
 		originalAgentDir = process.env[ENV_AGENT_DIR];
-		originalPiPackageDir = process.env.PI_PACKAGE_DIR;
-		originalPath = process.env.PATH;
 		originalExitCode = process.exitCode;
 		originalExecPath = process.execPath;
 		process.exitCode = undefined;
@@ -85,16 +81,6 @@ describe("package commands", () => {
 			delete process.env[ENV_AGENT_DIR];
 		} else {
 			process.env[ENV_AGENT_DIR] = originalAgentDir;
-		}
-		if (originalPiPackageDir === undefined) {
-			delete process.env.PI_PACKAGE_DIR;
-		} else {
-			process.env.PI_PACKAGE_DIR = originalPiPackageDir;
-		}
-		if (originalPath === undefined) {
-			delete process.env.PATH;
-		} else {
-			process.env.PATH = originalPath;
 		}
 		Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
 		rmSync(tempDir, { recursive: true, force: true });

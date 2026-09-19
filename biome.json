@@ -27,7 +27,6 @@
 		"includes": [
 			"packages/*/src/**/*.ts",
 			"packages/*/test/**/*.ts",
-			"packages/coding-agent/examples/**/*.ts",
 			"sure/skills/*/hooks/**/*.ts",
 			"sure/runtime/memory/**/*.ts",
 			"!**/node_modules/**/*",

@@ -199,8 +199,6 @@ await showMenu();  // First show
 await showMenu();  // "Back" = just call again
 ```
 
-See [overlay-qa-tests.ts](../examples/extensions/overlay-qa-tests.ts) for comprehensive examples covering anchors, margins, stacking, responsive visibility, and animation.
-
 ## Built-in Components
 
 Import from `@earendil-works/pi-tui`:
@@ -685,8 +683,6 @@ pi.registerCommand("pick", {
 });
 ```
 
-**Examples:** [preset.ts](../examples/extensions/preset.ts), [tools.ts](../examples/extensions/tools.ts)
-
 ### Pattern 2: Async Operation with Cancel (BorderedLoader)
 
 For operations that take time and should be cancellable. `BorderedLoader` shows a spinner and handles escape to cancel.
@@ -716,8 +712,6 @@ pi.registerCommand("fetch", {
   },
 });
 ```
-
-**Examples:** [qna.ts](../examples/extensions/qna.ts), [handoff.ts](../examples/extensions/handoff.ts)
 
 ### Pattern 3: Settings/Toggles (SettingsList)
 
@@ -761,8 +755,6 @@ pi.registerCommand("settings", {
 });
 ```
 
-**Examples:** [tools.ts](../examples/extensions/tools.ts)
-
 ### Pattern 4: Persistent Status Indicator
 
 Show status in the footer that persists across renders. Good for mode indicators.
@@ -774,8 +766,6 @@ ctx.ui.setStatus("my-ext", ctx.ui.theme.fg("accent", "● active"));
 // Clear status
 ctx.ui.setStatus("my-ext", undefined);
 ```
-
-**Examples:** [status-line.ts](../examples/extensions/status-line.ts), [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts), [preset.ts](../examples/extensions/preset.ts)
 
 ### Pattern 4b: Working Indicator Customization
 
@@ -805,8 +795,6 @@ ctx.ui.setWorkingIndicator();
 
 This only affects the normal streaming working indicator. Compaction and retry loaders keep their built-in styling. Custom frames are rendered verbatim, so extensions must add their own colors when needed.
 
-**Examples:** [working-indicator.ts](../examples/extensions/working-indicator.ts)
-
 ### Pattern 5: Widgets Above/Below Editor
 
 Show persistent content above or below the input editor. Good for todo lists, progress.
@@ -835,8 +823,6 @@ ctx.ui.setWidget("my-widget", (_tui, theme) => {
 ctx.ui.setWidget("my-widget", undefined);
 ```
 
-**Examples:** [plan-mode/index.ts](../examples/extensions/plan-mode/index.ts)
-
 ### Pattern 6: Custom Footer
 
 Replace the footer. `footerData` exposes data not otherwise accessible to extensions.
@@ -856,8 +842,6 @@ ctx.ui.setFooter(undefined); // restore default
 ```
 
 Token stats available via `ctx.sessionManager.getBranch()` and `ctx.model`.
-
-**Examples:** [custom-footer.ts](../examples/extensions/custom-footer.ts)
 
 ### Pattern 7: Custom Editor (vim mode, etc.)
 
@@ -934,8 +918,6 @@ export default function (pi: ExtensionAPI) {
 - **Factory pattern**: `setEditorComponent` receives a factory function that gets `tui`, `theme`, and `keybindings`
 - **Pass `undefined`** to restore the default editor: `ctx.ui.setEditorComponent(undefined)`
 
-**Examples:** [modal-editor.ts](../examples/extensions/modal-editor.ts)
-
 ## Key Rules
 
 1. **Always use theme from callback** - Don't import theme directly. Use `theme` from the `ctx.ui.custom((tui, theme, keybindings, done) => ...)` callback.
@@ -947,15 +929,3 @@ export default function (pi: ExtensionAPI) {
 4. **Return the three-method object** - Custom components need `{ render, invalidate, handleInput }`.
 
 5. **Use existing components** - `SelectList`, `SettingsList`, `BorderedLoader` cover 90% of cases. Don't rebuild them.
-
-## Examples
-
-- **Selection UI**: [examples/extensions/preset.ts](../examples/extensions/preset.ts) - SelectList with DynamicBorder framing
-- **Async with cancel**: [examples/extensions/qna.ts](../examples/extensions/qna.ts) - BorderedLoader for LLM calls
-- **Settings toggles**: [examples/extensions/tools.ts](../examples/extensions/tools.ts) - SettingsList for tool enable/disable
-- **Status indicators**: [examples/extensions/plan-mode/index.ts](../examples/extensions/plan-mode/index.ts) - setStatus and setWidget
-- **Working indicator**: [examples/extensions/working-indicator.ts](../examples/extensions/working-indicator.ts) - setWorkingIndicator
-- **Custom footer**: [examples/extensions/custom-footer.ts](../examples/extensions/custom-footer.ts) - setFooter with stats
-- **Custom editor**: [examples/extensions/modal-editor.ts](../examples/extensions/modal-editor.ts) - Vim-like modal editing
-- **Snake game**: [examples/extensions/snake.ts](../examples/extensions/snake.ts) - Full game with keyboard input, game loop
-- **Custom tool rendering**: [examples/extensions/todo.ts](../examples/extensions/todo.ts) - renderCall and renderResult

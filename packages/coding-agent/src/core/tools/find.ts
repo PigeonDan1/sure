@@ -175,7 +175,7 @@ export function createFindToolDefinition(
 							return;
 						}
 						if (!fdPath) {
-							settle(() => reject(new Error("fd is not available and could not be downloaded")));
+							settle(() => reject(new Error("fd is not available. Install it and make sure it is on PATH.")));
 							return;
 						}
 
