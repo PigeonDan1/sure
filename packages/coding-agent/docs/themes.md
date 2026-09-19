@@ -262,20 +262,6 @@ Editor border colors indicating thinking level (visual hierarchy from subtle to 
 |-------|---------|
 | `bashMode` | Editor border in bash mode (`!` prefix) |
 
-### HTML Export (optional)
-
-The `export` section controls colors for `/export` HTML output. If omitted, colors are derived from `userMessageBg`.
-
-```json
-{
-  "export": {
-    "pageBg": "#18181e",
-    "cardBg": "#1e1e24",
-    "infoBg": "#3c3728"
-  }
-}
-```
-
 ## Color Values
 
 Four formats are supported:

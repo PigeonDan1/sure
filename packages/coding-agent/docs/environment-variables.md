@@ -10,7 +10,7 @@ Provider API-key variables are documented separately in [Providers](providers.md
 
 ## Process Marker
 
-The CLI and RPC entry points set two process markers:
+The CLI entry point sets two process markers:
 
 - `AI_AGENT=pi` is a generic marker that lets tooling identify Pi as the agent that launched the process.
 - `PI_CODING_AGENT=true` is Pi-specific and lets child processes detect that they run inside Pi.
