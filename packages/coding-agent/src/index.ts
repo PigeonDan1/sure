@@ -362,18 +362,8 @@ export {
 	InteractiveMode,
 	type InteractiveModeOptions,
 	type JsonAgentSessionEvent,
-	type ModelInfo,
 	type PrintModeOptions,
-	RpcClient,
-	type RpcClientOptions,
-	type RpcCommand,
-	type RpcEventListener,
-	type RpcExtensionUIRequest,
-	type RpcExtensionUIResponse,
-	type RpcResponse,
-	type RpcSessionState,
 	runPrintMode,
-	runRpcMode,
 } from "./modes/index.ts";
 // UI components for extensions
 export {

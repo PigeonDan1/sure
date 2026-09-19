@@ -61,7 +61,7 @@ import { collectSettingsDiagnostics, deduplicateDiagnostics } from "./core/setti
 import { SettingsManager } from "./core/settings-manager.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
-import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
+import { InteractiveMode, runPrintMode } from "./modes/index.ts";
 import { initTheme, setThemeJsonValidator, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
 import { validateThemeJson } from "./modes/interactive/theme/theme-json.ts";
 import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
@@ -106,9 +106,6 @@ function isTruthyEnvFlag(value: string | undefined): boolean {
 }
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean, stdoutIsTTY: boolean): AppMode {
-	if (parsed.mode === "rpc") {
-		return "rpc";
-	}
 	if (parsed.mode === "json") {
 		return "json";
 	}
@@ -118,7 +115,7 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean, stdoutIsTTY: boolean)
 	return "interactive";
 }
 
-function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc"> {
+function toPrintOutputMode(appMode: AppMode): Mode {
 	return appMode === "json" ? "json" : "text";
 }
 
@@ -628,11 +625,6 @@ export async function main(args: string[], options?: MainOptions) {
 		takeOverStdout();
 	}
 
-	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
-		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
-		process.exit(1);
-	}
-
 	validateForkFlags(parsed);
 	validateSessionIdFlags(parsed);
 
@@ -846,13 +838,10 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(0);
 	}
 
-	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
-	let stdinContent: string | undefined;
-	if (appMode !== "rpc") {
-		stdinContent = await readPipedStdin();
-		if (stdinContent !== undefined && appMode === "interactive") {
-			appMode = "print";
-		}
+	// Read piped stdin content (if any)
+	const stdinContent = await readPipedStdin();
+	if (stdinContent !== undefined && appMode === "interactive") {
+		appMode = "print";
 	}
 	time("readPipedStdin");
 
@@ -892,20 +881,7 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(1);
 	}
 
-	// RPC refreshes catalogs here in the background; interactive mode starts its refresh after TUI initialization.
-	if (!offlineMode && appMode === "rpc") {
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), 15_000);
-		void modelRuntime
-			.refresh({ signal: controller.signal })
-			.catch(() => {})
-			.finally(() => clearTimeout(timeout));
-	}
-
-	if (appMode === "rpc") {
-		printTimings();
-		await runRpcMode(runtime);
-	} else if (appMode === "interactive") {
+	if (appMode === "interactive") {
 		const interactiveMode = new InteractiveMode(runtime, {
 			startupDiagnostics,
 			modelFallbackMessage,

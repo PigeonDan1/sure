@@ -143,7 +143,6 @@ function outputBytes(metafiles) {
 for (const entry of [
 	join(codingAgentDistDir, "cli.js"),
 	join(codingAgentDistDir, "index.js"),
-	join(codingAgentDistDir, "rpc-entry.js"),
 	join(codingAgentDistDir, "utils", "image-resize-worker.js"),
 	join(aiDistDir, "api", "bedrock-converse-stream.js"),
 	join(aiDistDir, "auth", "oauth", "anthropic.js"),
@@ -162,7 +161,6 @@ const mainResult = await build({
 	entryPoints: {
 		cli: join(codingAgentDistDir, "cli.js"),
 		index: join(codingAgentDistDir, "index.js"),
-		"rpc-entry": join(codingAgentDistDir, "rpc-entry.js"),
 	},
 	outdir: bundleDir,
 	chunkNames: "chunks/[name]-[hash]",
@@ -204,7 +202,6 @@ if (dirname(imageResizeOutput) !== dirname(imageResizeWorkerOutput)) {
 
 validateExternalImports([mainResult.metafile, lazyResult.metafile]);
 chmodSync(join(bundleDir, "cli.js"), 0o755);
-chmodSync(join(bundleDir, "rpc-entry.js"), 0o755);
 
 const files = new Set([...Object.keys(mainResult.metafile.outputs), ...Object.keys(lazyResult.metafile.outputs)]).size;
 const mib = outputBytes([mainResult.metafile, lazyResult.metafile]) / (1024 * 1024);

@@ -1,7 +1,7 @@
 /**
  * AgentSession - Core abstraction for agent lifecycle and session management.
  *
- * This class is shared between all run modes (interactive, print, rpc).
+ * This class is shared between all run modes (interactive, print).
  * It encapsulates:
  * - Agent state access
  * - Event subscription with automatic session persistence
@@ -248,7 +248,7 @@ export interface PromptOptions {
 	streamingBehavior?: "steer" | "followUp";
 	/** Source of input for extension input event handlers. Defaults to "interactive". */
 	source?: InputSource;
-	/** Internal hook used by RPC mode to observe prompt preflight acceptance or rejection. */
+	/** Internal hook used to observe prompt preflight acceptance or rejection. */
 	preflightResult?: (success: boolean) => void;
 }
 
@@ -1931,7 +1931,7 @@ export class AgentSession {
 	/**
 	 * Manually compact the session context.
 	 *
-	 * This is the manual entry point used by `/compact`, RPC, and extensions. It is
+	 * This is the manual entry point used by `/compact` and extensions. It is
 	 * separate from automatic threshold/overflow compaction, which enters through
 	 * `_checkCompaction()` and `_runAutoCompaction()`. After preparation and the
 	 * `session_before_compact` hook, both paths call the lower-level `compact()`

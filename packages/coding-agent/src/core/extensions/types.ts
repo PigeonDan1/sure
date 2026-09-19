@@ -128,7 +128,7 @@ export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: Keybindi
 
 /**
  * UI context for extensions to request interactive UI.
- * Each mode (interactive, RPC, print) provides its own implementation.
+ * Each mode (interactive, print) provides its own implementation.
  */
 export interface ExtensionUIContext {
 	/** Show a selector and return the user's choice. */
@@ -304,14 +304,14 @@ export interface CompactOptions {
 /**
  * Context passed to extension event handlers.
  */
-export type ExtensionMode = "tui" | "rpc" | "json" | "print";
+export type ExtensionMode = "tui" | "json" | "print";
 
 export interface ExtensionContext {
 	/** UI methods for user interaction */
 	ui: ExtensionUIContext;
 	/** Current run mode. Use "tui" to guard terminal-only UI such as custom components. */
 	mode: ExtensionMode;
-	/** Whether dialog-capable UI is available (true in TUI and RPC modes) */
+	/** Whether dialog-capable UI is available (true in TUI mode) */
 	hasUI: boolean;
 	/** Current working directory */
 	cwd: string;
@@ -863,7 +863,7 @@ export interface UserBashEvent {
 // ============================================================================
 
 /** Source of user input */
-export type InputSource = "interactive" | "rpc" | "extension";
+export type InputSource = "interactive" | "extension";
 
 /** Fired when user input is received, before agent processing */
 export interface InputEvent {

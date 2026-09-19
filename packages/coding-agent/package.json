@@ -16,9 +16,6 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
-		"./rpc-entry": {
-			"import": "./dist/bundle/rpc-entry.js"
-		},
 		"./hooks": {
 			"types": "./dist/core/sure/hook-types.d.ts",
 			"import": "./dist/core/sure/hook-types.js"
@@ -33,7 +30,7 @@
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "npm run build:unbundled && node ../../scripts/build-coding-agent-bundle.mjs",
-		"build:unbundled": "tsgo -p tsconfig.build.json && shx chmod +x dist/cli.js dist/rpc-entry.js && npm run copy-assets",
+		"build:unbundled": "tsgo -p tsconfig.build.json && shx chmod +x dist/cli.js && npm run copy-assets",
 		"copy-assets": "shx mkdir -p dist/modes/interactive/theme && shx cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/ && shx mkdir -p dist/core/export-html/vendor && shx cp src/core/export-html/template.html src/core/export-html/template.css src/core/export-html/template.js dist/core/export-html/ && shx cp src/core/export-html/vendor/*.js dist/core/export-html/vendor/",
 		"test": "vitest --run"
 	},
