@@ -23,8 +23,7 @@
 	},
 	"files": [
 		"dist",
-		"docs",
-		"containerization.md"
+		"docs"
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
