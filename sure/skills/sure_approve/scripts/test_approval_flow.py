@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 import approval_core
-from sure.runtime.model.bootstrap import _expected_manifest, _probe, _runtime_id, manifest_sha256
+from sure.runtime.model.bootstrap import _expected_manifest, _runtime_id, manifest_sha256, probe
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -80,9 +80,9 @@ class ApprovalFlowTests(unittest.TestCase):
         }.items():
             (self.source / name).write_text(content, encoding="utf-8")
 
-        probe = _probe(Path(sys.executable))
+        identity = probe(Path(sys.executable))
         lock_hash = approval_core.sha256_file(self.source / "requirements.lock")
-        runtime_id = _runtime_id(lock_hash, probe)
+        runtime_id = _runtime_id(lock_hash, identity)
         runtime = self.runtime_root / "models" / runtime_id
         (runtime / "bin").mkdir(parents=True)
         (runtime / "bin" / "python").symlink_to(Path(sys.executable).resolve())
@@ -91,7 +91,7 @@ class ApprovalFlowTests(unittest.TestCase):
         runtime_manifest = _expected_manifest(
             runtime_id=runtime_id,
             lock_sha256=lock_hash,
-            probe=probe,
+            probe=identity,
             installed_packages_sha256=approval_core.sha256_file(runtime / "installed-packages.txt"),
         )
         write_json(runtime / "runtime-manifest.json", runtime_manifest)

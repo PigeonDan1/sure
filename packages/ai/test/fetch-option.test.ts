@@ -7,9 +7,8 @@ import { streamSimple as streamMistral } from "../src/api/mistral-conversations.
 import { streamSimple as streamOpenAICodexResponses } from "../src/api/openai-codex-responses.ts";
 import { streamSimple as streamOpenAICompletions } from "../src/api/openai-completions.ts";
 import { streamSimple as streamOpenAIResponses } from "../src/api/openai-responses.ts";
-import { generateImages } from "../src/api/openrouter-images.ts";
 import { streamSimple as streamPiMessages } from "../src/api/pi-messages.ts";
-import type { Api, Context, FetchFunction, ImagesModel, Model } from "../src/types.ts";
+import type { Api, Context, FetchFunction, Model } from "../src/types.ts";
 
 const context: Context = {
 	messages: [{ role: "user", content: "hello", timestamp: 1 }],
@@ -155,24 +154,5 @@ describe("fetch stream option", () => {
 		expect(ambient).toHaveBeenCalledOnce();
 		expect(result.errorMessage).not.toContain("Custom fetch is not supported");
 		expect(globalThis.fetch).toBe(ambient);
-	});
-
-	it("uses fetch for image generation", async () => {
-		const { custom, fallback } = mockFetches();
-		const model: ImagesModel<"openrouter-images"> = {
-			...createModel("openrouter-images"),
-			provider: "openrouter",
-			output: ["image"],
-		};
-		await generateImages(
-			model,
-			{ input: [{ type: "text", text: "draw" }] },
-			{
-				apiKey: "test-key",
-				fetch: custom,
-				maxRetries: 0,
-			},
-		);
-		expectOnlyCustomFetch(custom, fallback);
 	});
 });

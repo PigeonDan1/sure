@@ -12,13 +12,6 @@ import { stripBom } from "./utils/text.ts";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-/**
- * Detect if we're running as a Bun compiled binary.
- * Bun binaries have import.meta.url containing "$bunfs", "~BUN", or "%7EBUN" (Bun's virtual filesystem path)
- */
-export const isBunBinary =
-	import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
-
 /** Detect the esbuild-bundled Node.js distribution. */
 declare const PI_BUNDLED_NODE: boolean;
 export const isBundledNode = typeof PI_BUNDLED_NODE !== "undefined" && PI_BUNDLED_NODE;
@@ -29,7 +22,6 @@ export const isBundledNode = typeof PI_BUNDLED_NODE !== "undefined" && PI_BUNDLE
 
 /**
  * Get the base directory for resolving package assets (themes, package.json, README.md).
- * - For Bun binary: returns the directory containing the executable
  * - For Node.js and tsx: returns the package root containing package.json
  */
 export function findNodePackageDir(startDir: string): string {
@@ -50,23 +42,15 @@ export function getPackageDir(): string {
 		return normalizePath(envDir);
 	}
 
-	if (isBunBinary) {
-		// Bun binary: process.execPath points to the compiled executable
-		return dirname(process.execPath);
-	}
 	return findNodePackageDir(__dirname);
 }
 
 /**
  * Get path to built-in themes directory (shipped with package)
- * - For Bun binary: theme/ next to executable
  * - For Node.js (dist/): dist/modes/interactive/theme/
  * - For tsx (src/): src/modes/interactive/theme/
  */
 export function getThemesDir(): string {
-	if (isBunBinary) {
-		return join(getPackageDir(), "theme");
-	}
 	// Theme is in modes/interactive/theme/ relative to src/ or dist/
 	const packageDir = getPackageDir();
 	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";

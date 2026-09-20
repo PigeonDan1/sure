@@ -2,7 +2,7 @@
  * Temporary compatibility entrypoint preserving the old global pi-ai API
  * surface: api-dispatch `stream()`/`complete()` with env API key injection,
  * the api-registry, generated catalog reads (`getModel`/`getModels`/
- * `getProviders`), per-API lazy stream wrappers, and image generation.
+ * `getProviders`), and per-API lazy stream wrappers.
  *
  * Existing apps switch imports from "@earendil-works/pi-ai" to
  * "@earendil-works/pi-ai/compat" unchanged; new code uses `createModels()`
@@ -21,12 +21,8 @@ export * from "./api/openai-completions.lazy.ts";
 export * from "./api/openai-responses.lazy.ts";
 export * from "./api/pi-messages.lazy.ts";
 export * from "./env-api-keys.ts";
-export * from "./image-models.ts";
-export * from "./images.ts";
-export * from "./images-api-registry.ts";
 export * from "./index.ts";
 export * from "./legacy-api-aliases.ts";
-export * from "./providers/images/register-builtins.ts";
 
 import { anthropicMessagesApi } from "./api/anthropic-messages.lazy.ts";
 import { azureOpenAIResponsesApi } from "./api/azure-openai-responses.lazy.ts";

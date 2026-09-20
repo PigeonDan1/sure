@@ -12,8 +12,8 @@ export interface SureInitManifest {
 	defaultThinkingLevel?: ModelThinkingLevel;
 	/** Whether the project was trusted at initialization time. */
 	trusted: boolean;
-	/** Whether the Python backend environment check passed. */
-	pythonOk: boolean;
+	/** Whether uv, which materializes the skills' Python runtimes, was found. */
+	uvOk: boolean;
 	/** List of available SURE skill commands discovered. */
 	availableSkills: string[];
 	/** Manifest format version. */
