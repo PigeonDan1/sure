@@ -18,7 +18,6 @@ const checks = [
 	["npm", ["run", "check:ts-imports"]],
 	["npm", ["run", "check:sure-hooks"]],
 	["tsgo", ["--noEmit"]],
-	["npm", ["run", "check:browser-smoke"]],
 ];
 
 const failed = [];

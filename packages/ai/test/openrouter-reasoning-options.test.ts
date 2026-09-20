@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { getOpenRouterThinkingLevelMap } from "../scripts/openrouter-reasoning-options.ts";
 import { streamSimple } from "../src/api/openai-completions.ts";
 import type { Context, Model, ThinkingLevelMap } from "../src/types.ts";
 
@@ -38,58 +37,18 @@ async function capturePayload(model: Model<"openai-completions">, reasoning?: "l
 	return payload;
 }
 
-describe("getOpenRouterThinkingLevelMap", () => {
-	it("marks mandatory reasoning and unsupported efforts unavailable", () => {
-		expect(
-			getOpenRouterThinkingLevelMap({
-				mandatory: true,
-				default_enabled: true,
-				supported_efforts: ["max", "high", "low"],
-				default_effort: "max",
-			}),
-		).toEqual({
-			off: null,
-			minimal: null,
-			low: "low",
-			medium: null,
-			high: "high",
-			xhigh: null,
-			max: "max",
-		});
-	});
-
-	it("still marks off unavailable when OpenRouter omits effort metadata", () => {
-		expect(getOpenRouterThinkingLevelMap({ mandatory: true })).toEqual({ off: null });
-	});
-
-	it("keeps off available while restricting optional models to supported efforts", () => {
-		expect(
-			getOpenRouterThinkingLevelMap({
-				mandatory: false,
-				default_enabled: true,
-				supported_efforts: ["high", "low"],
-			}),
-		).toEqual({
-			off: "none",
-			minimal: null,
-			low: "low",
-			medium: null,
-			high: "high",
-			xhigh: null,
-			max: null,
-		});
-	});
-
-	it("does not add metadata for optional models without effort controls", () => {
-		expect(getOpenRouterThinkingLevelMap({ mandatory: false })).toBeUndefined();
-	});
-});
-
 describe("OpenRouter mandatory reasoning payloads", () => {
-	const mandatoryMap = getOpenRouterThinkingLevelMap({
-		mandatory: true,
-		supported_efforts: ["max", "high", "low"],
-	});
+	// What getOpenRouterThinkingLevelMap({ mandatory: true, supported_efforts: ["max", "high", "low"] })
+	// used to produce: mandatory reasoning cannot be turned off, and only the three listed efforts are selectable.
+	const mandatoryMap: ThinkingLevelMap = {
+		off: null,
+		minimal: null,
+		low: "low",
+		medium: null,
+		high: "high",
+		xhigh: null,
+		max: "max",
+	};
 
 	it("omits reasoning when a background call does not request it", async () => {
 		expect(await capturePayload(openRouterModel(mandatoryMap))).not.toHaveProperty("reasoning");

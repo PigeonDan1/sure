@@ -11,6 +11,8 @@ try {
 	console.log("Generated model data is valid.");
 } catch (error) {
 	console.error(error instanceof Error ? error.message : String(error));
-	console.error("\nModel data is missing or stale. Run `npm run hydrate:model-data` from the repository root.");
+	console.error(
+		"\nModel data is missing or stale. The catalog under src/providers/data/ is frozen and hand-maintained: restore it with git, or, if the edit was intentional, update the file hash and structureHash in src/providers/data/.manifest.json and the provider imports in src/models.generated.ts to match.",
+	);
 	process.exitCode = 1;
 }

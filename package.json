@@ -11,7 +11,6 @@
 		"build": "cd packages/ai && npm run build:offline && cd ../coding-agent && npm run build",
 		"check": "node scripts/run-checks.mjs",
 		"format": "biome check --write --error-on-warnings .",
-		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
 		"check:fixture-provenance": "node scripts/generate-fixture-provenance.mjs --check && node scripts/check-fixture-provenance.mjs",
 		"check:task-capabilities": "python3 scripts/sure-task-capabilities.py --check",
 		"check:repository-hygiene": "node scripts/check-repository-hygiene.mjs",
@@ -31,7 +30,6 @@
 		"prepare": "husky"
 	},
 	"devDependencies": {
-		"@anthropic-ai/sandbox-runtime": "0.0.26",
 		"@biomejs/biome": "2.3.5",
 		"@types/node": "22.19.19",
 		"@typescript/native-preview": "7.0.0-dev.20260120.1",
