@@ -659,6 +659,39 @@ class MandatoryIntegrityPathTests(unittest.TestCase):
             _validate_complete_manifest(self.model, marker, {}, "none")
 
 
+class PortableBundlePathTests(unittest.TestCase):
+    """A path inside the bundle is portable only if both flavours agree."""
+
+    def test_a_relative_posix_path_is_portable(self) -> None:
+        self.assertEqual(_portable_relative("a/b.txt", "test path").as_posix(), "a/b.txt")
+
+    def test_nested_relative_paths_stay_portable(self) -> None:
+        self.assertEqual(
+            _portable_relative("artifacts/outputs/sample.wav", "test path").parts,
+            ("artifacts", "outputs", "sample.wav"),
+        )
+
+    def test_absolute_or_escaping_spellings_are_rejected_on_every_host(self) -> None:
+        # "/opt/evil" is absolute only to POSIX, the drive and UNC spellings
+        # only to Windows, and "a\\..\\b" hides its parent hop from POSIX. A
+        # bundle is read on whichever host happens to open it, so the union of
+        # both verdicts is the only one that holds everywhere.
+        for value in (
+            "/opt/evil",
+            "C:\\x",
+            "C:/x",
+            "\\\\srv\\share\\x",
+            "../x",
+            "a/../../x",
+            "a\\..\\b",
+            ".",
+            "",
+        ):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(DeploymentBindingError, "must be portable"):
+                    _portable_relative(value, "test path")
+
+
 class ContainerHarnessPathTests(unittest.TestCase):
     """A container-internal path is POSIX whatever the host is."""
 

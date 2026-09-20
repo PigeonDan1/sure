@@ -7,7 +7,7 @@ import hashlib
 import json
 import sys
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -274,14 +274,26 @@ COMMON_MANDATORY_SIDECARS = {
 }
 
 
-def _portable_relative(raw: object, label: str) -> Path:
+def _portable_relative(raw: object, label: str) -> PurePosixPath:
+    """A path inside the bundle: relative, escaping nothing, POSIX-spelled.
+
+    Judged under both flavours, because a bundle is read on whichever host
+    opens it: "/opt/evil" is absolute only to POSIX, "C:\\x" and "\\\\srv\\share\\x"
+    only to Windows, and "a\\..\\b" hides its parent hop from POSIX.
+    """
     value = str(raw or "")
-    path = Path(value)
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
     _require(
-        bool(value) and bool(path.parts) and not path.is_absolute() and ".." not in path.parts,
+        bool(value)
+        and bool(posix.parts)
+        and not posix.is_absolute()
+        and not windows.is_absolute()
+        and ".." not in posix.parts
+        and ".." not in windows.parts,
         f"{label} must be portable",
     )
-    return path
+    return posix
 
 
 def _bundle_files(root: Path, model_dir: Path, label: str) -> set[str]:
@@ -655,9 +667,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
         has_deployment_self_entry = False
         for entry in required_entries.values():
             _require(isinstance(entry, dict), "artifact_manifest required entry is invalid")
-            raw_path = str(entry.get("path") or "")
-            path = Path(raw_path)
-            _require(raw_path and not path.is_absolute() and ".." not in path.parts, "artifact_manifest contains a non-portable path")
+            path = _portable_relative(entry.get("path"), "artifact_manifest required path")
             if path.as_posix() == "artifacts/deployment_ready.json":
                 has_deployment_self_entry = True
             else:
