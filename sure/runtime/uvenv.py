@@ -13,11 +13,13 @@ differently and a runner with eight switches would be worse than three calls.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import shutil
 import subprocess
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -50,7 +52,20 @@ def exclusive_lock(path: Path):
                 lock.write(b"\0")
                 lock.flush()
             lock.seek(0)
-            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+            # LK_LOCK retries ten times at one-second intervals and then raises
+            # EDEADLOCK. A cold start fetches an interpreter and every wheel, so
+            # the loser of the race needs to wait far longer than that; retry
+            # without a cap, matching the unbounded flock() below. Waiting
+            # forever is safe: Windows releases a byte-range lock when the
+            # holding process dies. A contended byte reports EACCES.
+            while True:
+                try:
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in (errno.EACCES, errno.EDEADLOCK):
+                        raise
+                    time.sleep(0.25)
             try:
                 yield
             finally:
