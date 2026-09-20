@@ -38,12 +38,12 @@ if [[ "$NO_ENV" == "true" ]]; then
 fi
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "node was not found on PATH. Install Node 22.19 or newer (see .nvmrc)."
+  echo "node was not found on PATH. Install Node 22.19 or newer (see .nvmrc)." >&2
   exit 1
 fi
 
 if ! node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1);"; then
-  echo "Node $(node --version) is too old. This repository needs Node 22.19 or newer (see .nvmrc)."
+  echo "Node $(node --version) is too old. This repository needs Node 22.19 or newer (see .nvmrc)." >&2
   exit 1
 fi
 
@@ -53,10 +53,10 @@ if [[ "$PWD" != "$SCRIPT_DIR" ]]; then
 fi
 
 if [[ ! -d "$SCRIPT_DIR/node_modules/@earendil-works/pi-agent-core" ]]; then
-  echo "Missing node_modules/@earendil-works/pi-agent-core."
-  echo "Run from the repository root:"
-  echo "  npm install --ignore-scripts"
-  echo "  npm run sure:doctor"
+  echo "Missing node_modules/@earendil-works/pi-agent-core." >&2
+  echo "Run from the repository root:" >&2
+  echo "  npm install --ignore-scripts" >&2
+  echo "  npm run sure:doctor" >&2
   exit 1
 fi
 
@@ -69,10 +69,10 @@ if command -v cygpath >/dev/null 2>&1; then
 fi
 
 if ! node -e "const base = process.argv[1]; for (const p of ['typebox','typebox/compile','typebox/value']) require.resolve(p, { paths: [base] });" "$NATIVE_DIR/packages/coding-agent/src/core/sure" >/dev/null 2>&1; then
-  echo "Missing SURE runtime dependency: typebox."
-  echo "Run from the repository root:"
-  echo "  npm install --ignore-scripts"
-  echo "  npm run sure:doctor"
+  echo "Missing SURE runtime dependency: typebox." >&2
+  echo "Run from the repository root:" >&2
+  echo "  npm install --ignore-scripts" >&2
+  echo "  npm run sure:doctor" >&2
   exit 1
 fi
 
@@ -80,6 +80,10 @@ fi
 # and a '#', '%' or '?' in the path would otherwise be read as URL syntax rather
 # than as part of the path. Let node spell the URL.
 RESOLVER="$NATIVE_DIR/packages/coding-agent/test/source-resolver.ts"
+if [[ ! -f "$RESOLVER" ]]; then
+  echo "Source resolver not found at $RESOLVER." >&2
+  exit 1
+fi
 RESOLVER_URL="$(node -e "console.log(require('node:url').pathToFileURL(process.argv[1]).href);" "$RESOLVER")"
 
 node --import "$RESOLVER_URL" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
