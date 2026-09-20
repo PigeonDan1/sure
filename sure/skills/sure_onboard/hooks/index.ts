@@ -151,8 +151,11 @@ function parseArgs(raw: string): Record<string, string> {
 	return out;
 }
 
+// Same rule as sure/site/loader.ts: "/..." or a drive-rooted "C:\..." / "C:/...".
+const ABSOLUTE_SEARCH_ROOT = /^(?:\/|[A-Za-z]:[\\/])/;
+
 function unboundedFilesystemSearchTarget(command: string): string | undefined {
-	const pattern = /\bfind\s+(['"]?)(\/[^\s'"]*)\1(?=\s|$)/g;
+	const pattern = /\bfind\s+(['"]?)((?:\/|[A-Za-z]:[\\/])[^\s'"]*)\1(?=\s|$)/g;
 	for (const match of command.matchAll(pattern)) {
 		if (isBlockedSearchRoot(match[2])) {
 			return match[2];
@@ -174,17 +177,23 @@ function isBlockedSearchRoot(target: string): boolean {
 function blockedSearchRoots(): string[] {
 	const configured = (process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS ?? "")
 		.split(delimiter)
-		.map((root) => normalizeRoot(root))
-		.filter((root) => root.startsWith("/"));
-	return Array.from(new Set(["/", "/mnt", ...configured]));
+		.map((root) => root.trim())
+		.filter((root) => ABSOLUTE_SEARCH_ROOT.test(root))
+		.map((root) => normalizeRoot(root));
+	return Array.from(new Set(["/", ...configured]));
 }
 
 function normalizeRoot(root: string): string {
-	const trimmed = root.trim();
+	let trimmed = root.trim().replaceAll("\\", "/");
+	// A drive-lettered path names a case-insensitive filesystem, so "d:/data"
+	// and "D:\Data" are one root. Pure string work, applied to both sides.
+	if (/^[A-Za-z]:\//.test(trimmed)) trimmed = trimmed.toLowerCase();
 	if (!trimmed || trimmed === "/") {
 		return "/";
 	}
-	return trimmed.replace(/\/+$/, "");
+	// "//" is all trailing separator: without the fallback it normalises to the
+	// empty string, which every absolute path starts with.
+	return trimmed.replace(/\/+$/, "") || "/";
 }
 
 function discoverHeavyOperation(command: string): string | undefined {

@@ -30,7 +30,7 @@ def _filtered_absolute_paths(value: str, blocked_roots: list[Path]) -> str:
 
 
 def model_child_env(source: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Remove interpreter-specific state injected by the Harness wrapper."""
+    """Remove Harness interpreter state without dropping the model's own paths."""
     env = dict(os.environ if source is None else source)
     env.pop("PYTHONHOME", None)
     python_path = env.pop("PYTHONPATH", "")
@@ -44,18 +44,4 @@ def model_child_env(source: Mapping[str, str] | None = None) -> dict[str, str]:
     filtered_python_path = _filtered_absolute_paths(python_path, blocked_roots)
     if filtered_python_path:
         env["PYTHONPATH"] = filtered_python_path
-
-    harness_root_raw = env.get("SURE_HARNESS_RUNTIME_ROOT", "").strip()
-    library_path = env.get("LD_LIBRARY_PATH", "")
-    if harness_root_raw and library_path:
-        harness_root = Path(harness_root_raw).expanduser().resolve()
-        kept = [
-            entry
-            for entry in library_path.split(os.pathsep)
-            if entry and not _inside(entry, harness_root)
-        ]
-        if kept:
-            env["LD_LIBRARY_PATH"] = os.pathsep.join(kept)
-        else:
-            env.pop("LD_LIBRARY_PATH", None)
     return env

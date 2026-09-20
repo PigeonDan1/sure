@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parse } from "yaml";
@@ -162,12 +162,89 @@ try {
 		}
 	}
 
+	// A fresh machine has none of the default roots yet: sure:site-check must
+	// say so and still exit 0, or the zero-config default is unusable.
+	const missingRootHome = resolve(temporaryRoot, "empty-home");
+	const missingRootCheck = run("node", ["--import", "tsx", "scripts/sure-site-check.ts"], {
+		env: {
+			...process.env,
+			SURE_SITE_POLICY: resolve("config/site.default.yaml"),
+			HOME: missingRootHome,
+			USERPROFILE: missingRootHome,
+		},
+	});
+	if (missingRootCheck.status !== 0) {
+		failures.push(`sure:site-check failed on a policy whose roots do not exist yet: ${missingRootCheck.stderr.trim()}`);
+	} else if (!missingRootCheck.stdout.includes("does not exist yet")) {
+		failures.push("sure:site-check did not warn about a site root that does not exist yet");
+	} else if (!missingRootCheck.stdout.includes("ok   site policy:")) {
+		failures.push("sure:site-check dropped its ok line while warning about missing roots");
+	}
+
+	// The other half of that warning: a root that exists but cannot be
+	// written. sure-site-check.ts probes it by creating a directory rather
+	// than by asking accessSync, so a regular file is a root that no
+	// platform lets it write into, and the warning must still exit 0.
+	const unwritableHome = resolve(temporaryRoot, "unwritable-home");
+	const unwritableRoot = `${unwritableHome.replaceAll("\\", "/")}/.sure/runtime`;
+	mkdirSync(dirname(unwritableRoot), { recursive: true });
+	writeFileSync(unwritableRoot, "");
+	const unwritableCheck = run("node", ["--import", "tsx", "scripts/sure-site-check.ts"], {
+		env: {
+			...process.env,
+			SURE_SITE_POLICY: resolve("config/site.default.yaml"),
+			HOME: unwritableHome,
+			USERPROFILE: unwritableHome,
+		},
+	});
+	if (unwritableCheck.status !== 0) {
+		failures.push(`sure:site-check failed on a root that exists but is not writable: ${unwritableCheck.stderr.trim()}`);
+	} else if (!unwritableCheck.stdout.includes(`warn runtime root is not writable: ${unwritableRoot}`)) {
+		failures.push("sure:site-check did not warn that an existing site root is not writable");
+	}
+
+	// The parity run above diffs whatever policy this checkout resolves, and a
+	// developer's config/site.local.yaml shadows the shipped default, the only
+	// policy that carries ${HOME} and ${REPO}. Diff the twins on it directly,
+	// from a home directory named like a replacement pattern: $& and $$ are
+	// literal text to str.replace in loader.py and must stay literal in
+	// loader.ts, where String.replaceAll would otherwise expand them.
+	const tokenHome = resolve(temporaryRoot, "home-$&-$$-tokens");
+	const tokenEnvironment = {
+		...process.env,
+		SURE_SITE_POLICY: resolve("config/site.default.yaml"),
+		HOME: tokenHome,
+		USERPROFILE: tokenHome,
+	};
+	const tokenTypescript = run(
+		"node",
+		[
+			"--import",
+			"tsx",
+			"-e",
+			'import("./sure/site/loader.ts").then(({resolveSitePolicy}) => console.log(JSON.stringify(resolveSitePolicy())))',
+		],
+		{ env: tokenEnvironment },
+	);
+	const tokenPython = run("python3", ["sure/site/loader.py"], { env: tokenEnvironment });
+	if (tokenTypescript.status !== 0 || tokenPython.status !== 0) {
+		failures.push(`site loaders failed on the shipped default policy: ${tokenTypescript.stderr.trim()}${tokenPython.stderr.trim()}`);
+	} else {
+		try {
+			if (JSON.parse(tokenTypescript.stdout).sha256 !== JSON.parse(tokenPython.stdout).sha256) {
+				failures.push("TypeScript/Python site loader mismatch at ${HOME}/${REPO} expansion");
+			}
+		} catch (error) {
+			failures.push(`cannot compare site loader JSON: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
 	const exportedScript = "scripts/export-public.mjs";
 	if (existsSync(exportedScript)) {
 		const exported = run("node", [exportedScript, "--output", exportRoot]);
 		if (exported.error) {
 			failures.push(`public export failed to start: ${exported.error.message}`);
 		} else if (repositoryDirty) {
+			console.log("warn public export probes skipped: working tree is dirty");
 			if (exported.status === 0 || !exported.stderr.includes("requires a clean working tree")) {
 				failures.push("public export did not fail closed for a dirty working tree");
 			}
@@ -184,8 +261,16 @@ try {
 						exportRoot,
 					],
 				);
-				if (publicPolicy.status !== 0 || publicPolicy.stdout.trim() !== "null") {
-					failures.push("public export selected an implicit site policy");
+				let publicResolved = null;
+				if (publicPolicy.status === 0) {
+					try {
+						publicResolved = JSON.parse(publicPolicy.stdout);
+					} catch {
+						publicResolved = null;
+					}
+				}
+				if (publicResolved?.source !== "default") {
+					failures.push("public export did not select the repository default site policy");
 				}
 				const manifest = JSON.parse(readFileSync(resolve(exportRoot, "public-export-manifest.json"), "utf8"));
 				if (manifest.schema !== "sure.public_export_manifest.v2") failures.push("public export manifest schema mismatch");
@@ -201,14 +286,53 @@ try {
 				if (existsSync(resolve(exportRoot, "private"))) failures.push("public export contains the private overlay");
 				const resolver = "sure/skills/sure_infer/scripts/resolve_model_dir.py";
 				const publicHelp = run("python3", [resolver, "--help"], { cwd: exportRoot });
-				if (publicHelp.status !== 0) failures.push("public resource CLI help failed without a site policy");
+				if (publicHelp.status !== 0) failures.push("public resource CLI help failed under the default site policy");
+				// The gate that matters on a personal machine: a policy resolves,
+				// but nothing has been approved yet, so the command still refuses.
+				// resolve_model_dir.py prints the root through Path.resolve(), so the
+				// policy root needs the same canonicalisation before the two can be
+				// compared: a symlinked home, or a Windows home's on-disk casing,
+				// differs from os.homedir(). Only the home prefix may be realpath'd --
+				// the approved root is the one path this probe knows is absent. The
+				// replacement is a function: $& in a home would be a replace pattern.
+				const policyHome = homedir().replaceAll("\\", "/");
+				const realHome = realpathSync.native(homedir()).replaceAll("\\", "/");
+				const approvedRoot = String(publicResolved?.policy?.storage?.approved_models_roots?.[0] ?? "").replace(
+					policyHome,
+					() => realHome,
+				);
 				const publicResource = run("python3", [resolver, "--model", "missing-model"], { cwd: exportRoot });
+				const resourceStderr = (publicResource.stderr ?? "").replaceAll("\\", "/");
 				if (
-					publicResource.status === 0 ||
-					!publicResource.stderr.includes("README.md#publicself-hosted-site-policy") ||
-					!publicResource.stderr.includes("docs/site-configuration.md")
+					publicResource.status !== 1 ||
+					!resourceStderr.includes("approved model is not ready under") ||
+					approvedRoot === "" ||
+					!resourceStderr.includes(approvedRoot)
 				) {
-					failures.push("public resource command did not fail with site-configuration guidance");
+					failures.push("public resource command did not fail closed on an empty approved model root");
+				}
+				// Deleting the shipped default must still point the user at the docs.
+				const defaultPolicyPath = resolve(exportRoot, "config/site.default.yaml");
+				const parkedPolicyPath = `${defaultPolicyPath}.parked`;
+				if (existsSync(defaultPolicyPath)) {
+					renameSync(defaultPolicyPath, parkedPolicyPath);
+					try {
+						const unconfigured = run("python3", [resolver, "--model", "missing-model"], { cwd: exportRoot });
+						if (
+							unconfigured.status === 0 ||
+							!unconfigured.stderr.includes("README.md#publicself-hosted-site-policy") ||
+							!unconfigured.stderr.includes("docs/site-configuration.md")
+						) {
+							failures.push("removing the default site policy did not restore the site-configuration guidance");
+						}
+					} finally {
+						try {
+							renameSync(parkedPolicyPath, defaultPolicyPath);
+						} catch {
+							// Deliberately ignored: the whole export tree is removed next,
+							// and an aborted restore would take the failures above with it.
+						}
+					}
 				}
 			}
 		}
@@ -229,4 +353,8 @@ if (failures.length > 0) {
 	for (const failure of failures) console.error(`  ${failure}`);
 	process.exit(1);
 }
-console.log("ok   site boundary: private dependency, loader parity, fail-closed, and public export");
+console.log(
+	repositoryDirty
+		? "ok   site boundary: private dependency, loader parity, and fail-closed"
+		: "ok   site boundary: private dependency, loader parity, fail-closed, and public export",
+);

@@ -5,11 +5,7 @@
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
-	"sideEffects": [
-		"./dist/compat.js",
-		"./dist/images.js",
-		"./dist/providers/images/register-builtins.js"
-	],
+	"sideEffects": ["./dist/compat.js"],
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
@@ -38,14 +34,7 @@
 		"./bedrock-provider": {
 			"types": "./dist/bedrock-provider.d.ts",
 			"import": "./dist/bedrock-provider.js"
-		},
-		"./bun-oauth": {
-			"types": "./dist/bun-oauth.d.ts",
-			"import": "./dist/bun-oauth.js"
 		}
-	},
-	"bin": {
-		"pi-ai": "dist/cli.js"
 	},
 	"files": [
 		"dist",
@@ -53,12 +42,8 @@
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"generate-models": "node scripts/generate-models.ts --strict",
-		"hydrate-model-data": "node scripts/generate-models.ts --strict --data-only",
-		"generate-model-catalog": "node scripts/generate-models.ts --strict --json-only --json-output ../../.artifacts/model-catalog",
-		"generate-image-models": "node scripts/generate-image-models.ts --strict",
 		"check:model-data": "node scripts/check-model-data.ts",
-		"build": "npm run generate-models && npm run build:offline",
+		"build": "npm run build:offline",
 		"build:offline": "npm run check:model-data && tsgo -p tsconfig.build.json && shx rm -rf dist/providers/data && shx cp -r src/providers/data dist/providers/data",
 		"test": "vitest --run"
 	},
@@ -96,7 +81,6 @@
 	},
 	"devDependencies": {
 		"@types/node": "22.19.19",
-		"canvas": "3.2.3",
 		"vitest": "4.1.9"
 	}
 }

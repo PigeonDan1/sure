@@ -65,6 +65,8 @@ adapter 镜像 = source 镜像 + adapter 层，不额外安装包。
 
 trans 与 onboard 现在使用相同的 runtime 边界：adapter 镜像打包锁定的 Harness Runtime（`runtime_inventory.harness_runtime.required=true`），`/sure_infer` 直接使用镜像内 binding。
 
+这对 source 镜像是一条新约束：runtime image 里那份 uv 托管的 CPython 是 glibc（`-gnu`）构建，旧设计连它依赖的系统库一起打包，现在只带解释器本身，所以它落进哪个镜像就要求那个镜像自带 glibc（2.17 起）且架构一致，musl / Alpine 基底起不来。`Dockerfile.uv.sure`（`python:3.11-slim`）和 `Dockerfile.conda.sure`（`continuumio/miniconda3`）的默认基底都满足；`Dockerfile.sure` 直接用用户的 source 镜像，这一条要自己保证。trans 自己的 gate 只校验声明，不会替你发现：真正探它的是 onboard 打包时的 `check_container_package.verify_live_runtimes`，在 digest 固定的镜像里启动这个解释器并 import 全部依赖，起不来就当场失败。
+
 ## 4. 必备文件
 
 - source 镜像材料：用户 Dockerfile 或 `build_context` 内的镜像 tar（`source_image_policy=auto` 时先发现 tar、后回落 Dockerfile 构建）。
@@ -96,10 +98,10 @@ trans 与 onboard 现在使用相同的 runtime 边界：adapter 镜像打包锁
    docker push <source_image>
    ```
 
-3. 构建 adapter 镜像（`adapter/Dockerfile.sure` 以 digest 固定的 source 镜像为基底，并复制锁定的 Harness Runtime）：
+3. 构建 adapter 镜像（`adapter/Dockerfile.sure` 以 digest 固定的 source 镜像为基底，并从 digest 固定的 runtime image 复制锁定的 Harness Runtime；该 runtime image 用 `sure/runtime/harness/build_image.py` 构建）：
 
    ```bash
-  docker build --build-context sure_harness_runtime=<harness_runtime_root> -f adapter/Dockerfile.sure -t sure-trans/<model_name>:adapter <context>
+  docker build --build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest> -f adapter/Dockerfile.sure -t sure-trans/<model_name>:adapter <context>
    ```
 
 4. 在 adapter 镜像内完成 import/load/infer/contract/mcp/equivalence 验证。GPU 模式下

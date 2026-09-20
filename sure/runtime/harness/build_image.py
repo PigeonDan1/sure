@@ -49,19 +49,17 @@ def sha256_file(path: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runtime-root", required=True, type=Path)
+    parser.add_argument("--runtime-root", required=True, type=Path, help="the prepared host runtime to reproduce")
     parser.add_argument("--image", required=True, help="mutable build tag, e.g. registry/hpc/sure-harness:v1")
     parser.add_argument("--push", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     runtime_root = args.runtime_root.expanduser().resolve()
-    if not (runtime_root / "bin" / "python").is_file():
-        raise ValueError(f"runtime root is missing bin/python: {runtime_root}")
     if not (runtime_root / "runtime-manifest.json").is_file():
         raise ValueError(f"runtime root is missing runtime-manifest.json: {runtime_root}")
     manifest = read_json(runtime_root / "runtime-manifest.json")
     spec = read_json(SPEC_PATH)
-    for key in ("runtime_id", "lock_sha256"):
+    for key in ("runtime_id", "lock_sha256", "python_version"):
         if not manifest.get(key):
             raise ValueError(f"runtime manifest is missing {key}")
     if manifest.get("runtime_id", "").startswith("sure-harness-") is False:
@@ -70,9 +68,16 @@ def main() -> int:
     if manifest.get("lock_sha256") != lock_sha256:
         raise ValueError("runtime manifest lock_sha256 does not match the runtime spec")
     dockerfile = Path(__file__).resolve().parent / "Dockerfile"
+    # The image builds its own runtime from this lock rather than copying the
+    # host tree, which is a uv virtual environment and cannot be relocated. It
+    # installs the interpreter the host manifest names, so the image does not
+    # claim provenance for a build of Python it does not contain.
     command = [
         "docker", "build", "--progress", "plain",
-        "--build-context", f"harness_runtime_source={runtime_root}",
+        "--build-context", f"harness_runtime_spec={SPEC_PATH.parent.parent}",
+        "--build-arg", f"RUNTIME_ID={manifest['runtime_id']}",
+        "--build-arg", f"PYTHON_VERSION={spec['python']}",
+        "--build-arg", f"PYTHON_FULL_VERSION={manifest['python_version']}",
         "--label", f"org.sure.harness.runtime_id={manifest['runtime_id']}",
         "--label", f"org.sure.harness.lock_sha256={manifest['lock_sha256']}",
         "--file", str(dockerfile), "--tag", args.image, str(dockerfile.parent),

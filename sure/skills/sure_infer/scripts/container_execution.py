@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from harness_runtime import harness_runtime_from_eval_input
@@ -137,14 +137,16 @@ def _mount(
 
 
 def _replace_prefix(value: str, source: Path, target: str) -> str:
-    if not value.startswith("/"):
-        return value
     path = Path(value)
+    if not path.is_absolute():
+        return value
     try:
         relative = path.relative_to(source)
     except ValueError:
         return value
-    return str(Path(target) / relative)
+    # Whether the value sits under the mount source is a host question; what
+    # comes back is a path inside the container, so it is joined as POSIX.
+    return str(PurePosixPath(target) / relative.as_posix())
 
 
 def resolve_container_harness_runtime(
@@ -163,7 +165,7 @@ def resolve_container_harness_runtime(
         python = str(image_runtime.get("python_executable") or "")
         manifest = str(image_runtime.get("manifest_path") or "")
         root = str(image_runtime.get("runtime_root") or "")
-        if not all(Path(value).is_absolute() for value in (python, manifest, root)):
+        if not all(PurePosixPath(value).is_absolute() for value in (python, manifest, root)):
             raise ValueError("approved image Harness Runtime paths must be absolute")
         if python == model_python:
             raise ValueError("Harness Python and Model Python must be separate execution roles")
@@ -196,11 +198,13 @@ def build_local_container_command(
     model_target = str(model_mount.get("target") or "")
     output_source = Path(str((eval_input.get("runtime") or {}).get("run_dir") or "")).resolve()
     output_target = str(result_mount.get("target") or "/sure-output")
-    if not model_source.is_dir() or not Path(model_target).is_absolute():
+    # Mount targets name locations inside the image, so they are POSIX on every
+    # host; the sources beside them stay host paths.
+    if not model_source.is_dir() or not PurePosixPath(model_target).is_absolute():
         raise ValueError("approved deployment model mount is invalid")
     if not output_source.is_dir():
         output_source.mkdir(parents=True, exist_ok=True)
-    if not Path(output_target).is_absolute():
+    if not PurePosixPath(output_target).is_absolute():
         raise ValueError("approved deployment result mount target is invalid")
     harness_runtime, harness_mounted_from_repo = resolve_container_harness_runtime(
         binding,
@@ -241,7 +245,10 @@ def build_local_container_command(
             continue
         for key in ("source_root", "jsonl_path"):
             raw = item.get(key)
-            if not isinstance(raw, str) or not raw.startswith("/"):
+            # A declared dataset path is a host path: absolute means "/..." on
+            # POSIX and a drive or UNC root on Windows. Asked before expanduser
+            # so that "~/x" stays skipped, as it is today.
+            if not isinstance(raw, str) or not Path(raw).is_absolute():
                 continue
             declared_path = Path(raw).expanduser()
             path = declared_path.resolve()

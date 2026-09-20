@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 export interface HarnessRuntimeContract {
@@ -66,6 +66,37 @@ export function activateHarnessRuntime(contract: HarnessRuntimeContract): void {
 Object.assign(process.env, harnessRuntimeEnv(contract));
 }
 
+export const UV_INSTALL_HINT =
+	process.platform === "win32"
+		? 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+		: "curl -LsSf https://astral.sh/uv/install.sh | sh";
+
+function pinnedPythonVersion(repoRoot: string): string {
+	// The ABI pin lives in one place; reading it here keeps resolve.ts from
+	// becoming a second copy that drifts.
+	try {
+		const spec: unknown = JSON.parse(
+			readFileSync(resolve(repoRoot, "sure/runtime/harness/runtime.json"), "utf-8"),
+		);
+		if (isRecord(spec) && typeof spec.python === "string" && spec.python !== "") {
+			return spec.python;
+		}
+	} catch {
+		// fall through to the pin below
+	}
+	return "3.11";
+}
+
+/** How to launch bootstrap.py: an explicit interpreter, or uv with its own Python. */
+export function harnessBootstrapCommand(repoRoot: string): { command: string; args: string[] } {
+	const explicit = process.env.SURE_HARNESS_BOOTSTRAP_PYTHON?.trim();
+	if (explicit) {
+		return { command: explicit, args: [] };
+	}
+	const uv = process.env.SURE_UV_BIN?.trim() || "uv";
+	return { command: uv, args: ["run", "--no-project", "--python", pinnedPythonVersion(repoRoot)] };
+}
+
 export function resolveHarnessPython(packageDir: string): HarnessRuntimeResolution {
 const repoRoot = repoRootForPackage(packageDir);
 const cached = resolvedByRepo.get(repoRoot);
@@ -77,14 +108,30 @@ const bootstrap = resolve(repoRoot, "sure/runtime/harness/bootstrap.py");
 if (!existsSync(bootstrap)) {
 return { ok: false, error: `HARNESS_RUNTIME_NOT_READY: bootstrap is missing: ${bootstrap}` };
 }
-const bootstrapPython = process.env.SURE_HARNESS_BOOTSTRAP_PYTHON?.trim() || "python3";
-const completed = spawnSync(bootstrapPython, [bootstrap, "--json"], {
-cwd: repoRoot,
-encoding: "utf-8",
-timeout: 900_000,
-env: process.env,
-});
-if (completed.status !== 0) {
+	const { command, args } = harnessBootstrapCommand(repoRoot);
+	const completed = spawnSync(command, [...args, bootstrap, "--json"], {
+		cwd: repoRoot,
+		encoding: "utf-8",
+		timeout: 900_000,
+		env: process.env,
+	});
+	if (completed.error) {
+		// ENOENT here means the launcher itself is missing, which on a fresh PC is
+		// almost always uv. Saying "bootstrap exited null" sent people reading logs.
+		// An explicit interpreter override is the user's own path, so installing uv
+		// would not fix it: name what is missing and stop there.
+		const overridden = Boolean(process.env.SURE_HARNESS_BOOTSTRAP_PYTHON?.trim());
+		const reason =
+			(completed.error as NodeJS.ErrnoException).code === "ENOENT"
+				? overridden
+					? `${command} is not installed. SURE_HARNESS_BOOTSTRAP_PYTHON points at it.`
+					: `${command} is not installed. Install uv:\n  ${UV_INSTALL_HINT}`
+				: completed.error.message;
+		const failure = { ok: false, error: `HARNESS_RUNTIME_NOT_READY: ${reason}` };
+		resolvedByRepo.set(repoRoot, failure);
+		return failure;
+	}
+	if (completed.status !== 0) {
 const detail = completed.stderr?.trim() || completed.stdout?.trim() || `bootstrap exited ${completed.status}`;
 const failure = { ok: false, error: detail };
 resolvedByRepo.set(repoRoot, failure);

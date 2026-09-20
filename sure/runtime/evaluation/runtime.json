@@ -1,9 +1,8 @@
 {
   "schema": "sure.evaluation.runtime.spec.v1",
   "runtime_version": "root-v1",
-  "materialization_version": 4,
+  "materialization_version": 5,
   "python": "3.11",
-  "dynamic_loader": "/lib64/ld-linux-x86-64.so.2",
   "engine_commit": "db54d63350530d72d3acb83b560b8789ec896c2c",
   "engine_pyproject_sha256": "32e2ec98c3c972f19c38bf19d2e94e798f29cd1e4ca8fcdf110d17ba5e96a37e",
   "lock_file": "requirements.lock.txt",

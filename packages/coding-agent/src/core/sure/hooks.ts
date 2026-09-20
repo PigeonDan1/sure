@@ -1,7 +1,6 @@
 import { createJiti } from "jiti/static";
-import { isBunBinary } from "../../config.ts";
 import { resolveSurePackagePath } from "./manifest.ts";
-import { getSureHookAliases, getSureHookVirtualModules } from "./module-loader.ts";
+import { getSureHookAliases } from "./module-loader.ts";
 import type { SureHookContext, SureHookDeclaration, SureHookPoint, SureHookResult, SureSkillPackage } from "./types.ts";
 
 type HookFunction = (context: SureHookContext) => SureHookResult | Promise<SureHookResult | undefined> | undefined;
@@ -50,9 +49,7 @@ export class SureHookRunner {
 	private skillPackage: SureSkillPackage;
 	private jiti = createJiti(import.meta.url, {
 		moduleCache: false,
-		...(isBunBinary
-			? { virtualModules: getSureHookVirtualModules(), tryNative: false }
-			: { alias: getSureHookAliases() }),
+		alias: getSureHookAliases(),
 	});
 
 	constructor(skillPackage: SureSkillPackage) {

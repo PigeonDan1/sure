@@ -92,6 +92,48 @@ describe("output_dir resolution", () => {
 		expect(result.error ?? "").toContain(NFS_ROOT);
 	});
 
+	// Windows only: the drive letter is the one part of a path that
+	// path.resolve leaves as the caller typed it while the filesystem ignores
+	// its case, so it is the spelling that can walk into the forbidden root
+	// unnoticed. The fixture policy keeps the assertion off this host's home.
+	it.skipIf(process.platform !== "win32")("refuses the forbidden root spelled in another case", () => {
+		const root = mkdtempSync(join(tmpdir(), "sure-output-dir-case-"));
+		const home = root.replaceAll("\\", "/");
+		const forbidden = `${home}/.sure/approved`;
+		const policy = join(root, "site.yaml");
+		writeFileSync(
+			policy,
+			[
+				"schema: sure.site.policy.v1",
+				"site_id: case-fixture",
+				"policy_version: 1",
+				"storage:",
+				`  approved_models_roots: ["${forbidden}/models"]`,
+				`  forbidden_output_roots: ["${forbidden}"]`,
+				`  runtime_root: "${home}/.sure/runtime"`,
+				"datasets:",
+				`  allowed_source_roots: { default: "${home}/.sure/datasets" }`,
+				"execution:",
+				"  surfaces: [local]",
+				"",
+			].join("\n"),
+			"utf-8",
+		);
+		const previous = process.env.SURE_SITE_POLICY;
+		process.env.SURE_SITE_POLICY = policy;
+		try {
+			const lowerDrive = `${forbidden.charAt(0).toLowerCase()}${forbidden.slice(1)}`;
+
+			expect(resolveOutputDir(`model=demo output_dir=${forbidden}/results/job-1234`).ok).toBe(false);
+			expect(resolveOutputDir(`model=demo output_dir=${lowerDrive}/results/job-1234`).ok).toBe(false);
+			expect(resolveOutputDir(`model=demo output_dir=${lowerDrive}`).ok).toBe(false);
+		} finally {
+			if (previous === undefined) delete process.env.SURE_SITE_POLICY;
+			else process.env.SURE_SITE_POLICY = previous;
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("refuses a directory it cannot create", () => {
 		const root = freshRoot("blocked");
 		const blocker = join(root, "blocker");
