@@ -13,13 +13,19 @@
 ARG BUILD_IMAGE=ghcr.io/astral-sh/uv:0.12.15-trixie-slim@sha256:01db3cd653df8521c36836516a381f653d09a35631876ce367fc076ba02da4b4
 ARG RUNTIME_ID
 ARG PYTHON_VERSION=3.11
+ARG PYTHON_FULL_VERSION
 
 FROM ${BUILD_IMAGE} AS build
 ARG RUNTIME_ID
 ARG PYTHON_VERSION
+ARG PYTHON_FULL_VERSION
 # uv refuses to create a virtual environment in a directory that already exists,
 # so its managed interpreter is installed beside the runtime and moved in after
-# the environment is built.
+# the environment is built; every absolute link into the old location is then
+# re-pointed, which also covers uv's minor-version alias directory.
+# The interpreter is pinned to the exact version the host manifest records, and
+# the bootstrap below may not download another one, so the runtime in the image
+# is the same interpreter build as the runtime the manifest describes.
 ENV UV_PYTHON_INSTALL_DIR=/opt/harness-base-python
 ENV UV_LINK_MODE=copy
 COPY --from=harness_runtime_spec uvenv.py /opt/sure-build/sure/runtime/uvenv.py
@@ -27,19 +33,26 @@ COPY --from=harness_runtime_spec harness/bootstrap.py harness/runtime.json harne
 RUN set -eu; \
     bootstrap=/opt/sure-build/sure/runtime/harness/bootstrap.py; \
     dest="/opt/sure-harness/${RUNTIME_ID}"; \
-    uv python install "${PYTHON_VERSION}"; \
-    base="$(ls -d /opt/harness-base-python/cpython-*/bin/python${PYTHON_VERSION})"; \
-    "$base" "$bootstrap" --runtime-root /opt/sure-harness \
+    case "${PYTHON_FULL_VERSION}" in ${PYTHON_VERSION}.*) ;; \
+        *) echo "host interpreter '${PYTHON_FULL_VERSION}' is not a ${PYTHON_VERSION} release" >&2; exit 1;; esac; \
+    uv python install "${PYTHON_FULL_VERSION}"; \
+    base="$(uv python find "${PYTHON_FULL_VERSION}")"; \
+    [ -x "$base" ] || { echo "uv did not install ${PYTHON_FULL_VERSION}" >&2; exit 1; }; \
+    UV_PYTHON_DOWNLOADS=never "$base" "$bootstrap" --runtime-root /opt/sure-harness \
         || { cat /opt/sure-harness/logs/*.log >&2; exit 1; }; \
     [ -n "${RUNTIME_ID}" ] && [ -d "$dest" ] \
         || { echo "built runtime is not '${RUNTIME_ID}': $(ls /opt/sure-harness)" >&2; exit 1; }; \
     mv /opt/harness-base-python "$dest/base-python"; \
     sed -i "s|/opt/harness-base-python|$dest/base-python|g" "$dest/pyvenv.cfg"; \
-    interpreter="$dest/base-python${base#/opt/harness-base-python}"; \
-    for name in python python3 "python${PYTHON_VERSION}"; do \
-        ln -sfn "$interpreter" "$dest/bin/$name"; \
+    find "$dest" -type l | while read -r link; do \
+        target="$(readlink "$link")"; \
+        case "$target" in /opt/harness-base-python/*) \
+            ln -sfn "$dest/base-python${target#/opt/harness-base-python}" "$link";; esac; \
     done; \
-    "$dest/bin/python" "$bootstrap" --check --runtime-root /opt/sure-harness
+    "$dest/bin/python" "$bootstrap" --check --runtime-root /opt/sure-harness; \
+    built="$("$dest/bin/python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["python_version"])' "$dest/runtime-manifest.json")"; \
+    [ "$built" = "${PYTHON_FULL_VERSION}" ] \
+        || { echo "image interpreter is $built, host manifest says ${PYTHON_FULL_VERSION}" >&2; exit 1; }
 
 FROM scratch
 ARG RUNTIME_ID

@@ -24,7 +24,11 @@ class BuildImageLockTest(unittest.TestCase):
         (root / "bin").mkdir(parents=True)
         (root / "bin" / "python").write_text("", encoding="utf-8")
         (root / "runtime-manifest.json").write_text(
-            json.dumps({"runtime_id": "sure-harness-v1-py311-abc123", "lock_sha256": lock_sha256}),
+            json.dumps({
+                "runtime_id": "sure-harness-v1-py311-abc123",
+                "lock_sha256": lock_sha256,
+                "python_version": "3.11.13",
+            }),
             encoding="utf-8",
         )
         return root
@@ -90,6 +94,40 @@ class BuildImageLockTest(unittest.TestCase):
             self.assertIn("harness_runtime_spec=" + str(build_image.SPEC_PATH.parent.parent), build)
             self.assertNotIn(str(root), " ".join(build))
 
+    def test_the_build_pins_the_interpreter_the_host_manifest_records(self) -> None:
+        """Otherwise the image ships one build of Python and claims another."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._runtime_root(tmp)
+            inspect = _completed(json.dumps({"RepoDigests": []}))
+            recorded: list[list[str]] = []
+
+            def record(command: list[str]):
+                recorded.append(command)
+                return _completed() if command[:2] == ["docker", "build"] else inspect
+
+            with mock.patch.object(build_image, "run", side_effect=record), \
+                 mock.patch.object(sys, "argv", [
+                     "build_image.py", "--runtime-root", str(root),
+                     "--image", "registry.example/sure-harness:v1",
+                 ]):
+                self.assertEqual(build_image.main(), 0)
+            self.assertIn("PYTHON_FULL_VERSION=3.11.13", recorded[0])
+
+    def test_a_manifest_without_an_interpreter_version_cannot_be_sealed(self) -> None:
+        """The exact version is a build input now, so a manifest missing it must stop."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._runtime_root(tmp)
+            manifest = json.loads((root / "runtime-manifest.json").read_text(encoding="utf-8"))
+            del manifest["python_version"]
+            (root / "runtime-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with mock.patch.object(sys, "argv", [
+                "build_image.py", "--runtime-root", str(root),
+                "--image", "registry.example/sure-harness:v1",
+            ]):
+                with self.assertRaises(ValueError) as caught:
+                    build_image.main()
+            self.assertIn("python_version", str(caught.exception))
+
 
 class DockerfileTest(unittest.TestCase):
     """The Dockerfile cannot be run here, so pin the parts the gates depend on."""
@@ -107,6 +145,13 @@ class DockerfileTest(unittest.TestCase):
         self.assertIn("COPY --from=build /opt/sure-harness/${RUNTIME_ID}/ /", self.text)
         # The runtime the image built must be the runtime the host manifest names.
         self.assertIn('[ -d "$dest" ]', self.text)
+
+    def test_the_interpreter_is_pinned_to_the_one_the_host_manifest_records(self) -> None:
+        """"3.11" would let two builds of one lock ship different interpreter bytes."""
+        self.assertIn('uv python install "${PYTHON_FULL_VERSION}"', self.text)
+        # The bootstrap asks uv for "3.11"; without this it could fetch a newer patch.
+        self.assertIn("UV_PYTHON_DOWNLOADS=never", self.text)
+        self.assertIn('[ "$built" = "${PYTHON_FULL_VERSION}" ]', self.text)
 
 
 if __name__ == "__main__":
