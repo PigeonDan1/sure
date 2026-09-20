@@ -90,7 +90,11 @@ class ModelRuntimeBootstrapTests(unittest.TestCase):
             clear=False,
         ):
             identity = probe(Path(sys.executable))
-        self.assertEqual(identity["base_python"], str(Path(sys.executable).resolve()))
+        # The probe reports the base interpreter, not the one it was pointed at:
+        # inside a virtualenv those differ, and only POSIX makes bin/python a
+        # symlink that resolves back onto the base. Compare with what the probe
+        # is meant to report, the way the probe itself resolves it.
+        self.assertEqual(identity["base_python"], str(Path(sys._base_executable).resolve()))
 
     def test_rejects_tampered_package_inventory(self) -> None:
         contract = materialize_runtime(
