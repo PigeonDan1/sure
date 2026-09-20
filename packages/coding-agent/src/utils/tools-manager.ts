@@ -18,7 +18,7 @@ const TOOLS: Record<string, ToolConfig> = {
 		name: "fd",
 		binaryName: "fd",
 		systemBinaryNames: ["fd", "fdfind"],
-		fallbackNote: "file autocomplete and the find tool fall back to a slower built-in scan",
+		fallbackNote: "file autocomplete stops offering files and the find tool falls back to a slower built-in scan",
 	},
 	rg: {
 		name: "ripgrep",

@@ -160,7 +160,7 @@ if (gitVersion) {
 // packages/coding-agent/src/utils/tools-manager.ts, including Debian's fdfind.
 for (const [label, commands, fallbackNote] of [
 	["rg", ["rg"], "the grep tool falls back to a slower built-in search"],
-	["fd", ["fd", "fdfind"], "file autocomplete and the find tool fall back to a slower built-in scan"],
+	["fd", ["fd", "fdfind"], "file autocomplete stops offering files and the find tool falls back to a slower built-in scan"],
 ]) {
 	let found;
 	for (const command of commands) {
