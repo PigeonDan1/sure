@@ -154,7 +154,9 @@ def _verified_contract(
     contract.update(
         {
             "status": "ready",
-            "python_executable": str(python.resolve()),
+            # Not python.resolve(): in a venv bin/python is a symlink to the base
+            # interpreter, and following it leaves the venv and its packages behind.
+            "python_executable": str(_python_path(runtime_dir.resolve())),
             "runtime_root": str(runtime_dir.resolve()),
             "manifest_path": str(manifest_path.resolve()),
             "spec_path": str((SPEC_DIR / "runtime.json").resolve()),

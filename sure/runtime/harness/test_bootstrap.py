@@ -59,6 +59,8 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         expected_directory, expected_name = runtime_python_relative().split("/")
         self.assertEqual(python.name, expected_name)
         self.assertEqual(python.parent.name, expected_directory)
+        # The venv entry point, not the base interpreter its symlink leads to.
+        self.assertTrue(python.is_relative_to(Path(first["runtime_root"])))
         manifest = json.loads(Path(first["manifest_path"]).read_text(encoding="utf-8"))
         self.assertEqual(manifest["materialization"], "uv_venv")
         self.assertEqual(len(manifest["base_python_sha256"]), 64)
