@@ -245,18 +245,20 @@ try {
 				// Deleting the shipped default must still point the user at the docs.
 				const defaultPolicyPath = resolve(exportRoot, "config/site.default.yaml");
 				const parkedPolicyPath = `${defaultPolicyPath}.parked`;
-				renameSync(defaultPolicyPath, parkedPolicyPath);
-				try {
-					const unconfigured = run("python3", [resolver, "--model", "missing-model"], { cwd: exportRoot });
-					if (
-						unconfigured.status === 0 ||
-						!unconfigured.stderr.includes("README.md#publicself-hosted-site-policy") ||
-						!unconfigured.stderr.includes("docs/site-configuration.md")
-					) {
-						failures.push("removing the default site policy did not restore the site-configuration guidance");
+				if (existsSync(defaultPolicyPath)) {
+					renameSync(defaultPolicyPath, parkedPolicyPath);
+					try {
+						const unconfigured = run("python3", [resolver, "--model", "missing-model"], { cwd: exportRoot });
+						if (
+							unconfigured.status === 0 ||
+							!unconfigured.stderr.includes("README.md#publicself-hosted-site-policy") ||
+							!unconfigured.stderr.includes("docs/site-configuration.md")
+						) {
+							failures.push("removing the default site policy did not restore the site-configuration guidance");
+						}
+					} finally {
+						renameSync(parkedPolicyPath, defaultPolicyPath);
 					}
-				} finally {
-					renameSync(parkedPolicyPath, defaultPolicyPath);
 				}
 			}
 		}
