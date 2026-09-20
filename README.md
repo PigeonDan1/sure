@@ -191,6 +191,8 @@ npm run check
 - `sure:doctor` checks the local harness installation and runtime prerequisites.
 - `npm run check` runs repository-wide static checks.
 
+In PowerShell, call `npm.cmd` instead of `npm` here too, for the execution-policy reason given in the Quick Start.
+
 ## Six SURE Commands
 
 | Command | Purpose | Main product |
