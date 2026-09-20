@@ -22,6 +22,14 @@ python sure/runtime/harness/build_image.py \
 Docker Buildx; the classic builder rejects the flag. The adapter build below
 needs it for the same reason.
 
+The host manifest must carry `python_version`, and the image installs exactly
+that interpreter and fails when the runtime it built reports a different one, so
+the image never claims provenance for a build of Python it does not contain.
+With uv's defaults that version is a uv-managed interpreter and installs
+cleanly. If the host runtime was materialized on an interpreter uv cannot
+install as a managed build, the image build stops at `uv python install`;
+materialize the host runtime through uv, which is the default, and build again.
+
 The output records `image_ref` as `<repository>@sha256:<digest>` together with
 the runtime ID and dependency lock hash: the identity of the runtime image, not
 of the host tree it was built from. Commit that small JSON lock after reviewing
