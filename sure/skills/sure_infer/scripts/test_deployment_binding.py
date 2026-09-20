@@ -368,6 +368,75 @@ class DeploymentBindingTests(unittest.TestCase):
         )
         self.assertFalse(provenance["host_python_fallback"])
 
+    def test_local_command_argv_is_pinned(self) -> None:
+        # Host paths come from the fixture, container paths are literal. The
+        # whole argv is pinned so that making the container paths POSIX on
+        # Windows cannot quietly reorder or respell what Linux produces.
+        binding = load_deployment_binding(self.model, "demo")
+        command, _ = build_local_container_command(
+            surface={"env": {"TOOL_NAME": "transcribe_audio", "RESULT_FILE": f"{self.output}/report.jsonl"}},
+            eval_input={
+                "model": {"deployment_binding": binding},
+                "runtime": {"run_dir": str(self.output), "harness_runtime": self._runtime_binding()},
+                "datasets": [],
+            },
+            control_run_dir=self.control,
+            entrypoint=self.entrypoint,
+            repo_root=self.repo,
+            device_request="cpu",
+        )
+
+        repo = self.repo.resolve()
+        model = self.model.resolve()
+        output = self.output.resolve()
+        self.assertEqual(
+            command,
+            [
+                "docker", "run", "--rm", "--init",
+                "--entrypoint", str(self.harness_python),
+                "--mount", f"type=bind,src={repo},dst={repo},readonly",
+                "--mount", f"type=bind,src={self.control.resolve()},dst={self.control.resolve()}",
+                "--mount", f"type=bind,src={output},dst=/sure-output",
+                "--mount", f"type=bind,src={model},dst={model},readonly",
+                "--mount", f"type=bind,src={model},dst=/workspace/model,readonly",
+                "--env", "HARNESS_PYTHON_BIN=" + str(self.harness_python),
+                "--env", "HF_HOME=/sure-output/.runtime/cache/huggingface",
+                "--env", "HF_HUB_CACHE=/sure-output/.runtime/cache/huggingface/hub",
+                "--env", "MODELSCOPE_CACHE=/sure-output/.runtime/cache/modelscope",
+                "--env", "MODEL_DIR=/workspace/model",
+                "--env", "MODEL_PYTHON=python",
+                "--env", "PYTHON_BIN=python",
+                "--env", "REPO_ROOT=" + str(repo / "sure" / "skills" / "sure_infer"),
+                # The surface asked for a host path under the run directory; it
+                # reaches the container as the container's own spelling.
+                "--env", "RESULT_FILE=/sure-output/report.jsonl",
+                "--env", "RUN_DIR=/sure-output",
+                "--env", "SURE_EVAL_APPROVED_MODEL_DIR=/workspace/model",
+                "--env", "SURE_EVAL_APPROVED_RESULT_DIR=/sure-output",
+                "--env", "SURE_EVAL_CACHE_DIR=/sure-output/.runtime/cache/sure-eval",
+                "--env", "SURE_EVAL_CONTAINER_IMAGE=" + self.image_ref,
+                "--env", "SURE_EVAL_CONTAINER_WORKING_DIR=/workspace/model",
+                "--env", "SURE_EVAL_EXECUTION_ENTRYPOINT=" + str(self.entrypoint.resolve()),
+                "--env", "SURE_EVAL_EXECUTION_GENERATION_METHOD=harness_template",
+                "--env", "SURE_EVAL_EXECUTION_SURFACE_TYPE=python_entrypoint",
+                "--env", "SURE_EVAL_EXECUTION_TEMPLATE_FILE=",
+                "--env", "SURE_EVAL_EXECUTION_TEMPLATE_SHA256=",
+                "--env", "SURE_EVAL_NODE_LOCAL_PYTHON=" + str(self.harness_python),
+                "--env", "SURE_EVAL_PUBLISHED_RUN_DIR=" + str(output),
+                "--env", "SURE_EVAL_WRITABLE_CACHE_ROOT=/sure-output/.runtime/cache",
+                "--env", "SURE_HARNESS_LOCK_SHA256=" + "c" * 64,
+                "--env", "SURE_HARNESS_MANIFEST_PATH=" + str(self.harness_manifest),
+                "--env", "SURE_HARNESS_RUNTIME_ID=sure-harness-test",
+                "--env", "SURE_HARNESS_RUNTIME_ROOT=" + str(self.harness_runtime),
+                "--env", "TOOL_NAME=transcribe_audio",
+                "--env", "TORCH_HOME=/sure-output/.runtime/cache/torch",
+                "--env", "TRANSFORMERS_CACHE=/sure-output/.runtime/cache/huggingface/transformers",
+                "--env", "XDG_CACHE_HOME=/sure-output/.runtime/cache/xdg",
+                self.image_ref,
+                str(self.entrypoint.resolve()),
+            ],
+        )
+
     def test_local_command_preserves_declared_dataset_mount_target(self) -> None:
         binding = load_deployment_binding(self.model, "demo")
         real_dataset = self.root / "dataset-real"
