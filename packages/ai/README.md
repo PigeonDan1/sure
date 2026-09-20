@@ -1553,7 +1553,7 @@ Add a lazy wrapper `src/api/<api-id>.lazy.ts` (`<name>Api()` via `lazyApi()`) so
 
 #### 3. Model Catalog (`src/providers/data/<id>.json`)
 
-- The catalog is committed and hand-maintained in this fork; there is no generator. Add the provider's models to `src/providers/data/<id>.json`, keep `src/providers/data/.manifest.json` in step, and add a stable `src/providers/<id>.models.ts` wrapper that derives exact model/API types from those JSON keys
+- The catalog is frozen in this fork: it is committed under `src/providers/data/` and nothing in the repository regenerates it, so every edit is manual and has to keep four things in step by hand — the provider's `src/providers/data/<id>.json`, that file's sha256 entry under `files` in `src/providers/data/.manifest.json`, the manifest's `structureHash` (sha256 of the sorted provider to model to API map), and the `import { <ID>_MODELS } from "./providers/<id>.models.ts"` line in `src/models.generated.ts`, which is what `check:model-data` reads to decide which providers and `src/providers/<id>.models.ts` wrappers must exist. The wrapper itself is a stable hand-written file that derives exact model/API types from those JSON keys
 - Handle provider-specific quirks (pricing format, capability flags, model ID transformations)
 - `npm run check:model-data` validates the committed catalog offline
 

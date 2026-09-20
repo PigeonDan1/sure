@@ -12,7 +12,7 @@ try {
 } catch (error) {
 	console.error(error instanceof Error ? error.message : String(error));
 	console.error(
-		"\nModel data is missing or stale. The catalog under src/providers/data/ is committed and hand-maintained; restore it with git.",
+		"\nModel data is missing or stale. The catalog under src/providers/data/ is frozen and hand-maintained: restore it with git, or, if the edit was intentional, update the file hash and structureHash in src/providers/data/.manifest.json and the provider imports in src/models.generated.ts to match.",
 	);
 	process.exitCode = 1;
 }
