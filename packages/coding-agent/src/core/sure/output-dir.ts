@@ -4,7 +4,17 @@ import { requireSitePolicy, resolveSitePolicy } from "../../../../../sure/site/l
 
 // Approved models and promoted results both live below this root. Runs never
 // write inside it; a human promotes reviewed products there.
-export const NFS_ROOT = resolveSitePolicy()?.policy.storage.forbidden_output_roots[0] ?? "<site-policy-required>";
+//
+// Read at module load, so a malformed policy file must not take the whole
+// extension down with it: resolveOutputDir() calls requireSitePolicy() again
+// and reports the real parse error there, where the user asked for something.
+export const NFS_ROOT = ((): string => {
+	try {
+		return resolveSitePolicy()?.policy.storage.forbidden_output_roots[0] ?? "<site-policy-required>";
+	} catch {
+		return "<site-policy-required>";
+	}
+})();
 
 export interface OutputDirResolution {
 	ok: boolean;

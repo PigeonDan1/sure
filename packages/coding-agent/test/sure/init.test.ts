@@ -421,7 +421,7 @@ describe("runSureInit", () => {
 		const result = await runSureInit({ ctx, settingsManager, modelsJsonPath: join(tempDir, "models.json") });
 
 		expect(result.success).toBe(false);
-		expect(result.message).toContain("/login");
+		expect(result.message).toContain("is not registered");
 	});
 
 	it("falls back to /login message in non-UI mode for OAuth provider", async () => {

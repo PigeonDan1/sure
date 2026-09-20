@@ -22,6 +22,10 @@ describe("invokedSkillScripts", () => {
 		expect(invokedSkillScripts("ls -la")).toEqual([]);
 	});
 
+	it("catches a backslash-spelled script path", () => {
+		expect(invokedSkillScripts("python3 scripts\\run_infer.py")).toEqual(["scripts/run_infer.py"]);
+	});
+
 	it("honours a caller-supplied prefix", () => {
 		expect(invokedSkillScripts("python3 sure_infer/scripts/run.py", "sure_infer/scripts")).toEqual([
 			"sure_infer/scripts/run.py",

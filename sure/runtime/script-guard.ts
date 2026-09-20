@@ -16,7 +16,9 @@ const READ_ONLY_HEAD = /^(?:cat|head|tail|less|more|grep|rg|sed|awk|wc|ls|stat|f
 export function invokedSkillScripts(command: string, prefix = "scripts"): string[] {
 	const pattern = new RegExp(`${prefix}/([A-Za-z0-9_]+\\.py)\\b`, "g");
 	const names = new Set<string>();
-	for (const segment of command.split(/\|\||&&|[;&|\n]/)) {
+	// A PowerShell or cmd caller spells the same script scripts\x.py; fold the
+	// separators together so one path shape cannot slip past the gate.
+	for (const segment of command.replace(/\\/g, "/").split(/\|\||&&|[;&|\n]/)) {
 		const head = segment.trim().split(/\s+/)[0] ?? "";
 		if (READ_ONLY_HEAD.test(head)) {
 			continue;

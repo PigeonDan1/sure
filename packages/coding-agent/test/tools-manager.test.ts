@@ -49,13 +49,21 @@ describe("ensureTool", () => {
 		vi.mocked(spawnSync).mockReturnValue({ error: new Error("not found") } as ReturnType<typeof spawnSync>);
 		const statuses: ToolStatus[] = [];
 
-		const result = await ensureTool("rg", (status) => statuses.push(status));
+		expect(await ensureTool("rg", (status) => statuses.push(status))).toBeUndefined();
+		expect(await ensureTool("fd", (status) => statuses.push(status))).toBeUndefined();
 
-		expect(result).toBeUndefined();
 		expect(statuses).toEqual([
 			{
 				type: "warning",
-				message: "ripgrep not found. Install it and make sure it is on PATH; the grep tool until then.",
+				message:
+					"ripgrep not found on PATH; the grep tool falls back to a slower built-in search. Install it for faster searches.",
+			},
+			{
+				type: "warning",
+				// Without fd the autocomplete provider returns no file suggestions at
+				// all; only the find tool has a built-in scan to fall back on.
+				message:
+					"fd not found on PATH; file autocomplete stops offering files and the find tool falls back to a slower built-in scan. Install it for faster searches.",
 			},
 		]);
 	});

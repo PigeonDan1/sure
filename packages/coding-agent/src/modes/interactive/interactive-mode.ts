@@ -2863,7 +2863,7 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/export" || text.startsWith("/export ")) {
-				await this.handleExportCommand(text);
+				this.handleExportCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -5833,7 +5833,7 @@ export class InteractiveMode {
 		}
 	}
 
-	private async handleExportCommand(text: string): Promise<void> {
+	private handleExportCommand(text: string): void {
 		const outputPath = this.getPathCommandArgument(text, "/export");
 
 		try {

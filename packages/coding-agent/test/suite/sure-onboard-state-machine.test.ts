@@ -1710,7 +1710,8 @@ describe("sure_onboard new alignment gates", () => {
 		expect(result.repair).toContain("VC/HPC submission is not part of core /sure_onboard");
 	});
 
-	it("accepts build_env paths declared relative to the repository root", () => {
+	// check_env.py:165 hardcodes .venv/bin/python, which no Windows venv produces (it makes .venv\Scripts\python.exe).
+	it.skipIf(process.platform === "win32")("accepts build_env paths declared relative to the repository root", () => {
 		const root = resolve(__dirname, "tmp-ob", "build-env-repo-root");
 		rmSync(root, { recursive: true, force: true });
 		const runDir = join(root, ".sure", "runs", "run-1");
@@ -2352,7 +2353,9 @@ describe("sure_onboard new alignment gates", () => {
 		expect(checkpoint?.data.currentUnit).toBe("validate_load");
 	});
 
-	it("prefers model-local .venv python for validation run_command", () => {
+	// The fixture interpreter has to be a shell script that records its own $0,
+	// which Windows cannot execute from .venv/bin/python at all.
+	it.skipIf(process.platform === "win32")("prefers model-local .venv python for validation run_command", () => {
 		const root = resolve(__dirname, "tmp-ob", "validate-local-python");
 		rmSync(root, { recursive: true, force: true });
 		const runDir = join(root, ".sure", "runs", "run-1");
@@ -2949,7 +2952,7 @@ describe("sure_onboard artifact manifest structure compatibility", () => {
 				verified: true,
 			},
 		});
-		symlinkSync(join(cwd, "missing-reference-venv"), join(referenceDir, ".venv"));
+		symlinkSync(join(cwd, "missing-reference-venv"), join(referenceDir, ".venv"), "junction");
 
 		const adopt = spawnSync(
 			"python3",

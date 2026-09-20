@@ -214,7 +214,9 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const toolCall = isRecord(event.toolCall) ? event.toolCall : {};
 	const toolName =
 		typeof event.toolName === "string" ? event.toolName : typeof toolCall.name === "string" ? toolCall.name : "";
-	if (toolName !== "bash") {
+	// pi also ships a powershell tool; a Windows user without Git Bash would
+	// otherwise run the same scripts with every ordering gate switched off.
+	if (toolName !== "bash" && toolName !== "powershell") {
 		return { ok: true };
 	}
 	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};

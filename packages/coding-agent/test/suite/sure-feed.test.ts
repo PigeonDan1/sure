@@ -25,6 +25,19 @@ import type { SureHookContext } from "../../src/core/sure/types.ts";
 const PACKAGE_DIR = resolve(__dirname, "../../../../sure/skills/sure_feed");
 const SCRIPTS_DIR = join(PACKAGE_DIR, "scripts");
 
+const PYTHON_BIN = (() => {
+	for (const candidate of ["python3", "python"]) {
+		const probe = spawnSync(candidate, ["-c", "import sys; print(sys.executable)"], {
+			encoding: "utf-8",
+			timeout: 10_000,
+		});
+		if (probe.status === 0 && probe.stdout.trim()) {
+			return probe.stdout.trim();
+		}
+	}
+	return "";
+})();
+
 type StatePatchForTest = {
 	message?: string;
 	counters?: { completed_units?: number; total_units?: number; gate_blocks?: number };
@@ -61,7 +74,7 @@ function writeDebugArtifact(runDir: string, produces: string, value: unknown): v
 // Run a gate script the same way the hook does (spawnSync, exit 0 = pass).
 function runGate(script: string, runDir: string, produces: string): { ok: boolean; stderr: string } {
 	const r = spawnSync(
-		"python3",
+		PYTHON_BIN,
 		[join(SCRIPTS_DIR, script), "--run-dir", runDir, "--produces", join(runDir, "artifacts", produces)],
 		{ cwd: PACKAGE_DIR, encoding: "utf-8", timeout: 30_000 },
 	);
@@ -363,7 +376,7 @@ describe("sure_feed validateProduces repair message quality", () => {
 	});
 });
 
-describe("sure_feed gate scripts (real python3 spawnSync)", () => {
+describe.skipIf(!PYTHON_BIN)("sure_feed gate scripts (real python3 spawnSync)", () => {
 	const tmpRoot = resolve(__dirname, "tmp-gate");
 
 	function freshRunDir(name: string): string {
@@ -500,7 +513,7 @@ describe("sure_feed gate scripts (real python3 spawnSync)", () => {
 	});
 
 	it("provider unit tests pass without network", () => {
-		const r = spawnSync("python3", [join(SCRIPTS_DIR, "test_providers.py")], {
+		const r = spawnSync(PYTHON_BIN, [join(SCRIPTS_DIR, "test_providers.py")], {
 			cwd: PACKAGE_DIR,
 			encoding: "utf-8",
 			timeout: 30_000,
@@ -541,10 +554,10 @@ describe("sure_feed gate scripts (real python3 spawnSync)", () => {
 });
 
 describe("sure_feed preToolCall script ownership", () => {
-	function toolCtx(command: string): SureHookContext {
+	function toolCtx(command: string, toolName = "bash"): SureHookContext {
 		return {
 			...makeCtx(resolve(__dirname, "tmp-pretool")),
-			event: { type: "tool_call", toolCallId: "t1", toolName: "bash", input: { command } },
+			event: { type: "tool_call", toolCallId: "t1", toolName, input: { command } },
 		} as SureHookContext;
 	}
 
@@ -555,6 +568,24 @@ describe("sure_feed preToolCall script ownership", () => {
 
 	it("blocks an out-of-order gate script from the scan unit", () => {
 		const result = preToolCall(toolCtx("python3 scripts/check_rank_select.py --run-dir x --produces y"));
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("check_rank_select.py");
+	});
+
+	it("blocks a forward-slash script path run through the powershell tool", () => {
+		// Same command as the bash case above, so only the tool name differs: the
+		// gate must key on the tool, not on the backslashes of the case below.
+		const result = preToolCall(
+			toolCtx("python3 scripts/check_rank_select.py --run-dir x --produces y", "powershell"),
+		);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("check_rank_select.py");
+	});
+
+	it("blocks the same script when it is run through the powershell tool", () => {
+		const result = preToolCall(
+			toolCtx("python3 scripts\\check_rank_select.py --run-dir x --produces y", "powershell"),
+		);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("check_rank_select.py");
 	});

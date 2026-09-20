@@ -37,26 +37,53 @@ if [[ "$NO_ENV" == "true" ]]; then
   echo "Running without stored credentials..."
 fi
 
+if ! command -v node >/dev/null 2>&1; then
+  echo "node was not found on PATH. Install Node 22.19 or newer (see .nvmrc)." >&2
+  exit 1
+fi
+
+if ! node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1);"; then
+  echo "Node $(node --version) is too old. This repository needs Node 22.19 or newer (see .nvmrc)." >&2
+  exit 1
+fi
+
+if [[ "$PWD" != "$SCRIPT_DIR" ]]; then
+  echo "Warning: running from $PWD, not the repository root $SCRIPT_DIR." >&2
+  echo "Warning: the agent's working directory is the one you started from." >&2
+fi
+
 if [[ ! -d "$SCRIPT_DIR/node_modules/@earendil-works/pi-agent-core" ]]; then
-  echo "Missing node_modules/@earendil-works/pi-agent-core."
-  echo "Run from the repository root:"
-  echo "  npm install --ignore-scripts"
-  echo "  npm run sure:doctor"
+  echo "Missing node_modules/@earendil-works/pi-agent-core." >&2
+  echo "Run from the repository root:" >&2
+  echo "  npm install --ignore-scripts" >&2
+  echo "  npm run sure:doctor" >&2
   exit 1
 fi
 
-if ! node -e "const base = '$SCRIPT_DIR/packages/coding-agent/src/core/sure'; for (const p of ['typebox','typebox/compile','typebox/value']) require.resolve(p, { paths: [base] });" >/dev/null 2>&1; then
-  echo "Missing SURE runtime dependency: typebox."
-  echo "Run from the repository root:"
-  echo "  npm install --ignore-scripts"
-  echo "  npm run sure:doctor"
-  exit 1
-fi
-
-# Node resolves --import as a URL, so a Windows drive letter needs a file:// URL.
-RESOLVER="$SCRIPT_DIR/packages/coding-agent/test/source-resolver.ts"
+# node is a native Windows binary under Git Bash, so it cannot resolve the MSYS
+# spelling of SCRIPT_DIR (/d/repo). Hand it the native path for both the module
+# resolution probe and the --import URL.
+NATIVE_DIR="$SCRIPT_DIR"
 if command -v cygpath >/dev/null 2>&1; then
-  RESOLVER="$(cygpath -m "$RESOLVER")"
+  NATIVE_DIR="$(cygpath -m "$SCRIPT_DIR")"
 fi
 
-node --import "file:///${RESOLVER#/}" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
+if ! node -e "const base = process.argv[1]; for (const p of ['typebox','typebox/compile','typebox/value']) require.resolve(p, { paths: [base] });" "$NATIVE_DIR/packages/coding-agent/src/core/sure" >/dev/null 2>&1; then
+  echo "Missing SURE runtime dependency: typebox." >&2
+  echo "Run from the repository root:" >&2
+  echo "  npm install --ignore-scripts" >&2
+  echo "  npm run sure:doctor" >&2
+  exit 1
+fi
+
+# Node resolves --import as a URL, so a Windows drive letter needs a file:// URL
+# and a '#', '%' or '?' in the path would otherwise be read as URL syntax rather
+# than as part of the path. Let node spell the URL.
+RESOLVER="$NATIVE_DIR/packages/coding-agent/test/source-resolver.ts"
+if [[ ! -f "$RESOLVER" ]]; then
+  echo "Source resolver not found at $RESOLVER." >&2
+  exit 1
+fi
+RESOLVER_URL="$(node -e "console.log(require('node:url').pathToFileURL(process.argv[1]).href);" "$RESOLVER")"
+
+node --import "$RESOLVER_URL" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
