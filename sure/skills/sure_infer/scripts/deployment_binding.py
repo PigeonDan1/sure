@@ -278,8 +278,13 @@ def _portable_relative(raw: object, label: str) -> PurePosixPath:
     """A path inside the bundle: relative, escaping nothing, POSIX-spelled.
 
     Judged under both flavours, because a bundle is read on whichever host
-    opens it: "/opt/evil" is absolute only to POSIX, "C:\\x" and "\\\\srv\\share\\x"
+    opens it: "/opt/evil" is anchored only to POSIX, "C:\\x" and "\\\\srv\\share\\x"
     only to Windows, and "a\\..\\b" hides its parent hop from POSIX.
+
+    The test is the anchor rather than is_absolute(), which on the Windows
+    flavour demands a drive *and* a root and so calls two anchored spellings
+    relative: joining "\\opt\\evil" onto a bundle root yields "D:\\opt\\evil",
+    and joining "C:x" drops the bundle root altogether.
     """
     value = str(raw or "")
     posix = PurePosixPath(value)
@@ -287,8 +292,8 @@ def _portable_relative(raw: object, label: str) -> PurePosixPath:
     _require(
         bool(value)
         and bool(posix.parts)
-        and not posix.is_absolute()
-        and not windows.is_absolute()
+        and not posix.anchor
+        and not windows.anchor
         and ".." not in posix.parts
         and ".." not in windows.parts,
         f"{label} must be portable",

@@ -310,6 +310,19 @@ class DeploymentBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(DeploymentBindingError, "must be finalized"):
             load_deployment_binding(self.model, "demo")
 
+    def test_a_manifest_entry_that_escapes_the_bundle_is_rejected(self) -> None:
+        # The same portability gate, reached through the whole binding load
+        # rather than called directly.
+        self._rewrite_marker(integrity_profile="manifest-complete-v1")
+        manifest = json.loads((self.artifacts / "artifact_manifest.json").read_text())
+        manifest["artifacts"]["required"]["escape"] = {"path": "\\opt\\evil"}
+        write_json(self.artifacts / "artifact_manifest.json", manifest)
+
+        with self.assertRaisesRegex(
+            DeploymentBindingError, "artifact_manifest required path must be portable"
+        ):
+            load_deployment_binding(self.model, "demo")
+
     def test_marker_without_any_timestamp_may_not_fall_back_to_the_legacy_profile(self) -> None:
         marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
         marker.pop("generated_at", None)
@@ -671,13 +684,24 @@ class PortableBundlePathTests(unittest.TestCase):
             ("artifacts", "outputs", "sample.wav"),
         )
 
+    def test_leading_dots_that_are_not_a_parent_hop_stay_portable(self) -> None:
+        # ".." only escapes when it is a whole component.
+        for value in ("..a/b", "a/..hidden/b", "a\\b.txt"):
+            with self.subTest(value=value):
+                self.assertTrue(_portable_relative(value, "test path").parts)
+
     def test_absolute_or_escaping_spellings_are_rejected_on_every_host(self) -> None:
         # "/opt/evil" is absolute only to POSIX, the drive and UNC spellings
         # only to Windows, and "a\\..\\b" hides its parent hop from POSIX. A
         # bundle is read on whichever host happens to open it, so the union of
         # both verdicts is the only one that holds everywhere.
+        # "\\opt\\evil" and "C:x" carry a Windows anchor without being absolute
+        # to pathlib: joined onto a bundle root they give "D:\\opt\\evil" and
+        # "C:x", so the bundle root is escaped or dropped outright.
         for value in (
             "/opt/evil",
+            "\\opt\\evil",
+            "C:x",
             "C:\\x",
             "C:/x",
             "\\\\srv\\share\\x",
