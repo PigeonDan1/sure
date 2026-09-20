@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { lazyApi } from "../src/api/lazy.ts";
 import { envApiKeyAuth } from "../src/auth/helpers.ts";
-import type { AuthContext, AuthEvent } from "../src/auth/types.ts";
+import type { AuthContext } from "../src/auth/types.ts";
 import { createModels, createProvider } from "../src/models.ts";
 import { InMemoryModelsStore } from "../src/models-store.ts";
 import { builtinModels, builtinProviders, getBuiltinModel } from "../src/providers/all.ts";
-import { amazonBedrockProvider } from "../src/providers/amazon-bedrock.ts";
 import { anthropicProvider } from "../src/providers/anthropic.ts";
 import { cloudflareAIGatewayProvider } from "../src/providers/cloudflare-ai-gateway.ts";
 import { cloudflareWorkersAIProvider } from "../src/providers/cloudflare-workers-ai.ts";
@@ -114,55 +113,6 @@ describe("builtin providers", () => {
 		const result = await models.getAuth("anthropic");
 		expect(result?.auth.apiKey).toBe("oauth-token");
 		expect(result?.source).toBe("ANTHROPIC_OAUTH_TOKEN");
-	});
-
-	it("runs provider-owned Bedrock bearer token and AWS profile login flows", async () => {
-		const auth = amazonBedrockProvider().auth.apiKey!;
-		const bearerAnswers = ["bearer-token", "bedrock-token"];
-		expect(
-			await auth.login?.({
-				signal: neverAbortedSignal,
-				prompt: async () => bearerAnswers.shift()!,
-				notify: () => {},
-			}),
-		).toEqual({ type: "api_key", key: "bedrock-token" });
-
-		const profileAnswers = ["aws-profile", "work"];
-		const events: AuthEvent[] = [];
-		expect(
-			await auth.login?.({
-				signal: neverAbortedSignal,
-				prompt: async () => profileAnswers.shift()!,
-				notify: (event) => events.push(event),
-			}),
-		).toEqual({ type: "api_key", env: { AWS_PROFILE: "work" } });
-		expect(events).toEqual([
-			expect.objectContaining({
-				type: "info",
-				links: [expect.objectContaining({ label: "AWS credential provider chain" })],
-			}),
-		]);
-		expect(
-			await auth.resolve({
-				ctx: fakeAuthContext({}),
-				credential: { type: "api_key", env: { AWS_PROFILE: "work" } },
-				signal: neverAbortedSignal,
-			}),
-		).toMatchObject({ auth: {}, env: { AWS_PROFILE: "work" } });
-	});
-
-	it("reports bedrock as configured from ambient AWS credentials without an api key", async () => {
-		const models = createModels({ authContext: fakeAuthContext({ AWS_PROFILE: "dev" }) });
-		models.setProvider(amazonBedrockProvider());
-		const model = models.getModels("amazon-bedrock")[0];
-
-		const result = await models.getAuth(model.provider);
-		expect(result?.auth).toEqual({});
-		expect(result?.source).toBe("AWS_PROFILE");
-
-		const unconfigured = createModels({ authContext: fakeAuthContext({}) });
-		unconfigured.setProvider(amazonBedrockProvider());
-		expect(await unconfigured.getAuth(model.provider)).toBeUndefined();
 	});
 
 	it("requires Cloudflare Workers AI account config and returns scoped env", async () => {

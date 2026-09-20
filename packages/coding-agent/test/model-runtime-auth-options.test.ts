@@ -78,11 +78,6 @@ describe("ModelRuntime auth options", () => {
 			expect.arrayContaining([
 				expect.objectContaining({
 					type: "api_key",
-					provider: expect.objectContaining({ id: "amazon-bedrock", name: "Amazon Bedrock" }),
-					method: expect.objectContaining({ name: "AWS credentials or bearer token" }),
-				}),
-				expect.objectContaining({
-					type: "api_key",
 					provider: expect.objectContaining({ id: "deepseek", name: "DeepSeek" }),
 					method: expect.objectContaining({ name: "DeepSeek API key" }),
 				}),
@@ -97,6 +92,7 @@ describe("ModelRuntime auth options", () => {
 				expect.objectContaining({
 					type: "api_key",
 					provider: expect.objectContaining({ id: "cloudflare-workers-ai", name: "Cloudflare Workers AI" }),
+					method: expect.objectContaining({ name: "Cloudflare API key" }),
 				}),
 			]),
 		);

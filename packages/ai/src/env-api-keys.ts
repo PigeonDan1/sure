@@ -57,8 +57,7 @@ function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 /**
  * Find configured environment variables that can provide an API key for a provider.
  *
- * This only reports actual API key variables. It intentionally excludes ambient
- * credential sources such as AWS profiles and AWS IAM credentials.
+ * This only reports actual API key variables.
  */
 export function findEnvKeys(provider: KnownProvider, env?: ProviderEnv): string[] | undefined;
 export function findEnvKeys(provider: string, env?: ProviderEnv): string[] | undefined;
@@ -82,26 +81,6 @@ export function getEnvApiKey(provider: string, env?: ProviderEnv): string | unde
 	if (envKeys?.[0]) {
 		const apiKeyEnv = provider === "anthropic" ? envKeys.find((key) => key !== ANTHROPIC_AUTH_TOKEN_ENV) : envKeys[0];
 		if (apiKeyEnv) return getProviderEnvValue(apiKeyEnv, env);
-	}
-
-	if (provider === "amazon-bedrock") {
-		// Amazon Bedrock supports multiple credential sources:
-		// 1. AWS_PROFILE - named profile from ~/.aws/credentials
-		// 2. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY - standard IAM keys
-		// 3. AWS_BEARER_TOKEN_BEDROCK - Bedrock bearer token
-		// 4. AWS_CONTAINER_CREDENTIALS_RELATIVE_URI - ECS task roles
-		// 5. AWS_CONTAINER_CREDENTIALS_FULL_URI - ECS task roles (full URI)
-		// 6. AWS_WEB_IDENTITY_TOKEN_FILE - IRSA (IAM Roles for Service Accounts)
-		if (
-			getProviderEnvValue("AWS_PROFILE", env) ||
-			(getProviderEnvValue("AWS_ACCESS_KEY_ID", env) && getProviderEnvValue("AWS_SECRET_ACCESS_KEY", env)) ||
-			getProviderEnvValue("AWS_BEARER_TOKEN_BEDROCK", env) ||
-			getProviderEnvValue("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", env) ||
-			getProviderEnvValue("AWS_CONTAINER_CREDENTIALS_FULL_URI", env) ||
-			getProviderEnvValue("AWS_WEB_IDENTITY_TOKEN_FILE", env)
-		) {
-			return "<authenticated>";
-		}
 	}
 
 	return undefined;

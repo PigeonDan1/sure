@@ -73,7 +73,6 @@ pi
 | OpenAI | `OPENAI_API_KEY` | `openai` |
 | DeepSeek | `DEEPSEEK_API_KEY` | `deepseek` |
 | NVIDIA NIM | `NVIDIA_API_KEY` | `nvidia` |
-| Amazon Bedrock | `AWS_BEARER_TOKEN_BEDROCK` | `amazon-bedrock` |
 | Groq | `GROQ_API_KEY` | `groq` |
 | Cerebras | `CEREBRAS_API_KEY` | `cerebras` |
 | Cloudflare AI Gateway | `CLOUDFLARE_API_KEY` (+ `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID`) | `cloudflare-ai-gateway` |
@@ -130,7 +129,7 @@ credential under the provider you select; an environment variable is shared by b
 
 The file is created with `0600` permissions (user read/write only). Auth file credentials take priority over environment variables.
 
-API key credentials can also include provider-scoped environment values. These values are used before process environment variables when resolving the credential key, provider/model headers, and provider configuration such as Cloudflare account IDs, Azure OpenAI settings, Bedrock settings, `PI_CACHE_RETENTION`, and `HTTP_PROXY`/`HTTPS_PROXY`.
+API key credentials can also include provider-scoped environment values. These values are used before process environment variables when resolving the credential key, provider/model headers, and provider configuration such as Cloudflare account IDs, Azure OpenAI settings, `PI_CACHE_RETENTION`, and `HTTP_PROXY`/`HTTPS_PROXY`.
 
 ```json
 {
@@ -192,51 +191,6 @@ export AZURE_OPENAI_RESOURCE_NAME=your-resource
 # Optional
 export AZURE_OPENAI_API_VERSION=2024-02-01
 export AZURE_OPENAI_DEPLOYMENT_NAME_MAP=gpt-4=my-gpt4,gpt-4o=my-gpt4o
-```
-
-### Amazon Bedrock
-
-Use `/login amazon-bedrock` to store a Bedrock API key, or configure one of the ambient AWS credential sources below:
-
-```bash
-# Option 1: AWS Profile
-export AWS_PROFILE=your-profile
-
-# Option 2: IAM Keys
-export AWS_ACCESS_KEY_ID=AKIA...
-export AWS_SECRET_ACCESS_KEY=...
-
-# Option 3: Bearer Token
-export AWS_BEARER_TOKEN_BEDROCK=...
-
-# Optional region (defaults to us-east-1)
-export AWS_REGION=us-west-2
-```
-
-Also supports ECS task roles (`AWS_CONTAINER_CREDENTIALS_*`) and IRSA (`AWS_WEB_IDENTITY_TOKEN_FILE`).
-
-```bash
-pi --provider amazon-bedrock --model us.anthropic.claude-sonnet-4-20250514-v1:0
-```
-
-Prompt caching is enabled automatically for Claude models whose ID contains a recognizable model name (base models and system-defined inference profiles). For application inference profiles (whose ARNs don't contain the model name), set `AWS_BEDROCK_FORCE_CACHE=1` to enable cache points:
-
-```bash
-export AWS_BEDROCK_FORCE_CACHE=1
-pi --provider amazon-bedrock --model arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123
-```
-
-If you are connecting to a Bedrock API proxy, the following environment variables can be used:
-
-```bash
-# Set the URL for the Bedrock proxy (standard AWS SDK env var)
-export AWS_ENDPOINT_URL_BEDROCK_RUNTIME=https://my.corp.proxy/bedrock
-
-# Set if your proxy does not require authentication
-export AWS_BEDROCK_SKIP_AUTH=1
-
-# Set if your proxy only supports HTTP/1.1
-export AWS_BEDROCK_FORCE_HTTP1=1
 ```
 
 ### Cloudflare AI Gateway

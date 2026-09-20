@@ -1,7 +1,6 @@
 import type { TelemetryContext } from "@earendil-works/pi-telemetry";
 import type { AnthropicOptions } from "./api/anthropic-messages.ts";
 import type { AzureOpenAIResponsesOptions } from "./api/azure-openai-responses.ts";
-import type { BedrockOptions } from "./api/bedrock-converse-stream.ts";
 import type { OpenAICodexResponsesOptions } from "./api/openai-codex-responses.ts";
 import type { OpenAICompletionsOptions } from "./api/openai-completions.ts";
 import type { OpenAIResponsesOptions } from "./api/openai-responses.ts";
@@ -17,7 +16,6 @@ export type KnownApi =
 	| "azure-openai-responses"
 	| "openai-codex-responses"
 	| "anthropic-messages"
-	| "bedrock-converse-stream"
 	| "pi-messages";
 
 export type Api = KnownApi | (string & {});
@@ -27,7 +25,6 @@ export type KnownImagesApi = "openrouter-images";
 export type ImagesApi = KnownImagesApi | (string & {});
 
 export type KnownProvider =
-	| "amazon-bedrock"
 	| "ant-ling"
 	| "anthropic"
 	| "openai"
@@ -139,9 +136,6 @@ export interface ProviderRequestOptions<TModel = Model<Api>> {
 	/**
 	 * Optional custom HTTP headers to include in API requests.
 	 * Merged with provider defaults; caller values override default headers.
-	 * On AWS Bedrock these are injected via a Smithy `build`-step middleware so
-	 * they are covered by SigV4 signing; reserved headers (`x-amz-*`,
-	 * `authorization`, `host`) are silently ignored to preserve SigV4 / bearer auth.
 	 * A null value suppresses a provider/API default header with the same name.
 	 */
 	headers?: ProviderHeaders;
@@ -235,7 +229,6 @@ export interface ApiOptionsMap {
 	"openai-responses": OpenAIResponsesOptions;
 	"openai-codex-responses": OpenAICodexResponsesOptions;
 	"azure-openai-responses": AzureOpenAIResponsesOptions;
-	"bedrock-converse-stream": BedrockOptions;
 	"pi-messages": PiMessagesOptions;
 }
 
@@ -715,12 +708,6 @@ export interface AnthropicMessagesCompat {
 	supportsToolReferences?: boolean;
 }
 
-/** Compatibility settings for Amazon Bedrock models. */
-export interface BedrockCompat {
-	/** Whether the model supports Bedrock strict tool schemas. Default: false. */
-	supportsStrictMode?: boolean;
-}
-
 /**
  * OpenRouter provider routing preferences.
  * Controls which upstream providers OpenRouter routes requests to.
@@ -852,9 +839,7 @@ export interface Model<TApi extends Api> {
 			? OpenAIResponsesCompat
 			: TApi extends "anthropic-messages"
 				? AnthropicMessagesCompat
-				: TApi extends "bedrock-converse-stream"
-					? BedrockCompat
-					: never;
+				: never;
 }
 
 export interface ImagesModel<TApi extends ImagesApi>

@@ -82,7 +82,6 @@ For each built-in provider, pi maintains a list of tool-capable models. Dynamic 
 - Azure OpenAI
 - DeepSeek
 - NVIDIA NIM
-- Amazon Bedrock
 - Groq
 - Cerebras
 - Cloudflare AI Gateway
