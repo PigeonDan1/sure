@@ -9,10 +9,29 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "uvenv.py").is_file():
+        if str(_parent) not in sys.path:
+            sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.uvenv import (
+    child_environment,
+    exclusive_lock,
+    freeze_command,
+    probe,
+    publish,
+    runtime_python_relative,
+    sha256_file,
+    sync_command,
+    uv_binary,
+    venv_command,
+)
 
 
 SCHEMA = "sure.model.runtime.manifest.v1"
@@ -24,53 +43,6 @@ PACKAGES_NAME = "installed-packages.txt"
 
 class ModelRuntimeError(RuntimeError):
     """The selected Model Python runtime is missing or invalid."""
-
-
-def _python_child_environment() -> dict[str, str]:
-    """Launch model interpreters without Harness interpreter overrides."""
-    env = os.environ.copy()
-    for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE"):
-        env.pop(key, None)
-    return env
-
-
-def runtime_python_relative() -> str:
-    return "Scripts/python.exe" if os.name == "nt" else "bin/python"
-
-
-@contextmanager
-def exclusive_lock(path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a+b") as lock:
-        if os.name == "nt":
-            import msvcrt
-
-            if lock.tell() == 0:
-                lock.write(b"\0")
-                lock.flush()
-            lock.seek(0)
-            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
-            try:
-                yield
-            finally:
-                lock.seek(0)
-                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def manifest_sha256(manifest: dict[str, Any]) -> str:
@@ -89,36 +61,6 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def _probe(python: Path) -> dict[str, str]:
-    code = (
-        "import hashlib,json,platform,sys,sysconfig;"
-        "base=__import__('pathlib').Path(sys._base_executable).resolve();"
-        "print(json.dumps({'python_version':platform.python_version(),"
-        "'python_abi':sysconfig.get_config_var('SOABI') or sys.implementation.cache_tag or '',"
-        "'python_platform':sysconfig.get_platform(),"
-        "'base_python':str(base),"
-        "'base_python_sha256':hashlib.sha256(base.read_bytes()).hexdigest()}))"
-    )
-    completed = subprocess.run(
-        [str(python), "-I", "-c", code],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-        env=_python_child_environment(),
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or f"exit {completed.returncode}"
-        raise ModelRuntimeError(f"Model Python probe failed: {detail}")
-    try:
-        value = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise ModelRuntimeError("Model Python probe returned invalid JSON") from exc
-    if not isinstance(value, dict) or not all(isinstance(item, str) and item for item in value.values()):
-        raise ModelRuntimeError("Model Python probe returned incomplete identity data")
-    return value
-
-
 def _runtime_id(lock_sha256: str, probe: dict[str, str]) -> str:
     identity = {
         "backend": "uv",
@@ -134,13 +76,6 @@ def _runtime_id(lock_sha256: str, probe: dict[str, str]) -> str:
         json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
     return f"sure-model-python-v{MATERIALIZATION_VERSION}-{digest[:24]}"
-
-
-def _uv_binary(explicit: str | None = None) -> str:
-    candidate = (explicit or os.environ.get("SURE_UV_BIN", "").strip() or shutil.which("uv") or "")
-    if not candidate or not Path(candidate).is_file():
-        raise ModelRuntimeError("uv is required to materialize package=none Model Python runtimes")
-    return str(Path(candidate).resolve())
 
 
 def _run(
@@ -229,9 +164,9 @@ def verify_runtime(runtime_root: Path, expected: dict[str, Any]) -> dict[str, An
         raise ModelRuntimeError("site Model Runtime package inventory hash mismatch")
     if not python.is_file() or not os.access(python, os.X_OK):
         raise ModelRuntimeError(f"site Model Python is missing or not executable: {python}")
-    probe = _probe(python)
+    identity = probe(python, error=ModelRuntimeError)
     for key in ("python_version", "python_abi", "python_platform", "base_python_sha256"):
-        if probe.get(key) != expected.get(key):
+        if identity.get(key) != expected.get(key):
             raise ModelRuntimeError(f"site Model Runtime {key} mismatch")
     return {
         **actual,
@@ -239,7 +174,7 @@ def verify_runtime(runtime_root: Path, expected: dict[str, Any]) -> dict[str, An
         "manifest_path": str(manifest_path),
         "python_executable_resolved": str(python),
         "manifest_sha256": manifest_sha256(actual),
-        "probe": probe,
+        "probe": identity,
     }
 
 
@@ -258,7 +193,7 @@ def materialize_runtime(
         raise ModelRuntimeError(f"selected source Python is missing or not executable: {source_python}")
     if not lock_path.is_file():
         raise ModelRuntimeError(f"locked requirements file is missing: {lock_path}")
-    source_probe = _probe(source_python)
+    source_probe = probe(source_python, error=ModelRuntimeError)
     lock_sha256 = sha256_file(lock_path)
     runtime_id = _runtime_id(lock_sha256, source_probe)
     root = runtime_root.expanduser().resolve()
@@ -272,43 +207,42 @@ def materialize_runtime(
 
         staging = Path(tempfile.mkdtemp(prefix=f".{runtime_id}.", dir=root))
         try:
-            uv = _uv_binary(uv_bin)
+            uv = uv_binary(
+                uv_bin,
+                error=ModelRuntimeError,
+                message="uv is required to materialize package=none Model Python runtimes",
+            )
             cache_dir = root / ".uv-cache"
             cache_dir.mkdir(exist_ok=True)
-            env = _python_child_environment()
+            env = child_environment()
             env["UV_CACHE_DIR"] = str(cache_dir)
             _run(
-                [uv, "venv", "--no-project", "--no-python-downloads", "--python", source_probe["base_python"], str(staging)],
+                venv_command(uv, staging, python=source_probe["base_python"], allow_python_downloads=False),
                 env=env,
                 timeout=180,
             )
             runtime_python = staging / runtime_python_relative()
             _run(
-                [
+                sync_command(
                     uv,
-                    "pip",
-                    "sync",
-                    "--python",
-                    str(runtime_python),
-                    "--require-hashes",
-                    "--strict",
-                    "--allow-empty-requirements",
-                    "--no-python-downloads",
-                    str(lock_path),
-                ],
+                    runtime_python,
+                    lock_path,
+                    allow_python_downloads=False,
+                    allow_empty=True,
+                ),
                 env=env,
                 timeout=1800,
                 cwd=lock_path.parent,
             )
             frozen = _run(
-                [uv, "pip", "freeze", "--python", str(runtime_python), "--strict", "--no-python-downloads"],
+                freeze_command(uv, runtime_python, allow_python_downloads=False),
                 env=env,
                 timeout=180,
             ).stdout
             packages_path = staging / PACKAGES_NAME
             packages_path.write_text(frozen, encoding="utf-8")
             shutil.copy2(lock_path, staging / LOCK_NAME)
-            runtime_probe = _probe(runtime_python)
+            runtime_probe = probe(runtime_python, error=ModelRuntimeError)
             for key in ("python_version", "python_abi", "python_platform", "base_python_sha256"):
                 if runtime_probe[key] != source_probe[key]:
                     raise ModelRuntimeError(f"materialized Model Runtime {key} differs from source Python")
@@ -321,7 +255,7 @@ def materialize_runtime(
             (staging / MANIFEST_NAME).write_text(
                 json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )
-            staging.rename(runtime_dir)
+            publish(staging, runtime_dir, error=ModelRuntimeError)
         except (OSError, subprocess.SubprocessError):
             raise
         finally:

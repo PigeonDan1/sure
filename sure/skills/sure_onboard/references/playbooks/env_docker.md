@@ -5,7 +5,7 @@ Every local `/sure_onboard` success is a registry-backed, digest-pinned containe
 ## Required flow
 
 1. Write a model-specific Dockerfile and record its relative path and SHA-256.
-2. Run `"$HARNESS_PYTHON_BIN" scripts/describe_harness_runtime.py`, add its exact `COPY --from=sure_harness_runtime` instruction to the Dockerfile, and pass its exact `--build-context` option to Docker.
+2. Run `"$HARNESS_PYTHON_BIN" scripts/describe_harness_runtime.py`, add its exact `COPY --from=sure_harness_runtime` instruction to the Dockerfile, and pass its exact `--build-context` option to Docker. That option always names a digest-pinned Harness Runtime image; if the helper reports it has none, build one with `sure/runtime/harness/build_image.py` and export `SURE_HARNESS_RUNTIME_IMAGE=<repository>@sha256:<digest>` first.
 3. Build one explicit target image tag.
 4. Run Model Runtime import, load, inference, contract, and bounded-fixture checks inside that image.
 5. Run Harness Runtime imports, dataset preparation, server orchestration, prediction, and prediction-validation checks through the image binding returned by the helper.
@@ -30,6 +30,8 @@ The three documents must agree exactly on image tag, digest, immutable reference
 - `model_runtime.python_executable` and `harness_runtime.python_executable` are distinct;
 - `harness_runtime.runtime_id` and `lock_sha256` equal the active common Harness Runtime;
 - the Harness Runtime manifest and imports are live-probed in the exact digest image.
+
+The Harness Runtime the image copies in carries a uv-managed CPython built against glibc and no longer bundles its libraries, so the image needs a glibc base (2.17 or newer) on a matching architecture; a musl/Alpine base cannot start it, and `check_container_package.verify_live_runtimes` fails the package when the interpreter does not run in the digest-pinned image.
 
 The image must not depend on host absolute `.venv` paths. Model weights may be baked into the image or mounted from the approved model directory according to the declared policy, but the model mount stays read-only during Eval.
 

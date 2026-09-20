@@ -1,4 +1,3 @@
-import { createImagesModels, type ImagesProvider, type MutableImagesModels } from "../images-models.ts";
 import { MODELS } from "../models.generated.ts";
 import { type CreateModelsOptions, createModels, type MutableModels, type Provider } from "../models.ts";
 import type { Api, Model } from "../types.ts";
@@ -24,7 +23,6 @@ import { nvidiaProvider } from "./nvidia.ts";
 import { openaiProvider } from "./openai.ts";
 import { openaiCodexProvider } from "./openai-codex.ts";
 import { openrouterProvider } from "./openrouter.ts";
-import { openrouterImagesProvider } from "./openrouter-images.ts";
 import { qwenTokenPlanProvider } from "./qwen-token-plan.ts";
 import { qwenTokenPlanCnProvider } from "./qwen-token-plan-cn.ts";
 import { qwenTokenPlanIndividualProvider } from "./qwen-token-plan-individual.ts";
@@ -123,20 +121,6 @@ export function builtinProviders(): Provider[] {
 export function builtinModels(options?: CreateModelsOptions): MutableModels {
 	const models = createModels(options);
 	for (const provider of builtinProviders()) {
-		models.setProvider(provider);
-	}
-	return models;
-}
-
-/** All built-in image-generation providers, freshly constructed. */
-export function builtinImagesProviders(): ImagesProvider[] {
-	return [openrouterImagesProvider()];
-}
-
-/** An `ImagesModels` collection with every built-in image-generation provider registered. */
-export function builtinImagesModels(options?: CreateModelsOptions): MutableImagesModels {
-	const models = createImagesModels(options);
-	for (const provider of builtinImagesProviders()) {
 		models.setProvider(provider);
 	}
 	return models;

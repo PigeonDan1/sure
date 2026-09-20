@@ -17,6 +17,10 @@ for _parent in Path(__file__).resolve().parents:
 
 from sure.runtime.evaluation.task_registry import task_profile
 
+# The digest-pinned Harness Runtime image recorded by build_image.py, if one was
+# built and committed.
+RUNTIME_IMAGE_LOCK = Path(__file__).resolve().parents[4] / "sure" / "runtime" / "harness" / "runtime-image.json"
+
 
 def read_object(path: Path) -> dict:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -155,9 +159,8 @@ def harness_runtime_build_context(harness: dict[str, str] | None) -> str:
         return "directory"
     image_ref = os.environ.get("SURE_HARNESS_RUNTIME_IMAGE", "").strip()
     verified = False
-    config_path = Path(__file__).resolve().parents[4] / "sure" / "runtime" / "harness" / "runtime-image.json"
-    if not image_ref and config_path.is_file():
-        image_config = read_object(config_path)
+    if not image_ref and RUNTIME_IMAGE_LOCK.is_file():
+        image_config = read_object(RUNTIME_IMAGE_LOCK)
         image_ref = str(image_config.get("image_ref") or "").strip()
         if image_config.get("runtime_id") != harness["runtime_id"] or image_config.get("lock_sha256") != harness["lock_sha256"]:
             raise ValueError("runtime image identity does not match the active Harness Runtime")
@@ -169,9 +172,7 @@ def harness_runtime_build_context(harness: dict[str, str] | None) -> str:
             )
         except OSError:
             probe = None
-        if probe is None:
-            return "directory"
-        candidates = [line.strip() for line in probe.stdout.splitlines() if line.strip()]
+        candidates = [line.strip() for line in probe.stdout.splitlines() if line.strip()] if probe else []
         matches: list[str] = []
         for candidate in candidates:
             data = inspect_image(candidate)
@@ -194,7 +195,12 @@ def harness_runtime_build_context(harness: dict[str, str] | None) -> str:
                 "rebuild it with sure/runtime/harness/build_image.py"
             )
         return f"docker-image://{image_ref}"
-    return "directory"
+    # The host runtime is a uv virtual environment and cannot be copied into an
+    # image; the runtime image builds its own from the same lock.
+    raise ValueError(
+        "no digest-pinned Harness Runtime image is available; build one with "
+        "sure/runtime/harness/build_image.py and set SURE_HARNESS_RUNTIME_IMAGE"
+    )
 
 
 def render(source: Path, destination: Path, replacements: dict[str, str]) -> None:

@@ -21,7 +21,7 @@
 - Always ask before removing functionality or code that appears intentional.
 - Do not preserve backward compatibility unless the user asks for it.
 - Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
-- The pi model catalog is frozen and committed (see Vendored pi). Never hand-edit the generated catalog files under `packages/ai/src/`, and never run `npm run generate-models` or `npm run hydrate-model-data`: both fetch from models.dev.
+- The pi model catalog is frozen and committed (see Vendored pi). The networked generators are gone; `npm run build -w packages/ai` is offline and validates the committed catalog through `check:model-data`.
 
 ## Commands
 
@@ -152,6 +152,12 @@ Upstream features this fork no longer carries:
 - The `examples/` directory of sample extensions and SDK snippets.
 - RPC mode (`--mode rpc`, `rpc-entry`, `RpcClient`).
 - HTML export (`--export`, HTML `/export`, the theme `export` colors).
+- The pi-ai image generation stack (`generateImages`, `ImagesModels`, the OpenRouter images provider and its catalog).
+- The networked model catalog generators (`scripts/generate-models.ts` and the two reasoning-options helpers); `npm run build -w packages/ai` is offline now.
+- The second CLI (`bin: pi-ai`) and the bun OAuth flow registration.
+- Bun compiled-binary detection (`isBunBinary`).
+- The browser smoke check (`npm run check:browser-smoke`).
+- The `canvas` devDependency and `scripts/generate-test-image.ts`.
 - The `opencode` and `opencode-go` providers (OpenCode Zen and OpenCode Go).
 - The `mistral` provider and its `mistral-conversations` API; Mistral models stay reachable through OpenRouter, the Vercel AI Gateway, NVIDIA, Cloudflare Workers AI, or a custom OpenAI-compatible gateway.
 - The `google` and `google-vertex` providers, their `google-generative-ai` / `google-shared` / `google-vertex` APIs, and `@google/genai`; Gemini models stay reachable through GitHub Copilot, OpenRouter, the Vercel AI Gateway, or a custom OpenAI-compatible gateway.

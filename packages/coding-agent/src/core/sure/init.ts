@@ -1,8 +1,9 @@
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { getModels } from "@earendil-works/pi-ai/compat";
+import { harnessBootstrapCommand, repoRootForPackage } from "../../../../../sure/runtime/harness/resolve.ts";
 import { getModelsPath } from "../../config.ts";
 import type { ExtensionCommandContext } from "../extensions/types.ts";
 import type { ModelRegistry } from "../model-registry.ts";
@@ -202,15 +203,18 @@ async function ensureAuth(
 	}
 }
 
-function checkPythonEnvironment(): { ok: boolean; details: string[] } {
-	const details: string[] = [];
-	try {
-		const version = execSync("python3 --version", { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
-		details.push(version);
-	} catch {
-		return { ok: false, details: ["python3 not found"] };
+/**
+ * Probe the launcher the skills will really spawn — uv, or the interpreter
+ * SURE_HARNESS_BOOTSTRAP_PYTHON names. Both answer `--version`. Asking anything
+ * else here would make /sure_init disagree with resolveHarnessPython.
+ */
+function checkUvEnvironment(repoRoot: string): { ok: boolean; command: string; details: string[] } {
+	const { command } = harnessBootstrapCommand(repoRoot);
+	const probe = spawnSync(command, ["--version"], { encoding: "utf-8" });
+	if (probe.error || probe.status !== 0) {
+		return { ok: false, command, details: [`${command} not found`] };
 	}
-	return { ok: true, details };
+	return { ok: true, command, details: [probe.stdout.trim()] };
 }
 
 function writeInitManifest(cwd: string, manifest: SureInitManifest): string {
@@ -735,7 +739,10 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 	const discovered = discoverSureSkillPackages(ctx.cwd);
 	const availableSkills = discovered.packages.map((pkg) => `/${pkg.manifest.command}`);
 
-	const python = checkPythonEnvironment();
+	// Same repo root the skills' preStart hands to resolveHarnessPython, so a
+	// /sure_init run from a subdirectory asks about the launcher they will spawn.
+	const skillPackageDir = discovered.packages[0]?.packageDir;
+	const uv = checkUvEnvironment(skillPackageDir ? repoRootForPackage(skillPackageDir) : ctx.cwd);
 
 	const manifest: SureInitManifest = {
 		initializedAt: new Date().toISOString(),
@@ -748,7 +755,7 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 			? { capabilityProbe: { probedAt: new Date().toISOString(), steps: probeSteps, effortNote: effortNote ?? "" } }
 			: {}),
 		trusted: true,
-		pythonOk: python.ok,
+		uvOk: uv.ok,
 		availableSkills,
 		version: SURE_INIT_VERSION,
 	};
@@ -766,8 +773,10 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 	if (listing) {
 		lines.push(describeListingSource(listing));
 	}
-	if (!python.ok) {
-		lines.push("Warning: Python backend check failed. Some SURE skills may not work.");
+	if (!uv.ok) {
+		lines.push(
+			`Warning: ${uv.command} was not found. SURE skills cannot materialize their Python runtimes without it.`,
+		);
 	}
 	if (discovered.diagnostics.length > 0) {
 		lines.push("Discovery diagnostics:");

@@ -740,23 +740,40 @@ def verify_decision(review_path: Path, decision: str, rationale: str | None) -> 
         "review_packet": str(review_path),
         "review_packet_digest": expected_packet,
         "candidate_digest": digest,
-        "actor": {"os_user": getpass.getuser(), "uid": os.getuid(), "gid": os.getgid()},
+        "actor": _actor(),
         "rationale": rationale or "",
         "accepted_exceptions": [],
     }
 
 
+def _actor() -> dict[str, Any]:
+    """Who decided. Windows has no uid/gid, so those keys are simply absent."""
+    actor: dict[str, Any] = {"os_user": getpass.getuser()}
+    if hasattr(os, "getuid"):
+        actor["uid"] = os.getuid()
+        actor["gid"] = os.getgid()
+    return actor
+
+
+def _fsync_directory(path: Path) -> None:
+    """Flush a directory entry. Windows has no descriptor for a directory."""
+    if os.name == "nt":
+        return
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _fsync_tree(root: Path) -> None:
     for path in root.rglob("*"):
         if path.is_file():
-            with path.open("rb") as handle:
+            # Windows flushes through the handle and refuses a read-only one.
+            with path.open("rb+" if os.name == "nt" else "rb") as handle:
                 os.fsync(handle.fileno())
     for path in sorted((item for item in root.rglob("*") if item.is_dir()), reverse=True):
-        descriptor = os.open(path, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        _fsync_directory(path)
 
 
 def publish(run_dir: Path, replace: bool) -> dict[str, Any]:
@@ -839,11 +856,7 @@ def publish(run_dir: Path, replace: bool) -> dict[str, Any]:
             backup = root / f".{destination.name}.replaced-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
             destination.rename(backup)
         staging.rename(destination)
-        descriptor = os.open(root, os.O_RDONLY)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        _fsync_directory(root)
         result["temporary_path"] = None
         result["backup_path"] = str(backup) if backup else None
         atomic_json(destination / "artifacts" / "publication_result.json", result)

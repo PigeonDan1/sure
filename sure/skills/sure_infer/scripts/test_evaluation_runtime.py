@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
-import stat
 import subprocess
 import sys
 import tempfile
@@ -19,11 +19,10 @@ from evaluation_runtime import (
     _approved_harness_runtime,
     _engine_commit,
     _engine_has_repository,
+    _engine_pyproject_sha256,
     _expected_binding,
+    _materialize,
     _verify,
-    _sha256,
-    _make_group_writable,
-    _wrapper,
     ensure_evaluation_runtime,
     evaluation_child_environment,
     evaluation_runtime_from_eval_input,
@@ -31,125 +30,103 @@ from evaluation_runtime import (
 )
 from resolve_evaluation_engine import git_environment
 
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "sure" / "runtime" / "uvenv.py").is_file():
+        sys.path.insert(0, str(_parent))
+        break
+
+from sure.runtime.uvenv import runtime_python_relative  # noqa: E402
+
 
 class EvaluationRuntimeTests(unittest.TestCase):
-    def test_materialized_runtime_is_group_writable_without_inventing_execute_bits(self) -> None:
+    def test_the_binding_points_at_a_real_interpreter_in_the_runtime_root(self) -> None:
+        # The runtime used to be a bash script that exec'd the cluster's dynamic
+        # loader against the Harness Runtime's copied CPython. A uv venv owns its
+        # own interpreter, so the binding names that interpreter and nothing else.
         with tempfile.TemporaryDirectory() as raw_root:
             root = Path(raw_root)
-            data = root / "data.json"
-            executable = root / "bin" / "python"
-            executable.parent.mkdir()
-            data.write_text("{}\n", encoding="utf-8")
-            executable.write_text("#!/bin/sh\n", encoding="utf-8")
-            root.chmod(0o700)
-            executable.parent.chmod(0o700)
-            data.chmod(0o600)
-            executable.chmod(0o700)
-
-            _make_group_writable(root)
-
-            self.assertEqual(stat.S_IMODE(root.stat().st_mode) & 0o070, 0o070)
-            self.assertEqual(stat.S_IMODE(executable.parent.stat().st_mode) & 0o070, 0o070)
-            self.assertEqual(stat.S_IMODE(data.stat().st_mode) & 0o070, 0o060)
-            self.assertEqual(stat.S_IMODE(executable.stat().st_mode) & 0o070, 0o070)
-
-            inherited = root / "created-after-finalize.txt"
-            inherited.write_text("ok\n", encoding="utf-8")
-            self.assertEqual(stat.S_IMODE(inherited.stat().st_mode) & 0o060, 0o060)
-
-    def test_wrapper_does_not_leak_parent_pythonhome(self) -> None:
-        text = _wrapper(
-            {
-                "runtime_root": "/repo/sure/.runtime/evaluation/demo",
-                "harness_runtime_root": "/repo/sure/.runtime/harness/demo",
-                "engine_root": "/repo/sure/external/sure-evaluation",
-                "dynamic_loader": "/lib64/ld-linux-x86-64.so.2",
+            engine = root / "engine"
+            engine.mkdir()
+            (engine / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+            lock = root / "requirements.lock.txt"
+            lock.write_text("demo==1.0\n", encoding="utf-8")
+            harness_python = root / "bin" / "python"
+            harness_python.parent.mkdir(parents=True, exist_ok=True)
+            harness_python.write_text("#!/bin/sh\n", encoding="utf-8")
+            harness_python.chmod(0o755)
+            (root / "runtime-manifest.json").write_text(
+                json.dumps(
+                    {
+                        "schema": "sure.harness.runtime.manifest.v1",
+                        "runtime_id": "sure-harness-approved",
+                        "lock_sha256": "a" * 64,
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            harness_env = {
+                "HARNESS_PYTHON_BIN": str(harness_python),
+                "SURE_HARNESS_RUNTIME_ID": "sure-harness-approved",
+                "SURE_HARNESS_LOCK_SHA256": "a" * 64,
+                "SURE_HARNESS_MANIFEST_PATH": str(root / "runtime-manifest.json"),
+                "SURE_HARNESS_RUNTIME_ROOT": str(root),
             }
-        )
-        self.assertIn("unset PYTHONHOME PYTHONEXECUTABLE", text)
-        self.assertIn('"$_sure_eval_root/site-packages', text)
-        self.assertIn("--library-path", text)
-        self.assertNotIn("export LD_LIBRARY_PATH='/repo", text)
-        self.assertIn("_sure_eval_parent_ld", text)
-
-    def test_group_permissions_leave_another_owners_files_alone(self) -> None:
-        # The runtime cache is shared, and its log directory keeps every
-        # bootstrap log anyone has written. Only an owner may change a file's
-        # ACL, so re-ACLing the whole directory means the first person to
-        # materialize a runtime is the last: everyone after them dies on
-        # "Operation not permitted" with the packages already installed.
-        with tempfile.TemporaryDirectory() as raw_root:
-            root = Path(raw_root)
-            (root / "bootstrap-old.log").write_text("", encoding="utf-8")
-            touched: list[Path] = []
-
-            def record(setfacl: str, entries: str, paths: list[Path]) -> None:
-                touched.extend(paths)
-
-            with mock.patch("evaluation_runtime.shutil.which", return_value="/usr/bin/setfacl"), \
-                mock.patch("evaluation_runtime._apply_acl", record), \
-                mock.patch("evaluation_runtime.os.getuid", return_value=999999):
-                _make_group_writable(root)
-
-            self.assertEqual(touched, [])
-
-    def test_the_wrapper_is_identical_wherever_the_runtime_is_reached_from(self) -> None:
-        # One cache entry is reached through several names: the same storage
-        # carries two mount paths, and the Harness Runtime sits in the repo on
-        # the host but in /opt inside the evaluation image. _verify compares
-        # this text byte for byte, so any of those names baked into it turns a
-        # perfectly good runtime into "wrapper differs from the contract".
-        loader = "/lib64/ld-linux-x86-64.so.2"
-        host = _wrapper(
-            {
-                "runtime_root": "/storage/one/checkout/sure/.runtime/evaluation/demo",
-                "harness_runtime_root": "/storage/one/checkout/sure/.runtime/harness/demo",
-                "engine_root": "/storage/one/checkout/sure/external/sure-evaluation",
-                "dynamic_loader": loader,
+            spec = {
+                "lock_file": "requirements.lock.txt",
+                "python": "3.11",
+                "materialization_version": 5,
+                "engine_commit": "c" * 40,
+                "engine_pyproject_sha256": _engine_pyproject_sha256(engine / "pyproject.toml"),
             }
-        )
-        container = _wrapper(
-            {
-                "runtime_root": "/storage/two/checkout/sure/.runtime/evaluation/demo",
-                "harness_runtime_root": "/opt/sure-harness/demo",
-                "engine_root": "/storage/two/checkout/sure/external/sure-evaluation",
-                "dynamic_loader": loader,
-            }
-        )
-        self.assertEqual(host, container)
-        for name in ("/storage/one", "/storage/two", "/opt/sure-harness"):
-            self.assertNotIn(name, host)
+            with mock.patch.dict(os.environ, harness_env):
+                with mock.patch("evaluation_runtime.SPEC_ROOT", root):
+                    with mock.patch("evaluation_runtime._load_json", return_value=spec):
+                        with mock.patch("evaluation_runtime._engine_commit", return_value="c" * 40):
+                            binding = _expected_binding(engine)
 
-    def test_child_environment_removes_only_harness_library_path(self) -> None:
+        self.assertNotIn("dynamic_loader", binding)
+        self.assertNotIn("site_packages", binding)
+        self.assertIn("-m5-", binding["runtime_id"])
+        self.assertEqual(
+            binding["python_executable"],
+            str(Path(binding["runtime_root"]) / runtime_python_relative()),
+        )
+
+    def test_child_environment_removes_the_harness_interpreter_state(self) -> None:
         harness_root = "/repo/sure/.runtime/harness/demo"
         env = evaluation_child_environment(
             {
                 "SURE_HARNESS_RUNTIME_ROOT": harness_root,
-                "LD_LIBRARY_PATH": f"{harness_root}/base/lib:/usr/local/cuda/lib64:/opt/model/lib",
+                "LD_LIBRARY_PATH": "/usr/local/cuda/lib64:/opt/model/lib",
                 "PYTHONHOME": f"{harness_root}/base",
                 "PYTHONPATH": f"{harness_root}/site-packages:/opt/model-runtime",
-                "PYTHONEXECUTABLE": f"{harness_root}/base/bin/python",
+                "PYTHONEXECUTABLE": f"{harness_root}/bin/python",
+                "KEEP_ME": "yes",
             }
         )
-        self.assertEqual(env["LD_LIBRARY_PATH"], "/usr/local/cuda/lib64:/opt/model/lib")
         self.assertNotIn("PYTHONHOME", env)
         self.assertNotIn("PYTHONPATH", env)
         self.assertNotIn("PYTHONEXECUTABLE", env)
+        # A uv venv exports no library path of its own, so whatever the user set
+        # is theirs and survives.
+        self.assertEqual(env["LD_LIBRARY_PATH"], "/usr/local/cuda/lib64:/opt/model/lib")
+        self.assertEqual(env["KEEP_ME"], "yes")
 
     def test_import_probe_runs_from_the_engine_root(self) -> None:
         with tempfile.TemporaryDirectory() as raw_root:
             root = Path(raw_root)
             engine_root = root / "engine"
             engine_root.mkdir()
-            python = root / "runtime" / "bin" / "python"
+            python = root / "runtime" / runtime_python_relative()
             python.parent.mkdir(parents=True)
             manifest_path = root / "runtime" / "runtime-manifest.json"
             binding = {
                 "runtime_id": "sure-evaluation-test",
                 "runtime_type": "evaluation_python",
                 "runtime_version": "root-v1",
-                "materialization_version": 1,
-                "dynamic_loader": "/lib64/ld-linux-x86-64.so.2",
+                "materialization_version": 5,
+                "python": "3.11",
                 "python_executable": str(python),
                 "manifest_path": str(manifest_path),
                 "lock_sha256": "a" * 64,
@@ -160,7 +137,7 @@ class EvaluationRuntimeTests(unittest.TestCase):
                 "harness_runtime_root": str(root / "harness"),
                 "required_imports": ["sure_eval"],
             }
-            python.write_text(_wrapper(binding), encoding="utf-8")
+            python.write_text("", encoding="utf-8")
             manifest_path.write_text(json.dumps(binding), encoding="utf-8")
             completed = mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -169,6 +146,45 @@ class EvaluationRuntimeTests(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertEqual(run.call_args.kwargs["cwd"], str(engine_root))
+
+    def test_the_materialized_manifest_records_the_interpreter_it_got(self) -> None:
+        # The venv no longer borrows the approved Harness interpreter: uv fetches
+        # whatever 3.11 it can reach. The manifest is the only place that says
+        # which one, so it carries the probe identity the other two runtimes use.
+        identity = {
+            "python_version": "3.11.16",
+            "python_abi": "cpython-311-x86_64-linux-gnu",
+            "python_platform": "linux-x86_64",
+            "base_python": "/opt/uv/python/3.11.16/bin/python3.11",
+            "base_python_sha256": "d" * 64,
+        }
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            cache = root / "cache"
+            runtime_root = cache / "sure-evaluation-test"
+            binding = {
+                "runtime_id": "sure-evaluation-test",
+                "python": "3.11",
+                "python_executable": str(runtime_root / runtime_python_relative()),
+                "runtime_root": str(runtime_root),
+                "manifest_path": str(runtime_root / "runtime-manifest.json"),
+                "lock_path": str(root / "requirements.lock.txt"),
+                "required_imports": [],
+            }
+            completed = mock.Mock(returncode=0, stdout="", stderr="")
+            with mock.patch("evaluation_runtime.CACHE_ROOT", cache):
+                with mock.patch("evaluation_runtime.uv_binary", return_value="uv"):
+                    with mock.patch("evaluation_runtime.subprocess.run", return_value=completed):
+                        with mock.patch("evaluation_runtime.probe", return_value=identity):
+                            _materialize(binding)
+            manifest = json.loads((runtime_root / "runtime-manifest.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(manifest["python_version"], "3.11.16")
+        self.assertEqual(manifest["python_abi"], "cpython-311-x86_64-linux-gnu")
+        self.assertEqual(manifest["base_python_sha256"], "d" * 64)
+        # Provenance, not contract: an older manifest without them still verifies.
+        for key in ("python_version", "python_abi", "base_python_sha256"):
+            self.assertNotIn(key, binding)
 
     def test_non_external_input_has_no_evaluation_runtime(self) -> None:
         self.assertIsNone(
@@ -363,15 +379,13 @@ class ApprovedHarnessRuntimeTests(unittest.TestCase):
             engine = root / "engine"
             engine.mkdir()
             (engine / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
-            loader = root / "ld.so"
-            loader.write_text("", encoding="utf-8")
             lock = root / "requirements.lock.txt"
             lock.write_text("demo==1.0\n", encoding="utf-8")
             spec = {
                 "lock_file": "requirements.lock.txt",
+                "python": "3.11",
                 "engine_commit": "c" * 40,
-                "engine_pyproject_sha256": _sha256(engine / "pyproject.toml"),
-                "dynamic_loader": str(loader),
+                "engine_pyproject_sha256": _engine_pyproject_sha256(engine / "pyproject.toml"),
             }
             with mock.patch.dict(os.environ, self._runtime(root)):
                 with mock.patch("evaluation_runtime.SPEC_ROOT", root):
@@ -551,6 +565,76 @@ class AttestedBindingTests(unittest.TestCase):
         self.assertIn("lock_sha256", message)
         self.assertIn("0000000000000000", message)
         self.assertNotIn("runtime_id", message)
+
+
+LF_PYPROJECT = b'[project]\nname = "sure-eval"\n'
+CRLF_PYPROJECT = LF_PYPROJECT.replace(b"\n", b"\r\n")
+
+
+class EngineNewlineIdentityTests(unittest.TestCase):
+    """The engine checkout decides its own line endings.
+
+    sure/external/sure-evaluation is its own repository, so the superproject's
+    `* text=auto eol=lf` does not reach it and a Windows clone with git's
+    default core.autocrlf=true writes every engine file with CRLF. If the
+    identity hashed those bytes it could never match the pinned digest there,
+    and both evaluation entry points would refuse to materialize at all.
+    """
+
+    def _pyproject_sha(self, root: Path, payload: bytes, pinned: str) -> str:
+        engine = root / "engine"
+        engine.mkdir()
+        (engine / "pyproject.toml").write_bytes(payload)
+        (root / "requirements.lock.txt").write_text("demo==1.0\n", encoding="utf-8")
+        harness_python = root / "bin" / "python"
+        harness_python.parent.mkdir(parents=True, exist_ok=True)
+        harness_python.write_text("#!/bin/sh\n", encoding="utf-8")
+        harness_python.chmod(0o755)
+        (root / "runtime-manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema": "sure.harness.runtime.manifest.v1",
+                    "runtime_id": "sure-harness-approved",
+                    "lock_sha256": "a" * 64,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        harness_env = {
+            "HARNESS_PYTHON_BIN": str(harness_python),
+            "SURE_HARNESS_RUNTIME_ID": "sure-harness-approved",
+            "SURE_HARNESS_LOCK_SHA256": "a" * 64,
+            "SURE_HARNESS_MANIFEST_PATH": str(root / "runtime-manifest.json"),
+            "SURE_HARNESS_RUNTIME_ROOT": str(root),
+        }
+        spec = {
+            "lock_file": "requirements.lock.txt",
+            "python": "3.11",
+            "materialization_version": 5,
+            "engine_commit": "c" * 40,
+            "engine_pyproject_sha256": pinned,
+        }
+        with mock.patch.dict(os.environ, harness_env):
+            with mock.patch("evaluation_runtime.SPEC_ROOT", root):
+                with mock.patch("evaluation_runtime._load_json", return_value=spec):
+                    with mock.patch("evaluation_runtime._engine_commit", return_value="c" * 40):
+                        return _expected_binding(engine)["engine_pyproject_sha256"]
+
+    def test_a_crlf_engine_checkout_still_matches_the_pinned_identity(self) -> None:
+        pinned = hashlib.sha256(LF_PYPROJECT).hexdigest()
+        with tempfile.TemporaryDirectory() as lf_root:
+            self.assertEqual(self._pyproject_sha(Path(lf_root), LF_PYPROJECT, pinned), pinned)
+        with tempfile.TemporaryDirectory() as crlf_root:
+            self.assertEqual(self._pyproject_sha(Path(crlf_root), CRLF_PYPROJECT, pinned), pinned)
+
+    def test_a_lone_carriage_return_is_content_and_not_a_line_ending(self) -> None:
+        """Normalising a bare CR would erase a real difference between two files."""
+        pinned = hashlib.sha256(b"a\nb").hexdigest()
+        with tempfile.TemporaryDirectory() as raw_root:
+            with self.assertRaises(EvaluationRuntimeError) as caught:
+                self._pyproject_sha(Path(raw_root), b"a\rb", pinned)
+        self.assertIn("newline normalisation", str(caught.exception))
 
 
 if __name__ == "__main__":

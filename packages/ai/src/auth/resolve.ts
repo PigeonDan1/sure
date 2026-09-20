@@ -42,7 +42,7 @@ function withCauseDetail(message: string, cause: unknown): string {
 }
 
 /**
- * Auth resolution shared by the `Models` and `ImagesModels` collections.
+ * Auth resolution used by the `Models` collection.
  * A stored credential owns the provider: ambient/env is consulted only when
  * nothing is stored. No silent env fallback after a failed refresh or for a
  * credential type without a matching handler.

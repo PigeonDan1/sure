@@ -73,7 +73,7 @@ adapter 仓库由 `network.container_registry` 和 `container_delivery.repositor
 
 source 镜像构建会自动追加一层：若基础镜像没有 `git`，按镜像内可用的 apt/apk/dnf/yum/microdnf 安装 `git` 和 `ca-certificates`；原始 Dockerfile 不会被改写，最终 `USER` 会恢复。这样 adapter 镜像继承该工具，避免 `/sure_infer` 运行时缺少 `git`。
 
-adapter 镜像同时复制当前锁定的 Harness Runtime。默认从 `SURE_HARNESS_RUNTIME_ROOT` 目录复制；配置 digest 固定的 runtime image 后，设置 `SURE_HARNESS_RUNTIME_IMAGE=<repository>@sha256:<digest>`，并传入 `--build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>`。最终 `/sure_infer` 使用镜像内的 Model Python 和 Harness Python 两个独立运行时，不再把仓库 Harness Runtime 挂载进模型容器。
+adapter 镜像同时带上当前锁定的 Harness Runtime。运行时是一个 uv 虚拟环境，`bin/python` 指向树外的基础解释器，从主机目录复制进镜像只会得到一个起不来的 Python，所以唯一来源是 digest 固定的 runtime image：先用 `sure/runtime/harness/build_image.py` 构一个（镜像内按同一份 lock 自建，`runtime_id` 因此与主机一致），再设置 `SURE_HARNESS_RUNTIME_IMAGE=<repository>@sha256:<digest>`，并传入 `--build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>`；找不到这样一个镜像时 `scaffold_adapter.py` 直接拒绝，不再回退到主机目录。最终 `/sure_infer` 使用镜像内的 Model Python 和 Harness Python 两个独立运行时，不再把仓库 Harness Runtime 挂载进模型容器。
 
 ## 工作流(23 个单元)
 
@@ -164,7 +164,7 @@ sure/models/<model_name>/
 | 依赖 | 说明 |
 | --- | --- |
 | `uv` | Harness Runtime 引导必需,可用 `SURE_UV_BIN` 指定。 |
-| Python 3.11 | 引导复制 host CPython 3.11 的 stdlib 与共享库。conda 版 `INSTSONAME=libpython3.11.a` 但只带 `.so`,会报 "standard library or shared library is missing",需用 python-build-standalone 等正牌 CPython。 |
+| Python 3.11 | 主机不需要自备:引导跑 `uv venv --no-project --python 3.11`,主机没有 3.11 时 uv 自己下一份托管 CPython,所以首次物化要联网、耗时数分钟。`SURE_HARNESS_BOOTSTRAP_PYTHON` 只决定用哪个解释器启动 `bootstrap.py`,虚拟环境本身始终由 uv 按这个版本号建。 |
 | Docker | source 与 adapter 镜像的 load、build、运行、push/pull 全部依赖本地 Docker daemon。部分站点的 `docker` 是包装脚本,容器内进程失败时仍可能返回 0,gate 不能只信退出码。 |
 | VC | `device=cuda` 和 `auto` 必须能调用 `vc`;分区和默认资源来自站点策略与命令参数。 |
 | GPU | 视模型规格而定,7B BF16 模型约需 14 GiB 空闲显存;GPU smoke 在 VC 作业内执行,不占用登录节点本地 GPU。 |

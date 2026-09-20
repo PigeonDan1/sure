@@ -4,9 +4,8 @@
 // representative per tier (Success Criterion 7): a body-blind text provider
 // (openai-completions) and a status-only provider (openai-responses). Each
 // asserts the resulting errorMessage carries both the HTTP status and the body
-// reason. The image-provider tier is covered by
-// provider-error-body-passthrough.test.ts; the already-correct happy path (no
-// double body / no duplicated status) is asserted via the shared helper in
+// reason. The already-correct happy path (no double body / no duplicated
+// status) is asserted via the shared helper in
 // error-body.test.ts.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";

@@ -58,8 +58,10 @@ npm run sure:doctor
 
 ```bash
 git -C sure/external/sure-evaluation rev-parse HEAD          # 填进 runtime.json 的 engine_commit
-sha256sum sure/external/sure-evaluation/pyproject.toml       # 填进 engine_pyproject_sha256
+git -C sure/external/sure-evaluation show HEAD:pyproject.toml | sha256sum   # 填进 engine_pyproject_sha256
 ```
+
+第二条取的是提交里的内容(LF 换行),不是工作区文件:Windows 默认检出会把它转成 CRLF,对工作区文件直接 `sha256sum` 得到的值运行时永远对不上(运行时比对前先把 CRLF 归一成 LF)。
 
 两个值写进 `sure/runtime/evaluation/runtime.json`。gitlink 和 runtime.json 里记的值对不上时,`/sure_eval` 一解析 route plan 就当场报 `evaluation engine commit differs from the locked runtime`,而 `npm run sure:doctor` 在 submodule 正常的情况下查不出这一项。
 

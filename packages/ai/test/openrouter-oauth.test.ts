@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryCredentialStore } from "../src/auth/credential-store.ts";
 import { openRouterOAuth } from "../src/auth/oauth/openrouter.ts";
-import { createImagesModels } from "../src/images-models.ts";
 import { createModels } from "../src/models.ts";
 import { openrouterProvider } from "../src/providers/openrouter.ts";
-import { openrouterImagesProvider } from "../src/providers/openrouter-images.ts";
 
 const TOKEN_URL = "https://openrouter.ai/api/v1/auth/keys";
 const nativeFetch = globalThis.fetch;
@@ -26,15 +24,14 @@ describe.sequential("OpenRouter OAuth", () => {
 		vi.unstubAllEnvs();
 	});
 
-	it("is exposed by both OpenRouter providers alongside API-key auth", () => {
-		for (const provider of [openrouterProvider(), openrouterImagesProvider()]) {
-			expect(provider.auth.apiKey).toBeDefined();
-			expect(provider.auth.oauth).toBeDefined();
-			expect(provider.auth.oauth?.loginLabel).toBe("Sign in with OpenRouter");
-		}
+	it("is exposed by the OpenRouter provider alongside API-key auth", () => {
+		const provider = openrouterProvider();
+		expect(provider.auth.apiKey).toBeDefined();
+		expect(provider.auth.oauth).toBeDefined();
+		expect(provider.auth.oauth?.loginLabel).toBe("Sign in with OpenRouter");
 	});
 
-	it("resolves the same stored OAuth key for text and image providers", async () => {
+	it("resolves the stored OAuth key for the text provider", async () => {
 		const credentials = new InMemoryCredentialStore();
 		await credentials.modify("openrouter", async () => ({
 			type: "oauth",
@@ -45,11 +42,8 @@ describe.sequential("OpenRouter OAuth", () => {
 
 		const textModels = createModels({ credentials });
 		textModels.setProvider(openrouterProvider());
-		const imageModels = createImagesModels({ credentials });
-		imageModels.setProvider(openrouterImagesProvider());
 
 		expect((await textModels.getAuth("openrouter"))?.auth.apiKey).toBe("sk-or-stored");
-		expect((await imageModels.getAuth("openrouter"))?.auth.apiKey).toBe("sk-or-stored");
 	});
 
 	it("runs PKCE on a one-shot loopback callback and exchanges the code for a permanent API key", async () => {

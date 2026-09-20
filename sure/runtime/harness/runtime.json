@@ -2,7 +2,7 @@
   "schema": "sure.harness.runtime.spec.v1",
   "harness_version": "v1",
   "python": "3.11",
-  "materialization_version": 2,
+  "materialization_version": 3,
   "lock_file": "requirements.lock.txt",
   "required_imports": [
     "yaml",

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from bootstrap import ModelRuntimeError, _probe, materialize_runtime, runtime_python_relative, verify_runtime
+from bootstrap import ModelRuntimeError, materialize_runtime, probe, runtime_python_relative, verify_runtime
 
 
 class ModelRuntimeBootstrapTests(unittest.TestCase):
@@ -39,6 +39,42 @@ class ModelRuntimeBootstrapTests(unittest.TestCase):
         self.assertNotIn("runtime_root", manifest)
         self.assertNotIn(str(self.root), json.dumps(manifest))
 
+    def test_manifest_keys_are_the_sealed_set(self) -> None:
+        # Approved model bundles compare this manifest as a whole dict
+        # (verify_runtime: `if actual != expected`). Adding or dropping a key
+        # invalidates every existing approval, so the set is pinned here.
+        contract = materialize_runtime(
+            runtime_root=self.runtime_root,
+            source_python=Path(sys.executable),
+            lock_path=self.lock,
+        )
+        manifest = json.loads(Path(contract["manifest_path"]).read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            sorted(manifest),
+            sorted(
+                [
+                    "schema",
+                    "runtime_id",
+                    "runtime_type",
+                    "backend",
+                    "materialization",
+                    "materialization_version",
+                    "python_executable",
+                    "python_version",
+                    "python_abi",
+                    "python_platform",
+                    "base_python_sha256",
+                    "lock_file",
+                    "lock_sha256",
+                    "installed_packages_file",
+                    "installed_packages_sha256",
+                ]
+            ),
+        )
+        self.assertEqual(manifest["materialization"], "uv_venv")
+        self.assertEqual(manifest["schema"], "sure.model.runtime.manifest.v1")
+
     def test_runtime_python_path_matches_host_platform(self) -> None:
         expected = "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
         self.assertEqual(runtime_python_relative(), expected)
@@ -53,8 +89,12 @@ class ModelRuntimeBootstrapTests(unittest.TestCase):
             },
             clear=False,
         ):
-            probe = _probe(Path(sys.executable))
-        self.assertEqual(probe["base_python"], str(Path(sys.executable).resolve()))
+            identity = probe(Path(sys.executable))
+        # The probe reports the base interpreter, not the one it was pointed at:
+        # inside a virtualenv those differ, and only POSIX makes bin/python a
+        # symlink that resolves back onto the base. Compare with what the probe
+        # is meant to report, the way the probe itself resolves it.
+        self.assertEqual(identity["base_python"], str(Path(sys._base_executable).resolve()))
 
     def test_rejects_tampered_package_inventory(self) -> None:
         contract = materialize_runtime(
