@@ -89,6 +89,11 @@ describe("isContextOverflow", () => {
 		expect(isContextOverflow(message, 1048575)).toBe(true);
 	});
 
+	it("detects Bedrock-compatible input length errors", () => {
+		const message = createErrorMessage("Input is too long for requested model.");
+		expect(isContextOverflow(message, 200000)).toBe(true);
+	});
+
 	it("does not treat generic non-overflow Ollama errors as overflow", () => {
 		const message = createErrorMessage("500 `model runner crashed unexpectedly`");
 		expect(isContextOverflow(message, 32768)).toBe(false);
