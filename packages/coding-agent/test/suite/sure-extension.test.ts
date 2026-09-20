@@ -101,13 +101,13 @@ function linkRepositorySkill(tempDir: string, skillName: string): void {
 	const target = resolve(__dirname, "../../../../sure/skills", skillName);
 	const parent = join(tempDir, "sure", "skills");
 	mkdirSync(parent, { recursive: true });
-	symlinkSync(target, join(parent, skillName), "dir");
+	symlinkSync(target, join(parent, skillName), "junction");
 	// The hooks import ../../../runtime/... relative to their own path, and jiti
 	// resolves that from the symlink, not from its target, so the fixture needs
 	// the runtime tree next to sure/skills as well.
 	const runtime = join(tempDir, "sure", "runtime");
 	if (!existsSync(runtime)) {
-		symlinkSync(resolve(__dirname, "../../../../sure/runtime"), runtime, "dir");
+		symlinkSync(resolve(__dirname, "../../../../sure/runtime"), runtime, "junction");
 	}
 }
 
