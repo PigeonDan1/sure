@@ -24,7 +24,16 @@ function isWritable(root: string): boolean {
 	} catch {
 		return false;
 	} finally {
-		rmSync(probe, { recursive: true, force: true });
+		// Removing the probe must never fail the check: force only swallows
+		// ENOENT, so a handle held by a scanner or an indexer, or a drop-box ACL
+		// that grants add-subdirectory but denies delete-child, raises EPERM
+		// here. Retry a few times, then leave the probe behind rather than abort
+		// a command whose whole contract is that it does not fail.
+		try {
+			rmSync(probe, { recursive: true, force: true, maxRetries: 3 });
+		} catch {
+			// Deliberately ignored; see above.
+		}
 	}
 }
 
