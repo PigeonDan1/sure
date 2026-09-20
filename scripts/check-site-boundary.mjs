@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -203,8 +203,16 @@ try {
 						exportRoot,
 					],
 				);
-				if (publicPolicy.status !== 0 || publicPolicy.stdout.trim() !== "null") {
-					failures.push("public export selected an implicit site policy");
+				let publicResolved = null;
+				if (publicPolicy.status === 0) {
+					try {
+						publicResolved = JSON.parse(publicPolicy.stdout);
+					} catch {
+						publicResolved = null;
+					}
+				}
+				if (publicResolved?.source !== "default") {
+					failures.push("public export did not select the repository default site policy");
 				}
 				const manifest = JSON.parse(readFileSync(resolve(exportRoot, "public-export-manifest.json"), "utf8"));
 				if (manifest.schema !== "sure.public_export_manifest.v2") failures.push("public export manifest schema mismatch");
@@ -220,14 +228,35 @@ try {
 				if (existsSync(resolve(exportRoot, "private"))) failures.push("public export contains the private overlay");
 				const resolver = "sure/skills/sure_infer/scripts/resolve_model_dir.py";
 				const publicHelp = run("python3", [resolver, "--help"], { cwd: exportRoot });
-				if (publicHelp.status !== 0) failures.push("public resource CLI help failed without a site policy");
+				if (publicHelp.status !== 0) failures.push("public resource CLI help failed under the default site policy");
+				// The gate that matters on a personal machine: a policy resolves,
+				// but nothing has been approved yet, so the command still refuses.
+				const approvedRoot = String(publicResolved?.policy?.storage?.approved_models_roots?.[0] ?? "");
 				const publicResource = run("python3", [resolver, "--model", "missing-model"], { cwd: exportRoot });
+				const resourceStderr = (publicResource.stderr ?? "").replaceAll("\\", "/");
 				if (
-					publicResource.status === 0 ||
-					!publicResource.stderr.includes("README.md#publicself-hosted-site-policy") ||
-					!publicResource.stderr.includes("docs/site-configuration.md")
+					publicResource.status !== 1 ||
+					!resourceStderr.includes("approved model is not ready under") ||
+					approvedRoot === "" ||
+					!resourceStderr.includes(approvedRoot)
 				) {
-					failures.push("public resource command did not fail with site-configuration guidance");
+					failures.push("public resource command did not fail closed on an empty approved model root");
+				}
+				// Deleting the shipped default must still point the user at the docs.
+				const defaultPolicyPath = resolve(exportRoot, "config/site.default.yaml");
+				const parkedPolicyPath = `${defaultPolicyPath}.parked`;
+				renameSync(defaultPolicyPath, parkedPolicyPath);
+				try {
+					const unconfigured = run("python3", [resolver, "--model", "missing-model"], { cwd: exportRoot });
+					if (
+						unconfigured.status === 0 ||
+						!unconfigured.stderr.includes("README.md#publicself-hosted-site-policy") ||
+						!unconfigured.stderr.includes("docs/site-configuration.md")
+					) {
+						failures.push("removing the default site policy did not restore the site-configuration guidance");
+					}
+				} finally {
+					renameSync(parkedPolicyPath, defaultPolicyPath);
 				}
 			}
 		}
