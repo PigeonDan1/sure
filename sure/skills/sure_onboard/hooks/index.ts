@@ -188,7 +188,9 @@ function normalizeRoot(root: string): string {
 	if (!trimmed || trimmed === "/") {
 		return "/";
 	}
-	return trimmed.replace(/\/+$/, "");
+	// "//" is all trailing separator: without the fallback it normalises to the
+	// empty string, which every absolute path starts with.
+	return trimmed.replace(/\/+$/, "") || "/";
 }
 
 function discoverHeavyOperation(command: string): string | undefined {

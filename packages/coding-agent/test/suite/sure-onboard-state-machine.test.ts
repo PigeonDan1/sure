@@ -586,6 +586,46 @@ describe("sure_onboard aligned state machine", () => {
 		}
 	});
 
+	// A configured root of "//" normalised to the empty string, after which every
+	// absolute path started with it and the whole filesystem was blocked.
+	it("keeps a degenerate configured root from blocking every absolute search", () => {
+		const previousRoots = process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS;
+		process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS = "//";
+		const discoverFind = (name: string, target: string) => {
+			const { ctx, runDir } = freshCtx(name);
+			seedCheckpoint(runDir, {
+				currentUnit: "discover",
+				completedUnits: ["load_model_input", "context_selection"],
+				retries: {},
+			});
+			writeArtifact(runDir, "model_input_resolved.json", {
+				model_id: "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+				model_name: "Qwen__Qwen3-TTS-12Hz-1.7B-Base",
+				model_dir: "/tmp/project/sure/models/Qwen__Qwen3-TTS-12Hz-1.7B-Base",
+				repo_url: "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+				task_type: "tts",
+				deployment_type: "local",
+				package_profile: "none",
+				source: {},
+			});
+			ctx.point = "pre_tool_call";
+			ctx.event = {
+				toolCall: { name: "bash", input: { command: `find ${target} -maxdepth 6 -type d -name "Qwen3-TTS"` } },
+			} as never;
+			return preToolCall(ctx);
+		};
+		try {
+			expect(discoverFind("discover-degenerate-root-allowed", "/home/me/models").ok).toBe(true);
+			expect(discoverFind("discover-degenerate-root-blocked", "/").ok).toBe(false);
+		} finally {
+			if (previousRoots === undefined) {
+				delete process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS;
+			} else {
+				process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS = previousRoots;
+			}
+		}
+	});
+
 	// Windows only: the list separator is path.delimiter, which is ":" on POSIX and
 	// there splits "D:\data" into two unusable halves, so a drive root is Windows-only input.
 	it.skipIf(process.platform !== "win32")("blocks a configured Windows root during discover", () => {
