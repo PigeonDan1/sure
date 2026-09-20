@@ -541,10 +541,10 @@ describe("sure_feed gate scripts (real python3 spawnSync)", () => {
 });
 
 describe("sure_feed preToolCall script ownership", () => {
-	function toolCtx(command: string): SureHookContext {
+	function toolCtx(command: string, toolName = "bash"): SureHookContext {
 		return {
 			...makeCtx(resolve(__dirname, "tmp-pretool")),
-			event: { type: "tool_call", toolCallId: "t1", toolName: "bash", input: { command } },
+			event: { type: "tool_call", toolCallId: "t1", toolName, input: { command } },
 		} as SureHookContext;
 	}
 
@@ -555,6 +555,14 @@ describe("sure_feed preToolCall script ownership", () => {
 
 	it("blocks an out-of-order gate script from the scan unit", () => {
 		const result = preToolCall(toolCtx("python3 scripts/check_rank_select.py --run-dir x --produces y"));
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("check_rank_select.py");
+	});
+
+	it("blocks the same script when it is run through the powershell tool", () => {
+		const result = preToolCall(
+			toolCtx("python3 scripts\\check_rank_select.py --run-dir x --produces y", "powershell"),
+		);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("check_rank_select.py");
 	});
