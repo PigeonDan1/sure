@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { parse } from "yaml";
@@ -260,7 +260,18 @@ try {
 				if (publicHelp.status !== 0) failures.push("public resource CLI help failed under the default site policy");
 				// The gate that matters on a personal machine: a policy resolves,
 				// but nothing has been approved yet, so the command still refuses.
-				const approvedRoot = String(publicResolved?.policy?.storage?.approved_models_roots?.[0] ?? "");
+				// resolve_model_dir.py prints the root through Path.resolve(), so the
+				// policy root needs the same canonicalisation before the two can be
+				// compared: a symlinked home, or a Windows home's on-disk casing,
+				// differs from os.homedir(). Only the home prefix may be realpath'd --
+				// the approved root is the one path this probe knows is absent. The
+				// replacement is a function: $& in a home would be a replace pattern.
+				const policyHome = homedir().replaceAll("\\", "/");
+				const realHome = realpathSync.native(homedir()).replaceAll("\\", "/");
+				const approvedRoot = String(publicResolved?.policy?.storage?.approved_models_roots?.[0] ?? "").replace(
+					policyHome,
+					() => realHome,
+				);
 				const publicResource = run("python3", [resolver, "--model", "missing-model"], { cwd: exportRoot });
 				const resourceStderr = (publicResource.stderr ?? "").replaceAll("\\", "/");
 				if (
