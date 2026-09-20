@@ -29,13 +29,28 @@ The locked Harness and Evaluation runtimes remain repository-local. A sealed loc
 
 ## Quick Start
 
-Node.js 22.19 or newer, Git, Python 3, and the repository submodules are required.
+Node.js 22.19 or newer (see `.nvmrc`), Git, [uv](https://docs.astral.sh/uv/), and the repository submodules are required. On Windows also install [Git for Windows](https://git-scm.com/download/win): the agent's `bash` tool and the skills' `.sh` templates run through it. You do not need a system Python: uv fetches and pins the interpreters the runtimes need.
+
+Install uv on Linux or macOS:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Install uv on Windows:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+The Harness and Evaluation runtimes are uv virtual environments that uv builds on first use. The first `/sure_*` command therefore needs network access and takes a few minutes while uv downloads its CPython 3.11 interpreter and installs the locked dependencies.
 
 ### Bundled site policy
 
 Use this path when the distribution contains `config/site.bundled.yaml`:
 
 ```bash
+# Linux, macOS, or Git Bash on Windows
 git clone --recurse-submodules <repository-url> sure-harness
 cd sure-harness
 npm install --ignore-scripts
@@ -45,6 +60,27 @@ npm run sure:doctor
 PI_OFFLINE=1 ./pi-test.sh
 ```
 
+```powershell
+# Windows PowerShell
+git clone --recurse-submodules <repository-url> sure-harness
+cd sure-harness
+npm install --ignore-scripts
+npm run sure:site-info
+npm run sure:site-check
+npm run sure:doctor
+$env:PI_OFFLINE = "1"; .\pi-test.ps1
+```
+
+```bat
+:: Windows cmd.exe
+git clone --recurse-submodules <repository-url> sure-harness
+cd sure-harness
+npm install --ignore-scripts
+npm run sure:doctor
+set PI_OFFLINE=1
+.\pi-test.bat
+```
+
 `sure:site-info` must report `configured: true` and `source: bundled`. Do not copy the public example over the bundled policy. A bundled distribution may include site-specific operating documentation below `private/`.
 
 ### Public/self-hosted site policy
@@ -52,6 +88,7 @@ PI_OFFLINE=1 ./pi-test.sh
 The public distribution contains no private storage paths, internal gateways, cluster defaults, or credentials. Configure the deployment before running `/sure_infer` or `/sure_eval`:
 
 ```bash
+# Linux, macOS, or Git Bash on Windows
 git clone --recurse-submodules --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
 npm install --ignore-scripts
@@ -62,9 +99,23 @@ npm run sure:doctor
 PI_OFFLINE=1 ./pi-test.sh
 ```
 
+```powershell
+# Windows PowerShell
+git clone --recurse-submodules --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
+cd sure-harness
+npm install --ignore-scripts
+Copy-Item config/site.example.yaml config/site.local.yaml
+# Edit every path and execution surface in config/site.local.yaml.
+npm run sure:site-check
+npm run sure:doctor
+$env:PI_OFFLINE = "1"; .\pi-test.ps1
+```
+
 `config/site.local.yaml` is ignored by Git and must remain local. Advanced deployments can instead set `SURE_SITE_POLICY` to an absolute path outside the repository.
 
-Without a site policy, generic CLI help and `npm run sure:site-info` remain available. A command that requires site resources fails closed and points back to this Quick Start and [the site configuration guide](./docs/site-configuration.md); it never invents public defaults.
+`npm run sure:doctor` reports every prerequisite it can see — Node, uv, Git, `rg`, `fd`, a bash for the agent on Windows, and where the site policy came from. Warnings are safe to start with; `rg` and `fd` only make search faster, and the tools fall back to a built-in scan without them.
+
+Without a local or bundled policy, SURE selects the shipped default at `config/site.default.yaml`, which keeps approved models, promoted results, the runtime cache, datasets, and dataset projections under `~/.sure`. The default relaxes no gate: its approved root starts out empty, only `/sure_approve` publishes into it, and until it holds the model you name, a command that requires site resources still fails closed and points back to this Quick Start and [the site configuration guide](./docs/site-configuration.md).
 
 ### Local execution profiles
 
@@ -112,9 +163,9 @@ Configuration sources use this fixed order:
 1. Absolute path in `SURE_SITE_POLICY`.
 2. Trusted distribution policy at `config/site.bundled.yaml`.
 3. Local untracked policy at `config/site.local.yaml`.
-4. No policy; resource-dependent workflows are rejected.
+4. Shipped default policy at `config/site.default.yaml`, which keeps every root under `~/.sure`.
 
-An explicit invalid `SURE_SITE_POLICY` never falls back to another source. The complete schema, field semantics, symlink rules, examples, and diagnostics are documented in [docs/site-configuration.md](./docs/site-configuration.md).
+An explicit invalid `SURE_SITE_POLICY` never falls back to another source. Roots inside a policy are absolute, either POSIX (`/srv/sure`) or Windows drive-letter (`D:\sure`), and may refer to `${HOME}` and `${REPO}`. The complete schema, field semantics, symlink rules, examples, and diagnostics are documented in [docs/site-configuration.md](./docs/site-configuration.md).
 
 Configure `storage.approved_models_roots[0]` once. `/sure_approve` publishes approved packages only to that root, and `/sure_infer model=<name>` resolves the exact child directory from the same root. There is no command-level approval-root override.
 
