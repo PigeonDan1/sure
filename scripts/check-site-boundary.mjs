@@ -162,6 +162,25 @@ try {
 		}
 	}
 
+	// A fresh machine has none of the default roots yet: sure:site-check must
+	// say so and still exit 0, or the zero-config default is unusable.
+	const missingRootHome = resolve(temporaryRoot, "empty-home");
+	const missingRootCheck = run("node", ["--import", "tsx", "scripts/sure-site-check.ts"], {
+		env: {
+			...process.env,
+			SURE_SITE_POLICY: resolve("config/site.default.yaml"),
+			HOME: missingRootHome,
+			USERPROFILE: missingRootHome,
+		},
+	});
+	if (missingRootCheck.status !== 0) {
+		failures.push(`sure:site-check failed on a policy whose roots do not exist yet: ${missingRootCheck.stderr.trim()}`);
+	} else if (!missingRootCheck.stdout.includes("does not exist yet")) {
+		failures.push("sure:site-check did not warn about a site root that does not exist yet");
+	} else if (!missingRootCheck.stdout.includes("ok   site policy:")) {
+		failures.push("sure:site-check dropped its ok line while warning about missing roots");
+	}
+
 	const exportedScript = "scripts/export-public.mjs";
 	if (existsSync(exportedScript)) {
 		const exported = run("node", [exportedScript, "--output", exportRoot]);
