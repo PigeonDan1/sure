@@ -4,8 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
-import hashlib
 import json
 import os
 import shutil
@@ -21,6 +19,18 @@ from resolve_evaluation_engine import git_environment, git_repo_root
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO_ROOT))
+
+from sure.runtime.uvenv import (  # noqa: E402
+    child_environment,
+    exclusive_lock,
+    runtime_python_relative,
+    sha256_file,
+    sync_command,
+    uv_binary,
+    venv_command,
+)
+
 SPEC_ROOT = REPO_ROOT / "sure" / "runtime" / "evaluation"
 CACHE_ROOT = REPO_ROOT / "sure" / ".runtime" / "evaluation"
 
@@ -39,10 +49,6 @@ class EvaluationIdentityUnavailable(EvaluationRuntimeError):
     the environment. Everything that catches EvaluationRuntimeError still
     catches this.
     """
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -148,21 +154,19 @@ def _expected_binding(engine_root: Path) -> dict[str, Any]:
         raise EvaluationRuntimeError(
             f"evaluation engine commit differs from the locked runtime: expected={spec.get('engine_commit')} actual={commit}"
         )
-    pyproject_sha = _sha256(pyproject)
+    pyproject_sha = sha256_file(pyproject)
     if pyproject_sha != spec.get("engine_pyproject_sha256"):
         raise EvaluationRuntimeError("evaluation engine pyproject.toml differs from the locked runtime")
 
     harness = _approved_harness_runtime()
 
-    lock_sha = _sha256(lock_path)
+    lock_sha = sha256_file(lock_path)
     runtime_version = str(spec.get("runtime_version") or "root-v1")
     materialization_version = int(spec.get("materialization_version") or 1)
-    dynamic_loader = Path(str(spec.get("dynamic_loader") or ""))
-    if not dynamic_loader.is_file():
-        raise EvaluationRuntimeError(f"evaluation runtime dynamic loader is missing: {dynamic_loader}")
+    python_version = str(spec.get("python") or "3.11")
     runtime_id = (
         f"sure-evaluation-{runtime_version}-m{materialization_version}-"
-        f"{commit[:12]}-py311-{lock_sha[:12]}"
+        f"{commit[:12]}-py{python_version.replace('.', '')}-{lock_sha[:12]}"
     )
     runtime_root = CACHE_ROOT / runtime_id
     return {
@@ -171,11 +175,10 @@ def _expected_binding(engine_root: Path) -> dict[str, Any]:
         "runtime_type": "evaluation_python",
         "runtime_version": runtime_version,
         "materialization_version": materialization_version,
-        "dynamic_loader": str(dynamic_loader),
-        "python_executable": str(runtime_root / "bin" / "python"),
+        "python": python_version,
+        "python_executable": str(runtime_root / runtime_python_relative()),
         "runtime_root": str(runtime_root),
         "manifest_path": str(runtime_root / "runtime-manifest.json"),
-        "site_packages": str(runtime_root / "site-packages"),
         "lock_path": str(lock_path),
         "lock_sha256": lock_sha,
         "engine_root": str(engine_root),
@@ -201,7 +204,6 @@ def _verify(binding: dict[str, Any]) -> tuple[bool, str]:
         "runtime_type",
         "runtime_version",
         "materialization_version",
-        "dynamic_loader",
         "lock_sha256",
         "engine_commit",
         "engine_pyproject_sha256",
@@ -209,10 +211,8 @@ def _verify(binding: dict[str, Any]) -> tuple[bool, str]:
     ):
         if manifest.get(key) != binding.get(key):
             return False, f"runtime manifest {key} mismatch"
-    if python.read_text(encoding="utf-8") != _wrapper(binding):
-        return False, "runtime wrapper differs from the materialization contract"
     code = "\n".join(f"import {name}" for name in binding["required_imports"])
-    # The wrapper no longer names the engine, so the caller supplies it, the way
+    # The runtime does not name the engine, so the caller supplies it, the way
     # evaluate_predictions._external_env already does for the real evaluation
     # calls. Without this the engine's own package would not import here.
     env = evaluation_child_environment()
@@ -231,54 +231,16 @@ def _verify(binding: dict[str, Any]) -> tuple[bool, str]:
     return True, "locked Evaluation Runtime imports passed"
 
 
-def _wrapper(binding: dict[str, Any]) -> str:
-    """The launcher text, free of any path that depends on where it is read from.
-
-    _verify compares this byte for byte, and one cache entry is reached under
-    several names: the same storage carries more than one mount path, and the
-    Harness Runtime lives in the repository on the host but under /opt inside
-    the evaluation image. Baking either in made a sound runtime report
-    "wrapper differs from the materialization contract" and killed the run at
-    [2.6/5]. The runtime locates itself the way the Harness Runtime launcher
-    does; the harness root arrives in the environment every caller already
-    sets. Only the loader stays literal: it is a fixed system path the spec
-    pins and _expected_binding checks for.
-    """
-    dynamic_loader = str(binding["dynamic_loader"])
-    return f"""#!/usr/bin/env bash
-set -euo pipefail
-unset PYTHONHOME PYTHONEXECUTABLE
-_sure_eval_root="$(cd "$(dirname "${{BASH_SOURCE[0]}}")/.." && pwd)"
-_sure_eval_harness="${{SURE_HARNESS_RUNTIME_ROOT:?the approved Harness Runtime root is required}}"
-_sure_eval_ld=()
-IFS=: read -r -a _sure_eval_parent_ld <<< "${{LD_LIBRARY_PATH:-}}"
-for _sure_eval_entry in "${{_sure_eval_parent_ld[@]}}"; do
-  if [[ -n "$_sure_eval_entry" && "$_sure_eval_entry" != "$_sure_eval_harness/base/lib" ]]; then
-    _sure_eval_ld+=("$_sure_eval_entry")
-  fi
-done
-if ((${{#_sure_eval_ld[@]}})); then
-  IFS=:; export LD_LIBRARY_PATH="${{_sure_eval_ld[*]}}"; unset IFS
-else
-  unset LD_LIBRARY_PATH
-fi
-export PYTHONNOUSERSITE=1
-export PYTHONPATH="$_sure_eval_root/site-packages${{PYTHONPATH:+:$PYTHONPATH}}"
-exec {dynamic_loader!r} --library-path "$_sure_eval_harness/base/lib" "$_sure_eval_harness/base/bin/python3.11" "$@"
-"""
-
-
 def _materialize(binding: dict[str, Any]) -> None:
     CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-    lock_file = CACHE_ROOT / ".prepare.lock"
-    with lock_file.open("a+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    with exclusive_lock(CACHE_ROOT / ".prepare.lock"):
         ok, _ = _verify(binding)
         if ok:
             return
-        uv = shutil.which("uv")
-        if not uv:
-            raise EvaluationRuntimeError("uv is required to prepare the locked Evaluation Runtime")
+        uv = uv_binary(
+            error=EvaluationRuntimeError,
+            message="uv is required to prepare the locked Evaluation Runtime",
+        )
         runtime_root = Path(str(binding["runtime_root"]))
         staging = Path(tempfile.mkdtemp(prefix=f".{binding['runtime_id']}.tmp-", dir=CACHE_ROOT))
         log_dir = CACHE_ROOT / "logs"
@@ -286,46 +248,42 @@ def _materialize(binding: dict[str, Any]) -> None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         log_path = log_dir / f"bootstrap-{stamp}-{os.getpid()}.log"
         try:
-            site_packages = staging / "site-packages"
-            site_packages.mkdir(parents=True)
-            command = [
-                uv,
-                "pip",
-                "install",
-                "--python",
-                str(Path(str(binding["harness_runtime_root"])) / "bin" / "python"),
-                "--target",
-                str(site_packages),
-                "--require-hashes",
-                "-r",
-                str(binding["lock_path"]),
+            env = child_environment()
+            env["UV_CACHE_DIR"] = str(CACHE_ROOT / "cache")
+            env["UV_LINK_MODE"] = "copy"
+            runtime_python = staging / runtime_python_relative()
+            commands = [
+                venv_command(uv, staging, python=str(binding["python"]), allow_python_downloads=True),
+                sync_command(
+                    uv,
+                    runtime_python,
+                    Path(str(binding["lock_path"])),
+                    allow_python_downloads=True,
+                ),
             ]
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=600,
-                env=evaluation_child_environment(),
-            )
-            log_path.write_text(
-                "$ " + " ".join(command) + "\n" + completed.stdout + "\n" + completed.stderr,
-                encoding="utf-8",
-            )
-            if completed.returncode != 0:
-                raise EvaluationRuntimeError(
-                    f"Evaluation Runtime dependency install failed; see {log_path}"
+            transcript: list[str] = []
+            for command in commands:
+                completed = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=900,
+                    env=env,
                 )
-            (staging / "bin").mkdir()
-            wrapper = staging / "bin" / "python"
-            wrapper.write_text(_wrapper(binding), encoding="utf-8")
-            wrapper.chmod(0o755)
+                transcript.append("$ " + " ".join(command) + "\n" + completed.stdout + "\n" + completed.stderr)
+                if completed.returncode != 0:
+                    log_path.write_text("\n".join(transcript), encoding="utf-8")
+                    raise EvaluationRuntimeError(
+                        f"Evaluation Runtime dependency install failed; see {log_path}"
+                    )
+            log_path.write_text("\n".join(transcript), encoding="utf-8")
             manifest = {
                 **binding,
                 "runtime_root": str(runtime_root),
-                "python_executable": str(runtime_root / "bin" / "python"),
+                "python_executable": str(runtime_root / runtime_python_relative()),
                 "manifest_path": str(runtime_root / "runtime-manifest.json"),
-                "site_packages": str(runtime_root / "site-packages"),
+                "materialization": "uv_venv",
                 "prepared_at": datetime.now(timezone.utc).isoformat(),
                 "install_log": str(log_path),
                 "package_source": "configured uv index (credentials omitted)",
