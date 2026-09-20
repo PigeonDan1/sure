@@ -143,6 +143,17 @@ export async function applyProbedModel(input: ApplyProbedModelInput): Promise<Ap
 			},
 			input.modelsJsonPath,
 		);
+	} catch (error) {
+		return {
+			ok: false,
+			message: error instanceof Error ? error.message : String(error),
+			steps: result.steps,
+			supportedLevels: supported,
+			notes,
+		};
+	}
+
+	try {
 		await input.ctx.modelRegistry.refresh();
 	} catch (error) {
 		return {
