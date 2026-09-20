@@ -61,8 +61,6 @@ export type KnownProvider =
 	| "fireworks"
 	| "together"
 	| "baseten"
-	| "opencode"
-	| "opencode-go"
 	| "kimi-coding"
 	| "cloudflare-workers-ai"
 	| "cloudflare-ai-gateway"

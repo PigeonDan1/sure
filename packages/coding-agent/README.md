@@ -95,8 +95,6 @@ For each built-in provider, pi maintains a list of tool-capable models. Dynamic 
 - Vercel AI Gateway
 - ZAI Coding Plan (Global)
 - ZAI Coding Plan (China)
-- OpenCode Zen
-- OpenCode Go
 - Hugging Face
 - Fireworks
 - Together AI

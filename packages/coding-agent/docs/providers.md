@@ -85,8 +85,6 @@ pi
 | Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `vercel-ai-gateway` |
 | ZAI Coding Plan (Global) | `ZAI_API_KEY` | `zai` |
 | ZAI Coding Plan (China) | `ZAI_CODING_CN_API_KEY` | `zai-coding-cn` |
-| OpenCode Zen | `OPENCODE_API_KEY` | `opencode` |
-| OpenCode Go | `OPENCODE_API_KEY` | `opencode-go` |
 | Radius | `RADIUS_API_KEY` | `radius` |
 | Hugging Face | `HF_TOKEN` | `huggingface` |
 | Fireworks | `FIREWORKS_API_KEY` | `fireworks` |
@@ -117,8 +115,6 @@ Store credentials in `~/.pi/agent/auth.json`:
   "deepseek": { "type": "api_key", "key": "sk-..." },
   "nvidia": { "type": "api_key", "key": "nvapi-..." },
   "google": { "type": "api_key", "key": "..." },
-  "opencode": { "type": "api_key", "key": "..." },
-  "opencode-go": { "type": "api_key", "key": "..." },
   "together": { "type": "api_key", "key": "..." },
   "qwen-token-plan":  { "type": "api_key", "key": "sk-sp-..." },
   "qwen-token-plan-individual": { "type": "api_key", "key": "sk-sp-..." },
