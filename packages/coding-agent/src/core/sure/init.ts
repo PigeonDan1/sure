@@ -202,13 +202,13 @@ async function ensureAuth(
 	}
 }
 
-function checkPythonEnvironment(): { ok: boolean; details: string[] } {
+function checkUvEnvironment(): { ok: boolean; details: string[] } {
 	const details: string[] = [];
 	try {
-		const version = execSync("python3 --version", { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+		const version = execSync("uv --version", { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
 		details.push(version);
 	} catch {
-		return { ok: false, details: ["python3 not found"] };
+		return { ok: false, details: ["uv not found"] };
 	}
 	return { ok: true, details };
 }
@@ -735,7 +735,7 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 	const discovered = discoverSureSkillPackages(ctx.cwd);
 	const availableSkills = discovered.packages.map((pkg) => `/${pkg.manifest.command}`);
 
-	const python = checkPythonEnvironment();
+	const uv = checkUvEnvironment();
 
 	const manifest: SureInitManifest = {
 		initializedAt: new Date().toISOString(),
@@ -748,7 +748,7 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 			? { capabilityProbe: { probedAt: new Date().toISOString(), steps: probeSteps, effortNote: effortNote ?? "" } }
 			: {}),
 		trusted: true,
-		pythonOk: python.ok,
+		uvOk: uv.ok,
 		availableSkills,
 		version: SURE_INIT_VERSION,
 	};
@@ -766,8 +766,8 @@ export async function runSureInit(options: RunSureInitOptions): Promise<SureInit
 	if (listing) {
 		lines.push(describeListingSource(listing));
 	}
-	if (!python.ok) {
-		lines.push("Warning: Python backend check failed. Some SURE skills may not work.");
+	if (!uv.ok) {
+		lines.push("Warning: uv was not found. SURE skills cannot materialize their Python runtimes without it.");
 	}
 	if (discovered.diagnostics.length > 0) {
 		lines.push("Discovery diagnostics:");
