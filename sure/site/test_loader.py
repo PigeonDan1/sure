@@ -282,5 +282,59 @@ class TokenExpansionTest(unittest.TestCase):
         )
 
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+class CandidateOrderTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="sure-site-order-"))
+        (self.root / "config").mkdir()
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def _ship_default(self) -> None:
+        shutil.copyfile(
+            _REPO_ROOT / "config" / "site.default.yaml",
+            self.root / "config" / "site.default.yaml",
+        )
+
+    def test_default_is_selected_when_nothing_else_is_configured(self) -> None:
+        self._ship_default()
+
+        resolved = load_site_policy(repository_root=self.root, environment={})
+
+        self.assertEqual(resolved["source"], "default")
+        self.assertEqual(resolved["policy"]["site_id"], "local-default")
+        self.assertEqual(
+            resolved["policy"]["storage"]["approved_models_roots"][0],
+            f"{_expected_home()}/.sure/approved/models",
+        )
+        self.assertEqual(
+            resolved["policy"]["datasets"]["allowed_source_roots"]["smoke"],
+            f"{str(self.root).replace(chr(92), '/')}/fixtures/tasks",
+        )
+        self.assertEqual(resolved["policy"]["execution"]["local_runtimes"], ["python", "container"])
+        self.assertNotIn("network", resolved["policy"])
+
+    def test_local_outranks_the_shipped_default(self) -> None:
+        self._ship_default()
+        (self.root / "config" / "site.local.yaml").write_text(_TOKEN_FIXTURE, encoding="utf-8")
+
+        resolved = load_site_policy(repository_root=self.root, environment={})
+
+        self.assertEqual(resolved["source"], "local")
+
+    def test_bundled_outranks_local(self) -> None:
+        self._ship_default()
+        (self.root / "config" / "site.local.yaml").write_text(_TOKEN_FIXTURE, encoding="utf-8")
+        (self.root / "config" / "site.bundled.yaml").write_text(_TOKEN_FIXTURE, encoding="utf-8")
+
+        resolved = load_site_policy(repository_root=self.root, environment={})
+
+        self.assertEqual(resolved["source"], "bundled")
+
+    def test_returns_none_when_even_the_default_is_absent(self) -> None:
+        self.assertIsNone(load_site_policy(repository_root=self.root, environment={}))
+
+
 if __name__ == "__main__":
     unittest.main()

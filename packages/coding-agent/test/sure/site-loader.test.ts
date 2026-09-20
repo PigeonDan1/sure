@@ -1,8 +1,8 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: ${HOME} and ${REPO} are site policy tokens the loader expands, not JavaScript interpolation
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveSitePolicy, validateSitePolicy } from "../../../../sure/site/loader.ts";
 
@@ -301,5 +301,51 @@ describe("site policy token expansion", () => {
 		const resolved = resolveSitePolicy({ repositoryRoot: root, environment: {} });
 
 		expect(resolved?.sha256).toBe(createHash("sha256").update(Buffer.from(expanded, "utf8")).digest("hex"));
+	});
+});
+
+const REPO_ROOT = resolve(__dirname, "../../../..");
+
+function shipDefault(root: string): void {
+	copyFileSync(join(REPO_ROOT, "config", "site.default.yaml"), join(root, "config", "site.default.yaml"));
+}
+
+describe("resolveSitePolicy candidate order", () => {
+	it("selects the shipped default when nothing else is configured", () => {
+		const root = tokenRoot("default-only");
+		shipDefault(root);
+
+		const resolved = resolveSitePolicy({ repositoryRoot: root, environment: {} });
+
+		expect(resolved?.source).toBe("default");
+		expect(resolved?.policy.site_id).toBe("local-default");
+		expect(resolved?.policy.storage.approved_models_roots[0]).toBe(`${expectedHome()}/.sure/approved/models`);
+		expect(resolved?.policy.storage.forbidden_output_roots[0]).toBe(`${expectedHome()}/.sure/approved`);
+		expect(resolved?.policy.datasets.allowed_source_roots.smoke).toBe(`${root.replaceAll("\\", "/")}/fixtures/tasks`);
+		expect(resolved?.policy.execution.local_runtimes).toEqual(["python", "container"]);
+		expect(resolved?.policy.network).toBeUndefined();
+	});
+
+	it("lets a local policy outrank the shipped default", () => {
+		const root = tokenRoot("local-beats-default");
+		shipDefault(root);
+		writeFileSync(join(root, "config", "site.local.yaml"), TOKEN_FIXTURE, "utf-8");
+
+		expect(resolveSitePolicy({ repositoryRoot: root, environment: {} })?.source).toBe("local");
+	});
+
+	it("lets a bundled policy outrank a local one", () => {
+		const root = tokenRoot("bundled-beats-local");
+		shipDefault(root);
+		writeFileSync(join(root, "config", "site.local.yaml"), TOKEN_FIXTURE, "utf-8");
+		writeFileSync(join(root, "config", "site.bundled.yaml"), TOKEN_FIXTURE, "utf-8");
+
+		expect(resolveSitePolicy({ repositoryRoot: root, environment: {} })?.source).toBe("bundled");
+	});
+
+	it("returns undefined when even the default file is absent", () => {
+		const root = tokenRoot("nothing-at-all");
+
+		expect(resolveSitePolicy({ repositoryRoot: root, environment: {} })).toBeUndefined();
 	});
 });

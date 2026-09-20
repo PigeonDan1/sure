@@ -10,7 +10,7 @@ export const SITE_POLICY_SCHEMA = "sure.site.policy.v1";
 
 export type ExecutionSurface = "local" | "vc";
 export type LocalRuntime = "python" | "container";
-export type SitePolicySource = "environment" | "bundled" | "local";
+export type SitePolicySource = "environment" | "bundled" | "local" | "default";
 
 export interface SitePolicy {
 	schema: typeof SITE_POLICY_SCHEMA;
@@ -59,8 +59,8 @@ export interface SitePolicyLoadOptions {
 const repositoryRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const missingPolicyMessage =
 	"SURE site policy is not configured.\n" +
-	"Missing: config/site.bundled.yaml (bundled distribution) or config/site.local.yaml (local configuration).\n" +
-	"Fix: cp config/site.example.yaml config/site.local.yaml and edit the model, result, dataset and runtime paths.\n" +
+	"Missing: config/site.bundled.yaml (bundled distribution), config/site.local.yaml (local configuration) or config/site.default.yaml (repository default).\n" +
+	"Fix: restore config/site.default.yaml, or cp config/site.example.yaml config/site.local.yaml and edit the model, result, dataset and runtime paths.\n" +
 	"Verify: npm run sure:site-check\n" +
 	"See README.md#publicself-hosted-site-policy and docs/site-configuration.md.";
 
@@ -338,6 +338,16 @@ export function resolveSitePolicy(options: SitePolicyLoadOptions = {}): Resolved
 		[resolve(root, "config/site.bundled.yaml"), "bundled"],
 		[resolve(root, "config/site.local.yaml"), "local"],
 	];
+	// Only offer the shipped default when ${HOME} expands to something the
+	// policy validator accepts. Five modules load the policy at import scope
+	// (packages/coding-agent/src/core/sure/output-dir.ts:7,
+	// sure/skills/sure_infer/scripts/{resolve_model_dir.py:22,
+	// resolve_prediction_source.py:27, resolve_eval_input.py:58,
+	// sure_eval/datasets/source_resolver.py:26}); an unusable home directory
+	// must stay today's clean "not configured", not an import-time throw.
+	if (isAbsolutePolicyPath(normalizeHostPath(homedir()))) {
+		candidates.push([resolve(root, "config/site.default.yaml"), "default"]);
+	}
 	for (const [path, source] of candidates) {
 		if (existsSync(path)) return loadPolicy(path, source, root);
 	}

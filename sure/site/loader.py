@@ -20,8 +20,8 @@ SITE_POLICY_ENV = "SURE_SITE_POLICY"
 SITE_POLICY_SCHEMA = "sure.site.policy.v1"
 MISSING_POLICY_MESSAGE = (
     "SURE site policy is not configured.\n"
-    "Missing: config/site.bundled.yaml (bundled distribution) or config/site.local.yaml (local configuration).\n"
-    "Fix: cp config/site.example.yaml config/site.local.yaml and edit the model, result, dataset and runtime paths.\n"
+    "Missing: config/site.bundled.yaml (bundled distribution), config/site.local.yaml (local configuration) or config/site.default.yaml (repository default).\n"
+    "Fix: restore config/site.default.yaml, or cp config/site.example.yaml config/site.local.yaml and edit the model, result, dataset and runtime paths.\n"
     "Verify: npm run sure:site-check\n"
     "See README.md#publicself-hosted-site-policy and docs/site-configuration.md."
 )
@@ -246,10 +246,16 @@ def load_site_policy(
         if not is_absolute_policy_path(explicit):
             raise SitePolicyError(f"{SITE_POLICY_ENV} must be an absolute path")
         return _load(Path(explicit).resolve(), "environment", root)
-    for path, source in (
+    candidates: list[tuple[Path, str]] = [
         (root / "config" / "site.bundled.yaml", "bundled"),
         (root / "config" / "site.local.yaml", "local"),
-    ):
+    ]
+    # Only offer the shipped default when ${HOME} expands to something the
+    # policy validator accepts; five modules load the policy at import scope
+    # and an unusable home directory must stay "not configured", not a throw.
+    if is_absolute_policy_path(_normalize_host_path(str(Path.home()))):
+        candidates.append((root / "config" / "site.default.yaml", "default"))
+    for path, source in candidates:
         if path.exists():
             return _load(path, source, root)
     if required:
