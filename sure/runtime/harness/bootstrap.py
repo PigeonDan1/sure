@@ -105,6 +105,7 @@ def _probe(python: Path, required_imports: list[str]) -> dict[str, Any]:
         text=True,
         check=False,
         timeout=60,
+        env=child_environment(),
     )
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or f"exit {completed.returncode}"

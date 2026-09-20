@@ -15,7 +15,12 @@ for _parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(_parent))
         break
 
-from sure.runtime.harness.bootstrap import _load_spec, resolve_runtime
+from sure.runtime.harness.bootstrap import (
+    HarnessRuntimeError,
+    _load_spec,
+    _probe,
+    resolve_runtime,
+)
 from sure.runtime.uvenv import runtime_python_relative
 
 
@@ -58,6 +63,49 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         self.assertEqual(manifest["materialization"], "uv_venv")
         self.assertEqual(len(manifest["base_python_sha256"]), 64)
         self.assertEqual(manifest["runtime_id"], first["runtime_id"])
+
+
+class HarnessRuntimeImportProbeTests(unittest.TestCase):
+    """The probe must describe the runtime, not the environment it was called from.
+
+    These need no uv: the probe is pointed at the interpreter running the tests.
+    """
+
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+
+    def _set_environment(self, name: str, value: str) -> None:
+        previous = os.environ.get(name)
+
+        def restore() -> None:
+            if previous is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = previous
+
+        self.addCleanup(restore)
+        os.environ[name] = value
+
+    def test_a_host_python_home_does_not_reach_the_probe(self) -> None:
+        # The deleted bash wrapper exported a PYTHONHOME of its own, which hid
+        # whatever the host had set. A uv venv's interpreter is a real one and
+        # exports nothing, so a host PYTHONHOME would kill the probe: the reuse
+        # check would then call a healthy runtime invalid and quarantine and
+        # rebuild it on every single resolve.
+        self._set_environment("PYTHONHOME", str(Path(self._temporary.name) / "not-a-python"))
+        self.assertTrue(_probe(Path(sys.executable), [])["version"])
+
+    def test_a_host_python_path_cannot_satisfy_a_required_import(self) -> None:
+        # -s only blocks the user site directory. An import answered by the
+        # caller's PYTHONPATH would vouch for a package the lock never put in
+        # the runtime.
+        leaked = Path(self._temporary.name) / "leaked"
+        leaked.mkdir()
+        (leaked / "leaked_module.py").write_text("", encoding="utf-8")
+        self._set_environment("PYTHONPATH", str(leaked))
+        with self.assertRaises(HarnessRuntimeError):
+            _probe(Path(sys.executable), ["leaked_module"])
 
 
 if __name__ == "__main__":
