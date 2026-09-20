@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { harnessBootstrapCommand } from "../../../sure/runtime/harness/resolve.ts";
 
 // vitest globalSetup: materialize the Harness Runtime once, before any worker starts.
 //
@@ -10,9 +11,9 @@ import { fileURLToPath } from "node:url";
 // first harness test blocks on the same lock, so unrelated files time out together.
 export default function setup(): void {
 	const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-	const python = process.env.SURE_HARNESS_BOOTSTRAP_PYTHON?.trim() || "python3";
+	const { command, args } = harnessBootstrapCommand(repoRoot);
 	const started = Date.now();
-	const result = spawnSync(python, ["sure/runtime/harness/bootstrap.py", "--json"], {
+	const result = spawnSync(command, [...args, "sure/runtime/harness/bootstrap.py", "--json"], {
 		cwd: repoRoot,
 		encoding: "utf-8",
 		timeout: 900_000,

@@ -15,6 +15,7 @@ from deployment_binding import (
     CORE_BUNDLE_FILES,
     DeploymentBindingError,
     _mandatory_integrity_paths,
+    _normalize_harness_runtime,
     _portable_relative,
     _require_declared_integrity_profile,
     _validate_complete_manifest,
@@ -69,6 +70,7 @@ class DeploymentBindingTests(unittest.TestCase):
         self.harness_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         self.harness_python.chmod(0o755)
         self.harness_manifest = self.harness_runtime / "runtime-manifest.json"
+        self.image_harness_runtime = "/opt/sure-harness/sure-harness-test"
         write_json(
             self.harness_manifest,
             {
@@ -96,6 +98,15 @@ class DeploymentBindingTests(unittest.TestCase):
             "lock_sha256": "c" * 64,
             "manifest_path": str(self.harness_manifest),
             "runtime_root": str(self.harness_runtime),
+        }
+
+    def _image_runtime_binding(self) -> dict:
+        """The runtime baked into the image: its paths are container paths."""
+        return {
+            **self._runtime_binding(),
+            "python_executable": f"{self.image_harness_runtime}/bin/python",
+            "manifest_path": f"{self.image_harness_runtime}/runtime-manifest.json",
+            "runtime_root": self.image_harness_runtime,
         }
 
     def _write_bundle(self) -> None:
@@ -199,7 +210,7 @@ class DeploymentBindingTests(unittest.TestCase):
 
     def test_derives_legacy_image_runtime_root_from_manifest(self) -> None:
         inventory = json.loads((self.artifacts / "runtime_inventory.json").read_text())
-        legacy_binding = self._runtime_binding()
+        legacy_binding = self._image_runtime_binding()
         legacy_binding.pop("runtime_root")
         inventory["harness_runtime"] = {"required": True, **legacy_binding}
         write_json(self.artifacts / "runtime_inventory.json", inventory)
@@ -214,11 +225,11 @@ class DeploymentBindingTests(unittest.TestCase):
         write_json(self.artifacts / "deployment_ready.json", marker)
 
         binding = load_deployment_binding(self.model, "demo")
-        self.assertEqual(binding["container"]["harness_runtime"]["runtime_root"], str(self.harness_runtime))
+        self.assertEqual(binding["container"]["harness_runtime"]["runtime_root"], self.image_harness_runtime)
 
     def test_rejects_explicit_harness_runtime_root_mismatch(self) -> None:
         inventory = json.loads((self.artifacts / "runtime_inventory.json").read_text())
-        declared = {"required": True, **self._runtime_binding(), "runtime_root": str(self.repo / "wrong")}
+        declared = {"required": True, **self._image_runtime_binding(), "runtime_root": "/opt/sure-harness/wrong"}
         inventory["harness_runtime"] = declared
         write_json(self.artifacts / "runtime_inventory.json", inventory)
 
@@ -299,6 +310,19 @@ class DeploymentBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(DeploymentBindingError, "must be finalized"):
             load_deployment_binding(self.model, "demo")
 
+    def test_a_manifest_entry_that_escapes_the_bundle_is_rejected(self) -> None:
+        # The same portability gate, reached through the whole binding load
+        # rather than called directly.
+        self._rewrite_marker(integrity_profile="manifest-complete-v1")
+        manifest = json.loads((self.artifacts / "artifact_manifest.json").read_text())
+        manifest["artifacts"]["required"]["escape"] = {"path": "\\opt\\evil"}
+        write_json(self.artifacts / "artifact_manifest.json", manifest)
+
+        with self.assertRaisesRegex(
+            DeploymentBindingError, "artifact_manifest required path must be portable"
+        ):
+            load_deployment_binding(self.model, "demo")
+
     def test_marker_without_any_timestamp_may_not_fall_back_to_the_legacy_profile(self) -> None:
         marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
         marker.pop("generated_at", None)
@@ -356,6 +380,78 @@ class DeploymentBindingTests(unittest.TestCase):
             str(self.harness_python),
         )
         self.assertFalse(provenance["host_python_fallback"])
+
+    def test_local_command_argv_is_pinned(self) -> None:
+        # Host paths come from the fixture, container paths are literal. The
+        # whole argv is pinned so that making the container paths POSIX on
+        # Windows cannot quietly reorder or respell what Linux produces.
+        binding = load_deployment_binding(self.model, "demo")
+        command, _ = build_local_container_command(
+            # Resolved, because production compares it against
+            # Path(run_dir).resolve(): a temp root reached through a symlink
+            # (macOS /var) or an 8.3 short name would otherwise never match.
+            surface={"env": {"TOOL_NAME": "transcribe_audio", "RESULT_FILE": f"{self.output.resolve()}/report.jsonl"}},
+            eval_input={
+                "model": {"deployment_binding": binding},
+                "runtime": {"run_dir": str(self.output), "harness_runtime": self._runtime_binding()},
+                "datasets": [],
+            },
+            control_run_dir=self.control,
+            entrypoint=self.entrypoint,
+            repo_root=self.repo,
+            device_request="cpu",
+        )
+
+        repo = self.repo.resolve()
+        model = self.model.resolve()
+        output = self.output.resolve()
+        self.assertEqual(
+            command,
+            [
+                "docker", "run", "--rm", "--init",
+                "--entrypoint", str(self.harness_python),
+                "--mount", f"type=bind,src={repo},dst={repo},readonly",
+                "--mount", f"type=bind,src={self.control.resolve()},dst={self.control.resolve()}",
+                "--mount", f"type=bind,src={output},dst=/sure-output",
+                "--mount", f"type=bind,src={model},dst={model},readonly",
+                "--mount", f"type=bind,src={model},dst=/workspace/model,readonly",
+                "--env", "HARNESS_PYTHON_BIN=" + str(self.harness_python),
+                "--env", "HF_HOME=/sure-output/.runtime/cache/huggingface",
+                "--env", "HF_HUB_CACHE=/sure-output/.runtime/cache/huggingface/hub",
+                "--env", "MODELSCOPE_CACHE=/sure-output/.runtime/cache/modelscope",
+                "--env", "MODEL_DIR=/workspace/model",
+                "--env", "MODEL_PYTHON=python",
+                "--env", "PYTHON_BIN=python",
+                "--env", "REPO_ROOT=" + str(repo / "sure" / "skills" / "sure_infer"),
+                # The surface asked for a host path under the run directory; it
+                # reaches the container as the container's own spelling.
+                "--env", "RESULT_FILE=/sure-output/report.jsonl",
+                "--env", "RUN_DIR=/sure-output",
+                "--env", "SURE_EVAL_APPROVED_MODEL_DIR=/workspace/model",
+                "--env", "SURE_EVAL_APPROVED_RESULT_DIR=/sure-output",
+                "--env", "SURE_EVAL_CACHE_DIR=/sure-output/.runtime/cache/sure-eval",
+                "--env", "SURE_EVAL_CONTAINER_IMAGE=" + self.image_ref,
+                "--env", "SURE_EVAL_CONTAINER_WORKING_DIR=/workspace/model",
+                "--env", "SURE_EVAL_EXECUTION_ENTRYPOINT=" + str(self.entrypoint.resolve()),
+                "--env", "SURE_EVAL_EXECUTION_GENERATION_METHOD=harness_template",
+                "--env", "SURE_EVAL_EXECUTION_SURFACE_TYPE=python_entrypoint",
+                "--env", "SURE_EVAL_EXECUTION_TEMPLATE_FILE=",
+                "--env", "SURE_EVAL_EXECUTION_TEMPLATE_SHA256=",
+                "--env", "SURE_EVAL_NODE_LOCAL_PYTHON=" + str(self.harness_python),
+                "--env", "SURE_EVAL_PUBLISHED_RUN_DIR=" + str(output),
+                "--env", "SURE_EVAL_WRITABLE_CACHE_ROOT=/sure-output/.runtime/cache",
+                "--env", "SURE_HARNESS_LOCK_SHA256=" + "c" * 64,
+                "--env", "SURE_HARNESS_MANIFEST_PATH=" + str(self.harness_manifest),
+                "--env", "SURE_HARNESS_RUNTIME_ID=sure-harness-test",
+                "--env", "SURE_HARNESS_RUNTIME_ROOT=" + str(self.harness_runtime),
+                "--env", "TOOL_NAME=transcribe_audio",
+                "--env", "TORCH_HOME=/sure-output/.runtime/cache/torch",
+                "--env", "TRANSFORMERS_CACHE=/sure-output/.runtime/cache/huggingface/transformers",
+                "--env", "XDG_CACHE_HOME=/sure-output/.runtime/cache/xdg",
+                self.image_ref,
+                str(self.entrypoint.resolve()),
+            ],
+        )
 
     def test_local_command_preserves_declared_dataset_mount_target(self) -> None:
         binding = load_deployment_binding(self.model, "demo")
@@ -577,6 +673,110 @@ class MandatoryIntegrityPathTests(unittest.TestCase):
 
         with self.assertRaisesRegex(DeploymentBindingError, "weights root is missing"):
             _validate_complete_manifest(self.model, marker, {}, "none")
+
+
+class PortableBundlePathTests(unittest.TestCase):
+    """A path inside the bundle is portable only if both flavours agree."""
+
+    def test_a_relative_posix_path_is_portable(self) -> None:
+        self.assertEqual(_portable_relative("a/b.txt", "test path").as_posix(), "a/b.txt")
+
+    def test_nested_relative_paths_stay_portable(self) -> None:
+        self.assertEqual(
+            _portable_relative("artifacts/outputs/sample.wav", "test path").parts,
+            ("artifacts", "outputs", "sample.wav"),
+        )
+
+    def test_leading_dots_that_are_not_a_parent_hop_stay_portable(self) -> None:
+        # ".." only escapes when it is a whole component.
+        for value in ("..a/b", "a/..hidden/b", "a\\b.txt"):
+            with self.subTest(value=value):
+                self.assertTrue(_portable_relative(value, "test path").parts)
+
+    def test_absolute_or_escaping_spellings_are_rejected_on_every_host(self) -> None:
+        # "/opt/evil" is absolute only to POSIX, the drive and UNC spellings
+        # only to Windows, and "a\\..\\b" hides its parent hop from POSIX. A
+        # bundle is read on whichever host happens to open it, so the union of
+        # both verdicts is the only one that holds everywhere.
+        # "\\opt\\evil" and "C:x" carry a Windows anchor without being absolute
+        # to pathlib: joined onto a bundle root they give "D:\\opt\\evil" and
+        # "C:x", so the bundle root is escaped or dropped outright.
+        for value in (
+            "/opt/evil",
+            "\\opt\\evil",
+            "C:x",
+            "C:\\x",
+            "C:/x",
+            "\\\\srv\\share\\x",
+            "../x",
+            "a/../../x",
+            "a\\..\\b",
+            ".",
+            "",
+        ):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(DeploymentBindingError, "must be portable"):
+                    _portable_relative(value, "test path")
+
+
+class ContainerHarnessPathTests(unittest.TestCase):
+    """A container-internal path is POSIX whatever the host is."""
+
+    CONTAINER_ROOT = "/opt/sure-harness/demo"
+
+    def _binding(self, root: str | None, manifest: str, python: str) -> dict:
+        binding = {
+            "schema": "sure.harness.runtime.binding.v1",
+            "manifest_path": manifest,
+            "python_executable": python,
+        }
+        if root is not None:
+            binding["runtime_root"] = root
+        return binding
+
+    def test_a_posix_container_path_is_accepted_on_every_host(self) -> None:
+        normalized = _normalize_harness_runtime(
+            self._binding(
+                self.CONTAINER_ROOT,
+                f"{self.CONTAINER_ROOT}/runtime-manifest.json",
+                f"{self.CONTAINER_ROOT}/bin/python",
+            )
+        )
+
+        self.assertEqual(normalized["runtime_root"], self.CONTAINER_ROOT)
+
+    def test_a_derived_root_stays_posix_on_every_host(self) -> None:
+        normalized = _normalize_harness_runtime(
+            self._binding(
+                None,
+                f"{self.CONTAINER_ROOT}/runtime-manifest.json",
+                f"{self.CONTAINER_ROOT}/bin/python",
+            )
+        )
+
+        self.assertEqual(normalized["runtime_root"], self.CONTAINER_ROOT)
+
+    def test_a_relative_container_path_is_rejected(self) -> None:
+        with self.assertRaisesRegex(DeploymentBindingError, "must be absolute"):
+            _normalize_harness_runtime(
+                self._binding(
+                    "opt/sure-harness/demo",
+                    "opt/sure-harness/demo/runtime-manifest.json",
+                    "opt/sure-harness/demo/bin/python",
+                )
+            )
+
+    def test_a_windows_drive_path_is_rejected(self) -> None:
+        # A drive letter names nothing inside a Linux image, so the Linux
+        # verdict is the right one everywhere.
+        with self.assertRaisesRegex(DeploymentBindingError, "must be absolute"):
+            _normalize_harness_runtime(
+                self._binding(
+                    "C:\\opt\\sure-harness\\demo",
+                    "C:\\opt\\sure-harness\\demo\\runtime-manifest.json",
+                    "C:\\opt\\sure-harness\\demo\\bin\\python",
+                )
+            )
 
 
 class IntegrityProfileCutoffTests(unittest.TestCase):

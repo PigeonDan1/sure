@@ -300,6 +300,63 @@ describe("runSureInit", () => {
 		expect(settingsManager.getGlobalSettings().defaultModel).toBe("kimi-for-coding");
 	});
 
+	// The probe has to predict the launcher resolveHarnessPython will spawn, so these
+	// run with an empty PATH: a bare `uv` is then unreachable, an absolute one is not.
+	describe("harness launcher probe", () => {
+		const LAUNCHER_ENV = ["PATH", "SURE_UV_BIN", "SURE_HARNESS_BOOTSTRAP_PYTHON"] as const;
+		let previousLauncherEnv: Record<string, string | undefined>;
+
+		beforeEach(() => {
+			previousLauncherEnv = Object.fromEntries(LAUNCHER_ENV.map((key) => [key, process.env[key]]));
+			process.env.PATH = "";
+			delete process.env.SURE_UV_BIN;
+			delete process.env.SURE_HARNESS_BOOTSTRAP_PYTHON;
+		});
+
+		afterEach(() => {
+			for (const [key, value] of Object.entries(previousLauncherEnv)) {
+				if (value === undefined) {
+					delete process.env[key];
+				} else {
+					process.env[key] = value;
+				}
+			}
+		});
+
+		async function init() {
+			const { ctx, settingsManager } = await makeContext({ cwd: tempDir });
+			return runSureInit({
+				ctx,
+				args: "--option kimi-code --api-key sk-arg --model kimi-for-coding",
+				settingsManager,
+				modelsJsonPath: join(tempDir, "models.json"),
+				probe: solProbe(),
+				verify: okVerify(),
+			});
+		}
+
+		it("warns and names the launcher when uv cannot be started", async () => {
+			const result = await init();
+			expect(result.manifest?.uvOk).toBe(false);
+			expect(result.message).toContain("Warning: uv was not found.");
+		});
+
+		it("does not warn when SURE_HARNESS_BOOTSTRAP_PYTHON names a working interpreter", async () => {
+			// node answers --version the same way a python interpreter does.
+			process.env.SURE_HARNESS_BOOTSTRAP_PYTHON = process.execPath;
+			const result = await init();
+			expect(result.manifest?.uvOk).toBe(true);
+			expect(result.message).not.toContain("was not found.");
+		});
+
+		it("does not warn when SURE_UV_BIN points at a uv outside PATH", async () => {
+			process.env.SURE_UV_BIN = process.execPath;
+			const result = await init();
+			expect(result.manifest?.uvOk).toBe(true);
+			expect(result.message).not.toContain("was not found.");
+		});
+	});
+
 	it("trims the API key typed into the prompt before storing it", async () => {
 		const { ctx, settingsManager, authStorage } = await makeContext({ apiKey: "sk-x \n", cwd: tempDir });
 		const result = await runSureInit({

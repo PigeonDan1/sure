@@ -103,14 +103,21 @@ class DockerBinaryResolutionTest(unittest.TestCase):
 
 
 class TransScriptsTest(unittest.TestCase):
-    def _python_probe_environment(self, root: Path) -> dict[str, str]:
+    def _python_probe_environment(
+        self, root: Path, runtime_labels: dict[str, str] | None = None
+    ) -> dict[str, str]:
+        """A fake docker on PATH; runtime_labels makes every inspected image carry them."""
         binaries = root / "python-probe-bin"
         binaries.mkdir()
         docker = binaries / "docker"
+        inspected: dict[str, object] = {"Id": "sha256:" + "b" * 64}
+        if runtime_labels:
+            inspected["Config"] = {"Labels": runtime_labels}
         docker.write_text(
             "#!/bin/sh\n"
             "if [ \"$1\" = \"run\" ]; then printf '%s\\n' /opt/venv/bin/python; exit 0; fi\n"
-            "if [ \"$1\" = \"image\" ] && [ \"$2\" = \"inspect\" ]; then printf '%s\\n' '{\"Id\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}'; exit 0; fi\n"
+            "if [ \"$1\" = \"image\" ] && [ \"$2\" = \"inspect\" ]; then "
+            f"printf '%s\\n' '{json.dumps(inspected, separators=(',', ':'))}'; exit 0; fi\n"
             "if [ \"$1\" = \"image\" ]; then exit 0; fi\n"
             "exit 1\n",
             encoding="utf-8",
@@ -2335,6 +2342,18 @@ class TransScriptsTest(unittest.TestCase):
             context = scaffold_adapter.harness_runtime_build_context(harness)
         self.assertEqual(context, f"docker-image://{reference}")
 
+    def test_a_missing_runtime_image_is_refused_instead_of_copying_the_host(self) -> None:
+        """A uv venv cannot be copied into an image, so silence here shipped a dead python."""
+        harness = self._harness_binding()
+        empty = mock.Mock(returncode=0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as temporary:
+            # Not the repository's own lock: the README tells you to commit that one.
+            absent = Path(temporary) / "runtime-image.json"
+            with mock.patch.dict(os.environ, {"SURE_HARNESS_RUNTIME_IMAGE": ""}),              mock.patch.object(scaffold_adapter, "RUNTIME_IMAGE_LOCK", absent),              mock.patch.object(scaffold_adapter.subprocess, "run", return_value=empty):
+                with self.assertRaises(ValueError) as caught:
+                    scaffold_adapter.harness_runtime_build_context(harness)
+        self.assertIn("build_image.py", str(caught.exception))
+
     def test_scaffold_prefers_the_source_image_tag_over_the_image_id(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -2467,13 +2486,23 @@ class TransScriptsTest(unittest.TestCase):
             for name, value in values.items():
                 (artifacts / name).write_text(json.dumps(value) + "\n", encoding="utf-8")
             (artifacts / "source_image_build.log").write_text("fake docker build\n", encoding="utf-8")
+            # The host runtime is a uv venv and cannot be copied into an image, so
+            # the adapter needs a digest-pinned runtime image that carries this binding.
+            runtime_image = "registry.example/sure-harness@sha256:" + "f" * 64
+            environment = self._python_probe_environment(root, {
+                "org.sure.harness.runtime_id": "sure-harness-test",
+                "org.sure.harness.lock_sha256": "e" * 64,
+            })
+            environment["SURE_HARNESS_RUNTIME_IMAGE"] = runtime_image
             subprocess.run(
                 [sys.executable, str(SCRIPTS_DIR / "scaffold_adapter.py"), "--run-dir", str(run_dir)],
                 check=True,
                 capture_output=True,
                 text=True,
-                env=self._python_probe_environment(root),
+                env=environment,
             )
+            adapter_manifest = json.loads((artifacts / "adapter_manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(adapter_manifest["harness_runtime_build_context"], f"docker-image://{runtime_image}")
             (run_dir / "adapter" / "model.py").write_text(
                 "class ModelWrapper:\n    def __init__(self, config=None): self.model = object()\n    def load(self): return None\n    def predict(self, input_data): return {'text': 'ok'}\n    def healthcheck(self): return {'status': 'ready', 'model_loaded': True}\n",
                 encoding="utf-8",

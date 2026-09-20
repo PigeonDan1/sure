@@ -7,7 +7,7 @@ import hashlib
 import json
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -234,15 +234,15 @@ def _normalize_harness_runtime(binding: dict[str, Any]) -> dict[str, Any]:
     """Accept legacy bindings by deriving root from their manifest location."""
     manifest_value = str(binding.get("manifest_path") or "")
     python_value = str(binding.get("python_executable") or "")
-    _require(Path(manifest_value).is_absolute(), "container Harness Runtime manifest_path must be absolute")
-    _require(Path(python_value).is_absolute(), "container Harness Runtime python_executable must be absolute")
+    _require(PurePosixPath(manifest_value).is_absolute(), "container Harness Runtime manifest_path must be absolute")
+    _require(PurePosixPath(python_value).is_absolute(), "container Harness Runtime python_executable must be absolute")
 
     root_value = str(binding.get("runtime_root") or "")
-    root = Path(root_value) if root_value else Path(manifest_value).parent
+    root = PurePosixPath(root_value) if root_value else PurePosixPath(manifest_value).parent
     _require(root.is_absolute(), "container Harness Runtime runtime_root must be absolute")
-    _require(Path(manifest_value).parent == root, "container Harness Runtime manifest_path disagrees with runtime_root")
+    _require(PurePosixPath(manifest_value).parent == root, "container Harness Runtime manifest_path disagrees with runtime_root")
     try:
-        Path(python_value).relative_to(root)
+        PurePosixPath(python_value).relative_to(root)
     except ValueError as exc:
         raise DeploymentBindingError("container Harness Runtime python_executable escapes runtime_root") from exc
     normalized = dict(binding)
@@ -274,14 +274,31 @@ COMMON_MANDATORY_SIDECARS = {
 }
 
 
-def _portable_relative(raw: object, label: str) -> Path:
+def _portable_relative(raw: object, label: str) -> PurePosixPath:
+    """A path inside the bundle: relative, escaping nothing, POSIX-spelled.
+
+    Judged under both flavours, because a bundle is read on whichever host
+    opens it: "/opt/evil" is anchored only to POSIX, "C:\\x" and "\\\\srv\\share\\x"
+    only to Windows, and "a\\..\\b" hides its parent hop from POSIX.
+
+    The test is the anchor rather than is_absolute(), which on the Windows
+    flavour demands a drive *and* a root and so calls two anchored spellings
+    relative: joining "\\opt\\evil" onto a bundle root yields "D:\\opt\\evil",
+    and joining "C:x" drops the bundle root altogether.
+    """
     value = str(raw or "")
-    path = Path(value)
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
     _require(
-        bool(value) and bool(path.parts) and not path.is_absolute() and ".." not in path.parts,
+        bool(value)
+        and bool(posix.parts)
+        and not posix.anchor
+        and not windows.anchor
+        and ".." not in posix.parts
+        and ".." not in windows.parts,
         f"{label} must be portable",
     )
-    return path
+    return posix
 
 
 def _bundle_files(root: Path, model_dir: Path, label: str) -> set[str]:
@@ -590,8 +607,10 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     _require(isinstance(result_mount, dict) and result_mount.get("read_only") is False, "result workspace must be writable")
     model_target = str(model_mount.get("target") or "")
     result_target = str(result_mount.get("target") or "")
-    _require(Path(model_target).is_absolute(), "model bundle container target must be absolute")
-    _require(Path(result_target).is_absolute(), "result workspace container target must be absolute")
+    # Mount targets and working_dir name locations inside the image, so they are
+    # POSIX on every host: Path() on Windows calls "/workspace/model" relative.
+    _require(PurePosixPath(model_target).is_absolute(), "model bundle container target must be absolute")
+    _require(PurePosixPath(result_target).is_absolute(), "result workspace container target must be absolute")
 
     server_command = container.get("server_command")
     tool_names = container.get("tool_names")
@@ -599,7 +618,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     python_executable = str(container.get("python_executable") or "")
     _require(isinstance(server_command, list) and all(isinstance(item, str) and item for item in server_command), "container server_command is invalid")
     _require(isinstance(tool_names, list) and all(isinstance(item, str) and item for item in tool_names), "container tool_names are invalid")
-    _require(Path(working_dir).is_absolute(), "container working_dir must be absolute")
+    _require(PurePosixPath(working_dir).is_absolute(), "container working_dir must be absolute")
     _require(bool(python_executable), "container python_executable is missing")
     image_harness = inventory.get("harness_runtime")
     if isinstance(image_harness, dict) and image_harness.get("required") is True:
@@ -611,9 +630,9 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
         for key in ("runtime_id", "lock_sha256", "python_executable", "manifest_path", "runtime_root"):
             _require(bool(image_harness.get(key)), f"container Harness Runtime {key} is missing")
         _require(
-            Path(str(image_harness["python_executable"])).is_absolute()
-            and Path(str(image_harness["manifest_path"])).is_absolute()
-            and Path(str(image_harness["runtime_root"])).is_absolute(),
+            PurePosixPath(str(image_harness["python_executable"])).is_absolute()
+            and PurePosixPath(str(image_harness["manifest_path"])).is_absolute()
+            and PurePosixPath(str(image_harness["runtime_root"])).is_absolute(),
             "container Harness Runtime paths must be absolute",
         )
         _require(
@@ -653,9 +672,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
         has_deployment_self_entry = False
         for entry in required_entries.values():
             _require(isinstance(entry, dict), "artifact_manifest required entry is invalid")
-            raw_path = str(entry.get("path") or "")
-            path = Path(raw_path)
-            _require(raw_path and not path.is_absolute() and ".." not in path.parts, "artifact_manifest contains a non-portable path")
+            path = _portable_relative(entry.get("path"), "artifact_manifest required path")
             if path.as_posix() == "artifacts/deployment_ready.json":
                 has_deployment_self_entry = True
             else:
