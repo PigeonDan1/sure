@@ -31,3 +31,22 @@ still uses `COPY --from=sure_harness_runtime`; its build command must pass:
 ```bash
 --build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest>
 ```
+
+## Runtime identity
+
+`bootstrap.py` materializes the host runtime, and the skills start it through
+`uv run --no-project --python 3.11`. `SURE_HARNESS_BOOTSTRAP_PYTHON` names an
+interpreter to run `bootstrap.py` with instead; `SURE_UV_BIN` names the uv
+binary. The host needs no Python of its own, because uv fetches the interpreter
+and the locked wheels itself. That first run needs network and can take
+minutes; later runs verify the prepared tree and reuse it. The manifest records
+`materialization: uv_venv` and the SHA-256 of the base interpreter uv picked.
+
+`runtime_id` is
+`sure-harness-<harness_version>-m<materialization_version>-py311-<lock12>`, so
+the materialization version and the dependency lock are both part of the
+identity, and this runtime changed both. The gates compare those strings
+against the active runtime: `check_runtime_inventory.py` rejects an inventory
+and `check_container_package.py` rejects a container package whose `runtime_id`
+or `lock_sha256` differs. A bundle approved under the previous Harness Runtime
+is refused until it is approved again over this one.

@@ -96,10 +96,10 @@ trans 与 onboard 现在使用相同的 runtime 边界：adapter 镜像打包锁
    docker push <source_image>
    ```
 
-3. 构建 adapter 镜像（`adapter/Dockerfile.sure` 以 digest 固定的 source 镜像为基底，并复制锁定的 Harness Runtime）：
+3. 构建 adapter 镜像（`adapter/Dockerfile.sure` 以 digest 固定的 source 镜像为基底，并从 digest 固定的 runtime image 复制锁定的 Harness Runtime；该 runtime image 用 `sure/runtime/harness/build_image.py` 构建）：
 
    ```bash
-  docker build --build-context sure_harness_runtime=<harness_runtime_root> -f adapter/Dockerfile.sure -t sure-trans/<model_name>:adapter <context>
+  docker build --build-context sure_harness_runtime=docker-image://<repository>@sha256:<digest> -f adapter/Dockerfile.sure -t sure-trans/<model_name>:adapter <context>
    ```
 
 4. 在 adapter 镜像内完成 import/load/infer/contract/mcp/equivalence 验证。GPU 模式下
