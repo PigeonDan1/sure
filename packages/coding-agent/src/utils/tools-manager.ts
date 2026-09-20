@@ -10,7 +10,7 @@ interface ToolConfig {
 	name: string;
 	binaryName: string; // Name of the binary file
 	systemBinaryNames?: string[]; // Alternative system command names to try
-	missingImpact: string; // What breaks when the tool can't be found, for the warning message
+	fallbackNote: string; // What happens instead when the tool can't be found, for the warning message
 }
 
 const TOOLS: Record<string, ToolConfig> = {
@@ -18,12 +18,12 @@ const TOOLS: Record<string, ToolConfig> = {
 		name: "fd",
 		binaryName: "fd",
 		systemBinaryNames: ["fd", "fdfind"],
-		missingImpact: "file autocomplete and the find tool",
+		fallbackNote: "file autocomplete and the find tool fall back to a slower built-in scan",
 	},
 	rg: {
 		name: "ripgrep",
 		binaryName: "rg",
-		missingImpact: "the grep tool",
+		fallbackNote: "the grep tool falls back to a slower built-in search",
 	},
 };
 
@@ -84,7 +84,7 @@ export async function ensureTool(
 
 	onStatus?.({
 		type: "warning",
-		message: `${config.name} not found. Install it and make sure it is on PATH; ${config.missingImpact} until then.`,
+		message: `${config.name} not found on PATH; ${config.fallbackNote}. Install it for faster searches.`,
 	});
 	return undefined;
 }

@@ -55,7 +55,8 @@ describe("ensureTool", () => {
 		expect(statuses).toEqual([
 			{
 				type: "warning",
-				message: "ripgrep not found. Install it and make sure it is on PATH; the grep tool until then.",
+				message:
+					"ripgrep not found on PATH; the grep tool falls back to a slower built-in search. Install it for faster searches.",
 			},
 		]);
 	});
