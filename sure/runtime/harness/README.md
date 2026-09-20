@@ -18,9 +18,19 @@ python sure/runtime/harness/build_image.py \
   --output sure/runtime/harness/runtime-image.json
 ```
 
+`build_image.py` hands `docker build` a named `--build-context`, so this needs
+Docker Buildx; the classic builder rejects the flag. The adapter build below
+needs it for the same reason.
+
 The output records `image_ref` as `<repository>@sha256:<digest>` together with
-the runtime ID and dependency lock hash. Commit that small JSON lock after
-reviewing it; never use a mutable tag as the trans build source.
+the runtime ID and dependency lock hash: the identity of the runtime image, not
+of the host tree it was built from. Commit that small JSON lock after reviewing
+it; never use a mutable tag as the trans build source. Regenerate and recommit
+it whenever the dependency lock or `materialization_version` changes, because
+`describe_harness_runtime.py` ignores a `runtime-image.json` whose `runtime_id`
+and `lock_sha256` no longer match the active runtime, and `scaffold_adapter.py`
+refuses outright. This branch changed both, so any `runtime-image.json` produced
+before it is stale.
 
 Set `SURE_HARNESS_RUNTIME_IMAGE` to the digest-pinned `image_ref` before running
 `describe_harness_runtime.py` or `scaffold_adapter.py`. Without a digest-pinned

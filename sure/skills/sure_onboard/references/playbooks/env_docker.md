@@ -31,6 +31,8 @@ The three documents must agree exactly on image tag, digest, immutable reference
 - `harness_runtime.runtime_id` and `lock_sha256` equal the active common Harness Runtime;
 - the Harness Runtime manifest and imports are live-probed in the exact digest image.
 
+The Harness Runtime the image copies in carries a uv-managed CPython built against glibc and no longer bundles its libraries, so the image needs a glibc base (2.17 or newer) on a matching architecture; a musl/Alpine base cannot start it, and `check_container_package.verify_live_runtimes` fails the package when the interpreter does not run in the digest-pinned image.
+
 The image must not depend on host absolute `.venv` paths. Model weights may be baked into the image or mounted from the approved model directory according to the declared policy, but the model mount stays read-only during Eval.
 
 ## Failure handling
