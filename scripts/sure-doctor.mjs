@@ -44,6 +44,24 @@ function runGit(args, cwd = root) {
 	}
 }
 
+// No `which` / `where`: asking the binary for its own version is the one probe that
+// behaves the same on Linux, macOS and Windows. Same shape as commandExists() in
+// packages/coding-agent/src/utils/tools-manager.ts, so no shell either; a Windows
+// tool installed only as a .cmd shim reads as missing, which is a warning here.
+function commandVersion(command) {
+	try {
+		return execFileSync(command, ["--version"], {
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: 15_000,
+		})
+			.split(/\r?\n/)[0]
+			.trim();
+	} catch {
+		return undefined;
+	}
+}
+
 function versionAtLeast(actual, expected) {
 	const a = actual.split(".").map((part) => Number.parseInt(part, 10));
 	const e = expected.split(".").map((part) => Number.parseInt(part, 10));
@@ -119,6 +137,83 @@ if (existsSync(sparseCheckoutPath)) {
 	if (!sparseCheckout.trim()) {
 		warn("sparse checkout", "sparse-checkout file exists but is empty");
 	}
+}
+
+const uvVersion = commandVersion("uv");
+if (uvVersion) {
+	pass("uv", uvVersion);
+} else {
+	warn(
+		"uv",
+		'not found on PATH; the harness, evaluation and model runtimes are materialized with uv. Install it: curl -LsSf https://astral.sh/uv/install.sh | sh (Linux/macOS) or powershell -c "irm https://astral.sh/uv/install.ps1 | iex" (Windows)',
+	);
+}
+
+const gitVersion = commandVersion("git");
+if (gitVersion) {
+	pass("git", gitVersion);
+} else {
+	warn("git", "not found on PATH; cloning, submodules and the public export all need it");
+}
+
+// Command names and fallback wording follow TOOLS in
+// packages/coding-agent/src/utils/tools-manager.ts, including Debian's fdfind.
+for (const [label, commands, fallbackNote] of [
+	["rg", ["rg"], "the grep tool falls back to a slower built-in search"],
+	["fd", ["fd", "fdfind"], "file autocomplete and the find tool fall back to a slower built-in scan"],
+]) {
+	let found;
+	for (const command of commands) {
+		found = commandVersion(command);
+		if (found) break;
+	}
+	if (found) {
+		pass(label, found);
+	} else {
+		warn(label, `not found on PATH; ${fallbackNote}. Install it for faster searches`);
+	}
+}
+
+if (process.platform === "win32") {
+	// Same search order as getShellConfig() in packages/coding-agent/src/utils/shell.ts.
+	const bashCandidates = [];
+	if (process.env.ProgramFiles) bashCandidates.push(join(process.env.ProgramFiles, "Git", "bin", "bash.exe"));
+	if (process.env["ProgramFiles(x86)"])
+		bashCandidates.push(join(process.env["ProgramFiles(x86)"], "Git", "bin", "bash.exe"));
+	const gitBash =
+		bashCandidates.find((candidate) => existsSync(candidate)) ?? (commandVersion("bash") ? "bash" : undefined);
+	if (gitBash) {
+		pass("bash for the agent", gitBash);
+	} else {
+		warn(
+			"bash for the agent",
+			"no bash found; pi's bash tool and the skills' .sh templates need Git for Windows (https://git-scm.com/download/win) or a shellPath in settings.json",
+		);
+	}
+}
+
+try {
+	// Same entry as npm run sure:site-info, so the doctor reports whatever the loader
+	// picked rather than second-guessing the search order.
+	const siteInfo = JSON.parse(
+		execFileSync(process.execPath, ["--import", "tsx", join(root, "scripts", "sure-site-info.ts"), "--json"], {
+			cwd: root,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: 60_000,
+		}),
+	);
+	if (siteInfo.configured) {
+		pass("site policy", `source: ${siteInfo.source}; path: ${siteInfo.path}`);
+	} else {
+		warn("site policy", "not configured; commands that need site storage will refuse until one is in place");
+	}
+} catch (error) {
+	// sure-site-info.ts prints the loader's own message on stderr; error.message only
+	// carries the command line.
+	const stderr = typeof error?.stderr === "string" ? error.stderr.trim() : "";
+	const detail = stderr || (error instanceof Error ? error.message : String(error));
+	warn("site policy", `could not be read: ${detail.split(/\r?\n/)[0]}`);
 }
 
 // Mirrors the resolution order in packages/coding-agent/src/config.ts getAgentDir():
