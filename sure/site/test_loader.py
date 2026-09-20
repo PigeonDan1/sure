@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,7 +14,7 @@ for _parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(_parent))
         break
 
-from sure.site.loader import SitePolicyError, validate_site_policy
+from sure.site.loader import SitePolicyError, load_site_policy, validate_site_policy
 
 _ROOT = "/srv"
 
@@ -218,6 +220,66 @@ class AbsolutePathTest(unittest.TestCase):
                 )
             )
         self.assertIn("datasets.projection_root", str(raised.exception))
+
+
+_TOKEN_FIXTURE = "\n".join(
+    [
+        "schema: sure.site.policy.v1",
+        "site_id: token-fixture",
+        "policy_version: 1",
+        "storage:",
+        '  approved_models_roots: ["${HOME}/.sure/approved/models"]',
+        '  forbidden_output_roots: ["${HOME}/.sure/approved"]',
+        '  runtime_root: "${HOME}/.sure/runtime"',
+        "datasets:",
+        "  allowed_source_roots:",
+        '    smoke: "${REPO}/fixtures/tasks"',
+        "execution:",
+        "  surfaces: [local]",
+        "",
+    ]
+)
+
+
+def _expected_home() -> str:
+    return str(Path.home()).replace("\\", "/").rstrip("/")
+
+
+class TokenExpansionTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="sure-site-token-"))
+        (self.root / "config").mkdir()
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def test_expands_tokens_for_an_explicit_policy_path(self) -> None:
+        fixture = self.root / "config" / "token.yaml"
+        fixture.write_text(_TOKEN_FIXTURE, encoding="utf-8")
+
+        resolved = load_site_policy(
+            repository_root=self.root,
+            environment={"SURE_SITE_POLICY": str(fixture)},
+        )
+
+        self.assertEqual(resolved["source"], "environment")
+        self.assertEqual(
+            resolved["policy"]["storage"]["approved_models_roots"][0],
+            f"{_expected_home()}/.sure/approved/models",
+        )
+        self.assertEqual(
+            resolved["policy"]["datasets"]["allowed_source_roots"]["smoke"],
+            f"{str(self.root).replace(chr(92), '/')}/fixtures/tasks",
+        )
+
+    def test_expands_tokens_for_a_local_policy(self) -> None:
+        (self.root / "config" / "site.local.yaml").write_text(_TOKEN_FIXTURE, encoding="utf-8")
+
+        resolved = load_site_policy(repository_root=self.root, environment={})
+
+        self.assertEqual(resolved["source"], "local")
+        self.assertEqual(
+            resolved["policy"]["storage"]["forbidden_output_roots"][0],
+            f"{_expected_home()}/.sure/approved",
+        )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
@@ -280,14 +281,31 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	return policy;
 }
 
-function loadPolicy(path: string, source: SitePolicySource): ResolvedSitePolicy {
-	let content: Buffer;
+// ${HOME} and ${REPO} expand to forward-slash paths with no trailing separator
+// so the TypeScript and Python loaders produce identical bytes on every host:
+// on Windows os.homedir() and pathlib.Path.home() both spell C:\Users\me, and
+// scripts/check-site-boundary.mjs compares the sha256 of the expanded text.
+function normalizeHostPath(value: string): string {
+	return value.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+function expandPolicyTokens(text: string, repositoryRoot: string): string {
+	return text
+		.replaceAll("${HOME}", normalizeHostPath(homedir()))
+		.replaceAll("${REPO}", normalizeHostPath(repositoryRoot));
+}
+
+function loadPolicy(path: string, source: SitePolicySource, repositoryRoot: string): ResolvedSitePolicy {
+	let raw: Buffer;
 	try {
-		content = readFileSync(path);
+		raw = readFileSync(path);
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
 		throw new Error(`Cannot read ${source} site policy ${path}: ${detail}`);
 	}
+	// Expand before parsing, validating and hashing: the digest then identifies
+	// the policy this machine actually uses, not the committed template.
+	const content = Buffer.from(expandPolicyTokens(raw.toString("utf8"), repositoryRoot), "utf8");
 	let decoded: unknown;
 	try {
 		decoded = parse(content.toString("utf8"));
@@ -314,14 +332,14 @@ export function resolveSitePolicy(options: SitePolicyLoadOptions = {}): Resolved
 	const explicit = environment[SITE_POLICY_ENV]?.trim();
 	if (explicit) {
 		if (!isAbsolutePolicyPath(explicit)) throw new Error(`${SITE_POLICY_ENV} must be an absolute path`);
-		return loadPolicy(resolve(explicit), "environment");
+		return loadPolicy(resolve(explicit), "environment", root);
 	}
 	const candidates: Array<[string, SitePolicySource]> = [
 		[resolve(root, "config/site.bundled.yaml"), "bundled"],
 		[resolve(root, "config/site.local.yaml"), "local"],
 	];
 	for (const [path, source] of candidates) {
-		if (existsSync(path)) return loadPolicy(path, source);
+		if (existsSync(path)) return loadPolicy(path, source, root);
 	}
 	return undefined;
 }

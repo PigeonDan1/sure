@@ -219,6 +219,20 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
     return policy
 
 
+# ${HOME} and ${REPO} expand to forward-slash paths with no trailing separator
+# so the Python and TypeScript loaders produce identical bytes on every host:
+# on Windows pathlib.Path.home() and os.homedir() both spell C:\Users\me, and
+# scripts/check-site-boundary.mjs compares the sha256 of the expanded text.
+def _normalize_host_path(value: str) -> str:
+    return value.replace("\\", "/").rstrip("/")
+
+
+def _expand_policy_tokens(text: str, repository_root: Path) -> str:
+    return text.replace("${HOME}", _normalize_host_path(str(Path.home()))).replace(
+        "${REPO}", _normalize_host_path(str(repository_root))
+    )
+
+
 def load_site_policy(
     repository_root: Path | None = None,
     environment: Mapping[str, str] | None = None,
@@ -231,23 +245,27 @@ def load_site_policy(
     if explicit:
         if not is_absolute_policy_path(explicit):
             raise SitePolicyError(f"{SITE_POLICY_ENV} must be an absolute path")
-        return _load(Path(explicit).resolve(), "environment")
+        return _load(Path(explicit).resolve(), "environment", root)
     for path, source in (
         (root / "config" / "site.bundled.yaml", "bundled"),
         (root / "config" / "site.local.yaml", "local"),
     ):
         if path.exists():
-            return _load(path, source)
+            return _load(path, source, root)
     if required:
         raise SitePolicyError(MISSING_POLICY_MESSAGE)
     return None
 
 
-def _load(path: Path, source: str) -> dict[str, Any]:
+def _load(path: Path, source: str, root: Path) -> dict[str, Any]:
     try:
-        content = path.read_bytes()
+        raw = path.read_bytes()
     except OSError as error:
         raise SitePolicyError(f"Cannot read {source} site policy {path}: {error}") from error
+    # Expand before parsing, validating and hashing: the digest then identifies
+    # the policy this machine actually uses, not the committed template. The
+    # "replace" error handler mirrors Buffer.toString("utf8") in loader.ts.
+    content = _expand_policy_tokens(raw.decode("utf-8", "replace"), root).encode("utf-8")
     try:
         decoded = yaml.safe_load(content)
     except yaml.YAMLError as error:

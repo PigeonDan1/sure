@@ -92,7 +92,7 @@
 		}
 	},
 	"$defs": {
-		"absolutePath": { "type": "string", "pattern": "^(?:/|[A-Za-z]:[\\\\/])" },
+		"absolutePath": { "type": "string", "pattern": "^(?:\\$\\{(?:HOME|REPO)\\}/|/|[A-Za-z]:[\\\\/])" },
 		"absolutePaths": {
 			"type": "array",
 			"minItems": 1,

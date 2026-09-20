@@ -1,5 +1,10 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: ${HOME} and ${REPO} are site policy tokens the loader expands, not JavaScript interpolation
+import { createHash } from "node:crypto";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { validateSitePolicy } from "../../../../sure/site/loader.ts";
+import { resolveSitePolicy, validateSitePolicy } from "../../../../sure/site/loader.ts";
 
 const ROOT = "/srv";
 
@@ -230,5 +235,70 @@ describe("validateSitePolicy container_delivery", () => {
 				}),
 			),
 		).toThrow(/unsupported field: owner/);
+	});
+});
+
+const TOKEN_FIXTURE = [
+	"schema: sure.site.policy.v1",
+	"site_id: token-fixture",
+	"policy_version: 1",
+	"storage:",
+	'  approved_models_roots: ["${HOME}/.sure/approved/models"]',
+	'  forbidden_output_roots: ["${HOME}/.sure/approved"]',
+	'  runtime_root: "${HOME}/.sure/runtime"',
+	"datasets:",
+	"  allowed_source_roots:",
+	'    smoke: "${REPO}/fixtures/tasks"',
+	"execution:",
+	"  surfaces: [local]",
+	"",
+].join("\n");
+
+function expectedHome(): string {
+	return homedir().replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+function tokenRoot(name: string): string {
+	const root = resolve(__dirname, "tmp-site-policy", name);
+	rmSync(root, { recursive: true, force: true });
+	mkdirSync(join(root, "config"), { recursive: true });
+	return root;
+}
+
+describe("site policy token expansion", () => {
+	it("expands ${HOME} and ${REPO} for an explicit SURE_SITE_POLICY path", () => {
+		const root = tokenRoot("environment-source");
+		const fixture = join(root, "config", "token.yaml");
+		writeFileSync(fixture, TOKEN_FIXTURE, "utf-8");
+
+		const resolved = resolveSitePolicy({ repositoryRoot: root, environment: { SURE_SITE_POLICY: fixture } });
+
+		expect(resolved?.source).toBe("environment");
+		expect(resolved?.policy.storage.approved_models_roots[0]).toBe(`${expectedHome()}/.sure/approved/models`);
+		expect(resolved?.policy.storage.runtime_root).toBe(`${expectedHome()}/.sure/runtime`);
+		expect(resolved?.policy.datasets.allowed_source_roots.smoke).toBe(`${root.replaceAll("\\", "/")}/fixtures/tasks`);
+	});
+
+	it("expands ${HOME} and ${REPO} for a local policy", () => {
+		const root = tokenRoot("local-source");
+		writeFileSync(join(root, "config", "site.local.yaml"), TOKEN_FIXTURE, "utf-8");
+
+		const resolved = resolveSitePolicy({ repositoryRoot: root, environment: {} });
+
+		expect(resolved?.source).toBe("local");
+		expect(resolved?.policy.storage.forbidden_output_roots[0]).toBe(`${expectedHome()}/.sure/approved`);
+	});
+
+	it("hashes the expanded text, not the committed template", () => {
+		const root = tokenRoot("digest");
+		writeFileSync(join(root, "config", "site.local.yaml"), TOKEN_FIXTURE, "utf-8");
+		const expanded = TOKEN_FIXTURE.replaceAll("${HOME}", expectedHome()).replaceAll(
+			"${REPO}",
+			root.replaceAll("\\", "/"),
+		);
+
+		const resolved = resolveSitePolicy({ repositoryRoot: root, environment: {} });
+
+		expect(resolved?.sha256).toBe(createHash("sha256").update(Buffer.from(expanded, "utf8")).digest("hex"));
 	});
 });
