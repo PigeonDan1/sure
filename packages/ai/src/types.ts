@@ -1,10 +1,6 @@
 import type { TelemetryContext } from "@earendil-works/pi-telemetry";
 import type { AnthropicOptions } from "./api/anthropic-messages.ts";
 import type { AzureOpenAIResponsesOptions } from "./api/azure-openai-responses.ts";
-import type { BedrockOptions } from "./api/bedrock-converse-stream.ts";
-import type { GoogleOptions } from "./api/google-generative-ai.ts";
-import type { GoogleVertexOptions } from "./api/google-vertex.ts";
-import type { MistralOptions } from "./api/mistral-conversations.ts";
 import type { OpenAICodexResponsesOptions } from "./api/openai-codex-responses.ts";
 import type { OpenAICompletionsOptions } from "./api/openai-completions.ts";
 import type { OpenAIResponsesOptions } from "./api/openai-responses.ts";
@@ -16,24 +12,17 @@ export type { AssistantMessageEventStream } from "./utils/event-stream.ts";
 
 export type KnownApi =
 	| "openai-completions"
-	| "mistral-conversations"
 	| "openai-responses"
 	| "azure-openai-responses"
 	| "openai-codex-responses"
 	| "anthropic-messages"
-	| "bedrock-converse-stream"
-	| "google-generative-ai"
-	| "google-vertex"
 	| "pi-messages";
 
 export type Api = KnownApi | (string & {});
 
 export type KnownProvider =
-	| "amazon-bedrock"
 	| "ant-ling"
 	| "anthropic"
-	| "google"
-	| "google-vertex"
 	| "openai"
 	| "azure-openai-responses"
 	| "openai-codex"
@@ -48,7 +37,6 @@ export type KnownProvider =
 	| "vercel-ai-gateway"
 	| "zai"
 	| "zai-coding-cn"
-	| "mistral"
 	| "minimax"
 	| "minimax-cn"
 	| "moonshotai"
@@ -57,8 +45,6 @@ export type KnownProvider =
 	| "fireworks"
 	| "together"
 	| "baseten"
-	| "opencode"
-	| "opencode-go"
 	| "kimi-coding"
 	| "cloudflare-workers-ai"
 	| "cloudflare-ai-gateway"
@@ -142,9 +128,6 @@ export interface ProviderRequestOptions<TModel = Model<Api>> {
 	/**
 	 * Optional custom HTTP headers to include in API requests.
 	 * Merged with provider defaults; caller values override default headers.
-	 * On AWS Bedrock these are injected via a Smithy `build`-step middleware so
-	 * they are covered by SigV4 signing; reserved headers (`x-amz-*`,
-	 * `authorization`, `host`) are silently ignored to preserve SigV4 / bearer auth.
 	 * A null value suppresses a provider/API default header with the same name.
 	 */
 	headers?: ProviderHeaders;
@@ -238,10 +221,6 @@ export interface ApiOptionsMap {
 	"openai-responses": OpenAIResponsesOptions;
 	"openai-codex-responses": OpenAICodexResponsesOptions;
 	"azure-openai-responses": AzureOpenAIResponsesOptions;
-	"google-generative-ai": GoogleOptions;
-	"google-vertex": GoogleVertexOptions;
-	"mistral-conversations": MistralOptions;
-	"bedrock-converse-stream": BedrockOptions;
 	"pi-messages": PiMessagesOptions;
 }
 
@@ -337,7 +316,7 @@ export interface ToolCall {
 	id: string;
 	name: string;
 	arguments: Record<string, any>;
-	thoughtSignature?: string; // Google-specific: opaque signature for reusing thought context
+	thoughtSignature?: string; // Opaque signature for reusing thought context, read by GitHub Copilot / OpenAI-compatible paths
 	/** OpenAI Responses namespace for calls to dynamically loaded or namespaced tools. */
 	namespace?: string;
 }
@@ -670,12 +649,6 @@ export interface AnthropicMessagesCompat {
 	supportsToolReferences?: boolean;
 }
 
-/** Compatibility settings for Amazon Bedrock models. */
-export interface BedrockCompat {
-	/** Whether the model supports Bedrock strict tool schemas. Default: false. */
-	supportsStrictMode?: boolean;
-}
-
 /**
  * OpenRouter provider routing preferences.
  * Controls which upstream providers OpenRouter routes requests to.
@@ -807,7 +780,5 @@ export interface Model<TApi extends Api> {
 			? OpenAIResponsesCompat
 			: TApi extends "anthropic-messages"
 				? AnthropicMessagesCompat
-				: TApi extends "bedrock-converse-stream"
-					? BedrockCompat
-					: never;
+				: never;
 }

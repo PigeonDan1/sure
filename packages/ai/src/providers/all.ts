@@ -1,7 +1,6 @@
 import { MODELS } from "../models.generated.ts";
 import { type CreateModelsOptions, createModels, type MutableModels, type Provider } from "../models.ts";
 import type { Api, Model } from "../types.ts";
-import { amazonBedrockProvider } from "./amazon-bedrock.ts";
 import { antLingProvider } from "./ant-ling.ts";
 import { anthropicProvider } from "./anthropic.ts";
 import { azureOpenAIResponsesProvider } from "./azure-openai-responses.ts";
@@ -13,21 +12,16 @@ import modelDataManifest from "./data/.manifest.json" with { type: "json" };
 import { deepseekProvider } from "./deepseek.ts";
 import { fireworksProvider } from "./fireworks.ts";
 import { githubCopilotProvider } from "./github-copilot.ts";
-import { googleProvider } from "./google.ts";
-import { googleVertexProvider } from "./google-vertex.ts";
 import { groqProvider } from "./groq.ts";
 import { huggingfaceProvider } from "./huggingface.ts";
 import { kimiCodingProvider } from "./kimi-coding.ts";
 import { minimaxProvider } from "./minimax.ts";
 import { minimaxCnProvider } from "./minimax-cn.ts";
-import { mistralProvider } from "./mistral.ts";
 import { moonshotaiProvider } from "./moonshotai.ts";
 import { moonshotaiCnProvider } from "./moonshotai-cn.ts";
 import { nvidiaProvider } from "./nvidia.ts";
 import { openaiProvider } from "./openai.ts";
 import { openaiCodexProvider } from "./openai-codex.ts";
-import { opencodeProvider } from "./opencode.ts";
-import { opencodeGoProvider } from "./opencode-go.ts";
 import { openrouterProvider } from "./openrouter.ts";
 import { qwenTokenPlanProvider } from "./qwen-token-plan.ts";
 import { qwenTokenPlanCnProvider } from "./qwen-token-plan-cn.ts";
@@ -86,7 +80,6 @@ export function getBuiltinModels<TProvider extends BuiltinProvider>(
 /** All built-in providers, freshly constructed. */
 export function builtinProviders(): Provider[] {
 	return [
-		amazonBedrockProvider(),
 		antLingProvider(),
 		anthropicProvider(),
 		azureOpenAIResponsesProvider(),
@@ -97,21 +90,16 @@ export function builtinProviders(): Provider[] {
 		deepseekProvider(),
 		fireworksProvider(),
 		githubCopilotProvider(),
-		googleProvider(),
-		googleVertexProvider(),
 		groqProvider(),
 		huggingfaceProvider(),
 		kimiCodingProvider(),
 		minimaxProvider(),
 		minimaxCnProvider(),
-		mistralProvider(),
 		moonshotaiProvider(),
 		moonshotaiCnProvider(),
 		nvidiaProvider(),
 		openaiProvider(),
 		openaiCodexProvider(),
-		opencodeProvider(),
-		opencodeGoProvider(),
 		openrouterProvider(),
 		qwenTokenPlanProvider(),
 		qwenTokenPlanCnProvider(),

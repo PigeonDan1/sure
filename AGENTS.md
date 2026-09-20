@@ -126,7 +126,6 @@ Our pi is pi 0.85.1 plus the patches below. This list is the record; keep it cur
 
 - Dropped the dead `|| "Unknown error"` short-circuit in the Responses error template.
 - `error-body.ts` reads a three-digit numeric-string `code` as a status and exposes bodies that carry no status.
-- Gemini `finishMessage` is composed into `rawStopReason`, so the user-visible string is `Provider stopped with: REASON (message)`.
 - Responses `cancelled` and `failed` carry `errorMessage: "Response <status>"`.
 - The Anthropic and OpenAI Codex OAuth callback servers time out after five minutes (`LOGIN_TIMEOUT_MS`), matching openrouter.
 - A `PROVIDER_MIDSTREAM_ERROR` diagnostic on `openai-responses` and `azure-openai-responses` streams that drop after a 200, retryable in `retry.ts`, plus `isTerminalRateLimitError` de-duplication and a retry on "produced invalid content".
@@ -159,6 +158,10 @@ Upstream features this fork no longer carries:
 - Bun compiled-binary detection (`isBunBinary`).
 - The browser smoke check (`npm run check:browser-smoke`).
 - The `canvas` devDependency and `scripts/generate-test-image.ts`.
+- The `opencode` and `opencode-go` providers (OpenCode Zen and OpenCode Go).
+- The `mistral` provider and its `mistral-conversations` API; Mistral models stay reachable through OpenRouter, the Vercel AI Gateway, NVIDIA, Cloudflare Workers AI, or a custom OpenAI-compatible gateway.
+- The `google` and `google-vertex` providers, their `google-generative-ai` / `google-shared` / `google-vertex` APIs, and `@google/genai`; Gemini models stay reachable through GitHub Copilot, OpenRouter, the Vercel AI Gateway, or a custom OpenAI-compatible gateway.
+- The `amazon-bedrock` provider, its `bedrock-converse-stream` API, and the AWS SDK; Bedrock-hosted models such as Amazon Nova stay reachable through OpenRouter or the Vercel AI Gateway.
 
 Restore by reverting the commit that removed it; see git log.
 
