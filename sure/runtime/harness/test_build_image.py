@@ -21,8 +21,7 @@ class BuildImageLockTest(unittest.TestCase):
         spec = build_image.read_json(build_image.SPEC_PATH)
         lock_sha256 = build_image.sha256_file(build_image.SPEC_PATH.parent / str(spec["lock_file"]))
         root = Path(tmp) / "sure-harness-v1-py311-abc123"
-        (root / "bin").mkdir(parents=True)
-        (root / "bin" / "python").write_text("", encoding="utf-8")
+        root.mkdir(parents=True)
         (root / "runtime-manifest.json").write_text(
             json.dumps({
                 "runtime_id": "sure-harness-v1-py311-abc123",

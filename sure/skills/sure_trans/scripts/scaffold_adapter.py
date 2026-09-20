@@ -17,6 +17,10 @@ for _parent in Path(__file__).resolve().parents:
 
 from sure.runtime.evaluation.task_registry import task_profile
 
+# The digest-pinned Harness Runtime image recorded by build_image.py, if one was
+# built and committed.
+RUNTIME_IMAGE_LOCK = Path(__file__).resolve().parents[4] / "sure" / "runtime" / "harness" / "runtime-image.json"
+
 
 def read_object(path: Path) -> dict:
     value = json.loads(path.read_text(encoding="utf-8"))
@@ -155,9 +159,8 @@ def harness_runtime_build_context(harness: dict[str, str] | None) -> str:
         return "directory"
     image_ref = os.environ.get("SURE_HARNESS_RUNTIME_IMAGE", "").strip()
     verified = False
-    config_path = Path(__file__).resolve().parents[4] / "sure" / "runtime" / "harness" / "runtime-image.json"
-    if not image_ref and config_path.is_file():
-        image_config = read_object(config_path)
+    if not image_ref and RUNTIME_IMAGE_LOCK.is_file():
+        image_config = read_object(RUNTIME_IMAGE_LOCK)
         image_ref = str(image_config.get("image_ref") or "").strip()
         if image_config.get("runtime_id") != harness["runtime_id"] or image_config.get("lock_sha256") != harness["lock_sha256"]:
             raise ValueError("runtime image identity does not match the active Harness Runtime")
