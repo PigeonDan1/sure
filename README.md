@@ -64,11 +64,11 @@ PI_OFFLINE=1 ./pi-test.sh
 # Windows PowerShell
 git clone --recurse-submodules <repository-url> sure-harness
 cd sure-harness
-npm install --ignore-scripts
-npm run sure:site-info
-npm run sure:site-check
-npm run sure:doctor
-$env:PI_OFFLINE = "1"; .\pi-test.ps1
+npm.cmd install --ignore-scripts
+npm.cmd run sure:site-info
+npm.cmd run sure:site-check
+npm.cmd run sure:doctor
+$env:PI_OFFLINE = "1"; powershell -ExecutionPolicy Bypass -File .\pi-test.ps1
 ```
 
 ```bat
@@ -82,6 +82,8 @@ npm run sure:doctor
 set PI_OFFLINE=1
 .\pi-test.bat
 ```
+
+The PowerShell blocks call `npm.cmd` and forward the launcher through `powershell -ExecutionPolicy Bypass -File` because Windows refuses to run `.ps1` files, npm's own `npm.ps1` included, under its default execution policy.
 
 `sure:site-info` reports which policy is active; in a bundled distribution it must name the bundled source rather than the shipped default. Do not copy the public example over the bundled policy. A bundled distribution may include site-specific operating documentation below `private/`.
 
@@ -105,12 +107,12 @@ PI_OFFLINE=1 ./pi-test.sh
 # Windows PowerShell
 git clone --recurse-submodules --branch harness-tui-agent https://github.com/PigeonDan1/sure.git sure-harness
 cd sure-harness
-npm install --ignore-scripts
+npm.cmd install --ignore-scripts
 Copy-Item config/site.example.yaml config/site.local.yaml
 # Edit every path and execution surface in config/site.local.yaml.
-npm run sure:site-check
-npm run sure:doctor
-$env:PI_OFFLINE = "1"; .\pi-test.ps1
+npm.cmd run sure:site-check
+npm.cmd run sure:doctor
+$env:PI_OFFLINE = "1"; powershell -ExecutionPolicy Bypass -File .\pi-test.ps1
 ```
 
 `config/site.local.yaml` is ignored by Git and must remain local. Advanced deployments can instead set `SURE_SITE_POLICY` to an absolute path outside the repository.
