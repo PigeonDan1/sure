@@ -16,7 +16,7 @@ SURE turns model deployment, environment adaptation, inference-code generation, 
 This repository supports two distributions from one codebase:
 
 - A distribution with `config/site.bundled.yaml` carries a trusted site policy. Users do not create a local policy before running SURE workflows.
-- A public or self-hosted distribution does not carry a site policy. Users configure their own storage and execution boundaries before running workflows that consume models, datasets, or promoted results.
+- A public or self-hosted distribution carries no operator policy, no approved models, and no datasets. It falls back to the zero-configuration default at `config/site.default.yaml`, which keeps every root under `~/.sure`. Users write their own storage and execution boundaries into `config/site.local.yaml` when those defaults do not fit.
 
 The public core, command parameters, state machines, gates, runtime locks, artifact schemas, and evaluation configuration precedence are the same in both distributions. A site policy supplies deployment-specific roots and execution resources; it does not redefine workflow behavior.
 
@@ -76,16 +76,18 @@ $env:PI_OFFLINE = "1"; .\pi-test.ps1
 git clone --recurse-submodules <repository-url> sure-harness
 cd sure-harness
 npm install --ignore-scripts
+npm run sure:site-info
+npm run sure:site-check
 npm run sure:doctor
 set PI_OFFLINE=1
 .\pi-test.bat
 ```
 
-`sure:site-info` must report `configured: true` and `source: bundled`. Do not copy the public example over the bundled policy. A bundled distribution may include site-specific operating documentation below `private/`.
+`sure:site-info` reports which policy is active; in a bundled distribution it must name the bundled source rather than the shipped default. Do not copy the public example over the bundled policy. A bundled distribution may include site-specific operating documentation below `private/`.
 
 ### Public/self-hosted site policy
 
-The public distribution contains no private storage paths, internal gateways, cluster defaults, or credentials. Configure the deployment before running `/sure_infer` or `/sure_eval`:
+The public distribution contains no private storage paths, internal gateways, cluster defaults, or credentials. `/sure_infer` and `/sure_eval` need an approved model rather than a configured deployment: a fresh machine starts with an empty approved root, and both commands refuse until `/sure_onboard` and `/sure_approve` have published a model into it. Configure the deployment when the default roots do not fit, or to point at approved storage that already exists:
 
 ```bash
 # Linux, macOS, or Git Bash on Windows
