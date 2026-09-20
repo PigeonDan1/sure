@@ -17,5 +17,5 @@
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*"],
-	"exclude": ["**/dist/**"]
+	"exclude": ["**/dist/**", "packages/*/test/**/tmp-*/**"]
 }
