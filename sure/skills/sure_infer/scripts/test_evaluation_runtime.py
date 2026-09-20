@@ -19,6 +19,7 @@ from evaluation_runtime import (
     _engine_commit,
     _engine_has_repository,
     _expected_binding,
+    _materialize,
     _verify,
     ensure_evaluation_runtime,
     evaluation_child_environment,
@@ -139,6 +140,45 @@ class EvaluationRuntimeTests(unittest.TestCase):
 
         self.assertTrue(ok)
         self.assertEqual(run.call_args.kwargs["cwd"], str(engine_root))
+
+    def test_the_materialized_manifest_records_the_interpreter_it_got(self) -> None:
+        # The venv no longer borrows the approved Harness interpreter: uv fetches
+        # whatever 3.11 it can reach. The manifest is the only place that says
+        # which one, so it carries the probe identity the other two runtimes use.
+        identity = {
+            "python_version": "3.11.16",
+            "python_abi": "cpython-311-x86_64-linux-gnu",
+            "python_platform": "linux-x86_64",
+            "base_python": "/opt/uv/python/3.11.16/bin/python3.11",
+            "base_python_sha256": "d" * 64,
+        }
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            cache = root / "cache"
+            runtime_root = cache / "sure-evaluation-test"
+            binding = {
+                "runtime_id": "sure-evaluation-test",
+                "python": "3.11",
+                "python_executable": str(runtime_root / runtime_python_relative()),
+                "runtime_root": str(runtime_root),
+                "manifest_path": str(runtime_root / "runtime-manifest.json"),
+                "lock_path": str(root / "requirements.lock.txt"),
+                "required_imports": [],
+            }
+            completed = mock.Mock(returncode=0, stdout="", stderr="")
+            with mock.patch("evaluation_runtime.CACHE_ROOT", cache):
+                with mock.patch("evaluation_runtime.uv_binary", return_value="uv"):
+                    with mock.patch("evaluation_runtime.subprocess.run", return_value=completed):
+                        with mock.patch("evaluation_runtime.probe", return_value=identity):
+                            _materialize(binding)
+            manifest = json.loads((runtime_root / "runtime-manifest.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(manifest["python_version"], "3.11.16")
+        self.assertEqual(manifest["python_abi"], "cpython-311-x86_64-linux-gnu")
+        self.assertEqual(manifest["base_python_sha256"], "d" * 64)
+        # Provenance, not contract: an older manifest without them still verifies.
+        for key in ("python_version", "python_abi", "base_python_sha256"):
+            self.assertNotIn(key, binding)
 
     def test_non_external_input_has_no_evaluation_runtime(self) -> None:
         self.assertIsNone(

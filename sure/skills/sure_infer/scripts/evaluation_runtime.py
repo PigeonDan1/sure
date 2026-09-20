@@ -24,6 +24,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from sure.runtime.uvenv import (  # noqa: E402
     child_environment,
     exclusive_lock,
+    probe,
     runtime_python_relative,
     sha256_file,
     sync_command,
@@ -278,12 +279,19 @@ def _materialize(binding: dict[str, Any]) -> None:
                         f"Evaluation Runtime dependency install failed; see {log_path}"
                     )
             log_path.write_text("\n".join(transcript), encoding="utf-8")
+            # uv fetches whatever 3.11 it can find, so the manifest is the only
+            # record of which interpreter this runtime actually got. Provenance
+            # only: the binding and _verify's comparison do not carry these.
+            identity = probe(runtime_python, error=EvaluationRuntimeError)
             manifest = {
                 **binding,
                 "runtime_root": str(runtime_root),
                 "python_executable": str(runtime_root / runtime_python_relative()),
                 "manifest_path": str(runtime_root / "runtime-manifest.json"),
                 "materialization": "uv_venv",
+                "python_version": identity["python_version"],
+                "python_abi": identity["python_abi"],
+                "base_python_sha256": identity["base_python_sha256"],
                 "prepared_at": datetime.now(timezone.utc).isoformat(),
                 "install_log": str(log_path),
                 "package_source": "configured uv index (credentials omitted)",
