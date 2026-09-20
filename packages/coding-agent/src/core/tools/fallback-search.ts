@@ -153,6 +153,9 @@ export async function grepFallback(params: {
 		return matches;
 	}
 	for await (const entry of walkTree(params.searchPath, { signal: params.signal })) {
+		// walkTree only looks at the signal when it pops the next directory, so a
+		// flat directory of ten thousand files would ignore Esc until it is done.
+		if (params.signal?.aborted) break;
 		if (matches.length >= params.limit) break;
 		await scan(entry.absolutePath, entry.relativePosixPath);
 	}
