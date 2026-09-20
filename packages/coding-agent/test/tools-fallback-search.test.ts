@@ -51,6 +51,17 @@ describe("grep and find without ripgrep or fd", () => {
 		expect(text).not.toContain("binary.ts"); // NUL byte in the first 8 KiB
 	});
 
+	it("stops at the last real line of a file ending in a newline", async () => {
+		const dir = fixture();
+		const tool = createGrepTool(dir);
+
+		// "^" matches the empty string, so a phantom line after the final newline
+		// shows up as a hit of its own and eats the match limit.
+		const lines = toolText(await tool.execute("call-grep", { pattern: "^", glob: "alpha.ts" })).split("\n");
+
+		expect(lines).toEqual(["src/alpha.ts:1: const needle = 1;", "src/alpha.ts:2: const other = 2;"]);
+	});
+
 	it("finds files with node, honouring .gitignore", async () => {
 		const dir = fixture();
 		const tool = createFindTool(dir);
