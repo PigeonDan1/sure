@@ -572,6 +572,16 @@ describe("sure_feed preToolCall script ownership", () => {
 		expect(result.repair).toContain("check_rank_select.py");
 	});
 
+	it("blocks a forward-slash script path run through the powershell tool", () => {
+		// Same command as the bash case above, so only the tool name differs: the
+		// gate must key on the tool, not on the backslashes of the case below.
+		const result = preToolCall(
+			toolCtx("python3 scripts/check_rank_select.py --run-dir x --produces y", "powershell"),
+		);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("check_rank_select.py");
+	});
+
 	it("blocks the same script when it is run through the powershell tool", () => {
 		const result = preToolCall(
 			toolCtx("python3 scripts\\check_rank_select.py --run-dir x --produces y", "powershell"),

@@ -5,7 +5,7 @@ import {
 	initialCheckpoint,
 	retryExhausted,
 } from "../../../../sure/skills/sure_approve/hooks/checkpoints.ts";
-import { gateBlocks, modeFromArgs, preStart } from "../../../../sure/skills/sure_approve/hooks/index.ts";
+import { gateBlocks, modeFromArgs, preStart, preToolCall } from "../../../../sure/skills/sure_approve/hooks/index.ts";
 import {
 	APPROVE_UNITS,
 	AUDIT_UNITS,
@@ -36,6 +36,23 @@ describe("sure_approve state machine", () => {
 		} as SureHookContext);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("storage.approved_models_roots[0]");
+	});
+
+	it("blocks an out-of-order script run through the powershell tool", () => {
+		const result = preToolCall({
+			args: "model_dir=/tmp/model",
+			// No state.json there, so the run sits at the first audit unit,
+			// resolve_input, whose only permitted script is resolve_approve_input.py.
+			runDir: "sure-approve-run-that-does-not-exist",
+			event: {
+				type: "tool_call",
+				toolCallId: "t1",
+				toolName: "powershell",
+				input: { command: "python3 scripts/audit_bundle.py --kind producer" },
+			},
+		} as unknown as SureHookContext);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("scripts/audit_bundle.py");
 	});
 
 	it("orders publication only after an explicit decision", () => {
