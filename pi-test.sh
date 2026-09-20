@@ -68,7 +68,7 @@ if command -v cygpath >/dev/null 2>&1; then
   NATIVE_DIR="$(cygpath -m "$SCRIPT_DIR")"
 fi
 
-if ! node -e "const base = '$NATIVE_DIR/packages/coding-agent/src/core/sure'; for (const p of ['typebox','typebox/compile','typebox/value']) require.resolve(p, { paths: [base] });" >/dev/null 2>&1; then
+if ! node -e "const base = process.argv[1]; for (const p of ['typebox','typebox/compile','typebox/value']) require.resolve(p, { paths: [base] });" "$NATIVE_DIR/packages/coding-agent/src/core/sure" >/dev/null 2>&1; then
   echo "Missing SURE runtime dependency: typebox."
   echo "Run from the repository root:"
   echo "  npm install --ignore-scripts"
@@ -76,7 +76,10 @@ if ! node -e "const base = '$NATIVE_DIR/packages/coding-agent/src/core/sure'; fo
   exit 1
 fi
 
-# Node resolves --import as a URL, so a Windows drive letter needs a file:// URL.
+# Node resolves --import as a URL, so a Windows drive letter needs a file:// URL
+# and a '#', '%' or '?' in the path would otherwise be read as URL syntax rather
+# than as part of the path. Let node spell the URL.
 RESOLVER="$NATIVE_DIR/packages/coding-agent/test/source-resolver.ts"
+RESOLVER_URL="$(node -e "console.log(require('node:url').pathToFileURL(process.argv[1]).href);" "$RESOLVER")"
 
-node --import "file:///${RESOLVER#/}" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
+node --import "$RESOLVER_URL" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
