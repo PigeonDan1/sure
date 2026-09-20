@@ -16,7 +16,7 @@ import type { KeyId } from "@earendil-works/pi-tui";
 import * as _bundledPiTui from "@earendil-works/pi-tui";
 import { createJiti } from "jiti/static";
 // Static imports of packages that extensions may use.
-// These MUST be static so Bun bundles them into the compiled binary.
+// These MUST be static so SEA and bundled-Node builds embed them.
 // The virtualModules option then makes them available to extensions.
 import * as _bundledTypebox from "typebox";
 import * as _bundledTypeboxCompile from "typebox/compile";
