@@ -75,6 +75,13 @@ describe("isContextOverflow", () => {
 		expect(isContextOverflow(commaMessage, 256000)).toBe(true);
 	});
 
+	it("detects Mistral-compatible maximum context length errors", () => {
+		const message = createErrorMessage(
+			"400 Prompt contains 145000 tokens, too large for model with 131072 maximum context length",
+		);
+		expect(isContextOverflow(message, 131072)).toBe(true);
+	});
+
 	it("does not treat generic non-overflow Ollama errors as overflow", () => {
 		const message = createErrorMessage("500 `model runner crashed unexpectedly`");
 		expect(isContextOverflow(message, 32768)).toBe(false);
