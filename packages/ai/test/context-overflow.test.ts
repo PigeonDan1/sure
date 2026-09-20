@@ -198,27 +198,6 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
-	// Google
-	// Expected pattern: "input token count (X) exceeds the maximum"
-	// =============================================================================
-
-	describe.skipIf(!process.env.GEMINI_API_KEY)("Google", () => {
-		it("gemini-2.5-flash - should detect overflow via isContextOverflow", async () => {
-			const model = getModel("google", "gemini-2.5-flash");
-			const result = await testContextOverflow(model, process.env.GEMINI_API_KEY!);
-			logResult(result);
-
-			expect(result.stopReason).toBe("error");
-			expect(result.errorMessage).toMatch(/input token count.*exceeds the maximum/i);
-			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
-		}, 120000);
-	});
-
-	// =============================================================================
-	// Uses same API as Google, expects same error pattern
-	// =============================================================================
-
-	// =============================================================================
 	// =============================================================================
 
 	// =============================================================================

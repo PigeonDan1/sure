@@ -49,7 +49,7 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: St
 	expect(msg.stopReason).toBe("aborted");
 
 	// OpenAI providers, OpenAI Codex, zai, and Amazon Bedrock only send usage in the final chunk,
-	// so when aborted they have no token stats. Anthropic and Google send usage information early in the stream.
+	// so when aborted they have no token stats. Anthropic sends usage information early in the stream.
 	// MiniMax and Kimi report input tokens but not output tokens differently on aborted requests.
 	if (
 		llm.api === "openai-completions" ||
@@ -83,14 +83,6 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: St
 }
 
 describe("Token Statistics on Abort", () => {
-	describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider", () => {
-		const llm = getModel("google", "gemini-2.5-flash");
-
-		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm, { thinking: { enabled: true } });
-		});
-	});
-
 	describe.skipIf(!process.env.OPENAI_API_KEY)("OpenAI Completions Provider", () => {
 		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
 		void _compat;

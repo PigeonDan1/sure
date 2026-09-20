@@ -83,8 +83,8 @@ describe("ModelRuntime auth options", () => {
 				}),
 				expect.objectContaining({
 					type: "api_key",
-					provider: expect.objectContaining({ id: "google-vertex", name: "Google Vertex AI" }),
-					method: expect.objectContaining({ name: "Google Cloud credentials" }),
+					provider: expect.objectContaining({ id: "deepseek", name: "DeepSeek" }),
+					method: expect.objectContaining({ name: "DeepSeek API key" }),
 				}),
 				expect.objectContaining({
 					type: "oauth",

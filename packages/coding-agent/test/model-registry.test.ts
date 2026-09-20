@@ -186,22 +186,22 @@ describe("ModelRegistry", () => {
 			});
 
 			const registry = await createModelRegistry(authStorage, modelsJsonPath);
-			const googleModels = getModelsForProvider(registry, "google");
+			const deepseekModels = getModelsForProvider(registry, "deepseek");
 
-			// Google models should still have their original baseUrl
-			expect(googleModels.length).toBeGreaterThan(0);
-			expect(googleModels[0].baseUrl).not.toBe("https://my-proxy.example.com/v1");
+			// DeepSeek models should still have their original baseUrl
+			expect(deepseekModels.length).toBeGreaterThan(0);
+			expect(deepseekModels[0].baseUrl).not.toBe("https://my-proxy.example.com/v1");
 		});
 
 		test("can mix baseUrl override and models merge", async () => {
 			writeRawModelsJson({
 				// baseUrl-only for anthropic
 				anthropic: overrideConfig("https://anthropic-proxy.example.com/v1"),
-				// Add custom model for google (merged with built-ins)
-				google: providerConfig(
-					"https://google-proxy.example.com/v1",
-					[{ id: "gemini-custom" }],
-					"google-generative-ai",
+				// Add custom model for deepseek (merged with built-ins)
+				deepseek: providerConfig(
+					"https://deepseek-proxy.example.com/v1",
+					[{ id: "deepseek-custom" }],
+					"openai-completions",
 				),
 			});
 
@@ -212,10 +212,10 @@ describe("ModelRegistry", () => {
 			expect(anthropicModels.length).toBeGreaterThan(1);
 			expect(anthropicModels[0].baseUrl).toBe("https://anthropic-proxy.example.com/v1");
 
-			// Google: built-ins plus custom model
-			const googleModels = getModelsForProvider(registry, "google");
-			expect(googleModels.length).toBeGreaterThan(1);
-			expect(googleModels.some((m) => m.id === "gemini-custom")).toBe(true);
+			// DeepSeek: built-ins plus custom model
+			const deepseekModels = getModelsForProvider(registry, "deepseek");
+			expect(deepseekModels.length).toBeGreaterThan(1);
+			expect(deepseekModels.some((m) => m.id === "deepseek-custom")).toBe(true);
 		});
 
 		test("refresh() picks up baseUrl override changes", async () => {
@@ -331,7 +331,7 @@ describe("ModelRegistry", () => {
 
 			const registry = await createModelRegistry(authStorage, modelsJsonPath);
 
-			expect(getModelsForProvider(registry, "google").length).toBeGreaterThan(0);
+			expect(getModelsForProvider(registry, "deepseek").length).toBeGreaterThan(0);
 			expect(getModelsForProvider(registry, "openai").length).toBeGreaterThan(0);
 		});
 

@@ -7,7 +7,6 @@
  *
  * - OpenAI Completions: Uses native total_tokens field
  * - OpenAI Responses: Uses native total_tokens field
- * - Google: Uses native totalTokenCount field
  * - Anthropic: Computed as input + output + cacheRead + cacheWrite
  * - Other OpenAI-compatible providers: Uses native total_tokens field
  */
@@ -206,29 +205,6 @@ describe("totalTokens field", () => {
 
 				console.log(`\nAzure OpenAI Responses / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, azureOptions);
-
-				logUsage("First request", first);
-				logUsage("Second request", second);
-
-				assertTotalTokensEqualsComponents(first);
-				assertTotalTokensEqualsComponents(second);
-			},
-		);
-	});
-
-	// =========================================================================
-	// Google
-	// =========================================================================
-
-	describe.skipIf(!process.env.GEMINI_API_KEY)("Google", () => {
-		it(
-			"gemini-2.5-flash - should return totalTokens equal to sum of components",
-			{ retry: 3, timeout: 60000 },
-			async () => {
-				const llm = getModel("google", "gemini-2.5-flash");
-
-				console.log(`\nGoogle / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm);
 
 				logUsage("First request", first);
 				logUsage("Second request", second);

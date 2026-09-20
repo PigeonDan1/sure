@@ -10,7 +10,6 @@ import { anthropicProvider } from "../src/providers/anthropic.ts";
 import { cloudflareAIGatewayProvider } from "../src/providers/cloudflare-ai-gateway.ts";
 import { cloudflareWorkersAIProvider } from "../src/providers/cloudflare-workers-ai.ts";
 import { fauxAssistantMessage, fauxProvider } from "../src/providers/faux.ts";
-import { googleVertexProvider } from "../src/providers/google-vertex.ts";
 import type {
 	Api,
 	Context,
@@ -209,73 +208,6 @@ describe("builtin providers", () => {
 			CLOUDFLARE_ACCOUNT_ID: "account-id",
 			CLOUDFLARE_GATEWAY_ID: "gateway-id",
 		});
-	});
-
-	it("runs provider-owned Vertex API key and ADC login flows", async () => {
-		const auth = googleVertexProvider().auth.apiKey!;
-		const keyAnswers = ["api-key", "vertex-key"];
-		expect(
-			await auth.login?.({
-				signal: neverAbortedSignal,
-				prompt: async () => keyAnswers.shift()!,
-				notify: () => {},
-			}),
-		).toEqual({ type: "api_key", key: "vertex-key" });
-
-		const adcAnswers = ["adc", "project-id", "us-central1"];
-		const events: AuthEvent[] = [];
-		expect(
-			await auth.login?.({
-				signal: neverAbortedSignal,
-				prompt: async () => adcAnswers.shift()!,
-				notify: (event) => events.push(event),
-			}),
-		).toEqual({
-			type: "api_key",
-			env: { GOOGLE_CLOUD_PROJECT: "project-id", GOOGLE_CLOUD_LOCATION: "us-central1" },
-		});
-		expect(events).toEqual([
-			expect.objectContaining({
-				type: "info",
-				links: [expect.objectContaining({ label: "Application Default Credentials" })],
-			}),
-		]);
-		expect(
-			await auth.resolve({
-				ctx: fakeAuthContext({}, ["~/.config/gcloud/application_default_credentials.json"]),
-				credential: {
-					type: "api_key",
-					env: { GOOGLE_CLOUD_PROJECT: "project-id", GOOGLE_CLOUD_LOCATION: "us-central1" },
-				},
-				signal: neverAbortedSignal,
-			}),
-		).toMatchObject({
-			auth: {},
-			env: { GOOGLE_CLOUD_PROJECT: "project-id", GOOGLE_CLOUD_LOCATION: "us-central1" },
-		});
-	});
-
-	it("resolves vertex via ADC file plus project and location", async () => {
-		const adc = "~/.config/gcloud/application_default_credentials.json";
-		const configured = createModels({
-			authContext: fakeAuthContext({ GOOGLE_CLOUD_PROJECT: "proj", GOOGLE_CLOUD_LOCATION: "us-central1" }, [adc]),
-		});
-		configured.setProvider(googleVertexProvider());
-		const model = configured.getModels("google-vertex")[0];
-
-		const result = await configured.getAuth(model.provider);
-		expect(result?.auth).toEqual({});
-		expect(result?.source).toContain("application default");
-
-		// ADC without project/location is not configured
-		const partial = createModels({ authContext: fakeAuthContext({ GOOGLE_CLOUD_PROJECT: "proj" }, [adc]) });
-		partial.setProvider(googleVertexProvider());
-		expect(await partial.getAuth(model.provider)).toBeUndefined();
-
-		// explicit key wins over ADC
-		const keyed = createModels({ authContext: fakeAuthContext({ GOOGLE_CLOUD_API_KEY: "vertex-key" }) });
-		keyed.setProvider(googleVertexProvider());
-		expect((await keyed.getAuth(model.provider))?.auth.apiKey).toBe("vertex-key");
 	});
 });
 
