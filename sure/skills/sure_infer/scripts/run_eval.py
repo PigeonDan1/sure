@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
 import hashlib
 import json
 import os
@@ -12,9 +11,15 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:  # POSIX only
+    import fcntl
+except ImportError:  # pragma: no cover - Windows has no advisory file locks
+    fcntl = None  # type: ignore[assignment]
 
 import yaml
 
@@ -32,6 +37,7 @@ from resolve_prediction_source import (
     APPROVED_RESULTS_ROOT,
     build_payload as resolve_prediction_source,
 )
+from sure.runtime.uvenv import exclusive_lock
 from sure.site.loader import load_site_policy
 
 
@@ -184,11 +190,49 @@ def _copy_tree(source: Path, destination: Path, *, path_replacements: tuple[str,
                 shutil.copy2(source_file, target_file)
 
 
+def _fsync_directory(path: Path) -> None:
+    """Flush a directory entry. Windows has no descriptor for a directory."""
+    if os.name == "nt":
+        return
+    directory_fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+@contextmanager
+def _exclusive_result_lock(directory: Path):
+    """Serialize concurrent appends into one result tree.
+
+    POSIX locks the directory itself and can flush it afterwards. Windows has
+    neither a directory descriptor nor flock, so it takes the same advisory
+    lock on a stable per-directory file in the system temp directory -- the
+    result tree must not gain a file of its own, because its contents are
+    hashed into the artifact manifest.
+    """
+    if os.name == "nt":
+        token = hashlib.sha256(str(directory.resolve()).encode("utf-8")).hexdigest()[:16]
+        with exclusive_lock(Path(tempfile.gettempdir()) / f"sure-eval-{token}.lock"):
+            yield lambda: None
+        return
+    descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        try:
+            yield lambda: os.fsync(descriptor)
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+    finally:
+        os.close(descriptor)
+
+
 def _fsync_tree(root: Path) -> None:
     directories = [root]
     for path in root.rglob("*"):
         if path.is_file():
-            file_fd = os.open(path, os.O_RDONLY)
+            # Windows flushes through the handle and refuses a read-only one.
+            file_fd = os.open(path, os.O_RDWR if os.name == "nt" else os.O_RDONLY)
             try:
                 os.fsync(file_fd)
             finally:
@@ -196,11 +240,7 @@ def _fsync_tree(root: Path) -> None:
         elif path.is_dir():
             directories.append(path)
     for directory in reversed(directories):
-        directory_fd = os.open(directory, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        _fsync_directory(directory)
 
 
 def _verify_approved_base(source_result_dir: Path, staging_result_dir: Path) -> None:
@@ -430,9 +470,7 @@ def append_staging_bundle(
     else:
         source_report_sha256 = hashlib.sha256(source_report.read_bytes()).hexdigest()
     staging_result_dir.parent.mkdir(parents=True, exist_ok=True)
-    directory_fd = os.open(staging_result_dir.parent, os.O_RDONLY)
-    try:
-        fcntl.flock(directory_fd, fcntl.LOCK_EX)
+    with _exclusive_result_lock(staging_result_dir.parent) as flush_parent:
         base_materialized = False
         if not in_place and not staging_result_dir.exists():
             temporary_base = Path(
@@ -444,7 +482,7 @@ def append_staging_bundle(
                 _fsync_tree(temporary_base)
                 os.replace(temporary_base, staging_result_dir)
                 base_materialized = True
-                os.fsync(directory_fd)
+                flush_parent()
             finally:
                 if temporary_base.exists():
                     shutil.rmtree(temporary_base)
@@ -505,11 +543,7 @@ def append_staging_bundle(
                 _fsync_tree(temporary_batch)
                 os.replace(temporary_batch, batch_dir)
                 batch_materialized = True
-                batch_parent_fd = os.open(batch_dir.parent, os.O_RDONLY)
-                try:
-                    os.fsync(batch_parent_fd)
-                finally:
-                    os.close(batch_parent_fd)
+                _fsync_directory(batch_dir.parent)
             finally:
                 if temporary_batch.exists():
                     shutil.rmtree(temporary_batch)
@@ -558,11 +592,7 @@ def append_staging_bundle(
                 snapshot = build_snapshot(snapshot_run_dir).replace(str(snapshot_run_dir), str(staging_result_dir))
                 _atomic_write(staging_result_dir / "report_snapshot.md", snapshot.encode("utf-8"))
                 _atomic_write(staging_report, payload)
-                result_fd = os.open(staging_result_dir, os.O_RDONLY)
-                try:
-                    os.fsync(result_fd)
-                finally:
-                    os.close(result_fd)
+                _fsync_directory(staging_result_dir)
             finally:
                 shutil.rmtree(snapshot_parent)
         artifact_manifest_path = batch_dir / "artifact_manifest.json"
@@ -589,9 +619,6 @@ def append_staging_bundle(
             "staging_report_sha256": _sha256(staging_report),
             "staging_snapshot_sha256": _sha256(staging_snapshot),
         }
-    finally:
-        fcntl.flock(directory_fd, fcntl.LOCK_UN)
-        os.close(directory_fd)
 
 
 def _run(command: list[str], *, cwd: Path = SCRIPT_DIR, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:

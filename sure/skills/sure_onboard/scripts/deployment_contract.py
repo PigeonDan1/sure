@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -156,17 +156,19 @@ def normalize_harness_runtime(
     """Normalize the image Harness Runtime binding without site-specific paths."""
     manifest_value = str(harness.get("manifest_path") or "")
     python_value = str(harness.get("python_executable") or "")
-    if not Path(manifest_value).is_absolute() or not Path(python_value).is_absolute():
+    # Container paths are POSIX whatever the host is; Path() on Windows calls
+    # "/opt/sure-harness/<id>" relative and rejects the image's own layout.
+    if not PurePosixPath(manifest_value).is_absolute() or not PurePosixPath(python_value).is_absolute():
         raise ValueError("image Harness Runtime paths must be absolute")
 
     root_value = str(harness.get("runtime_root") or "")
     if not root_value:
         if not allow_derive:
             raise ValueError("image Harness Runtime runtime_root is missing")
-        root_value = str(Path(manifest_value).parent)
-    root = Path(root_value)
-    manifest = Path(manifest_value)
-    python = Path(python_value)
+        root_value = str(PurePosixPath(manifest_value).parent)
+    root = PurePosixPath(root_value)
+    manifest = PurePosixPath(manifest_value)
+    python = PurePosixPath(python_value)
     if not root.is_absolute():
         raise ValueError("image Harness Runtime runtime_root must be absolute")
     if manifest.parent != root:
