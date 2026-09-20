@@ -24,7 +24,10 @@ def describe() -> dict[str, Any]:
     lock_sha256 = _required("SURE_HARNESS_LOCK_SHA256")
     manifest_path = Path(_required("SURE_HARNESS_MANIFEST_PATH")).resolve()
     runtime_root = Path(_required("SURE_HARNESS_RUNTIME_ROOT")).resolve()
-    python = Path(_required("HARNESS_PYTHON_BIN")).resolve()
+    # Resolve the directory only: in a venv bin/python is a symlink to the base
+    # interpreter, and following it would always land outside the runtime root.
+    python = Path(_required("HARNESS_PYTHON_BIN"))
+    python = python.parent.resolve() / python.name
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("schema") != "sure.harness.runtime.manifest.v1":
         raise ValueError("HARNESS_RUNTIME_NOT_READY: unsupported runtime manifest")
