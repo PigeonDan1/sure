@@ -1,5 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildInvocationPrompt } from "../../src/core/sure/extension.ts";
 import { NFS_ROOT, resolveOutputDir, stripOutputDir } from "../../src/core/sure/output-dir.ts";
@@ -170,5 +173,47 @@ describe("result.json", () => {
 		manager.createRun(skillPackage(), "model=demo");
 
 		expect(existsSync(join(root, "result.json"))).toBe(false);
+	});
+});
+
+describe("module load with a broken site policy", () => {
+	it("still loads output-dir.ts, and still refuses an output directory", () => {
+		const dir = mkdtempSync(join(tmpdir(), "sure-broken-policy-"));
+		try {
+			const policyPath = join(dir, "site.yaml");
+			writeFileSync(policyPath, "storage: [this is not: valid yaml\n", "utf-8");
+			const moduleUrl = pathToFileURL(resolve(__dirname, "../../src/core/sure/output-dir.ts")).href;
+			const probe = spawnSync(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					"-e",
+					`import(${JSON.stringify(moduleUrl)}).then((m) => {
+						console.log(m.NFS_ROOT);
+						console.log(JSON.stringify(m.resolveOutputDir("model=demo output_dir=" + ${JSON.stringify(join(dir, "out"))})));
+					});`,
+				],
+				{
+					cwd: resolve(__dirname, "../../../.."),
+					encoding: "utf-8",
+					env: { ...process.env, SURE_SITE_POLICY: policyPath },
+					timeout: 60_000,
+				},
+			);
+
+			expect(probe.status, probe.stderr).toBe(0);
+			const [root, resolution] = probe.stdout.trim().split(/\r?\n/);
+			expect(root).toBe("<site-policy-required>");
+			// The module loads, but the policy failure still refuses at the point of
+			// use — a broken policy must never read as "no restriction".
+			expect(JSON.parse(resolution ?? "{}")).toEqual({
+				ok: false,
+				error: expect.stringContaining("Cannot parse environment site policy"),
+			});
+			expect(existsSync(join(dir, "out"))).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
