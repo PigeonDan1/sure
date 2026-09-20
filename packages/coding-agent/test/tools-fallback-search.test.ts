@@ -29,9 +29,13 @@ describe("grep and find without ripgrep or fd", () => {
 	function fixture(): string {
 		const dir = mkdtempSync(join(tmpdir(), "pi-fallback-search-"));
 		tempDirs.push(dir);
-		mkdirSync(join(dir, "src"), { recursive: true });
+		mkdirSync(join(dir, "src", "gen"), { recursive: true });
 		mkdirSync(join(dir, "build"), { recursive: true });
+		mkdirSync(join(dir, "gen"), { recursive: true });
 		writeFileSync(join(dir, ".gitignore"), "build/\n");
+		writeFileSync(join(dir, "src", ".gitignore"), "gen/\n");
+		writeFileSync(join(dir, "src", "gen", "x.ts"), "generated\n");
+		writeFileSync(join(dir, "gen", "y.ts"), "generated\n");
 		writeFileSync(join(dir, "src", "alpha.ts"), "const needle = 1;\nconst other = 2;\n");
 		writeFileSync(join(dir, "src", "beta.txt"), "needle in a text file\n");
 		writeFileSync(join(dir, "src", "binary.ts"), Buffer.from([0x6e, 0x65, 0x65, 0x64, 0x6c, 0x65, 0x00]));
@@ -100,5 +104,15 @@ describe("grep and find without ripgrep or fd", () => {
 
 		expect(lines).toContain("src/alpha.ts");
 		expect(lines).not.toContain("build/alpha.ts");
+	});
+
+	it("applies a nested .gitignore below its own directory only", async () => {
+		const dir = fixture();
+		const tool = createFindTool(dir);
+
+		const lines = toolText(await tool.execute("call-find", { pattern: "*.ts" })).split("\n");
+
+		expect(lines).not.toContain("src/gen/x.ts"); // src/.gitignore says gen/
+		expect(lines).toContain("gen/y.ts"); // the same rule does not reach the root
 	});
 });
