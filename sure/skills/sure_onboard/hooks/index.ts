@@ -184,7 +184,10 @@ function blockedSearchRoots(): string[] {
 }
 
 function normalizeRoot(root: string): string {
-	const trimmed = root.trim().replaceAll("\\", "/");
+	let trimmed = root.trim().replaceAll("\\", "/");
+	// A drive-lettered path names a case-insensitive filesystem, so "d:/data"
+	// and "D:\Data" are one root. Pure string work, applied to both sides.
+	if (/^[A-Za-z]:\//.test(trimmed)) trimmed = trimmed.toLowerCase();
 	if (!trimmed || trimmed === "/") {
 		return "/";
 	}
