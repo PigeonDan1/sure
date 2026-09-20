@@ -181,6 +181,35 @@ try {
 		failures.push("sure:site-check dropped its ok line while warning about missing roots");
 	}
 
+	// The parity run above diffs whatever policy this checkout resolves, and a
+	// developer's config/site.local.yaml shadows the shipped default, the only
+	// policy that carries ${HOME} and ${REPO}. Diff the twins on it directly,
+	// from a home directory named like a replacement pattern: $& and $$ are
+	// literal text to str.replace in loader.py and must stay literal in
+	// loader.ts, where String.replaceAll would otherwise expand them.
+	const tokenHome = resolve(temporaryRoot, "home-$&-$$-tokens");
+	const tokenEnvironment = {
+		...process.env,
+		SURE_SITE_POLICY: resolve("config/site.default.yaml"),
+		HOME: tokenHome,
+		USERPROFILE: tokenHome,
+	};
+	const tokenTypescript = run(
+		"node",
+		[
+			"--import",
+			"tsx",
+			"-e",
+			'import("./sure/site/loader.ts").then(({resolveSitePolicy}) => console.log(JSON.stringify(resolveSitePolicy())))',
+		],
+		{ env: tokenEnvironment },
+	);
+	const tokenPython = run("python3", ["sure/site/loader.py"], { env: tokenEnvironment });
+	if (tokenTypescript.status !== 0 || tokenPython.status !== 0) {
+		failures.push(`site loaders failed on the shipped default policy: ${tokenTypescript.stderr.trim()}${tokenPython.stderr.trim()}`);
+	} else if (JSON.parse(tokenTypescript.stdout).sha256 !== JSON.parse(tokenPython.stdout).sha256) {
+		failures.push("TypeScript/Python site loader mismatch at ${HOME}/${REPO} expansion");
+	}
 	const exportedScript = "scripts/export-public.mjs";
 	if (existsSync(exportedScript)) {
 		const exported = run("node", [exportedScript, "--output", exportRoot]);

@@ -264,9 +264,12 @@ function normalizeHostPath(value: string): string {
 }
 
 function expandPolicyTokens(text: string, repositoryRoot: string): string {
-	return text
-		.replaceAll("${HOME}", normalizeHostPath(homedir()))
-		.replaceAll("${REPO}", normalizeHostPath(repositoryRoot));
+	// Replacer functions, not replacement strings: String.replaceAll reads $&
+	// and $$ in a replacement string as patterns, while str.replace in
+	// sure/site/loader.py substitutes the path literally.
+	const home = normalizeHostPath(homedir());
+	const repo = normalizeHostPath(repositoryRoot);
+	return text.replaceAll("${HOME}", () => home).replaceAll("${REPO}", () => repo);
 }
 
 function loadPolicy(path: string, source: SitePolicySource, repositoryRoot: string): ResolvedSitePolicy {
