@@ -13,6 +13,9 @@ from run_validate import env_for
 
 
 class ModelRuntimeEnvTests(unittest.TestCase):
+    # model_child_env no longer filters LD_LIBRARY_PATH: the portable base that
+    # used to inject the harness lib directory is gone, so every entry is the
+    # caller's own.
     def test_removes_harness_interpreter_state_only(self) -> None:
         env = model_child_env(
             {
@@ -25,7 +28,7 @@ class ModelRuntimeEnvTests(unittest.TestCase):
         )
         self.assertNotIn("PYTHONHOME", env)
         self.assertNotIn("PYTHONPATH", env)
-        self.assertEqual(env["LD_LIBRARY_PATH"], "/usr/local/lib")
+        self.assertEqual(env["LD_LIBRARY_PATH"], "/opt/sure-harness/base/lib:/usr/local/lib")
         self.assertEqual(env["KEEP_ME"], "yes")
 
     def test_child_python_starts_after_invalid_pythonhome_is_removed(self) -> None:

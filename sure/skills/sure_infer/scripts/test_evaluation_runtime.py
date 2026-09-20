@@ -91,21 +91,25 @@ class EvaluationRuntimeTests(unittest.TestCase):
             str(Path(binding["runtime_root"]) / runtime_python_relative()),
         )
 
-    def test_child_environment_removes_only_harness_library_path(self) -> None:
+    def test_child_environment_removes_the_harness_interpreter_state(self) -> None:
         harness_root = "/repo/sure/.runtime/harness/demo"
         env = evaluation_child_environment(
             {
                 "SURE_HARNESS_RUNTIME_ROOT": harness_root,
-                "LD_LIBRARY_PATH": f"{harness_root}/base/lib:/usr/local/cuda/lib64:/opt/model/lib",
+                "LD_LIBRARY_PATH": "/usr/local/cuda/lib64:/opt/model/lib",
                 "PYTHONHOME": f"{harness_root}/base",
                 "PYTHONPATH": f"{harness_root}/site-packages:/opt/model-runtime",
-                "PYTHONEXECUTABLE": f"{harness_root}/base/bin/python",
+                "PYTHONEXECUTABLE": f"{harness_root}/bin/python",
+                "KEEP_ME": "yes",
             }
         )
-        self.assertEqual(env["LD_LIBRARY_PATH"], "/usr/local/cuda/lib64:/opt/model/lib")
         self.assertNotIn("PYTHONHOME", env)
         self.assertNotIn("PYTHONPATH", env)
         self.assertNotIn("PYTHONEXECUTABLE", env)
+        # A uv venv exports no library path of its own, so whatever the user set
+        # is theirs and survives.
+        self.assertEqual(env["LD_LIBRARY_PATH"], "/usr/local/cuda/lib64:/opt/model/lib")
+        self.assertEqual(env["KEEP_ME"], "yes")
 
     def test_import_probe_runs_from_the_engine_root(self) -> None:
         with tempfile.TemporaryDirectory() as raw_root:

@@ -63,19 +63,8 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def evaluation_child_environment(parent: dict[str, str] | None = None) -> dict[str, str]:
-    """Remove Harness interpreter state and dynamic libraries before evaluation."""
-    env = dict(parent if parent is not None else os.environ)
-    for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE"):
-        env.pop(key, None)
-    harness_root = env.get("SURE_HARNESS_RUNTIME_ROOT", "").strip()
-    harness_lib = str(Path(harness_root) / "base" / "lib") if harness_root else ""
-    entries = [entry for entry in env.get("LD_LIBRARY_PATH", "").split(":") if entry]
-    entries = [entry for entry in entries if entry != harness_lib]
-    if entries:
-        env["LD_LIBRARY_PATH"] = ":".join(entries)
-    else:
-        env.pop("LD_LIBRARY_PATH", None)
-    return env
+    """Remove Harness interpreter state before evaluation."""
+    return child_environment(parent)
 
 
 def _engine_commit(engine_root: Path) -> str:
@@ -249,7 +238,7 @@ def _materialize(binding: dict[str, Any]) -> None:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         log_path = log_dir / f"bootstrap-{stamp}-{os.getpid()}.log"
         try:
-            env = child_environment()
+            env = evaluation_child_environment()
             env["UV_CACHE_DIR"] = str(CACHE_ROOT / "cache")
             env["UV_LINK_MODE"] = "copy"
             runtime_python = staging / runtime_python_relative()
