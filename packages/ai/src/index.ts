@@ -13,7 +13,6 @@ export type { GoogleOptions } from "./api/google-generative-ai.ts";
 export type { GoogleApiThinkingLevel, ResolvedGoogleThinkingLevel } from "./api/google-shared.ts";
 export type { GoogleVertexOptions } from "./api/google-vertex.ts";
 export * from "./api/lazy.ts";
-export type { MistralOptions } from "./api/mistral-conversations.ts";
 export type { OpenAICodexResponsesOptions, OpenAICodexWebSocketDebugStats } from "./api/openai-codex-responses.ts";
 export type { OpenAICompletionsOptions } from "./api/openai-completions.ts";
 export type { OpenAIResponsesOptions } from "./api/openai-responses.ts";

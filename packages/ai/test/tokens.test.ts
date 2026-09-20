@@ -53,7 +53,6 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: St
 	// MiniMax and Kimi report input tokens but not output tokens differently on aborted requests.
 	if (
 		llm.api === "openai-completions" ||
-		llm.api === "mistral-conversations" ||
 		llm.api === "openai-responses" ||
 		llm.api === "azure-openai-responses" ||
 		llm.api === "openai-codex-responses" ||
@@ -203,14 +202,6 @@ describe("Token Statistics on Abort", () => {
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
 		const llm = getModel("zai", "glm-5.2");
-
-		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
-	});
-
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider", () => {
-		const llm = getModel("mistral", "devstral-medium-latest");
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);

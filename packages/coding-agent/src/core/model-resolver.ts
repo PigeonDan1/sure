@@ -37,7 +37,6 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	cerebras: "gpt-oss-120b",
 	zai: "glm-5.3",
 	"zai-coding-cn": "glm-5.3",
-	mistral: "devstral-medium-latest",
 	minimax: "MiniMax-M2.7",
 	"minimax-cn": "MiniMax-M2.7",
 	moonshotai: "kimi-k2.6",

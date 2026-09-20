@@ -21,7 +21,6 @@ import { huggingfaceProvider } from "./huggingface.ts";
 import { kimiCodingProvider } from "./kimi-coding.ts";
 import { minimaxProvider } from "./minimax.ts";
 import { minimaxCnProvider } from "./minimax-cn.ts";
-import { mistralProvider } from "./mistral.ts";
 import { moonshotaiProvider } from "./moonshotai.ts";
 import { moonshotaiCnProvider } from "./moonshotai-cn.ts";
 import { nvidiaProvider } from "./nvidia.ts";
@@ -104,7 +103,6 @@ export function builtinProviders(): Provider[] {
 		kimiCodingProvider(),
 		minimaxProvider(),
 		minimaxCnProvider(),
-		mistralProvider(),
 		moonshotaiProvider(),
 		moonshotaiCnProvider(),
 		nvidiaProvider(),

@@ -66,7 +66,6 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
 - **Anthropic**
 - **Google**
 - **Vertex AI** (Gemini via Vertex AI)
-- **Mistral**
 - **Groq**
 - **Cerebras**
 - **Cloudflare AI Gateway**
@@ -419,7 +418,6 @@ Built-in providers resolve these env vars (Node.js; in browsers pass `apiKey` ex
 | NVIDIA NIM | `NVIDIA_API_KEY` |
 | Google | `GEMINI_API_KEY` |
 | Vertex AI | `GOOGLE_CLOUD_API_KEY` or `GOOGLE_CLOUD_PROJECT` (or `GCLOUD_PROJECT`) + `GOOGLE_CLOUD_LOCATION` + ADC |
-| Mistral | `MISTRAL_API_KEY` |
 | Groq | `GROQ_API_KEY` |
 | Cerebras | `CEREBRAS_API_KEY` |
 | Cloudflare AI Gateway | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_GATEWAY_ID` |
@@ -503,7 +501,7 @@ const strictTool: Tool = {
 };
 ```
 
-Strict JSON-schema constrained sampling is supported for OpenAI, Anthropic, supported Amazon Bedrock Converse models, Mistral, and Gemini 3 tool calls through the Google Generative AI and Vertex adapters. Google uses `VALIDATED` function-calling mode (or `ANY` when explicitly requested); earlier Gemini versions fall back for `strict: 'prefer'` and reject `strict: 'require'` because they do not enforce required parameters. Bedrock strict-tool capability is generated from model structured-output metadata; custom Bedrock models can override `compat.supportsStrictMode`. OpenAI Responses and Chat Completions can also emit grammar-constrained custom tools with OpenAI Lark or regex grammar variants. If multiple OpenAI variants are supplied, Lark is preferred over regex. Grammar constraints are enforced when the active model supports grammar tools; otherwise the tool falls back to normal function/JSON-schema handling. Grammar tool capability is model metadata: the generated catalog sets `compat.supportsOpenAIGrammarTools` for GPT-5+ models on endpoints that pass OpenAI custom tools through (OpenAI, OpenAI Codex, Azure OpenAI Responses, GitHub Copilot, and Cloudflare AI Gateway). OpenAI rejects `type: "custom"` tools for pre-GPT-5 models, and gateways that normalize tool schemas (e.g. OpenRouter) mangle them, so the flag stays off elsewhere. Custom model definitions can opt in via `compat`. Grammar-capable models reject grammar configurations without a non-empty supported variant. Native grammar tools must have an object parameter schema with exactly one required string property:
+Strict JSON-schema constrained sampling is supported for OpenAI, Anthropic, supported Amazon Bedrock Converse models, and Gemini 3 tool calls through the Google Generative AI and Vertex adapters. Google uses `VALIDATED` function-calling mode (or `ANY` when explicitly requested); earlier Gemini versions fall back for `strict: 'prefer'` and reject `strict: 'require'` because they do not enforce required parameters. Bedrock strict-tool capability is generated from model structured-output metadata; custom Bedrock models can override `compat.supportsStrictMode`. OpenAI Responses and Chat Completions can also emit grammar-constrained custom tools with OpenAI Lark or regex grammar variants. If multiple OpenAI variants are supplied, Lark is preferred over regex. Grammar constraints are enforced when the active model supports grammar tools; otherwise the tool falls back to normal function/JSON-schema handling. Grammar tool capability is model metadata: the generated catalog sets `compat.supportsOpenAIGrammarTools` for GPT-5+ models on endpoints that pass OpenAI custom tools through (OpenAI, OpenAI Codex, Azure OpenAI Responses, GitHub Copilot, and Cloudflare AI Gateway). OpenAI rejects `type: "custom"` tools for pre-GPT-5 models, and gateways that normalize tool schemas (e.g. OpenRouter) mangle them, so the flag stays off elsewhere. Custom model definitions can opt in via `compat`. Grammar-capable models reject grammar configurations without a non-empty supported variant. Native grammar tools must have an object parameter schema with exactly one required string property:
 
 ```typescript
 const patchTool: Tool = {
@@ -1188,7 +1186,6 @@ Built-in API implementations live under `./api/<api-id>`:
 | `azure-openai-responses` | `AzureOpenAIResponsesOptions` |
 | `google-generative-ai` | `GoogleOptions` |
 | `google-vertex` | `GoogleVertexOptions` |
-| `mistral-conversations` | `MistralOptions` |
 | `bedrock-converse-stream` | `BedrockOptions` |
 
 Importing an implementation module loads its SDK. The `./api/<id>.lazy` wrappers (used by the provider factories) defer that load to the first request when the runtime or bundler supports dynamic import chunking. Legacy raw API subpaths from older releases (`./anthropic`, `./google`, `./mistral`, `./openai-completions`, ...) were removed; use `@earendil-works/pi-ai/api/<api-id>`.

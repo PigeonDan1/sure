@@ -95,7 +95,6 @@ function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 		"vercel-ai-gateway": "AI_GATEWAY_API_KEY",
 		zai: "ZAI_API_KEY",
 		"zai-coding-cn": "ZAI_CODING_CN_API_KEY",
-		mistral: "MISTRAL_API_KEY",
 		minimax: "MINIMAX_API_KEY",
 		"minimax-cn": "MINIMAX_CN_API_KEY",
 		moonshotai: "MOONSHOT_API_KEY",

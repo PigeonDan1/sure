@@ -85,7 +85,6 @@ For each built-in provider, pi maintains a list of tool-capable models. Dynamic 
 - Google Gemini
 - Google Vertex
 - Amazon Bedrock
-- Mistral
 - Groq
 - Cerebras
 - Cloudflare AI Gateway

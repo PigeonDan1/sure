@@ -112,8 +112,6 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	{ provider: "baseten", model: "zai-org/GLM-5.2", label: "baseten-glm-5.2" },
 	// Kimi For Coding
 	{ provider: "kimi-coding", model: "kimi-for-coding", label: "kimi-for-coding" },
-	// Mistral
-	{ provider: "mistral", model: "devstral-medium-latest", label: "mistral-devstral-medium" },
 	// MiniMax
 	{ provider: "minimax", model: "MiniMax-M2.7", label: "minimax-m2.7" },
 	{ provider: "minimax-cn", model: "MiniMax-M2.7", label: "minimax-m2.7" },

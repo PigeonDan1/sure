@@ -165,18 +165,6 @@ describe("AI Providers Abort Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Abort", () => {
-		const llm = getModel("mistral", "devstral-medium-latest");
-
-		it("should abort mid-stream", { retry: 3 }, async () => {
-			await testAbortSignal(llm);
-		});
-
-		it("should handle immediate abort", { retry: 3 }, async () => {
-			await testImmediateAbort(llm);
-		});
-	});
-
 	describe.skipIf(!process.env.TOGETHER_API_KEY)("Together AI Provider Abort", () => {
 		const llm = getModel("together", "moonshotai/Kimi-K2.6");
 

@@ -400,7 +400,6 @@ ${chalk.bold("Environment Variables:")}
   AI_GATEWAY_API_KEY               - Vercel AI Gateway API key
   ZAI_API_KEY                      - ZAI Coding Plan API key (Global)
   ZAI_CODING_CN_API_KEY            - ZAI Coding Plan API key (China)
-  MISTRAL_API_KEY                  - Mistral API key
   MINIMAX_API_KEY                  - MiniMax API key
   MOONSHOT_API_KEY                 - Moonshot AI API key
   KIMI_API_KEY                     - Kimi For Coding API key

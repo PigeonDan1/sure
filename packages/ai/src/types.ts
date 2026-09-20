@@ -4,7 +4,6 @@ import type { AzureOpenAIResponsesOptions } from "./api/azure-openai-responses.t
 import type { BedrockOptions } from "./api/bedrock-converse-stream.ts";
 import type { GoogleOptions } from "./api/google-generative-ai.ts";
 import type { GoogleVertexOptions } from "./api/google-vertex.ts";
-import type { MistralOptions } from "./api/mistral-conversations.ts";
 import type { OpenAICodexResponsesOptions } from "./api/openai-codex-responses.ts";
 import type { OpenAICompletionsOptions } from "./api/openai-completions.ts";
 import type { OpenAIResponsesOptions } from "./api/openai-responses.ts";
@@ -16,7 +15,6 @@ export type { AssistantMessageEventStream } from "./utils/event-stream.ts";
 
 export type KnownApi =
 	| "openai-completions"
-	| "mistral-conversations"
 	| "openai-responses"
 	| "azure-openai-responses"
 	| "openai-codex-responses"
@@ -52,7 +50,6 @@ export type KnownProvider =
 	| "vercel-ai-gateway"
 	| "zai"
 	| "zai-coding-cn"
-	| "mistral"
 	| "minimax"
 	| "minimax-cn"
 	| "moonshotai"
@@ -246,7 +243,6 @@ export interface ApiOptionsMap {
 	"azure-openai-responses": AzureOpenAIResponsesOptions;
 	"google-generative-ai": GoogleOptions;
 	"google-vertex": GoogleVertexOptions;
-	"mistral-conversations": MistralOptions;
 	"bedrock-converse-stream": BedrockOptions;
 	"pi-messages": PiMessagesOptions;
 }

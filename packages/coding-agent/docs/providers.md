@@ -75,7 +75,6 @@ pi
 | NVIDIA NIM | `NVIDIA_API_KEY` | `nvidia` |
 | Google Gemini | `GEMINI_API_KEY` | `google` |
 | Amazon Bedrock | `AWS_BEARER_TOKEN_BEDROCK` | `amazon-bedrock` |
-| Mistral | `MISTRAL_API_KEY` | `mistral` |
 | Groq | `GROQ_API_KEY` | `groq` |
 | Cerebras | `CEREBRAS_API_KEY` | `cerebras` |
 | Cloudflare AI Gateway | `CLOUDFLARE_API_KEY` (+ `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID`) | `cloudflare-ai-gateway` |
