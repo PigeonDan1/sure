@@ -1,8 +1,8 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: ${HOME} and ${REPO} are site policy tokens the loader expands, not JavaScript interpolation
 import { createHash } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveSitePolicy, validateSitePolicy } from "../../../../sure/site/loader.ts";
 
@@ -258,9 +258,10 @@ function expectedHome(): string {
 	return homedir().replaceAll("\\", "/").replace(/\/+$/, "");
 }
 
+// Fixtures live in the system temporary directory, never inside the repository:
+// scripts/check-site-boundary.mjs only runs its export probe on a clean tree.
 function tokenRoot(name: string): string {
-	const root = resolve(__dirname, "tmp-site-policy", name);
-	rmSync(root, { recursive: true, force: true });
+	const root = mkdtempSync(join(tmpdir(), `sure-site-${name}-`));
 	mkdirSync(join(root, "config"), { recursive: true });
 	return root;
 }
