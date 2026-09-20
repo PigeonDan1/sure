@@ -297,9 +297,21 @@ function loadPolicy(path: string, source: SitePolicySource, repositoryRoot: stri
 		const detail = error instanceof Error ? error.message : String(error);
 		throw new Error(`Cannot read ${source} site policy ${path}: ${detail}`);
 	}
+	// Decode strictly: the bytes a site policy names its roots with must be
+	// exactly what the file holds. A U+FFFD substituted into a forbidden output
+	// root would be a root no real path can ever match. ignoreBOM keeps a
+	// leading byte order mark in the text, the way raw.decode("utf-8") does in
+	// sure/site/loader.py, so both twins hash the same bytes.
+	let text: string;
+	try {
+		text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(raw);
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		throw new Error(`Cannot parse ${source} site policy ${path}: ${detail}`);
+	}
 	// Expand before parsing, validating and hashing: the digest then identifies
 	// the policy this machine actually uses, not the committed template.
-	const content = Buffer.from(expandPolicyTokens(raw.toString("utf8"), repositoryRoot, source, path), "utf8");
+	const content = Buffer.from(expandPolicyTokens(text, repositoryRoot, source, path), "utf8");
 	let decoded: unknown;
 	try {
 		decoded = parse(content.toString("utf8"));

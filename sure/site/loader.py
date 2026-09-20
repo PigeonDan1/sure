@@ -265,10 +265,16 @@ def _load(path: Path, source: str, root: Path) -> dict[str, Any]:
         raw = path.read_bytes()
     except OSError as error:
         raise SitePolicyError(f"Cannot read {source} site policy {path}: {error}") from error
+    # Decode strictly: the bytes a site policy names its roots with must be
+    # exactly what the file holds. A U+FFFD substituted into a forbidden output
+    # root would be a root no real path can ever match.
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise SitePolicyError(f"Cannot parse {source} site policy {path}: {error}") from error
     # Expand before parsing, validating and hashing: the digest then identifies
-    # the policy this machine actually uses, not the committed template. The
-    # "replace" error handler mirrors Buffer.toString("utf8") in loader.ts.
-    content = _expand_policy_tokens(raw.decode("utf-8", "replace"), root, source, path).encode("utf-8")
+    # the policy this machine actually uses, not the committed template.
+    content = _expand_policy_tokens(text, root, source, path).encode("utf-8")
     try:
         decoded = yaml.safe_load(content)
     except yaml.YAMLError as error:

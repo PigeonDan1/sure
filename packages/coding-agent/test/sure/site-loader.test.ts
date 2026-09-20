@@ -406,6 +406,33 @@ describe("resolveSitePolicy without a usable home directory", () => {
 	});
 });
 
+describe("site policy encoding", () => {
+	it("refuses a policy that is not valid UTF-8", () => {
+		const root = tokenRoot("invalid-utf8");
+		const fixture = join(root, "config", "site.local.yaml");
+		const [head, tail] = PLAIN_FIXTURE.split("approved/models");
+		writeFileSync(
+			fixture,
+			Buffer.concat([Buffer.from(head, "utf8"), Buffer.from([0xff, 0xfe]), Buffer.from(`approved/models${tail}`, "utf8")]),
+		);
+
+		expect(() => resolveSitePolicy({ repositoryRoot: root, environment: {} })).toThrow(
+			`Cannot parse local site policy ${fixture}: `,
+		);
+	});
+
+	it("still loads a policy that starts with a UTF-8 byte order mark", () => {
+		const root = tokenRoot("byte-order-mark");
+		const fixture = join(root, "config", "site.local.yaml");
+		writeFileSync(fixture, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(TOKEN_FIXTURE, "utf8")]));
+		const expanded = `﻿${TOKEN_FIXTURE.replaceAll("${HOME}", expectedHome()).replaceAll("${REPO}", root.replaceAll("\\", "/"))}`;
+
+		const resolved = resolveSitePolicy({ repositoryRoot: root, environment: {} });
+
+		expect(resolved?.sha256).toBe(createHash("sha256").update(Buffer.from(expanded, "utf8")).digest("hex"));
+	});
+});
+
 describe("validateSitePolicy removed fields", () => {
 	it("rejects network.internal_git_host", () => {
 		expect(() => validateSitePolicy(policy({ network: { internal_git_host: "git.example" } }))).toThrow(

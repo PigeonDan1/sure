@@ -2,6 +2,7 @@
 """Tests for the site policy loader."""
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import sys
@@ -379,6 +380,35 @@ class MissingHomeTest(unittest.TestCase):
 
         with mock.patch("pathlib.Path.home", side_effect=RuntimeError("Could not determine home directory")):
             self.assertIsNone(load_site_policy(repository_root=self.root, environment={}))
+
+
+class PolicyEncodingTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="sure-site-encoding-"))
+        (self.root / "config").mkdir()
+        self.fixture = self.root / "config" / "site.local.yaml"
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def test_refuses_a_policy_that_is_not_valid_utf8(self) -> None:
+        self.fixture.write_bytes(_PLAIN_FIXTURE.encode("utf-8").replace(b"approved/models", b"\xff\xfeapproved/models"))
+
+        with self.assertRaises(SitePolicyError) as raised:
+            load_site_policy(repository_root=self.root, environment={})
+
+        self.assertTrue(
+            str(raised.exception).startswith(f"Cannot parse local site policy {self.fixture}: "),
+            str(raised.exception),
+        )
+
+    def test_still_loads_a_policy_that_starts_with_a_byte_order_mark(self) -> None:
+        self.fixture.write_bytes(b"\xef\xbb\xbf" + _TOKEN_FIXTURE.encode("utf-8"))
+        expanded = "﻿" + _TOKEN_FIXTURE.replace("${HOME}", _expected_home()).replace(
+            "${REPO}", str(self.root).replace(chr(92), "/")
+        )
+
+        resolved = load_site_policy(repository_root=self.root, environment={})
+
+        self.assertEqual(resolved["sha256"], hashlib.sha256(expanded.encode("utf-8")).hexdigest())
 
 
 class RemovedFieldTest(unittest.TestCase):
