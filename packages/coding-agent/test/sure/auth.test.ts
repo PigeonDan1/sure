@@ -38,6 +38,28 @@ describe("uiAuthInteraction", () => {
 		await expect(interaction.prompt(selectPrompt)).rejects.toBeInstanceOf(LoginCancelled);
 	});
 
+	it("forwards the prompt's abort signal to the selector", async () => {
+		const { ctx, ui } = makeCtx();
+		ui.select.mockResolvedValueOnce("Work");
+		const controller = new AbortController();
+		const interaction = uiAuthInteraction(ctx, "OpenAI Codex");
+
+		await expect(interaction.prompt({ ...selectPrompt, signal: controller.signal })).resolves.toBe("work");
+		expect(ui.select).toHaveBeenCalledWith("Pick an account", ["Personal", "Work"], { signal: controller.signal });
+	});
+
+	it("forwards the prompt's abort signal to the input dialog", async () => {
+		const { ctx, ui } = makeCtx();
+		ui.input.mockResolvedValueOnce("sk-typed");
+		const controller = new AbortController();
+		const interaction = uiAuthInteraction(ctx, "Kimi Code");
+
+		await expect(
+			interaction.prompt({ type: "secret", message: "Kimi API key", signal: controller.signal }),
+		).resolves.toBe("sk-typed");
+		expect(ui.input).toHaveBeenCalledWith("Kimi API key", undefined, { signal: controller.signal });
+	});
+
 	it("answers the first secret prompt from presetSecret without touching the UI", async () => {
 		const { ctx, ui } = makeCtx();
 		const interaction = uiAuthInteraction(ctx, "Kimi Code", { presetSecret: "sk-preset" });
