@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getModel } from "@earendil-works/pi-ai/compat";
@@ -43,6 +43,33 @@ describe("JSONL export", () => {
 				.map((line) => JSON.parse(line) as Record<string, unknown>);
 			expect(records[0]).toMatchObject({ type: "session", id: sessionManager.getSessionId() });
 			expect(records.slice(1).map((record) => record.id)).toEqual(entryIds);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("refuses an html output path and names the jsonl replacement", async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), "pi-jsonl-export-"));
+		tempDirs.push(tempDir);
+		const sessionManager = SessionManager.inMemory(tempDir);
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: join(tempDir, "agent"),
+			model: getModel("anthropic", "claude-sonnet-4-5")!,
+			settingsManager: SettingsManager.inMemory(),
+			sessionManager,
+		});
+
+		try {
+			sessionManager.appendMessage(userMsg("hello"));
+
+			expect(() => session.exportToJsonl(join(tempDir, "session.html"))).toThrow(
+				"HTML export was removed; use a .jsonl path",
+			);
+			expect(() => session.exportToJsonl(join(tempDir, "session.HTM"))).toThrow(
+				"HTML export was removed; use a .jsonl path",
+			);
+			expect(existsSync(join(tempDir, "session.html"))).toBe(false);
 		} finally {
 			session.dispose();
 		}

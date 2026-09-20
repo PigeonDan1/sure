@@ -9,6 +9,12 @@ export function exportSessionToJsonl(sessionManager: SessionManager, outputPath?
 		outputPath ?? `session-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`,
 		process.cwd(),
 	);
+	// HTML export was removed; writing JSONL into a .html path would look like it
+	// still worked.
+	if (/\.html?$/i.test(filePath)) {
+		throw new Error("HTML export was removed; use a .jsonl path");
+	}
+
 	const dir = dirname(filePath);
 	if (!existsSync(dir)) {
 		mkdirSync(dir, { recursive: true });
