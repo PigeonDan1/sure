@@ -5,12 +5,10 @@ from __future__ import annotations
 
 import argparse
 import fcntl
-import grp
 import hashlib
 import json
 import os
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -45,56 +43,6 @@ class EvaluationIdentityUnavailable(EvaluationRuntimeError):
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _apply_acl(setfacl: str, entries: str, paths: list[Path]) -> None:
-    for offset in range(0, len(paths), 256):
-        command = [setfacl, "-m", entries, "--", *(str(path) for path in paths[offset : offset + 256])]
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "setfacl failed").strip()
-            raise OSError(f"cannot make runtime group-collaborative: {detail}")
-
-
-def _make_group_writable(root: Path, *, recursive: bool = True) -> None:
-    """Preserve executable bits and grant the runtime's owning group inherited write access."""
-    paths = [root, *root.rglob("*")] if recursive else [root]
-    paths = [path for path in paths if not path.is_symlink()]
-    # Only an owner may change a file's ACL or mode. The cache is shared and its
-    # log directory keeps every bootstrap log anyone has written, so reaching for
-    # someone else's file fails with "Operation not permitted" and takes the whole
-    # materialization down with it, packages already installed. Whoever wrote that
-    # file made it group-collaborative on the way past; there is nothing to add.
-    uid = os.getuid()
-    paths = [path for path in paths if path.stat().st_uid == uid]
-    directories = [path for path in paths if path.is_dir()]
-    executables = [
-        path
-        for path in paths
-        if not path.is_dir()
-        and stat.S_IMODE(path.stat().st_mode) & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    ]
-    regular = [path for path in paths if not path.is_dir() and path not in executables]
-    setfacl = shutil.which("setfacl")
-    if setfacl:
-        group_id = root.stat().st_gid
-        try:
-            group = grp.getgrgid(group_id).gr_name
-        except KeyError:
-            group = str(group_id)
-        _apply_acl(setfacl, f"g:{group}:rwx,m::rwx", [*directories, *executables])
-        _apply_acl(setfacl, f"g:{group}:rw-,m::rw-", regular)
-        _apply_acl(setfacl, f"d:g:{group}:rwx,d:m::rwx", directories)
-        return
-
-    for path in paths:
-        mode = stat.S_IMODE(path.stat().st_mode)
-        group_bits = stat.S_IRGRP | stat.S_IWGRP
-        if path.is_dir():
-            group_bits |= stat.S_IXGRP | stat.S_ISGID
-        elif mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
-            group_bits |= stat.S_IXGRP
-        path.chmod(mode | group_bits)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -322,7 +270,6 @@ exec {dynamic_loader!r} --library-path "$_sure_eval_harness/base/lib" "$_sure_ev
 
 def _materialize(binding: dict[str, Any]) -> None:
     CACHE_ROOT.mkdir(parents=True, exist_ok=True)
-    _make_group_writable(CACHE_ROOT, recursive=False)
     lock_file = CACHE_ROOT / ".prepare.lock"
     with lock_file.open("a+", encoding="utf-8") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
@@ -336,7 +283,6 @@ def _materialize(binding: dict[str, Any]) -> None:
         staging = Path(tempfile.mkdtemp(prefix=f".{binding['runtime_id']}.tmp-", dir=CACHE_ROOT))
         log_dir = CACHE_ROOT / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
-        _make_group_writable(log_dir, recursive=False)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         log_path = log_dir / f"bootstrap-{stamp}-{os.getpid()}.log"
         try:
@@ -388,8 +334,6 @@ def _materialize(binding: dict[str, Any]) -> None:
                 json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
                 encoding="utf-8",
             )
-            _make_group_writable(staging)
-            _make_group_writable(log_dir)
             if runtime_root.exists():
                 invalid = CACHE_ROOT / f".{runtime_root.name}.invalid-{stamp}-{os.getpid()}"
                 runtime_root.rename(invalid)

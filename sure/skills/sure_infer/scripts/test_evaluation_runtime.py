@@ -5,7 +5,6 @@ import contextlib
 import io
 import json
 import os
-import stat
 import subprocess
 import sys
 import tempfile
@@ -22,7 +21,6 @@ from evaluation_runtime import (
     _expected_binding,
     _verify,
     _sha256,
-    _make_group_writable,
     _wrapper,
     ensure_evaluation_runtime,
     evaluation_child_environment,
@@ -33,30 +31,6 @@ from resolve_evaluation_engine import git_environment
 
 
 class EvaluationRuntimeTests(unittest.TestCase):
-    def test_materialized_runtime_is_group_writable_without_inventing_execute_bits(self) -> None:
-        with tempfile.TemporaryDirectory() as raw_root:
-            root = Path(raw_root)
-            data = root / "data.json"
-            executable = root / "bin" / "python"
-            executable.parent.mkdir()
-            data.write_text("{}\n", encoding="utf-8")
-            executable.write_text("#!/bin/sh\n", encoding="utf-8")
-            root.chmod(0o700)
-            executable.parent.chmod(0o700)
-            data.chmod(0o600)
-            executable.chmod(0o700)
-
-            _make_group_writable(root)
-
-            self.assertEqual(stat.S_IMODE(root.stat().st_mode) & 0o070, 0o070)
-            self.assertEqual(stat.S_IMODE(executable.parent.stat().st_mode) & 0o070, 0o070)
-            self.assertEqual(stat.S_IMODE(data.stat().st_mode) & 0o070, 0o060)
-            self.assertEqual(stat.S_IMODE(executable.stat().st_mode) & 0o070, 0o070)
-
-            inherited = root / "created-after-finalize.txt"
-            inherited.write_text("ok\n", encoding="utf-8")
-            self.assertEqual(stat.S_IMODE(inherited.stat().st_mode) & 0o060, 0o060)
-
     def test_wrapper_does_not_leak_parent_pythonhome(self) -> None:
         text = _wrapper(
             {
@@ -71,27 +45,6 @@ class EvaluationRuntimeTests(unittest.TestCase):
         self.assertIn("--library-path", text)
         self.assertNotIn("export LD_LIBRARY_PATH='/repo", text)
         self.assertIn("_sure_eval_parent_ld", text)
-
-    def test_group_permissions_leave_another_owners_files_alone(self) -> None:
-        # The runtime cache is shared, and its log directory keeps every
-        # bootstrap log anyone has written. Only an owner may change a file's
-        # ACL, so re-ACLing the whole directory means the first person to
-        # materialize a runtime is the last: everyone after them dies on
-        # "Operation not permitted" with the packages already installed.
-        with tempfile.TemporaryDirectory() as raw_root:
-            root = Path(raw_root)
-            (root / "bootstrap-old.log").write_text("", encoding="utf-8")
-            touched: list[Path] = []
-
-            def record(setfacl: str, entries: str, paths: list[Path]) -> None:
-                touched.extend(paths)
-
-            with mock.patch("evaluation_runtime.shutil.which", return_value="/usr/bin/setfacl"), \
-                mock.patch("evaluation_runtime._apply_acl", record), \
-                mock.patch("evaluation_runtime.os.getuid", return_value=999999):
-                _make_group_writable(root)
-
-            self.assertEqual(touched, [])
 
     def test_the_wrapper_is_identical_wherever_the_runtime_is_reached_from(self) -> None:
         # One cache entry is reached through several names: the same storage
