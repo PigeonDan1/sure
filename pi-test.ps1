@@ -32,6 +32,34 @@ try {
 		Write-Host "Running without stored credentials..."
 	}
 
+	if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+		throw "node was not found on PATH. Install Node 22.19 or newer (see .nvmrc)."
+	}
+
+	& node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1);"
+	if ($LASTEXITCODE -ne 0) {
+		throw "Node $(node --version) is too old. This repository needs Node 22.19 or newer (see .nvmrc)."
+	}
+
+	if ((Get-Location).Path -ne $scriptDir) {
+		Write-Warning "Running from $((Get-Location).Path), not the repository root $scriptDir."
+		Write-Warning "The agent's working directory is the one you started from."
+	}
+
+	$agentCoreDir = Join-Path $scriptDir "node_modules/@earendil-works/pi-agent-core"
+	if (-not (Test-Path -LiteralPath $agentCoreDir)) {
+		throw "Missing node_modules/@earendil-works/pi-agent-core. Run npm install --ignore-scripts, then npm run sure:doctor, from the repository root."
+	}
+
+	$sureCoreDir = Join-Path $scriptDir "packages/coding-agent/src/core/sure"
+	# The probe swallows its own error: redirecting a native command's stderr under
+	# ErrorActionPreference Stop makes Windows PowerShell throw NativeCommandError
+	# before the message below is ever reached.
+	& node -e "const base = process.argv[1]; try { for (const p of ['typebox','typebox/compile','typebox/value']) require.resolve(p, { paths: [base] }); } catch { process.exit(1); }" $sureCoreDir
+	if ($LASTEXITCODE -ne 0) {
+		throw "Missing SURE runtime dependency: typebox. Run npm install --ignore-scripts, then npm run sure:doctor, from the repository root."
+	}
+
 	$resolverPath = Join-Path $scriptDir "packages/coding-agent/test/source-resolver.ts"
 	if (-not (Test-Path -LiteralPath $resolverPath)) {
 		throw "Source resolver not found at $resolverPath."

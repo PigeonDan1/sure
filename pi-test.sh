@@ -37,6 +37,21 @@ if [[ "$NO_ENV" == "true" ]]; then
   echo "Running without stored credentials..."
 fi
 
+if ! command -v node >/dev/null 2>&1; then
+  echo "node was not found on PATH. Install Node 22.19 or newer (see .nvmrc)."
+  exit 1
+fi
+
+if ! node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit(major > 22 || (major === 22 && minor >= 19) ? 0 : 1);"; then
+  echo "Node $(node --version) is too old. This repository needs Node 22.19 or newer (see .nvmrc)."
+  exit 1
+fi
+
+if [[ "$PWD" != "$SCRIPT_DIR" ]]; then
+  echo "Warning: running from $PWD, not the repository root $SCRIPT_DIR." >&2
+  echo "Warning: the agent's working directory is the one you started from." >&2
+fi
+
 if [[ ! -d "$SCRIPT_DIR/node_modules/@earendil-works/pi-agent-core" ]]; then
   echo "Missing node_modules/@earendil-works/pi-agent-core."
   echo "Run from the repository root:"
@@ -45,7 +60,15 @@ if [[ ! -d "$SCRIPT_DIR/node_modules/@earendil-works/pi-agent-core" ]]; then
   exit 1
 fi
 
-if ! node -e "const base = '$SCRIPT_DIR/packages/coding-agent/src/core/sure'; for (const p of ['typebox','typebox/compile','typebox/value']) require.resolve(p, { paths: [base] });" >/dev/null 2>&1; then
+# node is a native Windows binary under Git Bash, so it cannot resolve the MSYS
+# spelling of SCRIPT_DIR (/d/repo). Hand it the native path for both the module
+# resolution probe and the --import URL.
+NATIVE_DIR="$SCRIPT_DIR"
+if command -v cygpath >/dev/null 2>&1; then
+  NATIVE_DIR="$(cygpath -m "$SCRIPT_DIR")"
+fi
+
+if ! node -e "const base = '$NATIVE_DIR/packages/coding-agent/src/core/sure'; for (const p of ['typebox','typebox/compile','typebox/value']) require.resolve(p, { paths: [base] });" >/dev/null 2>&1; then
   echo "Missing SURE runtime dependency: typebox."
   echo "Run from the repository root:"
   echo "  npm install --ignore-scripts"
@@ -54,9 +77,6 @@ if ! node -e "const base = '$SCRIPT_DIR/packages/coding-agent/src/core/sure'; fo
 fi
 
 # Node resolves --import as a URL, so a Windows drive letter needs a file:// URL.
-RESOLVER="$SCRIPT_DIR/packages/coding-agent/test/source-resolver.ts"
-if command -v cygpath >/dev/null 2>&1; then
-  RESOLVER="$(cygpath -m "$RESOLVER")"
-fi
+RESOLVER="$NATIVE_DIR/packages/coding-agent/test/source-resolver.ts"
 
 node --import "file:///${RESOLVER#/}" "$SCRIPT_DIR/packages/coding-agent/src/cli.ts" ${ARGS[@]+"${ARGS[@]}"}
