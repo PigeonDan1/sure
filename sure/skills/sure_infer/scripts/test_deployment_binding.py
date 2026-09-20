@@ -15,6 +15,7 @@ from deployment_binding import (
     CORE_BUNDLE_FILES,
     DeploymentBindingError,
     _mandatory_integrity_paths,
+    _normalize_harness_runtime,
     _portable_relative,
     _require_declared_integrity_profile,
     _validate_complete_manifest,
@@ -69,6 +70,7 @@ class DeploymentBindingTests(unittest.TestCase):
         self.harness_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         self.harness_python.chmod(0o755)
         self.harness_manifest = self.harness_runtime / "runtime-manifest.json"
+        self.image_harness_runtime = "/opt/sure-harness/sure-harness-test"
         write_json(
             self.harness_manifest,
             {
@@ -96,6 +98,15 @@ class DeploymentBindingTests(unittest.TestCase):
             "lock_sha256": "c" * 64,
             "manifest_path": str(self.harness_manifest),
             "runtime_root": str(self.harness_runtime),
+        }
+
+    def _image_runtime_binding(self) -> dict:
+        """The runtime baked into the image: its paths are container paths."""
+        return {
+            **self._runtime_binding(),
+            "python_executable": f"{self.image_harness_runtime}/bin/python",
+            "manifest_path": f"{self.image_harness_runtime}/runtime-manifest.json",
+            "runtime_root": self.image_harness_runtime,
         }
 
     def _write_bundle(self) -> None:
@@ -199,7 +210,7 @@ class DeploymentBindingTests(unittest.TestCase):
 
     def test_derives_legacy_image_runtime_root_from_manifest(self) -> None:
         inventory = json.loads((self.artifacts / "runtime_inventory.json").read_text())
-        legacy_binding = self._runtime_binding()
+        legacy_binding = self._image_runtime_binding()
         legacy_binding.pop("runtime_root")
         inventory["harness_runtime"] = {"required": True, **legacy_binding}
         write_json(self.artifacts / "runtime_inventory.json", inventory)
@@ -214,11 +225,11 @@ class DeploymentBindingTests(unittest.TestCase):
         write_json(self.artifacts / "deployment_ready.json", marker)
 
         binding = load_deployment_binding(self.model, "demo")
-        self.assertEqual(binding["container"]["harness_runtime"]["runtime_root"], str(self.harness_runtime))
+        self.assertEqual(binding["container"]["harness_runtime"]["runtime_root"], self.image_harness_runtime)
 
     def test_rejects_explicit_harness_runtime_root_mismatch(self) -> None:
         inventory = json.loads((self.artifacts / "runtime_inventory.json").read_text())
-        declared = {"required": True, **self._runtime_binding(), "runtime_root": str(self.repo / "wrong")}
+        declared = {"required": True, **self._image_runtime_binding(), "runtime_root": "/opt/sure-harness/wrong"}
         inventory["harness_runtime"] = declared
         write_json(self.artifacts / "runtime_inventory.json", inventory)
 
@@ -577,6 +588,66 @@ class MandatoryIntegrityPathTests(unittest.TestCase):
 
         with self.assertRaisesRegex(DeploymentBindingError, "weights root is missing"):
             _validate_complete_manifest(self.model, marker, {}, "none")
+
+
+class ContainerHarnessPathTests(unittest.TestCase):
+    """A container-internal path is POSIX whatever the host is."""
+
+    CONTAINER_ROOT = "/opt/sure-harness/demo"
+
+    def _binding(self, root: str | None, manifest: str, python: str) -> dict:
+        binding = {
+            "schema": "sure.harness.runtime.binding.v1",
+            "manifest_path": manifest,
+            "python_executable": python,
+        }
+        if root is not None:
+            binding["runtime_root"] = root
+        return binding
+
+    def test_a_posix_container_path_is_accepted_on_every_host(self) -> None:
+        normalized = _normalize_harness_runtime(
+            self._binding(
+                self.CONTAINER_ROOT,
+                f"{self.CONTAINER_ROOT}/runtime-manifest.json",
+                f"{self.CONTAINER_ROOT}/bin/python",
+            )
+        )
+
+        self.assertEqual(normalized["runtime_root"], self.CONTAINER_ROOT)
+
+    def test_a_derived_root_stays_posix_on_every_host(self) -> None:
+        normalized = _normalize_harness_runtime(
+            self._binding(
+                None,
+                f"{self.CONTAINER_ROOT}/runtime-manifest.json",
+                f"{self.CONTAINER_ROOT}/bin/python",
+            )
+        )
+
+        self.assertEqual(normalized["runtime_root"], self.CONTAINER_ROOT)
+
+    def test_a_relative_container_path_is_rejected(self) -> None:
+        with self.assertRaisesRegex(DeploymentBindingError, "must be absolute"):
+            _normalize_harness_runtime(
+                self._binding(
+                    "opt/sure-harness/demo",
+                    "opt/sure-harness/demo/runtime-manifest.json",
+                    "opt/sure-harness/demo/bin/python",
+                )
+            )
+
+    def test_a_windows_drive_path_is_rejected(self) -> None:
+        # A drive letter names nothing inside a Linux image, so the Linux
+        # verdict is the right one everywhere.
+        with self.assertRaisesRegex(DeploymentBindingError, "must be absolute"):
+            _normalize_harness_runtime(
+                self._binding(
+                    "C:\\opt\\sure-harness\\demo",
+                    "C:\\opt\\sure-harness\\demo\\runtime-manifest.json",
+                    "C:\\opt\\sure-harness\\demo\\bin\\python",
+                )
+            )
 
 
 class IntegrityProfileCutoffTests(unittest.TestCase):

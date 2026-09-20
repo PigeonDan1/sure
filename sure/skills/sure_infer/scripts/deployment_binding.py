@@ -7,7 +7,7 @@ import hashlib
 import json
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -234,15 +234,15 @@ def _normalize_harness_runtime(binding: dict[str, Any]) -> dict[str, Any]:
     """Accept legacy bindings by deriving root from their manifest location."""
     manifest_value = str(binding.get("manifest_path") or "")
     python_value = str(binding.get("python_executable") or "")
-    _require(Path(manifest_value).is_absolute(), "container Harness Runtime manifest_path must be absolute")
-    _require(Path(python_value).is_absolute(), "container Harness Runtime python_executable must be absolute")
+    _require(PurePosixPath(manifest_value).is_absolute(), "container Harness Runtime manifest_path must be absolute")
+    _require(PurePosixPath(python_value).is_absolute(), "container Harness Runtime python_executable must be absolute")
 
     root_value = str(binding.get("runtime_root") or "")
-    root = Path(root_value) if root_value else Path(manifest_value).parent
+    root = PurePosixPath(root_value) if root_value else PurePosixPath(manifest_value).parent
     _require(root.is_absolute(), "container Harness Runtime runtime_root must be absolute")
-    _require(Path(manifest_value).parent == root, "container Harness Runtime manifest_path disagrees with runtime_root")
+    _require(PurePosixPath(manifest_value).parent == root, "container Harness Runtime manifest_path disagrees with runtime_root")
     try:
-        Path(python_value).relative_to(root)
+        PurePosixPath(python_value).relative_to(root)
     except ValueError as exc:
         raise DeploymentBindingError("container Harness Runtime python_executable escapes runtime_root") from exc
     normalized = dict(binding)
@@ -590,8 +590,10 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     _require(isinstance(result_mount, dict) and result_mount.get("read_only") is False, "result workspace must be writable")
     model_target = str(model_mount.get("target") or "")
     result_target = str(result_mount.get("target") or "")
-    _require(Path(model_target).is_absolute(), "model bundle container target must be absolute")
-    _require(Path(result_target).is_absolute(), "result workspace container target must be absolute")
+    # Mount targets and working_dir name locations inside the image, so they are
+    # POSIX on every host: Path() on Windows calls "/workspace/model" relative.
+    _require(PurePosixPath(model_target).is_absolute(), "model bundle container target must be absolute")
+    _require(PurePosixPath(result_target).is_absolute(), "result workspace container target must be absolute")
 
     server_command = container.get("server_command")
     tool_names = container.get("tool_names")
@@ -599,7 +601,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     python_executable = str(container.get("python_executable") or "")
     _require(isinstance(server_command, list) and all(isinstance(item, str) and item for item in server_command), "container server_command is invalid")
     _require(isinstance(tool_names, list) and all(isinstance(item, str) and item for item in tool_names), "container tool_names are invalid")
-    _require(Path(working_dir).is_absolute(), "container working_dir must be absolute")
+    _require(PurePosixPath(working_dir).is_absolute(), "container working_dir must be absolute")
     _require(bool(python_executable), "container python_executable is missing")
     image_harness = inventory.get("harness_runtime")
     if isinstance(image_harness, dict) and image_harness.get("required") is True:
@@ -611,9 +613,9 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
         for key in ("runtime_id", "lock_sha256", "python_executable", "manifest_path", "runtime_root"):
             _require(bool(image_harness.get(key)), f"container Harness Runtime {key} is missing")
         _require(
-            Path(str(image_harness["python_executable"])).is_absolute()
-            and Path(str(image_harness["manifest_path"])).is_absolute()
-            and Path(str(image_harness["runtime_root"])).is_absolute(),
+            PurePosixPath(str(image_harness["python_executable"])).is_absolute()
+            and PurePosixPath(str(image_harness["manifest_path"])).is_absolute()
+            and PurePosixPath(str(image_harness["runtime_root"])).is_absolute(),
             "container Harness Runtime paths must be absolute",
         )
         _require(
