@@ -31,12 +31,9 @@ export interface SitePolicy {
 		local_runtimes: LocalRuntime[];
 		vc_project?: string;
 		vc_partitions?: string[];
-		vc_partition_priority?: Record<string, number>;
 		vc_default_partition?: string;
 	};
 	network?: {
-		internal_git_host?: string;
-		gateway_portal?: string;
 		container_registry?: string;
 	};
 	container_delivery?: {
@@ -181,7 +178,7 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	const execution = expectRecord(root.execution, "execution");
 	rejectUnknown(
 		execution,
-		["surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_partition_priority", "vc_default_partition"],
+		["surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_default_partition"],
 		"execution",
 	);
 	const surfaces = expectUniqueStrings(execution.surfaces, "execution.surfaces", false);
@@ -196,22 +193,10 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	let network: SitePolicy["network"];
 	if (root.network !== undefined) {
 		const source = expectRecord(root.network, "network");
-		rejectUnknown(source, ["internal_git_host", "gateway_portal", "container_registry"], "network");
+		rejectUnknown(source, ["container_registry"], "network");
 		network = {};
-		if (source.internal_git_host !== undefined) {
-			network.internal_git_host = expectString(source.internal_git_host, "network.internal_git_host");
-		}
 		if (source.container_registry !== undefined) {
 			network.container_registry = expectString(source.container_registry, "network.container_registry");
-		}
-		if (source.gateway_portal !== undefined) {
-			network.gateway_portal = expectString(source.gateway_portal, "network.gateway_portal");
-			try {
-				const portal = new URL(network.gateway_portal);
-				if (!portal.hostname || (portal.protocol !== "http:" && portal.protocol !== "https:")) throw new Error();
-			} catch {
-				throw new Error("network.gateway_portal must be a valid HTTP(S) URL");
-			}
 		}
 	}
 
@@ -247,17 +232,6 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	}
 	if (execution.vc_partitions !== undefined) {
 		policy.execution.vc_partitions = expectUniqueStrings(execution.vc_partitions, "execution.vc_partitions", false);
-	}
-	if (execution.vc_partition_priority !== undefined) {
-		const priority = expectRecord(execution.vc_partition_priority, "execution.vc_partition_priority");
-		const parsed: Record<string, number> = {};
-		for (const [name, value] of Object.entries(priority)) {
-			if (!/^\S+$/.test(name) || typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-				throw new Error(`execution.vc_partition_priority.${name} must be a non-negative integer`);
-			}
-			parsed[name] = value;
-		}
-		policy.execution.vc_partition_priority = parsed;
 	}
 	if (execution.vc_default_partition !== undefined) {
 		const defaultPartition = expectString(execution.vc_default_partition, "execution.vc_default_partition");

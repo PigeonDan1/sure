@@ -65,11 +65,6 @@
 					"uniqueItems": true,
 					"items": { "type": "string", "minLength": 1 }
 				},
-				"vc_partition_priority": {
-					"type": "object",
-					"propertyNames": { "minLength": 1 },
-					"additionalProperties": { "type": "integer", "minimum": 0 }
-				},
 				"vc_default_partition": { "type": "string", "minLength": 1 }
 			}
 		},
@@ -77,8 +72,6 @@
 			"type": "object",
 			"additionalProperties": false,
 			"properties": {
-				"internal_git_host": { "type": "string", "minLength": 1 },
-				"gateway_portal": { "type": "string", "pattern": "^https?://" },
 				"container_registry": { "type": "string", "minLength": 1 }
 			}
 		},

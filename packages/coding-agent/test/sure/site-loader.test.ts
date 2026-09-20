@@ -349,3 +349,32 @@ describe("resolveSitePolicy candidate order", () => {
 		expect(resolveSitePolicy({ repositoryRoot: root, environment: {} })).toBeUndefined();
 	});
 });
+
+describe("validateSitePolicy removed fields", () => {
+	it("rejects network.internal_git_host", () => {
+		expect(() => validateSitePolicy(policy({ network: { internal_git_host: "git.example" } }))).toThrow(
+			/network has unknown field: internal_git_host/,
+		);
+	});
+
+	it("rejects network.gateway_portal", () => {
+		expect(() => validateSitePolicy(policy({ network: { gateway_portal: "https://portal.example" } }))).toThrow(
+			/network has unknown field: gateway_portal/,
+		);
+	});
+
+	it("rejects execution.vc_partition_priority", () => {
+		expect(() =>
+			validateSitePolicy(
+				policy({
+					execution: {
+						surfaces: ["vc"],
+						vc_project: "example-project",
+						vc_partitions: ["gpu-a"],
+						vc_partition_priority: { "gpu-a": 1 },
+					},
+				}),
+			),
+		).toThrow(/execution has unknown field: vc_partition_priority/);
+	});
+});

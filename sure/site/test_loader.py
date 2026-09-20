@@ -336,5 +336,31 @@ class CandidateOrderTest(unittest.TestCase):
         self.assertIsNone(load_site_policy(repository_root=self.root, environment={}))
 
 
+class RemovedFieldTest(unittest.TestCase):
+    def test_rejects_network_internal_git_host(self) -> None:
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(_policy(network={"internal_git_host": "git.example"}))
+        self.assertIn("network has unknown field: internal_git_host", str(raised.exception))
+
+    def test_rejects_network_gateway_portal(self) -> None:
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(_policy(network={"gateway_portal": "https://portal.example"}))
+        self.assertIn("network has unknown field: gateway_portal", str(raised.exception))
+
+    def test_rejects_execution_vc_partition_priority(self) -> None:
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(
+                _policy(
+                    execution={
+                        "surfaces": ["vc"],
+                        "vc_project": "example-project",
+                        "vc_partitions": ["gpu-a"],
+                        "vc_partition_priority": {"gpu-a": 1},
+                    }
+                )
+            )
+        self.assertIn("execution has unknown field: vc_partition_priority", str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

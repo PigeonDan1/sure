@@ -50,8 +50,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `execution.local_runtimes` | optional | Permitted local runtimes: `python`, `container`, or both; omission remains container-only |
 | `execution.vc_project` | for `vc` | Submission project passed to the VC backend |
 | `execution.vc_partitions` | when needed | Declared VC partitions for adapters and deployment documentation |
-| `execution.vc_partition_priority` | optional | Numeric priority map used by automatic VC selection |
-| `network` | optional | Non-secret site endpoints used by private adapters and documentation |
+| `network` | optional | Non-secret site endpoints; `container_registry` is the only key |
 | `network.container_registry` | for `docker-registry` | Registry host or host/path prefix, without a URL scheme |
 | `container_delivery.repository_template` | for `docker-registry` | Repository template using `{registry}`, optional `{task}`, and `{model_name}` |
 

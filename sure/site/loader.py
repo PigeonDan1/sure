@@ -7,7 +7,6 @@ import os
 import re
 from pathlib import Path
 from typing import Any, Mapping
-from urllib.parse import urlparse
 
 import yaml
 
@@ -128,7 +127,7 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
     execution = _mapping(root.get("execution"), "execution")
     _reject_unknown(
         execution,
-        {"surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_partition_priority", "vc_default_partition"},
+        {"surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_default_partition"},
         "execution",
     )
     surfaces = _unique_strings(execution.get("surfaces"), "execution.surfaces", absolute=False)
@@ -175,14 +174,6 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
         )
     if "vc_partitions" in execution:
         policy["execution"]["vc_partitions"] = _unique_strings(execution["vc_partitions"], "execution.vc_partitions", absolute=False)
-    if "vc_partition_priority" in execution:
-        priority = _mapping(execution["vc_partition_priority"], "execution.vc_partition_priority")
-        parsed_priority: dict[str, int] = {}
-        for name, value in priority.items():
-            if not isinstance(name, str) or re.fullmatch(r"\S+", name) is None or not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                raise SitePolicyError(f"execution.vc_partition_priority.{name} must be a non-negative integer")
-            parsed_priority[name] = value
-        policy["execution"]["vc_partition_priority"] = parsed_priority
     if "vc_default_partition" in execution:
         default_partition = _string(execution["vc_default_partition"], "execution.vc_default_partition")
         allowed_partitions = policy["execution"].get("vc_partitions")
@@ -191,18 +182,10 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
         policy["execution"]["vc_default_partition"] = default_partition
     if "network" in root:
         source = _mapping(root["network"], "network")
-        _reject_unknown(source, {"internal_git_host", "gateway_portal", "container_registry"}, "network")
+        _reject_unknown(source, {"container_registry"}, "network")
         network = {}
-        if "internal_git_host" in source:
-            network["internal_git_host"] = _string(source["internal_git_host"], "network.internal_git_host")
         if "container_registry" in source:
             network["container_registry"] = _string(source["container_registry"], "network.container_registry")
-        if "gateway_portal" in source:
-            portal = _string(source["gateway_portal"], "network.gateway_portal")
-            parsed_portal = urlparse(portal)
-            if parsed_portal.scheme not in {"http", "https"} or not parsed_portal.netloc:
-                raise SitePolicyError("network.gateway_portal must be a valid HTTP(S) URL")
-            network["gateway_portal"] = portal
         policy["network"] = network
     if "container_delivery" in root:
         delivery_source = _mapping(root["container_delivery"], "container_delivery")
