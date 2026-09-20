@@ -10,8 +10,9 @@ export function exportSessionToJsonl(sessionManager: SessionManager, outputPath?
 		process.cwd(),
 	);
 	// HTML export was removed; writing JSONL into a .html path would look like it
-	// still worked.
-	if (/\.html?$/i.test(filePath)) {
+	// still worked. Trailing whitespace survives quoting and resolution, and
+	// "session.html " is a file that still reads as HTML.
+	if (/\.html?$/i.test(filePath.trim())) {
 		throw new Error("HTML export was removed; use a .jsonl path");
 	}
 

@@ -69,7 +69,34 @@ describe("JSONL export", () => {
 			expect(() => session.exportToJsonl(join(tempDir, "session.HTM"))).toThrow(
 				"HTML export was removed; use a .jsonl path",
 			);
+			expect(() => session.exportToJsonl(join(tempDir, "session.html "))).toThrow(
+				"HTML export was removed; use a .jsonl path",
+			);
 			expect(existsSync(join(tempDir, "session.html"))).toBe(false);
+			expect(existsSync(join(tempDir, "session.html "))).toBe(false);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("exports into a directory whose name ends in .html", async () => {
+		const tempDir = mkdtempSync(join(tmpdir(), "pi-jsonl-export-"));
+		tempDirs.push(tempDir);
+		const sessionManager = SessionManager.inMemory(tempDir);
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: join(tempDir, "agent"),
+			model: getModel("anthropic", "claude-sonnet-4-5")!,
+			settingsManager: SettingsManager.inMemory(),
+			sessionManager,
+		});
+
+		try {
+			sessionManager.appendMessage(userMsg("hello"));
+
+			const outputPath = join(tempDir, "foo.html", "session.jsonl");
+			expect(session.exportToJsonl(outputPath)).toBe(outputPath);
+			expect(existsSync(outputPath)).toBe(true);
 		} finally {
 			session.dispose();
 		}
