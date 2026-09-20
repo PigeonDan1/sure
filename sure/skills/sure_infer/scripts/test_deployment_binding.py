@@ -387,7 +387,10 @@ class DeploymentBindingTests(unittest.TestCase):
         # Windows cannot quietly reorder or respell what Linux produces.
         binding = load_deployment_binding(self.model, "demo")
         command, _ = build_local_container_command(
-            surface={"env": {"TOOL_NAME": "transcribe_audio", "RESULT_FILE": f"{self.output}/report.jsonl"}},
+            # Resolved, because production compares it against
+            # Path(run_dir).resolve(): a temp root reached through a symlink
+            # (macOS /var) or an 8.3 short name would otherwise never match.
+            surface={"env": {"TOOL_NAME": "transcribe_audio", "RESULT_FILE": f"{self.output.resolve()}/report.jsonl"}},
             eval_input={
                 "model": {"deployment_binding": binding},
                 "runtime": {"run_dir": str(self.output), "harness_runtime": self._runtime_binding()},
