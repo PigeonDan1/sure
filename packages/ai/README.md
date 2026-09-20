@@ -28,7 +28,6 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
   - [Complete Event Reference](#complete-event-reference)
   - [Compact Assistant Message Frames](#compact-assistant-message-frames)
 - [Image Input](#image-input)
-- [Image Generation](#image-generation)
 - [Thinking/Reasoning](#thinkingreasoning)
   - [Unified Interface](#unified-interface-streamsimplecompletesimple)
   - [Provider-Specific Options](#provider-specific-options-streamcomplete)
@@ -738,83 +737,6 @@ for (const block of response.content) {
   }
 }
 ```
-
-## Image Generation
-
-Image generation uses a separate API surface from text/chat generation, mirroring the chat-side design: an `ImagesModels` collection holds `ImagesProvider`s, reads are sync, and auth resolves through the owning provider. Image generation is a one-shot API: `generateImages()` waits for the provider response and returns the final `AssistantImages` result — do not use the chat/stream APIs for it.
-
-### Basic Image Generation
-
-```typescript
-import { builtinImagesModels } from '@earendil-works/pi-ai/providers/all';
-
-// Every built-in image-generation provider; accepts the same options as createModels()
-const imagesModels = builtinImagesModels();
-
-const model = imagesModels.getModel('openrouter', 'google/gemini-2.5-flash-image')!;
-
-// Auth resolves through the provider (OPENROUTER_API_KEY here); explicit apiKey wins
-const result = await imagesModels.generateImages(model, {
-  input: [{ type: 'text', text: 'Generate a red circle on a plain white background.' }]
-});
-
-for (const block of result.output) {
-  if (block.type === 'text') {
-    console.log(block.text);
-  } else if (block.type === 'image') {
-    console.log(block.mimeType);
-    console.log(block.data.substring(0, 32));
-  }
-}
-```
-
-Like the chat side, you can build the collection from parts: `createImagesModels({ credentials?, authContext? })`, the `openrouterImagesProvider()` factory from `@earendil-works/pi-ai/providers/openrouter-images`, and `createImagesProvider({ id, auth, models, refreshModels?, api })` for custom image providers (with `imagesModels.refresh(provider?)` for dynamic lists). Failures never reject — they return an `AssistantImages` with `stopReason: "error"`. The collection's provider-scoped `getAuth(providerId)` works exactly like the chat-side one.
-
-The old global API (`getImageModel()` / `getImageModels()` / `getImageProviders()` / `generateImages()`) remains available on the [compat entrypoint](#migrating-from-the-old-global-api):
-
-```typescript
-import { getImageModel, generateImages } from '@earendil-works/pi-ai/compat';
-
-const model = getImageModel('openrouter', 'google/gemini-2.5-flash-image');
-const result = await generateImages(model, {
-  input: [{ type: 'text', text: 'Generate a red circle on a plain white background.' }]
-}, {
-  apiKey: process.env.OPENROUTER_API_KEY
-});
-```
-
-Some models also support image input:
-
-```typescript
-import { readFileSync } from 'fs';
-
-const imageBuffer = readFileSync('input.png');
-const result = await imagesModels.generateImages(model, {
-  input: [
-    { type: 'text', text: 'Create a variation of this image with a blue background.' },
-    { type: 'image', data: imageBuffer.toString('base64'), mimeType: 'image/png' }
-  ]
-});
-```
-
-Check capabilities on the model metadata:
-
-```typescript
-console.log(model.input);   // ['text', 'image']
-console.log(model.output);  // ['image'] or ['image', 'text']
-```
-
-### Notes and Limitations
-
-- Image models live in `ImagesModels` collections, chat models in `Models` collections; the two are separate surfaces.
-- Use `generateImages()`, not the chat/stream APIs.
-- Image-generation models do not participate in tool calling.
-- Outputs are returned in `AssistantImages.output` and can include both base64-encoded `ImageContent` blocks and `TextContent` blocks.
-- Some models return only images, others return images plus text. Check `model.output`.
-- Some models accept image input, others are text-to-image only. Check `model.input`.
-- Like the streaming APIs, image generation supports options such as `apiKey`, `signal`, `headers`, `onPayload`, and `onResponse`, and results may include `stopReason`, `responseId`, and `usage`.
-- If you want a model to analyze images in a conversation or call tools, use the regular chat APIs with a model that supports image input.
-- At the moment, image generation is available through only one provider, OpenRouter.
 
 ## Thinking/Reasoning
 
@@ -1642,11 +1564,10 @@ Create a new API implementation file (for example `bedrock-converse-stream.ts`) 
 
 Add a lazy wrapper `src/api/<api-id>.lazy.ts` (`<name>Api()` via `lazyApi()`) so providers can reference the implementation without importing its SDK. Add any root-level `export type` re-exports in `src/index.ts` that should remain available from `@earendil-works/pi-ai`.
 
-#### 3. Model Generation (`scripts/generate-models.ts`, `scripts/generate-image-models.ts`)
+#### 3. Model Generation (`scripts/generate-models.ts`)
 
 - Add logic to fetch and parse models from the provider's source (e.g., models.dev API)
 - Map chat/tool-capable provider model data to the standardized `Model` interface via `scripts/generate-models.ts`; hydration groups the ignored `src/providers/data/<id>.json` values by API, while stable `src/providers/<id>.models.ts` wrappers derive exact model/API types directly from those JSON keys
-- Map image-generation provider model data to the standardized `ImagesModel` interface via `scripts/generate-image-models.ts`
 - Handle provider-specific quirks (pricing format, capability flags, model ID transformations)
 
 #### 4. Provider Factory (`src/providers/<id>.ts`)
