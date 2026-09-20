@@ -528,7 +528,7 @@ describe("sure_onboard aligned state machine", () => {
 			toolCall: {
 				name: "bash",
 				input: {
-					command: 'find /mnt -maxdepth 6 -type d -name "Qwen3-TTS"',
+					command: 'find / -maxdepth 6 -type d -name "Qwen3-TTS"',
 				},
 			},
 		} as never;
@@ -568,6 +568,52 @@ describe("sure_onboard aligned state machine", () => {
 					name: "bash",
 					input: {
 						command: 'find /shared/site-root/models -maxdepth 6 -type d -name "Qwen3-TTS"',
+					},
+				},
+			} as never;
+
+			const result = preToolCall(ctx);
+			const patch = statePatch(result);
+			expect(result.ok).toBe(false);
+			expect(result.repair).toContain("Blocked unbounded discover search");
+			expect(patch.message).toContain("Blocked unbounded discover search");
+		} finally {
+			if (previousRoots === undefined) {
+				delete process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS;
+			} else {
+				process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS = previousRoots;
+			}
+		}
+	});
+
+	// Windows only: the list separator is path.delimiter, which is ":" on POSIX and
+	// there splits "D:\data" into two unusable halves, so a drive root is Windows-only input.
+	it.skipIf(process.platform !== "win32")("blocks a configured Windows root during discover", () => {
+		const previousRoots = process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS;
+		process.env.SURE_ONBOARD_BLOCKED_SEARCH_ROOTS = "D:\\data";
+		try {
+			const { ctx, runDir } = freshCtx("discover-windows-root-find");
+			seedCheckpoint(runDir, {
+				currentUnit: "discover",
+				completedUnits: ["load_model_input", "context_selection"],
+				retries: {},
+			});
+			writeArtifact(runDir, "model_input_resolved.json", {
+				model_id: "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+				model_name: "Qwen__Qwen3-TTS-12Hz-1.7B-Base",
+				model_dir: "/tmp/project/sure/models/Qwen__Qwen3-TTS-12Hz-1.7B-Base",
+				repo_url: "https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+				task_type: "tts",
+				deployment_type: "local",
+				package_profile: "none",
+				source: {},
+			});
+			ctx.point = "pre_tool_call";
+			ctx.event = {
+				toolCall: {
+					name: "bash",
+					input: {
+						command: 'find D:\\data\\models -maxdepth 6 -type d -name "Qwen3-TTS"',
 					},
 				},
 			} as never;
