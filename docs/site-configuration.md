@@ -50,7 +50,7 @@ An explicit missing, relative, unreadable, or invalid path fails closed. It does
 | 2 | `config/site.bundled.yaml` | Trusted policy shipped by a private distribution |
 | 3 | `config/site.local.yaml` | Public and self-hosted local configuration |
 | 4 | `config/site.default.yaml` | Repository default for a single ordinary machine |
-| 5 | No source | Only reachable when `config/site.default.yaml` has been deleted, or the home directory does not spell an absolute path; help and site information only, resource workflows fail closed |
+| 5 | No source | Only reachable when `config/site.default.yaml` has been deleted, or the host has no home directory at all, or its home directory does not spell an absolute path; help and site information only, resource workflows fail closed |
 
 An absolute path starts with `/`, or with a drive letter followed by a separator (`C:\...` or `C:/...`). Both loaders apply that one string rule on every platform and never ask the host what "absolute" means, so a policy file means the same thing in TypeScript and in Python. Two Windows spellings are not absolute by this rule and are rejected: a UNC path such as `\\server\share\site-policy.yaml`, and a path rooted on the current drive such as `\srv\site-policy.yaml`. A path written in the other platform's spelling passes the rule and then fails as an unreadable file.
 
@@ -164,7 +164,7 @@ When `image_version` is omitted, the workflow queries the relevant Registry V2 t
 | Command | Scope |
 | --- | --- |
 | `npm run sure:site-info` | Shows whether a policy is selected and reports source metadata and checksum |
-| `npm run sure:site-check` | Validates schema and cross-field storage boundaries without mutation |
+| `npm run sure:site-check` | Validates schema and cross-field storage boundaries, and probes writability by creating a directory inside each root that exists and removing it again, or leaving it behind when removal keeps failing |
 | `npm run sure:doctor` | Checks harness/runtime prerequisites beyond the policy contract |
 
 Common repairs:
@@ -172,7 +172,8 @@ Common repairs:
 - `SURE_SITE_POLICY must be an absolute path`: use a fully qualified path or unset it to use the normal distribution source.
 - `unknown field`: remove the field or update the policy to the current schema.
 - `must be protected by a forbidden output root`: add the approved root's parent to `forbidden_output_roots`.
-- `site policy is not configured`: `config/site.default.yaml` is missing from the checkout, or the home directory does not spell an absolute path. Restore the file, or copy the example to `config/site.local.yaml`, edit it, and rerun `sure:site-check`.
+- `site policy is not configured`: `config/site.default.yaml` is missing from the checkout, or the host has no home directory, or its home directory does not spell an absolute path. Restore the file, or copy the example to `config/site.local.yaml`, edit it, and rerun `sure:site-check`.
+- `Cannot expand ${HOME} in <source> site policy <path>: no home directory`: that policy file uses the `${HOME}` token on a host where no home directory can be determined. Write the roots out in full, or give the account a home directory.
 - `site policy is missing network.container_registry` or `container_delivery.repository_template`: configure both fields before selecting `docker-registry` delivery.
 - `execution.vc_project is required when the vc surface is enabled`: configure the backend submission project before enabling VC.
 - `registry tag query failed`: verify registry reachability, Docker login state, and the resolved repository; do not bypass automatic versioning with a guessed tag.
