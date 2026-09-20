@@ -461,6 +461,9 @@ const weatherTool: Tool = {
   })
 };
 
+// Note: Some upstream APIs reject the anyOf/const schema Type.Enum emits for enums;
+// use StringEnum instead, which emits a plain string enum they accept
+
 const bookMeetingTool: Tool = {
   name: 'book_meeting',
   description: 'Schedule a meeting',
