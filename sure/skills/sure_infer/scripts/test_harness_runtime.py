@@ -28,8 +28,8 @@ class HarnessRuntimeBindingTests(unittest.TestCase):
                     "python_version": "3.11.5",
                     "python_abi": "cp311",
                     "harness_version": "v1",
-                    "materialization": "portable_host_cpython",
-                    "materialization_version": 2,
+                    "materialization": "uv_venv",
+                    "materialization_version": 3,
                 }
             ),
             encoding="utf-8",
