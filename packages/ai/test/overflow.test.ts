@@ -82,6 +82,13 @@ describe("isContextOverflow", () => {
 		expect(isContextOverflow(message, 131072)).toBe(true);
 	});
 
+	it("detects Gemini-compatible input token count errors", () => {
+		const message = createErrorMessage(
+			"The input token count (1196265) exceeds the maximum number of tokens allowed (1048575)",
+		);
+		expect(isContextOverflow(message, 1048575)).toBe(true);
+	});
+
 	it("does not treat generic non-overflow Ollama errors as overflow", () => {
 		const message = createErrorMessage("500 `model runner crashed unexpectedly`");
 		expect(isContextOverflow(message, 32768)).toBe(false);
