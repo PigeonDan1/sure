@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
@@ -49,12 +49,21 @@ def _string(value: Any, location: str) -> str:
     return value
 
 
+# One string rule, shared by the Python and TypeScript loaders and by the
+# SURE_SITE_POLICY check below. Neither loader may ask its own platform what
+# "absolute" means: Path("/srv").is_absolute() is False on Windows while
+# path.isAbsolute("/srv") is true there, and scripts/check-site-boundary.mjs
+# runs both loaders and diffs policy, source and sha256.
+_ABSOLUTE_POLICY_PATH = re.compile(r"^(?:/|[A-Za-z]:[\\/])")
+
+
+def is_absolute_policy_path(path: str) -> bool:
+    return _ABSOLUTE_POLICY_PATH.match(path) is not None
+
+
 def _absolute_path(value: Any, location: str) -> str:
-    # Site policy paths are POSIX cluster paths; policy.schema.json declares
-    # them as "^/". Path() would answer by host platform, so a Windows host
-    # rejected the site's own roots and accepted drive-letter paths.
     path = _string(value, location)
-    if not PurePosixPath(path).is_absolute():
+    if not is_absolute_policy_path(path):
         raise SitePolicyError(f"{location} must be an absolute path")
     return path
 
@@ -220,10 +229,9 @@ def load_site_policy(
     env = environment if environment is not None else os.environ
     explicit = env.get(SITE_POLICY_ENV, "").strip()
     if explicit:
-        path = Path(explicit)
-        if not path.is_absolute():
+        if not is_absolute_policy_path(explicit):
             raise SitePolicyError(f"{SITE_POLICY_ENV} must be an absolute path")
-        return _load(path.resolve(), "environment")
+        return _load(Path(explicit).resolve(), "environment")
     for path, source in (
         (root / "config" / "site.bundled.yaml", "bundled"),
         (root / "config" / "site.local.yaml", "local"),

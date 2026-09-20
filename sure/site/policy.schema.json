@@ -92,7 +92,7 @@
 		}
 	},
 	"$defs": {
-		"absolutePath": { "type": "string", "pattern": "^/" },
+		"absolutePath": { "type": "string", "pattern": "^(?:/|[A-Za-z]:[\\\\/])" },
 		"absolutePaths": {
 			"type": "array",
 			"minItems": 1,

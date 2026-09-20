@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, posix, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
@@ -80,11 +80,20 @@ function expectString(value: unknown, location: string): string {
 	return value;
 }
 
+// One string rule, shared by the TypeScript and Python loaders and by the
+// SURE_SITE_POLICY check below. Neither loader may ask its own platform what
+// "absolute" means: path.isAbsolute("/srv") is true on Windows while
+// Path("/srv").is_absolute() is false there, and scripts/check-site-boundary.mjs
+// runs both loaders and diffs policy, source and sha256.
+const ABSOLUTE_POLICY_PATH = /^(?:\/|[A-Za-z]:[\\/])/;
+
+export function isAbsolutePolicyPath(path: string): boolean {
+	return ABSOLUTE_POLICY_PATH.test(path);
+}
+
 function expectAbsolutePath(value: unknown, location: string): string {
 	const path = expectString(value, location);
-	// Site policy paths are POSIX cluster paths, declared as "^/" in
-	// policy.schema.json; win32 isAbsolute would also accept C:/....
-	if (!posix.isAbsolute(path)) throw new Error(`${location} must be an absolute path`);
+	if (!isAbsolutePolicyPath(path)) throw new Error(`${location} must be an absolute path`);
 	return path;
 }
 
@@ -304,7 +313,7 @@ export function resolveSitePolicy(options: SitePolicyLoadOptions = {}): Resolved
 	const environment = options.environment ?? process.env;
 	const explicit = environment[SITE_POLICY_ENV]?.trim();
 	if (explicit) {
-		if (!isAbsolute(explicit)) throw new Error(`${SITE_POLICY_ENV} must be an absolute path`);
+		if (!isAbsolutePolicyPath(explicit)) throw new Error(`${SITE_POLICY_ENV} must be an absolute path`);
 		return loadPolicy(resolve(explicit), "environment");
 	}
 	const candidates: Array<[string, SitePolicySource]> = [

@@ -113,12 +113,47 @@ describe("validateSitePolicy storage.approved_results_roots", () => {
 });
 
 describe("validateSitePolicy absolute paths", () => {
-	it("rejects a path that does not start with a slash", () => {
+	it("accepts a Windows drive-letter path", () => {
+		const result = validateSitePolicy(
+			policy({
+				storage: {
+					approved_models_roots: ["C:/Users/example/.sure/approved/models"],
+					approved_results_roots: ["C:/Users/example/.sure/approved/results"],
+					forbidden_output_roots: ["C:/Users/example/.sure/approved"],
+					runtime_root: "C:\\Users\\example\\.sure\\runtime",
+				},
+			}),
+		);
+		expect(result.storage.approved_models_roots[0]).toBe("C:/Users/example/.sure/approved/models");
+		expect(result.storage.runtime_root).toBe("C:\\Users\\example\\.sure\\runtime");
+	});
+
+	it("still accepts a POSIX path on every host", () => {
+		const result = validateSitePolicy(policy());
+		expect(result.storage.approved_models_roots[0]).toBe(`${ROOT}/models`);
+	});
+
+	it("rejects a path that is neither POSIX-rooted nor drive-rooted", () => {
 		expect(() =>
 			validateSitePolicy(
 				policy({
 					storage: {
-						approved_models_roots: ["C:/srv/models"],
+						approved_models_roots: ["srv/models"],
+						approved_results_roots: [`${ROOT}/results`],
+						forbidden_output_roots: [ROOT],
+						runtime_root: `${ROOT}/runtime`,
+					},
+				}),
+			),
+		).toThrow(/storage\.approved_models_roots\[0\]/);
+	});
+
+	it("rejects a drive letter with no separator", () => {
+		expect(() =>
+			validateSitePolicy(
+				policy({
+					storage: {
+						approved_models_roots: ["C:models"],
 						approved_results_roots: [`${ROOT}/results`],
 						forbidden_output_roots: [ROOT],
 						runtime_root: `${ROOT}/runtime`,

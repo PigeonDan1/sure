@@ -153,9 +153,38 @@ class ApprovedResultsRootsTest(unittest.TestCase):
 
 
 class AbsolutePathTest(unittest.TestCase):
-    def test_rejects_a_path_that_does_not_start_with_a_slash(self) -> None:
+    def test_accepts_a_windows_drive_letter_path(self) -> None:
         storage = {
-            "approved_models_roots": ["C:/srv/models"],
+            "approved_models_roots": ["C:/Users/example/.sure/approved/models"],
+            "approved_results_roots": ["C:/Users/example/.sure/approved/results"],
+            "forbidden_output_roots": ["C:/Users/example/.sure/approved"],
+            "runtime_root": "C:\\Users\\example\\.sure\\runtime",
+        }
+        policy = validate_site_policy(_policy(storage=storage))
+        self.assertEqual(
+            policy["storage"]["approved_models_roots"][0],
+            "C:/Users/example/.sure/approved/models",
+        )
+        self.assertEqual(policy["storage"]["runtime_root"], "C:\\Users\\example\\.sure\\runtime")
+
+    def test_still_accepts_a_posix_path_on_every_host(self) -> None:
+        policy = validate_site_policy(_policy())
+        self.assertEqual(policy["storage"]["approved_models_roots"][0], f"{_ROOT}/models")
+
+    def test_rejects_a_path_that_is_neither_posix_nor_drive_rooted(self) -> None:
+        storage = {
+            "approved_models_roots": ["srv/models"],
+            "approved_results_roots": [f"{_ROOT}/results"],
+            "forbidden_output_roots": [_ROOT],
+            "runtime_root": f"{_ROOT}/runtime",
+        }
+        with self.assertRaises(SitePolicyError) as raised:
+            validate_site_policy(_policy(storage=storage))
+        self.assertIn("storage.approved_models_roots[0]", str(raised.exception))
+
+    def test_rejects_a_drive_letter_with_no_separator(self) -> None:
+        storage = {
+            "approved_models_roots": ["C:models"],
             "approved_results_roots": [f"{_ROOT}/results"],
             "forbidden_output_roots": [_ROOT],
             "runtime_root": f"{_ROOT}/runtime",
