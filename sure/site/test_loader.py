@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 for _parent in Path(__file__).resolve().parents:
     if (_parent / "sure" / "site" / "loader.py").is_file():
@@ -334,6 +335,50 @@ class CandidateOrderTest(unittest.TestCase):
 
     def test_returns_none_when_even_the_default_is_absent(self) -> None:
         self.assertIsNone(load_site_policy(repository_root=self.root, environment={}))
+
+
+_PLAIN_FIXTURE = _TOKEN_FIXTURE.replace("${HOME}", "/srv").replace("${REPO}", "/srv")
+
+
+class MissingHomeTest(unittest.TestCase):
+    """Five modules load the policy at import scope, so a host without a home
+    directory must get a policy or a readable SitePolicyError, never a
+    RuntimeError nobody catches."""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="sure-site-no-home-"))
+        (self.root / "config").mkdir()
+        self.addCleanup(shutil.rmtree, self.root, True)
+
+    def test_a_policy_without_the_home_token_still_loads(self) -> None:
+        (self.root / "config" / "site.local.yaml").write_text(_PLAIN_FIXTURE, encoding="utf-8")
+
+        with mock.patch("pathlib.Path.home", side_effect=RuntimeError("Could not determine home directory")):
+            resolved = load_site_policy(repository_root=self.root, environment={})
+
+        self.assertEqual(resolved["source"], "local")
+
+    def test_a_policy_that_needs_the_home_token_reports_a_policy_error(self) -> None:
+        fixture = self.root / "config" / "site.local.yaml"
+        fixture.write_text(_TOKEN_FIXTURE, encoding="utf-8")
+
+        with mock.patch("pathlib.Path.home", side_effect=RuntimeError("Could not determine home directory")):
+            with self.assertRaises(SitePolicyError) as raised:
+                load_site_policy(repository_root=self.root, environment={})
+
+        self.assertEqual(
+            str(raised.exception),
+            f"Cannot expand ${{HOME}} in local site policy {fixture}: no home directory",
+        )
+
+    def test_the_shipped_default_is_not_offered_without_a_home(self) -> None:
+        shutil.copyfile(
+            _REPO_ROOT / "config" / "site.default.yaml",
+            self.root / "config" / "site.default.yaml",
+        )
+
+        with mock.patch("pathlib.Path.home", side_effect=RuntimeError("Could not determine home directory")):
+            self.assertIsNone(load_site_policy(repository_root=self.root, environment={}))
 
 
 class RemovedFieldTest(unittest.TestCase):

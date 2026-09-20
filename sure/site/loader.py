@@ -210,10 +210,23 @@ def _normalize_host_path(value: str) -> str:
     return value.replace("\\", "/").rstrip("/")
 
 
-def _expand_policy_tokens(text: str, repository_root: Path) -> str:
-    return text.replace("${HOME}", _normalize_host_path(str(Path.home()))).replace(
-        "${REPO}", _normalize_host_path(str(repository_root))
-    )
+# Path.home() raises RuntimeError on a host that has no home directory, and
+# five modules load the policy at import scope: the loader must answer with a
+# policy or a SitePolicyError, never with an exception nobody catches.
+def _host_home() -> str | None:
+    try:
+        return _normalize_host_path(str(Path.home()))
+    except RuntimeError:
+        return None
+
+
+def _expand_policy_tokens(text: str, repository_root: Path, source: str, path: Path) -> str:
+    if "${HOME}" in text:
+        home = _host_home()
+        if home is None:
+            raise SitePolicyError(f"Cannot expand ${{HOME}} in {source} site policy {path}: no home directory")
+        text = text.replace("${HOME}", home)
+    return text.replace("${REPO}", _normalize_host_path(str(repository_root)))
 
 
 def load_site_policy(
@@ -236,7 +249,8 @@ def load_site_policy(
     # Only offer the shipped default when ${HOME} expands to something the
     # policy validator accepts; five modules load the policy at import scope
     # and an unusable home directory must stay "not configured", not a throw.
-    if is_absolute_policy_path(_normalize_host_path(str(Path.home()))):
+    home = _host_home()
+    if home is not None and is_absolute_policy_path(home):
         candidates.append((root / "config" / "site.default.yaml", "default"))
     for path, source in candidates:
         if path.exists():
@@ -254,7 +268,7 @@ def _load(path: Path, source: str, root: Path) -> dict[str, Any]:
     # Expand before parsing, validating and hashing: the digest then identifies
     # the policy this machine actually uses, not the committed template. The
     # "replace" error handler mirrors Buffer.toString("utf8") in loader.ts.
-    content = _expand_policy_tokens(raw.decode("utf-8", "replace"), root).encode("utf-8")
+    content = _expand_policy_tokens(raw.decode("utf-8", "replace"), root, source, path).encode("utf-8")
     try:
         decoded = yaml.safe_load(content)
     except yaml.YAMLError as error:

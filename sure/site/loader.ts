@@ -263,13 +263,30 @@ function normalizeHostPath(value: string): string {
 	return value.replaceAll("\\", "/").replace(/\/+$/, "");
 }
 
-function expandPolicyTokens(text: string, repositoryRoot: string): string {
+// homedir() throws on a host that has no home directory, the way Path.home()
+// raises RuntimeError in sure/site/loader.py, and five modules load the policy
+// at import scope: the loader must answer with a policy or a readable error,
+// never with an exception nobody catches.
+function hostHome(): string | undefined {
+	try {
+		return normalizeHostPath(homedir());
+	} catch {
+		return undefined;
+	}
+}
+
+function expandPolicyTokens(text: string, repositoryRoot: string, source: SitePolicySource, path: string): string {
 	// Replacer functions, not replacement strings: String.replaceAll reads $&
 	// and $$ in a replacement string as patterns, while str.replace in
 	// sure/site/loader.py substitutes the path literally.
-	const home = normalizeHostPath(homedir());
+	let expanded = text;
+	if (expanded.includes("${HOME}")) {
+		const home = hostHome();
+		if (home === undefined) throw new Error(`Cannot expand \${HOME} in ${source} site policy ${path}: no home directory`);
+		expanded = expanded.replaceAll("${HOME}", () => home);
+	}
 	const repo = normalizeHostPath(repositoryRoot);
-	return text.replaceAll("${HOME}", () => home).replaceAll("${REPO}", () => repo);
+	return expanded.replaceAll("${REPO}", () => repo);
 }
 
 function loadPolicy(path: string, source: SitePolicySource, repositoryRoot: string): ResolvedSitePolicy {
@@ -282,7 +299,7 @@ function loadPolicy(path: string, source: SitePolicySource, repositoryRoot: stri
 	}
 	// Expand before parsing, validating and hashing: the digest then identifies
 	// the policy this machine actually uses, not the committed template.
-	const content = Buffer.from(expandPolicyTokens(raw.toString("utf8"), repositoryRoot), "utf8");
+	const content = Buffer.from(expandPolicyTokens(raw.toString("utf8"), repositoryRoot, source, path), "utf8");
 	let decoded: unknown;
 	try {
 		decoded = parse(content.toString("utf8"));
@@ -322,7 +339,8 @@ export function resolveSitePolicy(options: SitePolicyLoadOptions = {}): Resolved
 	// resolve_prediction_source.py:27, resolve_eval_input.py:58,
 	// sure_eval/datasets/source_resolver.py:26}); an unusable home directory
 	// must stay today's clean "not configured", not an import-time throw.
-	if (isAbsolutePolicyPath(normalizeHostPath(homedir()))) {
+	const home = hostHome();
+	if (home !== undefined && isAbsolutePolicyPath(home)) {
 		candidates.push([resolve(root, "config/site.default.yaml"), "default"]);
 	}
 	for (const [path, source] of candidates) {

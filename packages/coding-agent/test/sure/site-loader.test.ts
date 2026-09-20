@@ -3,8 +3,32 @@ import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveSitePolicy, validateSitePolicy } from "../../../../sure/site/loader.ts";
+
+// node:os is the loader's only source of a home directory, and on a host with
+// none Node throws from homedir() where Python raises RuntimeError from
+// Path.home(). This is the seam that reproduces both.
+const homeFailure = vi.hoisted(() => ({ active: false }));
+vi.mock("node:os", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:os")>();
+	return {
+		...actual,
+		homedir: () => {
+			if (homeFailure.active) throw new Error("Could not determine home directory");
+			return actual.homedir();
+		},
+	};
+});
+
+function withoutHome<T>(body: () => T): T {
+	homeFailure.active = true;
+	try {
+		return body();
+	} finally {
+		homeFailure.active = false;
+	}
+}
 
 const ROOT = "/srv";
 
@@ -347,6 +371,38 @@ describe("resolveSitePolicy candidate order", () => {
 		const root = tokenRoot("nothing-at-all");
 
 		expect(resolveSitePolicy({ repositoryRoot: root, environment: {} })).toBeUndefined();
+	});
+});
+
+const PLAIN_FIXTURE = TOKEN_FIXTURE.replaceAll("${HOME}", "/srv").replaceAll("${REPO}", "/srv");
+
+// Five modules load the policy at import scope, so a host without a home
+// directory must get a policy or a readable error, never an uncaught throw.
+describe("resolveSitePolicy without a usable home directory", () => {
+	it("still loads a policy that has no ${HOME} token", () => {
+		const root = tokenRoot("no-home-plain");
+		writeFileSync(join(root, "config", "site.local.yaml"), PLAIN_FIXTURE, "utf-8");
+
+		const resolved = withoutHome(() => resolveSitePolicy({ repositoryRoot: root, environment: {} }));
+
+		expect(resolved?.source).toBe("local");
+	});
+
+	it("reports a policy error for a policy that needs ${HOME}", () => {
+		const root = tokenRoot("no-home-token");
+		const fixture = join(root, "config", "site.local.yaml");
+		writeFileSync(fixture, TOKEN_FIXTURE, "utf-8");
+
+		expect(() => withoutHome(() => resolveSitePolicy({ repositoryRoot: root, environment: {} }))).toThrow(
+			`Cannot expand \${HOME} in local site policy ${fixture}: no home directory`,
+		);
+	});
+
+	it("does not offer the shipped default", () => {
+		const root = tokenRoot("no-home-default");
+		shipDefault(root);
+
+		expect(withoutHome(() => resolveSitePolicy({ repositoryRoot: root, environment: {} }))).toBeUndefined();
 	});
 });
 
