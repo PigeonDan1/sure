@@ -5,9 +5,8 @@ import hashlib
 import json
 import os
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Mapping
-from urllib.parse import urlparse
 
 import yaml
 
@@ -20,8 +19,8 @@ SITE_POLICY_ENV = "SURE_SITE_POLICY"
 SITE_POLICY_SCHEMA = "sure.site.policy.v1"
 MISSING_POLICY_MESSAGE = (
     "SURE site policy is not configured.\n"
-    "Missing: config/site.bundled.yaml (bundled distribution) or config/site.local.yaml (local configuration).\n"
-    "Fix: cp config/site.example.yaml config/site.local.yaml and edit the model, result, dataset and runtime paths.\n"
+    "Missing: config/site.bundled.yaml (bundled distribution), config/site.local.yaml (local configuration) or config/site.default.yaml (repository default).\n"
+    "Fix: restore config/site.default.yaml, or cp config/site.example.yaml config/site.local.yaml and edit the model, result, dataset and runtime paths.\n"
     "Verify: npm run sure:site-check\n"
     "See README.md#publicself-hosted-site-policy and docs/site-configuration.md."
 )
@@ -49,12 +48,21 @@ def _string(value: Any, location: str) -> str:
     return value
 
 
+# One string rule, shared by the Python and TypeScript loaders and by the
+# SURE_SITE_POLICY check below. Neither loader may ask its own platform what
+# "absolute" means: Path("/srv").is_absolute() is False on Windows while
+# path.isAbsolute("/srv") is true there, and scripts/check-site-boundary.mjs
+# runs both loaders and diffs policy, source and sha256.
+_ABSOLUTE_POLICY_PATH = re.compile(r"^(?:/|[A-Za-z]:[\\/])")
+
+
+def is_absolute_policy_path(path: str) -> bool:
+    return _ABSOLUTE_POLICY_PATH.match(path) is not None
+
+
 def _absolute_path(value: Any, location: str) -> str:
-    # Site policy paths are POSIX cluster paths; policy.schema.json declares
-    # them as "^/". Path() would answer by host platform, so a Windows host
-    # rejected the site's own roots and accepted drive-letter paths.
     path = _string(value, location)
-    if not PurePosixPath(path).is_absolute():
+    if not is_absolute_policy_path(path):
         raise SitePolicyError(f"{location} must be an absolute path")
     return path
 
@@ -119,7 +127,7 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
     execution = _mapping(root.get("execution"), "execution")
     _reject_unknown(
         execution,
-        {"surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_partition_priority", "vc_default_partition"},
+        {"surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_default_partition"},
         "execution",
     )
     surfaces = _unique_strings(execution.get("surfaces"), "execution.surfaces", absolute=False)
@@ -166,14 +174,6 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
         )
     if "vc_partitions" in execution:
         policy["execution"]["vc_partitions"] = _unique_strings(execution["vc_partitions"], "execution.vc_partitions", absolute=False)
-    if "vc_partition_priority" in execution:
-        priority = _mapping(execution["vc_partition_priority"], "execution.vc_partition_priority")
-        parsed_priority: dict[str, int] = {}
-        for name, value in priority.items():
-            if not isinstance(name, str) or re.fullmatch(r"\S+", name) is None or not isinstance(value, int) or isinstance(value, bool) or value < 0:
-                raise SitePolicyError(f"execution.vc_partition_priority.{name} must be a non-negative integer")
-            parsed_priority[name] = value
-        policy["execution"]["vc_partition_priority"] = parsed_priority
     if "vc_default_partition" in execution:
         default_partition = _string(execution["vc_default_partition"], "execution.vc_default_partition")
         allowed_partitions = policy["execution"].get("vc_partitions")
@@ -182,18 +182,10 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
         policy["execution"]["vc_default_partition"] = default_partition
     if "network" in root:
         source = _mapping(root["network"], "network")
-        _reject_unknown(source, {"internal_git_host", "gateway_portal", "container_registry"}, "network")
+        _reject_unknown(source, {"container_registry"}, "network")
         network = {}
-        if "internal_git_host" in source:
-            network["internal_git_host"] = _string(source["internal_git_host"], "network.internal_git_host")
         if "container_registry" in source:
             network["container_registry"] = _string(source["container_registry"], "network.container_registry")
-        if "gateway_portal" in source:
-            portal = _string(source["gateway_portal"], "network.gateway_portal")
-            parsed_portal = urlparse(portal)
-            if parsed_portal.scheme not in {"http", "https"} or not parsed_portal.netloc:
-                raise SitePolicyError("network.gateway_portal must be a valid HTTP(S) URL")
-            network["gateway_portal"] = portal
         policy["network"] = network
     if "container_delivery" in root:
         delivery_source = _mapping(root["container_delivery"], "container_delivery")
@@ -210,6 +202,33 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
     return policy
 
 
+# ${HOME} and ${REPO} expand to forward-slash paths with no trailing separator
+# so the Python and TypeScript loaders produce identical bytes on every host:
+# on Windows pathlib.Path.home() and os.homedir() both spell C:\Users\me, and
+# scripts/check-site-boundary.mjs compares the sha256 of the expanded text.
+def _normalize_host_path(value: str) -> str:
+    return value.replace("\\", "/").rstrip("/")
+
+
+# Path.home() raises RuntimeError on a host that has no home directory, and
+# five modules load the policy at import scope: the loader must answer with a
+# policy or a SitePolicyError, never with an exception nobody catches.
+def _host_home() -> str | None:
+    try:
+        return _normalize_host_path(str(Path.home()))
+    except RuntimeError:
+        return None
+
+
+def _expand_policy_tokens(text: str, repository_root: Path, source: str, path: Path) -> str:
+    if "${HOME}" in text:
+        home = _host_home()
+        if home is None:
+            raise SitePolicyError(f"Cannot expand ${{HOME}} in {source} site policy {path}: no home directory")
+        text = text.replace("${HOME}", home)
+    return text.replace("${REPO}", _normalize_host_path(str(repository_root)))
+
+
 def load_site_policy(
     repository_root: Path | None = None,
     environment: Mapping[str, str] | None = None,
@@ -220,26 +239,42 @@ def load_site_policy(
     env = environment if environment is not None else os.environ
     explicit = env.get(SITE_POLICY_ENV, "").strip()
     if explicit:
-        path = Path(explicit)
-        if not path.is_absolute():
+        if not is_absolute_policy_path(explicit):
             raise SitePolicyError(f"{SITE_POLICY_ENV} must be an absolute path")
-        return _load(path.resolve(), "environment")
-    for path, source in (
+        return _load(Path(explicit).resolve(), "environment", root)
+    candidates: list[tuple[Path, str]] = [
         (root / "config" / "site.bundled.yaml", "bundled"),
         (root / "config" / "site.local.yaml", "local"),
-    ):
+    ]
+    # Only offer the shipped default when ${HOME} expands to something the
+    # policy validator accepts; five modules load the policy at import scope
+    # and an unusable home directory must stay "not configured", not a throw.
+    home = _host_home()
+    if home is not None and is_absolute_policy_path(home):
+        candidates.append((root / "config" / "site.default.yaml", "default"))
+    for path, source in candidates:
         if path.exists():
-            return _load(path, source)
+            return _load(path, source, root)
     if required:
         raise SitePolicyError(MISSING_POLICY_MESSAGE)
     return None
 
 
-def _load(path: Path, source: str) -> dict[str, Any]:
+def _load(path: Path, source: str, root: Path) -> dict[str, Any]:
     try:
-        content = path.read_bytes()
+        raw = path.read_bytes()
     except OSError as error:
         raise SitePolicyError(f"Cannot read {source} site policy {path}: {error}") from error
+    # Decode strictly: the bytes a site policy names its roots with must be
+    # exactly what the file holds. A U+FFFD substituted into a forbidden output
+    # root would be a root no real path can ever match.
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise SitePolicyError(f"Cannot parse {source} site policy {path}: {error}") from error
+    # Expand before parsing, validating and hashing: the digest then identifies
+    # the policy this machine actually uses, not the committed template.
+    content = _expand_policy_tokens(text, root, source, path).encode("utf-8")
     try:
         decoded = yaml.safe_load(content)
     except yaml.YAMLError as error:

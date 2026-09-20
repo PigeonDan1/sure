@@ -76,12 +76,16 @@ function realPathish(path: string): string {
 }
 
 function insideNfs(dir: string): boolean {
+	// Windows spells the same directory with either drive-letter case and
+	// resolve() keeps whichever one the caller typed, so "c:\...\approved\x"
+	// walked straight past a "C:\...\approved" root. POSIX stays byte-exact.
+	const fold = (value: string) => (process.platform === "win32" ? value.toLowerCase() : value);
 	const configuredRoots = requireSitePolicy().policy.storage.forbidden_output_roots;
-	const roots = new Set(configuredRoots.map((root) => resolve(root)));
+	const roots = new Set(configuredRoots.map((root) => fold(resolve(root))));
 	for (const root of configuredRoots) {
-		if (existsSync(root)) roots.add(realpathSync(root));
+		if (existsSync(root)) roots.add(fold(realpathSync(root)));
 	}
-	const candidates = new Set([resolve(dir), realPathish(dir)]);
+	const candidates = new Set([fold(resolve(dir)), fold(realPathish(dir))]);
 	for (const root of roots) {
 		for (const candidate of candidates) {
 			if (candidate === root || candidate.startsWith(root + sep)) {

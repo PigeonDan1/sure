@@ -1,0 +1,36 @@
+# Zero-configuration default for a single ordinary machine.
+#
+# Precedence: SURE_SITE_POLICY > config/site.bundled.yaml >
+# config/site.local.yaml > this file. A distribution or a self-hoster that
+# ships either of those keeps winning, so this file changes nothing for them.
+#
+# The HOME and REPO tokens below are expanded by sure/site/loader.ts and
+# sure/site/loader.py when the file is read, and the recorded sha256 covers the
+# expanded text. The loaders never create any of these directories;
+# /sure_approve, /sure_infer and the runtime materializers create what they
+# need, when they need it.
+schema: sure.site.policy.v1
+site_id: local-default
+policy_version: 1
+
+storage:
+  approved_models_roots:
+    - "${HOME}/.sure/approved/models"
+  approved_results_roots:
+    - "${HOME}/.sure/approved/results"
+  forbidden_output_roots:
+    - "${HOME}/.sure/approved"
+  runtime_root: "${HOME}/.sure/runtime"
+
+datasets:
+  allowed_source_roots:
+    default: "${HOME}/.sure/datasets"
+    smoke: "${REPO}/fixtures/tasks"
+  projection_root: "${HOME}/.sure/dataset-projections"
+
+execution:
+  surfaces:
+    - local
+  local_runtimes:
+    - python
+    - container
