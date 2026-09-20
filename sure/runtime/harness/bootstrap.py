@@ -5,12 +5,10 @@ from __future__ import annotations
 
 import argparse
 import fcntl
-import grp
 import hashlib
 import json
 import os
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -49,49 +47,6 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-def _apply_acl(setfacl: str, entries: str, paths: list[Path]) -> None:
-    for offset in range(0, len(paths), 256):
-        command = [setfacl, "-m", entries, "--", *(str(path) for path in paths[offset : offset + 256])]
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
-        if completed.returncode != 0:
-            detail = (completed.stderr or completed.stdout or "setfacl failed").strip()
-            raise OSError(f"cannot make runtime group-collaborative: {detail}")
-
-
-def _make_group_writable(root: Path, *, recursive: bool = True) -> None:
-    """Preserve executable bits and grant the runtime's owning group inherited write access."""
-    paths = [root, *root.rglob("*")] if recursive else [root]
-    paths = [path for path in paths if not path.is_symlink()]
-    directories = [path for path in paths if path.is_dir()]
-    executables = [
-        path
-        for path in paths
-        if not path.is_dir()
-        and stat.S_IMODE(path.stat().st_mode) & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    ]
-    regular = [path for path in paths if not path.is_dir() and path not in executables]
-    setfacl = shutil.which("setfacl")
-    if setfacl:
-        group_id = root.stat().st_gid
-        try:
-            group = grp.getgrgid(group_id).gr_name
-        except KeyError:
-            group = str(group_id)
-        _apply_acl(setfacl, f"g:{group}:rwx,m::rwx", [*directories, *executables])
-        _apply_acl(setfacl, f"g:{group}:rw-,m::rw-", regular)
-        _apply_acl(setfacl, f"d:g:{group}:rwx,d:m::rwx", directories)
-        return
-
-    for path in paths:
-        mode = stat.S_IMODE(path.stat().st_mode)
-        group_bits = stat.S_IRGRP | stat.S_IWGRP
-        if path.is_dir():
-            group_bits |= stat.S_IXGRP | stat.S_ISGID
-        elif mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH):
-            group_bits |= stat.S_IXGRP
-        path.chmod(mode | group_bits)
 
 
 def _load_spec() -> tuple[dict[str, Any], Path, str, str]:
@@ -349,10 +304,8 @@ def _build_runtime(
     uv = _uv_binary()
     logs_dir = runtime_root / "logs"
     cache_dir = runtime_root / "cache"
-    _make_group_writable(runtime_root, recursive=False)
     for path in (logs_dir, cache_dir):
         path.mkdir(parents=True, exist_ok=True)
-        _make_group_writable(path, recursive=False)
     max_attempts = max(1, min(2, int(spec.get("max_prepare_attempts") or 2)))
     errors: list[str] = []
 
@@ -434,9 +387,6 @@ def _build_runtime(
                 _manifest_path(staging).write_text(
                     json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
                 )
-                _make_group_writable(staging)
-                _make_group_writable(logs_dir)
-                _make_group_writable(cache_dir)
                 if runtime_dir.exists():
                     raise HarnessRuntimeError(f"runtime destination appeared during bootstrap: {runtime_dir}")
                 staging.rename(runtime_dir)
