@@ -66,5 +66,48 @@ class BuildImageLockTest(unittest.TestCase):
             self.assertEqual(payload["image_ref"], f"registry.example:5000/hpc/sure-harness@{digest}")
 
 
+    def test_the_build_names_the_runtime_id_so_the_image_lands_at_its_final_path(self) -> None:
+        """A uv venv is path-bound, so the image must build its own at the destination."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._runtime_root(tmp)
+            output = Path(tmp) / "runtime-image.json"
+            inspect = _completed(json.dumps({"RepoDigests": ["registry.example/sure-harness@sha256:" + "a" * 64]}))
+            recorded: list[list[str]] = []
+
+            def record(command: list[str]):
+                recorded.append(command)
+                return _completed() if command[:2] == ["docker", "build"] else inspect
+
+            with mock.patch.object(build_image, "run", side_effect=record), \
+                 mock.patch.object(sys, "argv", [
+                     "build_image.py", "--runtime-root", str(root),
+                     "--image", "registry.example/sure-harness:v1", "--output", str(output),
+                 ]):
+                self.assertEqual(build_image.main(), 0)
+
+            build = recorded[0]
+            self.assertIn("RUNTIME_ID=sure-harness-v1-py311-abc123", build)
+            self.assertIn("harness_runtime_spec=" + str(build_image.SPEC_PATH.parent.parent), build)
+            self.assertNotIn(str(root), " ".join(build))
+
+
+class DockerfileTest(unittest.TestCase):
+    """The Dockerfile cannot be run here, so pin the parts the gates depend on."""
+
+    def setUp(self) -> None:
+        self.text = (build_image.SPEC_PATH.parent / "Dockerfile").read_text(encoding="utf-8")
+
+    def test_the_image_builds_the_runtime_instead_of_copying_the_host(self) -> None:
+        """Copying a uv venv into an image ships an interpreter that cannot start."""
+        self.assertNotIn("harness_runtime_source", self.text)
+        self.assertIn("bootstrap.py", self.text)
+        # The interpreter has to live inside the tree, because only the tree is
+        # flattened into the image the adapters copy from.
+        self.assertIn('mv /opt/harness-base-python "$dest/base-python"', self.text)
+        self.assertIn("COPY --from=build /opt/sure-harness/${RUNTIME_ID}/ /", self.text)
+        # The runtime the image built must be the runtime the host manifest names.
+        self.assertIn('[ -d "$dest" ]', self.text)
+
+
 if __name__ == "__main__":
     unittest.main()

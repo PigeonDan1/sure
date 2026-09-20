@@ -169,9 +169,7 @@ def harness_runtime_build_context(harness: dict[str, str] | None) -> str:
             )
         except OSError:
             probe = None
-        if probe is None:
-            return "directory"
-        candidates = [line.strip() for line in probe.stdout.splitlines() if line.strip()]
+        candidates = [line.strip() for line in probe.stdout.splitlines() if line.strip()] if probe else []
         matches: list[str] = []
         for candidate in candidates:
             data = inspect_image(candidate)
@@ -194,7 +192,12 @@ def harness_runtime_build_context(harness: dict[str, str] | None) -> str:
                 "rebuild it with sure/runtime/harness/build_image.py"
             )
         return f"docker-image://{image_ref}"
-    return "directory"
+    # The host runtime is a uv virtual environment and cannot be copied into an
+    # image; the runtime image builds its own from the same lock.
+    raise ValueError(
+        "no digest-pinned Harness Runtime image is available; build one with "
+        "sure/runtime/harness/build_image.py and set SURE_HARNESS_RUNTIME_IMAGE"
+    )
 
 
 def render(source: Path, destination: Path, replacements: dict[str, str]) -> None:

@@ -2335,6 +2335,15 @@ class TransScriptsTest(unittest.TestCase):
             context = scaffold_adapter.harness_runtime_build_context(harness)
         self.assertEqual(context, f"docker-image://{reference}")
 
+    def test_a_missing_runtime_image_is_refused_instead_of_copying_the_host(self) -> None:
+        """A uv venv cannot be copied into an image, so silence here shipped a dead python."""
+        harness = self._harness_binding()
+        empty = mock.Mock(returncode=0, stdout="", stderr="")
+        with mock.patch.dict(os.environ, {"SURE_HARNESS_RUNTIME_IMAGE": ""}),              mock.patch.object(scaffold_adapter.subprocess, "run", return_value=empty):
+            with self.assertRaises(ValueError) as caught:
+                scaffold_adapter.harness_runtime_build_context(harness)
+        self.assertIn("build_image.py", str(caught.exception))
+
     def test_scaffold_prefers_the_source_image_tag_over_the_image_id(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
