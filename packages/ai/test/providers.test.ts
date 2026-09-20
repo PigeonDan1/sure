@@ -20,10 +20,10 @@ import type {
 } from "../src/types.ts";
 import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
 
-function fakeAuthContext(env: Record<string, string>, files: string[] = []): AuthContext {
+function fakeAuthContext(env: Record<string, string>): AuthContext {
 	return {
 		env: async (name) => env[name],
-		fileExists: async (path) => files.includes(path),
+		fileExists: async () => false,
 	};
 }
 
