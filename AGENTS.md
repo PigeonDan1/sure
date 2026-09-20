@@ -153,6 +153,12 @@ Upstream features this fork no longer carries:
 - The `examples/` directory of sample extensions and SDK snippets.
 - RPC mode (`--mode rpc`, `rpc-entry`, `RpcClient`).
 - HTML export (`--export`, HTML `/export`, the theme `export` colors).
+- The pi-ai image generation stack (`generateImages`, `ImagesModels`, the OpenRouter images provider and its catalog).
+- The networked model catalog generators (`scripts/generate-models.ts` and the two reasoning-options helpers); `npm run build -w packages/ai` is offline now.
+- The second CLI (`bin: pi-ai`) and the bun OAuth flow registration.
+- Bun compiled-binary detection (`isBunBinary`).
+- The browser smoke check (`npm run check:browser-smoke`).
+- The `canvas` devDependency and `scripts/generate-test-image.ts`.
 
 Restore by reverting the commit that removed it; see git log.
 
