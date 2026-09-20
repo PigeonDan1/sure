@@ -209,7 +209,9 @@ def _exclusive_result_lock(directory: Path):
     neither a directory descriptor nor flock, so it takes the same advisory
     lock on a stable per-directory file in the system temp directory -- the
     result tree must not gain a file of its own, because its contents are
-    hashed into the artifact manifest.
+    hashed into the artifact manifest. That key is the resolved path string
+    rather than the inode POSIX locks, so two processes given different TEMP
+    directories would not exclude each other.
     """
     if os.name == "nt":
         token = hashlib.sha256(str(directory.resolve()).encode("utf-8")).hexdigest()[:16]
