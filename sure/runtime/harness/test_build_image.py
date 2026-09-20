@@ -145,6 +145,24 @@ class DockerfileTest(unittest.TestCase):
         # The runtime the image built must be the runtime the host manifest names.
         self.assertIn('[ -d "$dest" ]', self.text)
 
+    def test_the_relocated_tree_is_proven_self_contained_before_the_check(self) -> None:
+        """`--check` only starts the interpreter; a broken link or a stale path survives it."""
+        self.assertIn('find "$dest" -xtype l', self.text)
+        self.assertIn("dangling symlink under $dest", self.text)
+        self.assertIn('grep -rlI /opt/harness-base-python "$dest"', self.text)
+        self.assertIn("stale build-stage path under $dest", self.text)
+        # grep exits 1 when it finds nothing, which is the only passing case:
+        # 0 means a stale path is still there and 2 means grep itself failed.
+        self.assertIn('[ "$status" -eq 1 ]', self.text)
+        check = self.text.index("--check --runtime-root")
+        self.assertLess(self.text.index("-xtype l"), check)
+        self.assertLess(self.text.index("grep -rlI"), check)
+
+    def test_the_link_rewrite_cannot_swallow_a_failing_find(self) -> None:
+        """/bin/sh in the build stage is dash: no pipefail, so nothing may be piped into the loop."""
+        self.assertNotIn("-type l | while", self.text)
+        self.assertIn('done < "$scan"', self.text)
+
     def test_the_interpreter_is_pinned_to_the_one_the_host_manifest_records(self) -> None:
         """"3.11" would let two builds of one lock ship different interpreter bytes."""
         self.assertIn('uv python install "${PYTHON_FULL_VERSION}"', self.text)

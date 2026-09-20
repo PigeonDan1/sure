@@ -22,7 +22,11 @@ ARG PYTHON_FULL_VERSION
 # uv refuses to create a virtual environment in a directory that already exists,
 # so its managed interpreter is installed beside the runtime and moved in after
 # the environment is built; every absolute link into the old location is then
-# re-pointed, which also covers uv's minor-version alias directory.
+# re-pointed, which also covers uv's minor-version alias directory. The tree is
+# only self-contained if nothing survives that re-pointing, so the build then
+# proves it: no broken link anywhere under the destination, and no readable
+# file still naming the build-stage install directory. `--check` below cannot
+# show this -- it only proves the interpreter starts and the imports resolve.
 # The interpreter is pinned to the exact version the host manifest records, and
 # the bootstrap below may not download another one, so the runtime in the image
 # is the same interpreter build as the runtime the manifest describes.
@@ -44,11 +48,19 @@ RUN set -eu; \
         || { echo "built runtime is not '${RUNTIME_ID}': $(ls /opt/sure-harness)" >&2; exit 1; }; \
     mv /opt/harness-base-python "$dest/base-python"; \
     sed -i "s|/opt/harness-base-python|$dest/base-python|g" "$dest/pyvenv.cfg"; \
-    find "$dest" -type l | while read -r link; do \
+    scan=/tmp/harness-runtime-scan; \
+    find "$dest" -type l > "$scan"; \
+    while read -r link; do \
         target="$(readlink "$link")"; \
         case "$target" in /opt/harness-base-python/*) \
             ln -sfn "$dest/base-python${target#/opt/harness-base-python}" "$link";; esac; \
-    done; \
+    done < "$scan"; \
+    find "$dest" -xtype l > "$scan"; \
+    [ ! -s "$scan" ] \
+        || { echo "dangling symlink under $dest" >&2; cat "$scan" >&2; exit 1; }; \
+    status=0; grep -rlI /opt/harness-base-python "$dest" > "$scan" || status=$?; \
+    [ "$status" -eq 1 ] \
+        || { echo "stale build-stage path under $dest (grep exit $status)" >&2; cat "$scan" >&2; exit 1; }; \
     "$dest/bin/python" "$bootstrap" --check --runtime-root /opt/sure-harness; \
     built="$("$dest/bin/python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["python_version"])' "$dest/runtime-manifest.json")"; \
     [ "$built" = "${PYTHON_FULL_VERSION}" ] \
