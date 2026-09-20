@@ -154,7 +154,8 @@ export function createGrepToolDefinition(
 							return lines;
 						};
 
-						// Collect matches during streaming, then format them after rg exits.
+						// Filled by whichever backend runs: ripgrep's streamed JSON events,
+						// or the node fallback's return value.
 						const matches: Array<{ filePath: string; lineNumber: number; lineText?: string }> = [];
 						const outputLines: string[] = [];
 						let linesTruncated = false;

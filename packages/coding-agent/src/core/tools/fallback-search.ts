@@ -12,10 +12,19 @@ import path from "path";
  * get slower rather than disappearing. They never shell out: `grep` and `find`
  * are different programs on the three platforms, and Windows ships neither.
  *
- * One deliberate difference from ripgrep: a `--glob` that contains a slash is
- * anchored at the search root here, while ripgrep anchors it at its own working
- * directory. The search root is what the caller asked about, so this is the more
- * predictable of the two.
+ * Known differences from ripgrep and fd:
+ * - A `--glob` that contains a slash is anchored at the search root here, while
+ *   ripgrep anchors it at its own working directory. The search root is what
+ *   the caller asked about, so this is the more predictable of the two.
+ * - Patterns are JavaScript regexes. ripgrep's inline flags (`(?i)`) and its
+ *   named groups (`(?P<name>)`) are syntax errors here; backreferences and
+ *   lookbehind work here and not in ripgrep.
+ * - Only `.gitignore` is read; `.ignore`, `.rgignore` and `.fdignore` are not.
+ * - A nested `.gitignore` cannot re-include with `!x` what an enclosing scope
+ *   ignored, and an ignored directory is never entered at all, so the rules
+ *   inside it are never read.
+ * - The two ceilings marked `ponytail:` below: the per-file size limit with its
+ *   binary sniff, and `.gitignore` files above the search root being ignored.
  */
 
 // ponytail: 5 MiB grep ceiling and a first-8-KiB binary sniff; raise both if a
