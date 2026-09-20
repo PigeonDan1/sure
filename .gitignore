@@ -4,6 +4,16 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# tsgo emits these next to the tracked loader.ts and resolve.ts when building coding-agent
+/sure/site/loader.js
+/sure/site/loader.js.map
+/sure/site/loader.d.ts
+/sure/site/loader.d.ts.map
+/sure/runtime/harness/resolve.js
+/sure/runtime/harness/resolve.js.map
+/sure/runtime/harness/resolve.d.ts
+/sure/runtime/harness/resolve.d.ts.map
+
 # Tool and runtime state
 /.pi/
 /.sure/

@@ -48,7 +48,7 @@ describe("canonicalizePath", () => {
 		const targetDir = join(dir, "target-dir");
 		const linkDir = join(dir, "link-dir");
 		mkdirSync(targetDir);
-		symlinkSync(targetDir, linkDir, "dir");
+		symlinkSync(targetDir, linkDir, "junction");
 		expect(canonicalizePath(linkDir)).toBe(realpathSync(targetDir));
 	});
 

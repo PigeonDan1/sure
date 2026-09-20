@@ -334,10 +334,30 @@ describe("applyProbedModel", () => {
 		});
 		expect(outcome.ok).toBe(false);
 		expect(outcome.message).toContain("comments");
+		// The write never happened, so the message must not tell the user it did.
+		expect(outcome.message).not.toContain("The model was written");
 		expect(outcome.supportedLevels).toEqual(["xhigh", "high", "off"]);
 		expect(select).not.toHaveBeenCalled();
 		expect(refresh).not.toHaveBeenCalled();
 		expect(readFileSync(modelsPath, "utf-8")).toBe(original);
+	});
+
+	it("says the model was already written when the registry refresh fails", async () => {
+		const modelsPath = join(tempDir, "models.json");
+		const { ctx, refresh } = makeApplyContext();
+		refresh.mockRejectedValueOnce(new Error("registry is locked"));
+		const outcome = await applyProbedModel({
+			ctx,
+			providerName: "apifusion",
+			baseUrl: "https://gw.example.com/v1",
+			modelId: "gpt-5.6-sol",
+			modelsJsonPath: modelsPath,
+			probe: fakeProbe({ ok: true, result: SOL_RESULT }),
+		});
+		expect(outcome.ok).toBe(false);
+		expect(outcome.message).toContain(`The model was written to ${modelsPath}`);
+		expect(outcome.message).toContain("registry is locked");
+		expect(JSON.parse(readFileSync(modelsPath, "utf-8")).providers.apifusion.models[0].id).toBe("gpt-5.6-sol");
 	});
 });
 

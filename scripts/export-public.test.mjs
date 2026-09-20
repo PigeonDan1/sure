@@ -7,6 +7,10 @@ import test from "node:test";
 
 const exporter = resolve(import.meta.dirname, "export-public.mjs");
 
+// Creating a symlink on Windows needs Developer Mode or admin rights, so the
+// 120000 path is exercised on POSIX only.
+const SYMLINKS_SUPPORTED = process.platform !== "win32";
+
 function run(command, args, cwd) {
 	return spawnSync(command, args, { cwd, encoding: "utf8" });
 }
@@ -58,17 +62,21 @@ test("exports a deterministic tracked projection and keeps source identity priva
 			"visible.txt": "public\n",
 		});
 		chmodSync(resolve(sourceRoot, "scripts/run.sh"), 0o755);
-		assert.equal(run("git", ["add", "--", "scripts/run.sh"], sourceRoot).status, 0);
+		// Windows cannot set the executable bit on disk, so record it in the index
+		// directly; the exporter reads modes from Git, not from the filesystem.
+		assert.equal(run("git", ["update-index", "--chmod=+x", "--", "scripts/run.sh"], sourceRoot).status, 0);
 		assert.equal(
 			run("git", ["-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "executable mode"], sourceRoot).status,
 			0,
 		);
-		symlinkSync("visible.txt", resolve(sourceRoot, "visible-link"));
-		assert.equal(run("git", ["add", "--", "visible-link"], sourceRoot).status, 0);
-		assert.equal(
-			run("git", ["-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "symlink"], sourceRoot).status,
-			0,
-		);
+		if (SYMLINKS_SUPPORTED) {
+			symlinkSync("visible.txt", resolve(sourceRoot, "visible-link"));
+			assert.equal(run("git", ["add", "--", "visible-link"], sourceRoot).status, 0);
+			assert.equal(
+				run("git", ["-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "symlink"], sourceRoot).status,
+				0,
+			);
+		}
 		write(sourceRoot, "ignored.txt", "not tracked\n");
 
 		const firstOutput = resolve(temporaryRoot, "first");
@@ -94,10 +102,14 @@ test("exports a deterministic tracked projection and keeps source identity priva
 		assert.equal(existsSync(resolve(firstOutput, "private")), false);
 		assert.equal(existsSync(resolve(firstOutput, "ignored.txt")), false);
 		assert.equal(readFileSync(resolve(firstOutput, "large.txt"), "utf8").length, 1024 * 1024 + 1);
-		assert.equal(lstatSync(resolve(firstOutput, "scripts/run.sh")).mode & 0o111, 0o111);
-		assert.equal(lstatSync(resolve(firstOutput, "visible-link")).isSymbolicLink(), true);
+		if (process.platform !== "win32") {
+			assert.equal(lstatSync(resolve(firstOutput, "scripts/run.sh")).mode & 0o111, 0o111);
+		}
 		assert.equal(manifest.files.find((entry) => entry.path === "scripts/run.sh").mode, "100755");
-		assert.equal(manifest.files.find((entry) => entry.path === "visible-link").mode, "120000");
+		if (SYMLINKS_SUPPORTED) {
+			assert.equal(lstatSync(resolve(firstOutput, "visible-link")).isSymbolicLink(), true);
+			assert.equal(manifest.files.find((entry) => entry.path === "visible-link").mode, "120000");
+		}
 
 		const privateMapping = JSON.parse(readFileSync(attestation, "utf8"));
 		assert.equal(privateMapping.schema, "sure.private_public_export_attestation.v1");

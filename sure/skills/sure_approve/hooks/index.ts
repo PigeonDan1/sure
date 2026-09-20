@@ -112,7 +112,9 @@ function toolCommand(ctx: SureHookContext): string | undefined {
 	const call =
 		typeof event.toolCall === "object" && event.toolCall !== null ? (event.toolCall as Record<string, unknown>) : {};
 	const tool = typeof event.toolName === "string" ? event.toolName : call.name;
-	if (tool !== "bash") return undefined;
+	// pi also ships a powershell tool; a Windows user without Git Bash would
+	// otherwise run the same scripts with every ordering gate switched off.
+	if (tool !== "bash" && tool !== "powershell") return undefined;
 	const inputValue = typeof event.input === "object" && event.input !== null ? event.input : call.input;
 	const input = typeof inputValue === "object" && inputValue !== null ? (inputValue as Record<string, unknown>) : {};
 	return typeof input.command === "string" ? input.command : "";

@@ -76,6 +76,10 @@
         {
           "title": "Session Format",
           "path": "session-format.md"
+        },
+        {
+          "title": "Environment Variables",
+          "path": "environment-variables.md"
         }
       ]
     },

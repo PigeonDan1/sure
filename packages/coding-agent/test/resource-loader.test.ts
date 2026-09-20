@@ -173,8 +173,8 @@ Project skill`,
 
 			mkdirSync(agentDir, { recursive: true });
 			mkdirSync(join(cwd, ".pi"), { recursive: true });
-			symlinkSync(sharedExtDir, join(agentDir, "extensions"), "dir");
-			symlinkSync(sharedExtDir, join(cwd, ".pi", "extensions"), "dir");
+			symlinkSync(sharedExtDir, join(agentDir, "extensions"), "junction");
+			symlinkSync(sharedExtDir, join(cwd, ".pi", "extensions"), "junction");
 
 			const loader = new DefaultResourceLoader({ cwd, agentDir });
 			await loader.reload();

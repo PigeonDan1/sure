@@ -4,7 +4,17 @@ import { requireSitePolicy, resolveSitePolicy } from "../../../../../sure/site/l
 
 // Approved models and promoted results both live below this root. Runs never
 // write inside it; a human promotes reviewed products there.
-export const NFS_ROOT = resolveSitePolicy()?.policy.storage.forbidden_output_roots[0] ?? "<site-policy-required>";
+//
+// Read at module load, so a malformed policy file must not take the whole
+// extension down with it: resolveOutputDir() calls requireSitePolicy() again
+// and reports the real parse error there, where the user asked for something.
+export const NFS_ROOT = ((): string => {
+	try {
+		return resolveSitePolicy()?.policy.storage.forbidden_output_roots[0] ?? "<site-policy-required>";
+	} catch {
+		return "<site-policy-required>";
+	}
+})();
 
 export interface OutputDirResolution {
 	ok: boolean;
@@ -76,12 +86,16 @@ function realPathish(path: string): string {
 }
 
 function insideNfs(dir: string): boolean {
+	// Windows spells the same directory with either drive-letter case and
+	// resolve() keeps whichever one the caller typed, so "c:\...\approved\x"
+	// walked straight past a "C:\...\approved" root. POSIX stays byte-exact.
+	const fold = (value: string) => (process.platform === "win32" ? value.toLowerCase() : value);
 	const configuredRoots = requireSitePolicy().policy.storage.forbidden_output_roots;
-	const roots = new Set(configuredRoots.map((root) => resolve(root)));
+	const roots = new Set(configuredRoots.map((root) => fold(resolve(root))));
 	for (const root of configuredRoots) {
-		if (existsSync(root)) roots.add(realpathSync(root));
+		if (existsSync(root)) roots.add(fold(realpathSync(root)));
 	}
-	const candidates = new Set([resolve(dir), realPathish(dir)]);
+	const candidates = new Set([fold(resolve(dir)), fold(realPathish(dir))]);
 	for (const root of roots) {
 		for (const candidate of candidates) {
 			if (candidate === root || candidate.startsWith(root + sep)) {

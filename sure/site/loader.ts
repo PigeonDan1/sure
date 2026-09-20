@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, posix, resolve } from "node:path";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
@@ -9,7 +10,7 @@ export const SITE_POLICY_SCHEMA = "sure.site.policy.v1";
 
 export type ExecutionSurface = "local" | "vc";
 export type LocalRuntime = "python" | "container";
-export type SitePolicySource = "environment" | "bundled" | "local";
+export type SitePolicySource = "environment" | "bundled" | "local" | "default";
 
 export interface SitePolicy {
 	schema: typeof SITE_POLICY_SCHEMA;
@@ -30,12 +31,9 @@ export interface SitePolicy {
 		local_runtimes: LocalRuntime[];
 		vc_project?: string;
 		vc_partitions?: string[];
-		vc_partition_priority?: Record<string, number>;
 		vc_default_partition?: string;
 	};
 	network?: {
-		internal_git_host?: string;
-		gateway_portal?: string;
 		container_registry?: string;
 	};
 	container_delivery?: {
@@ -58,8 +56,8 @@ export interface SitePolicyLoadOptions {
 const repositoryRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const missingPolicyMessage =
 	"SURE site policy is not configured.\n" +
-	"Missing: config/site.bundled.yaml (bundled distribution) or config/site.local.yaml (local configuration).\n" +
-	"Fix: cp config/site.example.yaml config/site.local.yaml and edit the model, result, dataset and runtime paths.\n" +
+	"Missing: config/site.bundled.yaml (bundled distribution), config/site.local.yaml (local configuration) or config/site.default.yaml (repository default).\n" +
+	"Fix: restore config/site.default.yaml, or cp config/site.example.yaml config/site.local.yaml and edit the model, result, dataset and runtime paths.\n" +
 	"Verify: npm run sure:site-check\n" +
 	"See README.md#publicself-hosted-site-policy and docs/site-configuration.md.";
 
@@ -80,11 +78,20 @@ function expectString(value: unknown, location: string): string {
 	return value;
 }
 
+// One string rule, shared by the TypeScript and Python loaders and by the
+// SURE_SITE_POLICY check below. Neither loader may ask its own platform what
+// "absolute" means: path.isAbsolute("/srv") is true on Windows while
+// Path("/srv").is_absolute() is false there, and scripts/check-site-boundary.mjs
+// runs both loaders and diffs policy, source and sha256.
+const ABSOLUTE_POLICY_PATH = /^(?:\/|[A-Za-z]:[\\/])/;
+
+export function isAbsolutePolicyPath(path: string): boolean {
+	return ABSOLUTE_POLICY_PATH.test(path);
+}
+
 function expectAbsolutePath(value: unknown, location: string): string {
 	const path = expectString(value, location);
-	// Site policy paths are POSIX cluster paths, declared as "^/" in
-	// policy.schema.json; win32 isAbsolute would also accept C:/....
-	if (!posix.isAbsolute(path)) throw new Error(`${location} must be an absolute path`);
+	if (!isAbsolutePolicyPath(path)) throw new Error(`${location} must be an absolute path`);
 	return path;
 }
 
@@ -171,7 +178,7 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	const execution = expectRecord(root.execution, "execution");
 	rejectUnknown(
 		execution,
-		["surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_partition_priority", "vc_default_partition"],
+		["surfaces", "local_runtimes", "vc_project", "vc_partitions", "vc_default_partition"],
 		"execution",
 	);
 	const surfaces = expectUniqueStrings(execution.surfaces, "execution.surfaces", false);
@@ -186,22 +193,10 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	let network: SitePolicy["network"];
 	if (root.network !== undefined) {
 		const source = expectRecord(root.network, "network");
-		rejectUnknown(source, ["internal_git_host", "gateway_portal", "container_registry"], "network");
+		rejectUnknown(source, ["container_registry"], "network");
 		network = {};
-		if (source.internal_git_host !== undefined) {
-			network.internal_git_host = expectString(source.internal_git_host, "network.internal_git_host");
-		}
 		if (source.container_registry !== undefined) {
 			network.container_registry = expectString(source.container_registry, "network.container_registry");
-		}
-		if (source.gateway_portal !== undefined) {
-			network.gateway_portal = expectString(source.gateway_portal, "network.gateway_portal");
-			try {
-				const portal = new URL(network.gateway_portal);
-				if (!portal.hostname || (portal.protocol !== "http:" && portal.protocol !== "https:")) throw new Error();
-			} catch {
-				throw new Error("network.gateway_portal must be a valid HTTP(S) URL");
-			}
 		}
 	}
 
@@ -238,17 +233,6 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	if (execution.vc_partitions !== undefined) {
 		policy.execution.vc_partitions = expectUniqueStrings(execution.vc_partitions, "execution.vc_partitions", false);
 	}
-	if (execution.vc_partition_priority !== undefined) {
-		const priority = expectRecord(execution.vc_partition_priority, "execution.vc_partition_priority");
-		const parsed: Record<string, number> = {};
-		for (const [name, value] of Object.entries(priority)) {
-			if (!/^\S+$/.test(name) || typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-				throw new Error(`execution.vc_partition_priority.${name} must be a non-negative integer`);
-			}
-			parsed[name] = value;
-		}
-		policy.execution.vc_partition_priority = parsed;
-	}
 	if (execution.vc_default_partition !== undefined) {
 		const defaultPartition = expectString(execution.vc_default_partition, "execution.vc_default_partition");
 		const allowed = policy.execution.vc_partitions;
@@ -271,14 +255,63 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	return policy;
 }
 
-function loadPolicy(path: string, source: SitePolicySource): ResolvedSitePolicy {
-	let content: Buffer;
+// ${HOME} and ${REPO} expand to forward-slash paths with no trailing separator
+// so the TypeScript and Python loaders produce identical bytes on every host:
+// on Windows os.homedir() and pathlib.Path.home() both spell C:\Users\me, and
+// scripts/check-site-boundary.mjs compares the sha256 of the expanded text.
+function normalizeHostPath(value: string): string {
+	return value.replaceAll("\\", "/").replace(/\/+$/, "");
+}
+
+// homedir() throws on a host that has no home directory, the way Path.home()
+// raises RuntimeError in sure/site/loader.py, and five modules load the policy
+// at import scope: the loader must answer with a policy or a readable error,
+// never with an exception nobody catches.
+function hostHome(): string | undefined {
 	try {
-		content = readFileSync(path);
+		return normalizeHostPath(homedir());
+	} catch {
+		return undefined;
+	}
+}
+
+function expandPolicyTokens(text: string, repositoryRoot: string, source: SitePolicySource, path: string): string {
+	// Replacer functions, not replacement strings: String.replaceAll reads $&
+	// and $$ in a replacement string as patterns, while str.replace in
+	// sure/site/loader.py substitutes the path literally.
+	let expanded = text;
+	if (expanded.includes("${HOME}")) {
+		const home = hostHome();
+		if (home === undefined) throw new Error(`Cannot expand \${HOME} in ${source} site policy ${path}: no home directory`);
+		expanded = expanded.replaceAll("${HOME}", () => home);
+	}
+	const repo = normalizeHostPath(repositoryRoot);
+	return expanded.replaceAll("${REPO}", () => repo);
+}
+
+function loadPolicy(path: string, source: SitePolicySource, repositoryRoot: string): ResolvedSitePolicy {
+	let raw: Buffer;
+	try {
+		raw = readFileSync(path);
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
 		throw new Error(`Cannot read ${source} site policy ${path}: ${detail}`);
 	}
+	// Decode strictly: the bytes a site policy names its roots with must be
+	// exactly what the file holds. A U+FFFD substituted into a forbidden output
+	// root would be a root no real path can ever match. ignoreBOM keeps a
+	// leading byte order mark in the text, the way raw.decode("utf-8") does in
+	// sure/site/loader.py, so both twins hash the same bytes.
+	let text: string;
+	try {
+		text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(raw);
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		throw new Error(`Cannot parse ${source} site policy ${path}: ${detail}`);
+	}
+	// Expand before parsing, validating and hashing: the digest then identifies
+	// the policy this machine actually uses, not the committed template.
+	const content = Buffer.from(expandPolicyTokens(text, repositoryRoot, source, path), "utf8");
 	let decoded: unknown;
 	try {
 		decoded = parse(content.toString("utf8"));
@@ -304,15 +337,26 @@ export function resolveSitePolicy(options: SitePolicyLoadOptions = {}): Resolved
 	const environment = options.environment ?? process.env;
 	const explicit = environment[SITE_POLICY_ENV]?.trim();
 	if (explicit) {
-		if (!isAbsolute(explicit)) throw new Error(`${SITE_POLICY_ENV} must be an absolute path`);
-		return loadPolicy(resolve(explicit), "environment");
+		if (!isAbsolutePolicyPath(explicit)) throw new Error(`${SITE_POLICY_ENV} must be an absolute path`);
+		return loadPolicy(resolve(explicit), "environment", root);
 	}
 	const candidates: Array<[string, SitePolicySource]> = [
 		[resolve(root, "config/site.bundled.yaml"), "bundled"],
 		[resolve(root, "config/site.local.yaml"), "local"],
 	];
+	// Only offer the shipped default when ${HOME} expands to something the
+	// policy validator accepts. Five modules load the policy at import scope
+	// (packages/coding-agent/src/core/sure/output-dir.ts:7,
+	// sure/skills/sure_infer/scripts/{resolve_model_dir.py:22,
+	// resolve_prediction_source.py:27, resolve_eval_input.py:58,
+	// sure_eval/datasets/source_resolver.py:26}); an unusable home directory
+	// must stay today's clean "not configured", not an import-time throw.
+	const home = hostHome();
+	if (home !== undefined && isAbsolutePolicyPath(home)) {
+		candidates.push([resolve(root, "config/site.default.yaml"), "default"]);
+	}
 	for (const [path, source] of candidates) {
-		if (existsSync(path)) return loadPolicy(path, source);
+		if (existsSync(path)) return loadPolicy(path, source, root);
 	}
 	return undefined;
 }

@@ -1,5 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildInvocationPrompt } from "../../src/core/sure/extension.ts";
 import { NFS_ROOT, resolveOutputDir, stripOutputDir } from "../../src/core/sure/output-dir.ts";
@@ -89,6 +92,48 @@ describe("output_dir resolution", () => {
 		expect(result.error ?? "").toContain(NFS_ROOT);
 	});
 
+	// Windows only: the drive letter is the one part of a path that
+	// path.resolve leaves as the caller typed it while the filesystem ignores
+	// its case, so it is the spelling that can walk into the forbidden root
+	// unnoticed. The fixture policy keeps the assertion off this host's home.
+	it.skipIf(process.platform !== "win32")("refuses the forbidden root spelled in another case", () => {
+		const root = mkdtempSync(join(tmpdir(), "sure-output-dir-case-"));
+		const home = root.replaceAll("\\", "/");
+		const forbidden = `${home}/.sure/approved`;
+		const policy = join(root, "site.yaml");
+		writeFileSync(
+			policy,
+			[
+				"schema: sure.site.policy.v1",
+				"site_id: case-fixture",
+				"policy_version: 1",
+				"storage:",
+				`  approved_models_roots: ["${forbidden}/models"]`,
+				`  forbidden_output_roots: ["${forbidden}"]`,
+				`  runtime_root: "${home}/.sure/runtime"`,
+				"datasets:",
+				`  allowed_source_roots: { default: "${home}/.sure/datasets" }`,
+				"execution:",
+				"  surfaces: [local]",
+				"",
+			].join("\n"),
+			"utf-8",
+		);
+		const previous = process.env.SURE_SITE_POLICY;
+		process.env.SURE_SITE_POLICY = policy;
+		try {
+			const lowerDrive = `${forbidden.charAt(0).toLowerCase()}${forbidden.slice(1)}`;
+
+			expect(resolveOutputDir(`model=demo output_dir=${forbidden}/results/job-1234`).ok).toBe(false);
+			expect(resolveOutputDir(`model=demo output_dir=${lowerDrive}/results/job-1234`).ok).toBe(false);
+			expect(resolveOutputDir(`model=demo output_dir=${lowerDrive}`).ok).toBe(false);
+		} finally {
+			if (previous === undefined) delete process.env.SURE_SITE_POLICY;
+			else process.env.SURE_SITE_POLICY = previous;
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("refuses a directory it cannot create", () => {
 		const root = freshRoot("blocked");
 		const blocker = join(root, "blocker");
@@ -170,5 +215,47 @@ describe("result.json", () => {
 		manager.createRun(skillPackage(), "model=demo");
 
 		expect(existsSync(join(root, "result.json"))).toBe(false);
+	});
+});
+
+describe("module load with a broken site policy", () => {
+	it("still loads output-dir.ts, and still refuses an output directory", () => {
+		const dir = mkdtempSync(join(tmpdir(), "sure-broken-policy-"));
+		try {
+			const policyPath = join(dir, "site.yaml");
+			writeFileSync(policyPath, "storage: [this is not: valid yaml\n", "utf-8");
+			const moduleUrl = pathToFileURL(resolve(__dirname, "../../src/core/sure/output-dir.ts")).href;
+			const probe = spawnSync(
+				process.execPath,
+				[
+					"--import",
+					"tsx",
+					"-e",
+					`import(${JSON.stringify(moduleUrl)}).then((m) => {
+						console.log(m.NFS_ROOT);
+						console.log(JSON.stringify(m.resolveOutputDir("model=demo output_dir=" + ${JSON.stringify(join(dir, "out"))})));
+					});`,
+				],
+				{
+					cwd: resolve(__dirname, "../../../.."),
+					encoding: "utf-8",
+					env: { ...process.env, SURE_SITE_POLICY: policyPath },
+					timeout: 60_000,
+				},
+			);
+
+			expect(probe.status, probe.stderr).toBe(0);
+			const [root, resolution] = probe.stdout.trim().split(/\r?\n/);
+			expect(root).toBe("<site-policy-required>");
+			// The module loads, but the policy failure still refuses at the point of
+			// use — a broken policy must never read as "no restriction".
+			expect(JSON.parse(resolution ?? "{}")).toEqual({
+				ok: false,
+				error: expect.stringContaining("Cannot parse environment site policy"),
+			});
+			expect(existsSync(join(dir, "out"))).toBe(false);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
