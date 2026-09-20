@@ -413,7 +413,11 @@ describe("site policy encoding", () => {
 		const [head, tail] = PLAIN_FIXTURE.split("approved/models");
 		writeFileSync(
 			fixture,
-			Buffer.concat([Buffer.from(head, "utf8"), Buffer.from([0xff, 0xfe]), Buffer.from(`approved/models${tail}`, "utf8")]),
+			Buffer.concat([
+				Buffer.from(head, "utf8"),
+				Buffer.from([0xff, 0xfe]),
+				Buffer.from(`approved/models${tail}`, "utf8"),
+			]),
 		);
 
 		expect(() => resolveSitePolicy({ repositoryRoot: root, environment: {} })).toThrow(
