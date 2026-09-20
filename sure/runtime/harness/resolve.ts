@@ -118,9 +118,14 @@ return { ok: false, error: `HARNESS_RUNTIME_NOT_READY: bootstrap is missing: ${b
 	if (completed.error) {
 		// ENOENT here means the launcher itself is missing, which on a fresh PC is
 		// almost always uv. Saying "bootstrap exited null" sent people reading logs.
+		// An explicit interpreter override is the user's own path, so installing uv
+		// would not fix it: name what is missing and stop there.
+		const overridden = Boolean(process.env.SURE_HARNESS_BOOTSTRAP_PYTHON?.trim());
 		const reason =
 			(completed.error as NodeJS.ErrnoException).code === "ENOENT"
-				? `${command} is not installed. Install uv:\n  ${UV_INSTALL_HINT}`
+				? overridden
+					? `${command} is not installed. SURE_HARNESS_BOOTSTRAP_PYTHON points at it.`
+					: `${command} is not installed. Install uv:\n  ${UV_INSTALL_HINT}`
 				: completed.error.message;
 		const failure = { ok: false, error: `HARNESS_RUNTIME_NOT_READY: ${reason}` };
 		resolvedByRepo.set(repoRoot, failure);
