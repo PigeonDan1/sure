@@ -5,6 +5,7 @@ import path from "path";
 import { type Static, Type } from "typebox";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
+import { findFallback } from "./fallback-search.ts";
 import { pathExists, resolveToCwd } from "./path-utils.ts";
 import { findRenderers } from "./renderers/find.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -168,6 +169,42 @@ export function createFindToolDefinition(
 							return;
 						}
 
+						// Shared by the fd path and the node fallback.
+						const finishWithPaths = (rawPaths: string[]): void => {
+							const relativized: string[] = [];
+							for (const rawPath of rawPaths) {
+								const line = rawPath.replace(/\r$/, "").trim();
+								if (!line) continue;
+								relativized.push(relativizeFindResultPath(line, searchPath));
+							}
+
+							const resultLimitReached = relativized.length >= effectiveLimit;
+							const rawOutput = relativized.join("\n");
+							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+							let resultOutput = truncation.content;
+							const details: FindToolDetails = {};
+							const notices: string[] = [];
+							if (resultLimitReached) {
+								notices.push(
+									`${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+								);
+								details.resultLimitReached = effectiveLimit;
+							}
+							if (truncation.truncated) {
+								notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+								details.truncation = truncation;
+							}
+							if (notices.length > 0) {
+								resultOutput += `\n\n[${notices.join(". ")}]`;
+							}
+							settle(() =>
+								resolve({
+									content: [{ type: "text", text: resultOutput }],
+									details: Object.keys(details).length > 0 ? details : undefined,
+								}),
+							);
+						};
+
 						// Default implementation uses fd.
 						const fdPath = await ensureTool("fd");
 						if (signal?.aborted) {
@@ -175,7 +212,32 @@ export function createFindToolDefinition(
 							return;
 						}
 						if (!fdPath) {
-							settle(() => reject(new Error("fd is not available. Install it and make sure it is on PATH.")));
+							// No fd on this box: walk the tree in node instead of failing.
+							if (!(await pathExists(searchPath))) {
+								settle(() => reject(new Error(`Path not found: ${searchPath}`)));
+								return;
+							}
+							let fallbackPaths: string[];
+							try {
+								fallbackPaths = await findFallback({ searchPath, pattern, limit: effectiveLimit, signal });
+							} catch (error) {
+								settle(() => reject(error as Error));
+								return;
+							}
+							if (signal?.aborted) {
+								settle(() => reject(new Error("Operation aborted")));
+								return;
+							}
+							if (fallbackPaths.length === 0) {
+								settle(() =>
+									resolve({
+										content: [{ type: "text", text: "No files found matching pattern" }],
+										details: undefined,
+									}),
+								);
+								return;
+							}
+							finishWithPaths(fallbackPaths);
 							return;
 						}
 
@@ -265,38 +327,7 @@ export function createFindToolDefinition(
 								return;
 							}
 
-							const relativized: string[] = [];
-							for (const rawLine of lines) {
-								const line = rawLine.replace(/\r$/, "").trim();
-								if (!line) continue;
-								relativized.push(relativizeFindResultPath(line, searchPath));
-							}
-
-							const resultLimitReached = relativized.length >= effectiveLimit;
-							const rawOutput = relativized.join("\n");
-							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
-							let resultOutput = truncation.content;
-							const details: FindToolDetails = {};
-							const notices: string[] = [];
-							if (resultLimitReached) {
-								notices.push(
-									`${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
-								);
-								details.resultLimitReached = effectiveLimit;
-							}
-							if (truncation.truncated) {
-								notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
-								details.truncation = truncation;
-							}
-							if (notices.length > 0) {
-								resultOutput += `\n\n[${notices.join(". ")}]`;
-							}
-							settle(() =>
-								resolve({
-									content: [{ type: "text", text: resultOutput }],
-									details: Object.keys(details).length > 0 ? details : undefined,
-								}),
-							);
+							finishWithPaths(lines);
 						});
 					} catch (e) {
 						if (signal?.aborted) {
