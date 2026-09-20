@@ -21,7 +21,7 @@
 - Always ask before removing functionality or code that appears intentional.
 - Do not preserve backward compatibility unless the user asks for it.
 - Never hardcode key checks (e.g. `matchesKey(keyData, "ctrl+x")`). Add defaults to `DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS` so they stay configurable.
-- The pi model catalog is frozen and committed (see Vendored pi). Never hand-edit the generated catalog files under `packages/ai/src/`, and never run `npm run generate-models` or `npm run hydrate-model-data`: both fetch from models.dev.
+- The pi model catalog is frozen and committed (see Vendored pi). The networked generators are gone; `npm run build -w packages/ai` is offline and validates the committed catalog through `check:model-data`.
 
 ## Commands
 
