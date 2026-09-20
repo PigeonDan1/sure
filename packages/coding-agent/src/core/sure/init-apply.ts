@@ -147,7 +147,7 @@ export async function applyProbedModel(input: ApplyProbedModelInput): Promise<Ap
 	} catch (error) {
 		return {
 			ok: false,
-			message: error instanceof Error ? error.message : String(error),
+			message: `The model was written to ${input.modelsJsonPath}, but reloading the model registry failed: ${error instanceof Error ? error.message : String(error)}`,
 			steps: result.steps,
 			supportedLevels: supported,
 			notes,
