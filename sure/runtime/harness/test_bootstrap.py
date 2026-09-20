@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -17,6 +19,13 @@ from sure.runtime.harness.bootstrap import _load_spec, resolve_runtime
 from sure.runtime.uvenv import runtime_python_relative
 
 
+# Materializing the runtime needs uv, and a fresh runtime root every time means a
+# fresh uv cache every time: without uv this whole module used to fail rather than
+# skip. CI puts uv on PATH, so nothing is lost there.
+@unittest.skipUnless(
+    shutil.which("uv") or os.environ.get("SURE_UV_BIN", "").strip(),
+    "uv is not installed",
+)
 class HarnessRuntimeBootstrapTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temporary = tempfile.TemporaryDirectory()
