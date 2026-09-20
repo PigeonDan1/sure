@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../../../src/core/auth-storage.ts";
@@ -54,12 +54,6 @@ describe("regression #5661: uppercase models.json header values", () => {
 			)}\n`,
 			"utf-8",
 		);
-
-		const written = JSON.parse(readFileSync(modelsPath, "utf-8")) as {
-			providers: Record<string, { apiKey?: string; headers?: Record<string, string> }>;
-		};
-		expect(written.providers["my-provider"]?.apiKey).toBe("CUSTOM_API_KEY");
-		expect(written.providers["my-provider"]?.headers?.Authorization).toBe("BEARER");
 
 		const registry = await createModelRegistry(AuthStorage.create(join(harness.tempDir, "auth.json")), modelsPath);
 		const model = registry.find("my-provider", "my-model");
