@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -116,6 +117,20 @@ def _approved_harness_runtime() -> dict[str, Any]:
         raise EvaluationRuntimeError(f"approved Harness Runtime binding is required: {exc}") from exc
 
 
+def _engine_pyproject_sha256(pyproject: Path) -> str:
+    """Identify the engine's pyproject.toml by its newline-normalised bytes.
+
+    The engine is a separate repository, so the superproject's `* text=auto
+    eol=lf` does not reach it: a clone made with git's default core.autocrlf
+    on Windows writes it with CRLF, and hashing those bytes could never match
+    the digest pinned in runtime.json. Normalising costs the ability to tell
+    two files apart by line endings alone, which no lockfile depends on. An
+    LF checkout hashes to exactly what it did before. Only a CRLF pair is a
+    line ending here; a lone CR is content and stays in the digest.
+    """
+    return hashlib.sha256(pyproject.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
 def _expected_binding(engine_root: Path) -> dict[str, Any]:
     engine_root = engine_root.expanduser().resolve()
     spec = _load_json(SPEC_ROOT / "runtime.json")
@@ -144,9 +159,12 @@ def _expected_binding(engine_root: Path) -> dict[str, Any]:
         raise EvaluationRuntimeError(
             f"evaluation engine commit differs from the locked runtime: expected={spec.get('engine_commit')} actual={commit}"
         )
-    pyproject_sha = sha256_file(pyproject)
+    pyproject_sha = _engine_pyproject_sha256(pyproject)
     if pyproject_sha != spec.get("engine_pyproject_sha256"):
-        raise EvaluationRuntimeError("evaluation engine pyproject.toml differs from the locked runtime")
+        raise EvaluationRuntimeError(
+            "evaluation engine pyproject.toml differs from the locked runtime "
+            "after newline normalisation"
+        )
 
     harness = _approved_harness_runtime()
 

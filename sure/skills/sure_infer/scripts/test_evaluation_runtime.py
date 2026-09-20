@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -18,6 +19,7 @@ from evaluation_runtime import (
     _approved_harness_runtime,
     _engine_commit,
     _engine_has_repository,
+    _engine_pyproject_sha256,
     _expected_binding,
     _materialize,
     _verify,
@@ -33,7 +35,7 @@ for _parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(_parent))
         break
 
-from sure.runtime.uvenv import runtime_python_relative, sha256_file  # noqa: E402
+from sure.runtime.uvenv import runtime_python_relative  # noqa: E402
 
 
 class EvaluationRuntimeTests(unittest.TestCase):
@@ -75,7 +77,7 @@ class EvaluationRuntimeTests(unittest.TestCase):
                 "python": "3.11",
                 "materialization_version": 5,
                 "engine_commit": "c" * 40,
-                "engine_pyproject_sha256": sha256_file(engine / "pyproject.toml"),
+                "engine_pyproject_sha256": _engine_pyproject_sha256(engine / "pyproject.toml"),
             }
             with mock.patch.dict(os.environ, harness_env):
                 with mock.patch("evaluation_runtime.SPEC_ROOT", root):
@@ -383,7 +385,7 @@ class ApprovedHarnessRuntimeTests(unittest.TestCase):
                 "lock_file": "requirements.lock.txt",
                 "python": "3.11",
                 "engine_commit": "c" * 40,
-                "engine_pyproject_sha256": sha256_file(engine / "pyproject.toml"),
+                "engine_pyproject_sha256": _engine_pyproject_sha256(engine / "pyproject.toml"),
             }
             with mock.patch.dict(os.environ, self._runtime(root)):
                 with mock.patch("evaluation_runtime.SPEC_ROOT", root):
@@ -563,6 +565,76 @@ class AttestedBindingTests(unittest.TestCase):
         self.assertIn("lock_sha256", message)
         self.assertIn("0000000000000000", message)
         self.assertNotIn("runtime_id", message)
+
+
+LF_PYPROJECT = b'[project]\nname = "sure-eval"\n'
+CRLF_PYPROJECT = LF_PYPROJECT.replace(b"\n", b"\r\n")
+
+
+class EngineNewlineIdentityTests(unittest.TestCase):
+    """The engine checkout decides its own line endings.
+
+    sure/external/sure-evaluation is its own repository, so the superproject's
+    `* text=auto eol=lf` does not reach it and a Windows clone with git's
+    default core.autocrlf=true writes every engine file with CRLF. If the
+    identity hashed those bytes it could never match the pinned digest there,
+    and both evaluation entry points would refuse to materialize at all.
+    """
+
+    def _pyproject_sha(self, root: Path, payload: bytes, pinned: str) -> str:
+        engine = root / "engine"
+        engine.mkdir()
+        (engine / "pyproject.toml").write_bytes(payload)
+        (root / "requirements.lock.txt").write_text("demo==1.0\n", encoding="utf-8")
+        harness_python = root / "bin" / "python"
+        harness_python.parent.mkdir(parents=True, exist_ok=True)
+        harness_python.write_text("#!/bin/sh\n", encoding="utf-8")
+        harness_python.chmod(0o755)
+        (root / "runtime-manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema": "sure.harness.runtime.manifest.v1",
+                    "runtime_id": "sure-harness-approved",
+                    "lock_sha256": "a" * 64,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        harness_env = {
+            "HARNESS_PYTHON_BIN": str(harness_python),
+            "SURE_HARNESS_RUNTIME_ID": "sure-harness-approved",
+            "SURE_HARNESS_LOCK_SHA256": "a" * 64,
+            "SURE_HARNESS_MANIFEST_PATH": str(root / "runtime-manifest.json"),
+            "SURE_HARNESS_RUNTIME_ROOT": str(root),
+        }
+        spec = {
+            "lock_file": "requirements.lock.txt",
+            "python": "3.11",
+            "materialization_version": 5,
+            "engine_commit": "c" * 40,
+            "engine_pyproject_sha256": pinned,
+        }
+        with mock.patch.dict(os.environ, harness_env):
+            with mock.patch("evaluation_runtime.SPEC_ROOT", root):
+                with mock.patch("evaluation_runtime._load_json", return_value=spec):
+                    with mock.patch("evaluation_runtime._engine_commit", return_value="c" * 40):
+                        return _expected_binding(engine)["engine_pyproject_sha256"]
+
+    def test_a_crlf_engine_checkout_still_matches_the_pinned_identity(self) -> None:
+        pinned = hashlib.sha256(LF_PYPROJECT).hexdigest()
+        with tempfile.TemporaryDirectory() as lf_root:
+            self.assertEqual(self._pyproject_sha(Path(lf_root), LF_PYPROJECT, pinned), pinned)
+        with tempfile.TemporaryDirectory() as crlf_root:
+            self.assertEqual(self._pyproject_sha(Path(crlf_root), CRLF_PYPROJECT, pinned), pinned)
+
+    def test_a_lone_carriage_return_is_content_and_not_a_line_ending(self) -> None:
+        """Normalising a bare CR would erase a real difference between two files."""
+        pinned = hashlib.sha256(b"a\nb").hexdigest()
+        with tempfile.TemporaryDirectory() as raw_root:
+            with self.assertRaises(EvaluationRuntimeError) as caught:
+                self._pyproject_sha(Path(raw_root), b"a\rb", pinned)
+        self.assertIn("newline normalisation", str(caught.exception))
 
 
 if __name__ == "__main__":
