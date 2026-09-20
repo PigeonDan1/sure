@@ -181,6 +181,28 @@ try {
 		failures.push("sure:site-check dropped its ok line while warning about missing roots");
 	}
 
+	// The other half of that warning: a root that exists but cannot be
+	// written. sure-site-check.ts probes it by creating a directory rather
+	// than by asking accessSync, so a regular file is a root that no
+	// platform lets it write into, and the warning must still exit 0.
+	const unwritableHome = resolve(temporaryRoot, "unwritable-home");
+	const unwritableRoot = `${unwritableHome.replaceAll("\\", "/")}/.sure/runtime`;
+	mkdirSync(dirname(unwritableRoot), { recursive: true });
+	writeFileSync(unwritableRoot, "");
+	const unwritableCheck = run("node", ["--import", "tsx", "scripts/sure-site-check.ts"], {
+		env: {
+			...process.env,
+			SURE_SITE_POLICY: resolve("config/site.default.yaml"),
+			HOME: unwritableHome,
+			USERPROFILE: unwritableHome,
+		},
+	});
+	if (unwritableCheck.status !== 0) {
+		failures.push(`sure:site-check failed on a root that exists but is not writable: ${unwritableCheck.stderr.trim()}`);
+	} else if (!unwritableCheck.stdout.includes(`warn runtime root is not writable: ${unwritableRoot}`)) {
+		failures.push("sure:site-check did not warn that an existing site root is not writable");
+	}
+
 	// The parity run above diffs whatever policy this checkout resolves, and a
 	// developer's config/site.local.yaml shadows the shipped default, the only
 	// policy that carries ${HOME} and ${REPO}. Diff the twins on it directly,
