@@ -207,8 +207,14 @@ try {
 	const tokenPython = run("python3", ["sure/site/loader.py"], { env: tokenEnvironment });
 	if (tokenTypescript.status !== 0 || tokenPython.status !== 0) {
 		failures.push(`site loaders failed on the shipped default policy: ${tokenTypescript.stderr.trim()}${tokenPython.stderr.trim()}`);
-	} else if (JSON.parse(tokenTypescript.stdout).sha256 !== JSON.parse(tokenPython.stdout).sha256) {
-		failures.push("TypeScript/Python site loader mismatch at ${HOME}/${REPO} expansion");
+	} else {
+		try {
+			if (JSON.parse(tokenTypescript.stdout).sha256 !== JSON.parse(tokenPython.stdout).sha256) {
+				failures.push("TypeScript/Python site loader mismatch at ${HOME}/${REPO} expansion");
+			}
+		} catch (error) {
+			failures.push(`cannot compare site loader JSON: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 	const exportedScript = "scripts/export-public.mjs";
 	if (existsSync(exportedScript)) {
@@ -216,6 +222,7 @@ try {
 		if (exported.error) {
 			failures.push(`public export failed to start: ${exported.error.message}`);
 		} else if (repositoryDirty) {
+			console.log("warn public export probes skipped: working tree is dirty");
 			if (exported.status === 0 || !exported.stderr.includes("requires a clean working tree")) {
 				failures.push("public export did not fail closed for a dirty working tree");
 			}
@@ -297,7 +304,12 @@ try {
 							failures.push("removing the default site policy did not restore the site-configuration guidance");
 						}
 					} finally {
-						renameSync(parkedPolicyPath, defaultPolicyPath);
+						try {
+							renameSync(parkedPolicyPath, defaultPolicyPath);
+						} catch {
+							// Deliberately ignored: the whole export tree is removed next,
+							// and an aborted restore would take the failures above with it.
+						}
 					}
 				}
 			}
@@ -319,4 +331,8 @@ if (failures.length > 0) {
 	for (const failure of failures) console.error(`  ${failure}`);
 	process.exit(1);
 }
-console.log("ok   site boundary: private dependency, loader parity, fail-closed, and public export");
+console.log(
+	repositoryDirty
+		? "ok   site boundary: private dependency, loader parity, and fail-closed"
+		: "ok   site boundary: private dependency, loader parity, fail-closed, and public export",
+);
