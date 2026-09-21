@@ -78,7 +78,7 @@ If the same hook/gate blocks three consecutive attempts, stop agent-side repair 
 - **Agent research first.** Scripts may extract candidate fields from provider APIs and model cards, but the agent must continue researching README/examples/source files when fields are unresolved. Hooks verify evidence and block hacks; they are not a substitute for research.
 - **Fixture registry first.** After task matching, open the matching `fixtures/tasks/<task>/README.md` and select concrete files from that task registry. Model-card demo audio/text may be recorded as `provider_fixture_hint`, but it must not replace the task fixture unless a model-specific fixture is explicitly created and recorded.
 - **GitHub is not a default weights source.** GitHub can be the repo/evidence source. `weights.source` must be one of `huggingface`, `modelscope`, `local`, `api`, `pip`, or `release_or_pypi`.
-- **Handoff must be actionable.** `sure/handoffs/<model_name>/model_input.yaml` is the single onboarding input. The debug `handoff_manifest.json` must still carry `repo`, `weights_source`, and `model_input` or `model_input_path` for every selected model so the terminal state-machine unit remains auditable. The RANK_AND_SELECT gate rejects selections missing `repo` or with a negative `score`.
+- **Handoff must be actionable.** `sure/handoffs/<model_name>/model_input.yaml` is the single onboarding input. The debug `handoff_manifest.json` must still carry `repo`, `weights_source`, and `model_input` or `model_input_path` for every selected model so the terminal state-machine unit remains auditable. The RANK_AND_SELECT gate rejects selections missing `repo` or with a negative `score`, and it cross-checks every selected `model_id` against the `model_input_result.json` in the run directory: a selection may only rank models that passed SYNTHESIZE_MODEL_INPUT.
 
 ## Per-Unit Contracts
 
@@ -128,8 +128,8 @@ Each unit below lists: **Inputs** (what to read), **Output** (produces + schema)
 - **Output**: `rank_select_result.json` (`schemas/rank_select_result.schema.json`). `selected[]` each `{model_id, repo, weights_source, task_type, score, rank_reason, model_input_path, model_input}`.
 - **Allowed**: `score` must be `≥ 0`.
 - **Must Not Do**: do NOT select a candidate without `repo` — `/sure_onboard` cannot handoff without a repo. Do NOT use a negative `score`.
-- **Gate**: `scripts/check_rank_select.py` — verifies the selection is non-empty and every selected candidate has `repo` + non-negative `score`. Exit 0 = pass.
-- **Failure**: `selection_empty`, `missing_repo_for_handoff`, `negative_score`.
+- **Gate**: `scripts/check_rank_select.py` — verifies the selection is non-empty, that every selected `model_id` has a MODEL_INPUT in the run directory's `model_input_result.json`, and that every selected candidate has `repo` + non-negative `score` (a boolean is not a score). Exit 0 = pass.
+- **Failure**: `selection_empty`, `missing_repo_for_handoff`, `negative_score`, `model_input_missing_for_selection`.
 
 ### 7. extract_lessons (gate)
 - **Inputs**: `artifacts/run_digest.json`, written by the hook the moment `rank_and_select` passed (read it; never rebuild it in place).
