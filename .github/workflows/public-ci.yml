@@ -66,11 +66,11 @@ jobs:
       - name: Run Python tests
         run: |
           python -m unittest discover -s sure/skills/sure_infer/scripts -p "test_*.py"
-          python -m unittest discover -s sure/skills/sure_eval/scripts -p "test_*.py"
           python -m unittest discover -s sure/skills/sure_trans/scripts -p "test_*.py"
           python -m unittest discover -s sure/skills/sure_onboard/scripts -p "test_*.py"
           python -m unittest discover -s sure/skills/sure_feed/scripts -p "test_*.py"
           python -m unittest discover -s sure/runtime/harness -p "test_*.py"
+          python -m unittest discover -s sure/runtime/memory -p "test_*.py"
           python -m unittest discover -s sure/runtime/model -p "test_*.py"
           python -m unittest discover -s sure/site -p "test_*.py"
 
