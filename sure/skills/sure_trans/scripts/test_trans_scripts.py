@@ -1629,6 +1629,39 @@ class TransScriptsTest(unittest.TestCase):
             self.assertTrue(payload["import_passed"])
             self.assertEqual(payload["status"], "passed")
 
+    def test_validation_runner_records_a_timeout_as_a_failed_stage(self) -> None:
+        # A timeout used to escape main(), so the gate never rewrote the stage
+        # artifact and the agent-written status="passed" survived as evidence.
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir()
+            (artifacts / "execution_compat.json").write_text(
+                json.dumps({"status": "ready", "compat_ok": True, "selected_device": "cpu"}) + "\n",
+                encoding="utf-8",
+            )
+            result = artifacts / "import_result.json"
+            result.write_text(
+                json.dumps({
+                    "status": "passed",
+                    "import_passed": True,
+                    "run_command": [sys.executable, "-c", "import time; time.sleep(30)"],
+                    "timeout_seconds": 1,
+                }) + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run([
+                sys.executable, str(SCRIPTS_DIR / "run_trans_validate.py"), "--run-dir", str(run_dir),
+                "--produces", str(result), "--kind", "import",
+            ], check=False, capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
+            payload = json.loads(result.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "failed")
+            self.assertFalse(payload["import_passed"])
+            self.assertTrue(payload["executed"])
+            self.assertEqual(payload["exit_code"], 124)
+            self.assertIn("TIMEOUT", Path(payload["log_path"]).read_text(encoding="utf-8"))
+
     def test_validation_runner_strips_harness_python_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
