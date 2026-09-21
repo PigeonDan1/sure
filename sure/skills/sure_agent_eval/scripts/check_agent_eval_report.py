@@ -7,8 +7,8 @@ Read-only. Called by the Sure hook with:
 The gate proves the report's agent identity against the resolved spec, that a
 successful report scores every selected dataset with at least one numeric
 metric, and that the batch directory it names exists inside the bundle's
-evaluation_runs/. A failed report is a valid outcome when it carries an
-error_code.
+evaluation_runs/ and carries the scoring evidence the report's numbers come
+from. A failed report is a valid outcome when it carries an error_code.
 """
 from __future__ import annotations
 
@@ -72,6 +72,20 @@ def gate_errors(run_dir: Path, report_path: Path) -> list[str]:
     if not batch_dir.is_dir():
         errors.append(f"batch directory does not exist: {batch_dir}")
 
+    validation = _read_json(batch_dir / "validation_payload.json")
+    if validation is None:
+        errors.append(f"validation_payload.json not found or invalid: {batch_dir / 'validation_payload.json'}")
+    elif validation.get("is_valid") is not True:
+        errors.append("validation_payload.is_valid must be true")
+    evaluation = _read_json(batch_dir / "evaluation_payload.json")
+    if evaluation is None:
+        errors.append(f"evaluation_payload.json not found or invalid: {batch_dir / 'evaluation_payload.json'}")
+    payload_scores = {
+        (str(row.get("dataset") or ""), str(row.get("metric") or ""), str(row.get("pipeline_id") or "")): row["result"].get("score")
+        for row in (evaluation or {}).get("results") or []
+        if isinstance(row, dict) and isinstance(row.get("result"), dict)
+    }
+
     rows = report.get("datasets")
     if not isinstance(rows, list):
         return errors + ["a successful eval_run_report must list its datasets"]
@@ -93,6 +107,18 @@ def gate_errors(run_dir: Path, report_path: Path) -> list[str]:
         ]
         if not scored:
             errors.append(f"{dataset}: no numeric metric score recorded")
+        if evaluation is None:
+            continue
+        for metric in scored:
+            name = str(metric.get("metric") or "")
+            key = (dataset, name, str(metric.get("pipeline_id") or ""))
+            if key not in payload_scores:
+                errors.append(f"{dataset}: metric {name!r} via {key[2]!r} is not scored by the evaluation payload")
+            elif payload_scores[key] != metric["score"]:
+                errors.append(
+                    f"{dataset}: metric {name!r} score {metric['score']!r} differs from the evaluation payload "
+                    f"{payload_scores[key]!r}"
+                )
     return errors
 
 

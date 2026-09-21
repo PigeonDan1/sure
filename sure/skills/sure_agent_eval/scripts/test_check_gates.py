@@ -80,6 +80,24 @@ def write_bundle(product_dir: Path) -> None:
     )
 
 
+def write_scoring_evidence(batch_dir: Path, *, score: float = 42.0) -> None:
+    write_json(batch_dir / "validation_payload.json", {"is_valid": True, "results": [{"dataset": DATASET}]})
+    write_json(
+        batch_dir / "evaluation_payload.json",
+        {
+            "schema": "sure.eval.payload.v2",
+            "results": [
+                {
+                    "dataset": DATASET,
+                    "metric": "bleu",
+                    "pipeline_id": "s2tt.zh.bleu.sacrebleu_zh_v1",
+                    "result": {"score": score},
+                }
+            ],
+        },
+    )
+
+
 def make_execution(product_dir: Path, **overrides) -> dict:
     result = {
         "schema": "sure.agent_eval.execution_result.v1",
@@ -205,7 +223,9 @@ class CheckAgentEvalReportTests(GateTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        (self.product_dir / "evaluation_runs" / self.BATCH).mkdir(parents=True)
+        self.batch_dir = self.product_dir / "evaluation_runs" / self.BATCH
+        self.batch_dir.mkdir(parents=True)
+        write_scoring_evidence(self.batch_dir)
 
     def check(self, report: dict) -> list[str]:
         produces = self.artifacts / "eval_run_report.json"
@@ -252,6 +272,30 @@ class CheckAgentEvalReportTests(GateTestCase):
         report["agent"]["spec_sha256"] = "b" * 64
         errors = self.check(report)
         self.assertTrue(any("spec_sha256" in error for error in errors))
+
+    def test_rejects_a_success_report_without_scoring_evidence(self) -> None:
+        (self.batch_dir / "validation_payload.json").unlink()
+        (self.batch_dir / "evaluation_payload.json").unlink()
+        errors = self.check(make_eval_report(self.product_dir, self.BATCH))
+        self.assertTrue(any("validation_payload.json" in error for error in errors))
+        self.assertTrue(any("evaluation_payload.json" in error for error in errors))
+
+    def test_rejects_a_validation_payload_that_did_not_pass(self) -> None:
+        write_json(self.batch_dir / "validation_payload.json", {"is_valid": False, "results": []})
+        errors = self.check(make_eval_report(self.product_dir, self.BATCH))
+        self.assertTrue(any("is_valid" in error for error in errors))
+
+    def test_rejects_a_score_the_evaluation_payload_does_not_back(self) -> None:
+        report = make_eval_report(self.product_dir, self.BATCH)
+        report["datasets"][0]["metrics"][0]["score"] = 99.0
+        errors = self.check(report)
+        self.assertTrue(any("evaluation payload" in error for error in errors))
+
+    def test_rejects_a_metric_absent_from_the_evaluation_payload(self) -> None:
+        report = make_eval_report(self.product_dir, self.BATCH)
+        report["datasets"][0]["metrics"][0]["metric"] = "wer"
+        errors = self.check(report)
+        self.assertTrue(any("wer" in error for error in errors))
 
 
 class CheckAgentRunReportTests(GateTestCase):
