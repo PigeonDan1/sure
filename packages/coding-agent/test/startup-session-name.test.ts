@@ -2,11 +2,14 @@ import { spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 
 const cliPath = resolve(__dirname, "../src/cli.ts");
-const sourceResolverPath = resolve(__dirname, "./source-resolver.ts");
+// `--import` takes a module specifier, not a path: Windows drive paths parse as
+// a "d:" URL scheme and abort the child before it reaches the CLI.
+const sourceResolverPath = pathToFileURL(resolve(__dirname, "./source-resolver.ts")).href;
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -80,9 +83,13 @@ async function runCli(args: string[], dirs: CliDirs): Promise<CliResult> {
 	});
 
 	return new Promise((resolvePromise, reject) => {
+		// Guard against a genuine hang only. Starting the CLI from TypeScript source
+		// measures 6.2s idle here and 13.4s with the whole suite running, almost all
+		// of it loading and type-stripping the main.ts module graph. 30s keeps a 2x
+		// margin on the loaded figure while still being able to fire.
 		const timeout = setTimeout(() => {
 			child.kill("SIGKILL");
-		}, 10_000);
+		}, 30_000);
 		child.on("error", (error) => {
 			clearTimeout(timeout);
 			reject(error);
@@ -118,5 +125,6 @@ describe("startup session name", () => {
 		expect(result.code).toBe(1);
 		expect(result.signal).toBeNull();
 		expect(readSessionInfoNames(dirs.sessionFile)).toEqual(["CLI Named Session"]);
-	});
+		// Above the watchdog so a real hang is reported as a kill, not a case timeout.
+	}, 60_000);
 });

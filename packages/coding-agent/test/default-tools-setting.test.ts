@@ -147,12 +147,25 @@ describe("defaultTools setting", () => {
 			model: getModel("anthropic", "claude-sonnet-4-5")!,
 		});
 
+		// Unlike the cases above, this path loads the default extensions, so the sure
+		// extension's two tools are registered here. They are inactive by default.
 		expect(
 			session
 				.getAllTools()
 				.map((tool) => tool.name)
 				.sort(),
-		).toEqual(["bash", "edit", "find", "grep", "ls", "powershell", "read", "write"]);
+		).toEqual([
+			"bash",
+			"edit",
+			"find",
+			"grep",
+			"ls",
+			"powershell",
+			"read",
+			"sure_finish",
+			"sure_update_state",
+			"write",
+		]);
 		expect(session.getActiveToolNames()).toEqual(["ls"]);
 		session.dispose();
 	});
