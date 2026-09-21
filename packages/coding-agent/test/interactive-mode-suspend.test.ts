@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 
 type FakeUi = {
@@ -24,7 +24,22 @@ function callHandleCtrlZ(context: HandleCtrlZThis): void {
 const interactiveModePrototype = InteractiveMode.prototype as unknown;
 
 describe("InteractiveMode.handleCtrlZ", () => {
+	let platformDescriptor: PropertyDescriptor | undefined;
+
+	// handleCtrlZ returns early on win32, so the suspend cases have to name the
+	// platform whose behaviour they describe instead of inheriting the host's.
+	beforeEach(() => {
+		platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+		Object.defineProperty(process, "platform", {
+			configurable: true,
+			value: "linux",
+		});
+	});
+
 	afterEach(() => {
+		if (platformDescriptor) {
+			Object.defineProperty(process, "platform", platformDescriptor);
+		}
 		vi.restoreAllMocks();
 	});
 
@@ -36,7 +51,6 @@ describe("InteractiveMode.handleCtrlZ", () => {
 		};
 		const showStatus = vi.fn();
 		const context: HandleCtrlZThis & { showStatus: (message: string) => void } = { ui, showStatus };
-		const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
 		Object.defineProperty(process, "platform", {
 			configurable: true,
 			value: "win32",
@@ -46,13 +60,7 @@ describe("InteractiveMode.handleCtrlZ", () => {
 		const processOnceSpy = vi.spyOn(process, "once");
 		const processKillSpy = vi.spyOn(process, "kill");
 
-		try {
-			callHandleCtrlZ(context);
-		} finally {
-			if (platformDescriptor) {
-				Object.defineProperty(process, "platform", platformDescriptor);
-			}
-		}
+		callHandleCtrlZ(context);
 
 		expect(showStatus).toHaveBeenCalledWith("Suspend to background is not supported on Windows");
 		expect(ui.stop).not.toHaveBeenCalled();

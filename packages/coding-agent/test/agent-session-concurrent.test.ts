@@ -38,6 +38,21 @@ class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMe
 	}
 }
 
+/**
+ * prompt() only marks the session streaming once it reaches _runAgentPrompt, several
+ * awaits in (extension input hook, auth check, system prompt build). Waiting a fixed
+ * number of milliseconds for that races the machine; wait for the state instead.
+ */
+async function waitForStreaming(target: AgentSession): Promise<void> {
+	const deadline = Date.now() + 5000;
+	while (!target.isStreaming) {
+		if (Date.now() > deadline) {
+			throw new Error("Timed out waiting for the session to start streaming");
+		}
+		await new Promise((resolve) => setTimeout(resolve, 1));
+	}
+}
+
 function createAssistantMessage(text: string): AssistantMessage {
 	return {
 		role: "assistant",
@@ -133,8 +148,8 @@ describe("AgentSession concurrent prompt guard", () => {
 		// Start first prompt (don't await, it will block until abort)
 		const firstPrompt = session.prompt("First message");
 
-		// Wait a tick for isStreaming to be set
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		// Wait for isStreaming to be set
+		await waitForStreaming(session);
 
 		// Verify we're streaming
 		expect(session.isStreaming).toBe(true);
@@ -154,7 +169,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		// Start first prompt
 		const firstPrompt = session.prompt("First message");
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		await waitForStreaming(session);
 
 		// steer should work while streaming
 		expect(() => session.steer("Steering message")).not.toThrow();
@@ -170,7 +185,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		// Start first prompt
 		const firstPrompt = session.prompt("First message");
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		await waitForStreaming(session);
 
 		// followUp should work while streaming
 		expect(() => session.followUp("Follow-up message")).not.toThrow();
@@ -265,7 +280,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		});
 
 		const firstPrompt = session.prompt("First message");
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		await waitForStreaming(session);
 		expect(session.isStreaming).toBe(true);
 
 		const pi = (
