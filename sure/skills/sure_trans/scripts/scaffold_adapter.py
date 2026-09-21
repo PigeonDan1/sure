@@ -260,7 +260,7 @@ def main() -> int:
         "__TASK_TYPE__": str(resolved.get("task_type") or "ASR").upper(),
         "__FRAMEWORK__": str(resolved["framework"]),
         "__MODEL_FRAMEWORK__": str(resolved["model_framework"]),
-        "__MODEL_MOUNT_TARGET__": model_mount_target,
+        "__MODEL_MOUNT_TARGET__": json.dumps(model_mount_target, ensure_ascii=False),
         "__SOURCE_IMAGE__": source_reference,
         "__PYTHON_EXECUTABLE__": python_executable,
         "__SERVER_COMMAND__": json.dumps(server_command, ensure_ascii=False),

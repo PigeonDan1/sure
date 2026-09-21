@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -2429,6 +2431,40 @@ class TransScriptsTest(unittest.TestCase):
                 manifest["server_command"],
                 ["/opt/venv/bin/python", "/opt/sure_trans/server.py"],
             )
+
+    def test_scaffold_writes_the_model_mount_target_as_a_quoted_yaml_scalar(self) -> None:
+        # A host path is not a safe bare YAML scalar: " #" opens a comment and
+        # truncates the value, ": " turns the line into a nested mapping.
+        for mount_target in ("/models/demo #1", "/models/demo: beta"):
+            with self.subTest(mount_target=mount_target), tempfile.TemporaryDirectory() as temporary:
+                run_dir = Path(temporary)
+                artifacts = run_dir / "artifacts"
+                artifacts.mkdir()
+                (artifacts / "trans_input_resolved.json").write_text(
+                    json.dumps({
+                        "source_kind": "python",
+                        "model_name": "demo",
+                        "model_dir": mount_target,
+                        "model_mount_target": mount_target,
+                        "inference_entrypoint": "infer.py",
+                        "task_type": "asr",
+                        "framework": "pytorch",
+                        "model_framework": "transformers",
+                    }) + "\n",
+                    encoding="utf-8",
+                )
+                (artifacts / "source_image_result.json").write_text(
+                    json.dumps({"python_executable": str(Path(sys.executable).resolve())}) + "\n",
+                    encoding="utf-8",
+                )
+                subprocess.run(
+                    [sys.executable, str(SCRIPTS_DIR / "scaffold_adapter.py"), "--run-dir", str(run_dir)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                spec = yaml.safe_load((run_dir / "adapter" / "model.spec.yaml").read_text(encoding="utf-8"))
+                self.assertEqual(spec["runtime"]["model_mount_target"], mount_target)
 
     def test_source_image_python_probe_rejects_a_relative_executable(self) -> None:
         completed = mock.Mock(returncode=0, stdout="python\n", stderr="")
