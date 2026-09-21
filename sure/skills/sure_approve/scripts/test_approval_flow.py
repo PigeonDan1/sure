@@ -13,6 +13,7 @@ from unittest import mock
 
 import approval_core
 from sure.runtime.model.bootstrap import _expected_manifest, _runtime_id, manifest_sha256, probe
+from sure.runtime.uvenv import runtime_python_relative
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -88,8 +89,9 @@ class ApprovalFlowTests(unittest.TestCase):
         lock_hash = approval_core.sha256_file(self.source / "requirements.lock")
         runtime_id = _runtime_id(lock_hash, identity)
         runtime = self.runtime_root / "models" / runtime_id
-        (runtime / "bin").mkdir(parents=True)
-        (runtime / "bin" / "python").symlink_to(Path(sys.executable).resolve())
+        runtime_python = runtime / runtime_python_relative()
+        runtime_python.parent.mkdir(parents=True)
+        runtime_python.symlink_to(Path(sys.executable).resolve())
         (runtime / "requirements.lock").write_text("", encoding="utf-8")
         (runtime / "installed-packages.txt").write_text("", encoding="utf-8")
         runtime_manifest = _expected_manifest(
@@ -111,7 +113,7 @@ class ApprovalFlowTests(unittest.TestCase):
             "runtime_id": runtime_id,
             "runtime_type": "model_python",
             "backend": "uv",
-            "python_executable": "bin/python",
+            "python_executable": runtime_python_relative(),
             "python_version": runtime_manifest["python_version"],
             "python_abi": runtime_manifest["python_abi"],
             "python_platform": runtime_manifest["python_platform"],
@@ -120,7 +122,7 @@ class ApprovalFlowTests(unittest.TestCase):
             "lockfile_path": "requirements.lock",
             "lock_sha256": lock_hash,
             "working_dir": ".",
-            "server_command": ["bin/python", "server.py"],
+            "server_command": [runtime_python_relative(), "server.py"],
             "tool_names": ["transcribe"],
             "required_imports": [],
             "gpu_required": False,
