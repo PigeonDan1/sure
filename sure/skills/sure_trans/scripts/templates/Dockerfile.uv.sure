@@ -1,7 +1,10 @@
-# SURE_TRANS_TODO: pin the base image and uv version, then remove this marker.
-FROM python:3.11-slim
-ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
-ENV UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+# SURE_TRANS_TODO: pin the uv version, then remove this marker.
+FROM python:3.11.16-slim@sha256:da047cb8f9d1d98e5c070f5300ba9f7274e33b8fc0e5be5ed88740aed1b95ba9
+# The bundle built here is hashed and approved, so the image must not depend on a
+# regional mirror. Pass --build-arg PIP_INDEX_URL=... (and UV_INDEX_URL) to build
+# through a local mirror; nothing is baked into the image.
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG UV_INDEX_URL=https://pypi.org/simple
 COPY --from=model_source . /opt/model-source
 COPY __SOURCE_RUNTIME_FILE__ /opt/sure_trans/__SOURCE_RUNTIME_FILE__
 RUN python -m venv /opt/sure-model \
