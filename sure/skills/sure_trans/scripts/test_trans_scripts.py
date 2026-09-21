@@ -1107,6 +1107,15 @@ class TransScriptsTest(unittest.TestCase):
                         self.assertIn("conda-lock install", draft)
                         self.assertIn("source-conda-lock.yml", draft)
                     self.assertIn("SURE_TRANS_TODO", draft)
+                    for line in draft.splitlines():
+                        if "INDEX_URL" not in line or line.startswith("#"):
+                            continue
+                        self.assertTrue(line.startswith("ARG "), f"package index must be overridable: {line}")
+                        self.assertIn("https://pypi.org/simple", line, f"package index default is not official: {line}")
+                    from_lines = [line for line in draft.splitlines() if line.startswith("FROM ")]
+                    self.assertTrue(from_lines)
+                    for line in from_lines:
+                        self.assertRegex(line, r"@sha256:[0-9a-f]{64}$", f"base image is not digest-pinned: {line}")
                     self.assertEqual(
                         json.loads((artifacts / "adapter_manifest.json").read_text(encoding="utf-8"))["status"],
                         "draft",

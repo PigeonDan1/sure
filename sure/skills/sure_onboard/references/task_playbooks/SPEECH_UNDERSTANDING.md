@@ -65,9 +65,9 @@ FireRedLID 接入要点：
 - wrapper 输入为本地 16 kHz、单声道 PCM WAV；输出至少包含
   `{"language": "<code>", "label": "<code>"}`，不要把语言代码写进 ASR 的
   `text` 字段。
-- 依赖安装优先使用中国大陆镜像，例如
-  `python -m pip install -i https://mirrors.aliyun.com/pypi/simple ...`；模型权重仍由
-  ModelScope 下载并记录 revision/hash，不要提交到仓库。
+- 依赖安装默认走官方源，例如
+  `python -m pip install -i https://pypi.org/simple ...`，有本地镜像的换成自己的索引
+  地址；模型权重仍由 ModelScope 下载并记录 revision/hash，不要提交到仓库。
 - 评测器不负责运行 FireRedLID。模型 wrapper 产出的 `key<TAB>label` 文件由
   `sure-evaluation` 的 `lid.any.accuracy.lid_label_canonical_v1.classify_v1` 路由评分。
 

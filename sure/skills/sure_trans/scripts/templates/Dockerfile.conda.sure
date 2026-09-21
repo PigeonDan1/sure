@@ -1,5 +1,5 @@
-# SURE_TRANS_TODO: pin a conda-compatible base image and verify every environment channel.
-FROM continuumio/miniconda3:latest
+# SURE_TRANS_TODO: verify every environment channel, then remove this marker.
+FROM continuumio/miniconda3:26.7.1-1@sha256:eca594d684f495c1a02beff33a9fab53aec8c5830eaf431bb149912dc6c9e4c1
 COPY --from=model_source . /opt/model-source
 COPY __SOURCE_RUNTIME_FILE__ /opt/sure_trans/__SOURCE_RUNTIME_FILE__
 RUN __CONDA_INSTALL_COMMAND__ \

@@ -141,14 +141,14 @@ ping -c 1 8.8.8.8
 curl -I https://www.modelscope.cn
 curl -I https://modelscope.cn/models/test/summary
 
-# 镜像源可用性（PyTorch CDN 可能被封）
-curl -I https://pypi.tuna.tsinghua.edu.cn/simple/torch/
+# PyPI 索引可用性（PyTorch CDN 可能被封）；用本地镜像的换成自己的索引地址
+curl -I https://pypi.org/simple/torch/
 
 # 实际下载速度测试（小文件）
 time curl -L -o /dev/null https://modelscope.cn/models/test/summary
 ```
 
-**Pass**: ModelScope 可达，清华镜像可达，下载速度 > 100KB/s
+**Pass**: ModelScope 可达，PyPI 索引可达，下载速度 > 100KB/s
 **Warn**: 镜像源可用但下载速度慢 (< 500KB/s)；或 HF 不可达但 ModelScope 可达
 **Fail**: ModelScope 不可达 或 镜像源不可达
 

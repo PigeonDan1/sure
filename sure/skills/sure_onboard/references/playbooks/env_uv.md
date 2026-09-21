@@ -122,7 +122,7 @@ No module named 'sacrebleu'
 env UV_CACHE_DIR=src/sure_eval/evaluation/nodes/scoring/sacrebleu/.cache/uv \
 uv pip install \
   -p .venv.hostbak/bin/python \
-  -i https://pypi.tuna.tsinghua.edu.cn/simple \
+  -i https://pypi.org/simple \
   sacrebleu
 ```
 
@@ -222,13 +222,14 @@ python3 -c "import json;print(json.load(open('checkpoints/config.json')).get('tr
   'PyExtensionType'`，应 pin `pyarrow<21`。
 - ModelScope 依赖可能要求不可解的旧包；已验证组合可以从 `modelscope==1.27.0` 加
   显式音频依赖开始，例如 `descript-audiotools==0.7.2`。
-- uv 安装 PyPI 依赖优先使用清华源，避免默认 `https://pypi.org/simple` DNS/连接失败：
+- uv 安装 PyPI 依赖默认走官方源 `https://pypi.org/simple`；本机访问它 DNS/连接失败时，
+  把 `--index-url` 换成自己可用的本地镜像，其余参数不变。本文档其余安装命令同理：
 
 ```bash
 UV_CACHE_DIR="$PWD/.runtime/uv-cache" \
 UV_PYTHON_INSTALL_DIR="$PWD/.runtime/uv-python" \
 uv pip install --python .venv/bin/python \
-  --index-url https://pypi.tuna.tsinghua.edu.cn/simple \
+  --index-url https://pypi.org/simple \
   -r requirements.txt
 ```
 
@@ -257,7 +258,7 @@ torch/CUDA 这一档就算一切正常也可能十几分钟以上，猜不准。
 ```bash
 nohup bash -c 'set -o pipefail; \
   uv pip install --python .venv/bin/python \
-    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    -i https://pypi.org/simple \
     -r requirements.txt > artifacts/build_env.log 2>&1; \
   echo $? > artifacts/build_env.rc' > /dev/null 2>&1 &
 ```
@@ -284,9 +285,9 @@ tail -5 artifacts/build_env.log
 在部分集群环境中，以下网络限制可能影响模型 onboarding：
 
 - **HuggingFace 被封锁**：无法访问 `https://huggingface.co`，必须使用 **ModelScope** 作为模型/数据下载源。
-- **PyTorch CDN 被封锁**：`https://download.pytorch.org` 可能无法访问，安装 torch 时需使用清华镜像：
+- **PyTorch CDN 被封锁**：`https://download.pytorch.org` 可能无法访问，改从 PyPI 索引安装 torch：
   ```bash
-  uv pip install torch==2.4.0 --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+  uv pip install torch==2.4.0 --index-url https://pypi.org/simple
   ```
 - **torchvision 版本兼容性**：安装依赖后必须验证 torchvision 与 torch 版本匹配：
   ```bash
