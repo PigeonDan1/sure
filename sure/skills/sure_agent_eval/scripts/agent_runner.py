@@ -39,9 +39,11 @@ HARNESS_ROOT = Path(__file__).resolve().parents[4]
 SURE_INFER_SCRIPTS = SCRIPT_DIR.parents[1] / "sure_infer" / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SURE_INFER_SCRIPTS))
+sys.path.insert(0, str(SCRIPT_DIR.parents[2] / "runtime" / "harness"))
 sys.path.insert(0, str(HARNESS_ROOT))
 
 from agent_spec import render_prompt  # noqa: E402
+from model_child_env import model_child_env  # noqa: E402
 from sure.site.loader import load_site_policy  # noqa: E402
 from sure_eval.core.config import Config  # noqa: E402
 from sure_eval.datasets.dataset_manager import DatasetManager  # noqa: E402
@@ -89,7 +91,7 @@ def _tsv_safe(text: str) -> str:
 class McpToolClient:
     """Minimal JSON-RPC stdio client for a stage model's MCP server."""
 
-    def __init__(self, stage: dict[str, Any]) -> None:
+    def __init__(self, stage: dict[str, Any], *, log_path: Path | None = None) -> None:
         command = [str(item) for item in stage.get("server_command") or []]
         if not command:
             raise RuntimeError(f"stage {stage.get('id')!r} carries no server_command")
@@ -104,15 +106,17 @@ class McpToolClient:
         # The stage model runs in its own Python (sealed Model Runtime or the
         # bundle's config.yaml command); leaking the harness interpreter's
         # PYTHONHOME/PYTHONPATH into the child breaks its path configuration.
-        child_env = os.environ.copy()
-        for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE"):
-            child_env.pop(key, None)
+        child_env = model_child_env(os.environ)
+        child_env.update({str(key): str(value) for key, value in (stage.get("env") or {}).items()})
+        # The server's own diagnostics belong in the run log; DEVNULL threw away
+        # the only account of why a stage model failed to start.
+        self._log = open(log_path, "a", encoding="utf-8", errors="replace") if log_path else None
         self._process = subprocess.Popen(
             command,
             cwd=str(stage.get("working_dir") or stage["model_dir"]),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=self._log or subprocess.DEVNULL,
             text=True,
             env=child_env,
         )
@@ -128,6 +132,7 @@ class McpToolClient:
             # so nothing would close this server; it keeps its (GPU) memory.
             self._process.kill()
             self._process.wait(timeout=10)
+            self._close_log()
             raise
 
     def _pump_stdout(self) -> None:
@@ -181,6 +186,11 @@ class McpToolClient:
         except json.JSONDecodeError:
             return text
 
+    def _close_log(self) -> None:
+        if self._log is not None:
+            self._log.close()
+            self._log = None
+
     def close(self) -> None:
         try:
             self._request("shutdown", {}, timeout=10)
@@ -194,6 +204,7 @@ class McpToolClient:
                 self._process.kill()
             except Exception:
                 pass
+        self._close_log()
 
 
 def extract_text(result: Any) -> str:
@@ -296,7 +307,7 @@ def run_agent(
     clients: list[McpToolClient] = []
 
     def default_mcp_caller(stage: dict[str, Any]) -> McpCaller:
-        client = McpToolClient(stage)
+        client = McpToolClient(stage, log_path=log_path)
         clients.append(client)
         return client.call
 

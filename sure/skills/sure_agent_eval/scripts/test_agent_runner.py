@@ -54,6 +54,24 @@ time.sleep(30)
 """
 
 
+ENV_ECHO_MCP_SERVER = """\
+import json, os, sys
+sys.stderr.write("stub server log line\\n")
+sys.stderr.flush()
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    request = json.loads(line)
+    if request.get("method") == "tools/call":
+        result = {"content": [{"type": "text", "text": json.dumps({"text": os.environ.get("MODEL_PATH", "")})}]}
+    else:
+        result = {}
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": request.get("id"), "result": result}) + "\\n")
+    sys.stdout.flush()
+"""
+
+
 def write_flat_s2tt_source(root: Path, name: str, samples: int = 2) -> Path:
     dataset_root = root / name
     dataset_root.mkdir(parents=True)
@@ -137,6 +155,7 @@ def make_spec(dataset_root: Path, product_dir: Path) -> dict:
                 "tool_names": ["asr_transcribe"],
                 "server_command": ["python", "server.py"],
                 "working_dir": "/tmp/models/asr_model",
+                "env": {},
                 "api": None,
                 "prompt_template": None,
                 "deployment_bound": False,
@@ -153,6 +172,7 @@ def make_spec(dataset_root: Path, product_dir: Path) -> dict:
                 "tool_names": [],
                 "server_command": [],
                 "working_dir": "/tmp/models/llm_model",
+                "env": {},
                 "api": {
                     "base_url": "https://example.invalid/v1",
                     "api_key_env": "DEMO_API_KEY",
@@ -318,13 +338,19 @@ class RunAgentTests(unittest.TestCase):
         self.assertEqual(result["failed_dataset"], "mini_s2tt__unversioned")
         self.assertIn("projection exploded", result["error"])
 
-    def start_stub_client(self, source: str = STUB_MCP_SERVER) -> agent_runner.McpToolClient:
+    def start_stub_client(
+        self,
+        source: str = STUB_MCP_SERVER,
+        *,
+        stage: dict | None = None,
+        log_path: Path | None = None,
+    ) -> agent_runner.McpToolClient:
         server = self.tmp / "stub_server.py"
         server.write_text(source, encoding="utf-8")
-        stage = dict(self.spec["stages"][0])
+        stage = dict(stage or self.spec["stages"][0])
         stage["server_command"] = [sys.executable, str(server)]
         stage["working_dir"] = str(self.tmp)
-        client = agent_runner.McpToolClient(stage)
+        client = agent_runner.McpToolClient(stage, log_path=log_path)
         self.clients.append(client)
         return client
 
@@ -360,6 +386,15 @@ class RunAgentTests(unittest.TestCase):
         client = self.start_stub_client()
         with self.assertRaisesRegex(RuntimeError, "stub tool failure"):
             client.call({"audio_path": "/audio/boom.wav"})
+
+    def test_stage_env_reaches_the_server_and_stderr_is_logged(self) -> None:
+        stage = {**self.spec["stages"][0], "env": {"MODEL_PATH": "/models/asr_model/weights"}}
+        log_path = self.tmp / "agent_runner.log"
+        client = self.start_stub_client(ENV_ECHO_MCP_SERVER, stage=stage, log_path=log_path)
+        answer = client.call({"audio_path": "/audio/utt0.wav"})
+        self.assertEqual(agent_runner.extract_text(answer), "/models/asr_model/weights")
+        client.close()
+        self.assertIn("stub server log line", log_path.read_text(encoding="utf-8"))
 
     def test_api_caller_requires_the_credential_env_var(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):

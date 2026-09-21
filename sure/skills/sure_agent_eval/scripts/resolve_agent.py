@@ -135,7 +135,11 @@ def _resolve_stage(
         for tool in config.get("tools") or []
         if isinstance(tool, dict) and str(tool.get("name") or "").strip()
     ]
-    working_dir = str(model_dir)
+    # The stage model's own environment (MODEL_PATH, DEVICE, cache roots): without
+    # it the server starts blind to everything its config.yaml declares.
+    server_env = {str(key): str(value) for key, value in (server.get("env") or {}).items()}
+    # A relative server.working_dir names a directory inside the approved bundle.
+    working_dir = str((model_dir / str(server.get("working_dir") or "")).resolve())
 
     deployment_bound = False
     deployment_error: str | None = None
@@ -170,6 +174,7 @@ def _resolve_stage(
         "tool_names": tool_names,
         "server_command": server_command,
         "working_dir": working_dir,
+        "env": server_env,
         "api": _resolve_api_section(config, label) if mode == "api" else None,
         "prompt_template": stage.get("prompt_template") if isinstance(stage.get("prompt_template"), str) else None,
         "deployment_bound": deployment_bound,

@@ -38,6 +38,7 @@
 					"tool_names",
 					"server_command",
 					"working_dir",
+					"env",
 					"api",
 					"prompt_template",
 					"deployment_bound",
@@ -54,6 +55,11 @@
 					"tool_names": { "type": "array", "items": { "type": "string" } },
 					"server_command": { "type": "array", "items": { "type": "string" } },
 					"working_dir": { "type": "string" },
+					"env": {
+						"type": "object",
+						"description": "server.env from the stage model's config.yaml, applied to the MCP server child process.",
+						"additionalProperties": { "type": "string" }
+					},
 					"api": {
 						"type": ["object", "null"],
 						"required": ["base_url", "api_key_env", "model", "timeout", "retry"],

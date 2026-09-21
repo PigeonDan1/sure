@@ -162,6 +162,20 @@ class ResolveAgentTests(unittest.TestCase):
         self.assertEqual(payload["metrics"], ["bleu", "chrf"])
         self.assertIn("demo_s2tt", payload["runtime"]["product_dir"])
 
+    def test_stage_records_server_env_and_working_dir(self) -> None:
+        write_model(
+            self.models_root,
+            "asr_model",
+            {
+                **ASR_CONFIG,
+                "server": {**ASR_CONFIG["server"], "env": {"MODEL_PATH": "weights", "DEVICE": "cpu"}, "working_dir": "runtime"},
+            },
+        )
+        payload = resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
+        asr = payload["stages"][0]
+        self.assertEqual(asr["env"], {"MODEL_PATH": "weights", "DEVICE": "cpu"})
+        self.assertEqual(asr["working_dir"], str(self.models_root / "asr_model" / "runtime"))
+
     def test_unknown_stage_model_fails(self) -> None:
         spec = AGENT_YAML.replace("model: asr_model", "model: missing_model")
         self.spec_path.write_text(spec, encoding="utf-8")
