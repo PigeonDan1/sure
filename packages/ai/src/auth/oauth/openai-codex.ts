@@ -462,7 +462,12 @@ async function loginOpenAICodex(interaction: ProviderAuthInteraction): Promise<O
 	const { verifier, state, url } = await createAuthorizationFlow();
 	const server = await startLocalOAuthServer(state);
 	const manualAbort = new AbortController();
-	const onAbort = () => server.cancelWait();
+	const onAbort = () => {
+		// Dismiss the manual_code prompt too: after cancelWait the code below waits on
+		// it, and a prompt that only watches its own signal would keep us there forever.
+		manualAbort.abort();
+		server.cancelWait();
+	};
 	interaction.signal.addEventListener("abort", onAbort, { once: true });
 	if (interaction.signal.aborted) onAbort();
 	let code: string | undefined;

@@ -536,4 +536,43 @@ describe("OpenAI Codex OAuth", () => {
 		vi.useRealTimers();
 		await bindCallbackPort(1455);
 	});
+
+	it("rejects instead of hanging when the caller aborts while the manual_code prompt is pending", async () => {
+		const controller = new AbortController();
+		let resolveListening: () => void = () => {};
+		const listening = new Promise<void>((resolve) => {
+			resolveListening = resolve;
+		});
+
+		const login = openaiCodexOAuth.login({
+			signal: controller.signal,
+			notify: (event) => {
+				if (event.type === "auth_url") resolveListening();
+			},
+			// A prompt that only goes away when its own signal says so, which is
+			// what a UI that never sees the caller's signal looks like.
+			prompt: (prompt) => {
+				if (prompt.type === "select") return Promise.resolve("browser");
+				return new Promise<string>((_resolve, reject) => {
+					const dismiss = () => reject(new Error("prompt dismissed"));
+					if (prompt.signal?.aborted) dismiss();
+					else prompt.signal?.addEventListener("abort", dismiss, { once: true });
+				});
+			},
+		});
+		const settled = login.then(
+			() => "resolved",
+			(error: unknown) => (error instanceof Error ? error.message : String(error)),
+		);
+
+		await listening;
+		controller.abort();
+
+		const outcome = await Promise.race([
+			settled,
+			new Promise<string>((resolve) => setTimeout(() => resolve("still pending"), 2000)),
+		]);
+		expect(outcome).toBe("prompt dismissed");
+		await bindCallbackPort(1455);
+	});
 });
