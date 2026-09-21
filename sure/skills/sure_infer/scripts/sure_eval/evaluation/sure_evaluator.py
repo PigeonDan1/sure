@@ -746,9 +746,12 @@ class SUREEvaluator:
         """Evaluate SD (speaker diarization DER)."""
         try:
             import meeteval
-        except ImportError:
-            logger.error("meeteval not installed. Install with: pip install meeteval")
-            return {"der": 0.0, "num_sessions": 0}
+        except ImportError as exc:
+            # DER is an error rate: returning 0.0 here would report a missing
+            # dependency as a flawless diarization.
+            raise RuntimeError(
+                "meeteval not installed, DER cannot be scored. Install with: pip install meeteval"
+            ) from exc
         _ensure_md_eval_on_path()
         
         logger.info(f"[SD] Running DER evaluation with collar={collar}s")
@@ -767,10 +770,13 @@ class SUREEvaluator:
             )
             total_error_rate += float(der.error_rate)
             total_sessions += 1
-        
-        avg_der = total_error_rate / total_sessions if total_sessions > 0 else 0.0
+
+        if total_sessions == 0:
+            raise ValueError(f"DER scored no sessions for ref={ref_file} hyp={hyp_file}")
+
+        avg_der = total_error_rate / total_sessions
         logger.info(f"[SD] Average DER: {avg_der:.4f}")
-        
+
         return {
             "der": avg_der,
             "num_sessions": total_sessions,
@@ -785,9 +791,12 @@ class SUREEvaluator:
         """Evaluate SA-ASR (multi-speaker ASR cpWER + DER)."""
         try:
             import meeteval
-        except ImportError:
-            logger.error("meeteval not installed. Install with: pip install meeteval")
-            return {"cpwer": 0.0, "der": 0.0, "num_sessions": 0}
+        except ImportError as exc:
+            # cpWER and DER are error rates: returning 0.0 here would report a
+            # missing dependency as a flawless transcription.
+            raise RuntimeError(
+                "meeteval not installed, cpWER/DER cannot be scored. Install with: pip install meeteval"
+            ) from exc
         _ensure_md_eval_on_path()
         
         # Normalize STM files
@@ -836,7 +845,10 @@ class SUREEvaluator:
                 total_der += float(der.error_rate)
                 num_sessions += 1
 
-            avg_der = total_der / num_sessions if num_sessions > 0 else 0.0
+            if num_sessions == 0:
+                raise ValueError(f"cpWER/DER scored no sessions for ref={ref_file} hyp={hyp_file}")
+
+            avg_der = total_der / num_sessions
 
             logger.info(f"[SA-ASR] cpWER: {avg_cpwer.error_rate:.4f}")
             logger.info(f"[SA-ASR] DER: {avg_der:.4f}")
