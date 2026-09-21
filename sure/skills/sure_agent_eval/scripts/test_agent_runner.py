@@ -479,6 +479,21 @@ class RunAgentTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "empty completion"):
                 agent_runner.call_chat_completion({**api, "retry": 1}, "prompt")
 
+    def test_a_declared_retry_of_zero_tries_once(self) -> None:
+        calls: list[int] = []
+
+        def fail(request, timeout=None):
+            calls.append(1)
+            raise RuntimeError("upstream is down")
+
+        api = self.spec["stages"][1]["api"]
+        with mock.patch.dict(os.environ, {"DEMO_API_KEY": "local-test-key"}), mock.patch.object(
+            agent_runner.urllib.request, "urlopen", side_effect=fail
+        ), mock.patch.object(agent_runner.time, "sleep"):
+            with self.assertRaises(RuntimeError):
+                agent_runner.call_chat_completion({**api, "retry": 0}, "prompt")
+        self.assertEqual(len(calls), 1)
+
 
 class MainArgumentTests(unittest.TestCase):
     def run_main(self, *extra: str) -> int:

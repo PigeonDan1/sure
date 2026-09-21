@@ -248,7 +248,7 @@ def call_chat_completion(api: dict[str, Any], prompt: str, *, env: dict[str, str
         if field in api and api[field] is not None:
             payload[field] = api[field]
     body = json.dumps(payload).encode("utf-8")
-    attempts = max(1, int(api.get("retry") or 3))
+    attempts = max(1, 3 if api.get("retry") is None else int(api["retry"]))
     timeout = float(api.get("timeout") or 120)
     last_error: Exception | None = None
     for attempt in range(attempts):

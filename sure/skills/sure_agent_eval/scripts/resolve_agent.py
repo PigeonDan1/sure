@@ -81,7 +81,8 @@ def _resolve_api_section(config: dict[str, Any], stage_label: str) -> dict[str, 
         "api_key_env": api_key_env,
         "model": model,
         "timeout": float(api.get("timeout") or 120),
-        "retry": int(api.get("retry") or 3),
+        # A declared retry: 0 means fail fast; `or 3` turned it into three tries.
+        "retry": 3 if api.get("retry") is None else int(api["retry"]),
     }
     if "temperature" in api and api["temperature"] is not None:
         temperature = float(api["temperature"])
