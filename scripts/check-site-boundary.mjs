@@ -9,7 +9,21 @@ function run(command, args, options = {}) {
 	// npm resolves to npm.cmd on Windows, which spawnSync cannot execute
 	// directly; without a shell it returns no stderr and every caller crashes.
 	const shell = process.platform === "win32" && command === "npm";
-	return spawnSync(command, args, { encoding: "utf8", shell, ...options });
+	const completed = spawnSync(command, args, { encoding: "utf8", shell, ...options });
+	// A program that never started (python3 is absent wherever Python is only
+	// `python`) leaves status, stdout and stderr null, and every caller reads
+	// .stderr or .stdout: name the missing program as an ordinary non-zero
+	// result instead of dying with a TypeError. error stays set so the callers
+	// that already branch on it keep their own message.
+	if (completed.error) {
+		return {
+			...completed,
+			status: 127,
+			stdout: "",
+			stderr: `${command} is required for check:site-boundary but could not be started (${completed.error.message}); install it and retry`,
+		};
+	}
+	return completed;
 }
 
 const failures = [];
