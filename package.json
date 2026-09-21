@@ -17,6 +17,7 @@
 		"check:site-boundary": "node scripts/check-site-boundary.mjs",
 		"check:site-compatibility": "node scripts/check-site-compatibility.mjs",
 		"test:public-export": "node --test scripts/export-public.test.mjs",
+		"test:repository-hygiene": "node --test scripts/check-repository-hygiene.test.mjs",
 		"test:site-compatibility-rules": "node --test scripts/site-compatibility-rules.test.mjs",
 		"test:sure-doctor": "node --test scripts/sure-doctor.test.mjs",
 		"public:export": "node scripts/export-public.mjs",
