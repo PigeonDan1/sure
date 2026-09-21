@@ -105,7 +105,6 @@ class EvaluationDatabase:
     
     def __init__(self, db_path: str | Path | None = None) -> None:
         self.db_path = Path(db_path or "./results/evaluations.json")
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._records: list[EvaluationRecord] = []
         self._load()
     
@@ -126,6 +125,7 @@ class EvaluationDatabase:
     def _save(self) -> None:
         """Save records to disk."""
         try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.db_path, "w", encoding="utf-8") as f:
                 json.dump(
                     [self._record_to_dict(r) for r in self._records],

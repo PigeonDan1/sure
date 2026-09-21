@@ -444,12 +444,12 @@ def _repair_of(event: dict) -> str | None:
 
 
 def _tool_call_row(data: Any) -> dict | None:
-    """{tool, command}: bash keeps the command, every other tool only its path."""
+    """{tool, command}: the shell tools keep the command, every other tool only its path."""
     if not isinstance(data, dict) or not isinstance(data.get("toolName"), str):
         return None
     tool = data["toolName"]
     payload = data.get("input") if isinstance(data.get("input"), dict) else {}
-    if tool == "bash":
+    if tool in ("bash", "powershell"):
         command = payload.get("command")
     else:
         command = payload.get("path")

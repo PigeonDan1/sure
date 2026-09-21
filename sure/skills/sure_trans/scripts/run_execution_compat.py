@@ -56,10 +56,15 @@ def run_probe(image: str, use_gpu: bool) -> tuple[list[str], subprocess.Complete
         command.extend(["--gpus", "all"])
     command.extend(["--entrypoint", "python", image, "-c", PROBE])
     started = time.monotonic()
-    process = subprocess.run(
-        command, check=False, capture_output=True, text=True, timeout=180,
-        env=agent_bin_cleared_env(),
-    )
+    try:
+        process = subprocess.run(
+            command, check=False, capture_output=True, text=True, timeout=180,
+            env=agent_bin_cleared_env(),
+        )
+    except OSError as error:
+        raise ValueError(
+            f"docker is required to probe the source runtime but is not available: {error}"
+        ) from error
     return command, process, round((time.monotonic() - started) * 1000, 3)
 
 
