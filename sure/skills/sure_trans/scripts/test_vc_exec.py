@@ -263,7 +263,10 @@ class MountHostPathTest(unittest.TestCase):
             vc_exec.ensure_mount_host_paths([f"{target}:/work/output:rw"])
             self.assertTrue(target.is_dir())
             self.assertTrue(os.access(target, os.W_OK))
-            self.assertEqual(target.stat().st_uid, os.getuid())
+            # Ownership is the point of the call, but only POSIX has a uid to
+            # compare; st_uid is a constant 0 on Windows and os.getuid is absent.
+            if hasattr(os, "getuid"):
+                self.assertEqual(target.stat().st_uid, os.getuid())
 
     def test_creates_missing_plain_dir(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
