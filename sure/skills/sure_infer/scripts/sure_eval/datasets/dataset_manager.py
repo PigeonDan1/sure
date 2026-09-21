@@ -629,6 +629,10 @@ class DatasetManager:
                     if not text:
                         skipped.append({"line": line_no, "reason": "missing translation text"})
                         continue
+                    source_text = self._extract_oref_transcription_text(record)
+                    if not source_text:
+                        skipped.append({"line": line_no, "reason": "missing transcription text"})
+                        continue
                 else:
                     text = (
                         self._extract_oref_language_label(record)
@@ -682,8 +686,9 @@ class DatasetManager:
                     row["target"] = text
                 if collect_translation:
                     # S2TT reference rows keep the source-language transcription
-                    # so triangle metrics (xcomet_xl) can build their src file.
-                    row["source"] = self._extract_oref_transcription_text(record)
+                    # so triangle metrics (xcomet_xl) can build their src file;
+                    # an empty one would be scored as a source, hence the skip above.
+                    row["source"] = source_text
                 rows.append(row)
         return rows, skipped, source_records
 

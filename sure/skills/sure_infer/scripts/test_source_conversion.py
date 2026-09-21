@@ -425,6 +425,30 @@ class SourceConversionS2TTTests(unittest.TestCase):
             self.manager._convert_source_root_to_jsonl(ref)
         self.assertIn("missing translation text", str(ctx.exception))
 
+    def test_missing_transcription_text_skips_the_record(self) -> None:
+        """An empty source line would reach triangle metrics as a valid source."""
+        dataset_root = make_s2tt_source_tree(
+            self.source_root,
+            "no_transcription",
+            '{"audio": {"speech": {"language": "zh", "translation_language": "en"}}}',
+        )
+        (dataset_root / "sample.jsonl").write_text(
+            json.dumps(
+                {
+                    "sample_id": "utt1",
+                    "attribute": {"path": "utt1.wav"},
+                    "annotation": [{"translation": {"text": ["hello"]}}],
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        with self.assertRaises(ValueError) as ctx:
+            self.manager._convert_source_root_to_jsonl(ref)
+        self.assertIn("missing transcription text", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
