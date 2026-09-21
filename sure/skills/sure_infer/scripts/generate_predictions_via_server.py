@@ -687,6 +687,33 @@ def _remap_legacy_model_env_path(value: str, model_dir: Path) -> str:
     return value
 
 
+def _start_model_server(
+    command: list[str],
+    *,
+    working_dir: Path | str,
+    env: dict[str, str],
+    log_handle: Any,
+) -> subprocess.Popen[str]:
+    """Launch the model's MCP server with UTF-8 on both sides of the stdio bridge.
+
+    Both ends serialise with ensure_ascii=False, so pipes left on the host code
+    page kill the first prompt or transcript that leaves ASCII. The child needs
+    PYTHONIOENCODING for the same reason: its own std streams default to the
+    host code page too.
+    """
+    return subprocess.Popen(
+        command,
+        cwd=str(working_dir),
+        env={**env, "PYTHONIOENCODING": "utf-8"},
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=log_handle,
+        text=True,
+        encoding="utf-8",
+        bufsize=1,
+    )
+
+
 def _send_request(
     process: subprocess.Popen[str],
     request: dict[str, Any],
@@ -754,6 +781,18 @@ def _prediction_projection(value: Any, *, task: str) -> str:
     return _single_line_text(value)
 
 
+def _first_present(*values: Any) -> Any:
+    """Pick the first value a wrapper actually supplied.
+
+    A class index of `0` and a `False` are answers, not absences, so only
+    `None` and the empty string count as "this field was not filled in".
+    """
+    for value in values:
+        if value is not None and value != "":
+            return value
+    return ""
+
+
 def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[str, Any]]:
     task_name = task.upper()
     if isinstance(payload, dict):
@@ -796,16 +835,15 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
                     normalized[key] = prediction[key]
             return normalized_value, normalized
         if task_name in {"CLASSIFICATION", "LID", "SER", "GR"}:
-            value = (
-                prediction.get("label")
-                or prediction.get("language")
-                or prediction.get("lang")
-                or payload.get("label")
-                or payload.get("language")
-                or payload.get("lang")
-                or prediction.get("text")
-                or payload.get("text")
-                or ""
+            value = _first_present(
+                prediction.get("label"),
+                prediction.get("language"),
+                prediction.get("lang"),
+                payload.get("label"),
+                payload.get("language"),
+                payload.get("lang"),
+                prediction.get("text"),
+                payload.get("text"),
             )
             normalized_value = _single_line_text(value)
             normalized = {"label": normalized_value}
@@ -813,7 +851,12 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
                 normalized["language"] = normalized_value
             return normalized_value, normalized
         if task_name == "SLU":
-            value = prediction.get("text") or prediction.get("label") or payload.get("text") or payload.get("label") or ""
+            value = _first_present(
+                prediction.get("text"),
+                prediction.get("label"),
+                payload.get("text"),
+                payload.get("label"),
+            )
             normalized_value = _single_line_text(value)
             normalized = {"answer": normalized_value, "text": normalized_value}
             if prediction.get("label") is not None:
@@ -1447,15 +1490,11 @@ def main() -> int:
             _write_existing_result_log_entries(result_log_handle, samples, existing_predictions)
             result_log_handle.flush()
 
-        process = subprocess.Popen(
+        process = _start_model_server(
             command,
-            cwd=str(working_dir),
+            working_dir=working_dir,
             env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=log_handle,
-            text=True,
-            bufsize=1,
+            log_handle=log_handle,
         )
 
         try:

@@ -1,0 +1,12 @@
+# AST/S2TT agent using the local Qwen3-ASR HF MCP stage and Qwen3-VL API stage.
+agent:
+  name: ast_qwen3asr_hf_qwen3vl4b
+  task: s2tt
+  input: speech
+  output: text
+stages:
+  - id: asr
+    model: qwen3_asr_1_7b_hf
+  - id: translate
+    model: qwen3_vl_4b_instruct
+    prompt_template: "Translate the following Chinese speech transcript to English. Output only the English translation, no explanations.\nChinese: {text}"

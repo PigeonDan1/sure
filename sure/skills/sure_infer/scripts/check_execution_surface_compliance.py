@@ -452,7 +452,9 @@ def main() -> int:
         )
 
     if args.output:
-        Path(args.output).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+        Path(args.output).write_text(
+            json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
 
     return 0 if all_passed else 1
 

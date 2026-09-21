@@ -54,12 +54,21 @@ def harness_image_binding(artifacts: Path) -> dict[str, str] | None:
 
 
 def inspect_image(reference: str) -> dict:
-    """Read `docker image inspect` output, or an empty object when it is unusable."""
+    """Read `docker image inspect` output, or an empty object when it is unusable.
+
+    An empty object means "docker looked and found nothing usable here", which
+    callers report as an image that was never loaded. A docker that will not run
+    at all is a different fault and has to say so itself.
+    """
     try:
         inspect = subprocess.run(
             ["docker", "image", "inspect", reference, "--format", "{{json .}}"],
             check=False, capture_output=True, text=True,
         )
+    except FileNotFoundError as error:
+        raise ValueError(
+            f"docker is required to inspect image {reference} but is not available: {error}"
+        ) from error
     except OSError:
         return {}
     try:
@@ -260,7 +269,7 @@ def main() -> int:
         "__TASK_TYPE__": str(resolved.get("task_type") or "ASR").upper(),
         "__FRAMEWORK__": str(resolved["framework"]),
         "__MODEL_FRAMEWORK__": str(resolved["model_framework"]),
-        "__MODEL_MOUNT_TARGET__": model_mount_target,
+        "__MODEL_MOUNT_TARGET__": json.dumps(model_mount_target, ensure_ascii=False),
         "__SOURCE_IMAGE__": source_reference,
         "__PYTHON_EXECUTABLE__": python_executable,
         "__SERVER_COMMAND__": json.dumps(server_command, ensure_ascii=False),

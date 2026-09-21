@@ -99,6 +99,7 @@ const requiredPaths = [
 	"sure/skills/sure_trans/sure.skill.json",
 	"sure/skills/sure_infer/sure.skill.json",
 	"sure/skills/sure_eval/sure.skill.json",
+	"sure/skills/sure_agent_eval/sure.skill.json",
 	"fixtures",
 ];
 
@@ -156,21 +157,42 @@ if (gitVersion) {
 	warn("git", "not found on PATH; cloning, submodules and the public export all need it");
 }
 
+// Mirrors the resolution order in packages/coding-agent/src/config.ts getAgentDir():
+// PI_CODING_AGENT_DIR env override, else os.homedir()/.pi/agent.
+const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
+
 // Command names and fallback wording follow TOOLS in
 // packages/coding-agent/src/utils/tools-manager.ts, including Debian's fdfind.
+// Same lookup order as getToolPath() there: the managed binary in getBinDir()
+// (getAgentDir()/bin) first, only then the system names on PATH.
+const binDir = join(agentDir, "bin");
 for (const [label, commands, fallbackNote] of [
 	["rg", ["rg"], "the grep tool falls back to a slower built-in search"],
 	["fd", ["fd", "fdfind"], "file autocomplete stops offering files and the find tool falls back to a slower built-in scan"],
 ]) {
 	let found;
-	for (const command of commands) {
-		found = commandVersion(command);
-		if (found) break;
+	const managedPath = join(binDir, commands[0] + (process.platform === "win32" ? ".exe" : ""));
+	if (existsSync(managedPath)) {
+		// getToolPath() hands the agent this path on existsSync alone, so a
+		// truncated or non-executable download is what it will run and PATH is
+		// no fallback for it: report the host as broken, not as healthy.
+		const managedVersion = commandVersion(managedPath);
+		if (!managedVersion) {
+			warn(label, `${managedPath} exists but cannot be run; the agent uses it before PATH, so ${fallbackNote}. Delete it and reinstall`);
+			continue;
+		}
+		found = `${managedVersion}; from ${managedPath}, which the agent searches before PATH`;
+	}
+	if (!found) {
+		for (const command of commands) {
+			found = commandVersion(command);
+			if (found) break;
+		}
 	}
 	if (found) {
 		pass(label, found);
 	} else {
-		warn(label, `not found on PATH; ${fallbackNote}. Install it for faster searches`);
+		warn(label, `not found in ${binDir} or on PATH; ${fallbackNote}. Install it for faster searches`);
 	}
 }
 
@@ -216,9 +238,6 @@ try {
 	warn("site policy", `could not be read: ${detail.split(/\r?\n/)[0]}`);
 }
 
-// Mirrors the resolution order in packages/coding-agent/src/config.ts getAgentDir():
-// PI_CODING_AGENT_DIR env override, else os.homedir()/.pi/agent.
-const agentDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
 const authPath = join(agentDir, "auth.json");
 const modelsPath = join(agentDir, "models.json");
 if (existsSync(authPath)) {

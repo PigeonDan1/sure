@@ -12,6 +12,16 @@ import { menuEntryLabel } from "../../src/core/sure/init-menu.ts";
 import type { SureInitManifest } from "../../src/core/sure/init-types.ts";
 import { createInMemoryModelRegistry, createModelRegistry, getModelRuntime } from "../model-runtime-test-utils.ts";
 
+// Observe which spawn implementation the launcher probe uses. The real
+// cross-spawn stays in place by default, so every other test is unaffected.
+const spies = vi.hoisted(() => ({ crossSpawnSync: vi.fn() }));
+
+vi.mock("cross-spawn", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("cross-spawn")>();
+	spies.crossSpawnSync.mockImplementation((...args: Parameters<typeof actual.sync>) => actual.sync(...args));
+	return { ...actual, default: Object.assign(vi.fn(), { sync: spies.crossSpawnSync }) };
+});
+
 vi.mock("../../src/core/sure/manifest.ts", () => ({
 	discoverSureSkillPackages: vi.fn(() => ({
 		packages: [
@@ -354,6 +364,31 @@ describe("runSureInit", () => {
 			const result = await init();
 			expect(result.manifest?.uvOk).toBe(true);
 			expect(result.message).not.toContain("was not found.");
+		});
+
+		// A uv installed as a .cmd/.bat shim is only reachable through
+		// cross-spawn, so on Windows the probe must not spawn the bare name
+		// itself. Forcing the platform keeps this meaningful on POSIX.
+		it("probes the launcher through cross-spawn on Windows", async () => {
+			const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+			Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
+			spies.crossSpawnSync.mockClear();
+			spies.crossSpawnSync.mockReturnValueOnce({
+				status: 0,
+				signal: null,
+				pid: 1,
+				output: [],
+				stdout: "uv 0.9.9\n",
+				stderr: "",
+			});
+			try {
+				const result = await init();
+				expect(spies.crossSpawnSync).toHaveBeenCalledWith("uv", ["--version"], expect.anything());
+				expect(result.manifest?.uvOk).toBe(true);
+				expect(result.message).not.toContain("was not found.");
+			} finally {
+				if (platformDescriptor) Object.defineProperty(process, "platform", platformDescriptor);
+			}
 		});
 	});
 

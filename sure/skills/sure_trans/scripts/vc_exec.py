@@ -31,7 +31,7 @@ import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 for _parent in Path(__file__).resolve().parents:
     if (_parent / "sure" / "site" / "loader.py").is_file():
@@ -462,13 +462,28 @@ def _merge_env(env: dict[str, str], assignment: str) -> None:
     env[key] = value
 
 
+def split_mount(mount: str) -> list[str]:
+    """Split a docker -v spec into host, target and optional mode.
+
+    A Windows host path carries its own colon (``C:\\run``), so a plain
+    ``split(":")`` hands back one part too many; rejoin a leading drive letter
+    with the path that follows it. The container side is always POSIX, so it
+    never contributes a colon of its own.
+    """
+    parts = str(mount).split(":")
+    if len(parts) > 1 and len(parts[0]) == 1 and parts[0].isalpha() and parts[1][:1] in ("\\", "/"):
+        parts = [f"{parts[0]}:{parts[1]}", *parts[2:]]
+    return parts
+
+
 def _validate_mount(mount: str) -> None:
-    parts = mount.split(":")
+    parts = split_mount(mount)
     if len(parts) not in (2, 3):
         raise ValueError(f"invalid docker volume in run_command: {mount!r}")
     host = Path(parts[0]).expanduser()
-    target = Path(parts[1])
-    if not host.is_absolute() or not target.is_absolute():
+    # The host side is spelled for the host OS, the target for the Linux
+    # container: ask each question in the flavour that owns it.
+    if not os.path.isabs(str(host)) or not PurePosixPath(parts[1]).is_absolute():
         raise ValueError(f"vc volume host and target must be absolute: {mount!r}")
     if len(parts) == 3 and parts[2] not in {"ro", "rw"}:
         raise ValueError(f"vc volume mode must be ro or rw: {mount!r}")
@@ -483,12 +498,12 @@ def ensure_mount_host_paths(mounts: list[str]) -> None:
     and fail fast when an existing writable source is not usable.
     """
     for mount in mounts:
-        parts = mount.split(":")
+        parts = split_mount(mount)
         host = parts[0]
         if not host:
             raise ValueError(f"invalid vc volume: {mount!r}")
         source = Path(host).expanduser()
-        if not source.is_absolute():
+        if not os.path.isabs(str(source)):
             raise ValueError(f"vc volume host must be absolute: {mount!r}")
         source = source.resolve()
         mode = parts[2] if len(parts) == 3 else ""
@@ -785,7 +800,7 @@ def run_vc_job(
         )
     log_dir = log_dir.resolve()
     mount_list = list(mounts or [])
-    covered = [Path(mount.split(":", 1)[0]).expanduser().resolve() for mount in mount_list]
+    covered = [Path(split_mount(mount)[0]).expanduser().resolve() for mount in mount_list]
     if not any(log_dir == host or log_dir.is_relative_to(host) for host in covered):
         mount_list.append(f"{log_dir}:{log_dir}")
     render_inner_script(log_dir, command, env or {}, command_timeout_seconds, workdir=workdir)

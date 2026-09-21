@@ -163,6 +163,33 @@ def _atomic_write(path: Path, payload: bytes) -> None:
             temporary.unlink()
 
 
+def _rewrite_json_paths(text: str, replacement: tuple[str, str], *, jsonl: bool) -> str | None:
+    """Rewrite the decoded string values of a JSON document, or None when it is not JSON.
+
+    JSON escapes every backslash, so a Windows path is spelled twice over in the
+    serialized text and never matches the plain replacement. Substituting in the
+    decoded values instead of patching the text cannot land inside an escape
+    sequence, so the result is a valid document by construction.
+    """
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(*replacement)
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if isinstance(value, dict):
+            return {rewrite(key): rewrite(item) for key, item in value.items()}
+        return value
+
+    try:
+        if jsonl:
+            lines = [line for line in text.splitlines() if line.strip()]
+            return "".join(json.dumps(rewrite(json.loads(line)), ensure_ascii=False) + "\n" for line in lines)
+        return json.dumps(rewrite(json.loads(text)), indent=2, ensure_ascii=False) + "\n"
+    except json.JSONDecodeError:
+        return None
+
+
 def _copy_tree(source: Path, destination: Path, *, path_replacements: tuple[str, str] | None = None) -> None:
     source = source.resolve()
     destination.mkdir(parents=True, exist_ok=False)
@@ -177,14 +204,22 @@ def _copy_tree(source: Path, destination: Path, *, path_replacements: tuple[str,
         for name in file_names:
             source_file = current_path / name
             target_file = target_dir / name
-            if path_replacements and source_file.suffix.lower() in {".json", ".jsonl", ".yaml", ".yml", ".md"}:
+            suffix = source_file.suffix.lower()
+            if path_replacements and suffix in {".json", ".jsonl", ".yaml", ".yml", ".md"}:
                 raw = source_file.read_bytes()
                 try:
                     text = raw.decode("utf-8")
                 except UnicodeDecodeError:
                     shutil.copy2(source_file, target_file)
                 else:
-                    target_file.write_text(text.replace(*path_replacements), encoding="utf-8")
+                    rewritten = (
+                        _rewrite_json_paths(text, path_replacements, jsonl=suffix == ".jsonl")
+                        if suffix in {".json", ".jsonl"}
+                        else None
+                    )
+                    if rewritten is None:
+                        rewritten = text.replace(*path_replacements)
+                    target_file.write_text(rewritten, encoding="utf-8")
                     shutil.copystat(source_file, target_file)
             else:
                 shutil.copy2(source_file, target_file)
@@ -550,7 +585,7 @@ def append_staging_bundle(
                 if temporary_batch.exists():
                     shutil.rmtree(temporary_batch)
         manifest = _validate_artifact_manifest(batch_dir, batch_id)
-        if batch_materialized and manifest.get("source_report_sha256") != source_report_sha256:
+        if manifest.get("source_report_sha256") != source_report_sha256:
             raise ValueError(f"persisted artifact bundle is based on a different approved report: {batch_dir}")
         if manifest.get("record_ids") != sorted(requested_record_ids):
             raise ValueError(f"persisted artifact bundle record IDs differ from this request: {batch_dir}")
@@ -915,7 +950,7 @@ def _ensure_ffmpeg(run_dir: Path, env: dict[str, str]) -> None:
     # Beside scratch/, not inside it: scratch is persisted whole into the batch and must not hold symlinks.
     bin_dir = run_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
-    target = bin_dir / "ffmpeg"
+    target = bin_dir / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
     if not target.exists():
         try:
             target.symlink_to(source)

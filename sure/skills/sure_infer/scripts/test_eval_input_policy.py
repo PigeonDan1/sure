@@ -23,6 +23,7 @@ from test_source_conversion import (  # noqa: E402
     make_flat_source_tree,
     make_lid_source_tree,
     make_manager,
+    make_s2tt_source_tree,
     make_source_tree,
     make_vad_source_tree,
 )
@@ -92,6 +93,13 @@ class ExecutionSurfacePolicyTests(unittest.TestCase):
         self.assertEqual(device["resolved"], "cpu")
         self.assertEqual(device["execution_device_source"], "local_nvidia_smi")
         self.assertEqual(device["notes"], [])
+
+    def test_unexecutable_nvidia_smi_counts_as_unavailable(self) -> None:
+        with (
+            mock.patch.object(resolve_eval_input.shutil, "which", return_value="/usr/bin/nvidia-smi"),
+            mock.patch.object(resolve_eval_input.subprocess, "run", side_effect=OSError(8, "Exec format error")),
+        ):
+            self.assertFalse(resolve_eval_input._nvidia_smi_available())
 
 
 class OutputDirPolicyTests(unittest.TestCase):
@@ -237,6 +245,22 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         self.assertEqual(detail["task"], "VAD")
         self.assertEqual(detail["language"], "zh")
         self.assertEqual(detail["default_metrics"], ["f1"])
+
+    def test_unconverted_s2tt_source_entry_yields_s2tt_detail(self) -> None:
+        """The ds.jsonl declaration wins: the sample's transcription must not report ASR."""
+        for name, ds_jsonl in (
+            ("implicit_s2tt", '{"audio": {"speech": {"language": "zh", "translation_language": "en"}}}'),
+            ("explicit_s2tt", '{"task": "S2TT", "audio": {"speech": {"language": "zh"}}}'),
+        ):
+            with self.subTest(name=name):
+                s2tt_root = make_s2tt_source_tree(self.source_root, name, ds_jsonl)
+                details = resolve_eval_input._dataset_details(
+                    self.manager, [str(s2tt_root)], [], None
+                )
+                self.assertEqual(len(details), 1)
+                detail = details[0]
+                self.assertEqual(detail["task"], "S2TT")
+                self.assertEqual(detail["default_metrics"], ["bleu"])
 
     def test_unconverted_lid_source_entry_yields_accuracy_detail(self) -> None:
         lid_root = make_lid_source_tree(self.source_root, "lid_ds", "v1.0.0")

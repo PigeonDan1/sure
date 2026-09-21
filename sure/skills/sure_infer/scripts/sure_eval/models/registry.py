@@ -95,7 +95,7 @@ class ModelInfo:
             for result_file in results_dir.glob("*.json"):
                 dataset_name = result_file.stem.split("_")[0]
                 try:
-                    with open(result_file) as f:
+                    with open(result_file, encoding="utf-8") as f:
                         results[dataset_name] = json.load(f)
                 except:
                     pass
@@ -164,7 +164,7 @@ class ModelRegistry:
             if config_file.exists():
                 try:
                     import yaml
-                    with open(config_file) as f:
+                    with open(config_file, encoding="utf-8") as f:
                         config = yaml.safe_load(f)
 
                     if config is None:

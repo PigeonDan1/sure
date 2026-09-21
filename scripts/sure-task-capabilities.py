@@ -61,6 +61,12 @@ def engine_commit() -> str:
 
 
 def engine_tasks() -> dict[str, dict[str, Any]]:
+    if not TASKS_ROOT.is_dir():
+        raise ValueError(
+            "the pinned evaluation engine has no task directory at "
+            "sure/external/sure-evaluation/src/sure_eval/evaluation/tasks; "
+            "check the submodule out with: git submodule update --init"
+        )
     discovered: dict[str, dict[str, Any]] = {}
     for routes_path in sorted(TASKS_ROOT.glob("*/routes.yaml")):
         task_dir = routes_path.parent

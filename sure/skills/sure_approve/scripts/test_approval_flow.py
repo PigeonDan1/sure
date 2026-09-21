@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import approval_core
 from sure.runtime.model.bootstrap import _expected_manifest, _runtime_id, manifest_sha256, probe
@@ -61,18 +62,21 @@ class ApprovalFlowTests(unittest.TestCase):
 
         self.addCleanup(restore)
 
-    def build_python_bundle(self) -> None:
+    def build_python_bundle(
+        self,
+        validate_content: str = (
+            "import os\n"
+            "from pathlib import Path\n"
+            "output = os.environ.get('SURE_VALIDATION_OUTPUT_DIR')\n"
+            "assert output\n"
+            "Path(output, 'smoke.json').write_text('{}')\n"
+            "print('validation passed')\n"
+        ),
+    ) -> None:
         for name, content in {
             "model.py": "VALUE = 1\n",
             "server.py": "print('server')\n",
-            "validate.py": (
-                "import os\n"
-                "from pathlib import Path\n"
-                "output = os.environ.get('SURE_VALIDATION_OUTPUT_DIR')\n"
-                "assert output\n"
-                "Path(output, 'smoke.json').write_text('{}')\n"
-                "print('validation passed')\n"
-            ),
+            "validate.py": validate_content,
             "__init__.py": "\n",
             "model.spec.yaml": "task: asr\n",
             "config.yaml": "task: asr\n",
@@ -247,6 +251,24 @@ class ApprovalFlowTests(unittest.TestCase):
         source_after, _, _ = approval_core.tree_digest(self.source)
         self.assertEqual(source_before, source_after)
 
+    def test_runtime_smoke_tolerates_self_persisting_validate_py(self) -> None:
+        # The producer contract requires validate.py to persist artifacts/<stage>_result.json
+        # on every run. The smoke must prove the runtime works without dirtying the sealed
+        # candidate, so it executes against a throwaway copy.
+        mutating_validate = (
+            "import json\n"
+            "from pathlib import Path\n"
+            "Path('artifacts/import_result.json').write_text(json.dumps({'import_passed': True}) + '\\n')\n"
+            "print('validation passed')\n"
+        )
+        self.build_python_bundle(validate_content=mutating_validate)
+        audit_run = self.root / "runs" / "mutating-audit"
+        review = self.audit(audit_run)
+        self.assertEqual(review["status"], "awaiting_approval")
+        self.assertEqual(review["runtime_verification"]["status"], "passed")
+        candidate = Path(review["candidate_dir"])
+        self.assertFalse((candidate / "artifacts" / "import_result.json").exists())
+
     def test_approve_input_resolves_from_review_without_model_dir(self) -> None:
         self.build_python_bundle()
         audit_run = self.root / "runs" / "resolve-approve-audit"
@@ -296,6 +318,53 @@ class ApprovalFlowTests(unittest.TestCase):
         self.assertEqual(resolved["approval"]["configured_root"], str(self.approved))
         self.assertEqual(resolved["approval"]["destination"], str(self.approved / "demo-model"))
         self.assertTrue(resolved["approval"]["eval_visible"])
+
+    def test_failed_publication_leaves_no_staging_copy_in_the_approved_root(self) -> None:
+        # publish() stages the whole candidate inside the approved-models root
+        # before the rename; a failure used to abandon that copy there.
+        (self.source / "model.py").write_text("VALUE = 1\n", encoding="utf-8")
+        candidate = (self.root / "candidate").resolve()
+        candidate.mkdir()
+        (candidate / "model.py").write_text("VALUE = 1\n", encoding="utf-8")
+        source_digest, _, _ = approval_core.tree_digest(self.source)
+        candidate_digest, _, _ = approval_core.tree_digest(candidate, publication=True)
+        run = (self.root / "runs" / "publish-cleanup").resolve()
+        manifest_path = run / "artifacts" / "approval_manifest.json"
+        write_json(manifest_path, {
+            "schema": "sure.approve.approval_manifest.v1",
+            "candidate_dir": str(candidate),
+            "candidate_digest": candidate_digest,
+            "model_name": "demo-model",
+        })
+        packet = {
+            "schema": "sure.approve.review_packet.v1",
+            "status": "awaiting_approval",
+            "model_name": "demo-model",
+            "source": {"canonical": str(self.source.resolve())},
+            "source_digest": source_digest,
+            "candidate_dir": str(candidate),
+            "candidate_digest": candidate_digest,
+            "approval_manifest": str(manifest_path),
+            "approval_manifest_sha256": approval_core.sha256_file(manifest_path),
+            "site_policy_sha256": approval_core.load_active_policy()["sha256"],
+            "approval": {
+                "root": str(self.approved),
+                "configured_root": str(self.approved),
+                "destination": str(self.approved / "demo-model"),
+                "eval_visible": True,
+            },
+        }
+        packet["packet_digest"] = approval_core._packet_digest(packet)
+        review_path = run / "artifacts" / "review_packet.json"
+        write_json(review_path, packet)
+        write_json(
+            run / "artifacts" / "approval_decision.json",
+            approval_core.verify_decision(review_path, "approve", "validated in test"),
+        )
+        with mock.patch.object(approval_core, "_copy_candidate", side_effect=OSError("no space left on device")):
+            with self.assertRaises(OSError):
+                approval_core.publish(run, replace=False)
+        self.assertEqual(sorted(path.name for path in self.approved.iterdir()), [])
 
     def test_publication_rejects_review_packet_with_nonconfigured_root(self) -> None:
         self.build_python_bundle()
@@ -418,6 +487,54 @@ class ApprovalFlowTests(unittest.TestCase):
         (Path(review["candidate_dir"]) / "model.py").write_text("VALUE = 2\n", encoding="utf-8")
         with self.assertRaisesRegex(approval_core.ApprovalError, "candidate changed"):
             approval_core.verify_decision(self.root / "runs" / "tamper" / "artifacts" / "review_packet.json", "approve", None)
+
+
+class SmokeMirrorTests(unittest.TestCase):
+    """The throwaway tree verify_runtime smokes against, on its own."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.candidate = self.root / "candidate" / "demo-model"
+        (self.candidate / "checkpoints").mkdir(parents=True)
+        (self.candidate / "checkpoints" / "weights.bin").write_bytes(b"W" * 4096)
+        (self.candidate / "model.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (self.candidate / "artifacts").mkdir()
+        (self.candidate / "artifacts" / "import_result.json").write_text("{}\n", encoding="utf-8")
+        self.mirror = self.root / "smoke" / "demo-model"
+
+    def test_weights_are_shared_and_artifacts_are_not(self) -> None:
+        approval_core._mirror_candidate_for_smoke(self.candidate, self.mirror)
+
+        weights = self.candidate / "checkpoints" / "weights.bin"
+        self.assertEqual((self.mirror / "checkpoints" / "weights.bin").stat().st_ino, weights.stat().st_ino)
+        self.assertNotEqual(
+            (self.mirror / "artifacts" / "import_result.json").stat().st_ino,
+            (self.candidate / "artifacts" / "import_result.json").stat().st_ino,
+        )
+
+        # What validate.py is contracted to write must not reach the sealed bundle.
+        (self.mirror / "artifacts" / "import_result.json").write_text('{"ok": true}\n', encoding="utf-8")
+        (self.mirror / "artifacts" / "validation.log").write_text("ran\n", encoding="utf-8")
+        self.assertEqual((self.candidate / "artifacts" / "import_result.json").read_text(encoding="utf-8"), "{}\n")
+        self.assertFalse((self.candidate / "artifacts" / "validation.log").exists())
+
+        # Anything else it overwrites in place still reaches the candidate, which is
+        # what keeps the digest check in verify_runtime able to see it.
+        (self.mirror / "model.py").write_text("VALUE = 2\n", encoding="utf-8")
+        self.assertEqual((self.candidate / "model.py").read_text(encoding="utf-8"), "VALUE = 2\n")
+
+    def test_falls_back_to_a_copy_when_linking_is_refused(self) -> None:
+        def refuse(source: str, target: str) -> None:
+            raise OSError("cross-device link")
+
+        with mock.patch.object(approval_core.os, "link", side_effect=refuse):
+            approval_core._mirror_candidate_for_smoke(self.candidate, self.mirror)
+
+        mirrored = self.mirror / "checkpoints" / "weights.bin"
+        self.assertEqual(mirrored.read_bytes(), b"W" * 4096)
+        self.assertNotEqual(mirrored.stat().st_ino, (self.candidate / "checkpoints" / "weights.bin").stat().st_ino)
 
 
 if __name__ == "__main__":

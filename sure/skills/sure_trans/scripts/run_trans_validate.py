@@ -27,6 +27,7 @@ from vc_exec import (
     recorded_push_digest,
     registry_image,
     run_vc_job,
+    split_mount,
 )
 from model_child_env import model_child_env
 
@@ -79,7 +80,7 @@ def require_local_gpu_command(
         return None
     root = run_dir.resolve()
     for mount in spec.mounts:
-        parts = mount.split(":")
+        parts = split_mount(mount)
         if len(parts) < 2 or parts[1] != target:
             continue
         output_dir = Path(parts[0]).expanduser().resolve()
@@ -147,7 +148,7 @@ def prepare_container_outputs(spec: object, run_dir: Path) -> None:
         return
     mounts = getattr(spec, "mounts", ())
     for mount in mounts:
-        parts = str(mount).split(":")
+        parts = split_mount(mount)
         if len(parts) < 2 or parts[1] != target:
             continue
         output_dir = Path(parts[0]).expanduser()
@@ -419,7 +420,7 @@ def container_stage_error(run_command: object, kind: str) -> str:
         spec = docker_run_to_vc(run_command, resolve_entrypoint=lambda _image: ((), ()))
         target = spec.env.get("SURE_VALIDATE_ARTIFACTS_DIR", "")
         for mount in spec.mounts:
-            parts = mount.split(":")
+            parts = split_mount(mount)
             if len(parts) < 2 or parts[1] != target:
                 continue
             result = Path(parts[0]) / f"{kind}_result.json"
@@ -586,11 +587,25 @@ def main() -> int:
     else:
         if local_cuda:
             local_validation_dir = require_local_gpu_command(command, shell, run_dir, args.kind)
-        process = subprocess.run(command, shell=shell, cwd=cwd, env=env, check=False, capture_output=True, text=True, timeout=timeout)
-        duration_ms = round((time.monotonic() - started) * 1000, 3)
-        exit_code = process.returncode
         rendered = command if isinstance(command, str) else " ".join(command)
-        log_path.write_text(f"$ {rendered}\n{process.stdout}\n{process.stderr}", encoding="utf-8")
+        try:
+            process = subprocess.run(command, shell=shell, cwd=cwd, env=env, check=False, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as expired:
+            # A timeout must end as a recorded failure: leaving it uncaught kept
+            # whatever status the agent wrote into the stage artifact.
+            duration_ms = round((time.monotonic() - started) * 1000, 3)
+            exit_code = 124
+            # TimeoutExpired carries bytes on POSIX even in text mode.
+            captured = "\n".join(
+                stream.decode("utf-8", "replace") if isinstance(stream, bytes) else stream
+                for stream in (expired.stdout, expired.stderr)
+                if stream
+            )
+            log_path.write_text(f"$ {rendered}\nTIMEOUT after {timeout:.3f}s\n{captured}\n", encoding="utf-8")
+        else:
+            duration_ms = round((time.monotonic() - started) * 1000, 3)
+            exit_code = process.returncode
+            log_path.write_text(f"$ {rendered}\n{process.stdout}\n{process.stderr}", encoding="utf-8")
         if local_cuda:
             extra = {"execution_surface": "local_docker"}
     passed = exit_code == 0
