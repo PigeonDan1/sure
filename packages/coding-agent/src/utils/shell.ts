@@ -224,7 +224,13 @@ const WINDOWS_KILL_ATTEMPTS = 3;
 const WINDOWS_KILL_SETTLE_MS = 250;
 const WINDOWS_PROCESS_TABLE_TIMEOUT_MS = 10000; // ~6x the measured read
 const WINDOWS_PROCESS_TABLE_QUERY =
-	'Get-CimInstance -Query "SELECT ProcessId,ParentProcessId FROM Win32_Process" | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }';
+	'Get-CimInstance -Query "SELECT ProcessId,ParentProcessId,CreationDate FROM Win32_Process" | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $([long]($_.CreationDate.ToUniversalTime() - [datetime]\'1970-01-01\').TotalMilliseconds)" }';
+
+interface ProcessTableEntry {
+	parentPid: number;
+	/** Creation time in epoch milliseconds; with the pid, this identifies the process. */
+	createdAt: number;
+}
 
 function windowsSystem32(...segments: string[]): string {
 	// Use the trusted System32 executables so cleanup does not depend on PATH.
@@ -249,12 +255,12 @@ function spawnTaskkill(pids: number[]): void {
 	}
 }
 
-/** Every live process as pid -> parent pid, or null when the table cannot be read. */
-function readWindowsProcessTable(): Promise<Map<number, number> | null> {
+/** Every live process by pid, or null when the table cannot be read. */
+function readWindowsProcessTable(): Promise<Map<number, ProcessTableEntry> | null> {
 	return new Promise((resolve) => {
 		let settled = false;
 		let timer: NodeJS.Timeout | undefined;
-		const finish = (table: Map<number, number> | null) => {
+		const finish = (table: Map<number, ProcessTableEntry> | null) => {
 			if (settled) return;
 			settled = true;
 			if (timer) clearTimeout(timer);
@@ -283,10 +289,12 @@ function readWindowsProcessTable(): Promise<Map<number, number> | null> {
 				finish(null);
 			}, WINDOWS_PROCESS_TABLE_TIMEOUT_MS);
 			child.once("close", () => {
-				const table = new Map<number, number>();
+				const table = new Map<number, ProcessTableEntry>();
 				for (const line of output.split("\n")) {
-					const [pid, parentPid] = line.trim().split(" ").map(Number);
-					if (Number.isInteger(pid) && Number.isInteger(parentPid)) table.set(pid, parentPid);
+					const [pid, parentPid, createdAt] = line.trim().split(" ").map(Number);
+					if (Number.isInteger(pid) && Number.isInteger(parentPid) && Number.isInteger(createdAt)) {
+						table.set(pid, { parentPid, createdAt });
+					}
 				}
 				finish(table.size > 0 ? table : null);
 			});
@@ -297,25 +305,62 @@ function readWindowsProcessTable(): Promise<Map<number, number> | null> {
 }
 
 /**
- * Live processes whose ancestry reaches a pid we already know about. `known` grows as we go, so a
- * descendant is still recognised once the parent that links it to the tree has itself been killed.
+ * Drop every pid whose identity no longer matches, so a later round can never fire at a process
+ * that merely inherited the number.
+ *
+ * A pid is not an identity on Windows: it is reissued once its owner exits, so a pid remembered
+ * from the first sweep can name an unrelated process seconds later. The pair that does identify a
+ * process is (ProcessId, CreationDate), both of which the table read already carries. Windows only
+ * reissues a pid after its owner has exited, so a replacement is always created strictly later and
+ * a millisecond of resolution separates the two.
+ *
+ * The pid we were asked to kill is the one we never got to timestamp - the caller hands us a bare
+ * number and the kill goes out before any table can be read - so its rule is weaker but still
+ * sufficient: whatever we were asked to kill existed before we were asked, so a process sitting at
+ * that pid that was created after the kill was dispatched cannot be it. Dropping it also drops
+ * everything hanging off it, because a process only ever joins the set through a parent that is
+ * already in it.
  */
-function collectLiveDescendants(known: Set<number>, table: Map<number, number>): number[] {
+function forgetReusedPids(
+	tracked: Map<number, number | undefined>,
+	table: Map<number, ProcessTableEntry>,
+	killedAt: number,
+): void {
+	for (const [pid, createdAt] of tracked) {
+		const entry = table.get(pid);
+		// A pid that is not running cannot be confused with anything. Keep it, so a descendant
+		// orphaned by its death stays attributable to this tree.
+		if (!entry) continue;
+		const isSameProcess = createdAt === undefined ? entry.createdAt <= killedAt : entry.createdAt === createdAt;
+		if (isSameProcess) tracked.set(pid, entry.createdAt);
+		else tracked.delete(pid);
+	}
+}
+
+/**
+ * Live processes whose ancestry reaches a pid we already track. `tracked` grows as we go - keyed by
+ * pid, valued by the creation time we attributed it at - so a descendant is still recognised once
+ * the parent that links it to the tree has itself been killed, and is still identifiable next round.
+ */
+function collectLiveDescendants(
+	tracked: Map<number, number | undefined>,
+	table: Map<number, ProcessTableEntry>,
+): number[] {
 	let grew = true;
 	while (grew) {
 		grew = false;
-		for (const [pid, parentPid] of table) {
-			if (!known.has(pid) && known.has(parentPid)) {
-				known.add(pid);
+		for (const [pid, entry] of table) {
+			if (!tracked.has(pid) && tracked.has(entry.parentPid)) {
+				tracked.set(pid, entry.createdAt);
 				grew = true;
 			}
 		}
 	}
-	return [...known].filter((pid) => table.has(pid));
+	return [...tracked.keys()].filter((pid) => table.has(pid));
 }
 
-async function confirmWindowsTreeGone(pid: number): Promise<void> {
-	const known = new Set([pid]);
+async function confirmWindowsTreeGone(pid: number, killedAt: number): Promise<void> {
+	const tracked = new Map<number, number | undefined>([[pid, undefined]]);
 	let survivors: number[] = [];
 	for (let attempt = 1; attempt <= WINDOWS_KILL_ATTEMPTS; attempt++) {
 		await sleep(WINDOWS_KILL_SETTLE_MS);
@@ -323,11 +368,14 @@ async function confirmWindowsTreeGone(pid: number): Promise<void> {
 		// Without a process table there is no evidence that anything survived, so say no more than
 		// the taskkill spawn itself does when it fails.
 		if (!table) return;
-		survivors = collectLiveDescendants(known, table);
+		forgetReusedPids(tracked, table, killedAt);
+		survivors = collectLiveDescendants(tracked, table);
 		if (survivors.length === 0) return;
 		if (attempt < WINDOWS_KILL_ATTEMPTS) spawnTaskkill(survivors);
 	}
-	console.warn(`Warning: could not kill the whole process tree of ${pid}; still running: ${survivors.join(", ")}.`);
+	console.warn(
+		`Warning: could not kill the process tree of ${pid}. These processes were left running and have to be ended manually: ${survivors.join(", ")}.`,
+	);
 }
 
 /**
@@ -337,8 +385,10 @@ async function confirmWindowsTreeGone(pid: number): Promise<void> {
  */
 export function killProcessTree(pid: number): Promise<void> {
 	if (process.platform === "win32") {
+		// Read before the kill goes out: whatever we were asked to kill already existed by now.
+		const killedAt = Date.now();
 		spawnTaskkill([pid]);
-		return confirmWindowsTreeGone(pid);
+		return confirmWindowsTreeGone(pid, killedAt);
 	}
 	// Use SIGKILL on Unix/Linux/Mac. Signalling the process group is a single kernel operation
 	// covering every current member, so it has no snapshot for a new descendant to slip past.
