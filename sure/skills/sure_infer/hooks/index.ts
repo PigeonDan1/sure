@@ -2,12 +2,12 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import { agentBinDir, demoteAgentBinDir } from "../../../runtime/agent-path.ts";
 import {
 	type HarnessRuntimeContract,
 	harnessRuntimeEnv,
 	resolveHarnessPython,
 } from "../../../runtime/harness/resolve.ts";
-import { agentBinDir, demoteAgentBinDir } from "../../../runtime/agent-path.ts";
 import {
 	gateUnavailable,
 	injectOnBlock,
