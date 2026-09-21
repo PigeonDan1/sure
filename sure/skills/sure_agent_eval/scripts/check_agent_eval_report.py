@@ -100,6 +100,12 @@ def gate_errors(run_dir: Path, report_path: Path) -> list[str]:
         if not isinstance(metrics, list) or not metrics:
             errors.append(f"{dataset}: a successful eval report must carry at least one metric score")
             continue
+        # A metric whose score is neither a number nor null is reported, not filtered
+        # away: silently dropping it would let a malformed row ride along unnoticed.
+        for metric in metrics:
+            score = metric.get("score") if isinstance(metric, dict) else None
+            if not isinstance(metric, dict) or (score is not None and not isinstance(score, (int, float))):
+                errors.append(f"{dataset}: metric row {metric!r} does not carry a numeric or null score")
         scored = [
             metric
             for metric in metrics

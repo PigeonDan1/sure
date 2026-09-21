@@ -83,10 +83,12 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
         )
 
     if job_status == "failed":
-        if not str(result.get("error") or "").strip():
-            errors.append("a failed execution_result.json must record error")
-        if not str(result.get("failed_stage") or "").strip():
-            errors.append("a failed execution_result.json must record failed_stage")
+        # str() on anything non-empty passes, so an object-valued field would read
+        # as a recorded reason; hooks/validate.ts does not reject it either.
+        for field in ("error", "failed_stage"):
+            value = result.get(field)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(f"a failed execution_result.json must record {field} as a non-empty string")
         return errors
 
     rows = result.get("datasets")

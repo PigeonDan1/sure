@@ -216,6 +216,21 @@ class CheckAgentExecutionTests(GateTestCase):
         self.assertTrue(any("error" in error for error in errors))
         self.assertTrue(any("failed_stage" in error for error in errors))
 
+    def test_rejects_a_failure_whose_reason_is_not_a_string(self) -> None:
+        errors = self.check(
+            make_execution(
+                self.product_dir,
+                job_status="failed",
+                exit_code=1,
+                failed_stage={"stage": "translate"},
+                failed_dataset=DATASET,
+                error={"code": 7},
+                datasets=[],
+            )
+        )
+        self.assertTrue(any("error as a non-empty string" in error for error in errors))
+        self.assertTrue(any("failed_stage as a non-empty string" in error for error in errors))
+
     def test_rejects_a_product_dir_that_differs_from_the_plan(self) -> None:
         errors = self.check(make_execution(self.tmp / "elsewhere"))
         self.assertTrue(any("product_dir" in error for error in errors))
@@ -281,6 +296,12 @@ class CheckAgentEvalReportTests(GateTestCase):
         report["datasets"][0]["metrics"] = [{"metric": "bleu", "pipeline_id": "p", "score": None}]
         errors = self.check(report)
         self.assertTrue(any("numeric" in error for error in errors))
+
+    def test_rejects_a_non_numeric_metric_beside_a_valid_one(self) -> None:
+        report = make_eval_report(self.product_dir, self.BATCH)
+        report["datasets"][0]["metrics"].append({"metric": "junk", "pipeline_id": "p", "score": {"value": 1}})
+        errors = self.check(report)
+        self.assertTrue(any("numeric or null score" in error for error in errors))
 
     def test_rejects_a_missing_batch_directory(self) -> None:
         report = make_eval_report(self.product_dir, self.BATCH)
