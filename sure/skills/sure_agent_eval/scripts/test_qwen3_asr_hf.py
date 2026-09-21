@@ -56,6 +56,7 @@ class FakeInferenceMode:
         return False
 
 
+@unittest.skipUnless((MODEL_DIR / "model.py").is_file(), f"requires the Qwen3-ASR wrapper at {MODEL_DIR}")
 class Qwen3ASRHFTests(unittest.TestCase):
     def load_wrapper(self):
         spec = importlib.util.spec_from_file_location("qwen3_asr_hf_model", MODEL_DIR / "model.py")
