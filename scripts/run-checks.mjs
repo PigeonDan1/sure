@@ -14,6 +14,7 @@ const checks = [
 	["npm", ["run", "check:repository-hygiene"]],
 	["npm", ["run", "check:site-boundary"]],
 	["npm", ["run", "test:public-export"]],
+	["npm", ["run", "test:repository-hygiene"]],
 	["npm", ["run", "test:sure-doctor"]],
 	["npm", ["run", "check:pinned-deps"]],
 	["npm", ["run", "check:ts-imports"]],

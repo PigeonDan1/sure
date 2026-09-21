@@ -20,7 +20,7 @@ Submodule 路径固定:
 sure/external/sure-evaluation
 ```
 
-它在 `.gitmodules` 里登记的是**相对地址** `../sure-evaluation.git`(branch `main`),指向哪取决于父仓库的 remote:从公司 GitLab clone 得到的是 GitLab 侧的 `sure/sure-evaluation`,从 GitHub clone 才是公开版。父仓库只记录经过验证的引擎 commit(gitlink)。
+它在 `.gitmodules` 里登记的是**绝对地址** `https://github.com/PigeonDan1/sure-evaluation.git`(branch `main`):相对地址会跟着父仓库的 remote 走,fork 之后 `git clone --recurse-submodules` 会去 fork 名下找这个 submodule 而失败。父仓库只记录经过验证的引擎 commit(gitlink)。
 
 已有 clone 补拉 submodule:
 

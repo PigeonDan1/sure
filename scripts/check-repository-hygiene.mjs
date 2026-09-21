@@ -93,8 +93,11 @@ for (const path of tracked) {
 const gitmodules = readFileSync(".gitmodules", "utf8");
 for (const line of gitmodules.split("\n")) {
 	const match = line.match(/^\s*url\s*=\s*(.+)\s*$/);
-	if (match && !match[1].startsWith("../")) {
-		failures.push(`.gitmodules: submodule URL must stay relative, found ${match[1]}`);
+	// Relative stays supported for existing clones; an absolute URL is allowed
+	// only on github.com, so a fork can clone the submodule and no other host
+	// can reach the public tree.
+	if (match && !match[1].startsWith("../") && !match[1].startsWith("https://github.com/")) {
+		failures.push(`.gitmodules: submodule URL must be relative or on https://github.com/, found ${match[1]}`);
 	}
 }
 

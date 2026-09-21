@@ -97,18 +97,49 @@ function setupSkillPackage(
 	});
 }
 
+function writeSitePolicy(tempDir: string): void {
+	const path = join(tempDir, "config", "site.local.yaml");
+	mkdirSync(resolve(path, ".."), { recursive: true });
+	writeFileSync(
+		path,
+		`${[
+			"schema: sure.site.policy.v1",
+			"site_id: test",
+			"policy_version: 1",
+			"storage:",
+			`  approved_models_roots: [${join(tempDir, "sure", "models")}]`,
+			`  approved_results_roots: [${join(tempDir, "sure", "results")}]`,
+			`  forbidden_output_roots: [${join(tempDir, "forbidden")}]`,
+			`  runtime_root: ${join(tempDir, ".runtime")}`,
+			"datasets:",
+			`  allowed_source_roots: [${join(tempDir, "datasets")}]`,
+			"execution:",
+			"  surfaces: [local]",
+			"  local_runtimes: [python]",
+		].join("\n")}\n`,
+		"utf-8",
+	);
+}
+
 function linkRepositorySkill(tempDir: string, skillName: string): void {
 	const target = resolve(__dirname, "../../../../sure/skills", skillName);
 	const parent = join(tempDir, "sure", "skills");
 	mkdirSync(parent, { recursive: true });
 	symlinkSync(target, join(parent, skillName), "junction");
-	// The hooks import ../../../runtime/... relative to their own path, and jiti
-	// resolves that from the symlink, not from its target, so the fixture needs
-	// the runtime tree next to sure/skills as well.
+	// The hooks import ../../../runtime/... and ../../../site/... relative to
+	// their own path, and jiti resolves that from the symlink, not from its
+	// target, so the fixture needs those trees next to sure/skills as well.
 	const runtime = join(tempDir, "sure", "runtime");
 	if (!existsSync(runtime)) {
 		symlinkSync(resolve(__dirname, "../../../../sure/runtime"), runtime, "junction");
 	}
+	const site = join(tempDir, "sure", "site");
+	if (!existsSync(site)) {
+		symlinkSync(resolve(__dirname, "../../../../sure/site"), site, "junction");
+	}
+	// The hooks resolve the site policy from the run's cwd, which is the temp
+	// dir, so the fixture has to carry one of its own.
+	writeSitePolicy(tempDir);
 }
 
 function writeOnboardModelInput(path: string): void {
@@ -325,7 +356,7 @@ describe("Sure extension", () => {
 		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
 	});
 
-	it("passes output_dir from /sure_infer arguments into resolved input", async () => {
+	it("records output_dir from /sure_infer arguments and refuses to resolve an un-onboarded model", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
 		linkRepositorySkill(harness.tempDir, "sure_infer");
@@ -353,24 +384,31 @@ describe("Sure extension", () => {
 			"utf-8",
 		);
 		const outputDir = join(harness.tempDir, "custom-eval-output");
-		harness.setResponses([fauxAssistantMessage("working")]);
+		harness.setResponses([fauxAssistantMessage("should not run")]);
 		process.env.SURE_EVAL_DATASETS_ROOT = datasetsRoot;
+		// Without this the hook resolves the policy from its own module location,
+		// which is the real repository, and the run is refused for sitting outside
+		// the repository's approved models root instead of at the gate under test.
+		process.env.SURE_SITE_POLICY = join(harness.tempDir, "config", "site.local.yaml");
 		try {
 			await harness.session.prompt(
 				`/sure_infer model=demo-asr datasets=${datasetId} max_samples=1 metrics=wer output_dir=${outputDir}`,
 			);
 			await harness.session.agent.waitForIdle();
-			await waitForCondition(() => getUserTexts(harness).length > 0);
 		} finally {
 			delete process.env.SURE_EVAL_DATASETS_ROOT;
+			delete process.env.SURE_SITE_POLICY;
 		}
 
 		const runId = getOnlyRunId(harness.tempDir);
-		const resolvedInput = JSON.parse(
-			readFileSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "eval_input_resolved.json"), "utf-8"),
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.outputDir).toBe(outputDir);
+		expect(run.status).toBe("failed");
+		expect(run.lastRepair).toContain("is not an approved runtime-ready NFS model");
+		expect(existsSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "eval_input_resolved.json"))).toBe(
+			false,
 		);
-		expect(resolvedInput.runtime.run_dir).toBe(outputDir);
-		expect(existsSync(join(outputDir, "_harness_config.yaml"))).toBe(true);
+		expect(getUserTexts(harness)).toHaveLength(0);
 	});
 
 	it("updates active run display state through sure_update_state", async () => {
