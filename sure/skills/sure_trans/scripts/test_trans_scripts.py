@@ -105,6 +105,14 @@ class DockerBinaryResolutionTest(unittest.TestCase):
         self.assertIn(str(system_bin), entries)
 
 
+# These tests put a fake docker on PATH as a #!/bin/sh script. Windows has no
+# shebang and CreateProcess only appends .exe when searching PATH, so a shim
+# with no extension is unreachable there whatever the product does.
+needs_posix_fake_docker = unittest.skipIf(
+    os.name == "nt", "the fake docker on PATH is a #!/bin/sh script"
+)
+
+
 class TransScriptsTest(unittest.TestCase):
     def _python_probe_environment(
         self, root: Path, runtime_labels: dict[str, str] | None = None
@@ -578,6 +586,7 @@ class TransScriptsTest(unittest.TestCase):
             text = augmented.read_text(encoding="utf-8")
         self.assertTrue(text.rstrip().endswith("USER 1000"))
 
+    @needs_posix_fake_docker
     def test_source_image_runner_loads_tar_before_git_augmentation_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -628,7 +637,7 @@ class TransScriptsTest(unittest.TestCase):
             fake_docker.chmod(0o755)
             output = artifacts / "source_image_result.json"
             environment = os.environ.copy()
-            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+            environment["PATH"] = f"{binaries}{os.pathsep}{environment['PATH']}"
             environment["DOCKER_CALLS"] = str(calls)
             subprocess.run([
                 sys.executable, str(SCRIPTS_DIR / "run_docker_build.py"), "--run-dir", str(run_dir),
@@ -645,6 +654,7 @@ class TransScriptsTest(unittest.TestCase):
             self.assertIn("build ", calls.read_text(encoding="utf-8"))
             self.assertTrue(payload["git_required"])
 
+    @needs_posix_fake_docker
     def test_source_image_runner_falls_back_when_load_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -676,7 +686,7 @@ class TransScriptsTest(unittest.TestCase):
             fake_docker.chmod(0o755)
             output = artifacts / "source_image_result.json"
             environment = os.environ.copy()
-            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+            environment["PATH"] = f"{binaries}{os.pathsep}{environment['PATH']}"
             subprocess.run([
                 sys.executable, str(SCRIPTS_DIR / "run_docker_build.py"), "--run-dir", str(run_dir),
                 "--produces", str(output),
@@ -686,6 +696,7 @@ class TransScriptsTest(unittest.TestCase):
             self.assertTrue(payload["fallback_to_build"])
             self.assertEqual(payload["source_image_attempts"][-1]["mode"], "load")
 
+    @needs_posix_fake_docker
     def test_docker_build_runner_executes_build_and_inspect(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -718,7 +729,7 @@ class TransScriptsTest(unittest.TestCase):
             fake_docker.chmod(0o755)
             output = artifacts / "source_image_result.json"
             environment = os.environ.copy()
-            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+            environment["PATH"] = f"{binaries}{os.pathsep}{environment['PATH']}"
             subprocess.run([
                 sys.executable,
                 str(SCRIPTS_DIR / "run_docker_build.py"),
@@ -1974,6 +1985,7 @@ class TransScriptsTest(unittest.TestCase):
             self.assertEqual(written["comparison_evidence"]["rtol"], 1e-12)
             self.assertEqual(written["comparison_evidence"]["atol"], 1e-15)
 
+    @needs_posix_fake_docker
     def test_execution_compat_cpu_device_stays_local(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1999,7 +2011,7 @@ class TransScriptsTest(unittest.TestCase):
             )
             output = artifacts / "execution_compat.json"
             environment = os.environ.copy()
-            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+            environment["PATH"] = f"{binaries}{os.pathsep}{environment['PATH']}"
             subprocess.run([
                 sys.executable, str(SCRIPTS_DIR / "run_execution_compat.py"), "--run-dir", str(run_dir), "--produces", str(output),
             ], check=True, capture_output=True, text=True, env=environment)
@@ -2009,6 +2021,7 @@ class TransScriptsTest(unittest.TestCase):
             self.assertEqual(payload["execution_surface"], "local_docker")
             self.assertIsNone(payload["fallback"])
 
+    @needs_posix_fake_docker
     def test_execution_compat_gpu_device_blocks_without_vc(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -2059,6 +2072,7 @@ class TransScriptsTest(unittest.TestCase):
         docker.chmod(0o755)
         return docker
 
+    @needs_posix_fake_docker
     def test_registry_tag_digest_reads_back_what_the_registry_serves(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -2075,6 +2089,7 @@ class TransScriptsTest(unittest.TestCase):
             self.assertEqual(probe.returncode, 0, probe.stderr)
             self.assertEqual(probe.stdout.strip(), digest)
 
+    @needs_posix_fake_docker
     def test_vc_exec_refuses_to_submit_when_the_tag_moved(self) -> None:
         """vc submit only takes repo:tag, so pinning is proven before the submit."""
         with tempfile.TemporaryDirectory() as temporary:
@@ -2461,6 +2476,7 @@ class TransScriptsTest(unittest.TestCase):
                     scaffold_adapter.harness_runtime_build_context(harness)
         self.assertIn("build_image.py", str(caught.exception))
 
+    @needs_posix_fake_docker
     def test_scaffold_prefers_the_source_image_tag_over_the_image_id(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -2608,6 +2624,7 @@ class TransScriptsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cannot inspect source image"):
                 scaffold_adapter.source_image_reference(source_image)
 
+    @needs_posix_fake_docker
     def test_final_bundle_matches_eval_deployment_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
