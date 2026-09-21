@@ -2538,6 +2538,25 @@ class TransScriptsTest(unittest.TestCase):
                 spec = yaml.safe_load((run_dir / "adapter" / "model.spec.yaml").read_text(encoding="utf-8"))
                 self.assertEqual(spec["runtime"]["model_mount_target"], mount_target)
 
+    def test_render_keeps_lf_whatever_the_scaffolding_host_is(self) -> None:
+        # The rendered files are built on the host and read inside the Linux
+        # image: docker build hands a Dockerfile RUN line to a shell, and a
+        # trailing CR goes into the command it runs. Assert the bytes on disk --
+        # read_text() normalizes newlines away, so a text assertion (as in
+        # test_scaffold_prefers_the_source_image_tag_over_the_image_id) stays
+        # green whichever line ending was written.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "Dockerfile.in"
+            source.write_text(
+                "FROM __SOURCE_IMAGE__\nRUN pip install demo\n", encoding="utf-8", newline=""
+            )
+            destination = root / "Dockerfile.sure"
+            scaffold_adapter.render(source, destination, {"__SOURCE_IMAGE__": "demo:0.1.0"})
+            raw = destination.read_bytes()
+        self.assertNotIn(b"\r", raw)
+        self.assertEqual(raw, b"FROM demo:0.1.0\nRUN pip install demo\n")
+
     def test_source_image_python_probe_rejects_a_relative_executable(self) -> None:
         completed = mock.Mock(returncode=0, stdout="python\n", stderr="")
         with mock.patch.object(scaffold_adapter.subprocess, "run", return_value=completed):
