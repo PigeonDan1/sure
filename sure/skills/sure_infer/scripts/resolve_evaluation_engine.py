@@ -150,7 +150,7 @@ def _git_info(root: Path) -> dict[str, Any]:
 def _smoke_describe(root: Path, task: str, language: str, metric: str) -> dict[str, Any]:
     env = git_environment()
     src = str(root / "src")
-    env["PYTHONPATH"] = f"{src}:{env.get('PYTHONPATH', '')}" if env.get("PYTHONPATH") else src
+    env["PYTHONPATH"] = f"{src}{os.pathsep}{env.get('PYTHONPATH', '')}" if env.get("PYTHONPATH") else src
     code = """
 import json
 from sure_eval.evaluation.cli_adapters import build_pipeline_spec

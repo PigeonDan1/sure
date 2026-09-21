@@ -10,7 +10,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run_eval import _approved_reference_datasets_root, _localize_batch_paths, append_staging_bundle
+from run_eval import (
+    _approved_reference_datasets_root,
+    _copy_tree,
+    _localize_batch_paths,
+    append_staging_bundle,
+)
 
 
 def _write(path: Path, value: str) -> None:
@@ -228,11 +233,11 @@ class InPlaceAppendTests(unittest.TestCase):
         )
         _json(self.bundle / "validation_payload.json", {"scope": "inference"})
 
-    def _append(self, scratch_name: str) -> dict[str, object]:
+    def _append(self, scratch_name: str, source_hash: str | None = None) -> dict[str, object]:
         scratch, artifacts, rows = _scratch_fixture(self.root, scratch_name, self.bundle)
         reval = rows[0]["reval"]
         assert isinstance(reval, dict)
-        reval["source_report_sha256"] = self.SOURCE_HASH
+        reval["source_report_sha256"] = source_hash or self.SOURCE_HASH
         return append_staging_bundle(
             source_result_dir=self.bundle,
             staging_result_dir=self.bundle,
@@ -288,6 +293,13 @@ class InPlaceAppendTests(unittest.TestCase):
         self.assertEqual(second["batch_id"], first["batch_id"])
         self.assertEqual(second["staging_report_sha256"], first["staging_report_sha256"])
         self.assertEqual(second["staging_snapshot_sha256"], first["staging_snapshot_sha256"])
+
+    def test_persisted_batch_from_a_different_source_report_is_rejected(self) -> None:
+        """The record IDs do not bind the base report, so reuse must check the manifest."""
+        self._append("run_one")
+
+        with self.assertRaisesRegex(ValueError, "based on a different approved report"):
+            self._append("run_two", source_hash="c" * 64)
 
 
 class LocalizeBatchPathsTest(unittest.TestCase):
@@ -356,6 +368,45 @@ class LocalizeBatchPathsTest(unittest.TestCase):
                 "list": ["evaluation_runs/sure_eval_abc/metrics/report.json", "metrics/not_present.json"],
             },
         )
+
+
+class CopyTreePathRewriteTest(unittest.TestCase):
+    """JSON escapes every backslash, so a Windows scratch root never matches the plain spelling."""
+
+    SCRATCH = "D:\\runs\\ab\\scratch"
+    BATCH = "evaluation_runs/sure_eval_ab"
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.source = self.root / "source"
+        self.source.mkdir()
+        _json(self.source / "payload.json", {"report": self.SCRATCH + "\\report.json"})
+        _write(self.source / "rows.jsonl", json.dumps({"file": self.SCRATCH + "\\rows.txt"}) + "\n")
+        _write(self.source / "protocol.yaml", f"report: {self.SCRATCH}\\report.json\n")
+        _write(self.source / "notes.md", f"`{self.SCRATCH}\\report.json`\n")
+        _write(self.source / "broken.json", f"not json {self.SCRATCH}\\report.json\n")
+
+    def _copy(self) -> Path:
+        destination = self.root / "batch"
+        _copy_tree(self.source, destination, path_replacements=(self.SCRATCH, self.BATCH))
+        return destination
+
+    def test_json_and_jsonl_values_lose_the_scratch_prefix(self) -> None:
+        destination = self._copy()
+        payload = json.loads((destination / "payload.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["report"], self.BATCH + "\\report.json")
+        row = json.loads((destination / "rows.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(row["file"], self.BATCH + "\\rows.txt")
+
+    def test_text_formats_and_undecodable_json_keep_the_plain_rewrite(self) -> None:
+        destination = self._copy()
+        for name in ("protocol.yaml", "notes.md", "broken.json"):
+            with self.subTest(name=name):
+                text = (destination / name).read_text(encoding="utf-8")
+                self.assertNotIn(self.SCRATCH, text)
+                self.assertIn(self.BATCH, text)
 
 
 if __name__ == "__main__":
