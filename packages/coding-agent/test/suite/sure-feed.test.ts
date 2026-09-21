@@ -521,8 +521,17 @@ describe.skipIf(!PYTHON_BIN)("sure_feed gate scripts (real python3 spawnSync)", 
 		expect(r.status, r.stderr || r.stdout).toBe(0);
 	});
 
+	// The gate cross-checks the selection against the upstream MODEL_INPUT
+	// objects, so every rank_select run dir needs model_input_result.json seeded.
+	function seedSynthesized(runDir: string, modelIds: string[]): void {
+		writeArtifact(runDir, "model_input_result.json", {
+			model_inputs: modelIds.map((model_id) => ({ model_id })),
+		});
+	}
+
 	it("check_rank_select passes for a non-empty selection with repo + score", () => {
 		const runDir = freshRunDir("rank-pass");
+		seedSynthesized(runDir, ["m1"]);
 		writeArtifact(runDir, "rank_select_result.json", {
 			selected: [{ model_id: "m1", repo: "https://modelscope.cn/x/m1", score: 1.5, rank_reason: "top" }],
 		});
@@ -532,6 +541,7 @@ describe.skipIf(!PYTHON_BIN)("sure_feed gate scripts (real python3 spawnSync)", 
 
 	it("check_rank_select fails when a selected candidate has no repo (handoff needs it)", () => {
 		const runDir = freshRunDir("rank-fail");
+		seedSynthesized(runDir, ["m1"]);
 		writeArtifact(runDir, "rank_select_result.json", {
 			selected: [{ model_id: "m1", score: 1.5 }],
 		});
@@ -542,6 +552,7 @@ describe.skipIf(!PYTHON_BIN)("sure_feed gate scripts (real python3 spawnSync)", 
 
 	it("check_rank_select repair names the score domain (≥ 0) and the bad value", () => {
 		const runDir = freshRunDir("rank-score");
+		seedSynthesized(runDir, ["m1"]);
 		writeArtifact(runDir, "rank_select_result.json", {
 			selected: [{ model_id: "m1", repo: "https://modelscope.cn/x/m1", score: -3 }],
 		});
@@ -550,6 +561,17 @@ describe.skipIf(!PYTHON_BIN)("sure_feed gate scripts (real python3 spawnSync)", 
 		expect(r.stderr).toContain("score");
 		expect(r.stderr).toContain(">="); // domain: score ≥ 0
 		expect(r.stderr).toContain("-3"); // the offending value is echoed back
+	});
+
+	it("check_rank_select rejects a selection the run directory has no MODEL_INPUT for", () => {
+		const runDir = freshRunDir("rank-unbacked");
+		seedSynthesized(runDir, ["m1"]);
+		writeArtifact(runDir, "rank_select_result.json", {
+			selected: [{ model_id: "never-synthesized", repo: "https://modelscope.cn/x/m2", score: 1.5 }],
+		});
+		const r = runGate("check_rank_select.py", runDir, "rank_select_result.json");
+		expect(r.ok).toBe(false);
+		expect(r.stderr).toContain("model_input_result.json");
 	});
 });
 

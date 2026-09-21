@@ -1921,6 +1921,50 @@ class TransScriptsTest(unittest.TestCase):
             self.assertFalse(payload["equivalent"])
             self.assertIn("dimensions differ", payload["error"])
 
+    def test_sv_equivalence_rejects_a_tolerance_looser_than_the_gate_default(self) -> None:
+        """The artifact under test must not widen the bar it is judged against."""
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir, result = self._equivalence_run_dir(
+                Path(temporary),
+                {"embedding": [1.0, 1.0]},
+                {"embedding": [1.9, 1.9]},
+            )
+            (run_dir / "artifacts" / "adapter_manifest.json").write_text(
+                json.dumps({"io_contract": {"primary_field": "embedding"}}) + "\n",
+                encoding="utf-8",
+            )
+            payload = json.loads(result.read_text(encoding="utf-8"))
+            payload["rtol"] = 1.0
+            result.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+            process = self._run_equivalence(run_dir, result)
+            self.assertNotEqual(process.returncode, 0)
+            written = json.loads(result.read_text(encoding="utf-8"))
+            self.assertFalse(written["equivalent"])
+            self.assertIn("rtol", written["error"])
+            self.assertIn("1.0", written["error"])
+            self.assertIn("1e-05", written["error"])
+
+    def test_sv_equivalence_accepts_a_tolerance_tighter_than_the_gate_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir, result = self._equivalence_run_dir(
+                Path(temporary),
+                {"embedding": [1.0, 1.0]},
+                {"embedding": [1.0, 1.0]},
+            )
+            (run_dir / "artifacts" / "adapter_manifest.json").write_text(
+                json.dumps({"io_contract": {"primary_field": "embedding"}}) + "\n",
+                encoding="utf-8",
+            )
+            payload = json.loads(result.read_text(encoding="utf-8"))
+            payload["rtol"] = 1e-12
+            payload["atol"] = 1e-15
+            result.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+            process = self._run_equivalence(run_dir, result)
+            self.assertEqual(process.returncode, 0, process.stderr)
+            written = json.loads(result.read_text(encoding="utf-8"))
+            self.assertEqual(written["comparison_evidence"]["rtol"], 1e-12)
+            self.assertEqual(written["comparison_evidence"]["atol"], 1e-15)
+
     def test_execution_compat_cpu_device_stays_local(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

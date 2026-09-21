@@ -311,6 +311,12 @@ function rankSelectResult(): Record<string, unknown> {
 	};
 }
 
+// Upstream evidence the RANK_AND_SELECT gate cross-checks the selection against.
+// A run that reached rank_and_select has already passed synthesize_model_input.
+function modelInputResult(): Record<string, unknown> {
+	return { model_inputs: [{ model_id: "demo/asr-tiny" }] };
+}
+
 function feedReport(): Record<string, unknown> {
 	return { selected: { model_id: "demo/asr-tiny" } };
 }
@@ -580,6 +586,7 @@ describe("sure_feed memory wiring: injection, settlement and the digest", () => 
 			retries: {},
 			failedArtifactDigests: {},
 		});
+		writeArtifact(fixture.runDir, "model_input_result.json", modelInputResult());
 		writeArtifact(fixture.runDir, "rank_select_result.json", rankSelectResult());
 		const entered = postToolResult(fixture.ctx);
 		expect(entered.ok, entered.repair).toBe(true);
@@ -610,6 +617,7 @@ describe("sure_feed memory wiring: injection, settlement and the digest", () => 
 			retries: {},
 			failedArtifactDigests: {},
 		});
+		writeArtifact(fixture.runDir, "model_input_result.json", modelInputResult());
 		writeArtifact(fixture.runDir, "rank_select_result.json", rankSelectResult());
 		const entered = postToolResult(fixture.ctx);
 		expect(entered.ok, entered.repair).toBe(true);

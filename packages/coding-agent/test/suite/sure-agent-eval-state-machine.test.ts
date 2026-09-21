@@ -11,6 +11,7 @@ import {
 	TOTAL_UNITS,
 	type Unit,
 } from "../../../../sure/skills/sure_agent_eval/hooks/state-machine.ts";
+import { validateProduces } from "../../../../sure/skills/sure_agent_eval/hooks/validate.ts";
 import { discoverSureSkillPackages, SURE_COMMANDS } from "../../src/core/sure/manifest.ts";
 import type { SureHookContext } from "../../src/core/sure/types.ts";
 
@@ -384,5 +385,38 @@ describe("sure_agent_eval preToolCall script whitelist", () => {
 		const result = preToolCall(ctx);
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("inference surface");
+	});
+});
+
+// sure_agent_eval/hooks/validate.ts is a byte-for-byte copy of the sure_eval
+// one, so it carried the same union-type hole: execution_result.schema.json
+// declares error as ["string","null"] and the type tier skipped it entirely.
+describe("sure_agent_eval validateProduces union types", () => {
+	const unit = findUnit("run_agent")!;
+	const ctx = { packageDir: PACKAGE_DIR } as SureHookContext;
+
+	function executionResult(error: unknown): Record<string, unknown> {
+		return {
+			schema: "sure.agent_eval.execution_result.v1",
+			job_status: "succeeded",
+			exit_code: 0,
+			product_dir: "/tmp/product",
+			agent: { name: AGENT_NAME, task: "s2tt" },
+			datasets: [{ dataset: "demo", expected: 1, generated: 1 }],
+			created_at: "2026-09-21T00:00:00Z",
+			error,
+		};
+	}
+
+	it("accepts each member of the union", () => {
+		expect(validateProduces(ctx, unit, executionResult(null)).ok).toBe(true);
+		expect(validateProduces(ctx, unit, executionResult("boom")).ok).toBe(true);
+	});
+
+	it("rejects a value outside the union", () => {
+		const result = validateProduces(ctx, unit, executionResult(42));
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("error");
+		expect(result.repair).toContain("number");
 	});
 });

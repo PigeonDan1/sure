@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { preToolCall } from "../../../../sure/skills/sure_eval/hooks/index.ts";
 import { findUnit, MAIN_FLOW_UNITS, TOTAL_UNITS } from "../../../../sure/skills/sure_eval/hooks/state-machine.ts";
+import { validateProduces } from "../../../../sure/skills/sure_eval/hooks/validate.ts";
 import { MAIN_FLOW_UNITS as INFER_UNITS } from "../../../../sure/skills/sure_infer/hooks/state-machine.ts";
 import type { SureHookContext } from "../../src/core/sure/types.ts";
 
@@ -128,5 +129,39 @@ describe("sure_eval backend script guard", () => {
 		const result = backendGuard(`python3 ${join(backend, "evaluate_predictions.py")}`, "execute_evaluation");
 		expect(result.ok).toBe(false);
 		expect(result.repair).toContain("direct call");
+	});
+});
+
+// A union `type` in a schema (["string","null"]) used to read as "no declared
+// type", so the field was skipped by the type tier entirely and any value at
+// all passed. extraction_declaration.schema.json declares no_lessons_reason
+// that way, so the gate accepted a number where the schema allows only a
+// string or null.
+describe("sure_eval validateProduces union types", () => {
+	const unit = findUnit("extract_lessons")!;
+	const ctx = { packageDir: PACKAGE_DIR } as SureHookContext;
+
+	function declaration(noLessonsReason: unknown): Record<string, unknown> {
+		return {
+			schema: "sure.memory.extraction.v2",
+			no_new_lessons: true,
+			no_lessons_reason: noLessonsReason,
+			covered_by: [],
+			candidates: [],
+			infra_noise: false,
+			infra_evidence: [],
+		};
+	}
+
+	it("accepts each member of the union", () => {
+		expect(validateProduces(ctx, unit, declaration("clean run")).ok).toBe(true);
+		expect(validateProduces(ctx, unit, declaration(null)).ok).toBe(true);
+	});
+
+	it("rejects a value outside the union", () => {
+		const result = validateProduces(ctx, unit, declaration(42));
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("no_lessons_reason");
+		expect(result.repair).toContain("number");
 	});
 });
