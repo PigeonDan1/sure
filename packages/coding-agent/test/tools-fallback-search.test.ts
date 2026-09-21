@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -153,5 +153,24 @@ describe("grep and find without ripgrep or fd", () => {
 
 		expect(lines).not.toContain("src/gen/x.ts"); // src/.gitignore says gen/
 		expect(lines).toContain("gen/y.ts"); // the same rule does not reach the root
+	});
+
+	it("reads a .gitignore that is a symlink, as git, rg and fd do", async () => {
+		const dir = fixture();
+		// Dotfile managers (stow, chezmoi) leave .gitignore as a link to the real file.
+		rmSync(join(dir, ".gitignore"));
+		writeFileSync(join(dir, "ignore-rules"), "build/\n");
+		try {
+			symlinkSync(join(dir, "ignore-rules"), join(dir, ".gitignore"), "file");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "EPERM") return; // Windows without symlink rights
+			throw error;
+		}
+		const tool = createFindTool(dir);
+
+		const lines = toolText(await tool.execute("call-find", { pattern: "*.ts" })).split("\n");
+
+		expect(lines).toContain("src/alpha.ts");
+		expect(lines).not.toContain("build/alpha.ts");
 	});
 });
