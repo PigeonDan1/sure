@@ -296,7 +296,7 @@ describe("sure_onboard MODEL_INPUT startup", () => {
 		expect(result.ok).toBe(true);
 		expect(patch.message).toContain("rednote-hilab/dots.tts-base");
 		expect(patch.message).toContain('as "rednote-hilab__dots.tts-base"');
-		expect(patch.message).toContain("sure/models/rednote-hilab__dots.tts-base");
+		expect(patch.message).toContain(join("sure", "models", "rednote-hilab__dots.tts-base"));
 		expect(patch.message).toContain("from MODEL_INPUT");
 		expect(patch.diagnostics?.some((item) => item.message.includes("Loaded MODEL_INPUT"))).toBe(true);
 	});
