@@ -295,7 +295,11 @@ def run_agent(
             dataset_id = str(dataset["dataset"])
             log(f"dataset {dataset_id}: projecting from {dataset['source_root']}")
             try:
-                jsonl_path = manager.download_and_convert(str(dataset["source_root"]))
+                # The resolver takes <path>[@<version>]; without the version a pool
+                # with several versions is ambiguous and the projection fails here.
+                jsonl_path = manager.download_and_convert(
+                    f"{dataset['source_root']}@{dataset['version_id']}"
+                )
                 rows = [
                     json.loads(line)
                     for line in jsonl_path.read_text(encoding="utf-8").splitlines()

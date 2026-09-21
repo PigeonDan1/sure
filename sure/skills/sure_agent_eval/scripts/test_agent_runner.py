@@ -72,6 +72,37 @@ def write_flat_s2tt_source(root: Path, name: str, samples: int = 2) -> Path:
     return dataset_root
 
 
+def write_versioned_s2tt_source(root: Path, name: str, versions: tuple[str, ...], samples: int = 2) -> Path:
+    """A dataset pool in the versioned layout: sample_files/<version>/sample.jsonl."""
+    pool = root / name
+    raw_dir = pool / "raws" / "sample"
+    raw_dir.mkdir(parents=True)
+    for version in versions:
+        version_dir = pool / "sample_files" / version
+        version_dir.mkdir(parents=True)
+        lines = []
+        for index in range(samples):
+            (raw_dir / f"{version}_utt{index}.wav").write_bytes(b"RIFFxxxx")
+            lines.append(
+                json.dumps(
+                    {
+                        "sample_id": f"{version}_utt{index}",
+                        "attribute": {"path": f"{version}_utt{index}.wav", "sample_rate": 16000},
+                        "annotation": [
+                            {"transcription": {"text": [f"源文本{index}"]}},
+                            {"translation": {"text": [f"reference {index}"]}},
+                        ],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        (version_dir / "sample.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        (version_dir / "ds.jsonl").write_text(
+            '{"audio": {"speech": {"language": "zh", "translation_language": "en"}}}\n', encoding="utf-8"
+        )
+    return pool
+
+
 def make_spec(dataset_root: Path, product_dir: Path) -> dict:
     return {
         "schema": "sure.agent_eval.spec_resolved.v1",
@@ -236,6 +267,30 @@ class RunAgentTests(unittest.TestCase):
         self.assertIn("boom", result["error"])
         execution = json.loads((self.run_dir / "artifacts" / "execution_result.json").read_text(encoding="utf-8"))
         self.assertEqual(execution["job_status"], "failed")
+
+    def test_versioned_pool_projects_the_planned_version(self) -> None:
+        pool = write_versioned_s2tt_source(self.source_root, "pool_s2tt", ("v1", "v2"))
+        dataset = dict(self.spec["datasets"][0])
+        dataset.update(
+            {
+                "dataset": "pool_s2tt__v2",
+                "source_root": str(pool),
+                "source_dataset_name": "pool_s2tt",
+                "version_id": "v2",
+                "sample_jsonl": str(pool / "sample_files" / "v2" / "sample.jsonl"),
+                "ds_jsonl": str(pool / "sample_files" / "v2" / "ds.jsonl"),
+                "raw_dir": str(pool / "raws" / "sample"),
+            }
+        )
+        result = agent_runner.run_agent(
+            {**self.spec, "datasets": [dataset]},
+            self.run_dir,
+            mcp_caller_factory=self.stub_mcp_factory,
+            api_caller=self.stub_api_caller,
+        )
+        self.assertEqual(result["job_status"], "succeeded", result["error"])
+        predictions = (self.product_dir / "predictions" / "pool_s2tt__v2.txt").read_text(encoding="utf-8")
+        self.assertEqual([line.split("\t")[0] for line in predictions.splitlines()], ["v2_utt0", "v2_utt1"])
 
     def test_dataset_projection_failure_is_a_terminal_failed_record(self) -> None:
         class ExplodingManager:
