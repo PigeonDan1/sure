@@ -638,7 +638,7 @@ def main() -> int:
         "git_required": True, "git_augmentation_dockerfile": str(injected_dockerfile),
     }
     if build_result["exit_code"] == 0:
-        inspected, _ = inspect_image(image, min(args.timeout_seconds, 60))
+        inspected, inspect_result = inspect_image(image, min(args.timeout_seconds, 60))
         repo_tags = inspected.get("RepoTags") if inspected else None
         if inspected and isinstance(repo_tags, list) and image in repo_tags:
             payload["status"] = "passed"
@@ -646,7 +646,11 @@ def main() -> int:
             payload["image_repo_tags"] = repo_tags
             payload["image_created"] = inspected.get("Created")
         else:
-            payload["error"] = "docker image inspect did not confirm the generated tag"
+            # Keep inspect's own account of the failure; it is the only lead there is.
+            detail = inspect_result["stderr"].strip() or (
+                f"image {inspected['Id']} carries tags {repo_tags}" if inspected else f"docker image inspect exited {inspect_result['exit_code']}"
+            )
+            payload["error"] = f"docker image inspect did not confirm the generated tag: {detail}"
     else:
         payload["error"] = (build_result["stderr"] or build_result["stdout"]).strip() or f"docker build exited {build_result['exit_code']}"
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
