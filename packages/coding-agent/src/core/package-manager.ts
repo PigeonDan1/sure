@@ -219,7 +219,10 @@ function toPosixPath(p: string): string {
 }
 
 function getHomeDir(): string {
-	return process.env.HOME || homedir();
+	// Git Bash and friends export a POSIX-style HOME (`/c/Users/me`) that Windows
+	// path APIs cannot resolve, so run it through the same normalization the
+	// trust manager uses before joining anything onto it.
+	return resolvePath(process.env.HOME || homedir());
 }
 
 export function getExtensionTempFolder(agentDir: string): string {
