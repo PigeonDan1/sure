@@ -81,8 +81,7 @@ jobs:
         run: |
           npx vitest --run \
             test/suite/sure-*.test.ts \
-            test/sure/*.test.ts \
-            --exclude test/suite/sure-extension.test.ts
+            test/sure/*.test.ts
 
   public-smoke:
     name: Public export and startup
