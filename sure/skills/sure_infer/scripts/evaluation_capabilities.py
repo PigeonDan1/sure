@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,15 @@ STATIC_CAPABILITIES = (
     / "evaluation"
     / "engine-capabilities.generated.json"
 )
+
+
+class EngineRouteUnavailable(ValueError):
+    """The engine has no route configured for this task, language and metric.
+
+    A ValueError, because that is what the engine raises and what every caller
+    already treats as "the engine does not cover this"; the subclass is how a
+    caller tells that answer from the engine's other rejections.
+    """
 
 
 def normalize_engine_task(task: str) -> str:
@@ -52,6 +63,122 @@ def _insert_engine_src(engine_root: Path) -> None:
     if src in sys.path:
         sys.path.remove(src)
     sys.path.insert(0, src)
+
+
+def _rejection(exc: ValueError) -> dict[str, Any]:
+    """Tell the engine's two rejections apart, once, at the boundary that owns it.
+
+    The engine answers both from inside the same call with a bare ValueError:
+    a metric its task does not define ("Unsupported KWS metric: bogus") and a
+    metric with no route for this language ("No configured route found for ASR
+    (language=zh, metric=utmos)"). Only the second says the caller probably
+    paired a dataset with the wrong task. Nothing but the wording separates
+    them -- the type, the traceback and the raising function are identical --
+    so the wording is read here and callers switch on the status instead.
+    """
+
+    if "No configured route" in str(exc):
+        return {"status": "route_unavailable", "message": str(exc)}
+    return {"status": "unsupported", "message": str(exc)}
+
+
+def _probe_engine_here(engine_root: str, engine_task: str, language: str) -> dict[str, Any]:
+    """Ask the engine about one task/language, importing it into this process.
+
+    Only the child process started by _run_probe() may call this: it pins the
+    name `sure_eval` to the engine's package for the rest of the process.
+    """
+
+    _insert_engine_src(Path(engine_root))
+    try:
+        from sure_eval.evaluation.agent_plan import build_agent_plan
+        from sure_eval.evaluation.cli_adapters import build_pipeline_spec
+
+        plan = build_agent_plan(engine_task, language=language or None, include_root_env=False)
+    except ValueError as exc:
+        return _rejection(exc)
+    default_metrics = [str(item) for item in plan.get("metrics") or []]
+    try:
+        spec = build_pipeline_spec(engine_task, language=language or None)
+    except ValueError:
+        # The engine raises ValueError to say no route is configured for this
+        # task/language. That is an answer -- no routes -- not a failure.
+        return {"status": "no_routes", "default_metrics": default_metrics}
+    route_choices = [item for item in spec.get("route_choices") or [] if isinstance(item, dict)]
+    return {"status": "ok", "default_metrics": default_metrics, "route_choices": route_choices}
+
+
+def _plan_engine_here(
+    engine_root: str, engine_task: str, language: str, metrics: list[str]
+) -> dict[str, Any]:
+    """Build the engine's route/env plan in this process. Child process only."""
+
+    _insert_engine_src(Path(engine_root))
+    try:
+        from sure_eval.evaluation.agent_plan import build_agent_plan
+
+        plan = build_agent_plan(engine_task, language=language or None, metrics=list(metrics))
+    except ValueError as exc:
+        return _rejection(exc)
+    return {"status": "ok", "plan": plan}
+
+
+@lru_cache(maxsize=None)
+def _run_probe(
+    question: str, engine_root: str, engine_task: str, language: str, metrics: tuple[str, ...]
+) -> dict[str, Any]:
+    """Put one engine question to a child process, and remember its answer.
+
+    The engine's src/ carries a package named sure_eval, the same top-level
+    name as the harness-local package next to this file, and the two are
+    divergent forks of it. Whichever is imported first pins the name for the
+    whole process, and because both ship the same modules the loser's imports
+    keep working and silently hand back the other fork's classes. Importing
+    the engine only in a child keeps it out of every harness process.
+    """
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            question,
+            engine_root,
+            engine_task,
+            language,
+            *metrics,
+        ],
+        capture_output=True,
+        check=False,
+    )
+    stdout = completed.stdout.decode("utf-8", errors="replace").strip()
+    stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+    try:
+        # The engine may log to stdout; the probe's answer is the last line.
+        answer = json.loads(stdout.rsplit("\n", 1)[-1])
+    except json.JSONDecodeError:
+        answer = None
+    if not isinstance(answer, dict) or "status" not in answer:
+        return {
+            "status": "error",
+            "type": "EngineProbeFailed",
+            "message": f"probe exited {completed.returncode} without an answer: {stderr or stdout}",
+        }
+    return answer
+
+
+def _engine_answer(answer: dict[str, Any], broken: str) -> dict[str, Any]:
+    """Return the child's answer, or raise the exception its status stands for."""
+
+    status = answer.get("status")
+    if status == "route_unavailable":
+        raise EngineRouteUnavailable(str(answer.get("message") or ""))
+    if status == "unsupported":
+        raise ValueError(str(answer.get("message") or ""))
+    if status not in {"ok", "no_routes"}:
+        # The engine could not answer at all. Reporting defaults here is
+        # indistinguishable from a real answer.
+        raise RuntimeError(broken)
+    return answer
 
 
 def _catalog_entries(engine_root: Path, task: str, language: str) -> list[dict[str, Any]]:
@@ -123,33 +250,16 @@ def discover_engine_capabilities(engine_root: Path, task: str, language: str) ->
         static = _static_capabilities(engine_task, language)
         if static is not None:
             return static
-    _insert_engine_src(engine_root)
-    from sure_eval.evaluation.agent_plan import build_agent_plan
-    from sure_eval.evaluation.cli_adapters import build_pipeline_spec
-
-    default_plan = build_agent_plan(
-        engine_task,
-        language=language or None,
-        include_root_env=False,
+    probed = _run_probe("capabilities", str(engine_root), engine_task, language, ())
+    answer = _engine_answer(
+        probed,
+        f"sure-evaluation engine at {engine_root} could not describe task "
+        f"{engine_task!r} (language={language!r}): "
+        f"{probed.get('type')}: {probed.get('message')}",
     )
-    default_metrics = _dedupe([str(item) for item in default_plan.get("metrics") or []])
-    route_choices: list[dict[str, Any]] = []
+    default_metrics = _dedupe([str(item) for item in answer.get("default_metrics") or []])
     supported_metrics: list[str] = []
-    try:
-        spec = build_pipeline_spec(engine_task, language=language or None)
-    except ValueError:
-        # The engine raises ValueError to say no route is configured for this
-        # task/language. That is an answer -- no routes -- not a failure.
-        spec = {}
-    except Exception as exc:
-        # Anything else (the engine's lazy task imports, a partial checkout, a
-        # sure_eval package shadowing it) means the engine could not answer.
-        # Reporting the defaults here is indistinguishable from a real answer.
-        raise RuntimeError(
-            f"sure-evaluation engine at {engine_root} could not describe task "
-            f"{engine_task!r} (language={language!r}): {type(exc).__name__}: {exc}"
-        ) from exc
-    route_choices = [dict(item) for item in spec.get("route_choices") or [] if isinstance(item, dict)]
+    route_choices = [dict(item) for item in answer.get("route_choices") or [] if isinstance(item, dict)]
     for route in route_choices:
         metric = str(route.get("metric") or "").strip()
         if not metric:
@@ -173,6 +283,22 @@ def discover_engine_capabilities(engine_root: Path, task: str, language: str) ->
     }
 
 
+def build_engine_plan(
+    engine_root: Path, engine_task: str, language: str, metrics: list[str]
+) -> dict[str, Any]:
+    """Return the engine's route and node-environment plan for one dataset.
+
+    Raises EngineRouteUnavailable when the engine has no route for the
+    requested metrics, ValueError when it rejects the task, language or metric,
+    and RuntimeError carrying the engine's own message when it broke.
+    """
+
+    planned = _run_probe("plan", str(engine_root), engine_task, language, tuple(metrics))
+    # The caller puts this message straight into a per-dataset blocking issue,
+    # so it stays exactly the engine's own text.
+    return _engine_answer(planned, str(planned.get("message") or "")).get("plan") or {}
+
+
 def default_metrics_for_task_language(engine_root: Path, task: str, language: str) -> list[str]:
     """Return the engine default metrics for a task/language."""
 
@@ -183,3 +309,22 @@ def supported_metrics_for_task_language(engine_root: Path, task: str, language: 
     """Return the engine-supported metrics for a task/language."""
 
     return list(discover_engine_capabilities(engine_root, task, language).get("supported_metrics") or [])
+
+
+def _probe_main(argv: list[str]) -> int:
+    """Child entry point for _run_probe(): one JSON answer on the last stdout line."""
+
+    question, engine_root, engine_task, language, *metrics = argv
+    try:
+        if question == "plan":
+            answer = _plan_engine_here(engine_root, engine_task, language, metrics)
+        else:
+            answer = _probe_engine_here(engine_root, engine_task, language)
+    except Exception as exc:  # the parent turns this into its RuntimeError
+        answer = {"status": "error", "type": type(exc).__name__, "message": str(exc)}
+    sys.stdout.write(json.dumps(answer) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_probe_main(sys.argv[1:]))

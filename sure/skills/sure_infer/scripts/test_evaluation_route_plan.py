@@ -9,6 +9,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import resolve_evaluation_route_plan as route_plan  # noqa: E402
+from evaluation_capabilities import EngineRouteUnavailable  # noqa: E402
+
+NO_ROUTE = "No configured route found for ASR (language=zh, metric=utmos)"
 
 
 def plan_with_blocking_node() -> dict:
@@ -77,6 +80,36 @@ class MaintainerSetupCommandTests(unittest.TestCase):
         self.assertEqual(
             route_plan._maintainer_setup_commands(ready),
             ["Run `sure-eval metric describe`, then run it."],
+        )
+
+
+class BlockingIssueTests(unittest.TestCase):
+    """Which failure gets the dataset/model task hint appended."""
+
+    def test_a_route_the_engine_does_not_have_keeps_the_task_mismatch_hint(self) -> None:
+        issue = route_plan._blocking_issue("demo__v1", EngineRouteUnavailable(NO_ROUTE))
+        self.assertTrue(issue.startswith(f"demo__v1: {NO_ROUTE}"), issue)
+        self.assertIn("the dataset task does not match the model task", issue)
+
+    def test_a_broken_engine_is_not_dressed_up_as_a_task_mismatch(self) -> None:
+        issue = route_plan._blocking_issue("demo__v1", RuntimeError("No module named 'numpy'"))
+        self.assertEqual(issue, "demo__v1: No module named 'numpy'")
+
+    def test_the_hint_follows_the_engine_answer_not_its_wording(self) -> None:
+        """A broken engine whose message happens to quote a route error is still broken.
+
+        The child process reports which of the two the engine gave; reading the
+        message instead made any failure that repeated the engine's wording look
+        like a dataset the user had paired with the wrong model.
+        """
+
+        issue = route_plan._blocking_issue("demo__v1", RuntimeError(NO_ROUTE))
+        self.assertEqual(issue, f"demo__v1: {NO_ROUTE}")
+
+    def test_a_nameless_dataset_still_names_itself(self) -> None:
+        self.assertEqual(
+            route_plan._blocking_issue("", ValueError("Unsupported ASR language: xx")),
+            "(unknown dataset): Unsupported ASR language: xx",
         )
 
 
