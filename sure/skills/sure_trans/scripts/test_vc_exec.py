@@ -921,6 +921,14 @@ def write_artifact(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
 
 
+# These tests put a fake docker on PATH as a #!/bin/sh script. Windows has no
+# shebang and CreateProcess only appends .exe when searching PATH, so a shim
+# with no extension is unreachable there whatever the product does.
+needs_posix_fake_docker = unittest.skipIf(
+    os.name == "nt", "the fake docker on PATH is a #!/bin/sh script"
+)
+
+
 class ExecutionCompatVcTest(unittest.TestCase):
     def test_cuda_device_probes_via_vc_and_records_source_push(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1063,6 +1071,7 @@ class ExecutionCompatVcTest(unittest.TestCase):
             self.assertEqual(payload["status"], "blocked")
             self.assertTrue(payload["transformers_required"])
 
+    @needs_posix_fake_docker
     def test_auto_falls_back_to_local_cpu_after_vc_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -1092,7 +1101,7 @@ class ExecutionCompatVcTest(unittest.TestCase):
             )
             output = artifacts / "execution_compat.json"
             environment = dict(os.environ)
-            environment["PATH"] = f"{binaries}:{environment['PATH']}"
+            environment["PATH"] = f"{binaries}{os.pathsep}{environment['PATH']}"
             with mock.patch.object(run_execution_compat, "ensure_registry_image", return_value="sha256:" + "c" * 64), mock.patch.object(
                 run_execution_compat, "run_vc_job", return_value=failed
             ), mock.patch.dict(os.environ, {"PATH": environment["PATH"]}), mock.patch.object(
