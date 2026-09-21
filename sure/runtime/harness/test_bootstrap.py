@@ -68,6 +68,62 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         self.assertEqual(len(manifest["base_python_sha256"]), 64)
         self.assertEqual(manifest["runtime_id"], first["runtime_id"])
 
+    def test_a_manifest_base_python_hash_is_checked_against_the_interpreter(self) -> None:
+        # The hash was recorded and never read back, so a runtime whose base
+        # interpreter had been swapped under it was reused on every resolve.
+        first = resolve_runtime(self.runtime_root)
+        manifest_path = Path(first["manifest_path"])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        genuine = manifest["base_python_sha256"]
+        manifest["base_python_sha256"] = "0" * 64
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(HarnessRuntimeError, "base_python_sha256"):
+            resolve_runtime(self.runtime_root, repair=False)
+
+        repaired = json.loads(
+            Path(resolve_runtime(self.runtime_root)["manifest_path"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(repaired["base_python_sha256"], genuine)
+
+    def _superseded_runtime(self) -> Path:
+        """A runtime left behind by an earlier runtime_id, plus what must survive."""
+        self.runtime_root.mkdir(parents=True, exist_ok=True)
+        superseded = self.runtime_root / "sure-harness-v0-m1-py311-000000000000"
+        superseded.mkdir()
+        (superseded / "runtime-manifest.json").write_text(
+            json.dumps({"schema": "sure.harness.runtime.manifest.v1", "runtime_id": superseded.name}),
+            encoding="utf-8",
+        )
+        (superseded / "payload").write_text("", encoding="utf-8")
+        self.foreign = self.runtime_root / "not-a-runtime"
+        self.foreign.mkdir()
+        (self.foreign / "keep-me").write_text("", encoding="utf-8")
+        self.quarantine = self.runtime_root / f".{superseded.name}.invalid-19700101-000000-1"
+        self.quarantine.mkdir()
+        return superseded
+
+    def test_materializing_reclaims_a_superseded_runtime(self) -> None:
+        # runtime_id carries the harness version, the materialization version and
+        # the lock hash, so every bump of any of them leaves a whole venv behind
+        # under the same root and nothing ever collected it.
+        superseded = self._superseded_runtime()
+
+        contract = resolve_runtime(self.runtime_root)
+
+        self.assertFalse(superseded.exists())
+        self.assertTrue(Path(contract["python_executable"]).is_file())
+        # Only directories carrying this manifest schema are in scope.
+        self.assertTrue(self.foreign.is_dir())
+        self.assertTrue(self.quarantine.is_dir())
+
+    def test_superseded_runtimes_can_be_kept(self) -> None:
+        superseded = self._superseded_runtime()
+
+        resolve_runtime(self.runtime_root, prune=False)
+
+        self.assertTrue(superseded.is_dir())
+
 
 class HarnessRuntimeSpecTests(unittest.TestCase):
     """A malformed runtime.json must fail the way the launcher can report.

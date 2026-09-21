@@ -314,17 +314,26 @@ describe("site policy token expansion", () => {
 		expect(resolved?.policy.storage.forbidden_output_roots[0]).toBe(`${expectedHome()}/.sure/approved`);
 	});
 
-	it("hashes the expanded text, not the committed template", () => {
+	it("hashes the committed template, not the expanded text", () => {
+		// Two checkouts of one policy must agree on its digest: every provenance
+		// packet compares the sha256 a run recorded against the sha256 this host
+		// computes now, and where the repository happens to sit is not part of
+		// the policy.
 		const root = tokenRoot("digest");
-		writeFileSync(join(root, "config", "site.local.yaml"), TOKEN_FIXTURE, "utf-8");
-		const expanded = TOKEN_FIXTURE.replaceAll("${HOME}", expectedHome()).replaceAll(
-			"${REPO}",
-			root.replaceAll("\\", "/"),
+		const fixture = join(root, "config", "token.yaml");
+		writeFileSync(fixture, TOKEN_FIXTURE, "utf-8");
+		const elsewhere = tokenRoot("digest-elsewhere");
+		const environment = { SURE_SITE_POLICY: fixture };
+
+		const here = resolveSitePolicy({ repositoryRoot: root, environment });
+		const there = resolveSitePolicy({ repositoryRoot: elsewhere, environment });
+
+		expect(here?.sha256).toBe(there?.sha256);
+		expect(here?.sha256).toBe(createHash("sha256").update(Buffer.from(TOKEN_FIXTURE, "utf8")).digest("hex"));
+		// Expansion still happens; only what gets hashed changed.
+		expect(there?.policy.datasets.allowed_source_roots.smoke).toBe(
+			`${elsewhere.replaceAll("\\", "/")}/fixtures/tasks`,
 		);
-
-		const resolved = resolveSitePolicy({ repositoryRoot: root, environment: {} });
-
-		expect(resolved?.sha256).toBe(createHash("sha256").update(Buffer.from(expanded, "utf8")).digest("hex"));
 	});
 });
 
@@ -428,12 +437,12 @@ describe("site policy encoding", () => {
 	it("still loads a policy that starts with a UTF-8 byte order mark", () => {
 		const root = tokenRoot("byte-order-mark");
 		const fixture = join(root, "config", "site.local.yaml");
-		writeFileSync(fixture, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(TOKEN_FIXTURE, "utf8")]));
-		const expanded = `﻿${TOKEN_FIXTURE.replaceAll("${HOME}", expectedHome()).replaceAll("${REPO}", root.replaceAll("\\", "/"))}`;
+		const raw = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(TOKEN_FIXTURE, "utf8")]);
+		writeFileSync(fixture, raw);
 
 		const resolved = resolveSitePolicy({ repositoryRoot: root, environment: {} });
 
-		expect(resolved?.sha256).toBe(createHash("sha256").update(Buffer.from(expanded, "utf8")).digest("hex"));
+		expect(resolved?.sha256).toBe(createHash("sha256").update(raw).digest("hex"));
 	});
 });
 

@@ -150,6 +150,15 @@ def _verified_contract(
     python = _python_path(runtime_dir)
     if not python.is_file() or not os.access(python, os.X_OK):
         raise HarnessRuntimeError(f"Harness Runtime Python is missing or not executable: {python}")
+    # The manifest records which base interpreter the venv was built on. Reading
+    # it back is the whole point of recording it: a venv is a handful of paths
+    # pointing at an interpreter this directory does not own, and one that has
+    # been replaced or upgraded underneath it no longer matches the lock that was
+    # resolved for it. A mismatch reaches resolve_runtime, which quarantines the
+    # directory and rebuilds rather than trusting it.
+    identity = probe_python(python, error=HarnessRuntimeError)
+    if identity["base_python_sha256"] != manifest.get("base_python_sha256"):
+        raise HarnessRuntimeError("Harness Runtime base_python_sha256 mismatch")
     probe = _probe(python, required_imports)
     if not str(probe.get("version") or "").startswith(f"{spec['python']}."):
         raise HarnessRuntimeError(
@@ -296,7 +305,31 @@ def _build_runtime(
     raise HarnessRuntimeError("Harness Runtime preparation failed after bounded attempts: " + "; ".join(errors))
 
 
-def resolve_runtime(runtime_root: Path, *, repair: bool = True) -> dict[str, Any]:
+def _prune_superseded(runtime_root: Path, runtime_id: str) -> None:
+    """Drop the runtimes under this root that the current runtime_id replaced.
+
+    runtime_id carries the harness version, the materialization version and the
+    lock hash, so every bump of any of them materializes a new directory beside
+    the old one; nothing collected the old one and the root grew a whole venv
+    per bump. Only well-formed runtime directories are in scope: the
+    `.{runtime_id}.invalid-*` quarantines and `.{runtime_id}.attempt-*` staging
+    trees are left alone, the first because it is the only record of why a
+    runtime was rejected and the second because it belongs to a bootstrap in
+    flight. Best effort: a directory some already-running process still holds
+    open must not fail a bootstrap that has otherwise succeeded.
+    """
+    for entry in runtime_root.iterdir():
+        if entry.name.startswith(".") or entry.name == runtime_id or not entry.is_dir():
+            continue
+        try:
+            manifest = json.loads((entry / MANIFEST_NAME).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(manifest, dict) and manifest.get("schema") == "sure.harness.runtime.manifest.v1":
+            shutil.rmtree(entry, ignore_errors=True)
+
+
+def resolve_runtime(runtime_root: Path, *, repair: bool = True, prune: bool = True) -> dict[str, Any]:
     spec, lock_path, lock_sha256, runtime_id = _load_spec()
     runtime_root = runtime_root.expanduser().resolve()
     runtime_root.mkdir(parents=True, exist_ok=True)
@@ -312,7 +345,12 @@ def resolve_runtime(runtime_root: Path, *, repair: bool = True) -> dict[str, Any
         if runtime_dir.exists():
             quarantine = runtime_root / f".{runtime_id}.invalid-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
             runtime_dir.rename(quarantine)
-        return _build_runtime(runtime_root, runtime_dir, spec, lock_path, lock_sha256, runtime_id)
+        contract = _build_runtime(runtime_root, runtime_dir, spec, lock_path, lock_sha256, runtime_id)
+        # Under the same lock as the build: no other resolve can be verifying or
+        # publishing a sibling directory while this one is being reclaimed.
+        if prune:
+            _prune_superseded(runtime_root, runtime_id)
+        return contract
 
 
 def main() -> int:
@@ -320,9 +358,14 @@ def main() -> int:
     parser.add_argument("--runtime-root", default=str(DEFAULT_RUNTIME_ROOT))
     parser.add_argument("--check", action="store_true", help="Verify only; do not prepare or repair")
     parser.add_argument("--json", action="store_true", help="Print the resolved runtime contract as JSON")
+    parser.add_argument(
+        "--keep",
+        action="store_true",
+        help="Keep the runtime directories this runtime_id supersedes instead of reclaiming them",
+    )
     args = parser.parse_args()
     try:
-        contract = resolve_runtime(Path(args.runtime_root), repair=not args.check)
+        contract = resolve_runtime(Path(args.runtime_root), repair=not args.check, prune=not args.keep)
     except HarnessRuntimeError as exc:
         print(f"HARNESS_RUNTIME_NOT_READY: {exc}", file=sys.stderr)
         return 2
