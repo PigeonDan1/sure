@@ -73,6 +73,7 @@ jobs:
           python -m unittest discover -s sure/runtime/memory -p "test_*.py"
           python -m unittest discover -s sure/runtime/model -p "test_*.py"
           python -m unittest discover -s sure/site -p "test_*.py"
+          python -m unittest discover -s sure/skills/sure_approve/scripts -p "test_*.py"
 
       - name: Run coding-agent SURE tests
         working-directory: packages/coding-agent
