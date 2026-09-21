@@ -2492,6 +2492,23 @@ class TransScriptsTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "docker"):
                 scaffold_adapter.container_python_executable("demo-source:0.1.0")
 
+    def test_source_image_inspection_names_docker_when_it_is_missing(self) -> None:
+        # No docker at all and an image that cannot be inspected are different
+        # faults: the first one must not be reported as an unloaded image.
+        source_image = {"image": "demo-source:0.1.0", "image_id": "sha256:" + "b" * 64}
+        with mock.patch.object(
+            scaffold_adapter.subprocess, "run", side_effect=FileNotFoundError("docker")
+        ):
+            with self.assertRaisesRegex(ValueError, "docker is required"):
+                scaffold_adapter.source_image_reference(source_image)
+
+    def test_an_uninspectable_image_still_reports_the_image(self) -> None:
+        unusable = mock.Mock(returncode=1, stdout="", stderr="No such image")
+        source_image = {"image": "demo-source:0.1.0", "image_id": "sha256:" + "b" * 64}
+        with mock.patch.object(scaffold_adapter.subprocess, "run", return_value=unusable):
+            with self.assertRaisesRegex(ValueError, "cannot inspect source image"):
+                scaffold_adapter.source_image_reference(source_image)
+
     def test_final_bundle_matches_eval_deployment_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
