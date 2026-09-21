@@ -271,9 +271,9 @@ class InPlaceAppendTests(unittest.TestCase):
         )
         self.assertTrue((self.bundle / rows[0]["pipeline"]["report_path"]).is_file())
         snapshot = (self.bundle / "report_snapshot.md").read_text(encoding="utf-8")
-        batch_relative = f"evaluation_runs/{first['batch_id']}"
-        self.assertIn(f"{batch_relative}/evaluation_payload.json", snapshot)
-        self.assertIn(f"{batch_relative}/validation_payload.json", snapshot)
+        batch_dir = Path(str(first["staging_result_dir"])) / "evaluation_runs" / str(first["batch_id"])
+        self.assertIn(f"`{batch_dir / 'evaluation_payload.json'}`", snapshot)
+        self.assertIn(f"`{batch_dir / 'validation_payload.json'}`", snapshot)
         self.assertNotIn(f"`{self.bundle / 'evaluation_payload.json'}`", snapshot)
         self.assertNotIn(f"`{self.bundle / 'validation_payload.json'}`", snapshot)
         manifest = json.loads((Path(str(first["batch_dir"])) / "artifact_manifest.json").read_text(encoding="utf-8"))
