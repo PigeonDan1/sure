@@ -413,7 +413,6 @@ class TransScriptsTest(unittest.TestCase):
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn("exactly cover staged payload files", rejected.stdout + rejected.stderr)
 
-    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
     def test_output_cleanup_refuses_a_mount_outside_the_run_directory(self) -> None:
         """The gate must not delete a host path the agent chose for it.
 
@@ -436,7 +435,6 @@ class TransScriptsTest(unittest.TestCase):
             self.assertIn("run directory", str(caught.exception))
             self.assertTrue(keep.is_dir(), "refused mount must not be touched")
 
-    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
     def test_output_cleanup_refuses_to_follow_a_symlink_out_of_the_run_directory(self) -> None:
         """A symlink planted inside the run dir must not widen the blast radius."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -458,7 +456,6 @@ class TransScriptsTest(unittest.TestCase):
             self.assertIn("run directory", str(caught.exception))
             self.assertTrue(keep.is_dir(), "symlinked-out mount must not be touched")
 
-    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
     def test_output_cleanup_refuses_to_wipe_the_run_artifacts_directory(self) -> None:
         """artifacts/ holds the gate's own products, not container output."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -476,7 +473,6 @@ class TransScriptsTest(unittest.TestCase):
             self.assertIn("run artifacts directory", str(caught.exception))
             self.assertTrue(resolved_input.is_file(), "gate products must survive")
 
-    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
     def test_output_cleanup_clears_the_mount_the_skill_documents(self) -> None:
         """SKILL.md prescribes -v <run_dir>/artifacts/adapter_validation:/validation."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -492,7 +488,6 @@ class TransScriptsTest(unittest.TestCase):
             run_trans_validate.prepare_container_outputs(spec, run_dir)
             self.assertEqual(list(output.iterdir()), [])
 
-    @unittest.skipIf(os.name == "nt", "docker mount syntax collides with Windows drive letters")
     def test_output_cleanup_leaves_mounts_the_container_does_not_write_stage_output_into(self) -> None:
         """Only the declared stage output directory is the gate's to clear."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -506,6 +501,29 @@ class TransScriptsTest(unittest.TestCase):
             )
             run_trans_validate.prepare_container_outputs(spec, run_dir)
             self.assertTrue((models / "weights.bin").is_file())
+
+    def test_container_stage_error_reports_what_the_container_wrote(self) -> None:
+        """The reason lives in the mounted output dir, not in the job log.
+
+        The mount is spelled with an absolute host path of the running OS,
+        which is what the agent under test writes into its stage result.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "run" / "artifacts" / "adapter_validation"
+            output.mkdir(parents=True)
+            (output / "infer_result.json").write_text(
+                json.dumps({"error": "CUDA out of memory"}), encoding="utf-8"
+            )
+            command = [
+                "docker", "run",
+                "-e", "SURE_VALIDATE_ARTIFACTS_DIR=/validation",
+                "-v", f"{output}:/validation:rw",
+                "image", "true",
+            ]
+            self.assertEqual(
+                run_trans_validate.container_stage_error(command, "infer"),
+                "CUDA out of memory",
+            )
 
     def test_source_dockerfile_gets_git_install_and_restores_user(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

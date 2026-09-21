@@ -27,6 +27,7 @@ from vc_exec import (
     recorded_push_digest,
     registry_image,
     run_vc_job,
+    split_mount,
 )
 from model_child_env import model_child_env
 
@@ -79,7 +80,7 @@ def require_local_gpu_command(
         return None
     root = run_dir.resolve()
     for mount in spec.mounts:
-        parts = mount.split(":")
+        parts = split_mount(mount)
         if len(parts) < 2 or parts[1] != target:
             continue
         output_dir = Path(parts[0]).expanduser().resolve()
@@ -147,7 +148,7 @@ def prepare_container_outputs(spec: object, run_dir: Path) -> None:
         return
     mounts = getattr(spec, "mounts", ())
     for mount in mounts:
-        parts = str(mount).split(":")
+        parts = split_mount(mount)
         if len(parts) < 2 or parts[1] != target:
             continue
         output_dir = Path(parts[0]).expanduser()
@@ -419,7 +420,7 @@ def container_stage_error(run_command: object, kind: str) -> str:
         spec = docker_run_to_vc(run_command, resolve_entrypoint=lambda _image: ((), ()))
         target = spec.env.get("SURE_VALIDATE_ARTIFACTS_DIR", "")
         for mount in spec.mounts:
-            parts = mount.split(":")
+            parts = split_mount(mount)
             if len(parts) < 2 or parts[1] != target:
                 continue
             result = Path(parts[0]) / f"{kind}_result.json"
