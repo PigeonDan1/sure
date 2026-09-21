@@ -237,6 +237,23 @@ class RunAgentTests(unittest.TestCase):
         execution = json.loads((self.run_dir / "artifacts" / "execution_result.json").read_text(encoding="utf-8"))
         self.assertEqual(execution["job_status"], "failed")
 
+    def test_dataset_projection_failure_is_a_terminal_failed_record(self) -> None:
+        class ExplodingManager:
+            def download_and_convert(self, entry: str):
+                raise RuntimeError("projection exploded")
+
+        with mock.patch.object(agent_runner, "_dataset_manager", return_value=ExplodingManager()):
+            result = agent_runner.run_agent(
+                self.spec,
+                self.run_dir,
+                mcp_caller_factory=self.stub_mcp_factory,
+                api_caller=self.stub_api_caller,
+            )
+        self.assertEqual(result["job_status"], "failed")
+        self.assertEqual(result["failed_stage"], "dataset_projection")
+        self.assertEqual(result["failed_dataset"], "mini_s2tt__unversioned")
+        self.assertIn("projection exploded", result["error"])
+
     def start_stub_client(self, source: str = STUB_MCP_SERVER) -> agent_runner.McpToolClient:
         server = self.tmp / "stub_server.py"
         server.write_text(source, encoding="utf-8")

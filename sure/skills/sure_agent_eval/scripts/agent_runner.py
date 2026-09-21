@@ -294,19 +294,25 @@ def run_agent(
         for dataset in datasets:
             dataset_id = str(dataset["dataset"])
             log(f"dataset {dataset_id}: projecting from {dataset['source_root']}")
-            jsonl_path = manager.download_and_convert(str(dataset["source_root"]))
-            rows = [
-                json.loads(line)
-                for line in jsonl_path.read_text(encoding="utf-8").splitlines()
-                if line.strip()
-            ]
-            if max_samples > 0:
-                rows = rows[:max_samples]
-            reference_copy = product_dir / "references" / "sure_benchmark" / "jsonl" / f"{dataset_id}.jsonl"
-            reference_copy.write_text(
-                "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
-                encoding="utf-8",
-            )
+            try:
+                jsonl_path = manager.download_and_convert(str(dataset["source_root"]))
+                rows = [
+                    json.loads(line)
+                    for line in jsonl_path.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                ]
+                if max_samples > 0:
+                    rows = rows[:max_samples]
+                reference_copy = product_dir / "references" / "sure_benchmark" / "jsonl" / f"{dataset_id}.jsonl"
+                reference_copy.write_text(
+                    "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+                    encoding="utf-8",
+                )
+            except Exception as exc:  # noqa: BLE001 - a failed record must still name a stage for the gate
+                result["failed_stage"] = "dataset_projection"
+                result["failed_dataset"] = dataset_id
+                result["error"] = f"dataset {dataset_id}: {exc}"
+                raise
 
             prediction_path = product_dir / "predictions" / f"{dataset_id}.txt"
             generated = 0
