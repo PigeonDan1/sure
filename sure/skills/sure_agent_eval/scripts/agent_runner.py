@@ -423,11 +423,18 @@ def run_agent(
     return result
 
 
+def _non_negative_int(value: str) -> int:
+    number = int(value)
+    if number < 0:
+        raise argparse.ArgumentTypeError("--max-samples cannot be negative (0 means the whole dataset)")
+    return number
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run an agent chain over the resolved datasets")
     parser.add_argument("--run-dir", required=True, help="Sure invocation run directory")
     parser.add_argument("--spec", help="Path to agent_spec_resolved.json (default: <run-dir>/artifacts/)")
-    parser.add_argument("--max-samples", type=int, default=0)
+    parser.add_argument("--max-samples", type=_non_negative_int, default=0)
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir).expanduser().resolve()
@@ -439,7 +446,7 @@ def main() -> int:
     if spec.get("schema") != "sure.agent_eval.spec_resolved.v1":
         print(f"unsupported resolved-spec schema: {spec.get('schema')!r}", file=sys.stderr)
         return 2
-    result = run_agent(spec, run_dir, max_samples=max(0, args.max_samples))
+    result = run_agent(spec, run_dir, max_samples=args.max_samples)
     return 0 if result["job_status"] == "succeeded" else 1
 
 

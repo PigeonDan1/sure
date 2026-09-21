@@ -6,6 +6,7 @@ Run directly (needs the Harness Python for yaml/pydantic):
 """
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import os
@@ -407,6 +408,18 @@ class RunAgentTests(unittest.TestCase):
         ), mock.patch.object(agent_runner.time, "sleep"):
             with self.assertRaisesRegex(RuntimeError, "empty completion"):
                 agent_runner.call_chat_completion({**api, "retry": 1}, "prompt")
+
+
+class MainArgumentTests(unittest.TestCase):
+    def test_negative_max_samples_is_rejected(self) -> None:
+        argv = ["agent_runner.py", "--run-dir", str(Path.cwd()), "--max-samples", "-1"]
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "argv", argv), contextlib.redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as ctx:
+                agent_runner.main()
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("--max-samples", stderr.getvalue())
+        self.assertIn("negative", stderr.getvalue())
 
 
 class ExtractTextTests(unittest.TestCase):
