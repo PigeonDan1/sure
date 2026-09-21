@@ -96,7 +96,10 @@ class HarnessRuntimeSpecTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 with mock.patch.object(bootstrap, "SPEC_DIR", spec_dir):
-                    with self.assertRaises(HarnessRuntimeError):
+                    # _load_spec raises the same type from four earlier branches,
+                    # so name the field or a reorder passes this test for the
+                    # wrong reason.
+                    with self.assertRaisesRegex(HarnessRuntimeError, "materialization_version"):
                         _load_spec()
 
 
