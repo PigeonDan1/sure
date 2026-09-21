@@ -78,6 +78,19 @@ function writeJson(path: string, value: unknown): void {
 }
 
 function writePythonShim(modelDir: string): string {
+	if (process.platform === "win32") {
+		// The shim below is `exec python3 "$@"`, and the runtime probe spawns it
+		// directly. Windows honours no shebang and cannot exec a shell script, so
+		// name the interpreter the shim would have handed over to.
+		const probe = spawnSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf-8" });
+		const executable = probe.stdout?.trim();
+		if (!executable) {
+			throw new Error(
+				`cannot locate a python3 interpreter: ${probe.stderr?.trim() || probe.error?.message || "no output"}`,
+			);
+		}
+		return executable;
+	}
 	const binDir = join(modelDir, ".venv", "bin");
 	mkdirSync(binDir, { recursive: true });
 	const pythonPath = join(binDir, "python");
