@@ -738,6 +738,22 @@ class InnerScriptWorkdirTest(unittest.TestCase):
         self.assertNotIn("cd ", self._render(""))
 
 
+class InnerScriptLineEndingTest(unittest.TestCase):
+    """bash in the container reads a trailing CR in the shebang as part of the
+
+    interpreter name and refuses to run the script. The bytes on disk are what
+    matters: the string handed to write_text carries LF on either host.
+    """
+
+    def test_the_script_is_written_with_lf_whatever_the_submit_host_is(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            log_dir = Path(temporary)
+            vc_exec.render_inner_script(log_dir, "python train.py", {"A": "1"}, 60, workdir="/opt/app")
+            raw = (log_dir / "inner.sh").read_bytes()
+        self.assertTrue(raw.startswith(b"#!/usr/bin/env bash\n"))
+        self.assertNotIn(b"\r", raw)
+
+
 class CancelVcJobTest(unittest.TestCase):
     def test_a_job_we_stopped_waiting_for_is_deleted(self) -> None:
         calls: list[list[str]] = []

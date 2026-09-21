@@ -735,7 +735,9 @@ def render_inner_script(
         ]
     )
     log_dir.mkdir(parents=True, exist_ok=True)
-    (log_dir / "inner.sh").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # newline="" keeps the LF the lines already carry: bash in the container
+    # takes a trailing CR in the shebang as part of the interpreter name.
+    (log_dir / "inner.sh").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
 
 
 @dataclass
