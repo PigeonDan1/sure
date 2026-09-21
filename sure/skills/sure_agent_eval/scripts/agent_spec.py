@@ -20,7 +20,6 @@ STAGE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 AGENT_REQUIRED_FIELDS = ("name", "task", "input", "output")
-SPEECH_INPUTS = frozenset({"speech", "audio"})
 DEFAULT_PROMPT_TEMPLATE = "Translate to {target_language}: {text}"
 
 
