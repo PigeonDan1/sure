@@ -180,11 +180,16 @@ function withTrustFileLock<T>(path: string, fn: () => T): T {
  * project trust: trust-requiring entries under cwd/.pi, or .agents/skills in
  * cwd or one of its ancestors. Returns false when no such project resources
  * exist. The user/global ~/.agents/skills directory is always treated as a
- * trusted user resource and is ignored here, even when cwd is $HOME.
+ * trusted user resource and is ignored here, even when cwd is $HOME. Home is
+ * matched under either spelling, because on Windows $HOME need not be the
+ * account's profile directory that os.homedir() reports.
  */
 export function hasTrustRequiringProjectResources(cwd: string): boolean {
-	const homeDir = canonicalizePath(resolvePath(process.env.HOME || homedir()));
-	const userAgentsSkillsDir = join(homeDir, ".agents", "skills");
+	const userAgentsSkillsDirs = new Set(
+		[process.env.HOME, homedir()]
+			.filter((home): home is string => !!home)
+			.map((home) => join(canonicalizePath(resolvePath(home)), ".agents", "skills")),
+	);
 	let currentDir = canonicalizePath(resolvePath(cwd));
 
 	const configDir = join(currentDir, CONFIG_DIR_NAME);
@@ -194,7 +199,7 @@ export function hasTrustRequiringProjectResources(cwd: string): boolean {
 
 	while (true) {
 		const agentsSkillsDir = join(currentDir, ".agents", "skills");
-		if (agentsSkillsDir !== userAgentsSkillsDir && existsSync(agentsSkillsDir)) {
+		if (!userAgentsSkillsDirs.has(agentsSkillsDir) && existsSync(agentsSkillsDir)) {
 			return true;
 		}
 
