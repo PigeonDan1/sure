@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -241,6 +244,72 @@ class MeetEvalProjectionTests(unittest.TestCase):
             expected = "session-1 1 spk1 0.250 1.500 hello world\n"
             self.assertEqual(Path(reference).read_text(encoding="utf-8"), expected)
             self.assertEqual(Path(hypothesis).read_text(encoding="utf-8"), expected)
+
+
+def _locale_text_pipes(encoding: str):
+    """Pretend the host code page is `encoding` for every text pipe that names none.
+
+    That is what `text=True` does on a non-UTF-8 Windows box, and forcing it
+    here keeps the regression provable on a UTF-8 host too.
+    """
+    real_run = subprocess.run
+
+    def run(*args, **kwargs):  # type: ignore[no-untyped-def]
+        if (kwargs.get("text") or kwargs.get("universal_newlines")) and not kwargs.get("encoding"):
+            kwargs["encoding"] = encoding
+        return real_run(*args, **kwargs)
+
+    return mock.patch("subprocess.run", run)
+
+
+def _fake_engine(root: Path) -> Path:
+    package = root / "src" / "sure_eval" / "evaluation"
+    package.mkdir(parents=True)
+    (root / "src" / "sure_eval" / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "cli_adapters.py").write_text(
+        "def build_pipeline_spec(task, language=None, metric=None, pipeline_id=None):\n"
+        "    return {'task': task, 'note': '\\u4e2d\\u6587'}\n"
+        "\n"
+        "\n"
+        "def run_pipeline_spec(pipeline, **kwargs):\n"
+        "    return {'report_path': None, 'note': '\\u4eca\\u65e5\\u306f'}\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+class BridgePipeEncodingTests(unittest.TestCase):
+    """The bridge child prints ensure_ascii=False JSON, so both ends must be UTF-8."""
+
+    def setUp(self) -> None:
+        original = ep._evaluation_python
+        ep._evaluation_python = lambda _root: sys.executable
+        self.addCleanup(setattr, ep, "_evaluation_python", original)
+
+    def test_describe_round_trips_non_ascii_under_a_non_utf8_host_encoding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            engine = _fake_engine(Path(directory))
+            with mock.patch.dict(os.environ, {"PYTHONIOENCODING": "ascii"}), _locale_text_pipes("ascii"):
+                payload = ep._describe_external_pipeline(
+                    engine_root=engine,
+                    task="ASR",
+                    language="zh",
+                    metric="cer",
+                    timeout=120,
+                )
+        self.assertEqual(payload["note"], "中文")
+
+    def test_run_round_trips_non_ascii_under_a_non_utf8_host_encoding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            engine = _fake_engine(Path(directory))
+            with mock.patch.dict(os.environ, {"PYTHONIOENCODING": "ascii"}), _locale_text_pipes("ascii"):
+                payload = ep._run_external_pipeline(
+                    engine_root=engine,
+                    request={"task": "ASR", "language": "zh", "metric": "cer", "output_dir": str(engine)},
+                    timeout=120,
+                )
+        self.assertEqual(payload["summary"]["note"], "今日は")
 
 
 if __name__ == "__main__":

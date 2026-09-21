@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -174,6 +177,63 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
                 self.assertEqual(prediction, "generated.wav")
                 self.assertEqual(normalized["audio_path"], "generated.wav")
                 self.assertEqual(normalized[field], "generated.wav")
+
+
+_ECHO_SERVER = """
+import json, sys
+
+while True:
+    line = sys.stdin.readline()
+    if not line:
+        break
+    request = json.loads(line)
+    sys.stdout.write(
+        json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": request["params"]}, ensure_ascii=False)
+        + "\\n"
+    )
+    sys.stdout.flush()
+"""
+
+
+def _locale_text_pipes(encoding: str):
+    """Pretend the host code page is `encoding` for every text pipe that names none.
+
+    That is what `text=True` does on a non-UTF-8 Windows box, and forcing it
+    here keeps the regression provable on a UTF-8 host too.
+    """
+    real_popen = subprocess.Popen
+
+    def popen(*args, **kwargs):  # type: ignore[no-untyped-def]
+        if (kwargs.get("text") or kwargs.get("universal_newlines")) and not kwargs.get("encoding"):
+            kwargs["encoding"] = encoding
+        return real_popen(*args, **kwargs)
+
+    return mock.patch("subprocess.Popen", popen)
+
+
+class ServerPipeEncodingTests(unittest.TestCase):
+    """Both ends of the MCP stdio bridge serialise with ensure_ascii=False."""
+
+    def test_a_non_ascii_request_round_trips_under_a_non_utf8_host_encoding(self) -> None:
+        text = "今日は naïve café"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with open(root / "server.log", "w", encoding="utf-8") as log_handle:
+                with mock.patch.dict(os.environ, {"PYTHONIOENCODING": "ascii"}), _locale_text_pipes("ascii"):
+                    with gp._start_model_server(
+                        [sys.executable, "-c", _ECHO_SERVER],
+                        working_dir=root,
+                        env=dict(os.environ),
+                        log_handle=log_handle,
+                    ) as process:
+                        try:
+                            response = gp._send_request(
+                                process,
+                                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"text": text}},
+                            )
+                        finally:
+                            process.stdin.close()
+        self.assertEqual(response["result"]["text"], text)
 
 
 if __name__ == "__main__":

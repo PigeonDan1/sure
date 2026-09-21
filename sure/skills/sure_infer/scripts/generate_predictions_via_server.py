@@ -687,6 +687,33 @@ def _remap_legacy_model_env_path(value: str, model_dir: Path) -> str:
     return value
 
 
+def _start_model_server(
+    command: list[str],
+    *,
+    working_dir: Path | str,
+    env: dict[str, str],
+    log_handle: Any,
+) -> subprocess.Popen[str]:
+    """Launch the model's MCP server with UTF-8 on both sides of the stdio bridge.
+
+    Both ends serialise with ensure_ascii=False, so pipes left on the host code
+    page kill the first prompt or transcript that leaves ASCII. The child needs
+    PYTHONIOENCODING for the same reason: its own std streams default to the
+    host code page too.
+    """
+    return subprocess.Popen(
+        command,
+        cwd=str(working_dir),
+        env={**env, "PYTHONIOENCODING": "utf-8"},
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=log_handle,
+        text=True,
+        encoding="utf-8",
+        bufsize=1,
+    )
+
+
 def _send_request(
     process: subprocess.Popen[str],
     request: dict[str, Any],
@@ -1463,15 +1490,11 @@ def main() -> int:
             _write_existing_result_log_entries(result_log_handle, samples, existing_predictions)
             result_log_handle.flush()
 
-        process = subprocess.Popen(
+        process = _start_model_server(
             command,
-            cwd=str(working_dir),
+            working_dir=working_dir,
             env=env,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=log_handle,
-            text=True,
-            bufsize=1,
+            log_handle=log_handle,
         )
 
         try:
