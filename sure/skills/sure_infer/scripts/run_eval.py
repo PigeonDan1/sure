@@ -163,6 +163,33 @@ def _atomic_write(path: Path, payload: bytes) -> None:
             temporary.unlink()
 
 
+def _rewrite_json_paths(text: str, replacement: tuple[str, str], *, jsonl: bool) -> str | None:
+    """Rewrite the decoded string values of a JSON document, or None when it is not JSON.
+
+    JSON escapes every backslash, so a Windows path is spelled twice over in the
+    serialized text and never matches the plain replacement. Substituting in the
+    decoded values instead of patching the text cannot land inside an escape
+    sequence, so the result is a valid document by construction.
+    """
+
+    def rewrite(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(*replacement)
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if isinstance(value, dict):
+            return {rewrite(key): rewrite(item) for key, item in value.items()}
+        return value
+
+    try:
+        if jsonl:
+            lines = [line for line in text.splitlines() if line.strip()]
+            return "".join(json.dumps(rewrite(json.loads(line)), ensure_ascii=False) + "\n" for line in lines)
+        return json.dumps(rewrite(json.loads(text)), indent=2, ensure_ascii=False) + "\n"
+    except json.JSONDecodeError:
+        return None
+
+
 def _copy_tree(source: Path, destination: Path, *, path_replacements: tuple[str, str] | None = None) -> None:
     source = source.resolve()
     destination.mkdir(parents=True, exist_ok=False)
@@ -177,14 +204,22 @@ def _copy_tree(source: Path, destination: Path, *, path_replacements: tuple[str,
         for name in file_names:
             source_file = current_path / name
             target_file = target_dir / name
-            if path_replacements and source_file.suffix.lower() in {".json", ".jsonl", ".yaml", ".yml", ".md"}:
+            suffix = source_file.suffix.lower()
+            if path_replacements and suffix in {".json", ".jsonl", ".yaml", ".yml", ".md"}:
                 raw = source_file.read_bytes()
                 try:
                     text = raw.decode("utf-8")
                 except UnicodeDecodeError:
                     shutil.copy2(source_file, target_file)
                 else:
-                    target_file.write_text(text.replace(*path_replacements), encoding="utf-8")
+                    rewritten = (
+                        _rewrite_json_paths(text, path_replacements, jsonl=suffix == ".jsonl")
+                        if suffix in {".json", ".jsonl"}
+                        else None
+                    )
+                    if rewritten is None:
+                        rewritten = text.replace(*path_replacements)
+                    target_file.write_text(rewritten, encoding="utf-8")
                     shutil.copystat(source_file, target_file)
             else:
                 shutil.copy2(source_file, target_file)

@@ -10,7 +10,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run_eval import _approved_reference_datasets_root, _localize_batch_paths, append_staging_bundle
+from run_eval import (
+    _approved_reference_datasets_root,
+    _copy_tree,
+    _localize_batch_paths,
+    append_staging_bundle,
+)
 
 
 def _write(path: Path, value: str) -> None:
@@ -356,6 +361,45 @@ class LocalizeBatchPathsTest(unittest.TestCase):
                 "list": ["evaluation_runs/sure_eval_abc/metrics/report.json", "metrics/not_present.json"],
             },
         )
+
+
+class CopyTreePathRewriteTest(unittest.TestCase):
+    """JSON escapes every backslash, so a Windows scratch root never matches the plain spelling."""
+
+    SCRATCH = "D:\\runs\\ab\\scratch"
+    BATCH = "evaluation_runs/sure_eval_ab"
+
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.source = self.root / "source"
+        self.source.mkdir()
+        _json(self.source / "payload.json", {"report": self.SCRATCH + "\\report.json"})
+        _write(self.source / "rows.jsonl", json.dumps({"file": self.SCRATCH + "\\rows.txt"}) + "\n")
+        _write(self.source / "protocol.yaml", f"report: {self.SCRATCH}\\report.json\n")
+        _write(self.source / "notes.md", f"`{self.SCRATCH}\\report.json`\n")
+        _write(self.source / "broken.json", f"not json {self.SCRATCH}\\report.json\n")
+
+    def _copy(self) -> Path:
+        destination = self.root / "batch"
+        _copy_tree(self.source, destination, path_replacements=(self.SCRATCH, self.BATCH))
+        return destination
+
+    def test_json_and_jsonl_values_lose_the_scratch_prefix(self) -> None:
+        destination = self._copy()
+        payload = json.loads((destination / "payload.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["report"], self.BATCH + "\\report.json")
+        row = json.loads((destination / "rows.jsonl").read_text(encoding="utf-8"))
+        self.assertEqual(row["file"], self.BATCH + "\\rows.txt")
+
+    def test_text_formats_and_undecodable_json_keep_the_plain_rewrite(self) -> None:
+        destination = self._copy()
+        for name in ("protocol.yaml", "notes.md", "broken.json"):
+            with self.subTest(name=name):
+                text = (destination / name).read_text(encoding="utf-8")
+                self.assertNotIn(self.SCRATCH, text)
+                self.assertIn(self.BATCH, text)
 
 
 if __name__ == "__main__":
