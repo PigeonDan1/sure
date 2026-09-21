@@ -245,6 +245,10 @@ def validate_mcp_evidence(evidence_path: Path, tool_name: str) -> str | None:
 
 
 EQUIVALENCE_POLICIES = ("exact", "normalized_whitespace", "vector_allclose")
+# The gate owns the vector_allclose tolerance. These are both the default and the
+# ceiling: an artifact may declare a tighter value, never a looser one, so the
+# thing under test cannot widen the bar it is judged against.
+VECTOR_ALLCLOSE_CEILINGS = {"rtol": 1e-5, "atol": 1e-8}
 
 
 def output_value(path: Path, primary_field: str) -> object:
@@ -328,10 +332,22 @@ def compare_equivalence_outputs(run_dir: Path, data: dict) -> tuple[dict | None,
                 "baseline and adapter embedding dimensions differ: "
                 f"{len(baseline_vector)} vs {len(adapter_vector)}"
             )
-        rtol = float(data.get("rtol", 1e-5))
-        atol = float(data.get("atol", 1e-8))
-        if rtol < 0 or atol < 0 or not math.isfinite(rtol) or not math.isfinite(atol):
-            return None, "vector_allclose rtol and atol must be finite non-negative numbers"
+        tolerances: dict[str, float] = {}
+        for name, ceiling in VECTOR_ALLCLOSE_CEILINGS.items():
+            try:
+                value = float(data.get(name, ceiling))
+            except (TypeError, ValueError):
+                return None, f"vector_allclose {name} must be a number; got {data.get(name)!r}"
+            if value < 0 or not math.isfinite(value):
+                return None, "vector_allclose rtol and atol must be finite non-negative numbers"
+            if value > ceiling:
+                return None, (
+                    f"vector_allclose {name}={value!r} is looser than the gate ceiling {ceiling!r}; "
+                    "the artifact under test may only tighten the tolerance, never widen it"
+                )
+            tolerances[name] = value
+        rtol = tolerances["rtol"]
+        atol = tolerances["atol"]
         differences = [abs(left - right) for left, right in zip(baseline_vector, adapter_vector)]
         match = all(
             math.isclose(left, right, rel_tol=rtol, abs_tol=atol)
