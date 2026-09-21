@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from harness_runtime import harness_runtime_from_eval_input
@@ -115,6 +115,24 @@ def dataset_projection_root_from_eval_input(eval_input: dict[str, Any]) -> Path 
     return root
 
 
+def container_path(host: str | PurePath) -> str:
+    """Spell a host path for the container side, which is POSIX on every host.
+
+    A bind mount target, the interpreter docker executes and every path the run
+    reads out of its environment are read inside a Linux container, so a
+    Windows host's ``D:\\sure`` has to arrive as ``/d/sure``; the ``src=`` half
+    beside it stays the host's own spelling. Off Windows the two are the same
+    string and this hands the path straight back, so an approved image's own
+    POSIX paths pass through untouched. A UNC path has no drive letter to map
+    and is returned as it came.
+    """
+    windows = PureWindowsPath(host)
+    drive = windows.drive
+    if len(drive) != 2 or drive[1] != ":" or not drive[0].isalpha():
+        return str(host)
+    return str(PurePosixPath("/", drive[0].lower(), *windows.parts[1:]))
+
+
 def _mount(
     command: list[str],
     mounted_targets: dict[str, tuple[Path, bool]],
@@ -211,9 +229,11 @@ def build_local_container_command(
         host_harness_runtime,
         repo_root,
     )
-    harness_root = str(harness_runtime["runtime_root"])
-    harness_python = str(harness_runtime["python_executable"])
-    harness_manifest = str(harness_runtime["manifest_path"])
+    # Read inside the container, whether they came from the approved image
+    # (already POSIX) or from the runtime mounted out of the repository.
+    harness_root = container_path(harness_runtime["runtime_root"])
+    harness_python = container_path(harness_runtime["python_executable"])
+    harness_manifest = container_path(harness_runtime["manifest_path"])
     dataset_projection_root = dataset_projection_root_from_eval_input(eval_input)
 
     command = ["docker", "run", "--rm", "--init", "--entrypoint", harness_python]
@@ -225,18 +245,24 @@ def build_local_container_command(
         else:
             command.extend(["--gpus", "all"])
 
-    _mount(command, mounted_targets, repo_root.resolve(), str(repo_root.resolve()), read_only=True)
-    _mount(command, mounted_targets, control_run_dir.resolve(), str(control_run_dir.resolve()), read_only=False)
+    _mount(command, mounted_targets, repo_root.resolve(), container_path(repo_root.resolve()), read_only=True)
+    _mount(
+        command,
+        mounted_targets,
+        control_run_dir.resolve(),
+        container_path(control_run_dir.resolve()),
+        read_only=False,
+    )
     _mount(command, mounted_targets, output_source, output_target, read_only=False)
-    _mount(command, mounted_targets, model_source, str(model_source), read_only=True)
-    if model_target != str(model_source):
+    _mount(command, mounted_targets, model_source, container_path(model_source), read_only=True)
+    if model_target != container_path(model_source):
         _mount(command, mounted_targets, model_source, model_target, read_only=True)
     if dataset_projection_root is not None:
         _mount(
             command,
             mounted_targets,
             dataset_projection_root,
-            str(dataset_projection_root),
+            container_path(dataset_projection_root),
             read_only=False,
         )
 
@@ -262,7 +288,7 @@ def build_local_container_command(
             mount_source = path if path.is_dir() else path.parent
             mount_target = declared_path if path.is_dir() else declared_path.parent
             if mount_source.exists():
-                _mount(command, mounted_targets, mount_source, str(mount_target), read_only=True)
+                _mount(command, mounted_targets, mount_source, container_path(mount_target), read_only=True)
 
     env = surface_env(surface)
     source_provenance = surface.get("source_provenance") if isinstance(surface.get("source_provenance"), dict) else {}
@@ -282,7 +308,7 @@ def build_local_container_command(
             # so a surface-declared REPO_ROOT chooses which scripts the run
             # executes. This route passed it straight through; the repository is
             # mounted at its own path, so the harness names it here.
-            "REPO_ROOT": str(repo_root.resolve() / "sure" / "skills" / "sure_infer"),
+            "REPO_ROOT": container_path(repo_root.resolve() / "sure" / "skills" / "sure_infer"),
             "PYTHON_BIN": str(container.get("python_executable") or "python"),
             "HARNESS_PYTHON_BIN": harness_python,
             "SURE_EVAL_NODE_LOCAL_PYTHON": harness_python,
@@ -293,7 +319,7 @@ def build_local_container_command(
             "SURE_EVAL_CONTAINER_IMAGE": str(binding["target_image_ref"]),
             "SURE_EVAL_CONTAINER_WORKING_DIR": str(container.get("working_dir") or model_target),
             "SURE_EVAL_EXECUTION_SURFACE_TYPE": str(surface.get("execution_surface_type") or "python_entrypoint"),
-            "SURE_EVAL_EXECUTION_ENTRYPOINT": str(entrypoint.resolve()),
+            "SURE_EVAL_EXECUTION_ENTRYPOINT": container_path(entrypoint.resolve()),
             "SURE_EVAL_EXECUTION_GENERATION_METHOD": str(surface.get("generation_method") or "harness_template"),
             "SURE_EVAL_EXECUTION_TEMPLATE_FILE": str(source_provenance.get("template_file") or ""),
             "SURE_EVAL_EXECUTION_TEMPLATE_SHA256": str(source_provenance.get("template_sha256") or ""),
@@ -309,10 +335,10 @@ def build_local_container_command(
         }
     )
     if dataset_projection_root is not None:
-        env["SURE_EVAL_DATASETS_ROOT"] = str(dataset_projection_root)
+        env["SURE_EVAL_DATASETS_ROOT"] = container_path(dataset_projection_root)
     for key in sorted(env):
         command.extend(["--env", f"{key}={env[key]}"])
-    command.extend([str(binding["target_image_ref"]), str(entrypoint.resolve())])
+    command.extend([str(binding["target_image_ref"]), container_path(entrypoint.resolve())])
     return command, {
         "image": binding["target_image"],
         "image_digest": binding["target_image_digest"],
@@ -322,7 +348,7 @@ def build_local_container_command(
         "dataset_projection_mount": (
             {
                 "source": str(dataset_projection_root),
-                "target": str(dataset_projection_root),
+                "target": container_path(dataset_projection_root),
                 "read_only": False,
             }
             if dataset_projection_root is not None

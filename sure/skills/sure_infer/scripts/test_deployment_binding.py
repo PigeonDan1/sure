@@ -7,9 +7,9 @@ import os
 import subprocess
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from container_execution import build_local_container_command
+from container_execution import build_local_container_command, container_path
 from deployment_binding import (
     COMMON_MANDATORY_SIDECARS,
     CORE_BUNDLE_FILES,
@@ -30,6 +30,37 @@ def write_json(path: Path, payload: dict) -> None:
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def container_side(path: Path | str) -> str:
+    """The container spelling of a host path, derived independently here.
+
+    A Linux container never sees a drive letter, so a pinned argv has to say
+    what the container gets without borrowing the mapping it is checking. Off
+    Windows this is the host path itself, so the pinned argv stays what Linux
+    produces today.
+    """
+    text = str(path)
+    if len(text) > 1 and text[1] == ":":
+        return "/" + text[0].lower() + text[2:].replace("\\", "/")
+    return text
+
+
+class ContainerPathTests(unittest.TestCase):
+    """Both host spellings are exercised here, on whichever host runs them.
+
+    The command-building tests below can only see the host they run on, so the
+    mapping itself is pinned as data with pure paths.
+    """
+
+    def test_a_windows_host_path_reaches_the_container_as_posix(self) -> None:
+        self.assertEqual(container_path(PureWindowsPath(r"D:\sure\dev\repo")), "/d/sure/dev/repo")
+        self.assertEqual(container_path(r"C:\Users\demo\.venv\Scripts\python.exe"), "/c/Users/demo/.venv/Scripts/python.exe")
+
+    def test_a_posix_path_is_handed_back_unchanged(self) -> None:
+        self.assertEqual(container_path(PurePosixPath("/srv/sure/repo")), "/srv/sure/repo")
+        self.assertEqual(container_path("/opt/sure-harness/test/bin/python"), "/opt/sure-harness/test/bin/python")
+        self.assertEqual(container_path("/workspace/model"), "/workspace/model")
 
 
 class DeploymentBindingTests(unittest.TestCase):
@@ -356,28 +387,32 @@ class DeploymentBindingTests(unittest.TestCase):
         )
         self.assertIn(self.image_ref, command)
         self.assertIn("device=2", command)
-        self.assertEqual(command[command.index("--entrypoint") + 1], str(self.harness_python))
+        self.assertEqual(command[command.index("--entrypoint") + 1], container_side(self.harness_python))
         self.assertTrue(any("src=" + str(self.model) in item and "readonly" in item for item in command))
-        self.assertIn(f"HARNESS_PYTHON_BIN={self.harness_python}", command)
-        self.assertIn(f"SURE_EVAL_NODE_LOCAL_PYTHON={self.harness_python}", command)
+        self.assertIn(f"HARNESS_PYTHON_BIN={container_side(self.harness_python)}", command)
+        self.assertIn(f"SURE_EVAL_NODE_LOCAL_PYTHON={container_side(self.harness_python)}", command)
         self.assertNotIn("SURE_EVAL_NODE_LOCAL_PYTHON=/usr/bin/python3.11", command)
         self.assertIn("MODEL_PYTHON=python", command)
         self.assertIn("SURE_EVAL_APPROVED_MODEL_DIR=/workspace/model", command)
         self.assertIn("SURE_EVAL_APPROVED_RESULT_DIR=/sure-output", command)
         self.assertIn("SURE_EVAL_CACHE_DIR=/sure-output/.runtime/cache/sure-eval", command)
-        self.assertIn(f"SURE_EVAL_DATASETS_ROOT={self.projection}", command)
+        self.assertIn(f"SURE_EVAL_DATASETS_ROOT={container_side(self.projection)}", command)
         self.assertIn(
-            f"type=bind,src={self.projection},dst={self.projection}",
+            f"type=bind,src={self.projection},dst={container_side(self.projection)}",
             command,
         )
         self.assertEqual(
             provenance["dataset_projection_mount"],
-            {"source": str(self.projection), "target": str(self.projection), "read_only": False},
+            {
+                "source": str(self.projection),
+                "target": container_side(self.projection),
+                "read_only": False,
+            },
         )
         self.assertNotEqual(provenance["harness_runtime"]["python_executable"], "python")
         self.assertEqual(
             provenance["evaluation_node_runtime"]["python_executable"],
-            str(self.harness_python),
+            container_side(self.harness_python),
         )
         self.assertFalse(provenance["host_python_fallback"])
 
@@ -409,20 +444,20 @@ class DeploymentBindingTests(unittest.TestCase):
             command,
             [
                 "docker", "run", "--rm", "--init",
-                "--entrypoint", str(self.harness_python),
-                "--mount", f"type=bind,src={repo},dst={repo},readonly",
-                "--mount", f"type=bind,src={self.control.resolve()},dst={self.control.resolve()}",
+                "--entrypoint", container_side(self.harness_python),
+                "--mount", f"type=bind,src={repo},dst={container_side(repo)},readonly",
+                "--mount", f"type=bind,src={self.control.resolve()},dst={container_side(self.control.resolve())}",
                 "--mount", f"type=bind,src={output},dst=/sure-output",
-                "--mount", f"type=bind,src={model},dst={model},readonly",
+                "--mount", f"type=bind,src={model},dst={container_side(model)},readonly",
                 "--mount", f"type=bind,src={model},dst=/workspace/model,readonly",
-                "--env", "HARNESS_PYTHON_BIN=" + str(self.harness_python),
+                "--env", "HARNESS_PYTHON_BIN=" + container_side(self.harness_python),
                 "--env", "HF_HOME=/sure-output/.runtime/cache/huggingface",
                 "--env", "HF_HUB_CACHE=/sure-output/.runtime/cache/huggingface/hub",
                 "--env", "MODELSCOPE_CACHE=/sure-output/.runtime/cache/modelscope",
                 "--env", "MODEL_DIR=/workspace/model",
                 "--env", "MODEL_PYTHON=python",
                 "--env", "PYTHON_BIN=python",
-                "--env", "REPO_ROOT=" + str(repo / "sure" / "skills" / "sure_infer"),
+                "--env", "REPO_ROOT=" + container_side(repo / "sure" / "skills" / "sure_infer"),
                 # The surface asked for a host path under the run directory; it
                 # reaches the container as the container's own spelling.
                 "--env", "RESULT_FILE=/sure-output/report.jsonl",
@@ -432,24 +467,26 @@ class DeploymentBindingTests(unittest.TestCase):
                 "--env", "SURE_EVAL_CACHE_DIR=/sure-output/.runtime/cache/sure-eval",
                 "--env", "SURE_EVAL_CONTAINER_IMAGE=" + self.image_ref,
                 "--env", "SURE_EVAL_CONTAINER_WORKING_DIR=/workspace/model",
-                "--env", "SURE_EVAL_EXECUTION_ENTRYPOINT=" + str(self.entrypoint.resolve()),
+                "--env", "SURE_EVAL_EXECUTION_ENTRYPOINT=" + container_side(self.entrypoint.resolve()),
                 "--env", "SURE_EVAL_EXECUTION_GENERATION_METHOD=harness_template",
                 "--env", "SURE_EVAL_EXECUTION_SURFACE_TYPE=python_entrypoint",
                 "--env", "SURE_EVAL_EXECUTION_TEMPLATE_FILE=",
                 "--env", "SURE_EVAL_EXECUTION_TEMPLATE_SHA256=",
-                "--env", "SURE_EVAL_NODE_LOCAL_PYTHON=" + str(self.harness_python),
+                "--env", "SURE_EVAL_NODE_LOCAL_PYTHON=" + container_side(self.harness_python),
+                # The published run directory is where the results land on the
+                # host, so this one stays the host's spelling.
                 "--env", "SURE_EVAL_PUBLISHED_RUN_DIR=" + str(output),
                 "--env", "SURE_EVAL_WRITABLE_CACHE_ROOT=/sure-output/.runtime/cache",
                 "--env", "SURE_HARNESS_LOCK_SHA256=" + "c" * 64,
-                "--env", "SURE_HARNESS_MANIFEST_PATH=" + str(self.harness_manifest),
+                "--env", "SURE_HARNESS_MANIFEST_PATH=" + container_side(self.harness_manifest),
                 "--env", "SURE_HARNESS_RUNTIME_ID=sure-harness-test",
-                "--env", "SURE_HARNESS_RUNTIME_ROOT=" + str(self.harness_runtime),
+                "--env", "SURE_HARNESS_RUNTIME_ROOT=" + container_side(self.harness_runtime),
                 "--env", "TOOL_NAME=transcribe_audio",
                 "--env", "TORCH_HOME=/sure-output/.runtime/cache/torch",
                 "--env", "TRANSFORMERS_CACHE=/sure-output/.runtime/cache/huggingface/transformers",
                 "--env", "XDG_CACHE_HOME=/sure-output/.runtime/cache/xdg",
                 self.image_ref,
-                str(self.entrypoint.resolve()),
+                container_side(self.entrypoint.resolve()),
             ],
         )
 
@@ -475,7 +512,7 @@ class DeploymentBindingTests(unittest.TestCase):
             device_request="cpu",
         )
         self.assertIn(
-            f"type=bind,src={real_dataset},dst={dataset_alias},readonly",
+            f"type=bind,src={real_dataset},dst={container_side(dataset_alias)},readonly",
             command,
         )
 
@@ -505,7 +542,7 @@ class DeploymentBindingTests(unittest.TestCase):
         ]
         self.assertEqual(
             projection_mounts,
-            [f"type=bind,src={self.projection},dst={self.projection}"],
+            [f"type=bind,src={self.projection},dst={container_side(self.projection)}"],
         )
 
     def test_local_command_refuses_surface_declared_path_and_provenance(self) -> None:
@@ -552,7 +589,7 @@ class DeploymentBindingTests(unittest.TestCase):
         self.assertIn("EVALUATION_BACKEND=external", command)
         self.assertIn("REPAIR_INVALID_ONLY=1", command)
         # The harness's own value survives, and every refusal leaves a trace.
-        self.assertIn(f"REPO_ROOT={self.repo / 'sure' / 'skills' / 'sure_infer'}", command)
+        self.assertIn(f"REPO_ROOT={container_side(self.repo / 'sure' / 'skills' / 'sure_infer')}", command)
         self.assertEqual(
             sorted(provenance["surface_env_refused"]),
             [
