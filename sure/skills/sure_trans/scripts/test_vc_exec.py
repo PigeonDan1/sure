@@ -639,6 +639,40 @@ class EnsureRegistryImageTest(unittest.TestCase):
             self.assertIn("image_version", message)
 
 
+class MissingDockerBinaryTest(unittest.TestCase):
+    """A host with no docker has to be told which program is missing.
+
+    Windows spells the failure "[WinError 2] The system cannot find the file
+    specified", which names neither docker nor the step that wanted it.
+    """
+
+    @staticmethod
+    def _no_docker(args, *, timeout=None, env=None):
+        raise FileNotFoundError(2, "The system cannot find the file specified")
+
+    def test_a_push_without_docker_names_docker(self) -> None:
+        ref = registry_image("demo", "0.1.0")
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "push.log"
+            with mock.patch.object(vc_exec, "run_command", side_effect=self._no_docker):
+                with self.assertRaises(ValueError) as raised:
+                    ensure_registry_image("local-image", ref, log)
+        message = str(raised.exception)
+        self.assertIn("docker", message)
+        self.assertIn(ref, message)
+
+    def test_a_digest_resolution_without_docker_names_docker(self) -> None:
+        ref = registry_image("demo", "0.1.0")
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "resolve.log"
+            with mock.patch.object(vc_exec, "run_command", side_effect=self._no_docker):
+                with self.assertRaises(ValueError) as raised:
+                    vc_exec.registry_tag_digest(ref, log)
+        message = str(raised.exception)
+        self.assertIn("docker", message)
+        self.assertIn(ref, message)
+
+
 class InnerCommandQuotingTest(unittest.TestCase):
     def _one_remote_word(self, log_dir: PurePosixPath) -> None:
         command = vc_exec.inner_script_command(log_dir)
@@ -702,6 +736,22 @@ class InnerScriptWorkdirTest(unittest.TestCase):
 
     def test_no_workdir_leaves_the_image_default(self) -> None:
         self.assertNotIn("cd ", self._render(""))
+
+
+class InnerScriptLineEndingTest(unittest.TestCase):
+    """bash in the container reads a trailing CR in the shebang as part of the
+
+    interpreter name and refuses to run the script. The bytes on disk are what
+    matters: the string handed to write_text carries LF on either host.
+    """
+
+    def test_the_script_is_written_with_lf_whatever_the_submit_host_is(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            log_dir = Path(temporary)
+            vc_exec.render_inner_script(log_dir, "python train.py", {"A": "1"}, 60, workdir="/opt/app")
+            raw = (log_dir / "inner.sh").read_bytes()
+        self.assertTrue(raw.startswith(b"#!/usr/bin/env bash\n"))
+        self.assertNotIn(b"\r", raw)
 
 
 class CancelVcJobTest(unittest.TestCase):
@@ -831,7 +881,44 @@ class RunVcJobTest(unittest.TestCase):
             volume_index = recorded[0].index("-v") + 1
             mounts = recorded[0][volume_index].split(",")
             self.assertIn(ro_mount, mounts)
-            self.assertIn(f"{log_dir}:{log_dir}", mounts)
+            # The container side is POSIX -- a Linux container never sees a
+            # drive letter. Spelled out here by plain string surgery instead of
+            # the product's own pathlib rule, so the expectation does not borrow
+            # the mapping it is checking. Off Windows there is no drive to drop
+            # and this is the host path itself, so Linux expects what it always
+            # did.
+            host = str(log_dir)
+            target = (host[2:] if host[1:2] == ":" else host).replace("\\", "/")
+            self.assertIn(f"{log_dir}:{target}", mounts)
+
+    def test_the_added_log_dir_mount_has_no_third_part(self) -> None:
+        # vc_available() refuses on a host with no vc, so the mount list is
+        # reached by mocking that gate rather than by installing a vc client.
+        recorded: list[list[str]] = []
+
+        def fake_run(args: list[str], *, timeout: float | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+            recorded.append(list(args))
+            if args[:2] == ["vc", "submit"]:
+                # shlex.split, not split(" "): inner_script_command quotes the path.
+                inner = Path(shlex.split(args[args.index("--cmd") + 1])[1])
+                inner.parent.mkdir(parents=True, exist_ok=True)
+                (inner.parent / "exit_code").write_text("0\n", encoding="utf-8")
+                return completed(args, stdout="job-abc-123\n")
+            return completed(args, stdout="ok\n")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            log_dir = Path(temporary) / "logs"
+            with mock.patch.object(vc_exec, "run_command", side_effect=fake_run), mock.patch.object(
+                vc_exec, "vc_available", return_value=True
+            ), mock.patch.object(vc_exec, "user_partitions", return_value={"gpu-test"}):
+                run_vc_job(image="registry/demo:0.1.0", command="true", log_dir=log_dir)
+            mounts = recorded[0][recorded[0].index("-v") + 1].split(",")
+            self.assertEqual(len(mounts), 1)
+            parts = vc_exec.split_mount(mounts[0])
+            # A drive letter repeated on the container side reads as the mode.
+            self.assertEqual(len(parts), 2)
+            self.assertEqual(Path(parts[0]), log_dir.resolve())
+            self.assertTrue(PurePosixPath(parts[1]).is_absolute())
 
     def test_timeout_when_exit_code_never_appears(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

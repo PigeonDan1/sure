@@ -216,7 +216,10 @@ def render(source: Path, destination: Path, replacements: dict[str, str]) -> Non
     text = source.read_text(encoding="utf-8")
     for key, value in replacements.items():
         text = text.replace(key, value)
-    destination.write_text(text, encoding="utf-8")
+    # newline="" keeps the LF read_text already normalized the template to: the
+    # rendered files are read inside the Linux image, where a trailing CR lands
+    # in the shell command a Dockerfile RUN line becomes.
+    destination.write_text(text, encoding="utf-8", newline="")
 
 
 def main() -> int:
