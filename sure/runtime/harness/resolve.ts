@@ -59,6 +59,13 @@ SURE_HARNESS_RUNTIME_ID: contract.runtime_id,
 SURE_HARNESS_LOCK_SHA256: contract.lock_sha256,
 		SURE_HARNESS_MANIFEST_PATH: contract.manifest_path,
 		SURE_HARNESS_RUNTIME_ROOT: contract.runtime_root,
+		// Every caller decodes the child's stdout/stderr as UTF-8, but nothing told
+		// the child to encode that way: on a host whose code page is not UTF-8
+		// (cp936 is the common one) a gate refusal naming a non-ASCII path came
+		// back as U+FFFD. PYTHONIOENCODING covers exactly the stdio streams;
+		// PYTHONUTF8 would also switch the default encoding of the child's open(),
+		// which is a far wider change than this needs.
+		PYTHONIOENCODING: "utf-8",
 	};
 }
 
