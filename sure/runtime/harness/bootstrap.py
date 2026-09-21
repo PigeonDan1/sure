@@ -150,6 +150,15 @@ def _verified_contract(
     python = _python_path(runtime_dir)
     if not python.is_file() or not os.access(python, os.X_OK):
         raise HarnessRuntimeError(f"Harness Runtime Python is missing or not executable: {python}")
+    # The manifest records which base interpreter the venv was built on. Reading
+    # it back is the whole point of recording it: a venv is a handful of paths
+    # pointing at an interpreter this directory does not own, and one that has
+    # been replaced or upgraded underneath it no longer matches the lock that was
+    # resolved for it. A mismatch reaches resolve_runtime, which quarantines the
+    # directory and rebuilds rather than trusting it.
+    identity = probe_python(python, error=HarnessRuntimeError)
+    if identity["base_python_sha256"] != manifest.get("base_python_sha256"):
+        raise HarnessRuntimeError("Harness Runtime base_python_sha256 mismatch")
     probe = _probe(python, required_imports)
     if not str(probe.get("version") or "").startswith(f"{spec['python']}."):
         raise HarnessRuntimeError(

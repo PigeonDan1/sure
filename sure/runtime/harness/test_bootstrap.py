@@ -68,6 +68,24 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         self.assertEqual(len(manifest["base_python_sha256"]), 64)
         self.assertEqual(manifest["runtime_id"], first["runtime_id"])
 
+    def test_a_manifest_base_python_hash_is_checked_against_the_interpreter(self) -> None:
+        # The hash was recorded and never read back, so a runtime whose base
+        # interpreter had been swapped under it was reused on every resolve.
+        first = resolve_runtime(self.runtime_root)
+        manifest_path = Path(first["manifest_path"])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        genuine = manifest["base_python_sha256"]
+        manifest["base_python_sha256"] = "0" * 64
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(HarnessRuntimeError, "base_python_sha256"):
+            resolve_runtime(self.runtime_root, repair=False)
+
+        repaired = json.loads(
+            Path(resolve_runtime(self.runtime_root)["manifest_path"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(repaired["base_python_sha256"], genuine)
+
 
 class HarnessRuntimeSpecTests(unittest.TestCase):
     """A malformed runtime.json must fail the way the launcher can report.
