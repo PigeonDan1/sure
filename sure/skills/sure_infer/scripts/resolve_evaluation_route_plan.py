@@ -11,7 +11,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from evaluation_capabilities import discover_engine_capabilities, normalize_engine_task
+from evaluation_capabilities import (
+    EngineRouteUnavailable,
+    build_engine_plan,
+    discover_engine_capabilities,
+    normalize_engine_task,
+)
 from evaluation_runtime import ensure_evaluation_runtime
 from resolve_evaluation_engine import git_environment, git_repo_root, resolve_engine_root
 
@@ -134,6 +139,21 @@ def _scrubbed_plan(plan: dict[str, Any]) -> dict[str, Any]:
     return scrubbed
 
 
+ROUTE_MISMATCH_HINT = (
+    " (common cause: the dataset task does not match the model task,"
+    " e.g. an ASR model paired with a TTS dataset; check datasets="
+    " against the task declared in the model's config.yaml)"
+)
+
+
+def _blocking_issue(dataset_name: str, exc: BaseException) -> str:
+    """The blocking-issue line for a dataset the engine could not plan."""
+    issue = f"{dataset_name or '(unknown dataset)'}: {exc}"
+    if isinstance(exc, EngineRouteUnavailable):
+        issue += ROUTE_MISMATCH_HINT
+    return issue
+
+
 def _dedupe_blockers(blockers: list[dict[str, str]]) -> list[dict[str, str]]:
     seen: set[str] = set()
     unique: list[dict[str, str]] = []
@@ -167,11 +187,6 @@ def build_route_plan(
         )
     engine_source, engine_root = resolved_engine
     evaluation_runtime = ensure_evaluation_runtime(engine_root, prepare=True)
-    from evaluation_capabilities import _insert_engine_src
-
-    _insert_engine_src(engine_root)
-    from sure_eval.evaluation.agent_plan import build_agent_plan
-
     datasets = resolved_input.get("datasets")
     if not isinstance(datasets, list) or not datasets:
         raise ValueError("eval_input_resolved.json must contain a non-empty datasets array")
@@ -194,19 +209,9 @@ def build_route_plan(
             engine_task = normalize_engine_task(task)
             capabilities = discover_engine_capabilities(engine_root, task, language)
             metrics = _selected_metrics(requested_metrics, capabilities)
-            plan = build_agent_plan(
-                engine_task,
-                language=language or None,
-                metrics=metrics,
-            )
+            plan = build_engine_plan(engine_root, engine_task, language, metrics)
         except Exception as exc:
-            issue = f"{dataset_name or '(unknown dataset)'}: {exc}"
-            if "No configured route" in str(exc):
-                issue += (
-                    " (common cause: the dataset task does not match the model task,"
-                    " e.g. an ASR model paired with a TTS dataset; check datasets="
-                    " against the task declared in the model's config.yaml)"
-                )
+            issue = _blocking_issue(dataset_name, exc)
             blocking_issues.append(issue)
             dataset_plans.append(
                 {
