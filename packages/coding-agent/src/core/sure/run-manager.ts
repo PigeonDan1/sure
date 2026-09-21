@@ -40,7 +40,7 @@ function writeJson(path: string, value: unknown): void {
 
 function isPathInside(baseDir: string, candidate: string): boolean {
 	const rel = relative(baseDir, candidate);
-	return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/") && rel !== "..");
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel) && rel !== "..");
 }
 
 export interface SureRunEvent {

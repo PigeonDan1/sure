@@ -168,7 +168,7 @@ function isStringRecord(value: unknown): value is Record<string, unknown> {
 
 function isPathInside(baseDir: string, candidate: string): boolean {
 	const rel = relative(baseDir, candidate);
-	return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/") && rel !== "..");
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel) && rel !== "..");
 }
 
 function isManifestArtifact(value: unknown): value is { type?: string; path?: string } {
