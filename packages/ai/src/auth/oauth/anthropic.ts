@@ -250,7 +250,12 @@ async function loginAnthropic(interaction: ProviderAuthInteraction): Promise<OAu
 	const { verifier, challenge } = await generatePKCE();
 	const server = await startCallbackServer(verifier);
 	const manualAbort = new AbortController();
-	const onAbort = () => server.cancelWait();
+	const onAbort = () => {
+		// Dismiss the manual_code prompt too: after cancelWait the code below waits on
+		// it, and a prompt that only watches its own signal would keep us there forever.
+		manualAbort.abort();
+		server.cancelWait();
+	};
 	interaction.signal.addEventListener("abort", onAbort, { once: true });
 	if (interaction.signal.aborted) onAbort();
 	let code: string | undefined;
