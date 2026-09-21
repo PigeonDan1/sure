@@ -286,6 +286,31 @@ class MainErrorHandlingTests(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn("multiple versions", stderr.getvalue())
 
+    def test_engine_probe_failure_exits_2_and_names_the_probe(self) -> None:
+        """The engine probe failure joins the exit-2 shape, still distinguishable."""
+
+        def broken(*args, **kwargs):
+            raise RuntimeError("sure-evaluation engine at /e could not describe task 'asr'")
+
+        with mock.patch.object(
+            resolve_eval_input, "default_metrics_for_task_language", side_effect=broken
+        ):
+            with self.assertRaises(resolve_eval_input.EvalInputError) as ctx:
+                resolve_eval_input._default_metrics("ASR", "zh", Path("/e"))
+
+        with mock.patch.object(resolve_eval_input, "build_payload", side_effect=ctx.exception):
+            with mock.patch.object(
+                sys, "argv",
+                ["resolve_eval_input.py", "--model", "demo", "--datasets", "/srv/datasets/x"],
+            ):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    rc = resolve_eval_input.main()
+        self.assertEqual(rc, 2)
+        message = stderr.getvalue()
+        self.assertIn("engine probe", message)
+        self.assertIn("could not describe task", message)
+
 
 class DatasetProjectionRootTests(unittest.TestCase):
     """An unusable projection root has to name its source and an override."""
@@ -332,14 +357,17 @@ class DefaultMetricsProbeTests(unittest.TestCase):
 
         Falling back to the hardcoded table would publish a guessed metric as
         the dataset's default_metrics, indistinguishable from one the engine
-        actually chose.
+        actually chose. It surfaces as EvalInputError so main() renders it in
+        the same exit-2 shape as every other fatal error in this script.
         """
 
         def broken(*args, **kwargs):
             raise RuntimeError("sure-evaluation engine at engine could not describe task 'asr'")
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(resolve_eval_input.EvalInputError) as ctx:
             self._probe(broken)
+        self.assertIn("engine probe", str(ctx.exception))
+        self.assertIsInstance(ctx.exception.__cause__, RuntimeError)
 
     def test_a_task_the_engine_does_not_cover_still_falls_back(self) -> None:
         """ValueError is how the engine says 'not my task', e.g. UNKNOWN or a suite."""

@@ -520,9 +520,17 @@ def _default_metrics(task: str, language: str, engine_root: Path | None) -> list
         except ValueError:
             # The engine raises ValueError for tasks it does not cover (an
             # UNKNOWN dataset task, a suite label); the table below is the
-            # answer for those. Any other failure means the engine could not
-            # answer at all, and a guess must not be published as its default.
+            # answer for those.
             pass
+        except Exception as exc:
+            # Any other failure means the engine could not answer at all, and a
+            # guess must not be published as its default. Raised from the
+            # handler, not the try body, so the except ValueError above cannot
+            # catch it back -- EvalInputError is a ValueError subclass.
+            raise EvalInputError(
+                f"evaluation engine probe failed for task {task!r} "
+                f"(language={language!r}): {exc}"
+            ) from exc
     return _fallback_default_metrics(task, language)
 
 
