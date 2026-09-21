@@ -1,0 +1,137 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "agent_spec_resolved.schema.json",
+	"title": "SURE-AGENT-EVAL resolved agent spec",
+	"description": "Structured output of the RESOLVE_AGENT unit, written by scripts/resolve_agent.py. Never carries credential values: an API stage records only the NAME of the environment variable that holds its key.",
+	"type": "object",
+	"required": ["schema", "run_id", "created_at", "agent", "stages", "datasets", "metrics", "runtime"],
+	"properties": {
+		"schema": { "type": "string", "enum": ["sure.agent_eval.spec_resolved.v1"] },
+		"run_id": { "type": "string" },
+		"created_at": { "type": "string" },
+		"agent": {
+			"type": "object",
+			"required": ["name", "task", "input", "output", "spec_path", "spec_sha256"],
+			"properties": {
+				"name": { "type": "string" },
+				"task": { "type": "string" },
+				"input": { "type": "string" },
+				"output": { "type": "string" },
+				"spec_path": { "type": "string" },
+				"spec_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+			},
+			"additionalProperties": false
+		},
+		"stages": {
+			"type": "array",
+			"minItems": 1,
+			"items": {
+				"type": "object",
+				"required": [
+					"id",
+					"model",
+					"mode",
+					"task",
+					"model_dir",
+					"config_path",
+					"verdict_path",
+					"tool_names",
+					"server_command",
+					"working_dir",
+					"env",
+					"api",
+					"prompt_template",
+					"deployment_bound",
+					"deployment_error"
+				],
+				"properties": {
+					"id": { "type": "string" },
+					"model": { "type": "string" },
+					"mode": { "type": "string", "enum": ["mcp_tool", "api"] },
+					"task": { "type": "string" },
+					"model_dir": { "type": "string" },
+					"config_path": { "type": "string" },
+					"verdict_path": { "type": "string" },
+					"tool_names": { "type": "array", "items": { "type": "string" } },
+					"server_command": { "type": "array", "items": { "type": "string" } },
+					"working_dir": { "type": "string" },
+					"env": {
+						"type": "object",
+						"description": "server.env from the stage model's config.yaml, applied to the MCP server child process.",
+						"additionalProperties": { "type": "string" }
+					},
+					"api": {
+						"type": ["object", "null"],
+						"required": ["base_url", "api_key_env", "model", "timeout", "retry"],
+						"properties": {
+							"base_url": { "type": "string" },
+							"api_key_env": {
+								"type": "string",
+								"description": "NAME of the environment variable holding the API key. The value is never recorded."
+							},
+							"model": { "type": "string" },
+							"timeout": { "type": "number" },
+							"retry": { "type": "number" },
+							"temperature": { "type": "number", "minimum": 0 },
+							"top_p": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+							"max_tokens": { "type": "integer", "minimum": 1 }
+						},
+						"additionalProperties": false
+					},
+					"prompt_template": { "type": ["string", "null"] },
+					"deployment_bound": { "type": "boolean" },
+					"deployment_error": { "type": ["string", "null"] }
+				},
+				"additionalProperties": false
+			}
+		},
+		"datasets": {
+			"type": "array",
+			"minItems": 1,
+			"items": {
+				"type": "object",
+				"required": [
+					"dataset",
+					"source_root",
+					"source_dataset_name",
+					"version_id",
+					"task",
+					"language",
+					"translation_language",
+					"sample_jsonl",
+					"ds_jsonl",
+					"raw_dir",
+					"num_samples"
+				],
+				"properties": {
+					"dataset": { "type": "string" },
+					"source_root": { "type": "string" },
+					"source_dataset_name": { "type": "string" },
+					"version_id": { "type": "string" },
+					"task": { "type": "string" },
+					"language": { "type": "string" },
+					"translation_language": { "type": "string" },
+					"sample_jsonl": { "type": "string" },
+					"ds_jsonl": { "type": "string" },
+					"raw_dir": { "type": "string" },
+					"num_samples": { "type": "number" }
+				},
+				"additionalProperties": false
+			}
+		},
+		"metrics": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+		"runtime": {
+			"type": "object",
+			"required": ["product_dir", "output_dir", "dataset_source_key", "max_samples", "device"],
+			"properties": {
+				"product_dir": { "type": "string" },
+				"output_dir": { "type": ["string", "null"] },
+				"dataset_source_key": { "type": "string" },
+				"max_samples": { "type": "integer", "minimum": 0 },
+				"device": { "type": "string" }
+			},
+			"additionalProperties": false
+		}
+	},
+	"additionalProperties": false
+}

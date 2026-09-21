@@ -234,6 +234,29 @@ def read_source_language(ref: DatasetSourceRef) -> str:
     return str(speech.get("language") or "")
 
 
+def read_source_metadata(ref: DatasetSourceRef) -> dict[str, str]:
+    """Best-effort task/language metadata from the version's ds.jsonl.
+
+    ``audio.speech.language`` is the speech (source) language. A source declares
+    a speech-translation dataset either explicitly (top-level ``task``, e.g.
+    ``"S2TT"``) or implicitly via ``audio.speech.translation_language``; with no
+    declaration the task stays ``ASR`` so existing sources keep their behaviour.
+    """
+    try:
+        text = Path(ref.ds_jsonl).read_text(encoding="utf-8").strip()
+        payload = json.loads(text) if text else {}
+    except (OSError, json.JSONDecodeError):
+        return {"task": "ASR", "language": "", "translation_language": ""}
+    if not isinstance(payload, dict):
+        return {"task": "ASR", "language": "", "translation_language": ""}
+    speech = (payload.get("audio") or {}).get("speech") or {}
+    language = str(speech.get("language") or "")
+    translation_language = str(speech.get("translation_language") or "")
+    declared = str(payload.get("task") or "").strip().upper()
+    task = declared or ("S2TT" if translation_language else "ASR")
+    return {"task": task, "language": language, "translation_language": translation_language}
+
+
 def _normalize_source_task(value: object) -> str:
     normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
     return _SOURCE_TASK_ALIASES.get(normalized, "")

@@ -99,6 +99,7 @@ const requiredPaths = [
 	"sure/skills/sure_trans/sure.skill.json",
 	"sure/skills/sure_infer/sure.skill.json",
 	"sure/skills/sure_eval/sure.skill.json",
+	"sure/skills/sure_agent_eval/sure.skill.json",
 	"fixtures",
 ];
 

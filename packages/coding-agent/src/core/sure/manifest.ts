@@ -9,6 +9,7 @@ const SURE_MANIFEST_NAME = "sure.skill.json";
 export const SURE_COMMANDS = [
 	"sure_infer",
 	"sure_eval",
+	"sure_agent_eval",
 	"sure_approve",
 	"sure_onboard",
 	"sure_trans",
