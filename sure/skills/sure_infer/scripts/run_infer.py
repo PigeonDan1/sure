@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 import check_execution_surface_compliance as compliance
-from container_execution import build_local_container_command, effective_container_exit_code
+from container_execution import build_local_container_command, container_path, effective_container_exit_code
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 from python_execution import build_local_python_command, verify_model_integrity
 
@@ -475,7 +475,8 @@ def main() -> int:
             entrypoint=ENTRYPOINT,
             repo_root=cwd,
             device_request=device_request,
-            extra_env={**extra_env, "SURE_EVAL_CONTAINER_REPO_ROOT": str(cwd)},
+            # Read inside the container, so it carries the container spelling.
+            extra_env={**extra_env, "SURE_EVAL_CONTAINER_REPO_ROOT": container_path(cwd)},
         )
         process_env = os.environ.copy()
 
