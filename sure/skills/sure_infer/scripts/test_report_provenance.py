@@ -108,6 +108,49 @@ class PayloadAndReportRowTests(unittest.TestCase):
         self.assertTrue(dataset["source_root"].endswith("ds_pool/demo_ds"))
 
 
+class ScoreNormalizationLabelTests(unittest.TestCase):
+    """Per-sample and dataset scores are not on the same scale; say so where they are shown."""
+
+    def test_sample_row_labels_its_score_as_un_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "cer.jsonl"
+            ep._write_sample_report(
+                output_path=output_path,
+                samples=[{"key": "utt1", "target": "你好"}],
+                predictions={"utt1": "你好吗"},
+                result={"dataset": "demo_ds__v1.0.2", "task": "ASR", "metric": "cer"},
+            )
+            row = json.loads(output_path.read_text(encoding="utf-8").splitlines()[0])
+        self.assertIn("score", row)
+        self.assertEqual(row["score_normalization"], "none")
+
+    def test_report_row_labels_the_dataset_score_as_pipeline_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            jsonl = write_jsonl(Path(tmp) / "demo_ds__v1.0.2.jsonl")
+            payload_row = ep._dataset_metric_row(
+                {
+                    "dataset": "demo_ds__v1.0.2",
+                    "jsonl_path": str(jsonl),
+                    "prediction_path": "predictions/demo_ds__v1.0.2.txt",
+                    "task": "ASR",
+                    "language": "zh",
+                    "metric": "cer",
+                    "score": 0.05,
+                    "num_samples": 1,
+                }
+            )
+        report_row = ep._standard_report_row_v1(
+            row=payload_row,
+            validation={},
+            run_id="run1",
+            protocol_id="proto1",
+            model_dir=None,
+            tool_name="demo_tool",
+        )
+        self.assertEqual(report_row["metric"]["score"], 0.05)
+        self.assertEqual(report_row["metric"]["score_normalization"], "pipeline")
+
+
 class SotaFallbackTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
