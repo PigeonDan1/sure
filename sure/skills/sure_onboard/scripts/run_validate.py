@@ -126,7 +126,10 @@ def repo_root_for(run_dir: Path) -> Path:
 
 
 def normalize_repo_relative_text(value: str, repo_root: Path) -> str:
-    replacement = str(repo_root / "sure" / "models") + "/"
+    # The substitution lands in a command the model declared, so spell the
+    # path in POSIX: a backslash there is an escape (\b is a backspace), not a
+    # separator. Windows accepts forward slashes wherever it accepts them.
+    replacement = (repo_root / "sure" / "models").as_posix() + "/"
     # Pass a function, not the string, as the replacement. re.sub treats
     # backslashes in a *string* replacement as escapes (\s, \1, ...), which
     # raises on Windows where replacement contains path backslashes. A

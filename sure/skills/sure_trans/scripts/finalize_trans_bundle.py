@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from check_artifact import validate_fixture_manifest
 
@@ -375,10 +375,16 @@ def sample_value_is_nonempty(value: object) -> bool:
 
 def promote_generated_audio(artifacts: Path, raw_path: str) -> str:
     declared = Path(raw_path)
+    # The container writes this path, so read it as POSIX first: on Windows a
+    # rooted container path such as /validation/outputs/speech.wav has no
+    # drive and host pathlib calls it relative.
+    container = PurePosixPath(raw_path)
     candidates: list[Path] = []
-    if declared.is_absolute():
-        if declared.parts[:2] == ("/", "validation"):
-            candidates.append(artifacts / "adapter_validation" / Path(*declared.parts[2:]))
+    if container.is_absolute():
+        if container.parts[:2] == ("/", "validation"):
+            candidates.append(artifacts / "adapter_validation" / Path(*container.parts[2:]))
+        candidates.append(declared)
+    elif declared.is_absolute():
         candidates.append(declared)
     else:
         candidates.extend([artifacts / "adapter_validation" / declared, artifacts / declared])
