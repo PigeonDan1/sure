@@ -172,7 +172,15 @@ for (const [label, commands, fallbackNote] of [
 	let found;
 	const managedPath = join(binDir, commands[0] + (process.platform === "win32" ? ".exe" : ""));
 	if (existsSync(managedPath)) {
-		found = `${commandVersion(managedPath) ?? "found"}; from ${managedPath}, which the agent searches before PATH`;
+		// getToolPath() hands the agent this path on existsSync alone, so a
+		// truncated or non-executable download is what it will run and PATH is
+		// no fallback for it: report the host as broken, not as healthy.
+		const managedVersion = commandVersion(managedPath);
+		if (!managedVersion) {
+			warn(label, `${managedPath} exists but cannot be run; the agent uses it before PATH, so ${fallbackNote}. Delete it and reinstall`);
+			continue;
+		}
+		found = `${managedVersion}; from ${managedPath}, which the agent searches before PATH`;
 	}
 	if (!found) {
 		for (const command of commands) {
