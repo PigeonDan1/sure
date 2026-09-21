@@ -78,6 +78,10 @@ describe("DefaultPackageManager", () => {
 		delete process.env.PI_OFFLINE;
 		tempDir = join(tmpdir(), `pm-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
+		// Outside a git repo the .agents/skills scan walks to the filesystem root, and on
+		// Windows tmpdir() sits under the user's home, so it would pick up the real
+		// ~/.agents/skills. Mark the fixture as the repo root to stop the walk here.
+		mkdirSync(join(tempDir, ".git"), { recursive: true });
 		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
 
@@ -417,6 +421,8 @@ Content`,
 		});
 
 		it("should scan .agents/skills up to filesystem root when not in a git repo", async () => {
+			// This case is about the no-repo walk, so it drops the marker beforeEach adds.
+			rmSync(join(tempDir, ".git"), { recursive: true, force: true });
 			const nonRepoRoot = join(tempDir, "non-repo");
 			const nestedCwd = join(nonRepoRoot, "a", "b");
 			mkdirSync(nestedCwd, { recursive: true });
