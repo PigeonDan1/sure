@@ -231,6 +231,13 @@ class CheckAgentExecutionTests(GateTestCase):
         self.assertTrue(any("error as a non-empty string" in error for error in errors))
         self.assertTrue(any("failed_stage as a non-empty string" in error for error in errors))
 
+    def test_rejects_a_dataset_row_that_declares_no_counts(self) -> None:
+        # Without the counts every prediction-side check compares 0 against 0 and
+        # the is_file() guard skips the digest, so the whole row went unchecked.
+        (self.product_dir / "predictions" / f"{DATASET}.txt").unlink()
+        errors = self.check(make_execution(self.product_dir, datasets=[{"dataset": DATASET}]))
+        self.assertTrue(any("expected and generated" in error for error in errors))
+
     def test_rejects_a_product_dir_that_differs_from_the_plan(self) -> None:
         errors = self.check(make_execution(self.tmp / "elsewhere"))
         self.assertTrue(any("product_dir" in error for error in errors))

@@ -112,8 +112,13 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
             errors.append("dataset rows must be objects")
             continue
         dataset = str(row.get("dataset") or "")
-        expected = int(row.get("expected") or 0)
-        generated = int(row.get("generated") or 0)
+        expected = row.get("expected")
+        generated = row.get("generated")
+        # Defaulting these to 0 made every check below compare 0 against 0, so a
+        # row that declared no counts was a row nothing could fail.
+        if not all(isinstance(count, int) and not isinstance(count, bool) for count in (expected, generated)):
+            errors.append(f"{dataset}: dataset rows must declare expected and generated as integers")
+            continue
         prediction_file = product_dir / "predictions" / f"{dataset}.txt"
         non_empty = _nonempty_prediction_rows(prediction_file)
         if generated != expected:
