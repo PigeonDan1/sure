@@ -104,13 +104,15 @@ class FinalizeResultBundleTests(unittest.TestCase):
             manifest = root / "predictions/manifest.json"
             manifest.write_text(json.dumps({"model_name": "owner__demo"}))
 
-            with self.assertRaisesRegex(ValueError, "prediction model identity disagrees"):
+            # The message has to say which value was found and which was expected;
+            # "disagrees" alone leaves the person rerunning the comparison by hand.
+            with self.assertRaisesRegex(ValueError, "prediction model identity disagrees.*'model'.*'owner__demo'"):
                 finalize_bundle(root, root, model)
 
             status["model_name"] = "owner__demo"
             (root / "prediction_generation_status.json").write_text(json.dumps(status))
             manifest.write_text(json.dumps({"model_name": "model"}))
-            with self.assertRaisesRegex(ValueError, "prediction manifest identity disagrees"):
+            with self.assertRaisesRegex(ValueError, "prediction manifest identity disagrees.*'model'.*'owner__demo'"):
                 finalize_bundle(root, root, model)
 
     def test_verifies_python_runtime_fields_that_are_declared(self) -> None:
