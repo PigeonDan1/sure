@@ -337,7 +337,13 @@ def registry_tag_digest(image_ref: str, log_path: Path) -> str:
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     command = ["docker", "pull", image_ref]
-    result = run_command(command, env=proxy_cleared_env(), timeout=3600)
+    try:
+        result = run_command(command, env=proxy_cleared_env(), timeout=3600)
+    except OSError as error:
+        raise ValueError(
+            f"docker is required to resolve the manifest digest of {image_ref} "
+            f"but is not available: {error}"
+        ) from error
     output = f"{result.stdout}\n{result.stderr}".strip()
     with log_path.open("a", encoding="utf-8", buffering=1) as handle:
         handle.write(f"=== {datetime.now(timezone.utc).isoformat()} resolve {image_ref} ===\n")
@@ -379,7 +385,13 @@ def ensure_registry_image(
         )
         for command in commands:
             handle.write(f"$ {' '.join(command)}\n")
-            result = run_command(command, env=proxy_cleared_env(), timeout=3600)
+            try:
+                result = run_command(command, env=proxy_cleared_env(), timeout=3600)
+            except OSError as error:
+                raise ValueError(
+                    f"docker is required to deliver {registry_ref} to the registry "
+                    f"but is not available: {error}"
+                ) from error
             handle.write(result.stdout)
             handle.write(result.stderr)
             handle.write(f"exit_code={result.returncode}\n")

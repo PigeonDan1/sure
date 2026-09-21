@@ -639,6 +639,40 @@ class EnsureRegistryImageTest(unittest.TestCase):
             self.assertIn("image_version", message)
 
 
+class MissingDockerBinaryTest(unittest.TestCase):
+    """A host with no docker has to be told which program is missing.
+
+    Windows spells the failure "[WinError 2] The system cannot find the file
+    specified", which names neither docker nor the step that wanted it.
+    """
+
+    @staticmethod
+    def _no_docker(args, *, timeout=None, env=None):
+        raise FileNotFoundError(2, "The system cannot find the file specified")
+
+    def test_a_push_without_docker_names_docker(self) -> None:
+        ref = registry_image("demo", "0.1.0")
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "push.log"
+            with mock.patch.object(vc_exec, "run_command", side_effect=self._no_docker):
+                with self.assertRaises(ValueError) as raised:
+                    ensure_registry_image("local-image", ref, log)
+        message = str(raised.exception)
+        self.assertIn("docker", message)
+        self.assertIn(ref, message)
+
+    def test_a_digest_resolution_without_docker_names_docker(self) -> None:
+        ref = registry_image("demo", "0.1.0")
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "resolve.log"
+            with mock.patch.object(vc_exec, "run_command", side_effect=self._no_docker):
+                with self.assertRaises(ValueError) as raised:
+                    vc_exec.registry_tag_digest(ref, log)
+        message = str(raised.exception)
+        self.assertIn("docker", message)
+        self.assertIn(ref, message)
+
+
 class InnerCommandQuotingTest(unittest.TestCase):
     def _one_remote_word(self, log_dir: PurePosixPath) -> None:
         command = vc_exec.inner_script_command(log_dir)
