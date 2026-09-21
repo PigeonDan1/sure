@@ -41,7 +41,7 @@ Credential red line: an API stage's key is read from the environment variable **
 | `dataset_source_key` | — | Key in site policy `datasets.allowed_source_roots` that authorizes the supplied source paths. |
 | `max_samples` | — | Sample cap for bounded validation runs. Omitted or `0` means full dataset. Recorded as `runtime.max_samples`; `scripts/agent_runner.py` reads it from the plan. |
 | `device` | — | Evaluation device (`cpu` default). Never changes prediction identity. Recorded as `runtime.device`; `scripts/run_agent_eval.py` reads it from the plan. |
-| `output_dir` | — | Absolute directory that becomes this invocation's product directory, replacing `sure/results/agents/<agent_name>/<run_id>`. Must be outside every configured `forbidden_output_roots` entry. |
+| `output_dir` | — | Absolute directory that becomes this invocation's product directory, replacing `sure/results/agents/<agent_name>/<run_id>`. Must be outside every configured `forbidden_output_roots` entry. Quote the value when the path contains spaces: `output_dir="/data/My Runs/job"`. |
 
 `model`, `model_dir`, `source`, `pipeline_id`, `config` and `evaluation_engine_root` are rejected: the models come from the agent spec's stages, and weakening the pinned evaluator or the chain contract is not allowed.
 

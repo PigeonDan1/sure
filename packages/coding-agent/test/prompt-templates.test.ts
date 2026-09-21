@@ -13,12 +13,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, describe, expect, test } from "vitest";
 import { getAgentDir } from "../src/config.ts";
-import {
-	expandPromptTemplate,
-	loadPromptTemplates,
-	parseCommandArgs,
-	substituteArgs,
-} from "../src/core/prompt-templates.ts";
+import { expandPromptTemplate, loadPromptTemplates, substituteArgs } from "../src/core/prompt-templates.ts";
+import { parseCommandArgs } from "../src/utils/command-args.ts";
 
 // ============================================================================
 // substituteArgs
@@ -363,11 +359,24 @@ describe("parseCommandArgs", () => {
 	});
 
 	test("should parse single-quoted arguments", () => {
-		expect(parseCommandArgs("'first arg' second")).toEqual(["first arg", "second"]);
+		expect(parseCommandArgs("'first arg' second", { singleQuotes: true })).toEqual(["first arg", "second"]);
 	});
 
 	test("should parse mixed quote styles", () => {
-		expect(parseCommandArgs('"double" \'single\' "double again"')).toEqual(["double", "single", "double again"]);
+		expect(parseCommandArgs('"double" \'single\' "double again"', { singleQuotes: true })).toEqual([
+			"double",
+			"single",
+			"double again",
+		]);
+	});
+
+	test("should keep an apostrophe inside a path", () => {
+		expect(parseCommandArgs("C:\\Users\\O'Brien\\vim.exe --wait")).toEqual(["C:\\Users\\O'Brien\\vim.exe", "--wait"]);
+		expect(parseCommandArgs("/home/o'brien/My Notes/vim --wait")).toEqual([
+			"/home/o'brien/My",
+			"Notes/vim",
+			"--wait",
+		]);
 	});
 
 	test("should handle empty string", () => {
@@ -445,6 +454,20 @@ describe("expandPromptTemplate", () => {
 		]);
 
 		expect(result).toBe("- arg1: label-2\n- rest: Here is some description #2.");
+	});
+
+	test("should still read a single-quoted template argument as one argument", () => {
+		const result = expandPromptTemplate("/arg-test 'label two' rest", [
+			{
+				name: "arg-test",
+				description: "test",
+				content: "arg1: $1",
+				sourceInfo: { path: "/tmp/arg-test.md", source: "local", scope: "temporary", origin: "top-level" },
+				filePath: "/tmp/arg-test.md",
+			},
+		]);
+
+		expect(result).toBe("arg1: label two");
 	});
 
 	test("should support template command separated from args by newline", () => {

@@ -23,7 +23,7 @@ This skill is **self-contained**: all backend code is bundled under `scripts/` (
 | `download` | — | When true, materialize/fetch weights where supported. Default false for feed discovery. |
 | `handoff` | — | When true (default), publish `sure/handoffs/<model_name>/model_input.yaml` plus an `artifacts/` evidence folder for `/sure_onboard`. |
 | `handoff_root` | — | Override the handoff publication root. Default: repo-level `sure/handoffs`. |
-| `output_dir` | — | Absolute directory where the harness collects this invocation's `result.json` and control artifacts. The harness consumes it before the agent starts, so the handoff still belongs under `sure/handoffs/<model_name>/` where `/sure_onboard` looks for it; use `handoff_root` to publish somewhere else. The directory must be outside every configured `forbidden_output_roots` entry and writable. |
+| `output_dir` | — | Absolute directory where the harness collects this invocation's `result.json` and control artifacts. The harness consumes it before the agent starts, so the handoff still belongs under `sure/handoffs/<model_name>/` where `/sure_onboard` looks for it; use `handoff_root` to publish somewhere else. The directory must be outside every configured `forbidden_output_roots` entry and writable. Quote the value when the path contains spaces: `output_dir="/data/My Runs/job"`. |
 | `since` | — | Incremental-scan timestamp (watch mode). |
 | `max_retries` | — | Consecutive blocked gate attempts allowed per unit before the run terminates. Default `3`. |
 

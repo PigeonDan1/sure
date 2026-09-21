@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { basename, dirname, join, resolve, sep } from "path";
 import { CONFIG_DIR_NAME } from "../config.ts";
+import { parseCommandArgs } from "../utils/command-args.ts";
 import { parseFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
@@ -15,43 +16,6 @@ export interface PromptTemplate {
 	content: string;
 	sourceInfo: SourceInfo;
 	filePath: string; // Absolute path to the template file
-}
-
-/**
- * Parse command arguments respecting quoted strings (bash-style)
- * Returns array of arguments
- */
-export function parseCommandArgs(argsString: string): string[] {
-	const args: string[] = [];
-	let current = "";
-	let inQuote: string | null = null;
-
-	for (let i = 0; i < argsString.length; i++) {
-		const char = argsString[i];
-
-		if (inQuote) {
-			if (char === inQuote) {
-				inQuote = null;
-			} else {
-				current += char;
-			}
-		} else if (char === '"' || char === "'") {
-			inQuote = char;
-		} else if (/\s/.test(char)) {
-			if (current) {
-				args.push(current);
-				current = "";
-			}
-		} else {
-			current += char;
-		}
-	}
-
-	if (current) {
-		args.push(current);
-	}
-
-	return args;
 }
 
 /**
@@ -277,7 +241,8 @@ export function expandPromptTemplate(text: string, templates: PromptTemplate[]):
 
 	const template = templates.find((t) => t.name === templateName);
 	if (template) {
-		const args = parseCommandArgs(argsString);
+		// Template arguments are prose as often as paths, and '…' has always quoted here.
+		const args = parseCommandArgs(argsString, { singleQuotes: true });
 		return substituteArgs(template.content, args);
 	}
 

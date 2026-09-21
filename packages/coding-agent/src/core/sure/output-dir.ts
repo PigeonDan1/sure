@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { requireSitePolicy, resolveSitePolicy } from "../../../../../sure/site/loader.ts";
+import { tokenizeCommandArgs } from "../../utils/command-args.ts";
 
 // Approved models and promoted results both live below this root. Runs never
 // write inside it; a human promotes reviewed products there.
@@ -28,27 +29,31 @@ interface SplitArgs {
 }
 
 function splitOutputDir(args: string): SplitArgs {
-	const tokens = args.trim().split(/\s+/).filter(Boolean);
+	// Quote-aware, so output_dir="C:\Program Files\runs" stays one path. An
+	// unquoted path is still one whitespace-delimited token: nothing can tell
+	// `output_dir=/a/My Runs` from an output_dir followed by prose.
+	const tokens = tokenizeCommandArgs(args);
+	// The arguments that travel on keep the text they arrived as, quotes included.
 	const rest: string[] = [];
 	let requested: string | undefined;
 	for (let i = 0; i < tokens.length; i++) {
 		const token = tokens[i];
-		const eq = token.indexOf("=");
+		const eq = token.value.indexOf("=");
 		if (eq >= 0) {
-			if (token.slice(0, eq) === "output_dir") {
-				requested = requested ?? token.slice(eq + 1);
+			if (token.value.slice(0, eq) === "output_dir") {
+				requested = requested ?? token.value.slice(eq + 1);
 				continue;
 			}
-			rest.push(token);
+			rest.push(token.source);
 			continue;
 		}
-		if (token.replace(/^--?/, "") !== "output_dir") {
-			rest.push(token);
+		if (token.value.replace(/^--?/, "") !== "output_dir") {
+			rest.push(token.source);
 			continue;
 		}
 		const next = tokens[i + 1];
-		if (next !== undefined && !next.startsWith("-")) {
-			requested = requested ?? next;
+		if (next !== undefined && !next.value.startsWith("-")) {
+			requested = requested ?? next.value;
 			i++;
 		}
 	}
