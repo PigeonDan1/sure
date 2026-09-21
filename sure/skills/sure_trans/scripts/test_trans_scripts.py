@@ -16,6 +16,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import run_docker_build  # noqa: E402
+import run_execution_compat  # noqa: E402
 import run_trans_validate  # noqa: E402
 import mcp_smoke  # noqa: E402
 import materialize_trans_inputs  # noqa: E402
@@ -2422,6 +2423,15 @@ class TransScriptsTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "docker"):
                 scaffold_adapter.container_python_executable("demo-source:0.1.0")
+
+    def test_execution_compat_probe_names_docker_when_it_is_missing(self) -> None:
+        # No docker on the host must reach the agent as this gate's refusal,
+        # not as a raw FileNotFoundError traceback.
+        with mock.patch.object(
+            run_execution_compat.subprocess, "run", side_effect=FileNotFoundError("docker")
+        ):
+            with self.assertRaisesRegex(ValueError, "docker"):
+                run_execution_compat.run_probe("demo-source:0.1.0", False)
 
     def test_final_bundle_matches_eval_deployment_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
