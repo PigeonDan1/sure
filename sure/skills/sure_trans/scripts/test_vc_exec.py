@@ -881,7 +881,15 @@ class RunVcJobTest(unittest.TestCase):
             volume_index = recorded[0].index("-v") + 1
             mounts = recorded[0][volume_index].split(",")
             self.assertIn(ro_mount, mounts)
-            self.assertIn(f"{log_dir}:{log_dir}", mounts)
+            # The container side is POSIX -- a Linux container never sees a
+            # drive letter. Spelled out here by plain string surgery instead of
+            # the product's own pathlib rule, so the expectation does not borrow
+            # the mapping it is checking. Off Windows there is no drive to drop
+            # and this is the host path itself, so Linux expects what it always
+            # did.
+            host = str(log_dir)
+            target = (host[2:] if host[1:2] == ":" else host).replace("\\", "/")
+            self.assertIn(f"{log_dir}:{target}", mounts)
 
     def test_the_added_log_dir_mount_has_no_third_part(self) -> None:
         # vc_available() refuses on a host with no vc, so the mount list is
