@@ -111,7 +111,14 @@ class McpToolClient:
             env=child_env,
         )
         self._next_id = 0
-        self._request("initialize", {})
+        try:
+            self._request("initialize", {})
+        except Exception:
+            # A client that fails its handshake never reaches the caller's list,
+            # so nothing would close this server; it keeps its (GPU) memory.
+            self._process.kill()
+            self._process.wait(timeout=10)
+            raise
 
     def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         assert self._process.stdin is not None and self._process.stdout is not None

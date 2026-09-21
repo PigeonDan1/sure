@@ -6,6 +6,7 @@ Run directly (needs the Harness Python for yaml/pydantic):
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import sys
@@ -322,6 +323,25 @@ class RunAgentTests(unittest.TestCase):
     def test_real_mcp_client_against_a_stub_server(self) -> None:
         answer = self.start_stub_client().call({"audio_path": "/audio/utt0.wav"})
         self.assertEqual(agent_runner.extract_text(answer), "TRANSCRIBED:/audio/utt0.wav")
+
+    def test_failed_handshake_kills_the_server(self) -> None:
+        class FakeProcess:
+            def __init__(self) -> None:
+                self.stdin = io.StringIO()
+                self.stdout = io.StringIO("")  # the server dies during initialize
+                self.killed = False
+
+            def kill(self) -> None:
+                self.killed = True
+
+            def wait(self, timeout: float | None = None) -> int:
+                return 1
+
+        process = FakeProcess()
+        with mock.patch.object(agent_runner.subprocess, "Popen", return_value=process):
+            with self.assertRaisesRegex(RuntimeError, "exited while answering initialize"):
+                agent_runner.McpToolClient(dict(self.spec["stages"][0]))
+        self.assertTrue(process.killed)
 
     def test_tool_result_flagged_is_error_is_rejected(self) -> None:
         client = self.start_stub_client()
