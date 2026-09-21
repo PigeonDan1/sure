@@ -104,16 +104,18 @@ describe("sure_infer red line 1 — EXECUTION_SURFACE_ISOLATION", () => {
 		writeArtifact(runDir, "execution_surface.json", surfaceFor(ENTRYPOINT, sha256Of(ENTRYPOINT)));
 		writeEvalInput(runDir);
 		const surfacePath = join(runDir, "artifacts", "execution_surface.json");
-		const result = spawnSync(PYTHON_BIN, ["-"], {
+		const probe = join(runDir, "artifacts", "provenance_probe.py");
+		writeFileSync(
+			probe,
+			`from pathlib import Path\nfrom check_execution_surface_compliance import check_entrypoint_provenance\nresult = check_entrypoint_provenance(Path(${JSON.stringify(surfacePath)}))\nassert result["passed"], result\nassert result["entrypoint_sha256"] == ${JSON.stringify(sha256Of(ENTRYPOINT))}, result\n`,
+			"utf-8",
+		);
+		// Use a file instead of stdin: the locked Python wrapper can inherit a
+		// non-EOF stdin from a Vitest worker in restricted runners.
+		const result = spawnSync(PYTHON_BIN, [probe], {
 			cwd: SCRIPTS_DIR,
-			input: `
-from pathlib import Path
-from check_execution_surface_compliance import check_entrypoint_provenance
-result = check_entrypoint_provenance(Path(${JSON.stringify(surfacePath)}))
-assert result["passed"], result
-assert result["entrypoint_sha256"] == ${JSON.stringify(sha256Of(ENTRYPOINT))}, result
-`,
 			encoding: "utf-8",
+			timeout: 30_000,
 			env: { ...process.env, PYTHONPATH: SCRIPTS_DIR },
 		});
 		expect(result.status).toBe(0);

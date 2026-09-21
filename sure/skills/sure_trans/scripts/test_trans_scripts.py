@@ -754,6 +754,40 @@ class TransScriptsTest(unittest.TestCase):
             self.assertEqual(payload["build_exit_code"], 0)
             self.assertEqual(payload["image_id"], "sha256:" + "b" * 64)
 
+    def test_build_result_carries_the_inspect_failure_when_the_built_tag_cannot_be_confirmed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            delivery = root / "delivery"
+            run_dir = root / "run"
+            artifacts = run_dir / "artifacts"
+            delivery.mkdir()
+            artifacts.mkdir(parents=True)
+            (delivery / "Dockerfile").write_text("FROM python:3.12\n", encoding="utf-8")
+            (artifacts / "trans_input_resolved.json").write_text(
+                json.dumps({"dockerfile": str(delivery / "Dockerfile"), "build_context": str(delivery), "model_name": "demo"}) + "\n",
+                encoding="utf-8",
+            )
+            output = artifacts / "source_image_result.json"
+            daemon_error = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock"
+
+            def execute(command: list[str], timeout: float, cwd: Path | None = None) -> dict:
+                if command[:2] == ["docker", "build"]:
+                    return {"command": command, "exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1.0}
+                if command[:3] == ["docker", "image", "inspect"]:
+                    return {"command": command, "exit_code": 1, "stdout": "", "stderr": daemon_error, "duration_ms": 1.0}
+                raise AssertionError(f"unexpected docker invocation: {command}")
+
+            argv = ["run_docker_build.py", "--run-dir", str(run_dir), "--produces", str(output)]
+            with mock.patch.object(run_docker_build, "execute", side_effect=execute), mock.patch.object(sys, "argv", argv):
+                with self.assertRaises(RuntimeError) as raised:
+                    run_docker_build.main()
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "failed")
+            self.assertIn("did not confirm the generated tag", payload["error"])
+            # The reason inspect failed is the only lead the user has; it must not be dropped.
+            self.assertIn(daemon_error, payload["error"])
+            self.assertIn(daemon_error, str(raised.exception))
+
     def test_materialize_python_input_without_packaging(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

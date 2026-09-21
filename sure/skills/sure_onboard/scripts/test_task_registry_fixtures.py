@@ -145,6 +145,39 @@ class TaskRegistryFixtureTests(unittest.TestCase):
             )
             self.assertEqual(checked.returncode, 0, msg=checked.stderr)
 
+    def test_restaging_for_another_task_leaves_only_the_declared_fixture(self) -> None:
+        # validate.py takes the first gt.jsonl under <model>/fixture, so a set left
+        # behind by an earlier task would be validated instead of the declared one.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model_dir = root / "model"
+            model_dir.mkdir()
+            manifest: dict = {}
+            for task in ("asr", "lid"):
+                run_dir = root / f"run-{task}"
+                artifacts = run_dir / "artifacts"
+                artifacts.mkdir(parents=True)
+                (artifacts / "model_input_resolved.json").write_text(
+                    json.dumps({
+                        "model_id": "test/retask",
+                        "model_name": "test__retask",
+                        "model_dir": str(model_dir),
+                        "task_type": task,
+                    }),
+                    encoding="utf-8",
+                )
+                manifest_path = artifacts / "fixture_manifest.json"
+                prepared = subprocess.run(
+                    [sys.executable, str(PREPARE), "--run-dir", str(run_dir), "--produces", str(manifest_path)],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(prepared.returncode, 0, msg=prepared.stderr)
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+            staged = sorted(path.resolve() for path in (model_dir / "fixture").glob("**/gt.jsonl"))
+            self.assertEqual(staged, [Path(manifest["gt_jsonl"]).resolve()])
+
 
 if __name__ == "__main__":
     unittest.main()

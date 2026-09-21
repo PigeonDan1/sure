@@ -339,6 +339,29 @@ class ProtocolWriterModuleTests(unittest.TestCase):
         self.assertIsNone(protocol["provenance"]["evaluation_engine"]["root"])
         self.assertEqual(len(protocol["execution_surface"]["template_sha256"]), 64)
 
+    def test_model_name_comes_from_the_sealed_inventory_not_the_mount_path(self) -> None:
+        # Inside the container the bundle sits under a policy-defined alias, and
+        # config.yaml is whatever the wrapper author wrote; runtime_inventory.json
+        # is the sealed record, so it names the model.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "infer_run"
+            run_dir.mkdir()
+            write_json(
+                run_dir / "prediction_generation_status.json",
+                {"schema": "sure.eval.prediction_generation_status.v2", "runtime": {}, "generation": {}},
+            )
+            model_dir = Path(tmp) / "model"
+            (model_dir / "artifacts").mkdir(parents=True)
+            write_json(model_dir / "artifacts" / "runtime_inventory.json", {"status": "ready", "model": {"name": "owner__demo"}})
+            (model_dir / "config.yaml").write_text(
+                yaml.safe_dump({"name": "config-alias", "model": {"name": "nested-alias"}}), encoding="utf-8"
+            )
+            protocol_writer.write_protocol_yaml(
+                run_dir, "standard_system", model_dir, results=None, tool_name="transcribe_audio"
+            )
+            protocol = yaml.safe_load((run_dir / "protocol.yaml").read_text(encoding="utf-8"))
+        self.assertEqual(protocol["model"]["model_name"], "owner__demo")
+
     def test_prediction_contract_path_points_at_a_real_contract(self) -> None:
         # Downstream agents open contract_path; a dead link stops them there.
         with tempfile.TemporaryDirectory() as tmp:
