@@ -468,7 +468,11 @@ def _safe_path_component(value: str) -> str:
 def _external_env(engine_root: Path) -> dict[str, str]:
     env = evaluation_child_environment()
     src = str(engine_root / "src")
-    env["PYTHONPATH"] = f"{src}:{env.get('PYTHONPATH', '')}" if env.get("PYTHONPATH") else src
+    env["PYTHONPATH"] = f"{src}{os.pathsep}{env.get('PYTHONPATH', '')}" if env.get("PYTHONPATH") else src
+    # The bridge child prints ensure_ascii=False JSON, and the parent reads it
+    # over a UTF-8 text pipe; its std streams must not fall back to the host
+    # code page.
+    env["PYTHONIOENCODING"] = "utf-8"
     return env
 
 
@@ -529,6 +533,7 @@ print(json.dumps(pipeline, ensure_ascii=False))
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
             timeout=timeout,
         )
@@ -698,6 +703,7 @@ print(json.dumps({"pipeline": pipeline, "summary": summary, "report": report}, e
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
             timeout=timeout,
         )

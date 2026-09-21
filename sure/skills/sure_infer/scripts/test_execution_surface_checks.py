@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import io
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -444,6 +446,63 @@ class LiveRuntimeProbeTests(unittest.TestCase):
 
         self.assertTrue(result["probe_ran"])
         self.assertEqual(result["failure_class"], "HARNESS_RUNTIME_NOT_READY")
+
+
+def _host_encoding(encoding: str):
+    """Pretend the host code page is `encoding` wherever no encoding is named.
+
+    That is what write_text() resolves to on a non-UTF-8 Windows box, and
+    forcing it here keeps the regression provable on a UTF-8 host too.
+    """
+    real = io.text_encoding
+
+    def text_encoding(given, stacklevel=2):  # type: ignore[no-untyped-def]
+        return encoding if given is None else real(given, stacklevel)
+
+    return patch("io.text_encoding", text_encoding)
+
+
+class ComplianceReportEncodingTests(unittest.TestCase):
+    def test_a_report_quoting_a_non_ascii_path_is_still_written(self) -> None:
+        declared = "张伟/infer_entrypoint.py"
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir()
+            surface = artifacts / "execution_surface.json"
+            surface.write_text(
+                json.dumps(
+                    {
+                        "entrypoint_path": str(checks.INFER_ENTRYPOINT),
+                        "source_provenance": {
+                            "template_file": declared,
+                            "template_sha256": "0" * 64,
+                            "isolation_compliance": {
+                                "eval_runs_referenced": False,
+                                "prior_run_scripts_copied": False,
+                            },
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            output = run_dir / "compliance.json"
+            argv = [
+                "check_execution_surface_compliance.py",
+                "--run-dir",
+                str(run_dir),
+                "--produces",
+                str(surface),
+                "--output",
+                str(output),
+            ]
+
+            with patch.object(sys, "argv", argv), _host_encoding("ascii"):
+                exit_code = checks.main()
+
+            self.assertEqual(exit_code, 1)
+            report = json.loads(output.read_text(encoding="utf-8"))
+            self.assertIn(declared, "\n".join(report["blocking_issues"]))
 
 
 if __name__ == "__main__":
