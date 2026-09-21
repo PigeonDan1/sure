@@ -275,7 +275,7 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 // ${HOME} and ${REPO} expand to forward-slash paths with no trailing separator
 // so the TypeScript and Python loaders produce identical bytes on every host:
 // on Windows os.homedir() and pathlib.Path.home() both spell C:\Users\me, and
-// scripts/check-site-boundary.mjs compares the sha256 of the expanded text.
+// scripts/check-site-boundary.mjs runs both loaders and diffs the expanded policy.
 function normalizeHostPath(value: string): string {
 	return value.replaceAll("\\", "/").replace(/\/+$/, "");
 }
@@ -329,8 +329,11 @@ function loadPolicy(path: string, source: SitePolicySource, repositoryRoot: stri
 		const detail = error instanceof Error ? error.message : String(error);
 		throw new Error(`Cannot parse ${source} site policy ${path}: ${detail}`);
 	}
-	// Expand before parsing, validating and hashing: the digest then identifies
-	// the policy this machine actually uses, not the committed template.
+	// Expand before parsing and validating, but hash the file as committed:
+	// ${REPO} and ${HOME} resolve to a different path on every machine, so a
+	// digest taken after expansion says where this checkout sits rather than
+	// which policy it is, and two hosts running one policy can never compare
+	// the site_policy_sha256 their provenance packets carry.
 	const content = Buffer.from(expandPolicyTokens(text, repositoryRoot, source, path), "utf8");
 	let decoded: unknown;
 	try {
@@ -344,7 +347,7 @@ function loadPolicy(path: string, source: SitePolicySource, repositoryRoot: stri
 			policy: validateSitePolicy(decoded),
 			path,
 			source,
-			sha256: createHash("sha256").update(content).digest("hex"),
+			sha256: createHash("sha256").update(raw).digest("hex"),
 		};
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);

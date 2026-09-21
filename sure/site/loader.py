@@ -205,7 +205,7 @@ def validate_site_policy(value: Any) -> dict[str, Any]:
 # ${HOME} and ${REPO} expand to forward-slash paths with no trailing separator
 # so the Python and TypeScript loaders produce identical bytes on every host:
 # on Windows pathlib.Path.home() and os.homedir() both spell C:\Users\me, and
-# scripts/check-site-boundary.mjs compares the sha256 of the expanded text.
+# scripts/check-site-boundary.mjs runs both loaders and diffs the expanded policy.
 def _normalize_host_path(value: str) -> str:
     return value.replace("\\", "/").rstrip("/")
 
@@ -272,8 +272,11 @@ def _load(path: Path, source: str, root: Path) -> dict[str, Any]:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as error:
         raise SitePolicyError(f"Cannot parse {source} site policy {path}: {error}") from error
-    # Expand before parsing, validating and hashing: the digest then identifies
-    # the policy this machine actually uses, not the committed template.
+    # Expand before parsing and validating, but hash the file as committed:
+    # ${REPO} and ${HOME} resolve to a different path on every machine, so a
+    # digest taken after expansion says where this checkout sits rather than
+    # which policy it is, and two hosts running one policy can never compare
+    # the site_policy_sha256 their provenance packets carry.
     content = _expand_policy_tokens(text, root, source, path).encode("utf-8")
     try:
         decoded = yaml.safe_load(content)
@@ -287,7 +290,7 @@ def _load(path: Path, source: str, root: Path) -> dict[str, Any]:
         "policy": policy,
         "path": str(path),
         "source": source,
-        "sha256": hashlib.sha256(content).hexdigest(),
+        "sha256": hashlib.sha256(raw).hexdigest(),
     }
 
 

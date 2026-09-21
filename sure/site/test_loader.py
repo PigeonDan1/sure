@@ -283,6 +283,30 @@ class TokenExpansionTest(unittest.TestCase):
             f"{_expected_home()}/.sure/approved",
         )
 
+    def test_the_digest_covers_the_committed_text_not_the_expanded_paths(self) -> None:
+        # Two checkouts of one policy must agree on its digest: every provenance
+        # packet compares the sha256 a run recorded against the sha256 this host
+        # computes now, and where the repository happens to sit is not part of
+        # the policy.
+        # write_bytes, not write_text: the digest is over the bytes on disk, and
+        # write_text would turn every newline into CRLF on Windows.
+        fixture = self.root / "config" / "token.yaml"
+        fixture.write_bytes(_TOKEN_FIXTURE.encode("utf-8"))
+        elsewhere = Path(tempfile.mkdtemp(prefix="sure-site-token-elsewhere-"))
+        self.addCleanup(shutil.rmtree, elsewhere, True)
+        environment = {"SURE_SITE_POLICY": str(fixture)}
+
+        here = load_site_policy(repository_root=self.root, environment=environment)
+        there = load_site_policy(repository_root=elsewhere, environment=environment)
+
+        self.assertEqual(here["sha256"], there["sha256"])
+        self.assertEqual(here["sha256"], hashlib.sha256(_TOKEN_FIXTURE.encode("utf-8")).hexdigest())
+        # Expansion still happens; only what gets hashed changed.
+        self.assertEqual(
+            there["policy"]["datasets"]["allowed_source_roots"]["smoke"],
+            f"{str(elsewhere).replace(chr(92), '/')}/fixtures/tasks",
+        )
+
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -401,14 +425,12 @@ class PolicyEncodingTest(unittest.TestCase):
         )
 
     def test_still_loads_a_policy_that_starts_with_a_byte_order_mark(self) -> None:
-        self.fixture.write_bytes(b"\xef\xbb\xbf" + _TOKEN_FIXTURE.encode("utf-8"))
-        expanded = "﻿" + _TOKEN_FIXTURE.replace("${HOME}", _expected_home()).replace(
-            "${REPO}", str(self.root).replace(chr(92), "/")
-        )
+        raw = b"\xef\xbb\xbf" + _TOKEN_FIXTURE.encode("utf-8")
+        self.fixture.write_bytes(raw)
 
         resolved = load_site_policy(repository_root=self.root, environment={})
 
-        self.assertEqual(resolved["sha256"], hashlib.sha256(expanded.encode("utf-8")).hexdigest())
+        self.assertEqual(resolved["sha256"], hashlib.sha256(raw).hexdigest())
 
 
 class RemovedFieldTest(unittest.TestCase):
