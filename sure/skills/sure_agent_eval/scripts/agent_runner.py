@@ -139,6 +139,9 @@ class McpToolClient:
     def call(self, arguments: dict[str, Any]) -> Any:
         result = self._request("tools/call", {"name": self._tool, "arguments": arguments})
         content = result.get("content")
+        if result.get("isError"):
+            message = str(content[0].get("text") or "") if isinstance(content, list) and content else ""
+            raise RuntimeError(message or "Tool call returned isError=true")
         if not isinstance(content, list) or not content:
             raise RuntimeError("MCP tools/call returned no content")
         text = str(content[0].get("text") or "")

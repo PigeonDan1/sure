@@ -31,7 +31,11 @@ for line in sys.stdin:
         result = {"protocolVersion": "2024-11-05", "serverInfo": {"name": "stub", "version": "0"}, "capabilities": {"tools": {}}}
     elif method == "tools/call":
         arguments = (request.get("params") or {}).get("arguments") or {}
-        result = {"content": [{"type": "text", "text": json.dumps({"text": "TRANSCRIBED:" + str(arguments.get("audio_path", ""))})}]}
+        audio_path = str(arguments.get("audio_path", ""))
+        if "boom" in audio_path:
+            result = {"isError": True, "content": [{"type": "text", "text": "stub tool failure"}]}
+        else:
+            result = {"content": [{"type": "text", "text": json.dumps({"text": "TRANSCRIBED:" + audio_path})}]}
     elif method == "shutdown":
         result = {}
     else:
@@ -155,8 +159,11 @@ class RunAgentTests(unittest.TestCase):
         self._env.start()
         self._projection = mock.patch.object(agent_runner, "_projection_root", return_value=self.tmp / "projection")
         self._projection.start()
+        self.clients: list[agent_runner.McpToolClient] = []
 
     def tearDown(self) -> None:
+        for client in self.clients:
+            client.close()
         self._projection.stop()
         self._env.stop()
         self._tmp.cleanup()
@@ -230,18 +237,24 @@ class RunAgentTests(unittest.TestCase):
         execution = json.loads((self.run_dir / "artifacts" / "execution_result.json").read_text(encoding="utf-8"))
         self.assertEqual(execution["job_status"], "failed")
 
-    def test_real_mcp_client_against_a_stub_server(self) -> None:
+    def start_stub_client(self, source: str = STUB_MCP_SERVER) -> agent_runner.McpToolClient:
         server = self.tmp / "stub_server.py"
-        server.write_text(STUB_MCP_SERVER, encoding="utf-8")
+        server.write_text(source, encoding="utf-8")
         stage = dict(self.spec["stages"][0])
         stage["server_command"] = [sys.executable, str(server)]
         stage["working_dir"] = str(self.tmp)
         client = agent_runner.McpToolClient(stage)
-        try:
-            answer = client.call({"audio_path": "/audio/utt0.wav"})
-        finally:
-            client.close()
+        self.clients.append(client)
+        return client
+
+    def test_real_mcp_client_against_a_stub_server(self) -> None:
+        answer = self.start_stub_client().call({"audio_path": "/audio/utt0.wav"})
         self.assertEqual(agent_runner.extract_text(answer), "TRANSCRIBED:/audio/utt0.wav")
+
+    def test_tool_result_flagged_is_error_is_rejected(self) -> None:
+        client = self.start_stub_client()
+        with self.assertRaisesRegex(RuntimeError, "stub tool failure"):
+            client.call({"audio_path": "/audio/boom.wav"})
 
     def test_api_caller_requires_the_credential_env_var(self) -> None:
         with mock.patch.dict(os.environ, {}, clear=True):
