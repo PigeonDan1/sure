@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	writeFileSync,
+} from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { mergeSureDisplayState } from "./state.ts";
 import type { SureDisplayState, SureRunRecord, SureRunStatus, SureSkillPackage } from "./types.ts";
@@ -34,8 +43,28 @@ function safeTimestamp(): string {
 	return nowIso().replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-");
 }
 
+// A run's record is rewritten on every tool call, so a hard kill during the
+// write is what leaves a zero-byte run.json behind. Publish through a rename
+// inside the same directory: the file is either the old one or the new one.
 function writeJson(path: string, value: unknown): void {
-	writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+	const tmpPath = `${path}.sure-run-tmp`;
+	writeFileSync(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+	renameSync(tmpPath, path);
+}
+
+// One unreadable file must not answer with a bare "Unexpected end of JSON
+// input": /sure_resume walks every run, so the user has to be told which file
+// to look at. Never repaired here — the record may still be recoverable.
+function readJson<T>(path: string, description: string): T {
+	const raw = readFileSync(path, "utf-8");
+	try {
+		return JSON.parse(raw) as T;
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error);
+		throw new Error(
+			`Sure ${description} is corrupt: ${path} (${detail}). Inspect or move that file aside, then retry.`,
+		);
+	}
 }
 
 function isPathInside(baseDir: string, candidate: string): boolean {
@@ -101,7 +130,7 @@ export class SureRunManager {
 		if (!existsSync(runPath)) {
 			return undefined;
 		}
-		return JSON.parse(readFileSync(runPath, "utf-8")) as SureRunRecord;
+		return readJson<SureRunRecord>(runPath, "run record");
 	}
 
 	readState(record: SureRunRecord): SureDisplayState | undefined {
@@ -109,7 +138,7 @@ export class SureRunManager {
 		if (!existsSync(statePath)) {
 			return undefined;
 		}
-		return JSON.parse(readFileSync(statePath, "utf-8")) as SureDisplayState;
+		return readJson<SureDisplayState>(statePath, "display state");
 	}
 
 	updateRun(record: SureRunRecord, patch: Partial<SureRunRecord>, eventType: string, data?: unknown): SureRunRecord {
