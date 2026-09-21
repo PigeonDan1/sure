@@ -97,7 +97,7 @@ For Docker-backed `/sure_trans`, `device=cuda execution=local` is allowed only w
 - The declared runtime root must stay outside forbidden output roots.
 - A configured dataset projection root must stay outside forbidden output roots and must not overlap an allowed source root.
 - Path authorization resolves existing symlinks before comparison, so alternate names cannot bypass a protected root.
-- The policy validator does not create directories and does not require network access. Runtime commands perform their existing availability and permission checks at the same stages as before.
+- The policy validator does not create directories and does not require network access; the writability probe described below belongs to `npm run sure:site-check`, not to validation. Runtime commands perform their existing availability and permission checks at the same stages as before.
 - `npm run sure:site-check` reports a missing or read-only root as a `warn` line and still exits 0. A root that does not exist yet is the normal state of a fresh machine. Writability is measured by creating and removing a probe directory inside a root that already exists, the one question all three platforms answer honestly.
 - Sealed Model Python runtimes materialize under `storage.runtime_root/models/<runtime_id>`. The promoted model stores only the portable runtime identity and manifest; `/sure_infer` resolves and verifies the matching site runtime before use.
 - The locked Harness Runtime and Evaluation Runtime remain in their repository-local locations. `storage.runtime_root` does not redirect either role.
