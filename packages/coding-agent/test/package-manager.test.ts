@@ -15,6 +15,17 @@ function pathEndsWith(actualPath: string, suffix: string): boolean {
 	return normalizeForMatch(actualPath).endsWith(normalizeForMatch(suffix));
 }
 
+/**
+ * Spell an absolute path the way Git Bash exports HOME on Windows
+ * (`C:\Users\me` -> `/c/Users/me`). On Linux and macOS a path is already in
+ * that form, so the helper returns it unchanged and the tests using it still
+ * exercise the ordinary POSIX home.
+ */
+function toShellStyleHome(path: string): string {
+	const drive = /^([A-Za-z]):[\\/]/.exec(path);
+	return drive ? `/${drive[1].toLowerCase()}/${path.slice(3).replaceAll("\\", "/")}` : path;
+}
+
 class MockSpawnedProcess extends EventEmitter {
 	stdout = new PassThrough();
 	stderr = new PassThrough();
@@ -502,6 +513,55 @@ Content`,
 					process.env.HOME = previousHome;
 				}
 			}
+		});
+
+		it("should keep ~/.agents/skills user-scoped when HOME is spelled shell-style", async () => {
+			vi.stubEnv("HOME", toShellStyleHome(tempDir));
+
+			const cwd = join(tempDir, "scratch", "nested");
+			const localAgentDir = join(tempDir, ".pi", "agent");
+			mkdirSync(cwd, { recursive: true });
+			mkdirSync(localAgentDir, { recursive: true });
+
+			const homeSkill = join(tempDir, ".agents", "skills", "home-skill", "SKILL.md");
+			mkdirSync(join(tempDir, ".agents", "skills", "home-skill"), { recursive: true });
+			writeFileSync(homeSkill, "---\nname: home-skill\ndescription: home\n---\n");
+
+			const pm = new DefaultPackageManager({
+				cwd,
+				agentDir: localAgentDir,
+				settingsManager: SettingsManager.inMemory(),
+			});
+
+			const result = await pm.resolve();
+			const matchingSkills = result.skills.filter((r) => r.path === homeSkill);
+			expect(matchingSkills).toHaveLength(1);
+			expect(matchingSkills[0]?.enabled).toBe(true);
+			expect(matchingSkills[0]?.metadata.scope).toBe("user");
+		});
+
+		it("should load ~/.agents/skills from a shell-style HOME in an untrusted project", async () => {
+			vi.stubEnv("HOME", toShellStyleHome(tempDir));
+
+			const cwd = join(tempDir, "scratch", "nested");
+			const localAgentDir = join(tempDir, ".pi", "agent");
+			mkdirSync(cwd, { recursive: true });
+			mkdirSync(localAgentDir, { recursive: true });
+
+			const homeSkill = join(tempDir, ".agents", "skills", "home-skill", "SKILL.md");
+			mkdirSync(join(tempDir, ".agents", "skills", "home-skill"), { recursive: true });
+			writeFileSync(homeSkill, "---\nname: home-skill\ndescription: home\n---\n");
+
+			const pm = new DefaultPackageManager({
+				cwd,
+				agentDir: localAgentDir,
+				settingsManager: SettingsManager.inMemory({}, { projectTrusted: false }),
+			});
+
+			const result = await pm.resolve();
+			const matchingSkills = result.skills.filter((r) => r.path === homeSkill);
+			expect(matchingSkills).toHaveLength(1);
+			expect(matchingSkills[0]?.metadata.scope).toBe("user");
 		});
 
 		it("should dedupe user skill entries when ~/.pi/agent/skills is a symlink to ~/.agents/skills", async () => {
