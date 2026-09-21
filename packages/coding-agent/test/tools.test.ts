@@ -1256,6 +1256,21 @@ describe("edit tool fuzzy matching", () => {
 		expect(readFileSync(testFile, "utf-8")).toBe("console.log('world');\nhello universe\n");
 	});
 
+	it("should keep the bytes outside the matched span when matching fuzzily", async () => {
+		const testFile = join(testDir, "fuzzy-span.txt");
+		// Only the assignment is matched. The full-width parentheses, the non-breaking
+		// space and the trailing whitespace sit on the same line, outside the match.
+		const originalContent = "let s = “hello”; // （note） a b   \nkeep\n";
+		writeFileSync(testFile, originalContent);
+
+		await editTool.execute("test-fuzzy-span", {
+			path: testFile,
+			edits: [{ oldText: 'let s = "hello";', newText: 'let s = "bye";' }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe('let s = "bye"; // （note） a b   \nkeep\n');
+	});
+
 	it("should preserve the correct occurrence when fuzzy replacement equals a nearby line", async () => {
 		const testFile = join(testDir, "fuzzy-preserve-duplicate-line.txt");
 		const originalContent = ["replace me\u0020\u0020\u0020", "after\u0020\u0020\u0020", ""].join("\n");
