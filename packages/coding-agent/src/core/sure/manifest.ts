@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { SureHookDeclaration, SureHookPoint, SureSkillManifest, SureSkillPackage } from "./types.ts";
 
 const SURE_SKILLS_DIR = ".sure/skills";
@@ -52,7 +52,7 @@ function normalizeCommand(command: string): string {
 
 function isPathInside(baseDir: string, candidate: string): boolean {
 	const rel = relative(baseDir, candidate);
-	return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/") && rel !== "..");
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel) && rel !== "..");
 }
 
 function resolvePackagePath(packageDir: string, pathValue: string): string | undefined {
