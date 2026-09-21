@@ -99,9 +99,12 @@ function reportDiagnostics(diagnostics: readonly AgentSessionRuntimeDiagnostic[]
 	}
 }
 
-function isTruthyEnvFlag(value: string | undefined): boolean {
-	if (!value) return false;
-	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+export function isTruthyEnvFlag(value: string | undefined): boolean {
+	// Trim first: a value exported from a script or a .env line often keeps a
+	// trailing blank or newline, and the flag is still meant to be on.
+	const flag = value?.trim().toLowerCase();
+	if (!flag) return false;
+	return flag === "1" || flag === "true" || flag === "yes";
 }
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean, stdoutIsTTY: boolean): AppMode {
