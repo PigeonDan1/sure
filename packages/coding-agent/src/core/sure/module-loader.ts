@@ -2,14 +2,6 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import * as _bundledPiAgentCore from "@earendil-works/pi-agent-core";
-import * as _bundledPiAiCompat from "@earendil-works/pi-ai/compat";
-import * as _bundledPiTui from "@earendil-works/pi-tui";
-import * as _bundledTypebox from "typebox";
-import * as _bundledTypeboxCompile from "typebox/compile";
-import * as _bundledTypeboxValue from "typebox/value";
-import * as _bundledPiCodingAgent from "../../index.ts";
-import * as _bundledPiCodingAgentHooks from "./hook-types.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -77,27 +69,4 @@ export function getSureHookAliases(): Record<string, string> {
 	};
 
 	return aliases;
-}
-
-export function getSureHookVirtualModules(): Record<string, unknown> {
-	return {
-		typebox: _bundledTypebox,
-		"typebox/compile": _bundledTypeboxCompile,
-		"typebox/value": _bundledTypeboxValue,
-		"@sinclair/typebox": _bundledTypebox,
-		"@sinclair/typebox/compile": _bundledTypeboxCompile,
-		"@sinclair/typebox/value": _bundledTypeboxValue,
-		"@earendil-works/pi-agent-core": _bundledPiAgentCore,
-		"@earendil-works/pi-tui": _bundledPiTui,
-		"@earendil-works/pi-ai": _bundledPiAiCompat,
-		"@earendil-works/pi-ai/compat": _bundledPiAiCompat,
-		"@earendil-works/pi-coding-agent": _bundledPiCodingAgent,
-		"@earendil-works/pi-coding-agent/hooks": _bundledPiCodingAgentHooks,
-		"@mariozechner/pi-agent-core": _bundledPiAgentCore,
-		"@mariozechner/pi-tui": _bundledPiTui,
-		"@mariozechner/pi-ai": _bundledPiAiCompat,
-		"@mariozechner/pi-ai/compat": _bundledPiAiCompat,
-		"@mariozechner/pi-coding-agent": _bundledPiCodingAgent,
-		"@mariozechner/pi-coding-agent/hooks": _bundledPiCodingAgentHooks,
-	};
 }
