@@ -950,7 +950,7 @@ def _ensure_ffmpeg(run_dir: Path, env: dict[str, str]) -> None:
     # Beside scratch/, not inside it: scratch is persisted whole into the batch and must not hold symlinks.
     bin_dir = run_dir / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
-    target = bin_dir / "ffmpeg"
+    target = bin_dir / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
     if not target.exists():
         try:
             target.symlink_to(source)
