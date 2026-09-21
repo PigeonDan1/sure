@@ -55,10 +55,7 @@ try {
 	if (storage.forbidden_output_roots.some((forbidden) => isWithin(storage.runtime_root, forbidden))) {
 		failures.push(`runtime root must stay outside forbidden output roots: ${storage.runtime_root}`);
 	}
-	if (
-		projectionRoot &&
-		storage.forbidden_output_roots.some((forbidden) => isWithin(projectionRoot, forbidden))
-	) {
+	if (projectionRoot && storage.forbidden_output_roots.some((forbidden) => isWithin(projectionRoot, forbidden))) {
 		failures.push(`dataset projection root must stay outside forbidden output roots: ${projectionRoot}`);
 	}
 	if (
