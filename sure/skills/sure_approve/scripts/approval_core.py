@@ -628,6 +628,29 @@ def build_review(run_dir: Path) -> dict[str, Any]:
     return packet
 
 
+def _mirror_candidate_for_smoke(candidate: Path, destination: Path) -> None:
+    """Stand up a throwaway tree to smoke, without a second copy of the weights.
+
+    Every file is hard-linked, so a bundle of any size costs no extra bytes and an
+    in-place overwrite still reaches the sealed candidate, where the digest check
+    below catches it. ``artifacts/`` is the one directory the producer contract
+    lets validate.py write, so it is re-copied to break that sharing.
+    """
+
+    def link_or_copy(source: str, target: str) -> None:
+        try:
+            os.link(source, target)
+        except OSError:
+            # No hard links across volumes, or on a filesystem without them.
+            shutil.copy2(source, target)
+
+    shutil.copytree(candidate, destination, copy_function=link_or_copy)
+    artifacts = destination / "artifacts"
+    if artifacts.is_dir():
+        shutil.rmtree(artifacts)
+        shutil.copytree(candidate / "artifacts", artifacts)
+
+
 def verify_runtime(run_dir: Path) -> dict[str, Any]:
     manifest = read_json(artifact(run_dir, "approval_manifest.json"))
     resolved = read_json(artifact(run_dir, "approve_input_resolved.json"))
@@ -654,12 +677,12 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
             raise ApprovalError("Python candidate has no validate.py runtime smoke entrypoint")
         # The producer contract requires validate.py to persist artifacts/<stage>_result.json
         # on every run, so smoking the sealed candidate in place would dirty the tree the
-        # digest check below protects. Run the smoke on a throwaway full copy instead; the
-        # sealed candidate itself is never executed against.
+        # digest check below protects. Run the smoke on a throwaway mirror instead. The
+        # mirror lives beside the candidate so its hard links can land on one filesystem.
         child_env = model_child_env(os.environ)
-        with tempfile.TemporaryDirectory(prefix="sure-approve-smoke-") as smoke_root:
+        with tempfile.TemporaryDirectory(prefix="sure-approve-smoke-", dir=candidate.parent) as smoke_root:
             smoke_candidate = Path(smoke_root) / candidate.name
-            shutil.copytree(candidate, smoke_candidate)
+            _mirror_candidate_for_smoke(candidate, smoke_candidate)
             validation_output = Path(smoke_root) / "validation-output"
             validation_output.mkdir()
             child_env.update(

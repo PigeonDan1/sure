@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import approval_core
 from sure.runtime.model.bootstrap import _expected_manifest, _runtime_id, manifest_sha256, probe
@@ -439,6 +440,54 @@ class ApprovalFlowTests(unittest.TestCase):
         (Path(review["candidate_dir"]) / "model.py").write_text("VALUE = 2\n", encoding="utf-8")
         with self.assertRaisesRegex(approval_core.ApprovalError, "candidate changed"):
             approval_core.verify_decision(self.root / "runs" / "tamper" / "artifacts" / "review_packet.json", "approve", None)
+
+
+class SmokeMirrorTests(unittest.TestCase):
+    """The throwaway tree verify_runtime smokes against, on its own."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.candidate = self.root / "candidate" / "demo-model"
+        (self.candidate / "checkpoints").mkdir(parents=True)
+        (self.candidate / "checkpoints" / "weights.bin").write_bytes(b"W" * 4096)
+        (self.candidate / "model.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (self.candidate / "artifacts").mkdir()
+        (self.candidate / "artifacts" / "import_result.json").write_text("{}\n", encoding="utf-8")
+        self.mirror = self.root / "smoke" / "demo-model"
+
+    def test_weights_are_shared_and_artifacts_are_not(self) -> None:
+        approval_core._mirror_candidate_for_smoke(self.candidate, self.mirror)
+
+        weights = self.candidate / "checkpoints" / "weights.bin"
+        self.assertEqual((self.mirror / "checkpoints" / "weights.bin").stat().st_ino, weights.stat().st_ino)
+        self.assertNotEqual(
+            (self.mirror / "artifacts" / "import_result.json").stat().st_ino,
+            (self.candidate / "artifacts" / "import_result.json").stat().st_ino,
+        )
+
+        # What validate.py is contracted to write must not reach the sealed bundle.
+        (self.mirror / "artifacts" / "import_result.json").write_text('{"ok": true}\n', encoding="utf-8")
+        (self.mirror / "artifacts" / "validation.log").write_text("ran\n", encoding="utf-8")
+        self.assertEqual((self.candidate / "artifacts" / "import_result.json").read_text(encoding="utf-8"), "{}\n")
+        self.assertFalse((self.candidate / "artifacts" / "validation.log").exists())
+
+        # Anything else it overwrites in place still reaches the candidate, which is
+        # what keeps the digest check in verify_runtime able to see it.
+        (self.mirror / "model.py").write_text("VALUE = 2\n", encoding="utf-8")
+        self.assertEqual((self.candidate / "model.py").read_text(encoding="utf-8"), "VALUE = 2\n")
+
+    def test_falls_back_to_a_copy_when_linking_is_refused(self) -> None:
+        def refuse(source: str, target: str) -> None:
+            raise OSError("cross-device link")
+
+        with mock.patch.object(approval_core.os, "link", side_effect=refuse):
+            approval_core._mirror_candidate_for_smoke(self.candidate, self.mirror)
+
+        mirrored = self.mirror / "checkpoints" / "weights.bin"
+        self.assertEqual(mirrored.read_bytes(), b"W" * 4096)
+        self.assertNotEqual(mirrored.stat().st_ino, (self.candidate / "checkpoints" / "weights.bin").stat().st_ino)
 
 
 if __name__ == "__main__":
