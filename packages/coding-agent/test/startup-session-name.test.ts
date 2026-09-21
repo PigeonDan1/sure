@@ -83,9 +83,12 @@ async function runCli(args: string[], dirs: CliDirs): Promise<CliResult> {
 	});
 
 	return new Promise((resolvePromise, reject) => {
+		// Only a guard against a genuine hang. Starting the CLI from source costs
+		// over ten seconds on a loaded Windows host, so a tight budget kills a
+		// healthy child and reports it as a null exit code.
 		const timeout = setTimeout(() => {
 			child.kill("SIGKILL");
-		}, 10_000);
+		}, 60_000);
 		child.on("error", (error) => {
 			clearTimeout(timeout);
 			reject(error);
@@ -121,5 +124,5 @@ describe("startup session name", () => {
 		expect(result.code).toBe(1);
 		expect(result.signal).toBeNull();
 		expect(readSessionInfoNames(dirs.sessionFile)).toEqual(["CLI Named Session"]);
-	});
+	}, 120_000);
 });

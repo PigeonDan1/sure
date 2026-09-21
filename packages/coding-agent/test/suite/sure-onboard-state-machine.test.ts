@@ -1476,7 +1476,9 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 		const patch = statePatch(finish);
 		expect(finish.ok, finish.repair).toBe(true);
 		expect(patch.phase?.status).toBe("success");
-	}, 30_000);
+		// Sealing the runtime really does build a uv environment: about six seconds
+		// on an idle host, but seven times that when the whole suite is running.
+	}, 180_000);
 });
 
 // Regression guard for the --kind routing bug: runGateScript injected
