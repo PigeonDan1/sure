@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -12,6 +14,7 @@ import unittest
 import unittest.mock
 from pathlib import Path
 
+import check_container_package
 import write_package_gate as write_package_gate_module
 from deployment_contract import document_timestamp, resolve_model_dir
 from finalize_model_bundle import (
@@ -211,6 +214,38 @@ class DockerDeliveryContractTests(unittest.TestCase):
         env["SURE_HARNESS_LOCK_SHA256"] = "c" * 64
         return env
 
+    def stubbed_docker(self, command: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        """Answer the gate's two docker probes from inside the test process."""
+        if command[:2] == ["docker", "image"]:
+            return subprocess.CompletedProcess(command, 0, json.dumps([self.image_ref]) + "\n", "")
+        if command[:2] == ["docker", "run"]:
+            return subprocess.CompletedProcess(command, 0, "/runtime/python\n", "")
+        return subprocess.CompletedProcess(command, 1, "", f"unexpected docker command: {command}")
+
+    def run_container_gate_with_stubbed_docker(self) -> tuple[int, str]:
+        """Run the container gate in this process with subprocess.run stubbed.
+
+        fake_docker_env() hands the gate a `#!/bin/sh` shim on PATH, which
+        Windows CreateProcess cannot launch, so the two gate tests that need a
+        working docker are skipped there. This covers the same passing path
+        without a docker binary, on every platform.
+        """
+        argv = [
+            "check_container_package.py",
+            "--run-dir",
+            str(self.run_dir),
+            "--produces",
+            str(self.run_artifacts / "docker_registry_result.json"),
+        ]
+        harness = {"SURE_HARNESS_RUNTIME_ID": "sure-harness-test", "SURE_HARNESS_LOCK_SHA256": "c" * 64}
+        output = io.StringIO()
+        with unittest.mock.patch.object(check_container_package.subprocess, "run", self.stubbed_docker), \
+                unittest.mock.patch.object(sys, "argv", argv), \
+                unittest.mock.patch.dict(os.environ, harness), \
+                contextlib.redirect_stdout(output), \
+                contextlib.redirect_stderr(output):
+            return check_container_package.main(), output.getvalue()
+
     def test_shared_model_resolver_accepts_trans_input(self) -> None:
         (self.run_artifacts / "model_input_resolved.json").unlink()
         write_json(self.run_artifacts / "trans_input_resolved.json", self.resolved)
@@ -220,6 +255,7 @@ class DockerDeliveryContractTests(unittest.TestCase):
         self.assertEqual(model_dir, self.model_dir.resolve())
         self.assertEqual(resolved["model_name"], "demo__asr")
 
+    @unittest.skipIf(os.name == "nt", "the fake docker on PATH is a POSIX shell script Windows cannot launch")
     def test_container_gate_requires_live_digest_inspect(self) -> None:
         proc = self.run_script(
             "check_container_package.py",
@@ -227,6 +263,10 @@ class DockerDeliveryContractTests(unittest.TestCase):
             env=self.fake_docker_env(),
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_container_gate_accepts_a_live_digest_with_docker_stubbed(self) -> None:
+        code, output = self.run_container_gate_with_stubbed_docker()
+        self.assertEqual(code, 0, output)
 
     def test_fixture_gate_rejects_an_empty_annotation_value(self) -> None:
         fixture_dir = self.model_dir / "fixture" / "asr" / "smoke"
@@ -250,6 +290,7 @@ class DockerDeliveryContractTests(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("annotation field", proc.stderr)
 
+    @unittest.skipIf(os.name == "nt", "the fake docker on PATH is a POSIX shell script Windows cannot launch")
     def test_container_gate_derives_legacy_runtime_root(self) -> None:
         self.validation["harness_runtime"].pop("runtime_root")
         write_json(self.run_artifacts / "docker_validation.json", self.validation)
@@ -259,6 +300,12 @@ class DockerDeliveryContractTests(unittest.TestCase):
             env=self.fake_docker_env(),
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_container_gate_derives_legacy_runtime_root_with_docker_stubbed(self) -> None:
+        self.validation["harness_runtime"].pop("runtime_root")
+        write_json(self.run_artifacts / "docker_validation.json", self.validation)
+        code, output = self.run_container_gate_with_stubbed_docker()
+        self.assertEqual(code, 0, output)
 
     def test_container_gate_rejects_runtime_root_outside_manifest_parent(self) -> None:
         self.validation["harness_runtime"]["runtime_root"] = "/opt/sure-harness/other"
