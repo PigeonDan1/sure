@@ -319,6 +319,53 @@ class ApprovalFlowTests(unittest.TestCase):
         self.assertEqual(resolved["approval"]["destination"], str(self.approved / "demo-model"))
         self.assertTrue(resolved["approval"]["eval_visible"])
 
+    def test_failed_publication_leaves_no_staging_copy_in_the_approved_root(self) -> None:
+        # publish() stages the whole candidate inside the approved-models root
+        # before the rename; a failure used to abandon that copy there.
+        (self.source / "model.py").write_text("VALUE = 1\n", encoding="utf-8")
+        candidate = (self.root / "candidate").resolve()
+        candidate.mkdir()
+        (candidate / "model.py").write_text("VALUE = 1\n", encoding="utf-8")
+        source_digest, _, _ = approval_core.tree_digest(self.source)
+        candidate_digest, _, _ = approval_core.tree_digest(candidate, publication=True)
+        run = (self.root / "runs" / "publish-cleanup").resolve()
+        manifest_path = run / "artifacts" / "approval_manifest.json"
+        write_json(manifest_path, {
+            "schema": "sure.approve.approval_manifest.v1",
+            "candidate_dir": str(candidate),
+            "candidate_digest": candidate_digest,
+            "model_name": "demo-model",
+        })
+        packet = {
+            "schema": "sure.approve.review_packet.v1",
+            "status": "awaiting_approval",
+            "model_name": "demo-model",
+            "source": {"canonical": str(self.source.resolve())},
+            "source_digest": source_digest,
+            "candidate_dir": str(candidate),
+            "candidate_digest": candidate_digest,
+            "approval_manifest": str(manifest_path),
+            "approval_manifest_sha256": approval_core.sha256_file(manifest_path),
+            "site_policy_sha256": approval_core.load_active_policy()["sha256"],
+            "approval": {
+                "root": str(self.approved),
+                "configured_root": str(self.approved),
+                "destination": str(self.approved / "demo-model"),
+                "eval_visible": True,
+            },
+        }
+        packet["packet_digest"] = approval_core._packet_digest(packet)
+        review_path = run / "artifacts" / "review_packet.json"
+        write_json(review_path, packet)
+        write_json(
+            run / "artifacts" / "approval_decision.json",
+            approval_core.verify_decision(review_path, "approve", "validated in test"),
+        )
+        with mock.patch.object(approval_core, "_copy_candidate", side_effect=OSError("no space left on device")):
+            with self.assertRaises(OSError):
+                approval_core.publish(run, replace=False)
+        self.assertEqual(sorted(path.name for path in self.approved.iterdir()), [])
+
     def test_publication_rejects_review_packet_with_nonconfigured_root(self) -> None:
         self.build_python_bundle()
         audit_run = self.root / "runs" / "legacy-root-audit"

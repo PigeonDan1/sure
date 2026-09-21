@@ -587,11 +587,25 @@ def main() -> int:
     else:
         if local_cuda:
             local_validation_dir = require_local_gpu_command(command, shell, run_dir, args.kind)
-        process = subprocess.run(command, shell=shell, cwd=cwd, env=env, check=False, capture_output=True, text=True, timeout=timeout)
-        duration_ms = round((time.monotonic() - started) * 1000, 3)
-        exit_code = process.returncode
         rendered = command if isinstance(command, str) else " ".join(command)
-        log_path.write_text(f"$ {rendered}\n{process.stdout}\n{process.stderr}", encoding="utf-8")
+        try:
+            process = subprocess.run(command, shell=shell, cwd=cwd, env=env, check=False, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as expired:
+            # A timeout must end as a recorded failure: leaving it uncaught kept
+            # whatever status the agent wrote into the stage artifact.
+            duration_ms = round((time.monotonic() - started) * 1000, 3)
+            exit_code = 124
+            # TimeoutExpired carries bytes on POSIX even in text mode.
+            captured = "\n".join(
+                stream.decode("utf-8", "replace") if isinstance(stream, bytes) else stream
+                for stream in (expired.stdout, expired.stderr)
+                if stream
+            )
+            log_path.write_text(f"$ {rendered}\nTIMEOUT after {timeout:.3f}s\n{captured}\n", encoding="utf-8")
+        else:
+            duration_ms = round((time.monotonic() - started) * 1000, 3)
+            exit_code = process.returncode
+            log_path.write_text(f"$ {rendered}\n{process.stdout}\n{process.stderr}", encoding="utf-8")
         if local_cuda:
             extra = {"execution_surface": "local_docker"}
     passed = exit_code == 0

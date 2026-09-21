@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -1647,6 +1649,39 @@ class TransScriptsTest(unittest.TestCase):
             self.assertTrue(payload["import_passed"])
             self.assertEqual(payload["status"], "passed")
 
+    def test_validation_runner_records_a_timeout_as_a_failed_stage(self) -> None:
+        # A timeout used to escape main(), so the gate never rewrote the stage
+        # artifact and the agent-written status="passed" survived as evidence.
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir()
+            (artifacts / "execution_compat.json").write_text(
+                json.dumps({"status": "ready", "compat_ok": True, "selected_device": "cpu"}) + "\n",
+                encoding="utf-8",
+            )
+            result = artifacts / "import_result.json"
+            result.write_text(
+                json.dumps({
+                    "status": "passed",
+                    "import_passed": True,
+                    "run_command": [sys.executable, "-c", "import time; time.sleep(30)"],
+                    "timeout_seconds": 1,
+                }) + "\n",
+                encoding="utf-8",
+            )
+            completed = subprocess.run([
+                sys.executable, str(SCRIPTS_DIR / "run_trans_validate.py"), "--run-dir", str(run_dir),
+                "--produces", str(result), "--kind", "import",
+            ], check=False, capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
+            payload = json.loads(result.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "failed")
+            self.assertFalse(payload["import_passed"])
+            self.assertTrue(payload["executed"])
+            self.assertEqual(payload["exit_code"], 124)
+            self.assertIn("TIMEOUT", Path(payload["log_path"]).read_text(encoding="utf-8"))
+
     def test_validation_runner_strips_harness_python_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary)
@@ -2415,6 +2450,40 @@ class TransScriptsTest(unittest.TestCase):
                 ["/opt/venv/bin/python", "/opt/sure_trans/server.py"],
             )
 
+    def test_scaffold_writes_the_model_mount_target_as_a_quoted_yaml_scalar(self) -> None:
+        # A host path is not a safe bare YAML scalar: " #" opens a comment and
+        # truncates the value, ": " turns the line into a nested mapping.
+        for mount_target in ("/models/demo #1", "/models/demo: beta"):
+            with self.subTest(mount_target=mount_target), tempfile.TemporaryDirectory() as temporary:
+                run_dir = Path(temporary)
+                artifacts = run_dir / "artifacts"
+                artifacts.mkdir()
+                (artifacts / "trans_input_resolved.json").write_text(
+                    json.dumps({
+                        "source_kind": "python",
+                        "model_name": "demo",
+                        "model_dir": mount_target,
+                        "model_mount_target": mount_target,
+                        "inference_entrypoint": "infer.py",
+                        "task_type": "asr",
+                        "framework": "pytorch",
+                        "model_framework": "transformers",
+                    }) + "\n",
+                    encoding="utf-8",
+                )
+                (artifacts / "source_image_result.json").write_text(
+                    json.dumps({"python_executable": str(Path(sys.executable).resolve())}) + "\n",
+                    encoding="utf-8",
+                )
+                subprocess.run(
+                    [sys.executable, str(SCRIPTS_DIR / "scaffold_adapter.py"), "--run-dir", str(run_dir)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                spec = yaml.safe_load((run_dir / "adapter" / "model.spec.yaml").read_text(encoding="utf-8"))
+                self.assertEqual(spec["runtime"]["model_mount_target"], mount_target)
+
     def test_source_image_python_probe_rejects_a_relative_executable(self) -> None:
         completed = mock.Mock(returncode=0, stdout="python\n", stderr="")
         with mock.patch.object(scaffold_adapter.subprocess, "run", return_value=completed):
@@ -2440,6 +2509,23 @@ class TransScriptsTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "docker"):
                 scaffold_adapter.container_python_executable("demo-source:0.1.0")
+
+    def test_source_image_inspection_names_docker_when_it_is_missing(self) -> None:
+        # No docker at all and an image that cannot be inspected are different
+        # faults: the first one must not be reported as an unloaded image.
+        source_image = {"image": "demo-source:0.1.0", "image_id": "sha256:" + "b" * 64}
+        with mock.patch.object(
+            scaffold_adapter.subprocess, "run", side_effect=FileNotFoundError("docker")
+        ):
+            with self.assertRaisesRegex(ValueError, "docker is required"):
+                scaffold_adapter.source_image_reference(source_image)
+
+    def test_an_uninspectable_image_still_reports_the_image(self) -> None:
+        unusable = mock.Mock(returncode=1, stdout="", stderr="No such image")
+        source_image = {"image": "demo-source:0.1.0", "image_id": "sha256:" + "b" * 64}
+        with mock.patch.object(scaffold_adapter.subprocess, "run", return_value=unusable):
+            with self.assertRaisesRegex(ValueError, "cannot inspect source image"):
+                scaffold_adapter.source_image_reference(source_image)
 
     def test_final_bundle_matches_eval_deployment_binding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
