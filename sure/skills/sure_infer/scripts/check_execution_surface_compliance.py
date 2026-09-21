@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_runtime import HarnessRuntimeBindingError, harness_runtime_from_eval_input
-from container_execution import resolve_container_harness_runtime
+from container_execution import container_path, resolve_container_harness_runtime
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 
 
@@ -309,7 +309,9 @@ def _live_runtime_probe(
         }
     container = binding.get("container") if isinstance(binding.get("container"), dict) else {}
     model_python = str(container.get("python_executable") or "python")
-    harness_python = str(harness["python_executable"])
+    # The probe script runs this interpreter inside the container: POSIX there,
+    # even when the runtime is mounted out of a Windows checkout.
+    harness_python = container_path(harness["python_executable"])
     node_probe = (
         "import os,subprocess;"
         "python=os.environ['SURE_EVAL_NODE_LOCAL_PYTHON'];"
@@ -328,7 +330,9 @@ def _live_runtime_probe(
     )
     command = ["docker", "run", "--rm", "--entrypoint", "bash"]
     if mounted:
-        command.extend(["--mount", f"type=bind,src={repo_root},dst={repo_root},readonly"])
+        command.extend(
+            ["--mount", f"type=bind,src={repo_root},dst={container_path(repo_root)},readonly"]
+        )
     command.extend([str(binding["target_image_ref"]), "-lc", script])
     try:
         completed = run(command, capture_output=True, text=True, check=False, timeout=60)

@@ -8,7 +8,40 @@ from pathlib import Path
 
 import yaml
 
-from finalize_result_bundle import finalize_bundle
+from finalize_result_bundle import _replace, finalize_bundle
+
+
+class PrefixBoundaryTests(unittest.TestCase):
+    """Both separators are boundaries, and neither may match mid-component.
+
+    Spelled as data so each case runs on every host: the metadata a run leaves
+    behind is spelled by whichever platform wrote it, not by the one reading
+    it.
+    """
+
+    def test_windows_prefix_is_localized_on_its_own_boundary(self) -> None:
+        source = r"C:\run\abc"
+
+        self.assertEqual(_replace(source, source, "/published"), "/published")
+        self.assertEqual(
+            _replace(r"C:\run\abc\metrics\report.json", source, "/published"),
+            r"/published\metrics\report.json",
+        )
+        self.assertEqual(
+            _replace("C:/run/abc/metrics/report.json", r"C:/run/abc", "/published"),
+            "/published/metrics/report.json",
+        )
+        self.assertEqual(_replace(r"C:\run\abcdef", source, "/published"), r"C:\run\abcdef")
+
+    def test_posix_prefix_keeps_behaving_as_before(self) -> None:
+        source = "/container/run/abc"
+
+        self.assertEqual(_replace(source, source, "/published"), "/published")
+        self.assertEqual(
+            _replace("/container/run/abc/metrics/report.json", source, "/published"),
+            "/published/metrics/report.json",
+        )
+        self.assertEqual(_replace("/container/run/abcdef", source, "/published"), "/container/run/abcdef")
 
 
 class FinalizeResultBundleTests(unittest.TestCase):
@@ -19,8 +52,11 @@ class FinalizeResultBundleTests(unittest.TestCase):
             predictions = root / "predictions"
             predictions.mkdir(parents=True)
             source = str(root.resolve())
+            # Spelled the way the host that wrote it spells a path, so the
+            # boundary after the run directory is this platform's separator.
             (root / "evaluation_payload.json").write_text(
-                json.dumps({"artifact": f"{source}/metrics/report.json"}), encoding="utf-8"
+                json.dumps({"artifact": str(root.resolve() / "metrics" / "report.json")}),
+                encoding="utf-8",
             )
             (root / "protocol.yaml").write_text(
                 yaml.safe_dump({"run": {"run_dir": source}}), encoding="utf-8"

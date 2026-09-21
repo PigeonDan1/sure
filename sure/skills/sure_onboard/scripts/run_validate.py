@@ -33,7 +33,9 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from model_child_env import model_child_env
+from sure.runtime.uvenv import runtime_python_relative
 
 KIND_TO_PASS_KEY = {
     "import": "import_passed",
@@ -112,7 +114,8 @@ def maybe_use_model_local_python(command: list[str] | str, *, shell: bool, cwd: 
     python_names = {"python", "python3", "python3.10", "python3.11", "python3.12"}
     if executable not in python_names and command[0] != sys.executable:
         return command
-    local_python = cwd / ".venv" / "bin" / "python"
+    # The model venv spells its interpreter for the platform that created it.
+    local_python = cwd / ".venv" / runtime_python_relative()
     if local_python.exists():
         return [str(local_python), *command[1:]]
     return command

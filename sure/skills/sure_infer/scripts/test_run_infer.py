@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import check_execution_surface_compliance as compliance
 import run_infer
+from test_deployment_binding import container_side
 
 IMAGE_REF = "registry.example.com/sure/demo@sha256:" + "a" * 64
 SOURCE_ENTRY = "/srv/sure/datasets/group/store/ds_pool/demo_ds@v1.0.2"
@@ -172,6 +173,31 @@ class RunInferTests(unittest.TestCase):
         self.assertEqual(extra_env["SURE_EVAL_FROM_STAGE"], "validate")
         surface = json.loads((self.artifacts / "execution_surface.json").read_text(encoding="utf-8"))
         self.assertEqual(surface["resolved_inputs"]["from_stage"], "validate")
+
+    def test_the_container_repo_root_is_passed_in_the_container_spelling(self) -> None:
+        # model_child_env.py reads this one inside the container to decide which
+        # PYTHONPATH entries live in the repository, so a host spelling never
+        # matches there.
+        self.write_inputs(self.container_binding)
+        captured: dict[str, object] = {}
+
+        def build_command(**kwargs: object) -> tuple[list[str], dict[str, str]]:
+            captured.update(kwargs)
+            return [sys.executable, "-c", "pass"], {"image_ref": IMAGE_REF}
+
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["run_infer.py", "--run-dir", str(self.run_dir), "--cwd", str(self.root)],
+            ),
+            patch.object(run_infer, "build_local_container_command", side_effect=build_command),
+        ):
+            self.assertEqual(run_infer.main(), 0)
+
+        extra_env = captured["extra_env"]
+        self.assertIsInstance(extra_env, dict)
+        self.assertEqual(extra_env["SURE_EVAL_CONTAINER_REPO_ROOT"], container_side(self.root))
 
     def run_container(self, command: list[str]) -> tuple[int, dict, dict, dict]:
         with (

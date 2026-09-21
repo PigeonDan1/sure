@@ -20,6 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
 from model_child_env import model_child_env
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
+from sure.runtime.uvenv import runtime_python_relative
 from sure.site.loader import SitePolicyError, load_site_policy
 
 
@@ -162,13 +163,15 @@ def resolve_python_executable(
 
     model_base = normalize_model_dir(model_dir, repo_root)
     if model_base:
-        local_python = model_base / ".venv" / "bin" / "python"
+        # A venv spells its interpreter for the platform that created it:
+        # Scripts/python.exe on Windows, bin/python elsewhere.
+        local_python = model_base / ".venv" / runtime_python_relative()
         if local_python.exists():
             return local_python, None
         if backend == "uv":
             return (
                 None,
-                "BUILD_ENV gate: backend=uv requires model-local .venv/bin/python. "
+                f"BUILD_ENV gate: backend=uv requires model-local .venv/{runtime_python_relative()}. "
                 f"Expected {local_python}",
             )
     return None, None

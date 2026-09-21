@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from sure.runtime.model.bootstrap import materialize_runtime
+from sure.runtime.uvenv import runtime_python_relative
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -168,9 +169,12 @@ class PythonDeploymentBindingTests(unittest.TestCase):
         self.assertEqual(binding["schema"], "sure.eval.deployment_binding.v2")
         self.assertEqual(binding["runtime_kind"], "python")
         self.assertEqual(binding["python"]["runtime_id"], self.runtime_dir.name)
+        # The sealed runtime spells its interpreter for the platform that
+        # materialized it, so ask the same helper the runtime builder uses
+        # rather than pinning the POSIX layout.
         self.assertEqual(
             binding["python"]["python_executable"],
-            str(self.runtime_dir / "bin" / "python"),
+            str(self.runtime_dir / runtime_python_relative()),
         )
         self.assertNotIn(str(self.runtime_dir), (self.artifacts / "model_runtime_manifest.json").read_text())
 
