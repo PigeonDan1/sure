@@ -1,10 +1,10 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { getModels } from "@earendil-works/pi-ai/compat";
 import { harnessBootstrapCommand, repoRootForPackage } from "../../../../../sure/runtime/harness/resolve.ts";
 import { getModelsPath } from "../../config.ts";
+import { spawnProcessSync } from "../../utils/child-process.ts";
 import type { ExtensionCommandContext } from "../extensions/types.ts";
 import type { ModelRegistry } from "../model-registry.ts";
 import { CredentialSynchronizationError } from "../model-runtime.ts";
@@ -210,7 +210,7 @@ async function ensureAuth(
  */
 function checkUvEnvironment(repoRoot: string): { ok: boolean; command: string; details: string[] } {
 	const { command } = harnessBootstrapCommand(repoRoot);
-	const probe = spawnSync(command, ["--version"], { encoding: "utf-8" });
+	const probe = spawnProcessSync(command, ["--version"], { encoding: "utf-8" });
 	if (probe.error || probe.status !== 0) {
 		return { ok: false, command, details: [`${command} not found`] };
 	}

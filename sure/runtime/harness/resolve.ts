@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import crossSpawn from "cross-spawn";
 
 export interface HarnessRuntimeContract {
 runtime_id: string;
@@ -109,7 +110,14 @@ if (!existsSync(bootstrap)) {
 return { ok: false, error: `HARNESS_RUNTIME_NOT_READY: bootstrap is missing: ${bootstrap}` };
 }
 	const { command, args } = harnessBootstrapCommand(repoRoot);
-	const completed = spawnSync(command, [...args, bootstrap, "--json"], {
+	// The launcher is a bare command name, and on Windows that is often a
+	// .cmd/.bat shim which node:child_process cannot resolve on PATH — an
+	// installed uv would be reported as missing. Same branch as
+	// spawnProcessSync in packages/coding-agent/src/utils/child-process.ts,
+	// repeated rather than imported: hooks reach this module and must not
+	// import from packages/.
+	const spawnLauncherSync = process.platform === "win32" ? crossSpawn.sync : spawnSync;
+	const completed = spawnLauncherSync(command, [...args, bootstrap, "--json"], {
 		cwd: repoRoot,
 		encoding: "utf-8",
 		timeout: 900_000,
