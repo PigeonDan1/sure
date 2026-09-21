@@ -862,6 +862,9 @@ def publish(run_dir: Path, replace: bool) -> dict[str, Any]:
         atomic_json(destination / "artifacts" / "publication_result.json", result)
         return result
     except Exception:
+        # The staging copy is dead weight once publication failed; ignore_errors
+        # so cleanup can never raise over the failure that brought us here.
+        shutil.rmtree(staging, ignore_errors=True)
         if backup is not None and not destination.exists() and backup.exists():
             backup.rename(destination)
         raise
