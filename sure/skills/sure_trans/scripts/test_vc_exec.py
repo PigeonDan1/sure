@@ -280,6 +280,10 @@ class MountHostPathTest(unittest.TestCase):
                 vc_exec.ensure_mount_host_paths([f"{Path(temporary) / 'nope'}:/models:ro"])
             self.assertIn("read-only mount source does not exist", str(raised.exception))
 
+    # The gate under test is right; this case just cannot build its premise
+    # here. Python's chmod on Windows only toggles the read-only attribute,
+    # which does not apply to a directory: the target stays writable.
+    @unittest.skipIf(os.name == "nt", "chmod cannot make a directory unwritable")
     def test_rejects_existing_unwritable_dir(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             target = Path(temporary) / "locked"
