@@ -442,7 +442,7 @@ def stage_references(ctx: Ctx) -> None:
 
 def stage_finalize(ctx: Ctx) -> None:
     published = _env("SURE_EVAL_PUBLISHED_RUN_DIR") or str(ctx.run_dir)
-    _run(ctx, "finalize", "finalize_result_bundle.py", "--run-dir", str(ctx.run_dir), "--published-run-dir", published)
+    _run(ctx, "finalize", "finalize_result_bundle.py", "--run-dir", str(ctx.run_dir), "--published-run-dir", published, "--model-dir", str(ctx.model_dir))
 
 
 def main() -> int:

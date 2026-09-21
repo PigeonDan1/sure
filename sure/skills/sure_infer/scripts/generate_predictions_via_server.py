@@ -35,10 +35,13 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from model_child_env import model_child_env
+from model_identity import canonical_model_name
 
 from sure_eval.core.config import Config
 from sure_eval.core.logging import configure_logging, get_logger
 from sure_eval.datasets import DatasetManager
+from sure_eval.models.registry import ModelInfo
+from sure_eval.protocols.resolver import ProtocolResolver
 
 configure_logging(level="INFO")
 logger = get_logger(__name__)
@@ -565,15 +568,15 @@ def _harness_runtime_summary(env: dict[str, str]) -> dict[str, Any]:
 
 def _resolve_protocol_parameters(protocol_id: str, model_dir: Path, env: dict[str, str]) -> dict[str, Any]:
     env["SURE_EVAL_PROTOCOL_ID"] = protocol_id
-    from sure_eval.models.registry import ModelRegistry
-    from sure_eval.protocols.resolver import ProtocolResolver
-
     resolver = ProtocolResolver()
     env["SURE_EVAL_PROTOCOL_DEFINITION_PATH"] = str(resolver.protocols_path.resolve())
-    registry = ModelRegistry(model_dir.parent)
-    model_info = registry.get_model(model_dir.name)
-    if model_info is None:
-        raise ValueError(f"approved model is not registered from config.yaml: {model_dir}")
+    model_config = _load_yaml(model_dir / "config.yaml")
+    model_info = ModelInfo(
+        name=str(model_config.get("name") or model_dir.name),
+        task=_model_task(model_config),
+        path=model_dir,
+        config=model_config,
+    )
     resolved = resolver.resolve(protocol_id, model_info)
     standard_params = dict(resolved.standard_params or {})
     model_params = dict(resolved.model_params or {})
@@ -639,14 +642,41 @@ def _merge_protocol_tool_args(
     return {**explicit_tool_args, **protocol_tool_args}
 
 
-def _declared_tool_args(model_cfg: dict[str, Any], tool_name: str) -> set[str]:
+def _tool_argument_contract(model_cfg: dict[str, Any], tool_name: str) -> tuple[set[str], set[str]]:
     for tool in model_cfg.get("tools") or []:
         if not isinstance(tool, dict) or tool.get("name") != tool_name:
             continue
         schema = tool.get("input_schema") if isinstance(tool.get("input_schema"), dict) else {}
         properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
-        return {str(key) for key in properties}
+        allowed = {str(key) for key in properties}
+        if not allowed:
+            # Filtering against an empty schema would send the server no arguments at
+            # all, audio_path included, and nothing would notice.
+            raise ValueError(
+                f"selected tool {tool_name!r} declares no input_schema.properties; "
+                "arguments can only be filtered against a declared schema"
+            )
+        required = {str(key) for key in schema.get("required") or []}
+        undeclared_required = sorted(required - allowed)
+        if undeclared_required:
+            raise ValueError(
+                f"selected tool {tool_name!r} requires arguments missing from input_schema.properties: "
+                + ", ".join(undeclared_required)
+            )
+        return allowed, required
     raise ValueError(f"selected tool {tool_name!r} is not declared in approved config.yaml")
+
+
+def _filter_tool_arguments(
+    arguments: dict[str, Any],
+    allowed: set[str],
+    required: set[str],
+) -> dict[str, Any]:
+    filtered = {key: value for key, value in arguments.items() if key in allowed}
+    missing = sorted(required - set(filtered))
+    if missing:
+        raise ValueError("MCP tool arguments are missing required schema fields: " + ", ".join(missing))
+    return filtered
 
 
 def _is_dynamic_argument_key(key: str) -> bool:
@@ -1329,6 +1359,7 @@ def main() -> int:
     sample_language = str(samples[0].get("language", "")) if samples else ""
 
     model_cfg = _load_yaml(model_dir / "config.yaml")
+    model_name = canonical_model_name(model_dir, model_cfg)
     sample_task = _effective_generation_task(
         sample_task,
         model_cfg,
@@ -1383,11 +1414,12 @@ def main() -> int:
     approved_tools = selected_runtime.get("tool_names") if isinstance(selected_runtime, dict) else []
     if tool_name not in approved_tools:
         raise ValueError(f"tool {tool_name!r} is not present in the approved runtime inventory: {approved_tools}")
+    allowed_tool_args, required_tool_args = _tool_argument_contract(model_cfg, tool_name)
     tool_args = _merge_protocol_tool_args(
         protocol_id,
         protocol_resolution,
         _parse_tool_args(args.tool_arg),
-        _declared_tool_args(model_cfg, tool_name),
+        allowed_tool_args,
     )
     runtime_inventory = _runtime_inventory_summary(model_dir)
     safe_env = _safe_env_snapshot(env, extra_keys=set(server_env_config) | set(env_overrides))
@@ -1422,7 +1454,7 @@ def main() -> int:
         "updated_at": _utc_now(),
         "run_id": _artifact_run_id(run_dir),
         "run_dir": str(run_dir),
-        "model_name": model_dir.name,
+        "model_name": model_name,
         "model_dir": str(model_dir),
         "execution_path": env.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
         "execution_requested": env.get("SURE_EVAL_EXECUTION_REQUESTED", ""),
@@ -1560,6 +1592,11 @@ def main() -> int:
                         output_audio_dir=output_audio_dir,
                         tool_args=tool_args,
                     )
+                    arguments = _filter_tool_arguments(
+                        arguments,
+                        allowed_tool_args,
+                        required_tool_args,
+                    )
                     argument_keys_seen.update(str(key) for key in arguments)
                     dynamic_argument_fields.update(
                         str(key)
@@ -1646,7 +1683,7 @@ def main() -> int:
             manifest_path, conversion_manifest_path = _write_prediction_manifests(
                 predictions_dir=predictions_dir,
                 run_dir=run_dir,
-                model_name=model_dir.name,
+                model_name=model_name,
                 tool_name=tool_name,
                 dataset=canonical_dataset,
                 task=sample_task,
