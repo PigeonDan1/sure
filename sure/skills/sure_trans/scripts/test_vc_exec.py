@@ -883,6 +883,35 @@ class RunVcJobTest(unittest.TestCase):
             self.assertIn(ro_mount, mounts)
             self.assertIn(f"{log_dir}:{log_dir}", mounts)
 
+    def test_the_added_log_dir_mount_has_no_third_part(self) -> None:
+        # vc_available() refuses on a host with no vc, so the mount list is
+        # reached by mocking that gate rather than by installing a vc client.
+        recorded: list[list[str]] = []
+
+        def fake_run(args: list[str], *, timeout: float | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+            recorded.append(list(args))
+            if args[:2] == ["vc", "submit"]:
+                # shlex.split, not split(" "): inner_script_command quotes the path.
+                inner = Path(shlex.split(args[args.index("--cmd") + 1])[1])
+                inner.parent.mkdir(parents=True, exist_ok=True)
+                (inner.parent / "exit_code").write_text("0\n", encoding="utf-8")
+                return completed(args, stdout="job-abc-123\n")
+            return completed(args, stdout="ok\n")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            log_dir = Path(temporary) / "logs"
+            with mock.patch.object(vc_exec, "run_command", side_effect=fake_run), mock.patch.object(
+                vc_exec, "vc_available", return_value=True
+            ), mock.patch.object(vc_exec, "user_partitions", return_value={"gpu-test"}):
+                run_vc_job(image="registry/demo:0.1.0", command="true", log_dir=log_dir)
+            mounts = recorded[0][recorded[0].index("-v") + 1].split(",")
+            self.assertEqual(len(mounts), 1)
+            parts = vc_exec.split_mount(mounts[0])
+            # A drive letter repeated on the container side reads as the mode.
+            self.assertEqual(len(parts), 2)
+            self.assertEqual(Path(parts[0]), log_dir.resolve())
+            self.assertTrue(PurePosixPath(parts[1]).is_absolute())
+
     def test_timeout_when_exit_code_never_appears(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             log_dir = Path(temporary) / "logs"

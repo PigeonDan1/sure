@@ -816,7 +816,10 @@ def run_vc_job(
     mount_list = list(mounts or [])
     covered = [Path(split_mount(mount)[0]).expanduser().resolve() for mount in mount_list]
     if not any(log_dir == host or log_dir.is_relative_to(host) for host in covered):
-        mount_list.append(f"{log_dir}:{log_dir}")
+        # split_mount only rejoins a drive letter on the host side; the container
+        # side must be POSIX or a repeated `C:\...` reads as host:C:path, with
+        # the drive letter taken for the mount mode. Identical on a POSIX host.
+        mount_list.append(f"{log_dir}:{PurePosixPath('/', *log_dir.parts[1:])}")
     render_inner_script(log_dir, command, env or {}, command_timeout_seconds, workdir=workdir)
     clear_previous_result(log_dir)
     ensure_mount_host_paths(mount_list)
