@@ -565,7 +565,7 @@ sure/models/{model}/checkpoints/                # 显式本地权重（如有）
 
 **参考**: 
 - [Wrapper 契约](specs/wrapper_contract.md) 定义各文件职责与最小接口
-- [validate.py 模板](templates/validate.py) 提供通用验证脚本框架
+- [validate.py 模板](../scripts/templates/validate.py) 提供通用验证脚本框架
 
 **约束**:
 - wrapper 应复用已验证通过的 repo-native path
@@ -876,10 +876,10 @@ sure/models/asr_qwen3/docker_artifacts/
 
 ### 9.7 Templates (模板文件)
 
-- [model.spec.yaml](templates/model.spec.yaml)
-- [spec_validation.json](templates/spec_validation.json)
-- [verdict.json](templates/verdict.json)
-- [artifact_manifest.json](templates/artifact_manifest.json)
+- [model.spec.yaml](../scripts/templates/model.spec.yaml)
+- [spec_validation.json](../scripts/templates/spec_validation.json)
+- [verdict.json](../scripts/templates/verdict.json)
+- [artifact_manifest.json](../scripts/templates/artifact_manifest.json)
 
 ---
 

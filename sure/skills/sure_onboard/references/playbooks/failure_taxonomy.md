@@ -178,7 +178,7 @@ Prefer the following repair order:
 
 **Do NOT** default to a CUDA stack when the model spec explicitly says `requires_gpu: false`.
 
-**参考**: [`sure/models/snakers4_silero-vad/known_issues.yaml`](../../../sure/models/snakers4_silero-vad/known_issues.yaml)
+**参考**: [`sure/models/snakers4_silero-vad/known_issues.yaml`](../../../../models/snakers4_silero-vad/known_issues.yaml)
 
 ## 失败分类流程图
 
