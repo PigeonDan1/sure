@@ -186,6 +186,8 @@ export async function findFallback(params: {
 	}
 	const results: string[] = [];
 	for await (const entry of walkTree(params.searchPath, { includeDirectories: true, signal: params.signal })) {
+		// As in grepFallback: walkTree only looks at the signal between directories.
+		if (params.signal?.aborted) break;
 		if (results.length >= params.limit) break;
 		if (minimatch(entry.relativePosixPath, pattern, { dot: true, matchBase: true })) {
 			results.push(entry.absolutePath);

@@ -11,7 +11,7 @@ vi.mock("../src/utils/tools-manager.ts", () => ({
 
 // The wrapped tools are what the agent registers, and their execute() defaults
 // the extension context, so the search root is the cwd passed in here.
-import { grepFallback } from "../src/core/tools/fallback-search.ts";
+import { findFallback, grepFallback } from "../src/core/tools/fallback-search.ts";
 import { createFindTool } from "../src/core/tools/find.ts";
 import { createGrepTool } from "../src/core/tools/grep.ts";
 
@@ -111,6 +111,28 @@ describe("grep and find without ripgrep or fd", () => {
 
 		expect(matches.length).toBeGreaterThan(0); // the scan did start
 		expect(matches.length).toBeLessThan(fileCount); // and it stopped before the end
+	});
+
+	it("gives up between the entries of one flat directory when aborted while finding", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-fallback-find-abort-"));
+		tempDirs.push(dir);
+		const fileCount = 20;
+		for (let index = 0; index < fileCount; index++) {
+			writeFileSync(join(dir, `f${index}.txt`), "");
+		}
+		// As in the grep case: the walk reads `aborted` once per directory, so
+		// flipping the flag on a later read stops it inside this single one.
+		let reads = 0;
+		const signal = {
+			get aborted() {
+				return reads++ >= 2;
+			},
+		} as unknown as AbortSignal;
+
+		const results = await findFallback({ searchPath: dir, pattern: "*.txt", limit: fileCount * 2, signal });
+
+		expect(results.length).toBeGreaterThan(0); // the walk did start
+		expect(results.length).toBeLessThan(fileCount); // and it stopped before the end
 	});
 
 	it("finds files with node, honouring .gitignore", async () => {
