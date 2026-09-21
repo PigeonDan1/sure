@@ -112,6 +112,7 @@ def run_agent_eval(args: argparse.Namespace) -> dict[str, Any]:
         )
 
     datasets = [str(item["dataset"]) for item in spec["datasets"]]
+    device = str(args.device or spec["runtime"].get("device") or "cpu")
     batch_id = f"agent_eval_{secrets.token_hex(12)}"
     batch_dir = product_dir / "evaluation_runs" / batch_id
     scratch = run_dir / "scratch" / "evaluate"
@@ -187,7 +188,7 @@ def run_agent_eval(args: argparse.Namespace) -> dict[str, Any]:
             "--external-runs-dir",
             str(batch_dir),
             "--evaluation-device",
-            str(args.device),
+            device,
             "--no-copy-source-report",
             "--evaluation-engine-root",
             str(engine_root),
@@ -277,7 +278,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Score an agent bundle with the pinned evaluation engine")
     parser.add_argument("--run-dir", required=True, help="Sure invocation run directory")
     parser.add_argument("--run-id", help="Run id recorded in the report (default: run directory name)")
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--device", help="Override the resolved plan's runtime.device (default: cpu)")
     args = parser.parse_args()
     args.run_id = args.run_id or Path(args.run_dir).expanduser().resolve().name
     report = run_agent_eval(args)

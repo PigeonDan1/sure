@@ -134,6 +134,14 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (typeof args.output_dir === "string" && args.output_dir.length > 0) {
 		resolveArgs.push("--output-dir", args.output_dir);
 	}
+	// Recorded in the plan's runtime block: agent_runner.py and run_agent_eval.py
+	// read them from there instead of depending on the agent repeating them.
+	if (typeof args.max_samples === "string" && args.max_samples.length > 0) {
+		resolveArgs.push("--max-samples", args.max_samples);
+	}
+	if (typeof args.device === "string" && args.device.length > 0) {
+		resolveArgs.push("--device", args.device);
+	}
 	const resolved = spawnSync(runtime.contract.python_executable, resolveArgs, {
 		cwd: ctx.packageDir,
 		encoding: "utf-8",

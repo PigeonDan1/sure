@@ -127,6 +127,8 @@ class ResolveAgentTests(unittest.TestCase):
             "run_id": "run_test",
             "dataset_source_key": None,
             "output_dir": None,
+            "max_samples": 0,
+            "device": "cpu",
             "output": None,
         }
         values.update(overrides)
@@ -234,6 +236,20 @@ class ResolveAgentTests(unittest.TestCase):
         payload = resolve_agent.resolve_agent(self.make_args(output_dir=str(out)), approved_root=self.models_root)
         self.assertEqual(payload["runtime"]["product_dir"], str(out))
         self.assertEqual(payload["runtime"]["output_dir"], str(out))
+
+    def test_runtime_records_max_samples_and_device(self) -> None:
+        payload = resolve_agent.resolve_agent(
+            self.make_args(max_samples=5, device="cuda:0"), approved_root=self.models_root
+        )
+        self.assertEqual(payload["runtime"]["max_samples"], 5)
+        self.assertEqual(payload["runtime"]["device"], "cuda:0")
+        default = resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
+        self.assertEqual(default["runtime"]["max_samples"], 0)
+        self.assertEqual(default["runtime"]["device"], "cpu")
+
+    def test_negative_max_samples_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "max-samples"):
+            resolve_agent.resolve_agent(self.make_args(max_samples=-1), approved_root=self.models_root)
 
     def test_invalid_generation_parameters_fail(self) -> None:
         write_model(

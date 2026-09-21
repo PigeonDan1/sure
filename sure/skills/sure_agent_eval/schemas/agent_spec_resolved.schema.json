@@ -122,11 +122,13 @@
 		"metrics": { "type": "array", "minItems": 1, "items": { "type": "string" } },
 		"runtime": {
 			"type": "object",
-			"required": ["product_dir", "output_dir", "dataset_source_key"],
+			"required": ["product_dir", "output_dir", "dataset_source_key", "max_samples", "device"],
 			"properties": {
 				"product_dir": { "type": "string" },
 				"output_dir": { "type": ["string", "null"] },
-				"dataset_source_key": { "type": "string" }
+				"dataset_source_key": { "type": "string" },
+				"max_samples": { "type": "integer", "minimum": 0 },
+				"device": { "type": "string" }
 			},
 			"additionalProperties": false
 		}

@@ -469,7 +469,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run an agent chain over the resolved datasets")
     parser.add_argument("--run-dir", required=True, help="Sure invocation run directory")
     parser.add_argument("--spec", help="Path to agent_spec_resolved.json (default: <run-dir>/artifacts/)")
-    parser.add_argument("--max-samples", type=_non_negative_int, default=0)
+    parser.add_argument(
+        "--max-samples",
+        type=_non_negative_int,
+        help="Override the resolved plan's runtime.max_samples (0 means the whole dataset)",
+    )
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir).expanduser().resolve()
@@ -481,7 +485,8 @@ def main() -> int:
     if spec.get("schema") != "sure.agent_eval.spec_resolved.v1":
         print(f"unsupported resolved-spec schema: {spec.get('schema')!r}", file=sys.stderr)
         return 2
-    result = run_agent(spec, run_dir, max_samples=args.max_samples)
+    max_samples = args.max_samples if args.max_samples is not None else int(spec["runtime"].get("max_samples") or 0)
+    result = run_agent(spec, run_dir, max_samples=max_samples)
     return 0 if result["job_status"] == "succeeded" else 1
 
 

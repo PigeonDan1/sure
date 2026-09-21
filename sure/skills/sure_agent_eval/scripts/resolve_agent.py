@@ -228,6 +228,9 @@ def resolve_agent(
     metrics = _split_csv(args.metrics)
     if not metrics:
         raise ValueError("at least one metric is required")
+    max_samples = int(args.max_samples or 0)
+    if max_samples < 0:
+        raise ValueError("--max-samples cannot be negative (0 means the whole dataset)")
 
     stages = [
         _resolve_stage(stage, position=index, approved_root=approved_root)
@@ -262,6 +265,8 @@ def resolve_agent(
             "product_dir": product_dir,
             "output_dir": output_dir,
             "dataset_source_key": str(args.dataset_source_key or "default"),
+            "max_samples": max_samples,
+            "device": str(args.device or "cpu"),
         },
     }
 
@@ -274,6 +279,8 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--dataset-source-key")
     parser.add_argument("--output-dir")
+    parser.add_argument("--max-samples", type=int, default=0, help="Sample cap per dataset; 0 means the whole dataset")
+    parser.add_argument("--device", default="cpu", help="Evaluation device recorded in the plan")
     parser.add_argument("--approved-models-root", help=argparse.SUPPRESS)  # test hook
     parser.add_argument("--output", required=True)
     args = parser.parse_args()

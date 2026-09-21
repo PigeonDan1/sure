@@ -458,6 +458,35 @@ class RunAgentTests(unittest.TestCase):
 
 
 class MainArgumentTests(unittest.TestCase):
+    def run_main(self, *extra: str) -> int:
+        """main() over a resolved spec whose runtime caps the run at 3 samples."""
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / "artifacts").mkdir()
+            spec = make_spec(run_dir / "src", run_dir / "product")
+            spec["runtime"]["max_samples"] = 3
+            (run_dir / "artifacts" / "agent_spec_resolved.json").write_text(
+                json.dumps(spec), encoding="utf-8"
+            )
+            captured: dict[str, int] = {}
+
+            def fake_run_agent(spec: dict, run_dir: Path, *, max_samples: int = 0) -> dict:
+                captured["max_samples"] = max_samples
+                return {"job_status": "succeeded"}
+
+            argv = ["agent_runner.py", "--run-dir", str(run_dir), *extra]
+            with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                agent_runner, "run_agent", fake_run_agent
+            ):
+                self.assertEqual(agent_runner.main(), 0)
+            return captured["max_samples"]
+
+    def test_max_samples_defaults_to_the_resolved_plan(self) -> None:
+        self.assertEqual(self.run_main(), 3)
+
+    def test_max_samples_flag_overrides_the_resolved_plan(self) -> None:
+        self.assertEqual(self.run_main("--max-samples", "1"), 1)
+
     def test_negative_max_samples_is_rejected(self) -> None:
         argv = ["agent_runner.py", "--run-dir", str(Path.cwd()), "--max-samples", "-1"]
         stderr = io.StringIO()
