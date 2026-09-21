@@ -648,6 +648,13 @@ def _tool_argument_contract(model_cfg: dict[str, Any], tool_name: str) -> tuple[
         schema = tool.get("input_schema") if isinstance(tool.get("input_schema"), dict) else {}
         properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
         allowed = {str(key) for key in properties}
+        if not allowed:
+            # Filtering against an empty schema would send the server no arguments at
+            # all, audio_path included, and nothing would notice.
+            raise ValueError(
+                f"selected tool {tool_name!r} declares no input_schema.properties; "
+                "arguments can only be filtered against a declared schema"
+            )
         required = {str(key) for key in schema.get("required") or []}
         undeclared_required = sorted(required - allowed)
         if undeclared_required:

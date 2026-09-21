@@ -51,6 +51,17 @@ class MountedModelGenerationTests(unittest.TestCase):
                 {"audio_path"},
             )
 
+    def test_tool_without_declared_properties_is_refused_instead_of_sending_nothing(self):
+        # With nothing declared the filter would strip every argument, audio_path
+        # included, and raise nothing because nothing is required.
+        for schema in (None, {"type": "object"}, {"type": "object", "properties": {}}):
+            with self.subTest(schema=schema):
+                tool: dict = {"name": "detect"}
+                if schema is not None:
+                    tool["input_schema"] = schema
+                with self.assertRaisesRegex(ValueError, "declares no input_schema.properties"):
+                    generation._tool_argument_contract({"tools": [tool]}, "detect")
+
     def test_generation_sends_language_only_when_tool_declares_it(self):
         for accepts_language in (False, True):
             with self.subTest(accepts_language=accepts_language), tempfile.TemporaryDirectory() as directory:
