@@ -268,6 +268,44 @@ def tokenize_codeswitch(text: str, proc1, proc2) -> List[str]:
     return tokens
 
 
+def _read_key_value_file(path: str) -> Dict[str, str]:
+    """Read a key<TAB>value file. An empty value stays an empty value."""
+    rows: Dict[str, str] = {}
+    with open(path, 'r', encoding='utf-8') as handle:
+        for line in handle:
+            line = line.rstrip('\r\n')
+            if '\t' not in line:
+                continue
+            key, value = line.split('\t', 1)
+            rows[key.strip()] = value.strip()
+    return rows
+
+
+def _pair_by_key(ref_file: str, hyp_file: str, label: str) -> Tuple[List[Tuple[str, str, str]], List[str], List[str]]:
+    """Pair references with predictions by key, never by line number.
+
+    Pairing by line number lets a single absent or extra line shift every later
+    sample while the score stays plausible. Keys only one side has are reported
+    as missing samples instead of being paired with a neighbour.
+    """
+    ref_rows = _read_key_value_file(ref_file)
+    hyp_rows = _read_key_value_file(hyp_file)
+    missing_predictions = [key for key in ref_rows if key not in hyp_rows]
+    missing_references = [key for key in hyp_rows if key not in ref_rows]
+    if missing_predictions:
+        logger.warning(
+            f"[{label}] {len(missing_predictions)} reference keys have no prediction: "
+            f"{missing_predictions[:10]}"
+        )
+    if missing_references:
+        logger.warning(
+            f"[{label}] {len(missing_references)} predicted keys are not in the reference: "
+            f"{missing_references[:10]}"
+        )
+    pairs = [(key, ref_rows[key], hyp_rows[key]) for key in ref_rows if key in hyp_rows]
+    return pairs, missing_predictions, missing_references
+
+
 class SUREEvaluator:
     """
     Unified evaluator for SURE Benchmark.
@@ -564,103 +602,78 @@ class SUREEvaluator:
             "cer_details": cer_result,
         }
     
-    def _eval_ser(self, ref_file: str, hyp_file: str) -> float:
+    def _eval_ser(self, ref_file: str, hyp_file: str) -> Dict[str, Any]:
         """Evaluate SER (emotion recognition accuracy)."""
-        ref_labels = []
-        hyp_labels = []
-        
-        with open(ref_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                parts = line.strip().split('\t', 1)
-                if len(parts) == 2:
-                    key, label = parts
-                    ref_labels.append(self._normalize_label(label))
-        
-        with open(hyp_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                parts = line.strip().split('\t', 1)
-                if len(parts) == 2:
-                    key, label = parts
-                    norm_label = self._normalize_label(label)
-                    mapped = None
-                    if norm_label.isdigit():
-                        for k, v in self.ser_mapping.items():
-                            if str(v) == norm_label:
-                                mapped = k
-                                break
-                    else:
-                        mapped = norm_label
-                    hyp_labels.append(mapped)
-        
-        valid = [(r, h) for r, h in zip(ref_labels, hyp_labels) if r is not None and h is not None]
+        pairs, missing_predictions, missing_references = _pair_by_key(ref_file, hyp_file, "SER")
+
+        valid = []
+        for _key, ref_label, hyp_label in pairs:
+            norm_label = self._normalize_label(hyp_label)
+            mapped = None
+            if norm_label.isdigit():
+                for k, v in self.ser_mapping.items():
+                    if str(v) == norm_label:
+                        mapped = k
+                        break
+            else:
+                mapped = norm_label
+            if mapped is not None:
+                valid.append((self._normalize_label(ref_label), mapped))
+
         if not valid:
             logger.warning("[SER] No valid labels for accuracy calculation.")
-            return 0.0
-        
-        correct = sum(1 for r, h in valid if r == h)
-        acc = correct / len(valid)
-        logger.info(f"[SER] Accuracy: {acc:.4f} ({correct}/{len(valid)})")
-        return acc
-    
-    def _eval_gr(self, ref_file: str, hyp_file: str) -> float:
+            acc = 0.0
+        else:
+            correct = sum(1 for r, h in valid if r == h)
+            acc = correct / len(valid)
+            logger.info(f"[SER] Accuracy: {acc:.4f} ({correct}/{len(valid)})")
+        return {
+            "accuracy": acc,
+            "score": acc,
+            "missing_predictions": len(missing_predictions),
+            "missing_references": len(missing_references),
+        }
+
+    def _eval_gr(self, ref_file: str, hyp_file: str) -> Dict[str, Any]:
         """Evaluate GR (gender recognition accuracy)."""
-        ref_labels = []
-        hyp_labels = []
-        
-        with open(ref_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                parts = line.strip().split('\t', 1)
-                if len(parts) == 2:
-                    key, label = parts
-                    ref_labels.append(self._normalize_label(label))
-        
-        with open(hyp_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                parts = line.strip().split('\t', 1)
-                if len(parts) == 2:
-                    key, label = parts
-                    norm_label = self._normalize_label(label)
-                    mapped = None
-                    if norm_label.isdigit():
-                        for k, v in self.gr_mapping.items():
-                            if str(v) == norm_label:
-                                mapped = k
-                                break
-                    else:
-                        mapped = norm_label
-                    hyp_labels.append(mapped)
-        
-        valid = [(r, h) for r, h in zip(ref_labels, hyp_labels) if r is not None and h is not None]
+        pairs, missing_predictions, missing_references = _pair_by_key(ref_file, hyp_file, "GR")
+
+        valid = []
+        for _key, ref_label, hyp_label in pairs:
+            norm_label = self._normalize_label(hyp_label)
+            mapped = None
+            if norm_label.isdigit():
+                for k, v in self.gr_mapping.items():
+                    if str(v) == norm_label:
+                        mapped = k
+                        break
+            else:
+                mapped = norm_label
+            if mapped is not None:
+                valid.append((self._normalize_label(ref_label), mapped))
+
         if not valid:
             logger.warning("[GR] No valid labels for accuracy calculation.")
-            return 0.0
-        
-        correct = sum(1 for r, h in valid if r == h)
-        acc = correct / len(valid)
-        logger.info(f"[GR] Accuracy: {acc:.4f} ({correct}/{len(valid)})")
-        return acc
-    
+            acc = 0.0
+        else:
+            correct = sum(1 for r, h in valid if r == h)
+            acc = correct / len(valid)
+            logger.info(f"[GR] Accuracy: {acc:.4f} ({correct}/{len(valid)})")
+        return {
+            "accuracy": acc,
+            "score": acc,
+            "missing_predictions": len(missing_predictions),
+            "missing_references": len(missing_references),
+        }
+
     def _eval_s2tt(self, ref_file: str, hyp_file: str) -> Dict[str, float]:
         """Evaluate S2TT (BLEU/chrF2)."""
         from sacrebleu.metrics import BLEU, CHRF
-        
-        ref_lines = []
-        hyp_lines = []
-        
-        with open(ref_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                parts = line.strip().split('\t', 1)
-                if len(parts) == 2:
-                    key, text = parts
-                    ref_lines.append(text)
-        
-        with open(hyp_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                parts = line.strip().split('\t', 1)
-                if len(parts) == 2:
-                    key, text = parts
-                    hyp_lines.append(text)
-        
+
+        pairs, missing_predictions, missing_references = _pair_by_key(ref_file, hyp_file, "S2TT")
+        ref_lines = [ref_text for _key, ref_text, _hyp_text in pairs]
+        hyp_lines = [hyp_text for _key, _ref_text, hyp_text in pairs]
+
         # Use appropriate tokenizer
         if self.language.lower() in ["zh", "ch", "chinese"]:
             bleu = BLEU(tokenize='zh')
@@ -683,6 +696,8 @@ class SUREEvaluator:
             "bleu_char": score_bleu.score,
             "chrf": score_chrf.score,
             "score": score_bleu.score,
+            "missing_predictions": len(missing_predictions),
+            "missing_references": len(missing_references),
         }
     
     def _eval_slu(self, ref_file: str, hyp_file: str, prompt_jsonl: str | None = None) -> float:
@@ -746,9 +761,12 @@ class SUREEvaluator:
         """Evaluate SD (speaker diarization DER)."""
         try:
             import meeteval
-        except ImportError:
-            logger.error("meeteval not installed. Install with: pip install meeteval")
-            return {"der": 0.0, "num_sessions": 0}
+        except ImportError as exc:
+            # DER is an error rate: returning 0.0 here would report a missing
+            # dependency as a flawless diarization.
+            raise RuntimeError(
+                "meeteval not installed, DER cannot be scored. Install with: pip install meeteval"
+            ) from exc
         _ensure_md_eval_on_path()
         
         logger.info(f"[SD] Running DER evaluation with collar={collar}s")
@@ -767,10 +785,13 @@ class SUREEvaluator:
             )
             total_error_rate += float(der.error_rate)
             total_sessions += 1
-        
-        avg_der = total_error_rate / total_sessions if total_sessions > 0 else 0.0
+
+        if total_sessions == 0:
+            raise ValueError(f"DER scored no sessions for ref={ref_file} hyp={hyp_file}")
+
+        avg_der = total_error_rate / total_sessions
         logger.info(f"[SD] Average DER: {avg_der:.4f}")
-        
+
         return {
             "der": avg_der,
             "num_sessions": total_sessions,
@@ -785,9 +806,12 @@ class SUREEvaluator:
         """Evaluate SA-ASR (multi-speaker ASR cpWER + DER)."""
         try:
             import meeteval
-        except ImportError:
-            logger.error("meeteval not installed. Install with: pip install meeteval")
-            return {"cpwer": 0.0, "der": 0.0, "num_sessions": 0}
+        except ImportError as exc:
+            # cpWER and DER are error rates: returning 0.0 here would report a
+            # missing dependency as a flawless transcription.
+            raise RuntimeError(
+                "meeteval not installed, cpWER/DER cannot be scored. Install with: pip install meeteval"
+            ) from exc
         _ensure_md_eval_on_path()
         
         # Normalize STM files
@@ -836,7 +860,10 @@ class SUREEvaluator:
                 total_der += float(der.error_rate)
                 num_sessions += 1
 
-            avg_der = total_der / num_sessions if num_sessions > 0 else 0.0
+            if num_sessions == 0:
+                raise ValueError(f"cpWER/DER scored no sessions for ref={ref_file} hyp={hyp_file}")
+
+            avg_der = total_der / num_sessions
 
             logger.info(f"[SA-ASR] cpWER: {avg_cpwer.error_rate:.4f}")
             logger.info(f"[SA-ASR] DER: {avg_der:.4f}")
