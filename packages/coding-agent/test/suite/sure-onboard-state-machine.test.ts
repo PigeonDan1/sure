@@ -1476,9 +1476,10 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 		const patch = statePatch(finish);
 		expect(finish.ok, finish.repair).toBe(true);
 		expect(patch.phase?.status).toBe("success");
-		// Sealing the runtime really does build a uv environment: about six seconds
-		// on an idle host, but seven times that when the whole suite is running.
-	}, 180_000);
+		// Real work throughout: 4 python3 gate-script runs including the uv seal, plus
+		// 23 state transitions validating artifacts on disk. 6.7s idle here, 41.8s
+		// with the whole suite running; 120s keeps a 3x margin on the loaded figure.
+	}, 120_000);
 });
 
 // Regression guard for the --kind routing bug: runGateScript injected

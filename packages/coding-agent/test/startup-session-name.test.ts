@@ -83,12 +83,13 @@ async function runCli(args: string[], dirs: CliDirs): Promise<CliResult> {
 	});
 
 	return new Promise((resolvePromise, reject) => {
-		// Only a guard against a genuine hang. Starting the CLI from source costs
-		// over ten seconds on a loaded Windows host, so a tight budget kills a
-		// healthy child and reports it as a null exit code.
+		// Guard against a genuine hang only. Starting the CLI from TypeScript source
+		// measures 6.2s idle here and 13.4s with the whole suite running, almost all
+		// of it loading and type-stripping the main.ts module graph. 30s keeps a 2x
+		// margin on the loaded figure while still being able to fire.
 		const timeout = setTimeout(() => {
 			child.kill("SIGKILL");
-		}, 60_000);
+		}, 30_000);
 		child.on("error", (error) => {
 			clearTimeout(timeout);
 			reject(error);
@@ -124,5 +125,6 @@ describe("startup session name", () => {
 		expect(result.code).toBe(1);
 		expect(result.signal).toBeNull();
 		expect(readSessionInfoNames(dirs.sessionFile)).toEqual(["CLI Named Session"]);
-	}, 120_000);
+		// Above the watchdog so a real hang is reported as a kill, not a case timeout.
+	}, 60_000);
 });
