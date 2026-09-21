@@ -178,7 +178,7 @@ class KwsGenerationContractTests(unittest.TestCase):
         self.assertEqual(
             arguments,
             {
-                "audio_path": "/audio/positive.wav",
+                "audio_path": str(Path("/audio/positive.wav")),
                 "keywords": "你好问问,嗨小问",
                 "threshold": 0.2,
             },
