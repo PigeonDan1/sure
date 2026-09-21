@@ -1201,6 +1201,21 @@ describe("edit tool fuzzy matching", () => {
 		expect(content).toBe("const x = 'changed';\nconst y = 'other';\n");
 	});
 
+	it("should accept an oldText that is exactly unique but collides after fuzzy normalization", async () => {
+		const testFile = join(testDir, "exact-unique.txt");
+		// The two lines differ only in their quote characters, so they are the same
+		// after fuzzy normalization while the ASCII one occurs exactly once.
+		const originalContent = 'const a = "x";\nconst a = “x”;\n';
+		writeFileSync(testFile, originalContent);
+
+		await editTool.execute("test-fuzzy-exact-unique", {
+			path: testFile,
+			edits: [{ oldText: 'const a = "x";', newText: 'const a = "y";' }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe('const a = "y";\nconst a = “x”;\n');
+	});
+
 	it("should still fail when text is not found even with fuzzy matching", async () => {
 		const testFile = join(testDir, "no-match.txt");
 		writeFileSync(testFile, "completely different content\n");
@@ -1239,6 +1254,21 @@ describe("edit tool fuzzy matching", () => {
 		});
 
 		expect(readFileSync(testFile, "utf-8")).toBe("console.log('world');\nhello universe\n");
+	});
+
+	it("should keep the bytes outside the matched span when matching fuzzily", async () => {
+		const testFile = join(testDir, "fuzzy-span.txt");
+		// Only the assignment is matched. The full-width parentheses, the non-breaking
+		// space and the trailing whitespace sit on the same line, outside the match.
+		const originalContent = "let s = “hello”; // （note） a b   \nkeep\n";
+		writeFileSync(testFile, originalContent);
+
+		await editTool.execute("test-fuzzy-span", {
+			path: testFile,
+			edits: [{ oldText: 'let s = "hello";', newText: 'let s = "bye";' }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe('let s = "bye"; // （note） a b   \nkeep\n');
 	});
 
 	it("should preserve the correct occurrence when fuzzy replacement equals a nearby line", async () => {
@@ -1342,6 +1372,35 @@ describe("edit tool CRLF handling", () => {
 
 		const content = readFileSync(testFile, "utf-8");
 		expect(content).toBe("first\nREPLACED\nthird\n");
+	});
+
+	it("should leave the line endings of untouched lines alone in a CRLF-first mixed file", async () => {
+		const testFile = join(testDir, "mixed-crlf-first.txt");
+		// The first line ending is CRLF, so the whole file used to be rewritten to CRLF.
+		writeFileSync(testFile, "first\r\nsecond\nthird\nfourth\n");
+
+		await editTool.execute("test-mixed-crlf-first", {
+			path: testFile,
+			edits: [{ oldText: "third\n", newText: "THIRD\n" }],
+		});
+
+		// Only the replaced line is written with the file's line ending.
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("first\r\nsecond\nTHIRD\r\nfourth\n");
+	});
+
+	it("should leave the line endings of untouched lines alone in an LF-first mixed file", async () => {
+		const testFile = join(testDir, "mixed-lf-first.txt");
+		// The first line ending is LF, so the whole file used to be flattened to LF.
+		writeFileSync(testFile, "first\nsecond\r\nthird\r\n");
+
+		await editTool.execute("test-mixed-lf-first", {
+			path: testFile,
+			edits: [{ oldText: "first\n", newText: "FIRST\n" }],
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("FIRST\nsecond\r\nthird\r\n");
 	});
 
 	it("should detect duplicates across CRLF/LF variants", async () => {
