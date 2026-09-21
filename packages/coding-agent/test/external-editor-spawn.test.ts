@@ -68,4 +68,50 @@ describe("editInExternalEditor spawn arguments", () => {
 		expect(promptPath.startsWith(spacedTmpDir)).toBe(true);
 		expect(promptPath.endsWith("prompt.md")).toBe(true);
 	});
+
+	// The configured editor is a command line, not a bare program name. Both spellings
+	// are plain strings, so every platform parses both the same way.
+	const SPACED_EDITORS = [
+		['"C:\\Program Files\\Microsoft VS Code\\Code.exe" --wait', "C:\\Program Files\\Microsoft VS Code\\Code.exe"],
+		[
+			'"/Applications/Visual Studio Code.app/Contents/MacOS/Electron" --wait',
+			"/Applications/Visual Studio Code.app/Contents/MacOS/Electron",
+		],
+	] as const;
+
+	describe.each([
+		["win32", true],
+		["linux", false],
+		["darwin", false],
+	])("on %s", (platform, useShell) => {
+		it("keeps an apostrophe in an unquoted editor path", async () => {
+			const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+			Object.defineProperty(process, "platform", { configurable: true, value: platform });
+			try {
+				await editInExternalEditor({ command: "C:\\Users\\O'Brien\\vim.exe --wait", content: "original" });
+			} finally {
+				if (descriptor) Object.defineProperty(process, "platform", descriptor);
+			}
+
+			const [editor, args] = spawnMock.mock.calls[0] as [string, string[]];
+			expect(editor).toBe("C:\\Users\\O'Brien\\vim.exe");
+			expect(args[0]).toBe("--wait");
+		});
+
+		it.each(SPACED_EDITORS)("keeps the quoted editor path in %s as one argument", async (command, editorPath) => {
+			const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
+			Object.defineProperty(process, "platform", { configurable: true, value: platform });
+			try {
+				await editInExternalEditor({ command, content: "original" });
+			} finally {
+				if (descriptor) Object.defineProperty(process, "platform", descriptor);
+			}
+
+			expect(spawnMock).toHaveBeenCalledTimes(1);
+			const [editor, args] = spawnMock.mock.calls[0] as [string, string[]];
+			// Under a shell the argv is concatenated again, so the path has to stay quoted there.
+			expect(editor).toBe(useShell ? `"${editorPath}"` : editorPath);
+			expect(args[0]).toBe("--wait");
+		});
+	});
 });
