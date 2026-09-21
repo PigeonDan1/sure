@@ -35,7 +35,9 @@ def make_manager(tmp: Path) -> DatasetManager:
     return manager
 
 
-def make_source_tree(root: Path, name: str, version: str) -> Path:
+def make_source_tree(
+    root: Path, name: str, version: str, supported_tasks: list[str] | None = None
+) -> Path:
     dataset_root = root / "g001" / "store002" / "ds_pool" / name
     version_dir = dataset_root / "sample_files" / version
     version_dir.mkdir(parents=True)
@@ -62,8 +64,11 @@ def make_source_tree(root: Path, name: str, version: str) -> Path:
         + "\n",
         encoding="utf-8",
     )
+    ds_meta: dict = {"audio": {"speech": {"language": "zh"}}}
+    if supported_tasks is not None:
+        ds_meta["supported_tasks"] = list(supported_tasks)
     (version_dir / "ds.jsonl").write_text(
-        '{"audio": {"speech": {"language": "zh"}}}\n', encoding="utf-8"
+        json.dumps(ds_meta, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     return dataset_root
 
@@ -185,9 +190,9 @@ class SourceConversionTests(unittest.TestCase):
     def test_converts_to_two_segment_jsonl_with_source_metadata(self) -> None:
         ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
         jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
-        self.assertEqual(jsonl_path.name, "demo_ds__v1.0.2.jsonl")
+        self.assertEqual(jsonl_path.name, "demo_ds__v1.0.2__asr.jsonl")
         row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
-        self.assertEqual(row["dataset"], "demo_ds__v1.0.2")
+        self.assertEqual(row["dataset"], "demo_ds__v1.0.2__asr")
         self.assertEqual(row["task"], "ASR")
         self.assertEqual(row["language"], "zh")
         self.assertEqual(row["target"], "你好")
@@ -215,11 +220,11 @@ class SourceConversionTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(report["dataset"], "demo_ds__v1.0.2")
+        self.assertEqual(report["dataset"], "demo_ds__v1.0.2__asr")
         manifest = json.loads((package_dir / "dataset_manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["dataset"], "demo_ds")
         self.assertEqual(
-            manifest["projections"]["asr_transcription_v1"]["dataset"], "demo_ds__v1.0.2"
+            manifest["projections"]["asr_transcription_v1"]["dataset"], "demo_ds__v1.0.2__asr"
         )
         self.assertEqual(
             manifest["projections"]["asr_transcription_v1"]["sure_jsonl"],
@@ -245,9 +250,9 @@ class SourceConversionTests(unittest.TestCase):
         flat_root = make_flat_source_tree(self.source_root, "flat_ds")
         ref = source_resolver.resolve_site_source_entry(str(flat_root))
         jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
-        self.assertEqual(jsonl_path.name, "flat_ds__unversioned.jsonl")
+        self.assertEqual(jsonl_path.name, "flat_ds__unversioned__asr.jsonl")
         row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
-        self.assertEqual(row["dataset"], "flat_ds__unversioned")
+        self.assertEqual(row["dataset"], "flat_ds__unversioned__asr")
         self.assertEqual(row["task"], "ASR")
         self.assertEqual(row["target"], "你好")
         self.assertEqual(row["language"], "auto")
@@ -261,10 +266,10 @@ class SourceConversionTests(unittest.TestCase):
         ref = source_resolver.resolve_site_source_entry(str(vad_root))
         self.assertEqual(source_resolver.read_source_task(ref), "VAD")
 
-        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        jsonl_path = self.manager.download_and_convert(str(vad_root))
         row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
 
-        self.assertEqual(jsonl_path.name, "vad_ds__v0.0.1.jsonl")
+        self.assertEqual(jsonl_path.name, "vad_ds__v0.0.1__vad.jsonl")
         self.assertEqual(row["task"], "VAD")
         self.assertEqual(row["duration"], 1.5)
         self.assertEqual(
@@ -286,7 +291,7 @@ class SourceConversionTests(unittest.TestCase):
         lid_root = make_lid_source_tree(self.source_root, "lid_ds", "v1.0.0")
         ref = source_resolver.resolve_site_source_entry(str(lid_root))
         self.assertEqual(source_resolver.read_source_task(ref), "LID")
-        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        jsonl_path = self.manager.download_and_convert(str(lid_root))
         row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
         self.assertEqual(row["task"], "LID")
         self.assertEqual(row["label"], "en")
@@ -299,6 +304,7 @@ class SourceConversionTests(unittest.TestCase):
         self.assertEqual(contract["reference"]["primary_field"], "label")
 
     def test_rebuilds_stale_asr_projection_for_vad_source(self) -> None:
+        # Bare legacy cache must not block the per-task VAD projection.
         vad_root = make_vad_source_tree(self.source_root, "vad_ds", "v0.0.1")
         stale_path = self.manager.jsonl_dir / "vad_ds__v0.0.1.jsonl"
         stale_path.write_text(
@@ -306,14 +312,111 @@ class SourceConversionTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        ref = source_resolver.resolve_site_source_entry(str(vad_root))
-        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        jsonl_path = self.manager.download_and_convert(str(vad_root))
         row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
 
+        self.assertEqual(jsonl_path.name, "vad_ds__v0.0.1__vad.jsonl")
         self.assertEqual(row["task"], "VAD")
         self.assertIn("speech_segments", row)
         self.assertNotIn("target", row)
 
+    # ---- supported_tasks-driven multi-task sources ----
+
+    def test_source_resolver_reads_supported_tasks(self) -> None:
+        multi_root = make_source_tree(self.source_root, "multi_ds", "v1.0.0", supported_tasks=["ASR", "TTS"])
+        ref = source_resolver.resolve_site_source_entry(str(multi_root))
+        self.assertEqual(ref.supported_tasks, ("ASR", "TTS"))
+        self.assertEqual(ref.dataset_id, "multi_ds__v1.0.0")
+
+    def test_source_resolver_supported_tasks_tolerant(self) -> None:
+        nested_root = make_source_tree(self.source_root, "nested_ds", "v1.0.0", supported_tasks=None)
+        ds_jsonl = nested_root / "sample_files" / "v1.0.0" / "ds.jsonl"
+        ds_jsonl.write_text(
+            json.dumps({"audio": {"speech": {"supported_tasks": ["tts"]}}}, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        ref = source_resolver.resolve_site_source_entry(str(nested_root))
+        self.assertEqual(ref.supported_tasks, ("TTS",))
+        ds_jsonl.write_text("{not json", encoding="utf-8")
+        ref = source_resolver.resolve_site_source_entry(str(nested_root))
+        self.assertEqual(ref.supported_tasks, ())
+
+    def test_source_default_task_branches(self) -> None:
+        self.assertEqual(
+            source_resolver.source_default_task(
+                source_resolver.resolve_site_source_entry(str(self.dataset_root))
+            ),
+            "ASR",
+        )
+        with self.assertRaises(ValueError):
+            source_resolver.source_default_task(
+                source_resolver.resolve_site_source_entry(str(self.dataset_root)), "TTS"
+            )
+        multi_root = make_source_tree(self.source_root, "intent_ds", "v1.0.0", supported_tasks=["ASR", "TTS"])
+        multi_ref = source_resolver.resolve_site_source_entry(str(multi_root))
+        self.assertEqual(source_resolver.source_default_task(multi_ref, "tts"), "TTS")
+        self.assertEqual(source_resolver.source_default_task(multi_ref), "ASR")
+        tts_root = make_source_tree(self.source_root, "tts_ds", "v1.0.0", supported_tasks=["TTS"])
+        self.assertEqual(
+            source_resolver.source_default_task(source_resolver.resolve_site_source_entry(str(tts_root))),
+            "TTS",
+        )
+        synth_root = make_source_tree(self.source_root, "synth_ds", "v1.0.0", supported_tasks=["TTS", "VC"])
+        with self.assertRaises(ValueError):
+            source_resolver.source_default_task(source_resolver.resolve_site_source_entry(str(synth_root)))
+
+    def test_multi_task_source_projects_each_task_independently(self) -> None:
+        multi_root = make_source_tree(self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"])
+        tts_path = self.manager.download_and_convert(str(multi_root), task="TTS")
+        self.assertEqual(tts_path.name, "duo_ds__v1.0.0__tts.jsonl")
+        tts_row = json.loads(tts_path.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(tts_row["task"], "TTS")
+        self.assertEqual(tts_row["dataset"], "duo_ds__v1.0.0__tts")
+        self.assertEqual(tts_row["target"], "你好")
+        self.assertTrue(Path(tts_row["path"]).is_file())
+        self.assertEqual(tts_row["metadata"]["source"], "site_dataset_pool")
+
+        asr_path = self.manager.download_and_convert(str(multi_root))
+        self.assertEqual(asr_path.name, "duo_ds__v1.0.0__asr.jsonl")
+        self.assertNotEqual(asr_path, tts_path)
+        self.assertEqual(
+            json.loads(asr_path.read_text(encoding="utf-8").splitlines()[0])["task"], "ASR"
+        )
+        self.assertEqual(self.manager.download_and_convert(str(multi_root), task="TTS"), tts_path)
+        self.assertEqual(self.manager.download_and_convert(str(multi_root)), asr_path)
+
+        package_dir = self.manager.sure_dir / "duo_ds"
+        manifest = json.loads((package_dir / "dataset_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(manifest["projections"]), {"asr_transcription_v1", "tts_readback_v1"})
+        self.assertEqual(
+            manifest["projections"]["tts_readback_v1"]["dataset"], "duo_ds__v1.0.0__tts"
+        )
+
+    def test_legacy_source_cannot_be_readback_projected(self) -> None:
+        with self.assertRaises(ValueError):
+            self.manager.download_and_convert(str(self.dataset_root), task="TTS")
+
+    def test_per_task_projection_wins_over_legacy_bare_jsonl(self) -> None:
+        multi_root = make_source_tree(self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"])
+        tts_path = self.manager.download_and_convert(str(multi_root), task="TTS")
+        legacy = self.manager.jsonl_dir / "duo_ds__v1.0.0.jsonl"
+        legacy.write_text(
+            json.dumps({"task": "ASR", "dataset": "duo_ds__v1.0.0", "key": "old"}) + "\n",
+            encoding="utf-8",
+        )
+        resolved = self.manager.get_jsonl_path("duo_ds__v1.0.0")
+        self.assertEqual(resolved, tts_path)
+        self.assertEqual(resolved.name, "duo_ds__v1.0.0__tts.jsonl")
+
+    def test_ambiguous_multi_task_projections_do_not_guess(self) -> None:
+        multi_root = make_source_tree(self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"])
+        self.manager.download_and_convert(str(multi_root), task="TTS")
+        self.manager.download_and_convert(str(multi_root), task="ASR")
+        self.assertIsNone(self.manager._existing_jsonl_for_dataset("duo_ds__v1.0.0"))
+        self.assertEqual(
+            self.manager.get_jsonl_path("duo_ds__v1.0.0__tts").name,
+            "duo_ds__v1.0.0__tts.jsonl",
+        )
 
 def make_s2tt_source_tree(root: Path, name: str, ds_jsonl_text: str) -> Path:
     """A flat speech-translation source: one utterance, transcription + translation."""

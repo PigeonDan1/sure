@@ -29,6 +29,7 @@ from .source_resolver import (
     read_source_metadata,
     read_source_task,
     resolve_site_source_entry,
+    source_default_task,
 )
 
 logger = get_logger(__name__)
@@ -215,64 +216,74 @@ class DatasetManager:
         with path.open("r", encoding="utf-8") as handle:
             return sum(1 for line in handle if line.strip())
 
+    def _task_slug(self, task: str | None) -> str:
+        return str(task or "unknown").strip().lower().replace("-", "_")
+
+    def source_projection_name(self, dataset_id: str, task: str | None) -> str:
+        """JSONL stem for a ds_pool source-root projection, cached per task."""
+        return f"{dataset_id}__{self._task_slug(task)}"
+
     def get_jsonl_path(self, dataset_name: str) -> Path:
-        """Get the JSONL file path for a dataset."""
+        """Get the JSONL file path for a dataset.
+
+        Prefer an on-disk per-task projection when one uniquely matches. A bare
+        ``source__version.jsonl`` left from pre-task naming is only used when no
+        ``source__version__{task}.jsonl`` siblings exist.
+        """
         canonical_name = self._canonical_name(dataset_name)
+        existing = self._existing_jsonl_for_dataset(canonical_name)
+        if existing:
+            return existing
         return self.jsonl_dir / f"{canonical_name}.jsonl"
 
     def _existing_jsonl_for_dataset(self, dataset_name: str) -> Path | None:
         """Return an existing canonical JSONL path for aliases such as ``aishell1``.
 
-        Main-flow artifacts commonly use versioned dataset ids such as
-        ``aishell1__v1.0.2__asr`` while operators may still request the short
-        alias.  Prefer exact matches, then accept a unique versioned projection.
-        Ambiguous projections are left unresolved so the normal download/error
-        path can surface the configuration problem explicitly.
-
-        Source-root pipelines produce ids of the same
-        ``<source_dataset_name>__<version_id>`` shape, e.g.
-        ``demo_speech_zh_test__v1.0.2``; the same rule resolves them
-        regardless of how many ``__``-separated segments the id has.
-
-        The exact-match-else-unique-projection rule is shared with
-        /sure_eval's prediction-source resolver (resolve_dataset_alias in
-        sure/skills/sure_infer/scripts/dataset_alias.py) so both skills agree
-        on what a short dataset name means.
+        Prefer a unique per-task projection (``name__*.jsonl``) over a legacy bare
+        ``name.jsonl`` so ASR/TTS/VAD files win. Ambiguous multi-task projections
+        return None so prepare/download can take an explicit task instead of guessing.
         """
-        exact = self.jsonl_dir / f"{dataset_name}.jsonl"
-        candidates = [dataset_name] if exact.exists() else []
-        candidates += [path.stem for path in self.jsonl_dir.glob(f"{dataset_name}__*.jsonl")]
-        resolved = resolve_dataset_alias(dataset_name, candidates)
-        return self.jsonl_dir / f"{resolved}.jsonl" if resolved else None
+        name = str(dataset_name or "").strip()
+        if not name:
+            return None
+        exact = self.jsonl_dir / f"{name}.jsonl"
+        projections = sorted(path.stem for path in self.jsonl_dir.glob(f"{name}__*.jsonl"))
+        if projections:
+            resolved = resolve_dataset_alias(name, projections)
+            return self.jsonl_dir / f"{resolved}.jsonl" if resolved else None
+        if exact.exists():
+            return exact
+        return None
 
     def is_available(self, dataset_name: str) -> bool:
         """Check if dataset JSONL is available."""
         return self.get_jsonl_path(dataset_name).exists()
 
-    def download_and_convert(self, dataset_name: str) -> Path:
+    def download_and_convert(self, dataset_name: str, task: str | None = None) -> Path:
         """
         Download SURE Benchmark dataset and convert to JSONL.
-        
+
         Args:
             dataset_name: Dataset name (config name or CSV name)
-            
+            task: Optional projection task override for source-root entries
+                (e.g. ``"TTS"``). When omitted the dataset's declared
+                supported_tasks pick the projection task (legacy ASR default).
+
         Returns:
             Path to JSONL file
         """
         if is_source_entry(dataset_name):
-            return self._convert_source_root_to_jsonl(
-                resolve_site_source_entry(dataset_name, dataset_source_key=self.dataset_source_key)
+            ref = resolve_site_source_entry(
+                dataset_name, dataset_source_key=self.dataset_source_key
             )
+            resolved_task = source_default_task(ref, task or "")
+            return self._convert_source_root_to_jsonl(ref, resolved_task)
 
         canonical = self._canonical_name(dataset_name)
-        existing_jsonl = self.get_jsonl_path(canonical)
-        if existing_jsonl.exists():
-            logger.info("Using existing dataset JSONL", dataset=canonical, jsonl=str(existing_jsonl))
-            return existing_jsonl
         existing_jsonl = self._existing_jsonl_for_dataset(canonical)
         if existing_jsonl:
             logger.info(
-                "Using existing canonical dataset JSONL",
+                "Using existing dataset JSONL",
                 dataset=canonical,
                 resolved_dataset=existing_jsonl.stem,
                 jsonl=str(existing_jsonl),
@@ -711,43 +722,38 @@ class DatasetManager:
             encoding="utf-8",
         )
 
-    def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef) -> Path:
-        """Project a site dataset-pool source root into SURE-EVAL JSONL."""
-        jsonl_path = self.jsonl_dir / f"{ref.dataset_id}.jsonl"
-        source_task = read_source_task(ref)
-        source_meta = read_source_metadata(ref)
-        # A speech-translation declaration in ds.jsonl (explicit top-level task
-        # or audio.speech.translation_language) wins over the sample-based task
-        # guess; otherwise the sample/metadata resolution (KWS, VAD, ...) decides,
-        # falling back to the metadata default (ASR).
-        task = "S2TT" if source_meta["task"] == "S2TT" else (source_task or source_meta["task"])
-        detected_task = source_task or ("S2TT" if source_meta["task"] == "S2TT" else "")
+    def _source_projection_id(self, task: str) -> str:
+        """Package projection dir id for a source-root task projection."""
+        task = str(task).upper()
+        if task == "ASR":
+            return "asr_transcription_v1"
+        if task == "VAD":
+            return "vad_segments_v1"
+        if task == "KWS":
+            return "kws_wakeword_v1"
+        if task == "LID":
+            return "lid_labels_v1"
+        if task == "S2TT":
+            return "s2tt_translation_v1"
+        return f"{self._task_slug(task)}_readback_v1"
+
+    def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef, task: str = "ASR") -> Path:
+        """Project a site dataset-pool source root into SURE-EVAL JSONL.
+
+        Projections are cached per task as ``<dataset_id>__<task_slug>.jsonl``
+        so one multi-task source root (e.g. fleurs declaring ASR+TTS) keeps an
+        independent file for every task.
+        """
+        task = str(task or "ASR").strip().upper()
+        projection_name = self.source_projection_name(ref.dataset_id, task)
+        jsonl_path = self.jsonl_dir / f"{projection_name}.jsonl"
         if jsonl_path.exists():
-            existing_task = ""
-            try:
-                with jsonl_path.open("r", encoding="utf-8") as handle:
-                    for line in handle:
-                        if line.strip():
-                            payload = json.loads(line)
-                            if isinstance(payload, dict):
-                                existing_task = str(payload.get("task") or "").strip().upper()
-                            break
-            except (OSError, json.JSONDecodeError):
-                pass
-            if not detected_task or existing_task == task:
-                logger.info(
-                    "Using existing source-root projection",
-                    dataset=ref.dataset_id,
-                    jsonl=str(jsonl_path),
-                )
-                return jsonl_path
             logger.info(
-                "Rebuilding stale source-root projection",
-                dataset=ref.dataset_id,
-                existing_task=existing_task or "unknown",
-                source_task=task,
+                "Using existing source-root projection",
+                dataset=projection_name,
                 jsonl=str(jsonl_path),
             )
+            return jsonl_path
 
         sample_jsonl_path = Path(ref.sample_jsonl)
         ds_jsonl_path = Path(ref.ds_jsonl)
@@ -756,35 +762,39 @@ class DatasetManager:
             raise FileNotFoundError(f"source sample.jsonl not found: {sample_jsonl_path}")
         if not raw_dir.exists():
             raise FileNotFoundError(f"source raw_dir not found: {raw_dir}")
-        # Dataset metadata, not a caller flag, decides the projection: a ds.jsonl
-        # with a top-level task (or audio.speech.translation_language) projects as
-        # S2TT (target = translation text, source-language transcription kept for
-        # triangle metrics); KWS, LID and VAD sources project through their own
-        # projectors; anything else keeps the ASR projection unchanged.
-        if task not in {"ASR", "KWS", "LID", "VAD", "S2TT"}:
+
+        # Native projectors (ASR/KWS/LID/VAD/S2TT). Everything else is a
+        # readback projection of ASR-shaped rows (text as target, audio as path).
+        native_tasks = {"ASR", "KWS", "LID", "VAD", "S2TT"}
+        source_meta = read_source_metadata(ref)
+        # Keep S2TT discovery when caller passed ASR default but ds declares S2TT
+        # and no multi-task intent is in play — only when task is still ASR and
+        # the source itself is S2TT-shaped without supported_tasks multi-tag.
+        if task == "ASR" and not ref.supported_tasks and source_meta.get("task") == "S2TT":
+            task = "S2TT"
+            projection_name = self.source_projection_name(ref.dataset_id, task)
+            jsonl_path = self.jsonl_dir / f"{projection_name}.jsonl"
+            if jsonl_path.exists():
+                return jsonl_path
+
+        if task not in native_tasks and task not in {"TTS", "VC"}:
+            # Allow any other synth-style readback; unknown non-synth still fails.
+            # ponytail: open-ended readback for TTS/VC only; expand if more synth tasks land.
             raise ValueError(
-                f"source-root projection for task {task!r} is not implemented; supported tasks: ASR, KWS, LID, VAD, S2TT"
+                f"source-root projection for task {task!r} is not implemented; "
+                f"supported tasks: ASR, KWS, LID, VAD, S2TT, TTS, VC"
             )
+
         ds_meta = self._load_single_json_object(ds_jsonl_path)
         language = str(
             (((ds_meta.get("audio") or {}).get("speech") or {}).get("language")) or "auto"
         )
-        translation_language = source_meta["translation_language"]
+        translation_language = source_meta.get("translation_language") or ""
         if task == "KWS" and language == "auto":
             language = "any"
         package_dir = self.sure_dir / ref.source_dataset_name
-        projection_name = (
-            "kws_wakeword_v1"
-            if task == "KWS"
-            else "vad_segments_v1"
-            if task == "VAD"
-            else "lid_labels_v1"
-            if task == "LID"
-            else "s2tt_translation_v1"
-            if task == "S2TT"
-            else "asr_transcription_v1"
-        )
-        projection_dir = package_dir / "projections" / projection_name
+        projection_id = self._source_projection_id(task)
+        projection_dir = package_dir / "projections" / projection_id
         projection_dir.mkdir(parents=True, exist_ok=True)
 
         metadata_base = {
@@ -793,24 +803,30 @@ class DatasetManager:
             "source_dataset_name": ref.source_dataset_name,
             "version_id": ref.version_id,
         }
+        # Readback (TTS/VC) reuses ASR-shaped row projection with task stamped.
+        row_task = "ASR" if task in {"TTS", "VC"} else task
         if task == "KWS":
             rows, skipped, source_records = self._project_kws_sample_rows(
                 sample_jsonl_path=sample_jsonl_path,
                 raw_dir=raw_dir,
                 language=language,
-                dataset_label=ref.dataset_id,
+                dataset_label=projection_name,
                 metadata_base=metadata_base,
             )
         else:
             rows, skipped, source_records = self._project_sample_rows(
                 sample_jsonl_path=sample_jsonl_path,
                 raw_dir=raw_dir,
-                task=task,
+                task=row_task,
                 language=language,
-                dataset_label=ref.dataset_id,
+                dataset_label=projection_name,
                 metadata_base=metadata_base,
                 collect_translation=(task == "S2TT"),
             )
+            if task in {"TTS", "VC"}:
+                for row in rows:
+                    row["task"] = task
+                    row["dataset"] = projection_name
         if skipped:
             reasons = ", ".join(f"line {item['line']}: {item['reason']}" for item in skipped[:5])
             raise ValueError(
@@ -833,7 +849,7 @@ class DatasetManager:
         source_payload = {
             "source": SITE_DATASET_POOL_SOURCE,
             "task": task,
-            "projector": projection_name,
+            "projector": projection_id,
             "source_dataset_name": ref.source_dataset_name,
             "version_id": ref.version_id,
             "dataset_root": ref.source_root,
@@ -892,6 +908,7 @@ class DatasetManager:
                     }
                 )
             else:
+                # ASR and TTS/VC readback share transcription-as-target fields.
                 fields.update(
                     {
                         "target": "annotation[0].transcription.text[0]",
@@ -899,7 +916,7 @@ class DatasetManager:
                     }
                 )
         mapping = {
-            "projector": projection_name,
+            "projector": projection_id,
             "source_format": f"{SITE_DATASET_POOL_SOURCE}_sample_jsonl",
             "target_format": "sure_eval_jsonl_v1",
             "fields": fields,
@@ -937,23 +954,44 @@ class DatasetManager:
                 "output": {"prediction_format": "tsv", "columns": ["key", "label"], "type": "language_label"},
                 "reference": {"primary_field": "label", "type": "language_label"},
             }
-        else:
-            reference_contract: dict[str, Any] = (
-                {"primary_field": "speech_segments", "type": "segments"}
-                if task == "VAD"
-                else {"primary_field": "target", "type": "text"}
-            )
-            if task == "S2TT":
-                reference_contract["optional_source_field"] = "source"
+        elif task == "ASR":
             io_contract = {
                 "task": task,
                 "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
-                "output": (
-                    {"prediction_format": "jsonl", "columns": ["key", "speech_segments"], "type": "json"}
-                    if task == "VAD"
-                    else {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"}
-                ),
-                "reference": reference_contract,
+                "output": {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"},
+                "reference": {"primary_field": "target", "type": "text"},
+            }
+        elif task == "VAD":
+            io_contract = {
+                "task": task,
+                "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
+                "output": {"prediction_format": "jsonl", "columns": ["key", "speech_segments"], "type": "json"},
+                "reference": {"primary_field": "speech_segments", "type": "segments"},
+            }
+        elif task == "S2TT":
+            io_contract = {
+                "task": task,
+                "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
+                "output": {"prediction_format": "tsv", "columns": ["key", "prediction_text"], "type": "text"},
+                "reference": {
+                    "primary_field": "target",
+                    "type": "text",
+                    "optional_source_field": "source",
+                },
+            }
+        else:
+            # TTS/VC readback: audio path is reference/prompt, target is text to synth.
+            io_contract = {
+                "task": task,
+                "projection_kind": "readback",
+                "input": {
+                    "primary_field": "path",
+                    "type": "audio_path",
+                    "role": "reference_audio",
+                    "required_fields": ["key", "path", "target"],
+                },
+                "output": {"prediction_format": "tsv", "columns": ["key", "prediction_audio"], "type": "audio_path"},
+                "reference": {"primary_field": "target", "type": "text"},
             }
         (projection_dir / "io_contract.json").write_text(
             json.dumps(io_contract, indent=2, ensure_ascii=False) + "\n",
@@ -962,7 +1000,7 @@ class DatasetManager:
 
         conversion_report = {
             "source": SITE_DATASET_POOL_SOURCE,
-            "dataset": ref.dataset_id,
+            "dataset": projection_name,
             "source_dataset_name": ref.source_dataset_name,
             "source_dataset_root": ref.source_root,
             "version_id": ref.version_id,
@@ -990,31 +1028,38 @@ class DatasetManager:
             encoding="utf-8",
         )
 
-        manifest = {
-            "dataset": ref.source_dataset_name,
-            "default_projection": projection_name,
-            "source": SITE_DATASET_POOL_SOURCE,
-            "source_dataset_root": ref.source_root,
-            "version_id": ref.version_id,
-            "projections": {
-                projection_name: {
-                    "dataset": ref.dataset_id,
-                    "sure_jsonl": sure_jsonl.relative_to(package_dir).as_posix(),
-                    "mapping": f"projections/{projection_name}/mapping.yaml",
-                    "io_contract": f"projections/{projection_name}/io_contract.json",
-                    "conversion_report": f"projections/{projection_name}/conversion_report.json",
-                }
-            },
+        # Merge multi-task projections into the package manifest.
+        manifest_path = package_dir / "dataset_manifest.json"
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                manifest = {}
+        else:
+            manifest = {}
+        manifest.setdefault("dataset", ref.source_dataset_name)
+        manifest["source"] = SITE_DATASET_POOL_SOURCE
+        manifest["source_dataset_root"] = ref.source_root
+        manifest["version_id"] = ref.version_id
+        manifest["default_projection"] = projection_id
+        projections = manifest.setdefault("projections", {})
+        projections[projection_id] = {
+            "dataset": projection_name,
+            "sure_jsonl": sure_jsonl.relative_to(package_dir).as_posix(),
+            "mapping": f"projections/{projection_id}/mapping.yaml",
+            "io_contract": f"projections/{projection_id}/io_contract.json",
+            "conversion_report": f"projections/{projection_id}/conversion_report.json",
         }
-        (package_dir / "dataset_manifest.json").write_text(
+        manifest_path.write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
 
         logger.info(
             "Converted site dataset source root",
-            dataset=ref.dataset_id,
+            dataset=projection_name,
             source=ref.source_root,
+            task=task,
             samples=len(rows),
             jsonl=str(jsonl_path),
         )

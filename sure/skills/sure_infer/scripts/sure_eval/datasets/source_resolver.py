@@ -68,6 +68,7 @@ class DatasetSourceRef:
     sample_jsonl: str
     ds_jsonl: str
     raw_dir: str
+    supported_tasks: tuple[str, ...] = ()
 
 
 def _configured_source_roots() -> dict[str, str]:
@@ -218,6 +219,7 @@ def resolve_site_source_entry(entry: str, explicit_version: str | None = None, d
         sample_jsonl=str(sample_jsonl),
         ds_jsonl=str(ds_jsonl),
         raw_dir=str(raw_dir),
+        supported_tasks=read_source_supported_tasks(str(ds_jsonl)),
     )
 
 
@@ -260,6 +262,19 @@ def read_source_metadata(ref: DatasetSourceRef) -> dict[str, str]:
 def _normalize_source_task(value: object) -> str:
     normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
     return _SOURCE_TASK_ALIASES.get(normalized, "")
+
+
+def _normalize_task(value: object) -> str:
+    return str(value or "").strip().upper().replace("-", "_")
+
+
+# Tags that say nothing about what the rows contain. A pool declaring only these
+# is as good as undeclared for task resolution.
+_GENERIC_SOURCE_TASK_TAGS = {"", "NA", "N/A", "NONE", "OTHER", "UNKNOWN", "UNSPECIFIED"}
+
+
+def _declared_source_tasks(supported: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(task for task in supported if task not in _GENERIC_SOURCE_TASK_TAGS)
 
 
 def _read_first_sample(path: Path) -> dict[str, object]:
@@ -339,3 +354,83 @@ def read_source_task(ref: DatasetSourceRef) -> str:
             if task:
                 return task
     return ""
+
+
+def read_source_supported_tasks(ds_jsonl: str) -> tuple[str, ...]:
+    """Read supported_tasks from a version's ds.jsonl (top-level; tolerant).
+
+    A missing or unreadable field means a legacy ASR dataset, so the callers
+    fall back to ASR exactly like the pre-metadata pipeline did. fleurs stores
+    the tag at the top level; ``audio.speech.supported_tasks`` is tolerated too.
+    """
+    try:
+        text = Path(ds_jsonl).read_text(encoding="utf-8").strip()
+        payload = json.loads(text) if text else {}
+    except (OSError, json.JSONDecodeError):
+        return ()
+    if not isinstance(payload, dict):
+        return ()
+    raw = payload.get("supported_tasks")
+    if raw is None:
+        speech = (payload.get("audio") or {}).get("speech") or {}
+        raw = speech.get("supported_tasks")
+    if not isinstance(raw, (list, tuple, set)):
+        return ()
+    tasks: list[str] = []
+    for value in raw:
+        task = _normalize_task(value)
+        if task and task not in tasks:
+            tasks.append(task)
+    return tuple(tasks)
+
+
+def source_default_task(ref: DatasetSourceRef, intent: str = "") -> str:
+    """Pick the task a source root should be projected as.
+
+    ``intent`` is the run's synthetic-task intent (model task or a ``tts_*`` /
+    ``vc_*`` metric hint); empty when the caller has none. Resolution order:
+      0. nothing usable declared         -> sample/metadata shape (VAD/LID/S2TT…);
+                                            ASR-shaped samples fall through
+      1. no declared supported_tasks      -> legacy ASR (explicit non-ASR intent
+                                            raises)
+      2. intent declared                  -> intent
+      3. exactly one supported task       -> that task
+      4. ASR among several                -> ASR
+      5. otherwise                        -> SourceResolutionError
+    """
+    supported = _declared_source_tasks(ref.supported_tasks)
+    intent_task = _normalize_task(intent)
+    if not supported:
+        detected = read_source_task(ref)
+        # S2TT may only show up via read_source_metadata (translation_language).
+        if not detected or detected == "ASR":
+            try:
+                meta_task = read_source_metadata(ref).get("task") or ""
+            except Exception:
+                meta_task = ""
+            if meta_task and meta_task not in {"", "ASR"}:
+                detected = meta_task
+        if detected and detected != "ASR":
+            if not intent_task or intent_task == detected:
+                return detected
+            raise SourceResolutionError(
+                f"dataset {ref.dataset_id} has {detected}-shaped samples but was "
+                f"asked to project as {intent_task}"
+            )
+        if not intent_task or intent_task == "ASR":
+            return "ASR"
+        raise SourceResolutionError(
+            f"dataset {ref.dataset_id} declares no supported_tasks; cannot "
+            f"project as {intent_task} (only the legacy ASR default)"
+        )
+    if intent_task and intent_task in supported:
+        return intent_task
+    if len(supported) == 1:
+        return supported[0]
+    if "ASR" in supported:
+        return "ASR"
+    raise SourceResolutionError(
+        f"dataset {ref.dataset_id} declares supported_tasks {', '.join(supported)} "
+        f"with no ASR fallback; pass the projection task explicitly "
+        f"(got intent={intent_task or '(none)'})"
+    )

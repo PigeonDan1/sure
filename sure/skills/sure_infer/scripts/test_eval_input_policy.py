@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -270,6 +271,96 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         self.assertEqual(detail["name"], "lid_ds__v1.0.0")
         self.assertEqual(detail["task"], "LID")
         self.assertEqual(detail["default_metrics"], ["accuracy"])
+
+    def test_multi_task_source_detail_follows_model_intent(self) -> None:
+        multi_root = make_source_tree(
+            self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"]
+        )
+        details = resolve_eval_input._dataset_details(
+            self.manager, [str(multi_root)], [], None, model_task="TTS"
+        )
+        detail = details[0]
+        self.assertEqual(detail["name"], "duo_ds__v1.0.0")
+        self.assertEqual(detail["task"], "TTS")
+        self.assertEqual(detail["supported_tasks"], ["ASR", "TTS"])
+        self.assertEqual(detail["language"], "zh")
+        self.assertEqual(Path(detail["jsonl_path"]).name, "duo_ds__v1.0.0__tts.jsonl")
+
+    def test_plain_asr_model_on_multi_task_source_stays_asr(self) -> None:
+        multi_root = make_source_tree(
+            self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"]
+        )
+        details = resolve_eval_input._dataset_details(
+            self.manager, [str(multi_root)], [], None, model_task="ASR"
+        )
+        self.assertEqual(details[0]["task"], "ASR")
+        self.assertNotIn("task_source", details[0])
+
+    def test_legacy_task_agnostic_cache_does_not_lock_source_to_asr(self) -> None:
+        multi_root = make_source_tree(
+            self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"]
+        )
+        legacy = self.manager.jsonl_dir / "duo_ds__v1.0.0.jsonl"
+        legacy.write_text(
+            json.dumps(
+                {
+                    "task": "ASR",
+                    "language": "zh",
+                    "dataset": "duo_ds__v1.0.0",
+                    "metadata": {
+                        "source": "site_dataset_pool",
+                        "source_dataset_root": str(multi_root),
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        details = resolve_eval_input._dataset_details(
+            self.manager, [str(multi_root)], [], None, model_task="TTS"
+        )
+        detail = details[0]
+        self.assertEqual(detail["task"], "TTS")
+        self.assertEqual(Path(detail["jsonl_path"]).name, "duo_ds__v1.0.0__tts.jsonl")
+        self.assertFalse(detail["jsonl_exists"])
+
+    def test_multi_task_source_detail_points_at_the_per_task_projection(self) -> None:
+        multi_root = make_source_tree(
+            self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"]
+        )
+        self.manager.download_and_convert(str(multi_root), task="TTS")
+        details = resolve_eval_input._dataset_details(
+            self.manager, [str(multi_root)], [], None, model_task="TTS"
+        )
+        detail = details[0]
+        self.assertEqual(detail["task"], "TTS")
+        self.assertEqual(Path(detail["jsonl_path"]).name, "duo_ds__v1.0.0__tts.jsonl")
+        self.assertTrue(detail["jsonl_exists"])
+        self.assertEqual(detail["num_samples"], 1)
+
+    def test_tts_model_multi_task_source_passes_task_compatibility(self) -> None:
+        multi_root = make_source_tree(
+            self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"]
+        )
+        details = resolve_eval_input._dataset_details(
+            self.manager, [str(multi_root)], ["utmos"], None, model_task="TTS"
+        )
+        model = {"name": "xs__M40-IndexTTS", "declared_task": "TTS"}
+        # Must not raise Task mismatch.
+        resolve_eval_input._check_task_compatibility(model, details)
+        self.assertEqual(details[0]["task"], "TTS")
+
+    def test_tts_only_source_rejects_asr_model_in_guard(self) -> None:
+        tts_root = make_source_tree(
+            self.source_root, "tts_ds", "v1.0.0", supported_tasks=["TTS"]
+        )
+        details = resolve_eval_input._dataset_details(
+            self.manager, [str(tts_root)], [], None, model_task="ASR"
+        )
+        model = {"name": "some_asr_model", "declared_task": "ASR"}
+        with self.assertRaises(resolve_eval_input.EvalInputError) as ctx:
+            resolve_eval_input._check_task_compatibility(model, details)
+        self.assertIn("Task mismatch", str(ctx.exception))
 
 
 class MainErrorHandlingTests(unittest.TestCase):

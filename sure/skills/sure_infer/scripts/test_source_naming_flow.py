@@ -46,7 +46,7 @@ class SourceNamingFlowTests(unittest.TestCase):
 
     def test_download_and_convert_accepts_source_entry(self) -> None:
         jsonl_path = self.manager.download_and_convert(str(self.dataset_root))
-        self.assertEqual(jsonl_path.name, "demo_ds__v1.0.2.jsonl")
+        self.assertEqual(jsonl_path.name, "demo_ds__v1.0.2__asr.jsonl")
         self.assertTrue(jsonl_path.exists())
 
     def test_get_info_surfaces_source_fields(self) -> None:
@@ -70,7 +70,7 @@ class SourceNamingFlowTests(unittest.TestCase):
         summary = prepare_sure_dataset.prepare_dataset(
             self.manager, "demo_ds__v1.0.2", requested_name=str(self.dataset_root)
         )
-        self.assertEqual(summary["dataset"], "demo_ds__v1.0.2")
+        self.assertEqual(summary["dataset"], "demo_ds__v1.0.2__asr")
         self.assertEqual(summary["requested_name"], str(self.dataset_root))
         self.assertEqual(summary["source_dataset_root"], str(self.dataset_root))
         self.assertEqual(summary["source_dataset_name"], "demo_ds")
@@ -87,14 +87,30 @@ class SourceNamingFlowTests(unittest.TestCase):
         entry = f"{multi_root}@v2.0.0"
         self.assertEqual(self.manager.normalize_dataset_name(entry), "multi_ds__v2.0.0")
         jsonl_path = self.manager.download_and_convert(entry)
-        self.assertEqual(jsonl_path.name, "multi_ds__v2.0.0.jsonl")
+        self.assertEqual(jsonl_path.name, "multi_ds__v2.0.0__asr.jsonl")
 
     def test_flat_source_flows_through_normalize_and_convert(self) -> None:
         flat_root = make_flat_source_tree(self.source_root, "flat_ds")
         self.assertEqual(self.manager.normalize_dataset_name(str(flat_root)), "flat_ds__unversioned")
-        jsonl_path = self.manager.download_and_convert(str(flat_root))
-        self.assertEqual(jsonl_path.name, "flat_ds__unversioned.jsonl")
         self.assertEqual(self.manager.expand_dataset_names([str(flat_root)]), ["flat_ds__unversioned"])
+        jsonl_path = self.manager.download_and_convert(str(flat_root))
+        self.assertEqual(jsonl_path.name, "flat_ds__unversioned__asr.jsonl")
+        # Unique per-task projection becomes the formal id after convert.
+        self.assertEqual(
+            self.manager.expand_dataset_names([str(flat_root)]),
+            ["flat_ds__unversioned__asr"],
+        )
+    def test_prepare_dataset_projects_tts_readback(self) -> None:
+        multi_root = make_source_tree(
+            self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"]
+        )
+        summary = prepare_sure_dataset.prepare_dataset(
+            self.manager, "duo_ds__v1.0.0", requested_name=str(multi_root), task="TTS"
+        )
+        self.assertEqual(summary["dataset"], "duo_ds__v1.0.0__tts")
+        self.assertEqual(summary["task"], "TTS")
+        self.assertEqual(summary["source_dataset_name"], "duo_ds")
+        self.assertEqual(summary["version_id"], "v1.0.0")
 
 
 if __name__ == "__main__":

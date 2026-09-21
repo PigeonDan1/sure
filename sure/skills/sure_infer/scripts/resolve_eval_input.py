@@ -32,6 +32,7 @@ from sure_eval.datasets.source_resolver import (
     read_source_metadata,
     read_source_task,
     resolve_site_source_entry,
+    source_default_task,
 )
 
 from evaluation_capabilities import default_metrics_for_task_language, supported_metrics_for_task_language
@@ -127,6 +128,21 @@ SYNTH_TASKS = {"TTS", "VC"}
 EXACT_TASKS = {"KWS"}
 TASK_CHECK_EXEMPT = {"OMNI", "API"}
 TASK_WORDS = {"ASR": "speech recognition", "TTS": "speech synthesis", "VC": "voice conversion"}
+
+
+def _source_projection_task(model_task: str, metrics: list[str], ref) -> str:
+    """Metadata-driven task for an un-projected source root.
+
+    A synthetic-task intent (a ``tts_*``/``vc_*`` metric, else the model's own
+    declared synth task) picks the task among the dataset's ``supported_tasks``;
+    otherwise the dataset's declaration drives it with the legacy ASR default.
+    """
+    model_task = _normalize_task(model_task)
+    metric_task = _metric_task_hint(metrics)
+    intent = metric_task if metric_task in SYNTH_TASKS else ""
+    if not intent and model_task in SYNTH_TASKS:
+        intent = model_task
+    return source_default_task(ref, intent)
 
 
 class EvalInputError(ValueError):
@@ -558,21 +574,22 @@ def _dataset_details(
         version_id = info.get("version_id") or sample_meta.get("version_id")
         dataset_task = _normalize_task(info.get("task") or first_sample.get("task") or "")
         language = str(info.get("language") or first_sample.get("language") or "").lower()
-        if is_source_entry(requested_name) and not jsonl_path.exists():
+        source_supported_tasks: tuple[str, ...] = ()
+        # A task-agnostic legacy cache (`<dataset_id>.jsonl`) must not lock a
+        # multi-task source to ASR. Only per-task 3-seg projections are
+        # authoritative on re-run; otherwise re-derive from ds.jsonl.
+        legacy_cache = jsonl_path.exists() and jsonl_path.name == f"{dataset_name}.jsonl"
+        if is_source_entry(requested_name) and (legacy_cache or not jsonl_path.exists()):
             ref = resolve_site_source_entry(requested_name, dataset_source_key=dataset_source_key)
             source_root = source_root or ref.source_root
             source_name = source_name or ref.source_dataset_name
             version_id = version_id or ref.version_id
-            # Same precedence as DatasetManager._convert_source_root_to_jsonl: a
-            # speech-translation declaration in ds.jsonl wins over the sample-based
-            # guess, so the recorded task matches the projection the run will use.
-            source_meta = read_source_metadata(ref)
-            dataset_task = dataset_task or (
-                "S2TT"
-                if source_meta["task"] == "S2TT"
-                else (read_source_task(ref) or source_meta["task"])
+            dataset_task = _source_projection_task(model_task, requested_metrics, ref)
+            language = (read_source_language(ref) or language or "auto").lower()
+            source_supported_tasks = ref.supported_tasks
+            jsonl_path = manager.jsonl_dir / (
+                manager.source_projection_name(ref.dataset_id, dataset_task) + ".jsonl"
             )
-            language = language or (read_source_language(ref) or "auto").lower()
         task = _effective_dataset_task(dataset_task, model_task, requested_metrics)
         if not task:
             task = "UNKNOWN"
@@ -595,6 +612,8 @@ def _dataset_details(
             detail["source_dataset_name"] = str(source_name)
         if version_id:
             detail["version_id"] = str(version_id)
+        if source_supported_tasks:
+            detail["supported_tasks"] = list(source_supported_tasks)
         if dataset_task and dataset_task != task:
             detail["dataset_task"] = dataset_task
             detail["task_source"] = "model_or_metric_intent"

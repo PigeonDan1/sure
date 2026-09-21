@@ -308,7 +308,39 @@ def stage_config(ctx: Ctx) -> None:
 
 def stage_prepare(ctx: Ctx) -> None:
     summary = ctx.run_dir / "prepare_summary.json"
-    _run(ctx, "prepare", "prepare_sure_dataset.py", "--dataset", *ctx.requested_datasets, "--output", str(summary))
+    args = ["--dataset", *ctx.requested_datasets, "--output", str(summary)]
+    # Prefer the resolved plan's model task, else config.yaml, so multi-task
+    # sources (ASR+TTS) project the right 3-seg cache instead of legacy ASR.
+    model_task = ""
+    resolved_input = _env("SURE_EVAL_INPUT_RESOLVED")
+    if resolved_input:
+        try:
+            payload = _read_json(Path(resolved_input))
+            model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
+            model_task = str(model.get("declared_task") or "").strip()
+            if not model_task:
+                for row in payload.get("datasets") or []:
+                    if isinstance(row, dict) and row.get("task"):
+                        model_task = str(row["task"]).strip()
+                        break
+        except Exception:
+            model_task = ""
+    if not model_task:
+        config_yaml = ctx.model_dir / "config.yaml"
+        if config_yaml.is_file():
+            try:
+                import yaml
+
+                config = yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
+                model = config.get("model") if isinstance(config.get("model"), dict) else {}
+                model_task = str(
+                    model.get("task") or config.get("task") or config.get("task_type") or ""
+                ).strip()
+            except Exception:
+                model_task = ""
+    if model_task:
+        args.extend(["--task", model_task])
+    _run(ctx, "prepare", "prepare_sure_dataset.py", *args)
     prepared = [
         str(item["dataset"])
         for item in _read_json(summary).get("prepared", [])
@@ -319,7 +351,6 @@ def stage_prepare(ctx: Ctx) -> None:
     ctx.datasets = prepared
     print(f"Concrete datasets: {' '.join(prepared)}", flush=True)
 
-    resolved_input = _env("SURE_EVAL_INPUT_RESOLVED")
     if resolved_input:
         for row in _read_json(Path(resolved_input)).get("datasets", []):
             if isinstance(row, dict) and row.get("name") and row.get("language"):
@@ -328,7 +359,6 @@ def stage_prepare(ctx: Ctx) -> None:
     if fallback_language:
         for dataset in prepared:
             ctx.languages.setdefault(dataset, fallback_language)
-
 
 def stage_materialize(ctx: Ctx) -> None:
     _run(
