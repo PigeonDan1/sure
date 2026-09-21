@@ -87,16 +87,18 @@
 
 ---
 
-### 1.5 报告侧数据集身份保持两段式
+### 1.5 报告 / formal 数据集身份：3-seg 投影 id（对齐 GitLab `1d215ea`）
 
-**问题：** 多任务投影后，报告 `dataset.name` 可能带上 task 段。
+**问题：** 多任务源投影后，ASR/TTS 等需独立 formal id；早期曾压成 2-seg。
 
 **改动：**
 
-- `_report_dataset_name` / RPS payload：尽量 `source__version`，**不含 task 后缀**
-- **不**采用 GitLab 后期三元组 formal id（`source__version__task`）
+- 磁盘与产物：`source__version__{task}`（如 `…__asr` / `…__tts`）
+- `_report_dataset_name`：优先 row/stem 的 3-seg，**不**剥 task（对齐 `1d215ea`，覆盖更早的 `f307afe` 2-seg 报告策略）
+- `/sure_eval` local bundle：`datasets=` 接受 2-seg 或 3-seg，须与 bundle 完成集合完全一致
+- 批准 NFS reval 入参仍为 2-seg（与 GitLab reval 表面一致）；读 report 时再 peel
 
-**主要文件：** `sure/skills/sure_infer/scripts/evaluate_predictions.py`
+**主要文件：** `evaluate_predictions.py`、`resolve_prediction_source.py`、`sure_eval/SKILL.md`、dataset_manager / prepare（`dc4882ba` 及后续对齐）
 
 ---
 
@@ -133,7 +135,6 @@
 | 项 | 原因 |
 |---|---|
 | oref / HPC `site.bundled`、`ai_oref-` registry | 站点私有，不进公开默认配置 |
-| `1d215ea` 三元组 dataset formal id | 与 xsy **两段式** `source__version` + projection 设计冲突 |
 | runtime pin 中间态反复 bump | xsy 已在最终 lock |
 | `vc_precheck` / `vc_submitter` | xsy 无对应树 |
 | 纯 merge / import 排序 | 无产品行为 |
@@ -201,10 +202,9 @@ packages/coding-agent/test/suite/sure-onboard-state-machine.test.ts
 | host provenance + env inject | `3e9f2aa` | done |
 | check_env docker 隔离 | `76a1bed` | done |
 | finalize 相对路径 | `b99e66d` | done |
-| report 2-seg name | `f307afe` | done |
+| report / formal 3-seg id | `f307afe`→`1d215ea` | **done**（跟 GitLab 终态 3-seg） |
 | dataset format docs | `bae78be` | done |
 | sure_trans contracts | `1d2f05d` | done (adapt) |
-| 3-seg formal ids | `1d215ea` | **skip** |
 | oref site | `0744757` `9abe8ee` | **skip** |
 
 ---

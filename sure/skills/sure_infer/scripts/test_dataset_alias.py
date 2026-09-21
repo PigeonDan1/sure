@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """Regression tests for the infer/eval dataset identity boundary.
 
-/sure_infer expands a short alias such as "aishell1" to the fully qualified,
-versioned dataset id it actually writes artifacts under (e.g.
-"aishell1__v1.0.2__asr") via
+/sure_infer expands a short alias such as "aishell1" to the fully qualified
+projection id it writes artifacts under (e.g. ``aishell1__v1.0.2__asr``) via
 DatasetManager._existing_jsonl_for_dataset -> normalize_dataset_name.
-/sure_eval deliberately has a stricter public identity: callers must provide
-the exact ``<dataset>__<version>`` value approved in NFS. It does not accept a
-short alias or the historical ``__task`` report suffix.
+
+/sure_eval local_infer_run accepts the same formal projection ids (2-seg or
+3-seg). Approved NFS reval still requests 2-seg ``source__version`` and peels
+optional task suffixes when reading report rows (GitLab reval surface).
 
 These tests exercise:
   - the shared resolve_dataset_alias() rule directly,
-  - /sure_infer's own DatasetManager._existing_jsonl_for_dataset using that
-    rule (proves the eval side keeps resolving exactly as before), and
-  - /sure_eval's canonical request validator (proves aliases and historical
-    report suffixes cannot weaken exact dataset-set equality).
+  - DatasetManager._existing_jsonl_for_dataset,
+  - local vs approved request validators.
 
 Run directly:
     cd sure/skills/sure_infer/scripts && python test_dataset_alias.py
@@ -119,13 +117,46 @@ class RevalRequiresCanonicalDatasetIdTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not canonical"):
             resolve_prediction_source._requested_dataset_id("aishell1")
 
-    def test_historical_task_suffix_is_rejected(self) -> None:
+    def test_approved_nfs_rejects_task_suffix_on_request(self) -> None:
+        # Approved reval set matching is still 2-seg source__version.
         with self.assertRaisesRegex(ValueError, "not canonical"):
             resolve_prediction_source._requested_dataset_id("aishell1__v1.0.2__asr")
 
     def test_legacy_single_underscore_version_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "not canonical"):
             resolve_prediction_source._requested_dataset_id("aishell1_v1.0.2")
+
+
+class LocalInferDatasetIdTests(unittest.TestCase):
+    def test_two_seg_local_id(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("aishell1__v1.0.2"),
+            "aishell1__v1.0.2",
+        )
+
+    def test_three_seg_projection_id(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("aishell1__v1.0.2__asr"),
+            "aishell1__v1.0.2__asr",
+        )
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("duo_ds__v1.0.0__tts"),
+            "duo_ds__v1.0.0__tts",
+        )
+
+    def test_unversioned_and_task(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("flat_ds__unversioned"),
+            "flat_ds__unversioned",
+        )
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("flat_ds__unversioned__asr"),
+            "flat_ds__unversioned__asr",
+        )
+
+    def test_short_alias_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not "):
+            resolve_prediction_source._local_dataset_id("aishell1")
 
 
 if __name__ == "__main__":

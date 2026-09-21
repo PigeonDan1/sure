@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
 """Shared dataset-alias resolution for /sure_infer and /sure_eval.
 
-Both skills need to accept a short dataset alias such as ``aishell1`` and
-resolve it to the fully qualified, versioned dataset id that /sure_infer
-actually writes artifacts under, e.g. ``aishell1__v1.0.2__asr``.
-Source-root pipelines carry the same shape, e.g.
-``demo_speech_zh_test__v1.0.2``; the same prefix-match rule applies
-regardless of how many ``__``-separated segments the id has.
+Short aliases such as ``aishell1`` resolve to the unique fully qualified
+projection id on disk, e.g. ``aishell1__v1.0.2__asr`` (3-seg formal id after
+multi-task prepare). Source-root pipelines use the same prefix rule for
+``source__version`` and ``source__version__task``.
 
-/sure_infer already implements this rule for its own dataset directory in
-``sure_eval.datasets.dataset_manager.DatasetManager._existing_jsonl_for_dataset``.
-/sure_eval needs the identical rule applied to a different directory (its
-own already-generated predictions, not the source dataset JSONL files), so
-the rule is extracted here as a single, filesystem-agnostic implementation
-that both call sites use. This is the one implementation of the rule; do not
-re-implement it elsewhere.
+Used by DatasetManager JSONL lookup and any caller that maps a short name
+onto a set of known stems. Do not re-implement the prefix rule elsewhere.
 """
 
 from __future__ import annotations

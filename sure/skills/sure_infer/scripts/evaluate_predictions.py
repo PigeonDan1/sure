@@ -1391,7 +1391,19 @@ def _source_fallback_names(jsonl_path: str | Path | None) -> list[str]:
 
 
 def _report_dataset_name(row: dict[str, Any], jsonl_path: str | Path | None) -> str | None:
-    """Return the report identity without leaking a task projection suffix."""
+    """Report dataset name: keep per-task projection id when present (3-seg).
+
+    Aligns with GitLab ``1d215ea``: formal identity is the projection stem
+    (``source__version__task``), not a peeled ``source__version``. Source
+    metadata remains on the report row for SOTA fallback / provenance.
+    """
+    dataset = row.get("dataset")
+    if dataset is not None and str(dataset).strip():
+        return str(dataset).strip()
+    if jsonl_path:
+        stem = Path(jsonl_path).stem
+        if stem:
+            return stem
     source_fields = _dataset_source_fields(jsonl_path)
     row_source = row.get("source")
     if isinstance(row_source, dict):
@@ -1400,8 +1412,7 @@ def _report_dataset_name(row: dict[str, Any], jsonl_path: str | Path | None) -> 
     version_id = str(source_fields.get("version_id") or "").strip()
     if source_name and version_id:
         return f"{source_name}__{version_id}"
-    dataset = row.get("dataset")
-    return str(dataset) if dataset is not None else None
+    return None
 
 
 def _report_rps_payload(rps: Any, dataset_name: str | None) -> Any:

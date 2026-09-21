@@ -33,9 +33,16 @@ APPROVED_RESULTS_ROOT = (
 LOCAL_RESULTS_ROOT = Path(__file__).resolve().parents[4] / "sure" / "results"
 LOCAL_BUNDLE_FILES = ("protocol.yaml", "prediction_generation_status.json", "predictions")
 ALLOWED_PROTOCOLS = frozenset({"standard_system", "strict_core"})
+# Approved NFS reval still requests 2-seg source__version (GitLab reval surface).
 DATASET_ID_RE = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)__(?P<version>v[0-9][A-Za-z0-9.-]*)$")
-# A local bundle may carry <name>__unversioned; only the approved NFS path insists on a v-prefixed version.
-LOCAL_DATASET_ID_RE = re.compile(r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)__(?P<version>[A-Za-z0-9][A-Za-z0-9.-]*)$")
+# Local /sure_infer bundles use formal projection ids: source__version or
+# source__version__task (3-seg after multi-task prepare). unversioned allowed.
+LOCAL_DATASET_ID_RE = re.compile(
+    r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)__(?P<version>[A-Za-z0-9][A-Za-z0-9.-]*)"
+    r"(?:__(?P<task>[A-Za-z0-9][A-Za-z0-9_-]*))?$"
+)
+# Peel optional task suffix when reading approved report rows back to 2-seg
+# source identity for NFS set matching (same as GitLab resolve_prediction_source).
 LEGACY_VERSION_RE = re.compile(
     r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*?)(?:__|_)(?P<version>v[0-9][A-Za-z0-9.-]*)(?:__[A-Za-z0-9_-]+)?$"
 )
@@ -148,10 +155,14 @@ def _model_fingerprint(model_dir: Path, verdict_path: str) -> str:
 
 
 def _local_dataset_id(value: str) -> str:
+    """Canonical local-bundle dataset id (2-seg or 3-seg projection stem)."""
     value = value.strip()
     if LOCAL_DATASET_ID_RE.fullmatch(value):
         return value
-    raise ValueError(f"requested dataset identity {value!r} is not <dataset_name>__<version_id>")
+    raise ValueError(
+        f"requested dataset identity {value!r} is not "
+        "<dataset_name>__<version_id>[__<task>]"
+    )
 
 
 def _is_local_bundle(path: Path) -> bool:
@@ -219,7 +230,10 @@ def _local_infer_payload(
         raise ValueError(f"unsupported protocol {protocol_id!r}; expected {sorted(ALLOWED_PROTOCOLS)}")
     requested_datasets = _split_values(args.datasets)
     if not requested_datasets:
-        raise ValueError("--datasets requires the complete dataset__version set of the inference run")
+        raise ValueError(
+            "--datasets requires the complete projection id set of the inference run "
+            "(source__version or source__version__task)"
+        )
     requested = sorted(_local_dataset_id(item) for item in requested_datasets)
     if len(requested) != len(set(requested)):
         raise ValueError("requested datasets contain duplicate canonical identities")
