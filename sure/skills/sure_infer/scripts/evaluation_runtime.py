@@ -127,6 +127,9 @@ def _engine_pyproject_sha256(pyproject: Path) -> str:
     two files apart by line endings alone, which no lockfile depends on. An
     LF checkout hashes to exactly what it did before. Only a CRLF pair is a
     line ending here; a lone CR is content and stays in the digest.
+
+    What that makes the digest mean, and what it does not settle when two of
+    them are compared, is written up in docs/evaluation_engine.md.
     """
     return hashlib.sha256(pyproject.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 

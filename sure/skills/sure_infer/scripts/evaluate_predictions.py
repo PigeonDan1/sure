@@ -1552,6 +1552,10 @@ def _standard_report_row_v1(
                 "unit": _metric_unit(metric),
                 "display": _metric_display(metric, score),
                 "higher_is_better": not _is_lower_better_metric(metric),
+                # Counterpart of score_normalization in sample_reports/: this
+                # score comes out of the route, which normalizes both sides
+                # before scoring them over the whole corpus.
+                "score_normalization": "pipeline",
                 "score_key": (row.get("result") or {}).get("score_key") if isinstance(row.get("result"), dict) else "score",
             },
             "baseline": None,
@@ -1831,6 +1835,13 @@ def _write_sample_report(
                     total = detail["all"]
                     errors = detail["sub"] + detail["ins"] + detail["del"]
                     row["score"] = round(errors / total, 6) if total > 0 else 0.0
+                    # This is the raw dataset reference against the raw prediction:
+                    # the route's normalization node never runs here, and the rate
+                    # covers one sample. The dataset score the reader sees next to
+                    # it is normalized text scored over the whole corpus, so the
+                    # two are not the same scale. Label both rather than silently
+                    # invite the comparison.
+                    row["score_normalization"] = "none"
                     row["counts"] = {
                         "all": detail["all"],
                         "cor": detail["cor"],
