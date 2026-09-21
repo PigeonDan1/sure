@@ -120,7 +120,9 @@ export function resolveOutputDir(args: string): OutputDirResolution {
 	if (!isAbsolute(requested)) {
 		return {
 			ok: false,
-			error: `output_dir must be an absolute path, for example output_dir=${join(dirname(NFS_ROOT), "my_results")} (got "${requested}")`,
+			// resolve(), not join(): with no site policy NFS_ROOT has no directory
+			// part, and the example has to stay absolute like the rule it states.
+			error: `output_dir must be an absolute path, for example output_dir=${resolve(dirname(NFS_ROOT), "my_results")} (got "${requested}")`,
 		};
 	}
 	const dir = resolve(requested);
