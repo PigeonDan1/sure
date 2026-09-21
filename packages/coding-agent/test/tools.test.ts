@@ -1201,6 +1201,21 @@ describe("edit tool fuzzy matching", () => {
 		expect(content).toBe("const x = 'changed';\nconst y = 'other';\n");
 	});
 
+	it("should accept an oldText that is exactly unique but collides after fuzzy normalization", async () => {
+		const testFile = join(testDir, "exact-unique.txt");
+		// The two lines differ only in their quote characters, so they are the same
+		// after fuzzy normalization while the ASCII one occurs exactly once.
+		const originalContent = 'const a = "x";\nconst a = “x”;\n';
+		writeFileSync(testFile, originalContent);
+
+		await editTool.execute("test-fuzzy-exact-unique", {
+			path: testFile,
+			edits: [{ oldText: 'const a = "x";', newText: 'const a = "y";' }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe('const a = "y";\nconst a = “x”;\n');
+	});
+
 	it("should still fail when text is not found even with fuzzy matching", async () => {
 		const testFile = join(testDir, "no-match.txt");
 		writeFileSync(testFile, "completely different content\n");

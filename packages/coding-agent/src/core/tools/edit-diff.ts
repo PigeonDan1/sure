@@ -246,10 +246,13 @@ export function fuzzyFindText(content: string, oldText: string): FuzzyMatchResul
 	};
 }
 
-function countOccurrences(content: string, oldText: string): number {
-	const fuzzyContent = normalizeForFuzzyMatch(content);
-	const fuzzyOldText = normalizeForFuzzyMatch(oldText);
-	return fuzzyContent.split(fuzzyOldText).length - 1;
+function countOccurrences(content: string, oldText: string, usedFuzzyMatch: boolean): number {
+	// Count in the space the match was made in. Counting an exact match in fuzzy
+	// space would reject text that is unique in the file just because two
+	// normalized forms collide.
+	const haystack = usedFuzzyMatch ? normalizeForFuzzyMatch(content) : content;
+	const needle = usedFuzzyMatch ? normalizeForFuzzyMatch(oldText) : oldText;
+	return haystack.split(needle).length - 1;
 }
 
 function getNotFoundError(path: string, editIndex: number, totalEdits: number): Error {
@@ -327,7 +330,7 @@ export function applyEditsToNormalizedContent(
 			throw getNotFoundError(path, i, normalizedEdits.length);
 		}
 
-		const occurrences = countOccurrences(replacementBaseContent, edit.oldText);
+		const occurrences = countOccurrences(replacementBaseContent, edit.oldText, matchResult.usedFuzzyMatch);
 		if (occurrences > 1) {
 			throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
 		}
