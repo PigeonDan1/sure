@@ -513,6 +513,36 @@ describe("hooks.ts readLogTail", () => {
 		expect(tail).toEqual(["progress 10%", "progress 50%", "progress 100%", "y".repeat(20), "last line"].slice(-4));
 		expect(readLogTail(join(f.runDir, "missing.log"), { lines: 4, lineChars: 20, seekBytes: 600 })).toEqual([]);
 	});
+
+	it("agrees with every shared vector in fixtures/log_tail_vectors.json", () => {
+		// digest.py read_log_tail is the authority (python test_digest.py reads the same file):
+		// it writes the tail into run_digest.json while these hooks only match against it, so a
+		// tail that differs here makes the digest disagree with what the injection matched.
+		const raw = JSON.parse(
+			readFileSync(join(RUNTIME_DIR, "memory", "fixtures", "log_tail_vectors.json"), "utf-8"),
+		) as {
+			schema: string;
+			vectors: {
+				name: string;
+				text: string;
+				limits: { lines: number; line_chars: number; seek_bytes: number };
+				expected: string[];
+			}[];
+		};
+		expect(raw.schema).toBe("sure.memory.log_tail_vectors.v1");
+		expect(raw.vectors.length).toBeGreaterThanOrEqual(11);
+		const f = fixture("log-tail-vectors");
+		const path = join(f.runDir, "artifacts", "vector.log");
+		for (const vector of raw.vectors) {
+			writeFileSync(path, Buffer.from(vector.text, "utf-8"));
+			const limits = {
+				lines: vector.limits.lines,
+				lineChars: vector.limits.line_chars,
+				seekBytes: vector.limits.seek_bytes,
+			};
+			expect(readLogTail(path, limits), vector.name).toEqual(vector.expected);
+		}
+	});
 });
 
 describe("hooks.ts resolveUnitLogPath", () => {

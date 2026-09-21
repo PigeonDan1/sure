@@ -1,0 +1,17 @@
+{
+  "schema": "sure.memory.log_tail_vectors.v1",
+  "note": "Shared by digest.read_log_tail (python) and hooks.ts readLogTail. Python is the authority: it writes the tail into run_digest.json, the hooks only match against it. `text` is written to a file as UTF-8 and read back with `limits`; both sides must return `expected`. Rules: split on \\r\\n, \\r and \\n; drop the first piece when the seek window started mid-file (it is torn); drop trailing empty pieces only, so a blank line between records survives; no lines at all when `lines` <= 0; truncate each line to `line_chars` code points.",
+  "vectors": [
+    {"name": "blank-line-between-records", "text": "alpha\n\nbravo\n", "limits": {"lines": 5, "line_chars": 80, "seek_bytes": 4096}, "expected": ["alpha", "", "bravo"]},
+    {"name": "blank-line-at-the-start", "text": "\nalpha\nbravo\n", "limits": {"lines": 5, "line_chars": 80, "seek_bytes": 4096}, "expected": ["", "alpha", "bravo"]},
+    {"name": "trailing-blank-lines-dropped", "text": "alpha\nbravo\n\n\n", "limits": {"lines": 5, "line_chars": 80, "seek_bytes": 4096}, "expected": ["alpha", "bravo"]},
+    {"name": "torn-first-line-dropped-when-window-starts-mid-file", "text": "0123456789abcdef\nkeep-one\nkeep-two\n", "limits": {"lines": 5, "line_chars": 80, "seek_bytes": 20}, "expected": ["keep-one", "keep-two"]},
+    {"name": "first-line-kept-when-the-whole-file-fits", "text": "first\nsecond\n", "limits": {"lines": 5, "line_chars": 80, "seek_bytes": 4096}, "expected": ["first", "second"]},
+    {"name": "splits-on-bare-cr-and-crlf", "text": "a\rb\r\nc\n", "limits": {"lines": 5, "line_chars": 80, "seek_bytes": 4096}, "expected": ["a", "b", "c"]},
+    {"name": "no-trailing-newline", "text": "a\nb", "limits": {"lines": 5, "line_chars": 80, "seek_bytes": 4096}, "expected": ["a", "b"]},
+    {"name": "zero-lines-requested", "text": "alpha\nbravo\n", "limits": {"lines": 0, "line_chars": 80, "seek_bytes": 4096}, "expected": []},
+    {"name": "negative-lines-requested", "text": "alpha\nbravo\ncharlie\n", "limits": {"lines": -2, "line_chars": 80, "seek_bytes": 4096}, "expected": []},
+    {"name": "line-chars-counts-code-points-not-utf16-units", "text": "😀😀😀😀\n", "limits": {"lines": 5, "line_chars": 3, "seek_bytes": 4096}, "expected": ["😀😀😀"]},
+    {"name": "empty-file", "text": "", "limits": {"lines": 5, "line_chars": 80, "seek_bytes": 4096}, "expected": []}
+  ]
+}
