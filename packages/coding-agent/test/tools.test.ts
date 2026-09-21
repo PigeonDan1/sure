@@ -182,6 +182,34 @@ describe("Coding Agent Tools", () => {
 			);
 		});
 
+		it("should not count the empty string after a trailing newline as a line", async () => {
+			const testFile = join(testDir, "trailing-newline.txt");
+			const lines = Array.from({ length: 2500 }, (_, i) => `Line ${i + 1}`);
+			writeFileSync(testFile, `${lines.join("\n")}\n`);
+
+			const result = await readTool.execute("test-call-trailing-count", { path: testFile });
+
+			expect(getTextOutput(result)).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]");
+		});
+
+		it("should show error when offset is one past the last line of a file ending in a newline", async () => {
+			const testFile = join(testDir, "trailing-newline-offset.txt");
+			writeFileSync(testFile, "Line 1\nLine 2\nLine 3\n");
+
+			await expect(readTool.execute("test-call-trailing-offset", { path: testFile, offset: 4 })).rejects.toThrow(
+				/Offset 4 is beyond end of file \(3 lines total\)/,
+			);
+		});
+
+		it("should not report more lines when the limit covers a file ending in a newline", async () => {
+			const testFile = join(testDir, "trailing-newline-limit.txt");
+			writeFileSync(testFile, "Line 1\nLine 2\nLine 3\n");
+
+			const result = await readTool.execute("test-call-trailing-limit", { path: testFile, limit: 3 });
+
+			expect(getTextOutput(result)).not.toContain("more lines in file");
+		});
+
 		it("should include truncation details when truncated", async () => {
 			const testFile = join(testDir, "large-file.txt");
 			const lines = Array.from({ length: 2500 }, (_, i) => `Line ${i + 1}`);
