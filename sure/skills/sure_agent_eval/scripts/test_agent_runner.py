@@ -54,6 +54,25 @@ time.sleep(30)
 """
 
 
+# A spec-compliant MCP server: JSON-RPC over stdio is UTF-8 regardless of the
+# host's code page. Transcripts from this skill's models are rarely ASCII.
+UTF8_MCP_SERVER = """\
+import json, sys
+sys.stdout.reconfigure(encoding="utf-8")
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    request = json.loads(line)
+    if request.get("method") == "tools/call":
+        result = {"content": [{"type": "text", "text": json.dumps({"text": "\\u4f60\\u597d\\uff0c\\u4e16\\u754c"}, ensure_ascii=False)}]}
+    else:
+        result = {}
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": request.get("id"), "result": result}, ensure_ascii=False) + "\\n")
+    sys.stdout.flush()
+"""
+
+
 ENV_ECHO_MCP_SERVER = """\
 import json, os, sys
 sys.stderr.write("stub server log line\\n")
@@ -381,6 +400,10 @@ class RunAgentTests(unittest.TestCase):
         with mock.patch.object(agent_runner, "MCP_RESPONSE_TIMEOUT_SEC", 0.5):
             with self.assertRaisesRegex(RuntimeError, "timed out"):
                 self.start_stub_client(HANGING_MCP_SERVER)
+
+    def test_a_non_ascii_answer_survives_the_stdio_pipe(self) -> None:
+        client = self.start_stub_client(UTF8_MCP_SERVER)
+        self.assertEqual(agent_runner.extract_text(client.call({"audio_path": "/audio/utt0.wav"})), "你好，世界")
 
     def test_tool_result_flagged_is_error_is_rejected(self) -> None:
         client = self.start_stub_client()

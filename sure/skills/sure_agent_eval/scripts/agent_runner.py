@@ -107,10 +107,16 @@ class McpToolClient:
         # bundle's config.yaml command); leaking the harness interpreter's
         # PYTHONHOME/PYTHONPATH into the child breaks its path configuration.
         child_env = model_child_env(os.environ)
+        # JSON-RPC over stdio is UTF-8 whatever the host's code page says, and the
+        # answers this skill carries are transcripts, rarely ASCII. Without both
+        # halves the pipe decodes under the locale codec and a non-ASCII answer
+        # either explodes or, worse, lands mojibaked in predictions and gets scored.
+        child_env["PYTHONIOENCODING"] = "utf-8"
         child_env.update({str(key): str(value) for key, value in (stage.get("env") or {}).items()})
         # The server's own diagnostics belong in the run log; DEVNULL threw away
-        # the only account of why a stage model failed to start.
-        self._log = open(log_path, "a", encoding="utf-8", errors="replace") if log_path else None
+        # the only account of why a stage model failed to start. Popen takes the
+        # file's descriptor, so the child writes to it directly: open it as bytes.
+        self._log = open(log_path, "ab") if log_path else None
         self._process = subprocess.Popen(
             command,
             cwd=str(stage.get("working_dir") or stage["model_dir"]),
@@ -118,6 +124,8 @@ class McpToolClient:
             stdout=subprocess.PIPE,
             stderr=self._log or subprocess.DEVNULL,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             env=child_env,
         )
         self._next_id = 0
