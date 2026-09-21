@@ -38,6 +38,18 @@ describe("output_dir removal from skill arguments", () => {
 		);
 	});
 
+	// Both spellings are plain strings, so every platform reads both the same way.
+	it("drops a quoted directory whose path contains a space", () => {
+		expect(stripOutputDir('model=demo output_dir="C:\\Sure Runs\\job-1234" datasets=/ds/demo')).toBe(
+			"model=demo datasets=/ds/demo",
+		);
+		expect(stripOutputDir('model=demo output_dir="/home/me/My Documents/job-1234"')).toBe("model=demo");
+	});
+
+	it("leaves the arguments it keeps spelled the way they arrived", () => {
+		expect(stripOutputDir('note="two words" output_dir=/jobs/job-1234')).toBe('note="two words"');
+	});
+
 	it("leaves arguments without output_dir alone", () => {
 		expect(stripOutputDir("model=demo datasets=/ds/demo")).toBe("model=demo datasets=/ds/demo");
 	});
@@ -71,6 +83,26 @@ describe("output_dir resolution", () => {
 	it("creates the requested directory", () => {
 		const root = freshRoot("creates");
 		const target = join(root, "job-1234");
+
+		const result = resolveOutputDir(`model=demo output_dir=${target}`);
+
+		expect(result).toEqual({ ok: true, dir: target });
+		expect(existsSync(target)).toBe(true);
+	});
+
+	it("creates a quoted directory whose path contains a space", () => {
+		const root = freshRoot("quoted-space");
+		const target = join(root, "My Runs", "job-1234");
+
+		const result = resolveOutputDir(`model=demo output_dir="${target}" datasets=/ds/demo`);
+
+		expect(result).toEqual({ ok: true, dir: target });
+		expect(existsSync(target)).toBe(true);
+	});
+
+	it("creates a directory whose path contains an apostrophe", () => {
+		const root = freshRoot("apostrophe");
+		const target = join(root, "O'Brien", "job-1234");
 
 		const result = resolveOutputDir(`model=demo output_dir=${target}`);
 

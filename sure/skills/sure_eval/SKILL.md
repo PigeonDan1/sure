@@ -35,7 +35,7 @@ At `pre_start` the hook also writes `artifacts/runtime_binding.json`: the exact 
 | `metrics` | one of | Comma-separated metrics, e.g. `metrics=cer`; each is resolved to the engine's default pipeline for the dataset's task and language before anything runs, and the resolved ids are recorded in `pipeline_ids`. Exactly one of `pipeline_id` / `metrics` must be given. |
 | `protocol` | — | `standard_system` (default) or `strict_core`; must equal the source bundle's protocol. |
 | `device` | — | Evaluation device (`cpu` default). Never changes prediction identity. |
-| `output_dir` | — | Absolute directory where the harness collects this invocation's `result.json` and control artifacts. Consumed at `pre_start`; the evaluation batch itself always lands in the source bundle. Must be outside every configured `forbidden_output_roots` entry and writable. |
+| `output_dir` | — | Absolute directory where the harness collects this invocation's `result.json` and control artifacts. Consumed at `pre_start`; the evaluation batch itself always lands in the source bundle. Must be outside every configured `forbidden_output_roots` entry and writable. Quote the value when the path contains spaces: `output_dir="/data/My Runs/job"`. |
 
 `reuse_predictions_from`, `model_dir`, `tmp_root`, `copy_mode`, `max_samples`, `config` and `evaluation_engine_root` are rejected: they would weaken source identity, replace the pinned evaluator, or turn a full evaluation into a bounded test.
 
