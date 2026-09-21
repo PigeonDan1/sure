@@ -360,15 +360,32 @@ def infer_task(candidate: dict[str, Any], requested_task: str) -> tuple[bool, st
 
     haystack_fields = _candidate_haystack(candidate)
     if target == "auto":
-        for task_name, keywords in TASK_KEYWORDS.items():
-            for field, value in haystack_fields.items():
-                lowered = value.lower()
-                for keyword in keywords:
-                    if _keyword_matches(lowered, keyword):
-                        strength = "medium" if field == "tags" else "weak"
-                        ev.append(evidence(source, field, keyword, strength, url))
-                        return True, task_name, 0.72 if strength == "medium" else 0.55, ev, field
-        return False, "auto", 0.0, ev, ""
+        # A declared tag outranks any free-text mention; competing tasks inside the
+        # winning tier are reported, never guessed between.
+        hits = [
+            (field, task_name, keyword)
+            for task_name, keywords in TASK_KEYWORDS.items()
+            for field, value in haystack_fields.items()
+            for keyword in keywords
+            if _keyword_matches(value, keyword)
+        ]
+        tagged = [hit for hit in hits if hit[0] == "tags"]
+        best = tagged or hits
+        if not best:
+            return False, "auto", 0.0, ev, ""
+        first_hit: dict[str, str] = {}
+        for field, task_name, keyword in best:
+            first_hit.setdefault(task_name, f"{task_name} from {field} ({keyword})")
+        if len(first_hit) > 1:
+            raise ValueError(
+                f"cannot infer a task for {candidate.get('model_id') or 'this candidate'}: "
+                + ", ".join(first_hit[name] for name in sorted(first_hit))
+                + "; pass --task explicitly."
+            )
+        field, task_name, keyword = best[0]
+        strength = "medium" if field == "tags" else "weak"
+        ev.append(evidence(source, field, keyword, strength, url))
+        return True, task_name, 0.72 if strength == "medium" else 0.55, ev, field
 
     keywords = TASK_KEYWORDS.get(target, (target,))
     for field, value in haystack_fields.items():
