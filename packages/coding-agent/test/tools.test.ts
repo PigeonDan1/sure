@@ -898,6 +898,33 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain(".hidden-file");
 			expect(output).toContain(".hidden-dir/");
 		});
+
+		it("should list entries that cannot be stat'd, without a type suffix", async () => {
+			// A broken symlink is the real-world case: readdir returns it, stat rejects.
+			// Injected operations reproduce it identically on every platform.
+			const tool = createLsToolDefinition(testDir, {
+				operations: {
+					exists: () => true,
+					readdir: () => ["broken-link", "real-dir", "real-file"],
+					stat: (absolutePath: string) => {
+						if (absolutePath.endsWith("broken-link")) {
+							throw Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" });
+						}
+						return { isDirectory: () => !absolutePath.endsWith("real-file") };
+					},
+				},
+			});
+
+			const result = await tool.execute(
+				"test-ls-broken-link",
+				{ path: testDir },
+				undefined,
+				undefined,
+				fakeCtx(testDir),
+			);
+
+			expect(getTextOutput(result).split("\n")).toEqual(["broken-link", "real-dir/", "real-file"]);
+		});
 	});
 });
 
