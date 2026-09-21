@@ -96,8 +96,6 @@ export interface CredentialStore {
 /** Environment access for auth resolution. Injectable for tests and browsers. */
 export interface AuthContext {
 	env(name: string): Promise<string | undefined>;
-	/** Check whether a file exists. Supports a leading `~`. Always false in browsers. */
-	fileExists(path: string): Promise<boolean>;
 }
 
 /** Result of resolving auth for a model. */
