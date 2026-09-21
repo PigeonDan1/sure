@@ -84,7 +84,8 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 
 	// Premature stream endings from SDKs and transports. Anthropic can throw
 	// "stream ended without ..." and "Anthropic stream ended before message_stop"
-	// (#4433); Bedrock/Smithy can throw an HTTP/2 no-response error (#3594).
+	// (#4433); the HTTP/2 no-response error is Bedrock/Smithy wording, which now
+	// reaches us only through a gateway fronting it (#3594).
 	"ended without",
 	"stream ended before message_stop",
 	"stream ended before a terminal response event",
@@ -94,8 +95,8 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	// retry policy so callers can surface/abort the backoff (#1123).
 	"retry delay",
 
-	// Explicit retry guidance emitted mid-stream by OpenAI Responses and Bedrock
-	// stream exceptions (#6019).
+	// Explicit retry guidance emitted mid-stream by OpenAI Responses, and by
+	// Bedrock stream exceptions a gateway relays (#6019).
 	"you can retry your request",
 	"try your request again",
 	"please retry your request",

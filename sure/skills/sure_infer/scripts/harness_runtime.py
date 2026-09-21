@@ -35,7 +35,10 @@ def _validate_binding(
     lock_sha256: str,
     manifest_value: str,
 ) -> dict[str, Any]:
-    python = Path(python_value).expanduser().resolve()
+    # Resolve the directory only: in a venv bin/python is a symlink to the base
+    # interpreter, and following it would always land outside the runtime root.
+    python = Path(python_value).expanduser()
+    python = python.parent.resolve() / python.name
     manifest_path = Path(manifest_value).expanduser().resolve()
     if not python.is_file() or not os.access(python, os.X_OK):
         raise HarnessRuntimeBindingError(f"HARNESS_RUNTIME_NOT_READY: Python is not executable: {python}")

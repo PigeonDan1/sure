@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { requireSitePolicy } from "../sure/site/loader.ts";
@@ -17,24 +18,28 @@ function isWithin(path: string, root: string): boolean {
 // ACL-denied directory, and a path that is a plain file, writable. Creating and
 // removing a directory is the one question all three platforms answer honestly.
 function isWritable(root: string): boolean {
-	const probe = join(root, `.sure-site-check-${process.pid}`);
+	// A random name, not process.pid: the probe below may outlive its run, and
+	// a pid is reused, so a stale probe would collide with a later run.
+	const probe = join(root, `.sure-site-check-${randomUUID()}`);
 	try {
 		mkdirSync(probe);
-		return true;
-	} catch {
-		return false;
-	} finally {
-		// Removing the probe must never fail the check: force only swallows
-		// ENOENT, so a handle held by a scanner or an indexer, or a drop-box ACL
-		// that grants add-subdirectory but denies delete-child, raises EPERM
-		// here. Retry a few times, then leave the probe behind rather than abort
-		// a command whose whole contract is that it does not fail.
-		try {
-			rmSync(probe, { recursive: true, force: true, maxRetries: 3 });
-		} catch {
-			// Deliberately ignored; see above.
-		}
+	} catch (error) {
+		// EEXIST answers the question as well as a fresh directory does: that
+		// name is already a directory under the root, so the root takes writes.
+		// Leave it alone below; it belongs to whichever run created it.
+		return (error as NodeJS.ErrnoException).code === "EEXIST";
 	}
+	// Removing the probe we just created must never fail the check: force only
+	// swallows ENOENT, so a handle held by a scanner or an indexer, or a
+	// drop-box ACL that grants add-subdirectory but denies delete-child, raises
+	// EPERM here. Retry a few times, then leave the probe behind rather than
+	// abort a command whose whole contract is that it does not fail.
+	try {
+		rmSync(probe, { recursive: true, force: true, maxRetries: 3 });
+	} catch {
+		// Deliberately ignored; see above.
+	}
+	return true;
 }
 
 try {

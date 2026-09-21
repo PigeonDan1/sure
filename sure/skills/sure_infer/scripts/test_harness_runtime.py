@@ -51,6 +51,24 @@ class HarnessRuntimeBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(HarnessRuntimeBindingError, "disagrees"):
             load_harness_runtime(self.env)
 
+    def test_accepts_a_venv_interpreter_that_is_a_symlink(self) -> None:
+        base = Path(self.temp.name) / "base" / "bin" / "python3.11"
+        base.parent.mkdir(parents=True)
+        base.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        base.chmod(0o755)
+        python = self.root / "bin" / "python3.11"
+        try:
+            python.symlink_to(base)
+        except OSError as error:
+            self.skipTest(f"cannot create a symlink here: {error}")
+        self.env["HARNESS_PYTHON_BIN"] = str(python)
+        binding = load_harness_runtime(self.env)
+        # The venv entry point, not the base interpreter its symlink leads to.
+        self.assertEqual(Path(binding["python_executable"]).name, "python3.11")
+        self.assertTrue(
+            Path(binding["python_executable"]).is_relative_to(Path(binding["runtime_root"]))
+        )
+
     def test_rejects_python_outside_runtime(self) -> None:
         outside = Path(self.temp.name) / "python"
         outside.write_text("#!/bin/sh\n", encoding="utf-8")
