@@ -289,30 +289,69 @@ export function runIdOf(ctx: SureHookContext): string {
 	return basename(ctx.runDir);
 }
 
+/** One argument: `value` with its quotes removed, `source` as it was written. */
+interface ArgToken {
+	value: string;
+	source: string;
+}
+
+/** Split on whitespace, but a double-quoted run stays one argument. */
+function splitArgs(args: string): ArgToken[] {
+	const tokens: ArgToken[] = [];
+	let value = "";
+	let start = -1;
+	let inQuote = false;
+	const flush = (end: number): void => {
+		if (value) {
+			tokens.push({ value, source: args.slice(start, end) });
+		}
+		value = "";
+		start = -1;
+	};
+	for (let i = 0; i < args.length; i++) {
+		const char = args[i];
+		if (char === '"') {
+			if (start < 0) start = i;
+			inQuote = !inQuote;
+		} else if (!inQuote && /\s/.test(char)) {
+			flush(i);
+		} else {
+			if (start < 0) start = i;
+			value += char;
+		}
+	}
+	flush(args.length);
+	return tokens;
+}
+
 /**
- * Drop `output_dir` from a skill's argument string. Same token rules as
- * splitOutputDir in packages/coding-agent/src/core/sure/output-dir.ts (copied,
- * not imported: hooks must not import from packages/). Used by pre_start so the
- * text matched against fact triggers never carries the harness-owned path.
+ * Drop `output_dir` from a skill's argument string. A double-quoted value stays
+ * one argument and every argument that survives keeps the text it arrived as,
+ * matching splitOutputDir in packages/coding-agent/src/core/sure/output-dir.ts
+ * (copied, not imported: hooks must not import from packages/; the two are held
+ * to one table of cases by "hooks.ts stripOutputDir" in
+ * packages/coding-agent/test/suite/sure-memory-hooks-flow.test.ts). Used by
+ * pre_start so the text matched against fact triggers never carries the
+ * harness-owned path.
  */
 export function stripOutputDir(args: string): string {
-	const tokens = args.trim().split(/\s+/).filter(Boolean);
+	const tokens = splitArgs(args);
 	const rest: string[] = [];
 	for (let i = 0; i < tokens.length; i++) {
 		const token = tokens[i];
-		const eq = token.indexOf("=");
+		const eq = token.value.indexOf("=");
 		if (eq >= 0) {
-			if (token.slice(0, eq) !== "output_dir") {
-				rest.push(token);
+			if (token.value.slice(0, eq) !== "output_dir") {
+				rest.push(token.source);
 			}
 			continue;
 		}
-		if (token.replace(/^--?/, "") !== "output_dir") {
-			rest.push(token);
+		if (token.value.replace(/^--?/, "") !== "output_dir") {
+			rest.push(token.source);
 			continue;
 		}
 		const next = tokens[i + 1];
-		if (next !== undefined && !next.startsWith("-")) {
+		if (next !== undefined && !next.value.startsWith("-")) {
 			i++; // the bare form consumes its value token
 		}
 	}

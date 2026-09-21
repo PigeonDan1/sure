@@ -26,6 +26,7 @@ import {
 	stripOutputDir,
 } from "../../../../sure/runtime/memory/hooks.ts";
 import { loadMemoryConfig, readEventCount } from "../../../../sure/runtime/memory/match.ts";
+import { stripOutputDir as harnessStripOutputDir } from "../../src/core/sure/output-dir.ts";
 import type { SureHookContext } from "../../src/core/sure/types.ts";
 
 // Task 12: hooks.ts orchestration. Every fixture is a fake repo under
@@ -386,19 +387,34 @@ describe("hooks.ts python resolution and ids", () => {
 	});
 });
 
-describe("hooks.ts stripOutputDir", () => {
-	it("drops output_dir in its key=value, --output_dir value and bare forms, keeping every other token", () => {
-		expect(stripOutputDir("model_id=x output_dir=/tmp/o task_type=asr")).toBe("model_id=x task_type=asr");
-		expect(stripOutputDir("model=x --output_dir /tmp/o datasets=a@v1")).toBe("model=x datasets=a@v1");
-		expect(stripOutputDir("model=x output_dir /tmp/o")).toBe("model=x");
-		expect(stripOutputDir("model=x -output_dir /tmp/o rest")).toBe("model=x rest");
-	});
+// hooks.ts must not import from packages/, so the harness keeps a second
+// stripOutputDir and nothing but this table stops the two from drifting: the
+// harness copy learned about quotes and this one had stayed behind.
+const STRIP_OUTPUT_DIR_CASES: [args: string, expected: string][] = [
+	// key=value, --output_dir value and the bare form, keeping every other token
+	["model_id=x output_dir=/tmp/o task_type=asr", "model_id=x task_type=asr"],
+	["model=x --output_dir /tmp/o datasets=a@v1", "model=x datasets=a@v1"],
+	["model=x output_dir /tmp/o", "model=x"],
+	["model=x -output_dir /tmp/o rest", "model=x rest"],
+	// does not eat a following flag, and normalises whitespace
+	["a=1 --output_dir --verbose", "a=1 --verbose"],
+	["  a=1   b=2 ", "a=1 b=2"],
+	["", ""],
+	["output_dir=/tmp/o", ""],
+	// a quoted path holds together, in either spelling and in either form
+	['model=demo output_dir="C:\\Sure Runs\\job-1234" datasets=/ds/demo', "model=demo datasets=/ds/demo"],
+	['model=demo output_dir="/home/me/My Documents/job-1234"', "model=demo"],
+	['model=demo --output_dir "/home/me/My Documents/job-1234" note=x', "model=demo note=x"],
+	// an argument that stays keeps the text it arrived as
+	['note="two words" output_dir=/tmp/o', 'note="two words"'],
+	// an apostrophe is an ordinary character in a path
+	["model=x output_dir=C:\\Users\\O'Brien\\out", "model=x"],
+];
 
-	it("does not eat a following flag, and normalises whitespace", () => {
-		expect(stripOutputDir("a=1 --output_dir --verbose")).toBe("a=1 --verbose");
-		expect(stripOutputDir("  a=1   b=2 ")).toBe("a=1 b=2");
-		expect(stripOutputDir("")).toBe("");
-		expect(stripOutputDir("output_dir=/tmp/o")).toBe("");
+describe("hooks.ts stripOutputDir", () => {
+	it.each(STRIP_OUTPUT_DIR_CASES)("both copies strip %j the same way", (args, expected) => {
+		expect(stripOutputDir(args)).toBe(expected);
+		expect(harnessStripOutputDir(args)).toBe(expected);
 	});
 });
 
