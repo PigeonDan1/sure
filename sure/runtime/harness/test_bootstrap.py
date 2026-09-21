@@ -9,12 +9,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 for _parent in Path(__file__).resolve().parents:
     if (_parent / "sure" / "runtime" / "harness" / "bootstrap.py").is_file():
         sys.path.insert(0, str(_parent))
         break
 
+from sure.runtime.harness import bootstrap
 from sure.runtime.harness.bootstrap import (
     HarnessRuntimeError,
     _load_spec,
@@ -65,6 +67,37 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         self.assertEqual(manifest["materialization"], "uv_venv")
         self.assertEqual(len(manifest["base_python_sha256"]), 64)
         self.assertEqual(manifest["runtime_id"], first["runtime_id"])
+
+
+class HarnessRuntimeSpecTests(unittest.TestCase):
+    """A malformed runtime.json must fail the way the launcher can report.
+
+    main() turns HarnessRuntimeError into HARNESS_RUNTIME_NOT_READY; anything
+    else reaches the caller as a traceback.
+    """
+
+    def test_a_malformed_materialization_version_raises_a_harness_error(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        spec_dir = Path(temporary.name)
+        (spec_dir / "requirements.lock.txt").write_text("", encoding="utf-8")
+        # int() raises ValueError for a string it cannot read and TypeError for
+        # the JSON array or object that `or 0` lets through when it is non-empty.
+        for value in ("three", "1.5", ["1"], {"version": 1}):
+            with self.subTest(value=value):
+                (spec_dir / "runtime.json").write_text(
+                    json.dumps({
+                        "schema": "sure.harness.runtime.spec.v1",
+                        "harness_version": "v1",
+                        "python": "3.11",
+                        "lock_file": "requirements.lock.txt",
+                        "materialization_version": value,
+                    }),
+                    encoding="utf-8",
+                )
+                with mock.patch.object(bootstrap, "SPEC_DIR", spec_dir):
+                    with self.assertRaises(HarnessRuntimeError):
+                        _load_spec()
 
 
 class HarnessRuntimeImportProbeTests(unittest.TestCase):
