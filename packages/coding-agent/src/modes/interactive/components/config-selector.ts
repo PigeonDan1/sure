@@ -3,7 +3,7 @@
  */
 
 import { homedir } from "node:os";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import {
 	type Component,
 	Container,
@@ -851,15 +851,17 @@ class ResourceList implements Component, Focusable {
 		return scope === "project" ? join(this.cwd, CONFIG_DIR_NAME) : this.agentDir;
 	}
 
+	// Stored patterns are parsed as POSIX on every platform, so the separator the settings
+	// file receives must not depend on the platform that wrote it.
 	private getResourcePattern(item: ResourceItem): string {
 		const scope = item.metadata.scope as "user" | "project";
 		const baseDir = item.metadata.baseDir ?? this.getTopLevelBaseDir(scope);
-		return relative(baseDir, item.path);
+		return relative(baseDir, item.path).split(sep).join("/");
 	}
 
 	private getPackageResourcePattern(item: ResourceItem): string {
 		const baseDir = item.metadata.baseDir ?? dirname(item.path);
-		return relative(baseDir, item.path);
+		return relative(baseDir, item.path).split(sep).join("/");
 	}
 }
 
