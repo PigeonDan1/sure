@@ -659,7 +659,15 @@ def append_staging_bundle(
 
 
 def _run(command: list[str], *, cwd: Path = SCRIPT_DIR, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True, check=False)
+    # Both ends of the pipe must name UTF-8. The children print artifact paths
+    # and report text that leave ASCII, and this message is the only place a
+    # caller ever sees them: left on the host code page the parent turns the
+    # diagnosis into U+FFFD, and once the parent is pinned a child still on the
+    # code page makes it a UnicodeDecodeError that hides the failure entirely.
+    child_env = {**(os.environ if env is None else env), "PYTHONIOENCODING": "utf-8"}
+    completed = subprocess.run(
+        command, cwd=cwd, env=child_env, capture_output=True, text=True, encoding="utf-8", check=False
+    )
     if completed.returncode != 0:
         raise RuntimeError(
             "command failed "
