@@ -137,16 +137,26 @@ def discover_engine_capabilities(engine_root: Path, task: str, language: str) ->
     supported_metrics: list[str] = []
     try:
         spec = build_pipeline_spec(engine_task, language=language or None)
-        route_choices = [dict(item) for item in spec.get("route_choices") or [] if isinstance(item, dict)]
-        for route in route_choices:
-            metric = str(route.get("metric") or "").strip()
-            if not metric:
-                continue
-            route_language = route.get("language")
-            if route_language in (None, "", language):
-                supported_metrics.append(metric)
-    except Exception:
-        route_choices = []
+    except ValueError:
+        # The engine raises ValueError to say no route is configured for this
+        # task/language. That is an answer -- no routes -- not a failure.
+        spec = {}
+    except Exception as exc:
+        # Anything else (the engine's lazy task imports, a partial checkout, a
+        # sure_eval package shadowing it) means the engine could not answer.
+        # Reporting the defaults here is indistinguishable from a real answer.
+        raise RuntimeError(
+            f"sure-evaluation engine at {engine_root} could not describe task "
+            f"{engine_task!r} (language={language!r}): {type(exc).__name__}: {exc}"
+        ) from exc
+    route_choices = [dict(item) for item in spec.get("route_choices") or [] if isinstance(item, dict)]
+    for route in route_choices:
+        metric = str(route.get("metric") or "").strip()
+        if not metric:
+            continue
+        route_language = route.get("language")
+        if route_language in (None, "", language):
+            supported_metrics.append(metric)
 
     for row in _catalog_entries(engine_root, task, language):
         metric = str(row.get("metric") or "").strip()
