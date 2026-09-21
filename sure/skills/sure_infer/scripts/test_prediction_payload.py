@@ -141,6 +141,27 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
                 _projection, normalized = gp._normalize_prediction_payload(payload, task=task)
                 self.assertEqual(normalized, expected)
 
+    def test_class_index_zero_is_written_as_a_prediction(self) -> None:
+        # Class 0 is the first class of every binary task; dropping it as
+        # "no prediction" scores every correct class-0 answer wrong.
+        for task in ("CLASSIFICATION", "SER", "GR", "SLU"):
+            with self.subTest(task=task):
+                prediction, _normalized = gp._normalize_prediction_payload({"label": 0}, task=task)
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    txt = root / "predictions.txt"
+                    gp._write_prediction_snapshots(
+                        samples=[{"key": "sample-1"}],
+                        prediction_path=txt,
+                        structured_prediction_path=root / "predictions.jsonl",
+                        prediction_map={"sample-1": prediction},
+                        structured_map={},
+                        canonical_dataset="demo__v1",
+                        sample_task=task,
+                        sample_language="en",
+                    )
+                    self.assertEqual(txt.read_text(encoding="utf-8"), "sample-1\t0\n")
+
     def test_audio_task_payloads_use_task_specific_engine_fields(self) -> None:
         cases = [
             ("SE", "enhanced_audio"),
