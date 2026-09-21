@@ -219,6 +219,20 @@ def _verify(binding: dict[str, Any]) -> tuple[bool, str]:
     ):
         if manifest.get(key) != binding.get(key):
             return False, f"runtime manifest {key} mismatch"
+    # The binding cannot carry this one: uv fetches whatever 3.11 it can reach,
+    # so the interpreter is not part of the runtime's identity and the manifest
+    # is the only record of which one this runtime got. Reading that record back
+    # is what makes writing it a check rather than a note -- a venv is a handful
+    # of paths pointing at an interpreter the directory does not own, and one
+    # that has been replaced underneath it is not the runtime the lock was
+    # resolved for. A manifest written before this field existed has nothing to
+    # compare and is rebuilt, exactly as a manifest missing any other field is.
+    try:
+        identity = probe(python, error=EvaluationRuntimeError)
+    except EvaluationRuntimeError as exc:
+        return False, str(exc)
+    if identity["base_python_sha256"] != manifest.get("base_python_sha256"):
+        return False, "runtime manifest base_python_sha256 mismatch"
     code = "\n".join(f"import {name}" for name in binding["required_imports"])
     # The runtime does not name the engine, so the caller supplies it, the way
     # evaluate_predictions._external_env already does for the real evaluation
@@ -287,8 +301,9 @@ def _materialize(binding: dict[str, Any]) -> None:
                     )
             log_path.write_text("\n".join(transcript), encoding="utf-8")
             # uv fetches whatever 3.11 it can find, so the manifest is the only
-            # record of which interpreter this runtime actually got. Provenance
-            # only: the binding and _verify's comparison do not carry these.
+            # record of which interpreter this runtime actually got. The binding
+            # cannot carry these; _verify reads them back off the manifest and
+            # compares them against a fresh probe of the runtime.
             identity = probe(runtime_python, error=EvaluationRuntimeError)
             manifest = {
                 **binding,

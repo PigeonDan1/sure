@@ -138,14 +138,59 @@ class EvaluationRuntimeTests(unittest.TestCase):
                 "required_imports": ["sure_eval"],
             }
             python.write_text("", encoding="utf-8")
-            manifest_path.write_text(json.dumps(binding), encoding="utf-8")
+            # The manifest, not the binding, carries the interpreter identity;
+            # _verify probes the runtime and compares it against this.
+            manifest_path.write_text(
+                json.dumps({**binding, "base_python_sha256": "d" * 64}), encoding="utf-8"
+            )
             completed = mock.Mock(returncode=0, stdout="", stderr="")
 
             with mock.patch("evaluation_runtime.subprocess.run", return_value=completed) as run:
-                ok, _ = _verify(binding)
+                with mock.patch("evaluation_runtime.probe", return_value={"base_python_sha256": "d" * 64}):
+                    ok, _ = _verify(binding)
 
         self.assertTrue(ok)
         self.assertEqual(run.call_args.kwargs["cwd"], str(engine_root))
+
+    def test_a_manifest_base_python_hash_is_checked_against_the_interpreter(self) -> None:
+        # The manifest is the only record of which interpreter uv fetched, and
+        # nothing read it back: a runtime whose base interpreter was replaced
+        # underneath it verified clean on every run.
+        with tempfile.TemporaryDirectory() as raw_root:
+            root = Path(raw_root)
+            engine_root = root / "engine"
+            engine_root.mkdir()
+            python = root / "runtime" / runtime_python_relative()
+            python.parent.mkdir(parents=True)
+            manifest_path = root / "runtime" / "runtime-manifest.json"
+            binding = {
+                "runtime_id": "sure-evaluation-test",
+                "runtime_type": "evaluation_python",
+                "runtime_version": "root-v1",
+                "materialization_version": 5,
+                "python": "3.11",
+                "python_executable": str(python),
+                "manifest_path": str(manifest_path),
+                "lock_sha256": "a" * 64,
+                "engine_root": str(engine_root),
+                "engine_commit": "b" * 40,
+                "engine_pyproject_sha256": "c" * 64,
+                "harness_runtime_id": "sure-harness-test",
+                "harness_runtime_root": str(root / "harness"),
+                "required_imports": ["sure_eval"],
+            }
+            python.write_text("", encoding="utf-8")
+            manifest_path.write_text(
+                json.dumps({**binding, "base_python_sha256": "d" * 64}), encoding="utf-8"
+            )
+            completed = mock.Mock(returncode=0, stdout="", stderr="")
+
+            with mock.patch("evaluation_runtime.subprocess.run", return_value=completed):
+                with mock.patch("evaluation_runtime.probe", return_value={"base_python_sha256": "e" * 64}):
+                    ok, reason = _verify(binding)
+
+        self.assertFalse(ok)
+        self.assertIn("base_python_sha256", reason)
 
     def test_the_materialized_manifest_records_the_interpreter_it_got(self) -> None:
         # The venv no longer borrows the approved Harness interpreter: uv fetches
@@ -182,7 +227,9 @@ class EvaluationRuntimeTests(unittest.TestCase):
         self.assertEqual(manifest["python_version"], "3.11.16")
         self.assertEqual(manifest["python_abi"], "cpython-311-x86_64-linux-gnu")
         self.assertEqual(manifest["base_python_sha256"], "d" * 64)
-        # Provenance, not contract: an older manifest without them still verifies.
+        # The identity stays out of the binding: the runtime_id does not name an
+        # interpreter, so _verify compares the manifest against a live probe
+        # rather than against the binding.
         for key in ("python_version", "python_abi", "base_python_sha256"):
             self.assertNotIn(key, binding)
 
