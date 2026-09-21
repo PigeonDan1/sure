@@ -99,7 +99,6 @@ describe("Anthropic auth token env", () => {
 						ANTHROPIC_OAUTH_TOKEN: "oauth-token",
 						ANTHROPIC_API_KEY: "api-key",
 					})[name],
-				fileExists: async () => false,
 			},
 			signal: neverAbortedSignal,
 		});
@@ -119,7 +118,6 @@ describe("Anthropic auth token env", () => {
 						ANTHROPIC_OAUTH_TOKEN: "oauth-token",
 						ANTHROPIC_API_KEY: "api-key",
 					})[name],
-				fileExists: async () => false,
 			},
 			signal: neverAbortedSignal,
 		});
@@ -148,7 +146,6 @@ describe("Anthropic auth token env", () => {
 		const models = createModels({
 			authContext: {
 				env: async (name) => (name === "ANTHROPIC_AUTH_TOKEN" ? "ctx-token" : undefined),
-				fileExists: async () => false,
 			},
 		});
 		models.setProvider(anthropicProvider());
@@ -167,7 +164,6 @@ describe("Anthropic auth token env", () => {
 		const models = createModels({
 			authContext: {
 				env: async (name) => (name === "ANTHROPIC_OAUTH_TOKEN" ? "sk-ant-oat-test" : undefined),
-				fileExists: async () => false,
 			},
 		});
 		models.setProvider(anthropicProvider());
@@ -183,7 +179,6 @@ describe("Anthropic auth token env", () => {
 		const models = createModels({
 			authContext: {
 				env: async (name) => (name === "ANTHROPIC_AUTH_TOKEN" ? "ctx-token" : undefined),
-				fileExists: async () => false,
 			},
 		});
 		models.setProvider(anthropicProvider());

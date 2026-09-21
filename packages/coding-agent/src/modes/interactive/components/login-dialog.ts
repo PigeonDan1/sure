@@ -175,28 +175,14 @@ export class LoginDialogComponent extends Container implements Focusable {
 		});
 	}
 
-	/** Show informational text before another login step. */
-	showDetails(lines: string[]): void {
-		this.contentContainer.clear();
-		this.contentContainer.addChild(new Spacer(1));
-		for (const line of lines) {
-			this.contentContainer.addChild(new Text(line, 1, 0));
-		}
-		this.tui.requestRender();
-	}
-
 	/** Show provider-owned information and links without starting an auth callback flow. */
-	showInfo(message: string, links: readonly AuthInfoLink[] = [], showCloseHint = false): void {
+	showInfo(message: string, links: readonly AuthInfoLink[] = []): void {
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("text", message), 1, 0));
 		for (const link of links) {
 			const text = link.label ? `${link.label}: ${link.url}` : link.url;
 			const hyperlink = `\x1b]8;;${link.url}\x07${text}\x1b]8;;\x07`;
 			this.contentContainer.addChild(new Text(theme.fg("accent", hyperlink), 1, 0));
-		}
-		if (showCloseHint) {
-			this.contentContainer.addChild(new Spacer(1));
-			this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to close")})`, 1, 0));
 		}
 		this.tui.requestRender();
 	}

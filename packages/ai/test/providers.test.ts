@@ -23,7 +23,6 @@ import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
 function fakeAuthContext(env: Record<string, string>): AuthContext {
 	return {
 		env: async (name) => env[name],
-		fileExists: async () => false,
 	};
 }
 

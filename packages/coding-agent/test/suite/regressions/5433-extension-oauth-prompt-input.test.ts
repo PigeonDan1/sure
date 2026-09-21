@@ -84,18 +84,6 @@ describe("LoginDialogComponent OAuth prompts", () => {
 		expect(output).toContain("Press Enter to continue:");
 	});
 
-	test("preserves setup details when showing a prompt", () => {
-		const dialog = createDialog();
-
-		dialog.showDetails(["AWS credential setup:", "providers.md"]);
-		dialog.showPrompt("Enter API key:");
-
-		const output = renderDialog(dialog).join("\n");
-		expect(output).toContain("AWS credential setup:");
-		expect(output).toContain("providers.md");
-		expect(output).toContain("Enter API key:");
-	});
-
 	test("keeps previous manual input stable when a later prompt is active", async () => {
 		const dialog = createDialog();
 
