@@ -47,6 +47,13 @@ for line in sys.stdin:
 """
 
 
+HANGING_MCP_SERVER = """\
+import sys, time
+sys.stdin.readline()
+time.sleep(30)
+"""
+
+
 def write_flat_s2tt_source(root: Path, name: str, samples: int = 2) -> Path:
     dataset_root = root / name
     dataset_root.mkdir(parents=True)
@@ -343,6 +350,11 @@ class RunAgentTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "exited while answering initialize"):
                 agent_runner.McpToolClient(dict(self.spec["stages"][0]))
         self.assertTrue(process.killed)
+
+    def test_a_server_that_never_answers_times_out(self) -> None:
+        with mock.patch.object(agent_runner, "MCP_RESPONSE_TIMEOUT_SEC", 0.5):
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                self.start_stub_client(HANGING_MCP_SERVER)
 
     def test_tool_result_flagged_is_error_is_rejected(self) -> None:
         client = self.start_stub_client()

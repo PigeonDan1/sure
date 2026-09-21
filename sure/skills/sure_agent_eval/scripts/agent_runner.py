@@ -22,8 +22,10 @@ import argparse
 import hashlib
 import json
 import os
+import queue
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from datetime import datetime, timezone
@@ -43,6 +45,10 @@ from agent_spec import render_prompt  # noqa: E402
 from sure.site.loader import load_site_policy  # noqa: E402
 from sure_eval.core.config import Config  # noqa: E402
 from sure_eval.datasets.dataset_manager import DatasetManager  # noqa: E402
+
+# Bound on one MCP response (model load included); without it a hung stage model
+# blocks the whole run, since stdout.readline() has no deadline on any platform.
+MCP_RESPONSE_TIMEOUT_SEC = 600.0
 
 EXECUTION_RESULT_SCHEMA = "sure.agent_eval.execution_result.v1"
 STATUS_SCHEMA = "sure.eval.prediction_generation_status.v2"
@@ -111,6 +117,10 @@ class McpToolClient:
             env=child_env,
         )
         self._next_id = 0
+        # select() does not work on pipes on Windows, so stdout is drained by a
+        # thread and every request waits on the queue instead of on readline().
+        self._responses: queue.Queue[str | None] = queue.Queue()
+        threading.Thread(target=self._pump_stdout, daemon=True).start()
         try:
             self._request("initialize", {})
         except Exception:
@@ -120,17 +130,31 @@ class McpToolClient:
             self._process.wait(timeout=10)
             raise
 
-    def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
-        assert self._process.stdin is not None and self._process.stdout is not None
+    def _pump_stdout(self) -> None:
+        assert self._process.stdout is not None
+        while True:
+            line = self._process.stdout.readline()
+            self._responses.put(line or None)
+            if not line:
+                return
+
+    def _request(self, method: str, params: dict[str, Any], *, timeout: float | None = None) -> dict[str, Any]:
+        assert self._process.stdin is not None
         self._next_id += 1
         request_id = self._next_id
         self._process.stdin.write(
             json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}) + "\n"
         )
         self._process.stdin.flush()
+        limit = MCP_RESPONSE_TIMEOUT_SEC if timeout is None else timeout
+        deadline = time.monotonic() + limit
         while True:
-            line = self._process.stdout.readline()
-            if not line:
+            try:
+                line = self._responses.get(timeout=max(0.0, deadline - time.monotonic()))
+            except queue.Empty:
+                self._process.kill()
+                raise RuntimeError(f"MCP {method} timed out after {limit:g}s; server killed") from None
+            if line is None:
                 raise RuntimeError(f"MCP server exited while answering {method}")
             line = line.strip()
             if not line:
@@ -159,7 +183,7 @@ class McpToolClient:
 
     def close(self) -> None:
         try:
-            self._request("shutdown", {})
+            self._request("shutdown", {}, timeout=10)
         except Exception:
             pass
         try:
