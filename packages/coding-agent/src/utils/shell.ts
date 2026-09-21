@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { spawn, spawnSync } from "child_process";
 import { getBinDir } from "../config.ts";
+import { sleep } from "./sleep.ts";
 
 export interface ShellConfig {
 	shell: string;
@@ -211,37 +212,145 @@ export function killTrackedDetachedChildren(): void {
 }
 
 /**
- * Kill a process and all its children (cross-platform)
+ * `taskkill /T` kills the tree as it existed when it took its snapshot, so a descendant spawned
+ * while the sweep is running - or one already orphaned by a parent that exited first - outlives it.
+ *
+ * Budget measured on a Windows 11 host: a `taskkill`ed process is gone 158 ms after dispatch
+ * (median of 10 samples, max 173 ms), and reading the process table costs ~1.65 s for ~350
+ * processes. Three rounds - one to find survivors, one to re-kill them and confirm, one spare -
+ * bound the check at roughly 6 s of background work per killed tree.
  */
-export function killProcessTree(pid: number): void {
-	if (process.platform === "win32") {
-		// Use the trusted System32 executable so cleanup does not depend on PATH.
+const WINDOWS_KILL_ATTEMPTS = 3;
+const WINDOWS_KILL_SETTLE_MS = 250;
+const WINDOWS_PROCESS_TABLE_TIMEOUT_MS = 10000; // ~6x the measured read
+const WINDOWS_PROCESS_TABLE_QUERY =
+	'Get-CimInstance -Query "SELECT ProcessId,ParentProcessId FROM Win32_Process" | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }';
+
+function windowsSystem32(...segments: string[]): string {
+	// Use the trusted System32 executables so cleanup does not depend on PATH.
+	return join(process.env.SystemRoot ?? "C:\\Windows", "System32", ...segments);
+}
+
+function spawnTaskkill(pids: number[]): void {
+	try {
+		const child = spawn(
+			windowsSystem32("taskkill.exe"),
+			["/F", "/T", ...pids.flatMap((pid) => ["/PID", String(pid)])],
+			{
+				stdio: "ignore",
+				detached: true,
+				windowsHide: true,
+			},
+		);
+		// A failed spawn emits "error" asynchronously; consume it to avoid crashing Node.
+		child.once("error", () => {});
+	} catch {
+		// Ignore errors if taskkill fails.
+	}
+}
+
+/** Every live process as pid -> parent pid, or null when the table cannot be read. */
+function readWindowsProcessTable(): Promise<Map<number, number> | null> {
+	return new Promise((resolve) => {
+		let settled = false;
+		let timer: NodeJS.Timeout | undefined;
+		const finish = (table: Map<number, number> | null) => {
+			if (settled) return;
+			settled = true;
+			if (timer) clearTimeout(timer);
+			resolve(table);
+		};
+
 		try {
 			const child = spawn(
-				join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"),
-				["/F", "/T", "/PID", String(pid)],
-				{
-					stdio: "ignore",
-					detached: true,
-					windowsHide: true,
-				},
+				windowsSystem32("WindowsPowerShell", "v1.0", "powershell.exe"),
+				[...POWERSHELL_ARGS, WINDOWS_PROCESS_TABLE_QUERY],
+				{ stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
 			);
-			// A failed spawn emits "error" asynchronously; consume it to avoid crashing Node.
-			child.once("error", () => {});
+			child.once("error", () => finish(null));
+			const stdout = child.stdout;
+			if (!stdout) {
+				finish(null);
+				return;
+			}
+			let output = "";
+			stdout.setEncoding("utf-8");
+			stdout.on("data", (chunk: string) => {
+				output += chunk;
+			});
+			timer = setTimeout(() => {
+				child.kill();
+				finish(null);
+			}, WINDOWS_PROCESS_TABLE_TIMEOUT_MS);
+			child.once("close", () => {
+				const table = new Map<number, number>();
+				for (const line of output.split("\n")) {
+					const [pid, parentPid] = line.trim().split(" ").map(Number);
+					if (Number.isInteger(pid) && Number.isInteger(parentPid)) table.set(pid, parentPid);
+				}
+				finish(table.size > 0 ? table : null);
+			});
 		} catch {
-			// Ignore errors if taskkill fails.
+			finish(null);
 		}
-	} else {
-		// Use SIGKILL on Unix/Linux/Mac
-		try {
-			process.kill(-pid, "SIGKILL");
-		} catch {
-			// Fallback to killing just the child if process group kill fails
-			try {
-				process.kill(pid, "SIGKILL");
-			} catch {
-				// Process already dead
+	});
+}
+
+/**
+ * Live processes whose ancestry reaches a pid we already know about. `known` grows as we go, so a
+ * descendant is still recognised once the parent that links it to the tree has itself been killed.
+ */
+function collectLiveDescendants(known: Set<number>, table: Map<number, number>): number[] {
+	let grew = true;
+	while (grew) {
+		grew = false;
+		for (const [pid, parentPid] of table) {
+			if (!known.has(pid) && known.has(parentPid)) {
+				known.add(pid);
+				grew = true;
 			}
 		}
 	}
+	return [...known].filter((pid) => table.has(pid));
+}
+
+async function confirmWindowsTreeGone(pid: number): Promise<void> {
+	const known = new Set([pid]);
+	let survivors: number[] = [];
+	for (let attempt = 1; attempt <= WINDOWS_KILL_ATTEMPTS; attempt++) {
+		await sleep(WINDOWS_KILL_SETTLE_MS);
+		const table = await readWindowsProcessTable();
+		// Without a process table there is no evidence that anything survived, so say no more than
+		// the taskkill spawn itself does when it fails.
+		if (!table) return;
+		survivors = collectLiveDescendants(known, table);
+		if (survivors.length === 0) return;
+		if (attempt < WINDOWS_KILL_ATTEMPTS) spawnTaskkill(survivors);
+	}
+	console.warn(`Warning: could not kill the whole process tree of ${pid}; still running: ${survivors.join(", ")}.`);
+}
+
+/**
+ * Kill a process and all its children (cross-platform). The kill is dispatched synchronously; the
+ * returned promise settles once the tree has been confirmed gone and never rejects, so callers that
+ * only want the tree dead can ignore it.
+ */
+export function killProcessTree(pid: number): Promise<void> {
+	if (process.platform === "win32") {
+		spawnTaskkill([pid]);
+		return confirmWindowsTreeGone(pid);
+	}
+	// Use SIGKILL on Unix/Linux/Mac. Signalling the process group is a single kernel operation
+	// covering every current member, so it has no snapshot for a new descendant to slip past.
+	try {
+		process.kill(-pid, "SIGKILL");
+	} catch {
+		// Fallback to killing just the child if process group kill fails
+		try {
+			process.kill(pid, "SIGKILL");
+		} catch {
+			// Process already dead
+		}
+	}
+	return Promise.resolve();
 }
