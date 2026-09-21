@@ -67,7 +67,7 @@ interface MatchedEdit {
 	newText: string;
 }
 
-type TextReplacement = Pick<MatchedEdit, "matchIndex" | "matchLength" | "newText">;
+export type TextReplacement = Pick<MatchedEdit, "matchIndex" | "matchLength" | "newText">;
 
 function applyReplacements(content: string, replacements: TextReplacement[]): string {
 	let result = content;
@@ -97,6 +97,8 @@ export interface Edit {
 export interface AppliedEditsResult {
 	baseContent: string;
 	newContent: string;
+	/** The replaced spans, in LF-normalized space and ascending order. */
+	replacements: TextReplacement[];
 }
 
 /**
@@ -289,7 +291,43 @@ export function applyEditsToNormalizedContent(
 		throw getNoChangeError(path, normalizedEdits.length);
 	}
 
-	return { baseContent, newContent };
+	return { baseContent, newContent, replacements: matchedEdits };
+}
+
+/**
+ * Write LF-space replacements back into the raw file content.
+ *
+ * Only the replacement text is written with `ending`; every byte outside a
+ * replaced span keeps the line ending it already had, so an edit cannot
+ * rewrite the rest of a file that mixes CRLF and LF.
+ */
+export function applyReplacementsToOriginalContent(
+	originalContent: string,
+	replacements: TextReplacement[],
+	ending: "\r\n" | "\n",
+): string {
+	let originalIndex = 0;
+	let normalizedIndex = 0;
+	// normalizeToLF() only drops the CR of a CRLF pair, so advancing both cursors
+	// together maps a normalized offset onto the original content.
+	const advanceTo = (normalizedTarget: number): string => {
+		const start = originalIndex;
+		while (normalizedIndex < normalizedTarget && originalIndex < originalContent.length) {
+			if (originalContent[originalIndex] !== "\r" || originalContent[originalIndex + 1] !== "\n") {
+				normalizedIndex++;
+			}
+			originalIndex++;
+		}
+		return originalContent.slice(start, originalIndex);
+	};
+
+	let result = "";
+	for (const replacement of replacements) {
+		result += advanceTo(replacement.matchIndex);
+		advanceTo(replacement.matchIndex + replacement.matchLength);
+		result += restoreLineEndings(replacement.newText, ending);
+	}
+	return result + originalContent.slice(originalIndex);
 }
 
 /** Generate a standard unified patch. */

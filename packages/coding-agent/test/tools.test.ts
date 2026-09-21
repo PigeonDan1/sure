@@ -1374,6 +1374,35 @@ describe("edit tool CRLF handling", () => {
 		expect(content).toBe("first\nREPLACED\nthird\n");
 	});
 
+	it("should leave the line endings of untouched lines alone in a CRLF-first mixed file", async () => {
+		const testFile = join(testDir, "mixed-crlf-first.txt");
+		// The first line ending is CRLF, so the whole file used to be rewritten to CRLF.
+		writeFileSync(testFile, "first\r\nsecond\nthird\nfourth\n");
+
+		await editTool.execute("test-mixed-crlf-first", {
+			path: testFile,
+			edits: [{ oldText: "third\n", newText: "THIRD\n" }],
+		});
+
+		// Only the replaced line is written with the file's line ending.
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("first\r\nsecond\nTHIRD\r\nfourth\n");
+	});
+
+	it("should leave the line endings of untouched lines alone in an LF-first mixed file", async () => {
+		const testFile = join(testDir, "mixed-lf-first.txt");
+		// The first line ending is LF, so the whole file used to be flattened to LF.
+		writeFileSync(testFile, "first\nsecond\r\nthird\r\n");
+
+		await editTool.execute("test-mixed-lf-first", {
+			path: testFile,
+			edits: [{ oldText: "first\n", newText: "FIRST\n" }],
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("FIRST\nsecond\r\nthird\r\n");
+	});
+
 	it("should detect duplicates across CRLF/LF variants", async () => {
 		const testFile = join(testDir, "mixed-endings.txt");
 
