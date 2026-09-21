@@ -26,7 +26,7 @@ class ApprovalFlowTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.source = self.root / "staging" / "demo-model"
-        self.approved = self.root / "approved"
+        self.approved = self.root / "protected" / "models"
         self.runtime_root = self.root / "runtime"
         self.policy = self.root / "site.yaml"
         self.source.mkdir(parents=True)
@@ -38,11 +38,11 @@ class ApprovalFlowTests(unittest.TestCase):
                     "policy_version: 1",
                     "storage:",
                     f"  approved_models_roots: [{self.approved}]",
-                    f"  approved_results_roots: [{self.root / 'results'}]",
-                    f"  forbidden_output_roots: [{self.root}]",
+                    f"  approved_results_roots: [{self.root / 'protected' / 'results'}]",
+                    f"  forbidden_output_roots: [{self.root / 'protected'}]",
                     f"  runtime_root: {self.runtime_root}",
                     "datasets:",
-                    f"  allowed_source_roots: [{self.root / 'datasets'}]",
+                    f"  allowed_source_roots: {{default: {self.root / 'datasets'}}}",
                     "execution:",
                     "  surfaces: [local]",
                     "  local_runtimes: [python]",
