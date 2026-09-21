@@ -8,13 +8,14 @@
 // collapse to `"Unknown: UnknownError"`.
 //
 // `normalizeProviderError` probes the field shapes those error objects arrive
-// in: the `openai` SDK's own `APIError`, plus the `statusCode`/`body` and
-// `$metadata`/`$response` shapes that no SDK bundled here emits but a proxy or
-// gateway in front of an OpenAI-compatible endpoint can still hand back. It
-// returns a struct each provider composes into its display string. The
-// `messageCarriesBody` flag captures the happy path where the SDK already
-// folded the body into the message, so providers can preserve it without
-// double-printing.
+// in: the `APIError` of the two SDKs bundled here, `openai` and
+// `@anthropic-ai/sdk` (same generated shape, `status` plus a parsed `error`
+// body), plus the `statusCode`/`body` and `$metadata`/`$response` shapes that
+// neither emits but a proxy or gateway in front of an OpenAI-compatible
+// endpoint can still hand back. It returns a struct each provider composes
+// into its display string. The `messageCarriesBody` flag captures the happy
+// path where the SDK already folded the body into the message, so providers
+// can preserve it without double-printing.
 
 export const MAX_PROVIDER_ERROR_BODY_CHARS = 4000;
 
@@ -59,7 +60,7 @@ export function normalizeProviderError(error: unknown): NormalizedProviderError 
 
 /**
  * Probe the HTTP status, first numeric hit wins, in field order:
- * `statusCode` → `status` (the `openai` SDK's `APIError`) →
+ * `statusCode` → `status` (the `openai` and `@anthropic-ai/sdk` `APIError`) →
  * `$metadata.httpStatusCode` → `$response.statusCode` (AWS-style error
  * objects) → `code` (`openai`, where a gateway may have stringified the
  * status).
@@ -77,11 +78,11 @@ function extractStatus(error: SdkErrorShape): number | undefined {
 
 /**
  * Probe the raw body reason, first usable hit wins, in field order:
- * `body` string → `error` parsed JSON body object (`openai` SDK's
- * `this.error`) → `$response.body` (AWS-style error objects). Empty objects and
- * unread response streams are treated as no body so they do not surface as
- * `"{}"` or serialized stream internals. The chosen body is truncated to the
- * cap.
+ * `body` string → `error` parsed JSON body object (the `openai` and
+ * `@anthropic-ai/sdk` `this.error`) → `$response.body` (AWS-style error
+ * objects). Empty objects and unread response streams are treated as no body
+ * so they do not surface as `"{}"` or serialized stream internals. The chosen
+ * body is truncated to the cap.
  */
 function extractBody(error: SdkErrorShape): string | undefined {
 	const bodyText = pickBodyText(error);
@@ -128,8 +129,8 @@ function isPlainNonEmptyObject(value: unknown): boolean {
 
 /**
  * Compose a display string from a normalized error. When the message already
- * carries the body (an SDK that folds it into `error.message`) or no body was
- * extracted, the message is returned unchanged. Otherwise the body is surfaced,
+ * carries the body (both bundled SDKs fold it into `error.message`) or no body
+ * was extracted, the message is returned unchanged. Otherwise the body is surfaced,
  * with the status and an optional provider prefix when those are available.
  *
  * A mid-stream failure has no status, because the response returned 200 before
