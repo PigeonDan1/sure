@@ -109,7 +109,8 @@ function expectSourceRoots(value: unknown, location: string): Record<string, str
 	// Support legacy single-path array format: [/path] → { "default": "/path" }
 	if (Array.isArray(value)) {
 		if (value.length === 0) throw new Error(`${location} must contain at least one entry`);
-		if (value.length !== 1) throw new Error(`${location} must contain exactly one path in policy v1 (or use key-value format)`);
+		if (value.length !== 1)
+			throw new Error(`${location} must contain exactly one path in policy v1 (or use key-value format)`);
 		const path = expectAbsolutePath(value[0], `${location}[0]`);
 		return { default: path };
 	}
@@ -172,7 +173,11 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	if (root.policy_version !== 1) throw new Error("policy_version must be 1");
 
 	const storage = expectRecord(root.storage, "storage");
-	rejectUnknown(storage, ["approved_models_roots", "approved_results_roots", "forbidden_output_roots", "runtime_root"], "storage");
+	rejectUnknown(
+		storage,
+		["approved_models_roots", "approved_results_roots", "forbidden_output_roots", "runtime_root"],
+		"storage",
+	);
 	const datasets = expectRecord(root.datasets, "datasets");
 	rejectUnknown(datasets, ["allowed_source_roots", "projection_root"], "datasets");
 	const execution = expectRecord(root.execution, "execution");
@@ -185,7 +190,11 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 	if (surfaces.some((surface) => surface !== "local" && surface !== "vc")) {
 		throw new Error("execution.surfaces contains an unsupported value");
 	}
-	const localRuntimes = expectUniqueStrings(execution.local_runtimes ?? ["container"], "execution.local_runtimes", false);
+	const localRuntimes = expectUniqueStrings(
+		execution.local_runtimes ?? ["container"],
+		"execution.local_runtimes",
+		false,
+	);
 	if (localRuntimes.some((runtime) => runtime !== "python" && runtime !== "container")) {
 		throw new Error("execution.local_runtimes contains an unsupported value");
 	}
@@ -205,12 +214,20 @@ export function validateSitePolicy(value: unknown): SitePolicy {
 		site_id: siteId,
 		policy_version: 1,
 		storage: {
-			approved_models_roots: expectUniqueStrings(storage.approved_models_roots, "storage.approved_models_roots", true),
+			approved_models_roots: expectUniqueStrings(
+				storage.approved_models_roots,
+				"storage.approved_models_roots",
+				true,
+			),
 			approved_results_roots:
 				storage.approved_results_roots === undefined
 					? []
 					: expectUniqueStrings(storage.approved_results_roots, "storage.approved_results_roots", true),
-			forbidden_output_roots: expectUniqueStrings(storage.forbidden_output_roots, "storage.forbidden_output_roots", true),
+			forbidden_output_roots: expectUniqueStrings(
+				storage.forbidden_output_roots,
+				"storage.forbidden_output_roots",
+				true,
+			),
 			runtime_root: expectAbsolutePath(storage.runtime_root, "storage.runtime_root"),
 		},
 		datasets: {
@@ -280,13 +297,16 @@ function expandPolicyTokens(text: string, repositoryRoot: string, source: SitePo
 	// and $$ in a replacement string as patterns, while str.replace in
 	// sure/site/loader.py substitutes the path literally.
 	let expanded = text;
+	// biome-ignore-start lint/suspicious/noTemplateCurlyInString: the tokens are policy text to match, not interpolation
 	if (expanded.includes("${HOME}")) {
 		const home = hostHome();
-		if (home === undefined) throw new Error(`Cannot expand \${HOME} in ${source} site policy ${path}: no home directory`);
+		if (home === undefined)
+			throw new Error(`Cannot expand \${HOME} in ${source} site policy ${path}: no home directory`);
 		expanded = expanded.replaceAll("${HOME}", () => home);
 	}
 	const repo = normalizeHostPath(repositoryRoot);
 	return expanded.replaceAll("${REPO}", () => repo);
+	// biome-ignore-end lint/suspicious/noTemplateCurlyInString: policy tokens end here
 }
 
 function loadPolicy(path: string, source: SitePolicySource, repositoryRoot: string): ResolvedSitePolicy {

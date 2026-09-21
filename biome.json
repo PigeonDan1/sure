@@ -27,11 +27,14 @@
 		"includes": [
 			"packages/*/src/**/*.ts",
 			"packages/*/test/**/*.ts",
-			"sure/skills/*/hooks/**/*.ts",
-			"sure/runtime/memory/**/*.ts",
+			"packages/*/scripts/**/*.ts",
+			"packages/*/*.ts",
+			"scripts/**/*.ts",
+			"sure/**/*.ts",
+			"!sure/external/**/*",
 			"!**/node_modules/**/*",
 			"!**/test-sessions.ts",
-			"!**/models.generated.ts",
+			"!**/*.generated.ts",
 			"!**/*.models.ts",
 			"!packages/mom/data/**/*",
 			"!!**/node_modules"
