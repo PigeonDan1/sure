@@ -58,12 +58,13 @@ The runner must use:
 - SLU: `sure_eval.evaluation.tasks.slu.pipeline.evaluate_slu_files`
 
 If S2TT fails with `No module named 'sacrebleu'`, install it into the active
-SURE uv environment with清华源:
+SURE uv environment from the official index; substitute your own local mirror
+for `-i` if you have one:
 
 ```bash
 env UV_CACHE_DIR=/tmp/uv-cache uv pip install \
   -p .venv.hostbak/bin/python \
-  -i https://pypi.tuna.tsinghua.edu.cn/simple \
+  -i https://pypi.org/simple \
   sacrebleu
 ```
 

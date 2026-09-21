@@ -53,11 +53,11 @@ file digest after download because ModelScope file-level commit IDs are not
 valid snapshot selectors. Use the provider's immutable download/cache policy
 rather than copying weights into this repository.
 
-For mainland China environments, install Python packages with an approved
-mirror, for example:
+Install Python packages from the official index; substitute your own local
+mirror for `-i` if you have one:
 
 ```bash
-python -m pip install -i https://mirrors.aliyun.com/pypi/simple <packages>
+python -m pip install -i https://pypi.org/simple <packages>
 ```
 
 ModelScope download commands should use the model package's declared cache and
