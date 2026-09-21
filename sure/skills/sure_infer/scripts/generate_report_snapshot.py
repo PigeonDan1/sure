@@ -548,7 +548,7 @@ def build_snapshot(run_dir: Path) -> str:
         "",
         "| Field | Value |",
         "|---|---|",
-        "| Prediction contract | `references/contracts/prediction_output_contract.md` |",
+        "| Prediction contract | `references/contracts/prediction_generation_contract.md` |",
         "| Compatibility prediction file | `predictions/<dataset>.txt` |",
         "| Structured prediction file | `predictions/<dataset>.jsonl` |",
         f"| Required non-empty predictions | {_bool(require_nonempty)} |",

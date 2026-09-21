@@ -402,7 +402,7 @@ def write_protocol_yaml(
             "old_evaluation_reused": False,
         },
         "prediction_contract": {
-            "contract_path": "references/contracts/prediction_output_contract.md",
+            "contract_path": "references/contracts/prediction_generation_contract.md",
             "compatibility_tsv": "predictions/<dataset>.txt",
             "structured_jsonl": "predictions/<dataset>.jsonl",
             "format_used": "jsonl+txt",

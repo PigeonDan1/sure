@@ -112,7 +112,7 @@ Expected format:
 
 | Field | Value |
 |---|---|
-| Prediction contract | `docs/agents/main_flow_agent/contracts/prediction_output_contract.md` |
+| Prediction contract | `references/contracts/prediction_generation_contract.md` |
 | Compatibility prediction file | `predictions/<dataset>.txt` |
 | Structured prediction file | `predictions/<dataset>.jsonl` |
 | Required non-empty predictions | {require_nonempty_predictions} |
