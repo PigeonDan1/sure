@@ -318,6 +318,23 @@ class ReadLogTailTests(unittest.TestCase):
     def test_missing_file_is_empty(self) -> None:
         self.assertEqual(digest.read_log_tail(self.path, 30, 300, 65536), [])
 
+    def test_every_shared_vector(self) -> None:
+        # The same file is read by hooks.ts readLogTail in sure-memory-hooks-flow.test.ts: the
+        # hooks match an injection against this tail and the digest records it, so a tail that
+        # differs between the two makes the run_digest disagree with what was matched.
+        vectors = json.loads((paths.LIB_DIR / "fixtures" / "log_tail_vectors.json").read_text(encoding="utf-8"))
+        self.assertEqual(vectors["schema"], "sure.memory.log_tail_vectors.v1")
+        names = [row["name"] for row in vectors["vectors"]]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertGreaterEqual(len(names), 11)
+        for row in vectors["vectors"]:
+            with self.subTest(name=row["name"]):
+                self.assertEqual(set(row), {"name", "text", "limits", "expected"})
+                self.path.write_bytes(row["text"].encode("utf-8"))
+                limits = row["limits"]
+                got = digest.read_log_tail(self.path, limits["lines"], limits["line_chars"], limits["seek_bytes"])
+                self.assertEqual(got, row["expected"])
+
 
 class ResolveTargetTests(DigestTestBase):
     def test_onboard_reads_model_id_from_resolved_input(self) -> None:

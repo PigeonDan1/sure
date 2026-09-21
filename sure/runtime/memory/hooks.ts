@@ -876,8 +876,18 @@ export function onErrorDigest(env: MemoryHookEnv, memory?: MemoryCheckpoint): { 
 
 // --- log tail (same window as digest.py read_log_tail) --------------------------
 
-/** Last `lines` lines of a log, reading at most `seekBytes` from the end; splits on \n and \r; empty lines dropped. */
+/**
+ * Last `lines` lines of a log, reading at most `seekBytes` from the end; splits on \r\n, \r and \n.
+ *
+ * A port of digest.py read_log_tail, which is the authority: it writes the tail into
+ * run_digest.json while these hooks only match an injection against it, so the two reading the
+ * same log differently makes the digest disagree with what was matched.
+ * fixtures/log_tail_vectors.json pins both sides.
+ */
 export function readLogTail(path: string, limits: { lines: number; lineChars: number; seekBytes: number }): string[] {
+	if (limits.lines <= 0) {
+		return [];
+	}
 	let fd: number | undefined;
 	try {
 		const size = statSync(path).size;
@@ -885,14 +895,25 @@ export function readLogTail(path: string, limits: { lines: number; lineChars: nu
 		const length = size - start;
 		const buffer = Buffer.alloc(length);
 		fd = openSync(path, "r");
-		readSync(fd, buffer, 0, length, start);
-		const lines = buffer
+		const read = readSync(fd, buffer, 0, length, start);
+		const pieces = buffer
+			.subarray(0, read)
 			.toString("utf-8")
-			.split(/\r\n|\r|\n/)
-			.filter((line) => line.length > 0);
-		return lines
-			.slice(-limits.lines)
-			.map((line) => (line.length > limits.lineChars ? line.slice(0, limits.lineChars) : line));
+			.split(/\r\n|\r|\n/);
+		if (start > 0) {
+			pieces.shift(); // the window began mid-file, so the first piece is a torn line
+		}
+		// Only the trailing empties go: a blank line between two records is a line of the log.
+		while (pieces.length > 0 && pieces[pieces.length - 1] === "") {
+			pieces.pop();
+		}
+		return (
+			pieces
+				.slice(-limits.lines)
+				// python slices code points; line.length counts UTF-16 units, so it only ever
+				// over-estimates and the cheap check still catches every line that needs no cut.
+				.map((line) => (line.length > limits.lineChars ? [...line].slice(0, limits.lineChars).join("") : line))
+		);
 	} catch {
 		return []; // unreadable log: the repair text alone is matched
 	} finally {
