@@ -216,9 +216,16 @@ export function killTrackedDetachedChildren(): void {
  * while the sweep is running - or one already orphaned by a parent that exited first - outlives it.
  *
  * Budget measured on a Windows 11 host: a `taskkill`ed process is gone 158 ms after dispatch
- * (median of 10 samples, max 173 ms), and reading the process table costs ~1.65 s for ~350
+ * (median of 10 samples, max 173 ms), and reading the process table costs 1.6-1.9 s for ~355
  * processes. Three rounds - one to find survivors, one to re-kill them and confirm, one spare -
  * bound the check at roughly 6 s of background work per killed tree.
+ *
+ * Why it runs in the background rather than being awaited, measured rather than assumed: ~1.05 s of
+ * that read is PowerShell's own start-up (`-Command exit` alone costs that), so narrowing the query
+ * to the pids already recorded saves only ~280 ms and no query shape makes confirming cheap enough
+ * to put in front of a user-visible timeout. `tasklist` is six times faster but reports neither
+ * parent pid nor creation time, and `wmic` is gone from current Windows. Nothing here is unref'd -
+ * a plain Node exit waits for the confirmation - but a host that exits at once still loses it.
  */
 const WINDOWS_KILL_ATTEMPTS = 3;
 const WINDOWS_KILL_SETTLE_MS = 250;
