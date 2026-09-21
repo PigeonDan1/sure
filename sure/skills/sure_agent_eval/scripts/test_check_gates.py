@@ -6,6 +6,7 @@ Run directly:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
@@ -63,8 +64,20 @@ def make_spec(product_dir: Path) -> dict:
 def write_bundle(product_dir: Path) -> None:
     (product_dir / "predictions").mkdir(parents=True, exist_ok=True)
     (product_dir / "references" / "sure_benchmark" / "jsonl").mkdir(parents=True, exist_ok=True)
-    (product_dir / "predictions" / f"{DATASET}.txt").write_text("utt0\thello\nutt1\tworld\n", encoding="utf-8")
-    write_json(product_dir / "predictions" / "manifest.json", {"datasets": {DATASET: {"rows": 2}}})
+    prediction_file = product_dir / "predictions" / f"{DATASET}.txt"
+    prediction_file.write_text("utt0\thello\nutt1\tworld\n", encoding="utf-8")
+    write_json(
+        product_dir / "predictions" / "manifest.json",
+        {
+            "datasets": {
+                DATASET: {
+                    "prediction_file": f"predictions/{DATASET}.txt",
+                    "sha256": hashlib.sha256(prediction_file.read_bytes()).hexdigest(),
+                    "rows": 2,
+                }
+            }
+        },
+    )
     (product_dir / "protocol.yaml").write_text("schema: sure.agent_eval.inference_protocol.v1\n", encoding="utf-8")
     write_json(
         product_dir / "prediction_generation_status.json",
@@ -211,6 +224,14 @@ class CheckAgentExecutionTests(GateTestCase):
         (self.product_dir / "predictions" / f"{DATASET}.txt").write_text("utt0\thello\n", encoding="utf-8")
         errors = self.check(make_execution(self.product_dir))
         self.assertTrue(any("non-empty rows" in error for error in errors))
+
+    def test_rejects_a_manifest_sha256_that_the_prediction_file_does_not_back(self) -> None:
+        write_json(
+            self.product_dir / "predictions" / "manifest.json",
+            {"datasets": {DATASET: {"prediction_file": f"predictions/{DATASET}.txt", "sha256": "0" * 64, "rows": 2}}},
+        )
+        errors = self.check(make_execution(self.product_dir))
+        self.assertTrue(any("sha256" in error for error in errors))
 
     def test_rejects_missing_protocol(self) -> None:
         (self.product_dir / "protocol.yaml").unlink()

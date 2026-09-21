@@ -12,10 +12,19 @@ the contract, a product directory that differs from the resolved plan, or a
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
 from typing import Any
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -88,6 +97,8 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
     seen = [str(row.get("dataset") or "") for row in rows if isinstance(row, dict)]
     if sorted(seen) != sorted(expected_datasets):
         errors.append(f"execution_result datasets {sorted(seen)} do not match the plan {sorted(expected_datasets)}")
+    manifest = _read_json(product_dir / "predictions" / "manifest.json") or {}
+    manifest_rows = manifest.get("datasets") if isinstance(manifest.get("datasets"), dict) else {}
     status = _read_json(product_dir / "prediction_generation_status.json") or {}
     status_rows = {
         str(item.get("dataset") or ""): str(item.get("status") or "")
@@ -107,6 +118,12 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
             errors.append(f"{dataset}: generated {generated} != expected {expected}")
         if non_empty != expected:
             errors.append(f"{dataset}: predictions/{dataset}.txt carries {non_empty} non-empty rows, expected {expected}")
+        recorded = manifest_rows.get(dataset) if isinstance(manifest_rows.get(dataset), dict) else {}
+        if prediction_file.is_file() and str(recorded.get("sha256") or "") != _sha256(prediction_file):
+            errors.append(
+                f"{dataset}: predictions/manifest.json sha256 {recorded.get('sha256')!r} does not match "
+                f"predictions/{dataset}.txt"
+            )
         if status_rows.get(dataset) != "completed":
             errors.append(f"{dataset}: prediction_generation_status.json status is {status_rows.get(dataset)!r}")
         reference = product_dir / "references" / "sure_benchmark" / "jsonl" / f"{dataset}.jsonl"
