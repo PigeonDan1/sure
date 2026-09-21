@@ -158,6 +158,7 @@ class McpToolClient:
                 line = self._responses.get(timeout=max(0.0, deadline - time.monotonic()))
             except queue.Empty:
                 self._process.kill()
+                self._process.wait(timeout=10)
                 raise RuntimeError(f"MCP {method} timed out after {limit:g}s; server killed") from None
             if line is None:
                 raise RuntimeError(f"MCP server exited while answering {method}")
@@ -202,6 +203,7 @@ class McpToolClient:
         except Exception:
             try:
                 self._process.kill()
+                self._process.wait(timeout=10)
             except Exception:
                 pass
         self._close_log()
