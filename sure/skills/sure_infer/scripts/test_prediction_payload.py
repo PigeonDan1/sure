@@ -211,6 +211,41 @@ def _locale_text_pipes(encoding: str):
     return mock.patch("subprocess.Popen", popen)
 
 
+class GenerationStatusDurabilityTests(unittest.TestCase):
+    """prediction_generation_status.json is the only record of which datasets are already done."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "prediction_generation_status.json"
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_completed_datasets_survive_a_write_that_dies_midway(self) -> None:
+        # A lone surrogate is what a model server sends back as a response key when its own
+        # decoder is broken; it reaches the payload through generation.observed_raw_response and
+        # only fails once the text is being encoded, i.e. after the file is already open.
+        done = {"datasets": [{"dataset": "done-1", "status": "completed"}]}
+        gp._write_status_file(self.path, done)
+        recorded = self.path.read_text(encoding="utf-8")
+        with self.assertRaises(UnicodeEncodeError):
+            gp._write_status_file(self.path, {"datasets": [{"dataset": "done-2", "key": "x\ud800"}]})
+        self.assertEqual(self.path.read_text(encoding="utf-8"), recorded)
+        self.assertEqual([p.name for p in self.path.parent.iterdir()], [self.path.name])
+
+    def test_a_truncated_status_file_stops_the_run_instead_of_resetting_it(self) -> None:
+        self.path.write_text('{"datasets": [{"dataset": "finished-1"}, {"dataset": "fin', encoding="utf-8")
+        default = {"schema": "sure.eval.prediction_generation_status.v2", "datasets": []}
+        try:
+            payload, _current = gp._upsert_dataset_status(self.path, default, {"dataset": "next-one"})
+        except ValueError as exc:
+            self.assertIn(str(self.path), str(exc))
+            return
+        self.fail(
+            "a truncated status file was silently reset: the file recorded "
+            "['finished-1', 'fin...'] and the returned payload keeps "
+            f"{[row.get('dataset') for row in payload['datasets']]}"
+        )
+
+
 class ServerPipeEncodingTests(unittest.TestCase):
     """Both ends of the MCP stdio bridge serialise with ensure_ascii=False."""
 

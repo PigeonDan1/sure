@@ -1104,6 +1104,26 @@ def _write_existing_result_log_entries(
             result_log_handle.write(f"{key}\t{value}\n")
 
 
+def _write_status_file(status_path: Path, payload: dict[str, Any]) -> None:
+    """Replace the status file in one step, the way run_eval._atomic_write does.
+
+    It is rewritten after every sample, and it is the only record of which datasets a run has
+    already finished. Written in place, a write that dies partway - an interrupted run, an
+    unencodable response key - leaves a half file or an empty one, and the next resume reads it
+    as "nothing was ever generated"."""
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    temporary = status_path.with_name(f".{status_path.name}.{os.getpid()}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, status_path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
 def _upsert_dataset_status(
     status_path: Path,
     default_payload: dict[str, Any],
@@ -1112,8 +1132,14 @@ def _upsert_dataset_status(
     if status_path.exists():
         try:
             payload = json.loads(status_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            payload = dict(default_payload)
+        except json.JSONDecodeError as exc:
+            # Starting over from the default payload would drop the row of every dataset this
+            # run already completed, and the next write would make that loss permanent.
+            raise ValueError(
+                f"{status_path} is truncated or not valid JSON ({exc}); it is the record of the "
+                "datasets already generated, so it is not rebuilt from scratch. Repair or move it "
+                "aside to continue."
+            ) from exc
     else:
         payload = dict(default_payload)
     for key, value in default_payload.items():
@@ -1483,7 +1509,7 @@ def main() -> int:
         raw_response_types=raw_response_types,
         raw_response_keys=raw_response_keys,
     )
-    status_path.write_text(json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _write_status_file(status_path, status_payload)
 
     with open(log_path, "w", encoding="utf-8") as log_handle, open(result_log_path, "w", encoding="utf-8") as result_log_handle:
         if args.resume and existing_predictions:
@@ -1578,10 +1604,7 @@ def main() -> int:
                         raw_response_types=raw_response_types,
                         raw_response_keys=raw_response_keys,
                     )
-                    status_path.write_text(
-                        json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
-                        encoding="utf-8",
-                    )
+                    _write_status_file(status_path, status_payload)
                     if len(prediction_map) % PREDICTION_SNAPSHOT_INTERVAL == 0:
                         # The only line this script logged used to be its last one,
                         # so a five-hour generation pass looked identical to a hung
@@ -1647,10 +1670,7 @@ def main() -> int:
                 raw_response_types=raw_response_types,
                 raw_response_keys=raw_response_keys,
             )
-            status_path.write_text(
-                json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
+            _write_status_file(status_path, status_payload)
 
         except Exception as exc:
             current_dataset_status["status"] = "failed"
@@ -1674,10 +1694,7 @@ def main() -> int:
                 sample_task=sample_task,
                 sample_language=sample_language,
             )
-            status_path.write_text(
-                json.dumps(status_payload, indent=2, ensure_ascii=False) + "\n",
-                encoding="utf-8",
-            )
+            _write_status_file(status_path, status_payload)
             raise
         finally:
             try:
