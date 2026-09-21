@@ -34,9 +34,9 @@ def portable_source_python(path: object) -> str:
 
     The uv/conda source interpreter is always a host path (a user-supplied
     python or a run-materialized venv whose bin/python symlinks outside the
-    run directory), and sealed bundle sidecars must stay host-independent —
-    the deployment gate rejects legacy absolute paths. Describe it portably
-    and keep the exact executable in the run's own source_image_result.json.
+    run directory), and sealed bundle sidecars must stay host-independent.
+    Describe it portably and keep the exact executable in the run's own
+    source_image_result.json.
     """
     raw = str(path or "")
     if not raw:

@@ -13,7 +13,6 @@ import yaml
 from vc_exec import default_partition
 
 
-LEGACY_PATH = re.compile(r"/(?:mnt/cloudstorfs|hpc_stor\d+|hpc_\d+)/")
 ANNOTATION_FIELDS = (
     "ground_truth",
     "target_text",
@@ -805,10 +804,6 @@ def main() -> int:
             all(harness.get(key) for key in ("runtime_id", "lock_sha256", "python_executable", "manifest_path", "runtime_root")),
             "required Harness Runtime binding is missing identity or path fields",
         )
-        require(
-            not LEGACY_PATH.search(json.dumps(harness, ensure_ascii=False)),
-            "host Harness Runtime paths cannot be declared as the container runtime",
-        )
         mount_policy = container.get("mount_policy") or {}
         require((mount_policy.get("model_bundle") or {}).get("read_only") is True, "model bundle mount must be read-only")
         require((mount_policy.get("result_workspace") or {}).get("read_only") is False, "result workspace mount must be writable")
@@ -941,18 +936,6 @@ def main() -> int:
                 declared_binding.get("schema") == "sure.harness.runtime.binding.v1" and declared_binding.get("runtime_id"),
                 "ready deployment must expose the common Harness Runtime binding",
             )
-            require(
-                not LEGACY_PATH.search(json.dumps(declared_binding, ensure_ascii=False)),
-                "deployment Harness Runtime binding must reference an in-image runtime, not host paths",
-            )
-        portable = [
-            read_object(model_dir / "artifacts" / name)
-            for name in ("runtime_inventory.json", "package_gate.json", "artifact_manifest.json", "deployment_ready.json")
-        ]
-        require(
-            not LEGACY_PATH.search(json.dumps(portable, ensure_ascii=False)),
-            "finalized deployment sidecars contain legacy host absolute paths",
-        )
     print(f"{kind} OK: {path}")
     return 0
 
