@@ -316,5 +316,48 @@ class DatasetProjectionRootTests(unittest.TestCase):
         self.assertIn("SURE_EVAL_DATASETS_ROOT", message)
 
 
+class DefaultMetricsProbeTests(unittest.TestCase):
+    """_default_metrics may guess only when there is no engine to ask."""
+
+    def _probe(self, side_effect, task="ASR", language="zh", engine_root=Path("engine")):
+        with mock.patch.object(
+            resolve_eval_input, "default_metrics_for_task_language", side_effect=side_effect
+        ), mock.patch.object(
+            resolve_eval_input, "supported_metrics_for_task_language", side_effect=side_effect
+        ):
+            return resolve_eval_input._default_metrics(task, language, engine_root)
+
+    def test_a_broken_engine_probe_does_not_become_a_guess(self) -> None:
+        """A RuntimeError here means the engine could not answer at all.
+
+        Falling back to the hardcoded table would publish a guessed metric as
+        the dataset's default_metrics, indistinguishable from one the engine
+        actually chose.
+        """
+
+        def broken(*args, **kwargs):
+            raise RuntimeError("sure-evaluation engine at engine could not describe task 'asr'")
+
+        with self.assertRaises(RuntimeError):
+            self._probe(broken)
+
+    def test_a_task_the_engine_does_not_cover_still_falls_back(self) -> None:
+        """ValueError is how the engine says 'not my task', e.g. UNKNOWN or a suite."""
+
+        def unsupported(*args, **kwargs):
+            raise ValueError("Unsupported evaluation task for sure-evaluation: 'UNKNOWN'")
+
+        self.assertEqual(self._probe(unsupported, task="UNKNOWN"), ["accuracy"])
+
+    def test_no_engine_root_uses_the_table_without_probing(self) -> None:
+        def never(*args, **kwargs):
+            raise AssertionError("must not probe when there is no engine root")
+
+        with mock.patch.object(
+            resolve_eval_input, "default_metrics_for_task_language", side_effect=never
+        ):
+            self.assertEqual(resolve_eval_input._default_metrics("ASR", "en", None), ["wer"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -517,7 +517,11 @@ def _default_metrics(task: str, language: str, engine_root: Path | None) -> list
             metrics = [metric for metric in metrics if metric != "multi"]
             if metrics:
                 return metrics
-        except Exception:
+        except ValueError:
+            # The engine raises ValueError for tasks it does not cover (an
+            # UNKNOWN dataset task, a suite label); the table below is the
+            # answer for those. Any other failure means the engine could not
+            # answer at all, and a guess must not be published as its default.
             pass
     return _fallback_default_metrics(task, language)
 
