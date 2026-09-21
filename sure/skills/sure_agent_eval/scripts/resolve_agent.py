@@ -37,6 +37,7 @@ from agent_spec import (  # noqa: E402
     validate_agent_spec,
 )
 from deployment_binding import DeploymentBindingError, load_deployment_binding  # noqa: E402
+from resolve_eval_input import _resolve_output_dir  # noqa: E402
 from resolve_model_dir import resolve_approved_model_identity  # noqa: E402
 from sure_eval.datasets.source_resolver import (  # noqa: E402
     is_source_entry,
@@ -242,10 +243,12 @@ def resolve_agent(
     if len(set(names)) != len(names):
         raise ValueError(f"duplicate dataset ids after resolution: {names}")
 
-    output_dir = str(Path(args.output_dir).expanduser().resolve()) if args.output_dir else None
-    product_dir = output_dir or str(
-        HARNESS_ROOT / "sure" / "results" / "agents" / str(agent["name"]) / str(args.run_id)
-    )
+    # The same boundary /sure_infer applies to output_dir: absolute, outside the
+    # configured forbidden output roots, creatable and writable. The extension
+    # checks it too, but a direct script call must not get past it.
+    staged_dir = HARNESS_ROOT / "sure" / "results" / "agents" / str(agent["name"]) / str(args.run_id)
+    product_dir = str(_resolve_output_dir(args.output_dir, staged_dir))
+    output_dir = product_dir if args.output_dir else None
     return {
         "schema": RESOLVED_SCHEMA,
         "run_id": str(args.run_id),

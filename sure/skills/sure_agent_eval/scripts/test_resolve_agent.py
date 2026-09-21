@@ -18,6 +18,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import resolve_agent  # noqa: E402
+from resolve_eval_input import NFS_ROOT  # noqa: E402
 from sure_eval.datasets import source_resolver  # noqa: E402
 
 
@@ -250,6 +251,21 @@ class ResolveAgentTests(unittest.TestCase):
     def test_negative_max_samples_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "max-samples"):
             resolve_agent.resolve_agent(self.make_args(max_samples=-1), approved_root=self.models_root)
+
+    def test_output_dir_under_a_forbidden_root_is_rejected(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            resolve_agent.resolve_agent(
+                self.make_args(output_dir=str(NFS_ROOT.resolve() / "results" / "demo_s2tt")),
+                approved_root=self.models_root,
+            )
+        self.assertIn(str(NFS_ROOT), str(ctx.exception))
+
+    def test_relative_output_dir_is_rejected(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            resolve_agent.resolve_agent(
+                self.make_args(output_dir="jobs/job-1234"), approved_root=self.models_root
+            )
+        self.assertIn("absolute", str(ctx.exception))
 
     def test_invalid_generation_parameters_fail(self) -> None:
         write_model(
