@@ -15,25 +15,25 @@ from __future__ import annotations
 import re
 import sys
 import unittest
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_validate
 
 
 class WindowsPathSubstitution(unittest.TestCase):
-    def test_backslash_repo_root_does_not_raise(self) -> None:
-        repo_root = Path(r"C:\src\sure-test")
+    def test_backslash_repo_root_is_substituted_in_posix_spelling(self) -> None:
+        """PureWindowsPath (instead of Path) so this holds on any host OS."""
+        repo_root = PureWindowsPath(r"C:\src\sure-test")
         value = "sure/models/foo/config.yaml"
 
         result = run_validate.normalize_repo_relative_text(value, repo_root)
 
-        # Expected output built by plain string concatenation (not by
-        # re-running the regex under test), so this pins the actual
-        # requirement: the "sure/models/" prefix becomes the absolute
-        # repo_root path, and the rest of value is untouched.
-        expected = str(repo_root / "sure" / "models") + "/" + "foo/config.yaml"
-        self.assertEqual(result, expected)
+        # The substituted text goes into a command the model declared, where a
+        # backslash is an escape (\b is a backspace) rather than a separator,
+        # so the replacement must be spelled with forward slashes. Windows
+        # accepts those everywhere it accepts backslashes.
+        self.assertEqual(result, "C:/src/sure-test/sure/models/foo/config.yaml")
 
     def test_posix_repo_root_output_is_unchanged(self) -> None:
         """The fix must be a no-op off Windows: prove the new function-based

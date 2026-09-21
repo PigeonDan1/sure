@@ -103,6 +103,9 @@ class FakeRun:
     def bash(self, command: str, is_error: bool = False) -> None:
         self._tool("bash", {"command": command}, is_error)
 
+    def powershell(self, command: str, is_error: bool = False) -> None:
+        self._tool("powershell", {"command": command}, is_error)
+
     def read(self, path: str) -> None:
         self._tool("read", {"path": path})
 
@@ -446,6 +449,20 @@ class BuildDigestTests(DigestTestBase):
         for passed in ("plan", "build_env", "validate_env_compat"):
             self.assertEqual(self.unit(d, passed)["last_commands"], [])
         self.assertEqual(d["units"][-1]["id"], "validate_import")
+
+    def test_powershell_commands_are_kept_like_bash_commands(self) -> None:
+        # powershell takes the same input shape as bash (a command, never a path),
+        # so a Windows run must not digest as a run that executed nothing.
+        run = self.onboard_run()
+        run.pass_through("validate_import")
+        run.powershell("python -c 'import model'")
+        run.block("validate_import", "import failed: No module named 'model'", exhausted=True)
+        d = self.build(run)
+        failed = self.unit(d, "validate_import")
+        self.assertEqual(
+            failed["last_commands"],
+            [{"tool": "powershell", "command": "python -c 'import model'"}],
+        )
 
     def test_stuck_unit_becomes_failed_on_terminal_run_signal_or_finish_status(self) -> None:
         run = self.onboard_run()

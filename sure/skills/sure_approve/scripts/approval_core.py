@@ -628,6 +628,29 @@ def build_review(run_dir: Path) -> dict[str, Any]:
     return packet
 
 
+def _mirror_candidate_for_smoke(candidate: Path, destination: Path) -> None:
+    """Stand up a throwaway tree to smoke, without a second copy of the weights.
+
+    Every file is hard-linked, so a bundle of any size costs no extra bytes and an
+    in-place overwrite still reaches the sealed candidate, where the digest check
+    below catches it. ``artifacts/`` is the one directory the producer contract
+    lets validate.py write, so it is re-copied to break that sharing.
+    """
+
+    def link_or_copy(source: str, target: str) -> None:
+        try:
+            os.link(source, target)
+        except OSError:
+            # No hard links across volumes, or on a filesystem without them.
+            shutil.copy2(source, target)
+
+    shutil.copytree(candidate, destination, copy_function=link_or_copy)
+    artifacts = destination / "artifacts"
+    if artifacts.is_dir():
+        shutil.rmtree(artifacts)
+        shutil.copytree(candidate / "artifacts", artifacts)
+
+
 def verify_runtime(run_dir: Path) -> dict[str, Any]:
     manifest = read_json(artifact(run_dir, "approval_manifest.json"))
     resolved = read_json(artifact(run_dir, "approve_input_resolved.json"))
@@ -652,24 +675,35 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
         validate = candidate / "validate.py"
         if not validate.is_file():
             raise ApprovalError("Python candidate has no validate.py runtime smoke entrypoint")
+        # The producer contract requires validate.py to persist artifacts/<stage>_result.json
+        # on every run, so smoking the sealed candidate in place would dirty the tree the
+        # digest check below protects. Run the smoke on a throwaway mirror instead. The
+        # mirror lives beside the candidate so its hard links can land on one filesystem.
         child_env = model_child_env(os.environ)
-        with tempfile.TemporaryDirectory(prefix="sure-approval-validation-") as validation_output:
+        with tempfile.TemporaryDirectory(prefix="sure-approve-smoke-", dir=candidate.parent) as smoke_root:
+            smoke_candidate = Path(smoke_root) / candidate.name
+            _mirror_candidate_for_smoke(candidate, smoke_candidate)
+            validation_output = Path(smoke_root) / "validation-output"
+            validation_output.mkdir()
             child_env.update(
                 {
-                    "MODEL_DIR": str(candidate),
+                    "MODEL_DIR": str(smoke_candidate),
                     "PYTHONDONTWRITEBYTECODE": "1",
-                    "SURE_VALIDATION_OUTPUT_DIR": validation_output,
+                    "SURE_VALIDATION_OUTPUT_DIR": str(validation_output),
                 }
             )
-            completed = subprocess.run(
-                [python, str(validate)],
-                cwd=candidate,
-                capture_output=True,
-                text=True,
-                timeout=120,
-                check=False,
-                env=child_env,
-            )
+            try:
+                completed = subprocess.run(
+                    [python, str(smoke_candidate / "validate.py")],
+                    cwd=smoke_candidate,
+                    capture_output=True,
+                    text=True,
+                    timeout=1800,
+                    check=False,
+                    env=child_env,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise ApprovalError("candidate runtime smoke timed out after 1800s") from exc
         smoke = {"command": [python, "validate.py"], "exit_code": completed.returncode, "stdout_sha256": sha256_bytes(completed.stdout.encode()), "stderr": completed.stderr[-2000:]}
     else:
         image_ref = str(binding.get("target_image_ref") or "")
@@ -862,6 +896,9 @@ def publish(run_dir: Path, replace: bool) -> dict[str, Any]:
         atomic_json(destination / "artifacts" / "publication_result.json", result)
         return result
     except Exception:
+        # The staging copy is dead weight once publication failed; ignore_errors
+        # so cleanup can never raise over the failure that brought us here.
+        shutil.rmtree(staging, ignore_errors=True)
         if backup is not None and not destination.exists() and backup.exists():
             backup.rename(destination)
         raise

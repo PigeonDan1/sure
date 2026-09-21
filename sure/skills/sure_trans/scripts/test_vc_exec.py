@@ -135,6 +135,16 @@ class DockerRunToVcTest(unittest.TestCase):
         self.assertEqual(spec.command, ["python", "-c", "print(1)"])
         self.assertEqual(spec.workdir, "/work")
 
+    def test_accepts_the_mount_syntax_the_skill_prescribes(self) -> None:
+        """SKILL.md:196 mounts an absolute host path of the running OS."""
+        with tempfile.TemporaryDirectory() as tmp:
+            host = Path(tmp) / "artifacts" / "adapter_validation"
+            spec = docker_run_to_vc(
+                ["docker", "run", "-v", f"{host}:/validation:rw",
+                 "--entrypoint", "python", "img", "-c", "pass"]
+            )
+            self.assertEqual(spec.mounts, [f"{host}:/validation:rw"])
+
     def test_accepts_shell_string(self) -> None:
         spec = docker_run_to_vc("docker run --entrypoint=python img -c 'print(1)'")
         self.assertEqual(spec.image, "img")
@@ -221,6 +231,29 @@ class DockerRunToVcTest(unittest.TestCase):
             with self.subTest(command=case):
                 with self.assertRaises(ValueError):
                     docker_run_to_vc(case)
+
+
+class SplitMountTest(unittest.TestCase):
+    """A docker -v spec is split the same way whatever host reads it.
+
+    The inputs are spelled out rather than derived from the running OS, so
+    both the Windows and the POSIX shape are covered on every platform.
+    """
+
+    def test_a_drive_letter_stays_on_its_host_path(self) -> None:
+        self.assertEqual(
+            vc_exec.split_mount(r"C:\run\artifacts\adapter_validation:/validation:rw"),
+            [r"C:\run\artifacts\adapter_validation", "/validation", "rw"],
+        )
+        self.assertEqual(
+            vc_exec.split_mount("c:/run/out:/validation"),
+            ["c:/run/out", "/validation"],
+        )
+
+    def test_a_posix_spec_is_split_on_every_colon(self) -> None:
+        self.assertEqual(vc_exec.split_mount("/host:/cont:ro"), ["/host", "/cont", "ro"])
+        self.assertEqual(vc_exec.split_mount("relative:/cont"), ["relative", "/cont"])
+        self.assertEqual(vc_exec.split_mount("/host"), ["/host"])
 
 
 class MountHostPathTest(unittest.TestCase):

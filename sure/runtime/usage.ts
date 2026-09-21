@@ -21,9 +21,7 @@ export interface SkillRuntimeBindingOptions {
 	harnessRuntime: HarnessRuntimeContract;
 	harnessRole: string;
 	modelRuntimeReason: string;
-	evaluationRuntime:
-		| { binding: Record<string, unknown>; role: string }
-		| { reason: string };
+	evaluationRuntime: { binding: Record<string, unknown>; role: string } | { reason: string };
 }
 
 function harnessBinding(contract: HarnessRuntimeContract): Record<string, unknown> {

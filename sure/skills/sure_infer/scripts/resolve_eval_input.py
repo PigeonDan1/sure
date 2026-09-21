@@ -29,6 +29,7 @@ from sure_eval.datasets.source_resolver import (
     SourceResolutionError,
     is_source_entry,
     read_source_language,
+    read_source_metadata,
     read_source_task,
     resolve_site_source_entry,
 )
@@ -374,7 +375,10 @@ def _nvidia_smi_available() -> bool:
         return False
     if not shutil.which("nvidia-smi"):
         return False
-    completed = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, check=False, timeout=10)
+    try:
+        completed = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, check=False, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
     return completed.returncode == 0 and bool(completed.stdout.strip())
 
 
@@ -547,7 +551,15 @@ def _dataset_details(
             source_root = source_root or ref.source_root
             source_name = source_name or ref.source_dataset_name
             version_id = version_id or ref.version_id
-            dataset_task = dataset_task or read_source_task(ref) or "ASR"
+            # Same precedence as DatasetManager._convert_source_root_to_jsonl: a
+            # speech-translation declaration in ds.jsonl wins over the sample-based
+            # guess, so the recorded task matches the projection the run will use.
+            source_meta = read_source_metadata(ref)
+            dataset_task = dataset_task or (
+                "S2TT"
+                if source_meta["task"] == "S2TT"
+                else (read_source_task(ref) or source_meta["task"])
+            )
             language = language or (read_source_language(ref) or "auto").lower()
         task = _effective_dataset_task(dataset_task, model_task, requested_metrics)
         if not task:

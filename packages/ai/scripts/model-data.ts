@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 export const MODEL_DATA_SCHEMA_VERSION = 3;
@@ -14,8 +14,7 @@ export interface ModelDataManifest {
 	files: Record<string, string>;
 }
 
-const MODEL_DATA_IMPORT_PATTERN =
-	/^import \{ [A-Z][A-Z0-9_]*_MODELS \} from "\.\/providers\/([^"/]+)\.models\.ts";$/gm;
+const MODEL_DATA_IMPORT_PATTERN = /^import \{ [A-Z][A-Z0-9_]*_MODELS \} from "\.\/providers\/([^"/]+)\.models\.ts";$/gm;
 
 function sha256(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
@@ -34,7 +33,10 @@ function describeSetDifference(expected: readonly string[], actual: readonly str
 	const actualSet = new Set(actual);
 	const missing = expected.filter((value) => !actualSet.has(value));
 	const extra = actual.filter((value) => !expectedSet.has(value));
-	return [missing.length > 0 ? `missing: ${missing.join(", ")}` : "", extra.length > 0 ? `extra: ${extra.join(", ")}` : ""]
+	return [
+		missing.length > 0 ? `missing: ${missing.join(", ")}` : "",
+		extra.length > 0 ? `extra: ${extra.join(", ")}` : "",
+	]
 		.filter(Boolean)
 		.join("; ");
 }
@@ -149,7 +151,8 @@ function validateModelValue(
 		errors.push(`${label} must be an object`);
 		return;
 	}
-	if (value.id !== modelId) errors.push(`${label} has id ${JSON.stringify(value.id)}, expected ${JSON.stringify(modelId)}`);
+	if (value.id !== modelId)
+		errors.push(`${label} has id ${JSON.stringify(value.id)}, expected ${JSON.stringify(modelId)}`);
 	if (value.provider !== providerId) {
 		errors.push(`${label} has provider ${JSON.stringify(value.provider)}, expected ${JSON.stringify(providerId)}`);
 	}
@@ -203,7 +206,9 @@ export function validateModelDataDirectory(structure: ModelDataStructure, dataDi
 		.filter((entry) => entry.endsWith(".json") && entry !== MODEL_DATA_MANIFEST_FILE)
 		.sort();
 	if (!sameStrings(expectedFiles, actualFiles)) {
-		errors.push(`provider data files do not match the generated catalog (${describeSetDifference(expectedFiles, actualFiles)})`);
+		errors.push(
+			`provider data files do not match the generated catalog (${describeSetDifference(expectedFiles, actualFiles)})`,
+		);
 	}
 
 	const manifestPath = join(dataDir, MODEL_DATA_MANIFEST_FILE);
@@ -225,7 +230,9 @@ export function validateModelDataDirectory(structure: ModelDataStructure, dataDi
 	else {
 		const manifestFileNames = Object.keys(manifestFiles).sort();
 		if (!sameStrings(expectedFiles, manifestFileNames)) {
-			errors.push(`manifest file hashes do not match provider data files (${describeSetDifference(expectedFiles, manifestFileNames)})`);
+			errors.push(
+				`manifest file hashes do not match provider data files (${describeSetDifference(expectedFiles, manifestFileNames)})`,
+			);
 		}
 	}
 
@@ -259,7 +266,9 @@ export function validateModelDataDirectory(structure: ModelDataStructure, dataDi
 		const expectedModelIds = Object.keys(expectedModels).sort();
 		const actualModelIds = Array.from(actualModels.keys()).sort();
 		if (!sameStrings(expectedModelIds, actualModelIds)) {
-			errors.push(`${filename} model IDs do not match the generated catalog (${describeSetDifference(expectedModelIds, actualModelIds)})`);
+			errors.push(
+				`${filename} model IDs do not match the generated catalog (${describeSetDifference(expectedModelIds, actualModelIds)})`,
+			);
 		}
 		for (const [modelId, expectedApi] of Object.entries(expectedModels)) {
 			const actualApi = actualModels.get(modelId);

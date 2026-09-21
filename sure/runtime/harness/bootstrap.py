@@ -71,7 +71,12 @@ def _load_spec() -> tuple[dict[str, Any], Path, str, str]:
     harness_version = str(spec.get("harness_version") or "").strip()
     if not harness_version:
         raise HarnessRuntimeError("runtime definition must declare harness_version")
-    materialization_version = int(spec.get("materialization_version") or 0)
+    try:
+        materialization_version = int(spec.get("materialization_version") or 0)
+    except (TypeError, ValueError):
+        # A value int() cannot read is as unusable as a missing one, and only a
+        # HarnessRuntimeError reaches the launcher as a message instead of a traceback.
+        materialization_version = 0
     if materialization_version < 1:
         raise HarnessRuntimeError("runtime definition must declare materialization_version")
     runtime_id = (

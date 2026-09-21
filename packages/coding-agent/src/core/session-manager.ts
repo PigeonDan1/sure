@@ -239,6 +239,7 @@ function migrateV1ToV2(entries: FileEntry[]): void {
 		}
 
 		entry.id = generateId(ids);
+		ids.add(entry.id);
 		entry.parentId = prevId;
 		prevId = entry.id;
 
@@ -331,6 +332,25 @@ function buildEntryIndex(entries: SessionEntry[], byId?: Map<string, SessionEntr
 	return index;
 }
 
+/**
+ * Walk parent pointers from an entry to the root, root first.
+ * Stops on an id already seen: a session file with duplicate ids (hand-edited, or
+ * written by the migration before it deduped) has a cycle, and a truncated path is
+ * a better failure than an unbounded walk.
+ */
+function collectPathToRoot(leaf: SessionEntry | undefined, byId: Map<string, SessionEntry>): SessionEntry[] {
+	const path: SessionEntry[] = [];
+	const seen = new Set<string>();
+	let current = leaf;
+	while (current && !seen.has(current.id)) {
+		seen.add(current.id);
+		path.push(current);
+		current = current.parentId ? byId.get(current.parentId) : undefined;
+	}
+	path.reverse();
+	return path;
+}
+
 function buildSessionPath(
 	entries: SessionEntry[],
 	leafId?: string | null,
@@ -349,14 +369,7 @@ function buildSessionPath(
 		return [];
 	}
 
-	const path: SessionEntry[] = [];
-	let current: SessionEntry | undefined = leaf;
-	while (current) {
-		path.push(current);
-		current = current.parentId ? index.get(current.parentId) : undefined;
-	}
-	path.reverse();
-	return path;
+	return collectPathToRoot(leaf, index);
 }
 
 function getSessionContextSettings(path: SessionEntry[]): Pick<SessionContext, "thinkingLevel" | "model"> {
@@ -1272,15 +1285,8 @@ export class SessionManager {
 	 * Use buildSessionContext() to get the resolved messages for the LLM.
 	 */
 	getBranch(fromId?: string): SessionEntry[] {
-		const path: SessionEntry[] = [];
 		const startId = fromId ?? this.leafId;
-		let current = startId ? this.byId.get(startId) : undefined;
-		while (current) {
-			path.push(current);
-			current = current.parentId ? this.byId.get(current.parentId) : undefined;
-		}
-		path.reverse();
-		return path;
+		return collectPathToRoot(startId ? this.byId.get(startId) : undefined, this.byId);
 	}
 
 	/**

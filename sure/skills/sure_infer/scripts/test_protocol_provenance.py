@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -11,6 +12,8 @@ from unittest.mock import patch
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 import check_run_report  # noqa: E402
 import evaluate_predictions  # noqa: E402
@@ -311,6 +314,43 @@ class ProtocolWriterModuleTests(unittest.TestCase):
         )
         self.assertIsNone(protocol["provenance"]["evaluation_engine"]["root"])
         self.assertEqual(len(protocol["execution_surface"]["template_sha256"]), 64)
+
+    def test_prediction_contract_path_points_at_a_real_contract(self) -> None:
+        # Downstream agents open contract_path; a dead link stops them there.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "infer_run"
+            run_dir.mkdir()
+            write_json(
+                run_dir / "prediction_generation_status.json",
+                {"schema": "sure.eval.prediction_generation_status.v2", "runtime": {}, "generation": {}},
+            )
+            protocol_writer.write_protocol_yaml(
+                run_dir, "standard_system", None, results=None, tool_name="transcribe_audio"
+            )
+            protocol = yaml.safe_load((run_dir / "protocol.yaml").read_text(encoding="utf-8"))
+        contract_path = protocol["prediction_contract"]["contract_path"]
+        self.assertTrue(
+            (SKILL_ROOT / contract_path).is_file(),
+            f"protocol.yaml points at a missing contract: {contract_path}",
+        )
+
+
+class PredictionContractLinkTests(unittest.TestCase):
+    """The report snapshot names the same contract; it must exist too."""
+
+    CONTRACT_REFERENCE = re.compile(r"[A-Za-z0-9_./-]*contracts/[A-Za-z0-9_.-]+\.md")
+
+    def test_report_snapshot_sites_reference_a_real_contract(self) -> None:
+        for relative in ("scripts/generate_report_snapshot.py", "scripts/templates/report_snapshot.md"):
+            references = set(
+                self.CONTRACT_REFERENCE.findall((SKILL_ROOT / relative).read_text(encoding="utf-8"))
+            )
+            self.assertTrue(references, f"{relative} names no contract any more")
+            for reference in sorted(references):
+                self.assertTrue(
+                    (SKILL_ROOT / reference).is_file(),
+                    f"{relative} points at a missing contract: {reference}",
+                )
 
 
 if __name__ == "__main__":

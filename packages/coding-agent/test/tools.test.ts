@@ -182,6 +182,34 @@ describe("Coding Agent Tools", () => {
 			);
 		});
 
+		it("should not count the empty string after a trailing newline as a line", async () => {
+			const testFile = join(testDir, "trailing-newline.txt");
+			const lines = Array.from({ length: 2500 }, (_, i) => `Line ${i + 1}`);
+			writeFileSync(testFile, `${lines.join("\n")}\n`);
+
+			const result = await readTool.execute("test-call-trailing-count", { path: testFile });
+
+			expect(getTextOutput(result)).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]");
+		});
+
+		it("should show error when offset is one past the last line of a file ending in a newline", async () => {
+			const testFile = join(testDir, "trailing-newline-offset.txt");
+			writeFileSync(testFile, "Line 1\nLine 2\nLine 3\n");
+
+			await expect(readTool.execute("test-call-trailing-offset", { path: testFile, offset: 4 })).rejects.toThrow(
+				/Offset 4 is beyond end of file \(3 lines total\)/,
+			);
+		});
+
+		it("should not report more lines when the limit covers a file ending in a newline", async () => {
+			const testFile = join(testDir, "trailing-newline-limit.txt");
+			writeFileSync(testFile, "Line 1\nLine 2\nLine 3\n");
+
+			const result = await readTool.execute("test-call-trailing-limit", { path: testFile, limit: 3 });
+
+			expect(getTextOutput(result)).not.toContain("more lines in file");
+		});
+
 		it("should include truncation details when truncated", async () => {
 			const testFile = join(testDir, "large-file.txt");
 			const lines = Array.from({ length: 2500 }, (_, i) => `Line ${i + 1}`);
@@ -898,6 +926,33 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain(".hidden-file");
 			expect(output).toContain(".hidden-dir/");
 		});
+
+		it("should list entries that cannot be stat'd, without a type suffix", async () => {
+			// A broken symlink is the real-world case: readdir returns it, stat rejects.
+			// Injected operations reproduce it identically on every platform.
+			const tool = createLsToolDefinition(testDir, {
+				operations: {
+					exists: () => true,
+					readdir: () => ["broken-link", "real-dir", "real-file"],
+					stat: (absolutePath: string) => {
+						if (absolutePath.endsWith("broken-link")) {
+							throw Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" });
+						}
+						return { isDirectory: () => !absolutePath.endsWith("real-file") };
+					},
+				},
+			});
+
+			const result = await tool.execute(
+				"test-ls-broken-link",
+				{ path: testDir },
+				undefined,
+				undefined,
+				fakeCtx(testDir),
+			);
+
+			expect(getTextOutput(result).split("\n")).toEqual(["broken-link", "real-dir/", "real-file"]);
+		});
 	});
 });
 
@@ -1313,6 +1368,32 @@ describe("edit tool CRLF handling", () => {
 
 		const content = readFileSync(testFile, "utf-8");
 		expect(content).toBe("\uFEFFfirst\r\nREPLACED\r\nthird\r\n");
+	});
+
+	it("should keep a lone CR inside an LF file untouched", async () => {
+		const testFile = join(testDir, "lone-cr-lf.txt");
+		writeFileSync(testFile, "line1\nprogress\rdone\nlast\n");
+
+		await editTool.execute("test-lone-cr-lf", {
+			path: testFile,
+			edits: [{ oldText: "last\n", newText: "LAST\n" }],
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("line1\nprogress\rdone\nLAST\n");
+	});
+
+	it("should keep a lone CR inside a CRLF file untouched", async () => {
+		const testFile = join(testDir, "lone-cr-crlf.txt");
+		writeFileSync(testFile, "line1\r\nprogress\rdone\r\nlast\r\n");
+
+		await editTool.execute("test-lone-cr-crlf", {
+			path: testFile,
+			edits: [{ oldText: "last\n", newText: "LAST\n" }],
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("line1\r\nprogress\rdone\r\nLAST\r\n");
 	});
 
 	it("should preserve CRLF line endings and BOM in multi-edit mode", async () => {
