@@ -123,8 +123,7 @@ export function createLsToolDefinition(
 								const entryStat = await ops.stat(fullPath);
 								if (entryStat.isDirectory()) suffix = "/";
 							} catch {
-								// Skip entries we cannot stat.
-								continue;
+								// Broken symlink or unreadable entry: still list it, just without the "/" hint.
 							}
 							results.push(entry + suffix);
 						}

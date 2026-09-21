@@ -17,7 +17,9 @@ export function detectLineEnding(content: string): "\r\n" | "\n" {
 }
 
 export function normalizeToLF(text: string): string {
-	return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	// Only CRLF is a line ending here. A lone CR stays a plain character so that
+	// restoreLineEndings(), which only rewrites LF, leaves it byte-identical.
+	return text.replace(/\r\n/g, "\n");
 }
 
 export function restoreLineEndings(text: string, ending: "\r\n" | "\n"): string {
