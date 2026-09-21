@@ -47,6 +47,25 @@ def _fake_meeteval(sessions: dict) -> types.ModuleType:
     return module
 
 
+def _fake_sacrebleu(calls: list) -> dict:
+    """Stand-in for sacrebleu that records the corpora it is scored on."""
+
+    class _Metric:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def corpus_score(self, hypotheses, references):
+            calls.append((list(hypotheses), [list(reference) for reference in references]))
+            return types.SimpleNamespace(score=42.0)
+
+    metrics = types.ModuleType("sacrebleu.metrics")
+    metrics.BLEU = _Metric
+    metrics.CHRF = _Metric
+    package = types.ModuleType("sacrebleu")
+    package.metrics = metrics
+    return {"sacrebleu": package, "sacrebleu.metrics": metrics}
+
+
 class MeetevalDependencyTests(unittest.TestCase):
     """A missing dependency or an empty session set is an error, not a 0.0 score."""
 
@@ -94,6 +113,75 @@ class MeetevalDependencyTests(unittest.TestCase):
         self.assertEqual(result["num_sessions"], 1)
         self.assertAlmostEqual(result["der"], 0.5)
         self.assertAlmostEqual(result["cpwer"], 0.25)
+
+
+class KeyPairingTests(unittest.TestCase):
+    """Predictions are paired with references by key, never by line number."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        self.evaluator = SUREEvaluator(language="en")
+
+    def test_ser_pairs_by_key_when_a_prediction_is_absent(self):
+        ref = _write(self.tmp, "ref.txt", ["a\tneutral", "b\thappy", "c\tangry"])
+        hyp = _write(self.tmp, "hyp.txt", ["b\thappy", "c\tangry"])
+        self.assertEqual(
+            self.evaluator._eval_ser(ref, hyp),
+            {"accuracy": 1.0, "score": 1.0, "missing_predictions": 1, "missing_references": 0},
+        )
+
+    def test_ser_keeps_an_empty_prediction_value_as_a_wrong_answer(self):
+        ref = _write(self.tmp, "ref.txt", ["a\tneutral", "b\thappy"])
+        hyp = _write(self.tmp, "hyp.txt", ["a\t", "b\thappy"])
+        self.assertEqual(
+            self.evaluator._eval_ser(ref, hyp),
+            {"accuracy": 0.5, "score": 0.5, "missing_predictions": 0, "missing_references": 0},
+        )
+
+    def test_ser_counts_predictions_without_a_reference(self):
+        ref = _write(self.tmp, "ref.txt", ["a\tneutral"])
+        hyp = _write(self.tmp, "hyp.txt", ["a\tneutral", "z\tangry"])
+        self.assertEqual(
+            self.evaluator._eval_ser(ref, hyp),
+            {"accuracy": 1.0, "score": 1.0, "missing_predictions": 0, "missing_references": 1},
+        )
+
+    def test_gr_pairs_by_key_when_a_prediction_is_absent(self):
+        ref = _write(self.tmp, "ref.txt", ["a\tmale", "b\tfemale", "c\tmale"])
+        hyp = _write(self.tmp, "hyp.txt", ["b\tfemale", "c\tmale"])
+        self.assertEqual(
+            self.evaluator._eval_gr(ref, hyp),
+            {"accuracy": 1.0, "score": 1.0, "missing_predictions": 1, "missing_references": 0},
+        )
+
+    def test_gr_keeps_an_empty_prediction_value_as_a_wrong_answer(self):
+        ref = _write(self.tmp, "ref.txt", ["a\tmale", "b\tfemale"])
+        hyp = _write(self.tmp, "hyp.txt", ["a\t", "b\tfemale"])
+        self.assertEqual(
+            self.evaluator._eval_gr(ref, hyp),
+            {"accuracy": 0.5, "score": 0.5, "missing_predictions": 0, "missing_references": 0},
+        )
+
+    def test_s2tt_scores_the_keys_present_on_both_sides(self):
+        ref = _write(self.tmp, "ref.txt", ["a\tguten tag", "b\thallo welt", "c\tbis bald"])
+        hyp = _write(self.tmp, "hyp.txt", ["b\thallo welt", "c\tbis bald"])
+        calls: list = []
+        with mock.patch.dict(sys.modules, _fake_sacrebleu(calls)):
+            result = self.evaluator._eval_s2tt(ref, hyp)
+        self.assertEqual(calls[0], (["hallo welt", "bis bald"], [["hallo welt", "bis bald"]]))
+        self.assertEqual(result["missing_predictions"], 1)
+        self.assertEqual(result["missing_references"], 0)
+
+    def test_s2tt_keeps_an_empty_prediction_value(self):
+        ref = _write(self.tmp, "ref.txt", ["a\tguten tag", "b\thallo welt"])
+        hyp = _write(self.tmp, "hyp.txt", ["a\t", "b\thallo welt"])
+        calls: list = []
+        with mock.patch.dict(sys.modules, _fake_sacrebleu(calls)):
+            result = self.evaluator._eval_s2tt(ref, hyp)
+        self.assertEqual(calls[0], (["", "hallo welt"], [["guten tag", "hallo welt"]]))
+        self.assertEqual(result["missing_predictions"], 0)
 
 
 if __name__ == "__main__":
