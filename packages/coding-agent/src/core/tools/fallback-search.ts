@@ -79,7 +79,9 @@ export async function* walkTree(
 			continue; // unreadable directory: skip it, the same as rg and fd do
 		}
 		let scopes = current.scopes;
-		if (entries.some((entry) => entry.isFile() && entry.name === ".gitignore")) {
+		// By name, not isFile(): a .gitignore left by a dotfile manager is a symlink,
+		// and git, rg and fd all read through it. readFile follows the link.
+		if (entries.some((entry) => entry.name === ".gitignore")) {
 			try {
 				const patterns = await readFile(path.join(current.dir, ".gitignore"), "utf-8");
 				scopes = [...scopes, { prefix: current.relativePosixPath, matcher: ignore().add(patterns) }];
