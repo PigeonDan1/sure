@@ -755,7 +755,10 @@ class RunVcJobTest(unittest.TestCase):
             if args[:2] == ["vc", "info"]:
                 return completed(args, stdout="cluster ok\n")
             if args[:2] == ["vc", "submit"]:
-                inner = Path(args[args.index("--cmd") + 1].split(" ", 1)[1])
+                # --cmd is one shell-quoted string for the remote shell, so read
+                # it back the way that shell would rather than splitting on the
+                # first space: any log_dir needing quotes lost its opening quote.
+                inner = Path(shlex.split(args[args.index("--cmd") + 1])[1])
                 inner.parent.mkdir(parents=True, exist_ok=True)
                 (inner.parent / "exit_code").write_text("0\n", encoding="utf-8")
                 (inner.parent / "stdout.log").write_text("probe ok\n", encoding="utf-8")
@@ -788,7 +791,7 @@ class RunVcJobTest(unittest.TestCase):
             self.assertEqual(submit[job_index + 1 : job_index + 3], ["--project", TEST_PROJECT])
             self.assertIn("-v", submit)
             self.assertTrue(submit[-2].startswith("--cmd"))
-            self.assertTrue(submit[-1].startswith("bash ") and submit[-1].endswith("inner.sh"))
+            self.assertEqual(shlex.split(submit[-1]), ["bash", str(log_dir / "inner.sh")])
             self.assertTrue((log_dir / "inner.sh").is_file())
             inner = (log_dir / "inner.sh").read_text(encoding="utf-8")
             self.assertIn("timeout --kill-after=15 1200 python -c 'print(1)'", inner)
