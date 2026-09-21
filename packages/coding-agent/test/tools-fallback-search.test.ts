@@ -67,6 +67,23 @@ describe("grep and find without ripgrep or fd", () => {
 		expect(lines).toEqual(["src/alpha.ts:1: const needle = 1;", "src/alpha.ts:2: const other = 2;"]);
 	});
 
+	it("reports nothing for an empty file", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "pi-fallback-empty-"));
+		tempDirs.push(dir);
+		writeFileSync(join(dir, "empty.ts"), "");
+
+		// "^" matches the empty string, and an empty file has no lines for it to
+		// match: ripgrep prints nothing at all for one.
+		const matches = await grepFallback({
+			searchPath: join(dir, "empty.ts"),
+			isDirectory: false,
+			pattern: "^",
+			limit: 10,
+		});
+
+		expect(matches).toEqual([]);
+	});
+
 	it("gives up between the files of one flat directory when aborted", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "pi-fallback-abort-"));
 		tempDirs.push(dir);

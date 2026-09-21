@@ -149,9 +149,10 @@ export async function grepFallback(params: {
 		if (buffer.subarray(0, BINARY_SNIFF_BYTES).includes(0)) return;
 		const lines = buffer.toString("utf-8").split("\n");
 		// The final newline terminates the last line, it does not start another
-		// one. Without this, every pattern that matches the empty string reports a
-		// phantom hit past the end of the file and spends a slot of the limit.
-		if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+		// one, and an empty file holds no line at all. Without this, every pattern
+		// that matches the empty string reports a phantom hit past the end of the
+		// file and spends a slot of the limit.
+		if (lines[lines.length - 1] === "") lines.pop();
 		for (let index = 0; index < lines.length && matches.length < params.limit; index++) {
 			const lineText = (lines[index] ?? "").replace(/\r$/, "");
 			if (regex.test(lineText)) matches.push({ filePath: absolutePath, lineNumber: index + 1, lineText });
