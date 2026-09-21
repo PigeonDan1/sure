@@ -7,8 +7,9 @@ verdict. Exit codes:
 - 0: every requested (task, language, metric) is supported, or the engine is
   unavailable and the check is skipped (later stages report engine issues).
 - 2: usage or input errors.
-- 3: the evaluation package does not support a requested route. This is a
-  terminal verdict — no retry can make an unsupported route runnable.
+- 3: the evaluation package does not support a requested route, or no route
+  could be checked at all. This is a terminal verdict — no retry can make an
+  unsupported route runnable.
 """
 
 from __future__ import annotations
@@ -27,8 +28,12 @@ PREFLIGHT_SCHEMA = "sure.harness.evaluation_preflight.v1"
 REASON_CODE_SUPPORTED = "SUPPORTED"
 REASON_CODE_SKIPPED = "PREFLIGHT_SKIPPED_ENGINE_UNAVAILABLE"
 REASON_CODE_UNSUPPORTED = "EVALUATION_PACKAGE_UNSUPPORTED"
+REASON_CODE_INDETERMINATE = "EVALUATION_ROUTES_INDETERMINATE"
 REASON_UNSUPPORTED = (
     "evaluation package unsupported: sure-evaluation does not support the requested evaluation route"
+)
+REASON_INDETERMINATE = (
+    "evaluation routes indeterminate: no requested route could be checked, so support cannot be determined"
 )
 
 
@@ -135,6 +140,18 @@ def build_preflight(payload: dict, engine_override: str = "") -> dict:
     for item in datasets:
         if isinstance(item, dict):
             checks.extend(_check_dataset(engine_root, item))
+    if not checks:
+        # all([]) is True: with nothing checked, "every route is supported" is a
+        # verdict the run never earned.
+        return {
+            "schema": PREFLIGHT_SCHEMA,
+            "generated_at": _utc_now(),
+            "supported": False,
+            "reason_code": REASON_CODE_INDETERMINATE,
+            "reason": REASON_INDETERMINATE,
+            "engine": engine,
+            "checks": checks,
+        }
     supported = all(check["supported"] for check in checks)
     return {
         "schema": PREFLIGHT_SCHEMA,
@@ -167,7 +184,7 @@ def main() -> int:
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(text + "\n", encoding="utf-8")
-    if verdict["reason_code"] == REASON_CODE_UNSUPPORTED:
+    if not verdict["supported"]:
         print(verdict["reason"], file=sys.stderr)
         return 3
     return 0

@@ -123,6 +123,13 @@ class PreflightCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 3)
         self.assertEqual(written["reason_code"], "EVALUATION_PACKAGE_UNSUPPORTED")
 
+    def test_dataset_without_metrics_cannot_be_determined(self):
+        result, written = _run_preflight(_payload([_dataset("ASR", "zh", [])]))
+        self.assertEqual(result.returncode, 3)
+        self.assertFalse(written["supported"])
+        self.assertEqual(written["reason_code"], "EVALUATION_ROUTES_INDETERMINATE")
+        self.assertEqual(written["checks"], [])
+
     def test_missing_engine_skips_preflight(self):
         result, written = _run_preflight(_payload([_dataset("ASR", "zh", ["cer"])], engine_root=None))
         self.assertEqual(result.returncode, 0, result.stderr)
