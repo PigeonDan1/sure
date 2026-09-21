@@ -22,10 +22,13 @@ export async function editInExternalEditor(options: ExternalEditorOptions): Prom
 		// Do not use spawnSync here. On Windows, synchronous child_process calls can keep
 		// Node/libuv's console input read active after the parent pauses stdin, racing
 		// vim/nvim for the console input buffer until Ctrl+C cancels the pending read.
+		const useShell = process.platform === "win32";
 		const exitCode = await new Promise<number | null>((resolve) => {
-			const child = spawn(editor, [...editorArgs, filePath], {
+			// Under shell: true the arguments are concatenated without escaping, so the prompt
+			// path has to be quoted or a temporary directory containing a space is word-split.
+			const child = spawn(editor, [...editorArgs, useShell ? `"${filePath}"` : filePath], {
 				stdio: "inherit",
-				shell: process.platform === "win32",
+				shell: useShell,
 			});
 			child.on("error", () => resolve(null));
 			child.on("close", (code) => resolve(code));
