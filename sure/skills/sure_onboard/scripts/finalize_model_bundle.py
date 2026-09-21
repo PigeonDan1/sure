@@ -365,12 +365,42 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict[str, A
     return deployment
 
 
+
+def portable_path(raw: str, run_dir: Path, model_dir: Path) -> str:
+    path = Path(raw).expanduser()
+    for root in (model_dir.resolve(), run_dir.resolve()):
+        try:
+            return path.resolve().relative_to(root).as_posix() or "."
+        except ValueError:
+            continue
+    return raw
+
+
+def normalize_portable_paths(value: Any, run_dir: Path, model_dir: Path, key: str = "") -> Any:
+    if isinstance(value, dict):
+        return {
+            name: normalize_portable_paths(child, run_dir, model_dir, name)
+            for name, child in value.items()
+        }
+    if isinstance(value, list):
+        return [normalize_portable_paths(child, run_dir, model_dir, key) for child in value]
+    if isinstance(value, str) and (key == "path" or key.endswith("_path")) and Path(value).is_absolute():
+        return portable_path(value, run_dir, model_dir)
+    return value
+
+
 def finalize(run_dir: Path, produces: Path) -> dict[str, Any]:
     model_dir, resolved = resolve_model_dir(run_dir)
     ensure_safe_bundle_targets(model_dir, resolved)
     copy_selected_delivery_artifacts(run_dir, model_dir, resolved)
     update_manifest(model_dir, resolved)
     package = write_package_gate(run_dir, run_dir / "artifacts" / "package_gate.json", model_dir)
+    package["model_dir"] = "."
+    package["artifact_manifest_path"] = "artifacts/artifact_manifest.json"
+    package = normalize_portable_paths(package, run_dir, model_dir)
+    package_bytes = json_bytes(package)
+    atomic_write(run_dir / "artifacts" / "package_gate.json", package_bytes)
+    atomic_write(model_dir / "artifacts" / "package_gate.json", package_bytes)
     write_inventory(model_dir, run_dir / "artifacts" / "runtime_inventory.json", run_dir)
     write_verdict(run_dir, run_dir / "artifacts" / "verdict.json", model_dir)
     deployment = build_deployment_ready(run_dir, model_dir, resolved, package)

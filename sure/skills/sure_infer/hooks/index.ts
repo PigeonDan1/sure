@@ -7,6 +7,7 @@ import {
 	harnessRuntimeEnv,
 	resolveHarnessPython,
 } from "../../../runtime/harness/resolve.ts";
+import { agentBinDir, demoteAgentBinDir } from "../../../runtime/agent-path.ts";
 import {
 	gateUnavailable,
 	injectOnBlock,
@@ -166,6 +167,8 @@ export function evalProductDir(ctx: SureHookContext): string | undefined {
 }
 
 export function preStart(ctx: SureHookContext): SureHookResult {
+	// Park agent bin at end of PATH so a docker shim there cannot shadow system docker.
+	demoteAgentBinDir(process.env, agentBinDir());
 	const args = parseArgs(ctx.args);
 	const missing: string[] = [];
 	if (!args.model) {

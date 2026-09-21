@@ -7,6 +7,8 @@ description: Adapt and validate a model, then seal either the default digest-pin
 
 Onboard or repair a model into a reproducible inference unit. The state machine lives in `hooks/state-machine.ts`; this document is what the agent reads to drive each unit.
 
+Docker packaging resolves the host CLI via `SURE_ONBOARD_DOCKER_BIN`, then shared `SURE_DOCKER_BIN`, then system paths, then `PATH` (`scripts/docker_runtime.py`).
+
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
 
 Control principle: **agent decides scope, scripts enforce format and execution.** Docker registry delivery remains the default. An explicit `package=none` may instead become Eval-ready only when the site permits Python, the backend is `uv`, and a hash-locked Model Runtime is materialized and sealed. A model-local `.venv` by itself is validation evidence, never an Eval runtime.

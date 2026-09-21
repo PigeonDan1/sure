@@ -1389,6 +1389,30 @@ def _source_fallback_names(jsonl_path: str | Path | None) -> list[str]:
     return [str(name)] if name else []
 
 
+
+def _report_dataset_name(row: dict[str, Any], jsonl_path: str | Path | None) -> str | None:
+    """Return the report identity without leaking a task projection suffix."""
+    source_fields = _dataset_source_fields(jsonl_path)
+    row_source = row.get("source")
+    if isinstance(row_source, dict):
+        source_fields = {**source_fields, **row_source}
+    source_name = str(source_fields.get("source_dataset_name") or "").strip()
+    version_id = str(source_fields.get("version_id") or "").strip()
+    if source_name and version_id:
+        return f"{source_name}__{version_id}"
+    dataset = row.get("dataset")
+    return str(dataset) if dataset is not None else None
+
+
+def _report_rps_payload(rps: Any, dataset_name: str | None) -> Any:
+    if not isinstance(rps, dict) or not dataset_name:
+        return rps
+    normalized = dict(rps)
+    if "dataset" in normalized:
+        normalized["dataset"] = dataset_name
+    return normalized
+
+
 def _dataset_metric_row(result: dict[str, Any]) -> dict[str, Any]:
     report = _result_report(result)
     pipeline = _result_pipeline(result)
@@ -1504,6 +1528,8 @@ def _standard_report_row_v1(
     score = _metric_score_from_payload_row(row)
     prediction_file = artifacts.get("prediction_file") or inputs.get("prediction_path") or ""
     pipeline_id = row.get("pipeline_id") or pipeline.get("pipeline_id") or context.get("pipeline_id")
+    jsonl_path = inputs.get("jsonl_path") or row.get("jsonl_path") or validation.get("jsonl_path")
+    report_dataset_name = _report_dataset_name(row, jsonl_path)
     validation_summary = {
         "expected_samples": validation.get("expected_samples"),
         "provided_predictions": validation.get("provided_predictions"),
@@ -1535,12 +1561,12 @@ def _standard_report_row_v1(
                 "tool_name": tool_name,
             },
             "dataset": {
-                "name": row.get("dataset"),
+                "name": report_dataset_name,
                 "task": row.get("task"),
                 "language": row.get("language"),
-                "jsonl_path": inputs.get("jsonl_path") or row.get("jsonl_path") or validation.get("jsonl_path"),
+                "jsonl_path": jsonl_path,
                 "num_samples": row.get("num_samples"),
-                **_dataset_source_fields(inputs.get("jsonl_path") or row.get("jsonl_path")),
+                **_dataset_source_fields(jsonl_path),
             },
             "prediction": {
                 "file": prediction_file,
@@ -1559,7 +1585,7 @@ def _standard_report_row_v1(
                 "score_key": (row.get("result") or {}).get("score_key") if isinstance(row.get("result"), dict) else "score",
             },
             "baseline": None,
-            "rps": row.get("rps"),
+            "rps": _report_rps_payload(row.get("rps"), report_dataset_name),
             "pipeline": {
                 "pipeline_id": pipeline_id,
                 "report_path": pipeline.get("report_path") or artifacts.get("report"),

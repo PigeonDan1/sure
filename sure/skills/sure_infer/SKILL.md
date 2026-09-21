@@ -5,7 +5,7 @@ description: Run reproducible inference for an approved model over selected data
 
 # /sure_infer
 
-Run an approved model over the selected datasets. The model has been human-approved into a configured `approved_models_roots` directory; container bindings mount approved storage read-only, and a site-approved Python binding runs on a trusted host and verifies model-core hashes before and after execution. The product is an inference bundle staged under repository-local `sure/results` (or the requested `output_dir`): `predictions/`, `protocol.yaml`, `prediction_generation_status.json`, `validation_payload.json` and `references/sure_benchmark/jsonl/`. `/sure_eval` scores that bundle later; this skill never runs a metric.
+Run an approved model over the selected datasets. The model has been human-approved into a configured `approved_models_roots` directory; container bindings mount approved storage read-only, and a site-approved Python binding runs on a trusted host and verifies model-core hashes before and after execution. The product is an inference bundle staged under repository-local `sure/results` (or the requested `output_dir`): `predictions/`, `protocol.yaml`, `prediction_generation_status.json`, `validation_payload.json` and `references/sure_benchmark/jsonl/`. `/sure_eval` scores that bundle later; this skill never runs a metric. Dataset layout differences (ds_pool vs OpenBench) are documented in `references/dataset_formats.md`. Docker CLI resolution prefers `SURE_EVAL_DOCKER_BIN`, then `SURE_DOCKER_BIN`, then system paths (`/usr/bin/docker`, …), then `PATH`.
 
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
 

@@ -3,21 +3,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from pathlib import Path
 
-
-PYTHON_LIMIT = 5000
-ARCHITECTURE_PATTERNS = (
-    ("conformer", re.compile(r"\bconformer\b")),
-    ("transformer", re.compile(r"\btransformers?\b")),
-    ("cnn", re.compile(r"\b(?:cnn|conv1d|conv2d|convolutional?)\b")),
-    ("rnn", re.compile(r"\b(?:rnn|recurrent)\b")),
-    ("lstm", re.compile(r"\blstm\b")),
-    ("gru", re.compile(r"\bgru\b")),
-    ("ctc", re.compile(r"\bctc\b")),
-    ("transducer", re.compile(r"\b(?:rnn-?t|rnnt|transducer)\b")),
-)
+from framework_contract import collect_framework_evidence, deterministic_framework, evidence_digest
 
 
 def read_object(path: Path) -> dict:
@@ -64,88 +52,76 @@ def main() -> int:
     artifacts = run_dir / "artifacts"
     resolved = read_object(artifacts / "trans_input_resolved.json")
     dependencies = read_object(artifacts / "inference_dependency_report.json")
-    build_context = Path(resolved["build_context"])
-    evidence: list[str] = []
-    corpus: list[str] = []
-    for name in ("requirements.txt", "requirements.lock.txt", "pyproject.toml", "setup.py", "environment.yml", "environment.yaml"):
-        path = build_context / name
-        if path.is_file():
-            corpus.append(path.read_text(encoding="utf-8", errors="replace"))
-            evidence.append(str(path))
-    declared_lockfile = resolved.get("lockfile")
-    if declared_lockfile:
-        lockfile = Path(str(declared_lockfile))
-        if lockfile.is_file() and str(lockfile) not in evidence:
-            corpus.append(lockfile.read_text(encoding="utf-8", errors="replace"))
-            evidence.append(str(lockfile))
-    python_files: list[Path] = []
-    for support in dependencies.get("support_paths", []):
-        root = Path(str(support))
-        if root.is_file() and root.suffix == ".py":
-            python_files.append(root)
-        elif root.is_dir():
-            python_files.extend(root.rglob("*.py"))
-        if len(python_files) >= PYTHON_LIMIT:
-            break
-    for path in python_files[:PYTHON_LIMIT]:
-        corpus.append(path.read_text(encoding="utf-8", errors="replace"))
-    text = "\n".join(corpus).lower()
-    imports = {str(item).lower() for item in dependencies.get("python_imports", [])}
-    has_torch = any(name == "torch" or name.startswith("torch.") for name in imports) or re.search(
-        r"(^|[^a-z])torch([^a-z]|$)", text
-    ) is not None
-    has_transformers = any(name == "transformers" or name.startswith("transformers.") for name in imports) or re.search(
-        r"(^|[^a-z])transformers([^a-z]|$)", text
-    ) is not None
-    additional_frameworks = sorted(name for name in ("tensorflow", "jax", "flax") if name in imports or name in text)
-    # A torch token alone does not make PyTorch the primary computation
-    # framework: a delivery that also ships TensorFlow or JAX has to be
-    # blocked, which is what SKILL.md promises and what mainline did before
-    # the non-Transformers relaxation.
-    if has_torch and not additional_frameworks:
-        detected_framework = "pytorch"
-    elif "tensorflow" in additional_frameworks:
-        detected_framework = "tensorflow"
-    elif any(name in additional_frameworks for name in ("jax", "flax")):
-        detected_framework = "jax_flax"
+    evidence = collect_framework_evidence(resolved, dependencies)
+    digest = evidence_digest(evidence)
+    output = artifacts / "framework_detection.json"
+    previous: dict = {}
+    if output.is_file():
+        try:
+            previous = read_object(output)
+        except (OSError, ValueError, json.JSONDecodeError):
+            previous = {}
+    agent_review = previous.get("agent_review") if previous.get("evidence_digest") == digest else None
+
+    detected_framework = deterministic_framework(evidence)
+    has_torch = bool(evidence["has_torch"])
+    hard_conflicts = evidence["hard_conflicts"]
+    review_signals = evidence["review_signals"]
+    if detected_framework != "pytorch":
+        status = "blocked"
+    elif review_signals and not agent_review:
+        status = "needs_review"
+    elif isinstance(agent_review, dict) and agent_review.get("disposition") == "runtime_conflict":
+        status = "blocked"
     else:
-        detected_framework = "unknown"
-    detected_model_framework = "transformers" if has_transformers else "custom" if has_torch else "unknown"
+        status = "ready"
+
     declared_model_framework = str(resolved["model_framework"])
-    model_framework_matches = declared_model_framework == detected_model_framework or (
-        declared_model_framework != "transformers" and detected_model_framework == "custom"
-    )
-    architecture_signals = [name for name, pattern in ARCHITECTURE_PATTERNS if pattern.search(text)]
+    detected_model_framework = "transformers" if evidence["has_transformers"] else "custom" if has_torch else "unknown"
     clarification = architecture_clarification(
         declared_model_framework,
         detected_model_framework,
-        architecture_signals,
+        evidence["architecture_signals"],
     )
+    model_framework_matches = declared_model_framework == detected_model_framework or (
+        declared_model_framework != "transformers" and detected_model_framework == "custom"
+    )
+    human_evidence = []
     if has_torch:
-        evidence.append("PyTorch import or dependency detected")
-    if has_transformers:
-        evidence.append("Transformers import or dependency detected")
-    if "peft" in imports or "peft" in text:
-        evidence.append("PEFT dependency detected")
-    evidence.extend(f"additional framework evidence: {name}" for name in additional_frameworks)
+        human_evidence.append("PyTorch import or dependency detected")
+    if evidence["has_transformers"]:
+        human_evidence.append("Transformers import or dependency detected")
+    human_evidence.extend(
+        f"hard incompatible framework evidence: {item['framework']} ({item.get('file', item.get('package', 'dependency'))})"
+        for item in hard_conflicts
+    )
+    human_evidence.extend(
+        f"review-only framework evidence: {item['framework']} ({item.get('file', item.get('package', 'dependency'))})"
+        for item in review_signals
+    )
     payload = {
         "schema": "sure.trans.framework_detection.v2",
         "declared_framework": resolved["framework"],
         "declared_model_framework": declared_model_framework,
         "detected_framework": detected_framework,
         "detected_model_framework": detected_model_framework,
-        "framework_requirement_met": detected_framework == "pytorch",
+        "framework_requirement_met": detected_framework == "pytorch" and status != "blocked",
         "model_framework_matches": model_framework_matches,
         "transformers_preferred": True,
         "clarification_required": clarification is not None,
-        "architecture_signals": architecture_signals,
+        "architecture_signals": evidence["architecture_signals"],
         "architecture_clarification": clarification,
-        "status": "ready" if detected_framework == "pytorch" else "blocked",
-        "evidence": evidence,
+        "status": status,
+        "evidence": human_evidence,
+        "framework_evidence": evidence["framework_evidence"],
+        "hard_conflicts": hard_conflicts,
+        "review_signals": review_signals,
+        "review_required": bool(review_signals),
+        "evidence_digest": digest,
+        "agent_review": agent_review,
         "auxiliary_runtimes_allowed": ["onnxruntime", "native_binary"],
-        "scanned_python_files": min(len(python_files), PYTHON_LIMIT),
+        "scanned_python_files": evidence["scanned_python_files"],
     }
-    output = artifacts / "framework_detection.json"
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(output)
     return 0

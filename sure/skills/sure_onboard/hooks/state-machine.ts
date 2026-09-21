@@ -219,7 +219,7 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		schemaRef: "docker_registry_result.schema.json",
 		requiredFields: ["schema", "status"],
 		gateScript: "check_container_package.py",
-		helperScripts: ["describe_harness_runtime.py"],
+		helperScripts: ["docker_runtime.py", "describe_harness_runtime.py"],
 	},
 	{
 		id: "save_artifacts",

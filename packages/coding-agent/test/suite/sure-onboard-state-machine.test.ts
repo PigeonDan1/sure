@@ -480,6 +480,11 @@ describe("sure_onboard aligned state machine", () => {
 		]);
 	});
 
+	it("allows package_container to resolve the Docker binary before its gate runs", () => {
+		const unit = findUnit("package_container");
+		expect(unit?.helperScripts).toContain("docker_runtime.py");
+	});
+
 	it("accepts a local-first enriched repo_summary artifact", () => {
 		const { ctx } = freshCtx("repo-summary-local-first");
 		const unit = findUnit("discover")!;

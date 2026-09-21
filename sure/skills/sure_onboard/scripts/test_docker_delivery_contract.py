@@ -20,6 +20,7 @@ from deployment_contract import document_timestamp, resolve_model_dir
 from finalize_model_bundle import (
     ensure_safe_bundle_targets,
     finalize,
+    normalize_portable_paths,
     resolve_weights_root,
     weights_integrity,
 )
@@ -619,6 +620,30 @@ class DockerDeliveryContractTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "local evidence was not fully checked"):
                 build_package_gate(self.run_dir, self.model_dir)
+
+    def test_normalize_portable_paths_rewrites_nested_abs(self) -> None:
+        # finalize always rebuilds package_gate via write_package_gate; the
+        # ported rewrite is normalize_portable_paths — unit-test that directly.
+        # Only keys named `path` or ending `_path` are rewritten; model_dir is
+        # forced to "." by finalize itself before normalize runs.
+        package = {
+            "model_dir": str(self.model_dir),
+            "artifact_manifest_path": str(self.model_artifacts / "artifact_manifest.json"),
+            "local": {
+                "sample_output_path": str(self.model_artifacts / "sample_output.json"),
+            },
+            "docker": {
+                "build_result_path": str(self.run_artifacts / "docker_build_result.json"),
+            },
+            "outside_path": str(self.root / "elsewhere" / "x.json"),
+        }
+        value = normalize_portable_paths(package, self.run_dir, self.model_dir)
+        self.assertEqual(value["model_dir"], str(self.model_dir))  # not a *_path key
+        self.assertEqual(value["artifact_manifest_path"], "artifacts/artifact_manifest.json")
+        self.assertEqual(value["local"]["sample_output_path"], "artifacts/sample_output.json")
+        self.assertEqual(value["docker"]["build_result_path"], "artifacts/docker_build_result.json")
+        # out-of-root abs paths stay absolute (GitLab same); escape reject is ensure_safe_bundle_targets
+        self.assertEqual(value["outside_path"], str(self.root / "elsewhere" / "x.json"))
 
     def test_container_gate_rejects_harness_model_alias(self) -> None:
         self.validation["harness_runtime"]["python_executable"] = "python"

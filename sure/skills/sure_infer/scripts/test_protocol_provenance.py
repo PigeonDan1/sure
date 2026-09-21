@@ -85,6 +85,18 @@ class ProtocolProvenanceTests(unittest.TestCase):
         run_dir = self.root / "eval_run"
         run_dir.mkdir()
         write_json(
+            run_dir / "artifacts" / "execution_provenance.json",
+            {
+                "schema": "sure.eval.execution_provenance.v1",
+                "harness_commit": "h" * 40,
+                "evaluation_engine_commit": "e" * 40,
+                "evaluation_runtime_id": "sure-evaluation-test",
+                "evaluation_runtime_lock_sha256": "d" * 64,
+                "image_digest": "sha256:" + "a" * 64,
+                "unavailable": {},
+            },
+        )
+        write_json(
             run_dir / "prediction_generation_status.json",
             {
                 "schema": "sure.eval.prediction_generation_status.v2",
@@ -125,7 +137,14 @@ class ProtocolProvenanceTests(unittest.TestCase):
                 },
             },
         )
-        with patch.dict("os.environ", {"RUN_ID": "published-run-id"}):
+        with (
+            patch.dict("os.environ", {"RUN_ID": "published-run-id", "PATH": str(self.root / "no-git")}),
+            patch.object(
+                evaluate_predictions.subprocess,
+                "run",
+                side_effect=AssertionError("report generation must not execute git"),
+            ),
+        ):
             evaluate_predictions._write_protocol_yaml(
                 run_dir,
                 "strict_core",
@@ -139,6 +158,11 @@ class ProtocolProvenanceTests(unittest.TestCase):
         self.assertEqual(protocol["protocol_selection"]["standard_params"]["beam_size"], 4)
         self.assertEqual(protocol["inference_parameters"]["explicit_tool_args"]["max_new_tokens"], 64)
         self.assertFalse(protocol["provenance"]["raw_response_source_of_truth"])
+        self.assertEqual(protocol["provenance"]["harness_commit"], "h" * 40)
+        self.assertIsNone(protocol["provenance"]["harness_commit_unavailable_reason"])
+        self.assertEqual(protocol["provenance"]["evaluation_engine"]["commit"], "e" * 40)
+        self.assertIsNone(protocol["provenance"]["evaluation_engine"]["commit_unavailable_reason"])
+        self.assertEqual(protocol["provenance"]["execution_provenance_schema"], "sure.eval.execution_provenance.v1")
         self.assertEqual(protocol["inference_environment"]["runtime_inventory"]["status"], "ready")
         self.assertEqual(
             protocol["inference_environment"]["container"]["image_ref"],

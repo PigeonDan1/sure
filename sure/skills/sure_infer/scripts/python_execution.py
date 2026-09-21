@@ -12,6 +12,12 @@ from typing import Any, Mapping
 from container_execution import surface_env, surface_env_refuses
 from deployment_binding import DEPLOYMENT_BINDING_V2
 from harness_runtime import harness_runtime_from_eval_input
+from evaluation_runtime import evaluation_runtime_from_eval_input
+from execution_provenance import (
+    build_execution_provenance,
+    execution_provenance_env,
+    write_execution_provenance,
+)
 
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -124,6 +130,16 @@ def build_local_python_command(
     runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
     output_dir = Path(str(runtime.get("run_dir") or "")).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        evaluation_runtime = evaluation_runtime_from_eval_input(eval_input, prepare=False)
+    except Exception:
+        evaluation_runtime = None
+    execution_provenance_path = output_dir / "artifacts" / "execution_provenance.json"
+    execution_provenance = build_execution_provenance(
+        harness_root=repo_root,
+        evaluation_runtime=evaluation_runtime,
+    )
+    write_execution_provenance(execution_provenance_path, execution_provenance)
     skill_root = (repo_root / "sure" / "skills" / "sure_infer").resolve()
     if not (skill_root / "scripts").is_dir():
         raise ValueError(f"SURE-INFER skill root is invalid: {skill_root}")
@@ -165,6 +181,7 @@ def build_local_python_command(
             "XDG_CACHE_HOME": str(cache_root / "xdg"),
         }
     )
+    env.update(execution_provenance_env(execution_provenance_path, execution_provenance))
     return [str(harness_python), str(entrypoint.resolve())], env, {
         "runtime_kind": "python",
         "model_runtime": python,
@@ -173,4 +190,5 @@ def build_local_python_command(
         "working_dir": str(working_dir),
         "model_core_sha256": verified,
         "host_python_fallback": False,
+        "execution_provenance": execution_provenance,
     }
