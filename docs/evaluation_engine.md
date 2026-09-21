@@ -74,6 +74,18 @@ git commit -m "chore(sure): bump sure-evaluation submodule"
 
 在共享部署检出中不要直接开发或提交；从隔离开发检出走评审和 CI。
 
+### `engine_pyproject_sha256` 标识的是内容,不是字节
+
+运行时拿这个值来认引擎:读引擎 checkout 里 `pyproject.toml` 的原始字节,把每一对 CRLF 折成一个 LF,再对折完的字节做 sha256。归一只碰换行这一件事,BOM、尾随空白、缩进、文件末尾有没有换行、用什么编码存的,全都原样进哈希;单独一个 CR 算内容不算换行,留在摘要里。覆盖范围也只有 `pyproject.toml` 这一个文件,引擎其余内容靠 `engine_commit` 钉。
+
+所以它标识的是文件**内容**,不是文件**字节**。拿两个摘要对比时:
+
+- **相等**只说明内容一样,不说明字节一样。同一份内容的 LF 检出和 CRLF 检出摘要相同,CRLF 和 LF 混着的那份也和全 LF 的那份相同。想确认两个文件字节一致,这个摘要给不了答案,得自己另外比。
+- **不等**就是内容真的不一样,不可能只是"Windows 检出把换行换了"。看到 `evaluation engine pyproject.toml differs from the locked runtime after newline normalisation`,不用再去查换行,直接查内容差在哪。
+- 直接对工作区文件跑 `sha256sum` 得到的值,在 CRLF 检出上跟它对不上,这是算法不同,不是引擎不对。怎么取到能对上的值见上一节。
+
+`evaluation_route_plan.json` 的 `engine.runtime.engine_pyproject_sha256`、runtime binding 和 `runtime-manifest.json` 里记的都是这个值,语义一样。
+
 ## 数据集与音频路径解析
 
 `sure_benchmark/jsonl` 是引擎查参考文本的位置,默认:
