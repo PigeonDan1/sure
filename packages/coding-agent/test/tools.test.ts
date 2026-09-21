@@ -1315,6 +1315,32 @@ describe("edit tool CRLF handling", () => {
 		expect(content).toBe("\uFEFFfirst\r\nREPLACED\r\nthird\r\n");
 	});
 
+	it("should keep a lone CR inside an LF file untouched", async () => {
+		const testFile = join(testDir, "lone-cr-lf.txt");
+		writeFileSync(testFile, "line1\nprogress\rdone\nlast\n");
+
+		await editTool.execute("test-lone-cr-lf", {
+			path: testFile,
+			edits: [{ oldText: "last\n", newText: "LAST\n" }],
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("line1\nprogress\rdone\nLAST\n");
+	});
+
+	it("should keep a lone CR inside a CRLF file untouched", async () => {
+		const testFile = join(testDir, "lone-cr-crlf.txt");
+		writeFileSync(testFile, "line1\r\nprogress\rdone\r\nlast\r\n");
+
+		await editTool.execute("test-lone-cr-crlf", {
+			path: testFile,
+			edits: [{ oldText: "last\n", newText: "LAST\n" }],
+		});
+
+		const content = readFileSync(testFile, "utf-8");
+		expect(content).toBe("line1\r\nprogress\rdone\r\nLAST\r\n");
+	});
+
 	it("should preserve CRLF line endings and BOM in multi-edit mode", async () => {
 		const testFile = join(testDir, "bom-crlf-multi.txt");
 		writeFileSync(testFile, "\uFEFFfirst\r\nsecond\r\nthird\r\nfourth\r\n");
