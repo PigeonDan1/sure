@@ -89,6 +89,17 @@ stages:
     prompt_template: "Translate to {target_language}: {text}"
 """
 
+TEXT_AGENT_YAML = """\
+agent:
+  name: demo_mt
+  task: mt
+  input: text
+  output: text
+stages:
+  - id: translate
+    model: llm_model
+"""
+
 
 class ResolveAgentTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -170,6 +181,14 @@ class ResolveAgentTests(unittest.TestCase):
         with self.assertRaises(ValueError) as ctx:
             resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
         self.assertIn("first stage", str(ctx.exception))
+
+    def test_first_stage_api_model_is_rejected_for_any_input(self) -> None:
+        # agent_runner.py always drives position 0 through the MCP server, so a
+        # non-speech agent used to resolve here and only die in the runner.
+        self.spec_path.write_text(TEXT_AGENT_YAML, encoding="utf-8")
+        with self.assertRaises(ValueError) as ctx:
+            resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
+        self.assertIn("the first stage must be an MCP-tool model", str(ctx.exception))
 
     def test_later_stage_mcp_model_is_rejected(self) -> None:
         spec = AGENT_YAML.replace("model: llm_model", "model: asr_model")

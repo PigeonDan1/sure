@@ -27,7 +27,7 @@ stages:                     # run in declaration order; previous output feeds th
     prompt_template: "Translate to {target_language}: {text}"
 ```
 
-Schema: `schemas/agent_spec.schema.json`; an example lives in `examples/agent_s2tt_example.yaml`. A stage resolves to **mcp_tool** mode when its approved `config.yaml` declares `server.command`, and to **api** mode when it declares `api.base_url`. The first stage of a speech-input agent must be an mcp_tool stage. `prompt_template` placeholders: `{text}`, `{target_language}`, `{source_language}`, `{dataset}`, `{key}`.
+Schema: `schemas/agent_spec.schema.json`; an example lives in `examples/agent_s2tt_example.yaml`. A stage resolves to **mcp_tool** mode when its approved `config.yaml` declares `server.command`, and to **api** mode when it declares `api.base_url`. The first stage must be an mcp_tool stage: the runner drives position 0 over the dataset's audio through that model's MCP server. `prompt_template` placeholders: `{text}`, `{target_language}`, `{source_language}`, `{dataset}`, `{key}`.
 
 Credential red line: an API stage's key is read from the environment variable **named** by `api_key_env` at execution time. Only the variable name is ever recorded — never the value, in no artifact and no log.
 

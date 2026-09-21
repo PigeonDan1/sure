@@ -32,7 +32,6 @@ sys.path.insert(0, str(HARNESS_ROOT))
 
 from agent_spec import (  # noqa: E402
     AgentSpecError,
-    SPEECH_INPUTS,
     load_agent_spec,
     stage_mode,
     validate_agent_spec,
@@ -105,7 +104,6 @@ def _resolve_stage(
     stage: dict[str, Any],
     *,
     position: int,
-    agent: dict[str, Any],
     approved_root: Path | None,
 ) -> dict[str, Any]:
     stage_id = str(stage["id"])
@@ -118,10 +116,11 @@ def _resolve_stage(
     config_path = Path(str(identity["config_path"]))
     config = _load_yaml(config_path)
     mode = stage_mode(config)
-    if position == 0 and str(agent.get("input") or "").lower() in SPEECH_INPUTS and mode != "mcp_tool":
+    if position == 0 and mode != "mcp_tool":
         raise ValueError(
-            f"{label}: the first stage of a speech-input agent must be an MCP-tool model "
-            "(config.yaml with server.command), not an API model"
+            f"{label}: the first stage must be an MCP-tool model (config.yaml with server.command), "
+            "not an API model; scripts/agent_runner.py drives position 0 through the stage model's "
+            "MCP server over the dataset's audio"
         )
     if position > 0 and mode != "api":
         raise ValueError(
@@ -226,7 +225,7 @@ def resolve_agent(
         raise ValueError("at least one metric is required")
 
     stages = [
-        _resolve_stage(stage, position=index, agent=agent, approved_root=approved_root)
+        _resolve_stage(stage, position=index, approved_root=approved_root)
         for index, stage in enumerate(spec["stages"])
     ]
     dataset_source_key = args.dataset_source_key or None
