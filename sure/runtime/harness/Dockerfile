@@ -25,7 +25,10 @@ ARG PYTHON_FULL_VERSION
 # re-pointed, which also covers uv's minor-version alias directory. The tree is
 # only self-contained if nothing survives that re-pointing, so the build then
 # proves it: no broken link anywhere under the destination, and no readable
-# file still naming the build-stage install directory. `--check` below cannot
+# text file still naming the build-stage install directory. Binary files are
+# skipped on purpose, because the standalone CPython legitimately carries its
+# own build prefix in compiled artefacts, so a `.pyc` cache that still embeds
+# the old path is not caught here. `--check` below cannot
 # show this -- it only proves the interpreter starts and the imports resolve.
 # The interpreter is pinned to the exact version the host manifest records, and
 # the bootstrap below may not download another one, so the runtime in the image
