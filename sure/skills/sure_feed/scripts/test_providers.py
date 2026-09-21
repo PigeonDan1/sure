@@ -453,6 +453,54 @@ pip install sherpa-onnx
         self.assertGreaterEqual(score, 0.95)
         self.assertIn("task_narrowing.final_task", {item.get("field") for item in evidence})
 
+    def test_auto_prefers_a_tag_task_over_a_description_mention(self) -> None:
+        matched, task_type, score, evidence, match_source = infer_task(
+            {
+                "source": "modelscope",
+                "model_id": "owner/who-spoke-when",
+                "repo": "https://modelscope.cn/models/owner/who-spoke-when",
+                "tags": ["speaker-diarization"],
+                "description": "Segments a meeting by speaker; pairs with any speech recognition backend.",
+            },
+            "auto",
+        )
+        self.assertTrue(matched)
+        self.assertEqual(task_type, "sd")
+        self.assertEqual(match_source, "tags")
+        self.assertGreater(score, 0)
+
+    def test_auto_refuses_to_guess_between_two_tagged_tasks(self) -> None:
+        with self.assertRaises(ValueError) as raised:
+            infer_task(
+                {
+                    "source": "github",
+                    "model_id": "owner/speech-toolkit",
+                    "repo": "https://github.com/owner/speech-toolkit",
+                    "tags": ["speech-recognition", "text-to-speech"],
+                },
+                "auto",
+            )
+        message = str(raised.exception)
+        self.assertIn("--task", message)
+        self.assertIn("asr", message)
+        self.assertIn("tts", message)
+
+    def test_auto_reports_no_match_rather_than_failing_when_nothing_matches(self) -> None:
+        matched, task_type, score, evidence, match_source = infer_task(
+            {
+                "source": "github",
+                "model_id": "owner/generic-toolkit",
+                "repo": "https://github.com/owner/generic-toolkit",
+                "description": "A generic audio toolkit.",
+            },
+            "auto",
+        )
+        self.assertFalse(matched)
+        self.assertEqual(task_type, "auto")
+        self.assertEqual(score, 0.0)
+        self.assertEqual(evidence, [])
+        self.assertEqual(match_source, "")
+
     def test_github_never_defaults_weights_source_to_github(self) -> None:
         model_input, weak_fields, _evidence = synthesize_model_input(
             {
