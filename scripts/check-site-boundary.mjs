@@ -10,17 +10,24 @@ function run(command, args, options = {}) {
 	// directly; without a shell it returns no stderr and every caller crashes.
 	const shell = process.platform === "win32" && command === "npm";
 	const completed = spawnSync(command, args, { encoding: "utf8", shell, ...options });
-	// A program that never started (python3 is absent wherever Python is only
-	// `python`) leaves status, stdout and stderr null, and every caller reads
-	// .stderr or .stdout: name the missing program as an ordinary non-zero
-	// result instead of dying with a TypeError. error stays set so the callers
-	// that already branch on it keep their own message.
+	// A failed spawn leaves status null and every caller reads .stdout or
+	// .stderr, so report it as an ordinary non-zero result instead of dying
+	// with a TypeError. ENOENT means the program never started (python3 is
+	// absent wherever Python is only `python`) and leaves stdout and stderr
+	// null too; ENOBUFS past the default 1 MB maxBuffer and ETIMEDOUT mean it
+	// ran, so keep the partial output the callers inspect and only append the
+	// reason. error stays set so the callers that already branch on it keep
+	// their own message.
 	if (completed.error) {
+		const cause =
+			completed.error.code === "ENOENT"
+				? `${command} is required for check:site-boundary but could not be started (${completed.error.message}); install it and retry`
+				: `${command} did not run to completion (${completed.error.message}); its output below is partial`;
 		return {
 			...completed,
 			status: 127,
-			stdout: "",
-			stderr: `${command} is required for check:site-boundary but could not be started (${completed.error.message}); install it and retry`,
+			stdout: completed.stdout ?? "",
+			stderr: [completed.stderr, cause].filter(Boolean).join("\n"),
 		};
 	}
 	return completed;
