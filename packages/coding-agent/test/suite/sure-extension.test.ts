@@ -97,18 +97,49 @@ function setupSkillPackage(
 	});
 }
 
+function writeSitePolicy(tempDir: string): void {
+	const path = join(tempDir, "config", "site.local.yaml");
+	mkdirSync(resolve(path, ".."), { recursive: true });
+	writeFileSync(
+		path,
+		`${[
+			"schema: sure.site.policy.v1",
+			"site_id: test",
+			"policy_version: 1",
+			"storage:",
+			`  approved_models_roots: [${join(tempDir, "sure", "models")}]`,
+			`  approved_results_roots: [${join(tempDir, "sure", "results")}]`,
+			`  forbidden_output_roots: [${join(tempDir, "forbidden")}]`,
+			`  runtime_root: ${join(tempDir, ".runtime")}`,
+			"datasets:",
+			`  allowed_source_roots: [${join(tempDir, "datasets")}]`,
+			"execution:",
+			"  surfaces: [local]",
+			"  local_runtimes: [python]",
+		].join("\n")}\n`,
+		"utf-8",
+	);
+}
+
 function linkRepositorySkill(tempDir: string, skillName: string): void {
 	const target = resolve(__dirname, "../../../../sure/skills", skillName);
 	const parent = join(tempDir, "sure", "skills");
 	mkdirSync(parent, { recursive: true });
 	symlinkSync(target, join(parent, skillName), "junction");
-	// The hooks import ../../../runtime/... relative to their own path, and jiti
-	// resolves that from the symlink, not from its target, so the fixture needs
-	// the runtime tree next to sure/skills as well.
+	// The hooks import ../../../runtime/... and ../../../site/... relative to
+	// their own path, and jiti resolves that from the symlink, not from its
+	// target, so the fixture needs those trees next to sure/skills as well.
 	const runtime = join(tempDir, "sure", "runtime");
 	if (!existsSync(runtime)) {
 		symlinkSync(resolve(__dirname, "../../../../sure/runtime"), runtime, "junction");
 	}
+	const site = join(tempDir, "sure", "site");
+	if (!existsSync(site)) {
+		symlinkSync(resolve(__dirname, "../../../../sure/site"), site, "junction");
+	}
+	// The hooks resolve the site policy from the run's cwd, which is the temp
+	// dir, so the fixture has to carry one of its own.
+	writeSitePolicy(tempDir);
 }
 
 function writeOnboardModelInput(path: string): void {
