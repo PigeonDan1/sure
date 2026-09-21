@@ -22,6 +22,7 @@ from sure_eval.core.logging import get_logger
 
 from resolve_evaluation_engine import git_environment
 from evaluation_runtime import evaluation_child_environment
+from model_identity import canonical_model_name
 
 logger = get_logger(__name__)
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -233,7 +234,7 @@ def write_protocol_yaml(
             "created_at": _utc_now(),
         },
         "model": {
-            "model_name": str(model_section.get("name") or model_cfg.get("name") or (model_dir.name if model_dir else tool_name or "unknown")),
+            "model_name": canonical_model_name(model_dir, model_cfg) if model_dir else str(tool_name or "unknown"),
             "model_dir": str(model_dir) if model_dir else None,
             "model_source": model_section.get("source") or weights_manifest.get("model_id") or weights_manifest.get("source") or None,
             "weights_source": weights_manifest.get("snapshot_path") or weights_manifest.get("local_path") or weights_manifest.get("model_path") or None,

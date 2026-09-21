@@ -35,6 +35,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from model_child_env import model_child_env
+from model_identity import canonical_model_name
 
 from sure_eval.core.config import Config
 from sure_eval.core.logging import configure_logging, get_logger
@@ -1358,7 +1359,7 @@ def main() -> int:
     sample_language = str(samples[0].get("language", "")) if samples else ""
 
     model_cfg = _load_yaml(model_dir / "config.yaml")
-    model_name = str(model_cfg.get("name") or model_dir.name)
+    model_name = canonical_model_name(model_dir, model_cfg)
     sample_task = _effective_generation_task(
         sample_task,
         model_cfg,

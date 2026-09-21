@@ -71,8 +71,10 @@ class MountedModelGenerationTests(unittest.TestCase):
                 properties = {"audio_path": {"type": "string"}}
                 if accepts_language:
                     properties["language"] = {"type": "string"}
+                # config.yaml carries a different name on purpose: the sealed
+                # inventory, not the mounted config, is what names the model.
                 (model / "config.yaml").write_text(yaml.safe_dump({
-                    "name": "owner__demo", "task": "VAD",
+                    "name": "config-alias", "task": "VAD",
                     "tools": [{"name": "detect", "input_schema": {
                         "type": "object",
                         "properties": properties,
@@ -83,6 +85,7 @@ class MountedModelGenerationTests(unittest.TestCase):
                 image = "registry.example.com/demo@sha256:" + "a" * 64
                 (model / "artifacts/runtime_inventory.json").write_text(json.dumps({
                     "schema": "sure.onboard.runtime_inventory.v2", "status": "ready",
+                    "model": {"name": "owner__demo"},
                     "policy": {"eval_runtime": "container_only", "host_python_fallback": False, "image_override_allowed": False},
                     "container_runtime": {"server_command": ["python", "server.py"], "working_dir": str(model), "target_image_ref": image, "tool_names": ["detect"]},
                 }))
