@@ -196,6 +196,25 @@ def replace_tree(source_dir: Path, staged_dir: Path) -> None:
     shutil.copytree(source_dir, staged_dir)
 
 
+def discard_other_fixtures(model_dir: Path, keep: Path | None = None) -> None:
+    """Drop staged sets this run does not declare.
+
+    validate.py takes the first gt.jsonl under <model>/fixture, so a set left by
+    an earlier task would be validated in place of the one the manifest names.
+    `keep` is the source directory when it already lives under fixture/.
+    """
+    fixture_root = model_dir / "fixture"
+    if not fixture_root.is_dir():
+        return
+    for child in fixture_root.iterdir():
+        if keep is not None and keep.resolve().is_relative_to(child.resolve()):
+            continue
+        if child.is_symlink() or child.is_file():
+            child.unlink()
+        else:
+            shutil.rmtree(child)
+
+
 def stage_fixture(repo_root: Path, model_dir: Path, task: str) -> dict[str, Any]:
     source_dir = default_fixture_dir(repo_root, task)
     if source_dir is None:
@@ -250,6 +269,7 @@ def main() -> int:
             )
             return 1
         try:
+            discard_other_fixtures(model_dir)
             subtask_fixtures = [
                 stage_fixture(repo_root, model_dir, subtask)
                 for subtask in speech_understanding_tasks()
@@ -308,6 +328,7 @@ def main() -> int:
 
     samples = load_samples(source_dir)
     staged_dir = model_dir / "fixture" / task / source_dir.name
+    discard_other_fixtures(model_dir, keep=source_dir)
     replace_tree(source_dir, staged_dir)
 
     staged_samples = []
