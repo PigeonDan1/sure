@@ -17,7 +17,10 @@ def _replace(value: Any, source: str, published: str) -> Any:
         return {key: _replace(item, source, published) for key, item in value.items()}
     if isinstance(value, list):
         return [_replace(item, source, published) for item in value]
-    if isinstance(value, str) and (value == source or value.startswith(source + "/")):
+    # A child of the run directory is separated from it by whichever separator
+    # the writing platform uses; anything else after the prefix is a different
+    # component and must be left alone.
+    if isinstance(value, str) and value.startswith(source) and value[len(source) :][:1] in ("", "/", "\\"):
         return published + value[len(source) :]
     return value
 
