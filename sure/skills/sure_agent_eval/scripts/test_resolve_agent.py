@@ -175,12 +175,14 @@ class ResolveAgentTests(unittest.TestCase):
             resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
 
     def test_first_stage_api_model_is_rejected_for_speech_input(self) -> None:
-        spec = AGENT_YAML.replace("model: asr_model", "model: llm_model").replace("model: llm_model", "model: asr_model")
-        # swap: first stage api-mode, second mcp-mode
+        # only the first stage is swapped to the api-mode model; chaining the
+        # second replace() turned both stages back into asr_model and the
+        # rejection under test never ran.
+        spec = AGENT_YAML.replace("model: asr_model", "model: llm_model", 1)
         self.spec_path.write_text(spec, encoding="utf-8")
         with self.assertRaises(ValueError) as ctx:
             resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
-        self.assertIn("first stage", str(ctx.exception))
+        self.assertIn("the first stage must be an MCP-tool model", str(ctx.exception))
 
     def test_first_stage_api_model_is_rejected_for_any_input(self) -> None:
         # agent_runner.py always drives position 0 through the MCP server, so a
