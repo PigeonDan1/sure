@@ -7,11 +7,14 @@
 // the body and surface opaque messages like `"403 status code (no body)"` or
 // collapse to `"Unknown: UnknownError"`.
 //
-// `normalizeProviderError` probes the known SDK field shapes (Mistral,
-// `openai`, `@google/genai`, AWS Bedrock) and returns a struct each provider
-// composes into its display string. The `messageCarriesBody` flag captures the
-// Anthropic / `@google/genai` happy path where the SDK already folded the body
-// into the message, so providers can preserve it without double-printing.
+// `normalizeProviderError` probes the field shapes those error objects arrive
+// in: the `openai` SDK's own `APIError`, plus the `statusCode`/`body` and
+// `$metadata`/`$response` shapes that no SDK bundled here emits but a proxy or
+// gateway in front of an OpenAI-compatible endpoint can still hand back. It
+// returns a struct each provider composes into its display string. The
+// `messageCarriesBody` flag captures the happy path where the SDK already
+// folded the body into the message, so providers can preserve it without
+// double-printing.
 
 export const MAX_PROVIDER_ERROR_BODY_CHARS = 4000;
 
@@ -55,10 +58,11 @@ export function normalizeProviderError(error: unknown): NormalizedProviderError 
 }
 
 /**
- * Probe the HTTP status, first numeric hit wins, in SDK-field order:
- * `statusCode` (Mistral) → `status` (`openai`, `@google/genai`) →
- * `$metadata.httpStatusCode` (Bedrock) → `$response.statusCode` (Bedrock) →
- * `code` (`openai`, where a gateway may have stringified the status).
+ * Probe the HTTP status, first numeric hit wins, in field order:
+ * `statusCode` → `status` (the `openai` SDK's `APIError`) →
+ * `$metadata.httpStatusCode` → `$response.statusCode` (AWS-style error
+ * objects) → `code` (`openai`, where a gateway may have stringified the
+ * status).
  */
 function extractStatus(error: SdkErrorShape): number | undefined {
 	if (typeof error.statusCode === "number") return error.statusCode;
@@ -72,11 +76,12 @@ function extractStatus(error: SdkErrorShape): number | undefined {
 }
 
 /**
- * Probe the raw body reason, first usable hit wins, in SDK-field order:
- * `body` string (Mistral) → `error` parsed JSON body object (`openai` SDK's
- * `this.error`) → `$response.body` (Bedrock). Empty objects and unread response
- * streams are treated as no body so they do not surface as `"{}"` or serialized
- * stream internals. The chosen body is truncated to the cap.
+ * Probe the raw body reason, first usable hit wins, in field order:
+ * `body` string → `error` parsed JSON body object (`openai` SDK's
+ * `this.error`) → `$response.body` (AWS-style error objects). Empty objects and
+ * unread response streams are treated as no body so they do not surface as
+ * `"{}"` or serialized stream internals. The chosen body is truncated to the
+ * cap.
  */
 function extractBody(error: SdkErrorShape): string | undefined {
 	const bodyText = pickBodyText(error);
@@ -123,7 +128,7 @@ function isPlainNonEmptyObject(value: unknown): boolean {
 
 /**
  * Compose a display string from a normalized error. When the message already
- * carries the body (Anthropic / `@google/genai` happy path) or no body was
+ * carries the body (an SDK that folds it into `error.message`) or no body was
  * extracted, the message is returned unchanged. Otherwise the body is surfaced,
  * with the status and an optional provider prefix when those are available.
  *
