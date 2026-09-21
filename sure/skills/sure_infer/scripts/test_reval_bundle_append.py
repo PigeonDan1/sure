@@ -233,11 +233,11 @@ class InPlaceAppendTests(unittest.TestCase):
         )
         _json(self.bundle / "validation_payload.json", {"scope": "inference"})
 
-    def _append(self, scratch_name: str) -> dict[str, object]:
+    def _append(self, scratch_name: str, source_hash: str | None = None) -> dict[str, object]:
         scratch, artifacts, rows = _scratch_fixture(self.root, scratch_name, self.bundle)
         reval = rows[0]["reval"]
         assert isinstance(reval, dict)
-        reval["source_report_sha256"] = self.SOURCE_HASH
+        reval["source_report_sha256"] = source_hash or self.SOURCE_HASH
         return append_staging_bundle(
             source_result_dir=self.bundle,
             staging_result_dir=self.bundle,
@@ -293,6 +293,13 @@ class InPlaceAppendTests(unittest.TestCase):
         self.assertEqual(second["batch_id"], first["batch_id"])
         self.assertEqual(second["staging_report_sha256"], first["staging_report_sha256"])
         self.assertEqual(second["staging_snapshot_sha256"], first["staging_snapshot_sha256"])
+
+    def test_persisted_batch_from_a_different_source_report_is_rejected(self) -> None:
+        """The record IDs do not bind the base report, so reuse must check the manifest."""
+        self._append("run_one")
+
+        with self.assertRaisesRegex(ValueError, "based on a different approved report"):
+            self._append("run_two", source_hash="c" * 64)
 
 
 class LocalizeBatchPathsTest(unittest.TestCase):

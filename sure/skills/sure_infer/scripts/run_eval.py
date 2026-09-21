@@ -585,7 +585,7 @@ def append_staging_bundle(
                 if temporary_batch.exists():
                     shutil.rmtree(temporary_batch)
         manifest = _validate_artifact_manifest(batch_dir, batch_id)
-        if batch_materialized and manifest.get("source_report_sha256") != source_report_sha256:
+        if manifest.get("source_report_sha256") != source_report_sha256:
             raise ValueError(f"persisted artifact bundle is based on a different approved report: {batch_dir}")
         if manifest.get("record_ids") != sorted(requested_record_ids):
             raise ValueError(f"persisted artifact bundle record IDs differ from this request: {batch_dir}")
