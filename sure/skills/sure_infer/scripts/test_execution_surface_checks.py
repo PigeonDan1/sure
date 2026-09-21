@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import check_execution_surface_compliance as checks
+from test_deployment_binding import container_side
 
 
 IMAGE_REF = "registry.example.com/sure/demo@sha256:" + "a" * 64
@@ -376,6 +377,39 @@ def _probe_fixture() -> tuple[dict, dict]:
 
 
 class LiveRuntimeProbeTests(unittest.TestCase):
+    def test_a_repo_mounted_harness_runtime_is_probed_in_the_container_spelling(self) -> None:
+        # The only branch that mounts the repository into the probe container:
+        # the harness runtime lives in the checkout rather than in the image, so
+        # both the mount target and the interpreter the probe script runs are
+        # read inside the container.
+        commands: list[list[str]] = []
+
+        def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+            commands.append(command)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        repo_root = Path(checks.__file__).resolve().parents[4]
+        runtime_root = repo_root / "sure" / ".runtime" / "harness" / "demo"
+        harness = {
+            "runtime_id": "sure-harness-test",
+            "lock_sha256": "c" * 64,
+            "python_executable": str(runtime_root / "bin" / "python"),
+            "manifest_path": str(runtime_root / "runtime-manifest.json"),
+            "runtime_root": str(runtime_root),
+        }
+        binding = {"target_image_ref": IMAGE_REF, "container": {"python_executable": "python"}}
+
+        result = LIVE_RUNTIME_PROBE(binding, harness, run=run)
+
+        self.assertTrue(result["passed"])
+        command = commands[0]
+        self.assertEqual(
+            command[command.index("--mount") + 1],
+            f"type=bind,src={repo_root},dst={container_side(repo_root)},readonly",
+        )
+        self.assertIn(container_side(harness["python_executable"]), command[-1])
+        self.assertEqual(result["node_local_python"], container_side(harness["python_executable"]))
+
     def test_exact_image_probe_executes_node_override(self) -> None:
         commands: list[list[str]] = []
 
