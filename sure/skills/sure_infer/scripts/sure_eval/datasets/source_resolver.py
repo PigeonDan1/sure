@@ -398,7 +398,8 @@ def source_default_task(ref: DatasetSourceRef, intent: str = "") -> str:
                                             ASR-shaped samples fall through
       1. no declared supported_tasks      -> legacy ASR (explicit non-ASR intent
                                             raises)
-      2. intent declared                  -> intent
+      2. intent declared                  -> must be ∈ supported_tasks, else
+                                            raise (fail closed, no silent fall-through)
       3. exactly one supported task       -> that task
       4. ASR among several                -> ASR
       5. otherwise                        -> SourceResolutionError
@@ -436,7 +437,10 @@ def source_default_task(ref: DatasetSourceRef, intent: str = "") -> str:
             f"{', '.join(supported)} but was asked to project as {intent_task}; "
             "the requested task is not in the source's supported_tasks"
         )
-    if intent_task and intent_task in supported:
+    if intent_task:
+        # intent_task ∈ supported is enforced above, so a non-empty intent always
+        # resolves to itself; ASR / single-task / multi-task fall through only
+        # when the caller didn't specify one.
         return intent_task
     if len(supported) == 1:
         return supported[0]

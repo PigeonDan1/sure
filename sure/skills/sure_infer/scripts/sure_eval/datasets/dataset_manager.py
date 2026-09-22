@@ -1049,16 +1049,14 @@ class DatasetManager:
             "io_contract": f"projections/{projection_id}/io_contract.json",
             "conversion_report": f"projections/{projection_id}/conversion_report.json",
         }
-        # Pin a stable default: ASR wins when present, else the first written.
-        # Otherwise back-to-back prepare runs of different tasks would silently
-        # flip the package's "default" projection.
-        existing_default = manifest.get("default_projection")
-        if not existing_default or existing_default not in projections:
-            manifest["default_projection"] = (
-                "asr_transcription_v1"
-                if "asr_transcription_v1" in projections
-                else projection_id
-            )
+        # Pin a stable default: ASR wins when present, else first written.
+        # A pre-existing default that's still in projections is kept ONLY when
+        # it's already the ASR projection — otherwise a TTS-first prepare would
+        # silently stick the package's default at TTS even after ASR lands.
+        if "asr_transcription_v1" in projections:
+            manifest["default_projection"] = "asr_transcription_v1"
+        elif not manifest.get("default_projection") or manifest["default_projection"] not in projections:
+            manifest["default_projection"] = projection_id
         manifest_path.write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",

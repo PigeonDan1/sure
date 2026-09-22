@@ -391,6 +391,28 @@ class SourceConversionTests(unittest.TestCase):
         self.assertEqual(
             manifest["projections"]["tts_readback_v1"]["dataset"], "duo_ds__v1.0.0__tts"
         )
+        # ASR wins once present, regardless of which task was prepared first.
+        # Covers both orderings:
+        #   TTS first → default sticks at TTS until ASR lands, then flips to ASR.
+        #   ASR first → default is ASR from the start and stays.
+        self.assertEqual(manifest["default_projection"], "asr_transcription_v1")
+
+    def test_default_projection_prefers_asr_in_either_order(self) -> None:
+        """Default flips to ASR whichever task lands first.
+
+        This is the regression guard for ``dataset_manager._convert_source_root_to_jsonl``:
+        a TTS-first prepare must not leave the package's default at TTS once ASR
+        arrives, and an ASR-first prepare must keep ASR even after TTS arrives.
+        """
+        # ASR-first ordering: ASR sets the default, then TTS must not bump it off.
+        asr_first_root = make_source_tree(self.source_root, "asr_first", "v1.0.0", supported_tasks=["ASR", "TTS"])
+        self.manager.download_and_convert(str(asr_first_root))
+        self.manager.download_and_convert(str(asr_first_root), task="TTS")
+        manifest = json.loads(
+            (self.manager.sure_dir / "asr_first" / "dataset_manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(set(manifest["projections"]), {"asr_transcription_v1", "tts_readback_v1"})
+        self.assertEqual(manifest["default_projection"], "asr_transcription_v1")
 
     def test_legacy_source_cannot_be_readback_projected(self) -> None:
         with self.assertRaises(ValueError):
