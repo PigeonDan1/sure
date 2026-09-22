@@ -37,6 +37,7 @@ for _parent in Path(__file__).resolve().parents:
         break
 
 from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+from runtime_roles import same_runtime_executable
 
 STAGES: tuple[str, ...] = (
     "guards",
@@ -173,8 +174,7 @@ def stage_guards() -> Ctx:
         )
 
     model_python = _env("MODEL_PYTHON") or _env("PYTHON_BIN") or "python"
-    resolved_model_python = shutil.which(model_python) or model_python
-    if Path(resolved_model_python).exists() and _real(resolved_model_python) == _real(sys.executable):
+    if same_runtime_executable(model_python, sys.executable):
         raise StageError("guards", "Harness Python and Model Python resolved to the same executable")
     # The Harness Python's own imports are proved by the compliance probe before
     # launch; the bundled scripts fail loudly on their own if that ever drifts.

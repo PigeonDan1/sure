@@ -18,6 +18,7 @@ from execution_provenance import (
     execution_provenance_env,
     write_execution_provenance,
 )
+from runtime_roles import same_runtime_executable
 
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -125,7 +126,7 @@ def build_local_python_command(
 
     harness_runtime = harness_runtime_from_eval_input(eval_input)
     harness_python = Path(str(harness_runtime["python_executable"])).expanduser()
-    if model_python.parent.resolve() / model_python.name == harness_python.parent.resolve() / harness_python.name:
+    if same_runtime_executable(model_python, harness_python):
         raise ValueError("Harness Python and Model Python must remain separate execution roles")
     runtime = eval_input.get("runtime") if isinstance(eval_input.get("runtime"), dict) else {}
     output_dir = Path(str(runtime.get("run_dir") or "")).expanduser().resolve()
