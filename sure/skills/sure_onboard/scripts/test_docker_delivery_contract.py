@@ -209,7 +209,11 @@ class DockerDeliveryContractTests(unittest.TestCase):
             encoding="utf-8",
         )
         docker.chmod(0o755)
+        docker_bin = str(docker.resolve())
         env = os.environ.copy()
+        # resolve_docker_binary prefers /usr/bin/docker over PATH; pin the shim
+        # so live-inspect tests never call the runner's real Docker CLI.
+        env["SURE_ONBOARD_DOCKER_BIN"] = docker_bin
         env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
         env["SURE_HARNESS_RUNTIME_ID"] = "sure-harness-test"
         env["SURE_HARNESS_LOCK_SHA256"] = "c" * 64
@@ -217,9 +221,11 @@ class DockerDeliveryContractTests(unittest.TestCase):
 
     def stubbed_docker(self, command: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         """Answer the gate's two docker probes from inside the test process."""
-        if command[:2] == ["docker", "image"]:
+        # Production resolves an absolute CLI (/usr/bin/docker on Linux CI); match
+        # by basename so the stub stays tied to the argv shape, not the host path.
+        if command and Path(command[0]).name == "docker" and len(command) >= 2 and command[1] == "image":
             return subprocess.CompletedProcess(command, 0, json.dumps([self.image_ref]) + "\n", "")
-        if command[:2] == ["docker", "run"]:
+        if command and Path(command[0]).name == "docker" and len(command) >= 2 and command[1] == "run":
             return subprocess.CompletedProcess(command, 0, "/runtime/python\n", "")
         return subprocess.CompletedProcess(command, 1, "", f"unexpected docker command: {command}")
 
