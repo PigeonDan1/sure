@@ -737,14 +737,18 @@ class DatasetManager:
             return "s2tt_translation_v1"
         return f"{self._task_slug(task)}_readback_v1"
 
-    def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef, task: str = "ASR") -> Path:
+    def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef, task: str | None = None) -> Path:
         """Project a site dataset-pool source root into SURE-EVAL JSONL.
 
         Projections are cached per task as ``<dataset_id>__<task_slug>.jsonl``
         so one multi-task source root (e.g. fleurs declaring ASR+TTS) keeps an
         independent file for every task.
+
+        A missing ``task`` is discovered from the source itself rather than
+        assumed ASR, so a KWS/LID/VAD/S2TT source projected without an explicit
+        task still reaches its own projector.
         """
-        task = str(task or "ASR").strip().upper()
+        task = str(task or source_default_task(ref)).strip().upper()
         projection_name = self.source_projection_name(ref.dataset_id, task)
         jsonl_path = self.jsonl_dir / f"{projection_name}.jsonl"
         if jsonl_path.exists():

@@ -104,7 +104,7 @@ def write_execution_provenance(path: Path, provenance: dict[str, Any]) -> None:
     path.write_text(json.dumps(provenance, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def execution_provenance_env(path: Path, provenance: dict[str, Any]) -> dict[str, str]:
+def execution_provenance_env(path: Path | str, provenance: dict[str, Any]) -> dict[str, str]:
     values: dict[str, str] = {"SURE_EVAL_EXECUTION_PROVENANCE": str(path)}
     for env_key, field in PROVENANCE_ENV_KEYS.items():
         if field == "path":

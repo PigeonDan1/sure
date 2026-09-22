@@ -357,9 +357,11 @@ def build_local_container_command(
         }
     )
     # Sidecar is written on the host; env path must match the container mount spelling.
+    # Already-container-spelled: wrap it in Path() and a Windows host hands the
+    # container a backslashed `\d\...` path, so it stays a string.
     env.update(
         execution_provenance_env(
-            Path(container_path(execution_provenance_path.resolve())),
+            container_path(execution_provenance_path.resolve()),
             execution_provenance,
         )
     )
