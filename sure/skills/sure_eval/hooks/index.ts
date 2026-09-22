@@ -197,7 +197,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	const missing = ["model", "datasets"].filter((key) => !args[key]);
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version[__task],...> [source=<run_id|abs_dir>] (pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>) [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
+			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version[,...]> [source=<run_id|abs_dir>] (pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>) [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
 			"Missing required parameters.",
 		);
 	}

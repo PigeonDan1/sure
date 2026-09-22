@@ -29,7 +29,7 @@ At `pre_start` the hook also writes `artifacts/runtime_binding.json`: the exact 
 | Parameter | Required | Meaning |
 |-----------|----------|---------|
 | `model` | ✅ | Exact approved model directory name. No aliases or paths. |
-| `datasets` | ✅ | Complete comma-separated dataset set of the source bundle. Each item is the formal projection id written by `/sure_infer`: `<name>__<version>` or per-task `<name>__<version>__<task>` (e.g. `fleurs_zh__v1.0.0__tts`). Flat sources use `<name>__unversioned` or `<name>__unversioned__asr`. Must exactly match the completed set in the bundle; subsets/supersets are rejected. |
+| `datasets` | ✅ | Complete comma-separated dataset set covering the source bundle. Prefer the short source id `<name>__<version>` (flat: `<name>__unversioned`). For a local `/sure_infer` bundle this expands to the unique completed projection stem when the bundle only has one task projection (e.g. `…__v1.0.2` → `…__v1.0.2__tts`); if several tasks share the source, pass the full `<name>__<version>__<task>`. Writing the full 3-seg id is always accepted. Subsets/supersets are rejected. |
 | `source` | — | A `/sure_infer` run id below `sure/results/<model>/<protocol>/` or an absolute bundle directory. Omitted: the unique matching local run, else the approved result. |
 | `pipeline_id` | one of | Comma-separated exact sure-evaluation pipeline IDs (route variants). |
 | `metrics` | one of | Comma-separated metrics, e.g. `metrics=cer`; each is resolved to the engine's default pipeline for the dataset's task and language before anything runs, and the resolved ids are recorded in `pipeline_ids`. Exactly one of `pipeline_id` / `metrics` must be given. |
@@ -42,13 +42,19 @@ At `pre_start` the hook also writes `artifacts/runtime_binding.json`: the exact 
 Example:
 
 ```text
-/sure_eval model=Qwen__Qwen3-ASR-1.7B datasets=aishell1__v1.0.2__asr source=sure_infer_20260903_101500 metrics=cer
+/sure_eval model=Qwen__Qwen3-ASR-1.7B datasets=aishell1__v1.0.2 source=sure_infer_20260903_101500 metrics=cer
+```
+
+TTS example (2-seg expands to the bundle's unique `…__tts` projection):
+
+```text
+/sure_eval model=xs__M40-IndexTTS datasets=aispeech_phy_ar_common_fleurs_v251217__v1.0.2 metrics=utmos source=/abs/path/to/infer_bundle
 ```
 
 KWS wake-word example:
 
 ```text
-/sure_eval model=<approved-kws-model> datasets=<wake-dataset>__<version>__kws source=<sure_infer_run> metrics=accuracy
+/sure_eval model=<approved-kws-model> datasets=<wake-dataset>__<version> source=<sure_infer_run> metrics=accuracy
 ```
 
 For KWS, `metrics=accuracy` or `metrics=macro_recall` selects the pinned
@@ -90,7 +96,7 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 ```bash
 "$HARNESS_PYTHON_BIN" ../sure_infer/scripts/run_eval.py \
   --model <model> \
-  --datasets <dataset__version[__task],...> \
+  --datasets <dataset__version,...> \
   --protocol-id <standard_system|strict_core> \
   --metric <metric> ... | --pipeline-id <exact-pipeline-id> ... \
   [--source-run <run_id|abs_dir>] \

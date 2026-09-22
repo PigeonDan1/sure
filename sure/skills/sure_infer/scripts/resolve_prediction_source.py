@@ -165,6 +165,61 @@ def _local_dataset_id(value: str) -> str:
     )
 
 
+def _expand_local_dataset_ids(
+    requested: list[str] | tuple[str, ...],
+    completed: list[str] | tuple[str, ...] | set[str],
+) -> list[str]:
+    """Map user local-bundle ids onto the bundle's completed projection stems.
+
+    Exact match wins. Otherwise a shorter id (typically ``source__version``) may
+    expand to the unique completed stem with prefix ``{id}__`` (e.g. ``…__tts``).
+    Zero matches or two-or-more projections fail closed so multi-task bundles
+    still require an explicit 3-seg id. The expanded set must equal the full
+    completed set (no subset/superset scoring).
+    """
+    completed_list = sorted({str(item) for item in completed if str(item).strip()})
+    completed_set = set(completed_list)
+    if not requested:
+        raise ValueError(
+            "--datasets requires the complete projection id set of the inference run "
+            "(source__version or source__version__task)"
+        )
+
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for raw in requested:
+        item = _local_dataset_id(raw)
+        if item in completed_set:
+            resolved = item
+        else:
+            prefix = f"{item}__"
+            matches = sorted(name for name in completed_list if name.startswith(prefix))
+            if len(matches) == 1:
+                resolved = matches[0]
+            elif not matches:
+                raise ValueError(
+                    f"requested dataset {item!r} is not among completed bundle datasets "
+                    f"{completed_list}"
+                )
+            else:
+                raise ValueError(
+                    f"requested dataset {item!r} is ambiguous among completed projections "
+                    f"{matches}; pass the full source__version__task id"
+                )
+        if resolved in seen:
+            raise ValueError(f"requested datasets resolve to duplicate identity {resolved!r}")
+        seen.add(resolved)
+        expanded.append(resolved)
+
+    expanded_sorted = sorted(expanded)
+    if expanded_sorted != completed_list:
+        raise ValueError(
+            f"local inference bundle datasets {completed_list} do not exactly match "
+            f"the requested {list(requested)} (expanded to {expanded_sorted})"
+        )
+    return expanded_sorted
+
+
 def _is_local_bundle(path: Path) -> bool:
     return path.is_dir() and all((path / name).exists() for name in LOCAL_BUNDLE_FILES)
 
@@ -184,6 +239,10 @@ def _dataset_statuses(status: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _completed_dataset_ids(status: dict[str, Any]) -> list[str]:
+    return sorted(name for name, state in _dataset_statuses(status).items() if state == "completed")
+
+
 def _local_source_dir(args: argparse.Namespace) -> Path | None:
     """The /sure_infer bundle to score in place, or None when the request means an approved NFS result."""
     model = str(args.model)
@@ -200,16 +259,18 @@ def _local_source_dir(args: argparse.Namespace) -> Path | None:
     parent = LOCAL_RESULTS_ROOT / model / protocol_id
     if not parent.is_dir():
         return None
-    requested = sorted(_split_values(args.datasets))
-    matches = [
-        candidate
-        for candidate in sorted(path for path in parent.iterdir() if _is_local_bundle(path))
-        if sorted(name for name, state in _dataset_statuses(_read_status(candidate)).items() if state == "completed")
-        == requested
-    ]
+    requested = _split_values(args.datasets)
+    matches: list[Path] = []
+    for candidate in sorted(path for path in parent.iterdir() if _is_local_bundle(path)):
+        try:
+            completed = _completed_dataset_ids(_read_status(candidate))
+            _expand_local_dataset_ids(requested, completed)
+        except (ValueError, OSError, json.JSONDecodeError):
+            continue
+        matches.append(candidate)
     if len(matches) > 1:
         raise ValueError(
-            f"several local inference runs below {parent} completed {requested}; "
+            f"several local inference runs below {parent} match datasets {requested}; "
             "pass source=<run_id> to pick one: " + ", ".join(path.name for path in matches)
         )
     return matches[0].resolve() if matches else None
@@ -234,9 +295,6 @@ def _local_infer_payload(
             "--datasets requires the complete projection id set of the inference run "
             "(source__version or source__version__task)"
         )
-    requested = sorted(_local_dataset_id(item) for item in requested_datasets)
-    if len(requested) != len(set(requested)):
-        raise ValueError("requested datasets contain duplicate canonical identities")
 
     missing = [name for name in LOCAL_BUNDLE_FILES if not (source_dir / name).exists()]
     if missing:
@@ -259,10 +317,8 @@ def _local_infer_payload(
     if incomplete:
         raise ValueError(f"local inference bundle has datasets that are not completed: {incomplete} in {source_dir}")
     completed = sorted(statuses)
-    if completed != requested:
-        raise ValueError(
-            f"local inference bundle datasets {completed} do not exactly match the requested {requested}: {source_dir}"
-        )
+    # 2-seg user ids expand to unique completed 3-seg stems; payload keeps stems.
+    requested = _expand_local_dataset_ids(requested_datasets, completed)
 
     model_resolution = resolve_approved_model_identity(model, approved_root=approved_models_root)
     if not model_resolution["ok"]:

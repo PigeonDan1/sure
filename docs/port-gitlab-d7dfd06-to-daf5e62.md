@@ -6,8 +6,8 @@
 | **源** | GitLab `sure` · `rollback/liutao-port-oref` · `d7dfd06`（不含）→ `daf5e62` |
 | **目标** | GitHub `sure-xsy` · `harness-tui-agent` |
 | **路径映射** | GitLab 单体 `sure_eval` → xsy `sure_infer`（推理）+ `sure_eval`（打分） |
-| **日期** | 2026-09-21 |
-| **状态** | 代码已落地，**未自动 commit** |
+| **日期** | 2026-09-21（续：09-22 3-seg formal + eval 2-seg 展开） |
+| **状态** | 代码已落地并 push（含后续对齐）；本文件随改动更新 |
 
 对照矩阵（规划）：`openspec/changes/port-gitlab-d7dfd06-to-head/`  
 源仓时间线（GitLab 本地文档）：`docs/changes-d7dfd06-to-daf5e62.md`
@@ -93,12 +93,21 @@
 
 **改动：**
 
-- 磁盘与产物：`source__version__{task}`（如 `…__asr` / `…__tts`）
-- `_report_dataset_name`：优先 row/stem 的 3-seg，**不**剥 task（对齐 `1d215ea`，覆盖更早的 `f307afe` 2-seg 报告策略）
-- `/sure_eval` local bundle：`datasets=` 接受 2-seg 或 3-seg，须与 bundle 完成集合完全一致
+- 磁盘与产物：`source__version__{task}`（如 `…__asr` / `…__tts`）——`dc4882ba` multi-task prepare
+- `_report_dataset_name`：优先 row/stem 的 3-seg，**不**剥 task（`cbcf8e7d`，对齐 `1d215ea`，覆盖更早的 `f307afe` 2-seg 报告策略）
+- `/sure_eval` **local** 入参：可写短 id `source__version`；解析时若 bundle 对该源**唯一** completed 投影则自动扩成 3-seg（如 `…__tts`）；多任务歧义必须写全 3-seg；写全 3-seg 始终可用
 - 批准 NFS reval 入参仍为 2-seg（与 GitLab reval 表面一致）；读 report 时再 peel
+- **不改** sure_infer 产物命名，只在 `resolve_prediction_source` 做展开
 
-**主要文件：** `evaluate_predictions.py`、`resolve_prediction_source.py`、`sure_eval/SKILL.md`、dataset_manager / prepare（`dc4882ba` 及后续对齐）
+**主要文件：** `evaluate_predictions.py`、`resolve_prediction_source.py`（`_expand_local_dataset_ids`）、`sure_eval/SKILL.md`、dataset_manager / prepare（`dc4882ba` 及后续）
+
+**命令示例（TTS local bundle）：**
+
+```text
+/sure_eval model=xs__M40-IndexTTS datasets=aispeech_phy_ar_common_fleurs_v251217__v1.0.2 metrics=utmos source=/abs/infer_bundle
+```
+
+对内仍解析为 `…__v1.0.2__tts` 与 `predictions/…__tts.txt` 对齐。
 
 ---
 
@@ -202,7 +211,7 @@ packages/coding-agent/test/suite/sure-onboard-state-machine.test.ts
 | host provenance + env inject | `3e9f2aa` | done |
 | check_env docker 隔离 | `76a1bed` | done |
 | finalize 相对路径 | `b99e66d` | done |
-| report / formal 3-seg id | `f307afe`→`1d215ea` | **done**（跟 GitLab 终态 3-seg） |
+| report / formal 3-seg id | `f307afe`→`1d215ea` + xsy multi-task | **done**（产物/报告 3-seg；eval 入参可 2-seg 唯一展开） |
 | dataset format docs | `bae78be` | done |
 | sure_trans contracts | `1d2f05d` | done (adapt) |
 | oref site | `0744757` `9abe8ee` | **skip** |
@@ -217,9 +226,11 @@ packages/coding-agent/test/suite/sure-onboard-state-machine.test.ts
 - `test_check_env_docker`
 - `test_normalize_portable_paths_rewrites_nested_abs`
 - vitest：`allows package_container to resolve the Docker binary…`
+- multi-task：`test_source_conversion` / `test_eval_input_policy`（TTS intent）
+- 3-seg formal + eval 展开：`test_dataset_alias` / `test_report_provenance`
 
 ---
 
 ## 6. 一句话
 
-把 GitLab 上「系统 Docker、PATH 去 shim、宿主 provenance、Docker 交付不被宿主 Python 误伤、制品相对路径、报告两段式数据集名、OpenBench 文档、trans 契约」等行为，按 xsy 的 infer/eval 分叉结构重新实现；站点私有配置与 3-seg id 政策不迁入。
+把 GitLab 上「系统 Docker、PATH 去 shim、宿主 provenance、Docker 交付不被宿主 Python 误伤、制品相对路径、**多任务 3-seg 投影 formal id（1d215ea）**、OpenBench 文档、trans 契约」等行为，按 xsy 的 infer/eval 分叉重新实现；eval 入参额外支持 2-seg→唯一 3-seg 展开，站点私有配置不迁入。
