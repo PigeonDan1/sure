@@ -1041,7 +1041,6 @@ class DatasetManager:
         manifest["source"] = SITE_DATASET_POOL_SOURCE
         manifest["source_dataset_root"] = ref.source_root
         manifest["version_id"] = ref.version_id
-        manifest["default_projection"] = projection_id
         projections = manifest.setdefault("projections", {})
         projections[projection_id] = {
             "dataset": projection_name,
@@ -1050,6 +1049,16 @@ class DatasetManager:
             "io_contract": f"projections/{projection_id}/io_contract.json",
             "conversion_report": f"projections/{projection_id}/conversion_report.json",
         }
+        # Pin a stable default: ASR wins when present, else the first written.
+        # Otherwise back-to-back prepare runs of different tasks would silently
+        # flip the package's "default" projection.
+        existing_default = manifest.get("default_projection")
+        if not existing_default or existing_default not in projections:
+            manifest["default_projection"] = (
+                "asr_transcription_v1"
+                if "asr_transcription_v1" in projections
+                else projection_id
+            )
         manifest_path.write_text(
             json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",

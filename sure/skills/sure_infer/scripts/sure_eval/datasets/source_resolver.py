@@ -372,7 +372,12 @@ def read_source_supported_tasks(ds_jsonl: str) -> tuple[str, ...]:
         return ()
     raw = payload.get("supported_tasks")
     if raw is None:
-        speech = (payload.get("audio") or {}).get("speech") or {}
+        audio = payload.get("audio")
+        if not isinstance(audio, dict):
+            return ()
+        speech = audio.get("speech")
+        if not isinstance(speech, dict):
+            return ()
         raw = speech.get("supported_tasks")
     if not isinstance(raw, (list, tuple, set)):
         return ()
@@ -422,6 +427,14 @@ def source_default_task(ref: DatasetSourceRef, intent: str = "") -> str:
         raise SourceResolutionError(
             f"dataset {ref.dataset_id} declares no supported_tasks; cannot "
             f"project as {intent_task} (only the legacy ASR default)"
+        )
+    # When the caller passed a non-empty intent it must be in supported_tasks;
+    # otherwise fail closed instead of silently picking ASR / a different task.
+    if intent_task and intent_task not in supported:
+        raise SourceResolutionError(
+            f"dataset {ref.dataset_id} declares supported_tasks "
+            f"{', '.join(supported)} but was asked to project as {intent_task}; "
+            "the requested task is not in the source's supported_tasks"
         )
     if intent_task and intent_task in supported:
         return intent_task
