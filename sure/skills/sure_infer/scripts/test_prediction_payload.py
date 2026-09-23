@@ -137,6 +137,16 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
             ({"text": "activate_lights"}, "SLU", {"answer": "activate_lights", "text": "activate_lights"}),
             ({"detected": False, "score": 0.1}, "KWS", {"detected": False, "keyword": None, "score": 0.1}),
             ({"speech_segments": [{"start": 0.5, "end": 1.0}]}, "VAD", {"speech_segments": [{"start": 0.5, "end": 1.0}]}),
+            (
+                {"timestamps": [[0.5, 1], [1.25, 2.0]]},
+                "VAD",
+                {
+                    "speech_segments": [
+                        {"start": 0.5, "end": 1.0},
+                        {"start": 1.25, "end": 2.0},
+                    ]
+                },
+            ),
             ({"embedding": [0.1, 0.2]}, "SV", {"embedding": [0.1, 0.2]}),
         ]
         for payload, task, expected in cases:

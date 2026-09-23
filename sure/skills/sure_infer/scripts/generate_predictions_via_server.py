@@ -973,6 +973,13 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
             for field in ("speech_segments", "frame_scores"):
                 if prediction.get(field) is not None:
                     normalized[field] = prediction[field]
+            timestamps = prediction.get("timestamps")
+            if "speech_segments" not in normalized and isinstance(timestamps, list):
+                normalized["speech_segments"] = [
+                    {"start": float(segment[0]), "end": float(segment[1])}
+                    for segment in timestamps
+                    if isinstance(segment, (list, tuple)) and len(segment) >= 2
+                ]
             return json.dumps(normalized, ensure_ascii=False), normalized
         if task_name == "SV":
             embedding = prediction.get("embedding") or payload.get("embedding") or []
