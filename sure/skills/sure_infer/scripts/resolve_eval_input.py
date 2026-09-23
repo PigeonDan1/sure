@@ -133,14 +133,16 @@ TASK_WORDS = {"ASR": "speech recognition", "TTS": "speech synthesis", "VC": "voi
 def _source_projection_task(model_task: str, metrics: list[str], ref) -> str:
     """Metadata-driven task for an un-projected source root.
 
-    A synthetic-task intent (a ``tts_*``/``vc_*`` metric, else the model's own
-    declared synth task) picks the task among the dataset's ``supported_tasks``;
-    otherwise the dataset's declaration drives it with the legacy ASR default.
+    A synthetic-task metric hint takes precedence. Otherwise, a model task that
+    the source explicitly supports picks that task's projection. With neither
+    intent, the source declaration drives resolution with the legacy ASR
+    default.
     """
     model_task = _normalize_task(model_task)
     metric_task = _metric_task_hint(metrics)
     intent = metric_task if metric_task in SYNTH_TASKS else ""
-    if not intent and model_task in SYNTH_TASKS:
+    supported_tasks = {_normalize_task(task) for task in ref.supported_tasks}
+    if not intent and model_task in supported_tasks:
         intent = model_task
     return source_default_task(ref, intent)
 
@@ -575,12 +577,13 @@ def _dataset_details(
         dataset_task = _normalize_task(info.get("task") or first_sample.get("task") or "")
         language = str(info.get("language") or first_sample.get("language") or "").lower()
         source_supported_tasks: tuple[str, ...] = ()
-        # A task-agnostic legacy cache (`<dataset_id>.jsonl`) must not lock a
-        # multi-task source to ASR. Only per-task 3-seg projections are
-        # authoritative on re-run; otherwise re-derive from ds.jsonl.
-        legacy_cache = jsonl_path.exists() and jsonl_path.name == f"{dataset_name}.jsonl"
-        if is_source_entry(requested_name) and (legacy_cache or not jsonl_path.exists()):
+        # A source path is the identity of the source pool, not of whichever
+        # per-task projection happens to be cached. Re-resolve it every time so
+        # a stale LID/ASR projection cannot override the current model intent.
+        source_entry = is_source_entry(requested_name)
+        if source_entry:
             ref = resolve_site_source_entry(requested_name, dataset_source_key=dataset_source_key)
+            dataset_name = ref.dataset_id
             source_root = source_root or ref.source_root
             source_name = source_name or ref.source_dataset_name
             version_id = version_id or ref.version_id
@@ -603,8 +606,12 @@ def _dataset_details(
             "language": language,
             "default_metrics": metrics,
             "source": info.get("source"),
-            "num_samples": info.get("num_samples") or _count_jsonl_rows(jsonl_path),
-            "display_name": info.get("display_name") or dataset_name,
+            "num_samples": (
+                _count_jsonl_rows(jsonl_path)
+                if source_entry
+                else info.get("num_samples") or _count_jsonl_rows(jsonl_path)
+            ),
+            "display_name": dataset_name if source_entry else info.get("display_name") or dataset_name,
         }
         if source_root:
             detail["source_root"] = str(source_root)

@@ -286,6 +286,29 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         self.assertEqual(detail["language"], "zh")
         self.assertEqual(Path(detail["jsonl_path"]).name, "duo_ds__v1.0.0__tts.jsonl")
 
+    def test_kws_model_selects_kws_projection_from_multi_task_source(self) -> None:
+        multi_root = make_source_tree(
+            self.source_root, "kws_ds", "v1.0.0", supported_tasks=["ASR", "LID", "KWS"]
+        )
+        stale_lid_projection = self.manager.jsonl_dir / "kws_ds__v1.0.0__lid.jsonl"
+        stale_lid_projection.write_text(
+            json.dumps({"task": "LID", "dataset": "kws_ds__v1.0.0__lid"}) + "\n",
+            encoding="utf-8",
+        )
+        details = resolve_eval_input._dataset_details(
+            self.manager, [str(multi_root)], ["accuracy"], None, model_task="KWS"
+        )
+        detail = details[0]
+        self.assertEqual(detail["name"], "kws_ds__v1.0.0")
+        self.assertEqual(detail["display_name"], "kws_ds__v1.0.0")
+        self.assertIsNone(detail["num_samples"])
+        self.assertEqual(detail["task"], "KWS")
+        self.assertEqual(detail["supported_tasks"], ["ASR", "LID", "KWS"])
+        self.assertEqual(Path(detail["jsonl_path"]).name, "kws_ds__v1.0.0__kws.jsonl")
+        resolve_eval_input._check_task_compatibility(
+            {"name": "wake-model", "declared_task": "KWS"}, details
+        )
+
     def test_plain_asr_model_on_multi_task_source_stays_asr(self) -> None:
         multi_root = make_source_tree(
             self.source_root, "duo_ds", "v1.0.0", supported_tasks=["ASR", "TTS"]
