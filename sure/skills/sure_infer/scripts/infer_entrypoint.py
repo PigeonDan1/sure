@@ -309,20 +309,36 @@ def stage_config(ctx: Ctx) -> None:
 def stage_prepare(ctx: Ctx) -> None:
     summary = ctx.run_dir / "prepare_summary.json"
     args = ["--dataset", *ctx.requested_datasets, "--output", str(summary)]
-    # Prefer the resolved plan's model task, else config.yaml, so multi-task
-    # sources (ASR+TTS) project the right 3-seg cache instead of legacy ASR.
+    # Project onto a single, unambiguous dataset task when one exists and the
+    # model does not declare a conflicting concrete task (its declared_task is
+    # empty, a broad suite like SPEECH_UNDERSTANDING, or agrees with the dataset
+    # task). Otherwise the model's declared_task wins: the model's own task
+    # description outranks an ambiguous or conflicting dataset projection.
     model_task = ""
     resolved_input = _env("SURE_EVAL_INPUT_RESOLVED")
     if resolved_input:
         try:
             payload = _read_json(Path(resolved_input))
             model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
-            model_task = str(model.get("declared_task") or "").strip()
-            if not model_task:
-                for row in payload.get("datasets") or []:
-                    if isinstance(row, dict) and row.get("task"):
-                        model_task = str(row["task"]).strip()
-                        break
+            declared_task = str(model.get("declared_task") or "").strip()
+            dataset_tasks: list[str] = []
+            for row in payload.get("datasets") or []:
+                if isinstance(row, dict) and row.get("task"):
+                    dataset_task = str(row["task"]).strip()
+                    if dataset_task and dataset_task not in dataset_tasks:
+                        dataset_tasks.append(dataset_task)
+            if len(dataset_tasks) == 1:
+                dataset_task = dataset_tasks[0]
+                if (
+                    not declared_task
+                    or normalize_task(declared_task) == "speech_understanding"
+                    or normalize_task(declared_task) == normalize_task(dataset_task)
+                ):
+                    model_task = dataset_task
+                else:
+                    model_task = declared_task
+            else:
+                model_task = declared_task
         except Exception:
             model_task = ""
     if not model_task:
