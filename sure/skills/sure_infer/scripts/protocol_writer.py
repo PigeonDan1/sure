@@ -21,6 +21,7 @@ from sure_eval.core.logging import get_logger
 
 from execution_provenance import load_execution_provenance_from_environment
 from model_identity import canonical_model_name
+from server_protocol import resolve_server_protocol
 
 logger = get_logger(__name__)
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -229,6 +230,8 @@ def write_protocol_yaml(
     status_server_config = _safe_dict(status_runtime.get("server_config"))
     server_command = status_runtime.get("server_command") or sanitized_server.get("command", [])
     server_working_dir = status_runtime.get("server_working_dir") or sanitized_server.get("working_dir", ".")
+    merged_server = {**(sanitized_server or {}), **(status_server_config or {})}
+    server_protocol = resolve_server_protocol(merged_server)
     env_keys = status_env.get("env_keys") if isinstance(status_env.get("env_keys"), list) else server_env_keys
     safe_env_values = _safe_dict(status_env.get("safe_env_values"))
     redacted_env_keys = status_env.get("redacted_env_keys") if isinstance(status_env.get("redacted_env_keys"), list) else []
@@ -351,7 +354,8 @@ def write_protocol_yaml(
             },
             "evaluation_runtime": evaluation_runtime,
             "server": {
-                "transport": "stdio_jsonrpc",
+                "transport": merged_server.get("transport") or "stdio",
+                "protocol": server_protocol,
                 "command": server_command,
                 "working_dir": server_working_dir,
                 "tool_name": selected_tool_name,
@@ -487,7 +491,7 @@ def write_protocol_yaml(
             "source_runtime_inventory": source_inference_provenance.get("source_runtime_inventory"),
             "raw_response_source_of_truth": False,
             "notes": [
-                "Inference parameters come from model config, CLI overrides, protocol resolver output, and the actual MCP call policy.",
+                "Inference parameters come from model config, CLI overrides, protocol resolver output, and the actual server call policy.",
                 "raw_response is preserved in predictions JSONL as model output evidence only.",
             ],
         },
