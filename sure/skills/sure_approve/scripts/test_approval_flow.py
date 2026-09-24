@@ -189,6 +189,26 @@ class ApprovalFlowTests(unittest.TestCase):
         }
         write_json(artifacts / "deployment_ready.json", deployment)
 
+    def test_registry_pull_verification_accepts_legacy_nested_evidence(self) -> None:
+        digest = "sha256:" + "a" * 64
+        verified, legacy = approval_core.registry_pull_verification(
+            {"pull_verify": {"status": "passed", "digest": digest}}, digest
+        )
+        self.assertTrue(verified)
+        self.assertTrue(legacy)
+
+        verified, legacy = approval_core.registry_pull_verification(
+            {"pull_verify": {"status": "passed", "digest": "sha256:" + "b" * 64}}, digest
+        )
+        self.assertFalse(verified)
+        self.assertTrue(legacy)
+
+        verified, legacy = approval_core.registry_pull_verification(
+            {"pull_verified": False, "pull_verify": {"status": "passed", "digest": digest}}, digest
+        )
+        self.assertFalse(verified)
+        self.assertFalse(legacy)
+
     def audit(self, run_dir: Path) -> dict:
         run_artifacts = run_dir / "artifacts"
         run_artifacts.mkdir(parents=True)

@@ -114,6 +114,25 @@ def status_passed(value: Any) -> bool:
     return str(value or "").strip().lower() in SUCCESS
 
 
+def registry_pull_verification(registry: dict[str, Any], digest: str) -> tuple[bool, bool]:
+    """Return (verified, legacy_format) for Docker registry pull evidence.
+
+    New producer bundles carry the canonical top-level ``pull_verified`` flag.
+    Older onboard bundles may only carry the equivalent nested ``pull_verify``
+    result; accept that format temporarily when its status and digest prove the
+    same fact. An explicit non-true top-level value is never treated as legacy.
+    """
+    if registry.get("pull_verified") is True:
+        return True, False
+    if registry.get("pull_verified") is not None:
+        return False, False
+    pull = registry.get("pull_verify")
+    if not isinstance(pull, dict):
+        return False, True
+    verified = status_passed(pull.get("status")) and pull.get("digest") == digest
+    return verified, True
+
+
 def finding(severity: str, code: str, message: str, repair: str) -> dict[str, str]:
     return {"severity": severity, "code": code, "message": message, "repair": repair}
 
@@ -425,8 +444,18 @@ def audit_integrity(run_dir: Path) -> dict[str, Any]:
             findings.append(finding("error", "CONTAINER_BINDING_INCOMPLETE", "Docker approval requires docker-registry and a required container runtime.", f"Rerun /{producer} with package=docker-registry."))
         if not isinstance(digest, str) or not IMAGE_DIGEST.fullmatch(digest) or not isinstance(image_ref, str) or not image_ref.endswith(f"@{digest}") or any(value != (image, digest, image_ref) for value in values):
             findings.append(finding("error", "IMAGE_IDENTITY_MISMATCH", "Image, digest, and digest-pinned reference do not agree across terminal evidence.", f"Rerun /{producer} registry delivery."))
-        if registry.get("pull_verified") is not True:
+        pull_verified, legacy_pull_format = registry_pull_verification(registry, str(digest or ""))
+        if not pull_verified:
             findings.append(finding("error", "REGISTRY_PULL_UNVERIFIED", "Registry result does not prove pull_verified=true.", f"Rerun /{producer} registry verification."))
+        elif legacy_pull_format:
+            findings.append(
+                finding(
+                    "warning",
+                    "REGISTRY_PULL_VERIFIED_LEGACY",
+                    "Registry result uses legacy nested pull_verify evidence; rerun the producer to emit pull_verified=true.",
+                    f"Rerun /{producer} registry verification when the producer contract is upgraded.",
+                )
+            )
     else:
         policy_execution = resolved.get("site_policy", {}).get("execution", {}) if isinstance(resolved.get("site_policy"), dict) else {}
         local_runtimes = policy_execution.get("local_runtimes", ["container"]) if isinstance(policy_execution, dict) else []

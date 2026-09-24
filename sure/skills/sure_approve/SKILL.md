@@ -43,7 +43,10 @@ The publication root is always `storage.approved_models_roots[0]` from the activ
 
 - Do not mutate the producer directory.
 - Reject incomplete, failed, API-ready, and `docker-local` products.
-- Accept Docker v1 only with a digest-pinned, pull-verified registry image.
+- Accept Docker v1 only with a digest-pinned registry image. New producer bundles must carry
+  `pull_verified=true`; during the temporary producer-contract migration, a legacy bundle may
+  use `pull_verify.status=passed` with a matching `pull_verify.digest`, which is recorded as a
+  warning and must be repaired by rerunning the producer.
 - Accept Python v2 only with a sealed `uv` Model Runtime and site policy enabling local Python.
 - Require passing original, adapter, MCP, and equivalence evidence for `/sure_trans`.
 - Restrict safe repair to derived paths, publication permissions, and excluded caches. Never repair wrappers, configs, weights, payloads, locks, runtimes, images, provenance, or failed validation.

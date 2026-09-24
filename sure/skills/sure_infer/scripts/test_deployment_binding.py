@@ -678,6 +678,44 @@ class MandatoryIntegrityPathTests(unittest.TestCase):
         with self.assertRaisesRegex(DeploymentBindingError, "weights root is missing"):
             _mandatory_integrity_paths(self.model, {}, {}, "none", "bundled")
 
+    def test_bundled_weights_accept_relative_checkpoint_root(self) -> None:
+        checkpoint_root = self.model / "checkpoints" / "demo"
+        checkpoint_root.mkdir(parents=True)
+        (checkpoint_root / "weights.bin").write_bytes(b"weights")
+        write_json(
+            self.model / "artifacts" / "weights_manifest.json",
+            {"required": True, "checkpoint_root": "checkpoints/demo"},
+        )
+
+        required = _mandatory_integrity_paths(self.model, {}, {}, "none", "bundled")
+
+        self.assertIn("checkpoints/demo/weights.bin", required)
+
+    def test_bundled_weights_accept_absolute_checkpoint_root_inside_bundle(self) -> None:
+        checkpoint_root = self.model / "checkpoints" / "demo"
+        checkpoint_root.mkdir(parents=True)
+        (checkpoint_root / "weights.bin").write_bytes(b"weights")
+        write_json(
+            self.model / "artifacts" / "weights_manifest.json",
+            {"required": True, "checkpoint_root": str(checkpoint_root)},
+        )
+
+        required = _mandatory_integrity_paths(self.model, {}, {}, "none", "bundled")
+
+        self.assertIn("checkpoints/demo/weights.bin", required)
+
+    def test_bundled_weights_reject_checkpoint_root_outside_bundle(self) -> None:
+        outside_root = self.model.parent / "outside-weights"
+        outside_root.mkdir()
+        (outside_root / "weights.bin").write_bytes(b"weights")
+        write_json(
+            self.model / "artifacts" / "weights_manifest.json",
+            {"required": True, "checkpoint_root": "../outside-weights"},
+        )
+
+        with self.assertRaisesRegex(DeploymentBindingError, "escapes approved model directory"):
+            _mandatory_integrity_paths(self.model, {}, {}, "none", "bundled")
+
     def test_absent_weights_integrity_means_bundled(self) -> None:
         with self.assertRaisesRegex(DeploymentBindingError, "weights root is missing"):
             _mandatory_integrity_paths(self.model, {}, {}, "none", None)

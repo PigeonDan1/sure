@@ -2,7 +2,7 @@
 
 ## Onboard Docker v1
 
-Require `artifacts/model_input_resolved.json`, `deployment_ready.schema=sure.onboard.deployment_ready.v1`, `package_profile=docker-registry`, terminal-success verdict, ready runtime inventory, passed package gate, pull-verified registry evidence, and exact agreement among target image, digest, and digest-pinned image reference.
+Require `artifacts/model_input_resolved.json`, `deployment_ready.schema=sure.onboard.deployment_ready.v1`, `package_profile=docker-registry`, terminal-success verdict, ready runtime inventory, passed package gate, pull-verified registry evidence, and exact agreement among target image, digest, and digest-pinned image reference. During the temporary producer-contract migration, accept legacy `pull_verify.status=passed` with a matching digest when the top-level `pull_verified` field is absent; record a warning and require a future producer rerun.
 
 ## Onboard Python v2
 

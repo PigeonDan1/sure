@@ -423,10 +423,18 @@ def _mandatory_integrity_paths(
                     candidate_value = str(weights.get(key) or "")
                     if not candidate_value:
                         continue
-                    candidate = Path(candidate_value).expanduser().resolve()
-                    if _is_relative_to(candidate, model_dir.resolve()):
-                        local_dir_name = candidate.relative_to(model_dir.resolve()).as_posix()
-                        break
+                    candidate_path = Path(candidate_value).expanduser()
+                    candidate = (
+                        candidate_path
+                        if candidate_path.is_absolute()
+                        else model_dir / candidate_path
+                    ).resolve()
+                    _require(
+                        _is_relative_to(candidate, model_dir.resolve()),
+                        f"weights {key} escapes approved model directory: {candidate_value}",
+                    )
+                    local_dir_name = candidate.relative_to(model_dir.resolve()).as_posix()
+                    break
             _require(
                 bool(local_dir_name) or weights.get("required") is not True,
                 "required weights manifest has no model-local weight root",
