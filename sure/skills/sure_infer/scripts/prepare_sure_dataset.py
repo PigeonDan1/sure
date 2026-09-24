@@ -29,11 +29,12 @@ def prepare_dataset(
     manager: DatasetManager,
     dataset_name: str,
     requested_name: str | None = None,
+    task: str | None = None,
 ) -> dict[str, Any]:
     """Prepare a single dataset and return a summary."""
     canonical_name = manager.normalize_dataset_name(dataset_name)
     source_request = requested_name if requested_name and is_source_entry(requested_name) else None
-    jsonl_path = manager.download_and_convert(source_request or dataset_name)
+    jsonl_path = manager.download_and_convert(source_request or dataset_name, task=task)
     prepared_name = jsonl_path.stem
     info = manager.get_info(prepared_name) or manager.get_info(canonical_name) or {}
 
@@ -59,6 +60,13 @@ def prepare_dataset(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prepare deterministic SURE-EVAL datasets")
     parser.add_argument("--dataset", nargs="+", help="Dataset names to prepare")
+    parser.add_argument(
+        "--task",
+        type=str,
+        help="Projection task for source-root datasets when their supported_tasks "
+        "do not single out one (e.g. a source declaring ASR+TTS under a TTS run). "
+        "Case-insensitive; omitted means the dataset declaration/legacy ASR decides.",
+    )
     parser.add_argument("--all", action="store_true", help="Prepare all configured datasets")
     parser.add_argument("--config", type=str, help="Config path")
     parser.add_argument("--output", type=str, help="Optional JSON summary output path")
@@ -89,6 +97,7 @@ def main() -> int:
                 manager,
                 dataset_name,
                 requested_name=requested_by_dataset.get(dataset_name),
+                task=args.task,
             )
         )
 

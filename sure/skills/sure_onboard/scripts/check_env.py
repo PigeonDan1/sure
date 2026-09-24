@@ -206,6 +206,15 @@ def require_cuda_for(data: dict[str, Any], run_dir: Path) -> bool:
     return requested_device(run_dir) == "cuda"
 
 
+def resolved_package_profile(run_dir: Path) -> str:
+    resolved = resolved_model_input(run_dir) or {}
+    return str(resolved.get("package_profile") or "")
+
+
+def docker_delivery_profile(run_dir: Path) -> bool:
+    return resolved_package_profile(run_dir) in {"docker-local", "docker-registry"}
+
+
 def run_runtime_probe(
     *,
     python_executable: Path,
@@ -301,19 +310,27 @@ def main() -> int:
         print(f"build_env_result.json is not valid JSON: {exc}", file=sys.stderr)
         return 1
 
+    run_dir = Path(args.run_dir).expanduser().resolve()
+    backend = str(data.get("backend") or "")
+
     if not data.get("env_ready"):
         failures = data.get("failures") or []
         detail = "\n  - " + "\n  - ".join(failures) if failures else ""
+        if backend in LOCAL_RUNTIME_BACKENDS and docker_delivery_profile(run_dir):
+            detail += (
+                "\n  - Docker delivery must not be blocked solely by a stale or unusable "
+                "host model-local Python. Register backend=docker with docker_image and "
+                "record the host Python issue in repairs, or repair the local runtime before "
+                "declaring a local backend."
+            )
         print(f"BUILD_ENV gate failed: env_ready is false.{detail}", file=sys.stderr)
         return 1
 
-    run_dir = Path(args.run_dir).expanduser().resolve()
     repo_root = repo_root_for(run_dir)
     model_dir = Path(str(data["model_dir"])).expanduser() if data.get("model_dir") else None
 
     # If a lockfile path is declared, it should exist. Relative paths are
     # resolved against model_dir first, then run artifacts.
-    backend = data.get("backend", "")
     lockfile = data.get("lockfile_path")
     if lockfile and backend != "docker":
         resolved_lockfile = resolve_declared_path(
@@ -341,6 +358,10 @@ def main() -> int:
         if not resolved_log or not resolved_log.exists():
             print(f"BUILD_ENV gate: declared log_path does not exist: {log_path}", file=sys.stderr)
             return 1
+
+    if backend == "docker":
+        print(f"check_env OK: env_ready=true, backend={backend}")
+        return 0
 
     if backend in LOCAL_RUNTIME_BACKENDS:
         resolved = resolved_model_input(run_dir) or {}

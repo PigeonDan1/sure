@@ -38,6 +38,25 @@ def write_jsonl(path: Path) -> Path:
     return path
 
 
+def write_projection_jsonl(path: Path) -> Path:
+    row = {
+        "key": "utt1",
+        "path": "utt1.wav",
+        "target": "你好",
+        "task": "ASR",
+        "language": "zh",
+        "dataset": "demo_ds__v1.0.2__asr",
+        "metadata": {
+            "source": "site_dataset_pool",
+            "source_dataset_root": "/srv/sure/datasets/group/store/ds_pool/demo_ds",
+            "source_dataset_name": "demo_ds",
+            "version_id": "v1.0.2",
+        },
+    }
+    path.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+    return path
+
+
 class DatasetSourceFieldsTests(unittest.TestCase):
     def test_reads_source_fields_from_first_row(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -106,6 +125,37 @@ class PayloadAndReportRowTests(unittest.TestCase):
         self.assertEqual(dataset["source_dataset_name"], "demo_ds")
         self.assertEqual(dataset["version_id"], "v1.0.2")
         self.assertTrue(dataset["source_root"].endswith("ds_pool/demo_ds"))
+
+    def test_report_row_keeps_task_projection_suffix(self) -> None:
+        projection_jsonl = write_projection_jsonl(
+            Path(self._tmp.name) / "demo_ds__v1.0.2__asr.jsonl"
+        )
+        result = {
+            **self.result,
+            "dataset": "demo_ds__v1.0.2__asr",
+            "jsonl_path": str(projection_jsonl),
+            "rps": {
+                "status": "missing_baseline",
+                "dataset": "demo_ds__v1.0.2__asr",
+                "score": 0.05,
+            },
+        }
+        payload_row = ep._dataset_metric_row(result)
+        report_row = ep._standard_report_row_v1(
+            row=payload_row,
+            validation={},
+            run_id="run1",
+            protocol_id="proto1",
+            model_dir=None,
+            tool_name="demo_tool",
+        )
+        # Formal name stays the per-task projection id (3-seg).
+        self.assertEqual(report_row["dataset"]["name"], "demo_ds__v1.0.2__asr")
+        self.assertEqual(report_row["dataset"]["task"], "ASR")
+        self.assertEqual(report_row["dataset"]["jsonl_path"], str(projection_jsonl))
+        self.assertEqual(report_row["rps"]["dataset"], "demo_ds__v1.0.2__asr")
+        self.assertEqual(report_row["dataset"]["source_dataset_name"], "demo_ds")
+        self.assertEqual(report_row["dataset"]["version_id"], "v1.0.2")
 
 
 class ScoreNormalizationLabelTests(unittest.TestCase):

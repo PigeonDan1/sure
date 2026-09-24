@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import { agentBinDir, demoteAgentBinDir } from "../../../runtime/agent-path.ts";
 import {
 	type HarnessRuntimeContract,
 	harnessRuntimeEnv,
@@ -190,11 +191,13 @@ export function evalProductDir(ctx: SureHookContext): string | undefined {
 }
 
 export function preStart(ctx: SureHookContext): SureHookResult {
+	// Park agent bin at end of PATH so a docker shim there cannot shadow system docker.
+	demoteAgentBinDir(process.env, agentBinDir());
 	const args = parseArgs(ctx.args);
 	const missing = ["model", "datasets"].filter((key) => !args[key]);
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version,...> [source=<run_id|abs_dir>] (pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>) [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
+			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version[,...]> [source=<run_id|abs_dir>] (pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>) [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
 			"Missing required parameters.",
 		);
 	}

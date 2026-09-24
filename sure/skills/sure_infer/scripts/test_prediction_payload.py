@@ -137,6 +137,16 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
             ({"text": "activate_lights"}, "SLU", {"answer": "activate_lights", "text": "activate_lights"}),
             ({"detected": False, "score": 0.1}, "KWS", {"detected": False, "keyword": None, "score": 0.1}),
             ({"speech_segments": [{"start": 0.5, "end": 1.0}]}, "VAD", {"speech_segments": [{"start": 0.5, "end": 1.0}]}),
+            (
+                {"timestamps": [[0.5, 1], [1.25, 2.0]]},
+                "VAD",
+                {
+                    "speech_segments": [
+                        {"start": 0.5, "end": 1.0},
+                        {"start": 1.25, "end": 2.0},
+                    ]
+                },
+            ),
             ({"embedding": [0.1, 0.2]}, "SV", {"embedding": [0.1, 0.2]}),
         ]
         for payload, task, expected in cases:
@@ -193,6 +203,73 @@ while True:
     )
     sys.stdout.flush()
 """
+
+
+_RAW_JSONL_SERVER = """
+import json, sys
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    print(json.dumps({"speech_segments": [], "audio_path": request["audio_path"]}), flush=True)
+"""
+
+
+class ServerProtocolTests(unittest.TestCase):
+    def test_missing_server_defaults_to_mcp(self) -> None:
+        self.assertEqual(gp.resolve_server_protocol({}), gp.MCP_SERVER_PROTOCOL)
+        self.assertEqual(gp.resolve_server_protocol(None), gp.MCP_SERVER_PROTOCOL)
+
+    def test_bare_stdio_transport_defaults_to_mcp(self) -> None:
+        # transport is the channel, not the framing: an unadorned stdio
+        # server is MCP JSON-RPC unless it declares a jsonl protocol.
+        self.assertEqual(
+            gp.resolve_server_protocol({"transport": "stdio"}),
+            gp.MCP_SERVER_PROTOCOL,
+        )
+
+    def test_explicit_jsonl_protocol_selects_jsonl(self) -> None:
+        self.assertEqual(
+            gp.resolve_server_protocol({"protocol": "jsonl"}),
+            gp.JSONL_SERVER_PROTOCOL,
+        )
+        self.assertEqual(
+            gp.resolve_server_protocol({"transport": "stdio", "protocol": "json_lines"}),
+            gp.JSONL_SERVER_PROTOCOL,
+        )
+
+    def test_explicit_mcp_protocol_selects_jsonrpc(self) -> None:
+        self.assertEqual(
+            gp.resolve_server_protocol({"protocol": "mcp"}),
+            gp.MCP_SERVER_PROTOCOL,
+        )
+        self.assertEqual(
+            gp.resolve_server_protocol({"transport": "stdio", "protocol": "mcp"}),
+            gp.MCP_SERVER_PROTOCOL,
+        )
+
+    def test_unknown_protocol_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            gp.resolve_server_protocol({"protocol": "carrier_pigeon"})
+
+    def test_raw_jsonl_request_round_trips_without_jsonrpc_envelope(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with open(root / "server.log", "w", encoding="utf-8") as log_handle:
+                with gp._start_model_server(
+                    [sys.executable, "-c", _RAW_JSONL_SERVER],
+                    working_dir=root,
+                    env=dict(os.environ),
+                    log_handle=log_handle,
+                ) as process:
+                    response = gp._send_jsonl_request(
+                        process,
+                        {"audio_path": "/tmp/sample.wav"},
+                    )
+                    process.stdin.close()
+                    process.wait(timeout=5)
+        self.assertEqual(response, {"speech_segments": [], "audio_path": "/tmp/sample.wav"})
 
 
 def _locale_text_pipes(encoding: str):

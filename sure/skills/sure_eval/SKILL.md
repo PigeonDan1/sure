@@ -29,7 +29,7 @@ At `pre_start` the hook also writes `artifacts/runtime_binding.json`: the exact 
 | Parameter | Required | Meaning |
 |-----------|----------|---------|
 | `model` | ✅ | Exact approved model directory name. No aliases or paths. |
-| `datasets` | ✅ | Complete comma-separated dataset set of the source, each item `<dataset_name>__<version_id>` (a flat source is `<name>__unversioned`). Subsets and supersets are rejected. |
+| `datasets` | ✅ | Complete comma-separated dataset set covering the source bundle. Prefer the short source id `<name>__<version>` (flat: `<name>__unversioned`). For a local `/sure_infer` bundle this expands to the unique completed projection stem when the bundle only has one task projection (e.g. `…__v1.0.2` → `…__v1.0.2__tts`); if several tasks share the source, pass the full `<name>__<version>__<task>`. Writing the full 3-seg id is always accepted. Subsets/supersets are rejected. |
 | `source` | — | A `/sure_infer` run id below `sure/results/<model>/<protocol>/` or an absolute bundle directory. Omitted: the unique matching local run, else the approved result. |
 | `pipeline_id` | one of | Comma-separated exact sure-evaluation pipeline IDs (route variants). |
 | `metrics` | one of | Comma-separated metrics, e.g. `metrics=cer`; each is resolved to the engine's default pipeline for the dataset's task and language before anything runs, and the resolved ids are recorded in `pipeline_ids`. Exactly one of `pipeline_id` / `metrics` must be given. |
@@ -43,6 +43,12 @@ Example:
 
 ```text
 /sure_eval model=Qwen__Qwen3-ASR-1.7B datasets=aishell1__v1.0.2 source=sure_infer_20260903_101500 metrics=cer
+```
+
+TTS example (2-seg expands to the bundle's unique `…__tts` projection):
+
+```text
+/sure_eval model=xs__M40-IndexTTS datasets=aispeech_phy_ar_common_fleurs_v251217__v1.0.2 metrics=utmos source=/abs/path/to/infer_bundle
 ```
 
 KWS wake-word example:

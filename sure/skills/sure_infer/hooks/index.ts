@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
+import { agentBinDir, demoteAgentBinDir } from "../../../runtime/agent-path.ts";
 import {
 	type HarnessRuntimeContract,
 	harnessRuntimeEnv,
@@ -166,6 +167,8 @@ export function evalProductDir(ctx: SureHookContext): string | undefined {
 }
 
 export function preStart(ctx: SureHookContext): SureHookResult {
+	// Park agent bin at end of PATH so a docker shim there cannot shadow system docker.
+	demoteAgentBinDir(process.env, agentBinDir());
 	const args = parseArgs(ctx.args);
 	const missing: string[] = [];
 	if (!args.model) {

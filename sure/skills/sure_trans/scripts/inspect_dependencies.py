@@ -1,87 +1,26 @@
 #!/usr/bin/env python3
+"""Write the dependency report for a transformation run."""
 from __future__ import annotations
 
 import argparse
-import ast
 import json
-import shlex
 from pathlib import Path
+from typing import Any
+
+from dependency_contract import (
+    collect_dependency_evidence,
+    dependency_status,
+    evidence_digest,
+    load_json,
+    review_is_valid,
+)
 
 
-def load_json(path: Path) -> dict:
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"expected object: {path}")
-    return value
-
-
-def docker_instructions(path: Path) -> list[tuple[str, str]]:
-    logical: list[str] = []
-    current = ""
-    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        current = f"{current} {line}".strip()
-        if current.endswith("\\"):
-            current = current[:-1].rstrip()
-            continue
-        parts = current.split(None, 1)
-        logical.append((parts[0].upper(), parts[1] if len(parts) > 1 else ""))
-        current = ""
-    return logical
-
-
-def copy_sources(instructions: list[tuple[str, str]]) -> list[str]:
-    sources: list[str] = []
-    for instruction, value in instructions:
-        if instruction not in {"COPY", "ADD"}:
-            continue
-        value = value.strip()
-        if value.startswith("["):
-            items = json.loads(value)
-            sources.extend(str(item) for item in items[:-1])
-            continue
-        tokens = shlex.split(value)
-        tokens = [token for token in tokens if not token.startswith("--")]
-        sources.extend(tokens[:-1])
-    return sorted(set(sources))
-
-
-class DependencyVisitor(ast.NodeVisitor):
-    def __init__(self) -> None:
-        self.imports: set[str] = set()
-        self.string_paths: set[str] = set()
-        self.commands: set[str] = set()
-
-    def visit_Import(self, node: ast.Import) -> None:
-        self.imports.update(alias.name.split(".")[0] for alias in node.names)
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        if node.module:
-            self.imports.add(node.module.split(".")[0])
-
-    def visit_Call(self, node: ast.Call) -> None:
-        name = ""
-        if isinstance(node.func, ast.Name):
-            name = node.func.id
-        elif isinstance(node.func, ast.Attribute):
-            name = node.func.attr
-        if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
-            value = node.args[0].value
-            if name in {"open", "Path", "read_text", "read_bytes", "CDLL"}:
-                self.string_paths.add(value)
-            if name in {"run", "Popen", "call", "check_call", "check_output"}:
-                self.commands.add(value)
-        self.generic_visit(node)
-
-
-def inside(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-        return True
-    except ValueError:
-        return False
+def review_roots(resolved: dict[str, Any]) -> list[Path]:
+    return [
+        Path(str(resolved["build_context"])).resolve(),
+        Path(str(resolved["model_path"])).resolve(),
+    ]
 
 
 def main() -> int:
@@ -89,89 +28,53 @@ def main() -> int:
     parser.add_argument("--run-dir", required=True)
     args = parser.parse_args()
     run_dir = Path(args.run_dir).resolve()
-    resolved = load_json(run_dir / "artifacts" / "trans_input_resolved.json")
-    build_context = Path(resolved["build_context"])
-    source_kind = str(resolved.get("source_kind") or "docker")
-    entrypoint = Path(resolved["inference_entrypoint"])
-    model_path = Path(resolved["model_path"])
-    dependency_file = (
-        Path(str(resolved["dependency_file"])).resolve()
-        if resolved.get("dependency_file")
-        else None
-    )
+    artifacts = run_dir / "artifacts"
+    resolved = load_json(artifacts / "trans_input_resolved.json")
+    evidence = collect_dependency_evidence(resolved)
+    digest = evidence_digest(evidence)
+    output = artifacts / "inference_dependency_report.json"
+    previous: dict[str, Any] = {}
+    if output.is_file():
+        try:
+            previous = load_json(output)
+        except (OSError, ValueError, json.JSONDecodeError):
+            previous = {}
+    agent_review = previous.get("agent_review") if previous.get("evidence_digest") == digest else None
+    if agent_review is not None:
+        valid, _ = review_is_valid(agent_review, evidence["review_signals"], review_roots(resolved))
+        if not valid:
+            agent_review = None
 
-    sources: list[str] = []
-    if source_kind == "docker":
-        dockerfile = Path(resolved["dockerfile"])
-        sources = copy_sources(docker_instructions(dockerfile))
-    unresolved: list[str] = []
-    support_paths: set[str] = set()
-    for source in sources:
-        if source.startswith("http://") or source.startswith("https://"):
-            continue
-        candidate = build_context / source
-        if not candidate.exists():
-            unresolved.append(f"Dockerfile source does not exist: {source}")
-        else:
-            support_paths.add(str(candidate.resolve()))
-
-    visitor = DependencyVisitor()
-    visitor.visit(ast.parse(entrypoint.read_text(encoding="utf-8"), filename=str(entrypoint)))
-    external_paths = sorted(
-        value for value in visitor.string_paths
-        if value.startswith("/") and not inside(Path(value), build_context) and not inside(Path(value), model_path)
-    )
-    if inside(entrypoint, build_context):
-        support_paths.add(str(entrypoint.parent.resolve()))
-    else:
-        external_paths.append(str(entrypoint))
-    if source_kind == "python" and dependency_file is not None:
-        support_paths.add(str(dependency_file))
-
-    uv_files = [
-        str((build_context / name).resolve())
-        for name in ("uv.lock", "requirements.lock.txt", "requirements.lock", "requirements.txt", "pyproject.toml")
-        if (build_context / name).is_file()
+    status = dependency_status(evidence, agent_review)
+    human_evidence = [
+        f"entrypoint language: {evidence['entrypoint_language']}",
+        f"syntax check: {evidence['syntax_check'].get('status', 'unknown')}",
+        f"Python imports discovered: {len(evidence['python_imports'])}",
     ]
-    conda_files = [
-        str((build_context / name).resolve())
-        for name in ("conda-lock.yml", "conda-lock.yaml", "environment.yml", "environment.yaml")
-        if (build_context / name).is_file()
-    ]
-    python_executable = resolved.get("python_executable")
-    conda_prefix = None
-    if isinstance(python_executable, str) and python_executable:
-        executable = Path(python_executable).resolve()
-        conda_root = next(
-            (parent for parent in executable.parents if (parent / "conda-meta" / "history").is_file()),
-            None,
-        )
-        conda_prefix = str(conda_root) if conda_root else None
-
+    human_evidence.extend(
+        f"missing dependency: {item.get('path') or item.get('source') or item.get('resolved_path')}"
+        for item in evidence["hard_conflicts"]
+        if item.get("classification") == "missing" or item.get("kind") in {"syntax_error", "read_error"}
+    )
+    human_evidence.extend(
+        f"external dependency: {item.get('path') or item.get('source') or item.get('resolved_path')}"
+        for item in evidence["hard_conflicts"]
+        if item.get("classification") == "external"
+    )
+    human_evidence.extend(
+        f"dynamic reference requires Agent review: {item.get('file')}:{item.get('line')}"
+        for item in evidence["review_signals"]
+    )
     payload = {
-        "schema": "sure.trans.dependencies.v1",
-        "entrypoint": str(entrypoint),
-        "build_context": str(build_context),
-        "docker_copy_sources": sources,
-        "python_imports": sorted(visitor.imports),
-        "backend_signals": {
-            "dockerfile": str(resolved.get("dockerfile") or "") or None,
-            "uv_files": uv_files,
-            "conda_files": conda_files,
-            "python_executable": python_executable,
-            "conda_prefix": conda_prefix,
-        },
-        "dependency_file": str(dependency_file) if dependency_file else None,
-        "literal_file_references": sorted(visitor.string_paths),
-        "subprocess_references": sorted(visitor.commands),
-        "support_paths": sorted(support_paths),
-        "model_path": str(model_path),
-        "unresolved": sorted(set(unresolved)),
-        "external_paths": sorted(set(external_paths)),
-        "dynamic_validation_required": True,
-        "status": "ready" if not unresolved and not external_paths else "blocked",
+        "schema": "sure.trans.dependencies.v2",
+        **evidence,
+        "review_required": bool(evidence["review_signals"]),
+        "evidence_digest": digest,
+        "agent_review": agent_review,
+        "evidence": human_evidence,
+        "status": status,
     }
-    output = run_dir / "artifacts" / "inference_dependency_report.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(output)
     return 0

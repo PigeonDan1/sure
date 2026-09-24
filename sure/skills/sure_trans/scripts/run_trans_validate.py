@@ -244,7 +244,7 @@ def validate_mcp_evidence(evidence_path: Path, tool_name: str) -> str | None:
     return None
 
 
-EQUIVALENCE_POLICIES = ("exact", "normalized_whitespace", "vector_allclose")
+EQUIVALENCE_POLICIES = ("exact", "normalized_whitespace", "vector_allclose", "audio_contract")
 # The gate owns the vector_allclose tolerance. These are both the default and the
 # ceiling: an artifact may declare a tighter value, never a looser one, so the
 # thing under test cannot widen the bar it is judged against.
@@ -279,14 +279,34 @@ def embedding_vector(value: object, label: str) -> list[float]:
     return vector
 
 
-def adapter_primary_field(run_dir: Path) -> str:
+def adapter_contract(run_dir: Path) -> dict:
     manifest = run_dir / "artifacts" / "adapter_manifest.json"
     if not manifest.is_file():
-        return "text"
+        return {"primary_field": "text", "output_type": "json"}
     contract = read_object(manifest).get("io_contract")
-    if isinstance(contract, dict) and isinstance(contract.get("primary_field"), str):
-        return contract["primary_field"]
-    return "text"
+    return contract if isinstance(contract, dict) else {"primary_field": "text", "output_type": "json"}
+
+
+def audio_output(path: Path, primary_field: str) -> dict[str, object]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must contain a JSON object for audio equivalence")
+    raw_path = value.get(primary_field) or value.get("audio_path") or value.get("wav")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise ValueError(f"{path} carries no audio output path in {primary_field!r}")
+    output = Path(raw_path).expanduser()
+    if not output.is_file():
+        raise ValueError(f"audio output does not exist: {raw_path}")
+    size = output.stat().st_size
+    if size <= 0:
+        raise ValueError(f"audio output is empty: {raw_path}")
+    return {"audio_path": raw_path, "size_bytes": size}
+
+
+def adapter_primary_field(run_dir: Path) -> str:
+    contract = adapter_contract(run_dir)
+    primary = contract.get("primary_field")
+    return primary if isinstance(primary, str) and primary else "text"
 
 
 def compare_equivalence_outputs(run_dir: Path, data: dict) -> tuple[dict | None, str | None]:
@@ -297,13 +317,46 @@ def compare_equivalence_outputs(run_dir: Path, data: dict) -> tuple[dict | None,
     comparison happens here so the verdict rests on the recorded evidence
     rather than on an exit code the agent chooses.
     """
+    contract = adapter_contract(run_dir)
     primary_field = adapter_primary_field(run_dir)
-    default_policy = "vector_allclose" if primary_field == "embedding" else "normalized_whitespace"
+    if contract.get("output_type") == "audio":
+        default_policy = "audio_contract"
+    elif primary_field == "embedding":
+        default_policy = "vector_allclose"
+    else:
+        default_policy = "normalized_whitespace"
     policy = str(data.get("comparison_policy") or default_policy)
     if policy not in EQUIVALENCE_POLICIES:
         return None, (
             f"comparison_policy must be one of {list(EQUIVALENCE_POLICIES)}; got {policy!r}"
         )
+    if policy == "audio_contract":
+        outputs: dict[str, dict[str, object]] = {}
+        for key in ("baseline_output", "adapter_output"):
+            raw = str(data.get(key) or "")
+            path = Path(raw)
+            if not raw or not path.is_file():
+                return None, f"{key} must be the path of a recorded output file; got {raw!r}"
+            try:
+                outputs[key] = audio_output(path, primary_field)
+            except (OSError, ValueError, json.JSONDecodeError) as error:
+                return None, str(error)
+        baseline = outputs["baseline_output"]
+        adapter = outputs["adapter_output"]
+        match = (
+            int(baseline["size_bytes"]) > 0
+            and int(adapter["size_bytes"]) > 0
+        )
+        evidence = {
+            "policy": policy,
+            "primary_field": primary_field,
+            "baseline": baseline,
+            "adapter": adapter,
+            "match": match,
+        }
+        if not match:
+            return evidence, "audio_contract requires non-empty baseline and adapter audio files"
+        return evidence, None
     values: dict[str, object] = {}
     for key in ("baseline_output", "adapter_output"):
         raw = str(data.get(key) or "")
