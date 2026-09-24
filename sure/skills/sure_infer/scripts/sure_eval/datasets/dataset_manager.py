@@ -761,9 +761,9 @@ class DatasetManager:
         # S2TT (target = translation text, source-language transcription kept for
         # triangle metrics); KWS, LID and VAD sources project through their own
         # projectors; anything else keeps the ASR projection unchanged.
-        if task not in {"ASR", "KWS", "LID", "VAD", "S2TT"}:
+        if task not in {"ASR", "KWS", "LID", "VAD", "S2TT", "SV"}:
             raise ValueError(
-                f"source-root projection for task {task!r} is not implemented; supported tasks: ASR, KWS, LID, VAD, S2TT"
+                f"source-root projection for task {task!r} is not implemented; supported tasks: ASR, KWS, LID, VAD, S2TT, SV"
             )
         ds_meta = self._load_single_json_object(ds_jsonl_path)
         language = str(
@@ -782,6 +782,8 @@ class DatasetManager:
             if task == "LID"
             else "s2tt_translation_v1"
             if task == "S2TT"
+            else "sv_embeddings_v1"
+            if task == "SV"
             else "asr_transcription_v1"
         )
         projection_dir = package_dir / "projections" / projection_name
@@ -797,6 +799,16 @@ class DatasetManager:
             rows, skipped, source_records = self._project_kws_sample_rows(
                 sample_jsonl_path=sample_jsonl_path,
                 raw_dir=raw_dir,
+                language=language,
+                dataset_label=ref.dataset_id,
+                metadata_base=metadata_base,
+            )
+        elif task == "SV":
+            trial_manifest = self._resolve_sv_trial_manifest(ref)
+            rows, skipped, source_records = self._project_sv_sample_rows(
+                sample_jsonl_path=sample_jsonl_path,
+                raw_dir=raw_dir,
+                trial_manifest=trial_manifest,
                 language=language,
                 dataset_label=ref.dataset_id,
                 metadata_base=metadata_base,
@@ -821,6 +833,13 @@ class DatasetManager:
             raise ValueError(f"source-root conversion produced no samples for {ref.source_root}")
         if task == "KWS" and {row["expected_detected"] for row in rows} != {False, True}:
             raise ValueError("KWS evaluation requires at least one positive and one negative sample")
+        if task == "SV":
+            trial_gaps = self._sv_trial_key_gaps(trial_manifest, {str(row["key"]) for row in rows})
+            if trial_gaps:
+                raise ValueError(
+                    "SV trial manifest references unknown sample keys: "
+                    + ", ".join(sorted(trial_gaps)[:5])
+                )
 
         jsonl_path.parent.mkdir(parents=True, exist_ok=True)
         with jsonl_path.open("w", encoding="utf-8") as handle:
@@ -859,6 +878,15 @@ class DatasetManager:
                 "duration": "duration|duration_ms|attribute.duration|wav header",
                 "task": "constant:KWS",
                 "language": "row.language|ds.audio.speech.language|any",
+            }
+        elif task == "SV":
+            fields = {
+                "key": "key|sample_id",
+                "path": "audio|path|attribute.path|wav",
+                "task": "constant:SV",
+                "language": "row.language|ds.audio.speech.language",
+                "speaker_id": "record.speaker_id",
+                "trial_manifest": "record.trial_manifest|trial_manifest.json",
             }
         else:
             fields = {
@@ -936,6 +964,25 @@ class DatasetManager:
                 "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
                 "output": {"prediction_format": "tsv", "columns": ["key", "label"], "type": "language_label"},
                 "reference": {"primary_field": "label", "type": "language_label"},
+            }
+        elif task == "SV":
+            io_contract = {
+                "task": "SV",
+                "input": {
+                    "primary_field": "path",
+                    "type": "audio_path",
+                    "required_fields": ["key", "path", "speaker_id"],
+                },
+                "output": {
+                    "prediction_format": "jsonl+tsv_projection",
+                    "columns": ["key", "embedding"],
+                    "type": "speaker_embedding",
+                },
+                "reference": {
+                    "required_fields": ["speaker_id"],
+                    "type": "speaker_verification",
+                    "trial_manifest": "trial_manifest",
+                },
             }
         else:
             reference_contract: dict[str, Any] = (
@@ -1455,4 +1502,153 @@ class DatasetManager:
                 if threshold is not None:
                     row["threshold"] = threshold
                 rows.append(row)
+        return rows, skipped, source_records
+
+    def _resolve_sv_trial_manifest(self, ref: Any) -> Path:
+        """Locate and validate the trial manifest backing an SV source root.
+
+        The manifest lives next to the version's sample.jsonl or at the source
+        root; either layout is accepted. The manifest must parse as a JSON
+        object naming a trials file (``trials_file``) that exists beside it.
+        """
+        candidates = [
+            Path(ref.sample_jsonl).parent / "trial_manifest.json",
+            Path(ref.raw_dir) / "trial_manifest.json",
+            Path(ref.source_root) / "trial_manifest.json",
+        ]
+        manifest = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if manifest is None:
+            searched = ", ".join(str(candidate) for candidate in candidates)
+            raise FileNotFoundError(
+                f"SV source root {ref.source_root} has no trial_manifest.json; searched: {searched}"
+            )
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"SV trial manifest is not valid JSON: {manifest}: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"SV trial manifest must be a JSON object: {manifest}")
+        trials_name = str(payload.get("trials_file") or "").strip()
+        if not trials_name:
+            raise ValueError(f"SV trial manifest is missing trials_file: {manifest}")
+        trials_path = Path(trials_name)
+        if not trials_path.is_absolute():
+            trials_path = manifest.parent / trials_path
+        if not trials_path.is_file():
+            raise FileNotFoundError(f"SV trials file not found: {trials_path}")
+        return manifest
+
+    @staticmethod
+    def _sv_trial_keys(trials_path: Path) -> set[str]:
+        """Collect enroll/test keys from a whitespace-separated trials table."""
+        keys: set[str] = set()
+        for line in trials_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            if parts[0].strip().lower() in {"enroll_key", "enroll", "enrollment_key"}:
+                continue
+            keys.update((parts[0], parts[1]))
+        return keys
+
+    def _sv_trial_key_gaps(self, manifest: Path, sample_keys: set[str]) -> set[str]:
+        """Trial keys missing from the projected sample rows, if the table parses."""
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        trials_path = Path(str(payload.get("trials_file") or ""))
+        if not trials_path.is_absolute():
+            trials_path = manifest.parent / trials_path
+        trial_keys = self._sv_trial_keys(trials_path)
+        if not trial_keys:
+            raise ValueError(f"SV trials file has no parseable enroll/test rows: {trials_path}")
+        return trial_keys - sample_keys
+
+    def _project_sv_sample_rows(
+        self,
+        *,
+        sample_jsonl_path: Path,
+        raw_dir: Path,
+        trial_manifest: Path,
+        language: str,
+        dataset_label: str,
+        metadata_base: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+        """Project flat SV sample rows into speaker-embedding evaluation JSONL.
+
+        Every projected row keeps its absolute audio path, the speaker id, and
+        the resolved trial manifest path; the evaluator binds the manifest from
+        the first reference row at scoring time.
+        """
+        rows: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        source_records = 0
+        seen_keys: set[str] = set()
+        default_manifest = str(trial_manifest)
+
+        with sample_jsonl_path.open("r", encoding="utf-8") as handle:
+            for line_no, line in enumerate(handle, start=1):
+                if not line.strip():
+                    continue
+                source_records += 1
+                try:
+                    record = json.loads(line)
+                    if not isinstance(record, dict):
+                        raise ValueError("row is not an object")
+                    attr = record.get("attribute") if isinstance(record.get("attribute"), dict) else {}
+                    raw_path = attr.get("path") or record.get("audio") or record.get("path") or record.get("wav")
+                    if not raw_path:
+                        raise ValueError("missing audio path (audio, path, attribute.path, or wav)")
+                    audio_path = self._resolve_oref_audio_path(str(raw_path), raw_dir)
+                    if not audio_path.is_file():
+                        raise ValueError(f"audio_not_found: {audio_path}")
+                    if attr.get("size") is not None and int(attr["size"]) != audio_path.stat().st_size:
+                        raise ValueError(
+                            f"audio_size_mismatch: expected {attr['size']} got {audio_path.stat().st_size}"
+                        )
+
+                    key = str(record.get("key") or record.get("sample_id") or audio_path.stem).strip()
+                    if not key:
+                        raise ValueError("missing key/sample_id")
+                    if key in seen_keys:
+                        raise ValueError(f"duplicate sample key: {key}")
+
+                    speaker_id = str(record.get("speaker_id") or "").strip()
+                    if not speaker_id:
+                        raise ValueError("missing speaker_id")
+
+                    row_manifest = default_manifest
+                    manifest_value = str(record.get("trial_manifest") or "").strip()
+                    if manifest_value:
+                        candidate = Path(manifest_value).expanduser()
+                        if not candidate.is_absolute():
+                            resolved = raw_dir / candidate
+                            candidate = resolved if resolved.is_file() else raw_dir / candidate.name
+                        if not candidate.is_file():
+                            raise ValueError(f"trial_manifest not found: {candidate}")
+                        row_manifest = str(candidate)
+                except (TypeError, ValueError, OSError) as exc:
+                    skipped.append({"line": line_no, "reason": str(exc)})
+                    continue
+
+                seen_keys.add(key)
+                rows.append(
+                    {
+                        "key": key,
+                        "path": str(audio_path),
+                        "audio": str(audio_path),
+                        "task": "SV",
+                        "language": str(record.get("language") or language or "auto"),
+                        "dataset": dataset_label,
+                        "speaker_id": speaker_id,
+                        "trial_manifest": row_manifest,
+                        "metadata": {
+                            **metadata_base,
+                            "sample_id": record.get("sample_id") or key,
+                            "speaker_id": speaker_id,
+                            "raw_data_md5": attr.get("raw_data_md5"),
+                            "raw_data_format": attr.get("raw_data_format"),
+                            "size": attr.get("size") or audio_path.stat().st_size,
+                            "channels": attr.get("channels"),
+                        },
+                    }
+                )
         return rows, skipped, source_records

@@ -40,14 +40,19 @@ def _artifact_run_id(run_dir: Path) -> str:
 def _git_commit(root: Path | None) -> str | None:
     if root is None or not root.exists():
         return None
-    completed = subprocess.run(
-        ["git", "-c", f"safe.directory={root}", "-C", str(root), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-        env=git_environment(evaluation_child_environment()),
-    )
+    try:
+        completed = subprocess.run(
+            ["git", "-c", f"safe.directory={root}", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            env=git_environment(evaluation_child_environment()),
+        )
+    except (OSError, subprocess.SubprocessError):
+        # Sealed inference images need not ship git; the commit is provenance
+        # only, so a missing binary degrades to an absent value.
+        return None
     value = completed.stdout.strip()
     return value if completed.returncode == 0 and value else None
 

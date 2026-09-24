@@ -1,0 +1,4 @@
+{"key":"sv_1580_a","task":"SV","language":"en","dataset":"librispeech_test_clean_sv","audio":"1580-141083-0040.wav","speaker_id":"1580","trial_manifest":"trial_manifest.json"}
+{"key":"sv_1580_b","task":"SV","language":"en","dataset":"librispeech_test_clean_sv","audio":"1580-141083-0042.wav","speaker_id":"1580","trial_manifest":"trial_manifest.json"}
+{"key":"sv_1089_a","task":"SV","language":"en","dataset":"librispeech_test_clean_sv","audio":"1089-134691-0001.wav","speaker_id":"1089","trial_manifest":"trial_manifest.json"}
+{"key":"sv_1089_b","task":"SV","language":"en","dataset":"librispeech_test_clean_sv","audio":"1089-134691-0002.wav","speaker_id":"1089","trial_manifest":"trial_manifest.json"}
